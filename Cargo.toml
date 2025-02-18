@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = [
+    "base/game",
+    "base/main",
+    "lib/io",
+    "lib/twiddling"
+]
+
+[workspace.dependencies]
+main = { path = "base/main" }
+game = { path = "base/game" }
+twiddling = { path = "lib/twiddling" }
+io = { path = "lib/io" }
+
+bnum = "0.12.1"
