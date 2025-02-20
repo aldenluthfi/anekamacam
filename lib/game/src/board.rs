@@ -1,13 +1,13 @@
 use bnum::types::U4096;
 
 pub struct Board {
-    pub ranks: u8,
-    pub files: u8,
+    pub ranks: u16,
+    pub files: u16,
     pub bitboard: U4096,
 }
 
 impl Board {
-    pub fn new(ranks: u8, files: u8) -> Board {
+    pub fn new(ranks: u16, files: u16) -> Board {
         Board {
             ranks,
             files,
@@ -15,19 +15,19 @@ impl Board {
         }
     }
 
-    pub fn set_bit(&mut self, rank: u8, files: u8) {
-        let index = rank * self.files + files;
-        self.bitboard.set_bit(index as u32, true);
+    pub fn set_bit(&mut self, rank: u16, files: u16) {
+        let index = (rank * self.files + files) as u32;
+        self.bitboard.set_bit(index, true);
     }
 
-    pub fn clear_bit(&mut self, rank: u8, files: u8) {
-        let index = rank * self.files + files;
-        self.bitboard.set_bit(index as u32, false);
+    pub fn clear_bit(&mut self, rank: u16, files: u16) {
+        let index = (rank * self.files + files) as u32;
+        self.bitboard.set_bit(index, false);
     }
 
-    pub fn get_bit(&self, rank: u8, files: u8) -> bool {
-        let index = rank * self.files + files;
-        self.bitboard.bit(index as u32)
+    pub fn get_bit(&self, rank: u16, files: u16) -> bool {
+        let index = (rank * self.files + files) as u32;
+        self.bitboard.bit(index)
     }
 
     pub fn lsb(&self) -> u32 {
