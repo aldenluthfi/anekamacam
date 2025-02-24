@@ -1,3 +1,19 @@
+//! # board.rs
+//!
+//! Defines a board structure and operations for bitboard manipulation.
+//!
+//! This file contains the implementation of a `Board` struct, which represents
+//! a board using a bitboard of type `U4096`. It provides methods for setting,
+//! clearing, and querying bits, as well as utility functions for bitboard
+//! manipulation such as finding the least significant bit (LSB), most
+//! significant bit (MSB), and counting set bits.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 18/02/2024
+
 use bnum::types::U4096;
 
 pub struct Board {
