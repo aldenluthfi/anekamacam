@@ -13,5 +13,6 @@ game = { path = "lib/game" }
 twiddling = { path = "lib/twiddling" }
 io = { path = "lib/io" }
 
-bnum = "0.12.1"
-regex = "1.5"
+bnum = "*"
+regex = "*"
+ntest = "*"
