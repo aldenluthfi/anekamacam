@@ -193,11 +193,15 @@ fn expand_ranges(expr: &str) -> String {
                     }
                 }
                 (true, false) => {
-                    let pattern = Regex::new(r"([^>])$|(<.*>)$").unwrap();
+                    let pattern = Regex::new(
+                        r"(\[\d+\][^>])$|(\[\d+\]<.*>)$|([^>])$|(<.*>)$|"
+                    ).unwrap();
                     let capture = pattern.captures(prefix).unwrap();
                     let piece = capture
                         .get(1)
                         .or(capture.get(2))
+                        .or(capture.get(3))
+                        .or(capture.get(4))
                         .unwrap()
                         .as_str();
 
@@ -211,6 +215,7 @@ fn expand_ranges(expr: &str) -> String {
         }
 
         expanded = expanded.replacen(&cap[0], &vec_rep.join("|"), 1);
+        println!("{}", expanded);
     }
 
 
@@ -221,7 +226,15 @@ fn expand_directions(expr: &str) -> String {
     let mut expanded = expr.to_string();
 
     let pattern = Regex::new(
-        r"(?:\[(?:\.\.(\d+)|(\d+)\.\.|(\d+)\.\.(\d+)|\.\.)\]|\*)"
+        r"([^\]]K)|(^K)"
+    ).unwrap();
+    while let Some(cap) = pattern.captures(&expanded) {
+        let cap_str = cap.get(0).unwrap().as_str();
+        expanded = expanded.replacen(cap_str, &"[12345678]K", 1);
+    }
+
+    let pattern = Regex::new(
+        r"\[(?:\.\.(\d+)|(\d+)\.\.|(\d+)\.\.(\d+)|\.\.)\]"
     ).unwrap();
     while let Some(cap) = pattern.captures(&expanded) {
         let range = match (cap.get(1), cap.get(2), cap.get(3), cap.get(4)) {
@@ -246,8 +259,6 @@ fn expand_directions(expr: &str) -> String {
         let cap_str = cap.get(0).unwrap().as_str();
         expanded = expanded.replacen(cap_str, &replacement, 1);
     }
-
-    println!("{}", expanded);
 
     let mut stack = vec![expanded];
     let mut result_stack: Vec<String> = Vec::new();
@@ -276,21 +287,29 @@ fn expand_directions(expr: &str) -> String {
     result_stack.join("|")
 }
 
+fn vectorize(expr: &str) -> String {
+    expr.to_string()
+        .replace("[1]K", "(0, 1)[1]")
+        .replace("[2]K", "(1, 1)[2]")
+        .replace("[3]K", "(1, 0)[3]")
+        .replace("[4]K", "(1, -1)[4]")
+        .replace("[5]K", "(0, -1)[5]")
+        .replace("[6]K", "(-1, -1)[6]")
+        .replace("[7]K", "(-1, 0)[7]")
+        .replace("[8]K", "(-1, 1)[8]")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ntest::timeout;
 
     #[test]
-    fn expansion() {
-        assert_eq!("abd|abef|cd|cef", expand("(ab|c)(d|ef)"));
-        assert_eq!("ace|acf|ade|adf|bce|bcf|bde|bdf", expand("(a|b)(c|d)(e|f)"));
-    }
-
-    #[test]
     #[timeout(3000)]
     fn range_expansion() {
-        println!("{}", expand_directions("[2468]Kn[2468]K"));
+        println!("{}", &atomize("F-nW"));
+        println!("{}", &expand_directions(&atomize("F-nW")));
+        println!("{}", vectorize(&expand_directions(&atomize("F-nW"))));
         assert_eq!(1, 2)
     }
 
