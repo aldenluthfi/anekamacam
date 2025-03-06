@@ -1,4 +1,4 @@
-use std::char;
+use std::{char, vec};
 
 use regex::Regex;
 
@@ -98,7 +98,7 @@ fn precedence(op: char) -> usize {
     }
 }
 
-fn expand(expr: &str) -> String {
+fn normalize(expr: &str) -> String {
     let pattern = Regex::new(r"[^(^|]\(|\)[^()^|]").unwrap();
     let indices: Vec<usize> = pattern
         .find_iter(expr)
@@ -156,13 +156,13 @@ fn expand_ranges(expr: &str) -> String {
         let replacement = match (cap.get(2), cap.get(3)) {
             (Some(end), _) => {
                 let end_str = end.as_str();
-                format!("{}{{1..{}}}", prefix, end_str)
+                format!("{}{{1..{}}}", prefix, end_str)                         /* Handle ..n format                  */
             }
             (_, Some(start)) => {
                 let start_str = start.as_str();
-                format!("{}{{{}..64}}", prefix, start_str)
+                format!("{}{{{}..64}}", prefix, start_str)                      /* Handle n.. format                  */
             }
-            _ => format!("{}{{1..64}}", prefix),
+            _ => format!("{}{{1..64}}", prefix),                                /* Handle .. format                   */
         };
         let cap_str = cap.get(0).unwrap().as_str();
         expanded = expanded.replacen(cap_str, &replacement, 1);
@@ -187,9 +187,9 @@ fn expand_ranges(expr: &str) -> String {
             vec_rep.push(match (!colon.is_empty(), !dash.is_empty()) {
                 (true, true) => {
                     if suffix.is_empty() {
-                        format!("{}-", prefix).repeat(n - 1) + &prefix
+                        format!("{}-", prefix).repeat(n - 1) + &prefix          /* Handle move:-{n} repetition        */
                     } else {
-                        format!("{}-", prefix).repeat(n) + suffix
+                        format!("{}-", prefix).repeat(n) + suffix               /* Handle move:-{n}suffix             */
                     }
                 }
                 (true, false) => {
@@ -205,12 +205,12 @@ fn expand_ranges(expr: &str) -> String {
                         .unwrap()
                         .as_str();
 
-                    prefix.replacen(piece, &piece.repeat(n), 1) + suffix
+                    prefix.replacen(piece, &piece.repeat(n), 1) + suffix        /* Handle move:{n} piece repetition   */
                 }
                 (false, true) => {
-                    prefix.to_owned() + &"-.".repeat(n - 1) + &suffix
+                    prefix.to_owned() + &"-.".repeat(n - 1) + &suffix           /* Handle move-{n} dash repetition    */
                 }
-                _ => format!("{}{}{}", prefix, ".".repeat(n - 1), suffix),
+                _ => format!("{}{}{}", prefix, ".".repeat(n - 1), suffix),      /* Handle normal {n} dot repetition   */
             });
         }
 
@@ -222,6 +222,40 @@ fn expand_ranges(expr: &str) -> String {
     expanded
 }
 
+fn expand_cardinals(expr: &str) -> String {
+    let mut stack = vec![expr.to_string()];
+    let mut result_stack: Vec<String> = Vec::new();
+
+    let pattern = Regex::new(
+        r"([nsew]{1,2}\+)*"
+    ).unwrap();
+
+    while !stack.is_empty() {
+        let term = stack.pop().unwrap();
+
+        if !pattern.is_match(&term) {
+            result_stack.push(term);
+            continue;
+        }
+
+        let cap = pattern.captures(&term).unwrap();
+        let cardinals = cap
+            .get(0)
+            .unwrap()
+            .as_str();
+
+        let split = cardinals
+            .split('+')
+            .collect::<Vec<&str>>();
+
+        for cardinal in &split {
+            result_stack.push(term.replacen(cardinals, cardinal, 1));           /* Replace combined cardinals         */
+        }
+    }
+
+    result_stack.join("|")                                                      /* Join expanded cardinals with |     */
+}
+
 fn expand_directions(expr: &str) -> String {
     let mut expanded = expr.to_string();
 
@@ -230,7 +264,7 @@ fn expand_directions(expr: &str) -> String {
     ).unwrap();
     while let Some(cap) = pattern.captures(&expanded) {
         let cap_str = cap.get(0).unwrap().as_str();
-        expanded = expanded.replacen(cap_str, &"[12345678]K", 1);
+        expanded = expanded.replacen(cap_str, &"[12345678]K", 1);               /* Replace bare K with all directions   */
     }
 
     let pattern = Regex::new(
@@ -240,18 +274,18 @@ fn expand_directions(expr: &str) -> String {
         let range = match (cap.get(1), cap.get(2), cap.get(3), cap.get(4)) {
             (Some(end), _, _, _) => {
                 let e = end.as_str().parse().unwrap();
-                1..=e
+                1..=e                                                           /* Handle ..n range format            */
             },
             (_, Some(start), _, _) => {
                 let s = start.as_str().parse().unwrap();
-                s..=8
+                s..=8                                                           /* Handle n.. range format            */
             },
             (_, _, Some(start), Some(end)) => {
                 let s = start.as_str().parse::<usize>().unwrap();
                 let e = end.as_str().parse().unwrap();
-                s..=e
+                s..=e                                                           /* Handle n..m range format           */
             },
-            _ => 1..=8,
+            _ => 1..=8,                                                         /* Handle .. (all) range format       */
         };
 
         let range_str = range.map(|n| n.to_string()).collect::<String>();
@@ -280,23 +314,46 @@ fn expand_directions(expr: &str) -> String {
 
         for char in range.chars() {
             let n = format!("[{}]", char);
-            stack.push(term.replacen(&format!("[{}]", range), &n, 1));
+            stack.push(term.replacen(&format!("[{}]", range), &n, 1));          /* Split directions into single       */
         }
     }
 
-    result_stack.join("|")
+    result_stack.join("|")                                                      /* Join expanded directions with |    */
 }
 
 fn vectorize(expr: &str) -> String {
     expr.to_string()
-        .replace("[1]K", "(0, 1)[1]")
-        .replace("[2]K", "(1, 1)[2]")
-        .replace("[3]K", "(1, 0)[3]")
-        .replace("[4]K", "(1, -1)[4]")
-        .replace("[5]K", "(0, -1)[5]")
-        .replace("[6]K", "(-1, -1)[6]")
-        .replace("[7]K", "(-1, 0)[7]")
-        .replace("[8]K", "(-1, 1)[8]")
+        .replace("[1]K", "(0, 1)[1]")                                     /* North                              */
+        .replace("[2]K", "(1, 1)[2]")                                     /* Northeast                          */
+        .replace("[3]K", "(1, 0)[3]")                                     /* East                               */
+        .replace("[4]K", "(1, -1)[4]")                                    /* Southeast                          */
+        .replace("[5]K", "(0, -1)[5]")                                    /* South                              */
+        .replace("[6]K", "(-1, -1)[6]")                                   /* Southwest                          */
+        .replace("[7]K", "(-1, 0)[7]")                                    /* West                               */
+        .replace("[8]K", "(-1, 1)[8]")                                          /* Northwest                          */
+}
+
+fn split_and_process(expr: &str, f: fn(&str) -> String) -> String {
+    expr.split('|')
+        .map(|x| f(x))
+        .collect::<Vec<String>>()
+        .join("|")                                                              /* Process each term separately       */
+}
+
+pub fn parse_move(move_str: &str) -> String {
+    let pipeline = [
+        normalize,
+        atomize,
+        expand_ranges,
+        expand_cardinals,
+        expand_directions,
+        vectorize
+    ];                                                                          /* Define processing pipeline         */
+
+    pipeline
+        .iter()
+        .fold(move_str.to_string(), |acc, &f| split_and_process(&acc, f))       /* Apply each function in sequence    */
+
 }
 
 #[cfg(test)]
@@ -307,9 +364,7 @@ mod tests {
     #[test]
     #[timeout(3000)]
     fn range_expansion() {
-        println!("{}", &atomize("F-nW"));
-        println!("{}", &expand_directions(&atomize("F-nW")));
-        println!("{}", vectorize(&expand_directions(&atomize("F-nW"))));
+        parse_move("WnW-/WnW/-<WnWnW>-</WnW/>");
         assert_eq!(1, 2)
     }
 
