@@ -376,7 +376,7 @@ fn tokenize(expr: &str) -> Vec<String> {
         Regex::new(r"(^</?)").unwrap(),
         Regex::new(r"(^/?>)").unwrap(),
         Regex::new(r"(^/)").unwrap(),
-        Regex::new(r"(^-)").unwrap(),
+        Regex::new(r"(^-\.?)").unwrap(),
         Regex::new(r"(^\.)").unwrap(),
         Regex::new(r"(^\(-?\d+, -?\d+\)\[[0-7]\])").unwrap(),
     ];
@@ -456,33 +456,26 @@ fn determine_offset(vector: (i32, i32)) -> usize {
     }
 }
 
-fn collapse_move_stack(stack: &mut Vec<String>) -> String {
+fn flatten_stack(stack: &mut Vec<String>) -> String {
     let vector_pattern = Regex::new(r"(\(-?\d+, -?\d+\))\[([0-7])\]").unwrap();
+    let mut result: Vec<String> = vec![stack.pop().unwrap()];
 
-    println!("{:?}", stack);
+    while !stack.is_empty() {
+        let curr = stack.pop().unwrap();
+        let prev = result.pop().unwrap();
 
-    while stack.len() > 1 {
+        let curr_str = vector_pattern.captures(&curr).unwrap();
+        let prev_str = vector_pattern.captures(&prev).unwrap();
 
-        let current = stack.pop().unwrap();
-        let previous = stack.pop().unwrap();
+        let curr_vec = parse_vector(&curr_str[1]);
+        let prev_vec = parse_vector(&prev_str[1]);
 
-        let prev_vec = vector_pattern.captures(&previous).unwrap();
-        let curr_vec = vector_pattern.captures(&current).unwrap();
-
-        let prev_vector = parse_vector(&prev_vec[1]);
-        let curr_vector = parse_vector(&curr_vec[1]);
-
-        let prev_offset = prev_vec[2].parse::<usize>().unwrap();
-
-        let transposed = transpose_vector(curr_vector, prev_offset);
-
-        let new_vector = add_vectors(prev_vector, transposed);
-        let new_offset = determine_offset(new_vector);
-
-        stack.push(format!("{:?}[{}]", new_vector, new_offset));
+        result.push(format!("{:?}", add_vectors(curr_vec, prev_vec)));
     }
 
-    stack.pop().unwrap()
+    let final_vector = parse_vector(&result[0]);
+
+    format!("{}[{}]", result[0], determine_offset(final_vector))
 }
 
 fn collapse_directions(expr: &str) -> Option<String> {
@@ -490,21 +483,24 @@ fn collapse_directions(expr: &str) -> Option<String> {
     let mut result: Vec<String> = Vec::new();
     let mut stack: Vec<String> = Vec::new();
 
+    let vector_pattern = Regex::new(r"(\(-?\d+, -?\d+\))\[([0-7])\]").unwrap();
     tokens.reverse();
 
+
     while !tokens.is_empty() {
+        println!("{:?} {:?} {:?}", tokens, stack, result);
         let current = tokens.pop().unwrap();
 
         if current == "-" {
-            result.push(collapse_move_stack(&mut stack));
+            result.push(flatten_stack(&mut stack));
         }
 
         else if current == "." {
-            if stack.is_empty() {
-                stack.push(result.pop().unwrap());
-            } else {
-                stack.push(stack.last().cloned().unwrap())
-            }
+            stack.push(stack.last().unwrap().clone());
+        }
+
+        else if current == "-." {
+            result.push(flatten_stack(&mut stack));
         }
 
         else if current == "<" || current == "</" {
@@ -512,12 +508,44 @@ fn collapse_directions(expr: &str) -> Option<String> {
         }
 
         else if current == ">" || current == "/>" {
-            let last = result.pop().unwrap().to_owned();
+            let last = stack.pop().unwrap().to_owned();
             result.push(last + &current);
         }
 
         else {
-            stack.push(current);
+            if stack.is_empty() && result.is_empty() {
+                stack.push(current);
+            } else {
+                let previous = if stack.is_empty() {
+                    result.last().unwrap()
+                } else {
+                    &stack.last().unwrap()
+                };
+
+                let prev_vec = vector_pattern.captures(previous).unwrap();
+                let curr_vec = vector_pattern.captures(&current).unwrap();
+
+                let prev_vector = parse_vector(&prev_vec[1]);
+                let curr_vector = parse_vector(&curr_vec[1]);
+                let prev_offset = prev_vec[2].parse::<usize>().unwrap();
+                let curr_offset = curr_vec[2].parse::<usize>().unwrap();
+
+                println!("{:?} {:?} {:?} {:?}", prev_vector, curr_vector, prev_offset, curr_offset);
+
+                let new_vector = if stack.is_empty() {
+                    add_vectors(prev_vector, transpose_vector(curr_vector, prev_offset))
+                } else {
+                    transpose_vector(curr_vector, prev_offset)
+                };
+
+                let new_offset = if stack.is_empty() {
+                    determine_offset(new_vector)
+                } else {
+                    (curr_offset + prev_offset - 1) % 7
+                };
+
+                stack.push(format!("{:?}[{}]", new_vector, new_offset));
+            }
         }
     }
 
@@ -558,7 +586,7 @@ mod tests {
     #[test]
     #[timeout(10000)]
     fn range_expansion() {
-        println!("{}", parse_move("D"));
+        println!("{}", parse_move("B"));
         assert_eq!(1, 2)
     }
 
