@@ -1,4 +1,4 @@
-use std::{char, ops::Neg, result, vec};
+use std::{char, vec};
 use regex::Regex;
 use lazy_static::lazy_static;
 use timed::timed;
@@ -456,6 +456,35 @@ fn determine_offset(vector: (i32, i32)) -> usize {
     }
 }
 
+fn collapse_move_stack(stack: &mut Vec<String>) -> String {
+    let vector_pattern = Regex::new(r"(\(-?\d+, -?\d+\))\[([0-7])\]").unwrap();
+
+    println!("{:?}", stack);
+
+    while stack.len() > 1 {
+
+        let current = stack.pop().unwrap();
+        let previous = stack.pop().unwrap();
+
+        let prev_vec = vector_pattern.captures(&previous).unwrap();
+        let curr_vec = vector_pattern.captures(&current).unwrap();
+
+        let prev_vector = parse_vector(&prev_vec[1]);
+        let curr_vector = parse_vector(&curr_vec[1]);
+
+        let prev_offset = prev_vec[2].parse::<usize>().unwrap();
+
+        let transposed = transpose_vector(curr_vector, prev_offset);
+
+        let new_vector = add_vectors(prev_vector, transposed);
+        let new_offset = determine_offset(new_vector);
+
+        stack.push(format!("{:?}[{}]", new_vector, new_offset));
+    }
+
+    stack.pop().unwrap()
+}
+
 fn collapse_directions(expr: &str) -> Option<String> {
     let mut tokens = tokenize(expr);
     let mut result: Vec<String> = Vec::new();
@@ -463,21 +492,19 @@ fn collapse_directions(expr: &str) -> Option<String> {
 
     tokens.reverse();
 
-    let vector_pattern = Regex::new(r"(\(-?\d+, -?\d+\))\[([0-7])\]").unwrap();
-
     while !tokens.is_empty() {
         let current = tokens.pop().unwrap();
 
-        if current == "." {
-            if !stack.is_empty() {
-                tokens.push(stack.last().unwrap().clone());
-            } else {
-                result.push(result.last().unwrap().clone());
-            }
+        if current == "-" {
+            result.push(collapse_move_stack(&mut stack));
         }
 
-        else if current == "-" {
-            result.push(stack.pop().unwrap());
+        else if current == "." {
+            if stack.is_empty() {
+                stack.push(result.pop().unwrap());
+            } else {
+                stack.push(stack.last().cloned().unwrap())
+            }
         }
 
         else if current == "<" || current == "</" {
@@ -490,26 +517,7 @@ fn collapse_directions(expr: &str) -> Option<String> {
         }
 
         else {
-            if stack.is_empty() {
-                stack.push(current.clone());
-            } else {
-                let previous = stack.pop().unwrap();
-
-                let prev_vec = vector_pattern.captures(&previous).unwrap();
-                let curr_vec = vector_pattern.captures(&current).unwrap();
-
-                let prev_vector = parse_vector(&prev_vec[1]);
-                let curr_vector = parse_vector(&curr_vec[1]);
-
-                let prev_offset = prev_vec[2].parse::<usize>().unwrap();
-
-                let transposed = transpose_vector(curr_vector, prev_offset);
-
-                let new_vector = add_vectors(prev_vector, transposed);
-                let new_offset = determine_offset(new_vector);
-
-                stack.push(format!("{:?}[{}]", new_vector, new_offset));
-            }
+            stack.push(current);
         }
     }
 
@@ -548,7 +556,7 @@ mod tests {
     use ntest::timeout;
 
     #[test]
-    #[timeout(100000)]
+    #[timeout(10000)]
     fn range_expansion() {
         println!("{}", parse_move("D"));
         assert_eq!(1, 2)
