@@ -7,3 +7,5 @@ edition = "2021"
 bnum.workspace = true
 regex.workspace = true
 ntest.workspace = true
+lazy_static.workspace = true
+timed.workspace = true

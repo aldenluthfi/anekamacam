@@ -16,3 +16,5 @@ io = { path = "lib/io" }
 bnum = "*"
 regex = "*"
 ntest = "*"
+lazy_static = "*"
+timed = "*"
