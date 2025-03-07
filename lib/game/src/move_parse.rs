@@ -1,6 +1,7 @@
-use std::{char, vec};
-
+use std::{char, ops::Neg, result, vec};
 use regex::Regex;
+use lazy_static::lazy_static;
+use timed::timed;
 
 fn evaluate(expr: &str) -> String {
     let mut operands: Vec<String> = Vec::new();
@@ -44,8 +45,10 @@ fn evaluate(expr: &str) -> String {
             }
             _ => {
                 let mut operand = String::new();
-                while i < expr.len() && !"^|()".contains(expr.chars().nth(i).unwrap()) {
-                    /* Parse operand                      */
+                while
+                    i < expr.len() &&
+                    !"^|()".contains(expr.chars().nth(i).unwrap())              /* Parse operand                      */
+                {
                     operand.push(expr.chars().nth(i).unwrap());
                     i += 1;
                 }
@@ -98,7 +101,7 @@ fn precedence(op: char) -> usize {
     }
 }
 
-fn normalize(expr: &str) -> String {
+fn normalize(expr: &str) -> Option<String> {
     let pattern = Regex::new(r"[^(^|]\(|\)[^()^|]").unwrap();
     let indices: Vec<usize> = pattern
         .find_iter(expr)
@@ -114,7 +117,7 @@ fn normalize(expr: &str) -> String {
     parts.push(&expr[prev..]);
     let processed_expr = parts.join("^");                                       /* Join parts with '^'                */
 
-    evaluate(&processed_expr)                                                   /* Eval the processed expr            */
+    Some(evaluate(&processed_expr))                                             /* Eval the processed expr            */
 }
 
 fn betza_atoms(piece: char) -> String {
@@ -137,15 +140,15 @@ fn betza_atoms(piece: char) -> String {
     }
 }
 
-fn atomize(expr: &str) -> String {
+fn atomize(expr: &str) -> Option<String> {
     let mut atoms = Vec::new();
     for c in expr.chars() {
         atoms.push(betza_atoms(c));
     }
-    atoms.join("")
+    Some(atoms.join(""))                                                        /* Return Some with joined atoms      */
 }
 
-fn expand_ranges(expr: &str) -> String {
+fn expand_ranges(expr: &str) -> Option<String> {
     let mut expanded = expr.to_string();
 
     let pattern = Regex::new(
@@ -167,6 +170,9 @@ fn expand_ranges(expr: &str) -> String {
         let cap_str = cap.get(0).unwrap().as_str();
         expanded = expanded.replacen(cap_str, &replacement, 1);
     }
+
+    expanded = expanded.replace(":{1..64}", ":{1..8}");                         /* Limit repetitions to 8             */
+    expanded = expanded.replace(":-{1..64}", ":-{1..8}");
 
     let pattern = Regex::new(
         r"([^:-]+)(:?)(-?)(?:\{([0-9]+)(?:\.\.([0-9]+))?\})(.*)"
@@ -215,14 +221,13 @@ fn expand_ranges(expr: &str) -> String {
         }
 
         expanded = expanded.replacen(&cap[0], &vec_rep.join("|"), 1);
-        println!("{}", expanded);
     }
 
 
-    expanded
+    Some(expanded)                                                              /* Return Some with expanded ranges   */
 }
 
-fn expand_cardinals(expr: &str) -> String {
+fn expand_cardinals(expr: &str) -> Option<String> {
     let mut stack = vec![expr.to_string()];
     let mut result_stack: Vec<String> = Vec::new();
 
@@ -253,19 +258,21 @@ fn expand_cardinals(expr: &str) -> String {
         }
     }
 
-    result_stack.join("|")                                                      /* Join expanded cardinals with |     */
+    Some(result_stack.join("|"))                                                /* Return Some with expanded cardinals*/
 }
 
-fn expand_directions(expr: &str) -> String {
+fn expand_directions(expr: &str) -> Option<String> {
     let mut expanded = expr.to_string();
 
     let pattern = Regex::new(
-        r"([^\]]K)|(^K)"
+        r"(?:^|[^\]])(K)"
     ).unwrap();
     while let Some(cap) = pattern.captures(&expanded) {
-        let cap_str = cap.get(0).unwrap().as_str();
-        expanded = expanded.replacen(cap_str, &"[12345678]K", 1);               /* Replace bare K with all directions   */
+        let cap_str = cap.get(1).unwrap().as_str();
+        expanded = expanded.replacen(cap_str, &"[12345678]&", 1);               /* Replace bare K with all directions */
     }
+
+    expanded = expanded.replace("&", "K");                                      /* Replace &s with Ks                 */
 
     let pattern = Regex::new(
         r"\[(?:\.\.(\d+)|(\d+)\.\.|(\d+)\.\.(\d+)|\.\.)\]"
@@ -318,42 +325,221 @@ fn expand_directions(expr: &str) -> String {
         }
     }
 
-    result_stack.join("|")                                                      /* Join expanded directions with |    */
+    Some(result_stack.join("|"))                                                /* Return Some with expanded directions*/
 }
 
-fn vectorize(expr: &str) -> String {
-    expr.to_string()
-        .replace("[1]K", "(0, 1)[1]")                                     /* North                              */
-        .replace("[2]K", "(1, 1)[2]")                                     /* Northeast                          */
-        .replace("[3]K", "(1, 0)[3]")                                     /* East                               */
-        .replace("[4]K", "(1, -1)[4]")                                    /* Southeast                          */
-        .replace("[5]K", "(0, -1)[5]")                                    /* South                              */
-        .replace("[6]K", "(-1, -1)[6]")                                   /* Southwest                          */
-        .replace("[7]K", "(-1, 0)[7]")                                    /* West                               */
-        .replace("[8]K", "(-1, 1)[8]")                                          /* Northwest                          */
+fn vectorize(expr: &str) -> Option<String> {
+    let result = expr.to_string()
+        .replace("[1]K", "(0, 1)[0]")                                     /* North                              */
+        .replace("[2]K", "(1, 1)[1]")                                     /* Northeast                          */
+        .replace("[3]K", "(1, 0)[2]")                                     /* East                               */
+        .replace("[4]K", "(1, -1)[3]")                                    /* Southeast                          */
+        .replace("[5]K", "(0, -1)[4]")                                    /* South                              */
+        .replace("[6]K", "(-1, -1)[5]")                                   /* Southwest                          */
+        .replace("[7]K", "(-1, 0)[6]")                                    /* West                               */
+        .replace("[8]K", "(-1, 1)[7]")                                    /* Northwest                          */
+        .replace("#", "(0, 0)");                                                /* Stay                               */
+
+    Some(result)                                                                /* Return Some with vectorized result */
 }
 
-fn split_and_process(expr: &str, f: fn(&str) -> String) -> String {
+fn collapse_cardinals(expr: &str) -> Option<String> {
+
+    lazy_static! {
+        static ref INVALID_CARDINAL_PATTERN: Regex = Regex::new(
+            &[
+                r"ne<?\((?:-\d+|0), (?:-\d+|0)\)|",
+                r"se<?\((?:-\d+|0), (?:\d+|0)\)|",
+                r"nw<?\((?:\d+|0), (?:-\d+|0)\)|",
+                r"sw<?\((?:\d+|0), (?:\d+|0)\)|",
+                r"n<?\([^)]*?, (?:-\d+|0)\)|",
+                r"s<?\([^)]*?, (?:\d+|0)\)|",
+                r"e<?\((?:-\d+|0)[^)]*?\)|",
+                r"w<?\((?:\d+|0)[^)]*?\)"
+            ].join("")
+        ).unwrap();
+    }
+
+    if INVALID_CARDINAL_PATTERN.is_match(expr) {
+        return None;
+    }
+
+    Some(expr.to_string()
+        .replace("n", "")
+        .replace("s", "")
+        .replace("e", "")
+        .replace("w", ""))
+}
+
+fn tokenize(expr: &str) -> Vec<String> {
+    let token_patterns = [
+        Regex::new(r"(^</?)").unwrap(),
+        Regex::new(r"(^/?>)").unwrap(),
+        Regex::new(r"(^/)").unwrap(),
+        Regex::new(r"(^-)").unwrap(),
+        Regex::new(r"(^\.)").unwrap(),
+        Regex::new(r"(^\(-?\d+, -?\d+\)\[[0-7]\])").unwrap(),
+    ];
+
+    let mut result = vec![];
+    let mut expr = expr;
+
+    'parse: while !expr.is_empty() {
+
+        for pattern in &token_patterns {
+            if let Some(cap) = pattern.find(&expr) {
+                result.push(cap.as_str().to_string());
+                expr = &expr[cap.end()..];
+                continue 'parse;
+            }
+        }
+
+        break;
+    }
+
+    result.push("-".to_string());
+    result
+}
+
+fn parse_vector(expr: &str) -> (i32, i32) {
+    lazy_static! {
+        static ref VECTOR_PATTERN: Regex = Regex::new(
+            r"\((-?\d+), (-?\d+)\)"
+        ).unwrap();
+    }
+
+    if let Some(cap) = VECTOR_PATTERN.captures(expr) {
+        let x = cap[1].parse::<i32>().unwrap_or(0);
+        let y = cap[2].parse::<i32>().unwrap_or(0);
+        (x, y)
+    } else {
+        (0, 0)
+    }
+}
+
+fn add_vectors(a: (i32, i32), b: (i32, i32)) -> (i32, i32) {
+    (a.0 + b.0, a.1 + b.1)
+}
+
+fn transpose_vector(vector: (i32, i32), offset: usize) -> (i32, i32) {
+    let row = match vector {
+        (0, 1) => [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)],
+        (1, 1) => [(1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1)],
+        (1, 0) => [(1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1)],
+        (1, -1) => [(1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0)],
+        (0, -1) => [(0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1)],
+        (-1, -1) => [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)],
+        (-1, 0) => [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)],
+        (-1, 1) => [(-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0)],
+        _ => unreachable!("Invalid vector: {:?}", vector),
+    };
+
+    row[offset]
+}
+
+fn determine_offset(vector: (i32, i32)) -> usize {
+    match (
+        vector.0.abs() < vector.1.abs(),
+        vector.0.abs() > vector.1.abs(),
+        vector.0.is_negative(),
+        vector.1.is_negative()
+    ) {
+        (false, false, true, true) => 5,
+        (false, false, true, false) => 7,
+        (false, false, false, true) => 3,
+        (false, false, false, false) => 1,
+        (false, true, false, _) => 0,
+        (true, false, _, false) => 2,
+        (true, false, _, true) => 4,
+        (false, true, true, _) => 6,
+        _ => unreachable!("Invalid vector: {:?}", vector),
+    }
+}
+
+fn collapse_directions(expr: &str) -> Option<String> {
+    let mut tokens = tokenize(expr);
+    let mut result: Vec<String> = Vec::new();
+    let mut stack: Vec<String> = Vec::new();
+
+    tokens.reverse();
+
+    let vector_pattern = Regex::new(r"(\(-?\d+, -?\d+\))\[([0-7])\]").unwrap();
+
+    while !tokens.is_empty() {
+        let current = tokens.pop().unwrap();
+
+        if current == "." {
+            if !stack.is_empty() {
+                tokens.push(stack.last().unwrap().clone());
+            } else {
+                result.push(result.last().unwrap().clone());
+            }
+        }
+
+        else if current == "-" {
+            result.push(stack.pop().unwrap());
+        }
+
+        else if current == "<" || current == "</" {
+            result.push(current);
+        }
+
+        else if current == ">" || current == "/>" {
+            let last = result.pop().unwrap().to_owned();
+            result.push(last + &current);
+        }
+
+        else {
+            if stack.is_empty() {
+                stack.push(current.clone());
+            } else {
+                let previous = stack.pop().unwrap();
+
+                let prev_vec = vector_pattern.captures(&previous).unwrap();
+                let curr_vec = vector_pattern.captures(&current).unwrap();
+
+                let prev_vector = parse_vector(&prev_vec[1]);
+                let curr_vector = parse_vector(&curr_vec[1]);
+
+                let prev_offset = prev_vec[2].parse::<usize>().unwrap();
+
+                let transposed = transpose_vector(curr_vector, prev_offset);
+
+                let new_vector = add_vectors(prev_vector, transposed);
+                let new_offset = determine_offset(new_vector);
+
+                stack.push(format!("{:?}[{}]", new_vector, new_offset));
+            }
+        }
+    }
+
+    Some(result.join("-"))
+}
+
+#[timed]
+fn split_and_process(expr: &str, f: fn(&str) -> Option<String>) -> String {
     expr.split('|')
-        .map(|x| f(x))
+        .filter_map(f)
         .collect::<Vec<String>>()
         .join("|")                                                              /* Process each term separately       */
 }
 
-pub fn parse_move(move_str: &str) -> String {
+pub fn parse_move(expr: &str) -> String {
+    let expr = &normalize(expr).unwrap();
+
     let pipeline = [
-        normalize,
         atomize,
         expand_ranges,
         expand_cardinals,
         expand_directions,
-        vectorize
-    ];                                                                          /* Define processing pipeline         */
+        vectorize,
+        collapse_cardinals,
+        collapse_directions,
+    ];
 
     pipeline
         .iter()
-        .fold(move_str.to_string(), |acc, &f| split_and_process(&acc, f))       /* Apply each function in sequence    */
-
+        .fold(expr.to_string(), |acc, &step| split_and_process(&acc, step))
 }
 
 #[cfg(test)]
@@ -362,9 +548,9 @@ mod tests {
     use ntest::timeout;
 
     #[test]
-    #[timeout(3000)]
+    #[timeout(100000)]
     fn range_expansion() {
-        parse_move("WnW-/WnW/-<WnWnW>-</WnW/>");
+        println!("{}", parse_move("D"));
         assert_eq!(1, 2)
     }
 
