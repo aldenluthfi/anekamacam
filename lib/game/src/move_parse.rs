@@ -3,13 +3,56 @@ use regex::Regex;
 use lazy_static::lazy_static;
 use timed::timed;
 
+lazy_static! {
+    static ref NORMALIZE_PATTERN: Regex = Regex::new(
+        r"[^(^|]\(|\)[^()^|]"
+    ).unwrap();
+    static ref RANGE_PATTERN: Regex = Regex::new(
+        r"(-?)(?:\{(?:\.\.(\d+)|(\d+)\.\.|\.\.)\}|\*)"
+    ).unwrap();
+    static ref EXPANDED_RANGE_PATTERN: Regex = Regex::new(
+        r"([^:-]+)(:?)(-?)(?:\{([0-9]+)(?:\.\.([0-9]+))?\})(.*)"
+    ).unwrap();
+    static ref CARDINAL_PATTERN: Regex = Regex::new(
+        r"([nsew]{1,2}\+)*"
+    ).unwrap();
+    static ref K_PATTERN: Regex = Regex::new(
+        r"(?:^|[^\]])(K)"
+    ).unwrap();
+    static ref DIR_RANGE_PATTERN: Regex = Regex::new(
+        r"\[(?:\.\.(\d+)|(\d+)\.\.|(\d+)\.\.(\d+)|\.\.)\]"
+    ).unwrap();
+    static ref MULTI_DIR_PATTERN: Regex = Regex::new(
+        r"\[([0-9]{2,})\]"
+    ).unwrap();
+    static ref INVALID_CARDINAL_PATTERN: Regex = Regex::new(
+        &[
+            r"ne<?\((?:-\d+|0), (?:-\d+|0)\)|",
+            r"se<?\((?:-\d+|0), (?:\d+|0)\)|",
+            r"nw<?\((?:\d+|0), (?:-\d+|0)\)|",
+            r"sw<?\((?:\d+|0), (?:\d+|0)\)|",
+            r"n<?\([^)]*?, (?:-\d+|0)\)|",
+            r"s<?\([^)]*?, (?:\d+|0)\)|",
+            r"e<?\((?:-\d+|0)[^)]*?\)|",
+            r"w<?\((?:\d+|0)[^)]*?\)"
+        ].join("")
+    ).unwrap();
+    static ref VECTOR_PATTERN: Regex = Regex::new(
+        r"\((-?\d+), (-?\d+)\)"
+    ).unwrap();
+    static ref OFFSET_PATTERN: Regex = Regex::new(
+        r"\[([0-7])\]"
+    ).unwrap();
+}
+
 fn evaluate(expr: &str) -> String {
     let mut operands: Vec<String> = Vec::new();
     let mut operators: Vec<char> = Vec::new();
     let mut i = 0;
+    let chars: Vec<char> = expr.chars().collect();
 
-    while i < expr.len() {
-        let c = expr.chars().nth(i).unwrap();
+    while i < chars.len() {
+        let c = chars[i];
 
         match c {
             '(' => {
@@ -45,11 +88,8 @@ fn evaluate(expr: &str) -> String {
             }
             _ => {
                 let mut operand = String::new();
-                while
-                    i < expr.len() &&
-                    !"^|()".contains(expr.chars().nth(i).unwrap())              /* Parse operand                      */
-                {
-                    operand.push(expr.chars().nth(i).unwrap());
+                while i < chars.len() && !"^|()".contains(chars[i]) {
+                    operand.push(chars[i]);
                     i += 1;
                 }
                 operands.push(operand);
@@ -65,7 +105,7 @@ fn evaluate(expr: &str) -> String {
         operands.push(combined);
     }
 
-    operands.pop().unwrap() /* Final result is the only operand   */
+    operands.pop().unwrap()                                                     /* Final result is the only operand   */
 }
 
 fn apply_operator(op: char, a: &str, b: &str) -> String {
@@ -73,7 +113,9 @@ fn apply_operator(op: char, a: &str, b: &str) -> String {
         '^' => {
             let a_parts: Vec<&str> = a.split('|').collect();
             let b_parts: Vec<&str> = b.split('|').collect();
-            let mut expr = Vec::new();
+
+            let mut expr = Vec::with_capacity(a_parts.len() * b_parts.len());
+
             for x in &a_parts {
                 for y in &b_parts {
                     let combined = if *x != "#" && *y != "#" {
@@ -102,13 +144,16 @@ fn precedence(op: char) -> usize {
 }
 
 fn normalize(expr: &str) -> Option<String> {
-    let pattern = Regex::new(r"[^(^|]\(|\)[^()^|]").unwrap();
-    let indices: Vec<usize> = pattern
+    let indices: Vec<usize> = NORMALIZE_PATTERN
         .find_iter(expr)
         .map(|m| (m.end() + m.start()) / 2)
         .collect();
 
-    let mut parts = Vec::new();
+    if indices.is_empty() {
+        return Some(expr.to_string());
+    }
+
+    let mut parts = Vec::with_capacity(indices.len() + 1);
     let mut prev = 0;
     for &idx in &indices {
         parts.push(&expr[prev..idx]);
@@ -141,7 +186,7 @@ fn betza_atoms(piece: char) -> String {
 }
 
 fn atomize(expr: &str) -> Option<String> {
-    let mut atoms = Vec::new();
+    let mut atoms = Vec::with_capacity(expr.len());
     for c in expr.chars() {
         atoms.push(betza_atoms(c));
     }
@@ -149,12 +194,13 @@ fn atomize(expr: &str) -> Option<String> {
 }
 
 fn expand_ranges(expr: &str) -> Option<String> {
+    if !expr.contains('{') && !expr.contains('*') {
+        return Some(expr.to_string());
+    }
+
     let mut expanded = expr.to_string();
 
-    let pattern = Regex::new(
-        r"(-?)(?:\{(?:\.\.(\d+)|(\d+)\.\.|\.\.)\}|\*)"
-    ).unwrap();
-    while let Some(cap) = pattern.captures(&expanded) {
+    while let Some(cap) = RANGE_PATTERN.captures(&expanded) {
         let prefix = cap.get(1).map_or("", |m| m.as_str());
         let replacement = match (cap.get(2), cap.get(3)) {
             (Some(end), _) => {
@@ -174,10 +220,7 @@ fn expand_ranges(expr: &str) -> Option<String> {
     expanded = expanded.replace(":{1..64}", ":{1..8}");                         /* Limit repetitions to 8             */
     expanded = expanded.replace(":-{1..64}", ":-{1..8}");
 
-    let pattern = Regex::new(
-        r"([^:-]+)(:?)(-?)(?:\{([0-9]+)(?:\.\.([0-9]+))?\})(.*)"
-    ).unwrap();
-    while let Some(cap) = pattern.captures(&expanded) {
+    while let Some(cap) = EXPANDED_RANGE_PATTERN.captures(&expanded) {
         let (prefix, suffix) = (
             cap.get(1).unwrap().as_str(),
             cap.get(6).unwrap().as_str()
@@ -199,19 +242,7 @@ fn expand_ranges(expr: &str) -> Option<String> {
                     }
                 }
                 (true, false) => {
-                    let pattern = Regex::new(
-                        r"(\[\d+\][^>])$|(\[\d+\]<.*>)$|([^>])$|(<.*>)$|"
-                    ).unwrap();
-                    let capture = pattern.captures(prefix).unwrap();
-                    let piece = capture
-                        .get(1)
-                        .or(capture.get(2))
-                        .or(capture.get(3))
-                        .or(capture.get(4))
-                        .unwrap()
-                        .as_str();
-
-                    prefix.replacen(piece, &piece.repeat(n), 1) + suffix        /* Handle move:{n} piece repetition   */
+                    prefix.replacen(prefix, &prefix.repeat(n), 1) + suffix      /* Handle move:{n} piece repetition   */
                 }
                 (false, true) => {
                     prefix.to_owned() + &"-.".repeat(n - 1) + &suffix           /* Handle move-{n} dash repetition    */
@@ -223,27 +254,26 @@ fn expand_ranges(expr: &str) -> Option<String> {
         expanded = expanded.replacen(&cap[0], &vec_rep.join("|"), 1);
     }
 
-
     Some(expanded)                                                              /* Return Some with expanded ranges   */
 }
 
 fn expand_cardinals(expr: &str) -> Option<String> {
-    let mut stack = vec![expr.to_string()];
-    let mut result_stack: Vec<String> = Vec::new();
+    if !expr.contains('+') {
+        return Some(expr.to_string());
+    }
 
-    let pattern = Regex::new(
-        r"([nsew]{1,2}\+)*"
-    ).unwrap();
+    let mut stack = vec![expr.to_string()];
+    let mut result_stack = Vec::with_capacity(stack.len() * 2);
 
     while !stack.is_empty() {
         let term = stack.pop().unwrap();
 
-        if !pattern.is_match(&term) {
+        if !CARDINAL_PATTERN.is_match(&term) {
             result_stack.push(term);
             continue;
         }
 
-        let cap = pattern.captures(&term).unwrap();
+        let cap = CARDINAL_PATTERN.captures(&term).unwrap();
         let cardinals = cap
             .get(0)
             .unwrap()
@@ -262,22 +292,20 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 }
 
 fn expand_directions(expr: &str) -> Option<String> {
+    if !expr.contains('K') {
+        return Some(expr.to_string());
+    }
+
     let mut expanded = expr.to_string();
 
-    let pattern = Regex::new(
-        r"(?:^|[^\]])(K)"
-    ).unwrap();
-    while let Some(cap) = pattern.captures(&expanded) {
+    while let Some(cap) = K_PATTERN.captures(&expanded) {
         let cap_str = cap.get(1).unwrap().as_str();
         expanded = expanded.replacen(cap_str, &"[12345678]&", 1);               /* Replace bare K with all directions */
     }
 
     expanded = expanded.replace("&", "K");                                      /* Replace &s with Ks                 */
 
-    let pattern = Regex::new(
-        r"\[(?:\.\.(\d+)|(\d+)\.\.|(\d+)\.\.(\d+)|\.\.)\]"
-    ).unwrap();
-    while let Some(cap) = pattern.captures(&expanded) {
+    while let Some(cap) = DIR_RANGE_PATTERN.captures(&expanded) {
         let range = match (cap.get(1), cap.get(2), cap.get(3), cap.get(4)) {
             (Some(end), _, _, _) => {
                 let e = end.as_str().parse().unwrap();
@@ -301,22 +329,19 @@ fn expand_directions(expr: &str) -> Option<String> {
         expanded = expanded.replacen(cap_str, &replacement, 1);
     }
 
-    let mut stack = vec![expanded];
-    let mut result_stack: Vec<String> = Vec::new();
-
-    let pattern = Regex::new(
-        r"\[([0-9]{2,})\]"
-    ).unwrap();
+    let mut stack = Vec::with_capacity(4);
+    stack.push(expanded);
+    let mut result_stack = Vec::with_capacity(8);
 
     while !stack.is_empty() {
         let term = stack.pop().unwrap();
 
-        if !pattern.is_match(&term) {
+        if !MULTI_DIR_PATTERN.is_match(&term) {
             result_stack.push(term);
             continue;
         }
 
-        let cap = pattern.captures(&term).unwrap();
+        let cap = MULTI_DIR_PATTERN.captures(&term).unwrap();
         let range = cap.get(1).unwrap().as_str();
 
         for char in range.chars() {
@@ -325,39 +350,30 @@ fn expand_directions(expr: &str) -> Option<String> {
         }
     }
 
-    Some(result_stack.join("|"))                                                /* Return Some with expanded directions*/
+    Some(result_stack.join("|"))                                                /* Return  expanded directions        */
 }
 
 fn vectorize(expr: &str) -> Option<String> {
-    let result = expr.to_string()
-        .replace("[1]K", "(0, 1)[0]")                                     /* North                              */
-        .replace("[2]K", "(1, 1)[1]")                                     /* Northeast                          */
-        .replace("[3]K", "(1, 0)[2]")                                     /* East                               */
-        .replace("[4]K", "(1, -1)[3]")                                    /* Southeast                          */
-        .replace("[5]K", "(0, -1)[4]")                                    /* South                              */
-        .replace("[6]K", "(-1, -1)[5]")                                   /* Southwest                          */
-        .replace("[7]K", "(-1, 0)[6]")                                    /* West                               */
-        .replace("[8]K", "(-1, 1)[7]")                                    /* Northwest                          */
-        .replace("#", "(0, 0)");                                                /* Stay                               */
+    if !expr.contains("K") && !expr.contains('#') {
+        return Some(expr.to_string());
+    }
 
-    Some(result)                                                                /* Return Some with vectorized result */
+    Some(expr.to_string()
+        .replace("[1]K", "(0, 1)[0]")
+        .replace("[2]K", "(1, 1)[1]")
+        .replace("[3]K", "(1, 0)[2]")
+        .replace("[4]K", "(1, -1)[3]")
+        .replace("[5]K", "(0, -1)[4]")
+        .replace("[6]K", "(-1, -1)[5]")
+        .replace("[7]K", "(-1, 0)[6]")
+        .replace("[8]K", "(-1, 1)[7]")
+        .replace("#", "(0, 0)"))                                                /* Return Some with vectorized result */
 }
 
 fn collapse_cardinals(expr: &str) -> Option<String> {
-
-    lazy_static! {
-        static ref INVALID_CARDINAL_PATTERN: Regex = Regex::new(
-            &[
-                r"ne<?\((?:-\d+|0), (?:-\d+|0)\)|",
-                r"se<?\((?:-\d+|0), (?:\d+|0)\)|",
-                r"nw<?\((?:\d+|0), (?:-\d+|0)\)|",
-                r"sw<?\((?:\d+|0), (?:\d+|0)\)|",
-                r"n<?\([^)]*?, (?:-\d+|0)\)|",
-                r"s<?\([^)]*?, (?:\d+|0)\)|",
-                r"e<?\((?:-\d+|0)[^)]*?\)|",
-                r"w<?\((?:\d+|0)[^)]*?\)"
-            ].join("")
-        ).unwrap();
+    if !expr.contains('n') && !expr.contains('s') &&
+       !expr.contains('e') && !expr.contains('w') {
+        return Some(expr.to_string());
     }
 
     if INVALID_CARDINAL_PATTERN.is_match(expr) {
@@ -372,42 +388,32 @@ fn collapse_cardinals(expr: &str) -> Option<String> {
 }
 
 fn tokenize(expr: &str) -> Vec<String> {
-    let token_patterns = [
-        Regex::new(r"(^</?)").unwrap(),
-        Regex::new(r"(^/?>)").unwrap(),
-        Regex::new(r"(^/)").unwrap(),
-        Regex::new(r"(^-\.?)").unwrap(),
-        Regex::new(r"(^\.)").unwrap(),
-        Regex::new(r"(^\(-?\d+, -?\d+\)\[[0-7]\])").unwrap(),
-    ];
+    let mut result = Vec::with_capacity(expr.len() / 2);
+    let mut remaining = expr;
 
-    let mut result = vec![];
-    let mut expr = expr;
-
-    'parse: while !expr.is_empty() {
-
-        for pattern in &token_patterns {
-            if let Some(cap) = pattern.find(&expr) {
+    'parse: while !remaining.is_empty() {
+        for pattern in &[
+            &Regex::new(r"(^</?)").unwrap(),
+            &Regex::new(r"(^/?>)").unwrap(),
+            &Regex::new(r"(^/)").unwrap(),
+            &Regex::new(r"(^-\.?)").unwrap(),
+            &Regex::new(r"(^\.)").unwrap(),
+            &Regex::new(r"(^\(-?\d+, -?\d+\)\[[0-7]\])").unwrap(),
+        ] {
+            if let Some(cap) = pattern.find(remaining) {
                 result.push(cap.as_str().to_string());
-                expr = &expr[cap.end()..];
+                remaining = &remaining[cap.end()..];
                 continue 'parse;
             }
         }
-
         break;
     }
 
-    result.push("-".to_string());
+    result.push("$".to_string());
     result
 }
 
 fn parse_vector(expr: &str) -> (i32, i32) {
-    lazy_static! {
-        static ref VECTOR_PATTERN: Regex = Regex::new(
-            r"\((-?\d+), (-?\d+)\)"
-        ).unwrap();
-    }
-
     if let Some(cap) = VECTOR_PATTERN.captures(expr) {
         let x = cap[1].parse::<i32>().unwrap_or(0);
         let y = cap[2].parse::<i32>().unwrap_or(0);
@@ -417,27 +423,29 @@ fn parse_vector(expr: &str) -> (i32, i32) {
     }
 }
 
+fn parse_offset(expr: &str) -> usize {
+    if let Some(cap) = OFFSET_PATTERN.captures(expr) {
+        cap[1].parse::<usize>().unwrap_or(0)
+    } else {
+        0
+    }
+}
+
 fn add_vectors(a: (i32, i32), b: (i32, i32)) -> (i32, i32) {
     (a.0 + b.0, a.1 + b.1)
 }
 
 fn transpose_vector(vector: (i32, i32), offset: usize) -> (i32, i32) {
-    let row = match vector {
-        (0, 1) => [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)],
-        (1, 1) => [(1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1)],
-        (1, 0) => [(1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1)],
-        (1, -1) => [(1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0)],
-        (0, -1) => [(0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1)],
-        (-1, -1) => [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)],
-        (-1, 0) => [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)],
-        (-1, 1) => [(-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0)],
-        _ => unreachable!("Invalid vector: {:?}", vector),
-    };
+    let directions = [
+        (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)
+    ];
 
-    row[offset]
+    let base_idx = directions.iter().position(|&s| s == vector).unwrap();
+
+    directions[(base_idx + offset) % 8]
 }
 
-fn determine_offset(vector: (i32, i32)) -> usize {
+fn major_axis(vector: (i32, i32)) -> usize {
     match (
         vector.0.abs() < vector.1.abs(),
         vector.0.abs() > vector.1.abs(),
@@ -456,103 +464,92 @@ fn determine_offset(vector: (i32, i32)) -> usize {
     }
 }
 
-fn flatten_stack(stack: &mut Vec<String>) -> String {
-    let vector_pattern = Regex::new(r"(\(-?\d+, -?\d+\))\[([0-7])\]").unwrap();
-    let mut result: Vec<String> = vec![stack.pop().unwrap()];
-
-    while !stack.is_empty() {
-        let curr = stack.pop().unwrap();
-        let prev = result.pop().unwrap();
-
-        let curr_str = vector_pattern.captures(&curr).unwrap();
-        let prev_str = vector_pattern.captures(&prev).unwrap();
-
-        let curr_vec = parse_vector(&curr_str[1]);
-        let prev_vec = parse_vector(&prev_str[1]);
-
-        result.push(format!("{:?}", add_vectors(curr_vec, prev_vec)));
-    }
-
-    let final_vector = parse_vector(&result[0]);
-
-    format!("{}[{}]", result[0], determine_offset(final_vector))
-}
-
 fn collapse_directions(expr: &str) -> Option<String> {
     let mut tokens = tokenize(expr);
-    let mut result: Vec<String> = Vec::new();
-    let mut stack: Vec<String> = Vec::new();
+    let mut result_stack: Vec<String> = vec!["(0, 0)[0]".to_string()];
+    let mut offset_stack: Vec<(usize, usize)> = vec![(0, 0)];
+    let mut vector_stack: Vec<(i32, i32)> = vec![(0, 0)];
 
-    let vector_pattern = Regex::new(r"(\(-?\d+, -?\d+\))\[([0-7])\]").unwrap();
     tokens.reverse();
 
-
     while !tokens.is_empty() {
-        println!("{:?} {:?} {:?}", tokens, stack, result);
+        println!("{:?} {:?} {:?} {:?}", tokens, offset_stack, vector_stack, result_stack);
         let current = tokens.pop().unwrap();
 
-        if current == "-" {
-            result.push(flatten_stack(&mut stack));
+        if current == "$" {
+            break;
         }
 
-        else if current == "." {
-            stack.push(stack.last().unwrap().clone());
+        else if current == "-" {
+            let offset = parse_offset(&result_stack.last().unwrap());
+            result_stack.push(format!("(0, 0)[{}]", offset));
         }
 
-        else if current == "-." {
-            result.push(flatten_stack(&mut stack));
-        }
-
-        else if current == "<" || current == "</" {
-            result.push(current);
+        else if current == "<" || current == "</"{
+            result_stack.push(current);
+            offset_stack.push((0, 0));
+            vector_stack.push((0, 0));
         }
 
         else if current == ">" || current == "/>" {
-            let last = stack.pop().unwrap().to_owned();
-            result.push(last + &current);
+            let (global_offset, local_offset) = offset_stack.pop().unwrap();
+
+            if current == ">" {
+                result_stack.push(format!(">[{}]", global_offset));
+            }
+
+            else if current == "/>" {
+                result_stack.push(format!("/>[{}]", local_offset));
+            }
         }
 
         else {
-            if stack.is_empty() && result.is_empty() {
-                stack.push(current);
-            } else {
-                let previous = if stack.is_empty() {
-                    result.last().unwrap()
-                } else {
-                    &stack.last().unwrap()
-                };
+            let vector = parse_vector(&current);
+            let offset = parse_offset(&current);
+            let (_, _) = offset_stack.pop().unwrap();
+            let global_vector = vector_stack.pop().unwrap();
 
-                let prev_vec = vector_pattern.captures(previous).unwrap();
-                let curr_vec = vector_pattern.captures(&current).unwrap();
+            let prev_token = result_stack.pop().unwrap();
 
-                let prev_vector = parse_vector(&prev_vec[1]);
-                let curr_vector = parse_vector(&curr_vec[1]);
-                let prev_offset = prev_vec[2].parse::<usize>().unwrap();
-                let curr_offset = curr_vec[2].parse::<usize>().unwrap();
+            println!("{:?} {:?} {:?} {:?}", tokens, offset_stack, vector_stack, result_stack);
 
-                println!("{:?} {:?} {:?} {:?}", prev_vector, curr_vector, prev_offset, curr_offset);
+            if prev_token == "(0, 0)[0]" {
+                result_stack.push(format!("{:?}[{}]", vector, offset));
+                offset_stack.push((offset, offset));
+                vector_stack.push(vector);
+            }
 
-                let new_vector = if stack.is_empty() {
-                    add_vectors(prev_vector, transpose_vector(curr_vector, prev_offset))
-                } else {
-                    transpose_vector(curr_vector, prev_offset)
-                };
+            else if prev_token == "<" || prev_token == "</" {
+                result_stack.push(format!("{}{}", prev_token, current));
+                offset_stack.push((offset, offset));
+                vector_stack.push(add_vectors(global_vector, vector));
+            }
 
-                let new_offset = if stack.is_empty() {
-                    determine_offset(new_vector)
-                } else {
-                    (curr_offset + prev_offset - 1) % 7
-                };
+            else {
+                let prev_vector = parse_vector(&prev_token);
+                let prev_offset = parse_offset(&prev_token);
 
-                stack.push(format!("{:?}[{}]", new_vector, new_offset));
+                let transposed = transpose_vector(vector, prev_offset);
+
+                vector_stack.push(add_vectors(global_vector, transposed));
+
+                let new_vector = add_vectors(prev_vector, transposed);
+                let new_offset = major_axis(new_vector);
+
+                let new_local_offset = (offset + prev_offset - 1) % 7;
+                let new_global_offset = major_axis(
+                    *vector_stack.last().unwrap()
+                );
+
+                result_stack.push(format!("{:?}[{}]", new_vector, new_offset));
+                offset_stack.push((new_global_offset, new_local_offset));
             }
         }
     }
 
-    Some(result.join("-"))
+    Some(result_stack.join("-"))
 }
 
-#[timed]
 fn split_and_process(expr: &str, f: fn(&str) -> Option<String>) -> String {
     expr.split('|')
         .filter_map(f)
@@ -560,8 +557,16 @@ fn split_and_process(expr: &str, f: fn(&str) -> Option<String>) -> String {
         .join("|")                                                              /* Process each term separately       */
 }
 
+#[timed]
 pub fn parse_move(expr: &str) -> String {
-    let expr = &normalize(expr).unwrap();
+    if expr.is_empty() {
+        return String::new();
+    }
+
+    let expr = normalize(expr).unwrap_or_default();
+    if expr.is_empty() {
+        return String::new();
+    }
 
     let pipeline = [
         atomize,
@@ -575,20 +580,12 @@ pub fn parse_move(expr: &str) -> String {
 
     pipeline
         .iter()
-        .fold(expr.to_string(), |acc, &step| split_and_process(&acc, step))
+        .fold(expr, |acc, &step| {split_and_process(&acc, step)})               /* Process each step in the pipeline  */
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ntest::timeout;
-
-    #[test]
-    #[timeout(10000)]
-    fn range_expansion() {
-        println!("{}", parse_move("B"));
-        assert_eq!(1, 2)
-    }
 
     // #[test]
     // fn test_advancer() {
