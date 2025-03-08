@@ -440,6 +440,8 @@ fn transpose_vector(vector: (i32, i32), offset: usize) -> (i32, i32) {
         (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)
     ];
 
+    println!("{:?} {:?}", vector, offset);
+
     let base_idx = directions.iter().position(|&s| s == vector).unwrap();
 
     directions[(base_idx + offset) % 8]
@@ -456,8 +458,8 @@ fn major_axis(vector: (i32, i32)) -> usize {
         (false, false, true, false) => 7,
         (false, false, false, true) => 3,
         (false, false, false, false) => 1,
-        (false, true, false, _) => 0,
-        (true, false, _, false) => 2,
+        (true, false, _, false) => 0,
+        (false, true, false, _) => 2,
         (true, false, _, true) => 4,
         (false, true, true, _) => 6,
         _ => unreachable!("Invalid vector: {:?}", vector),
@@ -466,9 +468,9 @@ fn major_axis(vector: (i32, i32)) -> usize {
 
 fn collapse_directions(expr: &str) -> Option<String> {
     let mut tokens = tokenize(expr);
-    let mut result_stack: Vec<String> = vec!["(0, 0)[0]".to_string()];
-    let mut offset_stack: Vec<(usize, usize)> = vec![(0, 0)];
-    let mut vector_stack: Vec<(i32, i32)> = vec![(0, 0)];
+    let mut result_stack: Vec<String> = Vec::new();
+    let mut offset_stack: Vec<(usize, usize)> = Vec::new();
+    let mut vector_stack: Vec<(i32, i32)> = Vec::new();
 
     tokens.reverse();
 
@@ -481,73 +483,97 @@ fn collapse_directions(expr: &str) -> Option<String> {
         }
 
         else if current == "-" {
-            let offset = parse_offset(&result_stack.last().unwrap());
-            result_stack.push(format!("(0, 0)[{}]", offset));
+            let (_, prev_offset) = offset_stack.last().unwrap();
+            result_stack.push(format!("(0, 0)[{}]", prev_offset));
         }
 
-        else if current == "<" || current == "</"{
+        else if current == "<" || current == "</" {
+
+            if
+                vector_stack.is_empty() &&
+                offset_stack.is_empty() &&
+                result_stack.is_empty()
+
+            {
+                vector_stack.push((0, 0));
+                offset_stack.push((0, 0));
+                result_stack.push(current);
+                continue;
+            }
+
+            let (_, prev_offset) = offset_stack.last().unwrap();
+            offset_stack.push((*prev_offset, *prev_offset));
             result_stack.push(current);
-            offset_stack.push((0, 0));
-            vector_stack.push((0, 0));
         }
 
         else if current == ">" || current == "/>" {
-            let (global_offset, local_offset) = offset_stack.pop().unwrap();
+            let prev_vector1 = vector_stack.pop().unwrap();
+            let prev_vector2 = vector_stack.pop().unwrap();
 
-            if current == ">" {
-                result_stack.push(format!(">[{}]", global_offset));
-            }
+            let prev_offset = if current == ">" {
+                let (prev_offset, _) = offset_stack.pop().unwrap();
+                prev_offset
+            } else {
+                let (_, prev_offset) = offset_stack.pop().unwrap();
+                prev_offset
+            };
 
-            else if current == "/>" {
-                result_stack.push(format!("/>[{}]", local_offset));
-            }
+            let new_vector = add_vectors(prev_vector1, prev_vector2);
+            let new_offset = major_axis(new_vector);
+
+            vector_stack.push(new_vector);
+            offset_stack.push((new_offset, prev_offset));
+            result_stack.push(format!("{}[{}]", current, prev_offset));
         }
 
         else {
             let vector = parse_vector(&current);
             let offset = parse_offset(&current);
-            let (_, _) = offset_stack.pop().unwrap();
-            let global_vector = vector_stack.pop().unwrap();
+
+            if
+                vector_stack.is_empty() &&
+                offset_stack.is_empty() &&
+                result_stack.is_empty() ||
+                result_stack.last().unwrap() == "<" ||
+                result_stack.last().unwrap() == "</"
+
+            {
+                vector_stack.push(vector);
+                offset_stack.push((offset, offset));
+                result_stack.push(current);
+                continue;
+            }
 
             let prev_token = result_stack.pop().unwrap();
+            let prev_global_vec = vector_stack.pop().unwrap();
+            let _ = offset_stack.pop().unwrap();
 
-            println!("{:?} {:?} {:?} {:?}", tokens, offset_stack, vector_stack, result_stack);
+            let prev_vector = parse_vector(&prev_token);
+            let prev_offset = parse_offset(&prev_token);
 
-            if prev_token == "(0, 0)[0]" {
-                result_stack.push(format!("{:?}[{}]", vector, offset));
-                offset_stack.push((offset, offset));
-                vector_stack.push(vector);
-            }
+            let transposed = transpose_vector(vector, prev_offset);
 
-            else if prev_token == "<" || prev_token == "</" {
-                result_stack.push(format!("{}{}", prev_token, current));
-                offset_stack.push((offset, offset));
-                vector_stack.push(add_vectors(global_vector, vector));
-            }
+            let new_global_vec = add_vectors(prev_global_vec, transposed);
+            vector_stack.push(new_global_vec);
+            offset_stack.push((major_axis(new_global_vec), major_axis(vector)));
 
-            else {
-                let prev_vector = parse_vector(&prev_token);
-                let prev_offset = parse_offset(&prev_token);
+            let new_vector = add_vectors(prev_vector, transposed);
+            let new_offset = major_axis(new_vector);
 
-                let transposed = transpose_vector(vector, prev_offset);
-
-                vector_stack.push(add_vectors(global_vector, transposed));
-
-                let new_vector = add_vectors(prev_vector, transposed);
-                let new_offset = major_axis(new_vector);
-
-                let new_local_offset = (offset + prev_offset - 1) % 7;
-                let new_global_offset = major_axis(
-                    *vector_stack.last().unwrap()
-                );
-
-                result_stack.push(format!("{:?}[{}]", new_vector, new_offset));
-                offset_stack.push((new_global_offset, new_local_offset));
-            }
+            result_stack.push(format!("{:?}[{}]", new_vector, new_offset));
         }
     }
 
-    Some(result_stack.join("-"))
+    let result = result_stack
+        .join("-")
+        .replace("<-", "<")
+        .replace("</-", "</")
+        .replace("->", ">")
+        .replace("-/>", "/>");
+
+    println!();
+
+    Some(result)
 }
 
 fn split_and_process(expr: &str, f: fn(&str) -> Option<String>) -> String {

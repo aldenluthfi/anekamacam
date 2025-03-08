@@ -1,5 +1,5 @@
 use game::move_parse::parse_move;
 
 fn main() {
-    println!("{}", parse_move("W-<nF>"));
+    println!("{}", parse_move("</FnF/>-W"));
 }
