@@ -1,11 +1,5 @@
-use io;
-use game::board::Board;
+use game::move_parse::parse_move;
 
 fn main() {
-    let mut board: Board = Board::new(8, 8);
-
-    board.set_bit(0, 0);
-    board.set_bit(7, 7);
-
-    io::print_board(&board);
+    println!("{}", parse_move("W-<nF>"));
 }
