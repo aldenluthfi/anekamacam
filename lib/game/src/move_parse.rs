@@ -27,14 +27,22 @@ lazy_static! {
     ).unwrap();
     static ref INVALID_CARDINAL_PATTERN: Regex = Regex::new(
         &[
-            r"ne<?\((?:-\d+|0), (?:-\d+|0)\)|",
-            r"se<?\((?:-\d+|0), (?:\d+|0)\)|",
-            r"nw<?\((?:\d+|0), (?:-\d+|0)\)|",
-            r"sw<?\((?:\d+|0), (?:\d+|0)\)|",
-            r"n<?\([^)]*?, (?:-\d+|0)\)|",
-            r"s<?\([^)]*?, (?:\d+|0)\)|",
-            r"e<?\((?:-\d+|0)[^)]*?\)|",
-            r"w<?\((?:\d+|0)[^)]*?\)"
+            r"ne(?:</|<)*?\((?:-\d+|0), (?:-\d+|0)\)|",
+            r"ne(?:</|<)*?\((?:-\d+|0), (?:\d+|0)\)|",
+            r"ne(?:</|<)*?\((?:\d+|0), (?:-\d+|0)\)|",
+            r"se(?:</|<)*\((?:-\d+|0), (?:\d+|0)\)|",
+            r"se(?:</|<)*\((?:\d+|0), (?:\d+|0)\)|",
+            r"se(?:</|<)*\((?:-\d+|0), (?:-\d+|0)\)|",
+            r"nw(?:</|<)*\((?:\d+|0), (?:-\d+|0)\)|",
+            r"nw(?:</|<)*\((?:\d+|0), (?:\d+|0)\)|",
+            r"nw(?:</|<)*\((?:-\d+|0), (?:-\d+|0)\)|",
+            r"sw(?:</|<)*\((?:\d+|0), (?:\d+|0)\)|",
+            r"sw(?:</|<)*\((?:\d+|0), (?:-\d+|0)\)|",
+            r"sw(?:</|<)*\((?:-\d+|0), (?:\d+|0)\)|",
+            r"n(?:</|<)*\([^)]*?, (?:-\d+|0)\)|",
+            r"s(?:</|<)*\([^)]*?, (?:\d+|0)\)|",
+            r"e(?:</|<)*\((?:-\d+|0)[^)]*?\)|",
+            r"w(?:</|<)*\((?:\d+|0)[^)]*?\)"
         ].join("")
     ).unwrap();
     static ref VECTOR_PATTERN: Regex = Regex::new(
@@ -42,6 +50,9 @@ lazy_static! {
     ).unwrap();
     static ref OFFSET_PATTERN: Regex = Regex::new(
         r"\[([0-7])\]"
+    ).unwrap();
+    static ref CLEAN_PATTERN: Regex = Regex::new(
+        r"\[[0-7]\]|-/>|->|<-|</-|/"
     ).unwrap();
 }
 
@@ -395,7 +406,6 @@ fn tokenize(expr: &str) -> Vec<String> {
         for pattern in &[
             &Regex::new(r"(^</?)").unwrap(),
             &Regex::new(r"(^/?>)").unwrap(),
-            &Regex::new(r"(^/)").unwrap(),
             &Regex::new(r"(^-\.?)").unwrap(),
             &Regex::new(r"(^\.)").unwrap(),
             &Regex::new(r"(^\(-?\d+, -?\d+\)\[[0-7]\])").unwrap(),
@@ -440,8 +450,6 @@ fn transpose_vector(vector: (i32, i32), offset: usize) -> (i32, i32) {
         (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)
     ];
 
-    println!("{:?} {:?}", vector, offset);
-
     let base_idx = directions.iter().position(|&s| s == vector).unwrap();
 
     directions[(base_idx + offset) % 8]
@@ -471,11 +479,12 @@ fn collapse_directions(expr: &str) -> Option<String> {
     let mut result_stack: Vec<String> = Vec::new();
     let mut offset_stack: Vec<(usize, usize)> = Vec::new();
     let mut vector_stack: Vec<(i32, i32)> = Vec::new();
+    let mut consumed_vec: Vec<String> = Vec::new();
 
     tokens.reverse();
 
     while !tokens.is_empty() {
-        println!("{:?} {:?} {:?} {:?}", tokens, offset_stack, vector_stack, result_stack);
+        println!("{:?} {:?} {:?} {:?}", tokens, vector_stack, offset_stack, result_stack);
         let current = tokens.pop().unwrap();
 
         if current == "$" {
@@ -492,7 +501,9 @@ fn collapse_directions(expr: &str) -> Option<String> {
             if
                 vector_stack.is_empty() &&
                 offset_stack.is_empty() &&
-                result_stack.is_empty()
+                result_stack.is_empty() ||
+                result_stack.last().unwrap() == "<" ||
+                result_stack.last().unwrap() == "</"
 
             {
                 vector_stack.push((0, 0));
@@ -524,11 +535,43 @@ fn collapse_directions(expr: &str) -> Option<String> {
             vector_stack.push(new_vector);
             offset_stack.push((new_offset, prev_offset));
             result_stack.push(format!("{}[{}]", current, prev_offset));
+            consumed_vec.push(format!("{:?}[{}]", prev_vector1, prev_offset));
+        }
+
+        else if current == "-." {
+            let vector_str = consumed_vec.last().unwrap();
+            let vector = parse_vector(&vector_str);
+
+            let last_vector = vector_stack.pop().unwrap();
+            let (_, last_local) = offset_stack.pop().unwrap();
+
+            let new_vector = add_vectors(vector, last_vector);
+
+            vector_stack.push(new_vector);
+            offset_stack.push((major_axis(new_vector), last_local));
+            result_stack.push(vector_str.to_string());
+        }
+
+        else if current == "." {
+            let vector_str = consumed_vec.last().unwrap();
+            let vector = parse_vector(&vector_str);
+
+            let last_vector = parse_vector(&result_stack.pop().unwrap());
+            let (_, last_local) = offset_stack.pop().unwrap();
+
+            let new_vector = add_vectors(vector, last_vector);
+
+            vector_stack.pop();
+            vector_stack.push(new_vector);
+            offset_stack.push((major_axis(new_vector), last_local));
+            result_stack.push(format!("{:?}[{}]", new_vector, last_local));
         }
 
         else {
             let vector = parse_vector(&current);
             let offset = parse_offset(&current);
+
+            consumed_vec.push(format!("{:?}[{}]", vector, offset));
 
             if
                 vector_stack.is_empty() &&
@@ -555,7 +598,7 @@ fn collapse_directions(expr: &str) -> Option<String> {
 
             let new_global_vec = add_vectors(prev_global_vec, transposed);
             vector_stack.push(new_global_vec);
-            offset_stack.push((major_axis(new_global_vec), major_axis(vector)));
+            offset_stack.push((major_axis(new_global_vec), major_axis(transposed)));
 
             let new_vector = add_vectors(prev_vector, transposed);
             let new_offset = major_axis(new_vector);
@@ -564,16 +607,10 @@ fn collapse_directions(expr: &str) -> Option<String> {
         }
     }
 
-    let result = result_stack
-        .join("-")
-        .replace("<-", "<")
-        .replace("</-", "</")
-        .replace("->", ">")
-        .replace("-/>", "/>");
+    let joined = result_stack.join("-");
+    let result = CLEAN_PATTERN.replace_all(&joined, "");
 
-    println!();
-
-    Some(result)
+    Some(result.to_string())
 }
 
 fn split_and_process(expr: &str, f: fn(&str) -> Option<String>) -> String {
@@ -585,14 +622,7 @@ fn split_and_process(expr: &str, f: fn(&str) -> Option<String>) -> String {
 
 #[timed]
 pub fn parse_move(expr: &str) -> String {
-    if expr.is_empty() {
-        return String::new();
-    }
-
     let expr = normalize(expr).unwrap_or_default();
-    if expr.is_empty() {
-        return String::new();
-    }
 
     let pipeline = [
         atomize,
