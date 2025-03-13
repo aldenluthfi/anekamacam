@@ -1,5 +1,5 @@
 use std::{char, vec};
-use regex::Regex;
+use regex::{Captures, Regex};
 use lazy_static::lazy_static;
 use timed::timed;
 
@@ -17,7 +17,10 @@ lazy_static! {
         r"([nsew]{1,2}\+)*"
     ).unwrap();
     static ref K_PATTERN: Regex = Regex::new(
-        r"(?:^|[^\]])(K)"
+        r"(?:^|[^]])(K)"
+    ).unwrap();
+    static ref K_PATTERN_DIR: Regex = Regex::new(
+        r"(\[[1-8]+\]K)"
     ).unwrap();
     static ref DIR_RANGE_PATTERN: Regex = Regex::new(
         r"\[(?:\.\.(\d+)|(\d+)\.\.|(\d+)\.\.(\d+)|\.\.)\]"
@@ -45,14 +48,14 @@ lazy_static! {
             r"w(?:</|<)*\((?:\d+|0)[^)]*?\)"
         ].join("")
     ).unwrap();
+    static ref SLASH_PATTERN: Regex = Regex::new(
+        r"(?:^|[^<])(/.*/)(?:$|[^>])"
+    ).unwrap();
     static ref VECTOR_PATTERN: Regex = Regex::new(
         r"\((-?\d+), (-?\d+)\)"
     ).unwrap();
     static ref OFFSET_PATTERN: Regex = Regex::new(
-        r"\[([0-7])\]"
-    ).unwrap();
-    static ref CLEAN_PATTERN: Regex = Regex::new(
-        r"\[[0-7]\]|-/>|->|<-|</-|/"
+        r"\[([0-7]|-)\]"
     ).unwrap();
 }
 
@@ -309,9 +312,14 @@ fn expand_directions(expr: &str) -> Option<String> {
 
     let mut expanded = expr.to_string();
 
+    while let Some(cap) = K_PATTERN_DIR.captures(&expanded) {
+        let cap_str = cap.get(1).unwrap().as_str();
+        expanded = expanded.replacen(cap_str, &cap_str.replace("K", "&"), 1);   /* Replace bare K with all directions */
+    }
+
     while let Some(cap) = K_PATTERN.captures(&expanded) {
         let cap_str = cap.get(1).unwrap().as_str();
-        expanded = expanded.replacen(cap_str, &"[12345678]&", 1);               /* Replace bare K with all directions */
+        expanded = expanded.replacen(cap_str, &"[12345678]&", 1);   /* Replace bare K with all directions */
     }
 
     expanded = expanded.replace("&", "K");                                      /* Replace &s with Ks                 */
@@ -400,7 +408,16 @@ fn collapse_cardinals(expr: &str) -> Option<String> {
 
 fn tokenize(expr: &str) -> Vec<String> {
     let mut result = Vec::with_capacity(expr.len() / 2);
-    let mut remaining = expr;
+    let mut remaining = SLASH_PATTERN.replace_all(expr, |caps: &Captures| {
+        caps.get(0)
+            .unwrap()
+            .as_str()
+            .replace(
+                caps.get(1).unwrap().as_str(), 
+                &format!("<{}>", caps.get(1).unwrap().as_str()
+            )
+        )
+    }).to_string();
 
     'parse: while !remaining.is_empty() {
         for pattern in &[
@@ -410,13 +427,14 @@ fn tokenize(expr: &str) -> Vec<String> {
             &Regex::new(r"(^\.)").unwrap(),
             &Regex::new(r"(^\(-?\d+, -?\d+\)\[[0-7]\])").unwrap(),
         ] {
-            if let Some(cap) = pattern.find(remaining) {
+            if let Some(cap) = pattern.find(&remaining) {
                 result.push(cap.as_str().to_string());
-                remaining = &remaining[cap.end()..];
+                remaining = remaining[cap.end()..].to_string();
                 continue 'parse;
             }
         }
-        break;
+
+        unreachable!("Cannot tokenize {}", remaining);
     }
 
     result.push("$".to_string());
@@ -427,18 +445,18 @@ fn parse_vector(expr: &str) -> (i32, i32) {
     if let Some(cap) = VECTOR_PATTERN.captures(expr) {
         let x = cap[1].parse::<i32>().unwrap_or(0);
         let y = cap[2].parse::<i32>().unwrap_or(0);
-        (x, y)
-    } else {
-        (0, 0)
+        return (x, y);
     }
+
+    panic!("Invalid vector: {}", expr);
 }
 
 fn parse_offset(expr: &str) -> usize {
     if let Some(cap) = OFFSET_PATTERN.captures(expr) {
-        cap[1].parse::<usize>().unwrap_or(0)
-    } else {
-        0
+        return cap[1].parse::<usize>().unwrap_or(8);
     }
+
+    panic!("Invalid offset: {}", expr);
 }
 
 fn add_vectors(a: (i32, i32), b: (i32, i32)) -> (i32, i32) {
@@ -456,161 +474,95 @@ fn transpose_vector(vector: (i32, i32), offset: usize) -> (i32, i32) {
 }
 
 fn major_axis(vector: (i32, i32)) -> usize {
-    match (
-        vector.0.abs() < vector.1.abs(),
-        vector.0.abs() > vector.1.abs(),
-        vector.0.is_negative(),
-        vector.1.is_negative()
-    ) {
-        (false, false, true, true) => 5,
-        (false, false, true, false) => 7,
-        (false, false, false, true) => 3,
-        (false, false, false, false) => 1,
-        (true, false, _, false) => 0,
-        (false, true, false, _) => 2,
-        (true, false, _, true) => 4,
-        (false, true, true, _) => 6,
-        _ => unreachable!("Invalid vector: {:?}", vector),
+    let (x, y) = vector;
+
+    if x == 0 || y == 0 || x.abs() == y.abs() {
+        match (x.signum(), y.signum()) {
+            (0, 1)   => 0,
+            (1, 1)   => 1,
+            (1, 0)   => 2,
+            (1, -1)  => 3,
+            (0, -1)  => 4,
+            (-1, -1) => 5,
+            (-1, 0)  => 6,
+            (-1, 1)  => 7,
+            _ => unreachable!("Invalid vector: {:?}", vector),
+        }
+    } else if y.abs() > x.abs() {
+        if y > 0 { 0 } else { 4 }
+    } else {
+        if x > 0 { 2 } else { 6 }
     }
 }
 
-fn collapse_directions(expr: &str) -> Option<String> {
+fn collapse_vectors(expr: &str) -> Option<String> {
     let mut tokens = tokenize(expr);
-    let mut result_stack: Vec<String> = Vec::new();
-    let mut offset_stack: Vec<(usize, usize)> = Vec::new();
-    let mut vector_stack: Vec<(i32, i32)> = Vec::new();
-    let mut consumed_vec: Vec<String> = Vec::new();
+    let mut result: Vec<String> = Vec::new();
+
+    println!("{:?}", tokens);
 
     tokens.reverse();
 
     while !tokens.is_empty() {
-        println!("{:?} {:?} {:?} {:?}", tokens, vector_stack, offset_stack, result_stack);
-        let current = tokens.pop().unwrap();
+        println!("{:?}", result);
 
-        if current == "$" {
-            break;
-        }
+        let token = tokens.pop().unwrap();
 
-        else if current == "-" {
-            let (_, prev_offset) = offset_stack.last().unwrap();
-            result_stack.push(format!("(0, 0)[{}]", prev_offset));
-        }
+        if token == "$" { break }
 
-        else if current == "<" || current == "</" {
+        else if token == "." {
+            if result.last().unwrap() == ">" || result.last().unwrap() == "/>" {
+                let mut stack: Vec<String> = Vec::new();
 
-            if
-                vector_stack.is_empty() &&
-                offset_stack.is_empty() &&
-                result_stack.is_empty() ||
-                result_stack.last().unwrap() == "<" ||
-                result_stack.last().unwrap() == "</"
+                for t in (&result).into_iter().rev() {
+                    stack.push(t.clone());
 
-            {
-                vector_stack.push((0, 0));
-                offset_stack.push((0, 0));
-                result_stack.push(current);
-                continue;
-            }
+                    if t == "<" || t == "</" { break }
+                }
 
-            let (_, prev_offset) = offset_stack.last().unwrap();
-            offset_stack.push((*prev_offset, *prev_offset));
-            result_stack.push(current);
-        }
-
-        else if current == ">" || current == "/>" {
-            let prev_vector1 = vector_stack.pop().unwrap();
-            let prev_vector2 = vector_stack.pop().unwrap();
-
-            let prev_offset = if current == ">" {
-                let (prev_offset, _) = offset_stack.pop().unwrap();
-                prev_offset
+                stack.push("&".to_string());
+                stack.reverse();
+                result.append(&mut stack);
             } else {
-                let (_, prev_offset) = offset_stack.pop().unwrap();
-                prev_offset
-            };
-
-            let new_vector = add_vectors(prev_vector1, prev_vector2);
-            let new_offset = major_axis(new_vector);
-
-            vector_stack.push(new_vector);
-            offset_stack.push((new_offset, prev_offset));
-            result_stack.push(format!("{}[{}]", current, prev_offset));
-            consumed_vec.push(format!("{:?}[{}]", prev_vector1, prev_offset));
+                result.push("&".to_string());
+                result.push(result.last().unwrap().clone());
+            }
         }
 
-        else if current == "-." {
-            let vector_str = consumed_vec.last().unwrap();
-            let vector = parse_vector(&vector_str);
+        else if token == "-." {
+            if result.last().unwrap() == ">" || result.last().unwrap() == "/>" {
+                let mut stack: Vec<String> = Vec::new();
 
-            let last_vector = vector_stack.pop().unwrap();
-            let (_, last_local) = offset_stack.pop().unwrap();
+                for t in (&result).into_iter().rev() {
+                    stack.push(t.clone());
 
-            let new_vector = add_vectors(vector, last_vector);
+                    if t == "<" || t == "</" { break }
+                }
 
-            vector_stack.push(new_vector);
-            offset_stack.push((major_axis(new_vector), last_local));
-            result_stack.push(vector_str.to_string());
-        }
+                stack.push("-&".to_string());
+                stack.reverse();
+                result.append(&mut stack);
+            } else {
+                let mut stack: Vec<String> = Vec::new();
 
-        else if current == "." {
-            let vector_str = consumed_vec.last().unwrap();
-            let vector = parse_vector(&vector_str);
+                for t in (&result).into_iter().rev() {
+                    if t == "-" || t == "-&" { break }
 
-            let last_vector = parse_vector(&result_stack.pop().unwrap());
-            let (_, last_local) = offset_stack.pop().unwrap();
+                    stack.push(t.clone())
+                }
 
-            let new_vector = add_vectors(vector, last_vector);
-
-            vector_stack.pop();
-            vector_stack.push(new_vector);
-            offset_stack.push((major_axis(new_vector), last_local));
-            result_stack.push(format!("{:?}[{}]", new_vector, last_local));
+                stack.push("-&".to_string());
+                stack.reverse();
+                result.append(&mut stack);
+            }
         }
 
         else {
-            let vector = parse_vector(&current);
-            let offset = parse_offset(&current);
-
-            consumed_vec.push(format!("{:?}[{}]", vector, offset));
-
-            if
-                vector_stack.is_empty() &&
-                offset_stack.is_empty() &&
-                result_stack.is_empty() ||
-                result_stack.last().unwrap() == "<" ||
-                result_stack.last().unwrap() == "</"
-
-            {
-                vector_stack.push(vector);
-                offset_stack.push((offset, offset));
-                result_stack.push(current);
-                continue;
-            }
-
-            let prev_token = result_stack.pop().unwrap();
-            let prev_global_vec = vector_stack.pop().unwrap();
-            let _ = offset_stack.pop().unwrap();
-
-            let prev_vector = parse_vector(&prev_token);
-            let prev_offset = parse_offset(&prev_token);
-
-            let transposed = transpose_vector(vector, prev_offset);
-
-            let new_global_vec = add_vectors(prev_global_vec, transposed);
-            vector_stack.push(new_global_vec);
-            offset_stack.push((major_axis(new_global_vec), major_axis(transposed)));
-
-            let new_vector = add_vectors(prev_vector, transposed);
-            let new_offset = major_axis(new_vector);
-
-            result_stack.push(format!("{:?}[{}]", new_vector, new_offset));
+            result.push(token);
         }
     }
 
-    let joined = result_stack.join("-");
-    let result = CLEAN_PATTERN.replace_all(&joined, "");
-
-    Some(result.to_string())
+    Some(result.join("").to_string())
 }
 
 fn split_and_process(expr: &str, f: fn(&str) -> Option<String>) -> String {
@@ -631,7 +583,7 @@ pub fn parse_move(expr: &str) -> String {
         expand_directions,
         vectorize,
         collapse_cardinals,
-        collapse_directions,
+        collapse_vectors,
     ];
 
     pipeline
@@ -641,8 +593,6 @@ pub fn parse_move(expr: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // #[test]
     // fn test_advancer() {
     //     let expanded = expand("Q-nW");
