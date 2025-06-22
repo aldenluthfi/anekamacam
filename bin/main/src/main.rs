@@ -1,5 +1,5 @@
 use game::move_parse::parse_move;
 
 fn main() {
-    println!("{}", parse_move("W<KN>.F"));
+    println!("{}", parse_move("(cQ|dQ-u#)-mnW"));
 }
