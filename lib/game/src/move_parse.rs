@@ -1,7 +1,7 @@
 use std::{char, vec};
-use regex::{Captures, Regex};
+use regex::Regex;
 use lazy_static::lazy_static;
-use timed::timed;
+use rayon::prelude::*;
 
 lazy_static! {
     static ref NORMALIZE_PATTERN: Regex = Regex::new(
@@ -9,9 +9,6 @@ lazy_static! {
     ).unwrap();
     static ref RANGE_PATTERN: Regex = Regex::new(
         r"(-?)(?:\{(?:\.\.(\d+)|(\d+)\.\.|\.\.)\}|\*)"
-    ).unwrap();
-    static ref EXPANDED_RANGE_PATTERN: Regex = Regex::new(
-        r"([^:-]+)(:?)(-?)(?:\{([0-9]+)(?:\.\.([0-9]+))?\})(.*)"
     ).unwrap();
     static ref CARDINAL_PATTERN: Regex = Regex::new(
         r"([nsew]{1,2}\+)*"
@@ -48,17 +45,16 @@ lazy_static! {
             r"w(?:</|<)*\((?:\d+|0)[^)]*?\)"
         ].join("")
     ).unwrap();
-    static ref SLASH_PATTERN: Regex = Regex::new(
-        r"(?:^|[^<])(/.*/)(?:$|[^>])"
-    ).unwrap();
-    static ref VECTOR_PATTERN: Regex = Regex::new(
-        r"\((-?\d+), (-?\d+)\)"
-    ).unwrap();
-    static ref OFFSET_PATTERN: Regex = Regex::new(
-        r"\[([0-7]|-)\]"
-    ).unwrap();
 }
 
+
+/// Parses a move expression and returns a normalized version of it.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(evaluate("(cQ|dQ-u#)-mnW"), "cQ-mnW|dQ-u#-mnW");
+/// ```
 fn evaluate(expr: &str) -> String {
     let mut operands: Vec<String> = Vec::new();
     let mut operators: Vec<char> = Vec::new();
@@ -122,6 +118,15 @@ fn evaluate(expr: &str) -> String {
     operands.pop().unwrap()                                                     /* Final result is the only operand   */
 }
 
+/// Applies the operator to the two operands and returns the result.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(apply_operator('^', "a", "b"), "ab");
+/// assert_eq!(apply_operator('|', "a", "b"), "a|b");
+/// assert_eq!(apply_operator('^', "a|b", "c|d"), "ac|ad|bc|bd");
+/// ```
 fn apply_operator(op: char, a: &str, b: &str) -> String {
     match op {
         '^' => {
@@ -157,6 +162,16 @@ fn precedence(op: char) -> usize {
     }
 }
 
+
+/// Normalizes the expression by removing unnecessary parentheses and
+/// ensuring that the expression is in a canonical form. it also adds ^
+/// between implicit concatenations.
+///
+/// # Examples
+///
+/// ```ignore
+/// assert_eq!(normalize("(a|b)^c"), Some("ac|bc".to_string()));
+/// ```
 fn normalize(expr: &str) -> Option<String> {
     let indices: Vec<usize> = NORMALIZE_PATTERN
         .find_iter(expr)
@@ -207,6 +222,19 @@ fn atomize(expr: &str) -> Option<String> {
     Some(atoms.join(""))                                                        /* Return Some with joined atoms      */
 }
 
+
+/// Expands ranges in the expression. It handles the following formats:
+/// - `{..}`: expands to all possible values
+/// - `{n..}`: expands to n to 64
+/// - `{..n}`: expands to 1 to n
+/// - `*`: expands to 1 to 64
+///
+/// # Examples
+/// ```ignore
+/// assert_eq!(expand_ranges("{..}"), Some("{1..64}".to_string()));
+/// assert_eq!(expand_ranges("{..5}"), Some("{1..5}".to_string()));
+/// assert_eq!(expand_ranges("{5..}"), Some("{5..64}".to_string()));
+/// ```
 fn expand_ranges(expr: &str) -> Option<String> {
     if !expr.contains('{') && !expr.contains('*') {
         return Some(expr.to_string());
@@ -234,43 +262,15 @@ fn expand_ranges(expr: &str) -> Option<String> {
     expanded = expanded.replace(":{1..64}", ":{1..8}");                         /* Limit repetitions to 8             */
     expanded = expanded.replace(":-{1..64}", ":-{1..8}");
 
-    while let Some(cap) = EXPANDED_RANGE_PATTERN.captures(&expanded) {
-        let (prefix, suffix) = (
-            cap.get(1).unwrap().as_str(),
-            cap.get(6).unwrap().as_str()
-        );
-
-        let colon = cap.get(2).unwrap().as_str();
-        let dash = cap.get(3).unwrap().as_str();
-        let start = cap[4].parse::<usize>().unwrap();
-        let end = cap.get(5).map_or(start, |m| m.as_str().parse().unwrap());
-
-        let mut vec_rep = Vec::new();
-        for n in start..=end {
-            vec_rep.push(match (!colon.is_empty(), !dash.is_empty()) {
-                (true, true) => {
-                    if suffix.is_empty() {
-                        format!("{}-", prefix).repeat(n - 1) + &prefix          /* Handle move:-{n} repetition        */
-                    } else {
-                        format!("{}-", prefix).repeat(n) + suffix               /* Handle move:-{n}suffix             */
-                    }
-                }
-                (true, false) => {
-                    prefix.replacen(prefix, &prefix.repeat(n), 1) + suffix      /* Handle move:{n} piece repetition   */
-                }
-                (false, true) => {
-                    prefix.to_owned() + &"-.".repeat(n - 1) + &suffix           /* Handle move-{n} dash repetition    */
-                }
-                _ => format!("{}{}{}", prefix, ".".repeat(n - 1), suffix),      /* Handle normal {n} dot repetition   */
-            });
-        }
-
-        expanded = expanded.replacen(&cap[0], &vec_rep.join("|"), 1);
-    }
-
     Some(expanded)                                                              /* Return Some with expanded ranges   */
 }
 
+/// Expands cardinal directions in the expression. It handles the
+/// following formats:
+///
+/// - `n+s+e+w`: expands to `n|s|e|w`
+/// - `n+e`: expands to `n|e`
+/// - `n+e+s`: expands to `n|e|s`
 fn expand_cardinals(expr: &str) -> Option<String> {
     if !expr.contains('+') {
         return Some(expr.to_string());
@@ -305,6 +305,9 @@ fn expand_cardinals(expr: &str) -> Option<String> {
     Some(result_stack.join("|"))                                                /* Return Some with expanded cardinals*/
 }
 
+/// Expands directions in the expression. It handles the following formats:
+/// - `K`: expands to all directions
+/// - `K{n}`: expands to all directions with a range
 fn expand_directions(expr: &str) -> Option<String> {
     if !expr.contains('K') {
         return Some(expr.to_string());
@@ -372,6 +375,8 @@ fn expand_directions(expr: &str) -> Option<String> {
     Some(result_stack.join("|"))                                                /* Return  expanded directions        */
 }
 
+/// Vectorizes the expression by replacing cardinal directions with
+/// their vector representations.
 fn vectorize(expr: &str) -> Option<String> {
     if !expr.contains("K") && !expr.contains('#') {
         return Some(expr.to_string());
@@ -406,173 +411,22 @@ fn collapse_cardinals(expr: &str) -> Option<String> {
         .replace("w", ""))
 }
 
-fn tokenize(expr: &str) -> Vec<String> {
-    let mut result = Vec::with_capacity(expr.len() / 2);
-    let mut remaining = SLASH_PATTERN.replace_all(expr, |caps: &Captures| {
-        caps.get(0)
-            .unwrap()
-            .as_str()
-            .replace(
-                caps.get(1).unwrap().as_str(), 
-                &format!("<{}>", caps.get(1).unwrap().as_str()
-            )
-        )
-    }).to_string();
-
-    'parse: while !remaining.is_empty() {
-        for pattern in &[
-            &Regex::new(r"(^</?)").unwrap(),
-            &Regex::new(r"(^/?>)").unwrap(),
-            &Regex::new(r"(^-\.?)").unwrap(),
-            &Regex::new(r"(^\.)").unwrap(),
-            &Regex::new(r"(^\(-?\d+, -?\d+\)\[[0-7]\])").unwrap(),
-        ] {
-            if let Some(cap) = pattern.find(&remaining) {
-                result.push(cap.as_str().to_string());
-                remaining = remaining[cap.end()..].to_string();
-                continue 'parse;
-            }
-        }
-
-        unreachable!("Cannot tokenize {}", remaining);
-    }
-
-    result.push("$".to_string());
-    result
-}
-
-fn parse_vector(expr: &str) -> (i32, i32) {
-    if let Some(cap) = VECTOR_PATTERN.captures(expr) {
-        let x = cap[1].parse::<i32>().unwrap_or(0);
-        let y = cap[2].parse::<i32>().unwrap_or(0);
-        return (x, y);
-    }
-
-    panic!("Invalid vector: {}", expr);
-}
-
-fn parse_offset(expr: &str) -> usize {
-    if let Some(cap) = OFFSET_PATTERN.captures(expr) {
-        return cap[1].parse::<usize>().unwrap_or(8);
-    }
-
-    panic!("Invalid offset: {}", expr);
-}
-
-fn add_vectors(a: (i32, i32), b: (i32, i32)) -> (i32, i32) {
-    (a.0 + b.0, a.1 + b.1)
-}
-
-fn transpose_vector(vector: (i32, i32), offset: usize) -> (i32, i32) {
-    let directions = [
-        (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)
-    ];
-
-    let base_idx = directions.iter().position(|&s| s == vector).unwrap();
-
-    directions[(base_idx + offset) % 8]
-}
-
-fn major_axis(vector: (i32, i32)) -> usize {
-    let (x, y) = vector;
-
-    if x == 0 || y == 0 || x.abs() == y.abs() {
-        match (x.signum(), y.signum()) {
-            (0, 1)   => 0,
-            (1, 1)   => 1,
-            (1, 0)   => 2,
-            (1, -1)  => 3,
-            (0, -1)  => 4,
-            (-1, -1) => 5,
-            (-1, 0)  => 6,
-            (-1, 1)  => 7,
-            _ => unreachable!("Invalid vector: {:?}", vector),
-        }
-    } else if y.abs() > x.abs() {
-        if y > 0 { 0 } else { 4 }
-    } else {
-        if x > 0 { 2 } else { 6 }
-    }
-}
-
-fn collapse_vectors(expr: &str) -> Option<String> {
-    let mut tokens = tokenize(expr);
-    let mut result: Vec<String> = Vec::new();
-
-    println!("{:?}", tokens);
-
-    tokens.reverse();
-
-    while !tokens.is_empty() {
-        println!("{:?}", result);
-
-        let token = tokens.pop().unwrap();
-
-        if token == "$" { break }
-
-        else if token == "." {
-            if result.last().unwrap() == ">" || result.last().unwrap() == "/>" {
-                let mut stack: Vec<String> = Vec::new();
-
-                for t in (&result).into_iter().rev() {
-                    stack.push(t.clone());
-
-                    if t == "<" || t == "</" { break }
-                }
-
-                stack.push("&".to_string());
-                stack.reverse();
-                result.append(&mut stack);
-            } else {
-                result.push("&".to_string());
-                result.push(result.last().unwrap().clone());
-            }
-        }
-
-        else if token == "-." {
-            if result.last().unwrap() == ">" || result.last().unwrap() == "/>" {
-                let mut stack: Vec<String> = Vec::new();
-
-                for t in (&result).into_iter().rev() {
-                    stack.push(t.clone());
-
-                    if t == "<" || t == "</" { break }
-                }
-
-                stack.push("-&".to_string());
-                stack.reverse();
-                result.append(&mut stack);
-            } else {
-                let mut stack: Vec<String> = Vec::new();
-
-                for t in (&result).into_iter().rev() {
-                    if t == "-" || t == "-&" { break }
-
-                    stack.push(t.clone())
-                }
-
-                stack.push("-&".to_string());
-                stack.reverse();
-                result.append(&mut stack);
-            }
-        }
-
-        else {
-            result.push(token);
-        }
-    }
-
-    Some(result.join("").to_string())
-}
-
 fn split_and_process(expr: &str, f: fn(&str) -> Option<String>) -> String {
-    expr.split('|')
+    if expr.is_empty() {
+        return String::new();
+    }
+
+    if !expr.contains('|') {
+        return f(expr).unwrap_or_default();
+    }
+
+    expr.split('|')                                             /* Process in parallel                 */
+        .par_bridge()
         .filter_map(f)
-        .collect::<Vec<String>>()
-        .join("|")                                                              /* Process each term separately       */
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
-#[timed]
 pub fn parse_move(expr: &str) -> String {
     let expr = normalize(expr).unwrap_or_default();
 
@@ -583,216 +437,9 @@ pub fn parse_move(expr: &str) -> String {
         expand_directions,
         vectorize,
         collapse_cardinals,
-        collapse_vectors,
     ];
 
     pipeline
         .iter()
         .fold(expr, |acc, &step| {split_and_process(&acc, step)})               /* Process each step in the pipeline  */
-}
-
-#[cfg(test)]
-mod tests {
-    // #[test]
-    // fn test_advancer() {
-    //     let expanded = expand("Q-nW");
-    //     assert_eq!(expanded, "Q-nW");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "K-*-n[1357]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "K-*-n[1357]K");
-    // }
-
-    // #[test]
-    // fn test_amazon() {
-    //     let expanded = expand("Q|N");
-    //     assert_eq!(expanded, "Q|N");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "K-*|[2468]Kn[2468]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "K-*|[2468]Kn[2468]K");
-    // }
-
-    // #[test]
-    // fn test_antelope() {
-    //     let expanded = expand("WnF{3}");
-    //     assert_eq!(expanded, "WnF{3}");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "[1357]Kn[2468]K{3}");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "[1357]Kn[2468]K...");
-    // }
-
-    // #[test]
-    // fn test_archbishop() {
-    //     let expanded = expand("B|N");
-    //     assert_eq!(expanded, "B|N");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "[2468]K-*|[2468]Kn[2468]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "[2468]K-*|[2468]Kn[2468]K");
-    // }
-
-    // #[test]
-    // fn test_barc() {
-    //     let expanded = expand("[2367]N");
-    //     assert_eq!(expanded, "[2367]N");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "[2367][2468]Kn[2468]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "[2367][2468]Kn[2468]K");
-    // }
-
-    // #[test]
-    // fn test_bede() {
-    //     let expanded = expand("B|D");
-    //     assert_eq!(expanded, "B|D");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "[2468]K-*|[1357]K.");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "[2468]K-*|[1357]K.");
-    // }
-
-    // #[test]
-    // fn test_berolina_pawn() {
-    //     let expanded = expand("mFi<F-pF>cnW");
-    //     assert_eq!(expanded, "mFi<F-pF>cnW");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "m[2468]Ki<[2468]K-p[2468]K>cn[1357]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "m[2468]Ki<[2468]K-p[2468]K>cn[1357]K");
-    // }
-
-    // #[test]
-    // fn test_berolina_plus_pawn() {
-    //     let expanded = expand("mFi<F-pF>c[137]K");
-    //     assert_eq!(expanded, "mFi<F-pF>c[137]K");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "m[2468]Ki<[2468]K-p[2468]K>c[137]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "m[2468]Ki<[2468]K-p[2468]K>c[137]K");
-    // }
-
-    // #[test]
-    // fn test_bishopper() {
-    //     let expanded = expand("(cB|dB-u#)-mnW");
-    //     assert_eq!(expanded, "cB-mnW|dB-u#-mnW");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(
-    //         atomized,
-    //         "c[2468]K-*-mn[1357]K|d[2468]K-*-u#-mn[1357]K"
-    //     );
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(
-    //         ranged,
-    //         "c[2468]K-*-mn[1357]K|d[2468]K-*-u#-mn[1357]K"
-    //     );
-    // }
-
-    // #[test]
-    // fn test_grasshopper() {
-    //     let expanded = expand("(cQ|dQ-u#)-mnW");
-    //     assert_eq!(expanded, "cQ-mnW|dQ-u#-mnW");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "cK-*-mn[1357]K|dK-*-u#-mn[1357]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "cK-*-mn[1357]K|dK-*-u#-mn[1357]K");
-    // }
-
-    // #[test]
-    // fn test_shogi_lion() {
-    //     let expanded = expand("#|N|S|cKK");
-    //     assert_eq!(expanded, "#|N|S|cKK");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "#|[2468]Kn[2468]K|K.|cKK");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "#|[2468]Kn[2468]K|K.|cKK");
-    // }
-
-    // #[test]
-    // fn test_locust() {
-    //     let expanded = expand("cQ-mnW");
-    //     assert_eq!(expanded, "cQ-mnW");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "cK-*-mn[1357]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "cK-*-mn[1357]K");
-    // }
-
-    // #[test]
-    // fn test_mao() {
-    //     let expanded = expand("W-nF");
-    //     assert_eq!(expanded, "W-nF");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "[1357]K-n[2468]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "[1357]K-n[2468]K");
-    // }
-
-    // #[test]
-    // fn test_mao_hopper() {
-    //     let expanded = expand("cdW-u#-nF");
-    //     assert_eq!(expanded, "cdW-u#-nF");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "cd[1357]K-u#-n[2468]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "cd[1357]K-u#-n[2468]K");
-    // }
-
-    // #[test]
-    // fn test_moa() {
-    //     let expanded = expand("F-nF");
-    //     assert_eq!(expanded, "F-nF");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "[2468]K-n[2468]K");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "[2468]K-n[2468]K");
-    // }
-
-    // #[test]
-    // fn test_rose() {
-    //     let expanded = expand("Wn(eF|wF):-*");
-    //     assert_eq!(expanded, "WneF:-*|WnwF:-*");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "[1357]Kne[2468]K:-*|[1357]Knw[2468]K:-*");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "[1357]Kne[2468]K:-*|[1357]Knw[2468]K:-*");
-    // }
-
-    // #[test]
-    // fn test_ubi_ubi() {
-    //     let expanded = expand("N:*");
-    //     assert_eq!(expanded, "N:*");
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(atomized, "[2468]Kn[2468]K:*");
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(ranged, "[2468]Kn[2468]K:*");
-    // }
-
-    // #[test]
-    // fn test_crooked_bishop() {
-    //     let expanded = expand("F(#|((#|eW)-<wW-eW>|(#|wW)-<eW-wW>):-*)");
-    //     assert_eq!(
-    //         expanded,
-    //         "F|F-<wW-eW>:-*|FeW-<wW-eW>:-*|F-<eW-wW>:-*|FwW-<eW-wW>:-*"
-    //     );
-    //     let atomized = atomize(&expanded);
-    //     assert_eq!(
-    //         atomized,
-    //         "[2468]K\
-    //         |[2468]K-<w[1357]K-e[1357]K>:-*\
-    //         |[2468]Ke[1357]K-<w[1357]K-e[1357]K>:-*\
-    //         |[2468]K-<e[1357]K-w[1357]K>:-*\
-    //         |[2468]Kw[1357]K-<e[1357]K-w[1357]K>:-*"
-    //     );
-    //     let ranged = expand_ranges(&atomized);
-    //     assert_eq!(
-    //         ranged,
-    //         "[2468]K\
-    //         |[2468]K-<w[1357]K-e[1357]K>:-*\
-    //         |[2468]Ke[1357]K-<w[1357]K-e[1357]K>:-*\
-    //         |[2468]K-<e[1357]K-w[1357]K>:-*\
-    //         |[2468]Kw[1357]K-<e[1357]K-w[1357]K>:-*"
-    //     );
-    // }
 }
