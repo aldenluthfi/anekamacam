@@ -1,3 +1,19 @@
+//! # hash.rs
+//!
+//! Implements Zobrist hashing for game positions.
+//!
+//! This file contains functionality for generating and managing hash values
+//! for chess positions using Zobrist hashing. It provides random hash values
+//! for pieces on squares, castling rights, en passant squares, and side to move.
+//! These hashes enable efficient position comparison and transposition table
+//! lookups in game tree search algorithms.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 25/01/2026
+
 use bnum::types::U256;
 use lazy_static::lazy_static;
 use rand::{RngCore, SeedableRng};
@@ -67,6 +83,7 @@ pub fn init_piece_square_hashes(
     *PIECE_SQUARE_HASHES.write().unwrap() = piece_square_hashes;
 }
 
+/// Computes the Zobrist hash for the given game state.
 pub fn hash_position(state: &State) -> U256 {
     if PIECE_SQUARE_HASHES.read().unwrap().is_empty() {
         init_piece_square_hashes(state.pieces.len());
@@ -74,8 +91,12 @@ pub fn hash_position(state: &State) -> U256 {
 
     let mut hash = U256::default();
 
-    hash ^= &SIDE_HASHES[state.current_move];
+    hash ^= &SIDE_HASHES[state.current_move as usize];
     hash ^= &CASTLING_HASHES[state.castling_state as usize];
+
+    if let Some(ep_square) = state.en_passant_square {
+        hash ^= &EN_PASSANT_HASHES[ep_square as usize];
+    }
 
     hash
 }
