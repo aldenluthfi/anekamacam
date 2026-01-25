@@ -8,3 +8,4 @@ regex = { workspace = true }
 lazy_static = { workspace = true }
 rayon = { workspace = true }
 bnum = { workspace = true }
+rand = { workspace = true }
