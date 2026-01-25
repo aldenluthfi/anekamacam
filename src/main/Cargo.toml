@@ -1,0 +1,11 @@
+[package]
+name = "main"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "anekamacam"
+path = "src/main.rs"
+
+[dependencies]
+game = { workspace = true }
