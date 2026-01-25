@@ -32,7 +32,7 @@ pub struct MoveState {
 }
 
 pub struct State {
-    pub current_move: usize,
+    pub current_move: u8,
 
     pub pieces: Vec<Piece>,
     pub pieces_board: Vec<Board>,

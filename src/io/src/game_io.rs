@@ -1,3 +1,19 @@
+//! # game_io.rs
+//!
+//! Implements game state parsing and formatting functions.
+//!
+//! This file contains functionality for reading game configuration files,
+//! parsing FEN (Forsyth-Edwards Notation) strings, and formatting game state
+//! for display. It handles piece definitions, board setup, and state information
+//! such as castling rights, en passant squares, and move counters. The module
+//! provides both compact and verbose output formats for game visualization.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 25/01/2026
+
 use std::fs;
 use game::hash::hash_position;
 use game::representations::{
@@ -8,6 +24,46 @@ use game::representations::{
 use game::constants::*;
 use crate::board_io::format_board;
 
+/// Parses a game configuration file and initializes a game state.
+///
+/// The configuration file must have the following format:
+/// - First line: `ranks,files,piece_types` (comma-separated integers)
+/// - Next `piece_types` lines: piece definitions in format
+///   `name,white_char,black_char,cheesy_king_notation_movement`
+/// - Prefix piece name with `#` to mark it as royal (e.g., `#King`)
+/// - Last line: FEN (Forsyth-Edwards Notation) string for initial position
+///
+/// # Arguments
+///
+/// * `path` - Path to the configuration file
+///
+/// # Returns
+///
+/// A fully initialized `State` with pieces, boards, and position parsed from
+/// the config file.
+///
+/// # Panics
+///
+/// Panics if:
+/// - The file cannot be read
+/// - The file has fewer than 2 lines
+/// - The first line doesn't have exactly 3 comma-separated values
+/// - Any piece definition doesn't have exactly 4 comma-separated values
+/// - The FEN string is invalid
+///
+/// # Examples
+///
+/// ```plaintext
+/// FIDE Chess Standard Configuration:
+/// 8,8,6
+/// Pawn,P,p,mnW|ip!cnW-.|cnF
+/// Rook,R,r,R
+/// Bishop,B,b,B
+/// Knight,N,n,N
+/// Queen,Q,q,Q
+/// #King,K,k,K|O{3}|o{2}
+/// rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+/// ```
 pub fn parse_config_file(path: &str) -> State {
     let contents = fs::read_to_string(path)
         .expect(&format!("Failed to read config file: {}", path));
@@ -43,7 +99,7 @@ pub fn parse_config_file(path: &str) -> State {
     );
 
     let mut pieces = Vec::with_capacity(pieces_num);
-    for i in 1..=pieces_num {
+    for i in 1..=pieces_num {                                                   /* next n lines are piece definitions */
         let parts: Vec<&str> = lines[i].split(',').collect();
         assert!(
             parts.len() == 4,
@@ -70,18 +126,49 @@ pub fn parse_config_file(path: &str) -> State {
         state.pieces_board.push(Board::new(ranks, files));
     }
 
-    let fen_line = lines[pieces_num + 1];
+    let fen_line = lines[pieces_num + 1];                                       /* last line is FEN string            */
     parse_fen(&mut state, fen_line);
 
     state
 }
 
+/// Parses a FEN string and updates the game state accordingly. Note that the
+/// FEN implementation is slightly modified to accommodate arbitrary board
+/// sizes, the en passant square is represented as `xxyy` where `xx` is the
+/// file and `yy` is the rank (both 0-indexed).
 fn parse_fen(state: &mut State, fen: &str) {
     let parts: Vec<&str> = fen.split_whitespace().collect();
     assert!(parts.len() >= 4, "FEN must have at least 4 parts");
 
     let position = parts[0];
-    let mut rank = (state.pieces_board[0].ranks - 1) as i32;
+    let ranks_data: Vec<&str> = position.split('/').collect();
+
+    assert!(
+        ranks_data.len() == state.friends_board.ranks as usize,
+        "FEN rank count ({}) doesn't match board ranks ({})",
+        ranks_data.len(),
+        state.friends_board.ranks
+    );                                                                          /* assert number of ranks in the FEN  */
+
+    for (rank_idx, rank_data) in ranks_data.iter().enumerate() {                /* assert number of files in each rank*/
+        let mut file_count = 0u8;
+        for c in rank_data.chars() {
+            if c.is_ascii_digit() {
+                file_count += c.to_digit(10).unwrap() as u8;
+            } else {
+                file_count += 1;
+            }
+        }
+        assert!(
+            file_count == state.friends_board.files,
+            "FEN rank {} has {} files but expected {}",
+            rank_idx,
+            file_count,
+            state.friends_board.files
+        );
+    }
+
+    let mut rank = (state.friends_board.ranks - 1) as i32;
     let mut file = 0u8;
 
     for c in position.chars() {
@@ -149,9 +236,9 @@ fn parse_fen(state: &mut State, fen: &str) {
     let en_passant = parts[3];
     state.en_passant_square = if en_passant == "-" {
         None
-    } else {
+    } else {                                                                    /* enpassant square is a bit different*/
         let file = en_passant[0..2].parse::<u8>()
-            .expect("Invalid en passant file");
+            .expect("Invalid en passant file");                                 /* its xxyy with x = file and y = rank*/
         let rank = en_passant[2..4].parse::<u8>()
             .expect("Invalid en passant rank");
         Some(
@@ -183,7 +270,7 @@ fn combine_board_strings(
     result
 }
 
-fn index_to_square(index: u32, files: u8, ranks: u8) -> String {
+fn index_to_square(index: u32, files: u8) -> String {
     let rank = (index / (files as u32)) as u8;
     let file = (index % (files as u32)) as u8;
 
@@ -252,8 +339,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
                     "-".to_string(),
                     |sq| format!("{}", index_to_square(
                         sq as u32,
-                        state.friends_board.files,
-                        state.friends_board.ranks
+                        state.friends_board.files
                     )
                 )
             )

@@ -1,3 +1,18 @@
+//! # constants.rs
+//!
+//! Defines game-wide constants and configuration values.
+//!
+//! This file contains constant definitions for board dimensions, piece colors,
+//! castling rights, file/rank labels, and other game-related configuration
+//! values. These constants are used throughout the codebase to ensure
+//! consistency and allow for easy modification of game parameters.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 25/01/2026
+
 pub const MAX_RANKS: u8 = 64;
 pub const MAX_FILES: u8 = 64;
 pub const MAX_SQUARES: usize = 4096;
@@ -31,8 +46,8 @@ pub const X: u8 = 23;
 pub const Y: u8 = 24;
 pub const Z: u8 = 25;
 
-pub const WHITE : usize = 0;
-pub const BLACK : usize = 1;
+pub const WHITE : u8 = 0;
+pub const BLACK : u8 = 1;
 
 pub const WK_CASTLE : u8 = 0b0001;
 pub const WQ_CASTLE : u8 = 0b0010;
