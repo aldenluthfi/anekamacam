@@ -1,17 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "bin/main",
-    "lib/game",
-    "lib/io",
-    "lib/twiddling"
+    "src/main",
+    "src/game",
 ]
 
 [workspace.dependencies]
-main = { path = "bin/main" }
-game = { path = "lib/game" }
-twiddling = { path = "lib/twiddling" }
-io = { path = "lib/io" }
+game = { path = "src/game" }
 
 bnum = "*"
 regex = "*"
