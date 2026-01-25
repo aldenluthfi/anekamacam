@@ -1,3 +1,19 @@
+//! # board_io.rs
+//!
+//! Implements board formatting and visualization functions.
+//!
+//! This file contains functionality for converting bitboard representations
+//! into human-readable ASCII art displays. It provides methods for formatting
+//! individual bitboards and complete boards with Unicode box-drawing characters,
+//! supporting various board sizes and piece symbols. The formatting includes
+//! rank and file labels for easy reference.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 25/01/2026
+
 use game::representations::board::{
     Board,
     Bitboard,

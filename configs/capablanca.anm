@@ -1,0 +1,10 @@
+10,8,8
+Pawn,P,p,mnW|ip!cnW-.|cnF
+Rook,R,r,R
+Bishop,B,b,B
+Knight,N,n,N
+Queen,Q,q,Q
+Archbishop,A,a,N|B
+Chancellor,C,c,N|R
+#King,K,k,K|O{3}|o{2}
+ranbqkbncr/pppppppppp/10/10/10/10/PPPPPPPPPP/RANBQKBNCR w KQkq - 0 1
