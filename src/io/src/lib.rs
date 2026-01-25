@@ -1,5 +1,2 @@
-use game::board::Board;
-
-pub fn print_board(board: &Board) {
-    println!("{}", board.to_string());
-}
+pub mod board_io;
+pub mod game_io;

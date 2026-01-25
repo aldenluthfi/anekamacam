@@ -3,10 +3,12 @@ resolver = "2"
 members = [
     "src/main",
     "src/game",
+    "src/io"
 ]
 
 [workspace.dependencies]
 game = { path = "src/game" }
+io = { path = "src/io" }
 
 bnum = "*"
 regex = "*"
@@ -14,3 +16,5 @@ ntest = "*"
 lazy_static = "*"
 timed = "*"
 rayon = "*"
+rand = "*"
+fs = "*"
