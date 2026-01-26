@@ -14,10 +14,25 @@
 //! # Date
 //! 25/01/2026
 
-use game::representations::board::{
-    Board,
-    Bitboard,
+use game::representations::{
+    board::{
+        Bitboard,
+        Board
+    },
+    state::State
 };
+
+pub fn format_square(index: u16, state: &State) -> String {
+    let (rank, file) = state.index_to_square(index);
+
+    if state.files <= 26  {
+        let file_char = (b'a' + file) as char;
+        let rank_char = (b'1' + rank) as char;
+        format!("{}{:02}", file_char, rank_char)
+    } else {
+        format!("{:02}{:02}", file, rank)
+    }
+}
 
 fn format_bitboard(board: &Bitboard, ranks: u8, files: u8) -> String {
 
@@ -88,7 +103,7 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
         result.push_str(&format!("{:3} ", file_label));
     }
     result.push('\n');
-    result = result.replace("0", " ");
+    result = result.replace(" 0 ", "   ");
 
     result
 }

@@ -17,9 +17,11 @@
 //! 18/02/2024
 
 use bnum::types::{U256, U1024, U4096};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use crate::constants::*;
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
+#[derive(Debug, PartialEq)]
 pub enum Bitboard {
     U64(u64),
     U256(U256),
@@ -91,6 +93,24 @@ impl Bitboard {
             Bitboard::U1024(b) => b.count_ones(),
             Bitboard::U4096(b) => b.count_ones(),
         }
+    }
+
+    pub fn set_bit_indices(&self) -> Vec<u32> {
+        let mut indices = Vec::with_capacity(self.count_ones() as usize);
+        let mut temp = match self {
+            Bitboard::U64(b) => Bitboard::U64(*b),
+            Bitboard::U256(b) => Bitboard::U256(*b),
+            Bitboard::U1024(b) => Bitboard::U1024(*b),
+            Bitboard::U4096(b) => Bitboard::U4096(*b),
+        };
+
+        while temp.count_ones() > 0 {
+            let index = temp.trailing_zeros();
+            indices.push(index);
+            temp.set_bit(index, false);
+        }
+
+        indices
     }
 }
 
@@ -204,6 +224,7 @@ impl Not for &Bitboard {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Board {
     pub ranks: u8,
     pub files: u8,
@@ -263,6 +284,21 @@ impl Board {
 
     pub fn count_bits(&self) -> u32 {
         self.bitboard.count_ones()
+    }
+
+    pub fn set_bit_indices(&self) -> Vec<u32> {
+        self.bitboard.set_bit_indices()
+    }
+
+    pub fn set_bit_positions(&self) -> Vec<(u8, u8)> {
+        self.set_bit_indices()
+            .into_par_iter()
+            .map(|index| {
+                let file = (index % self.files as u32) as u8;
+                let rank = (index / self.files as u32) as u8;
+                (file, rank)
+            })
+            .collect()
     }
 }
 

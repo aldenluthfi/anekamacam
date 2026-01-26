@@ -1,10 +1,14 @@
+Capablanca Chess
 10,8,8
-Pawn,P,p,mnW|ip!cnW-.|cnF
-Rook,R,r,R
-Bishop,B,b,B
-Knight,N,n,N
-Queen,Q,q,Q
-Archbishop,A,a,N|B
-Chancellor,C,c,N|R
-#King,K,k,K|O{3}|o{2}
+^Pawn,P,p,1000,mnW|ip!cnW-.|cnF
+!Rook,R,r,5000,R
+Bishop,B,b,3375,B
+Knight,N,n,3000,N
+!Queen,Q,q,8375,Q
+!Archbishop,A,a,6375,N|B
+!Chancellor,C,c,8000,N|R
+#King,K,k,inf,K|O{3}|o{2}
+2
+P->RNBQAC
+p->rbnqac
 ranbqkbncr/pppppppppp/10/10/10/10/PPPPPPPPPP/RANBQKBNCR w KQkq - 0 1
