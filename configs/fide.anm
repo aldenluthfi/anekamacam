@@ -1,8 +1,12 @@
+FIDE Chess
 8,8,6
-Pawn,P,p,mnW|ip!cnW-.|cnF
-Rook,R,r,R
-Bishop,B,b,B
-Knight,N,n,N
-Queen,Q,q,Q
-#King,K,k,K|O{3}|o{2}
+^Pawn,P,p,1000,m!cnW|ip!cnW-.|cnF
+!Rook,R,r,5000,R
+Bishop,B,b,3375,B
+Knight,N,n,3000,N
+!Queen,Q,q,8375,Q
+#King,K,k,6375,N|B
+2
+P->RNBQ
+p->rbnq
 rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1

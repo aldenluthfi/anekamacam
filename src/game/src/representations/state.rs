@@ -32,13 +32,18 @@ pub struct MoveState {
 }
 
 pub struct State {
+    pub title: String,
+
+    pub files: u8,
+    pub ranks: u8,
+
     pub current_move: u8,
 
     pub pieces: Vec<Piece>,
     pub pieces_board: Vec<Board>,
 
-    pub enemies_board: Board,
-    pub friends_board: Board,
+    pub black_board: Board,
+    pub white_board: Board,
     pub monarch_board: Board,
     pub unmoved_board: Board,
 
@@ -48,25 +53,38 @@ pub struct State {
 
     pub position_hash: U256,
     pub history: Vec<MoveState>,
+
+    pub ply: u32,
+    pub ply_counter: u32,
+
+    pub big_pieces: [u32; 2],
+    pub major_pieces: [u32; 2],
+    pub minor_pieces: [u32; 2],
+
+    pub material: [u32; 2]
 }
 
 impl State {
     pub fn new(
-        ranks: u8,
+        title: String,
         files: u8,
+        ranks: u8,
         pieces: Vec<Piece>,
     ) -> Self {
         let piece_types = pieces.len();
         State {
-            current_move: WHITE,
-
+            title,
+            files,
+            ranks,
             pieces,
+
+            current_move: WHITE,
             pieces_board: Vec::with_capacity(piece_types),
 
-            enemies_board: Board::new(ranks, files),
-            friends_board: Board::new(ranks, files),
-            monarch_board: Board::new(ranks, files),
-            unmoved_board: Board::new(ranks, files),
+            black_board: Board::new(files, ranks),
+            white_board: Board::new(files, ranks),
+            monarch_board: Board::new(files, ranks),
+            unmoved_board: Board::new(files, ranks),
 
             castling_state: 0,
             halfmove_clock: 0,
@@ -74,6 +92,53 @@ impl State {
 
             position_hash: U256::default(),
             history: Vec::with_capacity(4096),
+
+            ply: 0,
+            ply_counter: 0,
+
+            big_pieces: [0; 2],
+            major_pieces: [0; 2],
+            minor_pieces: [0; 2],
+
+            material: [0; 2],
         }
+    }
+
+    pub fn index_to_square(&self, index: u16) -> (u8, u8) {
+        let file = (index % self.files as u16) as u8;
+        let rank = (index / self.files as u16) as u8;
+        assert!(file < self.files, "File {file} out of bounds.");
+        assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+
+        (file, rank)
+    }
+
+    pub fn square_to_index(&self, file: u8, rank: u8) -> u16 {
+        assert!(file < self.files, "File {file} out of bounds.");
+        assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+
+        (rank as u16) * (self.files as u16) + (file as u16)
+    }
+
+    pub fn reset(&mut self) {
+        self.current_move = WHITE;
+        self.castling_state = 0;
+        self.halfmove_clock = 0;
+        self.en_passant_square = None;
+        self.position_hash = U256::default();
+        self.history.clear();
+        self.ply = 0;
+        self.ply_counter = 0;
+
+        self.black_board = Board::new(self.files, self.ranks);
+        self.white_board = Board::new(self.files, self.ranks);
+        self.monarch_board = Board::new(self.files, self.ranks);
+        self.unmoved_board = Board::new(self.files, self.ranks);
+
+        self.big_pieces = [0; 2];
+        self.major_pieces = [0; 2];
+        self.minor_pieces = [0; 2];
+
+        self.material = [0; 2];
     }
 }
