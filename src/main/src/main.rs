@@ -13,7 +13,7 @@ fn main() {
     State::init_global(parse_config_file("configs/test.anm"));
 
     // let expr: String = parse_move(&"n<<nNnW>nF>");
-    let expr: String = parse_move(&"nW*");
+    let expr: String = parse_move(&"<FnF>nW");
 
     println!("Expr: {}", expr);
     for vec in compound_atomic_to_vector(&expr, "n") {
