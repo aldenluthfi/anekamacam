@@ -1,33 +1,22 @@
-
 use game::{
-    constants::*, moves::{move_gen::{chained_atomic_to_vector, move_blockers}, move_parse::parse_move},
+    moves::move_parse::{
+        parse_move,
+        compound_atomic_to_vector,
+        chained_atomic_to_vector,
+    },
     representations::state::State,
-    util::verify_game_state,
 };
 
-use io::{
-    board_io::format_board, game_io::parse_config_file
-};
-
-fn init() -> State {
-    let state = parse_config_file("configs/test.anm");
-    state
-}
+use io::game_io::parse_config_file;
 
 fn main() {
-    // let state = init();
+    State::init_global(parse_config_file("configs/test.anm"));
 
-    // verify_game_state(&state);
-    // let start: u16 = state.square_to_index(I, 7);
-    // let piece = &state.pieces[0];
-    // println!(
-    //     "{}",
-    //     format_board(
-    //         &move_blockers(state.pieces[0].movement.as_str(), start, &state),
-    //         Some(piece.symbol)
-    //     )
-    // );
-    let expr: String = parse_move(&"nWnWnWnWnWnF");
+    // let expr: String = parse_move(&"n<<nNnW>nF>");
+    let expr: String = parse_move(&"nW*");
+
     println!("Expr: {}", expr);
-    println!("{:?}", chained_atomic_to_vector(&expr))
+    for vec in compound_atomic_to_vector(&expr, "n") {
+        println!("{:?}", vec);
+    }
 }

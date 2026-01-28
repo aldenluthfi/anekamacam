@@ -22,8 +22,9 @@ use game::representations::{
     state::State
 };
 
-pub fn format_square(index: u16, state: &State) -> String {
-    let (rank, file) = state.index_to_square(index);
+pub fn format_square(index: u16) -> String {
+    let state = State::global();
+    let (file, rank) = state.index_to_square(index);
 
     if state.files <= 26  {
         let file_char = (b'a' + file) as char;

@@ -7,7 +7,7 @@ pub mod representations {
 
 pub mod moves {
 	pub mod move_parse;
-	pub mod move_gen;
+	pub mod vector;
 }
 
 pub mod constants;

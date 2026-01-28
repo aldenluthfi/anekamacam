@@ -15,6 +15,7 @@
 use crate::constants::*;
 
 use bnum::types::U256;
+use std::sync::{OnceLock, RwLock};
 
 use crate::representations::{
     board::Board,
@@ -22,6 +23,9 @@ use crate::representations::{
     moves::Move,
 };
 
+static GAME_STATE: OnceLock<RwLock<State>> = OnceLock::new();
+
+#[derive(Debug)]
 pub struct MoveState {
     pub move_ply: Move,
     pub castling_state: u8,
@@ -31,6 +35,7 @@ pub struct MoveState {
     pub position_hash: U256
 }
 
+#[derive(Debug)]
 pub struct State {
     pub title: String,
 
@@ -140,5 +145,27 @@ impl State {
         self.minor_pieces = [0; 2];
 
         self.material = [0; 2];
+    }
+
+    /// Initialize the global game state singleton
+    pub fn init_global(state: State) {
+        GAME_STATE.set(RwLock::new(state))
+            .expect("Game state already initialized");
+    }
+
+    /// Get a read lock on the global game state
+    pub fn global() -> std::sync::RwLockReadGuard<'static, State> {
+        GAME_STATE.get()
+            .expect("Game state not initialized")
+            .read()
+            .expect("Failed to acquire read lock on game state")
+    }
+
+    /// Get a write lock on the global game state
+    pub fn global_mut() -> std::sync::RwLockWriteGuard<'static, State> {
+        GAME_STATE.get()
+            .expect("Game state not initialized")
+            .write()
+            .expect("Failed to acquire write lock on game state")
     }
 }
