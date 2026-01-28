@@ -15,8 +15,6 @@
 //! # Date
 //! 25/01/2025
 
-use rayon::prelude::*;
-
 use crate::{
     constants::WHITE,
     representations::{
@@ -24,23 +22,6 @@ use crate::{
         state::State
     }
 };
-
-/// Splits an expression by '|' delimiter and processes each part in parallel.
-/// Returns a parallel iterator over the results of applying function `f` to
-/// each part.
-pub fn split_and_process<'a, T>(
-    expr: &'a str,
-    f: impl Fn(&str) -> Option<T> + Sync + Send + 'a
-) -> impl ParallelIterator<Item = Option<T>> + 'a
-where
-    T: Send + Sync,
-{
-    assert!(!expr.is_empty(), "{expr} must not empty.");
-
-    expr.par_split('|')
-        .map(move |s| f(s.trim()))
-        .into_par_iter()
-}
 
 pub fn verify_game_state(state: &State) {
     let mut temp_white_board = Board::new(state.files, state.ranks);

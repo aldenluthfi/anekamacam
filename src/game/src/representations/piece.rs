@@ -31,6 +31,8 @@ use bnum::types::U2048;
 /// piece can promote to. it consists of:
 /// - A byte to represent how many pieces can be promoted to (up to 255 pieces)
 /// - the next 255 bytes represents a piece index that this piece can promote to
+
+#[derive(Debug)]
 pub struct Piece {
     pub name: String,
     pub movement: String,

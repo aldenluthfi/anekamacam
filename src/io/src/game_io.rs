@@ -423,7 +423,10 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     };
 
     if parts.len() >= 5 {
-        state.halfmove_clock = parts[4].parse().unwrap_or(0);
+        state.halfmove_clock = parts[4].parse()
+            .expect(
+                &format!("Invalid halfmove clock: {}", parts[4].trim())
+            );
     }
 
     state.position_hash = hash_position(state);
@@ -563,9 +566,8 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             state.en_passant_square
                 .map_or(
                     "-".to_string(),
-                    |sq| format!("{}", format_square(sq, &state)
+                    |sq| format!("{}", format_square(sq))
                 )
-            )
         ));
 
         result.push_str(
@@ -641,7 +643,9 @@ pub fn format_piece_types(state: &State) -> String {
                 )
                     .to_string()
                     .parse::<usize>()
-                    .unwrap_or(0);
+                    .expect(
+                        "Failed to parse promotion count"
+                    );
 
                 for i in 0..promotion_count {
                     let target_idx = (
@@ -651,7 +655,9 @@ pub fn format_piece_types(state: &State) -> String {
                     )
                         .to_string()
                         .parse::<u8>()
-                        .unwrap_or(0);
+                        .expect(
+                            "Failed to parse promotion target index"
+                        );
 
                     if target_idx == piece_idx as u8 {
                         promo_from_symbols.push(other_piece.symbol);
