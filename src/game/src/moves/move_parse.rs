@@ -756,13 +756,13 @@ fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │ 08 │    │ 02 │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │ 06 │    │ 04 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1207,267 +1207,30 @@ pub fn compound_atomic_to_vector(
     println!("DEBUG: compound_atomic_to_vector tokens: {:?}", tokens);
 
     let mut stack: VecDeque<Vec<AtomicVector>> = VecDeque::new();
-    for token in tokens {
+
+    for token in tokens {                                                       /* Sort of like parsing infix exprs   */
         match token {
-            ">" => {
-                let mut substack: VecDeque<Vec<AtomicVector>> = VecDeque::new();
-
-                while stack.len() > 0 {
-                    let last_vector = stack.pop_back().unwrap();                /* need substack cuz not commutative  */
-
-                    if let Some(special) = AtomicVector::get_special
-                        (&last_vector[0]
-                    ) {
-                        if special == "<" {
-                            break;
-                        }
-                    }
-
-                    substack.push_back(last_vector);
-                }
-
-                #[cfg(debug_assertions)]
-                println!(
-                    "DEBUG: processing compound atomic substack: {:?}",
-                    substack
-                );
-
-                let mut combined: Vec<AtomicVector> = vec![
-                    AtomicVector::origin()
-                ];
-
-                while substack.len() > 0 {
-                    let mut set = substack.pop_back().unwrap();
-
-                    if set[0].is_special() {
-                        let special = AtomicVector::get_special(&set[0]).expect(
-                            "Expected special atomic vector."
-                        );
-
-                        #[cfg(debug_assertions)]
-                        println!(
-                            "DEBUG: processing special filter: {}",
-                            special
-                        );
-
-                        if special.starts_with("[") && special.ends_with("]") {
-                            let indices: &str = &special[1..special.len() - 1];
-                            let vector_indices: Vec<usize> = indices
-                                .chars()
-                                .map(|c| c.to_digit(10).unwrap() as usize)
-                                .collect();
-
-                            let set2 = substack.pop_back().expect(
-                                "Missing preceding vector for index filter."
-                            );
-
-                            set = filter_by_index(
-                                set2, vector_indices
-                            );
-                        } else{
-                            let set2 = substack.pop_back().expect(
-                                "Missing preceding vector for cardinal filter."
-                            );
-
-                            set = filter_by_cardinal_direction(
-                                set2, &special
-                            );
-                        }
-                    }
-
-                    combined = combine_vector_sets(combined, set);
-                }
-
-                stack.push_back(combined);
-            },
-            "<" | "n" | "e" | "s" | "w" |"ne" | "nw" | "se" | "sw" => {
+            ">" => process_closing_bracket(&mut stack),
+            "<" | "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw" => {
                 stack.push_back(vec![AtomicVector::special(token)]);
             },
             token if DIRECTION_RANGE_TOKEN.is_match(token) => {
-
-                #[cfg(debug_assertions)]
-                println!(
-                    "DEBUG: direction-range token: {}",
-                    token
-                );
-
                 stack.push_back(vec![AtomicVector::special(token)]);
             },
             token if DOTS_TOKEN.is_match(token) => {
-                let num_dots = token.len() as i8;
-                let last_vectors = stack.pop_back().expect(
-                    "Missing preceding vector for dots."
-                );
-
-                let updated_vectors: Vec<AtomicVector> = last_vectors
-                    .into_iter()
-                    .map(|vector| {
-                        let mut new_vector = vector.clone();
-                        new_vector.set(&new_vector.add_last(num_dots));
-                        new_vector
-                    })
-                    .collect();
-
-                stack.push_back(updated_vectors);
+                process_dots_token(&mut stack, token);
             },
             token if RANGE_TOKEN.is_match(token) => {
-                let captures = RANGE_TOKEN.captures(token).unwrap();
-
-                #[cfg(debug_assertions)]
-                println!(
-                    "DEBUG: range token captures: {:?}",
-                    captures
-                );
-
-                let start = captures.get(1);
-                let end = captures.get(2);
-
-                match (start, end) {
-                    (Some(s), Some(e)) => {
-                        let start_count: i8 = s.as_str().parse().expect(
-                            "Invalid start range token."
-                        );
-
-                        let end_count: i8 = e.as_str().parse().unwrap_or(
-                            i8::MAX
-                        );
-
-                        let last_vectors = stack.pop_back().expect(
-                            "Missing preceding vector for range."
-                        );
-
-                        let mut all_updated_vectors: Vec<_> = Vec::new();
-
-                        for count in start_count..=end_count {
-                            let updated_vectors: Vec<_> = last_vectors
-                                .iter()
-                                .map(|vector| {
-                                    let mut new_vector = vector.clone();
-                                    new_vector.set(
-                                        &new_vector.add_last(count - 1)
-                                    );                                          /* count = number of dots - 1         */
-                                    new_vector
-                                })
-                                .collect();
-
-                            all_updated_vectors.extend(updated_vectors);
-                        }
-
-                        stack.push_back(all_updated_vectors);
-                    },
-                    (Some(s), None) => {
-                        let count: i8 = s.as_str().parse().expect(
-                            "Invalid start range token."
-                        );
-
-                        let last_vectors = stack.pop_back().expect(
-                            "Missing preceding vector for range."
-                        );
-
-                        let updated_vectors: Vec<AtomicVector> = last_vectors
-                            .into_iter()
-                            .map(|vector| {
-                                let mut new_vector = vector.clone();
-                                new_vector.set(&new_vector.add_last(count - 1));/* count = number of dots - 1         */
-                                new_vector
-                            })
-                            .collect();
-
-                        stack.push_back(updated_vectors);
-                    },
-                    _ => {
-                        panic!(
-                            "Invalid range token: {:?}",
-                            token
-                        );
-                    }
-                }
+                process_range_token(&mut stack, token);
             },
             token if COLON_RANGE_TOKEN.is_match(token) => {
-                let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
-
-                #[cfg(debug_assertions)]
-                println!(
-                    "DEBUG: colon-range token captures: {:?}",
-                    captures
-                );
-
-                let start = captures.get(1);
-                let end = captures.get(2);
-
-                match (start, end) {
-                    (Some(s), Some(e)) => {
-                        let start_count: i8 = s.as_str().parse().expect(
-                            "Invalid start colon-range token."
-                        );
-
-                        let end_count: i8 = e.as_str().parse().unwrap_or(
-                            i8::MAX
-                        );
-
-                        let mut all_accumulated_vectors: Vec<_> = Vec::new();
-
-                        for count in start_count..=end_count {
-                            let mut accumulated_vectors = stack.pop_back()
-                                .expect(
-                                    "Missing preceding vector for colon-range."
-                                );
-
-                            for _ in 1..count {
-                                let set1 = accumulated_vectors.clone();
-                                let set2 = accumulated_vectors.clone();
-
-                                accumulated_vectors = combine_vector_sets(
-                                    set1, set2
-                                );
-
-                            }
-
-                            all_accumulated_vectors.extend(accumulated_vectors);
-                        }
-
-                        stack.push_back(all_accumulated_vectors);
-                    },
-                    (Some(s), None) => {
-                        let count: i8 = s.as_str().parse().expect(
-                            "Invalid start colon-range token."
-                        );
-
-                        let mut accumulated_vectors = stack.pop_back().expect(
-                            "Missing preceding vector for colon-range."
-                        );
-
-                        for _ in 1..count {
-                            let set1 = accumulated_vectors.clone();
-                            let set2 = accumulated_vectors.clone();
-
-                            accumulated_vectors = combine_vector_sets(
-                                set1, set2
-                            );
-
-                            #[cfg(debug_assertions)]
-                            println!(
-                                "DEBUG: colon-range intermediate accumulated_vectors: {:?}",
-                                accumulated_vectors
-                            );
-                        }
-
-                        stack.push_back(accumulated_vectors);
-                    },
-                    _ => {
-                        panic!(
-                            "Invalid colon-range token: {:?}",
-                            token
-                        );
-                    }
-                }
+                process_colon_range_token(&mut stack, token);
             },
             _ => {
-                stack.push_back(chained_atomic_to_vector(token, "n"));           /* default rotation "n" for now       */
+                stack.push_back(chained_atomic_to_vector(token, "n"));
             }
         }
     }
-
 
     #[cfg(debug_assertions)]
     println!(
@@ -1475,87 +1238,7 @@ pub fn compound_atomic_to_vector(
         stack
     );
 
-    let mut combined: Vec<AtomicVector> = stack.pop_front().unwrap();
-
-    if combined[0].is_special() {
-        let special = AtomicVector::get_special(&combined[0]).expect(
-            "Expected special atomic vector."
-        );
-
-        #[cfg(debug_assertions)]
-        println!(
-            "DEBUG: processing special filter: {}",
-            special
-        );
-
-        if special.starts_with("[") && special.ends_with("]") {
-            let indices: &str = &special[1..special.len() - 1];
-            let vector_indices: Vec<usize> = indices
-                .chars()
-                .map(|c| c.to_digit(10).unwrap() as usize)
-                .collect();
-
-            let set2 = stack.pop_front().expect(
-                "Missing preceding vector for index filter."
-            );
-
-            combined = filter_by_index(
-                set2, vector_indices
-            );
-        } else{
-            let set2 = stack.pop_front().expect(
-                "Missing preceding vector for cardinal filter."
-            );
-
-            combined = filter_by_cardinal_direction(
-                set2, &special
-            );
-        }
-    }
-
-    while stack.len() > 0 {
-        let mut set = stack.pop_front().unwrap();
-
-        if set[0].is_special() {
-            let special = AtomicVector::get_special(&set[0]).expect(
-                "Expected special atomic vector."
-            );
-
-            #[cfg(debug_assertions)]
-            println!(
-                "DEBUG: processing special filter: {}",
-                special
-            );
-
-            if special.starts_with("[") && special.ends_with("]") {
-                let indices: &str = &special[1..special.len() - 1];
-                let vector_indices: Vec<usize> = indices
-                    .chars()
-                    .map(|c| c.to_digit(10).unwrap() as usize)
-                    .collect();
-
-                let set2 = stack.pop_front().expect(
-                    "Missing preceding vector for index filter."
-                );
-
-                set = filter_by_index(
-                    set2, vector_indices
-                );
-            } else{
-                let set2 = stack.pop_front().expect(
-                    "Missing preceding vector for cardinal filter."
-                );
-
-                set = filter_by_cardinal_direction(
-                    set2, &special
-                );
-            }
-        }
-
-        combined = combine_vector_sets(combined, set);
-    }
-
-    let mut result = combined;
+    let mut result = combine_final_vectors(stack);
 
     result.retain(|vector| {
         let whole = vector.whole();
@@ -1566,20 +1249,259 @@ pub fn compound_atomic_to_vector(
     result
 }
 
-fn cleanup_atomic_vectors(vector_set: Vec<AtomicVector>) -> Vec<(i8, i8)> {
-    let mut seen = HashSet::new();
+fn process_special_filter(
+    stack: &mut VecDeque<Vec<AtomicVector>>,
+    special: &str
+) -> Vec<AtomicVector> {
+    if special.starts_with("[") && special.ends_with("]") {
+        let indices: &str = &special[1..special.len() - 1];
+        let vector_indices: Vec<usize> = indices
+            .chars()
+            .map(|c| c.to_digit(10).unwrap() as usize)
+            .collect();
 
-    vector_set
-        .into_iter()
-        .filter_map(|vector| {
-            let whole = vector.whole();
-            if seen.insert(whole) {
-                Some(whole)
-            } else {
-                None
+        let set = stack.pop_front().expect(
+            "Missing preceding vector for index filter."
+        );
+
+        filter_by_index(set, vector_indices)
+    } else {
+        let set = stack.pop_front().expect(
+            "Missing preceding vector for cardinal filter."
+        );
+
+        filter_by_cardinal_direction(set, special)
+    }
+}
+
+fn process_compound_substack(
+    substack: &mut VecDeque<Vec<AtomicVector>>
+) -> Vec<AtomicVector> {
+    #[cfg(debug_assertions)]
+    println!("DEBUG: processing compound atomic substack: {:?}", substack);
+
+    let mut combined: Vec<AtomicVector> = vec![AtomicVector::origin()];
+
+    while substack.len() > 0 {
+        let mut set = substack.pop_back().unwrap();
+
+        if set[0].is_special() {
+            set = process_special_filter(substack, 
+                &set[0].get_special().expect(
+                    "Expected special filter token."
+                )
+            );
+        }
+
+        combined = combine_vector_sets(combined, set);
+    }
+
+    combined
+}
+
+fn process_closing_bracket(
+    stack: &mut VecDeque<Vec<AtomicVector>>
+) {
+    let mut substack: VecDeque<Vec<AtomicVector>> = VecDeque::new();
+
+    while stack.len() > 0 {
+        let last_vector = stack.pop_back().unwrap();
+
+        if let Some(special) = AtomicVector::get_special(&last_vector[0]) {
+            if special == "<" {
+                break;
             }
+        }
+
+        substack.push_back(last_vector);
+    }
+
+    let combined = process_compound_substack(&mut substack);
+    stack.push_back(combined);
+}
+
+fn process_dots_token(
+    stack: &mut VecDeque<Vec<AtomicVector>>,
+    token: &str
+) {
+    let num_dots = token.len() as i8;
+    let last_vectors = stack.pop_back().expect(
+        "Missing preceding vector for dots."
+    );
+
+    let updated_vectors: Vec<AtomicVector> = last_vectors
+        .into_iter()
+        .map(|vector| {
+            let mut new_vector = vector.clone();
+            new_vector.set(&new_vector.add_last(num_dots));
+            new_vector
         })
-        .collect()
+        .collect();
+
+    stack.push_back(updated_vectors);
+}
+
+fn process_range_token(
+    stack: &mut VecDeque<Vec<AtomicVector>>,
+    token: &str
+) {
+    let captures = RANGE_TOKEN.captures(token).unwrap();
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: range token captures: {:?}", captures);
+
+    let start = captures.get(1);
+    let end = captures.get(2);
+
+    match (start, end) {
+        (Some(s), Some(e)) => {
+            let start_count: i8 = s.as_str().parse().expect(
+                "Invalid start range token."
+            );
+            let end_count: i8 = e.as_str().parse().unwrap_or(i8::MAX);
+
+            let last_vectors = stack.pop_back().expect(
+                "Missing preceding vector for range."
+            );
+
+            let mut all_updated_vectors: Vec<_> = Vec::new();
+
+            for count in start_count..=end_count {
+                let updated_vectors: Vec<_> = last_vectors
+                    .iter()
+                    .map(|vector| {
+                        let mut new_vector = vector.clone();
+                        new_vector.set(&new_vector.add_last(count - 1));
+                        new_vector
+                    })
+                    .collect();
+
+                all_updated_vectors.extend(updated_vectors);
+            }
+
+            stack.push_back(all_updated_vectors);
+        },
+        (Some(s), None) => {
+            let count: i8 = s.as_str().parse().expect(
+                "Invalid start range token."
+            );
+
+            let last_vectors = stack.pop_back().expect(
+                "Missing preceding vector for range."
+            );
+
+            let updated_vectors: Vec<AtomicVector> = last_vectors
+                .into_iter()
+                .map(|vector| {
+                    let mut new_vector = vector.clone();
+                    new_vector.set(&new_vector.add_last(count - 1));
+                    new_vector
+                })
+                .collect();
+
+            stack.push_back(updated_vectors);
+        },
+        _ => {
+            panic!("Invalid range token: {:?}", token);
+        }
+    }
+}
+
+fn process_colon_range_token(
+    stack: &mut VecDeque<Vec<AtomicVector>>,
+    token: &str
+) {
+    let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: colon-range token captures: {:?}", captures);
+
+    let start = captures.get(1);
+    let end = captures.get(2);
+
+    match (start, end) {
+        (Some(s), Some(e)) => {
+            let start_count: i8 = s.as_str().parse().expect(
+                "Invalid start colon-range token."
+            );
+            let end_count: i8 = e.as_str().parse().unwrap_or(i8::MAX);
+
+            let mut all_accumulated_vectors: Vec<_> = Vec::new();
+
+            for count in start_count..=end_count {
+                let mut accumulated_vectors = stack.pop_back()
+                    .expect("Missing preceding vector for colon-range.");
+
+                for _ in 1..count {
+                    let set1 = accumulated_vectors.clone();
+                    let set2 = accumulated_vectors.clone();
+
+                    accumulated_vectors = combine_vector_sets(set1, set2);
+                }
+
+                all_accumulated_vectors.extend(accumulated_vectors);
+            }
+
+            stack.push_back(all_accumulated_vectors);
+        },
+        (Some(s), None) => {
+            let count: i8 = s.as_str().parse().expect(
+                "Invalid start colon-range token."
+            );
+
+            let mut accumulated_vectors = stack.pop_back().expect(
+                "Missing preceding vector for colon-range."
+            );
+
+            for _ in 1..count {
+                let set1 = accumulated_vectors.clone();
+                let set2 = accumulated_vectors.clone();
+
+                accumulated_vectors = combine_vector_sets(set1, set2);
+
+                #[cfg(debug_assertions)]
+                println!(
+                    "DEBUG: colon-range intermediate accumulated_vectors: {:?}",
+                    accumulated_vectors
+                );
+            }
+
+            stack.push_back(accumulated_vectors);
+        },
+        _ => {
+            panic!("Invalid colon-range token: {:?}", token);
+        }
+    }
+}
+
+fn combine_final_vectors(
+    mut stack: VecDeque<Vec<AtomicVector>>
+) -> Vec<AtomicVector> {
+    let mut combined: Vec<AtomicVector> = stack.pop_front().unwrap();
+
+    if combined[0].is_special() {
+        combined = process_special_filter(&mut stack,
+            &combined[0].get_special().expect(
+                "Expected special atomic vector."
+            )
+        );
+    }
+
+    while stack.len() > 0 {
+        let mut set = stack.pop_front().unwrap();
+
+        if set[0].is_special() {
+            set = process_special_filter(&mut stack,
+                &set[0].get_special().expect(
+                    "Expected special atomic vector."
+                )
+            );
+        }
+
+        combined = combine_vector_sets(combined, set);
+    }
+
+    combined
 }
 
 /// Matches a move expression and chooses the right function to generate
