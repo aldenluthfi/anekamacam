@@ -1230,6 +1230,12 @@ pub fn compound_atomic_to_vector(
                 stack.push_back(chained_atomic_to_vector(token, "n"));
             }
         }
+
+        #[cfg(debug_assertions)]
+        println!(
+            "DEBUG: stack after processing token {}: {:?}",
+            token, stack
+        );
     }
 
     #[cfg(debug_assertions)]
@@ -1275,18 +1281,20 @@ fn process_special_filter(
 }
 
 fn process_compound_substack(
-    substack: &mut VecDeque<Vec<AtomicVector>>
+    mut substack: VecDeque<Vec<AtomicVector>>
 ) -> Vec<AtomicVector> {
     #[cfg(debug_assertions)]
     println!("DEBUG: processing compound atomic substack: {:?}", substack);
 
+    substack = substack.into_iter().rev().collect();
+
     let mut combined: Vec<AtomicVector> = vec![AtomicVector::origin()];
 
     while substack.len() > 0 {
-        let mut set = substack.pop_back().unwrap();
+        let mut set = substack.pop_front().unwrap();
 
         if set[0].is_special() {
-            set = process_special_filter(substack, 
+            set = process_special_filter(&mut substack,
                 &set[0].get_special().expect(
                     "Expected special filter token."
                 )
@@ -1316,7 +1324,7 @@ fn process_closing_bracket(
         substack.push_back(last_vector);
     }
 
-    let combined = process_compound_substack(&mut substack);
+    let combined = process_compound_substack(substack);
     stack.push_back(combined);
 }
 
@@ -1502,6 +1510,22 @@ fn combine_final_vectors(
     }
 
     combined
+}
+
+pub fn cleanup_atomic_vectors(vector_set: Vec<AtomicVector>) -> Vec<(i8, i8)> {
+    let mut seen = HashSet::new();
+
+    vector_set
+        .into_iter()
+        .filter_map(|vector| {
+            let whole = vector.whole();
+            if seen.insert(whole) {
+                Some(whole)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Matches a move expression and chooses the right function to generate
