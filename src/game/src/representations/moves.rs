@@ -56,6 +56,8 @@
 /// Each captured piece is represented in 20 bits:
 /// - First 8 bits: Piece type
 /// - Next 12 bits: Square index
+
+#[derive(Debug)]
 pub struct Move {
     pub encoded_move: u64,
     pub captured_pieces: Option<Vec<u32>>
