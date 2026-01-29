@@ -5,7 +5,9 @@ lto = true
 codegen-units = 1
 
 [profile.dev]
-
+opt-level = 3
+lto = true
+codegen-units = 1
 
 [workspace]
 resolver = "2"
@@ -27,3 +29,4 @@ timed = "*"
 rayon = "*"
 rand = "*"
 fs = "*"
+hotpath = "*"
