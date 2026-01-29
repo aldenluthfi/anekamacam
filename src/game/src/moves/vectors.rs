@@ -1,5 +1,7 @@
 use std::{char, fmt::Debug};
 
+use crate::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
+
 /// A 32 bit vector representation for atomic move vectors.
 ///
 /// - each vector is repreented as [(x1, y1), (x2, y2)]
@@ -21,7 +23,7 @@ use std::{char, fmt::Debug};
 /// - 'n|ne|e|se|s|sw|w|nw': [(d, 127), (_, _)], second vector unused
 ///   with d = 0 for n, 1 for ne, 2 for e, 3 for se, 4 for s, 5 for sw, 6 for w,
 ///   7 for nw
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtomicVector(u32);
 
 impl AtomicVector {
@@ -34,8 +36,8 @@ impl AtomicVector {
         AtomicVector(x1 | (y1 << 8) | (x2 << 16) | (y2 << 24))
     }
 
-    pub fn origin() -> Self {
-        AtomicVector::new((0, 0), (0, 1))
+    pub fn origin(rotation: i8) -> Self {
+        AtomicVector::new((0, 0), INDEX_TO_CARDINAL_VECTORS[rotation as usize])
     }
 
     pub fn special(token: &str) -> Self {
@@ -176,6 +178,6 @@ impl Debug for AtomicVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (wx, wy) = self.whole();
         let (lx, ly) = self.last();
-write!(f, "[({}, {}), ({}, {})]", wx, wy, lx, ly)
+        write!(f, "[({}, {}), ({}, {})]", wx, wy, lx, ly)
     }
 }

@@ -9,3 +9,8 @@ lazy_static = { workspace = true }
 rayon = { workspace = true }
 bnum = { workspace = true }
 rand = { workspace = true }
+hotpath = { workspace = true }
+
+[features]
+hotpath = ["hotpath/hotpath"]
+hotpath-alloc = ["hotpath/hotpath-alloc"]
