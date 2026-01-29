@@ -10,3 +10,8 @@ path = "src/main.rs"
 [dependencies]
 game = { workspace = true }
 io = { workspace = true }
+hotpath = { workspace = true }
+
+[features]
+hotpath = ["hotpath/hotpath"]
+hotpath-alloc = ["hotpath/hotpath-alloc"]
