@@ -500,7 +500,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 ///    ╚═══╧═══╧═══╧═══╝
 ///      a   b   c   d
 /// ```
-fn combine_board_strings(
+pub fn combine_board_strings(
     board1: &str,
     board2: &str,
 ) -> String {

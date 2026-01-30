@@ -1,6 +1,377 @@
-use std::{char, fmt::Debug};
+use std::{collections::VecDeque, fmt::Debug};
 
 use crate::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
+
+pub type MultiLegGroup = VecDeque<MultiLegElement>;
+
+pub enum MultiLegElement {
+    MultiLegTerm(LegToken),
+    MultiLegExpr(MultiLegGroup),
+    MultiLegEval(Vec<MultiLegVector>),
+}
+
+pub enum LegToken {
+    LegBracket(String),
+    LegModifier(String),
+    LegFilter(String),
+
+    Leg(AtomicGroup),
+
+    LegColon(String),
+    LegRange(String),
+    LegDots(String),
+}
+
+pub type MultiLegVector = Vec<LegVector>;
+
+/// A 64 bit vector representation for leg move vectors.
+/// the first 32 bits represent the whole AtomicVector,
+/// the next bits are move modifiers
+/// - `m` (must move without capture)
+/// - `c` (must capture with this move)
+/// - `i` (you can do this whole only on the initial move of the piece)
+/// - `u` (unload, capturing then/or putting the latest captured piece on the
+///   starting square of the current leg)
+/// - `d` (destroy, must capture friendly peice)
+/// - `p` (the starting square creates an en-passant square)
+/// - `k` (gives check)
+///
+/// while ! can be used for negation of the above modifiers. `m` and `c` are
+/// mutually exclusive, they cannot be used at the same time When chaining moves
+/// or making a multi-leg move (moves with `-`), every atom has an implicit
+/// `m!du` except the last one which has `!du` unless otherwise specified. Since
+/// every move implies `!p`, `!p` would then mean “this move can be used to
+/// capture to an en passant square”. The same goes for `!i` every move implies
+/// `!i`, so `!i` would mean “this move can be made except for its initial move”
+///
+/// the m odifiers are stored in the next 14 bits after the first 32 bits:
+///
+/// Modifier bits layout (bits 32-45):
+///
+///  45  44  43  42  41  40  39  38  37  36  35  34  33  32
+/// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+/// |!k |!p |!d |!u |!i |!c |!m | k | p | d | u | i | c | m |
+/// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+///
+/// Legend:
+/// - m  : must move without capture
+/// - c  : must capture with this move
+/// - i  : only on initial move
+/// - u  : unload (capture and/or drop)
+/// - d  : destroy (must capture friendly)
+/// - p  : creates en-passant square
+/// - k  : gives check
+/// - !x : negation of modifier x
+///
+/// There are also special tokens that is denoted by bit 61-63:
+/// - 0b001 : '<' token
+/// - 0b010 : '</' token
+/// - 0b100 : '-' token
+///
+/// Move modifiers without an atomic vector are also considered special.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct LegVector(u64);
+
+impl LegVector {
+
+    pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
+        let bits = Self::parse_modifiers(modifiers);
+        let atomic_bits = atomic.0 as u64;
+        let modifier_bits = (bits as u64) << 32;
+        LegVector(atomic_bits | modifier_bits)
+    }
+
+    fn parse_modifiers(mods: &str) -> u16 {
+        let mut bits = 0u16;
+        let chars = &mut mods.chars();
+        for ch in &mut *chars {
+            bits |= match ch {
+                'm' => 1 << 0,
+                'c' => 1 << 1,
+                'i' => 1 << 2,
+                'u' => 1 << 3,
+                'd' => 1 << 4,
+                'p' => 1 << 5,
+                'k' => 1 << 6,
+                '!' => break,
+                _ => panic!("Invalid modifier character: {}", ch),
+            };
+        }
+        while let Some(next) = chars.next() {
+            bits |= match next {
+                'm' => 1 << 7,
+                'c' => 1 << 8,
+                'i' => 1 << 9,
+                'u' => 1 << 10,
+                'd' => 1 << 11,
+                'p' => 1 << 12,
+                'k' => 1 << 13,
+                _ => panic!("Invalid modifier character: {}", next),
+            };
+        }
+
+        if bits & (1 << 1) == 1 && bits & (1 << 13) != 1 {
+            bits |= 1 << 6;                                                     /* c implies k                        */
+        }
+
+        match (bits & (1 << 0) == 1, bits & (1 << 7) == 1) {
+            (true, true) => panic!(
+                "Invalid modifier state: both m and !m are set"
+            ),
+            _ => {}
+        }
+
+        bits
+    }
+
+    pub fn get_modifiers_str(&self) -> String {
+        let mut s = "".to_string();
+
+        let mods = [
+            ('m', self.is_m()),
+            ('c', self.is_c()),
+            ('i', self.is_i()),
+            ('u', self.is_u()),
+            ('d', self.is_d()),
+            ('p', self.is_p()),
+            ('k', self.is_k()),
+        ];
+
+        for (ch, val) in mods.iter() {
+            match val {
+                Some(true) => s.push(*ch),
+                Some(false) => {
+                    if !s.contains('!') {
+                        s.push('!');
+                    }
+                    s.push(*ch);
+                }
+                None => {}
+            }
+        }
+
+        s
+    }
+
+    pub fn get_atomic(&self) -> AtomicVector {
+        AtomicVector((self.0 & 0xFFFF_FFFF) as u32)
+    }
+
+    pub fn get_modifiers(&self) -> u16 {
+        ((self.0 >> 32) & 0x3FFF) as u16
+    }
+
+    pub fn set_atomic(&mut self, atomic: AtomicVector) {
+        self.0 = (self.0 & !0xFFFF_FFFFu64) | (atomic.0 as u64);
+    }
+
+    pub fn as_tuple(&self) -> (AtomicVector, u16) {
+        (self.get_atomic(), self.get_modifiers())
+    }
+
+    pub fn add_modifier(&mut self, modifier: &str) {
+        let mut bits = self.get_modifiers();
+
+        let mut chars = modifier.chars();
+        let is_negated = chars.next() == Some('!');
+
+        let ch = chars.next().expect("Modifier string must not be empty");
+        let bit = match ch {
+            'm' => 0,
+            'c' => 1,
+            'i' => 2,
+            'u' => 3,
+            'd' => 4,
+            'p' => 5,
+            'k' => 6,
+            _ => panic!("Invalid modifier character: {}", ch),
+        };
+        let bit = if is_negated { bit + 7 } else { bit };
+
+        bits |= 1 << bit;
+
+        self.is_c();
+        self.is_m();
+        self.is_i();
+        self.is_u();
+        self.is_d();
+        self.is_p();
+        self.is_k();
+
+        self.0 = (self.0 & 0xFFFF_FFFF) | ((bits as u64) << 32);
+    }
+
+    pub fn is_m(&self) -> Option<bool> {
+        let mods = self.get_modifiers();
+        match (mods & (1 << 0) != 0, mods & (1 << 7) != 0) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+            (true, true) => panic!(
+                "Invalid modifier state: both m and !m are set"
+            ),
+        }
+    }
+
+    pub fn is_c(&self) -> Option<bool> {
+        let mods = self.get_modifiers();
+        match (mods & (1 << 1) != 0, mods & (1 << 8) != 0) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+            (true, true) => panic!(
+                "Invalid modifier state: both m and !m are set"
+            ),
+        }
+    }
+
+    pub fn is_i(&self) -> Option<bool> {
+        let mods = self.get_modifiers();
+        match (mods & (1 << 2) != 0, mods & (1 << 9) != 0) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+            (true, true) => panic!(
+                "Invalid modifier state: both m and !m are set"
+            ),
+        }
+    }
+
+    pub fn is_u(&self) -> Option<bool> {
+        let mods = self.get_modifiers();
+        match (mods & (1 << 3) != 0, mods & (1 << 10) != 0) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+            (true, true) => panic!(
+                "Invalid modifier state: both m and !m are set"
+            ),
+        }
+    }
+
+    pub fn is_d(&self) -> Option<bool> {
+        let mods = self.get_modifiers();
+        match (mods & (1 << 4) != 0, mods & (1 << 11) != 0) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+            (true, true) => panic!(
+                "Invalid modifier state: both m and !m are set"
+            ),
+        }
+    }
+
+    pub fn is_p(&self) -> Option<bool> {
+        let mods = self.get_modifiers();
+        match (mods & (1 << 5) != 0, mods & (1 << 12) != 0) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+            (true, true) => panic!(
+                "Invalid modifier state: both m and !m are set"
+            ),
+        }
+    }
+
+    pub fn is_k(&self) -> Option<bool> {
+        let mods = self.get_modifiers();
+        match (mods & (1 << 6) != 0, mods & (1 << 13) != 0) {
+            (true, false) => Some(true),
+            (false, true) => Some(false),
+            (false, false) => None,
+            (true, true) => panic!(
+                "Invalid modifier state: both m and !m are set"
+            ),
+        }
+    }
+
+    pub fn special(token: &str) -> Self {
+        match token {
+            "<" => LegVector(1 << 61),
+            "</" => LegVector(1 << 62),
+            "-" => LegVector(1 << 63),
+            _ => panic!("Invalid special token for LegVector: {}", token),
+        }
+    }
+
+    pub fn get_special(&self) -> Option<String> {
+        if !self.get_atomic().is_null() {
+            return None;
+        }
+
+        match (self.0 >> 61) & 0x1F {
+            0b001 => Some("<".to_string()),
+            0b010 => Some("</".to_string()),
+            0b100 => Some("-".to_string()),
+            _ => if self.get_modifiers_str().is_empty() {
+                None
+            } else {
+                Some(self.get_modifiers_str())
+            }
+        }
+    }
+}
+
+impl Debug for LegVector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(token) = self.get_special() {
+            write!(f, "LegVector {{ special: {} }}", token)
+        } else {
+            write!(
+                f,
+                "LegVector {{ atomic: {:?}, modifiers: {} }}",
+                self.get_atomic(),
+                self.get_modifiers_str()
+            )
+        }
+    }
+}
+
+pub type AtomicGroup = VecDeque<AtomicElement>;
+
+#[derive(Clone)]
+pub enum AtomicElement {
+    AtomicTerm(AtomicToken),
+    AtomicExpr(AtomicGroup),
+    AtomicEval(Vec<AtomicVector>),
+}
+
+impl Debug for AtomicElement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AtomicElement::AtomicTerm(token) => write!(f, "{:?}", token),
+            AtomicElement::AtomicExpr(group) => write!(f, "{:?}", group),
+            AtomicElement::AtomicEval(vectors) => write!(f, "{:?}", vectors),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum AtomicToken {
+    AtomicBracket(String),
+    Cardinal(String),
+    Filter(String),
+
+    Atomic(String),
+
+    Colon(String),
+    Range(String),
+    Dots(String),
+}
+
+impl Debug for AtomicToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AtomicToken::AtomicBracket(s) => write!(f, "{}", s),
+            AtomicToken::Cardinal(s) => write!(f, "{}", s),
+            AtomicToken::Filter(s) => write!(f, "{}", s),
+            AtomicToken::Atomic(s) => write!(f, "{}", s),
+            AtomicToken::Colon(s) => write!(f, "{}", s),
+            AtomicToken::Range(s) => write!(f, "{}", s),
+            AtomicToken::Dots(s) => write!(f, "{}", s),
+        }
+    }
+}
 
 /// A 32 bit vector representation for atomic move vectors.
 ///
@@ -13,16 +384,6 @@ use crate::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
 /// - bits 8-15: y1
 /// - bits 16-23: x2
 /// - bits 24-31: y2
-///
-/// each atomic token that is not a vector will have a special representation:
-/// since the maximum board size is 64x64, we can use values outside of that
-/// range to represent special tokens.
-///
-/// the special tokens are as follows:
-/// - '<': [(127, 0), (_, _)], second vector unused
-/// - 'n|ne|e|se|s|sw|w|nw': [(d, 127), (_, _)], second vector unused
-///   with d = 0 for n, 1 for ne, 2 for e, 3 for se, 4 for s, 5 for sw, 6 for w,
-///   7 for nw
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtomicVector(u32);
 
@@ -40,58 +401,12 @@ impl AtomicVector {
         AtomicVector::new((0, 0), INDEX_TO_CARDINAL_VECTORS[rotation as usize])
     }
 
-    pub fn special(token: &str) -> Self {
-        match token {
-            "<" => AtomicVector::new((127, 0), (0, 1)),
-            "n" => AtomicVector::new((0, 127), (0, 0)),
-            "ne" => AtomicVector::new((1, 127), (0, 0)),
-            "e" => AtomicVector::new((2, 127), (0, 0)),
-            "se" => AtomicVector::new((3, 127), (0, 0)),
-            "s" => AtomicVector::new((4, 127), (0, 0)),
-            "sw" => AtomicVector::new((5, 127), (0, 0)),
-            "w" => AtomicVector::new((6, 127), (0, 0)),
-            "nw" => AtomicVector::new((7, 127), (0, 0)),
-            token if token.starts_with("[") && token.ends_with("]") => {
-                let indices = &token[1..token.len()-1];
-
-                let mut y1 = 0;
-
-                for char in indices.chars() {
-                    y1 |= 1 << (char.to_digit(10).unwrap() as u8);
-                }
-
-                AtomicVector::new((-127, y1 as i8), (0, 1))
-            }
-            _ => panic!("Invalid special token for AtomicVector: {}", token),
-        }
+    pub fn null() -> Self {
+        AtomicVector::new((0, 0), (0, 0))
     }
 
-    pub fn get_special(&self) -> Option<String> {
-        let (wx, wy) = self.whole();
-        if wy == 127 {
-            return match wx {
-                0 => Some("n".to_string()),
-                1 => Some("ne".to_string()),
-                2 => Some("e".to_string()),
-                3 => Some("se".to_string()),
-                4 => Some("s".to_string()),
-                5 => Some("sw".to_string()),
-                6 => Some("w".to_string()),
-                7 => Some("nw".to_string()),
-                _ => None,
-            };
-        } else if wx == 127 {
-            return Some("<".to_string());
-        } else if wx == -127 {
-            let mut indices = String::new();
-            for i in 0..8 {
-                if (wy & (1 << i)) != 0 {
-                    indices.push(char::from_digit(i as u32, 10).unwrap());
-                }
-            }
-            return Some(format!("[{}]", indices));
-        }
-        None
+    pub fn is_null(&self) -> bool {
+        self.0 == 0
     }
 
     pub fn whole(&self) -> (i8, i8) {
@@ -104,11 +419,6 @@ impl AtomicVector {
         let x2 = ((self.0 >> 16) & 0xFF) as i8;
         let y2 = ((self.0 >> 24) & 0xFF) as i8;
         (x2, y2)
-    }
-
-    pub fn is_special(&self) -> bool {
-        let (wx, wy) = self.whole();
-        wy == 127 || wx == 127 || wx == -127
     }
 
     pub fn set(&mut self, other: &AtomicVector) {
