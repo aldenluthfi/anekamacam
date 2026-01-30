@@ -1,36 +1,37 @@
 use game::{
-    constants::I, moves::move_parse::{
-        cleanup_atomic_vectors, compound_atomic_to_vector, parse_move
-    }, representations::{board::Board, state::State}
+    constants::I, moves::move_parse::generate_move_vectors, representations::{board::Board, state::State}
 };
 
-use io::{board_io::format_board, game_io::parse_config_file};
+use io::{board_io::format_board, game_io::{combine_board_strings, parse_config_file}};
 
 #[hotpath::main]
 fn main() {
     State::init_global(parse_config_file("configs/test.anm"));
-    let state = State::global();
+    let state= State::global();
+    // println!("{:?}", generate_move_vectors(&"mF|im<nF-pnF>|c[137]K"));
+    // println!("{:?}", generate_move_vectors(&"F(#|((#|eW)-</wW-eW/>|(#|wW)-</eW-wW/>)-*)"));
+    // println!("{:?}", generate_move_vectors(&"<<W-</W-nC/>>>"));
+    // println!("{:?}", generate_move_vectors(&"</WneF/>-</WneF/>"));
+    let vecs = generate_move_vectors(&"WneF<[18]N>");
+    let mut initialb = Board::new(state.files, state.ranks);
+    initialb.set_bit(I, 7);
+    let mut moveb = Board::new(state.files, state.ranks);
 
-    let expr: String = parse_move(&"K:*");
+    let files = I as i8;
+    let ranks = 7 as i8;
+    for v in vecs {
+        let whole = v.whole();
+        let (df, dr) = (whole.0, whole.1);
+        let new_file = files + df;
+        let new_rank = ranks + dr;
 
-    println!("Expr: {}", expr);
-    let raw_vecs = compound_atomic_to_vector(&expr, "n");
-    let vecs = cleanup_atomic_vectors(raw_vecs);
-
-    let mut board = Board::new(state.files, state.ranks);
-
-    board.set_bit(I, 7);
-
-    for (f, r) in vecs {
-        let x = I as i8 + f;
-        let y = 7 + r;
-
-        if  x >= 0 && y >= 0 && x < state.files as i8 && y < state.ranks as i8 {
-            board.set_bit((I as i8 + f) as u8, (7 + r) as u8);
+        if new_file >= 0 && new_file < state.files as i8 && new_rank >= 0 && new_rank < state.ranks as i8 {
+            moveb.set_bit(new_file as u8, new_rank as u8);
         }
     }
 
-    println!("{}", format_board(&board, Some('X')));
+    let i_str = format_board(&initialb, Some('O'));
+    let m_str = format_board(&moveb, Some('X'));
 
-
+    println!("{}", combine_board_strings(&i_str, &m_str));
 }
