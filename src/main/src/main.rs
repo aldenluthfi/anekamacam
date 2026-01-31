@@ -9,10 +9,14 @@ fn main() {
     State::init_global(parse_config_file("configs/test.anm"));
     let state= State::global();
     // println!("{:?}", generate_move_vectors(&"mF|im<nF-pnF>|c[137]K"));
-    // println!("{:?}", generate_move_vectors(&"F(#|((#|eW)-</wW-eW/>|(#|wW)-</eW-wW/>)-*)"));
-    // println!("{:?}", generate_move_vectors(&"<<W-</W-nC/>>>"));
-    // println!("{:?}", generate_move_vectors(&"</WneF/>-</WneF/>"));
-    let vecs = generate_move_vectors(&"WneF<[18]N>");
+    // println!("{:?}", generate_move_vectors(&"F(#|((#|eW)-<wW-eW>|(#|wW)-<eW-wW>)-*)"));
+    // println!("{:#?}", generate_move_vectors(&"FnF"));
+    // println!("{:?}", generate_move_vectors(&"nWnF"));
+    // let vecs = generate_move_vectors(&"<WneF-WneF>");
+    // let vecs = generate_move_vectors(&"m<W:{1..2}neF..-<mn<[1]N>-N>>-:{3}-N");
+    // let vecs = generate_move_vectors(&"WnWe+wW");
+    let vecs = generate_move_vectors(&"R");
+    println!("{:#?}", vecs);
     let mut initialb = Board::new(state.files, state.ranks);
     initialb.set_bit(I, 7);
     let mut moveb = Board::new(state.files, state.ranks);
@@ -20,8 +24,13 @@ fn main() {
     let files = I as i8;
     let ranks = 7 as i8;
     for v in vecs {
-        let whole = v.whole();
-        let (df, dr) = (whole.0, whole.1);
+        let mut zero = (0, 0);
+        for v_ in v {
+            zero.0 += v_.get_atomic().whole().0;
+            zero.1 += v_.get_atomic().whole().1;
+        }
+
+        let (df, dr) = (zero.0, zero.1);
         let new_file = files + df;
         let new_rank = ranks + dr;
 
