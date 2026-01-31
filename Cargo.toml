@@ -5,7 +5,7 @@ lto = true
 codegen-units = 1
 
 [profile.dev]
-opt-level = 3
+debug = true
 
 [workspace]
 resolver = "2"
