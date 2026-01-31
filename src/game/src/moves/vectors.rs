@@ -4,22 +4,27 @@ use crate::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
 
 pub type MultiLegGroup = VecDeque<MultiLegElement>;
 
+#[derive(Clone)]
 pub enum MultiLegElement {
-    MultiLegTerm(LegToken),
+    MultiLegTerm(Token),
     MultiLegExpr(MultiLegGroup),
+    MultiLegSlashExpr(MultiLegGroup),
     MultiLegEval(Vec<MultiLegVector>),
 }
 
-pub enum LegToken {
-    LegBracket(String),
-    LegModifier(String),
-    LegFilter(String),
-
-    Leg(AtomicGroup),
-
-    LegColon(String),
-    LegRange(String),
-    LegDots(String),
+impl Debug for MultiLegElement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MultiLegElement::MultiLegTerm(token) =>
+                write!(f, "{:?}", token),
+            MultiLegElement::MultiLegExpr(group) =>
+                write!(f, "{:#?}", group),
+            MultiLegElement::MultiLegSlashExpr(group) =>
+                write!(f, "{:#?}#", group),
+            MultiLegElement::MultiLegEval(vectors) =>
+                write!(f, "{:#?}", vectors),
+        }
+    }
 }
 
 pub type MultiLegVector = Vec<LegVector>;
@@ -172,33 +177,33 @@ impl LegVector {
     pub fn add_modifier(&mut self, modifier: &str) {
         let mut bits = self.get_modifiers();
 
-        let mut chars = modifier.chars();
-        let is_negated = chars.next() == Some('!');
+        let is_negated = modifier.starts_with('!');
 
-        let ch = chars.next().expect("Modifier string must not be empty");
-        let bit = match ch {
-            'm' => 0,
-            'c' => 1,
-            'i' => 2,
-            'u' => 3,
-            'd' => 4,
-            'p' => 5,
-            'k' => 6,
-            _ => panic!("Invalid modifier character: {}", ch),
-        };
-        let bit = if is_negated { bit + 7 } else { bit };
+        for ch in modifier.chars().filter(|&c| c != '!') {
+            let bit = match ch {
+                'm' => 0,
+                'c' => 1,
+                'i' => 2,
+                'u' => 3,
+                'd' => 4,
+                'p' => 5,
+                'k' => 6,
+                _ => panic!("Invalid modifier character: {}", ch),
+            };
+            let bit = if is_negated { bit + 7 } else { bit };
 
-        bits |= 1 << bit;
+            bits |= 1 << bit;
 
-        self.is_c();
-        self.is_m();
-        self.is_i();
-        self.is_u();
-        self.is_d();
-        self.is_p();
-        self.is_k();
+            self.is_c();
+            self.is_m();
+            self.is_i();
+            self.is_u();
+            self.is_d();
+            self.is_p();
+            self.is_k();
 
-        self.0 = (self.0 & 0xFFFF_FFFF) | ((bits as u64) << 32);
+            self.0 = (self.0 & 0xFFFF_FFFF) | ((bits as u64) << 32);
+        }
     }
 
     pub fn is_m(&self) -> Option<bool> {
@@ -284,46 +289,16 @@ impl LegVector {
             ),
         }
     }
-
-    pub fn special(token: &str) -> Self {
-        match token {
-            "<" => LegVector(1 << 61),
-            "</" => LegVector(1 << 62),
-            "-" => LegVector(1 << 63),
-            _ => panic!("Invalid special token for LegVector: {}", token),
-        }
-    }
-
-    pub fn get_special(&self) -> Option<String> {
-        if !self.get_atomic().is_null() {
-            return None;
-        }
-
-        match (self.0 >> 61) & 0x1F {
-            0b001 => Some("<".to_string()),
-            0b010 => Some("</".to_string()),
-            0b100 => Some("-".to_string()),
-            _ => if self.get_modifiers_str().is_empty() {
-                None
-            } else {
-                Some(self.get_modifiers_str())
-            }
-        }
-    }
 }
 
 impl Debug for LegVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(token) = self.get_special() {
-            write!(f, "LegVector {{ special: {} }}", token)
-        } else {
-            write!(
+        write!(
                 f,
                 "LegVector {{ atomic: {:?}, modifiers: {} }}",
                 self.get_atomic(),
                 self.get_modifiers_str()
             )
-        }
     }
 }
 
@@ -331,7 +306,7 @@ pub type AtomicGroup = VecDeque<AtomicElement>;
 
 #[derive(Clone)]
 pub enum AtomicElement {
-    AtomicTerm(AtomicToken),
+    AtomicTerm(Token),
     AtomicExpr(AtomicGroup),
     AtomicEval(Vec<AtomicVector>),
 }
@@ -340,18 +315,22 @@ impl Debug for AtomicElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AtomicElement::AtomicTerm(token) => write!(f, "{:?}", token),
-            AtomicElement::AtomicExpr(group) => write!(f, "{:?}", group),
-            AtomicElement::AtomicEval(vectors) => write!(f, "{:?}", vectors),
+            AtomicElement::AtomicExpr(group) => write!(f, "{:#?}", group),
+            AtomicElement::AtomicEval(vectors) => write!(f, "{:#?}", vectors),
         }
     }
 }
 
 #[derive(Clone)]
-pub enum AtomicToken {
-    AtomicBracket(String),
+pub enum Token {
+    Bracket(String),
+    SlashBracket(String),
+
+    MoveModifier(String),
     Cardinal(String),
     Filter(String),
 
+    Leg(String),
     Atomic(String),
 
     Colon(String),
@@ -359,16 +338,22 @@ pub enum AtomicToken {
     Dots(String),
 }
 
-impl Debug for AtomicToken {
+impl Debug for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AtomicToken::AtomicBracket(s) => write!(f, "{}", s),
-            AtomicToken::Cardinal(s) => write!(f, "{}", s),
-            AtomicToken::Filter(s) => write!(f, "{}", s),
-            AtomicToken::Atomic(s) => write!(f, "{}", s),
-            AtomicToken::Colon(s) => write!(f, "{}", s),
-            AtomicToken::Range(s) => write!(f, "{}", s),
-            AtomicToken::Dots(s) => write!(f, "{}", s),
+            Token::Bracket(s) => write!(f, "{}", s),
+            Token::SlashBracket(s) => write!(f, "{}", s),
+
+            Token::MoveModifier(s) => write!(f, "{}", s),
+            Token::Cardinal(s) => write!(f, "{}", s),
+            Token::Filter(s) => write!(f, "{}", s),
+
+            Token::Leg(s) => write!(f, "{}", s),
+            Token::Atomic(s) => write!(f, "{}", s),
+
+            Token::Colon(s) => write!(f, "{}", s),
+            Token::Range(s) => write!(f, "{}", s),
+            Token::Dots(s) => write!(f, "{}", s),
         }
     }
 }
@@ -399,14 +384,6 @@ impl AtomicVector {
 
     pub fn origin(rotation: i8) -> Self {
         AtomicVector::new((0, 0), INDEX_TO_CARDINAL_VECTORS[rotation as usize])
-    }
-
-    pub fn null() -> Self {
-        AtomicVector::new((0, 0), (0, 0))
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.0 == 0
     }
 
     pub fn whole(&self) -> (i8, i8) {
@@ -454,7 +431,11 @@ impl AtomicVector {
         let new_whole = (
             wx1.saturating_add(wx2), wy1.saturating_add(wy2)
         );
-        let new_last = other.whole();
+        let new_last = if other.whole() != (0, 0) {
+            other.whole()
+        } else {
+            self.last()
+        };
 
         AtomicVector::new(new_whole, new_last)
     }
