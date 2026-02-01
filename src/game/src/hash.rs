@@ -14,30 +14,17 @@
 //! # Date
 //! 25/01/2026
 
-use bnum::types::U256;
 use lazy_static::lazy_static;
-use rand::{RngCore, SeedableRng};
-use std::sync::Mutex;
 use std::sync::OnceLock;
+use bnum::types::U256;
 
 use crate::{
     constants::*,
-    representations::state::State,
+    representations::state::State, 
+    util::random_u256
 };
 
-fn random_u256() -> U256 {
-    let mut rng = RNG.lock().unwrap();
-    U256::from(rng.next_u64()) << 192 |
-    U256::from(rng.next_u64()) << 128 |
-    U256::from(rng.next_u64()) << 64  |
-    U256::from(rng.next_u64())
-}
-
 lazy_static! {
-    static ref RNG: Mutex<rand::rngs::StdRng> = {
-        Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED))
-    };
-
     static ref CASTLING_HASHES: [U256; 16] = {
         let mut hashes = [U256::default(); 16];
         for i in 0..16 {
@@ -60,9 +47,9 @@ lazy_static! {
         = OnceLock::new();
 }
 
-pub fn init_piece_square_hashes(
+fn init_piece_square_hashes(
     num_piece_types: usize
-) {
+) -> Vec<[[U256; MAX_SQUARES]; 2]> {
     let mut piece_square_hashes = Vec::with_capacity(num_piece_types);
 
     for _ in 0..num_piece_types {
@@ -77,27 +64,14 @@ pub fn init_piece_square_hashes(
         piece_square_hashes.push([white_hashes, black_hashes]);
     }
 
-    let _ = PIECE_SQUARE_HASHES.set(piece_square_hashes);
+    piece_square_hashes
 }
 
 /// Computes the Zobrist hash for the given game state.
+#[hotpath::measure]
 pub fn hash_position(state: &State) -> U256 {
     let piece_hashes = PIECE_SQUARE_HASHES.get_or_init(|| {
-        let mut piece_square_hashes = Vec::with_capacity(state.pieces.len());
-
-        for _ in 0..state.pieces.len() {
-            let mut white_hashes = [U256::default(); MAX_SQUARES];
-            let mut black_hashes = [U256::default(); MAX_SQUARES];
-
-            for square in 0..MAX_SQUARES {
-                white_hashes[square] = random_u256();
-                black_hashes[square] = random_u256();
-            }
-
-            piece_square_hashes.push([white_hashes, black_hashes]);
-        }
-
-        piece_square_hashes
+        init_piece_square_hashes(state.pieces.len())
     });
 
     let mut hash = U256::default();
@@ -114,7 +88,7 @@ pub fn hash_position(state: &State) -> U256 {
 
     for (i, piece) in state.pieces.iter().enumerate() {
         let piece_board = &state.pieces_board[i];
-        let piece_indices = piece_board.set_bit_indices();
+        let piece_indices = piece_board.bit_indices();
 
         for index in piece_indices {
             hash ^= piece_hashes[i][piece.color() as usize][index as usize];

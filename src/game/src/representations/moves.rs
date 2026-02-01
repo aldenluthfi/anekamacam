@@ -15,7 +15,20 @@
 //! # Date
 //! 26/01/2026
 
+use std::fmt::{
+    Debug,
+    Formatter,
+    Result
+};
+
+use crate::util::format_square;
+
 /// A structure representing a move in the game.
+///
+/// A move is represented with 66 bits at most but compressed with huffman
+/// coding so that it fits in a u64 (64 bits).
+///
+/// The worst case scenario is 66 bits but it is infinitely rare to have that.
 ///
 /// Theres multiple ways to represent a move whether it is a sigle capture,
 /// a multi-capture, or a hopper capture.
@@ -31,20 +44,21 @@
 /// The following bit represents if the move is an initial move (1) or not (0).
 /// The following bit represents if the move is a promotion (1) or not (0).
 /// The following 8 bits represent the promotion piece type (if applicable).
+/// The following 12 bits represents the en passant square (if applicable).
 ///
-/// The remaining 28 bits are reserved for additional information based on the
+/// The remaining 20 bits are reserved for additional information based on the
 /// move type:
 ///
 /// Single move without capture (00):
 /// - Next bit represents if the move is a castling move (1) or not (0).
-/// - The remaining 27 bits are unused.
+/// - The remaining 19 bits are unused.
 ///
 /// Single move with capture (01):
 /// - Next 8 bits represent the captured piece type.
-/// - The remaining 20 bits are unused.
+/// - The remaining 12 bits are unused.
 ///
 /// Multi-capture move (10):
-/// - The remaining 28 bits are unused.
+/// - The remaining 20 bits are unused.
 ///
 /// Single Hopper capture move (11):
 /// - Next 8 bits represent the captured piece type.
@@ -56,8 +70,6 @@
 /// Each captured piece is represented in 20 bits:
 /// - First 8 bits: Piece type
 /// - Next 12 bits: Square index
-
-#[derive(Debug)]
 pub struct Move {
     pub encoded_move: u64,
     pub captured_pieces: Option<Vec<u32>>
@@ -83,10 +95,10 @@ impl Move {
     const START_SQUARE_MASK: u64 = 0xFFF << Self::START_SQUARE_SHIFT;
     const MOVE_TYPE_MASK: u64 = 0b11;
 
-    const SINGLE_NO_CAPTURE: u64 = 0b00;
-    const SINGLE_CAPTURE: u64 = 0b01;
-    const MULTI_CAPTURE: u64 = 0b10;
-    const HOPPER_CAPTURE: u64 = 0b11;
+    pub const SINGLE_NO_CAPTURE: u64 = 0b00;
+    pub const SINGLE_CAPTURE: u64 = 0b01;
+    pub const MULTI_CAPTURE: u64 = 0b10;
+    pub const HOPPER_CAPTURE: u64 = 0b11;
 
     pub fn new_single_no_capture(
         start: u16,
@@ -326,5 +338,50 @@ impl Move {
                 })
                 .collect()
         })
+    }
+}
+
+impl Debug for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let move_type = match self.move_type() as u64 {
+            Self::SINGLE_NO_CAPTURE => "SingleNoCapture",
+            Self::SINGLE_CAPTURE => "SingleCapture",
+            Self::MULTI_CAPTURE => "MultiCapture",
+            Self::HOPPER_CAPTURE => "HopperCapture",
+            _ => "Unknown",
+        };
+
+        let start = self.start_square();
+        let end = self.end_square();
+        let is_initial = self.is_initial();
+        let is_promotion = self.is_promotion();
+        let promotion_piece = self.promotion_piece();
+        let is_castling = self.is_castling();
+        let captured_piece_type = self.captured_piece_type();
+        let captured_square = self.captured_square();
+        let captured_pieces = self.get_captured_pieces();
+
+        f.debug_struct("Move")
+            .field("move_type", &move_type)
+            .field("start_square", &format_square(start).trim())
+            .field("end_square", &format_square(end).trim())
+            .field("is_initial", &is_initial)
+            .field("is_promotion", &is_promotion)
+            .field("promotion_piece", &promotion_piece)
+            .field("is_castling", &is_castling)
+            .field("captured_piece_type", &captured_piece_type)
+            .field(
+                "captured_square",
+                &{
+                    if let Some(square) = captured_square {
+                        format_square(square).trim().to_string()
+                    } else {
+                        "None".to_string()
+                    }
+                }
+            )
+            .field("captured_pieces", &captured_pieces)
+            .field("encoded_move", &self.encoded_move)
+            .finish()
     }
 }

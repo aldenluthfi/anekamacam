@@ -1,5 +1,5 @@
 use game::{
-    constants::I, moves::move_parse::generate_move_vectors, representations::{board::Board, state::State}
+    constants::{C, D, E, I}, moves::{move_list::{generate_move_list, generate_relevant_boards}, move_parse::generate_move_vectors}, representations::{board::Board, state::State}
 };
 
 use io::{board_io::format_board, game_io::{combine_board_strings, parse_config_file}};
@@ -15,32 +15,26 @@ fn main() {
     // let vecs = generate_move_vectors(&"<WneF-WneF>");
     // let vecs = generate_move_vectors(&"m<W:{1..2}neF..-<mn<[1]N>-N>>-:{3}-N");
     // let vecs = generate_move_vectors(&"WnWe+wW");
-    let vecs = generate_move_vectors(&"R");
+    let vecs = generate_move_vectors(&"cdW-nF");
     println!("{:#?}", vecs);
-    let mut initialb = Board::new(state.files, state.ranks);
-    initialb.set_bit(I, 7);
-    let mut moveb = Board::new(state.files, state.ranks);
+    let mut enemy = Board::new(state.files, state.ranks);
+    let mut friendly = Board::new(state.files, state.ranks);
 
-    let files = I as i8;
-    let ranks = 7 as i8;
-    for v in vecs {
-        let mut zero = (0, 0);
-        for v_ in v {
-            zero.0 += v_.get_atomic().whole().0;
-            zero.1 += v_.get_atomic().whole().1;
-        }
+    enemy.set_bit(E, 3);
+    enemy.set_bit(C, 3);
 
-        let (df, dr) = (zero.0, zero.1);
-        let new_file = files + df;
-        let new_rank = ranks + dr;
+    let square = (D, 3);
 
-        if new_file >= 0 && new_file < state.files as i8 && new_rank >= 0 && new_rank < state.ranks as i8 {
-            moveb.set_bit(new_file as u8, new_rank as u8);
-        }
-    }
+    let relevant = generate_relevant_boards(&vecs, square);
 
-    let i_str = format_board(&initialb, Some('O'));
-    let m_str = format_board(&moveb, Some('X'));
+    let masked_enemy = &relevant & &enemy;
+    let masked_friendly = &relevant & &friendly;
 
-    println!("{}", combine_board_strings(&i_str, &m_str));
+    println!("{}", format_board(&relevant, Some('R')));
+    println!("{}", format_board(&masked_friendly, Some('F')));
+    println!("{}", format_board(&masked_enemy, Some('E')));
+
+    let moves = generate_move_list(&vecs, square, &masked_friendly, &masked_enemy);
+
+    println!("{:#?}", moves);
 }
