@@ -15,14 +15,28 @@
 //! # Date
 //! 25/01/2025
 
+use lazy_static::lazy_static;
+use rand::{RngCore, SeedableRng};
+use std::sync::Mutex;
+use bnum::types::U256;
+
 use crate::{
-    constants::WHITE,
+    constants::{
+        RNG_SEED, WHITE
+    },
     representations::{
         board::Board,
         state::State
     }
 };
 
+lazy_static!{
+    static ref RNG: Mutex<rand::rngs::StdRng> = {
+        Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED))
+    };
+}
+
+#[hotpath::measure]
 pub fn verify_game_state(state: &State) {
     let mut temp_white_board = Board::new(state.files, state.ranks);
     let mut temp_black_board = Board::new(state.files, state.ranks);
@@ -55,7 +69,7 @@ pub fn verify_game_state(state: &State) {
 
     for (i, piece) in state.pieces.iter().enumerate() {
         let piece_board = &state.pieces_board[i];
-        let piece_indices = piece_board.set_bit_positions();
+        let piece_indices = piece_board.bit_positions();
 
         for (_file, _rank) in piece_indices {
             if piece.is_big() {
@@ -95,7 +109,7 @@ pub fn verify_game_state(state: &State) {
     for (i, piece) in state.pieces.iter().enumerate() {
         if piece.is_royal() {
             let piece_board = &state.pieces_board[i];
-            let royal_indices = piece_board.set_bit_positions();
+            let royal_indices = piece_board.bit_positions();
 
             for (file, rank) in royal_indices {
 
@@ -128,4 +142,26 @@ pub fn verify_game_state(state: &State) {
         &state.monarch_board,
         "Computed monarch board doesn't match state monarch board"
     );
+}
+
+#[hotpath::measure]
+pub fn random_u256() -> U256 {
+    let mut rng = RNG.lock().unwrap();
+    U256::from(rng.next_u64()) << 192 |
+    U256::from(rng.next_u64()) << 128 |
+    U256::from(rng.next_u64()) << 64  |
+    U256::from(rng.next_u64())
+}
+
+pub fn format_square(index: u16) -> String {
+    let state = State::global();
+    let (file, rank) = state.index_to_square(index);
+
+    if state.files <= 26  {
+        let file_char = (b'a' + file) as char;
+        let rank_char = (b'1' + rank) as char;
+        format!("{}{:02}", file_char, rank_char)
+    } else {
+        format!("{:02}{:02}", file, rank)
+    }
 }

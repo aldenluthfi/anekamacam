@@ -61,7 +61,7 @@ impl Bitboard {
 
     pub fn get_bit(&self, index: u32) -> bool {
         match self {
-            Bitboard::U64(b) => (b >> index) & 1 == 1,
+            Bitboard::U64(b) => ((b >> index) & 1) == 1,
             Bitboard::U256(b) => b.bit(index),
             Bitboard::U1024(b) => b.bit(index),
             Bitboard::U4096(b) => b.bit(index),
@@ -95,7 +95,7 @@ impl Bitboard {
         }
     }
 
-    pub fn set_bit_indices(&self) -> Vec<u32> {
+    pub fn bit_indices(&self) -> Vec<u32> {
         let mut indices = Vec::with_capacity(self.count_ones() as usize);
         let mut temp = match self {
             Bitboard::U64(b) => Bitboard::U64(*b),
@@ -286,12 +286,12 @@ impl Board {
         self.bitboard.count_ones()
     }
 
-    pub fn set_bit_indices(&self) -> Vec<u32> {
-        self.bitboard.set_bit_indices()
+    pub fn bit_indices(&self) -> Vec<u32> {
+        self.bitboard.bit_indices()
     }
 
-    pub fn set_bit_positions(&self) -> Vec<(u8, u8)> {
-        self.set_bit_indices()
+    pub fn bit_positions(&self) -> Vec<(u8, u8)> {
+        self.bit_indices()
             .into_par_iter()
             .map(|index| {
                 let file = (index % self.files as u32) as u8;
@@ -299,6 +299,29 @@ impl Board {
                 (file, rank)
             })
             .collect()
+    }
+
+    pub fn full_board(files: u8, ranks: u8) -> Board {
+        let size = (files as u16) * (ranks as u16);
+        let mut board = Board::new(files, ranks);
+
+        for index in 0..size {
+            board.bitboard.set_bit(index as u32, true);
+        }
+
+        board
+    }
+
+    pub fn random_board(files: u8, ranks: u8) -> Board {
+        let size = (files as u16) * (ranks as u16);
+        let mut board = Board::new(files, ranks);
+
+        for index in 0..size {
+            let random_bit = rand::random::<bool>();
+            board.bitboard.set_bit(index as u32, random_bit);
+        }
+
+        board
     }
 }
 
