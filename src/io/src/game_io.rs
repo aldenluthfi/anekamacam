@@ -16,6 +16,7 @@
 
 use std::fs;
 use game::hash::hash_position;
+use game::util::format_square;
 use game::representations::{
     state::State,
     piece::Piece,
@@ -23,7 +24,7 @@ use game::representations::{
 };
 use bnum::types::U2048;
 use game::constants::*;
-use crate::board_io::{format_board, format_square};
+use crate::board_io::format_board;
 use crate::piece_io::format_piece;
 
 /// Parses a game configuration file and initializes a game state.

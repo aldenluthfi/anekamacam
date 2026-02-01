@@ -19,21 +19,7 @@ use game::representations::{
         Bitboard,
         Board
     },
-    state::State
 };
-
-pub fn format_square(index: u16) -> String {
-    let state = State::global();
-    let (file, rank) = state.index_to_square(index);
-
-    if state.files <= 26  {
-        let file_char = (b'a' + file) as char;
-        let rank_char = (b'1' + rank) as char;
-        format!("{}{:02}", file_char, rank_char)
-    } else {
-        format!("{:02}{:02}", file, rank)
-    }
-}
 
 fn format_bitboard(board: &Bitboard, ranks: u8, files: u8) -> String {
 

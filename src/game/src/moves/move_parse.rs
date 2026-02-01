@@ -25,8 +25,8 @@ use std::char;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
-use crate::moves::vectors::MultiLegElement;
-use crate::moves::vectors::{
+use crate::representations::vector::MultiLegElement;
+use crate::representations::vector::{
     Token::{
         self, *
     },

@@ -83,7 +83,10 @@ impl LegVector {
         let bits = Self::parse_modifiers(modifiers);
         let atomic_bits = atomic.0 as u64;
         let modifier_bits = (bits as u64) << 32;
-        LegVector(atomic_bits | modifier_bits)
+        let result = LegVector(atomic_bits | modifier_bits);
+
+        result.check_discrepancy();
+        result
     }
 
     fn parse_modifiers(mods: &str) -> u16 {
@@ -119,9 +122,9 @@ impl LegVector {
             bits |= 1 << 6;                                                     /* c implies k                        */
         }
 
-        match (bits & (1 << 0) == 1, bits & (1 << 7) == 1) {
+        match (bits & (1 << 0) == 1, bits & (1 << 1) == 1) {                    /* mutually exclusive                 */
             (true, true) => panic!(
-                "Invalid modifier state: both m and !m are set"
+                "Invalid modifier state: both m and c are set"
             ),
             _ => {}
         }
@@ -194,16 +197,20 @@ impl LegVector {
 
             bits |= 1 << bit;
 
-            self.is_c();
-            self.is_m();
-            self.is_i();
-            self.is_u();
-            self.is_d();
-            self.is_p();
-            self.is_k();
+            self.check_discrepancy();
 
             self.0 = (self.0 & 0xFFFF_FFFF) | ((bits as u64) << 32);
         }
+    }
+
+    pub fn check_discrepancy(&self) {
+        self.is_c();
+        self.is_m();
+        self.is_i();
+        self.is_u();
+        self.is_d();
+        self.is_p();
+        self.is_k();
     }
 
     pub fn is_m(&self) -> Option<bool> {

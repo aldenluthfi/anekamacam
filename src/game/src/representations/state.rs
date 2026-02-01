@@ -66,7 +66,9 @@ pub struct State {
     pub major_pieces: [u32; 2],
     pub minor_pieces: [u32; 2],
 
-    pub material: [u32; 2]
+    pub material: [u32; 2],
+
+    pub board_mask: Board,
 }
 
 impl State {
@@ -106,6 +108,8 @@ impl State {
             minor_pieces: [0; 2],
 
             material: [0; 2],
+
+            board_mask: Board::full_board(files, ranks),
         }
     }
 
@@ -147,13 +151,11 @@ impl State {
         self.material = [0; 2];
     }
 
-    /// Initialize the global game state singleton
     pub fn init_global(state: State) {
         GAME_STATE.set(RwLock::new(state))
             .expect("Game state already initialized");
     }
 
-    /// Get a read lock on the global game state
     pub fn global() -> std::sync::RwLockReadGuard<'static, State> {
         GAME_STATE.get()
             .expect("Game state not initialized")
@@ -161,7 +163,6 @@ impl State {
             .expect("Failed to acquire read lock on game state")
     }
 
-    /// Get a write lock on the global game state
     pub fn global_mut() -> std::sync::RwLockWriteGuard<'static, State> {
         GAME_STATE.get()
             .expect("Game state not initialized")
