@@ -5,20 +5,15 @@ lto = true
 codegen-units = 1
 
 [profile.dev]
-debug = true
+debug = false
 
 [workspace]
 resolver = "2"
 members = [
-    "src/main",
-    "src/game",
-    "src/io"
+    "src"
 ]
 
 [workspace.dependencies]
-game = { path = "src/game" }
-io = { path = "src/io" }
-
 bnum = "*"
 regex = "*"
 ntest = "*"

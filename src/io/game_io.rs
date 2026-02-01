@@ -15,17 +15,17 @@
 //! 25/01/2026
 
 use std::fs;
-use game::hash::hash_position;
-use game::util::format_square;
-use game::representations::{
+use crate::game::hash::hash_position;
+use crate::game::util::format_square;
+use crate::game::representations::{
     state::State,
     piece::Piece,
     board::Board,
 };
 use bnum::types::U2048;
-use game::constants::*;
-use crate::board_io::format_board;
-use crate::piece_io::format_piece;
+use crate::constants::*;
+use crate::io::board_io::format_board;
+use crate::io::piece_io::format_piece;
 
 /// Parses a game configuration file and initializes a game state.
 ///
@@ -567,7 +567,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             state.en_passant_square
                 .map_or(
                     "-".to_string(),
-                    |sq| format!("{}", format_square(sq))
+                    |sq| format!("{}", format_square(sq, state))
                 )
         ));
 
