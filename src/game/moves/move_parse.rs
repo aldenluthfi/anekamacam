@@ -25,8 +25,7 @@ use std::char;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
-use crate::representations::vector::MultiLegElement;
-use crate::representations::vector::{
+use crate::game::representations::vector::{
     Token::{
         self, *
     },
@@ -34,11 +33,12 @@ use crate::representations::vector::{
         self, *
     },
     MultiLegElement::{
+        self,
         *
     },
     AtomicGroup, AtomicVector, LegVector, MultiLegGroup, MultiLegVector,
 };
-use crate::representations::state::State;
+use crate::game::representations::state::State;
 
 lazy_static! {
     pub static ref NORMALIZE_PATTERN: Regex = Regex::new(
@@ -679,8 +679,8 @@ fn filter_atomic_by_cardinal_direction(
     let pov_fn = quadrant_function(pov);
 
     vectors.retain(| vector | {
-        let whole = vector.whole();
-        let (is_north, is_east, is_south, is_west) = pov_fn(whole.0, whole.1);
+        let sum = vector.whole();
+        let (is_north, is_east, is_south, is_west) = pov_fn(sum.0, sum.1);
         match direction {
             "n" => is_north,
             "e" => is_east,
@@ -701,9 +701,7 @@ fn filter_atomic_by_cardinal_direction(
 }
 
 #[hotpath::measure]
-fn filter_atomic_out_of_bounds(vector: &mut Vec<AtomicVector>) {
-    let game_state = State::global();
-
+fn filter_atomic_out_of_bounds(vector: &mut Vec<AtomicVector>, game_state: &State) {
     vector.retain(|vector| {
         let whole = vector.whole();
         whole.0.saturating_abs() <= game_state.files as i8 &&
@@ -730,7 +728,8 @@ where
 #[hotpath::measure]
 fn process_atomic_dots_token(
     vector_set: Vec<AtomicVector>,
-    token: &str
+    token: &str,
+    game_state: &State,
 ) -> Vec<AtomicVector> {
     let dots_count = token.len() as i8;
 
@@ -743,7 +742,7 @@ fn process_atomic_dots_token(
         })
         .collect();
 
-    filter_atomic_out_of_bounds(&mut updated_vectors);
+    filter_atomic_out_of_bounds(&mut updated_vectors, game_state);
     remove_duplicates_in_place(&mut updated_vectors);
     updated_vectors
 }
@@ -751,7 +750,8 @@ fn process_atomic_dots_token(
 #[hotpath::measure]
 fn process_atomic_range_token(
     vector_set: Vec<AtomicVector>,
-    token: &str
+    token: &str,
+    game_state: &State,
 ) -> Vec<AtomicVector> {
     let captures = RANGE_TOKEN.captures(token).unwrap();
 
@@ -792,7 +792,7 @@ fn process_atomic_range_token(
             let mut result: Vec<AtomicVector> =
                 all_updated_vectors.into_iter().collect();
 
-            filter_atomic_out_of_bounds(&mut result);
+            filter_atomic_out_of_bounds(&mut result, game_state);
             remove_duplicates_in_place(&mut result);
             result
         },
@@ -812,7 +812,7 @@ fn process_atomic_range_token(
                 .into_iter()
                 .collect();
 
-            filter_atomic_out_of_bounds(&mut updated_vectors);
+            filter_atomic_out_of_bounds(&mut updated_vectors, game_state);
             remove_duplicates_in_place(&mut updated_vectors);
             updated_vectors
         },
@@ -827,7 +827,8 @@ fn process_atomic_colon_range_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
     element: Option<AtomicElement>,
-    modifiers: &(Option<Token>, Option<Token>)
+    modifiers: &(Option<Token>, Option<Token>),
+    game_state: &State,
 )  -> Vec<AtomicVector> {
     if element.is_none() {
         panic!(
@@ -873,6 +874,7 @@ fn process_atomic_colon_range_token(
                         vector_set.clone(),
                         multiplied_expr.clone(),
                         modifiers,
+                        game_state
                     );
 
                     for vector in eval {
@@ -891,7 +893,7 @@ fn process_atomic_colon_range_token(
             let mut result: Vec<AtomicVector> =
                 result.into_iter().collect();
 
-            filter_atomic_out_of_bounds(&mut result);
+            filter_atomic_out_of_bounds(&mut result, game_state);
             result
         },
         (Some(s), None) => {
@@ -909,6 +911,7 @@ fn process_atomic_colon_range_token(
                     vector_set.clone(),
                     multiplied_expr.clone(),
                     modifiers,
+                    game_state
                 );
 
                 for vector in eval {
@@ -921,7 +924,7 @@ fn process_atomic_colon_range_token(
             let mut result: Vec<AtomicVector> =
                 result.into_iter().collect();
 
-            filter_atomic_out_of_bounds(&mut result);
+            filter_atomic_out_of_bounds(&mut result, game_state);
             result
         },
         _ => {
@@ -1013,6 +1016,7 @@ fn evaluate_atomic_subexpresion(
     result: Vec<AtomicVector>,
     subexpr: AtomicGroup,
     modifiers: &(Option<Token>, Option<Token>),
+    game_state: &State,
 ) -> Vec<AtomicVector> {
     let mut new_result: HashSet<AtomicVector> = HashSet::new();
     for branch_vector in &result {
@@ -1026,6 +1030,7 @@ fn evaluate_atomic_subexpresion(
         let eval_result = evaluate_atomic_expression(
             subexpr.clone(),
             &branch_rotation,
+            game_state
         );
 
         let mut eval = match eval_result {
@@ -1055,6 +1060,7 @@ fn evaluate_atomic_subexpresion(
 fn evaluate_atomic_expression(
     expr: AtomicGroup,
     rotation: &str,
+    game_state: &State,
 ) -> AtomicElement {
 
     #[cfg(debug_assertions)]
@@ -1087,10 +1093,10 @@ fn evaluate_atomic_expression(
                 modifiers.1 = Some(Filter(directions.to_string()));
             }
             AtomicTerm(Dots(token)) => {
-                result = process_atomic_dots_token(result, &token);
+                result = process_atomic_dots_token(result, &token, game_state);
             }
             AtomicTerm(Range(token)) => {
-                result = process_atomic_range_token(result, &token);
+                result = process_atomic_range_token(result, &token, game_state);
             }
             AtomicTerm(Atomic(atomic)) => {                                     /* Base case                          */
                 if i + 1 < expr.len() {
@@ -1099,7 +1105,8 @@ fn evaluate_atomic_expression(
                             result,
                             &token,
                             Some(AtomicTerm(Atomic(atomic.to_string()))),
-                            &modifiers
+                            &modifiers,
+                            game_state
                         );
                         i += 2;
                         continue;
@@ -1121,7 +1128,8 @@ fn evaluate_atomic_expression(
                             result,
                             &token,
                             Some(AtomicExpr(group.clone())),
-                            &modifiers
+                            &modifiers,
+                            game_state
                         );
                         i += 2;
                         continue;
@@ -1131,6 +1139,7 @@ fn evaluate_atomic_expression(
                     result,
                     group.clone(),
                     &modifiers,
+                    game_state
                 );
 
                 modifiers = (None, None);                                       /* Reset modifiers after use          */
@@ -1146,7 +1155,7 @@ fn evaluate_atomic_expression(
         i += 1;
     }
 
-    filter_atomic_out_of_bounds(&mut result);
+    filter_atomic_out_of_bounds(&mut result, game_state);
 
     #[cfg(debug_assertions)]
     println!(
@@ -1233,11 +1242,11 @@ where
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 08 │ 01 │ 02 │    │    │    │
+/// │    │    │    │ 08 │    │ 02 │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 07 │    │ 03 │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 06 │ 05 │ 04 │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1259,7 +1268,7 @@ where
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 08 │ 01 │ 02 │    │    │    │
+/// │    │    │    │    │ 08 │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1287,7 +1296,7 @@ where
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │ 08 │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │ 02 │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1399,11 +1408,11 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 08 │    │ 02 │    │    │    │
+/// │    │    │    │    │ || │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │ S  │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 06 │    │ 04 │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1426,7 +1435,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 08 │    │ 02 │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1462,9 +1471,9 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │ || │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ == │ S  │ == │    │    │    │
+/// │    │    │    │    │ S  │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1480,15 +1489,15 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │ F  │    │ S  │    │ F  │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1508,23 +1517,23 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// results from W, W., W.., and W... (W{1}, W{2}, W{3}, W{4} respectively)
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │ F  │ F  │ F  │ F  │ S  │ F  │ F  │ F  │ F  │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ F  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
 ///
@@ -1653,13 +1662,13 @@ fn chained_atomic_to_vector(
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ \\ │    │ // │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S' │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1679,15 +1688,15 @@ fn chained_atomic_to_vector(
 /// Final squares of the move (F Squares):
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │ F  │    │ F  │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S  │    │    │    │    │
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
 /// │    │    │    │    │    │    │    │    │    │
 /// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
@@ -1700,7 +1709,7 @@ fn chained_atomic_to_vector(
 /// ```
 #[hotpath::measure]
 fn compound_atomic_to_vector(
-    expr: &str, rotation: &str
+    expr: &str, rotation: &str, game_state: &State
 ) -> Vec<AtomicVector> {
     #[cfg(debug_assertions)]
     println!(
@@ -1778,7 +1787,7 @@ fn compound_atomic_to_vector(
         }
     }
 
-    let result = evaluate_atomic_expression(stack, rotation);                   /* Evaluate recursively               */
+    let result = evaluate_atomic_expression(stack, rotation, game_state);       /* Evaluate recursively               */
     match result {
         AtomicEval(result) => result,
         _ => panic!(
@@ -1892,9 +1901,7 @@ fn filter_multi_leg_by_cardinal_direction(
 }
 
 #[hotpath::measure]
-fn filter_multi_leg_out_of_bounds(vectors: &mut Vec<MultiLegVector>) {
-    let game_state = State::global();
-
+fn filter_multi_leg_out_of_bounds(vectors: &mut Vec<MultiLegVector>, game_state: &State) {
     vectors.retain(| vector | {
         let sum = sum_multi_leg_vectors(vector);
         sum.0.saturating_abs() <= game_state.files as i8 &&
@@ -1906,6 +1913,7 @@ fn filter_multi_leg_out_of_bounds(vectors: &mut Vec<MultiLegVector>) {
 fn process_multi_leg_dots_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
+    game_state: &State,
 ) -> Vec<MultiLegVector> {
     let dot_count = token.len() as i8;
 
@@ -1923,7 +1931,7 @@ fn process_multi_leg_dots_token(
         })
         .collect();
 
-    filter_multi_leg_out_of_bounds(&mut updated_vectors);
+    filter_multi_leg_out_of_bounds(&mut updated_vectors, game_state);
     remove_duplicates_in_place(&mut updated_vectors);
     updated_vectors
 }
@@ -1932,6 +1940,7 @@ fn process_multi_leg_dots_token(
 fn process_multi_leg_range_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
+    game_state: &State,
 ) -> Vec<MultiLegVector> {
 let captures = RANGE_TOKEN.captures(token).unwrap();
 
@@ -1978,7 +1987,7 @@ let captures = RANGE_TOKEN.captures(token).unwrap();
             let mut result: Vec<MultiLegVector> =
                             all_updated_vectors.into_iter().collect();
 
-            filter_multi_leg_out_of_bounds(&mut result);
+            filter_multi_leg_out_of_bounds(&mut result, game_state);
             remove_duplicates_in_place(&mut result);
             result
         },
@@ -2003,7 +2012,7 @@ let captures = RANGE_TOKEN.captures(token).unwrap();
                 .into_iter()
                 .collect();
 
-            filter_multi_leg_out_of_bounds(&mut updated_vectors);
+            filter_multi_leg_out_of_bounds(&mut updated_vectors, game_state);
             remove_duplicates_in_place(&mut updated_vectors);
             updated_vectors
         },
@@ -2020,6 +2029,7 @@ fn process_multi_leg_colon_range_token(
     element: Option<MultiLegElement>,
     modifiers: &[Option<Token>; 3],
     rotation: &str,
+    game_state: &State,
 )  -> Vec<MultiLegVector> {
     if element.is_none() {
         panic!(
@@ -2065,6 +2075,7 @@ fn process_multi_leg_colon_range_token(
                         MultiLegSlashExpr(multiplied_expr.clone()),
                         modifiers,
                         rotation,
+                        game_state
                     );
 
                     result.extend(eval);
@@ -2084,6 +2095,7 @@ fn process_multi_leg_colon_range_token(
                             MultiLegSlashExpr(multiplied_expr.clone()),
                             modifiers,
                             branch_rotation,
+                            game_state
                         );
 
                         for vector in eval {
@@ -2105,7 +2117,7 @@ fn process_multi_leg_colon_range_token(
             let mut result: Vec<MultiLegVector> =
                 result.into_iter().collect();
 
-            filter_multi_leg_out_of_bounds(&mut result);
+            filter_multi_leg_out_of_bounds(&mut result, game_state);
             result
         },
         (Some(s), None) => {
@@ -2123,6 +2135,7 @@ fn process_multi_leg_colon_range_token(
                     MultiLegSlashExpr(multiplied_expr.clone()),
                     modifiers,
                     rotation,
+                    game_state
                 );
 
                 result.extend(eval);
@@ -2142,6 +2155,7 @@ fn process_multi_leg_colon_range_token(
                         MultiLegSlashExpr(multiplied_expr.clone()),
                         modifiers,
                         branch_rotation,
+                        game_state
                     );
 
                     for vector in eval {
@@ -2157,7 +2171,7 @@ fn process_multi_leg_colon_range_token(
             let mut result: Vec<MultiLegVector> =
                 result.into_iter().collect();
 
-            filter_multi_leg_out_of_bounds(&mut result);
+            filter_multi_leg_out_of_bounds(&mut result, game_state);
             result
         },
         _ => {
@@ -2216,6 +2230,7 @@ fn evaluate_multi_leg_term_leg(
     term: Token,
     modifiers: [Option<Token>; 3],
     rotation: &str,
+    game_state: &State,
 ) -> Vec<MultiLegVector> {
 
     #[cfg(debug_assertions)]
@@ -2240,7 +2255,8 @@ fn evaluate_multi_leg_term_leg(
     if result.is_empty() {
         let eval = leg_to_vector(
             &atomic.to_string(),
-            rotation
+            rotation,
+            game_state
         );
 
         let eval = process_multi_leg_modifiers(eval, &modifiers, rotation);
@@ -2269,7 +2285,7 @@ fn evaluate_multi_leg_term_leg(
         );
 
         let mut extension: Vec<MultiLegVector> = Vec::new();
-        let mut eval = leg_to_vector(&atomic, branch_rotation);
+        let mut eval = leg_to_vector(&atomic, branch_rotation, game_state);
 
         eval = process_multi_leg_modifiers(eval, &modifiers, branch_rotation);
 
@@ -2300,7 +2316,8 @@ fn evaluate_multi_leg_subexpression(
     result: Vec<MultiLegVector>,
     expr: MultiLegElement,
     modifiers: &[Option<Token>; 3],
-    rotation: &str
+    rotation: &str,
+    game_state: &State,
 ) -> Vec<MultiLegVector> {
     #[cfg(debug_assertions)]
     println!(
@@ -2327,7 +2344,9 @@ fn evaluate_multi_leg_subexpression(
     };
 
     if result.is_empty() {
-        let eval = evaluate_multi_leg_expression(inner_expr, rotation);
+        let eval = evaluate_multi_leg_expression(
+            inner_expr, rotation, game_state
+        );
         match eval {
             MultiLegEval(vectors) => {
 
@@ -2369,7 +2388,8 @@ fn evaluate_multi_leg_subexpression(
         let mut extension: Vec<MultiLegVector> = Vec::new();
         let eval_result = evaluate_multi_leg_expression(
             inner_expr.clone(),
-            branch_rotation
+            branch_rotation,
+            game_state
         );
 
         let mut eval = match eval_result {
@@ -2411,7 +2431,8 @@ fn evaluate_multi_leg_subexpression(
 #[hotpath::measure]
 fn evaluate_multi_leg_expression(
     expr: MultiLegGroup,
-    rotation: &str
+    rotation: &str,
+    game_state: &State
 ) -> MultiLegElement {
     #[cfg(debug_assertions)]
     println!(
@@ -2447,6 +2468,7 @@ fn evaluate_multi_leg_expression(
                             Some(MultiLegTerm(Leg(atomic.to_string()))),
                             &modifiers,
                             rotation,
+                            game_state
                         );
                         i += 2;
                         continue;
@@ -2456,16 +2478,21 @@ fn evaluate_multi_leg_expression(
                     result,
                     Leg(atomic.to_string()),
                     modifiers,
-                    rotation
+                    rotation,
+                    game_state
                 );
 
                 modifiers = [None, None, None];
             }
             MultiLegTerm(Dots(token)) => {
-                result = process_multi_leg_dots_token(result, token);
+                result = process_multi_leg_dots_token(
+                    result, token, game_state
+                );
             }
             MultiLegTerm(Range(token)) => {
-                result = process_multi_leg_range_token(result, token);
+                result = process_multi_leg_range_token(
+                    result, token, game_state
+                );
             }
             MultiLegExpr(group) => {
                 if i + 1 < expr.len() {
@@ -2476,6 +2503,7 @@ fn evaluate_multi_leg_expression(
                             Some(MultiLegSlashExpr(group.clone())),
                             &modifiers,
                             rotation,
+                            game_state
                         );
                         i += 2;
                         continue;
@@ -2487,6 +2515,7 @@ fn evaluate_multi_leg_expression(
                     element.clone(),
                     &modifiers,
                     rotation,
+                    game_state,
                 );
 
                 modifiers = [None, None, None];
@@ -2500,6 +2529,7 @@ fn evaluate_multi_leg_expression(
                             Some(MultiLegSlashExpr(group.clone())),
                             &modifiers,
                             rotation,
+                            game_state
                         );
                         i += 2;
                         continue;
@@ -2510,6 +2540,7 @@ fn evaluate_multi_leg_expression(
                     element.clone(),
                     &modifiers,
                     rotation,
+                    game_state,
                 );
 
                 modifiers = [None, None, None];
@@ -2524,7 +2555,7 @@ fn evaluate_multi_leg_expression(
         i += 1;
     }
 
-    filter_multi_leg_out_of_bounds(&mut result);
+    filter_multi_leg_out_of_bounds(&mut result, game_state);
 
     #[cfg(debug_assertions)]
     println!(
@@ -2537,7 +2568,7 @@ fn evaluate_multi_leg_expression(
 
 #[hotpath::measure]
 fn tokenize_multi_leg_expression(
-    expr: &str
+    expr: &str,
 ) -> Vec<String> {
 
     let token_matches: Vec<_> = LEG_TOKENS.find_iter(expr).collect();
@@ -2639,7 +2670,8 @@ fn tokenize_multi_leg_expression(
 #[hotpath::measure]
 fn leg_to_vector(
     expr: &str,
-    rotation: &str
+    rotation: &str,
+    game_state: &State
 ) -> Vec<MultiLegVector> {
 
     #[cfg(debug_assertions)]
@@ -2658,7 +2690,7 @@ fn leg_to_vector(
     let modifiers = captures.get(1).map_or("", |m| m.as_str());
     let exclusion = captures.get(3).map_or("", |m| m.as_str());
     let exclusion_vectors = if !exclusion.is_empty() {
-        compound_atomic_to_vector(exclusion, rotation)
+        compound_atomic_to_vector(exclusion, rotation, game_state)
             .into_iter()
             .map(|v| v.whole())
             .collect::<HashSet<_>>()
@@ -2668,7 +2700,9 @@ fn leg_to_vector(
     let compound_atomic = captures.get(2).expect(
         "Missing compound atomic in leg."
     ).as_str();
-    let mut vectors = compound_atomic_to_vector(compound_atomic, rotation);
+    let mut vectors = compound_atomic_to_vector(
+        compound_atomic, rotation, game_state
+    );
 
     vectors.retain(|vector| {
         let tuple = vector.as_tuple();
@@ -2683,7 +2717,8 @@ fn leg_to_vector(
 #[hotpath::measure]
 fn multi_leg_to_vector(
     expr: &str,
-    rotation: &str
+    rotation: &str,
+    game_state: &State
 ) -> Vec<MultiLegVector> {
 
     #[cfg(debug_assertions)]
@@ -2693,7 +2728,7 @@ fn multi_leg_to_vector(
     );
 
     if !expr.contains("-") {
-        return leg_to_vector(expr, rotation);
+        return leg_to_vector(expr, rotation, game_state);
     }
 
     let tokens = tokenize_multi_leg_expression(expr);
@@ -2791,7 +2826,7 @@ fn multi_leg_to_vector(
         stack
     );
 
-    let result = evaluate_multi_leg_expression(stack, rotation);                /* Evaluate recursively               */
+    let result = evaluate_multi_leg_expression(stack, rotation, game_state);    /* Evaluate recursively               */
 
     match result {
         MultiLegEval(result) => result,
@@ -2805,14 +2840,17 @@ fn multi_leg_to_vector(
 /// Generates all possible move vectors from the given move expression
 #[hotpath::measure]
 pub fn generate_move_vectors(
-    expr: &str
+    expr: &str,
+    game_state: &State
 ) -> Vec<MultiLegVector> {
     let parsed_expr = parse_move(expr);
-    split_and_process(&parsed_expr, |m| Some(multi_leg_to_vector(m, "n")))
+    split_and_process(&parsed_expr, |m| Some(
+            multi_leg_to_vector(m, "n", game_state))
+        )
         .into_iter()
         .flatten()
         .flatten()
-        .collect::<HashSet<_>>()                        /* Removes duplicates                  */
+        .collect::<HashSet<_>>()
         .into_iter()
         .collect()
 }

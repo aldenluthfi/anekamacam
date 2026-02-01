@@ -1,6 +1,6 @@
 Capablanca Chess
 10,8,8
-^Pawn,P,p,1000,mnW|ip!cnW-.|cnF
+^Pawn,P,p,1000,mnW|im<nW-pnW>|cnF
 !Rook,R,r,5000,R
 Bishop,B,b,3375,B
 Knight,N,n,3000,N

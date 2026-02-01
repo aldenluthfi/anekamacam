@@ -12,18 +12,22 @@
 //! # Date
 //! 25/01/2025
 
-use crate::constants::*;
-
-use bnum::types::U256;
-use std::sync::{OnceLock, RwLock};
-
-use crate::representations::{
-    board::Board,
-    piece::Piece,
-    moves::Move,
+use crate::{
+    constants::*,
+    game::{
+        moves::move_parse::generate_move_vectors,
+        representations::{
+            board::Board,
+            piece::Piece,
+            moves::Move,
+            vector::MultiLegVector
+        }
+    },
+    io::game_io::parse_config_file
 };
 
-static GAME_STATE: OnceLock<RwLock<State>> = OnceLock::new();
+use bnum::types::U256;
+
 
 #[derive(Debug)]
 pub struct MoveState {
@@ -69,6 +73,7 @@ pub struct State {
     pub material: [u32; 2],
 
     pub board_mask: Board,
+    pub piece_relevant_boards: Vec<Vec<MultiLegVector>>,
 }
 
 impl State {
@@ -79,7 +84,7 @@ impl State {
         pieces: Vec<Piece>,
     ) -> Self {
         let piece_types = pieces.len();
-        State {
+        let mut result = State {
             title,
             files,
             ranks,
@@ -110,7 +115,17 @@ impl State {
             material: [0; 2],
 
             board_mask: Board::full_board(files, ranks),
-        }
+
+            piece_relevant_boards: vec![Vec::new(); piece_types],
+        };
+
+        result.init_piece_moves();
+
+        result
+    }
+
+    pub fn from_config(path: &str) -> Self {
+        parse_config_file(path)
     }
 
     pub fn index_to_square(&self, index: u16) -> (u8, u8) {
@@ -151,22 +166,18 @@ impl State {
         self.material = [0; 2];
     }
 
-    pub fn init_global(state: State) {
-        GAME_STATE.set(RwLock::new(state))
-            .expect("Game state already initialized");
-    }
-
-    pub fn global() -> std::sync::RwLockReadGuard<'static, State> {
-        GAME_STATE.get()
-            .expect("Game state not initialized")
-            .read()
-            .expect("Failed to acquire read lock on game state")
-    }
-
-    pub fn global_mut() -> std::sync::RwLockWriteGuard<'static, State> {
-        GAME_STATE.get()
-            .expect("Game state not initialized")
-            .write()
-            .expect("Failed to acquire write lock on game state")
+    pub fn init_piece_moves(&mut self) {
+        for (i, piece) in self.pieces.iter().enumerate() {
+            let move_vectors = if i % 2 == 0 {
+                generate_move_vectors(&piece.movement, self)
+            } else {
+                let replaced = piece.movement
+                    .replace("n", "l")
+                    .replace("s", "n")
+                    .replace("l", "s");
+                generate_move_vectors(&replaced, self)
+            };
+            self.piece_relevant_boards[i] = move_vectors;
+        }
     }
 }
