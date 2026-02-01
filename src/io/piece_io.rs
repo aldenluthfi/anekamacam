@@ -11,7 +11,8 @@
 //! # Date
 //! 25/01/2026
 
-use game::{constants::BLACK, representations::piece::Piece};
+use crate::game::representations::piece::Piece;
+use crate::constants::*;
 
 /// Formats a piece as a column vector with 9 rows of information.
 ///

@@ -21,10 +21,8 @@ use std::sync::Mutex;
 use bnum::types::U256;
 
 use crate::{
-    constants::{
-        RNG_SEED, WHITE
-    },
-    representations::{
+    constants::*,
+    game::representations::{
         board::Board,
         state::State
     }
@@ -153,11 +151,10 @@ pub fn random_u256() -> U256 {
     U256::from(rng.next_u64())
 }
 
-pub fn format_square(index: u16) -> String {
-    let state = State::global();
-    let (file, rank) = state.index_to_square(index);
+pub fn format_square(index: u16, game_state: &State) -> String {
+    let (file, rank) = game_state.index_to_square(index);
 
-    if state.files <= 26  {
+    if game_state.files <= 26  {
         let file_char = (b'a' + file) as char;
         let rank_char = (b'1' + rank) as char;
         format!("{}{:02}", file_char, rank_char)

@@ -20,8 +20,8 @@ use bnum::types::U256;
 
 use crate::{
     constants::*,
-    representations::state::State, 
-    util::random_u256
+    game::representations::state::State,
+    game::util::random_u256
 };
 
 lazy_static! {

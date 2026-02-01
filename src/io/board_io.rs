@@ -14,7 +14,7 @@
 //! # Date
 //! 25/01/2026
 
-use game::representations::{
+use crate::game::representations::{
     board::{
         Bitboard,
         Board

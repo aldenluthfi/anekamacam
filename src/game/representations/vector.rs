@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, fmt::Debug};
 
-use crate::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
+use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
 
 pub type MultiLegGroup = VecDeque<MultiLegElement>;
 
