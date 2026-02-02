@@ -415,14 +415,36 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     } else {                                                                    /* enpassant square is a bit different*/
         let file = en_passant[0..2].parse::<u8>()
             .expect(
-                &format!("Invalid en passant file: {}", en_passant[0..2].trim())
-            );                                                                  /* its xxyy with x = file and y = rank*/
+                &format!("Invalid en passant file: {}", en_passant[0..2].trim())/* xxyyppqq -> [filefilerankrank; 2]  */
+            );                                                                  /* x and y are capturing square       */
         let rank = en_passant[2..4].parse::<u8>()
             .expect(
-                &format!("Invalid en passant rank: {}", en_passant[2..4].trim())
+                &format!("Invalid en passant rank: {}", en_passant[2..4].trim())/* p and q are captured piece square  */
             );
+
+        let piece_file = en_passant[4..6].parse::<u8>()
+            .expect(
+                &format!("Invalid en passant file: {}", en_passant[4..6].trim())/* xxyyppqq -> [filefilerankrank; 2]  */
+            );                                                                  /* x and y are capturing square       */
+        let piece_rank = en_passant[6..8].parse::<u8>()
+            .expect(
+                &format!("Invalid en passant rank: {}", en_passant[6..8].trim())/* p and q are captured piece square  */
+            );
+        let piece_index = u32::from_str_radix(&en_passant[8..10], 16)
+            .expect(                                                            /* last 2 digit hex num is piece indx */
+                &format!(
+                    "Invalid en passant rank: {}", en_passant[8..10].trim()
+                )
+            );
+
+        let square_index = (rank as u32) * (state.files as u32) + (file as u32);
+        let piece_square_index =
+            (piece_rank as u32) * (state.files as u32) + (piece_file as u32);
+
+        let en_passant_square = 
+            square_index | (piece_square_index << 12) | piece_index << 24;
         Some(
-            (rank as u16) * (state.files as u16) + (file as u16)
+            en_passant_square
         )
     };
 
@@ -570,7 +592,9 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             state.en_passant_square
                 .map_or(
                     "-".to_string(),
-                    |sq| format!("{}", format_square(sq, state))
+                    |sq| format!("{}", format_square(
+                        (sq & 0xFFF) as u16, state)
+                    )
                 )
         ));
 

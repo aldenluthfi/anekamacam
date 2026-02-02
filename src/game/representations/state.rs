@@ -35,7 +35,7 @@ pub struct Snapshot {
     pub move_ply: MoveType,
     pub castling_state: u8,
     pub halfmove_clock: u8,
-    pub en_passant_square: Option<u16>,
+    pub en_passant_square: Option<u32>,
 
     pub position_hash: U256
 }
@@ -59,8 +59,9 @@ pub struct State {
 
     pub castling_state: u8,
     pub halfmove_clock: u8,
-    pub en_passant_square: Option<u16>,
-
+    pub en_passant_square: Option<u32>,                                         /* 12 bits for capture square         */
+                                                                                /* 12 bits for captured piece square  */
+                                                                                /* 8 bits for captured piece index    */
     pub position_hash: U256,
     pub history: Vec<Snapshot>,
 

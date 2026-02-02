@@ -69,7 +69,7 @@ pub fn hash_position(state: &State) -> U256 {
     hash ^= &CASTLING_HASHES[state.castling_state as usize];
 
     if let Some(ep_square) = state.en_passant_square {
-        hash ^= &EN_PASSANT_HASHES[ep_square as usize];
+        hash ^= &EN_PASSANT_HASHES[(ep_square & 0xFFF) as usize];
     }
 
     for piece in &state.pieces {
@@ -118,14 +118,16 @@ pub fn hash_update_castling(
 #[hotpath::measure]
 pub fn hash_update_en_passant(
     game_state: &mut State,
-    old_ep_square: Option<u16>,
-    new_ep_square: Option<u16>
+    old_ep_square: Option<u32>,
+    new_ep_square: Option<u32>
 ) {
     if let Some(old_square) = old_ep_square {
-        game_state.position_hash ^= &EN_PASSANT_HASHES[old_square as usize];
+        let index = (old_square & 0xFFF) as usize;
+        game_state.position_hash ^= &EN_PASSANT_HASHES[index];
     }
 
     if let Some(new_square) = new_ep_square {
-        game_state.position_hash ^= &EN_PASSANT_HASHES[new_square as usize];
+        let index = (new_square & 0xFFF) as usize;
+        game_state.position_hash ^= &EN_PASSANT_HASHES[index];
     }
 }
