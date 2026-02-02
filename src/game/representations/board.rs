@@ -29,6 +29,7 @@ pub enum Bitboard {
     U4096(U4096),
 }
 
+#[hotpath::measure_all]
 impl Bitboard {
     pub fn new(size: u16) -> Self {
         assert!(
@@ -231,6 +232,7 @@ pub struct Board {
     pub bitboard: Bitboard,
 }
 
+#[hotpath::measure_all]
 impl Board {
     pub fn new(files: u8, ranks: u8) -> Board {
         assert!(
