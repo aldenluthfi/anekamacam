@@ -14,6 +14,7 @@
 //! # Date
 //! 25/01/2026
 
+use std::collections::HashMap;
 use std::fs;
 use crate::game::hash::hash_position;
 use crate::game::util::format_square;
@@ -123,7 +124,7 @@ pub fn parse_config_file(path: &str) -> State {
     );
 
     let mut pieces = Vec::with_capacity((pieces_num * 2) as usize);
-    let mut piece_char_to_idx = std::collections::HashMap::new();
+    let mut piece_char_to_idx = HashMap::new();
 
     for i in current_line..=((pieces_num as usize) + current_line - 1) {
         let parts: Vec<&str> = lines[i].split(',').collect();
@@ -167,18 +168,12 @@ pub fn parse_config_file(path: &str) -> State {
             )
         };
 
-        let white_idx = pieces.len() as u8;
-        let black_idx = (pieces.len() + 1) as u8;
-
-        piece_char_to_idx.insert(white_char, white_idx);
-        piece_char_to_idx.insert(black_char, black_idx);
-
         pieces.push(Piece::new(
             name.clone(),
             movement.clone(),
             white_char,
             U2048::ZERO,
-            white_idx,
+            0,                                                                  /* placeholde: will be set later      */
             WHITE,
             is_royal,
             is_big,
@@ -191,7 +186,7 @@ pub fn parse_config_file(path: &str) -> State {
             movement,
             black_char,
             U2048::ZERO,
-            black_idx,
+            0,                                                                  /* placeholde: will be set later      */
             BLACK,
             is_royal,
             is_big,
@@ -200,6 +195,14 @@ pub fn parse_config_file(path: &str) -> State {
         ));
 
         current_line += 1;
+    }
+
+    let pieces_len = pieces.len() as u8;
+    pieces.sort_by_key(|piece| (piece.color() * pieces_len) + piece.index());
+
+    for (i, piece) in pieces.iter_mut().enumerate() {
+        piece.encoded_piece |= i as u32;                                        /* set the piece index correctly       */
+        piece_char_to_idx.insert(piece.symbol, piece.index());
     }
 
     let promotion_count: usize = lines[current_line]
@@ -385,7 +388,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
         }
     }
 
-    state.current_move = match parts[1] {
+    state.playing = match parts[1] {
         "w" => WHITE,
         "b" => BLACK,
         _ => panic!("Invalid active color: {}", parts[1]),
@@ -550,7 +553,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
         result.push_str(
             &format!(
                 "Current move\t: {}\n",
-                if state.current_move == WHITE { "White" } else { "Black" }
+                if state.playing == WHITE { "White" } else { "Black" }
             )
         );
 

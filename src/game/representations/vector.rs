@@ -296,6 +296,16 @@ impl LegVector {
             ),
         }
     }
+
+    pub fn is_castling(&self) -> bool {
+        let atomic = self.get_atomic();
+        atomic.whole().1 == i8::MIN || atomic.whole().1 == i8::MAX
+    }
+
+    pub fn is_castling_right(&self) -> bool {
+        let atomic = self.get_atomic();
+        atomic.whole().1 == i8::MAX
+    }
 }
 
 impl Debug for LegVector {
