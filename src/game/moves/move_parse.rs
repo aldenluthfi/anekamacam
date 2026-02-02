@@ -98,6 +98,9 @@ lazy_static! {
     pub static ref MODIFIERS: Regex = Regex::new(
         r"^[mciudpk!]+$"
     ).unwrap();
+    pub static ref CASTLING_TOKEN: Regex = Regex::new(
+        r"^(?:O|o)\{(\d+)(?:\.\.(\d+|\*))?\}$"
+    ).unwrap();
     pub static ref INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] = [
         ( 0,  1),
         ( 1,  1),
@@ -2714,6 +2717,66 @@ fn leg_to_vector(
         .collect::<Vec<Vec<LegVector>>>()
 }
 
+/// Parses a castling move
+///
+/// O{range} for left side (queen side in fide) castling and o{range} for right
+/// side (king side in fide) castling
+///
+/// A piece with a castling move can only castle with an unmoved piece on either
+/// side of the board. An implicit `i` modifier for a castling move. A piece
+/// with castling movescan move `{range}` squares towards the piece at the end
+/// of the board and the target piece will always land adjacent to the
+/// castling piece on the side where the castling piece came from.
+///
+/// A queenside castling leg vector is denoted by (-range, i8::MIN) on the
+/// vector part and a modifier of i
+///
+/// A kingside castling leg vector is denoted by (range, i8::MAX) on the vector
+/// part and a modifier of i
+#[hotpath::measure]
+fn parse_castling(
+    expr: &str,
+) -> Vec<MultiLegVector> {
+    #[cfg(debug_assertions)]
+    println!("DEBUG: parse_castling expr {}", expr);
+
+    let mut vectors: Vec<MultiLegVector> = Vec::new();
+
+    let captures = CASTLING_TOKEN.captures(expr).expect(
+        &format!("Invalid castling expression: {}", expr)
+    );
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: parse_castling captures {:?}", captures);
+
+    let range = captures.get(1).expect(
+        "Missing range in castling expression."
+    ).as_str().parse::<i8>().expect(
+        "Invalid range in castling expression."
+    );
+
+    if expr.contains("O") {
+        let leg_vector = LegVector::new(
+            AtomicVector::new((-range, i8::MIN), (0, 0)),
+            "i"
+        );
+        vectors.push(vec![leg_vector]);
+    } else if expr.contains("o") {
+        let leg_vector = LegVector::new(
+            AtomicVector::new((range, i8::MAX), (0, 0)),
+            "i"
+        );
+        vectors.push(vec![leg_vector]);
+    } else {
+        panic!(
+            "Invalid castling expression, must contain O or o: {}",
+            expr
+        );
+    }
+
+    vectors
+}
+
 #[hotpath::measure]
 fn multi_leg_to_vector(
     expr: &str,
@@ -2726,6 +2789,10 @@ fn multi_leg_to_vector(
         "DEBUG: multi_leg_to_vector leg {} with rotation {}",
         expr, rotation
     );
+
+    if expr.contains("O") || expr.contains("o") {
+        return parse_castling(expr);
+    }
 
     if !expr.contains("-") {
         return leg_to_vector(expr, rotation, game_state);

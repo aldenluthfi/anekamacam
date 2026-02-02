@@ -21,7 +21,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use crate::constants::*;
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Bitboard {
     U64(u64),
     U256(U256),
@@ -224,7 +224,7 @@ impl Not for &Bitboard {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Board {
     pub ranks: u8,
     pub files: u8,
