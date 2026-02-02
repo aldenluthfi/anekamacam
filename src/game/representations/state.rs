@@ -15,12 +15,13 @@
 use crate::{
     constants::*,
     game::{
-        moves::move_parse::generate_move_vectors,
+        moves::{
+            move_list::generate_relevant_boards,
+            move_parse::generate_move_vectors
+        },
         representations::{
-            board::Board,
-            piece::Piece,
-            moves::Move,
-            vector::MultiLegVector
+            board::Board, moves::MoveType,
+            piece::Piece, vector::MultiLegVector
         }
     },
     io::game_io::parse_config_file
@@ -30,8 +31,8 @@ use bnum::types::U256;
 
 
 #[derive(Debug)]
-pub struct MoveState {
-    pub move_ply: Move,
+pub struct Snapshot {
+    pub move_ply: MoveType,
     pub castling_state: u8,
     pub halfmove_clock: u8,
     pub en_passant_square: Option<u16>,
@@ -46,7 +47,7 @@ pub struct State {
     pub files: u8,
     pub ranks: u8,
 
-    pub current_move: u8,
+    pub playing: u8,
 
     pub pieces: Vec<Piece>,
     pub pieces_board: Vec<Board>,
@@ -61,7 +62,7 @@ pub struct State {
     pub en_passant_square: Option<u16>,
 
     pub position_hash: U256,
-    pub history: Vec<MoveState>,
+    pub history: Vec<Snapshot>,
 
     pub ply: u32,
     pub ply_counter: u32,
@@ -72,8 +73,8 @@ pub struct State {
 
     pub material: [u32; 2],
 
-    pub board_mask: Board,
-    pub piece_relevant_boards: Vec<Vec<MultiLegVector>>,
+    pub piece_move_vectors: Vec<Vec<MultiLegVector>>,
+    pub piece_relevant_boards: Vec<Vec<Board>>,
 }
 
 impl State {
@@ -90,7 +91,7 @@ impl State {
             ranks,
             pieces,
 
-            current_move: WHITE,
+            playing: WHITE,
             pieces_board: Vec::with_capacity(piece_types),
 
             black_board: Board::new(files, ranks),
@@ -114,12 +115,11 @@ impl State {
 
             material: [0; 2],
 
-            board_mask: Board::full_board(files, ranks),
-
+            piece_move_vectors: vec![Vec::new(); piece_types],
             piece_relevant_boards: vec![Vec::new(); piece_types],
         };
 
-        result.init_piece_moves();
+        result.precompute_state();
 
         result
     }
@@ -145,7 +145,7 @@ impl State {
     }
 
     pub fn reset(&mut self) {
-        self.current_move = WHITE;
+        self.playing = WHITE;
         self.castling_state = 0;
         self.halfmove_clock = 0;
         self.en_passant_square = None;
@@ -166,18 +166,37 @@ impl State {
         self.material = [0; 2];
     }
 
-    pub fn init_piece_moves(&mut self) {
-        for (i, piece) in self.pieces.iter().enumerate() {
-            let move_vectors = if i % 2 == 0 {
-                generate_move_vectors(&piece.movement, self)
-            } else {
-                let replaced = piece.movement
-                    .replace("n", "l")
-                    .replace("s", "n")
-                    .replace("l", "s");
-                generate_move_vectors(&replaced, self)
-            };
-            self.piece_relevant_boards[i] = move_vectors;
+    fn init_piece_moves(&mut self) {
+        for piece in &self.pieces {
+            let i = piece.index() as usize;
+            self.piece_move_vectors[i] = generate_move_vectors(
+                &piece.movement, self
+            );
         }
+    }
+
+
+    fn init_relevant_boards(&mut self) {
+        let squares = (self.files as u16) * (self.ranks as u16);
+
+        for square in 0..squares {
+            for piece in &self.pieces {
+                let (file, rank) = self.index_to_square(square);
+                let i = piece.index() as usize;
+
+                let relevant_moves = generate_relevant_boards(
+                    piece,
+                    (file, rank),
+                    self
+                );
+
+                self.piece_relevant_boards[i].push(relevant_moves);
+            }
+        }
+    }
+
+    fn precompute_state(&mut self) {
+        self.init_piece_moves();
+        self.init_relevant_boards();
     }
 }

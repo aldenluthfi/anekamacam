@@ -13,7 +13,7 @@
 //! # Date
 //! 25/01/2026
 
-use bnum::types::U2048;
+use bnum::{cast::As, types::U2048};
 
 /// A structure representing a game piece with its properties.
 ///
@@ -124,5 +124,27 @@ impl Piece {
 
     pub fn value(&self) -> u16 {
         ((self.encoded_piece >> 12) & 0xFFFF) as u16
+    }
+
+    pub fn get_promotion_pieces(&self) -> Vec<u8> {
+        if !self.can_promote() {
+            return Vec::new();
+        }
+
+        let promotions_count = (
+            self.promotions & U2048::from(0xFFu32)
+        ).as_::<u8>();
+        let mut result = Vec::with_capacity(promotions_count as usize);
+
+        for i in 0..promotions_count {
+            let byte_index = i + 1;
+            let shift = byte_index * 8;
+            let piece_index = (
+                (self.promotions >> shift) & U2048::from(0xFFu32)
+            ).as_::<u8>();
+            result.push(piece_index);
+        }
+
+        result
     }
 }

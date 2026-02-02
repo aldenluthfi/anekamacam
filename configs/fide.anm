@@ -5,7 +5,7 @@ FIDE Chess
 Bishop,B,b,3375,B
 Knight,N,n,3000,N
 !Queen,Q,q,8375,Q
-#King,K,k,6375,N|B
+#King,K,k,6375,K|O{3}|o{2}
 2
 P->RNBQ
 p->rbnq
