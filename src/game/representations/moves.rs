@@ -29,8 +29,10 @@ use std::fmt::{
 /// The first two bits is used to represent the type of format used:
 /// - 00: Single move without capture
 /// - 01: Single move with capture or unload
-/// - 11: Single Hopper capture move
+/// - 10: Single Hopper capture move
+/// - 11: Multi-capture move
 ///
+/// The first 8 bits indicates the piece index of the piece making the move.
 /// The next 12 bits represent the starting square index (0-4095).
 /// The following 12 bits represent the ending square index (0-4095).
 /// The following bit represents if the move is an initial move (1) or not (0).
@@ -39,7 +41,7 @@ use std::fmt::{
 /// or not (0).
 /// the following 8 bits represent the promoting piece type (if applicable).
 /// The following 8 bits represent the promoted piece type (if applicable).
-/// The following 12 bits represents the en passant square (if applicable).
+/// The following 24 bits represents the en passant square (if applicable).
 ///
 /// The next 35 bits are reserved for additional information based on the
 /// move type:
@@ -73,8 +75,9 @@ pub struct Move {
 /// This structure is used for moves with multiple captures (MultiCapture).
 ///
 /// The first two bits is used to represent the type of format used:
-/// - 10: Multi-capture move
+/// - 11: Multi-capture move
 ///
+/// The first 8 bits indicates the piece index of the piece making the move.
 /// The next 12 bits represent the starting square index (0-4095).
 /// The following 12 bits represent the ending square index (0-4095).
 /// The following bit represents if the move is an initial move (1) or not (0).
@@ -83,9 +86,9 @@ pub struct Move {
 /// or not (0).
 /// the following 8 bits represent the promoting piece type (if applicable).
 /// The following 8 bits represent the promoted piece type (if applicable).
-/// The following 12 bits represents the en passant square (if applicable).
+/// The following 24 bits represents the en passant square (if applicable).
 ///
-/// Multi-capture move (10):
+/// Multi-capture move (11):
 /// - The remaining 35 bits are unused.
 ///
 /// The taken_pieces field is used to store the indices of all captured
@@ -132,45 +135,49 @@ impl Debug for MoveType {
 }
 
 impl Move {
-    const START_SQUARE_SHIFT: u32 = 2;
-    const END_SQUARE_SHIFT: u32 = 14;
-    const IS_INITIAL_SHIFT: u32 = 26;
-    const IS_PROMOTION_SHIFT: u32 = 27;
-    const CREATES_EN_PASSANT_SHIFT: u32 = 28;
-    const PROMOTING_PIECE_SHIFT: u32 = 29;
-    const PROMOTED_PIECE_SHIFT: u32 = 37;
-    const EN_PASSANT_SQUARE_SHIFT: u32 = 45;
-    const EXTRA_DATA_SHIFT: u32 = 57;
+    const PIECE_INDEX_SHIFT: u32 = 2;
+    const START_SQUARE_SHIFT: u32 = 10;
+    const END_SQUARE_SHIFT: u32 = 22;
+    const IS_INITIAL_SHIFT: u32 = 34;
+    const IS_PROMOTION_SHIFT: u32 = 35;
+    const CREATES_EN_PASSANT_SHIFT: u32 = 36;
+    const PROMOTING_PIECE_SHIFT: u32 = 37;
+    const PROMOTED_PIECE_SHIFT: u32 = 45;
+    const EN_PASSANT_SHIFT: u32 = 53;
+    const EXTRA_DATA_SHIFT: u32 = 77;
 
+    const PIECE_INDEX_MASK: u128 = 0xFF << Self::PIECE_INDEX_SHIFT;
     const PROMOTING_PIECE_MASK: u128 = 0xFF << Self::PROMOTING_PIECE_SHIFT;
     const PROMOTED_PIECE_MASK: u128 = 0xFF << Self::PROMOTED_PIECE_SHIFT;
     const END_SQUARE_MASK: u128 = 0xFFF << Self::END_SQUARE_SHIFT;
     const START_SQUARE_MASK: u128 = 0xFFF << Self::START_SQUARE_SHIFT;
-    const EN_PASSANT_SQUARE_MASK: u128 = 0xFFF << Self::EN_PASSANT_SQUARE_SHIFT;
+    const EN_PASSANT_SQUARE_MASK: u128 = 0xFFFFFF << Self::EN_PASSANT_SHIFT;
     const MOVE_TYPE_MASK: u128 = 0b11;
 
     pub const SINGLE_NO_CAPTURE: u128 = 0b00;
     pub const SINGLE_CAPTURE: u128 = 0b01;
-    pub const MULTI_CAPTURE: u128 = 0b10;
-    pub const HOPPER_CAPTURE: u128 = 0b11;
+    pub const HOPPER_CAPTURE: u128 = 0b10;
+    pub const MULTI_CAPTURE: u128 = 0b11;
 
     pub fn new_single_no_capture(
+        piece_index: u8,
         start: u16,
         end: u16,
         is_initial: bool,
         is_promotion: bool,
         promoting_piece: Option<u8>,
         promoted_piece: Option<u8>,
-        en_passant_square: Option<u16>,
+        en_passant_square: Option<u32>,
     ) -> Self {
         let mut encoded = Self::SINGLE_NO_CAPTURE;
+        encoded |= (piece_index as u128) << Self::PIECE_INDEX_SHIFT;
         encoded |= (start as u128) << Self::START_SQUARE_SHIFT;
         encoded |= (end as u128) << Self::END_SQUARE_SHIFT;
         encoded |= (is_initial as u128) << Self::IS_INITIAL_SHIFT;
         encoded |= (is_promotion as u128) << Self::IS_PROMOTION_SHIFT;
         if let Some(ep_square) = en_passant_square {
             encoded |= 1u128 << Self::CREATES_EN_PASSANT_SHIFT;
-            encoded |= (ep_square as u128) << Self::EN_PASSANT_SQUARE_SHIFT;
+            encoded |= (ep_square as u128) << Self::EN_PASSANT_SHIFT;
         }
         if let Some(piece) = promoting_piece {
             encoded |= (piece as u128) << Self::PROMOTING_PIECE_SHIFT;
@@ -185,26 +192,28 @@ impl Move {
     }
 
     pub fn new_single_capture(
+        piece_index: u8,
         start: u16,
         end: u16,
         is_initial: bool,
         is_promotion: bool,
         promoting_piece: Option<u8>,
         promoted_piece: Option<u8>,
-        en_passant_square: Option<u16>,
+        en_passant_square: Option<u32>,
         captured_piece: u8,
         can_capture_royal: bool,
         is_unload: bool,
         unload_square: Option<u16>,
     ) -> Self {
         let mut encoded = Self::SINGLE_CAPTURE;
+        encoded |= (piece_index as u128) << Self::PIECE_INDEX_SHIFT;
         encoded |= (start as u128) << Self::START_SQUARE_SHIFT;
         encoded |= (end as u128) << Self::END_SQUARE_SHIFT;
         encoded |= (is_initial as u128) << Self::IS_INITIAL_SHIFT;
         encoded |= (is_promotion as u128) << Self::IS_PROMOTION_SHIFT;
         if let Some(ep_square) = en_passant_square {
             encoded |= 1u128 << Self::CREATES_EN_PASSANT_SHIFT;
-            encoded |= (ep_square as u128) << Self::EN_PASSANT_SQUARE_SHIFT;
+            encoded |= (ep_square as u128) << Self::EN_PASSANT_SHIFT;
         }
         if let Some(piece) = promoting_piece {
             encoded |= (piece as u128) << Self::PROMOTING_PIECE_SHIFT;
@@ -225,13 +234,14 @@ impl Move {
     }
 
     pub fn new_hopper_capture(
+        piece_index: u8,
         start: u16,
         end: u16,
         is_initial: bool,
         is_promotion: bool,
         promoting_piece: Option<u8>,
         promoted_piece: Option<u8>,
-        en_passant_square: Option<u16>,
+        en_passant_square: Option<u32>,
         captured_piece: u8,
         captured_square: u16,
         can_capture_royal: bool,
@@ -239,13 +249,14 @@ impl Move {
         unload_square: Option<u16>,
     ) -> Self {
         let mut encoded = Self::HOPPER_CAPTURE;
+        encoded |= (piece_index as u128) << Self::PIECE_INDEX_SHIFT;
         encoded |= (start as u128) << Self::START_SQUARE_SHIFT;
         encoded |= (end as u128) << Self::END_SQUARE_SHIFT;
         encoded |= (is_initial as u128) << Self::IS_INITIAL_SHIFT;
         encoded |= (is_promotion as u128) << Self::IS_PROMOTION_SHIFT;
         if let Some(ep_square) = en_passant_square {
             encoded |= 1u128 << Self::CREATES_EN_PASSANT_SHIFT;
-            encoded |= (ep_square as u128) << Self::EN_PASSANT_SQUARE_SHIFT;
+            encoded |= (ep_square as u128) << Self::EN_PASSANT_SHIFT;
         }
         if let Some(piece) = promoting_piece {
             encoded |= (piece as u128) << Self::PROMOTING_PIECE_SHIFT;
@@ -267,14 +278,15 @@ impl Move {
     }
 
     pub fn encode(
+        piece_index: u8,
         start: u16,
         end: u16,
         is_initial: bool,
         is_promotion: bool,
         promoting_piece: Option<u8>,
         promoted_piece: Option<u8>,
-        en_passant_square: Option<u16>,
-        move_type: MoveType,
+        en_passant_square: Option<u32>,  // Changed from u16 to u32
+        move_type: u128,
         captured_piece: Option<u8>,
         can_capture_royal: Option<bool>,
         captured_square: Option<u16>,
@@ -283,8 +295,9 @@ impl Move {
         unload_square: Option<u16>,
     ) -> MoveType {
         match move_type {
-            MoveType::SingleNoCapture(_) => {
+            Self::SINGLE_NO_CAPTURE => {
                 MoveType::SingleNoCapture(Self::new_single_no_capture(
+                    piece_index,
                     start,
                     end,
                     is_initial,
@@ -294,8 +307,9 @@ impl Move {
                     en_passant_square,
                 ))
             }
-            MoveType::SingleCapture(_) => {
+            Self::SINGLE_CAPTURE => {
                 MoveType::SingleCapture(Self::new_single_capture(
+                    piece_index,
                     start,
                     end,
                     is_initial,
@@ -309,20 +323,9 @@ impl Move {
                     unload_square,
                 ))
             }
-            MoveType::MultiCapture(_) => {
-                MoveType::MultiCapture(MultiMove::new_multi_capture(
-                    start,
-                    end,
-                    is_initial,
-                    is_promotion,
-                    promoting_piece,
-                    promoted_piece,
-                    en_passant_square,
-                    taken_pieces.unwrap_or_else(Vec::new),
-                ))
-            }
-            MoveType::HopperCapture(_) => {
+            Self::HOPPER_CAPTURE => {
                 MoveType::HopperCapture(Self::new_hopper_capture(
+                    piece_index,
                     start,
                     end,
                     is_initial,
@@ -337,11 +340,34 @@ impl Move {
                     unload_square,
                 ))
             }
+            Self::MULTI_CAPTURE => {
+                MoveType::MultiCapture(MultiMove::new_multi_capture(
+                    piece_index,
+                    start,
+                    end,
+                    is_initial,
+                    is_promotion,
+                    promoting_piece,
+                    promoted_piece,
+                    en_passant_square,
+                    taken_pieces.expect(
+                        "taken_pieces must be provided for multi-capture moves"
+                    ),
+                ))
+            }
+            _ => panic!("Invalid move type: {}", move_type),
         }
     }
 
     pub fn move_type(&self) -> u8 {
         (self.encoded_move & Move::MOVE_TYPE_MASK) as u8
+    }
+
+    pub fn piece_index(&self) -> u8 {
+        (
+            (self.encoded_move & Move::PIECE_INDEX_MASK) >>
+            Move::PIECE_INDEX_SHIFT
+        ) as u8
     }
 
     pub fn start_square(&self) -> u16 {
@@ -396,12 +422,12 @@ impl Move {
         }
     }
 
-    pub fn en_passant_square(&self) -> Option<u16> {
+    pub fn en_passant_square(&self) -> Option<u32> {
         if self.creates_en_passant_square() {
             Some((
                 (self.encoded_move & Move::EN_PASSANT_SQUARE_MASK) >>
-                Move::EN_PASSANT_SQUARE_SHIFT
-            ) as u16)
+                Move::EN_PASSANT_SHIFT
+            ) as u32)
         } else {
             None
         }
@@ -432,7 +458,7 @@ impl Move {
             && (self.encoded_move >> Self::EXTRA_DATA_SHIFT) & 1 == 1
     }
 
-    pub fn captured_piece_type(&self) -> Option<u8> {
+    pub fn captured_piece(&self) -> Option<u8> {
         let move_type = self.move_type();
         if
             move_type == Self::HOPPER_CAPTURE as u8 ||
@@ -441,6 +467,19 @@ impl Move {
             Some((self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 1)) as u8)
         } else {
             None
+        }
+    }
+
+    pub fn set_captured_piece(&mut self, piece: u8) {
+        let move_type = self.move_type();
+        if
+            move_type == Self::HOPPER_CAPTURE as u8 ||
+            move_type == Self::SINGLE_CAPTURE as u8
+        {
+            self.encoded_move &=
+                !(0xFFu128 << (Self::EXTRA_DATA_SHIFT + 1));
+            self.encoded_move |=
+                (piece as u128) << (Self::EXTRA_DATA_SHIFT + 1);
         }
     }
 
@@ -475,23 +514,25 @@ impl Move {
 
 impl MultiMove {
     pub fn new_multi_capture(
+        piece_index: u8,
         start: u16,
         end: u16,
         is_initial: bool,
         is_promotion: bool,
         promoting_piece: Option<u8>,
         promoted_piece: Option<u8>,
-        en_passant_square: Option<u16>,
+        en_passant_square: Option<u32>,
         captured_pieces: Vec<(u8, u16, bool, bool, Option<u16>)>,
     ) -> Self {
         let mut encoded = Move::MULTI_CAPTURE;
+        encoded |= (piece_index as u128) << Move::PIECE_INDEX_SHIFT;
         encoded |= (start as u128) << Move::START_SQUARE_SHIFT;
         encoded |= (end as u128) << Move::END_SQUARE_SHIFT;
         encoded |= (is_initial as u128) << Move::IS_INITIAL_SHIFT;
         encoded |= (is_promotion as u128) << Move::IS_PROMOTION_SHIFT;
         if let Some(ep_square) = en_passant_square {
             encoded |= 1u128 << Move::CREATES_EN_PASSANT_SHIFT;
-            encoded |= (ep_square as u128) << Move::EN_PASSANT_SQUARE_SHIFT;
+            encoded |= (ep_square as u128) << Move::EN_PASSANT_SHIFT;
         }
         if let Some(piece) = promoting_piece {
             encoded |= (piece as u128) << Move::PROMOTING_PIECE_SHIFT;
@@ -504,8 +545,8 @@ impl MultiMove {
             .iter()
             .map(|
                     (
-                        piece_type, square, is_unload,
-                        can_capture_royal, unload_square
+                        piece_type, square, can_capture_royal,
+                        is_unload, unload_square
                     )
                 | {
                 let mut encoded: u64 = 0;
@@ -528,6 +569,13 @@ impl MultiMove {
 
     pub fn move_type(&self) -> u8 {
         (self.encoded_move & Move::MOVE_TYPE_MASK) as u8
+    }
+
+    pub fn piece_index(&self) -> u8 {
+        (
+            (self.encoded_move & Move::PIECE_INDEX_MASK) >>
+            Move::PIECE_INDEX_SHIFT
+        ) as u8
     }
 
     pub fn start_square(&self) -> u16 {
@@ -582,12 +630,12 @@ impl MultiMove {
         }
     }
 
-    pub fn en_passant_square(&self) -> Option<u16> {
+    pub fn en_passant_square(&self) -> Option<u32> {
         if self.creates_en_passant_square() {
             Some((
                 (self.encoded_move & Move::EN_PASSANT_SQUARE_MASK) >>
-                Move::EN_PASSANT_SQUARE_SHIFT
-            ) as u16)
+                Move::EN_PASSANT_SHIFT
+            ) as u32)
         } else {
             None
         }
@@ -610,8 +658,8 @@ impl MultiMove {
                 };
 
                 (
-                    piece_type, square, is_unload,
-                    can_capture_royal, unload_square
+                    piece_type, square, can_capture_royal,
+                    is_unload, unload_square
                 )
             })
             .collect()
@@ -623,11 +671,12 @@ impl Debug for Move {
         let move_type = match self.move_type() as u128 {
             Move::SINGLE_NO_CAPTURE => "SingleNoCapture",
             Move::SINGLE_CAPTURE => "SingleCapture",
-            Move::MULTI_CAPTURE => "MultiCapture",
             Move::HOPPER_CAPTURE => "HopperCapture",
+            Move::MULTI_CAPTURE => "MultiCapture",
             _ => "Unknown",
         };
 
+        let piece_index = self.piece_index();
         let start = self.start_square();
         let end = self.end_square();
         let is_initial = self.is_initial();
@@ -639,12 +688,13 @@ impl Debug for Move {
         let is_castling = self.is_castling();
         let is_capture_or_unload = self.is_unload();
         let can_capture_royal = self.can_capture_royal();
-        let captured_piece_type = self.captured_piece_type();
+        let captured_piece_type = self.captured_piece();
         let captured_square = self.captured_square();
         let unload_square = self.unload_square();
 
         f.debug_struct("Move")
             .field("move_type", &move_type)
+            .field("piece_index", &piece_index)
             .field("start_square", &start)
             .field("end_square", &end)
             .field("is_initial", &is_initial)
@@ -666,6 +716,7 @@ impl Debug for Move {
 
     impl Debug for MultiMove {
         fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let piece_index = self.piece_index();
         let start = self.start_square();
         let end = self.end_square();
         let is_initial = self.is_initial();
@@ -678,6 +729,7 @@ impl Debug for Move {
 
         f.debug_struct("MultiMove")
             .field("move_type", &"MultiCapture")
+            .field("piece_index", &piece_index)
             .field("start_square", &start)
             .field("end_square", &end)
             .field("is_initial", &is_initial)
