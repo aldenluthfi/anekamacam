@@ -21,28 +21,26 @@ use crate::{
 };
 
 fn check_out_of_bounds(
-    square: (i8, i8),
+    square_index: i32,
     game_state: &State
 ) -> bool {
-    square.0 < 0
-        || square.0 >= game_state.files as i8
-        || square.1 < 0
-        || square.1 >= game_state.ranks as i8
+    square_index < 0
+        || square_index >= (game_state.files as i32 * game_state.ranks as i32)
 }
 
 #[hotpath::measure]
 pub fn is_square_attacked(
-    square: (u8, u8),
+    square_index: u32,
     side: u8,
     game_state: &State
 ) -> bool {
 
     #[cfg(debug_assertions)]
     {
-        assert!(!check_out_of_bounds((
-            square.0 as i8,
-            square.1 as i8,
-        ), game_state), "Square {:?} is out of bounds", square);
+        assert!(!check_out_of_bounds(
+            square_index as i32,
+            game_state
+        ), "Square index {} is out of bounds", square_index);
 
         assert!(
             side == WHITE || side == BLACK,
@@ -57,15 +55,14 @@ pub fn is_square_attacked(
     } else {
         side_piece_count
     };
-    let sq_index = game_state.square_to_index(square.0, square.1) as usize;
-    let (file, rank) = square;
+    let sq_index = square_index as usize;
 
     let mut new_board = Board::new(
         game_state.files,
         game_state.ranks,
     );
 
-    new_board.set_bit(file, rank);
+    new_board.set_bit(square_index);
 
     let mut friendly_board = if side == WHITE {
         &game_state.white_board
@@ -73,7 +70,7 @@ pub fn is_square_attacked(
         &game_state.black_board
     } ^ &new_board;                                                             /* make sure no enemy piece there     */
 
-    if friendly_board.get_bit(file, rank) {
+    if friendly_board.get_bit(square_index) {
         friendly_board = &friendly_board ^ &new_board;
     }
 
@@ -92,15 +89,12 @@ pub fn is_square_attacked(
             let relevant_board =
                 &game_state.piece_relevant_boards[i][attacker_index as usize];
 
-            if !relevant_board.get_bit(file, rank) {
+            if !relevant_board.get_bit(square_index) {
                 continue;
             }
 
-            let (attacker_file, attacker_rank) =
-                game_state.index_to_square(attacker_index as u16);
-
             let move_list = generate_move_list(
-                (attacker_file, attacker_rank),
+                attacker_index,
                 piece,
                 &friendly_board,
                 &enemy_board,
@@ -158,10 +152,8 @@ pub fn is_in_check(
     let monarch_indices = monarch_board.bit_indices();
 
     for index in monarch_indices {
-        let (file, rank) = game_state.index_to_square(index as u16);
-
         if is_square_attacked(
-            (file, rank),
+            index,
             1 - side,
             game_state
         ) {
@@ -176,15 +168,15 @@ pub fn is_in_check(
 #[hotpath::measure]
 pub fn generate_relevant_boards(
     piece: &Piece,
-    square: (u8, u8),
+    square_index: u32,
     game_state: &State
 ) -> Board {
     #[cfg(debug_assertions)]
     {
-        assert!(!check_out_of_bounds((
-            square.0 as i8,
-            square.1 as i8,
-        ), game_state), "Square {:?} is out of bounds", square);
+        assert!(!check_out_of_bounds(
+            square_index as i32,
+            game_state
+        ), "Square index {} is out of bounds", square_index);
     }
 
     let mut result = Board::new(
@@ -195,27 +187,25 @@ pub fn generate_relevant_boards(
     let side = piece.color();
 
     for multi_leg_vector in vector_set {
-        let mut accumulated_offset: (i8, i8) = (square.0 as i8, square.1 as i8);
+        let mut accumulated_index = square_index as i32;
 
         for leg in multi_leg_vector {
-            accumulated_offset.0 = accumulated_offset.0.saturating_add(
-                leg.get_atomic().whole().0
-            );
+            let (file_offset, rank_offset) = leg.get_atomic().whole();
+            
+            let file = accumulated_index % (game_state.files as i32);
+            let rank = accumulated_index / (game_state.files as i32);
+            
+            let new_file = file + (file_offset as i32);
+            let adjusted_rank_offset = (rank_offset as i32) * if side == WHITE {1} else {-1};
+            let new_rank = rank + adjusted_rank_offset;
 
-            accumulated_offset.1 = accumulated_offset.1.saturating_add(
-                leg.get_atomic().whole().1.saturating_mul(
-                    if side == WHITE {1} else {-1}
-                )                                                               /* Adjust for side pov                */
-            );
-
-            if check_out_of_bounds(accumulated_offset, game_state) {
+            if new_file < 0 || new_file >= game_state.files as i32
+                || new_rank < 0 || new_rank >= game_state.ranks as i32 {
                 break;
             }
 
-            result.set_bit(
-                accumulated_offset.0 as u8,
-                accumulated_offset.1 as u8
-            );
+            accumulated_index = new_rank * (game_state.files as i32) + new_file;
+            result.set_bit(accumulated_index as u32);
         }
     }
 
@@ -224,7 +214,7 @@ pub fn generate_relevant_boards(
 
 fn process_multi_leg_vector(
     multi_leg_vector: &[LegVector],
-    square: (u8, u8),
+    square_index: u32,
     piece: &Piece,
     friendly_board: &Board,
     enemy_board: &Board,
@@ -235,7 +225,7 @@ fn process_multi_leg_vector(
     promotion_rank: u8,
     unmoved_piece: bool,
 ) -> Vec<MoveType> {
-    let mut accumulated_offset: (i8, i8) = (square.0 as i8, square.1 as i8);
+    let mut accumulated_index = square_index as i32;
     let mut taken_pieces: Vec<(u8, u16, bool, bool, Option<u16>)> =
         Vec::new();
     let mut castling_leg: Option<LegVector> = None;
@@ -324,31 +314,26 @@ fn process_multi_leg_vector(
             None => can_capture,                                                /* Default allows royal capture       */
         };
 
-        let start_square_index = game_state.square_to_index(
-            accumulated_offset.0 as u8,
-            accumulated_offset.1 as u8
-        );
+        let start_square_index = accumulated_index as u16;
 
-        accumulated_offset.0 = accumulated_offset.0.saturating_add(
-            leg.get_atomic().whole().0
-        );
+        let (file_offset, rank_offset) = leg.get_atomic().whole();
+        
+        let file = accumulated_index % (game_state.files as i32);
+        let rank = accumulated_index / (game_state.files as i32);
+        
+        let new_file = file + (file_offset as i32);
+        let adjusted_rank_offset = (rank_offset as i32) * if side == WHITE {1} else {-1};
+        let new_rank = rank + adjusted_rank_offset;
 
-        accumulated_offset.1 = accumulated_offset.1.saturating_add(
-            leg.get_atomic().whole().1.saturating_mul(
-                if side == WHITE {1} else {-1}
-            )                                                                   /* Adjust for side pov                */
-        );
-
-        let file = accumulated_offset.0 as u8;
-        let rank = accumulated_offset.1 as u8;
-
-        if check_out_of_bounds(accumulated_offset, game_state) {
+        if new_file < 0 || new_file >= game_state.files as i32
+            || new_rank < 0 || new_rank >= game_state.ranks as i32 {
             return Vec::new();
         }
 
-        let square_index = game_state.square_to_index(file, rank);
-        let has_friendly = friendly_board.get_bit(file, rank);
-        let has_enemy = enemy_board.get_bit(file, rank);
+        accumulated_index = new_rank * (game_state.files as i32) + new_file;
+        let square_index = accumulated_index as u16;
+        let has_friendly = friendly_board.get_bit(square_index as u32);
+        let has_enemy = enemy_board.get_bit(square_index as u32);
         let is_empty = !has_friendly && !has_enemy;
 
         if creates_en_passant {                                                 /* Handle en-passant creation (p)     */
@@ -572,8 +557,8 @@ fn process_multi_leg_vector(
     }
 
     if let Some(leg) = castling_leg {
-        let king_rank = square.1;
-        let king_file = square.0;
+        let king_file = square_index % (game_state.files as u32);
+        let king_rank = square_index / (game_state.files as u32);
 
         let atomic = leg.get_atomic();
         let (offset, _) = atomic.whole();
@@ -585,34 +570,36 @@ fn process_multi_leg_vector(
             0
         };
 
-        let rook_square = game_state.square_to_index(rook_file, king_rank);
+        let rook_square = (king_rank * (game_state.files as u32) + (rook_file as u32)) as u16;
+        let rook_sq_idx = rook_square as u32;
 
-        if !unmoved_board.get_bit(rook_file, king_rank) {
+        if !unmoved_board.get_bit(rook_sq_idx) {
             return Vec::new();                                                  /* Rook must be unmoved               */
         }
 
         let rook_occupied = if side == WHITE {
-            friendly_board.get_bit(rook_file, king_rank)
+            friendly_board.get_bit(rook_sq_idx)
         } else {
-            friendly_board.get_bit(rook_file, king_rank)
+            friendly_board.get_bit(rook_sq_idx)
         };
 
         if !rook_occupied {
             return Vec::new();                                                  /* Rook must exist on corner          */
         }
 
-        let king_end_file = (king_file as i8).saturating_add(offset) as u8;
-        if king_end_file >= game_state.files {
+        let king_end_file = (king_file as i32 + offset as i32) as u32;
+        if king_end_file >= game_state.files as u32 {
             return Vec::new();                                                  /* End square out of bounds           */
         }
 
-        let start_check = king_file.min(rook_file);
-        let end_check = king_file.max(rook_file);
+        let start_check = king_file.min(rook_file as u32);
+        let end_check = king_file.max(rook_file as u32);
 
         let mut path_clear = true;
         for f in start_check + 1..end_check {
-            if friendly_board.get_bit(f, king_rank) ||
-                enemy_board.get_bit(f, king_rank) {
+            let check_sq = king_rank * (game_state.files as u32) + f;
+            if friendly_board.get_bit(check_sq) ||
+                enemy_board.get_bit(check_sq) {
                 path_clear = false;
                 break;                                                          /* Path must be clear                 */
             }
@@ -627,8 +614,9 @@ fn process_multi_leg_vector(
 
         let mut king_path_safe = true;
         for f in attack_start..=attack_end {
+            let check_sq_idx = king_rank * (game_state.files as u32) + f;
             if is_square_attacked(
-                (f, king_rank),
+                check_sq_idx,
                 1 - side,                                                       /* Check from enemy perspective       */
                 game_state
             ) {
@@ -641,12 +629,8 @@ fn process_multi_leg_vector(
             return Vec::new();
         }
 
-        let start_square = game_state.square_to_index(
-            king_file, king_rank
-        );
-        let end_square = game_state.square_to_index(
-            king_end_file, king_rank
-        );
+        let start_square = square_index as u16;
+        let end_square = (king_rank * (game_state.files as u32) + king_end_file) as u16;
 
         let unload_file = if is_castling_right {
             king_end_file - 1
@@ -654,9 +638,7 @@ fn process_multi_leg_vector(
             king_end_file + 1
         };
 
-        let unload_square = game_state.square_to_index(
-            unload_file, king_rank
-        );
+        let unload_square = (king_rank * (game_state.files as u32) + unload_file) as u16;
 
         let encoded_move = Move::encode(
             piece_idx,
@@ -679,15 +661,13 @@ fn process_multi_leg_vector(
         return vec![encoded_move];
     }
 
-    let file = accumulated_offset.0 as u8;
-    let rank = accumulated_offset.1 as u8;
-
-    let start_square = game_state.square_to_index(square.0, square.1);
-    let end_square = game_state.square_to_index(file, rank);
+    let end_square = accumulated_index as u16;
+    let start_square = square_index as u16;
 
     let is_initial = move_is_initial;
                                                                                 /* Check for promotion                */
-    let reaches_promotion_rank = rank == promotion_rank;
+    let end_rank = (accumulated_index / (game_state.files as i32)) as u8;
+    let reaches_promotion_rank = end_rank == promotion_rank;
     let can_promote = piece.can_promote() && reaches_promotion_rank;
                                                                                 /* Get promotion pieces if applicable */
     let promotion_pieces = if can_promote {
@@ -819,7 +799,7 @@ fn process_multi_leg_vector(
 /// 4 -> special for castling
 #[hotpath::measure]
 pub fn generate_move_list(
-    square: (u8, u8),
+    square_index: u32,
     piece: &Piece,
     friendly_board: &Board,
     enemy_board: &Board,
@@ -829,13 +809,13 @@ pub fn generate_move_list(
 
     #[cfg(debug_assertions)]
     {
-        assert!(!check_out_of_bounds((
-            square.0 as i8,
-            square.1 as i8
-        ), game_state), "Square {:?} is out of bounds", square);
+        assert!(!check_out_of_bounds(
+            square_index as i32,
+            game_state
+        ), "Square index {} is out of bounds", square_index);
     }
 
-    let unmoved_piece = unmoved_board.get_bit(square.0, square.1);
+    let unmoved_piece = unmoved_board.get_bit(square_index);
     let vector_set = &game_state.piece_move_vectors[piece.index() as usize];
     let side = piece.color();
     let piece_idx = piece.index();
@@ -851,7 +831,7 @@ pub fn generate_move_list(
         .flat_map(|multi_leg_vector| {
             process_multi_leg_vector(
                 multi_leg_vector,
-                square,
+                square_index,
                 piece,
                 friendly_board,
                 enemy_board,
@@ -870,8 +850,7 @@ pub fn generate_move_list(
 
 fn find_piece_at_square(
     game_state: &State,
-    file: u8,
-    rank: u8,
+    square_index: u32,
 ) -> Option<&Piece> {
     let piece_count = game_state.pieces.len() / 2;
     let start_index = if game_state.playing == WHITE {
@@ -883,7 +862,7 @@ fn find_piece_at_square(
     for i in start_index..start_index + piece_count {
         let piece_board = &game_state.pieces_board[i];
 
-        if piece_board.get_bit(file, rank) {
+        if piece_board.get_bit(square_index) {
             return Some(&game_state.pieces[i]);
         }
     }
@@ -893,7 +872,7 @@ fn find_piece_at_square(
 
 fn remove_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
     let color = game_state.pieces[piece_index].color();
-    let (file, rank) = game_state.index_to_square(square_index);
+    let sq_idx = square_index as u32;
 
     hash_in_or_out_piece(
         game_state,
@@ -905,29 +884,29 @@ fn remove_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
     #[cfg(debug_assertions)]
     {
         assert!(
-            game_state.pieces_board[piece_index].get_bit(file, rank),
-            "No piece of index {} at square {:?} to remove",
+            game_state.pieces_board[piece_index].get_bit(sq_idx),
+            "No piece of index {} at square {} to remove",
             piece_index,
-            (file, rank)
+            square_index
         );
         assert!(
             if color == WHITE {
-                game_state.white_board.get_bit(file, rank)
+                game_state.white_board.get_bit(sq_idx)
             } else {
-                game_state.black_board.get_bit(file, rank)
+                game_state.black_board.get_bit(sq_idx)
             },
-            "No piece of color {} at square {:?} to remove",
+            "No piece of color {} at square {} to remove",
             if color == WHITE {"WHITE"} else {"BLACK"},
-            (file, rank)
+            square_index
         );
     }
 
-    game_state.pieces_board[piece_index].clear_bit(file, rank);
+    game_state.pieces_board[piece_index].clear_bit(sq_idx);
 
     if color == WHITE {
-        game_state.white_board.clear_bit(file, rank);
+        game_state.white_board.clear_bit(sq_idx);
     } else {
-        game_state.black_board.clear_bit(file, rank);
+        game_state.black_board.clear_bit(sq_idx);
     }
 
     if game_state.pieces[piece_index].is_big() {
@@ -946,7 +925,7 @@ fn remove_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
 
 fn add_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
     let color = game_state.pieces[piece_index].color();
-    let (file, rank) = game_state.index_to_square(square_index);
+    let sq_idx = square_index as u32;
 
     hash_in_or_out_piece(
         game_state,
@@ -958,29 +937,29 @@ fn add_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
     #[cfg(debug_assertions)]
     {
         assert!(
-            !game_state.pieces_board[piece_index].get_bit(file, rank),
-            "Piece of index {} already at square {:?}",
+            !game_state.pieces_board[piece_index].get_bit(sq_idx),
+            "Piece of index {} already at square {}",
             piece_index,
-            (file, rank)
+            square_index
         );
         assert!(
             if color == WHITE {
-                !game_state.white_board.get_bit(file, rank)
+                !game_state.white_board.get_bit(sq_idx)
             } else {
-                !game_state.black_board.get_bit(file, rank)
+                !game_state.black_board.get_bit(sq_idx)
             },
-            "Square {:?} already occupied by a piece of color {}",
-            (file, rank),
+            "Square {} already occupied by a piece of color {}",
+            square_index,
             if color == WHITE {"WHITE"} else {"BLACK"}
         );
     }
 
-    game_state.pieces_board[piece_index].set_bit(file, rank);
+    game_state.pieces_board[piece_index].set_bit(sq_idx);
 
     if color == WHITE {
-        game_state.white_board.set_bit(file, rank);
+        game_state.white_board.set_bit(sq_idx);
     } else {
-        game_state.black_board.set_bit(file, rank);
+        game_state.black_board.set_bit(sq_idx);
     }
 
     if game_state.pieces[piece_index].is_big() {
@@ -1004,8 +983,8 @@ fn move_piece(
     game_state: &mut State
 ) {
     let color = game_state.pieces[piece_index].color();
-    let (start_file, start_rank) = game_state.index_to_square(start_square);
-    let (end_file, end_rank) = game_state.index_to_square(end_square);
+    let start_idx = start_square as u32;
+    let end_idx = end_square as u32;
 
     hash_in_or_out_piece(
         game_state,
@@ -1024,38 +1003,38 @@ fn move_piece(
     #[cfg(debug_assertions)]
     {
         assert!(
-            game_state.pieces_board[piece_index].get_bit(start_file, start_rank),
-            "No piece of index {} at start square {:?} to move",
+            game_state.pieces_board[piece_index].get_bit(start_idx),
+            "No piece of index {} at start square {} to move",
             piece_index,
-            (start_file, start_rank)
+            start_square
         );
         assert!(
-            !game_state.pieces_board[piece_index].get_bit(end_file, end_rank),
-            "Piece of index {} already at end square {:?}",
+            !game_state.pieces_board[piece_index].get_bit(end_idx),
+            "Piece of index {} already at end square {}",
             piece_index,
-            (end_file, end_rank)
+            end_square
         );
         assert!(
             if color == WHITE {
-                game_state.white_board.get_bit(start_file, start_rank)
+                game_state.white_board.get_bit(start_idx)
             } else {
-                game_state.black_board.get_bit(start_file, start_rank)
+                game_state.black_board.get_bit(start_idx)
             },
-            "No piece of color {} at start square {:?} to move",
+            "No piece of color {} at start square {} to move",
             if color == WHITE {"WHITE"} else {"BLACK"},
-            (start_file, start_rank)
+            start_square
         );
     }
 
-    game_state.pieces_board[piece_index].clear_bit(start_file, start_rank);
-    game_state.pieces_board[piece_index].set_bit(end_file, end_rank);
+    game_state.pieces_board[piece_index].clear_bit(start_idx);
+    game_state.pieces_board[piece_index].set_bit(end_idx);
 
     if color == WHITE {
-        game_state.white_board.clear_bit(start_file, start_rank);
-        game_state.white_board.set_bit(end_file, end_rank);
+        game_state.white_board.clear_bit(start_idx);
+        game_state.white_board.set_bit(end_idx);
     } else {
-        game_state.black_board.clear_bit(start_file, start_rank);
-        game_state.black_board.set_bit(end_file, end_rank);
+        game_state.black_board.clear_bit(start_idx);
+        game_state.black_board.set_bit(end_idx);
     }
 }
 
@@ -1094,13 +1073,10 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             move_piece(piece_index, start_square, end_square, game_state);
 
-            let (start_file, start_rank) =
-                game_state.index_to_square(start_square);
-
-            game_state.unmoved_board.clear_bit(start_file, start_rank);
+            game_state.unmoved_board.clear_bit(start_square as u32);
 
             if is_initial {
-                game_state.unmoved_board.clear_bit(start_file, start_rank);
+                game_state.unmoved_board.clear_bit(start_square as u32);
             }
 
             if creates_en_passant {
@@ -1157,13 +1133,9 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             let is_unload = mv.is_unload();
             let unload_square = mv.unload_square();
 
-            let (end_file, end_rank) =
-                game_state.index_to_square(end_square);
-
             let real_captured = find_piece_at_square(
                 game_state,
-                end_file,
-                end_rank
+                end_square as u32
             )
             .expect("No piece found at captured square");
             let real_captured_index = real_captured.index() as usize;
@@ -1193,7 +1165,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     "Cannot capture royal pieces"
                 )
             }
-            game_state.unmoved_board.clear_bit(end_file, end_rank);
+            game_state.unmoved_board.clear_bit(end_square as u32);
 
             if let Some(unload_sq) = unload_square {
                 move_piece(
@@ -1208,13 +1180,10 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             move_piece(piece_index, start_square, end_square, game_state);
 
-            let (start_file, start_rank) =
-                game_state.index_to_square(start_square);
-
-            game_state.unmoved_board.clear_bit(start_file, start_rank);
+            game_state.unmoved_board.clear_bit(start_square as u32);
 
             if is_initial {
-                game_state.unmoved_board.clear_bit(start_file, start_rank);
+                game_state.unmoved_board.clear_bit(start_square as u32);
             }
 
             if creates_en_passant {
@@ -1253,20 +1222,20 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             }
         }
         MoveType::HopperCapture(mv) => {                                        /* where capture square != end square */
-            let piece_index = mv.piece_index() as usize;
-            let start_square = mv.start_square();
-            let end_square = mv.end_square();
-            let is_initial = mv.is_initial();
-            let is_promotion = mv.is_promotion();
-            let creates_en_passant = mv.creates_en_passant_square();
-            let promoting_piece = mv.promoting_piece();
-            let promoted_piece = mv.promoted_piece();
-            let en_passant_square = mv.en_passant_square();
-            let can_capture_royal = mv.can_capture_royal();
-            let captured_piece_type = mv.captured_piece();
-            let captured_square = mv.captured_square();
-            let is_unload = mv.is_unload();
-            let unload_square = mv.unload_square();
+            let _piece_index = mv.piece_index() as usize;
+            let _start_square = mv.start_square();
+            let _end_square = mv.end_square();
+            let _is_initial = mv.is_initial();
+            let _is_promotion = mv.is_promotion();
+            let _creates_en_passant = mv.creates_en_passant_square();
+            let _promoting_piece = mv.promoting_piece();
+            let _promoted_piece = mv.promoted_piece();
+            let _en_passant_square = mv.en_passant_square();
+            let _can_capture_royal = mv.can_capture_royal();
+            let _captured_piece_type = mv.captured_piece();
+            let _captured_square = mv.captured_square();
+            let _is_unload = mv.is_unload();
+            let _unload_square = mv.unload_square();
 
             Snapshot {
                 move_ply: MoveType::HopperCapture(mv),
@@ -1277,16 +1246,16 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             }
         }
         MoveType::MultiCapture(mv) => {
-            let piece_index = mv.piece_index() as usize;
-            let start_square = mv.start_square();
-            let end_square = mv.end_square();
-            let is_initial = mv.is_initial();
-            let is_promotion = mv.is_promotion();
-            let creates_en_passant = mv.creates_en_passant_square();
-            let promoting_piece = mv.promoting_piece();
-            let promoted_piece = mv.promoted_piece();
-            let en_passant_square = mv.en_passant_square();
-            let taken_pieces = mv.get_taken_pieces();
+            let _piece_index = mv.piece_index() as usize;
+            let _start_square = mv.start_square();
+            let _end_square = mv.end_square();
+            let _is_initial = mv.is_initial();
+            let _is_promotion = mv.is_promotion();
+            let _creates_en_passant = mv.creates_en_passant_square();
+            let _promoting_piece = mv.promoting_piece();
+            let _promoted_piece = mv.promoted_piece();
+            let _en_passant_square = mv.en_passant_square();
+            let _taken_pieces = mv.get_taken_pieces();
 
             Snapshot {
                 move_ply: MoveType::MultiCapture(mv),
@@ -1317,6 +1286,6 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
 // undoes the last move made
 #[hotpath::measure]
-pub fn undo_move(game_state: &mut State) {
+pub fn undo_move(_game_state: &mut State) {
     unimplemented!("Undo move not implemented yet.");
 }
