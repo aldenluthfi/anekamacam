@@ -1,4 +1,7 @@
-use crate::{constants::*, game::{moves::{move_list::generate_move_list, perft::start_peft}, representations::{moves::MoveType, state::State}}};
+use crate::game::{
+    moves::perft::start_perft,
+    representations::state::State
+};
 
 pub mod game {
     pub mod representations {
@@ -29,7 +32,7 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let state = State::from_config("configs/fide.anm");
+    let mut state = State::from_config("configs/fide.anm");
 
-    start_peft(&state, "res/fide.perft", 1);
+    start_perft(&mut state, "res/fide.perft", 1);
 }
