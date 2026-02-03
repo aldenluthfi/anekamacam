@@ -29,13 +29,17 @@ fn parse_perft_file(
     }).collect()
 }
 
-pub fn start_peft(state: &State, path: &str, depth: u8) {
+pub fn start_perft(state: &mut State, path: &str, depth: u8) {
     let perft_cases = parse_perft_file(path);
 
     let mut successful_cases = 0;
     let total_cases = perft_cases.len();
 
-    for (fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6) in perft_cases {
+    for (
+        fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6
+    ) in perft_cases {
+        state.load_fen(&fen);
+
         let expected_perfts = [
             perft_1, perft_2, perft_3, perft_4, perft_5, perft_6
         ];
@@ -46,16 +50,14 @@ pub fn start_peft(state: &State, path: &str, depth: u8) {
             let expected = expected_perfts[(d - 1) as usize];
 
             if result == expected {
-                println!(
-                    "Perft {} for FEN {} passed: got {}, expected {}",
-                    d, fen, result, expected
-                );
-
                 successful_cases += 1;
             } else {
                 println!(
-                    "Perft {} for FEN {} failed: got {}, expected {}",
-                    d, fen, result, expected
+                    concat!(
+                        "[FAIL] Perft test failed for FEN {} \n",
+                        "at depth {}: expected {}, got {}"
+                    ),
+                    fen, d, expected, result
                 );
             }
         }
@@ -67,7 +69,7 @@ pub fn start_peft(state: &State, path: &str, depth: u8) {
     );
 }
 
-fn generate_all_moves(state: &State) -> Vec<MoveType> {
+pub fn generate_all_moves(state: &State) -> Vec<MoveType> {
     let mut possible_moves: Vec<MoveType> = vec![];
 
     let piece_count = state.pieces.len() / 2;
@@ -106,7 +108,8 @@ fn generate_all_moves(state: &State) -> Vec<MoveType> {
     possible_moves
 }
 
-fn perft(state: &State, depth: u8) -> u64 {
+#[hotpath::measure]
+pub fn perft(state: &State, depth: u8) -> u64 {
 
     if depth == 1 {
         return generate_all_moves(state).len() as u64

@@ -14,6 +14,7 @@ regex = { workspace = true }
 rayon = { workspace = true }
 bnum = { workspace = true }
 rand = { workspace = true }
+backtrace-on-stack-overflow = { workspace = true }
 
 [features]
 hotpath = ["hotpath/hotpath"]
