@@ -7,9 +7,7 @@ use crate::{
     constants::*,
     game::{
         hash::{
-            hash_in_or_out_piece,
-            hash_toggle_side,
-            hash_update_en_passant
+            hash_in_or_out_piece, hash_toggle_side, hash_update_castling, hash_update_en_passant
         },
         representations::{
             board::Board,
@@ -17,7 +15,7 @@ use crate::{
             piece::Piece,
             state::{Snapshot, State}, vector::LegVector,
         }
-    },
+    }, io::move_io::format_move,
 };
 
 fn check_out_of_bounds(
@@ -56,29 +54,17 @@ pub fn is_square_attacked(
         side_piece_count
     };
     let sq_index = square_index as usize;
-
-    let mut new_board = Board::new(
-        game_state.files,
-        game_state.ranks,
-    );
-
-    new_board.set_bit(square_index);
-
-    let mut friendly_board = if side == WHITE {
+    let friendly_board = if side == WHITE {
         &game_state.white_board
     } else {
         &game_state.black_board
-    } ^ &new_board;                                                             /* make sure no enemy piece there     */
-
-    if friendly_board.get_bit(square_index) {
-        friendly_board = &friendly_board ^ &new_board;
-    }
+    };
 
     let enemy_board = if side == WHITE {
         &game_state.black_board
     } else {
         &game_state.white_board
-    } | &new_board;                                                             /* As if theres a friendly piece there*/
+    };
 
     for i in index..index + side_piece_count {
         let piece = &game_state.pieces[i];
@@ -99,7 +85,8 @@ pub fn is_square_attacked(
                 &friendly_board,
                 &enemy_board,
                 &game_state.unmoved_board,
-                game_state
+                game_state,
+                true
             );
 
             for moves in move_list {
@@ -120,7 +107,7 @@ pub fn is_square_attacked(
 
                     MoveType::MultiCapture(mv) => {
                         for (
-                            _, cap_square, can_capture_royal, is_unload, _
+                            _, cap_square, can_capture_royal, is_unload, _, _
                         ) in mv.get_taken_pieces() {
                             if  cap_square == sq_index as u16 &&
                                 !is_unload &&                                   /* attacks defined as captures only   */
@@ -149,15 +136,27 @@ pub fn is_in_check(
     } else {
         &game_state.black_board
     };
-    let monarch_indices = monarch_board.bit_indices();
+    let monarch_count = monarch_board.count_bits();
 
-    for index in monarch_indices {
-        if is_square_attacked(
-            index,
-            1 - side,
+    if monarch_count == 1 {
+        let lsb = monarch_board.lsb();
+
+        return is_square_attacked(
+            lsb,
+            if side == WHITE {BLACK} else {WHITE},
             game_state
-        ) {
-            return true;
+        );
+    } else {
+        let monerch_indices = monarch_board.bit_indices();
+
+        for index in monerch_indices {
+            if is_square_attacked(
+                index,
+                if side == WHITE {BLACK} else {WHITE},
+                game_state
+            ) {
+                return true;
+            }
         }
     }
 
@@ -191,20 +190,20 @@ pub fn generate_relevant_boards(
 
         for leg in multi_leg_vector {
             let (file_offset, rank_offset) = leg.get_atomic().whole();
-            
-            let file = accumulated_index % (game_state.files as i32);
-            let rank = accumulated_index / (game_state.files as i32);
-            
-            let new_file = file + (file_offset as i32);
-            let adjusted_rank_offset = (rank_offset as i32) * if side == WHITE {1} else {-1};
-            let new_rank = rank + adjusted_rank_offset;
 
-            if new_file < 0 || new_file >= game_state.files as i32
-                || new_rank < 0 || new_rank >= game_state.ranks as i32 {
+            let mut file = accumulated_index % (game_state.files as i32);
+            let mut rank = accumulated_index / (game_state.files as i32);
+
+            file += file_offset as i32;
+            rank += rank_offset as i32 * if side == WHITE {1} else {-1};
+
+            if  file < 0 || file >= game_state.files as i32 ||
+                rank < 0 || rank >= game_state.ranks as i32
+            {
                 break;
             }
 
-            accumulated_index = new_rank * (game_state.files as i32) + new_file;
+            accumulated_index = rank * (game_state.files as i32) + file;
             result.set_bit(accumulated_index as u32);
         }
     }
@@ -224,9 +223,10 @@ fn process_multi_leg_vector(
     piece_idx: u8,
     promotion_rank: u8,
     unmoved_piece: bool,
+    imaginary: bool
 ) -> Vec<MoveType> {
     let mut accumulated_index = square_index as i32;
-    let mut taken_pieces: Vec<(u8, u16, bool, bool, Option<u16>)> =
+    let mut taken_pieces: Vec<(u8, u16, bool, bool, Option<u16>, bool)> =
         Vec::new();
     let mut castling_leg: Option<LegVector> = None;
     let mut en_passant_square: Option<u32> = None;
@@ -263,6 +263,10 @@ fn process_multi_leg_vector(
                 _ => true
             }
         };
+
+        if unmoved_piece {
+            move_is_initial = true;
+        }
 
         if has_initial == Some(true) {                                          /* Mark move as initial if i present  */
             if !unmoved_piece {
@@ -317,32 +321,24 @@ fn process_multi_leg_vector(
         let start_square_index = accumulated_index as u16;
 
         let (file_offset, rank_offset) = leg.get_atomic().whole();
-        
-        let file = accumulated_index % (game_state.files as i32);
-        let rank = accumulated_index / (game_state.files as i32);
-        
-        let new_file = file + (file_offset as i32);
-        let adjusted_rank_offset = (rank_offset as i32) * if side == WHITE {1} else {-1};
-        let new_rank = rank + adjusted_rank_offset;
 
-        if new_file < 0 || new_file >= game_state.files as i32
-            || new_rank < 0 || new_rank >= game_state.ranks as i32 {
+        let mut file = accumulated_index % (game_state.files as i32);
+        let mut rank = accumulated_index / (game_state.files as i32);
+
+        file += file_offset as i32;
+        rank += rank_offset as i32 * if side == WHITE {1} else {-1};
+
+        if  file < 0 || file >= game_state.files as i32 ||
+            rank < 0 || rank >= game_state.ranks as i32
+        {
             return Vec::new();
         }
 
-        accumulated_index = new_rank * (game_state.files as i32) + new_file;
+        accumulated_index = rank * (game_state.files as i32) + file;
         let square_index = accumulated_index as u16;
         let has_friendly = friendly_board.get_bit(square_index as u32);
         let has_enemy = enemy_board.get_bit(square_index as u32);
         let is_empty = !has_friendly && !has_enemy;
-
-        if creates_en_passant {                                                 /* Handle en-passant creation (p)     */
-            en_passant_count += 1;
-            if en_passant_count > 1 {
-                panic!("More than one en-passant square in move vector!");
-            }
-            en_passant_square = Some(start_square_index as u32);                /* Store only capture square initially*/
-        }
 
         let must_capture = can_capture && !can_move && !can_destroy;
         let must_move = !can_capture && can_move && !can_destroy;
@@ -364,21 +360,26 @@ fn process_multi_leg_vector(
                         && is_empty
                         && game_state.pieces[enp_piece_idx].color() == side     /* Must be friendly piece              */
                     {
+                        let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;    /* 12 bits to encode where the pce is */
+                        let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
                         taken_pieces.push(
                             (
-                                2, (game_en_passant >> 12) as u16 & 0xFFF,      /* Next 12 bits: captured piece square*/
-                                can_capture_royal, false, None
+                                2, enp_sq,
+                                can_capture_royal, false, None, enp_unmoved
                             )
                         );
                         continue;
                     }
                 }
-                return Vec::new();
+                if !imaginary {
+                    return Vec::new();
+                }
             }
+            let sq_unmoved = unmoved_board.get_bit(square_index as u32);
             taken_pieces.push(
                 (
                     2, square_index, can_capture_royal,
-                    false, None
+                    false, None, sq_unmoved
                 )
             );
         } else if must_capture {                                                /* c: must capture enemy              */
@@ -388,27 +389,34 @@ fn process_multi_leg_vector(
                 {
                     let enp_piece_idx =
                         (game_en_passant >> 24) as usize & 0xFF;
+
                     if can_capture_en_passant
                         && square_index == (game_en_passant & 0xFFF) as u16
                         && is_empty
-                        && game_state.pieces[enp_piece_idx].color() != side     /* Must be friendly piece              */
+                        && game_state.pieces[enp_piece_idx].color() != side     /* Must be enemy  piece              */
                     {
+                        let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
+                        let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
                         taken_pieces.push(
                             (
-                                1, (game_en_passant >> 12) as u16 & 0xFFF,
-                                can_capture_royal, false, None
+                                1, enp_sq,
+                                can_capture_royal, false, None, enp_unmoved
                             )
                         );
                         continue;
                     }
                 }
-                return Vec::new();
+
+                if !imaginary {
+                    return Vec::new();
+                }
             }
 
+            let sq_unmoved = unmoved_board.get_bit(square_index as u32);
             taken_pieces.push(
                 (
                     1, square_index, can_capture_royal,
-                    false, None
+                    false, None, sq_unmoved
                 )
             );
         } else if must_move {                                                   /* m: must move to empty              */
@@ -424,32 +432,39 @@ fn process_multi_leg_vector(
                         && square_index == (game_en_passant & 0xFFF) as u16
                         && is_empty
                     {                                                           /* can be both color                  */
+                        let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
+                        let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
                         taken_pieces.push(
                             (
-                                3, (game_en_passant >> 12) as u16 & 0xFFF,
-                                can_capture_royal, false, None
+                                3, enp_sq,
+                                can_capture_royal, false, None, enp_unmoved
                             )
                         );
                         continue;
                     }
                 }
-                return Vec::new();
+
+                if !imaginary {
+                    return Vec::new();
+                }
             }
+            let sq_unmoved = unmoved_board.get_bit(square_index as u32);
             taken_pieces.push(
                 (
                     3, square_index, can_capture_royal,
-                    false, None
+                    false, None, sq_unmoved
                 )
             );
         } else if can_move_destroy {                                            /* md: move or destroy friendly       */
-            if has_enemy {
+            if has_enemy && !imaginary{
                 return Vec::new();
             }
-            if has_friendly {
+            if has_friendly || imaginary {
+                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
                 taken_pieces.push(
                     (
                         2, square_index, can_capture_royal,
-                        false, None
+                        false, None, sq_unmoved
                     )
                 );
             } else if let Some(game_en_passant) =
@@ -461,23 +476,26 @@ fn process_multi_leg_vector(
                     && is_empty
                     && game_state.pieces[enp_piece_idx].color() == side         /* Must be friendly piece             */
                 {
+                    let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
+                    let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
                     taken_pieces.push(
                         (
-                            2, (game_en_passant >> 12) as u16 & 0xFFF,
-                            can_capture_royal, false, None
+                            2, enp_sq,
+                            can_capture_royal, false, None, enp_unmoved
                         )
                     );
                 }
             }
         } else if can_move_capture {                                            /* mc: move or capture enemy          */
-            if has_friendly {
+            if has_friendly && !imaginary {
                 return Vec::new();
             }
-            if has_enemy {
+            if has_enemy || imaginary {
+                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
                 taken_pieces.push(
                     (
                         1, square_index, can_capture_royal,
-                        false, None
+                        false, None, sq_unmoved
                     )
                 );
             } else if let Some(game_en_passant) =
@@ -489,27 +507,40 @@ fn process_multi_leg_vector(
                     && is_empty
                     && game_state.pieces[enp_piece_idx].color() != side         /* Must be enemy piece                */
                 {
+                    let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
+                    let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
                     taken_pieces.push(
                         (
-                            1, (game_en_passant >> 12) as u16 & 0xFFF,
-                            can_capture_royal, false, None
+                            1, enp_sq,
+                            can_capture_royal, false, None, enp_unmoved
                         )
                     );
                 }
             }
         } else if can_do_all_three {                                            /* mcd: move/capture/destroy (any)    */
-            if has_friendly {
+            if imaginary {
+                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
+                taken_pieces.push(
+                    (
+                        3, square_index, can_capture_royal,
+                        false, None, sq_unmoved
+                    )
+                );
+            }
+            else if has_friendly {
+                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
                 taken_pieces.push(
                     (
                         2, square_index, can_capture_royal,
-                        false, None
+                        false, None, sq_unmoved
                     )
                 );
             } else if has_enemy {
+                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
                 taken_pieces.push(
                     (
                         1, square_index, can_capture_royal,
-                        false, None
+                        false, None, sq_unmoved
                     )
                 );
             } else if let Some(game_en_passant) =
@@ -519,10 +550,12 @@ fn process_multi_leg_vector(
                     && square_index == (game_en_passant & 0xFFF) as u16
                     && is_empty
                 {
+                    let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
+                    let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
                     taken_pieces.push(
                         (
-                            3, (game_en_passant >> 12) as u16 & 0xFFF,
-                            can_capture_royal, false, None
+                            3, enp_sq,
+                            can_capture_royal, false, None, enp_unmoved
                         )
                     );
                 }
@@ -536,22 +569,26 @@ fn process_multi_leg_vector(
             let last_idx = taken_pieces.len() - 1;                              /* Update last captured piece unload  */
 
             let (
-                piece_type, cap_square, _,
-                can_cap_royal, _
+                piece_type, cap_square, can_cap_royal,
+                _, _, captures_unmoved
             ) = taken_pieces[last_idx];
 
             taken_pieces[last_idx] = (
                 piece_type, cap_square, can_cap_royal, true,
-                Some(start_square_index)
+                Some(start_square_index), captures_unmoved
             );
             continue;                                                           /* Unload doesnt add to captures      */
         }
 
-        if let Some(en_passant_sq) = en_passant_square {
+        if creates_en_passant {                                                 /* Handle en-passant creation (p)     */
+            en_passant_count += 1;
+            if en_passant_count > 1 {
+                panic!("More than one en-passant square in move vector!");
+            }
             en_passant_square = Some(
-                (en_passant_sq & 0xFFF)                                         /* Capture square                     */
+                (start_square_index as u32 & 0xFFF)                             /* Capture square                     */
                 | (square_index as u32) << 12                                   /* Captured piece square              */
-                | (piece_idx as u32) << 24
+                | (piece_idx as u32) << 24                                      /* Captured piece index               */
             );
         }
     }
@@ -560,17 +597,38 @@ fn process_multi_leg_vector(
         let king_file = square_index % (game_state.files as u32);
         let king_rank = square_index / (game_state.files as u32);
 
+        if unmoved_piece == false {
+            return Vec::new();                                                  /* King must be unmoved               */
+        }
+
         let atomic = leg.get_atomic();
         let (offset, _) = atomic.whole();
 
         let is_castling_right = leg.is_castling_right();
+
+        if side == WHITE {
+            if game_state.castling_state &
+            if is_castling_right {0b0001} else {0b0010} == 0
+            {
+                return Vec::new();                                              /* Castling right not available       */
+            }
+        } else {
+            if game_state.castling_state &
+            if is_castling_right {0b0100} else {0b1000} == 0
+            {
+                return Vec::new();                                              /* Castling right not available       */
+            }
+        }
+
         let rook_file = if is_castling_right {
             game_state.files - 1
         } else {
             0
         };
 
-        let rook_square = (king_rank * (game_state.files as u32) + (rook_file as u32)) as u16;
+        let rook_square = (
+            king_rank * (game_state.files as u32) + (rook_file as u32)
+        ) as u16;
         let rook_sq_idx = rook_square as u32;
 
         if !unmoved_board.get_bit(rook_sq_idx) {
@@ -609,28 +667,10 @@ fn process_multi_leg_vector(
             return Vec::new();
         }
 
-        let attack_start = king_file.min(king_end_file);
-        let attack_end = king_file.max(king_end_file);
-
-        let mut king_path_safe = true;
-        for f in attack_start..=attack_end {
-            let check_sq_idx = king_rank * (game_state.files as u32) + f;
-            if is_square_attacked(
-                check_sq_idx,
-                1 - side,                                                       /* Check from enemy perspective       */
-                game_state
-            ) {
-                king_path_safe = false;
-                break;                                                          /* King path must not be attacked     */
-            }
-        }
-
-        if !king_path_safe {
-            return Vec::new();
-        }
-
         let start_square = square_index as u16;
-        let end_square = (king_rank * (game_state.files as u32) + king_end_file) as u16;
+        let end_square = (
+            king_rank * (game_state.files as u32) + king_end_file
+        ) as u16;
 
         let unload_file = if is_castling_right {
             king_end_file - 1
@@ -638,7 +678,9 @@ fn process_multi_leg_vector(
             king_end_file + 1
         };
 
-        let unload_square = (king_rank * (game_state.files as u32) + unload_file) as u16;
+        let unload_square = (
+            king_rank * (game_state.files as u32) + unload_file
+        ) as u16;
 
         let encoded_move = Move::encode(
             piece_idx,
@@ -656,6 +698,7 @@ fn process_multi_leg_vector(
             None,                                                               /* taken_pieces                       */
             Some(true),                                                         /* is_unload                          */
             Some(unload_square),                                                /* unload_square                      */
+            Some(true),                                                         /* captures_unmoved (rook is unmoved) */
         );
 
         return vec![encoded_move];
@@ -663,8 +706,6 @@ fn process_multi_leg_vector(
 
     let end_square = accumulated_index as u16;
     let start_square = square_index as u16;
-
-    let is_initial = move_is_initial;
                                                                                 /* Check for promotion                */
     let end_rank = (accumulated_index / (game_state.files as i32)) as u8;
     let reaches_promotion_rank = end_rank == promotion_rank;
@@ -705,7 +746,7 @@ fn process_multi_leg_vector(
                     piece_idx,
                     start_square,
                     end_square,
-                    is_initial,
+                    move_is_initial,
                     is_promotion,
                     promoting_piece,
                     promoted_piece,
@@ -717,12 +758,13 @@ fn process_multi_leg_vector(
                     None,                                                       /* taken_pieces                       */
                     None,                                                       /* is_unload                          */
                     None,                                                       /* unload_square                      */
+                    None,                                                       /* captures_unmoved                   */
                 )
             }
             1 => {
                 let (
                     captured_piece, cap_square, can_capture_royal,
-                    is_unload, unload_sq
+                    is_unload, unload_sq, captures_unmoved
                 ) = taken_pieces[0];
 
                 if cap_square != end_square {
@@ -730,7 +772,7 @@ fn process_multi_leg_vector(
                         piece_idx,
                         start_square,
                         end_square,
-                        is_initial,
+                        move_is_initial,
                         is_promotion,
                         promoting_piece,
                         promoted_piece,
@@ -742,13 +784,14 @@ fn process_multi_leg_vector(
                         None,                                                   /* taken_pieces                       */
                         Some(is_unload),
                         unload_sq,
+                        Some(captures_unmoved),
                     )
                 } else {
                     Move::encode(
                         piece_idx,
                         start_square,
                         end_square,
-                        is_initial,
+                        move_is_initial,
                         is_promotion,
                         promoting_piece,
                         promoted_piece,
@@ -760,6 +803,7 @@ fn process_multi_leg_vector(
                         None,                                                   /* taken_pieces                       */
                         Some(is_unload),
                         unload_sq,
+                        Some(captures_unmoved),
                     )
                 }
             }
@@ -768,7 +812,7 @@ fn process_multi_leg_vector(
                     piece_idx,
                     start_square,
                     end_square,
-                    is_initial,
+                    move_is_initial,
                     is_promotion,
                     promoting_piece,
                     promoted_piece,
@@ -780,6 +824,7 @@ fn process_multi_leg_vector(
                     Some(taken_pieces.clone()),                                 /* taken_pieces for multi-capture     */
                     None,                                                       /* is_unload                          */
                     None,                                                       /* unload_square                      */
+                    None,                                                       /* captures_unmoved                   */
                 )
             }
         };
@@ -804,7 +849,8 @@ pub fn generate_move_list(
     friendly_board: &Board,
     enemy_board: &Board,
     unmoved_board: &Board,
-    game_state: &State
+    game_state: &State,
+    imaginary: bool
 ) -> Vec<MoveType> {
 
     #[cfg(debug_assertions)]
@@ -841,6 +887,7 @@ pub fn generate_move_list(
                 piece_idx,
                 promotion_rank,
                 unmoved_piece,
+                imaginary
             )
         })
         .collect();
@@ -852,14 +899,9 @@ fn find_piece_at_square(
     game_state: &State,
     square_index: u32,
 ) -> Option<&Piece> {
-    let piece_count = game_state.pieces.len() / 2;
-    let start_index = if game_state.playing == WHITE {
-        0
-    } else {
-        piece_count
-    };
+    let piece_count = game_state.pieces.len();
 
-    for i in start_index..start_index + piece_count {
+    for i in 0..piece_count {
         let piece_board = &game_state.pieces_board[i];
 
         if piece_board.get_bit(square_index) {
@@ -873,13 +915,6 @@ fn find_piece_at_square(
 fn remove_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
     let color = game_state.pieces[piece_index].color();
     let sq_idx = square_index as u32;
-
-    hash_in_or_out_piece(
-        game_state,
-        piece_index,
-        color,
-        square_index
-    );
 
     #[cfg(debug_assertions)]
     {
@@ -926,13 +961,6 @@ fn remove_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
 fn add_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
     let color = game_state.pieces[piece_index].color();
     let sq_idx = square_index as u32;
-
-    hash_in_or_out_piece(
-        game_state,
-        piece_index,
-        color,
-        square_index
-    );
 
     #[cfg(debug_assertions)]
     {
@@ -986,20 +1014,6 @@ fn move_piece(
     let start_idx = start_square as u32;
     let end_idx = end_square as u32;
 
-    hash_in_or_out_piece(
-        game_state,
-        piece_index,
-        color,
-        start_square
-    );
-
-    hash_in_or_out_piece(
-        game_state,
-        piece_index,
-        color,
-        end_square
-    );
-
     #[cfg(debug_assertions)]
     {
         assert!(
@@ -1036,6 +1050,11 @@ fn move_piece(
         game_state.black_board.clear_bit(start_idx);
         game_state.black_board.set_bit(end_idx);
     }
+
+    if game_state.pieces[piece_index].is_royal() {
+        game_state.monarch_board.clear_bit(start_idx);
+        game_state.monarch_board.set_bit(end_idx);
+    }
 }
 
 fn promote_piece(
@@ -1071,7 +1090,25 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             let promoted_piece = mv.promoted_piece();
             let en_passant_square = mv.en_passant_square();
 
+            let piece_color = game_state.pieces[piece_index].color();
+            let piece_unmoved =
+                game_state.unmoved_board.get_bit(start_square as u32);
+
             move_piece(piece_index, start_square, end_square, game_state);
+
+            hash_in_or_out_piece(
+                game_state,
+                piece_index,
+                piece_color,
+                start_square
+            );
+
+            hash_in_or_out_piece(
+                game_state,
+                piece_index,
+                piece_color,
+                end_square
+            );
 
             game_state.unmoved_board.clear_bit(start_square as u32);
 
@@ -1112,6 +1149,84 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 game_state.halfmove_clock += 1;
             }
 
+            let can_castle_kingside =
+                game_state.pieces[piece_index].can_castle_kingside();
+            let can_castle_queenside =
+                game_state.pieces[piece_index].can_castle_queenside();
+
+            if can_castle_kingside || can_castle_queenside {
+                match (piece_color, can_castle_kingside, can_castle_queenside) {
+                    (WHITE, true, false) => {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                    (WHITE, false, true) => {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    }
+                    (BLACK, true, false) => {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                    (BLACK, false, true) => {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    }
+                    (WHITE, true, true) => {
+                        game_state.castling_state &= !0b0011;                   /* Both white sides lost              */
+                    }
+                    (BLACK, true, true) => {
+                        game_state.castling_state &= !0b1100;                   /* Both black sides lost              */
+                    }
+                    _ => {}
+                }
+            }
+
+            let piece_file = start_square % game_state.files as u16;
+
+            if piece_unmoved && piece_file == 0 {
+                match piece_color {
+                    WHITE => {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    }
+                    BLACK => {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    }
+                    _ => {}
+                }
+            } else if piece_unmoved && piece_file ==
+                (game_state.files as u16 - 1)
+            {
+                match piece_color {
+                    WHITE => {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                    BLACK => {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                    _ => {}
+                }
+            }
+
+            let end_rank = end_square / game_state.files as u16;
+            let end_file = end_square % game_state.files as u16;
+
+            if game_state.unmoved_board.get_bit(end_square as u32) {
+                if end_rank == 0 {                                              /* White back rank                    */
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                } else if end_rank == game_state.ranks as u16 - 1 {             /* Black back rank                    */
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                }
+            }
+
+            hash_update_castling(
+                game_state, last_castling_state, game_state.castling_state
+            );
+
             Snapshot {
                 move_ply: MoveType::SingleNoCapture(mv),
                 castling_state: last_castling_state,
@@ -1132,12 +1247,22 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             let captured_piece_template = mv.captured_piece();
             let is_unload = mv.is_unload();
             let unload_square = mv.unload_square();
+            let is_captured_piece_unmoved = mv.is_captured_piece_unmoved();
+
+            let piece_color = game_state.pieces[piece_index].color();
+            let piece_unmoved =
+                game_state.unmoved_board.get_bit(start_square as u32);
 
             let real_captured = find_piece_at_square(
                 game_state,
                 end_square as u32
-            )
-            .expect("No piece found at captured square");
+            ).unwrap_or_else(|| {
+                let en_passant = en_passant_square.expect(
+                    "En passant square must be provided for en passant captures"
+                );
+                let captured_piece_idx = (en_passant >> 24) as usize & 0xFF;
+                &game_state.pieces[captured_piece_idx]
+            });
             let real_captured_index = real_captured.index() as usize;
 
             #[cfg(debug_assertions)]
@@ -1165,22 +1290,60 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     "Cannot capture royal pieces"
                 )
             }
-            game_state.unmoved_board.clear_bit(end_square as u32);
+
+            if is_captured_piece_unmoved {
+                game_state.unmoved_board.clear_bit(end_square as u32);
+            }
 
             if let Some(unload_sq) = unload_square {
                 move_piece(
                     real_captured_index, end_square, unload_sq, game_state
                 );
+
+                hash_in_or_out_piece(
+                    game_state,
+                    real_captured_index,
+                    game_state.pieces[real_captured_index].color(),
+                    end_square
+                );
+
+                hash_in_or_out_piece(
+                    game_state,
+                    real_captured_index,
+                    game_state.pieces[real_captured_index].color(),
+                    unload_sq
+                );
+
+                if is_captured_piece_unmoved {
+                    game_state.unmoved_board.set_bit(unload_sq as u32);         /* unloaded pce is considered unmoved */
+                }
             } else {
                 remove_piece(real_captured_index, end_square, game_state);
-            }
 
-            game_state.halfmove_clock = 0;
+                hash_in_or_out_piece(
+                    game_state,
+                    real_captured_index,
+                    game_state.pieces[real_captured_index].color(),
+                    end_square
+                );
+            }
             mv.set_captured_piece(real_captured_index as u8);
 
             move_piece(piece_index, start_square, end_square, game_state);
 
-            game_state.unmoved_board.clear_bit(start_square as u32);
+            hash_in_or_out_piece(
+                game_state,
+                piece_index,
+                piece_color,
+                start_square
+            );
+
+            hash_in_or_out_piece(
+                game_state,
+                piece_index,
+                piece_color,
+                end_square
+            );
 
             if is_initial {
                 game_state.unmoved_board.clear_bit(start_square as u32);
@@ -1213,6 +1376,86 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 );
             }
 
+            game_state.halfmove_clock = 0;
+
+            let can_castle_kingside =
+                game_state.pieces[piece_index].can_castle_kingside();
+            let can_castle_queenside =
+                game_state.pieces[piece_index].can_castle_queenside();
+
+            if can_castle_kingside || can_castle_queenside {
+                match (piece_color, can_castle_kingside, can_castle_queenside) {
+                    (WHITE, true, false) => {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                    (WHITE, false, true) => {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    }
+                    (BLACK, true, false) => {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                    (BLACK, false, true) => {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    }
+                    (WHITE, true, true) => {
+                        game_state.castling_state &= !0b0011;                   /* Both white sides lost              */
+                    }
+                    (BLACK, true, true) => {
+                        game_state.castling_state &= !0b1100;                   /* Both black sides lost              */
+                    }
+                    _ => {}
+                }
+            }
+
+            let piece_file = start_square % game_state.files as u16;
+
+            if piece_unmoved && piece_file == 0 {
+                match piece_color {
+                    WHITE => {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    }
+                    BLACK => {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    }
+                    _ => {}
+                }
+            } else if piece_unmoved && piece_file ==
+                (game_state.files as u16 - 1)
+            {
+                match piece_color {
+                    WHITE => {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                    BLACK => {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                    _ => {}
+                }
+            }
+
+            let end_rank = end_square / game_state.files as u16;
+            let end_file = end_square % game_state.files as u16;
+
+            if game_state.unmoved_board.get_bit(end_square as u32) {
+                if end_rank == 0 {                                              /* White back rank                    */
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                } else if end_rank == game_state.ranks as u16 - 1 {             /* Black back rank                    */
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                }
+            }
+
+            hash_update_castling(
+                game_state, last_castling_state, game_state.castling_state
+            );
+
             Snapshot {
                 move_ply: MoveType::SingleCapture(mv),
                 castling_state: last_castling_state,
@@ -1221,21 +1464,245 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 position_hash: last_position_hash,
             }
         }
-        MoveType::HopperCapture(mv) => {                                        /* where capture square != end square */
-            let _piece_index = mv.piece_index() as usize;
-            let _start_square = mv.start_square();
-            let _end_square = mv.end_square();
-            let _is_initial = mv.is_initial();
-            let _is_promotion = mv.is_promotion();
-            let _creates_en_passant = mv.creates_en_passant_square();
-            let _promoting_piece = mv.promoting_piece();
-            let _promoted_piece = mv.promoted_piece();
-            let _en_passant_square = mv.en_passant_square();
-            let _can_capture_royal = mv.can_capture_royal();
-            let _captured_piece_type = mv.captured_piece();
-            let _captured_square = mv.captured_square();
-            let _is_unload = mv.is_unload();
-            let _unload_square = mv.unload_square();
+        MoveType::HopperCapture(mut mv) => {                                    /* where capture square != end square */
+            let piece_index = mv.piece_index() as usize;
+            let start_square = mv.start_square();
+            let end_square = mv.end_square();
+            let is_initial = mv.is_initial();
+            let is_promotion = mv.is_promotion();
+            let creates_en_passant = mv.creates_en_passant_square();
+            let promoted_piece = mv.promoted_piece();
+            let en_passant_square = mv.en_passant_square();
+            let captured_piece_template = mv.captured_piece();
+            let captured_square = mv.captured_square().expect(
+                "Captured square must be provided for hopper captures"
+            );
+            let is_unload = mv.is_unload();
+            let unload_square = mv.unload_square();
+            let is_captured_piece_unmoved = mv.is_captured_piece_unmoved();
+
+            if captured_piece_template == Some(4) {                             /* special castling move              */
+                for sq in start_square.min(end_square)..=
+                    start_square.max(end_square)
+                {
+                    if is_square_attacked(
+                        sq as u32, 1 - game_state.playing, game_state
+                    ) {
+                        return false;
+                    }
+                }
+            }
+
+            let piece_color = game_state.pieces[piece_index].color();
+            let piece_unmoved =
+                game_state.unmoved_board.get_bit(start_square as u32);
+
+            let real_captured = find_piece_at_square(
+                game_state,
+                captured_square as u32
+            )
+            .unwrap_or_else(|| {
+                let en_passant = en_passant_square.expect(
+                    "En passant square must be provided for en passant captures"
+                );
+                let captured_piece_idx = (en_passant >> 24) as usize & 0xFF;
+                &game_state.pieces[captured_piece_idx]
+            });
+            let real_captured_index = real_captured.index() as usize;
+
+            #[cfg(debug_assertions)]
+            {
+                assert!(match captured_piece_template {
+                    Some(1) => game_state.playing != real_captured.color(),
+                    Some(2) => game_state.playing == real_captured.color(),
+                    Some(3) => true,
+                    Some(4) => game_state.pieces[piece_index].is_royal(),
+                    _ => panic!(
+                        "Invalid captured piece template: {:?}",
+                        captured_piece_template
+                    ),
+                }, "Captured/moving piece type does not match the template");
+                assert!(
+                    if is_unload {
+                        unload_square.is_some()
+                    } else {
+                        true
+                    },
+                    "Unload square must be provided for unload captures"
+                );
+                assert!(
+                    !game_state.pieces[real_captured_index].is_royal(),
+                    "Cannot capture royal pieces"
+                )
+            }
+
+            if is_captured_piece_unmoved {
+                game_state.unmoved_board.clear_bit(end_square as u32);
+            }
+
+            if let Some(unload_sq) = unload_square {
+                if is_unload {
+                    move_piece(
+                        real_captured_index, captured_square,
+                        unload_sq, game_state
+                    );
+
+                    hash_in_or_out_piece(
+                        game_state,
+                        real_captured_index,
+                        game_state.pieces[real_captured_index].color(),
+                        end_square
+                    );
+
+                    hash_in_or_out_piece(
+                        game_state,
+                        real_captured_index,
+                        game_state.pieces[real_captured_index].color(),
+                        unload_sq
+                    );
+
+                    if is_captured_piece_unmoved {
+                        game_state.unmoved_board.set_bit(unload_sq as u32);     /* unloaded pce is considered unmoved */
+                    }
+                }
+            } else {
+                remove_piece(real_captured_index, captured_square, game_state);
+
+                hash_in_or_out_piece(
+                    game_state,
+                    real_captured_index,
+                    game_state.pieces[real_captured_index].color(),
+                    captured_square
+                );
+            }
+            mv.set_captured_piece(real_captured_index as u8);
+
+            move_piece(piece_index, start_square, end_square, game_state);
+
+            hash_in_or_out_piece(
+                game_state,
+                piece_index,
+                piece_color,
+                start_square
+            );
+
+            hash_in_or_out_piece(
+                game_state,
+                piece_index,
+                piece_color,
+                end_square
+            );
+
+            if is_initial {
+                game_state.unmoved_board.clear_bit(start_square as u32);
+            }
+
+            if creates_en_passant {
+                game_state.en_passant_square = en_passant_square;
+            } else {
+                game_state.en_passant_square = None;
+            }
+
+            hash_update_en_passant(
+                game_state,
+                last_en_passant_square,
+                en_passant_square
+            );
+
+            if is_promotion {
+                let promoting_piece = piece_index;
+                let promoted_piece = promoted_piece.expect(
+                    "Promoted piece must be provided for promotion moves"
+                ) as usize;
+
+                promote_piece(
+                    promoting_piece,
+                    end_square,
+                    end_square,
+                    promoted_piece,
+                    game_state
+                );
+            }
+
+            game_state.halfmove_clock = 0;
+
+            let can_castle_kingside =
+                game_state.pieces[piece_index].can_castle_kingside();
+            let can_castle_queenside =
+                game_state.pieces[piece_index].can_castle_queenside();
+
+            if can_castle_kingside || can_castle_queenside {
+                match (piece_color, can_castle_kingside, can_castle_queenside) {
+                    (WHITE, true, false) => {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                    (WHITE, false, true) => {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    }
+                    (BLACK, true, false) => {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                    (BLACK, false, true) => {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    }
+                    (WHITE, true, true) => {
+                        game_state.castling_state &= !0b0011;                   /* Both white sides lost              */
+                    }
+                    (BLACK, true, true) => {
+                        game_state.castling_state &= !0b1100;                   /* Both black sides lost              */
+                    }
+                    _ => {}
+                }
+            }
+
+            let piece_file = start_square % game_state.files as u16;
+
+            if piece_unmoved && piece_file == 0 {
+                match piece_color {
+                    WHITE => {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    }
+                    BLACK => {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    }
+                    _ => {}
+                }
+            } else if piece_unmoved && piece_file ==
+                (game_state.files as u16 - 1)
+            {
+                match piece_color {
+                    WHITE => {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                    BLACK => {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                    _ => {}
+                }
+            }
+
+            let cap_rank = captured_square / game_state.files as u16;
+            let cap_file = captured_square % game_state.files as u16;
+
+            if game_state.unmoved_board.get_bit(captured_square as u32) {
+                if cap_rank == 0 {                                              /* White back rank                    */
+                    if cap_file == 0 {
+                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
+                    } else if cap_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
+                    }
+                } else if cap_rank == game_state.ranks as u16 - 1 {             /* Black back rank                    */
+                    if cap_file == 0 {
+                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
+                    } else if cap_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
+                    }
+                }
+            }
+
+            hash_update_castling(
+                game_state, last_castling_state, game_state.castling_state
+            );
 
             Snapshot {
                 move_ply: MoveType::HopperCapture(mv),
@@ -1246,16 +1713,16 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             }
         }
         MoveType::MultiCapture(mv) => {
-            let _piece_index = mv.piece_index() as usize;
-            let _start_square = mv.start_square();
-            let _end_square = mv.end_square();
-            let _is_initial = mv.is_initial();
-            let _is_promotion = mv.is_promotion();
-            let _creates_en_passant = mv.creates_en_passant_square();
-            let _promoting_piece = mv.promoting_piece();
-            let _promoted_piece = mv.promoted_piece();
-            let _en_passant_square = mv.en_passant_square();
-            let _taken_pieces = mv.get_taken_pieces();
+            let piece_index = mv.piece_index() as usize;
+            let start_square = mv.start_square();
+            let end_square = mv.end_square();
+            let is_initial = mv.is_initial();
+            let is_promotion = mv.is_promotion();
+            let creates_en_passant = mv.creates_en_passant_square();
+            let promoting_piece = mv.promoting_piece();
+            let promoted_piece = mv.promoted_piece();
+            let en_passant_square = mv.en_passant_square();
+            let taken_pieces = mv.get_taken_pieces();
 
             Snapshot {
                 move_ply: MoveType::MultiCapture(mv),
@@ -1263,7 +1730,9 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
                 position_hash: last_position_hash,
-            }
+            };
+
+            unimplemented!("Multi-capture moves not implemented yet.")
         }
     };
 
@@ -1286,6 +1755,155 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
 // undoes the last move made
 #[hotpath::measure]
-pub fn undo_move(_game_state: &mut State) {
-    unimplemented!("Undo move not implemented yet.");
+pub fn undo_move(game_state: &mut State) {
+    game_state.ply -= 1;
+    game_state.ply_counter -= 1;
+
+    let snapshot = game_state.history.pop().expect(
+        "No move to undo - history is empty"
+    );
+
+    game_state.playing = 1 - game_state.playing;
+    game_state.castling_state = snapshot.castling_state;
+    game_state.halfmove_clock = snapshot.halfmove_clock;
+    game_state.en_passant_square = snapshot.en_passant_square;
+    game_state.position_hash = snapshot.position_hash;
+
+    match snapshot.move_ply {
+        MoveType::SingleNoCapture(mv) => {
+            let piece_index = mv.piece_index() as usize;
+            let start_square = mv.start_square();
+            let end_square = mv.end_square();
+            let is_initial = mv.is_initial();
+            let is_promotion = mv.is_promotion();
+            let promoting_piece = mv.promoting_piece();
+
+            if is_promotion {
+                let promoted_piece = mv.promoted_piece().expect(
+                    "Promoted piece must be provided for promotion moves"
+                ) as usize;
+                let promoting_idx = promoting_piece.expect(
+                    "Promoting piece must be provided for promotion moves"
+                ) as usize;
+
+                remove_piece(promoted_piece, end_square, game_state);
+                add_piece(promoting_idx, start_square, game_state);
+            } else {
+                move_piece(piece_index, end_square, start_square, game_state);
+            }
+
+            if is_initial {
+                game_state.unmoved_board.set_bit(start_square as u32);
+            }
+        }
+        MoveType::SingleCapture(mv) => {
+            let piece_index = mv.piece_index() as usize;
+            let start_square = mv.start_square();
+            let end_square = mv.end_square();
+            let is_initial = mv.is_initial();
+            let is_promotion = mv.is_promotion();
+            let promoting_piece = mv.promoting_piece();
+            let captured_piece = mv.captured_piece().expect(
+                "Captured piece must be provided for single captures"
+            ) as usize;
+            let is_unload = mv.is_unload();
+            let unload_square = mv.unload_square();
+            let is_captured_piece_unmoved = mv.is_captured_piece_unmoved();
+
+            if is_promotion {
+                let promoted_piece = mv.promoted_piece().expect(
+                    "Promoted piece must be provided for promotion moves"
+                ) as usize;
+                let promoting_idx = promoting_piece.expect(
+                    "Promoting piece must be provided for promotion moves"
+                ) as usize;
+
+                remove_piece(promoted_piece, end_square, game_state);
+                add_piece(promoting_idx, start_square, game_state);
+            } else {
+                move_piece(piece_index, end_square, start_square, game_state);
+            }
+
+            if let Some(unload_sq) = unload_square {
+                if is_unload {
+                    move_piece(
+                        captured_piece, unload_sq, end_square, game_state
+                    );
+                }
+
+                if is_captured_piece_unmoved {
+                    game_state.unmoved_board.clear_bit(unload_sq as u32);
+                }
+            } else {
+                add_piece(captured_piece, end_square, game_state);
+            }
+
+            if is_captured_piece_unmoved {
+                game_state.unmoved_board.set_bit(end_square as u32);
+            }
+
+            if is_initial {
+                game_state.unmoved_board.set_bit(start_square as u32);
+            }
+        }
+        MoveType::HopperCapture(mv) => {
+            let piece_index = mv.piece_index() as usize;
+            let start_square = mv.start_square();
+            let end_square = mv.end_square();
+            let is_initial = mv.is_initial();
+            let is_promotion = mv.is_promotion();
+            let promoting_piece = mv.promoting_piece();
+            let captured_piece = mv.captured_piece().expect(
+                "Captured piece must be provided for hopper captures"
+            ) as usize;
+            let captured_square = mv.captured_square().expect(
+                "Captured square must be provided for hopper captures"
+            );
+            let is_unload = mv.is_unload();
+            let unload_square = mv.unload_square();
+            let is_captured_piece_unmoved = mv.is_captured_piece_unmoved();
+
+            if is_promotion {
+                let promoted_piece = mv.promoted_piece().expect(
+                    "Promoted piece must be provided for promotion moves"
+                ) as usize;
+                let promoting_idx = promoting_piece.expect(
+                    "Promoting piece must be provided for promotion moves"
+                ) as usize;
+
+                remove_piece(promoted_piece, end_square, game_state);
+                add_piece(promoting_idx, start_square, game_state);
+            } else {
+                move_piece(piece_index, end_square, start_square, game_state);
+            }
+
+            if let Some(unload_sq) = unload_square {
+                if is_unload {
+                    move_piece(
+                        captured_piece, unload_sq, captured_square, game_state
+                    );
+
+                    if is_captured_piece_unmoved {
+                        game_state.unmoved_board.clear_bit(unload_sq as u32);
+                    }
+                }
+            } else {
+                add_piece(captured_piece, captured_square, game_state);
+            }
+
+            if is_captured_piece_unmoved {
+                game_state.unmoved_board.set_bit(end_square as u32);
+            }
+
+            if is_initial {
+                game_state.unmoved_board.set_bit(start_square as u32);
+            }
+        }
+        MoveType::MultiCapture(_mv) => {
+            unimplemented!("Undo multi-capture moves not implemented yet.");
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    verify_game_state(game_state);
 }

@@ -5,8 +5,8 @@ FIDE Chess
 Bishop,B,b,3375,!pB
 Knight,N,n,3000,!pN
 !Queen,Q,q,8375,!pQ
-#King,K,k,6375,!pK|O{3}|o{2}
+#King,K,k,6375,!pK|O{2}|o{2}
 2
 P->RNBQ
 p->rbnq
-b6K/8/7k/6r1/2n5/2p3b1/8/2r4n w - -
+rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1

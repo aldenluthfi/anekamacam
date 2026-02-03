@@ -26,6 +26,7 @@ pub mod io {
 	pub mod board_io;
 	pub mod game_io;
 	pub mod piece_io;
+    pub mod move_io;
 }
 
 pub mod constants;
@@ -34,5 +35,5 @@ pub mod constants;
 fn main() {
     let mut state = State::from_config("configs/fide.anm");
 
-    start_perft(&mut state, "res/fide.perft", 1);
+    start_perft(&mut state, "res/fideinit.perft", 6, true, Some(1));
 }
