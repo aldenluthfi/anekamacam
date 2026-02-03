@@ -1,5 +1,8 @@
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
+
 use crate::{
     constants::*,
     game::{
@@ -33,15 +36,19 @@ pub fn is_square_attacked(
     side: u8,
     game_state: &State
 ) -> bool {
-    assert!(!check_out_of_bounds((
-        square.0 as i8,
-        square.1 as i8,
-    ), game_state), "Square {:?} is out of bounds", square);
 
-    assert!(
-        side == WHITE || side == BLACK,
-        "Side must be WHITE or BLACK"
-    );
+    #[cfg(debug_assertions)]
+    {
+        assert!(!check_out_of_bounds((
+            square.0 as i8,
+            square.1 as i8,
+        ), game_state), "Square {:?} is out of bounds", square);
+
+        assert!(
+            side == WHITE || side == BLACK,
+            "Side must be WHITE or BLACK"
+        );
+    }
 
 
     let side_piece_count = game_state.pieces.len() / 2;
@@ -172,10 +179,13 @@ pub fn generate_relevant_boards(
     square: (u8, u8),
     game_state: &State
 ) -> Board {
-    assert!(!check_out_of_bounds((
-        square.0 as i8,
-        square.1 as i8,
-    ), game_state), "Square {:?} is out of bounds", square);
+    #[cfg(debug_assertions)]
+    {
+        assert!(!check_out_of_bounds((
+            square.0 as i8,
+            square.1 as i8,
+        ), game_state), "Square {:?} is out of bounds", square);
+    }
 
     let mut result = Board::new(
         game_state.files, game_state.ranks
@@ -212,6 +222,594 @@ pub fn generate_relevant_boards(
     result
 }
 
+fn process_multi_leg_vector(
+    multi_leg_vector: &[LegVector],
+    square: (u8, u8),
+    piece: &Piece,
+    friendly_board: &Board,
+    enemy_board: &Board,
+    unmoved_board: &Board,
+    game_state: &State,
+    side: u8,
+    piece_idx: u8,
+    promotion_rank: u8,
+    unmoved_piece: bool,
+) -> Vec<MoveType> {
+    let mut accumulated_offset: (i8, i8) = (square.0 as i8, square.1 as i8);
+    let mut taken_pieces: Vec<(u8, u16, bool, bool, Option<u16>)> =
+        Vec::new();
+    let mut castling_leg: Option<LegVector> = None;
+    let mut en_passant_square: Option<u32> = None;
+    let mut en_passant_count = 0;
+    let mut move_is_initial = false;
+    let mut can_capture_royal;                                                  /* Track royal capture capability     */
+    let mut creates_en_passant;
+
+    let total_legs = multi_leg_vector.len();
+
+    for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
+
+        if leg.is_castling() {
+            castling_leg = Some(*leg);
+            break;
+        }
+
+        let is_final_leg = leg_index == total_legs - 1;
+
+        let has_move = leg.is_m();
+        let has_capture = leg.is_c();
+        let has_destroy = leg.is_d();
+        let has_unload = leg.is_u();
+        let has_initial = leg.is_i();
+        let has_passant = leg.is_p();
+        let has_check = leg.is_k();
+
+        let can_move = match has_move {
+            Some(true) => true,
+            Some(false) => false,
+            None => match (has_capture, has_destroy) {
+                (Some(true), _) => false,
+                (_, Some(true)) => false,
+                _ => true
+            }
+        };
+
+        if has_initial == Some(true) {                                          /* Mark move as initial if i present  */
+            if !unmoved_piece {
+                return Vec::new();
+            }
+
+            move_is_initial = true;
+        }
+
+        if has_initial == Some(false) {                                         /* Fail if !i and piece is unmoved    */
+            if unmoved_piece {
+                return Vec::new();
+            }
+        }
+
+        let can_capture = match has_capture {
+            Some(true) => true,
+            Some(false) => false,
+            None => is_final_leg && has_move != Some(true),                     /* Implicit !c for non-final, c final */
+        };                                                                      /* unless m is set explicitly         */
+
+        let can_destroy = match has_destroy {
+            Some(true) => true,
+            Some(false) => false,
+            None => false,                                                      /* Implicit !d for all legs           */
+        };
+
+        let can_unload = match has_unload {
+            Some(true) => true,
+            Some(false) => false,
+            None => false,                                                      /* Implicit !u for all legs           */
+        };
+
+        creates_en_passant = match has_passant {
+            Some(true) => true,
+            Some(false) => false,                                               /* !p means cant capture en-passant   */
+            None => false,                                                      /* Implicit !p (no creation)          */
+        };
+
+        let can_capture_en_passant = match has_passant {
+            Some(true) => true,
+            Some(false) => false,                                               /* !p means cant capture en-passant   */
+            None => can_capture,                                                /* Default allows en-passant capture  */
+        };
+
+        can_capture_royal = match has_check {                                   /* Update royal capture flag          */
+            Some(true) => true,
+            Some(false) => false,                                               /* !k means cannot capture royal      */
+            None => can_capture,                                                /* Default allows royal capture       */
+        };
+
+        let start_square_index = game_state.square_to_index(
+            accumulated_offset.0 as u8,
+            accumulated_offset.1 as u8
+        );
+
+        accumulated_offset.0 = accumulated_offset.0.saturating_add(
+            leg.get_atomic().whole().0
+        );
+
+        accumulated_offset.1 = accumulated_offset.1.saturating_add(
+            leg.get_atomic().whole().1.saturating_mul(
+                if side == WHITE {1} else {-1}
+            )                                                                   /* Adjust for side pov                */
+        );
+
+        let file = accumulated_offset.0 as u8;
+        let rank = accumulated_offset.1 as u8;
+
+        if check_out_of_bounds(accumulated_offset, game_state) {
+            return Vec::new();
+        }
+
+        let square_index = game_state.square_to_index(file, rank);
+        let has_friendly = friendly_board.get_bit(file, rank);
+        let has_enemy = enemy_board.get_bit(file, rank);
+        let is_empty = !has_friendly && !has_enemy;
+
+        if creates_en_passant {                                                 /* Handle en-passant creation (p)     */
+            en_passant_count += 1;
+            if en_passant_count > 1 {
+                panic!("More than one en-passant square in move vector!");
+            }
+            en_passant_square = Some(start_square_index as u32);                /* Store only capture square initially*/
+        }
+
+        let must_capture = can_capture && !can_move && !can_destroy;
+        let must_move = !can_capture && can_move && !can_destroy;
+        let must_destroy = !can_capture && !can_move && can_destroy;
+        let can_move_capture = can_capture && can_move && !can_destroy;
+        let can_move_destroy = !can_capture && can_move && can_destroy;
+        let can_capture_destroy = can_capture && !can_move && can_destroy;
+        let can_do_all_three = can_capture && can_move && can_destroy;
+
+        if must_destroy {                                                       /* d: must destroy friendly           */
+            if has_enemy || is_empty {
+                if let Some(game_en_passant) =
+                    game_state.en_passant_square
+                {
+                    let enp_piece_idx =
+                        (game_en_passant >> 24) as usize & 0xFF;
+                    if can_capture_en_passant
+                        && square_index == (game_en_passant & 0xFFF) as u16
+                        && is_empty
+                        && game_state.pieces[enp_piece_idx].color() == side     /* Must be friendly piece              */
+                    {
+                        taken_pieces.push(
+                            (
+                                2, (game_en_passant >> 12) as u16 & 0xFFF,      /* Next 12 bits: captured piece square*/
+                                can_capture_royal, false, None
+                            )
+                        );
+                        continue;
+                    }
+                }
+                return Vec::new();
+            }
+            taken_pieces.push(
+                (
+                    2, square_index, can_capture_royal,
+                    false, None
+                )
+            );
+        } else if must_capture {                                                /* c: must capture enemy              */
+            if !has_enemy {
+                if let Some(game_en_passant) =
+                    game_state.en_passant_square
+                {
+                    let enp_piece_idx =
+                        (game_en_passant >> 24) as usize & 0xFF;
+                    if can_capture_en_passant
+                        && square_index == (game_en_passant & 0xFFF) as u16
+                        && is_empty
+                        && game_state.pieces[enp_piece_idx].color() != side     /* Must be friendly piece              */
+                    {
+                        taken_pieces.push(
+                            (
+                                1, (game_en_passant >> 12) as u16 & 0xFFF,
+                                can_capture_royal, false, None
+                            )
+                        );
+                        continue;
+                    }
+                }
+                return Vec::new();
+            }
+
+            taken_pieces.push(
+                (
+                    1, square_index, can_capture_royal,
+                    false, None
+                )
+            );
+        } else if must_move {                                                   /* m: must move to empty              */
+            if !is_empty {
+                return Vec::new();
+            }
+        } else if can_capture_destroy {                                         /* cd: capture or destroy (any piece) */
+            if is_empty {
+                if let Some(game_en_passant) =
+                    game_state.en_passant_square
+                {
+                    if can_capture_en_passant
+                        && square_index == (game_en_passant & 0xFFF) as u16
+                        && is_empty
+                    {                                                           /* can be both color                  */
+                        taken_pieces.push(
+                            (
+                                3, (game_en_passant >> 12) as u16 & 0xFFF,
+                                can_capture_royal, false, None
+                            )
+                        );
+                        continue;
+                    }
+                }
+                return Vec::new();
+            }
+            taken_pieces.push(
+                (
+                    3, square_index, can_capture_royal,
+                    false, None
+                )
+            );
+        } else if can_move_destroy {                                            /* md: move or destroy friendly       */
+            if has_enemy {
+                return Vec::new();
+            }
+            if has_friendly {
+                taken_pieces.push(
+                    (
+                        2, square_index, can_capture_royal,
+                        false, None
+                    )
+                );
+            } else if let Some(game_en_passant) =
+                game_state.en_passant_square
+            {
+                let enp_piece_idx = (game_en_passant >> 24) as usize & 0xFF;
+                if can_capture_en_passant
+                    && square_index == (game_en_passant & 0xFFF) as u16
+                    && is_empty
+                    && game_state.pieces[enp_piece_idx].color() == side         /* Must be friendly piece             */
+                {
+                    taken_pieces.push(
+                        (
+                            2, (game_en_passant >> 12) as u16 & 0xFFF,
+                            can_capture_royal, false, None
+                        )
+                    );
+                }
+            }
+        } else if can_move_capture {                                            /* mc: move or capture enemy          */
+            if has_friendly {
+                return Vec::new();
+            }
+            if has_enemy {
+                taken_pieces.push(
+                    (
+                        1, square_index, can_capture_royal,
+                        false, None
+                    )
+                );
+            } else if let Some(game_en_passant) =
+                game_state.en_passant_square
+            {
+                let enp_piece_idx = (game_en_passant >> 24) as usize & 0xFF;
+                if can_capture_en_passant
+                    && square_index == (game_en_passant & 0xFFF) as u16
+                    && is_empty
+                    && game_state.pieces[enp_piece_idx].color() != side         /* Must be enemy piece                */
+                {
+                    taken_pieces.push(
+                        (
+                            1, (game_en_passant >> 12) as u16 & 0xFFF,
+                            can_capture_royal, false, None
+                        )
+                    );
+                }
+            }
+        } else if can_do_all_three {                                            /* mcd: move/capture/destroy (any)    */
+            if has_friendly {
+                taken_pieces.push(
+                    (
+                        2, square_index, can_capture_royal,
+                        false, None
+                    )
+                );
+            } else if has_enemy {
+                taken_pieces.push(
+                    (
+                        1, square_index, can_capture_royal,
+                        false, None
+                    )
+                );
+            } else if let Some(game_en_passant) =
+                game_state.en_passant_square
+            {
+                if can_capture_en_passant
+                    && square_index == (game_en_passant & 0xFFF) as u16
+                    && is_empty
+                {
+                    taken_pieces.push(
+                        (
+                            3, (game_en_passant >> 12) as u16 & 0xFFF,
+                            can_capture_royal, false, None
+                        )
+                    );
+                }
+            }
+        }
+
+        if can_unload {
+            if taken_pieces.is_empty() {
+                return Vec::new();
+            }
+            let last_idx = taken_pieces.len() - 1;                              /* Update last captured piece unload  */
+
+            let (
+                piece_type, cap_square, _,
+                can_cap_royal, _
+            ) = taken_pieces[last_idx];
+
+            taken_pieces[last_idx] = (
+                piece_type, cap_square, can_cap_royal, true,
+                Some(start_square_index)
+            );
+            continue;                                                           /* Unload doesnt add to captures      */
+        }
+
+        if let Some(en_passant_sq) = en_passant_square {
+            en_passant_square = Some(
+                (en_passant_sq & 0xFFF)                                         /* Capture square                     */
+                | (square_index as u32) << 12                                   /* Captured piece square              */
+                | (piece_idx as u32) << 24
+            );
+        }
+    }
+
+    if let Some(leg) = castling_leg {
+        let king_rank = square.1;
+        let king_file = square.0;
+
+        let atomic = leg.get_atomic();
+        let (offset, _) = atomic.whole();
+
+        let is_castling_right = leg.is_castling_right();
+        let rook_file = if is_castling_right {
+            game_state.files - 1
+        } else {
+            0
+        };
+
+        let rook_square = game_state.square_to_index(rook_file, king_rank);
+
+        if !unmoved_board.get_bit(rook_file, king_rank) {
+            return Vec::new();                                                  /* Rook must be unmoved               */
+        }
+
+        let rook_occupied = if side == WHITE {
+            friendly_board.get_bit(rook_file, king_rank)
+        } else {
+            friendly_board.get_bit(rook_file, king_rank)
+        };
+
+        if !rook_occupied {
+            return Vec::new();                                                  /* Rook must exist on corner          */
+        }
+
+        let king_end_file = (king_file as i8).saturating_add(offset) as u8;
+        if king_end_file >= game_state.files {
+            return Vec::new();                                                  /* End square out of bounds           */
+        }
+
+        let start_check = king_file.min(rook_file);
+        let end_check = king_file.max(rook_file);
+
+        let mut path_clear = true;
+        for f in start_check + 1..end_check {
+            if friendly_board.get_bit(f, king_rank) ||
+                enemy_board.get_bit(f, king_rank) {
+                path_clear = false;
+                break;                                                          /* Path must be clear                 */
+            }
+        }
+
+        if !path_clear {
+            return Vec::new();
+        }
+
+        let attack_start = king_file.min(king_end_file);
+        let attack_end = king_file.max(king_end_file);
+
+        let mut king_path_safe = true;
+        for f in attack_start..=attack_end {
+            if is_square_attacked(
+                (f, king_rank),
+                1 - side,                                                       /* Check from enemy perspective       */
+                game_state
+            ) {
+                king_path_safe = false;
+                break;                                                          /* King path must not be attacked     */
+            }
+        }
+
+        if !king_path_safe {
+            return Vec::new();
+        }
+
+        let start_square = game_state.square_to_index(
+            king_file, king_rank
+        );
+        let end_square = game_state.square_to_index(
+            king_end_file, king_rank
+        );
+
+        let unload_file = if is_castling_right {
+            king_end_file - 1
+        } else {
+            king_end_file + 1
+        };
+
+        let unload_square = game_state.square_to_index(
+            unload_file, king_rank
+        );
+
+        let encoded_move = Move::encode(
+            piece_idx,
+            start_square,
+            end_square,
+            true,                                                               /* is_initial                         */
+            false,                                                              /* is_promotion                       */
+            None,                                                               /* promoting_piece                    */
+            None,                                                               /* promoted_piece                     */
+            None,                                                               /* en_passant_square                  */
+            Move::HOPPER_CAPTURE,                                               /* move_type                          */
+            Some(4),                                                            /* captured_piece (special)           */
+            Some(false),                                                        /* can_capture_royal                  */
+            Some(rook_square),                                                  /* captured_square                    */
+            None,                                                               /* taken_pieces                       */
+            Some(true),                                                         /* is_unload                          */
+            Some(unload_square),                                                /* unload_square                      */
+        );
+
+        return vec![encoded_move];
+    }
+
+    let file = accumulated_offset.0 as u8;
+    let rank = accumulated_offset.1 as u8;
+
+    let start_square = game_state.square_to_index(square.0, square.1);
+    let end_square = game_state.square_to_index(file, rank);
+
+    let is_initial = move_is_initial;
+                                                                                /* Check for promotion                */
+    let reaches_promotion_rank = rank == promotion_rank;
+    let can_promote = piece.can_promote() && reaches_promotion_rank;
+                                                                                /* Get promotion pieces if applicable */
+    let promotion_pieces = if can_promote {
+        piece.get_promotion_pieces()
+    } else {
+        Vec::new()
+    };
+
+    let is_promotion = can_promote && !promotion_pieces.is_empty();
+                                                                                /* Generate move variants             */
+    let moves_to_generate = if is_promotion {
+        promotion_pieces.len()                                                  /* One move per promotion piece       */
+    } else {
+        1                                                                       /* Single non-promotion move          */
+    };
+
+    let mut result = Vec::with_capacity(moves_to_generate);
+
+    for i in 0..moves_to_generate {
+        let promoting_piece = if is_promotion {
+            Some(piece.index())
+        } else {
+            None
+        };
+
+        let promoted_piece = if is_promotion {
+            Some(promotion_pieces[i])
+        } else {
+            None
+        };
+
+        let encoded_move = match taken_pieces.len() {
+            0 => {
+                Move::encode(
+                    piece_idx,
+                    start_square,
+                    end_square,
+                    is_initial,
+                    is_promotion,
+                    promoting_piece,
+                    promoted_piece,
+                    en_passant_square,
+                    Move::SINGLE_NO_CAPTURE,                                    /* move_type                          */
+                    None,                                                       /* captured_piece                     */
+                    None,                                                       /* can_capture_royal                  */
+                    None,                                                       /* captured_square                    */
+                    None,                                                       /* taken_pieces                       */
+                    None,                                                       /* is_unload                          */
+                    None,                                                       /* unload_square                      */
+                )
+            }
+            1 => {
+                let (
+                    captured_piece, cap_square, can_capture_royal,
+                    is_unload, unload_sq
+                ) = taken_pieces[0];
+
+                if cap_square != end_square {
+                    Move::encode(
+                        piece_idx,
+                        start_square,
+                        end_square,
+                        is_initial,
+                        is_promotion,
+                        promoting_piece,
+                        promoted_piece,
+                        en_passant_square,
+                        Move::HOPPER_CAPTURE,                                   /* move_type                          */
+                        Some(captured_piece),
+                        Some(can_capture_royal),
+                        Some(cap_square),
+                        None,                                                   /* taken_pieces                       */
+                        Some(is_unload),
+                        unload_sq,
+                    )
+                } else {
+                    Move::encode(
+                        piece_idx,
+                        start_square,
+                        end_square,
+                        is_initial,
+                        is_promotion,
+                        promoting_piece,
+                        promoted_piece,
+                        en_passant_square,
+                        Move::SINGLE_CAPTURE,                                   /* move_type                          */
+                        Some(captured_piece),
+                        Some(can_capture_royal),
+                        None,                                                   /* captured_square                    */
+                        None,                                                   /* taken_pieces                       */
+                        Some(is_unload),
+                        unload_sq,
+                    )
+                }
+            }
+            _ => {
+                Move::encode(
+                    piece_idx,
+                    start_square,
+                    end_square,
+                    is_initial,
+                    is_promotion,
+                    promoting_piece,
+                    promoted_piece,
+                    en_passant_square,
+                    Move::MULTI_CAPTURE,                                        /* move_type                          */
+                    None,                                                       /* captured_piece                     */
+                    None,                                                       /* can_capture_royal                  */
+                    None,                                                       /* captured_square                    */
+                    Some(taken_pieces.clone()),                                 /* taken_pieces for multi-capture     */
+                    None,                                                       /* is_unload                          */
+                    None,                                                       /* unload_square                      */
+                )
+            }
+        };
+
+        result.push(encoded_move);
+    }
+
+    result
+}
+
 
 /// generates possible move templates
 /// placeholder capture pieces:
@@ -229,12 +827,14 @@ pub fn generate_move_list(
     game_state: &State
 ) -> Vec<MoveType> {
 
-    assert!(!check_out_of_bounds((
-        square.0 as i8,
-        square.1 as i8
-    ), game_state), "Square {:?} is out of bounds", square);
+    #[cfg(debug_assertions)]
+    {
+        assert!(!check_out_of_bounds((
+            square.0 as i8,
+            square.1 as i8
+        ), game_state), "Square {:?} is out of bounds", square);
+    }
 
-    let mut move_list: Vec<MoveType> = Vec::new();
     let unmoved_piece = unmoved_board.get_bit(square.0, square.1);
     let vector_set = &game_state.piece_move_vectors[piece.index() as usize];
     let side = piece.color();
@@ -246,603 +846,25 @@ pub fn generate_move_list(
         0
     };
 
-    for multi_leg_vector in vector_set {
-        let mut accumulated_offset: (i8, i8) = (square.0 as i8, square.1 as i8);
-        let mut taken_pieces: Vec<(u8, u16, bool, bool, Option<u16>)> =
-            Vec::new();
-        let mut early_fail = false;
-        let mut castling_leg: Option<LegVector> = None;
-        let mut en_passant_square: Option<u32> = None;
-        let mut en_passant_count = 0;
-        let mut move_is_initial = false;
-        let mut can_capture_royal;                                              /* Track royal capture capability     */
-        let mut creates_en_passant;
-
-        let total_legs = multi_leg_vector.len();
-
-        for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
-
-            if leg.is_castling() {
-                castling_leg = Some(*leg);
-                break;
-            }
-
-            let is_final_leg = leg_index == total_legs - 1;
-
-            let has_move = leg.is_m();
-            let has_capture = leg.is_c();
-            let has_destroy = leg.is_d();
-            let has_unload = leg.is_u();
-            let has_initial = leg.is_i();
-            let has_passant = leg.is_p();
-            let has_check = leg.is_k();
-
-            let can_move = match has_move {
-                Some(true) => true,
-                Some(false) => false,
-                None => match (has_capture, has_destroy) {
-                    (Some(true), _) => false,
-                    (_, Some(true)) => false,
-                    _ => true
-                }
-            };
-
-            if has_initial == Some(true) {                                      /* Mark move as initial if i present  */
-                if !unmoved_piece {
-                    early_fail = true;
-                    break;
-                }
-
-                move_is_initial = true;
-            }
-
-            if has_initial == Some(false) {                                     /* Fail if !i and piece is unmoved    */
-                if unmoved_piece {
-                    early_fail = true;
-                    break;
-                }
-            }
-
-            let can_capture = match has_capture {
-                Some(true) => true,
-                Some(false) => false,
-                None => is_final_leg && has_move != Some(true),                 /* Implicit !c for non-final, c final */
-            };                                                                  /* unless m is set explicitly         */
-
-            let can_destroy = match has_destroy {
-                Some(true) => true,
-                Some(false) => false,
-                None => false,                                                  /* Implicit !d for all legs           */
-            };
-
-            let can_unload = match has_unload {
-                Some(true) => true,
-                Some(false) => false,
-                None => false,                                                  /* Implicit !u for all legs           */
-            };
-
-            creates_en_passant = match has_passant {
-                Some(true) => true,
-                Some(false) => false,                                           /* !p means cant capture en-passant   */
-                None => false,                                                  /* Implicit !p (no creation)          */
-            };
-
-            let can_capture_en_passant = match has_passant {
-                Some(true) => true,
-                Some(false) => false,                                           /* !p means cant capture en-passant   */
-                None => can_capture,                                            /* Default allows en-passant capture  */
-            };
-
-            can_capture_royal = match has_check {                               /* Update royal capture flag          */
-                Some(true) => true,
-                Some(false) => false,                                           /* !k means cannot capture royal      */
-                None => can_capture,                                            /* Default allows royal capture       */
-            };
-
-            let start_square_index = game_state.square_to_index(
-                accumulated_offset.0 as u8,
-                accumulated_offset.1 as u8
-            );
-
-            accumulated_offset.0 = accumulated_offset.0.saturating_add(
-                leg.get_atomic().whole().0
-            );
-
-            accumulated_offset.1 = accumulated_offset.1.saturating_add(
-                leg.get_atomic().whole().1.saturating_mul(
-                    if side == WHITE {1} else {-1}
-                )                                                               /* Adjust for side pov                */
-            );
-
-            let file = accumulated_offset.0 as u8;
-            let rank = accumulated_offset.1 as u8;
-
-            if check_out_of_bounds(accumulated_offset, game_state) {
-                early_fail = true;
-                break;
-            }
-
-            let square_index = game_state.square_to_index(file, rank);
-            let has_friendly = friendly_board.get_bit(file, rank);
-            let has_enemy = enemy_board.get_bit(file, rank);
-            let is_empty = !has_friendly && !has_enemy;
-
-            if  piece.is_royal() &&
-                is_square_attacked((file, rank), 1 - side, game_state)          /* Royal pieces cannot move into check*/
-            {
-                early_fail = true;
-                break;
-            }
-
-            if creates_en_passant {                                             /* Handle en-passant creation (p)     */
-                en_passant_count += 1;
-                if en_passant_count > 1 {
-                    panic!("More than one en-passant square in move vector!");
-                }
-                en_passant_square = Some(start_square_index as u32);            /* Store only capture square initially*/
-            }
-
-            let must_capture = can_capture && !can_move && !can_destroy;
-            let must_move = !can_capture && can_move && !can_destroy;
-            let must_destroy = !can_capture && !can_move && can_destroy;
-            let can_move_capture = can_capture && can_move && !can_destroy;
-            let can_move_destroy = !can_capture && can_move && can_destroy;
-            let can_capture_destroy = can_capture && !can_move && can_destroy;
-            let can_do_all_three = can_capture && can_move && can_destroy;
-
-            if must_destroy {                                                   /* d: must destroy friendly           */
-                if has_enemy || is_empty {
-                    if let Some(game_en_passant) =
-                        game_state.en_passant_square
-                    {
-                        let enp_piece_idx =
-                            (game_en_passant >> 24) as usize & 0xFF;
-                        if can_capture_en_passant
-                            && square_index == (game_en_passant & 0xFFF) as u16
-                            && is_empty
-                            && game_state.pieces[enp_piece_idx].color() == side /* Must be friendly piece              */
-                        {
-                            taken_pieces.push(
-                                (
-                                    2, (game_en_passant >> 12) as u16 & 0xFFF,  /* Next 12 bits: captured piece square*/
-                                    can_capture_royal, false, None
-                                )
-                            );
-                            continue;
-                        }
-                    }
-                    early_fail = true;
-                    break;
-                }
-                taken_pieces.push(
-                    (
-                        2, square_index, can_capture_royal,
-                        false, None
-                    )
-                );
-            } else if must_capture {                                            /* c: must capture enemy              */
-                if !has_enemy {
-                    if let Some(game_en_passant) =
-                        game_state.en_passant_square
-                    {
-                        let enp_piece_idx =
-                            (game_en_passant >> 24) as usize & 0xFF;
-                        if can_capture_en_passant
-                            && square_index == (game_en_passant & 0xFFF) as u16
-                            && is_empty
-                            && game_state.pieces[enp_piece_idx].color() != side /* Must be friendly piece              */
-                        {
-                            taken_pieces.push(
-                                (
-                                    1, (game_en_passant >> 12) as u16 & 0xFFF,
-                                    can_capture_royal, false, None
-                                )
-                            );
-                            continue;
-                        }
-                    }
-                    early_fail = true;
-                    break;
-                }
-
-                taken_pieces.push(
-                    (
-                        1, square_index, can_capture_royal,
-                        false, None
-                    )
-                );
-            } else if must_move {                                               /* m: must move to empty              */
-                if !is_empty {
-                    early_fail = true;
-                    break;
-                }
-            } else if can_capture_destroy {                                     /* cd: capture or destroy (any piece) */
-                if is_empty {
-                    if let Some(game_en_passant) =
-                        game_state.en_passant_square
-                    {
-                        if can_capture_en_passant
-                            && square_index == (game_en_passant & 0xFFF) as u16
-                            && is_empty
-                        {                                                       /* can be both color                  */
-                            taken_pieces.push(
-                                (
-                                    3, (game_en_passant >> 12) as u16 & 0xFFF,
-                                    can_capture_royal, false, None
-                                )
-                            );
-                            continue;
-                        }
-                    }
-                    early_fail = true;
-                    break;
-                }
-                taken_pieces.push(
-                    (
-                        3, square_index, can_capture_royal,
-                        false, None
-                    )
-                );
-            } else if can_move_destroy {                                        /* md: move or destroy friendly       */
-                if has_enemy {
-                    early_fail = true;
-                    break;
-                }
-                if has_friendly {
-                    taken_pieces.push(
-                        (
-                            2, square_index, can_capture_royal,
-                            false, None
-                        )
-                    );
-                } else if let Some(game_en_passant) =
-                    game_state.en_passant_square
-                {
-                    let enp_piece_idx = (game_en_passant >> 24) as usize & 0xFF;
-                    if can_capture_en_passant
-                        && square_index == (game_en_passant & 0xFFF) as u16
-                        && is_empty
-                        && game_state.pieces[enp_piece_idx].color() == side     /* Must be friendly piece             */
-                    {
-                        taken_pieces.push(
-                            (
-                                2, (game_en_passant >> 12) as u16 & 0xFFF,
-                                can_capture_royal, false, None
-                            )
-                        );
-                    }
-                }
-            } else if can_move_capture {                                        /* mc: move or capture enemy          */
-                if has_friendly {
-                    early_fail = true;
-                    break;
-                }
-                if has_enemy {
-                    taken_pieces.push(
-                        (
-                            1, square_index, can_capture_royal,
-                            false, None
-                        )
-                    );
-                } else if let Some(game_en_passant) =
-                    game_state.en_passant_square
-                {
-                    let enp_piece_idx = (game_en_passant >> 24) as usize & 0xFF;
-                    if can_capture_en_passant
-                        && square_index == (game_en_passant & 0xFFF) as u16
-                        && is_empty
-                        && game_state.pieces[enp_piece_idx].color() != side     /* Must be enemy piece                */
-                    {
-                        taken_pieces.push(
-                            (
-                                1, (game_en_passant >> 12) as u16 & 0xFFF,
-                                can_capture_royal, false, None
-                            )
-                        );
-                    }
-                }
-            } else if can_do_all_three {                                        /* mcd: move/capture/destroy (any)    */
-                if has_friendly {
-                    taken_pieces.push(
-                        (
-                            2, square_index, can_capture_royal,
-                            false, None
-                        )
-                    );
-                } else if has_enemy {
-                    taken_pieces.push(
-                        (
-                            1, square_index, can_capture_royal,
-                            false, None
-                        )
-                    );
-                } else if let Some(game_en_passant) =
-                    game_state.en_passant_square
-                {
-                    if can_capture_en_passant
-                        && square_index == (game_en_passant & 0xFFF) as u16
-                        && is_empty
-                    {
-                        taken_pieces.push(
-                            (
-                                3, (game_en_passant >> 12) as u16 & 0xFFF,
-                                can_capture_royal, false, None
-                            )
-                        );
-                    }
-                }
-            }
-
-                                                                                /* Handle unload modifier (u)         */
-            if can_unload {
-                if taken_pieces.is_empty() {
-                    early_fail = true;
-                    break;
-                }
-                let last_idx = taken_pieces.len() - 1;                          /* Update last captured piece unload  */
-
-                let (
-                    piece_type, cap_square, _,
-                    can_cap_royal, _
-                ) = taken_pieces[last_idx];
-
-                taken_pieces[last_idx] = (
-                    piece_type, cap_square, can_cap_royal, true,
-                    Some(start_square_index)
-                );
-                continue;                                                       /* Unload doesnt add to captures      */
-            }
-
-            if let Some(en_passant_sq) = en_passant_square {
-                en_passant_square = Some(
-                    (en_passant_sq & 0xFFF)                                     /* Capture square                     */
-                    | (square_index as u32) << 12                               /* Captured piece square              */
-                    | (piece_idx as u32) << 24
-                );
-            }
-        }
-
-        if early_fail {
-            continue;
-        }
-
-        if let Some(leg) = castling_leg {
-            let king_rank = square.1;
-            let king_file = square.0;
-
-            let atomic = leg.get_atomic();
-            let (offset, _) = atomic.whole();
-
-            let is_castling_right = leg.is_castling_right();
-            let rook_file = if is_castling_right {
-                game_state.files - 1
-            } else {
-                0
-            };
-
-            let rook_square = game_state.square_to_index(rook_file, king_rank);
-
-            if !unmoved_board.get_bit(rook_file, king_rank) {
-                continue;                                                       /* Rook must be unmoved               */
-            }
-
-            let rook_occupied = if side == WHITE {
-                friendly_board.get_bit(rook_file, king_rank)
-            } else {
-                friendly_board.get_bit(rook_file, king_rank)
-            };
-
-            if !rook_occupied {
-                continue;                                                       /* Rook must exist on corner          */
-            }
-
-            let king_end_file = (king_file as i8).saturating_add(offset) as u8;
-            if king_end_file >= game_state.files {
-                continue;                                                       /* End square out of bounds           */
-            }
-
-            let start_check = king_file.min(rook_file);
-            let end_check = king_file.max(rook_file);
-
-            let mut path_clear = true;
-            for f in start_check + 1..end_check {
-                if friendly_board.get_bit(f, king_rank) ||
-                   enemy_board.get_bit(f, king_rank) {
-                    path_clear = false;
-                    break;                                                      /* Path must be clear                 */
-                }
-            }
-
-            if !path_clear {
-                continue;
-            }
-
-            let attack_start = king_file.min(king_end_file);
-            let attack_end = king_file.max(king_end_file);
-
-            let mut king_path_safe = true;
-            for f in attack_start..=attack_end {
-                if is_square_attacked(
-                    (f, king_rank),
-                    1 - side,                                                   /* Check from enemy perspective       */
-                    game_state
-                ) {
-                    king_path_safe = false;
-                    break;                                                      /* King path must not be attacked     */
-                }
-            }
-
-            if !king_path_safe {
-                continue;
-            }
-
-            let start_square = game_state.square_to_index(
-                king_file, king_rank
-            );
-            let end_square = game_state.square_to_index(
-                king_end_file, king_rank
-            );
-
-            let unload_file = if is_castling_right {
-                king_end_file - 1
-            } else {
-                king_end_file + 1
-            };
-
-            let unload_square = game_state.square_to_index(
-                unload_file, king_rank
-            );
-
-            let encoded_move = Move::encode(
+    let result: Vec<MoveType> = vector_set
+        .par_iter()
+        .flat_map(|multi_leg_vector| {
+            process_multi_leg_vector(
+                multi_leg_vector,
+                square,
+                piece,
+                friendly_board,
+                enemy_board,
+                unmoved_board,
+                game_state,
+                side,
                 piece_idx,
-                start_square,
-                end_square,
-                true,                                                           /* is_initial                         */
-                false,                                                          /* is_promotion                       */
-                None,                                                           /* promoting_piece                    */
-                None,                                                           /* promoted_piece                     */
-                None,                                                           /* en_passant_square                  */
-                Move::HOPPER_CAPTURE,                                           /* move_type                          */
-                Some(4),                                                        /* captured_piece (special)           */
-                Some(false),                                                    /* can_capture_royal                  */
-                Some(rook_square),                                              /* captured_square                    */
-                None,                                                           /* taken_pieces                       */
-                Some(true),                                                     /* is_unload                          */
-                Some(unload_square),                                            /* unload_square                      */
-            );
-
-            move_list.push(encoded_move);
-            continue;
-        }
-
-        let file = accumulated_offset.0 as u8;
-        let rank = accumulated_offset.1 as u8;
-
-        let start_square = game_state.square_to_index(square.0, square.1);
-        let end_square = game_state.square_to_index(file, rank);
-
-        let is_initial = move_is_initial;
-                                                                                /* Check for promotion                */
-        let reaches_promotion_rank = rank == promotion_rank;
-        let can_promote = piece.can_promote() && reaches_promotion_rank;
-                                                                                /* Get promotion pieces if applicable */
-        let promotion_pieces = if can_promote {
-            piece.get_promotion_pieces()
-        } else {
-            Vec::new()
-        };
-
-        let is_promotion = can_promote && !promotion_pieces.is_empty();
-                                                                                /* Generate move variants             */
-        let moves_to_generate = if is_promotion {
-            promotion_pieces.len()                                              /* One move per promotion piece       */
-        } else {
-            1                                                                   /* Single non-promotion move          */
-        };
-
-        for move_idx in 0..moves_to_generate {
-            let promoting_piece = if is_promotion {
-                Some(piece.index())
-            } else {
-                None
-            };
-
-            let promoted_piece = if is_promotion {
-                Some(promotion_pieces[move_idx])
-            } else {
-                None
-            };
-
-            let encoded_move = match taken_pieces.len() {
-                0 => {
-                    Move::encode(
-                        piece_idx,
-                        start_square,
-                        end_square,
-                        is_initial,
-                        is_promotion,
-                        promoting_piece,
-                        promoted_piece,
-                        en_passant_square,
-                        Move::SINGLE_NO_CAPTURE,                                /* move_type                          */
-                        None,                                                   /* captured_piece                     */
-                        None,                                                   /* can_capture_royal                  */
-                        None,                                                   /* captured_square                    */
-                        None,                                                   /* taken_pieces                       */
-                        None,                                                   /* is_unload                          */
-                        None,                                                   /* unload_square                      */
-                    )
-                }
-                1 => {
-                    let (
-                        captured_piece, cap_square, can_capture_royal,
-                        is_unload, unload_sq
-                    ) = taken_pieces[0];
-
-                    if cap_square != end_square {
-                        Move::encode(
-                            piece_idx,
-                            start_square,
-                            end_square,
-                            is_initial,
-                            is_promotion,
-                            promoting_piece,
-                            promoted_piece,
-                            en_passant_square,
-                            Move::HOPPER_CAPTURE,                               /* move_type                          */
-                            Some(captured_piece),
-                            Some(can_capture_royal),
-                            Some(cap_square),
-                            None,                                               /* taken_pieces                       */
-                            Some(is_unload),
-                            unload_sq,
-                        )
-                    } else {
-                        Move::encode(
-                            piece_idx,
-                            start_square,
-                            end_square,
-                            is_initial,
-                            is_promotion,
-                            promoting_piece,
-                            promoted_piece,
-                            en_passant_square,
-                            Move::SINGLE_CAPTURE,                               /* move_type                          */
-                            Some(captured_piece),
-                            Some(can_capture_royal),
-                            None,                                               /* captured_square                    */
-                            None,                                               /* taken_pieces                       */
-                            Some(is_unload),
-                            unload_sq,
-                        )
-                    }
-                }
-                _ => {
-                    Move::encode(
-                        piece_idx,
-                        start_square,
-                        end_square,
-                        is_initial,
-                        is_promotion,
-                        promoting_piece,
-                        promoted_piece,
-                        en_passant_square,
-                        Move::MULTI_CAPTURE,                                    /* move_type                          */
-                        None,                                                   /* captured_piece                     */
-                        None,                                                   /* can_capture_royal                  */
-                        None,                                                   /* captured_square                    */
-                        Some(taken_pieces.clone()),                             /* taken_pieces for multi-capture     */
-                        None,                                                   /* is_unload                          */
-                        None,                                                   /* unload_square                      */
-                    )
-                }
-            };
-
-            move_list.push(encoded_move);
-        }
-    }
-
-    move_list
+                promotion_rank,
+                unmoved_piece,
+            )
+        })
+        .collect();
+    result
 }
 
 

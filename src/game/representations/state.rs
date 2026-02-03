@@ -24,7 +24,7 @@ use crate::{
             piece::Piece, vector::MultiLegVector
         }
     },
-    io::game_io::parse_config_file
+    io::game_io::{parse_config_file, parse_fen}
 };
 
 use bnum::types::U256;
@@ -132,15 +132,22 @@ impl State {
     pub fn index_to_square(&self, index: u16) -> (u8, u8) {
         let file = (index % self.files as u16) as u8;
         let rank = (index / self.files as u16) as u8;
-        assert!(file < self.files, "File {file} out of bounds.");
-        assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+
+        #[cfg(debug_assertions)]
+        {
+            assert!(file < self.files, "File {file} out of bounds.");
+            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        }
 
         (file, rank)
     }
 
     pub fn square_to_index(&self, file: u8, rank: u8) -> u16 {
-        assert!(file < self.files, "File {file} out of bounds.");
-        assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        #[cfg(debug_assertions)]
+        {
+            assert!(file < self.files, "File {file} out of bounds.");
+            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        }
 
         (rank as u16) * (self.files as u16) + (file as u16)
     }
@@ -155,6 +162,11 @@ impl State {
         self.ply = 0;
         self.ply_counter = 0;
 
+        self.pieces_board.clear();
+        self.pieces_board.resize(
+            self.pieces.len(), Board::new(self.files, self.ranks)
+        );
+
         self.black_board = Board::new(self.files, self.ranks);
         self.white_board = Board::new(self.files, self.ranks);
         self.monarch_board = Board::new(self.files, self.ranks);
@@ -165,6 +177,11 @@ impl State {
         self.minor_pieces = [0; 2];
 
         self.material = [0; 2];
+    }
+
+    pub fn load_fen(&mut self, fen: &str) {
+        self.reset();
+        parse_fen(self, fen);
     }
 
     fn init_piece_moves(&mut self) {

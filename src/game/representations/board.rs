@@ -32,10 +32,13 @@ pub enum Bitboard {
 #[hotpath::measure_all]
 impl Bitboard {
     pub fn new(size: u16) -> Self {
-        assert!(
+        #[cfg(debug_assertions)]
+        {
+            assert!(
             size <= MAX_SQUARES as u16,
             "Bitboard size {size} exceeds maximum size of {MAX_SQUARES}."
-        );
+            );
+        }
 
         match size {
             0..=64 => Bitboard::U64(0u64),
@@ -235,14 +238,17 @@ pub struct Board {
 #[hotpath::measure_all]
 impl Board {
     pub fn new(files: u8, ranks: u8) -> Board {
-        assert!(
+        #[cfg(debug_assertions)]
+        {
+            assert!(
             files <= MAX_FILES,
             "Number of files {files} exceeds maximum of {MAX_FILES}."
-        );
-        assert!(
+            );
+            assert!(
             ranks <= MAX_RANKS,
             "Number of ranks {ranks} exceeds maximum of {MAX_RANKS}."
-        );
+            );
+        }
 
         let size = (ranks as u16) * (files as u16);
         Board {
@@ -253,24 +259,30 @@ impl Board {
     }
 
     pub fn set_bit(&mut self, file: u8, rank: u8) {
-        assert!(file < self.files, "File {file} out of bounds.");
-        assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        #[cfg(debug_assertions)] {
+            assert!(file < self.files, "File {file} out of bounds.");
+            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        }
 
         let index = (rank as u32) * (self.files as u32) + (file as u32);
         self.bitboard.set_bit(index, true);
     }
 
     pub fn clear_bit(&mut self, file: u8, rank: u8) {
-        assert!(file < self.files, "File {file} out of bounds.");
-        assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        #[cfg(debug_assertions)] {
+            assert!(file < self.files, "File {file} out of bounds.");
+            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        }
 
         let index = (rank as u32) * (self.files as u32) + (file as u32);
         self.bitboard.set_bit(index, false);
     }
 
     pub fn get_bit(&self, file: u8, rank: u8) -> bool {
-        assert!(file < self.files, "File {file} out of bounds.");
-        assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        #[cfg(debug_assertions)] {
+            assert!(file < self.files, "File {file} out of bounds.");
+            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+        }
 
         let index = (rank as u32) * (self.files as u32) + (file as u32);
         self.bitboard.get_bit(index)
