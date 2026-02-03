@@ -24,7 +24,9 @@ use bnum::{cast::As, types::U2048};
 /// - Bit 10: Big piece status (1 if can be promoted to, 0 if can promote)
 /// - Bit 11: Major piece status (1 if major, 0 if minor)
 /// - Bits 12-27: Piece value
-/// - Bits 28-31: Unused
+/// - Bit 28: Can castle kingside (right)
+/// - Bit 29: Can castle queenside (left)
+/// - Bits 30-31: Unused
 ///
 ///
 /// the promotions field is a 2048-bit number representing which pieces this
@@ -56,6 +58,8 @@ impl Piece {
     /// * `is_big` - Whether can be promoted to (true) or can promote (false)
     /// * `is_major` - Whether this is a major piece (true) or minor (false)
     /// * `value` - The piece value (0-65535, stored in 16 bits)
+    /// * `can_castle_kingside` - This piece can castle kingside (right)
+    /// * `can_castle_queenside` - This piece can castle queenside (left)
     pub fn new(
         name: String,
         movement: String,
@@ -67,6 +71,8 @@ impl Piece {
         is_big: bool,
         is_major: bool,
         value: u16,
+        can_castle_kingside: bool,
+        can_castle_queenside: bool,
     ) -> Self {
         let mut encoded_piece = index as u32;
         encoded_piece |= (color as u32) << 8;
@@ -84,6 +90,14 @@ impl Piece {
         }
 
         encoded_piece |= (value as u32 & 0xFFFF) << 12;
+
+        if can_castle_kingside {
+            encoded_piece |= 1 << 28;
+        }
+
+        if can_castle_queenside {
+            encoded_piece |= 1 << 29;
+        }
 
         Self {
             name,
@@ -124,6 +138,14 @@ impl Piece {
 
     pub fn value(&self) -> u16 {
         ((self.encoded_piece >> 12) & 0xFFFF) as u16
+    }
+
+    pub fn can_castle_kingside(&self) -> bool {
+        (self.encoded_piece & (1 << 28)) != 0
+    }
+
+    pub fn can_castle_queenside(&self) -> bool {
+        (self.encoded_piece & (1 << 29)) != 0
     }
 
     pub fn get_promotion_pieces(&self) -> Vec<u8> {

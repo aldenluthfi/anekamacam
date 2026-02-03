@@ -121,6 +121,15 @@ impl Bitboard {
 
         indices
     }
+
+    pub fn lsb(&self) -> u32 {
+        match self {
+            Bitboard::U64(b) => b.trailing_zeros(),
+            Bitboard::U256(b) => b.trailing_zeros(),
+            Bitboard::U1024(b) => b.trailing_zeros(),
+            Bitboard::U4096(b) => b.trailing_zeros(),
+        }
+    }
 }
 
 impl BitAnd for Bitboard {
@@ -300,6 +309,10 @@ impl Board {
         }
 
         self.bitboard.get_bit(index)
+    }
+
+    pub fn lsb(&self) -> u32 {
+        self.bitboard.lsb()
     }
 
     pub fn count_bits(&self) -> u32 {

@@ -179,11 +179,13 @@ pub fn parse_config_file(path: &str) -> State {
             is_big,
             is_major,
             value,
+            movement.contains("o"),                                             /* can castle kingside                */
+            movement.contains("O")                                              /* can castle queenside               */
         ));
 
         pieces.push(Piece::new(
-            name,
-            movement,
+            name.clone(),
+            movement.clone(),
             black_char,
             U2048::ZERO,
             0,                                                                  /* placeholde: will be set later      */
@@ -192,6 +194,8 @@ pub fn parse_config_file(path: &str) -> State {
             is_big,
             is_major,
             value,
+            movement.contains("o"),                                             /* can castle kingside                */
+            movement.contains("O")                                              /* can castle queenside               */
         ));
 
         current_line += 1;
@@ -350,11 +354,13 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 file += num_str.parse::<u8>().unwrap();
             }
             _ => {
-                let piece_idx = state.pieces.iter().position(|piece| piece.symbol == c)
-                    .expect(&format!("Unknown piece character: {}", c));
+                let piece_idx = state.pieces.iter().position(
+                    |piece| piece.symbol == c
+                ).expect(&format!("Unknown piece character: {}", c));
 
                 let piece = &state.pieces[piece_idx];
-                let square_index = state.square_to_index(file, rank) as u32;
+                let square_index =
+                    (rank as u32) * (state.files as u32) + (file as u32);
 
                 state.pieces_board[piece_idx].set_bit(square_index);
 
@@ -382,7 +388,20 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[piece.color() as usize] += 1;
                 }
 
-                state.unmoved_board.set_bit(square_index);
+                if c == 'P' && rank == 1 {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'p' && rank == (state.ranks - 2) {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'R' && rank == 0 && (file == 0 || file == state.files - 1) {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'r' && rank == state.ranks - 1 &&
+                          (file == 0 || file == state.files - 1) {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'K' && rank == 0 && file == 4 {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'k' && rank == state.ranks - 1 && file == 4 {
+                    state.unmoved_board.set_bit(square_index);
+                }
 
                 file += 1;
             }
@@ -442,7 +461,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
         let piece_square_index =
             (piece_rank as u32) * (state.files as u32) + (piece_file as u32);
 
-        let en_passant_square = 
+        let en_passant_square =
             square_index | (piece_square_index << 12) | piece_index << 24;
         Some(
             en_passant_square

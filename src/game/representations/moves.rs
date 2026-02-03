@@ -55,7 +55,8 @@ use std::fmt::{
 /// - Next 8 bits represent the captured piece type.
 /// - Next bit indicates if this move is a capture or unload (1) or not (0).
 /// - Next 12 bits are the unload square index (if applicable).
-/// - The remaining 13 bits are unused.
+/// - Next bit indicates if the piece captured is unmoved (1) or not (0).
+/// - The remaining 12 bits are unused.
 ///
 /// Single Hopper capture move (11):
 /// - Next bit indicates this capture can be used to capture a royal piece (1)
@@ -64,8 +65,10 @@ use std::fmt::{
 /// - Next 12 bits represent the captured piece square index.
 /// - Next bit indicates if this move is a capture or unload (1) or not (0).
 /// - Next 12 bits are the unload square index (if applicable).
+/// - Next bit indicates if the piece captured is unmoved (1) or not (0).
 /// - The remaining bit is unused.
 
+#[derive(Clone)]
 pub struct Move {
     pub encoded_move: u128,
 }
@@ -101,13 +104,15 @@ pub struct Move {
 /// - Next 12 bits: Square index
 /// - Next bit indicates if this move is a capture or unload (1) or not (0).
 /// - Next 12 bits: Unload square index (if applicable).
-/// - The remaining bit is unused.
+/// - the last bit indicates if the piece captured is unmoved (1) or not (0).
 
+#[derive(Clone)]
 pub struct MultiMove {
     pub encoded_move: u128,
     pub taken_pieces: Vec<u64>,
 }
 
+#[derive(Clone)]
 pub enum MoveType {
     SingleNoCapture(Move),
     SingleCapture(Move),
@@ -151,7 +156,7 @@ impl Move {
     const PROMOTED_PIECE_MASK: u128 = 0xFF << Self::PROMOTED_PIECE_SHIFT;
     const END_SQUARE_MASK: u128 = 0xFFF << Self::END_SQUARE_SHIFT;
     const START_SQUARE_MASK: u128 = 0xFFF << Self::START_SQUARE_SHIFT;
-    const EN_PASSANT_SQUARE_MASK: u128 = 0xFFFFFF << Self::EN_PASSANT_SHIFT;
+    const EN_PASSANT_SQUARE_MASK: u128 = 0xFFFFFFFF << Self::EN_PASSANT_SHIFT;
     const MOVE_TYPE_MASK: u128 = 0b11;
 
     pub const SINGLE_NO_CAPTURE: u128 = 0b00;
@@ -204,6 +209,7 @@ impl Move {
         can_capture_royal: bool,
         is_unload: bool,
         unload_square: Option<u16>,
+        captures_unmoved: bool,
     ) -> Self {
         let mut encoded = Self::SINGLE_CAPTURE;
         encoded |= (piece_index as u128) << Self::PIECE_INDEX_SHIFT;
@@ -227,6 +233,7 @@ impl Move {
         if let Some(unload) = unload_square {
             encoded |= (unload as u128) << (Self::EXTRA_DATA_SHIFT + 10);
         }
+        encoded |= (captures_unmoved as u128) << (Self::EXTRA_DATA_SHIFT + 22);
 
         Self {
             encoded_move: encoded,
@@ -247,6 +254,7 @@ impl Move {
         can_capture_royal: bool,
         is_unload: bool,
         unload_square: Option<u16>,
+        captures_unmoved: bool,
     ) -> Self {
         let mut encoded = Self::HOPPER_CAPTURE;
         encoded |= (piece_index as u128) << Self::PIECE_INDEX_SHIFT;
@@ -271,6 +279,7 @@ impl Move {
         if let Some(unload) = unload_square {
             encoded |= (unload as u128) << (Self::EXTRA_DATA_SHIFT + 22);
         }
+        encoded |= (captures_unmoved as u128) << (Self::EXTRA_DATA_SHIFT + 34);
 
         Self {
             encoded_move: encoded,
@@ -285,14 +294,15 @@ impl Move {
         is_promotion: bool,
         promoting_piece: Option<u8>,
         promoted_piece: Option<u8>,
-        en_passant_square: Option<u32>,  // Changed from u16 to u32
+        en_passant_square: Option<u32>,
         move_type: u128,
         captured_piece: Option<u8>,
         can_capture_royal: Option<bool>,
         captured_square: Option<u16>,
-        taken_pieces: Option<Vec<(u8, u16, bool, bool, Option<u16>)>>,
+        taken_pieces: Option<Vec<(u8, u16, bool, bool, Option<u16>, bool)>>,
         is_unload: Option<bool>,
         unload_square: Option<u16>,
+        captures_unmoved: Option<bool>,
     ) -> MoveType {
         match move_type {
             Self::SINGLE_NO_CAPTURE => {
@@ -321,6 +331,7 @@ impl Move {
                     can_capture_royal.unwrap_or(false),
                     is_unload.unwrap_or(true),
                     unload_square,
+                    captures_unmoved.unwrap_or(false),
                 ))
             }
             Self::HOPPER_CAPTURE => {
@@ -338,6 +349,7 @@ impl Move {
                     can_capture_royal.unwrap_or(false),
                     is_unload.unwrap_or(true),
                     unload_square,
+                    captures_unmoved.unwrap_or(false),
                 ))
             }
             Self::MULTI_CAPTURE => {
@@ -424,10 +436,12 @@ impl Move {
 
     pub fn en_passant_square(&self) -> Option<u32> {
         if self.creates_en_passant_square() {
-            Some((
-                (self.encoded_move & Move::EN_PASSANT_SQUARE_MASK) >>
-                Move::EN_PASSANT_SHIFT
-            ) as u32)
+            Some(
+                (
+                    (self.encoded_move & Move::EN_PASSANT_SQUARE_MASK) >>
+                    Move::EN_PASSANT_SHIFT
+                ) as u32
+            )
         } else {
             None
         }
@@ -510,6 +524,17 @@ impl Move {
             None
         }
     }
+
+    pub fn is_captured_piece_unmoved(&self) -> bool {
+        let move_type = self.move_type();
+        if move_type == Self::SINGLE_CAPTURE as u8 {
+            (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 22)) & 1 == 1
+        } else if move_type == Self::HOPPER_CAPTURE as u8 {
+            (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 34)) & 1 == 1
+        } else {
+            false
+        }
+    }
 }
 
 impl MultiMove {
@@ -522,7 +547,7 @@ impl MultiMove {
         promoting_piece: Option<u8>,
         promoted_piece: Option<u8>,
         en_passant_square: Option<u32>,
-        captured_pieces: Vec<(u8, u16, bool, bool, Option<u16>)>,
+        captured_pieces: Vec<(u8, u16, bool, bool, Option<u16>, bool)>,
     ) -> Self {
         let mut encoded = Move::MULTI_CAPTURE;
         encoded |= (piece_index as u128) << Move::PIECE_INDEX_SHIFT;
@@ -546,7 +571,7 @@ impl MultiMove {
             .map(|
                     (
                         piece_type, square, can_capture_royal,
-                        is_unload, unload_square
+                        is_unload, unload_square, captures_unmoved
                     )
                 | {
                 let mut encoded: u64 = 0;
@@ -557,6 +582,7 @@ impl MultiMove {
                 if let Some(unload) = unload_square {
                     encoded |= (*unload as u64) << 1;
                 }
+                encoded |= *captures_unmoved as u64;
                 encoded
             })
             .collect();
@@ -643,7 +669,7 @@ impl MultiMove {
 
     pub fn get_taken_pieces(
         &self
-    ) -> Vec<(u8, u16, bool, bool, Option<u16>)> {
+    ) -> Vec<(u8, u16, bool, bool, Option<u16>, bool)> {
         self.taken_pieces
             .iter()
             .map(|encoded| {
@@ -656,10 +682,11 @@ impl MultiMove {
                 } else {
                     None
                 };
+                let captures_unmoved = encoded & 1 == 1;
 
                 (
                     piece_type, square, can_capture_royal,
-                    is_unload, unload_square
+                    is_unload, unload_square, captures_unmoved
                 )
             })
             .collect()
@@ -691,6 +718,7 @@ impl Debug for Move {
         let captured_piece_type = self.captured_piece();
         let captured_square = self.captured_square();
         let unload_square = self.unload_square();
+        let captures_unmoved = self.is_captured_piece_unmoved();
 
         f.debug_struct("Move")
             .field("move_type", &move_type)
@@ -709,6 +737,7 @@ impl Debug for Move {
             .field("captured_piece_type", &captured_piece_type)
             .field("captured_square", &captured_square)
             .field("unload_square", &unload_square)
+            .field("captures_unmoved", &captures_unmoved)
             .field("encoded_move", &self.encoded_move)
             .finish()
         }

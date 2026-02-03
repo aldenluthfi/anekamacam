@@ -1,11 +1,13 @@
 use std::fs;
 
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use crate::io::game_io::format_game_state;
 
+use crate::io::move_io::format_move;
 use crate::{
     constants::WHITE,
     game::{
-        moves::move_list::generate_move_list,
+        moves::move_list::{generate_move_list, make_move, undo_move},
         representations::{
             moves::MoveType,
             state::State
@@ -31,11 +33,15 @@ fn parse_perft_file(
     }).collect()
 }
 
-pub fn start_perft(state: &mut State, path: &str, depth: u8) {
+pub fn start_perft(
+    mut state: &mut State, path: &str,
+    depth: u8, debug: bool, branch: Option<u8>
+) {
     let perft_cases = parse_perft_file(path);
 
     let mut successful_cases = 0;
-    let total_cases = perft_cases.len();
+    let mut total_moves = 0;
+    let total_cases = perft_cases.len() * depth as usize;
 
     for (
         fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6
@@ -47,12 +53,17 @@ pub fn start_perft(state: &mut State, path: &str, depth: u8) {
         ];
 
         for d in 1..=depth {
-            let result = perft(&state, d);
-
+            let result = perft(&mut state, d, debug, branch, Some(depth), None);
             let expected = expected_perfts[(d - 1) as usize];
+
+            println!(
+                "FEN: {} | Depth: {} | Expected: {} | Result: {}",
+                fen, d, expected, result
+            );
 
             if result == expected {
                 successful_cases += 1;
+                total_moves += result;
             } else {
                 #[cfg(debug_assertions)]
                 println!(
@@ -62,6 +73,8 @@ pub fn start_perft(state: &mut State, path: &str, depth: u8) {
                     ),
                     fen, d, expected, result
                 );
+                #[cfg(debug_assertions)]
+                println!("{}", format_game_state(state, false))
             }
         }
     }
@@ -70,52 +83,102 @@ pub fn start_perft(state: &mut State, path: &str, depth: u8) {
         "Perft testing completed: {}/{} cases passed.",
         successful_cases, total_cases
     );
+    println!("Total moves generated: {}", total_moves);
 }
 
-pub fn generate_all_moves(state: &State) -> Vec<MoveType> {
+fn generate_all_moves(state: &State) -> Vec<MoveType> {
     let mut possible_moves: Vec<MoveType> = vec![];
 
     let piece_count = state.pieces.len() / 2;
     let start_index = if state.playing == WHITE { 0 } else { piece_count };
     let end_index = start_index + piece_count;
 
-        possible_moves = (start_index..end_index)
-            .into_par_iter()
-            .flat_map(|piece_index| {
-                let piece = &state.pieces[piece_index];
-                let piece_board = &state.pieces_board[piece_index];
-                let piece_indices = piece_board.bit_indices();
+    possible_moves = (start_index..end_index)
+        .into_par_iter()
+        .flat_map(|piece_index| {
+            let piece = &state.pieces[piece_index];
+            let piece_board = &state.pieces_board[piece_index];
+            let piece_indices = piece_board.bit_indices();
 
-                piece_indices.into_iter().flat_map(move |index| {
-                    let relevant_friendly_board = if piece.color() == WHITE {
-                        &state.white_board
-                    } else {
-                        &state.black_board
-                    };
+            piece_indices.into_par_iter().flat_map(move |index| {
+                let relevant_friendly_board = if piece.color() == WHITE {
+                    &state.white_board
+                } else {
+                    &state.black_board
+                };
 
-                    let relevant_enemy_board = if piece.color() == WHITE {
-                        &state.black_board
-                    } else {
-                        &state.white_board
-                    };
+                let relevant_enemy_board = if piece.color() == WHITE {
+                    &state.black_board
+                } else {
+                    &state.white_board
+                };
 
-                    generate_move_list(
-                        index, &piece, &relevant_friendly_board,
-                        &relevant_enemy_board, &state.unmoved_board, &state
-                    )
-                }).collect::<Vec<_>>()
-            })
-            .collect();
+                generate_move_list(
+                    index, &piece, &relevant_friendly_board,
+                    &relevant_enemy_board, &state.unmoved_board, &state,
+                    false
+                )
+            }).collect::<Vec<_>>()
+        })
+        .collect();
 
         possible_moves
 }
 
 #[hotpath::measure]
-pub fn perft(state: &State, depth: u8) -> u64 {
+fn perft(
+    mut state: &mut State, depth: u8, debug: bool,
+    branch: Option<u8>, max_depth: Option<u8>, prefix: Option<String>
+) -> u64 {
 
-    if depth == 1 {
-        return generate_all_moves(state).len() as u64
+    if depth == 0 {
+        return 1;
     }
 
-    unimplemented!()
+    let possible_moves = generate_all_moves(state);
+
+    let mut nodes = 0;
+
+    if !debug {
+        for mv in possible_moves {
+            if make_move(&mut state, mv) {
+                nodes += perft(state, depth - 1, false, None, None, None);
+                undo_move(&mut state);
+            }
+        }
+        return nodes;
+    } else {
+        for mv in possible_moves {
+            if make_move(&mut state, mv.clone()) {
+                nodes += perft(
+                    state,
+                    depth - 1,
+                    (max_depth.expect(
+                        "Max depth must be provided for debug mode"
+                    ) - depth) < branch.expect(
+                        "Branching must be provided for debug mode"
+                    ),
+                    branch,
+                    max_depth,
+                    Some(
+                        format!(
+                            "{} {}",
+                            prefix.as_deref().unwrap_or(""),
+                            format_move(&mv, state)
+                        )
+                    )
+                );
+                undo_move(&mut state);
+            }
+        }
+
+
+        println!(
+            "Move: {} | Nodes: {}",
+            prefix.as_deref().unwrap_or(""),
+            nodes
+        );
+    }
+
+    nodes
 }
