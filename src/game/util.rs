@@ -67,9 +67,9 @@ pub fn verify_game_state(state: &State) {
 
     for (i, piece) in state.pieces.iter().enumerate() {
         let piece_board = &state.pieces_board[i];
-        let piece_indices = piece_board.bit_positions();
+        let piece_indices = piece_board.bit_indices();
 
-        for (_file, _rank) in piece_indices {
+        for _index in piece_indices {
             if piece.is_big() {
                 temp_big_pieces[piece.color() as usize] += 1;
             }
@@ -107,24 +107,23 @@ pub fn verify_game_state(state: &State) {
     for (i, piece) in state.pieces.iter().enumerate() {
         if piece.is_royal() {
             let piece_board = &state.pieces_board[i];
-            let royal_indices = piece_board.bit_positions();
+            let royal_indices = piece_board.bit_indices();
 
-            for (file, rank) in royal_indices {
+            for index in royal_indices {
 
                 assert!(
-                    state.monarch_board.get_bit(file, rank),
-                    "Royal piece not set in monarch board at ({}, {})",
-                    file,
-                    rank
+                    state.monarch_board.get_bit(index),
+                    "Royal piece not set in monarch board at index {}",
+                    index
                 );
 
                 if piece.color() == WHITE {
-                    temp_white_monarch_board.set_bit(file, rank);
+                    temp_white_monarch_board.set_bit(index);
                 } else {
-                    temp_black_monarch_board.set_bit(file, rank);
+                    temp_black_monarch_board.set_bit(index);
                 }
 
-                temp_monarch_board.set_bit(file, rank);
+                temp_monarch_board.set_bit(index);
             }
         }
     }

@@ -129,29 +129,6 @@ impl State {
         parse_config_file(path)
     }
 
-    pub fn index_to_square(&self, index: u16) -> (u8, u8) {
-        let file = (index % self.files as u16) as u8;
-        let rank = (index / self.files as u16) as u8;
-
-        #[cfg(debug_assertions)]
-        {
-            assert!(file < self.files, "File {file} out of bounds.");
-            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
-        }
-
-        (file, rank)
-    }
-
-    pub fn square_to_index(&self, file: u8, rank: u8) -> u16 {
-        #[cfg(debug_assertions)]
-        {
-            assert!(file < self.files, "File {file} out of bounds.");
-            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
-        }
-
-        (rank as u16) * (self.files as u16) + (file as u16)
-    }
-
     pub fn reset(&mut self) {
         self.playing = WHITE;
         self.castling_state = 0;
@@ -193,18 +170,16 @@ impl State {
         }
     }
 
-
     fn init_relevant_boards(&mut self) {
         let squares = (self.files as u16) * (self.ranks as u16);
 
         for square in 0..squares {
             for piece in &self.pieces {
-                let (file, rank) = self.index_to_square(square);
                 let i = piece.index() as usize;
 
                 let relevant_moves = generate_relevant_boards(
                     piece,
-                    (file, rank),
+                    square as u32,
                     self
                 );
 

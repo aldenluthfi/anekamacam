@@ -1,5 +1,7 @@
 use std::fs;
 
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
 use crate::{
     constants::WHITE,
     game::{
@@ -52,6 +54,7 @@ pub fn start_perft(state: &mut State, path: &str, depth: u8) {
             if result == expected {
                 successful_cases += 1;
             } else {
+                #[cfg(debug_assertions)]
                 println!(
                     concat!(
                         "[FAIL] Perft test failed for FEN {} \n",
@@ -76,36 +79,35 @@ pub fn generate_all_moves(state: &State) -> Vec<MoveType> {
     let start_index = if state.playing == WHITE { 0 } else { piece_count };
     let end_index = start_index + piece_count;
 
-    for piece_index in start_index..end_index {
-        let piece = &state.pieces[piece_index];
-        let piece_board = &state.pieces_board[piece_index];
-        let piece_indices = piece_board.bit_indices();
+        possible_moves = (start_index..end_index)
+            .into_par_iter()
+            .flat_map(|piece_index| {
+                let piece = &state.pieces[piece_index];
+                let piece_board = &state.pieces_board[piece_index];
+                let piece_indices = piece_board.bit_indices();
 
-        for index in piece_indices {
-            let relevant_friendly_board = if piece.color() == WHITE {
-                &state.white_board
-            } else {
-                &state.black_board
-            };
+                piece_indices.into_iter().flat_map(move |index| {
+                    let relevant_friendly_board = if piece.color() == WHITE {
+                        &state.white_board
+                    } else {
+                        &state.black_board
+                    };
 
-            let relevant_enemy_board = if piece.color() == WHITE {
-                &state.black_board
-            } else {
-                &state.white_board
-            };
+                    let relevant_enemy_board = if piece.color() == WHITE {
+                        &state.black_board
+                    } else {
+                        &state.white_board
+                    };
 
-            let square = state.index_to_square(index as u16);
+                    generate_move_list(
+                        index, &piece, &relevant_friendly_board,
+                        &relevant_enemy_board, &state.unmoved_board, &state
+                    )
+                }).collect::<Vec<_>>()
+            })
+            .collect();
 
-            let mut piece_moves = generate_move_list(
-                square, &piece, &relevant_friendly_board,
-                &relevant_enemy_board, &state.unmoved_board, &state
-            );
-
-            possible_moves.append(&mut piece_moves);
-        }
-    }
-
-    possible_moves
+        possible_moves
 }
 
 #[hotpath::measure]

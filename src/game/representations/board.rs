@@ -17,7 +17,6 @@
 //! 18/02/2024
 
 use bnum::types::{U256, U1024, U4096};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use crate::constants::*;
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
@@ -65,28 +64,10 @@ impl Bitboard {
 
     pub fn get_bit(&self, index: u32) -> bool {
         match self {
-            Bitboard::U64(b) => ((b >> index) & 1) == 1,
+            Bitboard::U64(b) => (b & (1u64 << index)) != 0,
             Bitboard::U256(b) => b.bit(index),
             Bitboard::U1024(b) => b.bit(index),
             Bitboard::U4096(b) => b.bit(index),
-        }
-    }
-
-    pub fn trailing_zeros(&self) -> u32 {
-        match self {
-            Bitboard::U64(b) => b.trailing_zeros(),
-            Bitboard::U256(b) => b.trailing_zeros(),
-            Bitboard::U1024(b) => b.trailing_zeros(),
-            Bitboard::U4096(b) => b.trailing_zeros(),
-        }
-    }
-
-    pub fn leading_zeros(&self) -> u32 {
-        match self {
-            Bitboard::U64(b) => b.leading_zeros(),
-            Bitboard::U256(b) => b.leading_zeros(),
-            Bitboard::U1024(b) => b.leading_zeros(),
-            Bitboard::U4096(b) => b.leading_zeros(),
         }
     }
 
@@ -108,10 +89,34 @@ impl Bitboard {
             Bitboard::U4096(b) => Bitboard::U4096(*b),
         };
 
-        while temp.count_ones() > 0 {
-            let index = temp.trailing_zeros();
-            indices.push(index);
-            temp.set_bit(index, false);
+        let mut index = 0u32;
+        loop {
+            match &temp {
+                Bitboard::U64(b) if *b == 0 => break,
+                Bitboard::U256(b) if *b == U256::ZERO => break,
+                Bitboard::U1024(b) if *b == U1024::ZERO => break,
+                Bitboard::U4096(b) if *b == U4096::ZERO => break,
+                _ => {}
+            }
+
+            let is_zero = match &temp {
+                Bitboard::U64(b) => ((*b) & 1) == 0,
+                Bitboard::U256(b) => !b.bit(0),
+                Bitboard::U1024(b) => !b.bit(0),
+                Bitboard::U4096(b) => !b.bit(0),
+            };
+
+            if !is_zero {
+                indices.push(index);
+            }
+
+            match &mut temp {
+                Bitboard::U64(b) => *b >>= 1,
+                Bitboard::U256(b) => *b >>= 1,
+                Bitboard::U1024(b) => *b >>= 1,
+                Bitboard::U4096(b) => *b >>= 1,
+            }
+            index += 1;
         }
 
         indices
@@ -258,42 +263,43 @@ impl Board {
         }
     }
 
-    pub fn set_bit(&mut self, file: u8, rank: u8) {
-        #[cfg(debug_assertions)] {
-            assert!(file < self.files, "File {file} out of bounds.");
-            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+    pub fn set_bit(&mut self, index: u32) {
+        #[cfg(debug_assertions)]
+        {
+            let size = (self.ranks as u32) * (self.files as u32);
+            assert!(
+                index < size,
+                "Index {index} out of bounds for board of size {size}."
+            );
         }
 
-        let index = (rank as u32) * (self.files as u32) + (file as u32);
         self.bitboard.set_bit(index, true);
     }
 
-    pub fn clear_bit(&mut self, file: u8, rank: u8) {
-        #[cfg(debug_assertions)] {
-            assert!(file < self.files, "File {file} out of bounds.");
-            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+    pub fn clear_bit(&mut self, index: u32) {
+        #[cfg(debug_assertions)]
+        {
+            let size = (self.ranks as u32) * (self.files as u32);
+            assert!(
+                index < size,
+                "Index {index} out of bounds for board of size {size}."
+            );
         }
 
-        let index = (rank as u32) * (self.files as u32) + (file as u32);
         self.bitboard.set_bit(index, false);
     }
 
-    pub fn get_bit(&self, file: u8, rank: u8) -> bool {
-        #[cfg(debug_assertions)] {
-            assert!(file < self.files, "File {file} out of bounds.");
-            assert!(rank < self.ranks, "Rank {rank} out of bounds.");
+    pub fn get_bit(&self, index: u32) -> bool {
+        #[cfg(debug_assertions)]
+        {
+            let size = (self.ranks as u32) * (self.files as u32);
+            assert!(
+                index < size,
+                "Index {index} out of bounds for board of size {size}."
+            );
         }
 
-        let index = (rank as u32) * (self.files as u32) + (file as u32);
         self.bitboard.get_bit(index)
-    }
-
-    pub fn lsb(&self) -> u32 {
-        self.bitboard.trailing_zeros()
-    }
-
-    pub fn msb(&self) -> u32 {
-        self.bitboard.leading_zeros()
     }
 
     pub fn count_bits(&self) -> u32 {
@@ -302,40 +308,6 @@ impl Board {
 
     pub fn bit_indices(&self) -> Vec<u32> {
         self.bitboard.bit_indices()
-    }
-
-    pub fn bit_positions(&self) -> Vec<(u8, u8)> {
-        self.bit_indices()
-            .into_par_iter()
-            .map(|index| {
-                let file = (index % self.files as u32) as u8;
-                let rank = (index / self.files as u32) as u8;
-                (file, rank)
-            })
-            .collect()
-    }
-
-    pub fn full_board(files: u8, ranks: u8) -> Board {
-        let size = (files as u16) * (ranks as u16);
-        let mut board = Board::new(files, ranks);
-
-        for index in 0..size {
-            board.bitboard.set_bit(index as u32, true);
-        }
-
-        board
-    }
-
-    pub fn random_board(files: u8, ranks: u8) -> Board {
-        let size = (files as u16) * (ranks as u16);
-        let mut board = Board::new(files, ranks);
-
-        for index in 0..size {
-            let random_bit = rand::random::<bool>();
-            board.bitboard.set_bit(index as u32, random_bit);
-        }
-
-        board
     }
 }
 
