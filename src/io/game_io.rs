@@ -354,19 +354,20 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     .expect(&format!("Unknown piece character: {}", c));
 
                 let piece = &state.pieces[piece_idx];
+                let square_index = state.square_to_index(file, rank) as u32;
 
-                state.pieces_board[piece_idx].set_bit(file, rank);
+                state.pieces_board[piece_idx].set_bit(square_index);
 
                 if piece.color() == WHITE {
-                    state.white_board.set_bit(file, rank);
+                    state.white_board.set_bit(square_index);
                     state.material[WHITE as usize] += piece.value() as u32;
                 } else {
-                    state.black_board.set_bit(file, rank);
+                    state.black_board.set_bit(square_index);
                     state.material[BLACK as usize] += piece.value() as u32;
                 }
 
                 if piece.is_royal() {
-                    state.monarch_board.set_bit(file, rank);
+                    state.monarch_board.set_bit(square_index);
                 }
 
                 if piece.is_major() {
@@ -381,7 +382,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[piece.color() as usize] += 1;
                 }
 
-                state.unmoved_board.set_bit(file, rank);
+                state.unmoved_board.set_bit(square_index);
 
                 file += 1;
             }
