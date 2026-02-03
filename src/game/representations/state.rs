@@ -57,7 +57,7 @@ pub struct State {
     pub monarch_board: Board,
     pub unmoved_board: Board,
 
-    pub castling_state: u8,
+    pub castling_state: u8,                                                     /* 4 bits for representing KQkq       */
     pub halfmove_clock: u8,
     pub en_passant_square: Option<u32>,                                         /* 12 bits for capture square         */
                                                                                 /* 12 bits for captured piece square  */
