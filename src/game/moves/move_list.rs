@@ -14,7 +14,7 @@ use crate::{
             piece::Piece,
             state::{Snapshot, State}, vector::LegVector,
         }
-    }, io::move_io::format_move,
+    }, io::{board_io::format_square, move_io::format_move},
 };
 
 #[hotpath::measure]
@@ -1022,7 +1022,8 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
     let last_castling_state = game_state.castling_state;
     let last_position_hash = game_state.position_hash;
 
-    let formatted_move = format_move(&mv, game_state);
+    #[cfg(debug_assertions)]
+    verify_game_state(game_state);
 
     let snapshot: Snapshot = match mv {
         MoveType::SingleNoCapture(mv) => {
@@ -1079,12 +1080,26 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     "Promoted piece must be provided for promotion moves"
                 ) as usize;
 
+                hash_in_or_out_piece(
+                    game_state,
+                    piece_index,
+                    piece_color,
+                    end_square
+                );
+
                 promote_piece(
                     promoting_piece,
                     end_square,
                     end_square,
                     promoted_piece,
                     game_state
+                );
+
+                hash_in_or_out_piece(
+                    game_state,
+                    promoted_piece,
+                    piece_color,
+                    end_square
                 );
             }
 
@@ -1143,6 +1158,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 &game_state.pieces[captured_piece_idx]
             });
             let real_captured_index = real_captured.index() as usize;
+            let real_captured_color = real_captured.color();
 
             #[cfg(debug_assertions)]
             {
@@ -1175,26 +1191,29 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             }
 
             if let Some(unload_sq) = unload_square {
-                move_piece(
-                    real_captured_index, end_square, unload_sq, game_state
-                );
+                if is_unload {
+                    move_piece(
+                        real_captured_index, end_square,
+                        unload_sq, game_state
+                    );
 
-                hash_in_or_out_piece(
-                    game_state,
-                    real_captured_index,
-                    game_state.pieces[real_captured_index].color(),
-                    end_square
-                );
+                    hash_in_or_out_piece(
+                        game_state,
+                        real_captured_index,
+                        real_captured_color,
+                        end_square
+                    );
 
-                hash_in_or_out_piece(
-                    game_state,
-                    real_captured_index,
-                    game_state.pieces[real_captured_index].color(),
-                    unload_sq
-                );
+                    hash_in_or_out_piece(
+                        game_state,
+                        real_captured_index,
+                        real_captured_color,
+                        unload_sq
+                    );
 
-                if is_captured_piece_unmoved {
-                    game_state.unmoved_board.set_bit(unload_sq as u32);         /* unloaded pce is considered unmoved */
+                    if is_captured_piece_unmoved {
+                        game_state.unmoved_board.set_bit(unload_sq as u32);     /* unloaded pce is considered unmoved */
+                    }
                 }
             } else {
                 remove_piece(real_captured_index, end_square, game_state);
@@ -1202,7 +1221,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 hash_in_or_out_piece(
                     game_state,
                     real_captured_index,
-                    game_state.pieces[real_captured_index].color(),
+                    real_captured_color,
                     end_square
                 );
             }
@@ -1246,12 +1265,26 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     "Promoted piece must be provided for promotion moves"
                 ) as usize;
 
+                hash_in_or_out_piece(
+                    game_state,
+                    piece_index,
+                    piece_color,
+                    end_square
+                );
+
                 promote_piece(
                     promoting_piece,
                     end_square,
                     end_square,
                     promoted_piece,
                     game_state
+                );
+
+                hash_in_or_out_piece(
+                    game_state,
+                    promoted_piece,
+                    piece_color,
+                    end_square
                 );
             }
 
@@ -1324,6 +1357,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 &game_state.pieces[captured_piece_idx]
             });
             let real_captured_index = real_captured.index() as usize;
+            let real_captured_color = real_captured.color();
 
             #[cfg(debug_assertions)]
             {
@@ -1345,7 +1379,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             }
 
             if is_captured_piece_unmoved {
-                game_state.unmoved_board.clear_bit(end_square as u32);
+                game_state.unmoved_board.clear_bit(captured_square as u32);
             }
 
             if let Some(unload_sq) = unload_square {
@@ -1358,14 +1392,14 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     hash_in_or_out_piece(
                         game_state,
                         real_captured_index,
-                        game_state.pieces[real_captured_index].color(),
-                        end_square
+                        real_captured_color,
+                        captured_square
                     );
 
                     hash_in_or_out_piece(
                         game_state,
                         real_captured_index,
-                        game_state.pieces[real_captured_index].color(),
+                        real_captured_color,
                         unload_sq
                     );
 
@@ -1379,7 +1413,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 hash_in_or_out_piece(
                     game_state,
                     real_captured_index,
-                    game_state.pieces[real_captured_index].color(),
+                    real_captured_color,
                     captured_square
                 );
             }
@@ -1422,12 +1456,27 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 let promoted_piece = promoted_piece.expect(
                     "Promoted piece must be provided for promotion moves"
                 ) as usize;
+
+                hash_in_or_out_piece(
+                    game_state,
+                    piece_index,
+                    piece_color,
+                    end_square
+                );
+
                 promote_piece(
                     promoting_piece,
                     end_square,
                     end_square,
                     promoted_piece,
                     game_state
+                );
+
+                hash_in_or_out_piece(
+                    game_state,
+                    promoted_piece,
+                    piece_color,
+                    end_square
                 );
             }
 
@@ -1505,6 +1554,9 @@ pub fn undo_move(game_state: &mut State) {
     let snapshot = game_state.history.pop().expect(
         "No move to undo - history is empty"
     );
+
+    #[cfg(debug_assertions)]
+    verify_game_state(game_state);
 
     game_state.playing = 1 - game_state.playing;
     game_state.castling_state = snapshot.castling_state;
@@ -1635,7 +1687,7 @@ pub fn undo_move(game_state: &mut State) {
             }
 
             if is_captured_piece_unmoved {
-                game_state.unmoved_board.set_bit(end_square as u32);
+                game_state.unmoved_board.set_bit(captured_square as u32);
             }
 
             if is_initial {
