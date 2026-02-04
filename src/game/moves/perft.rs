@@ -1,17 +1,13 @@
 use std::fs;
 
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use crate::io::game_io::format_game_state;
-
-use crate::io::move_io::format_move;
 use crate::{
-    constants::WHITE,
     game::{
-        moves::move_list::{generate_move_list, make_move, undo_move},
-        representations::{
-            moves::MoveType,
-            state::State
-        }
+        moves::move_list::{make_move, undo_move, generate_all_moves},
+        representations::state::State
+    },
+    io::{
+        game_io::format_game_state,
+        move_io::format_move
     }
 };
 
@@ -56,21 +52,16 @@ pub fn start_perft(
             let result = perft(&mut state, d, debug, branch, Some(depth), None);
             let expected = expected_perfts[(d - 1) as usize];
 
-            println!(
-                "FEN: {} | Depth: {} | Expected: {} | Result: {}",
-                fen, d, expected, result
-            );
-
             if result == expected {
                 successful_cases += 1;
                 total_moves += result;
-            } else {
-                #[cfg(debug_assertions)]
                 println!(
-                    concat!(
-                        "[FAIL] Perft test failed for FEN {} \n",
-                        "at depth {}: expected {}, got {}"
-                    ),
+                    "FEN: {} | Depth: {} | Expected: {} | Result: {} [PASSED]",
+                    fen, d, expected, result
+                );
+            } else {
+                println!(
+                    "FEN: {} | Depth: {} | Expected: {} | Result: {} [FAILED]",
                     fen, d, expected, result
                 );
                 #[cfg(debug_assertions)]
@@ -84,45 +75,6 @@ pub fn start_perft(
         successful_cases, total_cases
     );
     println!("Total moves generated: {}", total_moves);
-}
-
-fn generate_all_moves(state: &State) -> Vec<MoveType> {
-    let mut possible_moves: Vec<MoveType> = vec![];
-
-    let piece_count = state.pieces.len() / 2;
-    let start_index = if state.playing == WHITE { 0 } else { piece_count };
-    let end_index = start_index + piece_count;
-
-    possible_moves = (start_index..end_index)
-        .into_par_iter()
-        .flat_map(|piece_index| {
-            let piece = &state.pieces[piece_index];
-            let piece_board = &state.pieces_board[piece_index];
-            let piece_indices = piece_board.bit_indices();
-
-            piece_indices.into_par_iter().flat_map(move |index| {
-                let relevant_friendly_board = if piece.color() == WHITE {
-                    &state.white_board
-                } else {
-                    &state.black_board
-                };
-
-                let relevant_enemy_board = if piece.color() == WHITE {
-                    &state.black_board
-                } else {
-                    &state.white_board
-                };
-
-                generate_move_list(
-                    index, &piece, &relevant_friendly_board,
-                    &relevant_enemy_board, &state.unmoved_board, &state,
-                    false
-                )
-            }).collect::<Vec<_>>()
-        })
-        .collect();
-
-        possible_moves
 }
 
 #[hotpath::measure]

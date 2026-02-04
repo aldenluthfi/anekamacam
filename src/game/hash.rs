@@ -26,7 +26,7 @@ use crate::{
 };
 
 lazy_static! {
-    static ref CASTLING_HASHES: [U256; 16] = {
+    pub static ref CASTLING_HASHES: [U256; 16] = {
         let mut hashes = [U256::default(); 16];
         for i in 0..16 {
             hashes[i] = random_u256();
@@ -34,7 +34,7 @@ lazy_static! {
         hashes
     };
 
-    static ref EN_PASSANT_HASHES: [U256; MAX_SQUARES] = {
+    pub static ref EN_PASSANT_HASHES: [U256; MAX_SQUARES] = {
         let mut hashes = [U256::default(); MAX_SQUARES];
         for i in 0..MAX_SQUARES {
             hashes[i] = random_u256();
@@ -42,11 +42,12 @@ lazy_static! {
         hashes
     };
 
-    static ref SIDE_HASHES: U256 = random_u256();
+    pub static ref SIDE_HASHES: U256 = random_u256();
 
-    static ref PIECE_HASHES: Vec<[[U256; MAX_SQUARES]; 2]>
+    pub static ref PIECE_HASHES: Vec<[[U256; MAX_SQUARES]; 2]>
         = {
-            let mut result: Vec<[[U256; MAX_SQUARES]; 2]> = Vec::with_capacity(256);
+            let mut result: Vec<[[U256; MAX_SQUARES]; 2]> =
+                Vec::with_capacity(256);
 
             for _ in 0..256 {
                 let piece_hashes = [[random_u256(); MAX_SQUARES]; 2];

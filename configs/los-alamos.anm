@@ -1,0 +1,11 @@
+Los Alamos Chess
+6,6,5
+^Pawn,P,p,1000,mnW|cnF
+!Rook,R,r,5000,R
+Knight,N,n,3000,N
+!Queen,Q,q,8375,Q
+#King,K,k,6375,K
+2
+P->RNQ
+p->rnq
+rnqknr/pppppp/6/6/PPPPPP/RNQKNR w KQkq - 0 1

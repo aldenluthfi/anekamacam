@@ -388,20 +388,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[piece.color() as usize] += 1;
                 }
 
-                if c == 'P' && rank == 1 {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'p' && rank == (state.ranks - 2) {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'R' && rank == 0 && (file == 0 || file == state.files - 1) {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'r' && rank == state.ranks - 1 &&
-                          (file == 0 || file == state.files - 1) {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'K' && rank == 0 && file == 4 {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'k' && rank == state.ranks - 1 && file == 4 {
-                    state.unmoved_board.set_bit(square_index);
-                }
+                state.unmoved_board.set_bit(square_index);
 
                 file += 1;
             }

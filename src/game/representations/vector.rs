@@ -77,6 +77,7 @@ pub type MultiLegVector = Vec<LegVector>;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
 
+#[hotpath::measure_all]
 impl LegVector {
 
     pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
