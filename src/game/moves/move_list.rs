@@ -1,4 +1,3 @@
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
@@ -7,7 +6,7 @@ use crate::{
     constants::*,
     game::{
         hash::{
-            hash_in_or_out_piece, hash_toggle_side, 
+            hash_in_or_out_piece, hash_toggle_side,
             hash_update_castling, hash_update_en_passant
         },
         representations::{
@@ -48,7 +47,6 @@ fn is_square_attacked(
         );
     }
 
-
     let side_piece_count = game_state.pieces.len() / 2;
     let index = if side == WHITE {
         0
@@ -71,9 +69,8 @@ fn is_square_attacked(
     for i in index..index + side_piece_count {
         let piece = &game_state.pieces[i];
         let piece_board = &game_state.pieces_board[i];
-        let piece_indices = piece_board.bit_indices();
 
-        for attacker_index in piece_indices {
+        for attacker_index in piece_board.bit_indices_iter() {
             let relevant_board =
                 &game_state.piece_relevant_boards[i][attacker_index as usize];
 
@@ -112,8 +109,8 @@ fn is_square_attacked(
                             _, cap_square, can_capture_royal, is_unload, _, _
                         ) in mv.get_taken_pieces() {
                             if  cap_square == square_index as u16 &&
-                                !is_unload &&                                   /* attacks defined as captures only   */
-                                can_capture_royal                               /* up to change, only used for checks */
+                                !is_unload &&
+                                can_capture_royal
                             {
                                 return true;
                             }
@@ -231,31 +228,134 @@ fn process_multi_leg_vector(
     let mut accumulated_index = square_index as i32;
     let mut taken_pieces: Vec<(u8, u16, bool, bool, Option<u16>, bool)> =
         Vec::new();
-    let mut castling_leg: Option<LegVector> = None;
     let mut en_passant_square: Option<u32> = None;
     let mut en_passant_count = 0;
     let mut move_is_initial = false;
-    let mut can_capture_royal;                                                  /* Track royal capture capability     */
+    let mut can_capture_royal;
     let mut creates_en_passant;
 
     let total_legs = multi_leg_vector.len();
 
-    for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
+    if total_legs > 0 && multi_leg_vector[0].is_castling() {
+        let leg = multi_leg_vector[0];
+        let king_file = square_index % (game_state.files as u32);
+        let king_rank = square_index / (game_state.files as u32);
 
-        if leg.is_castling() {
-            castling_leg = Some(*leg);
-            break;
+        if unmoved_piece == false {
+            return Vec::new();                                                  /* King must be unmoved               */
         }
 
+        let atomic = leg.get_atomic();
+        let (offset, _) = atomic.whole();
+
+        let is_castling_right = leg.is_castling_right();
+
+        if side == WHITE {
+            if game_state.castling_state &
+            if is_castling_right {0b0001} else {0b0010} == 0
+            {
+                return Vec::new();                                              /* Castling right not available       */
+            }
+        } else {
+            if game_state.castling_state &
+            if is_castling_right {0b0100} else {0b1000} == 0
+            {
+                return Vec::new();                                              /* Castling right not available       */
+            }
+        }
+
+        let rook_file = if is_castling_right {
+            game_state.files - 1
+        } else {
+            0
+        };
+
+        let rook_square = (
+            king_rank * (game_state.files as u32) + (rook_file as u32)
+        ) as u16;
+        let rook_sq_idx = rook_square as u32;
+
+        if !unmoved_board.get_bit(rook_sq_idx) {
+            return Vec::new();                                                  /* Rook must be unmoved               */
+        }
+
+        let rook_occupied = friendly_board.get_bit(rook_sq_idx);
+
+        if !rook_occupied {
+            return Vec::new();                                                  /* Rook must exist on corner          */
+        }
+
+        let king_end_file = (king_file as i32 + offset as i32) as u32;
+        if king_end_file >= game_state.files as u32 {
+            return Vec::new();                                                  /* End square out of bounds           */
+        }
+
+        let start_check = king_file.min(rook_file as u32);
+        let end_check = king_file.max(rook_file as u32);
+
+        let mut path_clear = true;
+        for f in start_check + 1..end_check {
+            let check_sq = king_rank * (game_state.files as u32) + f;
+            if friendly_board.get_bit(check_sq) ||
+                enemy_board.get_bit(check_sq) {
+                path_clear = false;
+                break;                                                          /* Path must be clear                 */
+            }
+        }
+
+        if !path_clear {
+            return Vec::new();
+        }
+
+        let start_square = square_index as u16;
+        let end_square = (
+            king_rank * (game_state.files as u32) + king_end_file
+        ) as u16;
+
+        let unload_file = if is_castling_right {
+            king_end_file - 1
+        } else {
+            king_end_file + 1
+        };
+
+        let unload_square = (
+            king_rank * (game_state.files as u32) + unload_file
+        ) as u16;
+
+        let encoded_move = Move::encode(
+            piece_idx,
+            start_square,
+            end_square,
+            true,                                                               /* is_initial                         */
+            false,                                                              /* is_promotion                       */
+            None,                                                               /* promoting_piece                    */
+            None,                                                               /* promoted_piece                     */
+            None,                                                               /* en_passant_square                  */
+            Move::HOPPER_CAPTURE,                                               /* move_type                          */
+            Some(4),                                                            /* captured_piece (special)           */
+            Some(false),                                                        /* can_capture_royal                  */
+            Some(rook_square),                                                  /* captured_square                    */
+            None,                                                               /* taken_pieces                       */
+            Some(true),                                                         /* is_unload                          */
+            Some(unload_square),                                                /* unload_square                      */
+            Some(true),                                                         /* captures_unmoved (rook is unmoved) */
+        );
+
+        return vec![encoded_move];
+    }
+
+    for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
         let is_final_leg = leg_index == total_legs - 1;
 
-        let has_move = leg.is_m();
-        let has_capture = leg.is_c();
-        let has_destroy = leg.is_d();
-        let has_unload = leg.is_u();
-        let has_initial = leg.is_i();
-        let has_passant = leg.is_p();
-        let has_check = leg.is_k();
+        let modifiers = leg.get_modifier_state();
+
+        let has_move = modifiers.m;
+        let has_capture = modifiers.c;
+        let has_destroy = modifiers.d;
+        let has_unload = modifiers.u;
+        let has_initial = modifiers.i;
+        let has_passant = modifiers.p;
+        let has_check = modifiers.k;
 
         let can_move = match has_move {
             Some(true) => true,
@@ -596,117 +696,6 @@ fn process_multi_leg_vector(
         }
     }
 
-    if let Some(leg) = castling_leg {
-        let king_file = square_index % (game_state.files as u32);
-        let king_rank = square_index / (game_state.files as u32);
-
-        if unmoved_piece == false {
-            return Vec::new();                                                  /* King must be unmoved               */
-        }
-
-        let atomic = leg.get_atomic();
-        let (offset, _) = atomic.whole();
-
-        let is_castling_right = leg.is_castling_right();
-
-        if side == WHITE {
-            if game_state.castling_state &
-            if is_castling_right {0b0001} else {0b0010} == 0
-            {
-                return Vec::new();                                              /* Castling right not available       */
-            }
-        } else {
-            if game_state.castling_state &
-            if is_castling_right {0b0100} else {0b1000} == 0
-            {
-                return Vec::new();                                              /* Castling right not available       */
-            }
-        }
-
-        let rook_file = if is_castling_right {
-            game_state.files - 1
-        } else {
-            0
-        };
-
-        let rook_square = (
-            king_rank * (game_state.files as u32) + (rook_file as u32)
-        ) as u16;
-        let rook_sq_idx = rook_square as u32;
-
-        if !unmoved_board.get_bit(rook_sq_idx) {
-            return Vec::new();                                                  /* Rook must be unmoved               */
-        }
-
-        let rook_occupied = if side == WHITE {
-            friendly_board.get_bit(rook_sq_idx)
-        } else {
-            friendly_board.get_bit(rook_sq_idx)
-        };
-
-        if !rook_occupied {
-            return Vec::new();                                                  /* Rook must exist on corner          */
-        }
-
-        let king_end_file = (king_file as i32 + offset as i32) as u32;
-        if king_end_file >= game_state.files as u32 {
-            return Vec::new();                                                  /* End square out of bounds           */
-        }
-
-        let start_check = king_file.min(rook_file as u32);
-        let end_check = king_file.max(rook_file as u32);
-
-        let mut path_clear = true;
-        for f in start_check + 1..end_check {
-            let check_sq = king_rank * (game_state.files as u32) + f;
-            if friendly_board.get_bit(check_sq) ||
-                enemy_board.get_bit(check_sq) {
-                path_clear = false;
-                break;                                                          /* Path must be clear                 */
-            }
-        }
-
-        if !path_clear {
-            return Vec::new();
-        }
-
-        let start_square = square_index as u16;
-        let end_square = (
-            king_rank * (game_state.files as u32) + king_end_file
-        ) as u16;
-
-        let unload_file = if is_castling_right {
-            king_end_file - 1
-        } else {
-            king_end_file + 1
-        };
-
-        let unload_square = (
-            king_rank * (game_state.files as u32) + unload_file
-        ) as u16;
-
-        let encoded_move = Move::encode(
-            piece_idx,
-            start_square,
-            end_square,
-            true,                                                               /* is_initial                         */
-            false,                                                              /* is_promotion                       */
-            None,                                                               /* promoting_piece                    */
-            None,                                                               /* promoted_piece                     */
-            None,                                                               /* en_passant_square                  */
-            Move::HOPPER_CAPTURE,                                               /* move_type                          */
-            Some(4),                                                            /* captured_piece (special)           */
-            Some(false),                                                        /* can_capture_royal                  */
-            Some(rook_square),                                                  /* captured_square                    */
-            None,                                                               /* taken_pieces                       */
-            Some(true),                                                         /* is_unload                          */
-            Some(unload_square),                                                /* unload_square                      */
-            Some(true),                                                         /* captures_unmoved (rook is unmoved) */
-        );
-
-        return vec![encoded_move];
-    }
-
     let end_square = accumulated_index as u16;
     let start_square = square_index as u16;
                                                                                 /* Check for promotion                */
@@ -875,25 +864,23 @@ pub fn generate_move_list(
         0
     };
 
-    let result: Vec<MoveType> = vector_set
-        .par_iter()
-        .flat_map(|multi_leg_vector| {
-            process_multi_leg_vector(
-                multi_leg_vector,
-                square_index,
-                piece,
-                friendly_board,
-                enemy_board,
-                unmoved_board,
-                game_state,
-                side,
-                piece_idx,
-                promotion_rank,
-                unmoved_piece,
-                imaginary
-            )
-        })
-        .collect();
+    let mut result = Vec::new();
+    for multi_leg_vector in vector_set {
+        result.extend(process_multi_leg_vector(
+            multi_leg_vector,
+            square_index,
+            piece,
+            friendly_board,
+            enemy_board,
+            unmoved_board,
+            game_state,
+            side,
+            piece_idx,
+            promotion_rank,
+            unmoved_piece,
+            imaginary
+        ));
+    }
     result
 }
 
@@ -1923,36 +1910,30 @@ pub fn generate_all_moves(state: &State) -> Vec<MoveType> {
     let start_index = if state.playing == WHITE { 0 } else { piece_count };
     let end_index = start_index + piece_count;
 
-    possible_moves = (start_index..end_index)
-        .into_par_iter()
-        .flat_map(|piece_index| {
-            let piece = &state.pieces[piece_index];
-            let piece_board = &state.pieces_board[piece_index];
-            let piece_indices = piece_board.bit_indices();
+    for piece_index in start_index..end_index {
+        let piece = &state.pieces[piece_index];
+        let piece_board = &state.pieces_board[piece_index];
 
-            piece_indices
-                .into_par_iter()
-                .flat_map(move |index| {
-                    let relevant_friendly_board = if piece.color() == WHITE {
-                        &state.white_board
-                    } else {
-                        &state.black_board
-                    };
+        let relevant_friendly_board = if piece.color() == WHITE {
+            &state.white_board
+        } else {
+            &state.black_board
+        };
 
-                    let relevant_enemy_board = if piece.color() == WHITE {
-                        &state.black_board
-                    } else {
-                        &state.white_board
-                    };
+        let relevant_enemy_board = if piece.color() == WHITE {
+            &state.black_board
+        } else {
+            &state.white_board
+        };
 
-                    generate_move_list(
-                        index, &piece, &relevant_friendly_board,
-                        &relevant_enemy_board, &state.unmoved_board, &state,
-                        false
-                    )
-            }).collect::<Vec<_>>()
-        })
-        .collect();
+        for index in piece_board.bit_indices_iter() {
+            possible_moves.extend(generate_move_list(
+                index, &piece, &relevant_friendly_board,
+                &relevant_enemy_board, &state.unmoved_board, &state,
+                false
+            ));
+        }
+    }
 
-        possible_moves
+    possible_moves
 }

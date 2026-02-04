@@ -27,6 +27,25 @@ pub struct Board {
     pub bits: U4096,
 }
 
+pub struct BitIndicesIter {
+    bits: U4096,
+}
+
+impl Iterator for BitIndicesIter {
+    type Item = u32;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.bits == U4096::ZERO {
+            None
+        } else {
+            let lsb = self.bits.trailing_zeros();
+            self.bits &= self.bits - U4096::ONE;
+            Some(lsb)
+        }
+    }
+}
+
 #[hotpath::measure_all]
 impl Board {
     pub fn new(files: u8, ranks: u8) -> Board {
@@ -106,27 +125,18 @@ impl Board {
         let mut bits = self.bits;
         let mut indices = Vec::with_capacity(count as usize);
 
-        match count {                                                           /* Special case common scenarios      */
-            1 => {
-                indices.push(bits.trailing_zeros());
-                return indices;
-            }
-            2 => {
-                indices.push(bits.trailing_zeros());
-                bits &= bits - U4096::ONE;
-                indices.push(bits.trailing_zeros());
-                return indices;
-            }
-            _ => {
-                while bits != U4096::ZERO {                                     /* General case                       */
-                    let lsb = bits.trailing_zeros();
-                    indices.push(lsb);
-                    bits &= bits - U4096::ONE;
-                }
-            }
+        while bits != U4096::ZERO {
+            let lsb = bits.trailing_zeros();
+            indices.push(lsb);
+            bits &= bits - U4096::ONE;
         }
 
         indices
+    }
+
+    #[inline(always)]
+    pub fn bit_indices_iter(&self) -> BitIndicesIter {
+        BitIndicesIter { bits: self.bits }
     }
 
     pub fn and_assign(&mut self, rhs: &Board) {
