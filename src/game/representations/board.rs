@@ -16,237 +16,15 @@
 //! # Date
 //! 18/02/2024
 
-use bnum::types::{U256, U1024, U4096};
+use bnum::types::U4096;
 use crate::constants::*;
-use std::ops::{BitAnd, BitOr, BitXor, Not};
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Bitboard {
-    U64(u64),
-    U256(U256),
-    U1024(U1024),
-    U4096(U4096),
-}
-
-#[hotpath::measure_all]
-impl Bitboard {
-    pub fn new(size: u16) -> Self {
-        #[cfg(debug_assertions)]
-        {
-            assert!(
-            size <= MAX_SQUARES as u16,
-            "Bitboard size {size} exceeds maximum size of {MAX_SQUARES}."
-            );
-        }
-
-        match size {
-            0..=64 => Bitboard::U64(0u64),
-            65..=256 => Bitboard::U256(U256::from(0u32)),
-            257..=1024 => Bitboard::U1024(U1024::from(0u32)),
-            _ => Bitboard::U4096(U4096::from(0u32)),
-        }
-    }
-
-    pub fn set_bit(&mut self, index: u32, value: bool) {
-        match self {
-            Bitboard::U64(b) => {
-                if value {
-                    *b |= 1u64 << index;
-                } else {
-                    *b &= !(1u64 << index);
-                }
-            }
-            Bitboard::U256(b) => b.set_bit(index, value),
-            Bitboard::U1024(b) => b.set_bit(index, value),
-            Bitboard::U4096(b) => b.set_bit(index, value),
-        }
-    }
-
-    pub fn get_bit(&self, index: u32) -> bool {
-        match self {
-            Bitboard::U64(b) => (b & (1u64 << index)) != 0,
-            Bitboard::U256(b) => b.bit(index),
-            Bitboard::U1024(b) => b.bit(index),
-            Bitboard::U4096(b) => b.bit(index),
-        }
-    }
-
-    pub fn count_ones(&self) -> u32 {
-        match self {
-            Bitboard::U64(b) => b.count_ones(),
-            Bitboard::U256(b) => b.count_ones(),
-            Bitboard::U1024(b) => b.count_ones(),
-            Bitboard::U4096(b) => b.count_ones(),
-        }
-    }
-
-    pub fn bit_indices(&self) -> Vec<u32> {
-        let mut indices = Vec::with_capacity(self.count_ones() as usize);
-        let mut temp = match self {
-            Bitboard::U64(b) => Bitboard::U64(*b),
-            Bitboard::U256(b) => Bitboard::U256(*b),
-            Bitboard::U1024(b) => Bitboard::U1024(*b),
-            Bitboard::U4096(b) => Bitboard::U4096(*b),
-        };
-
-        let mut index = 0u32;
-        loop {
-            match &temp {
-                Bitboard::U64(b) if *b == 0 => break,
-                Bitboard::U256(b) if *b == U256::ZERO => break,
-                Bitboard::U1024(b) if *b == U1024::ZERO => break,
-                Bitboard::U4096(b) if *b == U4096::ZERO => break,
-                _ => {}
-            }
-
-            let is_zero = match &temp {
-                Bitboard::U64(b) => ((*b) & 1) == 0,
-                Bitboard::U256(b) => !b.bit(0),
-                Bitboard::U1024(b) => !b.bit(0),
-                Bitboard::U4096(b) => !b.bit(0),
-            };
-
-            if !is_zero {
-                indices.push(index);
-            }
-
-            match &mut temp {
-                Bitboard::U64(b) => *b >>= 1,
-                Bitboard::U256(b) => *b >>= 1,
-                Bitboard::U1024(b) => *b >>= 1,
-                Bitboard::U4096(b) => *b >>= 1,
-            }
-            index += 1;
-        }
-
-        indices
-    }
-
-    pub fn lsb(&self) -> u32 {
-        match self {
-            Bitboard::U64(b) => b.trailing_zeros(),
-            Bitboard::U256(b) => b.trailing_zeros(),
-            Bitboard::U1024(b) => b.trailing_zeros(),
-            Bitboard::U4096(b) => b.trailing_zeros(),
-        }
-    }
-}
-
-impl BitAnd for Bitboard {
-    type Output = Self;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Bitboard::U64(a), Bitboard::U64(b)) => Bitboard::U64(a & b),
-            (Bitboard::U256(a), Bitboard::U256(b)) => Bitboard::U256(a & b),
-            (Bitboard::U1024(a), Bitboard::U1024(b)) => Bitboard::U1024(a & b),
-            (Bitboard::U4096(a), Bitboard::U4096(b)) => Bitboard::U4096(a & b),
-            _ => panic!("Bitboard types must match for bitwise AND operation"),
-        }
-    }
-}
-
-impl BitOr for Bitboard {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Bitboard::U64(a), Bitboard::U64(b)) => Bitboard::U64(a | b),
-            (Bitboard::U256(a), Bitboard::U256(b)) => Bitboard::U256(a | b),
-            (Bitboard::U1024(a), Bitboard::U1024(b)) => Bitboard::U1024(a | b),
-            (Bitboard::U4096(a), Bitboard::U4096(b)) => Bitboard::U4096(a | b),
-            _ => panic!("Bitboard types must match for bitwise OR operation"),
-        }
-    }
-}
-
-impl BitXor for Bitboard {
-    type Output = Self;
-
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Bitboard::U64(a), Bitboard::U64(b)) => Bitboard::U64(a ^ b),
-            (Bitboard::U256(a), Bitboard::U256(b)) => Bitboard::U256(a ^ b),
-            (Bitboard::U1024(a), Bitboard::U1024(b)) => Bitboard::U1024(a ^ b),
-            (Bitboard::U4096(a), Bitboard::U4096(b)) => Bitboard::U4096(a ^ b),
-            _ => panic!("Bitboard types must match for bitwise XOR operation"),
-        }
-    }
-}
-
-impl Not for Bitboard {
-    type Output = Self;
-
-    fn not(self) -> Self::Output {
-        match self {
-            Bitboard::U64(b) => Bitboard::U64(!b),
-            Bitboard::U256(b) => Bitboard::U256(!b),
-            Bitboard::U1024(b) => Bitboard::U1024(!b),
-            Bitboard::U4096(b) => Bitboard::U4096(!b),
-        }
-    }
-}
-
-impl BitAnd for &Bitboard {
-    type Output = Bitboard;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Bitboard::U64(a), Bitboard::U64(b)) => Bitboard::U64(a & b),
-            (Bitboard::U256(a), Bitboard::U256(b)) => Bitboard::U256(a & b),
-            (Bitboard::U1024(a), Bitboard::U1024(b)) => Bitboard::U1024(a & b),
-            (Bitboard::U4096(a), Bitboard::U4096(b)) => Bitboard::U4096(a & b),
-            _ => panic!("Bitboard types must match for bitwise AND operation"),
-        }
-    }
-}
-
-impl BitOr for &Bitboard {
-    type Output = Bitboard;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Bitboard::U64(a), Bitboard::U64(b)) => Bitboard::U64(a | b),
-            (Bitboard::U256(a), Bitboard::U256(b)) => Bitboard::U256(a | b),
-            (Bitboard::U1024(a), Bitboard::U1024(b)) => Bitboard::U1024(a | b),
-            (Bitboard::U4096(a), Bitboard::U4096(b)) => Bitboard::U4096(a | b),
-            _ => panic!("Bitboard types must match for bitwise OR operation"),
-        }
-    }
-}
-
-impl BitXor for &Bitboard {
-    type Output = Bitboard;
-
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Bitboard::U64(a), Bitboard::U64(b)) => Bitboard::U64(a ^ b),
-            (Bitboard::U256(a), Bitboard::U256(b)) => Bitboard::U256(a ^ b),
-            (Bitboard::U1024(a), Bitboard::U1024(b)) => Bitboard::U1024(a ^ b),
-            (Bitboard::U4096(a), Bitboard::U4096(b)) => Bitboard::U4096(a ^ b),
-            _ => panic!("Bitboard types must match for bitwise XOR operation"),
-        }
-    }
-}
-
-impl Not for &Bitboard {
-    type Output = Bitboard;
-
-    fn not(self) -> Self::Output {
-        match self {
-            Bitboard::U64(b) => Bitboard::U64(!b),
-            Bitboard::U256(b) => Bitboard::U256(!b),
-            Bitboard::U1024(b) => Bitboard::U1024(!b),
-            Bitboard::U4096(b) => Bitboard::U4096(!b),
-        }
-    }
-}
+use std::ops::{BitAnd, BitAndAssign, BitOrAssign, BitXorAssign};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Board {
     pub ranks: u8,
     pub files: u8,
-    pub bitboard: Bitboard,
+    pub bits: U4096,
 }
 
 #[hotpath::measure_all]
@@ -264,11 +42,10 @@ impl Board {
             );
         }
 
-        let size = (ranks as u16) * (files as u16);
         Board {
             ranks,
             files,
-            bitboard: Bitboard::new(size),
+            bits: U4096::from(0u32),
         }
     }
 
@@ -282,7 +59,7 @@ impl Board {
             );
         }
 
-        self.bitboard.set_bit(index, true);
+        self.bits.set_bit(index, true);
     }
 
     pub fn clear_bit(&mut self, index: u32) {
@@ -295,7 +72,7 @@ impl Board {
             );
         }
 
-        self.bitboard.set_bit(index, false);
+        self.bits.set_bit(index, false);
     }
 
     pub fn get_bit(&self, index: u32) -> bool {
@@ -308,67 +85,63 @@ impl Board {
             );
         }
 
-        self.bitboard.get_bit(index)
+        self.bits.bit(index)
     }
 
     pub fn lsb(&self) -> u32 {
-        self.bitboard.lsb()
+        self.bits.trailing_zeros()
     }
 
     pub fn count_bits(&self) -> u32 {
-        self.bitboard.count_ones()
+        self.bits.count_ones()
     }
 
     pub fn bit_indices(&self) -> Vec<u32> {
-        self.bitboard.bit_indices()
+        let mut bits = self.bits;
+        let count = bits.count_ones();
+        let mut indices = Vec::with_capacity(count as usize);
+
+        while bits != U4096::ZERO {
+            let lsb = bits.trailing_zeros();
+            indices.push(lsb);
+            bits &= bits - U4096::ONE;
+        }
+
+        indices
+    }
+
+    pub fn and_assign(&mut self, rhs: &Board) {
+        self.bits &= rhs.bits;
+    }
+
+    pub fn or_assign(&mut self, rhs: &Board) {
+        self.bits |= rhs.bits;
+    }
+
+    pub fn xor_assign(&mut self, rhs: &Board) {
+        self.bits ^= rhs.bits;
+    }
+
+    pub fn not_assign(&mut self) {
+        self.bits = !self.bits;
     }
 }
 
-impl BitAnd for Board {
-    type Output = Self;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        Board {
-            bitboard: self.bitboard & rhs.bitboard,
-            ranks: self.ranks,
-            files: self.files,
-        }
+impl BitAndAssign for Board {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.bits &= rhs.bits;
     }
 }
 
-impl BitOr for Board {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Board {
-            bitboard: self.bitboard | rhs.bitboard,
-            ranks: self.ranks,
-            files: self.files,
-        }
+impl BitOrAssign for Board {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.bits |= rhs.bits;
     }
 }
 
-impl BitXor for Board {
-    type Output = Self;
-
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        Board {
-            bitboard: self.bitboard ^ rhs.bitboard,
-            ranks: self.ranks,
-            files: self.files,
-        }
-    }
-}
-
-impl Not for Board {
-    type Output = Self;
-
-    fn not(self) -> Self::Output {
-        Board {
-            bitboard: !self.bitboard,
-            ranks: self.ranks,
-            files: self.files,
-        }
+impl BitXorAssign for Board {
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.bits ^= rhs.bits;
     }
 }
 
@@ -377,43 +150,7 @@ impl BitAnd for &Board {
 
     fn bitand(self, rhs: Self) -> Self::Output {
         Board {
-            bitboard: &self.bitboard & &rhs.bitboard,
-            ranks: self.ranks,
-            files: self.files,
-        }
-    }
-}
-
-impl BitOr for &Board {
-    type Output = Board;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Board {
-            bitboard: &self.bitboard | &rhs.bitboard,
-            ranks: self.ranks,
-            files: self.files,
-        }
-    }
-}
-
-impl BitXor for &Board {
-    type Output = Board;
-
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        Board {
-            bitboard: &self.bitboard ^ &rhs.bitboard,
-            ranks: self.ranks,
-            files: self.files,
-        }
-    }
-}
-
-impl Not for &Board {
-    type Output = Board;
-
-    fn not(self) -> Self::Output {
-        Board {
-            bitboard: !&self.bitboard,
+            bits: self.bits & rhs.bits,
             ranks: self.ranks,
             files: self.files,
         }

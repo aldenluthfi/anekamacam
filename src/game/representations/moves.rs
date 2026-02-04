@@ -139,6 +139,7 @@ impl Debug for MoveType {
     }
 }
 
+#[hotpath::measure_all]
 impl Move {
     const PIECE_INDEX_SHIFT: u32 = 2;
     const START_SQUARE_SHIFT: u32 = 10;
@@ -537,6 +538,7 @@ impl Move {
     }
 }
 
+#[hotpath::measure_all]
 impl MultiMove {
     pub fn new_multi_capture(
         piece_index: u8,

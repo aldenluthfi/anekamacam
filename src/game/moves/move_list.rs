@@ -1,4 +1,4 @@
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
@@ -7,7 +7,8 @@ use crate::{
     constants::*,
     game::{
         hash::{
-            hash_in_or_out_piece, hash_toggle_side, hash_update_castling, hash_update_en_passant
+            hash_in_or_out_piece, hash_toggle_side, 
+            hash_update_castling, hash_update_en_passant
         },
         representations::{
             board::Board,
@@ -15,9 +16,10 @@ use crate::{
             piece::Piece,
             state::{Snapshot, State}, vector::LegVector,
         }
-    }, io::move_io::format_move,
+    },
 };
 
+#[hotpath::measure]
 fn check_out_of_bounds(
     square_index: i32,
     game_state: &State
@@ -27,7 +29,7 @@ fn check_out_of_bounds(
 }
 
 #[hotpath::measure]
-pub fn is_square_attacked(
+fn is_square_attacked(
     square_index: u32,
     side: u8,
     game_state: &State
@@ -53,7 +55,7 @@ pub fn is_square_attacked(
     } else {
         side_piece_count
     };
-    let sq_index = square_index as usize;
+
     let friendly_board = if side == WHITE {
         &game_state.white_board
     } else {
@@ -92,14 +94,14 @@ pub fn is_square_attacked(
             for moves in move_list {
                 match moves {
                     MoveType::SingleCapture(mv) => {
-                        if mv.end_square() == sq_index as u16 {
+                        if mv.end_square() == square_index as u16 {
                             return true;
                         }
                     }
 
                     MoveType::HopperCapture(mv) => {
                         if let Some(sq) = mv.captured_square() {
-                            if sq == sq_index as u16 {
+                            if sq == square_index as u16 {
                                 return true;
                             }
                         }
@@ -109,7 +111,7 @@ pub fn is_square_attacked(
                         for (
                             _, cap_square, can_capture_royal, is_unload, _, _
                         ) in mv.get_taken_pieces() {
-                            if  cap_square == sq_index as u16 &&
+                            if  cap_square == square_index as u16 &&
                                 !is_unload &&                                   /* attacks defined as captures only   */
                                 can_capture_royal                               /* up to change, only used for checks */
                             {
@@ -127,14 +129,14 @@ pub fn is_square_attacked(
 }
 
 #[hotpath::measure]
-pub fn is_in_check(
+fn is_in_check(
     side: u8,
     game_state: &State
 ) -> bool {
-    let monarch_board = &game_state.monarch_board & if side == WHITE {
-        &game_state.white_board
+    let monarch_board = if side == WHITE {
+        &game_state.monarch_board & &game_state.white_board
     } else {
-        &game_state.black_board
+        &game_state.monarch_board & &game_state.black_board
     };
     let monarch_count = monarch_board.count_bits();
 
@@ -147,9 +149,9 @@ pub fn is_in_check(
             game_state
         );
     } else {
-        let monerch_indices = monarch_board.bit_indices();
+        let monarch_indices = monarch_board.bit_indices();
 
-        for index in monerch_indices {
+        for index in monarch_indices {
             if is_square_attacked(
                 index,
                 if side == WHITE {BLACK} else {WHITE},
@@ -211,6 +213,7 @@ pub fn generate_relevant_boards(
     result
 }
 
+#[hotpath::measure]
 fn process_multi_leg_vector(
     multi_leg_vector: &[LegVector],
     square_index: u32,
@@ -894,7 +897,7 @@ pub fn generate_move_list(
     result
 }
 
-
+#[hotpath::measure]
 fn find_piece_at_square(
     game_state: &State,
     square_index: u32,
@@ -912,6 +915,7 @@ fn find_piece_at_square(
     None
 }
 
+#[hotpath::measure]
 fn remove_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
     let color = game_state.pieces[piece_index].color();
     let sq_idx = square_index as u32;
@@ -958,6 +962,7 @@ fn remove_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
         game_state.pieces[piece_index].value() as u32;
 }
 
+#[hotpath::measure]
 fn add_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
     let color = game_state.pieces[piece_index].color();
     let sq_idx = square_index as u32;
@@ -1004,6 +1009,7 @@ fn add_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
         game_state.pieces[piece_index].value() as u32;
 }
 
+#[hotpath::measure]
 fn move_piece(
     piece_index: usize,
     start_square: u16,
@@ -1057,6 +1063,7 @@ fn move_piece(
     }
 }
 
+#[hotpath::measure]
 fn promote_piece(
     promoting_piece: usize,
     start_square: u16,
@@ -1906,4 +1913,46 @@ pub fn undo_move(game_state: &mut State) {
 
     #[cfg(debug_assertions)]
     verify_game_state(game_state);
+}
+
+#[hotpath::measure]
+pub fn generate_all_moves(state: &State) -> Vec<MoveType> {
+    let mut possible_moves: Vec<MoveType> = vec![];
+
+    let piece_count = state.pieces.len() / 2;
+    let start_index = if state.playing == WHITE { 0 } else { piece_count };
+    let end_index = start_index + piece_count;
+
+    possible_moves = (start_index..end_index)
+        .into_par_iter()
+        .flat_map(|piece_index| {
+            let piece = &state.pieces[piece_index];
+            let piece_board = &state.pieces_board[piece_index];
+            let piece_indices = piece_board.bit_indices();
+
+            piece_indices
+                .into_par_iter()
+                .flat_map(move |index| {
+                    let relevant_friendly_board = if piece.color() == WHITE {
+                        &state.white_board
+                    } else {
+                        &state.black_board
+                    };
+
+                    let relevant_enemy_board = if piece.color() == WHITE {
+                        &state.black_board
+                    } else {
+                        &state.white_board
+                    };
+
+                    generate_move_list(
+                        index, &piece, &relevant_friendly_board,
+                        &relevant_enemy_board, &state.unmoved_board, &state,
+                        false
+                    )
+            }).collect::<Vec<_>>()
+        })
+        .collect();
+
+        possible_moves
 }

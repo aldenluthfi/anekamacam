@@ -14,21 +14,22 @@
 //! # Date
 //! 25/01/2026
 
+use bnum::types::U4096;
+
 use crate::game::representations::{
     board::{
-        Bitboard,
         Board
     },
 };
 
-fn format_bitboard(board: &Bitboard, ranks: u8, files: u8) -> String {
+fn format_bitboard(board: &U4096, ranks: u8, files: u8) -> String {
 
     let mut result = String::new();
 
     for row in (0..ranks).rev() {
         for col in 0..files {
             let index: u32 = row as u32 * files as u32 + col as u32;
-            if board.get_bit(index) {
+            if board.bit(index) {
                 result.push_str("1  ");
             } else {
                 result.push_str("0  ");
@@ -42,7 +43,7 @@ fn format_bitboard(board: &Bitboard, ranks: u8, files: u8) -> String {
 pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     let ranks = board.ranks;
     let files = board.files;
-    let mut bitboard_str = format_bitboard(&board.bitboard, ranks, files);
+    let mut bitboard_str = format_bitboard(&board.bits, ranks, files);
 
     if piece_char.is_some() {
         bitboard_str = bitboard_str.replace(

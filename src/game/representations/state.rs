@@ -78,6 +78,7 @@ pub struct State {
     pub piece_relevant_boards: Vec<Vec<Board>>,
 }
 
+#[hotpath::measure_all]
 impl State {
     pub fn new(
         title: String,
