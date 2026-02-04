@@ -44,6 +44,7 @@ pub struct Piece {
     pub encoded_piece: u32,
 }
 
+#[hotpath::measure_all]
 impl Piece {
     /// Creates a new piece with the specified properties.
     ///

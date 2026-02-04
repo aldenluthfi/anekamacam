@@ -96,15 +96,34 @@ impl Board {
         self.bits.count_ones()
     }
 
+    #[inline(always)]
     pub fn bit_indices(&self) -> Vec<u32> {
+        let count = self.bits.count_ones();
+        if count == 0 {
+            return Vec::new();
+        }
+
         let mut bits = self.bits;
-        let count = bits.count_ones();
         let mut indices = Vec::with_capacity(count as usize);
 
-        while bits != U4096::ZERO {
-            let lsb = bits.trailing_zeros();
-            indices.push(lsb);
-            bits &= bits - U4096::ONE;
+        match count {                                                           /* Special case common scenarios      */
+            1 => {
+                indices.push(bits.trailing_zeros());
+                return indices;
+            }
+            2 => {
+                indices.push(bits.trailing_zeros());
+                bits &= bits - U4096::ONE;
+                indices.push(bits.trailing_zeros());
+                return indices;
+            }
+            _ => {
+                while bits != U4096::ZERO {                                     /* General case                       */
+                    let lsb = bits.trailing_zeros();
+                    indices.push(lsb);
+                    bits &= bits - U4096::ONE;
+                }
+            }
         }
 
         indices
