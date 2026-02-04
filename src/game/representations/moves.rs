@@ -372,77 +372,63 @@ impl Move {
         }
     }
 
+    #[inline(always)]
     pub fn move_type(&self) -> u8 {
         (self.encoded_move & Move::MOVE_TYPE_MASK) as u8
     }
 
+    #[inline(always)]
     pub fn piece_index(&self) -> u8 {
-        (
-            (self.encoded_move & Move::PIECE_INDEX_MASK) >>
-            Move::PIECE_INDEX_SHIFT
-        ) as u8
+        ((self.encoded_move & Move::PIECE_INDEX_MASK) >> Move::PIECE_INDEX_SHIFT) as u8
     }
 
+    #[inline(always)]
     pub fn start_square(&self) -> u16 {
-        (
-            (self.encoded_move & Move::START_SQUARE_MASK) >>
-            Move::START_SQUARE_SHIFT
-        ) as u16
+        ((self.encoded_move & Move::START_SQUARE_MASK) >> Move::START_SQUARE_SHIFT) as u16
     }
 
+    #[inline(always)]
     pub fn end_square(&self) -> u16 {
-        (
-            (self.encoded_move & Move::END_SQUARE_MASK) >>
-            Move::END_SQUARE_SHIFT
-        ) as u16
+        ((self.encoded_move & Move::END_SQUARE_MASK) >> Move::END_SQUARE_SHIFT) as u16
     }
 
+    #[inline(always)]
     pub fn is_initial(&self) -> bool {
         (self.encoded_move >> Move::IS_INITIAL_SHIFT) & 1 == 1
     }
 
+    #[inline(always)]
     pub fn is_promotion(&self) -> bool {
         (self.encoded_move >> Move::IS_PROMOTION_SHIFT) & 1 == 1
     }
 
+    #[inline(always)]
     pub fn creates_en_passant_square(&self) -> bool {
         (self.encoded_move >> Move::CREATES_EN_PASSANT_SHIFT) & 1 == 1
     }
 
+    #[inline(always)]
     pub fn promoting_piece(&self) -> Option<u8> {
-        if self.is_promotion() {
-            Some(
-                (
-                    (self.encoded_move & Move::PROMOTING_PIECE_MASK) >>
-                    Move::PROMOTING_PIECE_SHIFT
-                ) as u8
-            )
+        if (self.encoded_move >> Move::IS_PROMOTION_SHIFT) & 1 == 1 {
+            Some(((self.encoded_move & Move::PROMOTING_PIECE_MASK) >> Move::PROMOTING_PIECE_SHIFT) as u8)
         } else {
             None
         }
     }
 
+    #[inline(always)]
     pub fn promoted_piece(&self) -> Option<u8> {
-        if self.is_promotion() {
-            Some(
-                (
-                    (self.encoded_move & Move::PROMOTED_PIECE_MASK) >>
-                    Move::PROMOTED_PIECE_SHIFT
-                ) as u8
-            )
+        if (self.encoded_move >> Move::IS_PROMOTION_SHIFT) & 1 == 1 {
+            Some(((self.encoded_move & Move::PROMOTED_PIECE_MASK) >> Move::PROMOTED_PIECE_SHIFT) as u8)
         } else {
             None
         }
     }
 
+    #[inline(always)]
     pub fn en_passant_square(&self) -> Option<u32> {
-        if self.creates_en_passant_square() {
-            Some(
-                (
-                    (self.encoded_move & Move::EN_PASSANT_SQUARE_MASK) >>
-                    Move::EN_PASSANT_SHIFT
-                ) as u32
-            )
+        if (self.encoded_move >> Move::CREATES_EN_PASSANT_SHIFT) & 1 == 1 {
+            Some(((self.encoded_move & Move::EN_PASSANT_SQUARE_MASK) >> Move::EN_PASSANT_SHIFT) as u32)
         } else {
             None
         }
@@ -453,48 +439,41 @@ impl Move {
             && (self.encoded_move >> Self::EXTRA_DATA_SHIFT) & 1 == 1
     }
 
+    #[inline(always)]
     pub fn is_unload(&self) -> bool {
-        let move_type = self.move_type();
-        if move_type == Self::SINGLE_CAPTURE as u8 {
+        let move_type = self.encoded_move & Move::MOVE_TYPE_MASK;
+        if move_type == Self::SINGLE_CAPTURE {
             (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 9)) & 1 == 1
-        } else if move_type == Self::HOPPER_CAPTURE as u8 {
+        } else if move_type == Self::HOPPER_CAPTURE {
             (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 21)) & 1 == 1
         } else {
             false
         }
     }
 
+    #[inline(always)]
     pub fn can_capture_royal(&self) -> bool {
-        let move_type = self.move_type();
-        (
-            move_type == Self::SINGLE_CAPTURE as u8 ||
-            move_type == Self::HOPPER_CAPTURE as u8
-        )
+        let move_type = self.encoded_move & Move::MOVE_TYPE_MASK;
+        (move_type == Self::SINGLE_CAPTURE || move_type == Self::HOPPER_CAPTURE)
             && (self.encoded_move >> Self::EXTRA_DATA_SHIFT) & 1 == 1
     }
 
+    #[inline(always)]
     pub fn captured_piece(&self) -> Option<u8> {
-        let move_type = self.move_type();
-        if
-            move_type == Self::HOPPER_CAPTURE as u8 ||
-            move_type == Self::SINGLE_CAPTURE as u8
-        {
+        let move_type = self.encoded_move & Move::MOVE_TYPE_MASK;
+        if move_type == Self::HOPPER_CAPTURE || move_type == Self::SINGLE_CAPTURE {
             Some((self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 1)) as u8)
         } else {
             None
         }
     }
 
+    #[inline(always)]
     pub fn set_captured_piece(&mut self, piece: u8) {
-        let move_type = self.move_type();
-        if
-            move_type == Self::HOPPER_CAPTURE as u8 ||
-            move_type == Self::SINGLE_CAPTURE as u8
-        {
-            self.encoded_move &=
-                !(0xFFu128 << (Self::EXTRA_DATA_SHIFT + 1));
-            self.encoded_move |=
-                (piece as u128) << (Self::EXTRA_DATA_SHIFT + 1);
+        let move_type = self.encoded_move & Move::MOVE_TYPE_MASK;
+        if move_type == Self::HOPPER_CAPTURE || move_type == Self::SINGLE_CAPTURE {
+            self.encoded_move &= !(0xFFu128 << (Self::EXTRA_DATA_SHIFT + 1));
+            self.encoded_move |= (piece as u128) << (Self::EXTRA_DATA_SHIFT + 1);
         }
     }
 
@@ -526,11 +505,12 @@ impl Move {
         }
     }
 
+    #[inline(always)]
     pub fn is_captured_piece_unmoved(&self) -> bool {
-        let move_type = self.move_type();
-        if move_type == Self::SINGLE_CAPTURE as u8 {
+        let move_type = self.encoded_move & Move::MOVE_TYPE_MASK;
+        if move_type == Self::SINGLE_CAPTURE {
             (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 22)) & 1 == 1
-        } else if move_type == Self::HOPPER_CAPTURE as u8 {
+        } else if move_type == Self::HOPPER_CAPTURE {
             (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 34)) & 1 == 1
         } else {
             false

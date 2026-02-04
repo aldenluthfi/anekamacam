@@ -109,42 +109,52 @@ impl Piece {
         }
     }
 
+    #[inline(always)]
     pub fn index(&self) -> u8 {
-        (self.encoded_piece & 0xFF) as u8
+        self.encoded_piece as u8
     }
 
+    #[inline(always)]
     pub fn color(&self) -> u8 {
         ((self.encoded_piece >> 8) & 1) as u8
     }
 
+    #[inline(always)]
     pub fn is_royal(&self) -> bool {
         (self.encoded_piece & (1 << 9)) != 0
     }
 
+    #[inline(always)]
     pub fn is_big(&self) -> bool {
         (self.encoded_piece & (1 << 10)) != 0
     }
 
+    #[inline(always)]
     pub fn can_promote(&self) -> bool {
-        !self.is_big()
+        (self.encoded_piece & (1 << 10)) == 0
     }
 
+    #[inline(always)]
     pub fn is_major(&self) -> bool {
         (self.encoded_piece & (1 << 11)) != 0
     }
 
+    #[inline(always)]
     pub fn is_minor(&self) -> bool {
-        !self.is_major()
+        (self.encoded_piece & (1 << 11)) == 0
     }
 
+    #[inline(always)]
     pub fn value(&self) -> u16 {
         ((self.encoded_piece >> 12) & 0xFFFF) as u16
     }
 
+    #[inline(always)]
     pub fn can_castle_kingside(&self) -> bool {
         (self.encoded_piece & (1 << 28)) != 0
     }
 
+    #[inline(always)]
     pub fn can_castle_queenside(&self) -> bool {
         (self.encoded_piece & (1 << 29)) != 0
     }
