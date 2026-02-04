@@ -35,5 +35,5 @@ pub mod constants;
 fn main() {
     let mut state = State::from_config("configs/fide.anm");
 
-    start_perft(&mut state, "res/fide-kiwipete.perft", 4, false, None);
+    start_perft(&mut state, "res/fide-kiwipete.perft", 5, true, Some(2));
 }

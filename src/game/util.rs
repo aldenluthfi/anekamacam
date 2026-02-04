@@ -25,7 +25,7 @@ use crate::{
     game::{hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES}, representations::{
         board::Board,
         state::State
-    }},
+    }}, io::board_io::format_square,
 };
 
 lazy_static!{
@@ -169,6 +169,46 @@ pub fn verify_game_state(state: &State) {
         for index in piece_indices {
             temp_hash ^= PIECE_HASHES[i][color][index as usize];
         }
+    }
+
+    if temp_hash != state.position_hash {
+        let missing_hash = temp_hash ^ state.position_hash;
+
+        for (piece_idx, piece_colors) in PIECE_HASHES.iter().enumerate() {
+            for (color_idx, positions) in piece_colors.iter().enumerate() {
+                for (pos_idx, &hash) in positions.iter().enumerate() {
+                    if hash == missing_hash {
+                        panic!(
+                            concat!(
+                                "Hash mismatch! Missing/extra piece at ",
+                                "position {} for piece {} color {}"
+                            ),
+                            format_square(pos_idx as u16, state),
+                            state.pieces[piece_idx].name,
+                            if color_idx == 0 { "WHITE" } else { "BLACK" }
+                        );
+                    }
+                }
+            }
+        }
+
+        for (idx, &hash) in CASTLING_HASHES.iter().enumerate() {
+            if hash == missing_hash {
+                panic!("Hash mismatch! Castling state mismatch at index {}", idx);
+            }
+        }
+
+        for (idx, &hash) in EN_PASSANT_HASHES.iter().enumerate() {
+            if hash == missing_hash {
+                panic!("Hash mismatch! En passant square mismatch at index {}", idx);
+            }
+        }
+
+        if missing_hash == *SIDE_HASHES {
+            panic!("Hash mismatch! Side to move mismatch");
+        }
+
+        panic!("Hash mismatch! Could not find source of difference");
     }
 
     assert_eq!(
