@@ -68,11 +68,6 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - k  : gives check
 /// - !x : negation of modifier x
 ///
-/// There are also special tokens that is denoted by bit 61-63:
-/// - 0b001 : '<' token
-/// - 0b010 : '</' token
-/// - 0b100 : '-' token
-///
 /// Move modifiers without an atomic vector are also considered special.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
@@ -147,7 +142,7 @@ impl LegVector {
     #[inline(always)]
     pub fn get_modifier_state(&self) -> ModifierState {
         let mods = (self.0 >> 32) as u16;
-        
+
         unsafe {
             ModifierState {
                 m: match (mods & 1, mods & (1 << 7)) {
@@ -363,13 +358,13 @@ impl LegVector {
 
     #[inline(always)]
     pub fn is_castling(&self) -> bool {
-        let rank_offset = ((self.0 >> 40) & 0xFF) as i8;
+        let rank_offset = ((self.0 >> 8) & 0xFF) as i8;
         rank_offset == i8::MIN || rank_offset == i8::MAX
     }
 
     #[inline(always)]
     pub fn is_castling_right(&self) -> bool {
-        ((self.0 >> 40) & 0xFF) as i8 == i8::MAX
+        ((self.0 >> 8) & 0xFF) as i8 == i8::MAX
     }
 }
 

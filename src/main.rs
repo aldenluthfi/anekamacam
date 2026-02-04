@@ -31,9 +31,9 @@ pub mod io {
 
 pub mod constants;
 
-#[hotpath::main(limit=20)]
+#[hotpath::main(limit=30)]
 fn main() {
-    let mut state = State::from_config("configs/berolina.anm");
+    let mut state = State::from_config("configs/fide.anm");
 
-    start_perft(&mut state, "res/berolina.perft", 5, false, None);
+    start_perft(&mut state, "res/fide-kiwipete.perft", 4, false, None);
 }
