@@ -88,6 +88,7 @@ pub fn hash_position(state: &State) -> U256 {
     hash
 }
 
+#[inline(always)]
 #[hotpath::measure]
 pub fn hash_in_or_out_piece(
     game_state: &mut State,
@@ -95,17 +96,16 @@ pub fn hash_in_or_out_piece(
     piece_color: u8,
     square_index: u16
 ) {
-    let i = piece_index;
-    let color = piece_color as usize;
-
-    game_state.position_hash ^= PIECE_HASHES[i][color][square_index as usize];
+    game_state.position_hash ^= PIECE_HASHES[piece_index][piece_color as usize][square_index as usize];
 }
 
+#[inline(always)]
 #[hotpath::measure]
 pub fn hash_toggle_side(game_state: &mut State) {
     game_state.position_hash ^= &*SIDE_HASHES;
 }
 
+#[inline(always)]
 #[hotpath::measure]
 pub fn hash_update_castling(
     game_state: &mut State,
@@ -116,6 +116,7 @@ pub fn hash_update_castling(
     game_state.position_hash ^= &CASTLING_HASHES[new_castling_state as usize];
 }
 
+#[inline(always)]
 #[hotpath::measure]
 pub fn hash_update_en_passant(
     game_state: &mut State,
