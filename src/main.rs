@@ -31,9 +31,9 @@ pub mod io {
 
 pub mod constants;
 
-#[hotpath::main(limit=40)]
+#[hotpath::main(limit=20)]
 fn main() {
-    let mut state = State::from_config("configs/los-alamos.anm");
+    let mut state = State::from_config("configs/berolina.anm");
 
-    start_perft(&mut state, "res/los-alamos.perft", 6, false, None);
+    start_perft(&mut state, "res/berolina.perft", 4, false, None);
 }
