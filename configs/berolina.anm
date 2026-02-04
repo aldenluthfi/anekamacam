@@ -1,0 +1,12 @@
+Berolina Chess
+8,8,6
+^Berolina,P,p,1000,mnF|im<nF-pnW>|cnW
+!Rook,R,r,5000,!pR
+Bishop,B,b,3375,!pB
+Knight,N,n,3000,!pN
+!Queen,Q,q,8375,!pQ
+#King,K,k,6375,!pK|O{2}|o{2}
+2
+P->RNBQ
+p->rbnq
+rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1

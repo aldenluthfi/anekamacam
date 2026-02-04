@@ -22,10 +22,10 @@ use bnum::types::U256;
 
 use crate::{
     constants::*,
-    game::representations::{
+    game::{hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES}, representations::{
         board::Board,
         state::State
-    }
+    }},
 };
 
 lazy_static!{
@@ -43,9 +43,9 @@ pub fn verify_game_state(state: &State) {
         let piece_board = &state.pieces_board[i];
 
         if piece.color() == WHITE {
-            temp_white_board = &temp_white_board | piece_board;
+            temp_white_board.or_assign(piece_board);
         } else {
-            temp_black_board = &temp_black_board | piece_board;
+            temp_black_board.or_assign(piece_board);
         }
     }
 
@@ -60,6 +60,11 @@ pub fn verify_game_state(state: &State) {
         &state.black_board,
         "Computed black board doesn't match state black board"
     );
+
+    let mut temp_pieces_board = Board::new(state.files, state.ranks);
+
+    temp_pieces_board.or_assign(&temp_white_board);
+    temp_pieces_board.or_assign(&temp_black_board);
 
     let mut temp_big_pieces = [0; 2];
     let mut temp_major_pieces = [0; 2];
@@ -128,8 +133,10 @@ pub fn verify_game_state(state: &State) {
         }
     }
 
+    temp_black_monarch_board |= temp_white_monarch_board;
+
     assert_eq!(
-        &(&temp_white_monarch_board | &temp_black_monarch_board),
+        &temp_black_monarch_board,
         &state.monarch_board,
         "Computed monarch board from colors doesn't match state monarch board"
     );
@@ -138,6 +145,36 @@ pub fn verify_game_state(state: &State) {
         &temp_monarch_board,
         &state.monarch_board,
         "Computed monarch board doesn't match state monarch board"
+    );
+
+    let mut temp_hash = U256::default();
+
+    if state.playing == WHITE {
+        temp_hash ^= &*SIDE_HASHES;
+    }
+
+    temp_hash ^= &CASTLING_HASHES[state.castling_state as usize];
+
+    if let Some(ep_square) = state.en_passant_square {
+        temp_hash ^= &EN_PASSANT_HASHES[(ep_square & 0xFFF) as usize];
+    }
+
+    for piece in &state.pieces {
+        let i = piece.index() as usize;
+        let color = piece.color() as usize;
+
+        let piece_board = &state.pieces_board[i];
+        let piece_indices = piece_board.bit_indices();
+
+        for index in piece_indices {
+            temp_hash ^= PIECE_HASHES[i][color][index as usize];
+        }
+    }
+
+    assert_eq!(
+        temp_hash,
+        state.position_hash,
+        "Computed hash doesn't match state position hash"
     );
 }
 
