@@ -96,7 +96,7 @@ pub fn hash_in_or_out_piece(
     piece_color: u8,
     square_index: u16
 ) {
-    game_state.position_hash ^= 
+    game_state.position_hash ^=
         &PIECE_HASHES[piece_index][piece_color as usize][square_index as usize];
 }
 
@@ -114,9 +114,9 @@ pub fn hash_update_castling(
     new_castling_state: u8
 ) {
     if old_castling_state != new_castling_state {
-        game_state.position_hash ^= 
+        game_state.position_hash ^=
             &CASTLING_HASHES[old_castling_state as usize];
-        game_state.position_hash ^= 
+        game_state.position_hash ^=
             &CASTLING_HASHES[new_castling_state as usize];
     }
 }
