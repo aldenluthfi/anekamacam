@@ -77,6 +77,17 @@ pub type MultiLegVector = Vec<LegVector>;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
 
+#[derive(Clone, Copy, Debug)]
+pub struct ModifierState {
+    pub m: Option<bool>,
+    pub c: Option<bool>,
+    pub i: Option<bool>,
+    pub u: Option<bool>,
+    pub d: Option<bool>,
+    pub p: Option<bool>,
+    pub k: Option<bool>,
+}
+
 #[hotpath::measure_all]
 impl LegVector {
 
@@ -131,6 +142,55 @@ impl LegVector {
         }
 
         bits
+    }
+
+    #[inline(always)]
+    pub fn get_modifier_state(&self) -> ModifierState {
+        let mods = self.get_modifiers();
+        ModifierState {
+            m: match (mods & (1 << 0) != 0, mods & (1 << 7) != 0) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+                (true, true) => panic!("Invalid modifier state: both m and !m are set"),
+            },
+            c: match (mods & (1 << 1) != 0, mods & (1 << 8) != 0) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+                (true, true) => panic!("Invalid modifier state: both c and !c are set"),
+            },
+            i: match (mods & (1 << 2) != 0, mods & (1 << 9) != 0) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+                (true, true) => panic!("Invalid modifier state: both i and !i are set"),
+            },
+            u: match (mods & (1 << 3) != 0, mods & (1 << 10) != 0) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+                (true, true) => panic!("Invalid modifier state: both u and !u are set"),
+            },
+            d: match (mods & (1 << 4) != 0, mods & (1 << 11) != 0) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+                (true, true) => panic!("Invalid modifier state: both d and !d are set"),
+            },
+            p: match (mods & (1 << 5) != 0, mods & (1 << 12) != 0) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+                (true, true) => panic!("Invalid modifier state: both p and !p are set"),
+            },
+            k: match (mods & (1 << 6) != 0, mods & (1 << 13) != 0) {
+                (true, false) => Some(true),
+                (false, true) => Some(false),
+                (false, false) => None,
+                (true, true) => panic!("Invalid modifier state: both k and !k are set"),
+            },
+        }
     }
 
     pub fn get_modifiers_str(&self) -> String {
