@@ -146,50 +146,53 @@ impl LegVector {
 
     #[inline(always)]
     pub fn get_modifier_state(&self) -> ModifierState {
-        let mods = self.get_modifiers();
-        ModifierState {
-            m: match (mods & (1 << 0) != 0, mods & (1 << 7) != 0) {
-                (true, false) => Some(true),
-                (false, true) => Some(false),
-                (false, false) => None,
-                (true, true) => panic!("Invalid modifier state: both m and !m are set"),
-            },
-            c: match (mods & (1 << 1) != 0, mods & (1 << 8) != 0) {
-                (true, false) => Some(true),
-                (false, true) => Some(false),
-                (false, false) => None,
-                (true, true) => panic!("Invalid modifier state: both c and !c are set"),
-            },
-            i: match (mods & (1 << 2) != 0, mods & (1 << 9) != 0) {
-                (true, false) => Some(true),
-                (false, true) => Some(false),
-                (false, false) => None,
-                (true, true) => panic!("Invalid modifier state: both i and !i are set"),
-            },
-            u: match (mods & (1 << 3) != 0, mods & (1 << 10) != 0) {
-                (true, false) => Some(true),
-                (false, true) => Some(false),
-                (false, false) => None,
-                (true, true) => panic!("Invalid modifier state: both u and !u are set"),
-            },
-            d: match (mods & (1 << 4) != 0, mods & (1 << 11) != 0) {
-                (true, false) => Some(true),
-                (false, true) => Some(false),
-                (false, false) => None,
-                (true, true) => panic!("Invalid modifier state: both d and !d are set"),
-            },
-            p: match (mods & (1 << 5) != 0, mods & (1 << 12) != 0) {
-                (true, false) => Some(true),
-                (false, true) => Some(false),
-                (false, false) => None,
-                (true, true) => panic!("Invalid modifier state: both p and !p are set"),
-            },
-            k: match (mods & (1 << 6) != 0, mods & (1 << 13) != 0) {
-                (true, false) => Some(true),
-                (false, true) => Some(false),
-                (false, false) => None,
-                (true, true) => panic!("Invalid modifier state: both k and !k are set"),
-            },
+        let mods = (self.0 >> 32) as u16;
+        
+        unsafe {
+            ModifierState {
+                m: match (mods & 1, mods & (1 << 7)) {
+                    (0, 0) => None,
+                    (_, 0) => Some(true),
+                    (0, _) => Some(false),
+                    _ => std::hint::unreachable_unchecked(),
+                },
+                c: match (mods & 2, mods & (1 << 8)) {
+                    (0, 0) => None,
+                    (_, 0) => Some(true),
+                    (0, _) => Some(false),
+                    _ => std::hint::unreachable_unchecked(),
+                },
+                i: match (mods & 4, mods & (1 << 9)) {
+                    (0, 0) => None,
+                    (_, 0) => Some(true),
+                    (0, _) => Some(false),
+                    _ => std::hint::unreachable_unchecked(),
+                },
+                u: match (mods & 8, mods & (1 << 10)) {
+                    (0, 0) => None,
+                    (_, 0) => Some(true),
+                    (0, _) => Some(false),
+                    _ => std::hint::unreachable_unchecked(),
+                },
+                d: match (mods & 16, mods & (1 << 11)) {
+                    (0, 0) => None,
+                    (_, 0) => Some(true),
+                    (0, _) => Some(false),
+                    _ => std::hint::unreachable_unchecked(),
+                },
+                p: match (mods & 32, mods & (1 << 12)) {
+                    (0, 0) => None,
+                    (_, 0) => Some(true),
+                    (0, _) => Some(false),
+                    _ => std::hint::unreachable_unchecked(),
+                },
+                k: match (mods & 64, mods & (1 << 13)) {
+                    (0, 0) => None,
+                    (_, 0) => Some(true),
+                    (0, _) => Some(false),
+                    _ => std::hint::unreachable_unchecked(),
+                },
+            }
         }
     }
 
@@ -227,7 +230,7 @@ impl LegVector {
     }
 
     pub fn get_modifiers(&self) -> u16 {
-        ((self.0 >> 32) & 0x3FFF) as u16
+        (self.0 >> 32) as u16
     }
 
     pub fn set_atomic(&mut self, atomic: AtomicVector) {
@@ -358,14 +361,15 @@ impl LegVector {
         }
     }
 
+    #[inline(always)]
     pub fn is_castling(&self) -> bool {
-        let atomic = self.get_atomic();
-        atomic.whole().1 == i8::MIN || atomic.whole().1 == i8::MAX
+        let rank_offset = ((self.0 >> 40) & 0xFF) as i8;
+        rank_offset == i8::MIN || rank_offset == i8::MAX
     }
 
+    #[inline(always)]
     pub fn is_castling_right(&self) -> bool {
-        let atomic = self.get_atomic();
-        atomic.whole().1 == i8::MAX
+        ((self.0 >> 40) & 0xFF) as i8 == i8::MAX
     }
 }
 
