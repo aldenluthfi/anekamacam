@@ -1,4 +1,3 @@
-
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 
@@ -357,69 +356,37 @@ fn process_multi_leg_vector(
         let has_passant = modifiers.p;
         let has_check = modifiers.k;
 
-        let can_move = match has_move {
-            Some(true) => true,
-            Some(false) => false,
-            None => match (has_capture, has_destroy) {
-                (Some(true), _) => false,
-                (_, Some(true)) => false,
-                _ => true
-            }
-        };
+        let can_move = has_move.unwrap_or(
+            !has_capture.unwrap_or(false) && !has_destroy.unwrap_or(false)
+        );
 
         if unmoved_piece {
             move_is_initial = true;
         }
 
-        if has_initial == Some(true) {                                          /* Mark move as initial if i present  */
+        if has_initial == Some(true) {
             if !unmoved_piece {
                 return Vec::new();
             }
-
             move_is_initial = true;
         }
 
-        if has_initial == Some(false) {                                         /* Fail if !i and piece is unmoved    */
-            if unmoved_piece {
-                return Vec::new();
-            }
+        if has_initial == Some(false) && unmoved_piece {
+            return Vec::new();
         }
 
-        let can_capture = match has_capture {
-            Some(true) => true,
-            Some(false) => false,
-            None => is_final_leg && has_move != Some(true),                     /* Implicit !c for non-final, c final */
-        };                                                                      /* unless m is set explicitly         */
+        let can_capture = has_capture.unwrap_or(
+            is_final_leg && has_move != Some(true)
+        );
 
-        let can_destroy = match has_destroy {
-            Some(true) => true,
-            Some(false) => false,
-            None => false,                                                      /* Implicit !d for all legs           */
-        };
+        let can_destroy = has_destroy.unwrap_or(false);
+        let can_unload = has_unload.unwrap_or(false);
 
-        let can_unload = match has_unload {
-            Some(true) => true,
-            Some(false) => false,
-            None => false,                                                      /* Implicit !u for all legs           */
-        };
+        creates_en_passant = has_passant.unwrap_or(false);
 
-        creates_en_passant = match has_passant {
-            Some(true) => true,
-            Some(false) => false,                                               /* !p means cant capture en-passant   */
-            None => false,                                                      /* Implicit !p (no creation)          */
-        };
+        let can_capture_en_passant = has_passant.unwrap_or(can_capture);
 
-        let can_capture_en_passant = match has_passant {
-            Some(true) => true,
-            Some(false) => false,                                               /* !p means cant capture en-passant   */
-            None => can_capture,                                                /* Default allows en-passant capture  */
-        };
-
-        can_capture_royal = match has_check {                                   /* Update royal capture flag          */
-            Some(true) => true,
-            Some(false) => false,                                               /* !k means cannot capture royal      */
-            None => can_capture,                                                /* Default allows royal capture       */
-        };
+        can_capture_royal = has_check.unwrap_or(can_capture);
 
         let start_square_index = accumulated_index as u16;
 
@@ -439,8 +406,9 @@ fn process_multi_leg_vector(
 
         accumulated_index = rank * (game_state.files as i32) + file;
         let square_index = accumulated_index as u16;
-        let has_friendly = friendly_board.get_bit(square_index as u32);
-        let has_enemy = enemy_board.get_bit(square_index as u32);
+        let sq_idx = square_index as u32;
+        let has_friendly = friendly_board.get_bit(sq_idx);
+        let has_enemy = enemy_board.get_bit(sq_idx);
         let is_empty = !has_friendly && !has_enemy;
 
         let must_capture = can_capture && !can_move && !can_destroy;
@@ -451,216 +419,125 @@ fn process_multi_leg_vector(
         let can_capture_destroy = can_capture && !can_move && can_destroy;
         let can_do_all_three = can_capture && can_move && can_destroy;
 
-        if must_destroy {                                                       /* d: must destroy friendly           */
+        if must_destroy {
             if has_enemy || is_empty {
-                if let Some(game_en_passant) =
-                    game_state.en_passant_square
-                {
-                    let enp_piece_idx =
-                        (game_en_passant >> 24) as usize & 0xFF;
+                if let Some(game_en_passant) = game_state.en_passant_square {
+                    let enp_piece_idx = (game_en_passant >> 24) as usize & 0xFF;
                     if can_capture_en_passant
                         && square_index == (game_en_passant & 0xFFF) as u16
                         && is_empty
-                        && game_state.pieces[enp_piece_idx].color() == side     /* Must be friendly piece              */
-                    {
-                        let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;    /* 12 bits to encode where the pce is */
-                        let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
-                        taken_pieces.push(
-                            (
-                                2, enp_sq,
-                                can_capture_royal, false, None, enp_unmoved
-                            )
-                        );
-                        continue;
-                    }
-                }
-                if !imaginary {
-                    return Vec::new();
-                }
-            }
-            let sq_unmoved = unmoved_board.get_bit(square_index as u32);
-            taken_pieces.push(
-                (
-                    2, square_index, can_capture_royal,
-                    false, None, sq_unmoved
-                )
-            );
-        } else if must_capture {                                                /* c: must capture enemy              */
-            if !has_enemy {
-                if let Some(game_en_passant) =
-                    game_state.en_passant_square
-                {
-                    let enp_piece_idx =
-                        (game_en_passant >> 24) as usize & 0xFF;
-
-                    if can_capture_en_passant
-                        && square_index == (game_en_passant & 0xFFF) as u16
-                        && is_empty
-                        && game_state.pieces[enp_piece_idx].color() != side     /* Must be enemy  piece              */
+                        && game_state.pieces[enp_piece_idx].color() == side
                     {
                         let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
                         let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
-                        taken_pieces.push(
-                            (
-                                1, enp_sq,
-                                can_capture_royal, false, None, enp_unmoved
-                            )
-                        );
+                        taken_pieces.push((2, enp_sq, can_capture_royal, false, None, enp_unmoved));
                         continue;
                     }
                 }
-
                 if !imaginary {
                     return Vec::new();
                 }
             }
-
-            let sq_unmoved = unmoved_board.get_bit(square_index as u32);
-            taken_pieces.push(
-                (
-                    1, square_index, can_capture_royal,
-                    false, None, sq_unmoved
-                )
-            );
-        } else if must_move {                                                   /* m: must move to empty              */
+            let sq_unmoved = unmoved_board.get_bit(sq_idx);
+            taken_pieces.push((2, square_index, can_capture_royal, false, None, sq_unmoved));
+        } else if must_capture {
+            if !has_enemy {
+                if let Some(game_en_passant) = game_state.en_passant_square {
+                    let enp_piece_idx = (game_en_passant >> 24) as usize & 0xFF;
+                    if can_capture_en_passant
+                        && square_index == (game_en_passant & 0xFFF) as u16
+                        && is_empty
+                        && game_state.pieces[enp_piece_idx].color() != side
+                    {
+                        let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
+                        let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
+                        taken_pieces.push((1, enp_sq, can_capture_royal, false, None, enp_unmoved));
+                        continue;
+                    }
+                }
+                if !imaginary {
+                    return Vec::new();
+                }
+            }
+            let sq_unmoved = unmoved_board.get_bit(sq_idx);
+            taken_pieces.push((1, square_index, can_capture_royal, false, None, sq_unmoved));
+        } else if must_move {
             if !is_empty {
                 return Vec::new();
             }
-        } else if can_capture_destroy {                                         /* cd: capture or destroy (any piece) */
+        } else if can_capture_destroy {
             if is_empty {
-                if let Some(game_en_passant) =
-                    game_state.en_passant_square
-                {
+                if let Some(game_en_passant) = game_state.en_passant_square {
                     if can_capture_en_passant
                         && square_index == (game_en_passant & 0xFFF) as u16
-                        && is_empty
-                    {                                                           /* can be both color                  */
+                    {
                         let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
                         let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
-                        taken_pieces.push(
-                            (
-                                3, enp_sq,
-                                can_capture_royal, false, None, enp_unmoved
-                            )
-                        );
+                        taken_pieces.push((3, enp_sq, can_capture_royal, false, None, enp_unmoved));
                         continue;
                     }
                 }
-
                 if !imaginary {
                     return Vec::new();
                 }
             }
-            let sq_unmoved = unmoved_board.get_bit(square_index as u32);
-            taken_pieces.push(
-                (
-                    3, square_index, can_capture_royal,
-                    false, None, sq_unmoved
-                )
-            );
-        } else if can_move_destroy {                                            /* md: move or destroy friendly       */
-            if has_enemy && !imaginary{
+            let sq_unmoved = unmoved_board.get_bit(sq_idx);
+            taken_pieces.push((3, square_index, can_capture_royal, false, None, sq_unmoved));
+        } else if can_move_destroy {
+            if has_enemy && !imaginary {
                 return Vec::new();
             }
             if has_friendly || imaginary {
-                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
-                taken_pieces.push(
-                    (
-                        2, square_index, can_capture_royal,
-                        false, None, sq_unmoved
-                    )
-                );
-            } else if let Some(game_en_passant) =
-                game_state.en_passant_square
-            {
+                let sq_unmoved = unmoved_board.get_bit(sq_idx);
+                taken_pieces.push((2, square_index, can_capture_royal, false, None, sq_unmoved));
+            } else if let Some(game_en_passant) = game_state.en_passant_square {
                 let enp_piece_idx = (game_en_passant >> 24) as usize & 0xFF;
                 if can_capture_en_passant
                     && square_index == (game_en_passant & 0xFFF) as u16
                     && is_empty
-                    && game_state.pieces[enp_piece_idx].color() == side         /* Must be friendly piece             */
+                    && game_state.pieces[enp_piece_idx].color() == side
                 {
                     let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
                     let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
-                    taken_pieces.push(
-                        (
-                            2, enp_sq,
-                            can_capture_royal, false, None, enp_unmoved
-                        )
-                    );
+                    taken_pieces.push((2, enp_sq, can_capture_royal, false, None, enp_unmoved));
                 }
             }
-        } else if can_move_capture {                                            /* mc: move or capture enemy          */
+        } else if can_move_capture {
             if has_friendly && !imaginary {
                 return Vec::new();
             }
             if has_enemy || imaginary {
-                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
-                taken_pieces.push(
-                    (
-                        1, square_index, can_capture_royal,
-                        false, None, sq_unmoved
-                    )
-                );
-            } else if let Some(game_en_passant) =
-                game_state.en_passant_square
-            {
+                let sq_unmoved = unmoved_board.get_bit(sq_idx);
+                taken_pieces.push((1, square_index, can_capture_royal, false, None, sq_unmoved));
+            } else if let Some(game_en_passant) = game_state.en_passant_square {
                 let enp_piece_idx = (game_en_passant >> 24) as usize & 0xFF;
                 if can_capture_en_passant
                     && square_index == (game_en_passant & 0xFFF) as u16
                     && is_empty
-                    && game_state.pieces[enp_piece_idx].color() != side         /* Must be enemy piece                */
+                    && game_state.pieces[enp_piece_idx].color() != side
                 {
                     let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
                     let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
-                    taken_pieces.push(
-                        (
-                            1, enp_sq,
-                            can_capture_royal, false, None, enp_unmoved
-                        )
-                    );
+                    taken_pieces.push((1, enp_sq, can_capture_royal, false, None, enp_unmoved));
                 }
             }
-        } else if can_do_all_three {                                            /* mcd: move/capture/destroy (any)    */
+        } else if can_do_all_three {
             if imaginary {
-                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
-                taken_pieces.push(
-                    (
-                        3, square_index, can_capture_royal,
-                        false, None, sq_unmoved
-                    )
-                );
-            }
-            else if has_friendly {
-                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
-                taken_pieces.push(
-                    (
-                        2, square_index, can_capture_royal,
-                        false, None, sq_unmoved
-                    )
-                );
+                let sq_unmoved = unmoved_board.get_bit(sq_idx);
+                taken_pieces.push((3, square_index, can_capture_royal, false, None, sq_unmoved));
+            } else if has_friendly {
+                let sq_unmoved = unmoved_board.get_bit(sq_idx);
+                taken_pieces.push((2, square_index, can_capture_royal, false, None, sq_unmoved));
             } else if has_enemy {
-                let sq_unmoved = unmoved_board.get_bit(square_index as u32);
-                taken_pieces.push(
-                    (
-                        1, square_index, can_capture_royal,
-                        false, None, sq_unmoved
-                    )
-                );
-            } else if let Some(game_en_passant) =
-                game_state.en_passant_square
-            {
+                let sq_unmoved = unmoved_board.get_bit(sq_idx);
+                taken_pieces.push((1, square_index, can_capture_royal, false, None, sq_unmoved));
+            } else if let Some(game_en_passant) = game_state.en_passant_square {
                 if can_capture_en_passant
                     && square_index == (game_en_passant & 0xFFF) as u16
-                    && is_empty
                 {
                     let enp_sq = (game_en_passant >> 12) as u16 & 0xFFF;
                     let enp_unmoved = unmoved_board.get_bit(enp_sq as u32);
-                    taken_pieces.push(
-                        (
-                            3, enp_sq,
-                            can_capture_royal, false, None, enp_unmoved
-                        )
-                    );
+                    taken_pieces.push((3, enp_sq, can_capture_royal, false, None, enp_unmoved));
                 }
             }
         }
@@ -669,29 +546,21 @@ fn process_multi_leg_vector(
             if taken_pieces.is_empty() {
                 return Vec::new();
             }
-            let last_idx = taken_pieces.len() - 1;                              /* Update last captured piece unload  */
-
-            let (
-                piece_type, cap_square, can_cap_royal,
-                _, _, captures_unmoved
-            ) = taken_pieces[last_idx];
-
-            taken_pieces[last_idx] = (
-                piece_type, cap_square, can_cap_royal, true,
-                Some(start_square_index), captures_unmoved
-            );
-            continue;                                                           /* Unload doesnt add to captures      */
+            let last_idx = taken_pieces.len() - 1;
+            let (piece_type, cap_square, can_cap_royal, _, _, captures_unmoved) = taken_pieces[last_idx];
+            taken_pieces[last_idx] = (piece_type, cap_square, can_cap_royal, true, Some(start_square_index), captures_unmoved);
+            continue;
         }
 
-        if creates_en_passant {                                                 /* Handle en-passant creation (p)     */
+        if creates_en_passant {
             en_passant_count += 1;
             if en_passant_count > 1 {
                 panic!("More than one en-passant square in move vector!");
             }
             en_passant_square = Some(
-                (start_square_index as u32 & 0xFFF)                             /* Capture square                     */
-                | (square_index as u32) << 12                                   /* Captured piece square              */
-                | (piece_idx as u32) << 24                                      /* Captured piece index               */
+                (start_square_index as u32 & 0xFFF)
+                | (square_index as u32) << 12
+                | (piece_idx as u32) << 24
             );
         }
     }

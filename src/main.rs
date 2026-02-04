@@ -35,5 +35,5 @@ pub mod constants;
 fn main() {
     let mut state = State::from_config("configs/berolina.anm");
 
-    start_perft(&mut state, "res/berolina.perft", 4, false, None);
+    start_perft(&mut state, "res/berolina.perft", 5, false, None);
 }
