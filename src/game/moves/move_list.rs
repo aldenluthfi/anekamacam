@@ -2,7 +2,7 @@
 use crate::game::util::verify_game_state;
 
 use crate::{
-    constants::*,
+    constants::{BLACK, WHITE},
     game::{
         hash::{
             hash_in_or_out_piece, hash_toggle_side,
@@ -14,7 +14,7 @@ use crate::{
             piece::Piece,
             state::{Snapshot, State}, vector::LegVector,
         }
-    },
+    }, io::move_io::format_move,
 };
 
 #[hotpath::measure]
@@ -226,7 +226,7 @@ fn process_multi_leg_vector(
 ) -> Vec<MoveType> {
     let mut accumulated_index = square_index as i32;
     let mut taken_pieces: Vec<(u8, u16, bool, bool, Option<u16>, bool)> =
-        Vec::new();
+        Vec::with_capacity(multi_leg_vector.len().min(8));
     let mut en_passant_square: Option<u32> = None;
     let mut en_passant_count = 0;
     let mut move_is_initial = false;
@@ -931,6 +931,86 @@ fn promote_piece(
     add_piece(promoted_piece, end_square, game_state);
 }
 
+#[inline(always)]
+fn update_castling_rights(
+    game_state: &mut State,
+    piece_color: u8,
+    start_square: u16,
+    end_square: u16,
+    piece_unmoved: bool,
+    can_castle_kingside: bool,
+    can_castle_queenside: bool,
+) {
+    if piece_unmoved {
+        match (can_castle_kingside, can_castle_queenside) {
+            (true, true) => {
+                if piece_color == WHITE {
+                    game_state.castling_state &=
+                        !0b0011;
+                } else {
+                    game_state.castling_state &=
+                        !0b1100;
+                }
+            },
+            (true, false) => {
+                if piece_color == WHITE {
+                    game_state.castling_state &=
+                        !0b0010;
+                } else {
+                    game_state.castling_state &=
+                        !0b1000;
+                }
+            },
+            (false, true) => {
+                if piece_color == WHITE {
+                    game_state.castling_state &=
+                        !0b0001;
+                } else {
+                    game_state.castling_state &=
+                        !0b0100;
+                }
+            },
+            (false, false) => {
+                let start_rank = start_square / game_state.files as u16;
+                let start_file = start_square % game_state.files as u16;
+
+                if start_rank == 0 {
+                    if start_file == 0 {
+                        game_state.castling_state &= !0b0010;
+                    } else if start_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0001;
+                    }
+                } else if start_rank == game_state.ranks as u16 - 1 {
+                    if start_file == 0 {
+                        game_state.castling_state &= !0b1000;
+                    } else if start_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0100;
+                    }
+                }
+            }
+        }
+    }
+
+    let end_rank = end_square / game_state.files as u16;
+    let end_file = end_square % game_state.files as u16;
+
+    if game_state.unmoved_board.get_bit(end_square as u32) {
+        if end_rank == 0 {
+            if end_file == 0 {
+                game_state.castling_state &= !0b0010;
+            } else if end_file == game_state.files as u16 - 1 {
+                game_state.castling_state &= !0b0001;
+            }
+        } else if end_rank == game_state.ranks as u16 - 1 {
+            if end_file == 0 {
+                game_state.castling_state &= !0b1000;
+            } else if end_file == game_state.files as u16 - 1 {
+                game_state.castling_state &= !0b0100;
+            }
+        }
+    }
+}
+
 #[hotpath::measure]
 pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
@@ -941,6 +1021,8 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
     let last_halfmove_clock = game_state.halfmove_clock;
     let last_castling_state = game_state.castling_state;
     let last_position_hash = game_state.position_hash;
+
+    let formatted_move = format_move(&mv, game_state);
 
     let snapshot: Snapshot = match mv {
         MoveType::SingleNoCapture(mv) => {
@@ -1012,83 +1094,17 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 game_state.halfmove_clock += 1;
             }
 
-            let can_castle_kingside =
-                game_state.pieces[piece_index].can_castle_kingside();
-            let can_castle_queenside =
-                game_state.pieces[piece_index].can_castle_queenside();
-
-            if can_castle_kingside || can_castle_queenside {
-                match (piece_color, can_castle_kingside, can_castle_queenside) {
-                    (WHITE, true, false) => {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                    (WHITE, false, true) => {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    }
-                    (BLACK, true, false) => {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                    (BLACK, false, true) => {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    }
-                    (WHITE, true, true) => {
-                        game_state.castling_state &= !0b0011;                   /* Both white sides lost              */
-                    }
-                    (BLACK, true, true) => {
-                        game_state.castling_state &= !0b1100;                   /* Both black sides lost              */
-                    }
-                    _ => {}
-                }
-            }
-
-            let piece_file = start_square % game_state.files as u16;
-
-            if piece_unmoved && piece_file == 0 {
-                match piece_color {
-                    WHITE => {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    }
-                    BLACK => {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    }
-                    _ => {}
-                }
-            } else if piece_unmoved && piece_file ==
-                (game_state.files as u16 - 1)
-            {
-                match piece_color {
-                    WHITE => {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                    BLACK => {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                    _ => {}
-                }
-            }
-
-            let end_rank = end_square / game_state.files as u16;
-            let end_file = end_square % game_state.files as u16;
-
-            if game_state.unmoved_board.get_bit(end_square as u32) {
-                if end_rank == 0 {                                              /* White back rank                    */
-                    if end_file == 0 {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    } else if end_file == game_state.files as u16 - 1 {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                } else if end_rank == game_state.ranks as u16 - 1 {             /* Black back rank                    */
-                    if end_file == 0 {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    } else if end_file == game_state.files as u16 - 1 {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                }
-            }
-
-            hash_update_castling(
-                game_state, last_castling_state, game_state.castling_state
+            update_castling_rights(
+                game_state,
+                piece_color,
+                start_square,
+                end_square,
+                piece_unmoved,
+                game_state.pieces[piece_index].can_castle_kingside(),
+                game_state.pieces[piece_index].can_castle_queenside(),
             );
+
+            hash_update_castling(game_state, last_castling_state, game_state.castling_state);
 
             Snapshot {
                 move_ply: MoveType::SingleNoCapture(mv),
@@ -1241,79 +1257,15 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             game_state.halfmove_clock = 0;
 
-            let can_castle_kingside =
-                game_state.pieces[piece_index].can_castle_kingside();
-            let can_castle_queenside =
-                game_state.pieces[piece_index].can_castle_queenside();
-
-            if can_castle_kingside || can_castle_queenside {
-                match (piece_color, can_castle_kingside, can_castle_queenside) {
-                    (WHITE, true, false) => {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                    (WHITE, false, true) => {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    }
-                    (BLACK, true, false) => {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                    (BLACK, false, true) => {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    }
-                    (WHITE, true, true) => {
-                        game_state.castling_state &= !0b0011;                   /* Both white sides lost              */
-                    }
-                    (BLACK, true, true) => {
-                        game_state.castling_state &= !0b1100;                   /* Both black sides lost              */
-                    }
-                    _ => {}
-                }
-            }
-
-            let piece_file = start_square % game_state.files as u16;
-
-            if piece_unmoved && piece_file == 0 {
-                match piece_color {
-                    WHITE => {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    }
-                    BLACK => {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    }
-                    _ => {}
-                }
-            } else if piece_unmoved && piece_file ==
-                (game_state.files as u16 - 1)
-            {
-                match piece_color {
-                    WHITE => {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                    BLACK => {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                    _ => {}
-                }
-            }
-
-            let end_rank = end_square / game_state.files as u16;
-            let end_file = end_square % game_state.files as u16;
-
-            if game_state.unmoved_board.get_bit(end_square as u32) {
-                if end_rank == 0 {                                              /* White back rank                    */
-                    if end_file == 0 {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    } else if end_file == game_state.files as u16 - 1 {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                } else if end_rank == game_state.ranks as u16 - 1 {             /* Black back rank                    */
-                    if end_file == 0 {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    } else if end_file == game_state.files as u16 - 1 {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                }
-            }
+            update_castling_rights(
+                game_state,
+                piece_color,
+                start_square,
+                end_square,
+                piece_unmoved,
+                game_state.pieces[piece_index].can_castle_kingside(),
+                game_state.pieces[piece_index].can_castle_queenside(),
+            );
 
             hash_update_castling(
                 game_state, last_castling_state, game_state.castling_state
@@ -1386,17 +1338,10 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     ),
                 }, "Captured/moving piece type does not match the template");
                 assert!(
-                    if is_unload {
-                        unload_square.is_some()
-                    } else {
-                        true
-                    },
+                    if is_unload { unload_square.is_some() } else { true },
                     "Unload square must be provided for unload captures"
                 );
-                assert!(
-                    !game_state.pieces[real_captured_index].is_royal(),
-                    "Cannot capture royal pieces"
-                )
+                assert!(!game_state.pieces[real_captured_index].is_royal(), "Cannot capture royal pieces")
             }
 
             if is_captured_piece_unmoved {
@@ -1477,7 +1422,6 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 let promoted_piece = promoted_piece.expect(
                     "Promoted piece must be provided for promotion moves"
                 ) as usize;
-
                 promote_piece(
                     promoting_piece,
                     end_square,
@@ -1489,79 +1433,15 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             game_state.halfmove_clock = 0;
 
-            let can_castle_kingside =
-                game_state.pieces[piece_index].can_castle_kingside();
-            let can_castle_queenside =
-                game_state.pieces[piece_index].can_castle_queenside();
-
-            if can_castle_kingside || can_castle_queenside {
-                match (piece_color, can_castle_kingside, can_castle_queenside) {
-                    (WHITE, true, false) => {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                    (WHITE, false, true) => {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    }
-                    (BLACK, true, false) => {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                    (BLACK, false, true) => {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    }
-                    (WHITE, true, true) => {
-                        game_state.castling_state &= !0b0011;                   /* Both white sides lost              */
-                    }
-                    (BLACK, true, true) => {
-                        game_state.castling_state &= !0b1100;                   /* Both black sides lost              */
-                    }
-                    _ => {}
-                }
-            }
-
-            let piece_file = start_square % game_state.files as u16;
-
-            if piece_unmoved && piece_file == 0 {
-                match piece_color {
-                    WHITE => {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    }
-                    BLACK => {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    }
-                    _ => {}
-                }
-            } else if piece_unmoved && piece_file ==
-                (game_state.files as u16 - 1)
-            {
-                match piece_color {
-                    WHITE => {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                    BLACK => {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                    _ => {}
-                }
-            }
-
-            let cap_rank = captured_square / game_state.files as u16;
-            let cap_file = captured_square % game_state.files as u16;
-
-            if game_state.unmoved_board.get_bit(captured_square as u32) {
-                if cap_rank == 0 {                                              /* White back rank                    */
-                    if cap_file == 0 {
-                        game_state.castling_state &= !0b0010;                   /* White queenside lost               */
-                    } else if cap_file == game_state.files as u16 - 1 {
-                        game_state.castling_state &= !0b0001;                   /* White kingside lost                */
-                    }
-                } else if cap_rank == game_state.ranks as u16 - 1 {             /* Black back rank                    */
-                    if cap_file == 0 {
-                        game_state.castling_state &= !0b1000;                   /* Black queenside lost               */
-                    } else if cap_file == game_state.files as u16 - 1 {
-                        game_state.castling_state &= !0b0100;                   /* Black kingside lost                */
-                    }
-                }
-            }
+            update_castling_rights(
+                game_state,
+                piece_color,
+                start_square,
+                end_square,
+                piece_unmoved,
+                game_state.pieces[piece_index].can_castle_kingside(),
+                game_state.pieces[piece_index].can_castle_queenside(),
+            );
 
             hash_update_castling(
                 game_state, last_castling_state, game_state.castling_state

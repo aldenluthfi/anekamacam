@@ -186,16 +186,3 @@ pub fn random_u256() -> U256 {
     U256::from(rng.next_u64()) << 64  |
     U256::from(rng.next_u64())
 }
-
-pub fn format_square(index: u16, game_state: &State) -> String {
-    let file = (index % game_state.files as u16) as u8;
-    let rank = (index / game_state.files as u16) as u8;
-
-    if game_state.files <= 26  {
-        let file_char = (b'a' + file) as char;
-        let rank_char = (b'1' + rank) as char;
-        format!("{}{}", file_char, rank_char).trim().to_string()
-    } else {
-        format!("{:02}{:02}", file, rank).trim().to_string()
-    }
-}

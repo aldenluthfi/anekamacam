@@ -17,7 +17,6 @@
 use std::collections::HashMap;
 use std::fs;
 use crate::game::hash::hash_position;
-use crate::game::util::format_square;
 use crate::game::representations::{
     state::State,
     piece::Piece,
@@ -25,7 +24,10 @@ use crate::game::representations::{
 };
 use bnum::types::U2048;
 use crate::constants::*;
-use crate::io::board_io::format_board;
+use crate::io::board_io::{
+    format_board,
+    format_square
+};
 use crate::io::piece_io::format_piece;
 
 /// Parses a game configuration file and initializes a game state.
@@ -388,7 +390,20 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[piece.color() as usize] += 1;
                 }
 
-                state.unmoved_board.set_bit(square_index);
+                if c == 'P' && rank == 1 {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'p' && rank == (state.ranks - 2) {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'R' && rank == 0 && (file == 0 || file == state.files - 1) {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'r' && rank == state.ranks - 1 &&
+                          (file == 0 || file == state.files - 1) {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'K' && rank == 0 && file == 4 {
+                    state.unmoved_board.set_bit(square_index);
+                } else if c == 'k' && rank == state.ranks - 1 && file == 4 {
+                    state.unmoved_board.set_bit(square_index);
+                }
 
                 file += 1;
             }

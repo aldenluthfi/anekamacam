@@ -1,6 +1,8 @@
 use crate::game::{
     representations::{moves::MoveType, state::State},
-    util::format_square
+};
+use crate::io::board_io::{
+    format_square
 };
 
 pub fn format_move(mv: &MoveType, state: &State) -> String {

@@ -107,14 +107,14 @@ fn perft(
                     depth - 1,
                     (max_depth.expect(
                         "Max depth must be provided for debug mode"
-                    ) - depth) < branch.expect(
+                    ) - depth) <= branch.expect(
                         "Branching must be provided for debug mode"
                     ),
                     branch,
                     max_depth,
                     Some(
                         format!(
-                            "{} {}",
+                            "     {} {} ",
                             prefix.as_deref().unwrap_or(""),
                             format_move(&mv, state)
                         )
@@ -126,7 +126,7 @@ fn perft(
 
 
         println!(
-            "Move: {} | Nodes: {}",
+            "{}moves | Nodes: {}",
             prefix.as_deref().unwrap_or(""),
             nodes
         );
