@@ -17,10 +17,22 @@
 use bnum::types::U4096;
 
 use crate::game::representations::{
-    board::{
-        Board
-    },
+    board::Board,
+    state::State,
 };
+
+pub fn format_square(index: u16, game_state: &State) -> String {
+    let file = (index % game_state.files as u16) as u8;
+    let rank = (index / game_state.files as u16) as u8;
+
+    if game_state.files <= 26  {
+        let file_char = (b'a' + file) as char;
+        let rank_char = (b'1' + rank) as char;
+        format!("{}{}", file_char, rank_char).trim().to_string()
+    } else {
+        format!("{:02}{:02}", file, rank).trim().to_string()
+    }
+}
 
 fn format_bitboard(board: &U4096, ranks: u8, files: u8) -> String {
 
