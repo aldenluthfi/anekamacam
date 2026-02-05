@@ -16,7 +16,7 @@ use crate::{
     constants::*,
     game::{
         moves::{
-            move_list::generate_relevant_boards,
+            move_list::{generate_relevant_boards, generate_relevant_moves},
             move_parse::generate_move_vectors
         },
         representations::{
@@ -76,6 +76,7 @@ pub struct State {
 
     pub piece_move_vectors: Vec<Vec<MultiLegVector>>,
     pub piece_relevant_boards: Vec<Vec<Board>>,
+    pub piece_relevant_moves: Vec<Vec<Vec<MultiLegVector>>>,
 }
 
 #[hotpath::measure_all]
@@ -119,6 +120,7 @@ impl State {
 
             piece_move_vectors: vec![Vec::new(); piece_types],
             piece_relevant_boards: vec![Vec::new(); piece_types],
+            piece_relevant_moves: vec![Vec::new(); piece_types],
         };
 
         result.precompute_state();
@@ -189,8 +191,29 @@ impl State {
         }
     }
 
+    fn init_relevant_moves(&mut self) {
+        let squares = (self.files as u16) * (self.ranks as u16);
+
+        for square in 0..squares {
+            for piece in &self.pieces {
+                let i = piece.index() as usize;
+
+                let relevant_move_vectors = generate_relevant_moves(
+                    piece,
+                    square as u32,
+                    self
+                );
+
+                let collected: Vec<MultiLegVector> =
+                    relevant_move_vectors.into_iter().cloned().collect();
+                self.piece_relevant_moves[i].push(collected);
+            }
+        }
+    }
+
     fn precompute_state(&mut self) {
         self.init_piece_moves();
         self.init_relevant_boards();
+        self.init_relevant_moves();
     }
 }
