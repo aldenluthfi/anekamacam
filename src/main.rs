@@ -31,9 +31,9 @@ pub mod io {
 
 pub mod constants;
 
-#[hotpath::main(limit=30)]
+#[hotpath::main(limit=0)]
 fn main() {
     let mut state = State::from_config("configs/fide.anm");
 
-    start_perft(&mut state, "res/fide-kiwipete.perft", 5, true, Some(2));
+    start_perft(&mut state, "res/fide-kiwipete.perft", 4, false, None);
 }
