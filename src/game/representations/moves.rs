@@ -32,22 +32,39 @@ use std::fmt::{
 /// - 10: Single Hopper capture move
 /// - 11: Multi-capture move
 ///
-/// - The first 8 bits indicates the piece index of the piece making the move.
-/// - The next 12 bits represent the starting square index (0-4095).
-/// - The following 12 bits represent the ending square index (0-4095).
-/// - The following bit represents if the move is an initial move or not.
-/// - The following bit represents if the move is a promotion (1) or not (0).
-/// - The following bit represents if the move creates an en passant square (1)
+/// The first 8 bits indicates the piece index of the piece making the move.
+/// The next 12 bits represent the starting square index (0-4095).
+/// The following 12 bits represent the ending square index (0-4095).
+/// The following bit represents if the move is an initial move (1) or not (0).
+/// The following bit represents if the move is a promotion (1) or not (0).
+/// The following bit represents if the move creates an en passant square (1)
 /// or not (0).
-/// - the following 8 bits represent the promoting piece type (if applicable).
-/// - The following 8 bits represent the promoted piece type (if applicable).
-/// - The following 24 bits represents the en passant square (if applicable).
+/// the following 8 bits represent the promoting piece type (if applicable).
+/// The following 8 bits represent the promoted piece type (if applicable).
+/// The following 24 bits represents the en passant square (if applicable).
+///
+/// The next 35 bits are reserved for additional information based on the
+/// move type:
+///
+/// Single move without capture (00):
+/// - The remaining 35 bits are unused.
+///
+/// Single move with capture (01):
 /// - Next bit indicates this capture can be used to capture a royal piece (1)
 ///   or not (0).
 /// - Next bit indicates if this move is a capture or unload (1) or not (0).
 /// - Next 12 bits are the unload square index (if applicable).
 /// - Next 8 bits represent the captured piece type.
-/// - Next 12 bits represent the captured piece square index. (for hopper moves)
+/// - Next bit indicates if the piece captured is unmoved (1) or not (0).
+/// - The remaining 12 bits are unused.
+///
+/// Single Hopper capture move (11):
+/// - Next bit indicates this capture can be used to capture a royal piece (1)
+///   or not (0).
+/// - Next bit indicates if this move is a capture or unload (1) or not (0).
+/// - Next 12 bits are the unload square index (if applicable).
+/// - Next 8 bits represent the captured piece type.
+/// - Next 12 bits represent the captured piece square index.
 /// - Next bit indicates if the piece captured is unmoved (1) or not (0).
 /// - The remaining bit is unused.
 
