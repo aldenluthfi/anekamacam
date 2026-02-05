@@ -48,6 +48,8 @@ impl Iterator for BitIndicesIter {
 
 #[hotpath::measure_all]
 impl Board {
+
+    #[inline(always)]
     pub fn new(files: u8, ranks: u8) -> Board {
         #[cfg(debug_assertions)]
         {
@@ -68,6 +70,7 @@ impl Board {
         }
     }
 
+    #[inline(always)]
     pub fn set_bit(&mut self, index: u32) {
         #[cfg(debug_assertions)]
         {
@@ -81,6 +84,7 @@ impl Board {
         self.bits.set_bit(index, true);
     }
 
+    #[inline(always)]
     pub fn clear_bit(&mut self, index: u32) {
         #[cfg(debug_assertions)]
         {
@@ -94,6 +98,7 @@ impl Board {
         self.bits.set_bit(index, false);
     }
 
+    #[inline(always)]
     pub fn get_bit(&self, index: u32) -> bool {
         #[cfg(debug_assertions)]
         {
@@ -107,10 +112,12 @@ impl Board {
         self.bits.bit(index)
     }
 
+    #[inline(always)]
     pub fn lsb(&self) -> u32 {
         self.bits.trailing_zeros()
     }
 
+    #[inline(always)]
     pub fn count_bits(&self) -> u32 {
         self.bits.count_ones()
     }
@@ -139,18 +146,22 @@ impl Board {
         BitIndicesIter { bits: self.bits }
     }
 
+    #[inline(always)]
     pub fn and_assign(&mut self, rhs: &Board) {
         self.bits &= rhs.bits;
     }
 
+    #[inline(always)]
     pub fn or_assign(&mut self, rhs: &Board) {
         self.bits |= rhs.bits;
     }
 
+    #[inline(always)]
     pub fn xor_assign(&mut self, rhs: &Board) {
         self.bits ^= rhs.bits;
     }
 
+    #[inline(always)]
     pub fn not_assign(&mut self) {
         self.bits = !self.bits;
     }

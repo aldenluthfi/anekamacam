@@ -1,3 +1,5 @@
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 
@@ -12,9 +14,9 @@ use crate::{
             board::Board,
             moves::{Move, MoveType},
             piece::Piece,
-            state::{Snapshot, State}, vector::LegVector,
+            state::{Snapshot, State}, vector::{LegVector, MultiLegVector},
         }
-    }, io::{board_io::format_square, move_io::format_move},
+    },
 };
 
 #[hotpath::measure]
@@ -208,6 +210,62 @@ pub fn generate_relevant_boards(
 
     result
 }
+
+/// Generates list of moves that are relevant to the given square and piece
+#[hotpath::measure]
+pub fn generate_relevant_moves<'a>(
+    piece: &Piece,
+    square_index: u32,
+    game_state: &'a State
+) -> Vec<&'a MultiLegVector> {
+    #[cfg(debug_assertions)]
+    {
+        assert!(!check_out_of_bounds(
+            square_index as i32,
+            game_state
+        ), "Square index {} is out of bounds", square_index);
+    }
+
+    let mut result = Vec::new();
+
+    let vector_set = &game_state.piece_move_vectors[piece.index() as usize];
+    let side = piece.color();
+
+    for multi_leg_vector in vector_set {
+        let mut file = square_index as i32 % (game_state.files as i32);
+        let mut rank = square_index as i32 / (game_state.files as i32);
+
+        if multi_leg_vector.len() > 0 && multi_leg_vector[0].is_castling() {
+            result.push(multi_leg_vector);
+            continue;
+        }
+
+        for leg in multi_leg_vector {
+
+            let (file_offset, rank_offset) = leg.get_atomic().whole();
+
+            file += file_offset as i32;
+            rank += rank_offset as i32 * if side == WHITE {1} else {-1};
+
+            if  file < 0 || file >= game_state.files as i32 ||
+                rank < 0 || rank >= game_state.ranks as i32
+            {
+                break;
+            }
+        }
+
+        if file < 0 || file >= game_state.files as i32 ||
+           rank < 0 || rank >= game_state.ranks as i32
+        {
+            continue;
+        }
+
+        result.push(multi_leg_vector);
+    }
+
+    result
+}
+
 
 #[hotpath::measure]
 fn process_multi_leg_vector(
@@ -723,7 +781,10 @@ pub fn generate_move_list(
     }
 
     let unmoved_piece = unmoved_board.get_bit(square_index);
-    let vector_set = &game_state.piece_move_vectors[piece.index() as usize];
+    let vector_set =
+         &game_state.piece_relevant_moves
+            [piece.index() as usize]
+            [square_index as usize];
     let side = piece.color();
     let piece_idx = piece.index();
 
@@ -753,7 +814,7 @@ pub fn generate_move_list(
     result
 }
 
-#[hotpath::measure]
+#[inline(always)]
 fn find_piece_at_square(
     game_state: &State,
     square_index: u32,
@@ -769,246 +830,6 @@ fn find_piece_at_square(
     }
 
     None
-}
-
-#[hotpath::measure]
-fn remove_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
-    let color = game_state.pieces[piece_index].color();
-    let sq_idx = square_index as u32;
-
-    #[cfg(debug_assertions)]
-    {
-        assert!(
-            game_state.pieces_board[piece_index].get_bit(sq_idx),
-            "No piece of index {} at square {} to remove",
-            piece_index,
-            square_index
-        );
-        assert!(
-            if color == WHITE {
-                game_state.white_board.get_bit(sq_idx)
-            } else {
-                game_state.black_board.get_bit(sq_idx)
-            },
-            "No piece of color {} at square {} to remove",
-            if color == WHITE {"WHITE"} else {"BLACK"},
-            square_index
-        );
-    }
-
-    game_state.pieces_board[piece_index].clear_bit(sq_idx);
-
-    if color == WHITE {
-        game_state.white_board.clear_bit(sq_idx);
-    } else {
-        game_state.black_board.clear_bit(sq_idx);
-    }
-
-    if game_state.pieces[piece_index].is_big() {
-        game_state.big_pieces[color as usize] -= 1;
-    }
-
-    if game_state.pieces[piece_index].is_major() {
-        game_state.major_pieces[color as usize] -= 1;
-    } else if game_state.pieces[piece_index].is_minor() {
-        game_state.minor_pieces[color as usize] -= 1;
-    }
-
-    game_state.material[color as usize] -=
-        game_state.pieces[piece_index].value() as u32;
-}
-
-#[hotpath::measure]
-fn add_piece(piece_index: usize, square_index: u16, game_state: &mut State) {
-    let color = game_state.pieces[piece_index].color();
-    let sq_idx = square_index as u32;
-
-    #[cfg(debug_assertions)]
-    {
-        assert!(
-            !game_state.pieces_board[piece_index].get_bit(sq_idx),
-            "Piece of index {} already at square {}",
-            piece_index,
-            square_index
-        );
-        assert!(
-            if color == WHITE {
-                !game_state.white_board.get_bit(sq_idx)
-            } else {
-                !game_state.black_board.get_bit(sq_idx)
-            },
-            "Square {} already occupied by a piece of color {}",
-            square_index,
-            if color == WHITE {"WHITE"} else {"BLACK"}
-        );
-    }
-
-    game_state.pieces_board[piece_index].set_bit(sq_idx);
-
-    if color == WHITE {
-        game_state.white_board.set_bit(sq_idx);
-    } else {
-        game_state.black_board.set_bit(sq_idx);
-    }
-
-    if game_state.pieces[piece_index].is_big() {
-        game_state.big_pieces[color as usize] += 1;
-    }
-
-    if game_state.pieces[piece_index].is_major() {
-        game_state.major_pieces[color as usize] += 1;
-    } else if game_state.pieces[piece_index].is_minor() {
-        game_state.minor_pieces[color as usize] += 1;
-    }
-
-    game_state.material[color as usize] +=
-        game_state.pieces[piece_index].value() as u32;
-}
-
-#[hotpath::measure]
-fn move_piece(
-    piece_index: usize,
-    start_square: u16,
-    end_square: u16,
-    game_state: &mut State
-) {
-    let color = game_state.pieces[piece_index].color();
-    let start_idx = start_square as u32;
-    let end_idx = end_square as u32;
-
-    #[cfg(debug_assertions)]
-    {
-        assert!(
-            game_state.pieces_board[piece_index].get_bit(start_idx),
-            "No piece of index {} at start square {} to move",
-            piece_index,
-            start_square
-        );
-        assert!(
-            !game_state.pieces_board[piece_index].get_bit(end_idx),
-            "Piece of index {} already at end square {}",
-            piece_index,
-            end_square
-        );
-        assert!(
-            if color == WHITE {
-                game_state.white_board.get_bit(start_idx)
-            } else {
-                game_state.black_board.get_bit(start_idx)
-            },
-            "No piece of color {} at start square {} to move",
-            if color == WHITE {"WHITE"} else {"BLACK"},
-            start_square
-        );
-    }
-
-    game_state.pieces_board[piece_index].clear_bit(start_idx);
-    game_state.pieces_board[piece_index].set_bit(end_idx);
-
-    if color == WHITE {
-        game_state.white_board.clear_bit(start_idx);
-        game_state.white_board.set_bit(end_idx);
-    } else {
-        game_state.black_board.clear_bit(start_idx);
-        game_state.black_board.set_bit(end_idx);
-    }
-
-    if game_state.pieces[piece_index].is_royal() {
-        game_state.monarch_board.clear_bit(start_idx);
-        game_state.monarch_board.set_bit(end_idx);
-    }
-}
-
-#[hotpath::measure]
-fn promote_piece(
-    promoting_piece: usize,
-    start_square: u16,
-    end_square: u16,
-    promoted_piece: usize,
-    game_state: &mut State
-) {
-    remove_piece(promoting_piece, start_square, game_state);
-    add_piece(promoted_piece, end_square, game_state);
-}
-
-#[inline(always)]
-fn update_castling_rights(
-    game_state: &mut State,
-    piece_color: u8,
-    start_square: u16,
-    end_square: u16,
-    piece_unmoved: bool,
-    can_castle_kingside: bool,
-    can_castle_queenside: bool,
-) {
-    if piece_unmoved {
-        match (can_castle_kingside, can_castle_queenside) {
-            (true, true) => {
-                if piece_color == WHITE {
-                    game_state.castling_state &=
-                        !0b0011;
-                } else {
-                    game_state.castling_state &=
-                        !0b1100;
-                }
-            },
-            (true, false) => {
-                if piece_color == WHITE {
-                    game_state.castling_state &=
-                        !0b0010;
-                } else {
-                    game_state.castling_state &=
-                        !0b1000;
-                }
-            },
-            (false, true) => {
-                if piece_color == WHITE {
-                    game_state.castling_state &=
-                        !0b0001;
-                } else {
-                    game_state.castling_state &=
-                        !0b0100;
-                }
-            },
-            (false, false) => {
-                let start_rank = start_square / game_state.files as u16;
-                let start_file = start_square % game_state.files as u16;
-
-                if start_rank == 0 {
-                    if start_file == 0 {
-                        game_state.castling_state &= !0b0010;
-                    } else if start_file == game_state.files as u16 - 1 {
-                        game_state.castling_state &= !0b0001;
-                    }
-                } else if start_rank == game_state.ranks as u16 - 1 {
-                    if start_file == 0 {
-                        game_state.castling_state &= !0b1000;
-                    } else if start_file == game_state.files as u16 - 1 {
-                        game_state.castling_state &= !0b0100;
-                    }
-                }
-            }
-        }
-    }
-
-    let end_rank = end_square / game_state.files as u16;
-    let end_file = end_square % game_state.files as u16;
-
-    if game_state.unmoved_board.get_bit(end_square as u32) {
-        if end_rank == 0 {
-            if end_file == 0 {
-                game_state.castling_state &= !0b0010;
-            } else if end_file == game_state.files as u16 - 1 {
-                game_state.castling_state &= !0b0001;
-            }
-        } else if end_rank == game_state.ranks as u16 - 1 {
-            if end_file == 0 {
-                game_state.castling_state &= !0b1000;
-            } else if end_file == game_state.files as u16 - 1 {
-                game_state.castling_state &= !0b0100;
-            }
-        }
-    }
 }
 
 #[hotpath::measure]
@@ -1040,7 +861,24 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             let piece_unmoved =
                 game_state.unmoved_board.get_bit(start_square as u32);
 
-            move_piece(piece_index, start_square, end_square, game_state);
+            let start_idx = start_square as u32;
+            let end_idx = end_square as u32;
+
+            game_state.pieces_board[piece_index].clear_bit(start_idx);
+            game_state.pieces_board[piece_index].set_bit(end_idx);
+
+            if piece_color == WHITE {
+                game_state.white_board.clear_bit(start_idx);
+                game_state.white_board.set_bit(end_idx);
+            } else {
+                game_state.black_board.clear_bit(start_idx);
+                game_state.black_board.set_bit(end_idx);
+            }
+
+            if game_state.pieces[piece_index].is_royal() {
+                game_state.monarch_board.clear_bit(start_idx);
+                game_state.monarch_board.set_bit(end_idx);
+            }
 
             hash_in_or_out_piece(
                 game_state,
@@ -1076,7 +914,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             if is_promotion {
                 let promoting_piece = piece_index;
-                let promoted_piece = promoted_piece.expect(
+                let promoted_piece_idx = promoted_piece.expect(
                     "Promoted piece must be provided for promotion moves"
                 ) as usize;
 
@@ -1087,39 +925,130 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     end_square
                 );
 
-                promote_piece(
-                    promoting_piece,
-                    end_square,
-                    end_square,
-                    promoted_piece,
-                    game_state
-                );
+                let sq_idx = end_square as u32;
+
+                game_state.pieces_board[promoting_piece].clear_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(sq_idx);
+                } else {
+                    game_state.black_board.clear_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoting_piece].is_big() {
+                    game_state.big_pieces[piece_color as usize] -= 1;
+                }
+
+                if game_state.pieces[promoting_piece].is_major() {
+                    game_state.major_pieces[piece_color as usize] -= 1;
+                } else if game_state.pieces[promoting_piece].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] -= 1;
+                }
+
+                game_state.material[piece_color as usize] -=
+                    game_state.pieces[promoting_piece].value() as u32;
+
+                game_state.pieces_board[promoted_piece_idx].set_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.set_bit(sq_idx);
+                } else {
+                    game_state.black_board.set_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoted_piece_idx].is_big() {
+                    game_state.big_pieces[piece_color as usize] += 1;
+                }
+
+                if game_state.pieces[promoted_piece_idx].is_major() {
+                    game_state.major_pieces[piece_color as usize] += 1;
+                } else if game_state.pieces[promoted_piece_idx].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] += 1;
+                }
+
+                game_state.material[piece_color as usize] +=
+                    game_state.pieces[promoted_piece_idx].value() as u32;
 
                 hash_in_or_out_piece(
                     game_state,
-                    promoted_piece,
+                    promoted_piece_idx,
                     piece_color,
                     end_square
                 );
             }
 
-            if game_state.pieces[piece_index].can_promote() {                   /* reset halfmove clock on pawn move  */
+            if game_state.pieces[piece_index].can_promote() {
                 game_state.halfmove_clock = 0;
             } else {
                 game_state.halfmove_clock += 1;
             }
 
-            update_castling_rights(
-                game_state,
-                piece_color,
-                start_square,
-                end_square,
-                piece_unmoved,
-                game_state.pieces[piece_index].can_castle_kingside(),
-                game_state.pieces[piece_index].can_castle_queenside(),
-            );
+            if piece_unmoved {
+                match (game_state.pieces[piece_index].can_castle_kingside(), game_state.pieces[piece_index].can_castle_queenside()) {
+                    (true, true) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0011;
+                        } else {
+                            game_state.castling_state &= !0b1100;
+                        }
+                    },
+                    (true, false) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0010;
+                        } else {
+                            game_state.castling_state &= !0b1000;
+                        }
+                    },
+                    (false, true) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0001;
+                        } else {
+                            game_state.castling_state &= !0b0100;
+                        }
+                    },
+                    (false, false) => {
+                        let start_rank = start_square / game_state.files as u16;
+                        let start_file = start_square % game_state.files as u16;
 
-            hash_update_castling(game_state, last_castling_state, game_state.castling_state);
+                        if start_rank == 0 {
+                            if start_file == 0 {
+                                game_state.castling_state &= !0b0010;
+                            } else if start_file == game_state.files as u16 - 1 {
+                                game_state.castling_state &= !0b0001;
+                            }
+                        } else if start_rank == game_state.ranks as u16 - 1 {
+                            if start_file == 0 {
+                                game_state.castling_state &= !0b1000;
+                            } else if start_file == game_state.files as u16 - 1 {
+                                game_state.castling_state &= !0b0100;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let end_rank = end_square / game_state.files as u16;
+            let end_file = end_square % game_state.files as u16;
+
+            if game_state.unmoved_board.get_bit(end_square as u32) {
+                if end_rank == 0 {
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b0010;
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0001;
+                    }
+                } else if end_rank == game_state.ranks as u16 - 1 {
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b1000;
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0100;
+                    }
+                }
+            }
+
+            hash_update_castling(
+                game_state, last_castling_state, game_state.castling_state
+            );
 
             Snapshot {
                 move_ply: MoveType::SingleNoCapture(mv),
@@ -1129,7 +1058,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 position_hash: last_position_hash,
             }
         }
-        MoveType::SingleCapture(mut mv) => {                                    /* where capture square = end square  */
+        MoveType::SingleCapture(mut mv) => {
             let piece_index = mv.piece_index() as usize;
             let start_square = mv.start_square();
             let end_square = mv.end_square();
@@ -1138,7 +1067,6 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             let creates_en_passant = mv.creates_en_passant_square();
             let promoted_piece = mv.promoted_piece();
             let en_passant_square = mv.en_passant_square();
-            let captured_piece_template = mv.captured_piece();
             let is_unload = mv.is_unload();
             let unload_square = mv.unload_square();
             let is_captured_piece_unmoved = mv.is_captured_piece_unmoved();
@@ -1160,42 +1088,30 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             let real_captured_index = real_captured.index() as usize;
             let real_captured_color = real_captured.color();
 
-            #[cfg(debug_assertions)]
-            {
-                assert!(match captured_piece_template {
-                    Some(1) => game_state.playing != real_captured.color(),
-                    Some(2) => game_state.playing == real_captured.color(),
-                    Some(3) => true,
-                    Some(4) => game_state.pieces[piece_index].is_royal(),
-                    _ => panic!(
-                        "Invalid captured piece template: {:?}",
-                        captured_piece_template
-                    ),
-                }, "Captured/moving piece type does not match the template");
-                assert!(
-                    if is_unload {
-                        unload_square.is_some()
-                    } else {
-                        true
-                    },
-                    "Unload square must be provided for unload captures"
-                );
-                assert!(
-                    !game_state.pieces[real_captured_index].is_royal(),
-                    "Cannot capture royal pieces"
-                )
-            }
-
             if is_captured_piece_unmoved {
                 game_state.unmoved_board.clear_bit(end_square as u32);
             }
 
             if let Some(unload_sq) = unload_square {
                 if is_unload {
-                    move_piece(
-                        real_captured_index, end_square,
-                        unload_sq, game_state
-                    );
+                    let start_idx = end_square as u32;
+                    let end_idx = unload_sq as u32;
+
+                    game_state.pieces_board[real_captured_index].clear_bit(start_idx);
+                    game_state.pieces_board[real_captured_index].set_bit(end_idx);
+
+                    if real_captured_color == WHITE {
+                        game_state.white_board.clear_bit(start_idx);
+                        game_state.white_board.set_bit(end_idx);
+                    } else {
+                        game_state.black_board.clear_bit(start_idx);
+                        game_state.black_board.set_bit(end_idx);
+                    }
+
+                    if game_state.pieces[real_captured_index].is_royal() {
+                        game_state.monarch_board.clear_bit(start_idx);
+                        game_state.monarch_board.set_bit(end_idx);
+                    }
 
                     hash_in_or_out_piece(
                         game_state,
@@ -1212,11 +1128,32 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     );
 
                     if is_captured_piece_unmoved {
-                        game_state.unmoved_board.set_bit(unload_sq as u32);     /* unloaded pce is considered unmoved */
+                        game_state.unmoved_board.set_bit(unload_sq as u32);
                     }
                 }
             } else {
-                remove_piece(real_captured_index, end_square, game_state);
+                let sq_idx = end_square as u32;
+
+                game_state.pieces_board[real_captured_index].clear_bit(sq_idx);
+
+                if real_captured_color == WHITE {
+                    game_state.white_board.clear_bit(sq_idx);
+                } else {
+                    game_state.black_board.clear_bit(sq_idx);
+                }
+
+                if game_state.pieces[real_captured_index].is_big() {
+                    game_state.big_pieces[real_captured_color as usize] -= 1;
+                }
+
+                if game_state.pieces[real_captured_index].is_major() {
+                    game_state.major_pieces[real_captured_color as usize] -= 1;
+                } else if game_state.pieces[real_captured_index].is_minor() {
+                    game_state.minor_pieces[real_captured_color as usize] -= 1;
+                }
+
+                game_state.material[real_captured_color as usize] -=
+                    game_state.pieces[real_captured_index].value() as u32;
 
                 hash_in_or_out_piece(
                     game_state,
@@ -1227,7 +1164,24 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             }
             mv.set_captured_piece(real_captured_index as u8);
 
-            move_piece(piece_index, start_square, end_square, game_state);
+            let start_idx = start_square as u32;
+            let end_idx = end_square as u32;
+
+            game_state.pieces_board[piece_index].clear_bit(start_idx);
+            game_state.pieces_board[piece_index].set_bit(end_idx);
+
+            if piece_color == WHITE {
+                game_state.white_board.clear_bit(start_idx);
+                game_state.white_board.set_bit(end_idx);
+            } else {
+                game_state.black_board.clear_bit(start_idx);
+                game_state.black_board.set_bit(end_idx);
+            }
+
+            if game_state.pieces[piece_index].is_royal() {
+                game_state.monarch_board.clear_bit(start_idx);
+                game_state.monarch_board.set_bit(end_idx);
+            }
 
             hash_in_or_out_piece(
                 game_state,
@@ -1261,7 +1215,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             if is_promotion {
                 let promoting_piece = piece_index;
-                let promoted_piece = promoted_piece.expect(
+                let promoted_piece_idx = promoted_piece.expect(
                     "Promoted piece must be provided for promotion moves"
                 ) as usize;
 
@@ -1272,17 +1226,53 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     end_square
                 );
 
-                promote_piece(
-                    promoting_piece,
-                    end_square,
-                    end_square,
-                    promoted_piece,
-                    game_state
-                );
+                let sq_idx = end_square as u32;
+
+                game_state.pieces_board[promoting_piece].clear_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(sq_idx);
+                } else {
+                    game_state.black_board.clear_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoting_piece].is_big() {
+                    game_state.big_pieces[piece_color as usize] -= 1;
+                }
+
+                if game_state.pieces[promoting_piece].is_major() {
+                    game_state.major_pieces[piece_color as usize] -= 1;
+                } else if game_state.pieces[promoting_piece].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] -= 1;
+                }
+
+                game_state.material[piece_color as usize] -=
+                    game_state.pieces[promoting_piece].value() as u32;
+
+                game_state.pieces_board[promoted_piece_idx].set_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.set_bit(sq_idx);
+                } else {
+                    game_state.black_board.set_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoted_piece_idx].is_big() {
+                    game_state.big_pieces[piece_color as usize] += 1;
+                }
+
+                if game_state.pieces[promoted_piece_idx].is_major() {
+                    game_state.major_pieces[piece_color as usize] += 1;
+                } else if game_state.pieces[promoted_piece_idx].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] += 1;
+                }
+
+                game_state.material[piece_color as usize] +=
+                    game_state.pieces[promoted_piece_idx].value() as u32;
 
                 hash_in_or_out_piece(
                     game_state,
-                    promoted_piece,
+                    promoted_piece_idx,
                     piece_color,
                     end_square
                 );
@@ -1290,15 +1280,68 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             game_state.halfmove_clock = 0;
 
-            update_castling_rights(
-                game_state,
-                piece_color,
-                start_square,
-                end_square,
-                piece_unmoved,
-                game_state.pieces[piece_index].can_castle_kingside(),
-                game_state.pieces[piece_index].can_castle_queenside(),
-            );
+            if piece_unmoved {
+                match (game_state.pieces[piece_index].can_castle_kingside(), game_state.pieces[piece_index].can_castle_queenside()) {
+                    (true, true) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0011;
+                        } else {
+                            game_state.castling_state &= !0b1100;
+                        }
+                    },
+                    (true, false) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0010;
+                        } else {
+                            game_state.castling_state &= !0b1000;
+                        }
+                    },
+                    (false, true) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0001;
+                        } else {
+                            game_state.castling_state &= !0b0100;
+                        }
+                    },
+                    (false, false) => {
+                        let start_rank = start_square / game_state.files as u16;
+                        let start_file = start_square % game_state.files as u16;
+
+                        if start_rank == 0 {
+                            if start_file == 0 {
+                                game_state.castling_state &= !0b0010;
+                            } else if start_file == game_state.files as u16 - 1 {
+                                game_state.castling_state &= !0b0001;
+                            }
+                        } else if start_rank == game_state.ranks as u16 - 1 {
+                            if start_file == 0 {
+                                game_state.castling_state &= !0b1000;
+                            } else if start_file == game_state.files as u16 - 1 {
+                                game_state.castling_state &= !0b0100;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let end_rank = end_square / game_state.files as u16;
+            let end_file = end_square % game_state.files as u16;
+
+            if game_state.unmoved_board.get_bit(end_square as u32) {
+                if end_rank == 0 {
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b0010;
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0001;
+                    }
+                } else if end_rank == game_state.ranks as u16 - 1 {
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b1000;
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0100;
+                    }
+                }
+            }
 
             hash_update_castling(
                 game_state, last_castling_state, game_state.castling_state
@@ -1312,7 +1355,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                 position_hash: last_position_hash,
             }
         }
-        MoveType::HopperCapture(mut mv) => {                                    /* where capture square != end square */
+        MoveType::HopperCapture(mut mv) => {
             let piece_index = mv.piece_index() as usize;
             let start_square = mv.start_square();
             let end_square = mv.end_square();
@@ -1359,35 +1402,30 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             let real_captured_index = real_captured.index() as usize;
             let real_captured_color = real_captured.color();
 
-            #[cfg(debug_assertions)]
-            {
-                assert!(match captured_piece_template {
-                    Some(1) => game_state.playing != real_captured.color(),
-                    Some(2) => game_state.playing == real_captured.color(),
-                    Some(3) => true,
-                    Some(4) => game_state.pieces[piece_index].is_royal(),
-                    _ => panic!(
-                        "Invalid captured piece template: {:?}",
-                        captured_piece_template
-                    ),
-                }, "Captured/moving piece type does not match the template");
-                assert!(
-                    if is_unload { unload_square.is_some() } else { true },
-                    "Unload square must be provided for unload captures"
-                );
-                assert!(!game_state.pieces[real_captured_index].is_royal(), "Cannot capture royal pieces")
-            }
-
             if is_captured_piece_unmoved {
                 game_state.unmoved_board.clear_bit(captured_square as u32);
             }
 
             if let Some(unload_sq) = unload_square {
                 if is_unload {
-                    move_piece(
-                        real_captured_index, captured_square,
-                        unload_sq, game_state
-                    );
+                    let start_idx = captured_square as u32;
+                    let end_idx = unload_sq as u32;
+
+                    game_state.pieces_board[real_captured_index].clear_bit(start_idx);
+                    game_state.pieces_board[real_captured_index].set_bit(end_idx);
+
+                    if real_captured_color == WHITE {
+                        game_state.white_board.clear_bit(start_idx);
+                        game_state.white_board.set_bit(end_idx);
+                    } else {
+                        game_state.black_board.clear_bit(start_idx);
+                        game_state.black_board.set_bit(end_idx);
+                    }
+
+                    if game_state.pieces[real_captured_index].is_royal() {
+                        game_state.monarch_board.clear_bit(start_idx);
+                        game_state.monarch_board.set_bit(end_idx);
+                    }
 
                     hash_in_or_out_piece(
                         game_state,
@@ -1404,11 +1442,32 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     );
 
                     if is_captured_piece_unmoved {
-                        game_state.unmoved_board.set_bit(unload_sq as u32);     /* unloaded pce is considered unmoved */
+                        game_state.unmoved_board.set_bit(unload_sq as u32);
                     }
                 }
             } else {
-                remove_piece(real_captured_index, captured_square, game_state);
+                let sq_idx = captured_square as u32;
+
+                game_state.pieces_board[real_captured_index].clear_bit(sq_idx);
+
+                if real_captured_color == WHITE {
+                    game_state.white_board.clear_bit(sq_idx);
+                } else {
+                    game_state.black_board.clear_bit(sq_idx);
+                }
+
+                if game_state.pieces[real_captured_index].is_big() {
+                    game_state.big_pieces[real_captured_color as usize] -= 1;
+                }
+
+                if game_state.pieces[real_captured_index].is_major() {
+                    game_state.major_pieces[real_captured_color as usize] -= 1;
+                } else if game_state.pieces[real_captured_index].is_minor() {
+                    game_state.minor_pieces[real_captured_color as usize] -= 1;
+                }
+
+                game_state.material[real_captured_color as usize] -=
+                    game_state.pieces[real_captured_index].value() as u32;
 
                 hash_in_or_out_piece(
                     game_state,
@@ -1419,7 +1478,24 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
             }
             mv.set_captured_piece(real_captured_index as u8);
 
-            move_piece(piece_index, start_square, end_square, game_state);
+            let start_idx = start_square as u32;
+            let end_idx = end_square as u32;
+
+            game_state.pieces_board[piece_index].clear_bit(start_idx);
+            game_state.pieces_board[piece_index].set_bit(end_idx);
+
+            if piece_color == WHITE {
+                game_state.white_board.clear_bit(start_idx);
+                game_state.white_board.set_bit(end_idx);
+            } else {
+                game_state.black_board.clear_bit(start_idx);
+                game_state.black_board.set_bit(end_idx);
+            }
+
+            if game_state.pieces[piece_index].is_royal() {
+                game_state.monarch_board.clear_bit(start_idx);
+                game_state.monarch_board.set_bit(end_idx);
+            }
 
             hash_in_or_out_piece(
                 game_state,
@@ -1453,7 +1529,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             if is_promotion {
                 let promoting_piece = piece_index;
-                let promoted_piece = promoted_piece.expect(
+                let promoted_piece_idx = promoted_piece.expect(
                     "Promoted piece must be provided for promotion moves"
                 ) as usize;
 
@@ -1464,17 +1540,54 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
                     end_square
                 );
 
-                promote_piece(
-                    promoting_piece,
-                    end_square,
-                    end_square,
-                    promoted_piece,
-                    game_state
-                );
+                let sq_idx = end_square as u32;
+
+                game_state.pieces_board[promoting_piece].clear_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(sq_idx);
+                } else {
+                    game_state.black_board.clear_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoting_piece].is_big() {
+                    game_state.big_pieces[piece_color as usize] -= 1;
+                }
+
+                if game_state.pieces[promoting_piece].is_major() {
+                    game_state.major_pieces[piece_color as usize] -= 1;
+                } else if game_state.pieces[promoting_piece].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] -= 1;
+                }
+
+                game_state.material[piece_color as usize] -=
+                    game_state.pieces[promoting_piece].value() as u32;
+
+                // Add promoted piece
+                game_state.pieces_board[promoted_piece_idx].set_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.set_bit(sq_idx);
+                } else {
+                    game_state.black_board.set_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoted_piece_idx].is_big() {
+                    game_state.big_pieces[piece_color as usize] += 1;
+                }
+
+                if game_state.pieces[promoted_piece_idx].is_major() {
+                    game_state.major_pieces[piece_color as usize] += 1;
+                } else if game_state.pieces[promoted_piece_idx].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] += 1;
+                }
+
+                game_state.material[piece_color as usize] +=
+                    game_state.pieces[promoted_piece_idx].value() as u32;
 
                 hash_in_or_out_piece(
                     game_state,
-                    promoted_piece,
+                    promoted_piece_idx,
                     piece_color,
                     end_square
                 );
@@ -1482,15 +1595,68 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 
             game_state.halfmove_clock = 0;
 
-            update_castling_rights(
-                game_state,
-                piece_color,
-                start_square,
-                end_square,
-                piece_unmoved,
-                game_state.pieces[piece_index].can_castle_kingside(),
-                game_state.pieces[piece_index].can_castle_queenside(),
-            );
+            if piece_unmoved {
+                match (game_state.pieces[piece_index].can_castle_kingside(), game_state.pieces[piece_index].can_castle_queenside()) {
+                    (true, true) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0011;
+                        } else {
+                            game_state.castling_state &= !0b1100;
+                        }
+                    },
+                    (true, false) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0010;
+                        } else {
+                            game_state.castling_state &= !0b1000;
+                        }
+                    },
+                    (false, true) => {
+                        if piece_color == WHITE {
+                            game_state.castling_state &= !0b0001;
+                        } else {
+                            game_state.castling_state &= !0b0100;
+                        }
+                    },
+                    (false, false) => {
+                        let start_rank = start_square / game_state.files as u16;
+                        let start_file = start_square % game_state.files as u16;
+
+                        if start_rank == 0 {
+                            if start_file == 0 {
+                                game_state.castling_state &= !0b0010;
+                            } else if start_file == game_state.files as u16 - 1 {
+                                game_state.castling_state &= !0b0001;
+                            }
+                        } else if start_rank == game_state.ranks as u16 - 1 {
+                            if start_file == 0 {
+                                game_state.castling_state &= !0b1000;
+                            } else if start_file == game_state.files as u16 - 1 {
+                                game_state.castling_state &= !0b0100;
+                            }
+                        }
+                    }
+                }
+            }
+
+            let end_rank = end_square / game_state.files as u16;
+            let end_file = end_square % game_state.files as u16;
+
+            if game_state.unmoved_board.get_bit(end_square as u32) {
+                if end_rank == 0 {
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b0010;
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0001;
+                    }
+                } else if end_rank == game_state.ranks as u16 - 1 {
+                    if end_file == 0 {
+                        game_state.castling_state &= !0b1000;
+                    } else if end_file == game_state.files as u16 - 1 {
+                        game_state.castling_state &= !0b0100;
+                    }
+                }
+            }
 
             hash_update_castling(
                 game_state, last_castling_state, game_state.castling_state
@@ -1536,7 +1702,7 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
     if is_in_check(1 - game_state.playing, game_state) {
         undo_move(game_state);
         return false;
-    };                                                                          /* check if in check otherwise undo   */
+    };
 
     #[cfg(debug_assertions)]
     verify_game_state(game_state);
@@ -1545,7 +1711,6 @@ pub fn make_move(game_state: &mut State, mv: MoveType) -> bool{
 }
 
 
-// undoes the last move made
 #[hotpath::measure]
 pub fn undo_move(game_state: &mut State) {
     game_state.ply -= 1;
@@ -1581,10 +1746,72 @@ pub fn undo_move(game_state: &mut State) {
                     "Promoting piece must be provided for promotion moves"
                 ) as usize;
 
-                remove_piece(promoted_piece, end_square, game_state);
-                add_piece(promoting_idx, start_square, game_state);
+                let piece_color = game_state.pieces[promoting_idx].color();
+                let sq_idx = end_square as u32;
+
+                game_state.pieces_board[promoted_piece].clear_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(sq_idx);
+                } else {
+                    game_state.black_board.clear_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoted_piece].is_big() {
+                    game_state.big_pieces[piece_color as usize] -= 1;
+                }
+
+                if game_state.pieces[promoted_piece].is_major() {
+                    game_state.major_pieces[piece_color as usize] -= 1;
+                } else if game_state.pieces[promoted_piece].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] -= 1;
+                }
+
+                game_state.material[piece_color as usize] -=
+                    game_state.pieces[promoted_piece].value() as u32;
+
+                let start_idx = start_square as u32;
+
+                game_state.pieces_board[promoting_idx].set_bit(start_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.set_bit(start_idx);
+                } else {
+                    game_state.black_board.set_bit(start_idx);
+                }
+
+                if game_state.pieces[promoting_idx].is_big() {
+                    game_state.big_pieces[piece_color as usize] += 1;
+                }
+
+                if game_state.pieces[promoting_idx].is_major() {
+                    game_state.major_pieces[piece_color as usize] += 1;
+                } else if game_state.pieces[promoting_idx].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] += 1;
+                }
+
+                game_state.material[piece_color as usize] +=
+                    game_state.pieces[promoting_idx].value() as u32;
             } else {
-                move_piece(piece_index, end_square, start_square, game_state);
+                let piece_color = game_state.pieces[piece_index].color();
+                let start_idx = end_square as u32;
+                let end_idx = start_square as u32;
+
+                game_state.pieces_board[piece_index].clear_bit(start_idx);
+                game_state.pieces_board[piece_index].set_bit(end_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(start_idx);
+                    game_state.white_board.set_bit(end_idx);
+                } else {
+                    game_state.black_board.clear_bit(start_idx);
+                    game_state.black_board.set_bit(end_idx);
+                }
+
+                if game_state.pieces[piece_index].is_royal() {
+                    game_state.monarch_board.clear_bit(start_idx);
+                    game_state.monarch_board.set_bit(end_idx);
+                }
             }
 
             if is_initial {
@@ -1613,24 +1840,124 @@ pub fn undo_move(game_state: &mut State) {
                     "Promoting piece must be provided for promotion moves"
                 ) as usize;
 
-                remove_piece(promoted_piece, end_square, game_state);
-                add_piece(promoting_idx, start_square, game_state);
+                let piece_color = game_state.pieces[promoting_idx].color();
+                let sq_idx = end_square as u32;
+
+                game_state.pieces_board[promoted_piece].clear_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(sq_idx);
+                } else {
+                    game_state.black_board.clear_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoted_piece].is_big() {
+                    game_state.big_pieces[piece_color as usize] -= 1;
+                }
+
+                if game_state.pieces[promoted_piece].is_major() {
+                    game_state.major_pieces[piece_color as usize] -= 1;
+                } else if game_state.pieces[promoted_piece].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] -= 1;
+                }
+
+                game_state.material[piece_color as usize] -=
+                    game_state.pieces[promoted_piece].value() as u32;
+
+                let start_idx = start_square as u32;
+
+                game_state.pieces_board[promoting_idx].set_bit(start_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.set_bit(start_idx);
+                } else {
+                    game_state.black_board.set_bit(start_idx);
+                }
+
+                if game_state.pieces[promoting_idx].is_big() {
+                    game_state.big_pieces[piece_color as usize] += 1;
+                }
+
+                if game_state.pieces[promoting_idx].is_major() {
+                    game_state.major_pieces[piece_color as usize] += 1;
+                } else if game_state.pieces[promoting_idx].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] += 1;
+                }
+
+                game_state.material[piece_color as usize] +=
+                    game_state.pieces[promoting_idx].value() as u32;
             } else {
-                move_piece(piece_index, end_square, start_square, game_state);
+                let piece_color = game_state.pieces[piece_index].color();
+                let start_idx = end_square as u32;
+                let end_idx = start_square as u32;
+
+                game_state.pieces_board[piece_index].clear_bit(start_idx);
+                game_state.pieces_board[piece_index].set_bit(end_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(start_idx);
+                    game_state.white_board.set_bit(end_idx);
+                } else {
+                    game_state.black_board.clear_bit(start_idx);
+                    game_state.black_board.set_bit(end_idx);
+                }
+
+                if game_state.pieces[piece_index].is_royal() {
+                    game_state.monarch_board.clear_bit(start_idx);
+                    game_state.monarch_board.set_bit(end_idx);
+                }
             }
 
             if let Some(unload_sq) = unload_square {
                 if is_unload {
-                    move_piece(
-                        captured_piece, unload_sq, end_square, game_state
-                    );
+                    let captured_color = game_state.pieces[captured_piece].color();
+                    let start_idx = unload_sq as u32;
+                    let end_idx = end_square as u32;
+
+                    game_state.pieces_board[captured_piece].clear_bit(start_idx);
+                    game_state.pieces_board[captured_piece].set_bit(end_idx);
+
+                    if captured_color == WHITE {
+                        game_state.white_board.clear_bit(start_idx);
+                        game_state.white_board.set_bit(end_idx);
+                    } else {
+                        game_state.black_board.clear_bit(start_idx);
+                        game_state.black_board.set_bit(end_idx);
+                    }
+
+                    if game_state.pieces[captured_piece].is_royal() {
+                        game_state.monarch_board.clear_bit(start_idx);
+                        game_state.monarch_board.set_bit(end_idx);
+                    }
                 }
 
                 if is_captured_piece_unmoved {
                     game_state.unmoved_board.clear_bit(unload_sq as u32);
                 }
             } else {
-                add_piece(captured_piece, end_square, game_state);
+                let captured_color = game_state.pieces[captured_piece].color();
+                let sq_idx = end_square as u32;
+
+                game_state.pieces_board[captured_piece].set_bit(sq_idx);
+
+                if captured_color == WHITE {
+                    game_state.white_board.set_bit(sq_idx);
+                } else {
+                    game_state.black_board.set_bit(sq_idx);
+                }
+
+                if game_state.pieces[captured_piece].is_big() {
+                    game_state.big_pieces[captured_color as usize] += 1;
+                }
+
+                if game_state.pieces[captured_piece].is_major() {
+                    game_state.major_pieces[captured_color as usize] += 1;
+                } else if game_state.pieces[captured_piece].is_minor() {
+                    game_state.minor_pieces[captured_color as usize] += 1;
+                }
+
+                game_state.material[captured_color as usize] +=
+                    game_state.pieces[captured_piece].value() as u32;
             }
 
             if is_captured_piece_unmoved {
@@ -1666,24 +1993,131 @@ pub fn undo_move(game_state: &mut State) {
                     "Promoting piece must be provided for promotion moves"
                 ) as usize;
 
-                remove_piece(promoted_piece, end_square, game_state);
-                add_piece(promoting_idx, start_square, game_state);
+                let piece_color = game_state.pieces[promoting_idx].color();
+                let sq_idx = end_square as u32;
+
+                game_state.pieces_board[promoted_piece].clear_bit(sq_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(sq_idx);
+                } else {
+                    game_state.black_board.clear_bit(sq_idx);
+                }
+
+                if game_state.pieces[promoted_piece].is_big() {
+                    game_state.big_pieces[piece_color as usize] -= 1;
+                }
+
+                if game_state.pieces[promoted_piece].is_major() {
+                    game_state.major_pieces[piece_color as usize] -= 1;
+                } else if game_state.pieces[promoted_piece].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] -= 1;
+                }
+
+                game_state.material[piece_color as usize] -=
+                    game_state.pieces[promoted_piece].value() as u32;
+
+                let start_idx = start_square as u32;
+
+                game_state.pieces_board[promoting_idx].set_bit(start_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.set_bit(start_idx);
+                } else {
+                    game_state.black_board.set_bit(start_idx);
+                }
+
+                if game_state.pieces[promoting_idx].is_big() {
+                    game_state.big_pieces[piece_color as usize] += 1;
+                }
+
+                if game_state.pieces[promoting_idx].is_major() {
+                    game_state.major_pieces[piece_color as usize] += 1;
+                } else if game_state.pieces[promoting_idx].is_minor() {
+                    game_state.minor_pieces[piece_color as usize] += 1;
+                }
+
+                game_state.material[piece_color as usize] +=
+                    game_state.pieces[promoting_idx].value() as u32;
+
+                hash_in_or_out_piece(
+                    game_state,
+                    promoted_piece,
+                    piece_color,
+                    end_square
+                );
             } else {
-                move_piece(piece_index, end_square, start_square, game_state);
+                let piece_color = game_state.pieces[piece_index].color();
+                let start_idx = end_square as u32;
+                let end_idx = start_square as u32;
+
+                game_state.pieces_board[piece_index].clear_bit(start_idx);
+                game_state.pieces_board[piece_index].set_bit(end_idx);
+
+                if piece_color == WHITE {
+                    game_state.white_board.clear_bit(start_idx);
+                    game_state.white_board.set_bit(end_idx);
+                } else {
+                    game_state.black_board.clear_bit(start_idx);
+                    game_state.black_board.set_bit(end_idx);
+                }
+
+                if game_state.pieces[piece_index].is_royal() {
+                    game_state.monarch_board.clear_bit(start_idx);
+                    game_state.monarch_board.set_bit(end_idx);
+                }
             }
 
             if let Some(unload_sq) = unload_square {
                 if is_unload {
-                    move_piece(
-                        captured_piece, unload_sq, captured_square, game_state
-                    );
+                    let captured_color = game_state.pieces[captured_piece].color();
+                    let start_idx = unload_sq as u32;
+                    let end_idx = captured_square as u32;
+
+                    game_state.pieces_board[captured_piece].clear_bit(start_idx);
+                    game_state.pieces_board[captured_piece].set_bit(end_idx);
+
+                    if captured_color == WHITE {
+                        game_state.white_board.clear_bit(start_idx);
+                        game_state.white_board.set_bit(end_idx);
+                    } else {
+                        game_state.black_board.clear_bit(start_idx);
+                        game_state.black_board.set_bit(end_idx);
+                    }
+
+                    if game_state.pieces[captured_piece].is_royal() {
+                        game_state.monarch_board.clear_bit(start_idx);
+                        game_state.monarch_board.set_bit(end_idx);
+                    }
 
                     if is_captured_piece_unmoved {
                         game_state.unmoved_board.clear_bit(unload_sq as u32);
                     }
                 }
             } else {
-                add_piece(captured_piece, captured_square, game_state);
+                let captured_color = game_state.pieces[captured_piece].color();
+                let sq_idx = captured_square as u32;
+
+                game_state.pieces_board[captured_piece].set_bit(sq_idx);
+
+                if captured_color == WHITE {
+                    game_state.white_board.set_bit(sq_idx);
+                } else {
+                    game_state.black_board.set_bit(sq_idx);
+                }
+
+                if game_state.pieces[captured_piece].is_big() {
+                    game_state.big_pieces[captured_color as usize] += 1;
+                }
+
+                if game_state.pieces[captured_piece].is_major() {
+                    game_state.major_pieces[captured_color as usize] += 1;
+                } else if game_state.pieces[captured_piece].is_minor() {
+                    game_state.minor_pieces[captured_color as usize] += 1;
+                }
+
+                game_state.material[captured_color as usize] +=
+                    game_state.pieces[captured_piece].value() as u32;
             }
 
             if is_captured_piece_unmoved {
@@ -1705,36 +2139,44 @@ pub fn undo_move(game_state: &mut State) {
 
 #[hotpath::measure]
 pub fn generate_all_moves(state: &State) -> Vec<MoveType> {
-    let mut possible_moves: Vec<MoveType> = vec![];
-
     let piece_count = state.pieces.len() / 2;
     let start_index = if state.playing == WHITE { 0 } else { piece_count };
     let end_index = start_index + piece_count;
 
-    for piece_index in start_index..end_index {
-        let piece = &state.pieces[piece_index];
-        let piece_board = &state.pieces_board[piece_index];
+    let moves: Vec<MoveType> = (start_index..end_index)
+        .into_par_iter()
+        .flat_map(|piece_index| {
+            let piece = &state.pieces[piece_index];
+            let piece_board = &state.pieces_board[piece_index];
 
-        let relevant_friendly_board = if piece.color() == WHITE {
-            &state.white_board
-        } else {
-            &state.black_board
-        };
+            let relevant_friendly_board = if piece.color() == WHITE {
+                &state.white_board
+            } else {
+                &state.black_board
+            };
 
-        let relevant_enemy_board = if piece.color() == WHITE {
-            &state.black_board
-        } else {
-            &state.white_board
-        };
+            let relevant_enemy_board = if piece.color() == WHITE {
+                &state.black_board
+            } else {
+                &state.white_board
+            };
 
-        for index in piece_board.bit_indices_iter() {
-            possible_moves.extend(generate_move_list(
-                index, &piece, &relevant_friendly_board,
-                &relevant_enemy_board, &state.unmoved_board, &state,
-                false
-            ));
-        }
-    }
+            piece_board
+                .bit_indices_iter()
+                .flat_map(|index| {
+                    generate_move_list(
+                        index,
+                        piece,
+                        relevant_friendly_board,
+                        relevant_enemy_board,
+                        &state.unmoved_board,
+                        state,
+                        false,
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
-    possible_moves
+    moves
 }

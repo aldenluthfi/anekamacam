@@ -32,39 +32,22 @@ use std::fmt::{
 /// - 10: Single Hopper capture move
 /// - 11: Multi-capture move
 ///
-/// The first 8 bits indicates the piece index of the piece making the move.
-/// The next 12 bits represent the starting square index (0-4095).
-/// The following 12 bits represent the ending square index (0-4095).
-/// The following bit represents if the move is an initial move (1) or not (0).
-/// The following bit represents if the move is a promotion (1) or not (0).
-/// The following bit represents if the move creates an en passant square (1)
+/// - The first 8 bits indicates the piece index of the piece making the move.
+/// - The next 12 bits represent the starting square index (0-4095).
+/// - The following 12 bits represent the ending square index (0-4095).
+/// - The following bit represents if the move is an initial move or not.
+/// - The following bit represents if the move is a promotion (1) or not (0).
+/// - The following bit represents if the move creates an en passant square (1)
 /// or not (0).
-/// the following 8 bits represent the promoting piece type (if applicable).
-/// The following 8 bits represent the promoted piece type (if applicable).
-/// The following 24 bits represents the en passant square (if applicable).
-///
-/// The next 35 bits are reserved for additional information based on the
-/// move type:
-///
-/// Single move without capture (00):
-/// - The remaining 35 bits are unused.
-///
-/// Single move with capture (01):
+/// - the following 8 bits represent the promoting piece type (if applicable).
+/// - The following 8 bits represent the promoted piece type (if applicable).
+/// - The following 24 bits represents the en passant square (if applicable).
 /// - Next bit indicates this capture can be used to capture a royal piece (1)
 ///   or not (0).
-/// - Next 8 bits represent the captured piece type.
 /// - Next bit indicates if this move is a capture or unload (1) or not (0).
 /// - Next 12 bits are the unload square index (if applicable).
-/// - Next bit indicates if the piece captured is unmoved (1) or not (0).
-/// - The remaining 12 bits are unused.
-///
-/// Single Hopper capture move (11):
-/// - Next bit indicates this capture can be used to capture a royal piece (1)
-///   or not (0).
 /// - Next 8 bits represent the captured piece type.
-/// - Next 12 bits represent the captured piece square index.
-/// - Next bit indicates if this move is a capture or unload (1) or not (0).
-/// - Next 12 bits are the unload square index (if applicable).
+/// - Next 12 bits represent the captured piece square index. (for hopper moves)
 /// - Next bit indicates if the piece captured is unmoved (1) or not (0).
 /// - The remaining bit is unused.
 
@@ -100,10 +83,10 @@ pub struct Move {
 /// Each captured piece is represented in 35 bits:
 /// - Next bit indicates this capture can be used to capture a royal piece (1)
 ///   or not (0).
-/// - Next 8 bits: Piece type
-/// - Next 12 bits: Square index
 /// - Next bit indicates if this move is a capture or unload (1) or not (0).
 /// - Next 12 bits: Unload square index (if applicable).
+/// - Next 8 bits: Piece type
+/// - Next 12 bits: Square index
 /// - the last bit indicates if the piece captured is unmoved (1) or not (0).
 
 #[derive(Clone)]
@@ -229,11 +212,11 @@ impl Move {
             encoded |= (piece as u128) << Self::PROMOTED_PIECE_SHIFT;
         }
         encoded |= (can_capture_royal as u128) << Self::EXTRA_DATA_SHIFT;
-        encoded |= (captured_piece as u128) << (Self::EXTRA_DATA_SHIFT + 1);
-        encoded |= (is_unload as u128) << (Self::EXTRA_DATA_SHIFT + 9);
+        encoded |= (is_unload as u128) << (Self::EXTRA_DATA_SHIFT + 1);
         if let Some(unload) = unload_square {
-            encoded |= (unload as u128) << (Self::EXTRA_DATA_SHIFT + 10);
+            encoded |= (unload as u128) << (Self::EXTRA_DATA_SHIFT + 2);
         }
+        encoded |= (captured_piece as u128) << (Self::EXTRA_DATA_SHIFT + 14);
         encoded |= (captures_unmoved as u128) << (Self::EXTRA_DATA_SHIFT + 22);
 
         Self {
@@ -274,12 +257,12 @@ impl Move {
             encoded |= (piece as u128) << Self::PROMOTED_PIECE_SHIFT;
         }
         encoded |= (can_capture_royal as u128) << Self::EXTRA_DATA_SHIFT;
-        encoded |= (captured_piece as u128) << (Self::EXTRA_DATA_SHIFT + 1);
-        encoded |= (captured_square as u128) << (Self::EXTRA_DATA_SHIFT + 9);
-        encoded |= (is_unload as u128) << (Self::EXTRA_DATA_SHIFT + 21);
+        encoded |= (is_unload as u128) << (Self::EXTRA_DATA_SHIFT + 1);
         if let Some(unload) = unload_square {
-            encoded |= (unload as u128) << (Self::EXTRA_DATA_SHIFT + 22);
+            encoded |= (unload as u128) << (Self::EXTRA_DATA_SHIFT + 2);
         }
+        encoded |= (captured_piece as u128) << (Self::EXTRA_DATA_SHIFT + 14);
+        encoded |= (captured_square as u128) << (Self::EXTRA_DATA_SHIFT + 22);
         encoded |= (captures_unmoved as u128) << (Self::EXTRA_DATA_SHIFT + 34);
 
         Self {
@@ -442,10 +425,8 @@ impl Move {
     #[inline(always)]
     pub fn is_unload(&self) -> bool {
         let move_type = self.encoded_move & Move::MOVE_TYPE_MASK;
-        if move_type == Self::SINGLE_CAPTURE {
-            (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 9)) & 1 == 1
-        } else if move_type == Self::HOPPER_CAPTURE {
-            (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 21)) & 1 == 1
+        if move_type == Self::SINGLE_CAPTURE || move_type == Self::HOPPER_CAPTURE {
+            (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 1)) & 1 == 1
         } else {
             false
         }
@@ -462,7 +443,7 @@ impl Move {
     pub fn captured_piece(&self) -> Option<u8> {
         let move_type = self.encoded_move & Move::MOVE_TYPE_MASK;
         if move_type == Self::HOPPER_CAPTURE || move_type == Self::SINGLE_CAPTURE {
-            Some((self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 1)) as u8)
+            Some((self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 14)) as u8)
         } else {
             None
         }
@@ -472,21 +453,16 @@ impl Move {
     pub fn set_captured_piece(&mut self, piece: u8) {
         let move_type = self.encoded_move & Move::MOVE_TYPE_MASK;
         if move_type == Self::HOPPER_CAPTURE || move_type == Self::SINGLE_CAPTURE {
-            self.encoded_move &= !(0xFFu128 << (Self::EXTRA_DATA_SHIFT + 1));
-            self.encoded_move |= (piece as u128) << (Self::EXTRA_DATA_SHIFT + 1);
+            self.encoded_move &= !(0xFFu128 << (Self::EXTRA_DATA_SHIFT + 14));
+            self.encoded_move |= (piece as u128) << (Self::EXTRA_DATA_SHIFT + 14);
         }
     }
 
     pub fn unload_square(&self) -> Option<u16> {
         let move_type = self.move_type();
-        if move_type == Self::SINGLE_CAPTURE as u8 && self.is_unload() {
+        if (move_type == Self::SINGLE_CAPTURE as u8 || move_type == Self::HOPPER_CAPTURE as u8) && self.is_unload() {
             let square = (
-                (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 10)) & 0xFFF
-            ) as u16;
-            if square == 0 { None } else { Some(square) }
-        } else if move_type == Self::HOPPER_CAPTURE as u8 && self.is_unload() {
-            let square = (
-                (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 22)) & 0xFFF
+                (self.encoded_move >> (Self::EXTRA_DATA_SHIFT + 2)) & 0xFFF
             ) as u16;
             if square == 0 { None } else { Some(square) }
         } else {
@@ -498,7 +474,7 @@ impl Move {
         if self.move_type() == Self::HOPPER_CAPTURE as u8 {
             Some(
                 (self.encoded_move >>
-                (Self::EXTRA_DATA_SHIFT + 9)) as u16 & 0xFFF
+                (Self::EXTRA_DATA_SHIFT + 22)) as u16 & 0xFFF
             )
         } else {
             None
@@ -558,12 +534,12 @@ impl MultiMove {
                 | {
                 let mut encoded: u64 = 0;
                 encoded |= (*can_capture_royal as u64) << 34;
-                encoded |= (*piece_type as u64) << 26;
-                encoded |= (*square as u64) << 14;
-                encoded |= (*is_unload as u64) << 13;
+                encoded |= (*is_unload as u64) << 33;
                 if let Some(unload) = unload_square {
-                    encoded |= (*unload as u64) << 1;
+                    encoded |= (*unload as u64) << 21;
                 }
+                encoded |= (*piece_type as u64) << 13;
+                encoded |= (*square as u64) << 1;
                 encoded |= *captures_unmoved as u64;
                 encoded
             })
@@ -656,14 +632,14 @@ impl MultiMove {
             .iter()
             .map(|encoded| {
                 let can_capture_royal = (encoded >> 34) & 1 == 1;
-                let piece_type = ((encoded >> 26) & 0xFF) as u8;
-                let square = ((encoded >> 14) & 0xFFF) as u16;
-                let is_unload = (encoded >> 13) & 1 == 1;
+                let is_unload = (encoded >> 33) & 1 == 1;
                 let unload_square = if is_unload {
-                    Some(((encoded >> 1) & 0xFFF) as u16)
+                    Some(((encoded >> 21) & 0xFFF) as u16)
                 } else {
                     None
                 };
+                let piece_type = ((encoded >> 13) & 0xFF) as u8;
+                let square = ((encoded >> 1) & 0xFFF) as u16;
                 let captures_unmoved = encoded & 1 == 1;
 
                 (
