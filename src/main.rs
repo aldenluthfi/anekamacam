@@ -1,6 +1,4 @@
-use crate::{
-    game::{moves::move_list::generate_move_list, util::verify_game_state}, io::{board_io::format_board, game_io::{format_entire_game, parse_config_file}, move_io::format_move_template}
-};
+use crate::io::game_io::parse_config_file;
 
 pub mod game {
     pub mod representations {
@@ -32,5 +30,5 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let state = parse_config_file("configs/fide.anm");
+    let _state = parse_config_file("configs/fide.anm");
 }

@@ -1,7 +1,12 @@
 use bnum::types::U4096;
 use rayon::{iter::{IntoParallelIterator, ParallelIterator}};
 
-use crate::{board, captured_square, constants::{MULTI_CAPTURE_MOVE, SINGLE_CAPTURE_MOVE, WHITE}, enc_piece, game::representations::{board::Board, moves::Move, piece::Piece, state::State, vector::MoveSet}, get, move_type, multi_move_captured_square, multi_move_is_unload, set, x, y};
+use crate::{
+    board, captured_square, get, set, x, y,
+    constants::{MULTI_CAPTURE_MOVE, SINGLE_CAPTURE_MOVE, WHITE},
+    game::representations::{board::Board, moves::Move, piece::Piece, state::State, vector::MoveSet},
+    move_type, multi_move_captured_square, multi_move_is_unload,
+};
 
 #[hotpath::measure]
 fn check_out_of_bounds(
@@ -233,7 +238,13 @@ pub fn generate_move_list(
 
 #[hotpath::measure]
 pub fn make_move(game_state: &mut State, mv: Move) -> bool {
-    false
+
+    if is_in_check(1 - game_state.playing, game_state) {
+        undo_move(game_state);
+        return false;
+    }
+
+    true
 }
 
 #[hotpath::measure]
