@@ -16,6 +16,7 @@
 pub const MAX_RANKS: u8 = 64;
 pub const MAX_FILES: u8 = 64;
 pub const MAX_SQUARES: usize = 4096;
+pub const MAX_PIECES: usize = 255;
 
 pub const RNG_SEED: u64 = 0xDEADBEEFCAFEBABE;
 
@@ -53,3 +54,10 @@ pub const WK_CASTLE : u8 = 0b0001;
 pub const WQ_CASTLE : u8 = 0b0010;
 pub const BK_CASTLE : u8 = 0b0100;
 pub const BQ_CASTLE : u8 = 0b1000;
+
+pub const NO_PIECE: u8 = u8::MAX;
+pub const NO_EN_PASSANT: u32 = u32::MAX;
+
+pub const QUIET_MOVE: u128 = 0;
+pub const SINGLE_CAPTURE_MOVE: u128 = 1;
+pub const MULTI_CAPTURE_MOVE: u128 = 2;

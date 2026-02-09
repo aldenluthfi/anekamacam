@@ -5,10 +5,6 @@ use crate::{
         moves::move_list::{make_move, undo_move, generate_all_moves},
         representations::state::State
     },
-    io::{
-        game_io::format_game_state,
-        move_io::format_move
-    }
 };
 
 fn parse_perft_file(
@@ -29,10 +25,7 @@ fn parse_perft_file(
     }).collect()
 }
 
-pub fn start_perft(
-    mut state: &mut State, path: &str,
-    depth: u8, debug: bool, branch: Option<u8>
-) {
+pub fn start_perft(state: &mut State, path: &str, depth: u8) {
     let perft_cases = parse_perft_file(path);
 
     let mut successful_cases = 0;
@@ -49,7 +42,7 @@ pub fn start_perft(
         ];
 
         for d in 1..=depth {
-            let result = perft(&mut state, d, debug, branch, None);
+            let result = perft(state, d);
             let expected = expected_perfts[(d - 1) as usize];
 
             if result == expected {
@@ -64,8 +57,6 @@ pub fn start_perft(
                     "FEN: {} | Depth: {} | Expected: {} | Result: {} [FAILED]",
                     fen, d, expected, result
                 );
-                #[cfg(debug_assertions)]
-                println!("{}", format_game_state(state, false))
             }
         }
     }
@@ -78,10 +69,7 @@ pub fn start_perft(
 }
 
 #[hotpath::measure]
-fn perft(
-    mut state: &mut State, depth: u8, debug: bool,
-    branch: Option<u8>, prefix: Option<String>
-) -> u64 {
+fn perft(state: &mut State, depth: u8) -> u64 {
 
     if depth == 0 {
         return 1;
@@ -91,42 +79,11 @@ fn perft(
 
     let mut nodes = 0;
 
-    if !debug {
-        for mv in possible_moves {
-            if make_move(&mut state, mv) {
-                nodes += perft(state, depth - 1, false, None, None);
-                undo_move(&mut state);
-            }
+    for mv in possible_moves {
+        if make_move(state, mv) {
+            nodes += perft(state, depth - 1);
+            undo_move(state);
         }
-        return nodes;
-    } else {
-        for mv in possible_moves {
-            if make_move(&mut state, mv.clone()) {
-                nodes += perft(
-                    state,
-                    depth - 1,
-                    depth >= branch.expect(
-                        "Branching must be provided for debug mode"
-                    ),
-                    branch,
-                    Some(
-                        format!(
-                            "     {} {} ",
-                            prefix.as_deref().unwrap_or(""),
-                            format_move(&mv, state)
-                        )
-                    )
-                );
-                undo_move(&mut state);
-            }
-        }
-
-
-        println!(
-            "{}moves | Nodes: {}",
-            prefix.as_deref().unwrap_or(""),
-            nodes
-        );
     }
 
     nodes

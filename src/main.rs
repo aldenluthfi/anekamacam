@@ -1,6 +1,5 @@
-use crate::game::{
-    moves::perft::start_perft,
-    representations::state::State
+use crate::{
+    game::{moves::move_list::generate_move_list, util::verify_game_state}, io::{board_io::format_board, game_io::{format_entire_game, parse_config_file}, move_io::format_move_template}
 };
 
 pub mod game {
@@ -33,7 +32,5 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let mut state = State::from_config("configs/fide.anm");
-
-    start_perft(&mut state, "res/fide-kiwipete.perft", 4, false, None);
+    let state = parse_config_file("configs/fide.anm");
 }

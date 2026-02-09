@@ -15,20 +15,24 @@
 //! 25/01/2026
 
 use std::collections::HashMap;
+use bnum::types::{U2048, U4096};
 use std::fs;
-use crate::game::hash::hash_position;
-use crate::game::representations::{
-    state::State,
-    piece::Piece,
-    board::Board,
+
+use crate::{
+    board, set,
+    constants::*
 };
-use bnum::types::U2048;
-use crate::constants::*;
-use crate::io::board_io::{
-    format_board,
-    format_square
+use crate::game::{
+    hash::hash_position,
+    representations::{
+        state::State,
+        piece::Piece,
+    }
 };
-use crate::io::piece_io::format_piece;
+use crate::io::{
+    board_io::{format_board, format_square},
+    piece_io::format_piece
+};
 
 /// Parses a game configuration file and initializes a game state.
 ///
@@ -82,7 +86,7 @@ use crate::io::piece_io::format_piece;
 /// ```
 pub fn parse_config_file(path: &str) -> State {
     let contents = fs::read_to_string(path)
-        .expect(&format!("Failed to read config file: {}", path));
+        .unwrap_or_else(|_| panic!("Failed to read config file: {}", path));
 
     let lines: Vec<&str> = contents.lines().collect();
     let mut current_line = 0;
@@ -102,22 +106,22 @@ pub fn parse_config_file(path: &str) -> State {
         line[0]
             .trim()
             .parse()
-            .expect(
-                &format!("Invalid files: {}", line[0].trim())
+            .unwrap_or_else(
+                |_| panic!("Invalid files: {}", line[0].trim())
             );
     let ranks: u8 =
         line[1]
             .trim()
             .parse()
-            .expect(
-                &format!("Invalid ranks: {}", line[1].trim())
+            .unwrap_or_else(
+                |_| panic!("Invalid ranks: {}", line[1].trim())
             );
     let pieces_num: u8 =
         line[2]
             .trim()
             .parse()
-            .expect(
-                &format!("Invalid piece types: {}", line[2].trim())
+            .unwrap_or_else(
+                |_| panic!("Invalid piece types: {}", line[2].trim())
             );
 
     assert!(
@@ -128,8 +132,8 @@ pub fn parse_config_file(path: &str) -> State {
     let mut pieces = Vec::with_capacity((pieces_num * 2) as usize);
     let mut piece_char_to_idx = HashMap::new();
 
-    for i in current_line..=((pieces_num as usize) + current_line - 1) {
-        let parts: Vec<&str> = lines[i].split(',').collect();
+    for line in lines.iter().skip(current_line).take(pieces_num as usize) {
+        let parts: Vec<&str> = line.split(',').collect();
         assert_eq!(
             parts.len(), 5,
             "Piece definition must have 5 comma-separated values"
@@ -146,27 +150,27 @@ pub fn parse_config_file(path: &str) -> State {
             .trim_start_matches("!")
             .to_string();
         assert!(
-            0 < name.len() && name.len() <= 12,
+            !name.is_empty() && name.len() <= 12,
             "Invalid piece name length: {} ({})",
             name,
             name.len()
         );
 
         let white_char = parts[1]
-            .trim().chars().next().expect(
-                &format!("Invalid white char: {}", parts[1].trim())
+            .trim().chars().next().unwrap_or_else(
+                || panic!("Invalid white char: {}", parts[1].trim())
             );
         let black_char = parts[2]
-            .trim().chars().next().expect(
-                &format!("Invalid black char: {}", parts[2].trim())
+            .trim().chars().next().unwrap_or_else(
+                || panic!("Invalid black char: {}", parts[2].trim())
             );
         let movement = parts[4].trim().to_string();
 
         let value = if parts[3].eq("inf") {
             u16::MAX
         } else {
-            parts[3].trim().parse().expect(
-                &format!("Invalid piece value: {}", parts[3].trim())
+            parts[3].trim().parse().unwrap_or_else(
+                |_| panic!("Invalid piece value: {}", parts[3].trim())
             )
         };
 
@@ -214,13 +218,13 @@ pub fn parse_config_file(path: &str) -> State {
     let promotion_count: usize = lines[current_line]
         .trim()
         .parse()
-        .expect(
-            &format!("Invalid promotion count: {}", lines[current_line].trim())
+        .unwrap_or_else(
+            |_| panic!("Invalid promotion count: {}", lines[current_line].trim())
         );
     current_line += 1;
 
     assert!(
-        lines.len() >= current_line + promotion_count + 1,
+        lines.len() > current_line + promotion_count,
         "Not enough lines for promotion mappings and FEN"
     );
 
@@ -235,14 +239,14 @@ pub fn parse_config_file(path: &str) -> State {
             .trim()
             .chars()
             .next()
-            .expect(
-                &format!("Invalid source piece character: {}", parts[0].trim())
+            .unwrap_or_else(
+                || panic!("Invalid source piece character: {}", parts[0].trim())
             );
         let to_chars: Vec<char> = parts[1].trim().chars().collect();
 
         let from_idx = *piece_char_to_idx
             .get(&from_char)
-            .expect(&format!("Unknown source piece: {}", from_char));
+            .unwrap_or_else(|| panic!("Unknown source piece: {}", from_char));
 
         assert!(pieces[from_idx as usize].can_promote(),
             "Piece '{}' cannot promote, but promotion mapping provided",
@@ -255,7 +259,7 @@ pub fn parse_config_file(path: &str) -> State {
         for (i, &to_char) in to_chars.iter().enumerate() {
             let to_idx = *piece_char_to_idx
                 .get(&to_char)
-                .expect(&format!("Unknown target piece: {}", to_char));
+                .unwrap_or_else(|| panic!("Unknown target piece: {}", to_char));
 
             assert!(pieces[to_idx as usize].is_big(),
                 "Piece '{}' cannot be a promotion target",
@@ -274,11 +278,36 @@ pub fn parse_config_file(path: &str) -> State {
         current_line += 1;
     }
 
-    let mut state = State::new(title, files, ranks, pieces);
+    let promotion_ranks: Vec<&str> = lines[current_line].split(',').collect();
 
-    for _ in 0..(pieces_num * 2) {
-        state.pieces_board.push(Board::new(files, ranks));
-    }
+    assert_eq!(
+        promotion_ranks.len(), 2,
+        "Promotion ranks line must have 2 comma-separated values"
+    );
+
+    current_line += 1;
+
+    let white_promotion_rank: u8 = promotion_ranks[0]
+        .trim()
+        .parse()
+        .unwrap_or_else(
+            |_| panic!(
+                "Invalid white promotion rank: {}", promotion_ranks[0].trim()
+            )
+        );
+    let black_promotion_rank: u8 = promotion_ranks[1]
+        .trim()
+        .parse()
+        .unwrap_or_else(
+            |_| panic!(
+                "Invalid black promotion rank: {}", promotion_ranks[1].trim()
+            )
+        );
+
+    let mut state = State::new(
+        title, files, ranks, pieces,
+        [white_promotion_rank, black_promotion_rank]
+    );
 
     let fen_line = lines[current_line];
     parse_fen(&mut state, fen_line);
@@ -358,24 +387,26 @@ pub fn parse_fen(state: &mut State, fen: &str) {
             _ => {
                 let piece_idx = state.pieces.iter().position(
                     |piece| piece.symbol == c
-                ).expect(&format!("Unknown piece character: {}", c));
+                ).unwrap_or_else(|| panic!("Unknown piece character: {}", c));
 
                 let piece = &state.pieces[piece_idx];
                 let square_index =
                     (rank as u32) * (state.files as u32) + (file as u32);
 
-                state.pieces_board[piece_idx].set_bit(square_index);
+                state.main_board[square_index as usize] = piece.index();
 
-                if piece.color() == WHITE {
-                    state.white_board.set_bit(square_index);
-                    state.material[WHITE as usize] += piece.value() as u32;
-                } else {
-                    state.black_board.set_bit(square_index);
-                    state.material[BLACK as usize] += piece.value() as u32;
-                }
+                state.piece_list[piece.index() as usize]
+                    .push(square_index as u16);
+                state.piece_count[piece.index() as usize] += 1;
+
+                set!(state.pieces_board[piece.color() as usize], square_index);
+                state.material[piece.color() as usize] += piece.value() as u32;
 
                 if piece.is_royal() {
-                    state.monarch_board.set_bit(square_index);
+                    state.royal_list[piece.color() as usize].push(
+                        square_index as u16
+                    );
+                    state.royal_pieces[piece.color() as usize] += 1;
                 }
 
                 if piece.is_major() {
@@ -390,20 +421,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[piece.color() as usize] += 1;
                 }
 
-                if c == 'P' && rank == 1 {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'p' && rank == (state.ranks - 2) {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'R' && rank == 0 && (file == 0 || file == state.files - 1) {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'r' && rank == state.ranks - 1 &&
-                          (file == 0 || file == state.files - 1) {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'K' && rank == 0 && file == 4 {
-                    state.unmoved_board.set_bit(square_index);
-                } else if c == 'k' && rank == state.ranks - 1 && file == 4 {
-                    state.unmoved_board.set_bit(square_index);
-                }
+                set!(state.virgin_board, square_index);
 
                 file += 1;
             }
@@ -433,28 +451,36 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 
     let en_passant = parts[3];
     state.en_passant_square = if en_passant == "-" {
-        None
+        u32::MAX
     } else {                                                                    /* enpassant square is a bit different*/
         let file = en_passant[0..2].parse::<u8>()
-            .expect(
-                &format!("Invalid en passant file: {}", en_passant[0..2].trim())/* xxyyppqq -> [filefilerankrank; 2]  */
+            .unwrap_or_else(
+                |_| panic!(
+                    "Invalid en passant file: {}", en_passant[0..2].trim()      /* xxyyppqq -> [filefilerankrank; 2]  */
+                )
             );                                                                  /* x and y are capturing square       */
         let rank = en_passant[2..4].parse::<u8>()
-            .expect(
-                &format!("Invalid en passant rank: {}", en_passant[2..4].trim())/* p and q are captured piece square  */
+            .unwrap_or_else(
+                |_| panic!(
+                    "Invalid en passant rank: {}", en_passant[2..4].trim()
+                )                                                               /* p and q are captured piece square  */
             );
 
         let piece_file = en_passant[4..6].parse::<u8>()
-            .expect(
-                &format!("Invalid en passant file: {}", en_passant[4..6].trim())/* xxyyppqq -> [filefilerankrank; 2]  */
+            .unwrap_or_else(
+                |_| panic!(
+                    "Invalid en passant file: {}", en_passant[4..6].trim()      /* xxyyppqq -> [filefilerankrank; 2]  */
+                )
             );                                                                  /* x and y are capturing square       */
         let piece_rank = en_passant[6..8].parse::<u8>()
-            .expect(
-                &format!("Invalid en passant rank: {}", en_passant[6..8].trim())/* p and q are captured piece square  */
+            .unwrap_or_else(
+                |_| panic!(
+                    "Invalid en passant rank: {}", en_passant[6..8].trim()      /* p and q are captured piece square  */
+                )
             );
         let piece_index = u32::from_str_radix(&en_passant[8..10], 16)
-            .expect(                                                            /* last 2 digit hex num is piece indx */
-                &format!(
+            .unwrap_or_else(                                                    /* last 2 digit hex num is piece indx */
+                |_| panic!(
                     "Invalid en passant rank: {}", en_passant[8..10].trim()
                 )
             );
@@ -463,17 +489,13 @@ pub fn parse_fen(state: &mut State, fen: &str) {
         let piece_square_index =
             (piece_rank as u32) * (state.files as u32) + (piece_file as u32);
 
-        let en_passant_square =
-            square_index | (piece_square_index << 12) | piece_index << 24;
-        Some(
-            en_passant_square
-        )
+        square_index | (piece_square_index << 12) | piece_index << 24
     };
 
     if parts.len() >= 5 {
         state.halfmove_clock = parts[4].parse()
-            .expect(
-                &format!("Invalid halfmove clock: {}", parts[4].trim())
+            .unwrap_or_else(
+                |_| panic!("Invalid halfmove clock: {}", parts[4].trim())
             );
     }
 
@@ -568,27 +590,29 @@ pub fn combine_board_strings(
 pub fn format_game_state(state: &State, verbose: bool) -> String {
     let mut result = String::new();
 
-    let null_board = Board::new(
-        state.files,
-        state.ranks
-    );
-    let mut all_boards = Vec::new();
+    let board_size =
+        (state.files as usize) * (state.ranks as usize);
+    let piece_count = state.pieces.len();
 
-    for (i, piece) in state.pieces.iter().enumerate() {
-        let piece_board = &state.pieces_board[i];
+    let mut all_boards = vec![board!(state.files, state.ranks); piece_count];
 
-        all_boards.push(
-            format_board(&piece_board, Some(piece.symbol))
-        );
+    for square in 0..board_size {
+        let piece_idx = state.main_board[square];
+        if piece_idx != NO_PIECE {
+            set!(all_boards[piece_idx as usize], square as u32);
+        }
     }
 
     result.push_str(
-        &all_boards
-            .iter()
-            .fold(format_board(&null_board, None), |acc, board_str| {
-                combine_board_strings(&acc, board_str)
-            })
+        &all_boards.iter().enumerate().map(
+            |(i, b)| format_board(b, Some(state.pieces[i].symbol))
+        ).reduce(|board_str, next_board| {
+            combine_board_strings(&board_str, &next_board)
+        }).expect(
+            "Failed to format combined board string"
+        )
     );
+
 
     if verbose {
         result.push_str(
@@ -611,13 +635,13 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
         }));
 
         result.push_str(&format!("En passant\t: {}\n",
-            state.en_passant_square
-                .map_or(
-                    "-".to_string(),
-                    |sq| format!("{}", format_square(
-                        (sq & 0xFFF) as u16, state)
-                    )
+            if state.en_passant_square == u32::MAX {
+                "-".to_string()
+            } else {
+                format_square(
+                    (state.en_passant_square & 0xFFF) as u16, state
                 )
+            }
         ));
 
         result.push_str(
@@ -659,9 +683,7 @@ pub fn format_piece_types(state: &State) -> String {
 
     let mut result = String::new();
     let pieces_per_table = 6;
-    let num_tables = (
-        state.pieces.len() + pieces_per_table - 1
-    ) / pieces_per_table;
+    let num_tables = state.pieces.len().div_ceil(pieces_per_table);
 
     const HEADER_WIDTH: usize = 10;
     const PIECE_WIDTH: usize = 12;
@@ -725,55 +747,55 @@ pub fn format_piece_types(state: &State) -> String {
             piece_columns.push(piece_data);
         }
 
-        result.push_str("╔");
+        result.push('╔');
         result.push_str(&"═".repeat(HEADER_WIDTH + 2));
-        result.push_str("╤");
+        result.push('╤');
         for i in 0..pieces_in_table {
             result.push_str(&"═".repeat(PIECE_WIDTH + 2));
             if i < pieces_in_table - 1 {
-                result.push_str("╤");
+                result.push('╤');
             }
         }
         result.push_str("╗\n");
 
         for row_idx in 0..9 {
-            result.push_str("║");
+            result.push('║');
 
             result.push_str(&format!(" {:<HEADER_WIDTH$} ", headers[row_idx]));
-            result.push_str("│");
+            result.push('│');
 
             for (col_idx, piece_col) in piece_columns.iter().enumerate() {
                 result.push_str(
                     &format!(" {:^PIECE_WIDTH$} ", piece_col[row_idx])
                 );
                 if col_idx < piece_columns.len() - 1 {
-                    result.push_str("│");
+                    result.push('│');
                 }
             }
 
             result.push_str("║\n");
 
             if row_idx < 8 {
-                result.push_str("╟");
+                result.push('╟');
                 result.push_str(&"─".repeat(HEADER_WIDTH + 2));
-                result.push_str("┼");
+                result.push('┼');
                 for i in 0..pieces_in_table {
                     result.push_str(&"─".repeat(PIECE_WIDTH + 2));
                     if i < pieces_in_table - 1 {
-                        result.push_str("┼");
+                        result.push('┼');
                     }
                 }
                 result.push_str("╢\n");
             }
         }
 
-        result.push_str("╚");
+        result.push('╚');
         result.push_str(&"═".repeat(HEADER_WIDTH + 2));
-        result.push_str("╧");
+        result.push('╧');
         for i in 0..pieces_in_table {
             result.push_str(&"═".repeat(PIECE_WIDTH + 2));
             if i < pieces_in_table - 1 {
-                result.push_str("╧");
+                result.push('╧');
             }
         }
         result.push_str("╝\n");

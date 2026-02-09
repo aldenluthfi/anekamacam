@@ -18,14 +18,16 @@
 use lazy_static::lazy_static;
 use rand::{RngCore, SeedableRng};
 use std::sync::Mutex;
-use bnum::types::U256;
+use bnum::types::{U256, U4096};
 
 use crate::{
+    board, or, set,
     constants::*,
-    game::{hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES}, representations::{
-        board::Board,
-        state::State
-    }}, io::board_io::format_square,
+    game::{
+        hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES},
+        representations::state::State
+    },
+    io::board_io::format_square
 };
 
 lazy_static!{
@@ -36,45 +38,46 @@ lazy_static!{
 
 #[hotpath::measure]
 pub fn verify_game_state(state: &State) {
-    let mut temp_white_board = Board::new(state.files, state.ranks);
-    let mut temp_black_board = Board::new(state.files, state.ranks);
+    let mut temp_white_board = board!(state.files, state.ranks);
+    let mut temp_black_board = board!(state.files, state.ranks);
 
-    for (i, piece) in state.pieces.iter().enumerate() {
-        let piece_board = &state.pieces_board[i];
+    for (index, square) in state.main_board.iter().enumerate() {
+        if *square != NO_PIECE {
+            let piece = &state.pieces[*square as usize];
 
-        if piece.color() == WHITE {
-            temp_white_board.or_assign(piece_board);
-        } else {
-            temp_black_board.or_assign(piece_board);
+            if piece.color() == WHITE {
+                set!(temp_white_board, index as u32);
+            } else {
+                set!(temp_black_board, index as u32);
+            }
         }
     }
 
     assert_eq!(
         &temp_white_board,
-        &state.white_board,
+        &state.pieces_board[WHITE as usize],
         "Computed white board doesn't match state white board"
     );
 
     assert_eq!(
         &temp_black_board,
-        &state.black_board,
+        &state.pieces_board[BLACK as usize],
         "Computed black board doesn't match state black board"
     );
 
-    let mut temp_pieces_board = Board::new(state.files, state.ranks);
+    let mut temp_pieces_board = board!(state.files, state.ranks);
 
-    temp_pieces_board.or_assign(&temp_white_board);
-    temp_pieces_board.or_assign(&temp_black_board);
+    or!(temp_pieces_board, &temp_white_board);
+    or!(temp_pieces_board, &temp_black_board);
 
     let mut temp_big_pieces = [0; 2];
     let mut temp_major_pieces = [0; 2];
     let mut temp_minor_pieces = [0; 2];
 
     for (i, piece) in state.pieces.iter().enumerate() {
-        let piece_board = &state.pieces_board[i];
-        let piece_indices = piece_board.bit_indices();
+        let piece_indices = &state.piece_list[i];
 
-        for _index in piece_indices {
+        for _ in piece_indices {
             if piece.is_big() {
                 temp_big_pieces[piece.color() as usize] += 1;
             }
@@ -105,46 +108,20 @@ pub fn verify_game_state(state: &State) {
         "Computed minor pieces count doesn't match state minor pieces count"
     );
 
-    let mut temp_monarch_board = Board::new(state.files, state.ranks);
-    let mut temp_white_monarch_board = Board::new(state.files, state.ranks);
-    let mut temp_black_monarch_board = Board::new(state.files, state.ranks);
+    let mut temp_royal_list = [Vec::new(), Vec::new()];
 
-    for (i, piece) in state.pieces.iter().enumerate() {
-        if piece.is_royal() {
-            let piece_board = &state.pieces_board[i];
-            let royal_indices = piece_board.bit_indices();
+    for (index, square) in state.main_board.iter().enumerate() {
+        if *square != NO_PIECE && state.pieces[*square as usize].is_royal() {
+            let piece = &state.pieces[*square as usize];
 
-            for index in royal_indices {
-
-                assert!(
-                    state.monarch_board.get_bit(index),
-                    "Royal piece not set in monarch board at index {}",
-                    index
-                );
-
-                if piece.color() == WHITE {
-                    temp_white_monarch_board.set_bit(index);
-                } else {
-                    temp_black_monarch_board.set_bit(index);
-                }
-
-                temp_monarch_board.set_bit(index);
-            }
+            temp_royal_list[piece.color() as usize].push(index as u16);
         }
     }
 
-    temp_black_monarch_board |= temp_white_monarch_board;
-
     assert_eq!(
-        &temp_black_monarch_board,
-        &state.monarch_board,
-        "Computed monarch board from colors doesn't match state monarch board"
-    );
-
-    assert_eq!(
-        &temp_monarch_board,
-        &state.monarch_board,
-        "Computed monarch board doesn't match state monarch board"
+        &temp_royal_list,
+        &state.royal_list,
+        "Computed royal list doesn't match state royal list"
     );
 
     let mut temp_hash = U256::default();
@@ -155,52 +132,52 @@ pub fn verify_game_state(state: &State) {
 
     temp_hash ^= &CASTLING_HASHES[state.castling_state as usize];
 
-    if let Some(ep_square) = state.en_passant_square {
-        temp_hash ^= &EN_PASSANT_HASHES[(ep_square & 0xFFF) as usize];
+    if state.en_passant_square != NO_EN_PASSANT {
+        temp_hash ^=
+            &EN_PASSANT_HASHES[(state.en_passant_square & 0xFFF) as usize];
     }
 
     for piece in &state.pieces {
         let i = piece.index() as usize;
-        let color = piece.color() as usize;
 
-        let piece_board = &state.pieces_board[i];
-        let piece_indices = piece_board.bit_indices();
+        let piece_indices = &state.piece_list[i];
 
         for index in piece_indices {
-            temp_hash ^= PIECE_HASHES[i][color][index as usize];
+            temp_hash ^= PIECE_HASHES[i][*index as usize];
         }
     }
 
     if temp_hash != state.position_hash {
         let missing_hash = temp_hash ^ state.position_hash;
 
-        for (piece_idx, piece_colors) in PIECE_HASHES.iter().enumerate() {
-            for (color_idx, positions) in piece_colors.iter().enumerate() {
-                for (pos_idx, &hash) in positions.iter().enumerate() {
-                    if hash == missing_hash {
-                        panic!(
-                            concat!(
-                                "Hash mismatch! Missing/extra piece at ",
-                                "position {} for piece {} color {}"
-                            ),
-                            format_square(pos_idx as u16, state),
-                            state.pieces[piece_idx].name,
-                            if color_idx == 0 { "WHITE" } else { "BLACK" }
-                        );
-                    }
+        for (piece_idx, positions) in PIECE_HASHES.iter().enumerate() {
+            for (pos_idx, &hash) in positions.iter().enumerate() {
+                if hash == missing_hash {
+                    panic!(
+                        concat!(
+                            "Hash mismatch! Missing/extra piece at ",
+                            "position {} for piece {}"
+                        ),
+                        format_square(pos_idx as u16, state),
+                        state.pieces[piece_idx].name,
+                    );
                 }
             }
         }
 
         for (idx, &hash) in CASTLING_HASHES.iter().enumerate() {
             if hash == missing_hash {
-                panic!("Hash mismatch! Castling state mismatch at index {}", idx);
+                panic!(
+                    "Hash mismatch! Castling state mismatch at index {}", idx
+                );
             }
         }
 
         for (idx, &hash) in EN_PASSANT_HASHES.iter().enumerate() {
             if hash == missing_hash {
-                panic!("Hash mismatch! En passant square mismatch at index {}", idx);
+                panic!(
+                    "Hash mismatch! En passant square mismatch at index {}", idx
+                );
             }
         }
 
