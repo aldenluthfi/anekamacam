@@ -3,19 +3,10 @@ use rayon::{iter::{IntoParallelIterator, ParallelIterator}};
 
 use crate::{
     board, captured_square, get, set, x, y,
-    constants::{MULTI_CAPTURE_MOVE, SINGLE_CAPTURE_MOVE, WHITE},
+    constants::{MULTI_CAPTURE_MOVE, SINGLE_CAPTURE_MOVE},
     game::representations::{board::Board, moves::Move, piece::Piece, state::State, vector::MoveSet},
     move_type, multi_move_captured_square, multi_move_is_unload,
 };
-
-#[hotpath::measure]
-fn check_out_of_bounds(
-    square_index: i32,
-    game_state: &State
-) -> bool {
-    square_index < 0
-        || square_index >= (game_state.files as i32 * game_state.ranks as i32)
-}
 
 #[hotpath::measure]
 fn is_square_attacked(
@@ -23,28 +14,8 @@ fn is_square_attacked(
     side: u8,
     game_state: &State
 ) -> bool {
-
-    #[cfg(debug_assertions)]
-    {
-        use crate::constants::BLACK;
-
-        assert!(!check_out_of_bounds(
-            square_index as i32,
-            game_state
-        ), "Square index {} is out of bounds", square_index);
-
-        assert!(
-            side == WHITE || side == BLACK,
-            "Side must be WHITE or BLACK"
-        );
-    }
-
     let side_piece_count = game_state.pieces.len() / 2;
     let index = side_piece_count * side as usize;
-
-    let friendly_board = &game_state.pieces_board[side as usize];
-    let enemy_board = &game_state.pieces_board[1 - side as usize];
-    let unmoved_board = &game_state.virgin_board;
 
     for i in index..index + side_piece_count {
         let piece = &game_state.pieces[i];
@@ -60,9 +31,6 @@ fn is_square_attacked(
             let move_list = generate_move_list(
                 *attacker_index,
                 piece,
-                friendly_board,
-                enemy_board,
-                unmoved_board,
                 game_state,
                 true
             );
@@ -122,14 +90,6 @@ pub fn generate_relevant_boards(
     square_index: u32,
     game_state: &State
 ) -> Board {
-    #[cfg(debug_assertions)]
-    {
-        assert!(!check_out_of_bounds(
-            square_index as i32,
-            game_state
-        ), "Square index {} is out of bounds", square_index);
-    }
-
     let vector_set = &game_state.piece_moves[piece.index() as usize];
     let side = piece.color();
 
@@ -172,14 +132,6 @@ pub fn generate_relevant_moves(
     square_index: u32,
     game_state: &State
 ) -> MoveSet {
-    #[cfg(debug_assertions)]
-    {
-        assert!(!check_out_of_bounds(
-            square_index as i32,
-            game_state
-        ), "Square index {} is out of bounds", square_index);
-    }
-
     let vector_set = &game_state.piece_moves[piece.index() as usize];
     let side = piece.color();
 
@@ -218,21 +170,19 @@ pub fn generate_relevant_moves(
 pub fn generate_move_list(
     square_index: u16,
     piece: &Piece,
-    friendly_board: &Board,
-    enemy_board: &Board,
-    unmoved_board: &Board,
     game_state: &State,
     imaginary: bool
 ) -> Vec<Move> {
 
-    #[cfg(debug_assertions)]
-    {
-        assert!(!check_out_of_bounds(
-            square_index as i32,
-            game_state
-        ), "Square index {} is out of bounds", square_index);
-    }
+    let piece_index = piece.index() as usize;
+    let piece_color = piece.color() as usize;
+    let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
+    let friendly_board = &game_state.pieces_board[piece_color];
+    let enemy_board = &game_state.pieces_board[1 - piece_color];
+    let virgin_board = &game_state.virgin_board;
 
+    let vector_set =
+        &game_state.relevant_moves[piece_index][square_index as usize];
     unimplemented!()
 }
 
@@ -261,17 +211,12 @@ pub fn generate_all_moves(state: &State) -> Vec<Move> {
         .into_par_iter()
         .flat_map(|piece_index| {
             let piece = &state.pieces[piece_index];
-            let friendly_board = &state.pieces_board[piece.color() as usize];
-            let enemy_board = &state.pieces_board[1 - piece.color() as usize];
             state.piece_list[piece_index]
                 .iter()
                 .flat_map(|index| {
                     generate_move_list(
                         *index,
                         piece,
-                        friendly_board,
-                        enemy_board,
-                        &state.virgin_board,
                         state,
                         false
                     )
