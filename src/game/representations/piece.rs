@@ -17,6 +17,8 @@ use bnum::{cast::As, types::U2048};
 
 /// A structure representing a game piece with its properties.
 ///
+/// A piece can have id from 0 - 254, with 255 reserved for "no piece".
+///
 /// A piece is encoded in 32 bits:
 /// - Bits 0-7: Piece index
 /// - Bit 8: Color (0 for white, 1 for black)
@@ -53,7 +55,7 @@ impl Piece {
     /// * `movement` - Movement pattern in Cheesy King Notation
     /// * `symbol` - Display character for the piece
     /// * `promotions` - Bitset of pieces this can promote to
-    /// * `piece_type` - Index of the piece type (0-255)
+    /// * `piece_type` - Index of the piece type (0-254)
     /// * `color` - Color of the piece (0 for white, 1 for black)
     /// * `is_royal` - Whether this is a royal piece
     /// * `is_big` - Whether can be promoted to (true) or can promote (false)

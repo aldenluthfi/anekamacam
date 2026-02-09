@@ -476,8 +476,7 @@ fn expand_cardinals(expr: &str) -> Option<String> {
     let mut stack = vec![expr.to_string()];
     let mut result_stack = HashSet::new();
 
-    while !stack.is_empty() {
-        let term = stack.pop().unwrap();
+    while let Some(term) = stack.pop() {
 
         #[cfg(debug_assertions)]
         println!("DEBUG: expand_cardinals processing term: {}", term);
@@ -509,7 +508,7 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 /// Splits an expression by '|' delimiter and processes each part in parallel.
 /// Returns a vector of results of applying function `f` to each part.
 #[hotpath::measure]
-fn split_and_process<'a, T>(
+fn split_and_process<T>(
     expr: &str,
     f: impl Fn(&str) -> Option<T> + Sync
 ) -> Vec<Option<T>>
@@ -531,8 +530,8 @@ where
 /// - `leg_to_vector`
 #[hotpath::measure]
 fn parse_move(expr: &str) -> String {
-    let expr = normalize(expr).expect(
-        &format!("Failed to normalize expression: {}", expr)
+    let expr = normalize(expr).unwrap_or_else(
+        || panic!("Failed to normalize expression: {}", expr)
     );
 
     let pipeline = [
@@ -575,12 +574,13 @@ fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
         (vector.0.signum(), vector.1.signum())
     };
 
-    let index = *CARDINAL_VECTORS_TO_INDEX.get(&direction_vector).expect(
-        &format!("Invalid direction vector: {:?}", vector)
-    );
+    let index = *CARDINAL_VECTORS_TO_INDEX.get(&direction_vector)
+        .unwrap_or_else(
+            || panic!("Invalid direction vector: {:?}", vector)
+        );
 
-    *CARDINAL_INDEX_TO_STR.get(&index).expect(
-        &format!(
+    CARDINAL_INDEX_TO_STR.get(&index).unwrap_or_else(
+        || panic!(
             "Invalid index for inverse cardinal map: {}",
             index
         )
@@ -739,7 +739,7 @@ fn process_atomic_dots_token(
     let mut updated_vectors: Vec<AtomicVector> = vector_set
         .into_iter()
         .map(|vector| {
-            let mut new_vector = vector.clone();
+            let mut new_vector = vector;
             new_vector.set(&new_vector.add_last(dots_count));
             new_vector
         })
@@ -777,7 +777,7 @@ fn process_atomic_range_token(
                 let updated_vectors: Vec<_> = vector_set
                     .iter()
                     .map(|vector| {
-                        let mut new_vector = vector.clone();
+                        let mut new_vector = *vector;
                         new_vector.set(&new_vector.add_last(count - 1));
                         new_vector
                     })
@@ -807,7 +807,7 @@ fn process_atomic_range_token(
             let mut updated_vectors: Vec<AtomicVector> = vector_set
                 .into_iter()
                 .map(|vector| {
-                    let mut new_vector = vector.clone();
+                    let mut new_vector = vector;
                     new_vector.set(&new_vector.add_last(count - 1));
                     new_vector
                 })
@@ -1003,7 +1003,7 @@ fn evaluate_atomic_term (
         let mut extension = Vec::new();
         let mut eval = chained_atomic_to_vector(&atomic, rotation);
 
-        eval = process_atomic_modifiers(eval, &modifiers, rotation);
+        eval = process_atomic_modifiers(eval, modifiers, rotation);
 
         for vector in eval {
             extension.push(branch_vector.add(&vector))
@@ -1032,7 +1032,7 @@ fn evaluate_atomic_subexpresion(
         let mut extension = Vec::new();
         let eval_result = evaluate_atomic_expression(
             subexpr.clone(),
-            &branch_rotation,
+            branch_rotation,
             game_state
         );
 
@@ -1048,7 +1048,7 @@ fn evaluate_atomic_subexpresion(
             }
         };
 
-        eval = process_atomic_modifiers(eval, &modifiers, branch_rotation);
+        eval = process_atomic_modifiers(eval, modifiers, branch_rotation);
         for vector in eval {
             extension.push(branch_vector.add(&vector))
         }
@@ -1075,13 +1075,13 @@ fn evaluate_atomic_expression(
         expr, rotation
     );
 
-    let mut result: Vec<AtomicVector> = Vec::from(
+    let mut result: Vec<AtomicVector> =
         vec![
             AtomicVector::origin(
                 *CARDINAL_STR_TO_INDEX.get(rotation).unwrap()
             )
-        ]
-    );
+        ];
+
     let mut modifiers: (Option<Token>, Option<Token>) =
         (None, None);
 
@@ -1096,24 +1096,24 @@ fn evaluate_atomic_expression(
                 modifiers.1 = Some(Filter(directions.to_string()));
             }
             AtomicTerm(Dots(token)) => {
-                result = process_atomic_dots_token(result, &token, game_state);
+                result = process_atomic_dots_token(result, token, game_state);
             }
             AtomicTerm(Range(token)) => {
-                result = process_atomic_range_token(result, &token, game_state);
+                result = process_atomic_range_token(result, token, game_state);
             }
             AtomicTerm(Atomic(atomic)) => {                                     /* Base case                          */
-                if i + 1 < expr.len() {
-                    if let AtomicTerm(Colon(token)) = &expr[i + 1] {
-                        result = process_atomic_colon_range_token(
-                            result,
-                            &token,
-                            Some(AtomicTerm(Atomic(atomic.to_string()))),
-                            &modifiers,
-                            game_state
-                        );
-                        i += 2;
-                        continue;
-                    }
+                if  i + 1 < expr.len() &&
+                    let AtomicTerm(Colon(token)) = &expr[i + 1]
+                {
+                    result = process_atomic_colon_range_token(
+                        result,
+                        token,
+                        Some(AtomicTerm(Atomic(atomic.to_string()))),
+                        &modifiers,
+                        game_state
+                    );
+                    i += 2;
+                    continue;
                 }
 
                 result = evaluate_atomic_term(
@@ -1125,19 +1125,20 @@ fn evaluate_atomic_expression(
                 modifiers = (None, None);                                       /* Reset modifiers after use          */
             }
             AtomicExpr(group) => {                                              /* Recursive case                     */
-                if i + 1 < expr.len() {
-                    if let AtomicTerm(Colon(token)) = &expr[i + 1] {
-                        result = process_atomic_colon_range_token(
-                            result,
-                            &token,
-                            Some(AtomicExpr(group.clone())),
-                            &modifiers,
-                            game_state
-                        );
-                        i += 2;
-                        continue;
-                    }
+                if i + 1 < expr.len() &&
+                    let AtomicTerm(Colon(token)) = &expr[i + 1]
+                {
+                    result = process_atomic_colon_range_token(
+                        result,
+                        token,
+                        Some(AtomicExpr(group.clone())),
+                        &modifiers,
+                        game_state
+                    );
+                    i += 2;
+                    continue;
                 }
+
                 result = evaluate_atomic_subexpresion(
                     result,
                     group.clone(),
@@ -1328,15 +1329,15 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
     let mut set = HashSet::new();
 
     let cap = ATOMIC.captures(expr)
-        .expect(
-            &format!("Invalid atomic expression: {}", expr)
+        .unwrap_or_else(
+            || panic!("Invalid atomic expression: {}", expr)
         );
 
     let direction = cap.get(1).map(|m| m.as_str());
     let range = cap.get(2).map(|m| m.as_str());
     let rotation_index: i8 = *CARDINAL_STR_TO_INDEX.get(rotation)
-        .expect(
-            &format!("Invalid rotation direction: {}", rotation)
+        .unwrap_or_else(
+            || panic!("Invalid rotation direction: {}", rotation)
         );
 
     if let Some(range_str) = range {
@@ -1426,7 +1427,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// ```
 ///
 /// 2. for each of the vector, apply nF -> n[2468]K with respect to the last
-/// vector:
+///    vector:
 ///    - for (1, 1): direction is ne so n[2468]K rotated by ne produces (0, 1)
 ///      and (1, 0)
 ///
@@ -1568,10 +1569,11 @@ fn chained_atomic_to_vector(
     );
 
     let mut result: Vec<AtomicVector> = vec![
-        AtomicVector::origin(*CARDINAL_STR_TO_INDEX.get(rotation).expect(
-                &format!("Invalid rotation direction: {}", rotation)
-            ) as i8
-        )
+        AtomicVector::origin(*CARDINAL_STR_TO_INDEX.get(rotation)
+            .unwrap_or_else(
+                    || panic!("Invalid rotation direction: {}", rotation)
+                )
+            )
     ];
 
     if expr == "#" {                                                            /* null move follows prev direction   */
@@ -1583,13 +1585,12 @@ fn chained_atomic_to_vector(
     let atomics: Vec<_> = ATOMIC.find_iter(expr).collect();
     assert!(!atomics.is_empty(), "Invalid chained atomic expression: {}", expr);
 
-    for i in 0..atomics.len() {
+    for atomic_match in atomics {
         stack = result.clone();
         result.clear();
-        let atomic_str = atomics[i].as_str();
+        let atomic_str = atomic_match.as_str();
 
-        while !stack.is_empty() {
-            let previous = stack.pop().unwrap();
+        while let Some(previous) = stack.pop() {
             let prev_tuple = previous.as_tuple();
 
             let current_rotation = irregular_vector_direction(&prev_tuple[1]);
@@ -1659,8 +1660,8 @@ fn chained_atomic_to_vector(
 /// ```
 ///
 /// 2. nWnF is inside <...> so it will be treated as one vector set and
-///   influence the next atomic as a whole. so we need to recursively process
-///   nWnF first. So the move after processing nWnF (starting from S'):
+///    influence the next atomic as a whole. so we need to recursively process
+///    nWnF first. So the move after processing nWnF (starting from S'):
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
 /// │    │    │    │    │    │    │    │    │    │
@@ -1688,7 +1689,7 @@ fn chained_atomic_to_vector(
 /// magnitude is +y so it will influence the next atomic as "n" or (0, 1).
 ///
 /// 3. finally apply nW (with respect to "n" from the previous step):
-/// Final squares of the move (F Squares):
+///    Final squares of the move (F Squares):
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
 /// │    │    │    │    │    │    │    │    │    │
@@ -1735,7 +1736,7 @@ fn compound_atomic_to_vector(
                 process_closing_bracket(
                     &mut stack,
                     |term| matches!(term, AtomicTerm(Bracket(_))),
-                    |result| AtomicExpr(result),
+                    AtomicExpr,
                 );
             },
             "<" => {
@@ -1923,12 +1924,12 @@ fn process_multi_leg_dots_token(
     let mut updated_vectors: Vec<MultiLegVector> = vector_set
         .into_iter()
         .map(|mut vector| {
-            let last = vector.last().expect(
+            let last = *vector.last().expect(
                 "Expected at least one leg in multi leg vector."
-            ).clone();
+            );
 
             for _ in 0..dot_count {
-                vector.push(last.clone());
+                vector.push(last);
             }
             vector
         })
@@ -1967,12 +1968,12 @@ let captures = RANGE_TOKEN.captures(token).unwrap();
                     .clone()
                     .into_iter()
                     .map(|mut vector| {
-                        let last = vector.last().expect(
+                        let last = *vector.last().expect(
                             "Expected at least one leg in multi leg vector."
-                        ).clone();
+                        );
 
                         for _ in 0..count - 1 {
-                            vector.push(last.clone());
+                            vector.push(last);
                         }
                         vector
                     })
@@ -2002,12 +2003,12 @@ let captures = RANGE_TOKEN.captures(token).unwrap();
             let mut updated_vectors: Vec<MultiLegVector> = vector_set
                 .into_iter()
                 .map(|mut vector| {
-                    let last = vector.last().expect(
+                    let last = *vector.last().expect(
                         "Expected at least one leg in multi leg vector."
-                    ).clone();
+                    );
 
                     for _ in 0..count - 1 {
-                        vector.push(last.clone());
+                        vector.push(last);
                     }
                     vector
                 })
@@ -2447,6 +2448,7 @@ fn evaluate_multi_leg_expression(
     );
 
     let mut result: Vec<MultiLegVector> = Vec::new();
+    let mut exclusion: Vec<MultiLegVector> = Vec::new();
     let mut modifiers: [Option<Token>; 3] = [None, None, None];
 
     let mut i = 0;
@@ -2463,20 +2465,21 @@ fn evaluate_multi_leg_expression(
                 modifiers[2] = Some(MoveModifier(modifier.to_string()));
             }
             MultiLegTerm(Leg(atomic)) => {
-                if i + 1 < expr.len() {
-                    if let MultiLegTerm(Colon(token)) = &expr[i + 1] {
-                        result = process_multi_leg_colon_range_token(
-                            result,
-                            &token,
-                            Some(MultiLegTerm(Leg(atomic.to_string()))),
-                            &modifiers,
-                            rotation,
-                            game_state
-                        );
-                        i += 2;
-                        continue;
-                    }
+                if  i + 1 < expr.len() &&
+                    let MultiLegTerm(Colon(token)) = &expr[i + 1]
+                {
+                    result = process_multi_leg_colon_range_token(
+                        result,
+                        token,
+                        Some(MultiLegTerm(Leg(atomic.to_string()))),
+                        &modifiers,
+                        rotation,
+                        game_state
+                    );
+                    i += 2;
+                    continue;
                 }
+
                 result = evaluate_multi_leg_term_leg(
                     result,
                     Leg(atomic.to_string()),
@@ -2497,20 +2500,27 @@ fn evaluate_multi_leg_expression(
                     result, token, game_state
                 );
             }
+            MultiLegTerm(Exclusion(token)) => {
+                exclusion = multi_leg_to_vector(
+                    &token[1..],
+                    rotation,
+                    game_state
+                );
+            }
             MultiLegExpr(group) => {
-                if i + 1 < expr.len() {
-                    if let MultiLegTerm(Colon(token)) = &expr[i + 1] {
-                        result = process_multi_leg_colon_range_token(
-                            result,
-                            &token,
-                            Some(MultiLegSlashExpr(group.clone())),
-                            &modifiers,
-                            rotation,
-                            game_state
-                        );
-                        i += 2;
-                        continue;
-                    }
+                if  i + 1 < expr.len() &&
+                    let MultiLegTerm(Colon(token)) = &expr[i + 1]
+                {
+                    result = process_multi_leg_colon_range_token(
+                        result,
+                        token,
+                        Some(MultiLegSlashExpr(group.clone())),
+                        &modifiers,
+                        rotation,
+                        game_state
+                    );
+                    i += 2;
+                    continue;
                 }
 
                 result = evaluate_multi_leg_subexpression(
@@ -2524,20 +2534,21 @@ fn evaluate_multi_leg_expression(
                 modifiers = [None, None, None];
             },
             MultiLegSlashExpr(group) => {
-                if i + 1 < expr.len() {
-                    if let MultiLegTerm(Colon(token)) = &expr[i + 1] {
-                        result = process_multi_leg_colon_range_token(
-                            result,
-                            &token,
-                            Some(MultiLegSlashExpr(group.clone())),
-                            &modifiers,
-                            rotation,
-                            game_state
-                        );
-                        i += 2;
-                        continue;
-                    }
+                if  i + 1 < expr.len() &&
+                    let MultiLegTerm(Colon(token)) = &expr[i + 1]
+                {
+                    result = process_multi_leg_colon_range_token(
+                        result,
+                        token,
+                        Some(MultiLegSlashExpr(group.clone())),
+                        &modifiers,
+                        rotation,
+                        game_state
+                    );
+                    i += 2;
+                    continue;
                 }
+
                 result = evaluate_multi_leg_subexpression(
                     result,
                     element.clone(),
@@ -2559,6 +2570,12 @@ fn evaluate_multi_leg_expression(
     }
 
     filter_multi_leg_out_of_bounds(&mut result, game_state);
+
+    result.retain(
+        | vector | {
+            !exclusion.contains(vector)
+        }
+    );
 
     #[cfg(debug_assertions)]
     println!(
@@ -2608,8 +2625,7 @@ fn tokenize_multi_leg_expression(
         prev_tokens = tokens.clone();
         tokens = tokens.into_iter().rev().collect();
         let mut result = vec![];
-        while !tokens.is_empty() {
-            let token = tokens.pop().unwrap();
+        while let Some(token) = tokens.pop() {
             result.push(token.clone());
 
             if token == ">" {
@@ -2683,8 +2699,8 @@ fn leg_to_vector(
         expr, rotation
     );
 
-    let captures = LEG.captures(expr).expect(
-        &format!("Invalid leg expression: {}", expr)
+    let captures = LEG.captures(expr).unwrap_or_else(
+        || panic!("Invalid leg expression: {}", expr)
     );
 
     #[cfg(debug_assertions)]
@@ -2742,8 +2758,8 @@ fn parse_castling(
 
     let mut vectors: Vec<MultiLegVector> = Vec::new();
 
-    let captures = CASTLING_TOKEN.captures(expr).expect(
-        &format!("Invalid castling expression: {}", expr)
+    let captures = CASTLING_TOKEN.captures(expr).unwrap_or_else(
+        || panic!("Invalid castling expression: {}", expr)
     );
 
     #[cfg(debug_assertions)]
@@ -2811,14 +2827,14 @@ fn multi_leg_to_vector(
                 process_closing_bracket(
                     &mut stack,
                     |term| matches!(term, MultiLegTerm(Bracket(_))),
-                    |result| MultiLegExpr(result),
+                    MultiLegExpr,
                 );
             },
             "/>" => {
                 process_closing_bracket(
                     &mut stack,
                     |term| matches!(term, MultiLegTerm(SlashBracket(_))),
-                    |result| MultiLegSlashExpr(result),
+                    MultiLegSlashExpr,
                 );
             },
             "<" => {
@@ -2877,6 +2893,13 @@ fn multi_leg_to_vector(
                     )
                 );
             },
+            token if token.starts_with("@") => {
+                stack.push_back(
+                    MultiLegTerm(
+                        Exclusion(token.to_string())
+                    )
+                );
+            }
             _ => {
                 stack.push_back(
                     MultiLegTerm(
