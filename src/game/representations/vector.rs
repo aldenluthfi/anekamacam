@@ -2,6 +2,185 @@ use std::{collections::VecDeque, fmt::Debug};
 
 use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
 
+/*----------------------------------------------------------------------------*\
+                        MOVE GENERATION REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
+
+#[macro_export]
+macro_rules! leg {
+    ($l:expr) => {
+        ($l.get_atomic().whole().0 as u8 as Leg) |
+        ($l.get_atomic().whole().1 as u8 as Leg) << 8 |
+        ($l.get_modifiers() as Leg) << 16
+    };
+}
+
+#[macro_export]
+macro_rules! vector {
+    ($l:expr) => {
+        $l & 0xFFFF_FFFF                                                        /* lower 32 bits represent the vector */
+    };
+}
+
+#[macro_export]
+macro_rules! modifiers {
+    ($l:expr) => {
+        ($l >> 32) & 0xFFFF                                                     /* upper 16 bits represent modifiers  */
+    };
+}
+
+#[macro_export]
+macro_rules! x {
+    ($l:expr) => {
+        ($l & 0xFF) as i8
+    };
+}
+
+#[macro_export]
+macro_rules! y {
+    ($l:expr) => {
+        (($l >> 8) & 0xFF) as i8
+    };
+}
+
+#[macro_export]
+macro_rules! m {
+    ($l:expr) => {
+        ($l >> 16) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! c {
+    ($l:expr) => {
+        ($l >> 17) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! i {
+    ($l:expr) => {
+        ($l >> 18) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! u {
+    ($l:expr) => {
+        ($l >> 19) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! d {
+    ($l:expr) => {
+        ($l >> 20) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! p {
+    ($l:expr) => {
+        ($l >> 21) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! k {
+    ($l:expr) => {
+        ($l >> 22) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_m {
+    ($l:expr) => {
+        ($l >> 23) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_c {
+    ($l:expr) => {
+        ($l >> 24) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_i {
+    ($l:expr) => {
+        ($l >> 25) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_u {
+    ($l:expr) => {
+        ($l >> 26) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_d {
+    ($l:expr) => {
+        ($l >> 27) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_p {
+    ($l:expr) => {
+        ($l >> 28) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_k {
+    ($l:expr) => {
+        ($l >> 29) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! kingside {
+    ($l:expr) => {
+        {
+            let rank_offset = (($l >> 8) & 0xFF) as i8;
+            rank_offset == i8::MAX
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! queenside {
+    ($l:expr) => {
+        {
+            let rank_offset = (($l >> 8) & 0xFF) as i8;
+            rank_offset == i8::MIN
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! castling {
+    ($l:expr) => {
+        {
+            let rank_offset = (($l >> 8) & 0xFF) as i8;
+            rank_offset == i8::MIN || rank_offset == i8::MAX
+        }
+    };
+}
+
+/// A single leg move representation. Similar to LegVector but in u32 form.
+/// Only retaining the whole vector and modifier bits.
+pub type Leg = u32;
+pub type MoveVector = Vec<Leg>;
+pub type MoveSet = Vec<MoveVector>;
+
+/*----------------------------------------------------------------------------*\
+                            MOVE PARSE REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
+
 pub type MultiLegGroup = VecDeque<MultiLegElement>;
 
 #[derive(Clone)]
@@ -68,7 +247,10 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - k  : gives check
 /// - !x : negation of modifier x
 ///
-/// Move modifiers without an atomic vector are also considered special.
+/// Castling moves are represented with a special rank offset in the
+/// AtomicVector part of the LegVector:
+/// - rank offset = i8::MAX for kingside castling
+/// - rank offset = i8::MIN for queenside castling
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
 
@@ -112,7 +294,8 @@ impl LegVector {
                 _ => panic!("Invalid modifier character: {}", ch),
             };
         }
-        while let Some(next) = chars.next() {
+
+        for next in chars {
             bits |= match next {
                 'm' => 1 << 7,
                 'c' => 1 << 8,
@@ -125,15 +308,14 @@ impl LegVector {
             };
         }
 
-        if bits & (1 << 1) == 1 && bits & (1 << 13) != 1 {
+        if bits & (1 << 1) == 0 && bits & (1 << 13) != 0 {
             bits |= 1 << 6;                                                     /* c implies k                        */
         }
 
-        match (bits & (1 << 0) == 1, bits & (1 << 1) == 1) {                    /* mutually exclusive                 */
-            (true, true) => panic!(
+        if (bits & (1 << 0) != 0) && (bits & (1 << 1) != 0) {                   /* mutually exclusive                 */
+            panic!(
                 "Invalid modifier state: both m and c are set"
-            ),
-            _ => {}
+            );
         }
 
         bits
@@ -413,6 +595,7 @@ pub enum Token {
     Colon(String),
     Range(String),
     Dots(String),
+    Exclusion(String),
 }
 
 impl Debug for Token {
@@ -431,6 +614,7 @@ impl Debug for Token {
             Token::Colon(s) => write!(f, "{}", s),
             Token::Range(s) => write!(f, "{}", s),
             Token::Dots(s) => write!(f, "{}", s),
+            Token::Exclusion(s) => write!(f, "{}", s),
         }
     }
 }

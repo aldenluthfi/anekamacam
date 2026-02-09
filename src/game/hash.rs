@@ -26,31 +26,21 @@ use crate::{
 };
 
 lazy_static! {
-    pub static ref CASTLING_HASHES: [U256; 16] = {
-        let mut hashes = [U256::default(); 16];
-        for i in 0..16 {
-            hashes[i] = random_u256();
-        }
-        hashes
-    };
+    pub static ref CASTLING_HASHES: [U256; 16] =
+        [random_u256(); 16];
 
-    pub static ref EN_PASSANT_HASHES: [U256; MAX_SQUARES] = {
-        let mut hashes = [U256::default(); MAX_SQUARES];
-        for i in 0..MAX_SQUARES {
-            hashes[i] = random_u256();
-        }
-        hashes
-    };
+    pub static ref EN_PASSANT_HASHES: [U256; MAX_SQUARES] =
+        [random_u256(); MAX_SQUARES];
 
     pub static ref SIDE_HASHES: U256 = random_u256();
 
-    pub static ref PIECE_HASHES: Vec<[[U256; MAX_SQUARES]; 2]>
+    pub static ref PIECE_HASHES: Vec<[U256; MAX_SQUARES]>
         = {
-            let mut result: Vec<[[U256; MAX_SQUARES]; 2]> =
+            let mut result: Vec<[U256; MAX_SQUARES]> =
                 Vec::with_capacity(256);
 
             for _ in 0..256 {
-                let piece_hashes = [[random_u256(); MAX_SQUARES]; 2];
+                let piece_hashes = [random_u256(); MAX_SQUARES];
                 result.push(piece_hashes);
             }
 
@@ -69,19 +59,13 @@ pub fn hash_position(state: &State) -> U256 {
 
     hash ^= &CASTLING_HASHES[state.castling_state as usize];
 
-    if let Some(ep_square) = state.en_passant_square {
-        hash ^= &EN_PASSANT_HASHES[(ep_square & 0xFFF) as usize];
+    if state.en_passant_square < MAX_SQUARES as u32 {
+        hash ^= &EN_PASSANT_HASHES[(state.en_passant_square & 0xFFF) as usize];
     }
 
-    for piece in &state.pieces {
-        let i = piece.index() as usize;
-        let color = piece.color() as usize;
-
-        let piece_board = &state.pieces_board[i];
-        let piece_indices = piece_board.bit_indices();
-
-        for index in piece_indices {
-            hash ^= PIECE_HASHES[i][color][index as usize];
+    for (index, piece_positions) in state.piece_list.iter().enumerate() {
+        for &square in piece_positions {
+            hash ^= &PIECE_HASHES[index][square as usize];
         }
     }
 
@@ -93,11 +77,10 @@ pub fn hash_position(state: &State) -> U256 {
 pub fn hash_in_or_out_piece(
     game_state: &mut State,
     piece_index: usize,
-    piece_color: u8,
     square_index: u16
 ) {
     game_state.position_hash ^=
-        &PIECE_HASHES[piece_index][piece_color as usize][square_index as usize];
+        &PIECE_HASHES[piece_index][square_index as usize];
 }
 
 #[inline(always)]

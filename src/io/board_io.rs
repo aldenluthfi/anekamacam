@@ -16,9 +16,12 @@
 
 use bnum::types::U4096;
 
-use crate::game::representations::{
-    board::Board,
-    state::State,
+use crate::{
+    files, ranks,
+    game::representations::{
+        board::Board,
+        state::State,
+    },
 };
 
 pub fn format_square(index: u16, game_state: &State) -> String {
@@ -53,15 +56,14 @@ fn format_bitboard(board: &U4096, ranks: u8, files: u8) -> String {
 }
 
 pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
-    let ranks = board.ranks;
-    let files = board.files;
-    let mut bitboard_str = format_bitboard(&board.bits, ranks, files);
+    let ranks = ranks!(board);
+    let files = files!(board);
+    let mut bitboard_str = format_bitboard(&board.2, ranks, files);
 
-    if piece_char.is_some() {
+    if let Some(piece) = piece_char {
         bitboard_str = bitboard_str.replace(
             "1",
-            piece_char
-                .unwrap()
+            piece
                 .to_string()
                 .as_str()
         );
@@ -75,8 +77,8 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     for (i, line) in bitboard_str.lines().enumerate() {
         result.push_str(
             &format!(
-                "{} ║ {} ║\n",
-                format!("{:02}", ranks as usize - i),
+                "{:02} ║ {} ║\n",
+                ranks as usize - i,
                 line.trim().replace("  ", " │ ")
             )
         );

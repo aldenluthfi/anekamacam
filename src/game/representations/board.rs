@@ -2,13 +2,13 @@
 //!
 //! Defines a board structure and operations for bitboard manipulation.
 //!
-//! This file contains the implementation of a `Board` struct, which represents
-//! a board using a dynamically-sized bitboard. The bitboard type is selected
-//! based on the board dimensions: u64 for standard 8x8 boards, U256 for boards
-//! up to 16x16, U1024 for boards up to 32x32, and U4096 for larger boards.
-//! It provides methods for setting, clearing, and querying bits, as well as
-//! utility functions for bitboard manipulation such as finding the least
-//! significant bit (LSB), most significant bit (MSB), and counting set bits.
+//! This file contains the implementation of a `Board`, which represents a board
+//! using a bitboard. The bitboard type is selected based on the board
+//! dimensions: u64 for standard 8x8 boards, U256 for boards up to 16x16, U1024
+//! for boards up to 32x32, and U4096 for larger boards. It provides methods
+//! for setting, clearing, and querying bits, as well as utility functions for
+//! bitboard manipulation such as finding the least significant bit (LSB), most
+//! significant bit (MSB), and counting set bits.
 //!
 //! # Author
 //! Alden Luthfi
@@ -17,182 +17,68 @@
 //! 18/02/2024
 
 use bnum::types::U4096;
-use crate::constants::*;
-use std::ops::{BitAnd, BitAndAssign, BitOrAssign, BitXorAssign};
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Board {
-    pub ranks: u8,
-    pub files: u8,
-    pub bits: U4096,
+pub type Board = (u8, u8, U4096);
+
+#[macro_export]
+macro_rules! board {
+    ($ranks:expr, $files:expr) => {
+        ($ranks, $files, U4096::ZERO)
+    };
 }
 
-pub struct BitIndicesIter {
-    bits: U4096,
+#[macro_export]
+macro_rules! ranks {
+    ($board:expr) => {
+        $board.0
+    };
 }
 
-impl Iterator for BitIndicesIter {
-    type Item = u32;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.bits == U4096::ZERO {
-            None
-        } else {
-            let lsb = self.bits.trailing_zeros();
-            self.bits &= self.bits - U4096::ONE;
-            Some(lsb)
-        }
-    }
+#[macro_export]
+macro_rules! files {
+    ($board:expr) => {
+        $board.1
+    };
 }
 
-#[hotpath::measure_all]
-impl Board {
-
-    #[inline(always)]
-    pub fn new(files: u8, ranks: u8) -> Board {
-        #[cfg(debug_assertions)]
-        {
-            assert!(
-            files <= MAX_FILES,
-            "Number of files {files} exceeds maximum of {MAX_FILES}."
-            );
-            assert!(
-            ranks <= MAX_RANKS,
-            "Number of ranks {ranks} exceeds maximum of {MAX_RANKS}."
-            );
-        }
-
-        Board {
-            ranks,
-            files,
-            bits: U4096::from(0u32),
-        }
-    }
-
-    #[inline(always)]
-    pub fn set_bit(&mut self, index: u32) {
-        #[cfg(debug_assertions)]
-        {
-            let size = (self.ranks as u32) * (self.files as u32);
-            assert!(
-                index < size,
-                "Index {index} out of bounds for board of size {size}."
-            );
-        }
-
-        self.bits.set_bit(index, true);
-    }
-
-    #[inline(always)]
-    pub fn clear_bit(&mut self, index: u32) {
-        #[cfg(debug_assertions)]
-        {
-            let size = (self.ranks as u32) * (self.files as u32);
-            assert!(
-                index < size,
-                "Index {index} out of bounds for board of size {size}."
-            );
-        }
-
-        self.bits.set_bit(index, false);
-    }
-
-    #[inline(always)]
-    pub fn get_bit(&self, index: u32) -> bool {
-        #[cfg(debug_assertions)]
-        {
-            let size = (self.ranks as u32) * (self.files as u32);
-            assert!(
-                index < size,
-                "Index {index} out of bounds for board of size {size}."
-            );
-        }
-
-        self.bits.bit(index)
-    }
-
-    #[inline(always)]
-    pub fn lsb(&self) -> u32 {
-        self.bits.trailing_zeros()
-    }
-
-    #[inline(always)]
-    pub fn count_bits(&self) -> u32 {
-        self.bits.count_ones()
-    }
-
-    #[inline(always)]
-    pub fn bit_indices(&self) -> Vec<u32> {
-        let count = self.bits.count_ones();
-        if count == 0 {
-            return Vec::new();
-        }
-
-        let mut bits = self.bits;
-        let mut indices = Vec::with_capacity(count as usize);
-
-        while bits != U4096::ZERO {
-            let lsb = bits.trailing_zeros();
-            indices.push(lsb);
-            bits &= bits - U4096::ONE;
-        }
-
-        indices
-    }
-
-    #[inline(always)]
-    pub fn bit_indices_iter(&self) -> BitIndicesIter {
-        BitIndicesIter { bits: self.bits }
-    }
-
-    #[inline(always)]
-    pub fn and_assign(&mut self, rhs: &Board) {
-        self.bits &= rhs.bits;
-    }
-
-    #[inline(always)]
-    pub fn or_assign(&mut self, rhs: &Board) {
-        self.bits |= rhs.bits;
-    }
-
-    #[inline(always)]
-    pub fn xor_assign(&mut self, rhs: &Board) {
-        self.bits ^= rhs.bits;
-    }
-
-    #[inline(always)]
-    pub fn not_assign(&mut self) {
-        self.bits = !self.bits;
-    }
+#[macro_export]
+macro_rules! get {
+    ($board:expr, $index:expr) => {
+        $board.2.bit($index)
+    };
 }
 
-impl BitAndAssign for Board {
-    fn bitand_assign(&mut self, rhs: Self) {
-        self.bits &= rhs.bits;
-    }
+#[macro_export]
+macro_rules! set {
+    ($board:expr, $index:expr) => {
+        $board.2.set_bit($index, true);
+    };
 }
 
-impl BitOrAssign for Board {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.bits |= rhs.bits;
-    }
+#[macro_export]
+macro_rules! clear {
+    ($board:expr, $index:expr) => {
+        $board.2.set_bit($index, false);
+    };
 }
 
-impl BitXorAssign for Board {
-    fn bitxor_assign(&mut self, rhs: Self) {
-        self.bits ^= rhs.bits;
-    }
+#[macro_export]
+macro_rules! or {
+    ($board1:expr, $board2:expr) => {
+        $board1.2 |= &$board2.2;
+    };
 }
 
-impl BitAnd for &Board {
-    type Output = Board;
+#[macro_export]
+macro_rules! and {
+    ($board1:expr, $board2:expr) => {
+        $board1.2.and_assign(&$board2.2);
+    };
+}
 
-    fn bitand(self, rhs: Self) -> Self::Output {
-        Board {
-            bits: self.bits & rhs.bits,
-            ranks: self.ranks,
-            files: self.files,
-        }
-    }
+#[macro_export]
+macro_rules! xor {
+    ($board1:expr, $board2:expr) => {
+        $board1.2.xor_assign(&$board2.2);
+    };
 }

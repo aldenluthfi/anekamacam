@@ -7,6 +7,13 @@ edition = "2024"
 name = "anekamacam"
 path = "main.rs"
 
+[lints.rust]
+unused_imports = "warn"
+unused_variables = "warn"
+
+[lints.clippy]
+large_stack_arrays = "deny"
+
 [dependencies]
 hotpath = { workspace = true }
 lazy_static = { workspace = true }
