@@ -14,7 +14,7 @@
 //! # Date
 //! 25/01/2026
 
-use bnum::types::U4096;
+use bnum::types::U2048;
 
 use crate::{
     files, ranks,
@@ -37,7 +37,7 @@ pub fn format_square(index: u16, game_state: &State) -> String {
     }
 }
 
-fn format_bitboard(board: &U4096, ranks: u8, files: u8) -> String {
+fn format_bitboard(board: &U2048, ranks: u8, files: u8) -> String {
 
     let mut result = String::new();
 
