@@ -1,40 +1,42 @@
-use bnum::types::U4096;
+use bnum::types::U2048;
 
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 use crate::{
-    board, c, captured_piece, captured_square, captured_unmoved, castling,
-    clear,
+    board, c, captured_piece, captured_square, captured_unmoved,
+    castling, clear,
     constants::{
-        BK_CASTLE, BQ_CASTLE, MULTI_CAPTURE_MOVE, NO_EN_PASSANT, NO_PIECE,
-        QUIET_MOVE, SINGLE_CAPTURE_MOVE, WHITE, WK_CASTLE, WQ_CASTLE,
+        BK_CASTLE, BQ_CASTLE, MULTI_CAPTURE_MOVE, NO_EN_PASSANT,
+        NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WHITE, WK_CASTLE,
+        WQ_CASTLE,
     },
-    created_enp, creates_enp, d, enc_can_check, enc_can_enp,
-    enc_captured_piece, enc_captured_square, enc_captured_unmoved,
-    enc_created_enp, enc_creates_enp, enc_end, enc_is_castling,
-    enc_is_unload, enc_move_type, enc_multi_move_can_check,
+    created_enp, creates_enp, d,
+    enc_can_check, enc_can_enp, enc_captured_piece,
+    enc_captured_square, enc_captured_unmoved, enc_created_enp,
+    enc_creates_enp, enc_end, enc_is_castling, enc_is_unload,
+    enc_move_type, enc_multi_move_can_check, enc_multi_move_can_enp,
     enc_multi_move_captured_piece, enc_multi_move_captured_square,
     enc_multi_move_captured_unmoved, enc_multi_move_is_unload,
     enc_multi_move_unload_square, enc_must_initial, enc_must_not_initial,
     enc_piece, enc_promoted, enc_promoting, enc_promotion, enc_start,
     enc_unload_square, end, enp_captured, enp_piece, enp_square,
     game::{
-        hash::{
-            hash_in_or_out_piece, hash_toggle_side, hash_update_castling,
-            hash_update_en_passant,
-        },
+        hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES,
+               SIDE_HASHES},
         representations::{
             board::Board, moves::Move, piece::Piece,
             state::{EnPassantSquare, Snapshot, Square, State},
             vector::MoveSet,
         },
     },
-    get, i, is_castling, is_unload, k, m, move_type, multi_move_can_check,
-    multi_move_can_enp, multi_move_captured_piece,
-    multi_move_captured_square, multi_move_captured_unmoved,
-    multi_move_is_unload, multi_move_unload_square, must_initial, not_c,
-    not_i, not_m, not_p, p, piece, promoted, promotion, queenside, set,
-    start, u, unload_square, x, y,
+    get, i, is_castling, is_unload, k, m, move_type,
+    multi_move_can_check, multi_move_can_enp,
+    multi_move_captured_piece, multi_move_captured_square,
+    multi_move_captured_unmoved, multi_move_is_unload,
+    multi_move_unload_square, must_initial, not_c, not_i, not_k, not_m,
+    not_p, p, piece, promoted, promotion, queenside, set, start, u,
+    unload_square, x, y, hash_in_or_out_piece, hash_toggle_side,
+    hash_update_castling, hash_update_en_passant,
 };
 
 #[hotpath::measure]
@@ -305,8 +307,29 @@ pub fn generate_move_list(
             let not_c = not_c!(leg);
             let not_i = not_i!(leg);
             let not_p = not_p!(leg);
+            let not_k = not_k!(leg);
             let unset_m = !m && !not_m;
             let unset_c = !c && !not_c;
+            let unset_p = !p && !not_p;
+            let unset_k = !k && !not_k;
+
+            let can_move = m || (unset_m && !d && !c);
+            let can_capture = c || (unset_c && last_leg && !m);
+            let can_destroy = d;
+            let can_unload = u;
+            let creates_enp = p;
+            let can_enp = !not_p || unset_p && can_capture;
+            let can_check = !not_k || unset_k && can_capture;
+
+            enc_multi_move_can_check!(
+                taken_piece,
+                can_check as u64
+            );
+
+            enc_multi_move_can_enp!(
+                taken_piece,
+                can_enp as u64
+            );
 
             if piece_unmoved {
                 enc_must_initial!(encoded_move, 1);
@@ -324,21 +347,13 @@ pub fn generate_move_list(
                 enc_must_not_initial!(encoded_move, 1);
             }
 
-            let can_move = m || (unset_m && !d && !c);
-            let can_capture = c || (unset_c && last_leg && !m);
-            let can_destroy = d;
-            let can_unload = u;
-            let creates_enp = p;
-            let can_enp = !not_p || c;
-            let can_check = k || c;
-
             let start_index = (rank * (game_state.files as i32) + file) as u16;
 
             let file_offset = x!(leg);
             let rank_offset = y!(leg);
 
-            file += file_offset as i32 * (-2 * piece.color() as i32 + 1);
-            rank += rank_offset as i32 * (-2 * piece.color() as i32 + 1);
+            file += file_offset as i32 * (-2 * side as i32 + 1);
+            rank += rank_offset as i32 * (-2 * side as i32 + 1);
 
             accumulated_index = rank * (game_state.files as i32) + file;
 
@@ -388,11 +403,6 @@ pub fn generate_move_list(
                                 enp_unmoved as u64
                             );
 
-                            enc_multi_move_can_check!(
-                                taken_piece,
-                                can_check as u64
-                            );
-
                             taken_pieces.push(taken_piece);
                             continue;
                         }
@@ -410,11 +420,6 @@ pub fn generate_move_list(
                 enc_multi_move_captured_square!(
                     taken_piece,
                     accumulated_index as u64
-                );
-
-                enc_multi_move_can_check!(
-                    taken_piece,
-                    can_check as u64
                 );
 
                 enc_multi_move_captured_unmoved!(
@@ -455,11 +460,6 @@ pub fn generate_move_list(
                                 enp_unmoved as u64
                             );
 
-                            enc_multi_move_can_check!(
-                                taken_piece,
-                                can_check as u64
-                            );
-
                             taken_pieces.push(taken_piece);
                             continue;
                         }
@@ -477,11 +477,6 @@ pub fn generate_move_list(
                 enc_multi_move_captured_square!(
                     taken_piece,
                     accumulated_index as u64
-                );
-
-                enc_multi_move_can_check!(
-                    taken_piece,
-                    can_check as u64
                 );
 
                 enc_multi_move_captured_unmoved!(
@@ -521,11 +516,6 @@ pub fn generate_move_list(
                                 enp_unmoved as u64
                             );
 
-                            enc_multi_move_can_check!(
-                                taken_piece,
-                                can_check as u64
-                            );
-
                             taken_pieces.push(taken_piece);
                             continue;
                         }
@@ -543,11 +533,6 @@ pub fn generate_move_list(
                 enc_multi_move_captured_square!(
                     taken_piece,
                     accumulated_index as u64
-                );
-
-                enc_multi_move_can_check!(
-                    taken_piece,
-                    can_check as u64
                 );
 
                 enc_multi_move_captured_unmoved!(
@@ -569,11 +554,6 @@ pub fn generate_move_list(
                     enc_multi_move_captured_square!(
                         taken_piece,
                         accumulated_index as u64
-                    );
-
-                    enc_multi_move_can_check!(
-                        taken_piece,
-                        can_check as u64
                     );
 
                     enc_multi_move_captured_unmoved!(
@@ -611,11 +591,6 @@ pub fn generate_move_list(
                             enp_unmoved as u64
                         );
 
-                        enc_multi_move_can_check!(
-                            taken_piece,
-                            can_check as u64
-                        );
-
                         taken_pieces.push(taken_piece);
                         continue;
                     }
@@ -633,11 +608,6 @@ pub fn generate_move_list(
                     enc_multi_move_captured_square!(
                         taken_piece,
                         accumulated_index as u64
-                    );
-
-                    enc_multi_move_can_check!(
-                        taken_piece,
-                        can_check as u64
                     );
 
                     enc_multi_move_captured_unmoved!(
@@ -675,11 +645,6 @@ pub fn generate_move_list(
                             enp_unmoved as u64
                         );
 
-                        enc_multi_move_can_check!(
-                            taken_piece,
-                            can_check as u64
-                        );
-
                         taken_pieces.push(taken_piece);
                         continue;
                     }
@@ -694,11 +659,6 @@ pub fn generate_move_list(
                     enc_multi_move_captured_square!(
                         taken_piece,
                         accumulated_index as u64
-                    );
-
-                    enc_multi_move_can_check!(
-                        taken_piece,
-                        can_check as u64
                     );
 
                     enc_multi_move_captured_unmoved!(
@@ -730,11 +690,6 @@ pub fn generate_move_list(
                         enc_multi_move_captured_unmoved!(
                             taken_piece,
                             enp_unmoved as u64
-                        );
-
-                        enc_multi_move_can_check!(
-                            taken_piece,
-                            can_check as u64
                         );
 
                         taken_pieces.push(taken_piece);
@@ -937,21 +892,21 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
             game_state.en_passant_square = NO_EN_PASSANT;
         }
 
-        hash_update_en_passant(
+        hash_update_en_passant!(
             game_state,
             last_en_passant_square,
             game_state.en_passant_square
         );
 
-        hash_in_or_out_piece(game_state, piece_index, start_square as u16);
-        hash_in_or_out_piece(
+        hash_in_or_out_piece!(game_state, piece_index, start_square as u16);
+        hash_in_or_out_piece!(
             game_state,
             if is_promotion { promoted_piece } else { piece_index },
             end_square as u16
         );
 
         game_state.main_board[start_square as usize] = NO_PIECE;
-        game_state.main_board[end_square as usize] = 
+        game_state.main_board[end_square as usize] =
             if is_promotion { promoted_piece as u8 } else { piece_index as u8 };
 
         if is_promotion {
@@ -1034,7 +989,7 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
             }
         }
 
-        hash_update_castling(
+        hash_update_castling!(
             game_state, last_castling_state, game_state.castling_state
         );
 
@@ -1106,21 +1061,21 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
             game_state.en_passant_square = NO_EN_PASSANT;
         }
 
-        hash_update_en_passant(
+        hash_update_en_passant!(
             game_state,
             last_en_passant_square,
             game_state.en_passant_square
         );
 
-        hash_in_or_out_piece(game_state, piece_index, start_square as u16);
-        hash_in_or_out_piece(
+        hash_in_or_out_piece!(game_state, piece_index, start_square as u16);
+        hash_in_or_out_piece!(
             game_state,
             if is_promotion { promoted_piece } else { piece_index },
             end_square as u16
         );
 
         game_state.main_board[start_square as usize] = NO_PIECE;
-        game_state.main_board[end_square as usize] = 
+        game_state.main_board[end_square as usize] =
             if is_promotion { promoted_piece as u8 } else { piece_index as u8 };
 
         if is_promotion {
@@ -1202,15 +1157,20 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
         let end_rank = (captured_square as u16) / game_state.files as u16;
         let end_file = (captured_square as u16) % game_state.files as u16;
 
-        if get!(game_state.virgin_board, captured_square) {
+        if get!(game_state.virgin_board, captured_square)
+            && (end_rank == 0 || end_rank == game_state.ranks as u16 - 1)
+            && (end_file == 0 || end_file == game_state.files as u16 - 1)
+        {
+            let is_queenside = end_file == 0;
             let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
-                [(
-                    (end_rank == game_state.ranks as u16 - 1) as usize
-                ) * 2 + (end_file == 0) as usize];
+            [
+                (end_rank == game_state.ranks as u16 - 1) as usize * 2
+                + is_queenside as usize
+            ];
             game_state.castling_state &= !rights;
         }
 
-        hash_update_castling(
+        hash_update_castling!(
             game_state, last_castling_state, game_state.castling_state
         );
 
@@ -1224,14 +1184,14 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
         }
 
 
-        hash_in_or_out_piece(
+        hash_in_or_out_piece!(
             game_state,
             captured_piece_index,
             captured_square as u16
         );
 
         if is_unload {
-            hash_in_or_out_piece(
+            hash_in_or_out_piece!(
                 game_state,
                 captured_piece_index,
                 unload_square as u16
@@ -1282,7 +1242,7 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
     }
 
     game_state.playing = 1 - game_state.playing;
-    hash_toggle_side(game_state);
+    hash_toggle_side!(game_state);
 
     let snapshot: Snapshot = Snapshot {
         move_ply: mv,

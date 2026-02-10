@@ -13,9 +13,7 @@
 //! # Date
 //! 25/01/2026
 
-pub const MAX_RANKS: u8 = 64;
-pub const MAX_FILES: u8 = 64;
-pub const MAX_SQUARES: usize = 4096;
+pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 
 pub const RNG_SEED: u64 = 0xDEADBEEFCAFEBABE;
