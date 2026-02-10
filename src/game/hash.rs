@@ -18,9 +18,8 @@ use lazy_static::lazy_static;
 use bnum::types::U256;
 
 use crate::{
-    constants::*,
-    game::{
-        representations::state::State,
+    constants::*, enp_square, game::{
+        representations::state::{EnPassantSquare, State},
         util::random_u256
     }
 };
@@ -59,8 +58,9 @@ pub fn hash_position(state: &State) -> U256 {
 
     hash ^= &CASTLING_HASHES[state.castling_state as usize];
 
-    if state.en_passant_square < MAX_SQUARES as u32 {
-        hash ^= &EN_PASSANT_HASHES[(state.en_passant_square & 0xFFF) as usize];
+    if state.en_passant_square != NO_EN_PASSANT {
+        hash ^= &EN_PASSANT_HASHES
+            [enp_square!(state.en_passant_square) as usize];
     }
 
     for (index, piece_positions) in state.piece_list.iter().enumerate() {
@@ -108,17 +108,17 @@ pub fn hash_update_castling(
 #[hotpath::measure]
 pub fn hash_update_en_passant(
     game_state: &mut State,
-    old_ep_square: Option<u32>,
-    new_ep_square: Option<u32>
+    old_ep_square: EnPassantSquare,
+    new_ep_square: EnPassantSquare
 ) {
     if old_ep_square != new_ep_square {
-        if let Some(old_square) = old_ep_square {
-            let index = (old_square & 0xFFF) as usize;
+        if old_ep_square != NO_EN_PASSANT {
+            let index = enp_square!(old_ep_square) as usize;
             game_state.position_hash ^= &EN_PASSANT_HASHES[index];
         }
 
-        if let Some(new_square) = new_ep_square {
-            let index = (new_square & 0xFFF) as usize;
+        if new_ep_square != NO_EN_PASSANT {
+            let index = enp_square!(new_ep_square) as usize;
             game_state.position_hash ^= &EN_PASSANT_HASHES[index];
         }
     }

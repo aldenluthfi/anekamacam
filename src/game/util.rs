@@ -21,13 +21,10 @@ use std::sync::Mutex;
 use bnum::types::{U256, U4096};
 
 use crate::{
-    board, or, set,
-    constants::*,
-    game::{
+    board, constants::*, enp_square, game::{
         hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES},
         representations::state::State
-    },
-    io::board_io::format_square
+    }, io::board_io::{format_board, format_square}, or, set
 };
 
 lazy_static!{
@@ -56,13 +53,17 @@ pub fn verify_game_state(state: &State) {
     assert_eq!(
         &temp_white_board,
         &state.pieces_board[WHITE as usize],
-        "Computed white board doesn't match state white board"
+        "Computed white board doesn't match state white board\n{}\n{}",
+        format_board(&temp_white_board, None),
+        format_board(&state.pieces_board[WHITE as usize], None)
     );
 
     assert_eq!(
         &temp_black_board,
         &state.pieces_board[BLACK as usize],
-        "Computed black board doesn't match state black board"
+        "Computed black board doesn't match state black board\n{}\n{}",
+        format_board(&temp_black_board, None),
+        format_board(&state.pieces_board[BLACK as usize], None)
     );
 
     let mut temp_pieces_board = board!(state.files, state.ranks);
@@ -134,7 +135,7 @@ pub fn verify_game_state(state: &State) {
 
     if state.en_passant_square != NO_EN_PASSANT {
         temp_hash ^=
-            &EN_PASSANT_HASHES[(state.en_passant_square & 0xFFF) as usize];
+            &EN_PASSANT_HASHES[enp_square!(state.en_passant_square) as usize];
     }
 
     for piece in &state.pieces {
