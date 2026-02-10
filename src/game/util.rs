@@ -33,7 +33,6 @@ lazy_static!{
     };
 }
 
-#[hotpath::measure]
 pub fn verify_game_state(state: &State) {
     let mut temp_white_board = board!(state.files, state.ranks);
     let mut temp_black_board = board!(state.files, state.ranks);
@@ -196,7 +195,6 @@ pub fn verify_game_state(state: &State) {
     );
 }
 
-#[hotpath::measure]
 pub fn random_u256() -> u128 {
     let mut rng = RNG.lock().unwrap();
     u128::from(rng.next_u64()) << 64  |

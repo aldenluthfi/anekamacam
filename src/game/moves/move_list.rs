@@ -50,43 +50,32 @@ fn is_square_attacked(
 
     for i in index..index + side_piece_count {
         let piece = &game_state.pieces[i];
+        let relevant_boards = &game_state.relevant_board[i];
 
-        for attacker_index in &game_state.piece_list[i] {
-            let relevant_board =
-                &game_state.relevant_board[i][*attacker_index as usize];
-
-            if !get!(relevant_board, square_index) {
+        for &attacker_index in &game_state.piece_list[i] {
+            if !get!(relevant_boards[attacker_index as usize], square_index) {
                 continue;
             }
 
             let move_list = generate_move_list(
-                *attacker_index,
-                piece,
-                game_state,
-                true
+                attacker_index, piece, game_state, true
             );
 
             for moves in move_list {
-                let move_type = move_type!(moves);
-                let captured_square = captured_square!(moves);
-
-                if  move_type == SINGLE_CAPTURE_MOVE &&
-                    captured_square == square_index as u128
+                if move_type!(moves) == SINGLE_CAPTURE_MOVE
+                    && captured_square!(moves) == square_index as u128
+                    && !is_unload!(moves)
                 {
                     return true;
-                } else if move_type == MULTI_CAPTURE_MOVE {
-                    let multi_captures = &moves.1;
+                }
 
-                    for &multi_capture in multi_captures {
-                        let captured_square =
-                            multi_move_captured_square!(multi_capture);
-
-                        if captured_square == square_index as u64 &&
-                           !multi_move_is_unload!(multi_capture)
-                        {
-                            return true;
-                        }
-                    }
+                if move_type!(moves) == MULTI_CAPTURE_MOVE
+                    && moves.1.iter().any(|&mc| {
+                        multi_move_captured_square!(mc) == square_index as u64
+                        && !multi_move_is_unload!(mc)
+                    })
+                {
+                    return true;
                 }
             }
         }
@@ -95,7 +84,6 @@ fn is_square_attacked(
     false
 }
 
-#[hotpath::measure]
 fn is_in_check(
     side: u8,
     game_state: &State
@@ -201,7 +189,6 @@ pub fn generate_relevant_moves(
     result
 }
 
-#[hotpath::measure]
 pub fn generate_move_list(
     square_index: u16,
     piece: &Piece,
@@ -331,21 +318,17 @@ pub fn generate_move_list(
                 can_enp as u64
             );
 
-            if piece_unmoved {
-                enc_must_initial!(encoded_move, 1);
+            if (i && !piece_unmoved) || (not_i && piece_unmoved) {
+                continue 'multi_leg;
             }
 
-            if i {
-                if !piece_unmoved {
-                    continue 'multi_leg;
-                }
-                enc_must_initial!(encoded_move, 1);
-            } else if not_i {
-                if piece_unmoved {
-                    continue 'multi_leg;
-                }
-                enc_must_not_initial!(encoded_move, 1);
-            }
+            enc_must_initial!(
+                encoded_move, (i | piece_unmoved) as u128
+            );
+
+            enc_must_not_initial!(
+                encoded_move, not_i as u128
+            );
 
             let start_index = (rank * (game_state.files as i32) + file) as u16;
 
@@ -711,14 +694,12 @@ pub fn generate_move_list(
                 taken_pieces[last_idx] = last_captured;
             }
 
-            if creates_enp {
-                enc_creates_enp!(encoded_move, 1);
-                enc_created_enp!(encoded_move,
-                    (start_index as u128 & 0xFFF)
-                    | (accumulated_index as u128) << 12
-                    | (piece_index as u128) << 24
-                );
-            }
+            enc_creates_enp!(encoded_move, creates_enp as u128);
+            enc_created_enp!(encoded_move, creates_enp as u128 *
+                ((start_index as u128 & 0xFFF)
+                | (accumulated_index as u128) << 12
+                | (piece_index as u128) << 24)
+            );
         }
 
         let reaches_promotion_rank =
@@ -942,8 +923,7 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
             .retain(|&sq| sq != start_square as u16);
         game_state.piece_list[
             if is_promotion { promoted_piece } else { piece_index }
-        ]
-            .push(end_square as u16);
+        ].push(end_square as u16);
 
         if game_state.pieces[piece_index].can_promote() {
             game_state.halfmove_clock = 0;
@@ -1111,8 +1091,7 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
             .retain(|&sq| sq != start_square as u16);
         game_state.piece_list[
             if is_promotion { promoted_piece } else { piece_index }
-        ]
-            .push(end_square as u16);
+        ].push(end_square as u16);
 
         game_state.halfmove_clock = 0;
 
@@ -1177,12 +1156,6 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
         clear!(
             game_state.pieces_board[captured_color as usize], captured_square
         );
-        if is_unload {
-            set!(
-                game_state.pieces_board[captured_color as usize], unload_square
-            );
-        }
-
 
         hash_in_or_out_piece!(
             game_state,
@@ -1190,16 +1163,19 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
             captured_square as u16
         );
 
+        clear!(game_state.virgin_board, captured_square);
+
         if is_unload {
+            set!(
+                game_state.pieces_board[captured_color as usize], unload_square
+            );
+
             hash_in_or_out_piece!(
                 game_state,
                 captured_piece_index,
                 unload_square as u16
             );
-        }
 
-        clear!(game_state.virgin_board, captured_square);
-        if is_unload {
             set!(game_state.virgin_board, unload_square);
         }
 
@@ -1265,7 +1241,6 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
     true
 }
 
-#[hotpath::measure]
 pub fn undo_move(game_state: &mut State) {
 
     game_state.ply -= 1;

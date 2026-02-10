@@ -5,10 +5,7 @@ use crate::{
         moves::move_list::{make_move, undo_move, generate_all_moves},
         representations::state::State
     },
-    io::{
-        game_io::format_game_state,
-        move_io::format_move
-    }
+    io::{move_io::format_move, game_io::format_game_state}
 };
 
 fn parse_perft_file(
@@ -30,8 +27,11 @@ fn parse_perft_file(
 }
 
 pub fn start_perft(
-    state: &mut State, path: &str,
-    depth: u8, debug: bool, branch: Option<u8>
+    state: &mut State,
+    path: &str,
+    depth: u8,
+    debug: bool,
+    branch: Option<u8>,
 ) {
     let perft_cases = parse_perft_file(path);
 
@@ -39,32 +39,33 @@ pub fn start_perft(
     let mut total_moves = 0;
     let total_cases = perft_cases.len() * depth as usize;
 
-    for (
-        fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6
-    ) in perft_cases {
+    for (fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6) in
+        perft_cases
+    {
         state.load_fen(&fen);
 
         let expected_perfts = [
-            perft_1, perft_2, perft_3, perft_4, perft_5, perft_6
+            perft_1, perft_2, perft_3, perft_4, perft_5, perft_6,
         ];
 
         for d in 1..=depth {
-            let result = perft(state, d, debug, branch, None);
+            let result = perft(state, d, debug, branch);
             let expected = expected_perfts[(d - 1) as usize];
 
             if result == expected {
                 successful_cases += 1;
                 total_moves += result;
                 println!(
-                    "FEN: {} | Depth: {} | Expected: {} | Result: {} [PASSED]",
+                    "FEN: {} | Depth: {} | Expected: {} | Result: {} \
+                     [PASSED]",
                     fen, d, expected, result
                 );
             } else {
                 println!(
-                    "FEN: {} | Depth: {} | Expected: {} | Result: {} [FAILED]",
+                    "FEN: {} | Depth: {} | Expected: {} | Result: {} \
+                     [FAILED]",
                     fen, d, expected, result
                 );
-                #[cfg(debug_assertions)]
                 println!("{}", format_game_state(state, false))
             }
         }
@@ -72,61 +73,54 @@ pub fn start_perft(
 
     println!(
         "Perft testing completed: {}/{} cases passed.",
-        successful_cases, total_cases
+        successful_cases,
+        total_cases
     );
     println!("Total moves generated: {}", total_moves);
 }
 
-#[hotpath::measure]
 fn perft(
-    state: &mut State, depth: u8, debug: bool,
-    branch: Option<u8>, prefix: Option<String>
+    state: &mut State,
+    depth: u8,
+    debug: bool,
+    branch: Option<u8>,
 ) -> u64 {
+    perft_impl(state, depth, debug, branch, String::new())
+}
 
+fn perft_impl(
+    state: &mut State,
+    depth: u8,
+    debug: bool,
+    branch: Option<u8>,
+    prefix: String,
+) -> u64 {
     if depth == 0 {
         return 1;
     }
 
     let possible_moves = generate_all_moves(state);
-
     let mut nodes = 0;
 
-    if !debug {
-        for mv in possible_moves {
-            if make_move(state, mv) {
-                nodes += perft(state, depth - 1, false, None, None);
-                undo_move(state);
-            }
+    for mv in possible_moves {
+        if make_move(state, mv.clone()) {
+            nodes += perft_impl(
+                state,
+                depth - 1,
+                debug && depth > branch.unwrap_or(0),
+                branch,
+                format!(
+                    "{} {}",
+                    prefix,
+                    format_move(&mv, state)
+                ),
+            );
+            undo_move(state);
         }
-        return nodes;
-    } else {
-        for mv in possible_moves {
-            if make_move(state, mv.clone()) {
-                nodes += perft(
-                    state,
-                    depth - 1,
-                    depth >= branch.expect(
-                        "Branching must be provided for debug mode"
-                    ),
-                    branch,
-                    Some(
-                        format!(
-                            "     {} {} ",
-                            prefix.as_deref().unwrap_or(""),
-                            format_move(&mv, state)
-                        )
-                    )
-                );
-                undo_move(state);
-            }
-        }
+    }
 
-
-        println!(
-            "{}moves | Nodes: {}",
-            prefix.as_deref().unwrap_or(""),
-            nodes
-        );
+    if debug {
+        println!("{} moves | Nodes: {}", prefix, nodes);
     }
 
     nodes
