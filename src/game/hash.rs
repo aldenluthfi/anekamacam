@@ -47,7 +47,6 @@ lazy_static! {
 }
 
 /// Computes the Zobrist hash for the given game state.
-#[hotpath::measure]
 pub fn hash_position(state: &State) -> u128 {
     let mut hash = u128::default();
 

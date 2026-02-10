@@ -33,22 +33,7 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let mut state = parse_config_file("configs/fide.anm");
+    let mut state = parse_config_file("configs/berolina.anm");
 
-    start_perft(&mut state, "res/fide-kiwipete.perft", 5, false, None);
-
-    // let moves = generate_all_moves(&state);
-
-    // let mut count = 0;
-    // for mv in moves {
-    //     if make_move(&mut state, mv.clone()) {
-    //         if piece!(mv) == 5 {
-    //             count += 1;
-    //         }
-
-    //         undo_move(&mut state);
-    //     }
-
-    // }
-    // println!("{}", count);
+    start_perft(&mut state, "res/berolina.perft", 6, false, None);
 }

@@ -121,7 +121,6 @@ pub struct State {
     pub piece_moves: Vec<MoveSet>,
 }
 
-#[hotpath::measure_all]
 impl State {
     pub fn new(
         title: String,

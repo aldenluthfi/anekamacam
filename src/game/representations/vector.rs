@@ -265,7 +265,6 @@ pub struct ModifierState {
     pub k: Option<bool>,
 }
 
-#[hotpath::measure_all]
 impl LegVector {
 
     pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
