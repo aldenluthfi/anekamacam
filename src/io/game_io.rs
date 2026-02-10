@@ -15,7 +15,7 @@
 //! 25/01/2026
 
 use std::collections::HashMap;
-use bnum::types::{U2048, U4096};
+use bnum::types::{U2048};
 use std::fs;
 
 use crate::{
@@ -421,7 +421,15 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[piece.color() as usize] += 1;
                 }
 
-                set!(state.virgin_board, square_index);
+                if (c == 'P' && rank == 1)
+                    || (c == 'p' && rank == (state.ranks - 2))
+                    || (c == 'R' && rank == 0 && (file == 0 || file == state.files - 1))
+                    || (c == 'r' && rank == state.ranks - 1 && (file == 0 || file == state.files - 1))
+                    || (c == 'K' && rank == 0 && file == 4)
+                    || (c == 'k' && rank == state.ranks - 1 && file == 4)
+                {
+                    set!(state.virgin_board, square_index);
+                }
 
                 file += 1;
             }

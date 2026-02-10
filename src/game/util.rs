@@ -18,7 +18,7 @@
 use lazy_static::lazy_static;
 use rand::{RngCore, SeedableRng};
 use std::sync::Mutex;
-use bnum::types::{U256, U4096};
+use bnum::types::U2048;
 
 use crate::{
     board, constants::*, enp_square, game::{
@@ -125,7 +125,7 @@ pub fn verify_game_state(state: &State) {
         "Computed royal list doesn't match state royal list"
     );
 
-    let mut temp_hash = U256::default();
+    let mut temp_hash = u128::default();
 
     if state.playing == WHITE {
         temp_hash ^= &*SIDE_HASHES;
@@ -197,10 +197,8 @@ pub fn verify_game_state(state: &State) {
 }
 
 #[hotpath::measure]
-pub fn random_u256() -> U256 {
+pub fn random_u256() -> u128 {
     let mut rng = RNG.lock().unwrap();
-    U256::from(rng.next_u64()) << 192 |
-    U256::from(rng.next_u64()) << 128 |
-    U256::from(rng.next_u64()) << 64  |
-    U256::from(rng.next_u64())
+    u128::from(rng.next_u64()) << 64  |
+    u128::from(rng.next_u64())
 }

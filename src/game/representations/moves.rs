@@ -144,69 +144,69 @@ macro_rules! enc_promoted {
 #[macro_export]
 macro_rules! enc_created_enp {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFFF) << 55;
+        $mv.0 |= ($val & 0xFFFFFFFF) << 55;
     };
 }
 #[macro_export]
 macro_rules! enc_can_check {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 79;
+        $mv.0 |= ($val & 1) << 87;
     };
 }
 
 #[macro_export]
 macro_rules! enc_can_enp {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 80;
+        $mv.0 |= ($val & 1) << 88;
     };
 }
 
 #[macro_export]
 macro_rules! enc_is_unload {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 81;
+        $mv.0 |= ($val & 1) << 89;
     };
 }
 
 #[macro_export]
 macro_rules! enc_unload_square {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFFF) << 82;
+        $mv.0 |= ($val & 0xFFF) << 90;
     };
 }
 
 #[macro_export]
 macro_rules! enc_captured_piece {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFF) << 94;
+        $mv.0 |= ($val & 0xFF) << 102;
     };
 }
 
 #[macro_export]
 macro_rules! clear_captured_piece {
     ($mv:expr) => {
-        $mv.0 &= !(0xFF << 94);
+        $mv.0 &= !(0xFF << 102);
     };
 }
 
 #[macro_export]
 macro_rules! enc_captured_square {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFFF) << 102;
+        $mv.0 |= ($val & 0xFFF) << 110;
     };
 }
 
 #[macro_export]
 macro_rules! enc_captured_unmoved {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 114;
+        $mv.0 |= ($val & 1) << 122;
     };
 }
 
 #[macro_export]
 macro_rules! enc_is_castling {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 115;
+        $mv.0 |= ($val & 1) << 123;
     };
 }
 
@@ -287,63 +287,63 @@ macro_rules! promoted {
 #[macro_export]
 macro_rules! created_enp {
     ($mv:expr) => {
-        ($mv.0 >> 55) & 0xFFF
+        ($mv.0 >> 55) & 0xFFFFFFFF
     };
 }
 
 #[macro_export]
 macro_rules! can_check {
     ($mv:expr) => {
-        ($mv.0 >> 79) & 1 == 1
+        ($mv.0 >> 87) & 1 == 1
     };
 }
 
 #[macro_export]
 macro_rules! can_enp {
     ($mv:expr) => {
-        ($mv.0 >> 80) & 1 == 1
+        ($mv.0 >> 88) & 1 == 1
     };
 }
 
 #[macro_export]
 macro_rules! is_unload {
     ($mv:expr) => {
-        ($mv.0 >> 81) & 1 == 1
+        ($mv.0 >> 89) & 1 == 1
     };
 }
 
 #[macro_export]
 macro_rules! unload_square {
     ($mv:expr) => {
-        ($mv.0 >> 82) & 0xFFF
+        ($mv.0 >> 90) & 0xFFF
     };
 }
 
 #[macro_export]
 macro_rules! captured_piece {
     ($mv:expr) => {
-        ($mv.0 >> 94) & 0xFF
+        ($mv.0 >> 102) & 0xFF
     };
 }
 
 #[macro_export]
 macro_rules! captured_square {
     ($mv:expr) => {
-        ($mv.0 >> 102) & 0xFFF
+        ($mv.0 >> 110) & 0xFFF
     };
 }
 
 #[macro_export]
 macro_rules! captured_unmoved {
     ($mv:expr) => {
-        ($mv.0 >> 114) & 1 == 1
+        ($mv.0 >> 122) & 1 == 1
     };
 }
 
 #[macro_export]
 macro_rules! is_castling {
     ($mv:expr) => {
-        ($mv.0 >> 115) & 1 == 1
+        ($mv.0 >> 123) & 1 == 1
     };
 }
 

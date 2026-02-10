@@ -33,7 +33,7 @@ use crate::{
     leg,
 };
 
-use bnum::types::{U256, U4096};
+use bnum::types::U2048;
 
 pub type EnPassantSquare = u32;
 pub type Square = u16;
@@ -66,7 +66,7 @@ pub struct Snapshot {
     pub halfmove_clock: u8,
     pub en_passant_square: u32,
 
-    pub position_hash: U256
+    pub position_hash: u128
 }
 
 impl Default for Snapshot {
@@ -76,7 +76,7 @@ impl Default for Snapshot {
             castling_state: 0,
             halfmove_clock: 0,
             en_passant_square: u32::MAX,
-            position_hash: U256::default(),
+            position_hash: u128::default(),
         }
     }
 }
@@ -99,7 +99,7 @@ pub struct State {
     pub halfmove_clock: u8,
     pub en_passant_square: EnPassantSquare,
 
-    pub position_hash: U256,
+    pub position_hash: u128,
     pub history: Vec<Snapshot>,
 
     pub ply: u32,
@@ -146,7 +146,7 @@ impl State {
             castling_state: 0,
             halfmove_clock: 0,
             en_passant_square: NO_EN_PASSANT,
-            position_hash: U256::default(),
+            position_hash: u128::default(),
             history: Vec::with_capacity(8192),
             ply: 0,
             ply_counter: 0,
@@ -178,7 +178,7 @@ impl State {
         self.castling_state = 0;
         self.halfmove_clock = 0;
         self.en_passant_square = NO_EN_PASSANT;
-        self.position_hash = U256::default();
+        self.position_hash = u128::default();
         self.history = Vec::with_capacity(8192);
         self.ply = 0;
         self.ply_counter = 0;
