@@ -2,7 +2,7 @@ use std::fs;
 
 use crate::{
     game::{
-        moves::move_list::{make_move, undo_move, generate_all_moves},
+        moves::move_list::{generate_all_moves, make_move, undo_move},
         representations::state::State
     },
 };
@@ -42,6 +42,7 @@ pub fn start_perft(state: &mut State, path: &str, depth: u8) {
         ];
 
         for d in 1..=depth {
+
             let result = perft(state, d);
             let expected = expected_perfts[(d - 1) as usize];
 

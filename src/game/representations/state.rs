@@ -13,13 +13,24 @@
 //! 25/01/2025
 
 use crate::{
-    board,
-    constants::*,
+    board, constants::*,
     game::{
-        moves::{move_list::{generate_relevant_boards, generate_relevant_moves}, move_parse::generate_move_vectors},
-        representations::{board::Board, moves::Move, piece::Piece, vector::{Leg, LegVector, MoveSet}},
+        moves::{
+            move_list::{
+                generate_relevant_boards,
+                generate_relevant_moves,
+            },
+            move_parse::generate_move_vectors,
+        },
+        representations::{
+            board::Board,
+            moves::Move,
+            piece::Piece,
+            vector::{Leg, LegVector, MoveSet},
+        },
     },
-    io::game_io::parse_fen, leg,
+    io::game_io::parse_fen,
+    leg,
 };
 
 use bnum::types::{U256, U4096};
@@ -44,7 +55,7 @@ macro_rules! enp_captured {
 #[macro_export]
 macro_rules! enp_piece {
     ($en_passant:expr) => {
-        ($en_passant >> 24) & 0x1
+        ($en_passant >> 24) & 0xFF
     };
 }
 
@@ -89,7 +100,7 @@ pub struct State {
     pub en_passant_square: EnPassantSquare,
 
     pub position_hash: U256,
-    pub history: [Snapshot; 8192],
+    pub history: Vec<Snapshot>,
 
     pub ply: u32,
     pub ply_counter: u32,
@@ -136,7 +147,7 @@ impl State {
             halfmove_clock: 0,
             en_passant_square: NO_EN_PASSANT,
             position_hash: U256::default(),
-            history: core::array::from_fn(|_| Snapshot::default()),
+            history: Vec::with_capacity(8192),
             ply: 0,
             ply_counter: 0,
             big_pieces: [0; 2],
@@ -168,7 +179,7 @@ impl State {
         self.halfmove_clock = 0;
         self.en_passant_square = NO_EN_PASSANT;
         self.position_hash = U256::default();
-        self.history = core::array::from_fn(|_| Snapshot::default());
+        self.history = Vec::with_capacity(8192);
         self.ply = 0;
         self.ply_counter = 0;
         self.main_board = vec![NO_PIECE; board_size];

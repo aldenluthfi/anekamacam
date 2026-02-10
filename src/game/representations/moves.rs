@@ -28,7 +28,8 @@
 /// - The next 8 bits indicates the piece index of the piece making the move.
 /// - The next 12 bits represent the starting square index (0-4095).
 /// - The following 12 bits represent the ending square index (0-4095).
-/// - The following bit represents if the move is an initial move (1) or not (0)
+/// - The following bit represents if the move must be an initial move (1) or
+///   not (0)
 /// - Next bit indicates if this move can be performed as an initial move (1)
 ///   or not (0).
 /// - The following bit represents if the move is a promotion (1) or not (0).
@@ -37,15 +38,19 @@
 /// - the following 8 bits represent the promoting piece type (if applicable).
 /// - The following 8 bits represent the promoted piece type (if applicable).
 /// - The following 24 bits represents the en passant square (if applicable).
+///
+///   --- the following bits are set only for capture moves ---
+///
 /// - Next bit indicates this capture can be used to capture a royal piece (1)
 ///   or not (0).
-/// - Next bit indicates if this move can be used to capture en passant (1) or
-///   not (0).
+/// - Next bit indicates if this capture can be used to capture en passant (1) 
+///   or not (0).
 /// - Next bit indicates if this move is a unload (1) or regular capture (0).
 /// - Next 12 bits are the unload square index (if applicable).
 /// - Next 8 bits represent the captured piece type.
 /// - Next 12 bits represent the captured piece square index.
 /// - Next bit indicates if the piece captured is unmoved (1) or not (0).
+/// - Next bit indicates if this move is a castling move (1) or not (0).
 /// - The remaining bits are unused.
 ///
 /// The second array is used to store the indices of all captured pieces.
@@ -198,6 +203,13 @@ macro_rules! enc_captured_unmoved {
     };
 }
 
+#[macro_export]
+macro_rules! enc_is_castling {
+    ($mv:expr, $val:expr) => {
+        $mv.0 |= ($val & 1) << 115;
+    };
+}
+
 /*----------------------------------------------------------------------------*\
                           MOVE REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
@@ -325,6 +337,13 @@ macro_rules! captured_square {
 macro_rules! captured_unmoved {
     ($mv:expr) => {
         ($mv.0 >> 114) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! is_castling {
+    ($mv:expr) => {
+        ($mv.0 >> 115) & 1 == 1
     };
 }
 
