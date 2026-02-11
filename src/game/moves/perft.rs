@@ -96,6 +96,9 @@ fn perft_impl(
     prefix: String,
 ) -> u64 {
     if depth == 0 {
+        if debug {
+            println!("{} Reached leaf node", prefix);
+        }
         return 1;
     }
 

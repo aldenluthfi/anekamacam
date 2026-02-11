@@ -15,6 +15,14 @@
 //! # Date
 //! 26/01/2026
 
+use crate::game::representations::{
+    piece::PieceIndex,
+    state::Square,
+    vector::MoveVector
+};
+
+pub type AttackMask = (PieceIndex, Square, MoveVector);
+
 /// A type representing a single move in the game.
 ///
 /// This structure is used for moves without multiple captures (SingleNoCapture,
@@ -43,7 +51,7 @@
 ///
 /// - Next bit indicates this capture can be used to capture a royal piece (1)
 ///   or not (0).
-/// - Next bit indicates if this capture can be used to capture en passant (1) 
+/// - Next bit indicates if this capture can be used to capture en passant (1)
 ///   or not (0).
 /// - Next bit indicates if this move is a unload (1) or regular capture (0).
 /// - Next 12 bits are the unload square index (if applicable).

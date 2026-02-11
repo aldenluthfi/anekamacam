@@ -195,7 +195,7 @@ pub fn verify_game_state(state: &State) {
     );
 }
 
-pub fn random_u256() -> u128 {
+pub fn random_u128() -> u128 {
     let mut rng = RNG.lock().unwrap();
     u128::from(rng.next_u64()) << 64  |
     u128::from(rng.next_u64())

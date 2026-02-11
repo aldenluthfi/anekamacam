@@ -15,6 +15,8 @@
 
 use bnum::{cast::As, types::U2048};
 
+pub type PieceIndex = u8;
+
 /// A structure representing a game piece with its properties.
 ///
 /// A piece can have id from 0 - 254, with 255 reserved for "no piece".

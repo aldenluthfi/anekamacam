@@ -19,18 +19,18 @@ use lazy_static::lazy_static;
 use crate::{
     constants::*, enp_square, game::{
         representations::state::State,
-        util::random_u256
+        util::random_u128
     }
 };
 
 lazy_static! {
     pub static ref CASTLING_HASHES: [u128; 16] =
-        [random_u256(); 16];
+        [random_u128(); 16];
 
     pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
-        [random_u256(); MAX_SQUARES];
+        [random_u128(); MAX_SQUARES];
 
-    pub static ref SIDE_HASHES: u128 = random_u256();
+    pub static ref SIDE_HASHES: u128 = random_u128();
 
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]>
         = {
@@ -38,7 +38,7 @@ lazy_static! {
                 Vec::with_capacity(256);
 
             for _ in 0..256 {
-                let piece_hashes = [random_u256(); MAX_SQUARES];
+                let piece_hashes = [random_u128(); MAX_SQUARES];
                 result.push(piece_hashes);
             }
 
