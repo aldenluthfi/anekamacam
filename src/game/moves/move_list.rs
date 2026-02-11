@@ -1,82 +1,73 @@
-use bnum::types::U2048;
-
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 use crate::{
-    board, c, captured_piece, captured_square, captured_unmoved,
-    castling, clear,
+    c, captured_piece, captured_square, captured_unmoved, castling, clear,
     constants::{
-        BK_CASTLE, BQ_CASTLE, MULTI_CAPTURE_MOVE, NO_EN_PASSANT,
-        NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WHITE, WK_CASTLE,
-        WQ_CASTLE,
+        BK_CASTLE, BQ_CASTLE, MULTI_CAPTURE_MOVE, NO_EN_PASSANT, NO_PIECE,
+        QUIET_MOVE, SINGLE_CAPTURE_MOVE, WHITE, WK_CASTLE, WQ_CASTLE,
     },
-    created_enp, creates_enp, d,
-    enc_can_check, enc_can_enp, enc_captured_piece,
-    enc_captured_square, enc_captured_unmoved, enc_created_enp,
-    enc_creates_enp, enc_end, enc_is_castling, enc_is_unload,
-    enc_move_type, enc_multi_move_can_check, enc_multi_move_can_enp,
+    created_enp, creates_enp, d, enc_can_check, enc_can_enp, enc_captured_piece,
+    enc_captured_square, enc_captured_unmoved, enc_created_enp, enc_creates_enp,
+    enc_end, enc_is_castling, enc_is_unload, enc_move_type,
+    enc_multi_move_can_check, enc_multi_move_can_enp,
     enc_multi_move_captured_piece, enc_multi_move_captured_square,
     enc_multi_move_captured_unmoved, enc_multi_move_is_unload,
     enc_multi_move_unload_square, enc_must_initial, enc_must_not_initial,
     enc_piece, enc_promoted, enc_promoting, enc_promotion, enc_start,
     enc_unload_square, end, enp_captured, enp_piece, enp_square,
     game::{
-        hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES,
-               SIDE_HASHES},
+        hash::{
+            CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES,
+        },
         representations::{
-            board::Board, moves::Move, piece::Piece,
+            moves::Move,
+            piece::Piece,
             state::{EnPassantSquare, Snapshot, Square, State},
-            vector::MoveSet,
+            vector::{MoveSet, MoveVector},
         },
     },
-    get, i, is_castling, is_unload, k, m, move_type,
-    multi_move_can_check, multi_move_can_enp,
-    multi_move_captured_piece, multi_move_captured_square,
-    multi_move_captured_unmoved, multi_move_is_unload,
-    multi_move_unload_square, must_initial, not_c, not_i, not_k, not_m,
-    not_p, p, piece, promoted, promotion, queenside, set, start, u,
-    unload_square, x, y, hash_in_or_out_piece, hash_toggle_side,
-    hash_update_castling, hash_update_en_passant,
+    get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling,
+    hash_update_en_passant, i, is_castling, is_unload, m, move_type,
+    multi_move_can_check, multi_move_can_enp, multi_move_captured_piece,
+    multi_move_captured_square, multi_move_captured_unmoved,
+    multi_move_is_unload, multi_move_unload_square, must_initial, not_c, not_i,
+    not_k, not_m, not_p, p, piece, promoted, promotion, queenside, set, start,
+    u, unload_square, x, y,
 };
 
 #[hotpath::measure]
 fn is_square_attacked(
     square_index: u32,
-    side: u8,
+    for_side: u8,
     game_state: &State
 ) -> bool {
-    let side_piece_count = game_state.pieces.len() / 2;
-    let index = side_piece_count * side as usize;
+    let possible_attacks = &game_state.relevant_attacks
+        [for_side as usize][square_index as usize];
 
-    for i in index..index + side_piece_count {
-        let piece = &game_state.pieces[i];
-        let relevant_boards = &game_state.relevant_board[i];
+    for (piece_index, start, move_vector) in possible_attacks {
+        if game_state.main_board[*start as usize] != *piece_index {
+            continue;
+        }
 
-        for &attacker_index in &game_state.piece_list[i] {
-            if !get!(relevant_boards[attacker_index as usize], square_index) {
-                continue;
+        let piece = &game_state.pieces[*piece_index as usize];
+
+        if let Some(moves) =
+        validate_attack_vector(move_vector, *start, piece, game_state)
+        {
+            if move_type!(moves) == SINGLE_CAPTURE_MOVE
+                && captured_square!(moves) == square_index as u128
+                && !is_unload!(moves)
+            {
+                return true;
             }
 
-            let move_list = generate_move_list(
-                attacker_index, piece, game_state, true
-            );
-
-            for moves in move_list {
-                if move_type!(moves) == SINGLE_CAPTURE_MOVE
-                    && captured_square!(moves) == square_index as u128
-                    && !is_unload!(moves)
-                {
-                    return true;
-                }
-
-                if move_type!(moves) == MULTI_CAPTURE_MOVE
-                    && moves.1.iter().any(|&mc| {
-                        multi_move_captured_square!(mc) == square_index as u64
-                        && !multi_move_is_unload!(mc)
-                    })
-                {
-                    return true;
-                }
+            if move_type!(moves) == MULTI_CAPTURE_MOVE
+                && moves.1.iter().any(|&mc| {
+                    multi_move_captured_square!(mc) == square_index as u64
+                    && !multi_move_is_unload!(mc)
+                })
+            {
+                return true;
             }
         }
     }
@@ -93,7 +84,7 @@ fn is_in_check(
     for square in monarch_indices {
         if is_square_attacked(
             *square as u32,
-            1 - side,
+            side,
             game_state
         ) {
             return true;
@@ -101,50 +92,6 @@ fn is_in_check(
     }
 
     false
-}
-
-#[hotpath::measure]
-pub fn generate_relevant_boards(
-    piece: &Piece,
-    square_index: u32,
-    game_state: &State
-) -> Board {
-    let vector_set = &game_state.piece_moves[piece.index() as usize];
-    let side = piece.color();
-
-    let mut result = board!(game_state.files, game_state.ranks);
-    'multi_leg: for multi_leg_vector in vector_set {
-        let mut accumulated_index = square_index as i32;
-
-        let mut file = accumulated_index % (game_state.files as i32);
-        let mut rank = accumulated_index / (game_state.files as i32);
-        let mut index_to_set = Vec::new();
-
-        for leg in multi_leg_vector {
-            let file_offset = x!(leg);
-            let rank_offset = y!(leg);
-
-            file += file_offset as i32 * (-2 * side as i32 + 1);
-            if !castling!(leg) {
-                rank += rank_offset as i32 * (-2 * side as i32 + 1);
-            }
-
-            if  file < 0 || file >= game_state.files as i32 ||
-                rank < 0 || rank >= game_state.ranks as i32
-            {
-                continue 'multi_leg;
-            }
-
-            accumulated_index = rank * (game_state.files as i32) + file;
-            index_to_set.push(accumulated_index as u32);
-        }
-
-        for index in index_to_set {
-            set!(result, index);
-        }
-    }
-
-    result
 }
 
 #[hotpath::measure]
@@ -189,11 +136,463 @@ pub fn generate_relevant_moves(
     result
 }
 
+pub fn generate_attack_masks(
+    square_index: u16,
+    game_state: &mut State,
+) {
+    for piece in &game_state.pieces {
+        let piece_index = piece.index();
+        let side = piece.color() as usize;
+
+        let vector_set =
+            &game_state.relevant_moves
+            [piece_index as usize][square_index as usize];
+
+        'multi_leg: for multi_leg_vector in vector_set {
+            let mut accumulated_index = square_index as i32;
+
+            let mut file = accumulated_index % (game_state.files as i32);
+            let mut rank = accumulated_index / (game_state.files as i32);
+
+            let leg_count = multi_leg_vector.len();
+
+            if castling!(multi_leg_vector[0]) {
+                continue 'multi_leg;
+            }
+
+            let mut must_capture;
+            let mut must_destroy;
+            let mut can_move_capture;
+            let mut can_move_destroy;
+            let mut can_capture_destroy;
+            let mut can_do_all_three;
+
+            for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
+                let last_leg = leg_index + 1 == leg_count;
+
+                let m = m!(leg);
+                let c = c!(leg);
+                let d = d!(leg);
+                let not_m = not_m!(leg);
+                let not_c = not_c!(leg);
+                let unset_m = !m && !not_m;
+                let unset_c = !c && !not_c;
+
+                let can_move = m || (unset_m && !d && !c);
+                let can_capture = c || (unset_c && last_leg && !m);
+                let can_destroy = d;
+
+                let file_offset = x!(leg);
+                let rank_offset = y!(leg);
+
+                file += file_offset as i32 * (-2 * side as i32 + 1);
+                rank += rank_offset as i32 * (-2 * side as i32 + 1);
+
+                accumulated_index = rank * (game_state.files as i32) + file;
+
+                must_capture = can_capture && !can_move && !can_destroy;
+                must_destroy = !can_capture && !can_move && can_destroy;
+                can_move_capture = can_capture && can_move && !can_destroy;
+                can_move_destroy = !can_capture && can_move && can_destroy;
+                can_capture_destroy = can_capture && !can_move && can_destroy;
+                can_do_all_three = can_capture && can_move && can_destroy;
+
+                if must_destroy || can_move_destroy {
+                    game_state.relevant_attacks[side]
+                        [accumulated_index as usize]
+                        .push(
+                            (
+                                piece_index,
+                                square_index,
+                                multi_leg_vector.to_vec()
+                            )
+                        );
+                }
+
+                if must_capture || can_move_capture {
+                    game_state.relevant_attacks[1 - side]
+                        [accumulated_index as usize]
+                        .push(
+                            (
+                                piece_index,
+                                square_index,
+                                multi_leg_vector.to_vec()
+                            )
+                        );
+                }
+
+                if can_capture_destroy || can_do_all_three {
+                    game_state.relevant_attacks[side]
+                        [accumulated_index as usize]
+                        .push(
+                            (
+                                piece_index,
+                                square_index,
+                                multi_leg_vector.to_vec()
+                            )
+                        );
+                    game_state.relevant_attacks[1 - side]
+                        [accumulated_index as usize]
+                        .push(
+                            (
+                                piece_index,
+                                square_index,
+                                multi_leg_vector.to_vec()
+                            )
+                        );
+                }
+            }
+        }
+    }
+}
+
+#[inline(always)]
+pub fn validate_attack_vector(
+    multi_leg_vector: &MoveVector,
+    square_index: u16,
+    piece: &Piece,
+    game_state: &State,
+) -> Option<Move> {
+
+    let mut encoded_move = Move::default();
+
+    let piece_index = piece.index() as usize;
+    let side = piece.color() as usize;
+    let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
+    let friendly_board = &game_state.pieces_board[side];
+    let enemy_board = &game_state.pieces_board[1 - side];
+    let virgin_board = &game_state.virgin_board;
+
+    enc_start!(encoded_move, square_index as u128);
+    enc_piece!(encoded_move, piece_index as u128);
+
+    let mut accumulated_index = square_index as i32;
+
+    let mut file = accumulated_index % (game_state.files as i32);
+    let mut rank = accumulated_index / (game_state.files as i32);
+
+    let leg_count = multi_leg_vector.len();
+
+    let mut taken_pieces: Vec<u64> = Vec::new();
+    for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
+        let last_leg = leg_index + 1 == leg_count;
+        let mut taken_piece = 0u64;
+
+        let m = m!(leg);
+        let c = c!(leg);
+        let d = d!(leg);
+        let i = i!(leg);
+        let p = p!(leg);
+        let u = u!(leg);
+        let not_m = not_m!(leg);
+        let not_c = not_c!(leg);
+        let not_i = not_i!(leg);
+        let not_p = not_p!(leg);
+        let not_k = not_k!(leg);
+        let unset_m = !m && !not_m;
+        let unset_c = !c && !not_c;
+
+        let can_move = m || (unset_m && !d && !c);
+        let can_capture = c || (unset_c && last_leg && !m);
+        let can_destroy = d;
+        let can_unload = u;
+        let creates_enp = p;
+        let can_enp = !not_p;
+        let can_check = !not_k;
+
+        enc_multi_move_can_check!(
+            taken_piece,
+            can_check as u64
+        );
+
+        enc_multi_move_can_enp!(
+            taken_piece,
+            can_enp as u64
+        );
+
+        if (i && !piece_unmoved) || (not_i && piece_unmoved) {
+            return None
+        }
+
+        enc_must_initial!(
+            encoded_move, (i | piece_unmoved) as u128
+        );
+
+        enc_must_not_initial!(
+            encoded_move, not_i as u128
+        );
+
+        let start_index = (rank * (game_state.files as i32) + file) as u16;
+
+        let file_offset = x!(leg);
+        let rank_offset = y!(leg);
+
+        file += file_offset as i32 * (-2 * side as i32 + 1);
+        rank += rank_offset as i32 * (-2 * side as i32 + 1);
+
+        accumulated_index = rank * (game_state.files as i32) + file;
+
+        let has_friendly =
+            get!(friendly_board, accumulated_index as u32);
+        let has_enemy =
+            get!(enemy_board, accumulated_index as u32);
+        let is_empty =
+            !has_friendly && !has_enemy;
+
+        let must_capture = can_capture && !can_move && !can_destroy;
+        let must_move = !can_capture && can_move && !can_destroy;
+        let must_destroy = !can_capture && !can_move && can_destroy;
+        let can_move_capture = can_capture && can_move && !can_destroy;
+        let can_move_destroy = !can_capture && can_move && can_destroy;
+        let can_capture_destroy = can_capture && !can_move && can_destroy;
+        let can_do_all_three = can_capture && can_move && can_destroy;
+
+        if must_destroy {
+            if !has_friendly && game_state.en_passant_square != NO_EN_PASSANT {
+                let game_en_passant = game_state.en_passant_square;
+                let enp_piece_idx =
+                    enp_piece!(game_en_passant) as usize;
+                if can_enp
+                    && accumulated_index ==
+                        enp_square!(game_en_passant) as i32
+                    && is_empty
+                    && game_state.pieces[enp_piece_idx].color() ==
+                        side as u8
+                {
+                    let enp_sq = enp_captured!(game_en_passant) as u16;
+                    let enp_unmoved = get!(virgin_board, enp_sq as u32);
+
+                    enc_multi_move_captured_piece!(
+                        taken_piece,
+                        game_state.main_board[enp_sq as usize] as u64
+                    );
+
+                    enc_multi_move_captured_square!(
+                        taken_piece,
+                        enp_sq as u64
+                    );
+
+                    enc_multi_move_captured_unmoved!(
+                        taken_piece,
+                        enp_unmoved as u64
+                    );
+
+                    taken_pieces.push(taken_piece);
+                    continue;
+                }
+            }
+            enc_multi_move_captured_piece!(
+                taken_piece,
+                game_state.main_board[accumulated_index as usize] as u64
+            );
+
+            enc_multi_move_captured_square!(
+                taken_piece,
+                accumulated_index as u64
+            );
+
+            enc_multi_move_captured_unmoved!(
+                taken_piece,
+                get!(virgin_board, accumulated_index as u32) as u64
+            );
+
+            taken_pieces.push(taken_piece);
+        } else if must_capture {
+            if !has_enemy && game_state.en_passant_square != NO_EN_PASSANT {
+                let game_en_passant = game_state.en_passant_square;
+                let enp_piece_idx =
+                    enp_piece!(game_en_passant) as usize;
+
+                if can_enp
+                    && accumulated_index ==
+                        enp_square!(game_en_passant) as i32
+                    && is_empty
+                    && game_state.pieces[enp_piece_idx].color() !=
+                        side as u8
+                {
+                    let enp_sq = enp_captured!(game_en_passant) as u16;
+                    let enp_unmoved = get!(virgin_board, enp_sq as u32);
+
+                    enc_multi_move_captured_piece!(
+                        taken_piece,
+                        game_state.main_board[enp_sq as usize] as u64
+                    );
+
+                    enc_multi_move_captured_square!(
+                        taken_piece,
+                        enp_sq as u64
+                    );
+
+                    enc_multi_move_captured_unmoved!(
+                        taken_piece,
+                        enp_unmoved as u64
+                    );
+
+                    taken_pieces.push(taken_piece);
+                    continue;
+                }
+            }
+            enc_multi_move_captured_piece!(
+                taken_piece,
+                game_state.main_board[accumulated_index as usize] as u64
+            );
+
+            enc_multi_move_captured_square!(
+                taken_piece,
+                accumulated_index as u64
+            );
+
+            enc_multi_move_captured_unmoved!(
+                taken_piece,
+                get!(virgin_board, accumulated_index as u32) as u64
+            );
+
+            taken_pieces.push(taken_piece);
+        } else if must_move {
+            if !is_empty {
+                return None;
+            }
+        } else if can_capture_destroy {
+            if is_empty && game_state.en_passant_square != NO_EN_PASSANT {
+                let game_en_passant = game_state.en_passant_square;
+                if can_enp
+                    && accumulated_index ==
+                        enp_square!(game_en_passant) as i32
+                    && is_empty
+                {
+                    let enp_sq = enp_captured!(game_en_passant) as u16;
+                    let enp_unmoved = get!(virgin_board, enp_sq as u32);
+
+                    enc_multi_move_captured_piece!(
+                        taken_piece,
+                        game_state.main_board[enp_sq as usize] as u64
+                    );
+
+                    enc_multi_move_captured_square!(
+                        taken_piece,
+                        enp_sq as u64
+                    );
+
+                    enc_multi_move_captured_unmoved!(
+                        taken_piece,
+                        enp_unmoved as u64
+                    );
+
+                    taken_pieces.push(taken_piece);
+                    continue;
+                }
+            }
+            enc_multi_move_captured_piece!(
+                taken_piece,
+                game_state.main_board[accumulated_index as usize] as u64
+            );
+
+            enc_multi_move_captured_square!(
+                taken_piece,
+                accumulated_index as u64
+            );
+
+            enc_multi_move_captured_unmoved!(
+                taken_piece,
+                get!(virgin_board, accumulated_index as u32) as u64
+            );
+
+            taken_pieces.push(taken_piece);
+        } else if can_move_destroy || can_move_capture || can_do_all_three {
+            enc_multi_move_captured_piece!(
+                taken_piece,
+                game_state.main_board[accumulated_index as usize] as u64
+            );
+
+            enc_multi_move_captured_square!(
+                taken_piece,
+                accumulated_index as u64
+            );
+
+            enc_multi_move_captured_unmoved!(
+                taken_piece,
+                get!(virgin_board, accumulated_index as u32) as u64
+            );
+
+            taken_pieces.push(taken_piece);
+        }
+
+        if can_unload {
+            let last_idx = taken_pieces.len() - 1;
+            let mut last_captured = taken_pieces[last_idx];
+
+            enc_multi_move_is_unload!(last_captured, 1);
+            enc_multi_move_unload_square!(
+                last_captured,
+                start_index as u64
+            );
+
+            taken_pieces[last_idx] = last_captured;
+        }
+
+        enc_creates_enp!(encoded_move, creates_enp as u128);
+        enc_created_enp!(encoded_move, creates_enp as u128 *
+            ((start_index as u128 & 0xFFF)
+            | (accumulated_index as u128) << 12
+            | (piece_index as u128) << 24)
+        );
+    }
+
+    let taken_pieces_len = taken_pieces.len();
+    enc_end!(encoded_move, accumulated_index as u128);
+    if taken_pieces_len == 0 {
+        enc_move_type!(encoded_move, QUIET_MOVE);
+        Some(encoded_move)
+    } else if taken_pieces_len == 1 {
+        enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
+
+        enc_can_check!(
+            encoded_move,
+            multi_move_can_check!(taken_pieces[0]) as u128
+        );
+
+        enc_can_enp!(
+            encoded_move,
+            multi_move_can_enp!(taken_pieces[0]) as u128
+        );
+
+        enc_is_unload!(
+            encoded_move,
+            multi_move_is_unload!(taken_pieces[0]) as u128
+        );
+
+        enc_unload_square!(
+            encoded_move,
+            multi_move_unload_square!(taken_pieces[0]) as u128
+        );
+
+        enc_captured_piece!(
+            encoded_move,
+            multi_move_captured_piece!(taken_pieces[0]) as u128
+        );
+
+        enc_captured_square!(
+            encoded_move,
+            multi_move_captured_square!(taken_pieces[0]) as u128
+        );
+
+        enc_captured_unmoved!(
+            encoded_move,
+            multi_move_captured_unmoved!(taken_pieces[0]) as u128
+        );
+
+        Some(encoded_move)
+    } else {
+        enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
+        Some((encoded_move.0, taken_pieces))
+    }
+}
+
+#[inline(always)]
 pub fn generate_move_list(
     square_index: u16,
     piece: &Piece,
     game_state: &State,
-    imaginary: bool
 ) -> Vec<Move> {
 
     let piece_index = piece.index() as usize;
@@ -207,9 +606,10 @@ pub fn generate_move_list(
     let vector_set =
         &game_state.relevant_moves[piece_index][square_index as usize];
 
-    let mut result: Vec<Move> = Vec::new();
+    let mut result = Vec::new();
     'multi_leg: for multi_leg_vector in vector_set {
         let mut encoded_move = Move::default();
+
         enc_start!(encoded_move, square_index as u128);
         enc_piece!(encoded_move, piece_index as u128);
 
@@ -288,7 +688,6 @@ pub fn generate_move_list(
             let d = d!(leg);
             let i = i!(leg);
             let p = p!(leg);
-            let k = k!(leg);
             let u = u!(leg);
             let not_m = not_m!(leg);
             let not_c = not_c!(leg);
@@ -297,16 +696,14 @@ pub fn generate_move_list(
             let not_k = not_k!(leg);
             let unset_m = !m && !not_m;
             let unset_c = !c && !not_c;
-            let unset_p = !p && !not_p;
-            let unset_k = !k && !not_k;
 
             let can_move = m || (unset_m && !d && !c);
             let can_capture = c || (unset_c && last_leg && !m);
             let can_destroy = d;
             let can_unload = u;
             let creates_enp = p;
-            let can_enp = !not_p || unset_p && can_capture;
-            let can_check = !not_k || unset_k && can_capture;
+            let can_enp = !not_p;
+            let can_check = !not_k;
 
             enc_multi_move_can_check!(
                 taken_piece,
@@ -391,9 +788,7 @@ pub fn generate_move_list(
                         }
                     }
 
-                    if !imaginary {
-                        continue 'multi_leg;
-                    }
+                    continue 'multi_leg;
                 }
                 enc_multi_move_captured_piece!(
                     taken_piece,
@@ -448,9 +843,7 @@ pub fn generate_move_list(
                         }
                     }
 
-                    if !imaginary {
-                        continue 'multi_leg;
-                    }
+                    continue 'multi_leg;
                 }
                 enc_multi_move_captured_piece!(
                     taken_piece,
@@ -504,9 +897,7 @@ pub fn generate_move_list(
                         }
                     }
 
-                    if !imaginary {
-                        continue 'multi_leg;
-                    }
+                    continue 'multi_leg;
                 }
                 enc_multi_move_captured_piece!(
                     taken_piece,
@@ -525,10 +916,10 @@ pub fn generate_move_list(
 
                 taken_pieces.push(taken_piece);
             } else if can_move_destroy {
-                if has_enemy && !imaginary {
+                if has_enemy {
                     continue 'multi_leg;
                 }
-                if has_friendly || imaginary {
+                if has_friendly {
                     enc_multi_move_captured_piece!(
                         taken_piece,
                         game_state.main_board[accumulated_index as usize] as u64
@@ -579,10 +970,10 @@ pub fn generate_move_list(
                     }
                 }
             } else if can_move_capture {
-                if has_friendly && !imaginary {
+                if has_friendly {
                     continue 'multi_leg;
                 }
-                if has_enemy || imaginary {
+                if has_enemy {
                     enc_multi_move_captured_piece!(
                         taken_piece,
                         game_state.main_board[accumulated_index as usize] as u64
@@ -633,7 +1024,7 @@ pub fn generate_move_list(
                     }
                 }
             } else if can_do_all_three {
-                if imaginary || has_enemy || has_friendly {
+                if has_enemy || has_friendly {
                     enc_multi_move_captured_piece!(
                         taken_piece,
                         game_state.main_board[accumulated_index as usize] as u64
@@ -996,28 +1387,22 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
             let king_file = start_square % game_state.files as u32;
             let end_file = end_square % game_state.files as u32;
 
-            let start_check = king_file.min(end_file) + 1;
+            let start_check = king_file.min(end_file);
             let end_check = king_file.max(end_file);
 
-            let path_attacked = (start_check..end_check).any(|f| {
+            let path_attacked = (start_check..=end_check).any(|f| {
                 let check_sq =
                     (start_square / game_state.files as u32)
                     * game_state.files as u32 + f;
 
                 is_square_attacked(
                     check_sq,
-                    1 - piece_color,
+                    piece_color,
                     game_state,
                 )
             });
 
-            let is_in_check = is_square_attacked(
-                start_square,
-                1 - piece_color,
-                game_state,
-            );
-
-            if path_attacked || is_in_check {
+            if path_attacked {
                 return false;
             }
         }
@@ -1473,7 +1858,6 @@ pub fn generate_all_moves(state: &State) -> Vec<Move> {
                         *index,
                         piece,
                         state,
-                        false
                     )
                 })
                 .collect::<Vec<_>>()
