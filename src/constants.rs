@@ -47,6 +47,7 @@ pub const Z: u8 = 25;
 
 pub const WHITE : u8 = 0;
 pub const BLACK : u8 = 1;
+pub const BOTH : u8 = 2;
 
 pub const WK_CASTLE : u8 = 0b0001;
 pub const WQ_CASTLE : u8 = 0b0010;

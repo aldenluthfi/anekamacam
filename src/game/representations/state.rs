@@ -17,14 +17,13 @@ use crate::{
     game::{
         moves::{
             move_list::{
-                generate_relevant_boards,
-                generate_relevant_moves,
+                generate_attack_masks, generate_relevant_moves
             },
             move_parse::generate_move_vectors,
         },
         representations::{
             board::Board,
-            moves::Move,
+            moves::{AttackMask, Move},
             piece::Piece,
             vector::{Leg, LegVector, MoveSet},
         },
@@ -116,8 +115,8 @@ pub struct State {
     pub piece_list: Vec<Vec<Square>>,                                           /* piece index to square list         */
     pub royal_list: [Vec<Square>; 2],                                           /* color to royal piece square list   */
 
-    pub relevant_board: Vec<Vec<Board>>,
     pub relevant_moves: Vec<Vec<MoveSet>>,
+    pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub piece_moves: Vec<MoveSet>,
 }
 
@@ -158,10 +157,10 @@ impl State {
             piece_count: vec![0u32; piece_count],
             piece_list: vec![Vec::new(); piece_count],
             royal_list: [Vec::new(), Vec::new()],
-            relevant_board:
-                vec![vec![board!(files, ranks); board_size]; piece_count],
             relevant_moves:
                 vec![vec![MoveSet::new(); board_size]; piece_count],
+            relevant_attacks: 
+                [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
             piece_moves: vec![MoveSet::new(); piece_count],
         };
 
@@ -216,19 +215,6 @@ impl State {
         }
     }
 
-    fn populate_relevant_boards(&mut self) {
-        for (index, piece) in self.pieces.iter().enumerate() {
-            for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_board[index][square as usize]
-                    = generate_relevant_boards(
-                        piece,
-                        square,
-                        self
-                    );
-            }
-        }
-    }
-
     fn populate_relevant_moves(&mut self) {
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
@@ -242,9 +228,15 @@ impl State {
         }
     }
 
+    fn populate_relevant_attacks(&mut self) {
+        for square in 0..(self.files as u32 * self.ranks as u32) {
+            generate_attack_masks(square as u16, self);
+        }
+    }
+
     fn precompute(&mut self) {
         self.populate_piece_moves();
-        self.populate_relevant_boards();
         self.populate_relevant_moves();
+        self.populate_relevant_attacks();
     }
 }
