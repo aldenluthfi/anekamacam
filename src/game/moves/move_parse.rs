@@ -17,8 +17,6 @@
 //! 18/02/2024
 
 use lazy_static::lazy_static;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use rayon::prelude::*;
 use regex::Regex;
 use core::panic;
 use std::char;
@@ -63,7 +61,7 @@ lazy_static! {
             r"\[\d+\]|",
             r"(?:\.+)|",
             r":?\{\d+(?:\.\.(?:\d+|\*))?\}|",
-            r"<|>"
+            r"<|>|#"
         )
     ).unwrap();
     pub static ref DOTS_TOKEN: Regex = Regex::new(
@@ -88,7 +86,7 @@ lazy_static! {
             r"\[\d+\]|",
             r"(?:\.+)|",
             r"-(?:\.+)|",
-            r"[mciudpk!]+|",
+            r"[mciudpklr!]+|",
             r":?\{\d+(?:\.\.(?:\d+|\*))?\}|",
             r"-:\{\d+(?:\.\.(?:\d+|\*))?\}|",
             r"-\{\d+(?:\.\.(?:\d+|\*))?\}|",
@@ -96,10 +94,10 @@ lazy_static! {
         )
     ).unwrap();
     pub static ref MODIFIERS: Regex = Regex::new(
-        r"^[mciudpk!]+$"
+        r"^[mciudpklr!]+$"
     ).unwrap();
     pub static ref CASTLING_TOKEN: Regex = Regex::new(
-        r"^(?:O|o)\{(\d+)(?:\.\.(\d+|\*))?\}$"
+        r"^(?:O|o)\{(\d+)\}\{(\d+)\}$"
     ).unwrap();
     pub static ref INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] = [
         ( 0,  1),
@@ -478,6 +476,9 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 
     while let Some(term) = stack.pop() {
 
+        #[cfg(debug_assertions)]
+        println!("DEBUG: expand_cardinals processing term: {}", term);
+
         if !CARDINAL_PATTERN.is_match(&term) {
             result_stack.insert(term);
             continue;
@@ -514,7 +515,7 @@ where
 {
     assert!(!expr.is_empty(), "{expr} must not empty.");
 
-    expr.par_split('|')
+    expr.split('|')
         .map(|s| f(s.trim()))
         .collect()
 }
@@ -542,7 +543,7 @@ fn parse_move(expr: &str) -> String {
         .iter()
         .fold(expr, |acc, &step| {
             split_and_process(&acc, step)
-                .into_par_iter()
+                .into_iter()
                 .flatten()
                 .collect::<Vec<_>>()
                 .join("|")
@@ -644,12 +645,18 @@ fn filter_atomic_by_index(
 ) -> Vec<AtomicVector> {
     let mut result: Vec<AtomicVector> = Vec::new();
 
+    #[cfg(debug_assertions)]
+    println!("DEBUG: filter_atomic_by_index sorted indices: {:?}", index);
+
     assert_eq!(
         vectors.len(), 8,
         "Can only filter from 8 cardinal directions clockwise"
     );
 
     vectors = sort_atomic_clockwise(vectors);
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: filter_atomic_by_index sorted vectors: {:?}", vectors);
 
     for i in index {
         result.push(vectors[i]);
@@ -664,6 +671,11 @@ fn filter_atomic_by_cardinal_direction(
     direction: &str,
     pov: & str
 ) -> Vec<AtomicVector> {
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: filter_atomic_by_cardinal_direction direction: {} w.r.t {}",
+        direction, pov
+    );
 
     let pov_fn = quadrant_function(pov);
 
@@ -743,6 +755,10 @@ fn process_atomic_range_token(
     game_state: &State,
 ) -> Vec<AtomicVector> {
     let captures = RANGE_TOKEN.captures(token).unwrap();
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: range token captures: {:?}", captures);
+
     let start = captures.get(1);
     let end = captures.get(2);
 
@@ -834,6 +850,9 @@ fn process_atomic_colon_range_token(
 
     let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
 
+    #[cfg(debug_assertions)]
+    println!("DEBUG: colon-range token captures: {:?}", captures);
+
     let start = captures.get(1);
     let end = captures.get(2);
 
@@ -921,6 +940,12 @@ fn process_atomic_modifiers(
     modifiers: &(Option<Token>, Option<Token>),
     rotation: &str
 ) -> Vec<AtomicVector> {
+
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: process_modifiers with modifiers: {:?}, rotation: {}",
+        modifiers, rotation
+    );
 
     match modifiers {
         (Some(Cardinal(direction)), Some(Filter(indices))) => {
@@ -1039,6 +1064,15 @@ fn evaluate_atomic_expression(
     game_state: &State,
 ) -> AtomicElement {
 
+    #[cfg(debug_assertions)]
+    println!(
+        concat!(
+            "DEBUG: evaluate_atomic_expression with expression: {:?} ",
+            "with rotation: {} "
+        ),
+        expr, rotation
+    );
+
     let mut result: Vec<AtomicVector> =
         vec![
             AtomicVector::origin(
@@ -1124,6 +1158,12 @@ fn evaluate_atomic_expression(
     }
 
     filter_atomic_out_of_bounds(&mut result, game_state);
+
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: evaluate_atomic_expression {:?} final len: {}",
+        expr, result.len()
+    );
     AtomicEval(result)
 }
 
@@ -1277,6 +1317,13 @@ where
 /// here.
 #[hotpath::measure]
 fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
+
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: atomic_to_vector expr {} with rotation {}",
+        expr, rotation
+    );
+
     let mut set = HashSet::new();
 
     let cap = ATOMIC.captures(expr)
@@ -1513,6 +1560,12 @@ fn chained_atomic_to_vector(
     expr: &str, rotation: &str
 ) -> Vec<AtomicVector> {
 
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: chained_atomic_to_vector expr {} with rotation {}",
+        expr, rotation
+    );
+
     let mut result: Vec<AtomicVector> = vec![
         AtomicVector::origin(*CARDINAL_STR_TO_INDEX.get(rotation)
             .unwrap_or_else(
@@ -1660,9 +1713,18 @@ fn chained_atomic_to_vector(
 fn compound_atomic_to_vector(
     expr: &str, rotation: &str, game_state: &State
 ) -> Vec<AtomicVector> {
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: compound_atomic_to_vector expr {} with rotation {}",
+        expr, rotation
+    );
+
     let tokens: Vec<&str> = ATOMIC_TOKENS.find_iter(expr)
         .map(|m| m.as_str())
         .collect();
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: compound_atomic_to_vector tokens: {:?}", tokens);
 
     let mut stack: AtomicGroup = VecDeque::new();
 
@@ -1785,7 +1847,18 @@ fn filter_multi_leg_by_index(
 ) -> Vec<MultiLegVector> {
 
     let mut result: Vec<MultiLegVector> = Vec::new();
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: filter_atomic_by_index sorted indices: {:?}", index);
+
     vectors = sort_multi_leg_clockwise(vectors);
+
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: filter_multi_leg_by_index sorted vectors: {:#?}",
+        vectors
+    );
+
     for i in index {
         result.push(vectors[i].clone());
     }
@@ -1799,7 +1872,14 @@ fn filter_multi_leg_by_cardinal_direction(
     direction: &str,
     pov: & str
 ) -> Vec<MultiLegVector> {
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: filter_by_cardinal_direction direction: {} w.r.t {}",
+        direction, pov
+    );
+
     let pov_fn = quadrant_function(pov);
+
     vectors.retain(| vector | {
         let sum = sum_multi_leg_vectors(vector);
         let (is_north, is_east, is_south, is_west) = pov_fn(sum.0, sum.1);
@@ -1864,7 +1944,11 @@ fn process_multi_leg_range_token(
     token: &str,
     game_state: &State,
 ) -> Vec<MultiLegVector> {
-    let captures = RANGE_TOKEN.captures(token).unwrap();
+let captures = RANGE_TOKEN.captures(token).unwrap();
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: range token captures: {:?}", captures);
+
     let start = captures.get(1);
     let end = captures.get(2);
 
@@ -1967,6 +2051,10 @@ fn process_multi_leg_colon_range_token(
     let mut result: HashSet<MultiLegVector> = HashSet::new();
 
     let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: colon-range token captures: {:?}", captures);
+
     let start = captures.get(1);
     let end = captures.get(2);
 
@@ -2100,6 +2188,13 @@ fn process_multi_leg_modifiers(
     modifiers: &[Option<Token>; 3],
     rotation: &str
 ) -> Vec<MultiLegVector> {
+
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: process_multi_leg_modifiers with modifiers: {:?} ",
+        modifiers
+    );
+
     if let Some(Cardinal(directions)) = &modifiers[0] {
         vector_set = filter_multi_leg_by_cardinal_direction(
             vector_set,
@@ -2139,6 +2234,16 @@ fn evaluate_multi_leg_term_leg(
     rotation: &str,
     game_state: &State,
 ) -> Vec<MultiLegVector> {
+
+    #[cfg(debug_assertions)]
+    println!(
+        concat!(
+            "DEBUG: evaluate_multi_leg_term_leg with term: {:#?} ",
+            "modifiers: {:?}"
+        ),
+        term, modifiers
+    );
+
     let atomic = match term {
         Leg(atomic) => atomic,
         _ => {
@@ -2216,6 +2321,15 @@ fn evaluate_multi_leg_subexpression(
     rotation: &str,
     game_state: &State,
 ) -> Vec<MultiLegVector> {
+    #[cfg(debug_assertions)]
+    println!(
+        concat!(
+            "DEBUG: evaluate_multi_leg_subexpr with expr: {:#?} ",
+            "modifiers: {:?}, rotation: {}"
+        ),
+        expr, modifiers, rotation
+    );
+
     let is_slash_expr = matches!(
         expr,
         MultiLegSlashExpr(_)
@@ -2322,6 +2436,15 @@ fn evaluate_multi_leg_expression(
     rotation: &str,
     game_state: &State
 ) -> MultiLegElement {
+    #[cfg(debug_assertions)]
+    println!(
+        concat!(
+            "DEBUG: evaluate_multi_leg_expression with expression: {:#?} ",
+            "with rotation: {} "
+        ),
+        expr, rotation
+    );
+
     let mut result: Vec<MultiLegVector> = Vec::new();
     let mut exclusion: Vec<MultiLegVector> = Vec::new();
     let mut modifiers: [Option<Token>; 3] = [None, None, None];
@@ -2451,6 +2574,13 @@ fn evaluate_multi_leg_expression(
             !exclusion.contains(vector)
         }
     );
+
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: evaluate_multi_leg_expression {:?} final len: {:#?} ",
+        expr, result.len()
+    );
+
     MultiLegEval(result)
 }
 
@@ -2484,6 +2614,9 @@ fn tokenize_multi_leg_expression(
         tokens.push(expr[current..expr.len()].to_string());
     }
 
+    #[cfg(debug_assertions)]
+    println!("DEBUG: tokenize_multi_leg_expression raw tokens: {:?}", tokens);
+
     let mut prev_tokens: Vec<String> = vec![];
 
     while prev_tokens != tokens {
@@ -2516,6 +2649,9 @@ fn tokenize_multi_leg_expression(
         }
         tokens = result;
     }
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: tokenize_multi_leg_expression first pass {:?}", tokens);
 
     let mut result: Vec<String> = vec![];
     tokens = tokens.into_iter().rev().collect();
@@ -2555,9 +2691,18 @@ fn leg_to_vector(
     game_state: &State
 ) -> Vec<MultiLegVector> {
 
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: leg_to_vector leg {} with rotation {}",
+        expr, rotation
+    );
+
     let captures = LEG.captures(expr).unwrap_or_else(
         || panic!("Invalid leg expression: {}", expr)
     );
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: leg_to_vector captures: {:?}", captures);
 
     let modifiers = captures.get(1).map_or("", |m| m.as_str());
     let exclusion = captures.get(3).map_or("", |m| m.as_str());
@@ -2597,47 +2742,62 @@ fn leg_to_vector(
 /// of the board and the target piece will always land adjacent to the
 /// castling piece on the side where the castling piece came from.
 ///
-/// A queenside castling leg vector is denoted by (-range, i8::MIN) on the
-/// vector part and a modifier of i
+/// A queenside is by O{x}{y} and a kingside is o{x}{y} where:
+/// x -> how many squares to the edge of the board the unmoved piece is
+/// y -> how many squares to move towards the center after capturing the unmoved
+///      piece
 ///
-/// A kingside castling leg vector is denoted by (range, i8::MAX) on the vector
-/// part and a modifier of i
+/// Queenside castling is performed by:
+/// 1. making a null move (to verify not in check later on)
+/// 2. move to the edge of the board, captured the unmoved rook there
+/// 3. move back towards the center, placing the rook adjacent
+///    to the castling piece on the kingside of the castling piece
+///
+/// Kingside castling is similar but on the other side.
 #[hotpath::measure]
 fn parse_castling(
     expr: &str,
-) -> Vec<MultiLegVector> {
-    let mut vectors: Vec<MultiLegVector> = Vec::new();
+) -> String {
+    let mut string: String = String::from("i!ic<i!i#-");
 
     let captures = CASTLING_TOKEN.captures(expr).unwrap_or_else(
         || panic!("Invalid castling expression: {}", expr)
     );
 
-    let range = captures.get(1).expect(
+    let distance_to_edge = captures.get(1).expect(
+        "Missing distance to edge in castling expression."
+    ).as_str().parse::<i8>().expect(
+        "Invalid distance to edge in castling expression."
+    );
+
+    let distance_to_move_back = captures.get(2).expect(
         "Missing range in castling expression."
     ).as_str().parse::<i8>().expect(
         "Invalid range in castling expression."
     );
 
+    let distance_to_dest_file = distance_to_edge - distance_to_move_back;
+
     if expr.contains("O") {
-        let leg_vector = LegVector::new(
-            AtomicVector::new((-range, i8::MIN), (0, 0)),
-            "i"
-        );
-        vectors.push(vec![leg_vector]);
+        string.push_str(&format!(
+            "i!iwW-{{{}}}-du!unW{{{}}}-isW-{{{}}}>-l#",
+            distance_to_dest_file - 1,
+            distance_to_move_back + 1,
+            distance_to_move_back
+        ));
     } else if expr.contains("o") {
-        let leg_vector = LegVector::new(
-            AtomicVector::new((range, i8::MAX), (0, 0)),
-            "i"
-        );
-        vectors.push(vec![leg_vector]);
-    } else {
-        panic!(
-            "Invalid castling expression, must contain O or o: {}",
-            expr
-        );
+        string.push_str(&format!(
+            "i!ieW-{{{}}}-du!unW{{{}}}-isW-{{{}}}>-r#",
+            distance_to_dest_file - 1,
+            distance_to_move_back + 1,
+            distance_to_move_back
+        ));
     }
 
-    vectors
+    #[cfg(debug_assertions)]
+    println!("DEBUG: parse_castling generated move expression: {}", string);
+
+    string
 }
 
 #[hotpath::measure]
@@ -2647,8 +2807,14 @@ fn multi_leg_to_vector(
     game_state: &State
 ) -> Vec<MultiLegVector> {
 
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: multi_leg_to_vector leg {} with rotation {}",
+        expr, rotation
+    );
+
     if expr.contains("O") || expr.contains("o") {
-        return parse_castling(expr);
+        return generate_move_vectors(&parse_castling(expr), game_state);
     }
 
     if !expr.contains("-") {
@@ -2656,6 +2822,10 @@ fn multi_leg_to_vector(
     }
 
     let tokens = tokenize_multi_leg_expression(expr);
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: multi_leg_to_vector final tokens: {:?}", tokens);
+
     let mut stack: MultiLegGroup = VecDeque::new();
     for token in tokens {
         match token.as_str() {
@@ -2746,6 +2916,12 @@ fn multi_leg_to_vector(
             }
         }
     }
+
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: multi_leg_to_vector parsed stack: {:#?}",
+        stack
+    );
 
     let result = evaluate_multi_leg_expression(stack, rotation, game_state);    /* Evaluate recursively               */
 

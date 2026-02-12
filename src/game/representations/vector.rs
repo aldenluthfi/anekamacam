@@ -142,32 +142,16 @@ macro_rules! not_k {
 }
 
 #[macro_export]
-macro_rules! kingside {
+macro_rules! l {
     ($l:expr) => {
-        {
-            let rank_offset = (($l >> 8) & 0xFF) as i8;
-            rank_offset == i8::MAX
-        }
+        ($l >> 30) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! queenside {
+macro_rules! r {
     ($l:expr) => {
-        {
-            let rank_offset = (($l >> 8) & 0xFF) as i8;
-            rank_offset == i8::MIN
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! castling {
-    ($l:expr) => {
-        {
-            let rank_offset = (($l >> 8) & 0xFF) as i8;
-            rank_offset == i8::MIN || rank_offset == i8::MAX
-        }
+        ($l >> 31) & 1 == 1
     };
 }
 
@@ -247,23 +231,16 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - k  : gives check
 /// - !x : negation of modifier x
 ///
-/// Castling moves are represented with a special rank offset in the
-/// AtomicVector part of the LegVector:
-/// - rank offset = i8::MAX for kingside castling
-/// - rank offset = i8::MIN for queenside castling
+/// additional modifier 'r' for 'right' can be used to indicate that the leg
+/// is to the right side (for castling purposes)
+///
+/// similarly, modifier 'l' for 'left' can be used to indicate that the leg
+/// is to the left side (for castling purposes)
+///
+/// l and r must be used alone, they cannot be negated or used with other
+/// modifiers
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
-
-#[derive(Clone, Copy, Debug)]
-pub struct ModifierState {
-    pub m: Option<bool>,
-    pub c: Option<bool>,
-    pub i: Option<bool>,
-    pub u: Option<bool>,
-    pub d: Option<bool>,
-    pub p: Option<bool>,
-    pub k: Option<bool>,
-}
 
 impl LegVector {
 
@@ -271,10 +248,7 @@ impl LegVector {
         let bits = Self::parse_modifiers(modifiers);
         let atomic_bits = atomic.0 as u64;
         let modifier_bits = (bits as u64) << 32;
-        let result = LegVector(atomic_bits | modifier_bits);
-
-        result.check_discrepancy();
-        result
+        LegVector(atomic_bits | modifier_bits)
     }
 
     fn parse_modifiers(mods: &str) -> u16 {
@@ -289,6 +263,8 @@ impl LegVector {
                 'd' => 1 << 4,
                 'p' => 1 << 5,
                 'k' => 1 << 6,
+                'l' => 1 << 14,
+                'r' => 1 << 15,
                 '!' => break,
                 _ => panic!("Invalid modifier character: {}", ch),
             };
@@ -307,94 +283,46 @@ impl LegVector {
             };
         }
 
-        if bits & (1 << 1) == 0 && bits & (1 << 13) != 0 {
-            bits |= 1 << 6;                                                     /* c implies k                        */
-        }
-
-        if (bits & (1 << 0) != 0) && (bits & (1 << 1) != 0) {                   /* mutually exclusive                 */
-            panic!(
-                "Invalid modifier state: both m and c are set"
-            );
-        }
-
         bits
-    }
-
-    #[inline(always)]
-    pub fn get_modifier_state(&self) -> ModifierState {
-        let mods = (self.0 >> 32) as u16;
-
-        unsafe {
-            ModifierState {
-                m: match (mods & 1, mods & (1 << 7)) {
-                    (0, 0) => None,
-                    (_, 0) => Some(true),
-                    (0, _) => Some(false),
-                    _ => std::hint::unreachable_unchecked(),
-                },
-                c: match (mods & 2, mods & (1 << 8)) {
-                    (0, 0) => None,
-                    (_, 0) => Some(true),
-                    (0, _) => Some(false),
-                    _ => std::hint::unreachable_unchecked(),
-                },
-                i: match (mods & 4, mods & (1 << 9)) {
-                    (0, 0) => None,
-                    (_, 0) => Some(true),
-                    (0, _) => Some(false),
-                    _ => std::hint::unreachable_unchecked(),
-                },
-                u: match (mods & 8, mods & (1 << 10)) {
-                    (0, 0) => None,
-                    (_, 0) => Some(true),
-                    (0, _) => Some(false),
-                    _ => std::hint::unreachable_unchecked(),
-                },
-                d: match (mods & 16, mods & (1 << 11)) {
-                    (0, 0) => None,
-                    (_, 0) => Some(true),
-                    (0, _) => Some(false),
-                    _ => std::hint::unreachable_unchecked(),
-                },
-                p: match (mods & 32, mods & (1 << 12)) {
-                    (0, 0) => None,
-                    (_, 0) => Some(true),
-                    (0, _) => Some(false),
-                    _ => std::hint::unreachable_unchecked(),
-                },
-                k: match (mods & 64, mods & (1 << 13)) {
-                    (0, 0) => None,
-                    (_, 0) => Some(true),
-                    (0, _) => Some(false),
-                    _ => std::hint::unreachable_unchecked(),
-                },
-            }
-        }
     }
 
     pub fn get_modifiers_str(&self) -> String {
         let mut s = "".to_string();
 
         let mods = [
-            ('m', self.is_m()),
-            ('c', self.is_c()),
-            ('i', self.is_i()),
-            ('u', self.is_u()),
-            ('d', self.is_d()),
-            ('p', self.is_p()),
-            ('k', self.is_k()),
+            ('m', m!(self.0 >> 16)),
+            ('c', c!(self.0 >> 16)),
+            ('i', i!(self.0 >> 16)),
+            ('u', u!(self.0 >> 16)),
+            ('d', d!(self.0 >> 16)),
+            ('p', p!(self.0 >> 16)),
+            ('k', k!(self.0 >> 16)),
+            ('l', l!(self.0 >> 16)),
+            ('r', r!(self.0 >> 16)),
+        ];
+
+        let not_mods = [
+            ('m', not_m!(self.0 >> 16)),
+            ('c', not_c!(self.0 >> 16)),
+            ('i', not_i!(self.0 >> 16)),
+            ('u', not_u!(self.0 >> 16)),
+            ('d', not_d!(self.0 >> 16)),
+            ('p', not_p!(self.0 >> 16)),
+            ('k', not_k!(self.0 >> 16)),
         ];
 
         for (ch, val) in mods.iter() {
-            match val {
-                Some(true) => s.push(*ch),
-                Some(false) => {
-                    if !s.contains('!') {
-                        s.push('!');
-                    }
-                    s.push(*ch);
+            if *val {
+                s.push(*ch);
+            }
+        }
+
+        for (ch, val) in not_mods.iter() {
+            if *val {
+                if !s.contains('!') {
+                    s.push('!');
                 }
-                None => {}
+                s.push(*ch);
             }
         }
 
@@ -420,132 +348,29 @@ impl LegVector {
     pub fn add_modifier(&mut self, modifier: &str) {
         let mut bits = self.get_modifiers();
 
-        let is_negated = modifier.starts_with('!');
+        let mut is_negated = 0;
 
-        for ch in modifier.chars().filter(|&c| c != '!') {
+        for ch in modifier.chars() {
             let bit = match ch {
-                'm' => 0,
-                'c' => 1,
-                'i' => 2,
-                'u' => 3,
-                'd' => 4,
-                'p' => 5,
-                'k' => 6,
+                'm' => is_negated,
+                'c' => 1 + is_negated,
+                'i' => 2 + is_negated,
+                'u' => 3 + is_negated,
+                'd' => 4 + is_negated,
+                'p' => 5 + is_negated,
+                'k' => 6 + is_negated,
+                'l' => 14,
+                'r' => 15,
+                '!' => {is_negated = 7; -1},
                 _ => panic!("Invalid modifier character: {}", ch),
             };
-            let bit = if is_negated { bit + 7 } else { bit };
 
-            bits |= 1 << bit;
-
-            self.check_discrepancy();
+            if bit != -1 {
+                bits |= 1 << bit;
+            }
 
             self.0 = (self.0 & 0xFFFF_FFFF) | ((bits as u64) << 32);
         }
-    }
-
-    pub fn check_discrepancy(&self) {
-        self.is_c();
-        self.is_m();
-        self.is_i();
-        self.is_u();
-        self.is_d();
-        self.is_p();
-        self.is_k();
-    }
-
-    pub fn is_m(&self) -> Option<bool> {
-        let mods = self.get_modifiers();
-        match (mods & (1 << 0) != 0, mods & (1 << 7) != 0) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            (false, false) => None,
-            (true, true) => panic!(
-                "Invalid modifier state: both m and !m are set"
-            ),
-        }
-    }
-
-    pub fn is_c(&self) -> Option<bool> {
-        let mods = self.get_modifiers();
-        match (mods & (1 << 1) != 0, mods & (1 << 8) != 0) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            (false, false) => None,
-            (true, true) => panic!(
-                "Invalid modifier state: both m and !m are set"
-            ),
-        }
-    }
-
-    pub fn is_i(&self) -> Option<bool> {
-        let mods = self.get_modifiers();
-        match (mods & (1 << 2) != 0, mods & (1 << 9) != 0) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            (false, false) => None,
-            (true, true) => panic!(
-                "Invalid modifier state: both m and !m are set"
-            ),
-        }
-    }
-
-    pub fn is_u(&self) -> Option<bool> {
-        let mods = self.get_modifiers();
-        match (mods & (1 << 3) != 0, mods & (1 << 10) != 0) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            (false, false) => None,
-            (true, true) => panic!(
-                "Invalid modifier state: both m and !m are set"
-            ),
-        }
-    }
-
-    pub fn is_d(&self) -> Option<bool> {
-        let mods = self.get_modifiers();
-        match (mods & (1 << 4) != 0, mods & (1 << 11) != 0) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            (false, false) => None,
-            (true, true) => panic!(
-                "Invalid modifier state: both m and !m are set"
-            ),
-        }
-    }
-
-    pub fn is_p(&self) -> Option<bool> {
-        let mods = self.get_modifiers();
-        match (mods & (1 << 5) != 0, mods & (1 << 12) != 0) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            (false, false) => None,
-            (true, true) => panic!(
-                "Invalid modifier state: both m and !m are set"
-            ),
-        }
-    }
-
-    pub fn is_k(&self) -> Option<bool> {
-        let mods = self.get_modifiers();
-        match (mods & (1 << 6) != 0, mods & (1 << 13) != 0) {
-            (true, false) => Some(true),
-            (false, true) => Some(false),
-            (false, false) => None,
-            (true, true) => panic!(
-                "Invalid modifier state: both m and !m are set"
-            ),
-        }
-    }
-
-    #[inline(always)]
-    pub fn is_castling(&self) -> bool {
-        let rank_offset = ((self.0 >> 8) & 0xFF) as i8;
-        rank_offset == i8::MIN || rank_offset == i8::MAX
-    }
-
-    #[inline(always)]
-    pub fn is_castling_right(&self) -> bool {
-        ((self.0 >> 8) & 0xFF) as i8 == i8::MAX
     }
 }
 
