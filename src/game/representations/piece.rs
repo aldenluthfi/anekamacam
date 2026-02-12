@@ -15,6 +15,76 @@
 
 use bnum::{cast::As, types::U2048};
 
+#[macro_export]
+macro_rules! p_index {
+    ($piece:expr) => {
+        $piece.encoded_piece as u8
+    };
+}
+
+#[macro_export]
+macro_rules! p_color {
+    ($piece:expr) => {
+        (($piece.encoded_piece >> 8) & 1) as u8
+    };
+}
+
+#[macro_export]
+macro_rules! p_is_royal {
+    ($piece:expr) => {
+        ($piece.encoded_piece & (1 << 9)) != 0
+    };
+}
+
+#[macro_export]
+macro_rules! p_is_big {
+    ($piece:expr) => {
+        ($piece.encoded_piece & (1 << 10)) != 0
+    };
+}
+
+#[macro_export]
+macro_rules! p_can_promote {
+    ($piece:expr) => {
+        ($piece.encoded_piece & (1 << 10)) == 0
+    };
+}
+
+#[macro_export]
+macro_rules! p_is_major {
+    ($piece:expr) => {
+        ($piece.encoded_piece & (1 << 11)) != 0
+    };
+}
+
+#[macro_export]
+macro_rules! p_is_minor {
+    ($piece:expr) => {
+        ($piece.encoded_piece & (1 << 11)) == 0
+    };
+}
+
+#[macro_export]
+macro_rules! p_value {
+    ($piece:expr) => {
+        (($piece.encoded_piece >> 12) & 0xFFFF) as u16
+    };
+}
+
+#[macro_export]
+macro_rules! p_castle_kingside {
+    ($piece:expr) => {
+        ($piece.encoded_piece & (1 << 28)) != 0
+    };
+}
+
+#[macro_export]
+macro_rules! p_castle_queenside {
+    ($piece:expr) => {
+        ($piece.encoded_piece & (1 << 29)) != 0
+    };
+}
+
 pub type PieceIndex = u8;
 
 /// A structure representing a game piece with its properties.

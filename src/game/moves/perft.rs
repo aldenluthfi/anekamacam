@@ -2,10 +2,10 @@ use std::fs;
 
 use crate::{
     game::{
-        moves::move_list::{make_move, undo_move, generate_all_moves},
+        moves::move_list::{generate_all_moves, make_move, undo_move},
         representations::state::State
     },
-    io::{move_io::format_move, game_io::format_game_state}
+    io::{game_io::format_game_state, move_io::format_move}
 };
 
 fn parse_perft_file(
@@ -39,10 +39,10 @@ pub fn start_perft(
     let mut total_moves = 0;
     let total_cases = perft_cases.len() * depth as usize;
 
-    for (fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6) in
-        perft_cases
+    for (i, (fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6)) in
+        perft_cases.iter().enumerate()
     {
-        state.load_fen(&fen);
+        state.load_fen(fen);
 
         let expected_perfts = [
             perft_1, perft_2, perft_3, perft_4, perft_5, perft_6,
@@ -52,19 +52,19 @@ pub fn start_perft(
             let result = perft(state, d, debug, branch);
             let expected = expected_perfts[(d - 1) as usize];
 
-            if result == expected {
+            if result == *expected {
                 successful_cases += 1;
                 total_moves += result;
                 println!(
-                    "FEN: {} | Depth: {} | Expected: {} | Result: {} \
+                    "{:04}. FEN: {} | Depth: {} | Expected: {} | Result: {} \
                      [PASSED]",
-                    fen, d, expected, result
+                    i, fen, d, expected, result
                 );
             } else {
                 println!(
-                    "FEN: {} | Depth: {} | Expected: {} | Result: {} \
+                    "{:04}. FEN: {} | Depth: {} | Expected: {} | Result: {} \
                      [FAILED]",
-                    fen, d, expected, result
+                    i, fen, d, expected, result
                 );
                 println!("{}", format_game_state(state, false))
             }
@@ -106,18 +106,32 @@ fn perft_impl(
     let mut nodes = 0;
 
     for mv in possible_moves {
-        if make_move(state, mv.clone()) {
+        if debug {
+            let formatted_move = &format_move(&mv, state);
+
+            if make_move(state, mv) {
+                nodes += perft_impl(
+                    state,
+                    depth - 1,
+                    debug && depth > branch.unwrap_or(0),
+                    branch,
+                    format!(
+                        "{} {}",
+                        prefix,
+                        formatted_move
+                    ),
+                );
+                undo_move(state);
+            }
+        } else if make_move(state, mv) {
             nodes += perft_impl(
                 state,
                 depth - 1,
-                debug && depth > branch.unwrap_or(0),
-                branch,
-                format!(
-                    "{} {}",
-                    prefix,
-                    format_move(&mv, state)
-                ),
+                false,
+                None,
+                String::new(),
             );
+
             undo_move(state);
         }
     }

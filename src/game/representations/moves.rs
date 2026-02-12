@@ -58,7 +58,6 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// - Next 8 bits represent the captured piece type.
 /// - Next 12 bits represent the captured piece square index.
 /// - Next bit indicates if the piece captured is unmoved (1) or not (0).
-/// - Next bit indicates if this move is a castling move (1) or not (0).
 /// - The remaining bits are unused.
 ///
 /// The second array is used to store the indices of all captured pieces.
@@ -211,13 +210,6 @@ macro_rules! enc_captured_unmoved {
     };
 }
 
-#[macro_export]
-macro_rules! enc_is_castling {
-    ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 123;
-    };
-}
-
 /*----------------------------------------------------------------------------*\
                           MOVE REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
@@ -348,13 +340,6 @@ macro_rules! captured_unmoved {
     };
 }
 
-#[macro_export]
-macro_rules! is_castling {
-    ($mv:expr) => {
-        ($mv.0 >> 123) & 1 == 1
-    };
-}
-
 /*----------------------------------------------------------------------------*\
                         MOVE LIST REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
@@ -362,7 +347,7 @@ macro_rules! is_castling {
 #[macro_export]
 macro_rules! multi_move_can_check {
     ($mv:expr) => {
-        $mv & 1
+        $mv & 1 == 1
     };
 }
 
