@@ -174,35 +174,38 @@ pub fn parse_config_file(path: &str) -> State {
             )
         };
 
-        pieces.push(Piece::new(
-            name.clone(),
-            movement.clone(),
-            white_char,
-            U2048::ZERO,
-            0,                                                                  /* placeholde: will be set later      */
-            WHITE,
-            is_royal,
-            is_big,
-            is_major,
-            value,
-            movement.contains("o"),                                             /* can castle kingside                */
-            movement.contains("O")                                              /* can castle queenside               */
-        ));
-
-        pieces.push(Piece::new(
-            name.clone(),
-            movement.clone(),
-            black_char,
-            U2048::ZERO,
-            0,                                                                  /* placeholde: will be set later      */
-            BLACK,
-            is_royal,
-            is_big,
-            is_major,
-            value,
-            movement.contains("o"),                                             /* can castle kingside                */
-            movement.contains("O")                                              /* can castle queenside               */
-        ));
+        if white_char != '_' {
+            pieces.push(Piece::new(
+                name.clone(),
+                movement.clone(),
+                white_char,
+                U2048::ZERO,
+                0,                                                              /* placeholde: will be set later      */
+                WHITE,
+                is_royal,
+                is_big,
+                is_major,
+                value,
+                movement.contains("o"),                                         /* can castle kingside                */
+                movement.contains("O")                                          /* can castle queenside               */
+            ));
+        }
+        if black_char != '_' {
+            pieces.push(Piece::new(
+                name.clone(),
+                movement.clone(),
+                black_char,
+                U2048::ZERO,
+                0,                                                              /* placeholde: will be set later      */
+                BLACK,
+                is_royal,
+                is_big,
+                is_major,
+                value,
+                movement.contains("o"),                                         /* can castle kingside                */
+                movement.contains("O")                                          /* can castle queenside               */
+            ));
+        }
 
         current_line += 1;
     }
