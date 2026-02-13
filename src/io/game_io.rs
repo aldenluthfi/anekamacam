@@ -19,8 +19,7 @@ use bnum::types::{U2048};
 use std::fs;
 
 use crate::{
-    board, set,
-    constants::*
+    board, constants::*, p_can_promote, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
 };
 use crate::game::{
     hash::hash_position,
@@ -211,11 +210,11 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     let pieces_len = pieces.len() as u8;
-    pieces.sort_by_key(|piece| (piece.color() * pieces_len) + piece.index());
+    pieces.sort_by_key(|piece| (p_color!(piece) * pieces_len) + p_index!(piece));
 
     for (i, piece) in pieces.iter_mut().enumerate() {
         piece.encoded_piece |= i as u32;                                        /* set the piece index correctly       */
-        piece_char_to_idx.insert(piece.symbol, piece.index());
+        piece_char_to_idx.insert(piece.symbol, p_index!(piece));
     }
 
     let promotion_count: usize = lines[current_line]
@@ -251,7 +250,7 @@ pub fn parse_config_file(path: &str) -> State {
             .get(&from_char)
             .unwrap_or_else(|| panic!("Unknown source piece: {}", from_char));
 
-        assert!(pieces[from_idx as usize].can_promote(),
+        assert!(p_can_promote!(pieces[from_idx as usize]),
             "Piece '{}' cannot promote, but promotion mapping provided",
             from_char
         );
@@ -264,13 +263,8 @@ pub fn parse_config_file(path: &str) -> State {
                 .get(&to_char)
                 .unwrap_or_else(|| panic!("Unknown target piece: {}", to_char));
 
-            assert!(pieces[to_idx as usize].is_big(),
+            assert!(p_is_big!(pieces[to_idx as usize]),
                 "Piece '{}' cannot be a promotion target",
-                to_char
-            );
-
-            assert!(!pieces[to_idx as usize].is_royal(),
-                "Piece '{}' is royal and cannot be promoted to",
                 to_char
             );
 
@@ -396,32 +390,35 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 let square_index =
                     (rank as u32) * (state.files as u32) + (file as u32);
 
-                state.main_board[square_index as usize] = piece.index();
+                state.main_board[square_index as usize] = p_index!(piece);
 
-                state.piece_list[piece.index() as usize]
+                state.piece_list[p_index!(piece) as usize]
                     .push(square_index as u16);
-                state.piece_count[piece.index() as usize] += 1;
+                state.piece_count[p_index!(piece) as usize] += 1;
 
-                set!(state.pieces_board[piece.color() as usize], square_index);
-                state.material[piece.color() as usize] += piece.value() as u32;
+                set!(
+                    state.pieces_board[p_color!(piece) as usize], square_index
+                );
+                state.material[p_color!(piece) as usize] +=
+                    p_value!(piece) as u32;
 
-                if piece.is_royal() {
-                    state.royal_list[piece.color() as usize].push(
+                if p_is_royal!(piece) {
+                    state.royal_list[p_color!(piece) as usize].push(
                         square_index as u16
                     );
-                    state.royal_pieces[piece.color() as usize] += 1;
+                    state.royal_pieces[p_color!(piece) as usize] += 1;
                 }
 
-                if piece.is_major() {
-                    state.major_pieces[piece.color() as usize] += 1;
+                if p_is_major!(piece) {
+                    state.major_pieces[p_color!(piece) as usize] += 1;
                 }
 
-                if piece.is_minor() {
-                    state.minor_pieces[piece.color() as usize] += 1;
+                if p_is_minor!(piece) {
+                    state.minor_pieces[p_color!(piece) as usize] += 1;
                 }
 
-                if piece.is_big() {
-                    state.big_pieces[piece.color() as usize] += 1;
+                if p_is_big!(piece) {
+                    state.big_pieces[p_color!(piece) as usize] += 1;
                 }
 
                 if (c == 'P' && rank == 1)

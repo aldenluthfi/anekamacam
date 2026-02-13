@@ -180,75 +180,23 @@ impl Piece {
         }
     }
 
-    #[inline(always)]
-    pub fn index(&self) -> u8 {
-        self.encoded_piece as u8
-    }
-
-    #[inline(always)]
-    pub fn color(&self) -> u8 {
-        ((self.encoded_piece >> 8) & 1) as u8
-    }
-
-    #[inline(always)]
-    pub fn is_royal(&self) -> bool {
-        (self.encoded_piece & (1 << 9)) != 0
-    }
-
-    #[inline(always)]
-    pub fn is_big(&self) -> bool {
-        (self.encoded_piece & (1 << 10)) != 0
-    }
-
-    #[inline(always)]
-    pub fn can_promote(&self) -> bool {
-        (self.encoded_piece & (1 << 10)) == 0
-    }
-
-    #[inline(always)]
-    pub fn is_major(&self) -> bool {
-        (self.encoded_piece & (1 << 11)) != 0
-    }
-
-    #[inline(always)]
-    pub fn is_minor(&self) -> bool {
-        (self.encoded_piece & (1 << 11)) == 0
-    }
-
-    #[inline(always)]
-    pub fn value(&self) -> u16 {
-        ((self.encoded_piece >> 12) & 0xFFFF) as u16
-    }
-
-    #[inline(always)]
-    pub fn can_castle_kingside(&self) -> bool {
-        (self.encoded_piece & (1 << 28)) != 0
-    }
-
-    #[inline(always)]
-    pub fn can_castle_queenside(&self) -> bool {
-        (self.encoded_piece & (1 << 29)) != 0
-    }
-
     pub fn get_promotion_pieces(&self) -> Vec<u8> {
-        if !self.can_promote() {
+        if !p_can_promote!(self) {
             return Vec::new();
         }
 
         let promotions_count = (
             self.promotions & U2048::from(0xFFu32)
         ).as_::<u8>();
-        let mut result = Vec::with_capacity(promotions_count as usize);
 
-        for i in 0..promotions_count {
-            let byte_index = i + 1;
-            let shift = byte_index * 8;
-            let piece_index = (
-                (self.promotions >> shift) & U2048::from(0xFFu32)
-            ).as_::<u8>();
-            result.push(piece_index);
+        if promotions_count == 0 {
+            return Vec::new();
         }
 
-        result
+        (1..=promotions_count)
+            .map(|i| (
+                (self.promotions >> (i * 8)) & U2048::from(0xFFu32)
+            ).as_::<u8>())
+            .collect()
     }
 }

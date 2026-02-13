@@ -12,7 +12,7 @@
 //! 25/01/2026
 
 use crate::game::representations::piece::Piece;
-use crate::constants::*;
+use crate::{constants::*, p_can_promote, p_color, p_index, p_is_major, p_is_royal, p_value};
 
 /// Formats a piece as a column vector with 9 rows of information.
 ///
@@ -30,19 +30,19 @@ pub fn format_piece(piece: &Piece) -> String {
     let mut rows = Vec::with_capacity(9);
 
     rows.push(piece.name.clone());
-    rows.push(piece.index().to_string());
+    rows.push(p_index!(piece).to_string());
     rows.push(piece.symbol.to_string());
     rows.push(
-        if piece.color() == BLACK { "Black" } else { "White" }.to_string()
+        if p_color!(piece) == BLACK { "Black" } else { "White" }.to_string()
     );
-    rows.push(if piece.value() == u16::MAX {
+    rows.push(if p_value!(piece) == u16::MAX {
         "∞".to_string()
     } else {
-        piece.value().to_string()
+        p_value!(piece).to_string()
     });
-    rows.push(if piece.is_royal() { "*" } else { "" }.to_string());
-    rows.push(if piece.can_promote() { "*" } else { "" }.to_string());
-    rows.push(if piece.is_major() { "*" } else { "" }.to_string());
+    rows.push(if p_is_royal!(piece) { "*" } else { "" }.to_string());
+    rows.push(if p_can_promote!(piece) { "*" } else { "" }.to_string());
+    rows.push(if p_is_major!(piece) { "*" } else { "" }.to_string());
     rows.push("-".to_string());                                                 /* Placeholder for "promotion from"   */
 
     const FIXED_WIDTH: usize = 12;
