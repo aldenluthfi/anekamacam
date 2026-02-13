@@ -24,7 +24,7 @@ use crate::{
     board, constants::*, enp_square, game::{
         hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES},
         representations::state::State
-    }, io::board_io::{format_board, format_square}, or, set
+    }, io::board_io::{format_board, format_square}, or, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, set
 };
 
 lazy_static!{
@@ -41,7 +41,7 @@ pub fn verify_game_state(state: &State) {
         if *square != NO_PIECE {
             let piece = &state.pieces[*square as usize];
 
-            if piece.color() == WHITE {
+            if p_color!(piece) == WHITE {
                 set!(temp_white_board, index as u32);
             } else {
                 set!(temp_black_board, index as u32);
@@ -78,14 +78,14 @@ pub fn verify_game_state(state: &State) {
         let piece_indices = &state.piece_list[i];
 
         for _ in piece_indices {
-            if piece.is_big() {
-                temp_big_pieces[piece.color() as usize] += 1;
+            if p_is_big!(piece) {
+                temp_big_pieces[p_color!(piece) as usize] += 1;
             }
-            if piece.is_major() {
-                temp_major_pieces[piece.color() as usize] += 1;
+            if p_is_major!(piece) {
+                temp_major_pieces[p_color!(piece) as usize] += 1;
             }
-            if piece.is_minor() {
-                temp_minor_pieces[piece.color() as usize] += 1;
+            if p_is_minor!(piece) {
+                temp_minor_pieces[p_color!(piece) as usize] += 1;
             }
         }
     }
@@ -111,10 +111,10 @@ pub fn verify_game_state(state: &State) {
     let mut temp_royal_list = [Vec::new(), Vec::new()];
 
     for (index, square) in state.main_board.iter().enumerate() {
-        if *square != NO_PIECE && state.pieces[*square as usize].is_royal() {
+        if *square != NO_PIECE && p_is_royal!(state.pieces[*square as usize]) {
             let piece = &state.pieces[*square as usize];
 
-            temp_royal_list[piece.color() as usize].push(index as u16);
+            temp_royal_list[p_color!(piece) as usize].push(index as u16);
         }
     }
 
@@ -138,7 +138,7 @@ pub fn verify_game_state(state: &State) {
     }
 
     for piece in &state.pieces {
-        let i = piece.index() as usize;
+        let i = p_index!(piece) as usize;
 
         let piece_indices = &state.piece_list[i];
 
