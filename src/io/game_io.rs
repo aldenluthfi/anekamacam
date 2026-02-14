@@ -14,12 +14,14 @@
 //! # Date
 //! 25/01/2026
 
-use std::collections::HashMap;
 use bnum::types::{U2048};
+use toml::Table;
+use std::collections::HashMap;
 use std::fs;
 
+use crate::game::representations::board::Board;
 use crate::{
-    board, constants::*, p_can_promote, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
+    board, constants::*, enc_castling, enc_count_limit, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promotions, get, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
 };
 use crate::game::{
     hash::hash_position,
@@ -34,282 +36,300 @@ use crate::io::{
 };
 
 /// Parses a game configuration file and initializes a game state.
-///
-/// The configuration file must have the following format:
-/// - First line: `ranks,files,piece_types` (comma-separated integers)
-/// - Next `piece_types` lines: piece definitions in format
-///   `name,white_char,black_char,cheesy_king_notation_movement`
-/// - Prefix piece name with `#` to mark it as royal (e.g., `#King`)
-/// - Prefix piece name with `^` if a piece can promote (non-big piece)
-/// - Prefix piece name with "!" if a piece is major
-/// - A non-big piece is minor by default
-/// - A royal piece is exclusive since it cannot be captured or promoted
-/// - Next line: a number m=[0..piece_type] the number of pieces that can promote
-/// - the next `m` lines: promotion mappings in format
-///   `from_piece_char->to_piece_chars` (e.g., `P->RNBQ`)
-/// - Last line: FEN (Forsyth-Edwards Notation) string for initial position
-///
-/// # Arguments
-///
-/// * `path` - Path to the configuration file
-///
-/// # Returns
-///
-/// A fully initialized `State` with pieces, boards, and position parsed from
-/// the config file.
-///
-/// # Panics
-///
-/// Panics if:
-/// - The file cannot be read
-/// - The file has fewer than 2 lines
-/// - The first line doesn't have exactly 3 comma-separated values
-/// - Any piece definition doesn't have exactly 4 comma-separated values
-/// - The FEN string is invalid
-///
-/// # Examples
-///
-/// ```plaintext
-/// FIDE Chess
-/// 8,8,6
-/// ^Pawn,P,p,1000,m!cnW|ip!cnW-.|cnF
-/// !Rook,R,r,5000,R
-/// Bishop,B,b,3375,B
-/// Knight,N,n,3000,N
-/// !Queen,Q,q,8375,Q
-/// #King,K,k,6375,N|B
-/// 2
-/// P->RNBQ
-/// p->rbnq
-/// rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
-/// ```
 pub fn parse_config_file(path: &str) -> State {
-    let contents = fs::read_to_string(path)
-        .unwrap_or_else(|_| panic!("Failed to read config file: {}", path));
+    let file_str = fs::read_to_string(path)
+        .expect("Failed to read configuration file");
+    let config = file_str.parse::<Table>()
+        .expect("Failed to parse configuration file as TOML");
 
-    let lines: Vec<&str> = contents.lines().collect();
-    let mut current_line = 0;
-    assert!(lines.len() >= 5, "Config file must have at least 5 lines");
-
-    let title: String = lines[current_line].to_string();
-    current_line += 1;
-
-    let line: Vec<&str> = lines[current_line].split(',').collect();
-    assert_eq!(
-        line.len(), 3,
-        "First line must have 3 comma-separated values."
-    );
-    current_line += 1;
-
-    let files: u8 =
-        line[0]
-            .trim()
-            .parse()
-            .unwrap_or_else(
-                |_| panic!("Invalid files: {}", line[0].trim())
-            );
-    let ranks: u8 =
-        line[1]
-            .trim()
-            .parse()
-            .unwrap_or_else(
-                |_| panic!("Invalid ranks: {}", line[1].trim())
-            );
-    let pieces_num: u8 =
-        line[2]
-            .trim()
-            .parse()
-            .unwrap_or_else(
-                |_| panic!("Invalid piece types: {}", line[2].trim())
-            );
-
-    assert!(
-        lines.len() >= (pieces_num as usize) + 2,
-        "Not enough lines for piece definitions and FEN"
-    );
-
-    let mut pieces = Vec::with_capacity((pieces_num * 2) as usize);
     let mut piece_char_to_idx = HashMap::new();
+    let mut pieces: Vec<Piece> = Vec::new();
+    let pieces_table = config["pieces"].as_array().expect(
+        "Pieces section not found in configuration file"
+    );
 
-    for line in lines.iter().skip(current_line).take(pieces_num as usize) {
-        let parts: Vec<&str> = line.split(',').collect();
-        assert_eq!(
-            parts.len(), 5,
-            "Piece definition must have 5 comma-separated values"
+    for piece_table in pieces_table.iter() {
+        let piece_data = piece_table.as_table().expect(
+            "Piece entry is not a valid table"
         );
 
-        let raw_name = parts[0].trim();
-        let is_royal = raw_name.starts_with("#");
-        let is_big = !raw_name.starts_with("^");
-        let is_major = raw_name.starts_with("!");
+        let name = piece_data["name"].as_str().unwrap_or_else(
+            || panic!("Piece name not found in configuration file")
+        ).to_string();
 
-        let name = raw_name
-            .trim_start_matches("#")
-            .trim_start_matches("^")
-            .trim_start_matches("!")
-            .to_string();
+        let charset = piece_data["charset"].as_str().unwrap_or_else(
+            || panic!("Piece char not found in configuration file")
+        );
+
         assert!(
-            !name.is_empty() && name.len() <= 12,
-            "Invalid piece name length: {} ({})",
-            name,
-            name.len()
+            charset.len() == 2,
+            "Piece char must be a single character"
         );
 
-        let white_char = parts[1]
-            .trim().chars().next().unwrap_or_else(
-                || panic!("Invalid white char: {}", parts[1].trim())
-            );
-        let black_char = parts[2]
-            .trim().chars().next().unwrap_or_else(
-                || panic!("Invalid black char: {}", parts[2].trim())
-            );
-        let movement = parts[4].trim().to_string();
+        let white_char = charset.chars().next().unwrap();
+        let black_char = charset.chars().nth(1).unwrap();
 
-        let value = if parts[3].eq("inf") {
-            u16::MAX
-        } else {
-            parts[3].trim().parse().unwrap_or_else(
-                |_| panic!("Invalid piece value: {}", parts[3].trim())
-            )
+        let value = match &piece_data["value"] {
+            v if v.is_integer() => v.as_integer().unwrap() as u16,
+            v if v.is_float() => u16::MAX,
+            _ => panic!(
+                "Piece value not found or invalid in configuration file"
+            ),
         };
 
+        let movement = piece_data["movement"].as_str().unwrap_or_else(
+            || panic!("Piece movement not found in configuration file")
+        ).to_string();
+
+        let is_royal = piece_data["royal"].as_bool().unwrap_or(false);
+        let is_big = piece_data["big"].as_bool().unwrap_or(false);
+        let is_major = piece_data["major"].as_bool().unwrap_or(false);
+
         if white_char != '_' {
-            pieces.push(Piece::new(
-                name.clone(),
-                movement.clone(),
-                white_char,
-                U2048::ZERO,
-                0,                                                              /* placeholde: will be set later      */
-                WHITE,
-                is_royal,
-                is_big,
-                is_major,
-                value,
-                movement.contains("o"),                                         /* can castle kingside                */
-                movement.contains("O")                                          /* can castle queenside               */
-            ));
-        }
-        if black_char != '_' {
-            pieces.push(Piece::new(
-                name.clone(),
-                movement.clone(),
-                black_char,
-                U2048::ZERO,
-                0,                                                              /* placeholde: will be set later      */
-                BLACK,
-                is_royal,
-                is_big,
-                is_major,
-                value,
-                movement.contains("o"),                                         /* can castle kingside                */
-                movement.contains("O")                                          /* can castle queenside               */
-            ));
+            pieces.push(
+                Piece::new(
+                    name.clone(),
+                    movement.clone(),
+                    white_char,
+                    U2048::ZERO,
+                    0,                                                          /* placeholder                        */
+                    WHITE,
+                    is_royal,
+                    is_big,
+                    is_major,
+                    value,
+                    movement.contains("o"),
+                    movement.contains("O"),
+                )
+            );
         }
 
-        current_line += 1;
+        if black_char != '_' {
+            pieces.push(
+                Piece::new(
+                    name.clone(),
+                    movement.clone(),
+                    black_char,
+                    U2048::ZERO,
+                    0,                                                          /* placeholder                        */
+                    BLACK,
+                    is_royal,
+                    is_big,
+                    is_major,
+                    value,
+                    movement.contains("o"),
+                    movement.contains("O"),
+                )
+            );
+        }
     }
 
-    let pieces_len = pieces.len() as u8;
-    pieces.sort_by_key(|piece| (p_color!(piece) * pieces_len) + p_index!(piece));
+    pieces.sort_by_key(|piece| p_color!(piece));
 
     for (i, piece) in pieces.iter_mut().enumerate() {
         piece.encoded_piece |= i as u32;                                        /* set the piece index correctly       */
-        piece_char_to_idx.insert(piece.symbol, p_index!(piece));
+        piece_char_to_idx.insert(piece.char, p_index!(piece));
     }
 
-    let promotion_count: usize = lines[current_line]
-        .trim()
-        .parse()
-        .unwrap_or_else(
-            |_| panic!("Invalid promotion count: {}", lines[current_line].trim())
-        );
-    current_line += 1;
-
-    assert!(
-        lines.len() > current_line + promotion_count,
-        "Not enough lines for promotion mappings and FEN"
+    let mut special_rules = 0u32;
+    let special_rules_table = config.get("special_rules").expect(
+        "Special rules section not found in configuration file"
+    ).as_table().expect(
+        "Special rules section is not a valid table"
     );
 
-    for _ in 0..promotion_count {
-        let parts: Vec<&str> = lines[current_line].split("->").collect();
-        assert_eq!(
-            parts.len(), 2,
-            "Promotion mapping must be in format 'from->to'"
+    let castling = special_rules_table.get("castling")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let en_passant = special_rules_table.get("en_passant")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let promotions = special_rules_table.get("promotion")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let drops = special_rules_table.get("drop")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let count_limit = special_rules_table.get("count_limit")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let forbidden_zones = special_rules_table.get("forbidden_zones")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if castling {
+        enc_castling!(special_rules);
+    }
+
+    if en_passant {
+        enc_en_passant!(special_rules);
+    }
+
+    if promotions {
+        enc_promotions!(special_rules);
+    }
+
+    if drops {
+        enc_drops!(special_rules);
+    }
+
+    if count_limit {
+        enc_count_limit!(special_rules);
+    }
+
+    if forbidden_zones {
+        enc_forbidden_zones!(special_rules);
+    }
+
+    let mut result = State::new(
+        config["title"].as_str().unwrap_or_else(
+            || panic!("Game title not found in configuration file")
+        ).to_string(),
+        config["files"].as_integer().unwrap_or_else(
+            || panic!("Files not found in configuration file")
+        ) as u8,
+        config["ranks"].as_integer().unwrap_or_else(
+            || panic!("Ranks not found in configuration file")
+        ) as u8,
+        pieces,
+        special_rules,
+    );
+
+    let default_initial_setup = Table::new();
+    let initial_setup_table = config.get("initial_setup")
+        .and_then(|v| v.as_table())
+        .unwrap_or(&default_initial_setup);
+
+    for piece_char in initial_setup_table.keys() {
+        let piece_index = piece_char_to_idx.get(
+            &piece_char.chars().next().unwrap()
+        ).unwrap_or_else(
+            || panic!("Unknown promotion piece character: {}", piece_char)
         );
 
-        let from_char = parts[0]
-            .trim()
-            .chars()
-            .next()
-            .unwrap_or_else(
-                || panic!("Invalid source piece character: {}", parts[0].trim())
-            );
-        let to_chars: Vec<char> = parts[1].trim().chars().collect();
+        let bit_fen = initial_setup_table[piece_char]
+            .as_str();
 
-        let from_idx = *piece_char_to_idx
-            .get(&from_char)
-            .unwrap_or_else(|| panic!("Unknown source piece: {}", from_char));
+        result.initial_setup[*piece_index as usize] =
+            parse_bit_fen(bit_fen, &result);
+    }
 
-        assert!(p_can_promote!(pieces[from_idx as usize]),
-            "Piece '{}' cannot promote, but promotion mapping provided",
-            from_char
+    if promotions {
+        let piece_promotions_table = config.get("promotions").expect(
+            "Piece promotions section not found in configuration file"
+        ).as_table().expect(
+            "Piece promotions section is not a valid table"
         );
 
-        let mut promotion_bits = U2048::ZERO;
-        promotion_bits |= U2048::from(to_chars.len() as u8);
+        let default_mandatory_table = Table::new();
+        let promotion_mandatory_table = config.get("promotion_zones_mandatory")
+            .and_then(|v| v.as_table())
+            .unwrap_or(&default_mandatory_table);
 
-        for (i, &to_char) in to_chars.iter().enumerate() {
-            let to_idx = *piece_char_to_idx
-                .get(&to_char)
-                .unwrap_or_else(|| panic!("Unknown target piece: {}", to_char));
+        let default_optional_table = Table::new();
+        let promotion_optional_table = config.get("promotion_zones_optional")
+            .and_then(|v| v.as_table())
+            .unwrap_or(&default_optional_table);
 
-            assert!(p_is_big!(pieces[to_idx as usize]),
-                "Piece '{}' cannot be a promotion target",
-                to_char
+        for piece_char in piece_promotions_table.keys() {
+            let mut promotions_encoded = U2048::ZERO;
+
+            let piece_index = piece_char_to_idx.get(
+                &piece_char.chars().next().unwrap()
+            ).unwrap_or_else(
+                || panic!("Unknown promotion piece character: {}", piece_char)
             );
 
-            promotion_bits |= U2048::from(to_idx) << ((i + 1) * 8);
+            let promoted_chars = piece_promotions_table[piece_char]
+                .as_str()
+                .unwrap_or_else(
+                    || panic!("Piece promotions entry is not a valid string")
+                );
+
+            promotions_encoded |= U2048::from(promoted_chars.len());
+
+            for (i, char) in promoted_chars.chars().enumerate() {
+                let promoted_idx = piece_char_to_idx.get(&char).unwrap_or_else(
+                    || panic!("Unknown promotion piece character: {}", char)
+                );
+
+                promotions_encoded |=
+                    U2048::from(*promoted_idx as u32) << ((i + 1) * 8);
+            }
+
+            let piece = &mut result.pieces[*piece_index as usize];
+            piece.promotions = promotions_encoded;
+
+            let bit_fen_mandatory = promotion_mandatory_table
+                .get(piece_char)
+                .and_then(|v| v.as_str());
+
+            result.promotion_zones_mandatory[*piece_index as usize] =
+                parse_bit_fen(bit_fen_mandatory, &result);
+
+            let bit_fen_optional = promotion_optional_table
+                .get(piece_char)
+                .and_then(|v| v.as_str());
+
+            result.promotion_zones_optional[*piece_index as usize] =
+                parse_bit_fen(bit_fen_optional, &result);
+        };
+    }
+
+    let initial_position = config["initial_position"].as_str().unwrap_or_else(
+        || panic!("Initial position not found in configuration file")
+    );
+
+    result.load_fen(initial_position);
+
+    hash_position(&result);
+
+    result
+}
+
+fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
+    if fen.is_none() {
+        return board!(state.files, state.ranks);
+    }
+
+    let fen = fen.unwrap();
+
+    let mut result = board!(state.files, state.ranks);
+
+    let mut rank = state.ranks - 1;
+    let mut file = 0u8;
+
+    let mut position_chars = fen.chars().peekable();
+
+    while let Some(c) = position_chars.next() {
+        match c {
+            '/' => {
+                rank -= 1;
+                file = 0;
+            }
+            '0'..='9' => {
+                let mut num_str = c.to_string();
+                while let Some(&next_c) = position_chars.peek() {
+                    if next_c.is_ascii_digit() {
+                        num_str.push(next_c);
+                        position_chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                file += num_str.parse::<u8>().unwrap();
+            }
+            _ => {
+                set!(
+                    result,
+                    (rank as u32) * (state.files as u32) + (file as u32)
+                );
+                file += 1;
+            }
         }
-
-        pieces[from_idx as usize].promotions = promotion_bits;
-        current_line += 1;
     }
 
-    let promotion_ranks: Vec<&str> = lines[current_line].split(',').collect();
-
-    assert_eq!(
-        promotion_ranks.len(), 2,
-        "Promotion ranks line must have 2 comma-separated values"
-    );
-
-    current_line += 1;
-
-    let white_promotion_rank: u8 = promotion_ranks[0]
-        .trim()
-        .parse()
-        .unwrap_or_else(
-            |_| panic!(
-                "Invalid white promotion rank: {}", promotion_ranks[0].trim()
-            )
-        );
-    let black_promotion_rank: u8 = promotion_ranks[1]
-        .trim()
-        .parse()
-        .unwrap_or_else(
-            |_| panic!(
-                "Invalid black promotion rank: {}", promotion_ranks[1].trim()
-            )
-        );
-
-    let mut state = State::new(
-        title, files, ranks, pieces,
-        [white_promotion_rank, black_promotion_rank]
-    );
-
-    let fen_line = lines[current_line];
-    parse_fen(&mut state, fen_line);
-
-    state
+    result
 }
 
 /// Parses a FEN string and updates the game state accordingly. Note that the
@@ -383,7 +403,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
             }
             _ => {
                 let piece_idx = state.pieces.iter().position(
-                    |piece| piece.symbol == c
+                    |piece| piece.char == c
                 ).unwrap_or_else(|| panic!("Unknown piece character: {}", c));
 
                 let piece = &state.pieces[piece_idx];
@@ -421,13 +441,9 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[p_color!(piece) as usize] += 1;
                 }
 
-                if (c == 'P' && rank == 1)
-                    || (c == 'p' && rank == (state.ranks - 2))
-                    || (c == 'R' && rank == 0 && (file == 0 || file == state.files - 1))
-                    || (c == 'r' && rank == state.ranks - 1 && (file == 0 || file == state.files - 1))
-                    || (c == 'K' && rank == 0 && file == 4)
-                    || (c == 'k' && rank == state.ranks - 1 && file == 4)
-                {
+                if get!(
+                    state.initial_setup[p_index!(piece) as usize], square_index
+                ) {
                     set!(state.virgin_board, square_index);
                 }
 
@@ -613,7 +629,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
 
     result.push_str(
         &all_boards.iter().enumerate().map(
-            |(i, b)| format_board(b, Some(state.pieces[i].symbol))
+            |(i, b)| format_board(b, Some(state.pieces[i].char))
         ).reduce(|board_str, next_board| {
             combine_board_strings(&board_str, &next_board)
         }).expect(
@@ -740,7 +756,7 @@ pub fn format_piece_types(state: &State) -> String {
                         );
 
                     if target_idx == piece_idx as u8 {
-                        promo_from_symbols.push(other_piece.symbol);
+                        promo_from_symbols.push(other_piece.char);
                         break;
                     }
                 }
@@ -816,6 +832,77 @@ pub fn format_piece_types(state: &State) -> String {
     result
 }
 
+pub fn format_promotion_zones(state: &State) -> String {
+    let mut result = String::new();
+
+    for piece in &state.pieces {
+        if piece.promotions != U2048::ZERO {
+            let mandatory_zone = format_board(
+                &state.promotion_zones_mandatory[p_index!(piece) as usize],
+                piece.char.into()
+            );
+            let optional_zone = format_board(
+                &state.promotion_zones_optional[p_index!(piece) as usize],
+                piece.char.into()
+            );
+
+            let mandatory_lines: Vec<&str> = mandatory_zone.lines().collect();
+            let optional_lines: Vec<&str> = optional_zone.lines().collect();
+            let max_lines = mandatory_lines.len().max(optional_lines.len());
+
+            result.push_str(&format!(
+                "Promotion zones for {} ({}):\n", piece.name, piece.char
+            ));
+            result.push_str(
+                &format!("{:<width$}{}\n",
+                    "Mandatory Zone",
+                    "Optional Zone",
+                    width = mandatory_lines.iter().map(
+                        |l| l.chars().count()
+                    ).max().unwrap_or(0) + 4
+                )
+            );
+
+            for i in 0..max_lines {
+                let left = mandatory_lines.get(i).unwrap_or(&"");
+                let right = optional_lines.get(i).unwrap_or(&"");
+                let width = left.chars().count().max(right.chars().count()) + 4;
+                result.push_str(
+                    &format!("{:<width$}{}\n", left, right, width = width)
+                );
+            }
+            result.push('\n');
+        }
+    }
+
+    result
+}
+
+pub fn format_intial_setup(state: &State) -> String {
+    let mut result = String::new();
+
+    for piece in &state.pieces {
+        let piece_setup = state.initial_setup[p_index!(piece) as usize];
+
+        if piece_setup.2 == U2048::ZERO {
+            continue;
+        }
+
+        let setup_board = format_board(
+            &piece_setup,
+            piece.char.into()
+        );
+
+        result.push_str(&format!(
+            "Initial setup for {} ({}):\n", piece.name, piece.char
+        ));
+        result.push_str(&setup_board);
+        result.push('\n');
+    }
+
+    result
+}
+
 pub fn format_entire_game(state: &State) -> String {
     let mut result = String::new();
 
@@ -824,6 +911,9 @@ pub fn format_entire_game(state: &State) -> String {
     );
     result.push_str("\n---------- Piece Types\n");
     result.push_str(&format_piece_types(state));
+    result.push_str("\n---------- Static Parameters\n");
+    result.push_str(&format_promotion_zones(state));
+    result.push_str(&format_intial_setup(state));
     result.push_str("\n---------- Initial Position\n");
     result.push_str(&format_game_state(state, true));
 

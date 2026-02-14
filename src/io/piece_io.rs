@@ -31,7 +31,7 @@ pub fn format_piece(piece: &Piece) -> String {
 
     rows.push(piece.name.clone());
     rows.push(p_index!(piece).to_string());
-    rows.push(piece.symbol.to_string());
+    rows.push(piece.char.to_string());
     rows.push(
         if p_color!(piece) == BLACK { "Black" } else { "White" }.to_string()
     );

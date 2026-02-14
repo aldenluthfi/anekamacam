@@ -13,6 +13,8 @@
 //! # Date
 //! 25/01/2026
 
+use crate::game::representations::moves::Move;
+
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 
@@ -60,3 +62,5 @@ pub const NO_EN_PASSANT: u32 = u32::MAX;
 pub const QUIET_MOVE: u128 = 0;
 pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
+
+pub const NULL_MOVE: Move = (!0u128, Vec::new());

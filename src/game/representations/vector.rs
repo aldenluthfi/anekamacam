@@ -16,20 +16,6 @@ macro_rules! leg {
 }
 
 #[macro_export]
-macro_rules! vector {
-    ($l:expr) => {
-        $l & 0xFFFF_FFFF                                                        /* lower 32 bits represent the vector */
-    };
-}
-
-#[macro_export]
-macro_rules! modifiers {
-    ($l:expr) => {
-        ($l >> 32) & 0xFFFF                                                     /* upper 16 bits represent modifiers  */
-    };
-}
-
-#[macro_export]
 macro_rules! x {
     ($l:expr) => {
         ($l & 0xFF) as i8
@@ -58,7 +44,7 @@ macro_rules! c {
 }
 
 #[macro_export]
-macro_rules! i {
+macro_rules! d {
     ($l:expr) => {
         ($l >> 18) & 1 == 1
     };
@@ -72,70 +58,70 @@ macro_rules! u {
 }
 
 #[macro_export]
-macro_rules! d {
+macro_rules! k {
     ($l:expr) => {
         ($l >> 20) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! p {
+macro_rules! v {
     ($l:expr) => {
         ($l >> 21) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! k {
+macro_rules! g {
     ($l:expr) => {
         ($l >> 22) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_m {
+macro_rules! t {
     ($l:expr) => {
         ($l >> 23) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_c {
+macro_rules! i {
     ($l:expr) => {
         ($l >> 24) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_i {
+macro_rules! p {
     ($l:expr) => {
         ($l >> 25) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_u {
+macro_rules! not_k {
     ($l:expr) => {
         ($l >> 26) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_d {
+macro_rules! not_v {
     ($l:expr) => {
         ($l >> 27) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_p {
+macro_rules! not_g {
     ($l:expr) => {
         ($l >> 28) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_k {
+macro_rules! not_i {
     ($l:expr) => {
         ($l >> 29) & 1 == 1
     };
@@ -194,42 +180,105 @@ pub type MultiLegVector = Vec<LegVector>;
 
 /// A 64 bit vector representation for leg move vectors.
 /// the first 32 bits represent the whole AtomicVector,
-/// the next bits are move modifiers
-/// - `m` (must move without capture)
-/// - `c` (must capture with this move)
-/// - `i` (you can do this whole only on the initial move of the piece)
-/// - `u` (unload, capturing then/or putting the latest captured piece on the
-///   starting square of the current leg)
-/// - `d` (destroy, must capture friendly peice)
-/// - `p` (the starting square creates an en-passant square)
-/// - `k` (gives check)
 ///
-/// while ! can be used for negation of the above modifiers. `m` and `c` are
-/// mutually exclusive, they cannot be used at the same time When chaining moves
-/// or making a multi-leg move (moves with `-`), every atom has an implicit
-/// `m!du` except the last one which has `!du` unless otherwise specified. Since
-/// every move implies `!p`, `!p` would then mean “this move can be used to
-/// capture to an en passant square”. The same goes for `!i` every move implies
-/// `!i`, so `!i` would mean “this move can be made except for its initial move”
-///
-/// the m odifiers are stored in the next 14 bits after the first 32 bits:
+/// the next 16 bits are move modifiers:
+/// - main: m, c, d, u,
+/// - capture/destroy modifier: k, v, g, s
+/// - miscellaneous modifier: i, p
+/// - negated capture modifiers: !k, !v, !g
+/// - negated misc modifiers: !i
+/// - castling modifiers l and r
 ///
 /// Modifier bits layout (bits 32-45):
 ///
-///  45  44  43  42  41  40  39  38  37  36  35  34  33  32
-/// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-/// |!k |!p |!d |!u |!i |!c |!m | k | p | d | u | i | c | m |
-/// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+///  47  46  45  44  43  42  41  40  39  38  37  36  35  34  33  32
+/// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+/// | r | l |!i |!g |!v |!k | p | i | t | g | v | k | u | d | c | m |
+/// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
 ///
-/// Legend:
-/// - m  : must move without capture
-/// - c  : must capture with this move
-/// - i  : only on initial move
-/// - u  : unload (capture and/or drop)
-/// - d  : destroy (must capture friendly)
-/// - p  : creates en-passant square
-/// - k  : gives check
-/// - !x : negation of modifier x
+/// main modifiers:
+/// - (m)ove:
+///   can move with this leg.
+/// - (c)apture:
+///   can capture with this leg.
+/// - (d)estroy:
+///   can destroy with this leg. Destroying is capturing a friendly piece.
+/// - (u)nload:
+///   can unload with this leg. Unloading is placing the last captured piece
+///   back on the board to the start square of this leg.
+///
+/// Capture/destroy modifiers:
+/// - (k)ing:
+///     - k:
+///       indicates the capture must be royal.
+///     - !k:
+///       indicates the capture must not be royal.
+///
+/// usage of (k, !k):
+/// - (false, false): this capture can be royal or not royal (regular capture).
+/// - (false, true) : this capture must not be royal.
+/// - (true, false) : this capture must be royal.
+/// - (true, true)  : special modifier r!r (explained below).
+///
+/// - (v)irgin:
+///     - v:
+///       indicates the capture must be virgin (not moved yet).
+///     - !v:
+///       indicates the capture must not be virgin (has moved).
+///
+/// usage of (v, !v):
+/// - (false, false): this capture can be virgin or not (regular capture).
+/// - (false, true) : this capture must not be virgin.
+/// - (true, false) : this capture must be virgin.
+/// - (true, true)  : special modifier v!v (explained below).
+///
+/// - (g)reater:
+///     - g:
+///       indicates the capture must be of greater value than the capturing
+///       piece (captured > capturing).
+///     - !g:
+///       indicates the capture must not be of greater value than the capturing
+///       piece (captured <= capturing).
+///
+/// design note:
+/// I chose (> and <=) instead of (>= and <) because it in a lot of chess
+/// variants, capturing an equal value piece is often allowed, while there
+/// are variants where its not alowed to capture a greater value piece.
+///
+/// usage of (g, !g):
+/// - (false, false): this capture can be of any value (regular capture).
+/// - (false, true) : this capture must not be of greater value.
+/// - (true, false) : this capture must be of greater value.
+/// - (true, true)  : special modifier g!g (explained below).
+///
+/// - en-passan(t):
+///    - t: means this leg can capture en passant.
+///
+/// usage of (s):
+/// - (true) : this leg can capture en passant.
+/// - (false): this leg cannot capture en passant.
+///
+/// Miscellaneous modifiers:
+///
+/// - (i)nitial:
+///     - i:
+///       indicates this leg must be used as an initial move of the piece.
+///     - !i:
+///       indicates this leg must not be used as an initial move of the piece.
+///
+/// usage of (i, !i):
+/// - (false, false): this leg can be used as initial or not (regular leg).
+/// - (false, true) : this leg must not be used as initial.
+/// - (true, false) : this leg must be used as initial.
+/// - (true, true)  : special modifier i!i (explained below).
+///
+/// - (p)assant:
+///     - p:
+///       indicates this leg's start square creates an en passant square.
+///
+/// usage of (p):
+/// - (true) : this leg's start square creates an en passant square.
+/// - (false): this leg's start square does not create an en passant square.
 ///
 /// additional modifier 'r' for 'right' can be used to indicate that the leg
 /// is to the right side (for castling purposes)
@@ -237,8 +286,34 @@ pub type MultiLegVector = Vec<LegVector>;
 /// similarly, modifier 'l' for 'left' can be used to indicate that the leg
 /// is to the left side (for castling purposes)
 ///
-/// l and r must be used alone, they cannot be negated or used with other
-/// modifiers
+/// Special modifiers (r!r, v!v, g!g, i!i):
+///
+/// - i!i: means that at the end of this leg, the moving piece cannot be in
+///   attacked, i.e. (i)mmune
+/// - k!k: TODO
+/// - v!v: TODO
+/// - g!g: TODO
+///
+/// Defaults:
+/// - by default each leg will have m (can move) set. except for the last leg
+///   which wll have mc (can move and capture) set by default.
+///
+/// Final notes:
+/// - capture/destroy modifiers must be used if the leg has has c or d set
+/// - you can combine negation like `mc!kvg` means a move/capture leg that must
+///   not be royal, must be moved, and must be of lesser or equal value and
+///   cannot capture en passant.
+///
+/// How to use (examples)
+///
+/// Xianqi "Cannon" move leg: cdR-u#-nR
+/// 1. First, capture/destroy as a rook, then unload it back to that square
+///    (hopping)
+/// 2. Continuing the same direction, move as a rook (non-hopping)
+///
+/// Xiangqi "King": W|kcnR
+/// 1. Move as a wazir OR capture/destroy a royal piece as a rook
+///    (the flying generals rule)
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
 
@@ -254,15 +329,19 @@ impl LegVector {
     fn parse_modifiers(mods: &str) -> u16 {
         let mut bits = 0u16;
         let chars = &mut mods.chars();
+
         for ch in &mut *chars {
             bits |= match ch {
                 'm' => 1 << 0,
                 'c' => 1 << 1,
-                'i' => 1 << 2,
+                'd' => 1 << 2,
                 'u' => 1 << 3,
-                'd' => 1 << 4,
-                'p' => 1 << 5,
-                'k' => 1 << 6,
+                'k' => 1 << 4,
+                'v' => 1 << 5,
+                'g' => 1 << 6,
+                't' => 1 << 7,
+                'i' => 1 << 8,
+                'p' => 1 << 9,
                 'l' => 1 << 14,
                 'r' => 1 << 15,
                 '!' => break,
@@ -270,16 +349,13 @@ impl LegVector {
             };
         }
 
-        for next in chars {
-            bits |= match next {
-                'm' => 1 << 7,
-                'c' => 1 << 8,
-                'i' => 1 << 9,
-                'u' => 1 << 10,
-                'd' => 1 << 11,
-                'p' => 1 << 12,
-                'k' => 1 << 13,
-                _ => panic!("Invalid modifier character: {}", next),
+        for ch in &mut *chars {
+            bits |= match ch {
+                'k' => 1 << 10,
+                'v' => 1 << 11,
+                'g' => 1 << 12,
+                'i' => 1 << 13,
+                _ => panic!("Invalid modifier character: {}", ch),
             };
         }
 
@@ -292,37 +368,35 @@ impl LegVector {
         let mods = [
             ('m', m!(self.0 >> 16)),
             ('c', c!(self.0 >> 16)),
-            ('i', i!(self.0 >> 16)),
-            ('u', u!(self.0 >> 16)),
             ('d', d!(self.0 >> 16)),
-            ('p', p!(self.0 >> 16)),
+            ('u', u!(self.0 >> 16)),
             ('k', k!(self.0 >> 16)),
-            ('l', l!(self.0 >> 16)),
-            ('r', r!(self.0 >> 16)),
+            ('v', v!(self.0 >> 16)),
+            ('g', g!(self.0 >> 16)),
+            ('t', t!(self.0 >> 16)),
+            ('i', i!(self.0 >> 16)),
+            ('p', p!(self.0 >> 16)),
         ];
 
         let not_mods = [
-            ('m', not_m!(self.0 >> 16)),
-            ('c', not_c!(self.0 >> 16)),
-            ('i', not_i!(self.0 >> 16)),
-            ('u', not_u!(self.0 >> 16)),
-            ('d', not_d!(self.0 >> 16)),
-            ('p', not_p!(self.0 >> 16)),
             ('k', not_k!(self.0 >> 16)),
+            ('v', not_v!(self.0 >> 16)),
+            ('g', not_g!(self.0 >> 16)),
+            ('i', not_i!(self.0 >> 16)),
         ];
 
-        for (ch, val) in mods.iter() {
-            if *val {
-                s.push(*ch);
+        for (ch, val) in mods {
+            if val {
+                s.push(ch);
             }
         }
 
-        for (ch, val) in not_mods.iter() {
-            if *val {
+        for (ch, val) in not_mods {
+            if val {
                 if !s.contains('!') {
                     s.push('!');
                 }
-                s.push(*ch);
+                s.push(ch);
             }
         }
 
@@ -346,31 +420,12 @@ impl LegVector {
     }
 
     pub fn add_modifier(&mut self, modifier: &str) {
-        let mut bits = self.get_modifiers();
+        let mut bits = Self::parse_modifiers(modifier);
+        let current_bits = self.get_modifiers();
 
-        let mut is_negated = 0;
+        bits |= current_bits;
 
-        for ch in modifier.chars() {
-            let bit = match ch {
-                'm' => is_negated,
-                'c' => 1 + is_negated,
-                'i' => 2 + is_negated,
-                'u' => 3 + is_negated,
-                'd' => 4 + is_negated,
-                'p' => 5 + is_negated,
-                'k' => 6 + is_negated,
-                'l' => 14,
-                'r' => 15,
-                '!' => {is_negated = 7; -1},
-                _ => panic!("Invalid modifier character: {}", ch),
-            };
-
-            if bit != -1 {
-                bits |= 1 << bit;
-            }
-
-            self.0 = (self.0 & 0xFFFF_FFFF) | ((bits as u64) << 32);
-        }
+        self.0 = (self.0 & 0xFFFF_FFFF) | ((bits as u64) << 32);
     }
 }
 

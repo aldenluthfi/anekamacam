@@ -33,9 +33,101 @@ use crate::{
 };
 
 use bnum::types::U2048;
+pub type Square = u16;
+
+/*----------------------------------------------------------------------------*\
+                          SPECIAL RULES REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
+
+#[macro_export]
+macro_rules! castling {
+    ($state:expr) => {
+        ($state.special_rules & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_castling {
+    ($rules:expr) => {
+        $rules |= 1;
+    };
+}
+
+#[macro_export]
+macro_rules! en_passant {
+    ($state:expr) => {
+        ($state.special_rules >> 1 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_en_passant {
+    ($rules:expr) => {
+        $rules |= 1 << 1;
+    };
+}
+
+#[macro_export]
+macro_rules! promotions {
+    ($state:expr) => {
+        ($state.special_rules >> 2 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_promotions {
+    ($rules:expr) => {
+        $rules |= 1 << 2;
+    };
+}
+
+#[macro_export]
+macro_rules! drops {
+    ($state:expr) => {
+        ($state.special_rules >> 3 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_drops {
+    ($rules:expr) => {
+        $rules |= 1 << 3;
+    };
+}
+
+#[macro_export]
+macro_rules! count_limit {
+    ($state:expr) => {
+        ($state.special_rules >> 4 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_count_limit {
+    ($rules:expr) => {
+        $rules |= 1 << 4;
+    };
+}
+
+#[macro_export]
+macro_rules! forbidden_zones {
+    ($state:expr) => {
+        ($state.special_rules >> 5 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_forbidden_zones {
+    ($rules:expr) => {
+        $rules |= 1 << 5;
+    };
+}
+
+/*----------------------------------------------------------------------------*\
+                            EN PASSANT REPRESENTATION
+\*----------------------------------------------------------------------------*/
 
 pub type EnPassantSquare = u32;
-pub type Square = u16;
 
 #[macro_export]
 macro_rules! enp_square {
@@ -57,6 +149,10 @@ macro_rules! enp_piece {
         ($en_passant >> 24) & 0xFF
     };
 }
+
+/*----------------------------------------------------------------------------*\
+                              SNAPSHOT REPRESENTATION
+\*----------------------------------------------------------------------------*/
 
 pub struct Snapshot {
     pub move_ply: Move,
@@ -80,15 +176,52 @@ impl Default for Snapshot {
     }
 }
 
+/*----------------------------------------------------------------------------*\
+                            GAME STATE REPRESENTATION
+\*----------------------------------------------------------------------------*/
+
+/// Main state of the game
+///
+/// The special rules field is a bitmask representing enabled special rules.
+///
+/// The bits are defined as follows:
+/// - but 0: Castling allowed
+/// - bit 1: En passant allowed
+/// - bit 2: Promotions allowed
+/// - bit 3: Drops allowed
+/// - bit 4: Some pieces have a count limit
+/// - bit 5: Some pieces have forbidden zones
+/// - but 2-31: reserved for future use
+///
 pub struct State {
+
+/*----------------------------------------------------------------------------*\
+                                 STATIC FIELDS
+\*----------------------------------------------------------------------------*/
+
     pub title: String,
+    pub pieces: Vec<Piece>,
+    pub special_rules: u32,
+
+    pub initial_setup: Vec<Board>,                                              /* piece index to board               */
+
+    pub forbidden_zones: Vec<Board>,                                            /* piece to forbidden zone bitboard   */
+    pub promotion_zones_optional: Vec<Board>,                                   /* piece to promotion zone bitboard   */
+    pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
+    pub piece_count_limit: Vec<u32>,                                            /* piece index to count limit         */
 
     pub files: u8,
     pub ranks: u8,
 
-    pub playing: u8,
+    pub relevant_moves: Vec<Vec<MoveSet>>,
+    pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
+    pub piece_moves: Vec<MoveSet>,
 
-    pub pieces: Vec<Piece>,
+/*----------------------------------------------------------------------------*\
+                                 DYNAMIC FIELDS
+\*----------------------------------------------------------------------------*/
+
+    pub playing: u8,
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
 
     pub pieces_board: [Board; 2],
@@ -104,20 +237,16 @@ pub struct State {
     pub ply: u32,
     pub ply_counter: u32,
 
+    pub material: [u32; 2],
     pub big_pieces: [u32; 2],
     pub major_pieces: [u32; 2],
     pub minor_pieces: [u32; 2],
     pub royal_pieces: [u32; 2],
-
-    pub material: [u32; 2],
-    pub promotion_ranks: [u8; 2],
-    pub piece_count: Vec<u32>,                                                  /* piece index to count               */
-    pub piece_list: Vec<Vec<Square>>,                                           /* piece index to square list         */
     pub royal_list: [Vec<Square>; 2],                                           /* color to royal piece square list   */
 
-    pub relevant_moves: Vec<Vec<MoveSet>>,
-    pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
-    pub piece_moves: Vec<MoveSet>,
+    pub piece_count: Vec<u32>,                                                  /* piece index to count               */
+    pub piece_list: Vec<Vec<Square>>,                                           /* piece index to square list         */
+    pub piece_in_hand: [Vec<u8>; 2],                                            /* color to pieces in hand list       */
 }
 
 impl State {
@@ -126,7 +255,7 @@ impl State {
         files: u8,
         ranks: u8,
         pieces: Vec<Piece>,
-        promotion_ranks: [u8; 2],
+        special_rules: u32,
     ) -> Self {
 
         let piece_count: usize = pieces.len();
@@ -134,34 +263,51 @@ impl State {
 
         let mut result = State {
             title,
+            pieces,
+            special_rules,
+
+            initial_setup: vec![board!(files, ranks); piece_count],
+
+            forbidden_zones: vec![board!(files, ranks); piece_count],
+            promotion_zones_optional: vec![board!(files, ranks); piece_count],
+            promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
+            piece_count_limit: vec![u32::MAX; piece_count],
+
             files,
             ranks,
-            pieces,
+
+            relevant_moves:
+                vec![vec![MoveSet::new(); board_size]; piece_count],
+            relevant_attacks:
+                [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
+            piece_moves: vec![MoveSet::new(); piece_count],
+
             playing: WHITE,
             main_board: vec![NO_PIECE; (files as usize) * (ranks as usize)],
+
             pieces_board: [board!(files, ranks); 2],
             virgin_board: board!(files, ranks),
+
             castling_state: 0,
             halfmove_clock: 0,
             en_passant_square: NO_EN_PASSANT,
+
             position_hash: u128::default(),
             history: Vec::with_capacity(8192),
+
             ply: 0,
             ply_counter: 0,
+
             big_pieces: [0; 2],
             major_pieces: [0; 2],
             minor_pieces: [0; 2],
             royal_pieces: [0; 2],
             material: [0; 2],
-            promotion_ranks,
+            royal_list: [Vec::new(), Vec::new()],
+
             piece_count: vec![0u32; piece_count],
             piece_list: vec![Vec::new(); piece_count],
-            royal_list: [Vec::new(), Vec::new()],
-            relevant_moves:
-                vec![vec![MoveSet::new(); board_size]; piece_count],
-            relevant_attacks: 
-                [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
-            piece_moves: vec![MoveSet::new(); piece_count],
+            piece_in_hand: [Vec::new(), Vec::new()],
         };
 
         result.precompute();
@@ -173,24 +319,31 @@ impl State {
         let board_size: usize = (self.files as usize) * (self.ranks as usize);
 
         self.playing = WHITE;
+        self.main_board = vec![NO_PIECE; board_size];
+
+        self.pieces_board = [board!(self.files, self.ranks); 2];
+        self.virgin_board = board!(self.files, self.ranks);
+
         self.castling_state = 0;
         self.halfmove_clock = 0;
         self.en_passant_square = NO_EN_PASSANT;
+
         self.position_hash = u128::default();
         self.history = Vec::with_capacity(8192);
+
         self.ply = 0;
         self.ply_counter = 0;
-        self.main_board = vec![NO_PIECE; board_size];
-        self.pieces_board = [board!(self.files, self.ranks); 2];
-        self.virgin_board = board!(self.files, self.ranks);
+
         self.big_pieces = [0; 2];
         self.major_pieces = [0; 2];
         self.minor_pieces = [0; 2];
         self.royal_pieces = [0; 2];
         self.material = [0; 2];
+        self.royal_list = [Vec::new(), Vec::new()];
+
         self.piece_count = vec![0u32; piece_count];
         self.piece_list = vec![Vec::new(); piece_count];
-        self.royal_list = [Vec::new(), Vec::new()];
+        self.piece_in_hand = [Vec::new(), Vec::new()];
     }
 
     pub fn load_fen(&mut self, fen: &str) {
