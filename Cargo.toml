@@ -19,4 +19,5 @@ timed = "*"
 rand = "*"
 fs = "*"
 hotpath = "*"
+toml = "*"
 

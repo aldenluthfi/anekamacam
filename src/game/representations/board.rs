@@ -22,20 +22,20 @@ pub type Board = (u8, u8, U2048);
 
 #[macro_export]
 macro_rules! board {
-    ($ranks:expr, $files:expr) => {
-        ($ranks, $files, U2048::ZERO)
+    ($files:expr, $ranks:expr) => {
+        ($files, $ranks, U2048::ZERO)
     };
 }
 
 #[macro_export]
-macro_rules! ranks {
+macro_rules! files {
     ($board:expr) => {
         $board.0
     };
 }
 
 #[macro_export]
-macro_rules! files {
+macro_rules! ranks {
     ($board:expr) => {
         $board.1
     };
@@ -80,5 +80,12 @@ macro_rules! and {
 macro_rules! xor {
     ($board1:expr, $board2:expr) => {
         $board1.2.xor_assign(&$board2.2);
+    };
+}
+
+#[macro_export]
+macro_rules! not {
+    ($board:expr) => {
+        $board.2 = !$board.2;
     };
 }

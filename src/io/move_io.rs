@@ -1,11 +1,11 @@
 use crate::{
-    can_check, can_enp, captured_piece, captured_square,
+    captured_piece, captured_square,
     captured_unmoved, creates_enp, created_enp, end, is_unload,
-    move_type, multi_move_can_check, multi_move_can_enp,
+    move_type,
     multi_move_captured_piece, multi_move_captured_square,
     multi_move_captured_unmoved, multi_move_is_unload,
-    multi_move_unload_square, must_initial, must_not_initial, piece,
-    promotion, promoting, promoted, start, unload_square,
+    multi_move_unload_square, is_initial, piece,
+    promotion, promoted, start, unload_square,
     game::representations::{moves::Move, state::State},
     io::board_io::format_square,
 };
@@ -17,18 +17,11 @@ pub fn format_move_template(mv: &Move) -> String {
     s.push_str(&format!("  piece: {}\n", piece!(mv)));
     s.push_str(&format!("  start: {}\n", start!(mv)));
     s.push_str(&format!("  end: {}\n", end!(mv)));
-    s.push_str(&format!("  must_initial: {}\n", must_initial!(mv)));
-    s.push_str(&format!(
-        "  must_not_initial: {}\n",
-        must_not_initial!(mv)
-    ));
+    s.push_str(&format!("  must_initial: {}\n", is_initial!(mv)));
     s.push_str(&format!("  promotion: {}\n", promotion!(mv)));
     s.push_str(&format!("  creates_enp: {}\n", creates_enp!(mv)));
-    s.push_str(&format!("  promoting: {}\n", promoting!(mv)));
     s.push_str(&format!("  promoted: {}\n", promoted!(mv)));
     s.push_str(&format!("  created_enp: {}\n", created_enp!(mv)));
-    s.push_str(&format!("  can_check: {}\n", can_check!(mv)));
-    s.push_str(&format!("  can_enp: {}\n", can_enp!(mv)));
     s.push_str(&format!("  is_unload: {}\n", is_unload!(mv)));
     s.push_str(&format!("  unload_square: {}\n", unload_square!(mv)));
     s.push_str(&format!(
@@ -48,13 +41,11 @@ pub fn format_move_template(mv: &Move) -> String {
         s.push_str("Captured pieces (multi-capture):\n");
         for (i, cap) in mv.1.iter().enumerate() {
             s.push_str(&format!(
-                "  [{}]: can_check: {}, can_enp: {}, \
+                "  [{}]: \
                  is_unload: {}, unload_square: {}, \
                  captured_piece: {}, captured_square: {}, \
                  captured_unmoved: {}\n",
                 i,
-                multi_move_can_check!(*cap),
-                multi_move_can_enp!(*cap),
                 multi_move_is_unload!(*cap),
                 multi_move_unload_square!(*cap),
                 multi_move_captured_piece!(*cap),

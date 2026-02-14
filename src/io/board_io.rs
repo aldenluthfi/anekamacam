@@ -37,7 +37,7 @@ pub fn format_square(index: u16, game_state: &State) -> String {
     }
 }
 
-fn format_bitboard(board: &U2048, ranks: u8, files: u8) -> String {
+fn format_bitboard(board: &U2048, files: u8, ranks: u8) -> String {
 
     let mut result = String::new();
 

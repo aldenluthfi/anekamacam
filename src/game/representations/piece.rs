@@ -72,14 +72,14 @@ macro_rules! p_value {
 }
 
 #[macro_export]
-macro_rules! p_castle_kingside {
+macro_rules! p_castle_right {
     ($piece:expr) => {
         ($piece.encoded_piece & (1 << 28)) != 0
     };
 }
 
 #[macro_export]
-macro_rules! p_castle_queenside {
+macro_rules! p_castle_left {
     ($piece:expr) => {
         ($piece.encoded_piece & (1 << 29)) != 0
     };
@@ -110,7 +110,7 @@ pub type PieceIndex = u8;
 pub struct Piece {
     pub name: String,
     pub movement: String,
-    pub symbol: char,
+    pub char: char,
 
     pub promotions: U2048,
     pub encoded_piece: u32,
@@ -130,8 +130,8 @@ impl Piece {
     /// * `is_big` - Whether can be promoted to (true) or can promote (false)
     /// * `is_major` - Whether this is a major piece (true) or minor (false)
     /// * `value` - The piece value (0-65535, stored in 16 bits)
-    /// * `can_castle_kingside` - This piece can castle kingside (right)
-    /// * `can_castle_queenside` - This piece can castle queenside (left)
+    /// * `castle_right` - This piece can castle kingside (right)
+    /// * `castle_left` - This piece can castle queenside (left)
     pub fn new(
         name: String,
         movement: String,
@@ -143,8 +143,8 @@ impl Piece {
         is_big: bool,
         is_major: bool,
         value: u16,
-        can_castle_kingside: bool,
-        can_castle_queenside: bool,
+        castle_right: bool,
+        castle_left: bool,
     ) -> Self {
         let mut encoded_piece = index as u32;
         encoded_piece |= (color as u32) << 8;
@@ -163,18 +163,18 @@ impl Piece {
 
         encoded_piece |= (value as u32 & 0xFFFF) << 12;
 
-        if can_castle_kingside {
+        if castle_right {
             encoded_piece |= 1 << 28;
         }
 
-        if can_castle_queenside {
+        if castle_left {
             encoded_piece |= 1 << 29;
         }
 
         Self {
             name,
             movement,
-            symbol,
+            char: symbol,
             promotions,
             encoded_piece,
         }
