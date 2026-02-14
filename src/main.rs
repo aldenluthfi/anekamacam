@@ -33,7 +33,7 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let mut state = parse_config_file("configs/fide.anm");
+    let mut state = parse_config_file("configs/fide.toml");
 
-    start_perft(&mut state, "res/fide-kiwipete.perft", 5, false, Some(0));
+    start_perft(&mut state, "res/fide.perft", 6, false, Some(0));
 }

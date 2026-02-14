@@ -5,7 +5,7 @@ use crate::{
         moves::move_list::{generate_all_moves, make_move, undo_move},
         representations::state::State
     },
-    io::{game_io::format_game_state, move_io::format_move}
+    io::move_io::format_move
 };
 
 fn parse_perft_file(
@@ -26,6 +26,18 @@ fn parse_perft_file(
     }).collect()
 }
 
+fn format_time(nanos: u128) -> String {
+    if nanos < 1_000 {
+        format!("{} ns", nanos)
+    } else if nanos < 1_000_000 {
+        format!("{:.3} µs", nanos as f64 / 1_000.0)
+    } else if nanos < 1_000_000_000 {
+        format!("{:.3} ms", nanos as f64 / 1_000_000.0)
+    } else {
+        format!("{:.3}  s", nanos as f64 / 1_000_000_000.0)
+    }
+}
+
 pub fn start_perft(
     state: &mut State,
     path: &str,
@@ -39,6 +51,16 @@ pub fn start_perft(
     let mut total_moves = 0;
     let total_cases = perft_cases.len() * depth as usize;
 
+    let longest_fen: usize = perft_cases
+        .iter()
+        .max_by_key(
+            |(fen, _, _, _, _, _, _)|
+            fen.len()
+        )
+        .unwrap()
+        .0
+        .len();
+
     for (i, (fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6)) in
         perft_cases.iter().enumerate()
     {
@@ -49,24 +71,28 @@ pub fn start_perft(
         ];
 
         for d in 1..=depth {
+            let start_time = std::time::Instant::now();
             let result = perft(state, d, debug, branch);
+            let elapsed = start_time.elapsed().as_nanos();
+
             let expected = expected_perfts[(d - 1) as usize];
 
             if result == *expected {
                 successful_cases += 1;
                 total_moves += result;
                 println!(
-                    "{:04}. FEN: {} | Depth: {} | Expected: {} | Result: {} \
-                     [PASSED]",
-                    i, fen, d, expected, result
+                    "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>11} | \
+                    Result: {:>11} | Time: {:>10} [PASSED]",
+                    i, fen, d, expected, result, format_time(elapsed),
+                    width = longest_fen
                 );
             } else {
                 println!(
-                    "{:04}. FEN: {} | Depth: {} | Expected: {} | Result: {} \
-                     [FAILED]",
-                    i, fen, d, expected, result
+                    "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
+                    Result: {:>12} | Time: {:>10} [FAILED]",
+                    i, fen, d, expected, result, format_time(elapsed),
+                    width = longest_fen
                 );
-                println!("{}", format_game_state(state, false))
             }
         }
     }
