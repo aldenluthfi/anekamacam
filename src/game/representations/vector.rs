@@ -291,7 +291,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - i!i: means that at the end of this leg, the moving piece cannot be in
 ///   attacked, i.e. (i)mmune
 /// - k!k: TODO
-/// - v!v: TODO
+/// - v!v: this leg can bypass forbidden zones, i.e. (v)oid
 /// - g!g: TODO
 ///
 /// Defaults:

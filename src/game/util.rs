@@ -18,7 +18,7 @@
 use lazy_static::lazy_static;
 use rand::{RngCore, SeedableRng};
 use std::sync::Mutex;
-use bnum::types::U2048;
+use bnum::types::U4096;
 
 use crate::{
     board, constants::*, enp_square, game::{
