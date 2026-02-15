@@ -14,7 +14,7 @@
 //! # Date
 //! 25/01/2026
 
-use bnum::types::U2048;
+use bnum::types::U4096;
 
 use crate::{
     files, ranks,
@@ -30,14 +30,13 @@ pub fn format_square(index: u16, game_state: &State) -> String {
 
     if game_state.files <= 26  {
         let file_char = (b'a' + file) as char;
-        let rank_char = (b'1' + rank) as char;
-        format!("{}{}", file_char, rank_char).trim().to_string()
+        format!("{}{}", file_char, rank + 1).trim().to_string()
     } else {
         format!("{:02}{:02}", file, rank).trim().to_string()
     }
 }
 
-fn format_bitboard(board: &U2048, files: u8, ranks: u8) -> String {
+fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
 
     let mut result = String::new();
 
@@ -58,7 +57,7 @@ fn format_bitboard(board: &U2048, files: u8, ranks: u8) -> String {
 pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     let ranks = ranks!(board);
     let files = files!(board);
-    let mut bitboard_str = format_bitboard(&board.2, ranks, files);
+    let mut bitboard_str = format_bitboard(&board.2, files, ranks);
 
     if let Some(piece) = piece_char {
         bitboard_str = bitboard_str.replace(

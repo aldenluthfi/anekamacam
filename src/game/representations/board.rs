@@ -16,14 +16,14 @@
 //! # Date
 //! 18/02/2024
 
-use bnum::types::U2048;
+use bnum::types::U4096;
 
-pub type Board = (u8, u8, U2048);
+pub type Board = (u8, u8, U4096);
 
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {
-        ($files, $ranks, U2048::ZERO)
+        ($files, $ranks, U4096::ZERO)
     };
 }
 

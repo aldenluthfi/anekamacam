@@ -1986,7 +1986,7 @@ fn process_multi_leg_dots_token(
     token: &str,
     game_state: &State,
 ) -> Vec<MultiLegVector> {
-    let dot_count = token.len() as i8;
+    let dot_count = token.replace("-", "").len() as i8;
 
     let mut updated_vectors: Vec<MultiLegVector> = vector_set
         .into_iter()

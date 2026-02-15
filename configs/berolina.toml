@@ -1,16 +1,16 @@
-title="Chess"
+title="Berolina Chess"
 initial_position="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
 files=8
 ranks=8
 
 [special_rules]
-promotions=true
+promotion=true
 
 [[pieces]]
-name="Pawn"
+name="Berolina Pawn"
 charset="Pp"
-movement="mnW|im<nW-pnW>|tcnF"
-value=1000
+movement="mnF|im<nF-pnW>|tcnW"
+value=1200
 big=false
 major=false
 royal=false

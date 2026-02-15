@@ -1,6 +1,6 @@
 use crate::{
     game::moves::perft::start_perft,
-    io::game_io::parse_config_file,
+    io::game_io::{format_entire_game, parse_config_file},
 };
 
 pub mod game {
@@ -33,7 +33,9 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let mut state = parse_config_file("configs/fide.toml");
+    let mut state = parse_config_file("configs/xianqi.toml");
 
-    start_perft(&mut state, "res/fide-kiwipete.perft", 6, false, Some(0));
+    // println!("{}", format_entire_game(&state));
+
+    start_perft(&mut state, "res/xianqi.perft", 5, false, Some(1));
 }

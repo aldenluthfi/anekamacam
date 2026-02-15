@@ -1,5 +1,5 @@
-title="Chess"
-initial_position="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
+title="Shatranj"
+initial_position="rnafkanr/pppppppp/8/8/8/8/PPPPPPPP/RNAFKANR w - -"
 files=8
 ranks=8
 
@@ -9,7 +9,7 @@ promotions=true
 [[pieces]]
 name="Pawn"
 charset="Pp"
-movement="mnW|im<nW-pnW>|tcnF"
+movement="mnW|cnF"
 value=1000
 big=false
 major=false
@@ -34,53 +34,36 @@ major=false
 royal=false
 
 [[pieces]]
-name="Bishop"
-charset="Bb"
-movement="B"
-value=3375
+name="Alfil"
+charset="Aa"
+movement="A"
+value=2500
 big=true
 major=false
 royal=false
 
 [[pieces]]
-name="Queen"
-charset="Qq"
-movement="Q"
-value=3000
+name="Ferz"
+charset="Ff"
+movement="F"
+value=1500
 big=true
-major=true
+major=false
 royal=false
 
 [[pieces]]
 name="King"
-charset="K_"
-movement="K|O{4}{2}|o{3}{1}"
-value=inf
-big=true
-major=false
-royal=true
-
-[[pieces]]
-name="King"
-charset="_k"
-movement="K|o{4}{2}|O{3}{1}"
+charset="Kk"
+movement="K"
 value=inf
 big=true
 major=false
 royal=true
 
 [promotions]
-P="RNBQ"
-p="rbnq"
+P="F"
+p="f"
 
 [promotion_zones_mandatory]
 P="XXXXXXXX/8/8/8/8/8/8/8"
 p="8/8/8/8/8/8/8/XXXXXXXX"
-
-[initial_setup]
-K="8/8/8/8/8/8/8/4X3"
-k="4X3/8/8/8/8/8/8/8"
-P="8/8/8/8/8/8/XXXXXXXX/8"
-p="8/XXXXXXXX/8/8/8/8/8/8"
-R="8/8/8/8/8/8/8/X6X"
-r="X6X/8/8/8/8/8/8/8"
