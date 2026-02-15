@@ -208,7 +208,7 @@ pub struct State {
     pub forbidden_zones: Vec<Board>,                                            /* piece to forbidden zone bitboard   */
     pub promotion_zones_optional: Vec<Board>,                                   /* piece to promotion zone bitboard   */
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
-    pub piece_count_limit: Vec<u32>,                                            /* piece index to count limit         */
+    pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
 
     pub files: u8,
     pub ranks: u8,
@@ -271,7 +271,7 @@ impl State {
             forbidden_zones: vec![board!(files, ranks); piece_count],
             promotion_zones_optional: vec![board!(files, ranks); piece_count],
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
-            piece_count_limit: vec![u32::MAX; piece_count],
+            piece_limit: vec![u32::MAX; piece_count],
 
             files,
             ranks,
