@@ -55,6 +55,7 @@ pub const WK_CASTLE : u8 = 0b0001;
 pub const WQ_CASTLE : u8 = 0b0010;
 pub const BK_CASTLE : u8 = 0b0100;
 pub const BQ_CASTLE : u8 = 0b1000;
+pub const CASTLING: [u8; 4] = [WK_CASTLE, WQ_CASTLE, BQ_CASTLE, BK_CASTLE];
 
 pub const NO_PIECE: u8 = u8::MAX;
 pub const NO_EN_PASSANT: u32 = u32::MAX;

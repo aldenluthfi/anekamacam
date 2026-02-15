@@ -81,15 +81,15 @@ pub fn start_perft(
                 successful_cases += 1;
                 total_moves += result;
                 println!(
-                    "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>11} | \
-                    Result: {:>11} | Time: {:>10} [PASSED]",
+                    "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
+                    Result: {:>12} | Time: {:>12} [PASSED]",
                     i, fen, d, expected, result, format_time(elapsed),
                     width = longest_fen
                 );
             } else {
                 println!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
-                    Result: {:>12} | Time: {:>10} [FAILED]",
+                    Result: {:>12} | Time: {:>12} [FAILED]",
                     i, fen, d, expected, result, format_time(elapsed),
                     width = longest_fen
                 );

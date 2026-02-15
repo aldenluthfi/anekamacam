@@ -13,7 +13,7 @@
 //! # Date
 //! 25/01/2026
 
-use bnum::{cast::As, types::U2048};
+use bnum::types::U2048;
 
 #[macro_export]
 macro_rules! p_index {
@@ -82,6 +82,31 @@ macro_rules! p_castle_right {
 macro_rules! p_castle_left {
     ($piece:expr) => {
         ($piece.encoded_piece & (1 << 29)) != 0
+    };
+}
+
+#[macro_export]
+macro_rules! p_promotions {
+    ($piece:expr) => {
+        {
+            if !p_can_promote!($piece) {
+                return Vec::new();
+            }
+
+            let promotions_count = (
+                $piece.promotions & U2048::from(0xFFu32)
+            ).as_::<u8>();
+
+            if promotions_count == 0 {
+                return Vec::new();
+            }
+
+            (1..=promotions_count)
+                .map(|i| (
+                    ($piece.promotions >> (i * 8)) & U2048::from(0xFFu32)
+                ).as_::<usize>())
+                .collect::<Vec<usize>>()
+        }
     };
 }
 
@@ -178,25 +203,5 @@ impl Piece {
             promotions,
             encoded_piece,
         }
-    }
-
-    pub fn get_promotion_pieces(&self) -> Vec<u8> {
-        if !p_can_promote!(self) {
-            return Vec::new();
-        }
-
-        let promotions_count = (
-            self.promotions & U2048::from(0xFFu32)
-        ).as_::<u8>();
-
-        if promotions_count == 0 {
-            return Vec::new();
-        }
-
-        (1..=promotions_count)
-            .map(|i| (
-                (self.promotions >> (i * 8)) & U2048::from(0xFFu32)
-            ).as_::<u8>())
-            .collect()
     }
 }
