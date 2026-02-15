@@ -32,7 +32,7 @@ use crate::{
     leg,
 };
 
-use bnum::types::U2048;
+use bnum::types::U4096;
 pub type Square = u16;
 
 /*----------------------------------------------------------------------------*\
@@ -40,86 +40,58 @@ pub type Square = u16;
 \*----------------------------------------------------------------------------*/
 
 #[macro_export]
-macro_rules! castling {
+macro_rules! promotions {
     ($state:expr) => {
         ($state.special_rules & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_castling {
+macro_rules! enc_promotions {
     ($rules:expr) => {
         $rules |= 1;
     };
 }
 
 #[macro_export]
-macro_rules! en_passant {
+macro_rules! drops {
     ($state:expr) => {
         ($state.special_rules >> 1 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_en_passant {
+macro_rules! enc_drops {
     ($rules:expr) => {
         $rules |= 1 << 1;
     };
 }
 
 #[macro_export]
-macro_rules! promotions {
+macro_rules! count_limits {
     ($state:expr) => {
         ($state.special_rules >> 2 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_promotions {
+macro_rules! enc_count_limits {
     ($rules:expr) => {
         $rules |= 1 << 2;
     };
 }
 
 #[macro_export]
-macro_rules! drops {
+macro_rules! forbidden_zones {
     ($state:expr) => {
         ($state.special_rules >> 3 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_drops {
-    ($rules:expr) => {
-        $rules |= 1 << 3;
-    };
-}
-
-#[macro_export]
-macro_rules! count_limit {
-    ($state:expr) => {
-        ($state.special_rules >> 4 & 1) == 1
-    };
-}
-
-#[macro_export]
-macro_rules! enc_count_limit {
-    ($rules:expr) => {
-        $rules |= 1 << 4;
-    };
-}
-
-#[macro_export]
-macro_rules! forbidden_zones {
-    ($state:expr) => {
-        ($state.special_rules >> 5 & 1) == 1
-    };
-}
-
-#[macro_export]
 macro_rules! enc_forbidden_zones {
     ($rules:expr) => {
-        $rules |= 1 << 5;
+        $rules |= 1 << 3;
     };
 }
 
@@ -185,13 +157,11 @@ impl Default for Snapshot {
 /// The special rules field is a bitmask representing enabled special rules.
 ///
 /// The bits are defined as follows:
-/// - but 0: Castling allowed
-/// - bit 1: En passant allowed
-/// - bit 2: Promotions allowed
-/// - bit 3: Drops allowed
-/// - bit 4: Some pieces have a count limit
-/// - bit 5: Some pieces have forbidden zones
-/// - but 2-31: reserved for future use
+/// - bit 0: Promotions allowed
+/// - bit 1: Drops allowed
+/// - bit 2: Some pieces have a count limit
+/// - bit 3: Some pieces have forbidden zones
+/// - but 4-31: reserved for future use
 ///
 pub struct State {
 
@@ -261,7 +231,7 @@ impl State {
         let piece_count: usize = pieces.len();
         let board_size: usize = (files as usize) * (ranks as usize);
 
-        let mut result = State {
+        State {
             title,
             pieces,
             special_rules,
@@ -308,10 +278,7 @@ impl State {
             piece_count: vec![0u32; piece_count],
             piece_list: vec![Vec::new(); piece_count],
             piece_in_hand: [Vec::new(), Vec::new()],
-        };
-
-        result.precompute();
-        result
+        }
     }
 
     pub fn reset(&mut self) {
@@ -387,7 +354,7 @@ impl State {
         }
     }
 
-    fn precompute(&mut self) {
+    pub fn precompute(&mut self) {
         self.populate_piece_moves();
         self.populate_relevant_moves();
         self.populate_relevant_attacks();

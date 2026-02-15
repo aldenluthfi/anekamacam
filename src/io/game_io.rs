@@ -14,14 +14,14 @@
 //! # Date
 //! 25/01/2026
 
-use bnum::types::{U2048};
+use bnum::types::{U2048, U4096};
 use toml::Table;
 use std::collections::HashMap;
 use std::fs;
 
 use crate::game::representations::board::Board;
 use crate::{
-    board, constants::*, enc_castling, enc_count_limit, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promotions, get, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
+    board, constants::*, count_limits, drops, enc_count_limits, enc_drops, enc_forbidden_zones, enc_promotions, forbidden_zones, get, p_can_promote, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, promotions, set
 };
 use crate::game::{
     hash::hash_position,
@@ -138,16 +138,10 @@ pub fn parse_config_file(path: &str) -> State {
         "Special rules section is not a valid table"
     );
 
-    let castling = special_rules_table.get("castling")
+    let promotions = special_rules_table.get("promotions")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let en_passant = special_rules_table.get("en_passant")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let promotions = special_rules_table.get("promotion")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let drops = special_rules_table.get("drop")
+    let drops = special_rules_table.get("drops")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let count_limit = special_rules_table.get("count_limit")
@@ -156,14 +150,6 @@ pub fn parse_config_file(path: &str) -> State {
     let forbidden_zones = special_rules_table.get("forbidden_zones")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-
-    if castling {
-        enc_castling!(special_rules);
-    }
-
-    if en_passant {
-        enc_en_passant!(special_rules);
-    }
 
     if promotions {
         enc_promotions!(special_rules);
@@ -174,7 +160,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     if count_limit {
-        enc_count_limit!(special_rules);
+        enc_count_limits!(special_rules);
     }
 
     if forbidden_zones {
@@ -237,7 +223,7 @@ pub fn parse_config_file(path: &str) -> State {
             let piece_index = piece_char_to_idx.get(
                 &piece_char.chars().next().unwrap()
             ).unwrap_or_else(
-                || panic!("Unknown promotion piece character: {}", piece_char)
+                || panic!("Unknown promoting piece character: {}", piece_char)
             );
 
             let promoted_chars = piece_promotions_table[piece_char]
@@ -276,6 +262,52 @@ pub fn parse_config_file(path: &str) -> State {
         };
     }
 
+    if count_limit {
+        let count_limits_table = config.get("count_limits").expect(
+            "Count limits section not found in configuration file"
+        ).as_table().expect(
+            "Count limits section is not a valid table"
+        );
+
+        for piece_char in count_limits_table.keys() {
+            let piece_index = piece_char_to_idx.get(
+                &piece_char.chars().next().unwrap()
+            ).unwrap_or_else(
+                || panic!("Unknown piece character: {}", piece_char)
+            );
+
+            let limit = count_limits_table[piece_char]
+                .as_integer()
+                .unwrap_or_else(
+                    || panic!("Count limit entry is not a valid integer")
+                );
+
+            result.piece_limit[*piece_index as usize] = limit as u32;
+        }
+    }
+
+    if forbidden_zones {
+        let forbidden_zones_table = config.get("forbidden_zones").expect(
+            "Forbidden zones section not found in configuration file"
+        ).as_table().expect(
+            "Forbidden zones section is not a valid table"
+        );
+
+        for piece_char in forbidden_zones_table.keys() {
+            let piece_index = piece_char_to_idx.get(
+                &piece_char.chars().next().unwrap()
+            ).unwrap_or_else(
+                || panic!("Unknown piece character: {}", piece_char)
+            );
+
+            let bit_fen = forbidden_zones_table[piece_char]
+                .as_str();
+
+            result.forbidden_zones[*piece_index as usize] =
+                parse_bit_fen(bit_fen, &result);
+        }
+    }
+
     let initial_position = config["initial_position"].as_str().unwrap_or_else(
         || panic!("Initial position not found in configuration file")
     );
@@ -283,6 +315,7 @@ pub fn parse_config_file(path: &str) -> State {
     result.load_fen(initial_position);
 
     hash_position(&result);
+    result.precompute();
 
     result
 }
@@ -832,11 +865,11 @@ pub fn format_piece_types(state: &State) -> String {
     result
 }
 
-pub fn format_promotion_zones(state: &State) -> String {
+fn format_promotion_zones(state: &State) -> String {
     let mut result = String::new();
 
     for piece in &state.pieces {
-        if piece.promotions != U2048::ZERO {
+        if p_can_promote!(piece) {
             let mandatory_zone = format_board(
                 &state.promotion_zones_mandatory[p_index!(piece) as usize],
                 piece.char.into()
@@ -878,13 +911,13 @@ pub fn format_promotion_zones(state: &State) -> String {
     result
 }
 
-pub fn format_intial_setup(state: &State) -> String {
+fn format_intial_setup(state: &State) -> String {
     let mut result = String::new();
 
     for piece in &state.pieces {
         let piece_setup = state.initial_setup[p_index!(piece) as usize];
 
-        if piece_setup.2 == U2048::ZERO {
+        if piece_setup.2 == U4096::ZERO {
             continue;
         }
 
@@ -903,16 +936,54 @@ pub fn format_intial_setup(state: &State) -> String {
     result
 }
 
+fn format_forbidden_zones(state: &State) -> String {
+    let mut result = String::new();
+
+    for piece in &state.pieces {
+        let forbidden_zone = state.forbidden_zones[p_index!(piece) as usize];
+
+        if forbidden_zone.2 == U4096::ZERO {
+            continue;
+        }
+
+        let forbidden_board = format_board(
+            &forbidden_zone,
+            Some('X')
+        );
+
+        result.push_str(&format!(
+            "Forbidden zones for {} ({}):\n", piece.name, piece.char
+        ));
+        result.push_str(&forbidden_board);
+        result.push('\n');
+    }
+
+    result
+}
+
 pub fn format_entire_game(state: &State) -> String {
     let mut result = String::new();
 
     result.push_str(
         &format!("{} ({}x{})\n", state.title, state.files, state.ranks)
     );
+    result.push_str(&format!("Special rules: {}\n",
+        if state.special_rules == 0 {
+            "None".to_string()
+        } else {
+            let mut rules = Vec::new();
+            if promotions!(state) { rules.push("Promotions"); }
+            if drops!(state) { rules.push("Drops"); }
+            if count_limits!(state) { rules.push("Count Limits"); }
+            if forbidden_zones!(state) { rules.push("Forbidden Zones"); }
+            rules.join(", ")
+        }
+    ));
     result.push_str("\n---------- Piece Types\n");
     result.push_str(&format_piece_types(state));
     result.push_str("\n---------- Static Parameters\n");
     result.push_str(&format_promotion_zones(state));
+    result.push_str(&format_forbidden_zones(state));
     result.push_str(&format_intial_setup(state));
     result.push_str("\n---------- Initial Position\n");
     result.push_str(&format_game_state(state, true));
