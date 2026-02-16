@@ -30,7 +30,7 @@ pub fn format_square(index: u16, game_state: &State) -> String {
 
     if game_state.files <= 26  {
         let file_char = (b'a' + file) as char;
-        format!("{}{}", file_char, rank + 1).trim().to_string()
+        format!("{}{}", file_char, rank).trim().to_string()
     } else {
         format!("{:02}{:02}", file, rank).trim().to_string()
     }

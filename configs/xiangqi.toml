@@ -73,7 +73,7 @@ royal=false
 [[pieces]]
 name="General"
 charset="Kk"
-movement="W|kc<v!vW-{7..9}>"
+movement="W|kc<v!vW-{5..9}>"
 value=inf
 big=true
 major=false

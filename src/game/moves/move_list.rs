@@ -5,8 +5,7 @@ use bnum::cast::As;
 use crate::game::util::verify_game_state;
 use crate::{
     c, captured_piece, captured_square, captured_unmoved, clear, constants::{
-        BK_CASTLE, BQ_CASTLE, CASTLING, MULTI_CAPTURE_MOVE, NO_EN_PASSANT,
-        NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE,
+        BK_CASTLE, BQ_CASTLE, CASTLING, MULTI_CAPTURE_MOVE, NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE
     }, count_limits, created_enp, creates_enp, d, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, end, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
         hash::{
             CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES,
@@ -42,7 +41,7 @@ fn is_square_attacked(
             move_vector, *start, piece,
             attacked_unmoved, attacked_royal, attacked_value,
             square, game_state,
-        ).is_some()
+        )
         {
             return true;
         }
@@ -51,7 +50,7 @@ fn is_square_attacked(
     false
 }
 
-fn is_in_check(
+pub fn is_in_check(
     side: u8,
     game_state: &State
 ) -> bool {
@@ -149,8 +148,7 @@ pub fn generate_attack_masks(
                     rank_offset * (game_state.files as i8) + file_offset
                 ) as i16;
 
-                let m = m!(leg);
-                let c = c!(leg) || (last_leg && !m);
+                let c = c!(leg) || (last_leg && !m!(leg));
                 let d = d!(leg);
 
                 if d {
@@ -191,17 +189,16 @@ pub fn validate_attack_vector(
     attacked_value: u16,
     attacked_square: u32,
     game_state: &State,
-) -> Option<Move> {
-    let encoded_move = Move::default();
+) -> bool {
 
     let piece_color = p_color!(attacking_piece);
     let piece_value = p_value!(attacking_piece);
     let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
 
     let mut accumulated_index = square_index as i16;
+    let mut target_was_last_captured = false;
 
     let leg_count = multi_leg_vector.len();
-    let mut last_captured = false;
 
     for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
         let last_leg = leg_index + 1 == leg_count;
@@ -230,48 +227,49 @@ pub fn validate_attack_vector(
         let not_g = not_g!(leg);
         let not_v = not_v!(leg);
         let not_i = not_i!(leg);
+        let special_i = i && not_i;
         let special_v = v && not_v;
 
-        if ((i && !piece_unmoved) || (not_i && piece_unmoved)) &&
-            !(i && not_i)
+        if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
         {
-            return None;
+            return false;
         }
 
         let friendly = get!(
             game_state.pieces_board[piece_color as usize],
             end_square
         ) && end_square != start_square;
-
         let enemy = get!(
             game_state.pieces_board[1 - piece_color as usize],
             end_square
         );
-
         let empty = !friendly && !enemy;
-        let null_move = file_offset == 0 && rank_offset == 0;
 
-        if u && last_captured {
-            return None;
+        let null_move = file_offset == 0 && rank_offset == 0;
+        let imaginary_move = end_square == attacked_square;
+
+        if u && target_was_last_captured {
+            return false;
         }
 
-        if end_square == attacked_square &&
-            (
-                k && !attacked_royal
-                || not_k && attacked_royal
-                || g && piece_value <= attacked_value
-                || not_g && piece_value > attacked_value
-                || ((v && !attacked_unmoved
-                || not_v && attacked_unmoved) && !special_v)
-            )
-        {
-            return None;
-        } else if end_square == attacked_square {
-            last_captured = true;
+        if imaginary_move {
+            if k && !attacked_royal
+            || not_k && attacked_royal
+            || g && piece_value <= attacked_value
+            || not_g && piece_value > attacked_value
+            || (v && !attacked_unmoved || not_v && attacked_unmoved)
+            && !special_v
+            || u
+            {
+                return false;
+            }
+
+            target_was_last_captured = true;
             continue;
-        } else if empty && !null_move {
-            if enp_square!(game_state.en_passant_square) == end_square
-            && t
+        }
+
+        if empty && !null_move {
+            if t && enp_square!(game_state.en_passant_square) == end_square
             {
                 let capt_piece_index =
                     enp_piece!(game_state.en_passant_square);
@@ -297,20 +295,22 @@ pub fn validate_attack_vector(
                     || not_k && capt_royal
                     || g && piece_value <= capt_value
                     || not_g && piece_value > capt_value
-                    || ((v && !capt_unmoved
-                    || not_v && capt_unmoved) && !special_v)
+                    || (v && !capt_unmoved || not_v && capt_unmoved)
+                    && !special_v
                     {
-                        return None;
+                        return false;
                     }
+
+                    target_was_last_captured = false;
                 } else {
-                    return None;
+                    return false;
                 }
             } else if !m {
-                return None;
+                return false;
             }
-        } else if friendly && !null_move {
+        } else if friendly && !null_move{
             if !d {
-                return None;
+                return false;
             }
 
             let capt_piece_index =
@@ -328,14 +328,16 @@ pub fn validate_attack_vector(
             || not_k && capt_royal
             || g && piece_value <= capt_value
             || not_g && piece_value > capt_value
-            || ((v && !capt_unmoved
-            || not_v && capt_unmoved) && !special_v)
+            || (v && !capt_unmoved || not_v && capt_unmoved)
+            && !special_v
             {
-                return None;
+                return false;
             }
+
+            target_was_last_captured = false;
         } else if enemy && !null_move {
             if !c {
-                return None;
+                return false;
             }
 
             let capt_piece_index =
@@ -353,18 +355,17 @@ pub fn validate_attack_vector(
             || not_k && capt_royal
             || g && piece_value <= capt_value
             || not_g && piece_value > capt_value
-            || ((v && !capt_unmoved
-            || not_v && capt_unmoved) && !special_v)
+            || (v && !capt_unmoved || not_v && capt_unmoved)
+            && !special_v
             {
-                return None;
+                return false;
             }
-        }
 
-        if (c || d) && last_captured {
-            last_captured = false;
+            target_was_last_captured = false;
         }
     }
-    Some(encoded_move)
+
+    true
 }
 
 #[inline(always)]
@@ -383,14 +384,13 @@ pub fn generate_move_list(
     let vector_set =
         &game_state.relevant_moves
         [piece_index as usize][square_index as usize];
+    let mut taken_pieces: Vec<u64> = Vec::new();
 
     'multi_leg: for multi_leg_vector in vector_set {
 
         let mut encoded_move = Move::default();
         enc_start!(encoded_move, square_index as u128);
         enc_piece!(encoded_move, piece_index as u128);
-
-        let mut taken_pieces: Vec<u64> = Vec::new();
 
         let mut accumulated_index = square_index as i16;
 
@@ -429,16 +429,11 @@ pub fn generate_move_list(
             let r = r!(leg);
             let special_i = i && not_i;
             let special_v = v && not_v;
+            let castling_rights = piece_color as usize * 2 + l as usize;
 
-            if ((i && !piece_unmoved) || (not_i && piece_unmoved)) &&
-                !special_i
-            {
-                continue 'multi_leg;
-            }
-
-
-            if special_i &&
-                is_square_attacked(
+            if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
+            || special_i
+            && is_square_attacked(
                     accumulated_index as u32,
                     piece_color,
                     piece_unmoved,
@@ -446,14 +441,8 @@ pub fn generate_move_list(
                     p_value!(piece),
                     game_state
                 )
-            {
-                continue 'multi_leg;
-            }
-
-            if (l || r)
-            &&  game_state.castling_state & CASTLING[
-                piece_color as usize * 2 + l as usize
-            ] == 0
+            || (l || r)
+            && game_state.castling_state & CASTLING[castling_rights] == 0
             {
                 continue 'multi_leg;
             }
@@ -466,16 +455,15 @@ pub fn generate_move_list(
                 game_state.pieces_board[piece_color as usize],
                 end_square
             ) && end_square != start_square;
-
             let enemy = get!(
                 game_state.pieces_board[1 - piece_color as usize],
                 end_square
             );
-
             let empty = !friendly && !enemy;
+
             let null_move = file_offset == 0 && rank_offset == 0;
 
-            if empty && !null_move{
+            if empty && !null_move {
                 if t && enp_square!(game_state.en_passant_square) == end_square
                 {
                     let capt_piece_index =
@@ -512,8 +500,8 @@ pub fn generate_move_list(
                         || not_k && capt_royal
                         || g && piece_value <= capt_value
                         || not_g && piece_value > capt_value
-                        || ((v && !capt_unmoved
-                        || not_v && capt_unmoved) && !special_v)
+                        || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
                         {
                             continue 'multi_leg;
                         }
@@ -550,8 +538,8 @@ pub fn generate_move_list(
                 || not_k && capt_royal
                 || g && piece_value <= capt_value
                 || not_g && piece_value > capt_value
-                || ((v && !capt_unmoved
-                || not_v && capt_unmoved) && !special_v)
+                || (v && !capt_unmoved || not_v && capt_unmoved)
+                && !special_v
                  {
                       continue 'multi_leg;
                  }
@@ -592,8 +580,8 @@ pub fn generate_move_list(
                     || not_k && capt_royal
                     || g && piece_value <= capt_value
                     || not_g && piece_value > capt_value
-                    || ((v && !capt_unmoved
-                    || not_v && capt_unmoved) && !special_v)
+                    || (v && !capt_unmoved || not_v && capt_unmoved)
+                    && !special_v
                  {
                       continue 'multi_leg;
                  }

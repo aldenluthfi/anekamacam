@@ -1,6 +1,6 @@
-title="Chess"
-initial_position="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -"
-files=8
+title="Capablanca Chess"
+initial_position="ranbqkbncr/pppppppppp/10/10/10/10/PPPPPPPPPP/RANBQKBNCR w KQkq -"
+files=10
 ranks=8
 
 [special_rules]
@@ -52,9 +52,27 @@ major=true
 royal=false
 
 [[pieces]]
+name="Archbishop"
+charset="Aa"
+movement="B|N"
+value=8500
+big=true
+major=true
+royal=false
+
+[[pieces]]
+name="Chancellor"
+charset="Cc"
+movement="R|N"
+value=8500
+big=true
+major=true
+royal=false
+
+[[pieces]]
 name="King"
 charset="K_"
-movement="K|O{4}{2}|o{3}{1}"
+movement="K|O{5}{2}|o{4}{1}"
 value=inf
 big=true
 major=false
@@ -63,24 +81,24 @@ royal=true
 [[pieces]]
 name="King"
 charset="_k"
-movement="K|o{4}{2}|O{3}{1}"
+movement="K|o{5}{2}|O{4}{1}"
 value=inf
 big=true
 major=false
 royal=true
 
 [promotions]
-P="RNBQ"
-p="rbnq"
+P="RNBQAC"
+p="rbnqac"
 
 [promotion_zones_mandatory]
-P="XXXXXXXX/8/8/8/8/8/8/8"
-p="8/8/8/8/8/8/8/XXXXXXXX"
+P="XXXXXXXXXX/10/10/10/10/10/10/10"
+p="10/10/10/10/10/10/10/XXXXXXXXXX"
 
 [initial_setup]
-K="8/8/8/8/8/8/8/4X3"
-k="4X3/8/8/8/8/8/8/8"
-P="8/8/8/8/8/8/XXXXXXXX/8"
-p="8/XXXXXXXX/8/8/8/8/8/8"
-R="8/8/8/8/8/8/8/X6X"
-r="X6X/8/8/8/8/8/8/8"
+K="10/10/10/10/10/10/10/5X4"
+k="5X4/10/10/10/10/10/10/10"
+P="10/10/10/10/10/10/XXXXXXXXXX/10"
+p="10/XXXXXXXXXX/10/10/10/10/10/10"
+R="10/10/10/10/10/10/10/X8X"
+r="X8X/10/10/10/10/10/10/10"
