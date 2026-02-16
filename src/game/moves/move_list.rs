@@ -384,13 +384,14 @@ pub fn generate_move_list(
     let vector_set =
         &game_state.relevant_moves
         [piece_index as usize][square_index as usize];
-    let mut taken_pieces: Vec<u64> = Vec::new();
 
     'multi_leg: for multi_leg_vector in vector_set {
 
         let mut encoded_move = Move::default();
         enc_start!(encoded_move, square_index as u128);
         enc_piece!(encoded_move, piece_index as u128);
+
+        let mut taken_pieces: Vec<u64> = Vec::new();
 
         let mut accumulated_index = square_index as i16;
 
