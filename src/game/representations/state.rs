@@ -139,7 +139,7 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Snapshot {
-            move_ply: (0u128, vec![]),
+            move_ply: NULL_MOVE,
             castling_state: 0,
             halfmove_clock: 0,
             en_passant_square: u32::MAX,

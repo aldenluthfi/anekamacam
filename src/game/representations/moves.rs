@@ -56,7 +56,6 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 ///
 /// The second array is used to store the indices of all captured pieces.
 ///
-/// Each captured piece is represented in 34 bits:
 /// - Next bit indicates if this move is a unload (1) or regular capture (0).
 /// - Next 12 bits: Unload square index (if applicable).
 /// - Next 8 bits: bits represent the captured piece type.
