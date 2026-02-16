@@ -33,9 +33,9 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let mut state = parse_config_file("configs/xianqi.toml");
+    let mut state = parse_config_file("configs/xiangqi.toml");
 
-    // println!("{}", format_entire_game(&state));
+    println!("{}", format_entire_game(&state));
 
-    start_perft(&mut state, "res/xianqi.perft", 5, false, Some(1));
+    start_perft(&mut state, "res/xiangqi.perft", 6, false, Some(0));
 }
