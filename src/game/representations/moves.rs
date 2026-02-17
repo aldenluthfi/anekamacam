@@ -32,6 +32,7 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// - 000: Single move without capture
 /// - 001: Single move with capture or unload
 /// - 010: Multi-capture move
+/// - 011: Drop move
 ///
 /// - The next 8 bits indicates the piece index of the piece making the move.
 /// - The next 12 bits represent the starting square index (0-4095).
@@ -61,6 +62,14 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// - Next 8 bits: bits represent the captured piece type.
 /// - Next 12 bits: represent the captured piece square index.
 /// - the last bit indicates if the piece captured is unmoved (1) or not (0).
+///
+/// For the drop move, the second array is not used, and the first 128-bit
+/// integer is used as follows:
+///
+/// - The first 3 bits is the move type (011 for drop).
+/// - The next 8 bits is the piece index of the piece being dropped.
+/// - The next 12 bits represent the square index where the piece is being
+///   dropped.
 pub type Move = (u128, Vec<u64>);
 
 /*----------------------------------------------------------------------------*\
