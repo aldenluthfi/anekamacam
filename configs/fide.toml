@@ -4,6 +4,8 @@ files=8
 ranks=8
 
 [special_rules]
+castling=true
+en_passant=true
 promotions=true
 
 [[pieces]]

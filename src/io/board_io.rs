@@ -77,7 +77,7 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
         result.push_str(
             &format!(
                 "{:02} ║ {} ║\n",
-                ranks as usize - i,
+                ranks as usize - i - 1,
                 line.trim().replace("  ", " │ ")
             )
         );

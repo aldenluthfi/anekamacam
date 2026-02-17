@@ -14,14 +14,15 @@
 //! # Date
 //! 25/01/2026
 
+use bnum::cast::As;
 use bnum::types::{U2048, U4096};
 use toml::Table;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 
 use crate::game::representations::board::Board;
 use crate::{
-    board, constants::*, count_limits, drops, enc_count_limits, enc_drops, enc_forbidden_zones, enc_promotions, forbidden_zones, get, p_can_promote, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, promotions, set
+    board, castling, constants::*, count_limits, drops, en_passant, enc_castling, enc_count_limits, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, forbidden_zones, get, p_can_promote, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set
 };
 use crate::game::{
     hash::hash_position,
@@ -138,18 +139,35 @@ pub fn parse_config_file(path: &str) -> State {
         "Special rules section is not a valid table"
     );
 
+    let castling = special_rules_table.get("castling")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let en_passant = special_rules_table.get("en_passant")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let promotions = special_rules_table.get("promotions")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let drops = special_rules_table.get("drops")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let count_limit = special_rules_table.get("count_limit")
+    let count_limits = special_rules_table.get("count_limits")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     let forbidden_zones = special_rules_table.get("forbidden_zones")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let promote_to_captured = special_rules_table.get("promote_to_captured")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if castling {
+        enc_castling!(special_rules);
+    }
+
+    if en_passant {
+        enc_en_passant!(special_rules);
+    }
 
     if promotions {
         enc_promotions!(special_rules);
@@ -159,12 +177,16 @@ pub fn parse_config_file(path: &str) -> State {
         enc_drops!(special_rules);
     }
 
-    if count_limit {
+    if count_limits {
         enc_count_limits!(special_rules);
     }
 
     if forbidden_zones {
         enc_forbidden_zones!(special_rules);
+    }
+
+    if promote_to_captured {
+        enc_promote_to_captured!(special_rules);
     }
 
     let mut result = State::new(
@@ -180,6 +202,22 @@ pub fn parse_config_file(path: &str) -> State {
         pieces,
         special_rules,
     );
+
+    let mut piece_swap_map = HashMap::new();
+    for (i, piece) in result.pieces.iter().enumerate() {
+        let my_color = p_color!(piece);
+        if let Some((j, _)) = result.pieces.iter().enumerate()
+            .find(|(j, other)|
+                *j != i &&
+                other.name == piece.name &&
+                p_color!(other) != my_color
+            )
+        {
+            piece_swap_map.insert(i as u8, j as u8);
+        }
+    }
+
+    result.piece_swap_map = piece_swap_map;
 
     let default_initial_setup = Table::new();
     let initial_setup_table = config.get("initial_setup")
@@ -260,14 +298,38 @@ pub fn parse_config_file(path: &str) -> State {
             result.promotion_zones_optional[*piece_index as usize] =
                 parse_bit_fen(bit_fen_optional, &result);
         };
+
+        let mut piece_demotion_map = HashMap::new();
+        for (big_idx, big_piece) in result.pieces.iter().enumerate() {
+            if p_can_promote!(big_piece) {
+                continue;
+            }
+            let mut demoters = Vec::new();
+            for (small_idx, small_piece) in result.pieces.iter().enumerate() {
+                if !p_can_promote!(small_piece) {
+                    continue;
+                }
+
+                for promotion_index in p_promotions!(small_piece) {
+                    if promotion_index == big_idx {
+                        demoters.push(small_idx as u8);
+                        break;
+                    }
+                }
+            }
+            if !demoters.is_empty() {
+                piece_demotion_map.insert(big_idx as u8, demoters);
+            }
+        }
+
+        result.piece_demotion_map = piece_demotion_map;
     }
 
-    if count_limit {
-        let count_limits_table = config.get("count_limits").expect(
-            "Count limits section not found in configuration file"
-        ).as_table().expect(
-            "Count limits section is not a valid table"
-        );
+    if count_limits {
+        let default_count_limits = Table::new();
+        let count_limits_table = config.get("count_limits")
+            .and_then(|v| v.as_table())
+            .unwrap_or(&default_count_limits);
 
         for piece_char in count_limits_table.keys() {
             let piece_index = piece_char_to_idx.get(
@@ -327,6 +389,42 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 
     let fen = fen.unwrap();
 
+    let ranks_data: Vec<&str> = fen.split('/').collect();
+    assert!(
+        ranks_data.len() == state.ranks as usize,
+        "FEN rank count ({}) doesn't match board ranks ({})",
+        ranks_data.len(),
+        state.ranks
+    );                                                                          /* assert number of ranks in the FEN  */
+
+    for (rank_idx, rank_data) in ranks_data.iter().enumerate() {                /* assert number of files in each rank*/
+        let mut file_count = 0u8;
+        let mut chars = rank_data.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c.is_ascii_digit() {
+                let mut num_str = c.to_string();
+                while let Some(&next_c) = chars.peek() {
+                    if next_c.is_ascii_digit() {
+                        num_str.push(next_c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                file_count += num_str.parse::<u8>().unwrap();
+            } else {
+                file_count += 1;
+            }
+        }
+        assert!(
+            file_count == state.files,
+            "FEN rank {} has {} files but expected {}",
+            rank_idx,
+            file_count,
+            state.files
+        );
+    }
+
     let mut result = board!(state.files, state.ranks);
 
     let mut rank = state.ranks - 1;
@@ -367,13 +465,30 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 
 /// Parses a FEN string and updates the game state accordingly. Note that the
 /// FEN implementation is slightly modified to accommodate arbitrary board
-/// sizes, the en passant square is represented as `xxyy` where `xx` is the
-/// file and `yy` is the rank (both 0-indexed).
+/// sizes, the en passant square is represented as `xxyyzz` where `xx` is the
+/// file and `yy` is the rank (both 0-indexed) and zz is the piece index in hex.
 pub fn parse_fen(state: &mut State, fen: &str) {
-    let parts: Vec<&str> = fen.split_whitespace().collect();
-    assert!(parts.len() >= 4, "FEN must have at least 4 parts");
 
-    let position = parts[0];
+    let mut needed_parts = 2;
+
+    if drops!(state) {
+        needed_parts += 1;
+    }
+
+    if castling!(state) {
+        needed_parts += 1;
+    }
+
+    if en_passant!(state) {
+        needed_parts += 1;
+    }
+
+    let parts: Vec<&str> = fen.split_whitespace().collect();
+    assert!(parts.len() >= needed_parts, "FEN must have at least 4 parts");
+    let mut part_index = 0;
+
+    let position = parts[part_index];
+    part_index += 1;
     assert!(!position.contains("_"), "_ is not a valid FEN character");
 
     let ranks_data: Vec<&str> = position.split('/').collect();
@@ -485,74 +600,84 @@ pub fn parse_fen(state: &mut State, fen: &str) {
         }
     }
 
-    state.playing = match parts[1] {
+    state.playing = match parts[part_index] {
         "w" => WHITE,
         "b" => BLACK,
         _ => panic!("Invalid active color: {}", parts[1]),
     };
+    part_index += 1;
 
-    let castling = parts[2];
-    state.castling_state = 0;
-    if castling.contains('K') {
-        state.castling_state |= WK_CASTLE;
+    if castling!(state) {
+        let castling = parts[part_index];
+        part_index += 1;
+        state.castling_state = 0;
+        if castling.contains('K') {
+            state.castling_state |= WK_CASTLE;
+        }
+        if castling.contains('Q') {
+            state.castling_state |= WQ_CASTLE;
+        }
+        if castling.contains('k') {
+            state.castling_state |= BK_CASTLE;
+        }
+        if castling.contains('q') {
+            state.castling_state |= BQ_CASTLE;
+        }
     }
-    if castling.contains('Q') {
-        state.castling_state |= WQ_CASTLE;
+
+    if en_passant!(state) {
+        let en_passant = parts[part_index];
+        part_index += 1;
+        state.en_passant_square = if en_passant == "-" {
+            u32::MAX
+        } else {                                                                /* enpassant square is a bit different*/
+            let file = en_passant[0..2].parse::<u8>()
+                .unwrap_or_else(
+                    |_| panic!(
+                        "Invalid en passant file: {}", en_passant[0..2].trim()  /* xxyyppqq -> [filefilerankrank; 2]  */
+                    )
+                );                                                              /* x and y are capturing square       */
+            let rank = en_passant[2..4].parse::<u8>()
+                .unwrap_or_else(
+                    |_| panic!(
+                        "Invalid en passant rank: {}", en_passant[2..4].trim()
+                    )                                                           /* p and q are captured piece square  */
+                );
+
+            let p_file = en_passant[4..6].parse::<u8>()
+                .unwrap_or_else(
+                    |_| panic!(
+                        "Invalid en passant file: {}", en_passant[4..6].trim()  /* xxyyppqq -> [filefilerankrank; 2]  */
+                    )
+                );                                                              /* x and y are capturing square       */
+            let p_rank = en_passant[6..8].parse::<u8>()
+                .unwrap_or_else(
+                    |_| panic!(
+                        "Invalid en passant rank: {}", en_passant[6..8].trim()  /* p and q are captured piece square  */
+                    )
+                );
+            let piece_index = u32::from_str_radix(&en_passant[8..10], 16)
+                .unwrap_or_else(                                                /* last 2 digit hex num is piece indx */
+                    |_| panic!(
+                        "Invalid en passant rank: {}", en_passant[8..10].trim()
+                    )
+                );
+
+            let square_index =
+                (rank as u32) * (state.files as u32) + (file as u32);
+            let piece_square_index =
+                (p_rank as u32) * (state.files as u32) + (p_file as u32);
+
+            square_index | (piece_square_index << 12) | piece_index << 24
+        };
     }
-    if castling.contains('k') {
-        state.castling_state |= BK_CASTLE;
-    }
-    if castling.contains('q') {
-        state.castling_state |= BQ_CASTLE;
-    }
 
-    let en_passant = parts[3];
-    state.en_passant_square = if en_passant == "-" {
-        u32::MAX
-    } else {                                                                    /* enpassant square is a bit different*/
-        let file = en_passant[0..2].parse::<u8>()
+    if parts.len() > part_index {
+        state.halfmove_clock = parts[part_index].parse()
             .unwrap_or_else(
                 |_| panic!(
-                    "Invalid en passant file: {}", en_passant[0..2].trim()      /* xxyyppqq -> [filefilerankrank; 2]  */
+                    "Invalid halfmove clock: {}", parts[part_index].trim()
                 )
-            );                                                                  /* x and y are capturing square       */
-        let rank = en_passant[2..4].parse::<u8>()
-            .unwrap_or_else(
-                |_| panic!(
-                    "Invalid en passant rank: {}", en_passant[2..4].trim()
-                )                                                               /* p and q are captured piece square  */
-            );
-
-        let piece_file = en_passant[4..6].parse::<u8>()
-            .unwrap_or_else(
-                |_| panic!(
-                    "Invalid en passant file: {}", en_passant[4..6].trim()      /* xxyyppqq -> [filefilerankrank; 2]  */
-                )
-            );                                                                  /* x and y are capturing square       */
-        let piece_rank = en_passant[6..8].parse::<u8>()
-            .unwrap_or_else(
-                |_| panic!(
-                    "Invalid en passant rank: {}", en_passant[6..8].trim()      /* p and q are captured piece square  */
-                )
-            );
-        let piece_index = u32::from_str_radix(&en_passant[8..10], 16)
-            .unwrap_or_else(                                                    /* last 2 digit hex num is piece indx */
-                |_| panic!(
-                    "Invalid en passant rank: {}", en_passant[8..10].trim()
-                )
-            );
-
-        let square_index = (rank as u32) * (state.files as u32) + (file as u32);
-        let piece_square_index =
-            (piece_rank as u32) * (state.files as u32) + (piece_file as u32);
-
-        square_index | (piece_square_index << 12) | piece_index << 24
-    };
-
-    if parts.len() >= 5 {
-        state.halfmove_clock = parts[4].parse()
-            .unwrap_or_else(
-                |_| panic!("Invalid halfmove clock: {}", parts[4].trim())
             );
     }
 
@@ -670,50 +795,71 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
         )
     );
 
-
     if verbose {
         result.push_str(
             &format!("\nPosition hash\t: {:32X}\n", state.position_hash)
         );
         result.push_str(
             &format!(
-                "Current move\t: {}\n",
+                "Side to move\t: {}\n",
                 if state.playing == WHITE { "White" } else { "Black" }
             )
         );
 
-        result.push_str(&format!("Castling rights\t: {}\n", {
-            let mut rights = String::new();
-            if state.castling_state & WK_CASTLE != 0 { rights.push('K'); }
-            if state.castling_state & WQ_CASTLE != 0 { rights.push('Q'); }
-            if state.castling_state & BK_CASTLE != 0 { rights.push('k'); }
-            if state.castling_state & BQ_CASTLE != 0 { rights.push('q'); }
-            if rights.is_empty() { "-".to_string() } else { rights }
-        }));
+        if castling!(state) {
+            result.push_str(&format!("Castling rights\t: {}\n", {
+                let mut rights = String::new();
+                if state.castling_state & WK_CASTLE != 0 { rights.push('K'); }
+                if state.castling_state & WQ_CASTLE != 0 { rights.push('Q'); }
+                if state.castling_state & BK_CASTLE != 0 { rights.push('k'); }
+                if state.castling_state & BQ_CASTLE != 0 { rights.push('q'); }
+                if rights.is_empty() { "-".to_string() } else { rights }
+            }));
+        }
 
-        result.push_str(&format!("En passant\t: {}\n",
-            if state.en_passant_square == u32::MAX {
-                "-".to_string()
-            } else {
-                format_square(
-                    (state.en_passant_square & 0xFFF) as u16, state
-                )
-            }
-        ));
+        if en_passant!(state) {
+            result.push_str(&format!("En passant\t: {}\n",
+                if state.en_passant_square == u32::MAX {
+                    "-".to_string()
+                } else {
+                    format_square(
+                        (state.en_passant_square & 0xFFF) as u16, state
+                    )
+                }
+            ));
+        }
 
         result.push_str(
             &format!("Halfmove clock\t: {}\n", state.halfmove_clock)
         );
+
+        if drops!(state) || promote_to_captured!(state) {
+            let pieces_in_white = &state.piece_in_hand[WHITE as usize];
+            let pieces_in_black = &state.piece_in_hand[BLACK as usize];
+
+            result.push_str("White's hand\t: ");
+            for (i, piece) in state.pieces.iter().enumerate() {
+                let count = pieces_in_white[i];
+                if count > 0 {
+                    result.push_str(&format!("{}x{} ", count, piece.char));
+                }
+            }
+
+            result.push_str("\nBlack's hand\t: ");
+            for (i, piece) in state.pieces.iter().enumerate() {
+                let count = pieces_in_black[i];
+                if count > 0 {
+                    result.push_str(&format!("{}x{} ", count, piece.char));
+                }
+            }
+        }
     }
 
+    result.push('\n');
     result
 }
 
 /// Formats all piece types in the game state as tables.
-///
-/// Creates tables with box-drawing characters, each table containing up to 6
-/// pieces.
-/// If there are more than 6 piece types, additional tables are created.
 ///
 /// Each column represents one piece with the following rows:
 /// Name, Index, Symbol, Color, Value, Royal, Can Promote, Major, Promotes From
@@ -726,23 +872,33 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
 ///
 /// A formatted string containing one or more piece type tables.
 pub fn format_piece_types(state: &State) -> String {
-    let headers = vec![
+    let mut headers = vec![
         "Name",
         "Index",
         "Symbol",
         "Color",
         "Value",
         "Royal",
-        "Promote",
         "Major",
-        "Promo From"
     ];
 
+    if count_limits!(state) {
+        headers.push("Count Limit");
+    }
+
+    if promotions!(state) {
+        headers.push("Can Promote");
+        headers.push("Promotes From");
+    }
+
     let mut result = String::new();
-    let pieces_per_table = 6;
+    let mut pieces_per_table = state.pieces.len();
+    while pieces_per_table > 9 {
+        pieces_per_table = pieces_per_table.div_ceil(2);
+    }
     let num_tables = state.pieces.len().div_ceil(pieces_per_table);
 
-    const HEADER_WIDTH: usize = 10;
+    const HEADER_WIDTH: usize = 16;
     const PIECE_WIDTH: usize = 12;
 
     for table_idx in 0..num_tables {
@@ -755,51 +911,25 @@ pub fn format_piece_types(state: &State) -> String {
         let mut piece_columns: Vec<Vec<String>> = Vec::new();
 
         for piece_idx in start_idx..end_idx {
-            let formatted = format_piece(&state.pieces[piece_idx]);
+            let formatted = format_piece(&state.pieces[piece_idx], state);
             let lines: Vec<&str> = formatted.lines().collect();
 
             let mut piece_data = Vec::new();
-            for line in lines.iter().skip(1).take(9) {
+            let data_lines: Vec<_> = lines
+                .iter()
+                .filter(
+                    |line|
+                    line.trim_start().starts_with('│') &&
+                    line.trim_end().ends_with('│')
+                )
+                .collect();
+
+            for line in data_lines {
                 let content = line
-                    .trim_start_matches("│ ").trim_end_matches(" │");
+                    .trim_start_matches("│ ")
+                    .trim_end_matches(" │");
                 piece_data.push(content.to_string());
             }
-
-            let mut promo_from_symbols = Vec::new();
-            for other_piece in state.pieces.iter() {
-                let promotion_count = (
-                    other_piece.promotions & bnum::types::U2048::from(0xFFu8)
-                )
-                    .to_string()
-                    .parse::<usize>()
-                    .expect(
-                        "Failed to parse promotion count"
-                    );
-
-                for i in 0..promotion_count {
-                    let target_idx = (
-                        (other_piece.promotions >> (
-                            (i + 1) * 8)
-                        ) & bnum::types::U2048::from(0xFFu8)
-                    )
-                        .to_string()
-                        .parse::<u8>()
-                        .expect(
-                            "Failed to parse promotion target index"
-                        );
-
-                    if target_idx == piece_idx as u8 {
-                        promo_from_symbols.push(other_piece.char);
-                        break;
-                    }
-                }
-            }
-
-            piece_data[8] = if promo_from_symbols.is_empty() {
-                "-".to_string()
-            } else {
-                promo_from_symbols.iter().collect::<String>()
-            };
 
             piece_columns.push(piece_data);
         }
@@ -815,7 +945,7 @@ pub fn format_piece_types(state: &State) -> String {
         }
         result.push_str("╗\n");
 
-        for row_idx in 0..9 {
+        for row_idx in 0..headers.len() {
             result.push('║');
 
             result.push_str(&format!(" {:<HEADER_WIDTH$} ", headers[row_idx]));
@@ -832,7 +962,7 @@ pub fn format_piece_types(state: &State) -> String {
 
             result.push_str("║\n");
 
-            if row_idx < 8 {
+            if row_idx < headers.len() - 1 {
                 result.push('╟');
                 result.push_str(&"─".repeat(HEADER_WIDTH + 2));
                 result.push('┼');
@@ -862,103 +992,275 @@ pub fn format_piece_types(state: &State) -> String {
         }
     }
 
+    result.push('\n');
     result
 }
 
 fn format_promotion_zones(state: &State) -> String {
     let mut result = String::new();
+    let mut seen_names = HashSet::new();
 
     for piece in &state.pieces {
-        if p_can_promote!(piece) {
-            let mandatory_zone = format_board(
-                &state.promotion_zones_mandatory[p_index!(piece) as usize],
-                piece.char.into()
-            );
-            let optional_zone = format_board(
-                &state.promotion_zones_optional[p_index!(piece) as usize],
-                piece.char.into()
-            );
-
-            let mandatory_lines: Vec<&str> = mandatory_zone.lines().collect();
-            let optional_lines: Vec<&str> = optional_zone.lines().collect();
-            let max_lines = mandatory_lines.len().max(optional_lines.len());
-
-            result.push_str(&format!(
-                "Promotion zones for {} ({}):\n", piece.name, piece.char
-            ));
-            result.push_str(
-                &format!("{:<width$}{}\n",
-                    "Mandatory Zone",
-                    "Optional Zone",
-                    width = mandatory_lines.iter().map(
-                        |l| l.chars().count()
-                    ).max().unwrap_or(0) + 4
-                )
-            );
-
-            for i in 0..max_lines {
-                let left = mandatory_lines.get(i).unwrap_or(&"");
-                let right = optional_lines.get(i).unwrap_or(&"");
-                let width = left.chars().count().max(right.chars().count()) + 4;
-                result.push_str(
-                    &format!("{:<width$}{}\n", left, right, width = width)
-                );
-            }
-            result.push('\n');
+        if !p_can_promote!(piece) || !seen_names.insert(piece.name.clone()) {
+            continue;
         }
-    }
 
+        let white = state.pieces
+            .iter().find(|p| p.name == piece.name && p_color!(p) == WHITE);
+        let black = state.pieces
+            .iter().find(|p| p.name == piece.name && p_color!(p) == BLACK);
+
+        let (w_label, w_mand, w_opt) = if let Some(w) = white {
+            let mand = &state.promotion_zones_mandatory[p_index!(w) as usize];
+            let opt = &state.promotion_zones_optional[p_index!(w) as usize];
+            (
+                format!("White ({})", w.char),
+                if mand.2 == U4096::ZERO { "".to_string() }
+                else { format_board(mand, Some(w.char)) },
+                if opt.2 == U4096::ZERO { "".to_string() }
+                else { format_board(opt, Some(w.char)) },
+            )
+        } else {
+            ("White (-)".to_string(), "".to_string(), "".to_string())
+        };
+
+        let (b_label, b_mand, b_opt) = if let Some(b) = black {
+            let mand = &state.promotion_zones_mandatory[p_index!(b) as usize];
+            let opt = &state.promotion_zones_optional[p_index!(b) as usize];
+            (
+                format!("Black ({})", b.char),
+                if mand.2 == U4096::ZERO { "".to_string() }
+                else { format_board(mand, Some(b.char)) },
+                if opt.2 == U4096::ZERO { "".to_string() }
+                else { format_board(opt, Some(b.char)) },
+            )
+        } else {
+            ("Black (-)".to_string(), "".to_string(), "".to_string())
+        };
+
+        if w_label == "White (-)" && b_label == "Black (-)" {
+            continue;
+        }
+
+        let w_mand_lines: Vec<_> = w_mand.lines().collect();
+        let w_opt_lines: Vec<_> = w_opt.lines().collect();
+        let b_mand_lines: Vec<_> = b_mand.lines().collect();
+        let b_opt_lines: Vec<_> = b_opt.lines().collect();
+
+        let max_lines = [
+            w_mand_lines.len(),
+            w_opt_lines.len(),
+            b_mand_lines.len(),
+            b_opt_lines.len(),
+        ]
+        .into_iter()
+        .max()
+        .unwrap();
+
+        let board_width = state.files as usize * 4 + 4;
+
+        if !w_mand_lines.is_empty()
+        || !b_mand_lines.is_empty()
+        || !w_opt_lines.is_empty()
+        || !b_opt_lines.is_empty()
+        {
+            result.push_str(&format!(
+                "{:^width$}\n",
+                format!("Promotion Zones for the {}\n", piece.name),
+                width = board_width * 2 + 8
+            ));
+            result.push_str(&format!(
+                "   {:<label_width$}    {:<label_width$}",
+                w_label, b_label, label_width = board_width + 2
+            ));
+        }
+        if !w_mand_lines.is_empty() || !b_mand_lines.is_empty() {
+            result.push_str(&format!(
+            "\n   {:<label_width$}    {:<label_width$}\n",
+            "Mandatory", "Mandatory", label_width = board_width + 2
+            ));
+            for i in 0..max_lines {
+                let wl = w_mand_lines.get(i).unwrap_or(&"");
+                let bl = b_mand_lines.get(i).unwrap_or(&"");
+                result.push_str(&format!(
+                    "{:<label_width$}    {:<label_width$}\n",
+                    wl, bl, label_width = board_width + 2
+                ));
+            }
+        }
+
+        if !w_opt_lines.is_empty() || !b_opt_lines.is_empty() {
+            result.push_str(&format!(
+            "\n   {:<label_width$}    {:<label_width$}\n",
+            "Optional", "Optional", label_width = board_width + 2
+            ));
+            for i in 0..max_lines {
+                let wl = w_opt_lines.get(i).unwrap_or(&"");
+                let bl = b_opt_lines.get(i).unwrap_or(&"");
+                result.push_str(&format!(
+                    "{:<label_width$}    {:<label_width$}\n",
+                    wl, bl, label_width = board_width + 2
+                ));
+            }
+        }
+        result.push('\n');
+    }
     result
 }
 
 fn format_intial_setup(state: &State) -> String {
     let mut result = String::new();
+    let mut seen_names = HashSet::new();
 
     for piece in &state.pieces {
-        let piece_setup = state.initial_setup[p_index!(piece) as usize];
-
-        if piece_setup.2 == U4096::ZERO {
+        if !seen_names.insert(piece.name.clone()) {
             continue;
         }
 
-        let setup_board = format_board(
-            &piece_setup,
-            piece.char.into()
-        );
+        if state.initial_setup[p_index!(piece) as usize].2 == U4096::ZERO {
+            continue;
+        }
+
+        let white = state.pieces
+            .iter().find(|p| p.name == piece.name && p_color!(p) == WHITE);
+        let black = state.pieces
+            .iter().find(|p| p.name == piece.name && p_color!(p) == BLACK);
+
+        let (w_label, w_board) = if let Some(w) = white {
+            (
+                format!("White ({})", w.char),
+                format_board(
+                    &state.initial_setup[p_index!(w) as usize], Some(w.char)
+                ),
+            )
+        } else {
+            ("White (-)".to_string(), "".to_string())
+        };
+        let (b_label, b_board) = if let Some(b) = black {
+            (
+                format!("Black ({})", b.char),
+                format_board(
+                    &state.initial_setup[p_index!(b) as usize], Some(b.char)
+                ),
+            )
+        } else {
+            ("Black (-)".to_string(), "".to_string())
+        };
+
+        let w_lines: Vec<_> = w_board.lines().collect();
+        let b_lines: Vec<_> = b_board.lines().collect();
+        let max_lines = w_lines.len().max(b_lines.len());
+
+        let board_width = state.files as usize * 4 + 4;
 
         result.push_str(&format!(
-            "Initial setup for {} ({}):\n", piece.name, piece.char
+            "{:^width$}\n",
+            format!("Initial Setup for the {}\n", piece.name),
+            width = board_width * 2 + 8
         ));
-        result.push_str(&setup_board);
+        result.push_str(&format!(
+            "   {:<label_width$}    {:<label_width$}\n",
+            w_label, b_label, label_width = board_width + 2
+        ));
+        for i in 0..max_lines {
+            let wl = w_lines.get(i).unwrap_or(&"");
+            let bl = b_lines.get(i).unwrap_or(&"");
+            result.push_str(&format!(
+            "{:<label_width$}    {:<label_width$}\n",
+            wl, bl, label_width = board_width + 2
+            ));
+        }
         result.push('\n');
     }
-
     result
 }
 
 fn format_forbidden_zones(state: &State) -> String {
     let mut result = String::new();
+    let mut seen_names = HashSet::new();
 
     for piece in &state.pieces {
-        let forbidden_zone = state.forbidden_zones[p_index!(piece) as usize];
-
-        if forbidden_zone.2 == U4096::ZERO {
+        if !seen_names.insert(piece.name.clone()) {
             continue;
         }
 
-        let forbidden_board = format_board(
-            &forbidden_zone,
-            Some('X')
-        );
+        let white = state.pieces.iter().find(|p| p.name == piece.name && p_color!(p) == WHITE);
+        let black = state.pieces.iter().find(|p| p.name == piece.name && p_color!(p) == BLACK);
+
+        let (w_label, w_board) = if let Some(w) = white {
+            let forbidden_zone = &state.forbidden_zones[p_index!(w) as usize];
+            if forbidden_zone.2 == U4096::ZERO {
+                ("White (-)".to_string(), "".to_string())
+            } else {
+                (
+                    format!("White ({})", w.char),
+                    format_board(forbidden_zone, Some('X'))
+                )
+            }
+        } else {
+            ("White (-)".to_string(), "".to_string())
+        };
+
+        let (b_label, b_board) = if let Some(b) = black {
+            let forbidden_zone = &state.forbidden_zones[p_index!(b) as usize];
+            if forbidden_zone.2 == U4096::ZERO {
+                ("Black (-)".to_string(), "".to_string())
+            } else {
+                (
+                    format!("Black ({})", b.char),
+                    format_board(forbidden_zone, Some('X'))
+                )
+            }
+        } else {
+            ("Black (-)".to_string(), "".to_string())
+        };
+
+        if w_label == "White (-)" && b_label == "Black (-)" {
+            continue;
+        }
+
+        let w_lines: Vec<_> = w_board.lines().collect();
+        let b_lines: Vec<_> = b_board.lines().collect();
+        let max_lines = w_lines.len().max(b_lines.len());
+
+        let board_width = state.files as usize * 4 + 4;
 
         result.push_str(&format!(
-            "Forbidden zones for {} ({}):\n", piece.name, piece.char
+            "{:^width$}\n",
+            format!("Forbidden Zones for the {}\n", piece.name),
+            width = board_width * 2 + 8
         ));
-        result.push_str(&forbidden_board);
+        result.push_str(&format!(
+            "   {:<label_width$}    {:<label_width$}\n",
+            w_label, b_label, label_width = board_width + 2
+        ));
+        for i in 0..max_lines {
+            let wl = w_lines.get(i).unwrap_or(&"");
+            let bl = b_lines.get(i).unwrap_or(&"");
+            result.push_str(&format!(
+                "{:<label_width$}    {:<label_width$}\n",
+                wl, bl, label_width = board_width + 2
+            ));
+        }
         result.push('\n');
     }
-
     result
+}
+
+fn format_special_rules(state: &State) -> String {
+    if state.special_rules == 0 {
+        "".to_string()
+    } else {
+        let mut rules = Vec::new();
+        if castling!(state) { rules.push("Castling"); }
+        if en_passant!(state) { rules.push("En Passant"); }
+        if promotions!(state) { rules.push("Promotions"); }
+        if drops!(state) { rules.push("Drops"); }
+        if count_limits!(state) { rules.push("Count Limits"); }
+        if forbidden_zones!(state) { rules.push("Forbidden Zones"); }
+        if promote_to_captured!(state) { rules.push("Promote to Captured"); }
+        rules.join(", ")
+    }
 }
 
 pub fn format_entire_game(state: &State) -> String {
@@ -967,25 +1269,13 @@ pub fn format_entire_game(state: &State) -> String {
     result.push_str(
         &format!("{} ({}x{})\n", state.title, state.files, state.ranks)
     );
-    result.push_str(&format!("Special rules: {}\n",
-        if state.special_rules == 0 {
-            "None".to_string()
-        } else {
-            let mut rules = Vec::new();
-            if promotions!(state) { rules.push("Promotions"); }
-            if drops!(state) { rules.push("Drops"); }
-            if count_limits!(state) { rules.push("Count Limits"); }
-            if forbidden_zones!(state) { rules.push("Forbidden Zones"); }
-            rules.join(", ")
-        }
-    ));
-    result.push_str("\n---------- Piece Types\n");
+    result.push_str(
+        &format!("Special rules: {}\n\n", format_special_rules(state))
+    );
     result.push_str(&format_piece_types(state));
-    result.push_str("\n---------- Static Parameters\n");
     result.push_str(&format_promotion_zones(state));
     result.push_str(&format_forbidden_zones(state));
     result.push_str(&format_intial_setup(state));
-    result.push_str("\n---------- Initial Position\n");
     result.push_str(&format_game_state(state, true));
 
     result

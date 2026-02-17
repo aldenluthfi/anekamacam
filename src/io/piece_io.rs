@@ -12,9 +12,19 @@
 //! 25/01/2026
 
 use crate::game::representations::piece::Piece;
-use crate::{constants::*, p_can_promote, p_color, p_index, p_is_major, p_is_royal, p_value};
+use crate::game::representations::state::State;
+use crate::{
+    constants::*,
+    count_limits,
+    p_can_promote,
+    p_color,
+    p_index,
+    p_is_major,
+    p_is_royal,
+    p_value, promotions
+};
 
-/// Formats a piece as a column vector with 9 rows of information.
+/// Formats a piece as a column vector with 9-10 rows of information.
 ///
 /// Returns a String formatted as a table column with box-drawing characters:
 /// - Row 0: Piece name
@@ -25,8 +35,10 @@ use crate::{constants::*, p_can_promote, p_color, p_index, p_is_major, p_is_roya
 /// - Row 5: Royal status ("*" if royal, empty otherwise)
 /// - Row 6: Promotion ability ("*" if can promote, empty otherwise)
 /// - Row 7: Major piece status ("*" if major, empty otherwise)
-/// - Row 8: Placeholder for promotion from (handled by format_piece_types)
-pub fn format_piece(piece: &Piece) -> String {
+/// - Row 8: Piece count limit (if applicable, otherwise non-existent)
+/// - Row 9: Can Promote (if applicable, otherwise non-existent)
+/// - Row 10: Promotes From (if applicable, otherwise non-existent)
+pub fn format_piece(piece: &Piece, state: &State) -> String {
     let mut rows = Vec::with_capacity(9);
 
     rows.push(piece.name.clone());
@@ -41,9 +53,24 @@ pub fn format_piece(piece: &Piece) -> String {
         p_value!(piece).to_string()
     });
     rows.push(if p_is_royal!(piece) { "*" } else { "" }.to_string());
-    rows.push(if p_can_promote!(piece) { "*" } else { "" }.to_string());
     rows.push(if p_is_major!(piece) { "*" } else { "" }.to_string());
-    rows.push("-".to_string());                                                 /* Placeholder for "promotion from"   */
+    if count_limits!(state) {
+        rows.push(state.piece_limit[p_index!(piece) as usize].to_string());
+    }
+    if promotions!(state) {
+        rows.push(if p_can_promote!(piece) { "*" } else { "" }.to_string());
+        rows.push(
+            if !state.piece_demotion_map.contains_key(&p_index!(piece)) {
+                "-".to_string()
+            } else {
+                state.piece_demotion_map.get(&p_index!(piece))
+                .unwrap()
+                .iter()
+                .map(|piece_idx| state.pieces[*piece_idx as usize].char)
+                .collect::<String>()
+            }
+        );
+    }
 
     const FIXED_WIDTH: usize = 12;
 

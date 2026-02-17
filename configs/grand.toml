@@ -1,12 +1,12 @@
-title="Capablanca Chess"
-initial_position="ranbqkbncr/pppppppppp/10/10/10/10/PPPPPPPPPP/RANBQKBNCR w KQkq -"
+title="Grand Chess"
+initial_position="r8r/1nbqkcabn1/pppppppppp/10/10/10/10/PPPPPPPPPP/1NBQKCABN1/R8R w -"
 files=10
-ranks=8
+ranks=10
 
 [special_rules]
-castling=true
 en_passant=true
 promotions=true
+promote_to_captured=true
 
 [[pieces]]
 name="Pawn"
@@ -73,17 +73,8 @@ royal=false
 
 [[pieces]]
 name="King"
-charset="K_"
-movement="K|O{5}{2}|o{4}{1}"
-value=inf
-big=true
-major=false
-royal=true
-
-[[pieces]]
-name="King"
-charset="_k"
-movement="K|o{5}{2}|O{4}{1}"
+charset="Kk"
+movement="K"
 value=inf
 big=true
 major=false
@@ -94,13 +85,13 @@ P="RNBQAC"
 p="rbnqac"
 
 [promotion_zones_mandatory]
-P="XXXXXXXXXX/10/10/10/10/10/10/10"
-p="10/10/10/10/10/10/10/XXXXXXXXXX"
+P="XXXXXXXXXX/10/10/10/10/10/10/10/10/10"
+p="10/10/10/10/10/10/10/10/10/XXXXXXXXXX"
+
+[promotion_zones_optional]
+P="XXXXXXXXXX/XXXXXXXXXX/XXXXXXXXXX/10/10/10/10/10/10/10"
+p="10/10/10/10/10/10/10/XXXXXXXXXX/XXXXXXXXXX/XXXXXXXXXX"
 
 [initial_setup]
-K="10/10/10/10/10/10/10/5X4"
-k="5X4/10/10/10/10/10/10/10"
-P="10/10/10/10/10/10/XXXXXXXXXX/10"
-p="10/XXXXXXXXXX/10/10/10/10/10/10"
-R="10/10/10/10/10/10/10/X8X"
-r="X8X/10/10/10/10/10/10/10"
+P="10/10/10/10/10/10/10/XXXXXXXXXX/10/10"
+p="10/10/XXXXXXXXXX/10/10/10/10/10/10/10"
