@@ -33,9 +33,13 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let mut state = parse_config_file("configs/fide.toml");
+    let variant = "grand";
+    let config_path = format!("configs/{}.toml", variant);
+    let perft_path = format!("res/{}.perft", variant);
+
+    let mut state = parse_config_file(&config_path);
 
     println!("{}", format_entire_game(&state));
 
-    start_perft(&mut state, "res/fide-kiwipete.perft", 6, false, Some(0));
+    start_perft(&mut state, &perft_path, 6, false, Some(0));
 }

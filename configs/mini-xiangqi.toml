@@ -1,0 +1,56 @@
+title="Mini Xianqi"
+initial_position="rchkhcr/p1ppp1p/7/7/7/P1PPP1P/RCHKHCR w"
+files=7
+ranks=7
+
+[special_rules]
+forbidden_zones=true
+
+[[pieces]]
+name="Pawn"
+charset="Pp"
+movement="n+e+wW"
+value=2000
+big=true
+major=false
+royal=false
+
+[[pieces]]
+name="Cannon"
+charset="Cc"
+movement="cdR-u#-cnR|mR"
+value=5000
+big=true
+major=true
+royal=false
+
+[[pieces]]
+name="Chariot"
+charset="Rr"
+movement="R"
+value=5000
+big=true
+major=true
+royal=false
+
+[[pieces]]
+name="Knight"
+charset="Hh"
+movement="W-nF"
+value=3000
+big=true
+major=false
+royal=false
+
+[[pieces]]
+name="General"
+charset="Kk"
+movement="W|kc<v!vW-{2..6}>"
+value=inf
+big=true
+major=false
+royal=true
+
+[forbidden_zones]
+K = "XXXXXXX/XXXXXXX/XXXXXXX/XXXXXXX/XX3XX/XX3XX/XX3XX"
+k = "XX3XX/XX3XX/XX3XX/XXXXXXX/XXXXXXX/XXXXXXX/XXXXXXX"

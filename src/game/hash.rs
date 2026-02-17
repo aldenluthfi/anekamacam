@@ -44,6 +44,19 @@ lazy_static! {
 
             result
         };
+
+    pub static ref DROP_HASHES: Vec<[u128; MAX_SQUARES]>
+        = {
+            let mut result: Vec<[u128; MAX_SQUARES]> =
+                Vec::with_capacity(256);
+
+            for _ in 0..256 {
+                let drop_hashes = [random_u128(); MAX_SQUARES];
+                result.push(drop_hashes);
+            }
+
+            result
+        };
 }
 
 /// Computes the Zobrist hash for the given game state.
@@ -64,6 +77,15 @@ pub fn hash_position(state: &State) -> u128 {
     for (index, piece_positions) in state.piece_list.iter().enumerate() {
         for &square in piece_positions {
             hash ^= &PIECE_HASHES[index][square as usize];
+        }
+    }
+
+    for color in [WHITE, BLACK] {
+        for (index, &count) in state.piece_in_hand[color as usize]
+            .iter()
+            .enumerate()
+        {
+            hash ^= &DROP_HASHES[index][count as usize];
         }
     }
 

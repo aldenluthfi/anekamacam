@@ -4,10 +4,12 @@ files=8
 ranks=8
 
 [special_rules]
-promotion=true
+castling=true
+en_passant=true
+promotions=true
 
 [[pieces]]
-name="Berolina Pawn"
+name="Berolina"
 charset="Pp"
 movement="mnF|im<nF-pnW>|tcnW"
 value=1200
@@ -46,7 +48,7 @@ royal=false
 name="Queen"
 charset="Qq"
 movement="Q"
-value=3000
+value=9000
 big=true
 major=true
 royal=false

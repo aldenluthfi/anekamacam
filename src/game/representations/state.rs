@@ -12,6 +12,8 @@
 //! # Date
 //! 25/01/2025
 
+use std::collections::HashMap;
+
 use crate::{
     board, constants::*,
     game::{
@@ -24,7 +26,7 @@ use crate::{
         representations::{
             board::Board,
             moves::{AttackMask, Move},
-            piece::Piece,
+            piece::{Piece},
             vector::{Leg, LegVector, MoveSet},
         },
     },
@@ -40,58 +42,114 @@ pub type Square = u16;
 \*----------------------------------------------------------------------------*/
 
 #[macro_export]
-macro_rules! promotions {
+macro_rules! castling {
     ($state:expr) => {
         ($state.special_rules & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_promotions {
+macro_rules! enc_castling {
     ($rules:expr) => {
         $rules |= 1;
     };
 }
 
 #[macro_export]
-macro_rules! drops {
+macro_rules! en_passant {
     ($state:expr) => {
         ($state.special_rules >> 1 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_drops {
+macro_rules! enc_en_passant {
     ($rules:expr) => {
         $rules |= 1 << 1;
     };
 }
 
 #[macro_export]
-macro_rules! count_limits {
+macro_rules! promotions {
     ($state:expr) => {
         ($state.special_rules >> 2 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_count_limits {
+macro_rules! enc_promotions {
     ($rules:expr) => {
         $rules |= 1 << 2;
     };
 }
 
 #[macro_export]
-macro_rules! forbidden_zones {
+macro_rules! drops {
     ($state:expr) => {
         ($state.special_rules >> 3 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_forbidden_zones {
+macro_rules! enc_drops {
     ($rules:expr) => {
         $rules |= 1 << 3;
+    };
+}
+
+#[macro_export]
+macro_rules! count_limits {
+    ($state:expr) => {
+        ($state.special_rules >> 4 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_count_limits {
+    ($rules:expr) => {
+        $rules |= 1 << 4;
+    };
+}
+
+#[macro_export]
+macro_rules! forbidden_zones {
+    ($state:expr) => {
+        ($state.special_rules >> 5 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_forbidden_zones {
+    ($rules:expr) => {
+        $rules |= 1 << 5;
+    };
+}
+
+#[macro_export]
+macro_rules! promote_to_captured {
+    ($state:expr) => {
+        ($state.special_rules >> 6 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_promote_to_captured {
+    ($rules:expr) => {
+        $rules |= 1 << 6;
+    };
+}
+
+#[macro_export]
+macro_rules! demote_upon_capture {
+    ($state:expr) => {
+        ($state.special_rules >> 7 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_demote_upon_capture {
+    ($rules:expr) => {
+        $rules |= 1 << 7;
     };
 }
 
@@ -157,11 +215,15 @@ impl Default for Snapshot {
 /// The special rules field is a bitmask representing enabled special rules.
 ///
 /// The bits are defined as follows:
-/// - bit 0: Promotions allowed
-/// - bit 1: Drops allowed
-/// - bit 2: Some pieces have a count limit
-/// - bit 3: Some pieces have forbidden zones
-/// - but 4-31: reserved for future use
+/// - bit 0: castling allowed
+/// - bit 1: en passant allowed
+/// - bit 2: Promotions allowed
+/// - bit 3: Drops allowed
+/// - bit 4: Some pieces have a count limit
+/// - bit 5: Some pieces have forbidden zones
+/// - bit 6: Can only promote to captured pieces
+/// - bit 7: Demote piece in hand upon capture
+/// - but 8-31: reserved for future use
 ///
 pub struct State {
 
@@ -186,6 +248,8 @@ pub struct State {
     pub relevant_moves: Vec<Vec<MoveSet>>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub piece_moves: Vec<MoveSet>,
+    pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
+    pub piece_demotion_map: HashMap<u8, Vec<u8>>,                               /* piece index to demotion piece idx  */
 
 /*----------------------------------------------------------------------------*\
                                  DYNAMIC FIELDS
@@ -216,7 +280,7 @@ pub struct State {
 
     pub piece_count: Vec<u32>,                                                  /* piece index to count               */
     pub piece_list: Vec<Vec<Square>>,                                           /* piece index to square list         */
-    pub piece_in_hand: [Vec<u8>; 2],                                            /* color to pieces in hand list       */
+    pub piece_in_hand: [Vec<u16>; 2],                                           /* color to pieces in hand list       */
 }
 
 impl State {
@@ -241,7 +305,7 @@ impl State {
             forbidden_zones: vec![board!(files, ranks); piece_count],
             promotion_zones_optional: vec![board!(files, ranks); piece_count],
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
-            piece_limit: vec![u32::MAX; piece_count],
+            piece_limit: vec![0; piece_count],
 
             files,
             ranks,
@@ -251,6 +315,8 @@ impl State {
             relevant_attacks:
                 [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
             piece_moves: vec![MoveSet::new(); piece_count],
+            piece_swap_map: HashMap::new(),
+            piece_demotion_map: HashMap::new(),
 
             playing: WHITE,
             main_board: vec![NO_PIECE; (files as usize) * (ranks as usize)],
@@ -277,7 +343,7 @@ impl State {
 
             piece_count: vec![0u32; piece_count],
             piece_list: vec![Vec::new(); piece_count],
-            piece_in_hand: [Vec::new(), Vec::new()],
+            piece_in_hand: [vec![0; piece_count], vec![0; piece_count]],
         }
     }
 
@@ -310,7 +376,7 @@ impl State {
 
         self.piece_count = vec![0u32; piece_count];
         self.piece_list = vec![Vec::new(); piece_count];
-        self.piece_in_hand = [Vec::new(), Vec::new()];
+        self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
     }
 
     pub fn load_fen(&mut self, fen: &str) {

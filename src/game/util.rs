@@ -24,7 +24,7 @@ use crate::{
     board, constants::*, enp_square, game::{
         hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES},
         representations::state::State
-    }, io::board_io::{format_board, format_square}, or, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, set
+    }, io::board_io::{format_board, format_square}, or, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
 };
 
 lazy_static!{
@@ -73,6 +73,7 @@ pub fn verify_game_state(state: &State) {
     let mut temp_big_pieces = [0; 2];
     let mut temp_major_pieces = [0; 2];
     let mut temp_minor_pieces = [0; 2];
+    let mut temp_material = [0; 2];
 
     for (i, piece) in state.pieces.iter().enumerate() {
         let piece_indices = &state.piece_list[i];
@@ -87,6 +88,8 @@ pub fn verify_game_state(state: &State) {
             if p_is_minor!(piece) {
                 temp_minor_pieces[p_color!(piece) as usize] += 1;
             }
+
+            temp_material[p_color!(piece) as usize] += p_value!(piece) as u32;
         }
     }
 
@@ -106,6 +109,12 @@ pub fn verify_game_state(state: &State) {
         temp_minor_pieces,
         state.minor_pieces,
         "Computed minor pieces count doesn't match state minor pieces count"
+    );
+
+    assert_eq!(
+        temp_material,
+        state.material,
+        "Computed material count doesn't match state material count"
     );
 
     let mut temp_royal_list = [Vec::new(), Vec::new()];

@@ -89,23 +89,20 @@ macro_rules! p_castle_left {
 macro_rules! p_promotions {
     ($piece:expr) => {
         {
-            if !p_can_promote!($piece) {
-                return Vec::new();
-            }
 
             let promotions_count = (
                 $piece.promotions & U2048::from(0xFFu32)
             ).as_::<u8>();
 
-            if promotions_count == 0 {
-                return Vec::new();
+            if !p_can_promote!($piece) || promotions_count == 0 {
+                Vec::new()
+            } else {
+                (1..=promotions_count)
+                    .map(|i| (
+                        ($piece.promotions >> (i * 8)) & U2048::from(0xFFu32)
+                    ).as_::<usize>())
+                    .collect::<Vec<usize>>()
             }
-
-            (1..=promotions_count)
-                .map(|i| (
-                    ($piece.promotions >> (i * 8)) & U2048::from(0xFFu32)
-                ).as_::<usize>())
-                .collect::<Vec<usize>>()
         }
     };
 }

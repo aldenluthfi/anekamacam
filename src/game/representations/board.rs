@@ -3,12 +3,9 @@
 //! Defines a board structure and operations for bitboard manipulation.
 //!
 //! This file contains the implementation of a `Board`, which represents a board
-//! using a bitboard. The bitboard type is selected based on the board
-//! dimensions: u64 for standard 8x8 boards, U256 for boards up to 16x16, U1024
-//! for boards up to 32x32, and U4096 for larger boards. It provides methods
-//! for setting, clearing, and querying bits, as well as utility functions for
-//! bitboard manipulation such as finding the least significant bit (LSB), most
-//! significant bit (MSB), and counting set bits.
+//! using a bitboard. The bitboard type is  U4096 for larger boards. It provides
+//! macros for setting, clearing, and querying bits, as well as utility
+//! functions for bitboard manipulation.
 //!
 //! # Author
 //! Alden Luthfi
@@ -18,6 +15,8 @@
 
 use bnum::types::U4096;
 
+/// The board type is a triple with three entries, the first is the file count,
+/// followed by the rank count then the board itself.
 pub type Board = (u8, u8, U4096);
 
 #[macro_export]

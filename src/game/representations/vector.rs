@@ -1,3 +1,20 @@
+//! # vector.rs
+//!
+//! Implements move vector and leg representations for chess-like games.
+//!
+//! This file defines macros and types for representing move vectors, legs, and
+//! multi-leg move sequences, supporting complex movement rules and modifiers.
+//! It provides bitfield-based encoding for move modifiers (such as capture,
+//! unload, destroy, and various constraints), as well as structures for
+//! multi-leg and atomic move parsing. These abstractions enable flexible and
+//! efficient move generation for a wide variety of chess variants.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 12/02/2026
+
 use std::{collections::VecDeque, fmt::Debug};
 
 use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
@@ -12,6 +29,20 @@ macro_rules! leg {
         ($l.get_atomic().whole().0 as u8 as Leg) |
         ($l.get_atomic().whole().1 as u8 as Leg) << 8 |
         ($l.get_modifiers() as Leg) << 16
+    };
+}
+
+#[macro_export]
+macro_rules! enc_checkpoint {
+    ($l:expr) => {
+        $l |= 1 << 63;
+    };
+}
+
+#[macro_export]
+macro_rules! is_checkpoint {
+    ($l:expr) => {
+        ($l >> 63) & 1 == 1
     };
 }
 
@@ -141,8 +172,8 @@ macro_rules! r {
     };
 }
 
-/// A single leg move representation. Similar to LegVector but in u32 form.
-/// Only retaining the whole vector and modifier bits.
+/// A single leg move representation. Similar to LegVector but only retaining
+/// the whole vector and modifier bits.
 pub type Leg = u32;
 pub type MoveVector = Vec<Leg>;
 pub type MoveSet = Vec<MoveVector>;
