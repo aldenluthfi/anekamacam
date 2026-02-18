@@ -136,6 +136,7 @@ pub type PieceIndex = u8;
 pub struct Piece {
     pub name: String,
     pub movement: String,
+    pub drop: String,
     pub char: char,
 
     pub promotions: U2048,
@@ -199,9 +200,12 @@ impl Piece {
             encoded_piece |= 1 << 9;
         }
 
+        let drop = "#".to_string();
+
         Self {
             name,
             movement,
+            drop,
             char: symbol,
             promotions,
             encoded_piece,

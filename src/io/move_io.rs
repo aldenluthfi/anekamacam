@@ -1,13 +1,5 @@
 use crate::{
-    captured_piece, captured_square,
-    captured_unmoved, creates_enp, created_enp, end, is_unload,
-    move_type,
-    multi_move_captured_piece, multi_move_captured_square,
-    multi_move_captured_unmoved, multi_move_is_unload,
-    multi_move_unload_square, is_initial, piece,
-    promotion, promoted, start, unload_square,
-    game::representations::{moves::Move, state::State},
-    io::board_io::format_square,
+    captured_piece, captured_square, captured_unmoved, constants::DROP_MOVE, created_enp, creates_enp, end, game::representations::{moves::Move, state::State}, io::board_io::format_square, is_initial, is_unload, move_type, multi_move_captured_piece, multi_move_captured_square, multi_move_captured_unmoved, multi_move_is_unload, multi_move_unload_square, piece, promoted, promotion, start, unload_square
 };
 
 pub fn format_move_template(mv: &Move) -> String {
@@ -61,6 +53,19 @@ pub fn format_move(mv: &Move, state: &State) -> String {
     let start_square = start!(mv);
     let end_square = end!(mv);
     let mut promoted_piece = "".to_string();
+
+    let move_type = move_type!(mv);
+
+    if move_type == DROP_MOVE {
+        let piece_type = piece!(mv) as usize;
+        let result = format!(
+            "{}{}",
+            format_square(start_square as u16, state),
+            state.pieces[piece_type].char
+        );
+
+        return format!("{:<5}", result)
+    }
 
     if promotion!(mv) {
         let promoted_index = promoted!(mv) as usize;
