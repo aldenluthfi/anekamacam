@@ -13,6 +13,9 @@
 //! # Date
 //! 25/01/2026
 
+use std::fmt::Debug;
+
+use bnum::cast::As;
 use bnum::types::U2048;
 
 #[macro_export]
@@ -30,58 +33,58 @@ macro_rules! p_color {
 }
 
 #[macro_export]
-macro_rules! p_is_royal {
+macro_rules! p_can_promote {
     ($piece:expr) => {
         ($piece.encoded_piece & (1 << 9)) != 0
     };
 }
 
 #[macro_export]
-macro_rules! p_is_big {
+macro_rules! p_is_royal {
     ($piece:expr) => {
         ($piece.encoded_piece & (1 << 10)) != 0
     };
 }
 
 #[macro_export]
-macro_rules! p_can_promote {
-    ($piece:expr) => {
-        ($piece.encoded_piece & (1 << 10)) == 0
-    };
-}
-
-#[macro_export]
-macro_rules! p_is_major {
+macro_rules! p_is_big {
     ($piece:expr) => {
         ($piece.encoded_piece & (1 << 11)) != 0
     };
 }
 
 #[macro_export]
+macro_rules! p_is_major {
+    ($piece:expr) => {
+        ($piece.encoded_piece & (1 << 12)) != 0
+    };
+}
+
+#[macro_export]
 macro_rules! p_is_minor {
     ($piece:expr) => {
-        ($piece.encoded_piece & (1 << 11)) == 0
+        ($piece.encoded_piece & (1 << 12)) == 0
     };
 }
 
 #[macro_export]
 macro_rules! p_value {
     ($piece:expr) => {
-        (($piece.encoded_piece >> 12) & 0xFFFF) as u16
+        (($piece.encoded_piece >> 13) & 0xFFFF) as u16
     };
 }
 
 #[macro_export]
 macro_rules! p_castle_right {
     ($piece:expr) => {
-        ($piece.encoded_piece & (1 << 28)) != 0
+        ($piece.encoded_piece & (1 << 29)) != 0
     };
 }
 
 #[macro_export]
 macro_rules! p_castle_left {
     ($piece:expr) => {
-        ($piece.encoded_piece & (1 << 29)) != 0
+        ($piece.encoded_piece & (1 << 30)) != 0
     };
 }
 
@@ -115,14 +118,15 @@ pub type PieceIndex = u8;
 ///
 /// A piece is encoded in 32 bits:
 /// - Bits 0-7: Piece index
-/// - Bit 8: Color (0 for white, 1 for black)
-/// - Bit 9: Royal status (1 if royal, 0 otherwise)
-/// - Bit 10: Big piece status (1 if can be promoted to, 0 if can promote)
-/// - Bit 11: Major piece status (1 if major, 0 if minor)
-/// - Bits 12-27: Piece value
-/// - Bit 28: Can castle kingside (right)
-/// - Bit 29: Can castle queenside (left)
-/// - Bits 30-31: Unused
+/// - Bit 8 : Color (0 for white, 1 for black)
+/// - Bit 9 : Piece can promote (1 if can promote, 0 otherwise)
+/// - Bit 10: Royal status (1 if royal, 0 otherwise)
+/// - Bit 11: Big piece status
+/// - Bit 12: Major piece status (1 if major, 0 if minor)
+/// - Bits 13-28: Piece value
+/// - Bit 29: Can castle kingside (right)
+/// - Bit 30: Can castle queenside (left)
+/// - Bit 31: Unused
 ///
 ///
 /// the promotions field is a 2048-bit number representing which pieces this
@@ -165,32 +169,34 @@ impl Piece {
         is_big: bool,
         is_major: bool,
         value: u16,
-        castle_right: bool,
-        castle_left: bool,
     ) -> Self {
         let mut encoded_piece = index as u32;
         encoded_piece |= (color as u32) << 8;
 
         if is_royal {
-            encoded_piece |= 1 << 9;
-        }
-
-        if is_big {
             encoded_piece |= 1 << 10;
         }
 
-        if is_major {
+        if is_big {
             encoded_piece |= 1 << 11;
         }
 
-        encoded_piece |= (value as u32 & 0xFFFF) << 12;
-
-        if castle_right {
-            encoded_piece |= 1 << 28;
+        if is_major {
+            encoded_piece |= 1 << 12;
         }
 
-        if castle_left {
+        encoded_piece |= (value as u32 & 0xFFFF) << 13;
+
+        if movement.contains('o') {
             encoded_piece |= 1 << 29;
+        }
+
+        if movement.contains('O') {
+            encoded_piece |= 1 << 30;
+        }
+
+        if promotions != U2048::ZERO {
+            encoded_piece |= 1 << 9;
         }
 
         Self {
@@ -200,5 +206,17 @@ impl Piece {
             promotions,
             encoded_piece,
         }
+    }
+}
+
+impl Debug for Piece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Piece")
+            .field("name", &self.name)
+            .field("movement", &self.movement)
+            .field("char", &self.char)
+            .field("promotions", &p_promotions!(self))
+            .field("encoded_piece", &format_args!("{:#034b}", self.encoded_piece))
+            .finish()
     }
 }
