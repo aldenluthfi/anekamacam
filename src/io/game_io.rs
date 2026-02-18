@@ -1553,7 +1553,7 @@ pub fn format_piece_types(state: &State) -> String {
 
             for (col_idx, piece_col) in piece_columns.iter().enumerate() {
                 result.push_str(
-                    &format!(" {:^piece_width$} ", piece_col[row_idx])
+                    &format!(" {:^piece_width$} ", piece_col[row_idx].trim())
                 );
                 if col_idx < piece_columns.len() - 1 {
                     result.push('│');

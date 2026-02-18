@@ -35,7 +35,7 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let variant = "shogi";
+    let variant = "crazyhouse";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 
@@ -43,5 +43,5 @@ fn main() {
 
     println!("{}", format_entire_game(&state));
 
-    start_perft(&mut state, &perft_path, 6, -1);
+    start_perft(&mut state, &perft_path, 5, -1);
 }
