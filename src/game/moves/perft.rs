@@ -65,7 +65,7 @@ pub fn start_perft(
         perft_cases.iter().enumerate()
     {
         state.load_fen(fen);
-        println!("{}", format_game_state(state, false));
+        println!("{}", format_game_state(state, true));
 
         let expected_perfts = [
             perft_1, perft_2, perft_3, perft_4, perft_5, perft_6,
@@ -136,7 +136,8 @@ fn perft_impl(
 
     for mv in possible_moves {
         if debug {
-            let formatted_move = &format_move(&mv, state);
+            let formatted_move = &mut format_move(&mv, state);
+            formatted_move.push(' ');
 
             if make_move(state, mv) {
                 nodes += perft_impl(
@@ -145,7 +146,7 @@ fn perft_impl(
                     debug && depth > branch.unwrap_or(0),
                     branch,
                     Some(format!(
-                        "{} {}",
+                        "{}{}",
                         prefix.as_ref().unwrap(),
                         formatted_move
                     )),
@@ -166,7 +167,7 @@ fn perft_impl(
     }
 
     if debug {
-        println!("{} moves | Nodes: {}", prefix.unwrap(), nodes);
+        println!("{}moves | Nodes: {}", prefix.unwrap(), nodes);
     }
 
     nodes

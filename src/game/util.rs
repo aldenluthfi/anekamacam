@@ -22,7 +22,7 @@ use bnum::types::U4096;
 
 use crate::{
     board, constants::*, enp_square, game::{
-        hash::{CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES},
+        hash::{CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES, SIDE_HASHES},
         representations::state::State
     }, io::board_io::{format_board, format_square}, or, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
 };
@@ -153,6 +153,15 @@ pub fn verify_game_state(state: &State) {
 
         for index in piece_indices {
             temp_hash ^= PIECE_HASHES[i][*index as usize];
+        }
+    }
+
+    for color in [WHITE, BLACK] {
+        for (index, &count) in state.piece_in_hand[color as usize]
+            .iter()
+            .enumerate()
+        {
+            temp_hash ^= &IN_HAND_HASHES[index][count as usize];
         }
     }
 

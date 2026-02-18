@@ -6,9 +6,9 @@ use crate::game::util::verify_game_state;
 use crate::{
     c, captured_piece, captured_square, captured_unmoved, clear, constants::{
         BK_CASTLE, BQ_CASTLE, CASTLING, MULTI_CAPTURE_MOVE, NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE
-    }, count_limits, created_enp, creates_enp, d, drops, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, end, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
+    }, count_limits, created_enp, creates_enp, d, demote_upon_capture, drops, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, end, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
         hash::{
-            CASTLING_HASHES, EN_PASSANT_HASHES, PIECE_HASHES, SIDE_HASHES,
+            CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES, SIDE_HASHES,
         },
         representations::{
             moves::Move,
@@ -16,7 +16,7 @@ use crate::{
             state::{EnPassantSquare, Snapshot, Square, State},
             vector::{MoveSet, MoveVector},
         },
-    }, get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling, hash_update_en_passant, i, is_initial, is_unload, k, l, m, move_type, multi_move_captured_piece, multi_move_captured_square, multi_move_captured_unmoved, multi_move_is_unload, multi_move_unload_square, not_g, not_i, not_k, not_v, p, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, piece, promote_to_captured, promoted, promotion, promotions, r, set, start, t, u, unload_square, v, x, y
+    }, get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling, hash_update_en_passant, hash_update_in_hand, i, is_initial, is_unload, k, l, m, move_type, multi_move_captured_piece, multi_move_captured_square, multi_move_captured_unmoved, multi_move_is_unload, multi_move_unload_square, not_g, not_i, not_k, not_v, p, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, piece, promote_to_captured, promoted, promotion, promotions, r, set, start, t, u, unload_square, v, x, y
 };
 
 fn is_square_attacked(
@@ -671,16 +671,27 @@ pub fn generate_move_list(
 
             if mandatory || optional {
                 for promo_piece_index in p_promotions!(piece) {
-                    let can_promote =
-                        (
-                            !count_limits!(game_state) ||
-                            game_state.piece_count[promo_piece_index] <
-                            game_state.piece_limit[promo_piece_index]
-                        ) || (
-                            !promote_to_captured!(game_state) ||
-                            game_state.piece_in_hand[piece_color as usize]
-                            [promo_piece_index] > 0
-                        );
+
+                    let mut can_promote = true;
+
+                    if count_limits!(game_state) {
+                        can_promote = can_promote &&
+                        game_state.piece_count[promo_piece_index] <
+                        game_state.piece_limit[promo_piece_index];
+                    }
+
+                    if promote_to_captured!(game_state) {
+                        let enemy_equiv =
+                            game_state.piece_swap_map[
+                                &(promo_piece_index as u8)
+                            ];
+
+                        can_promote = can_promote &&
+                            game_state.piece_in_hand
+                            [1 - piece_color as usize]
+                            [enemy_equiv as usize] > 0;
+                    }
+
                     if can_promote {
                         let mut promo_move = encoded_move.clone();
                         enc_promotion!(promo_move, 1);
@@ -804,6 +815,22 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
 
             game_state.piece_count[promoted_piece] += 1;
             game_state.piece_count[piece_index] -= 1;
+
+            if promote_to_captured!(game_state) {
+                let enemy_equiv = game_state.piece_swap_map
+                    [&(promoted_piece as u8)];
+                let hand =
+                    &mut game_state.piece_in_hand
+                    [1 - piece_color as usize][enemy_equiv as usize];
+                *hand -= 1;
+
+                hash_update_in_hand!(
+                    game_state,
+                    enemy_equiv as usize,
+                    *hand + 1,
+                    *hand
+                );
+            }
         }
 
         game_state.piece_list[piece_index]
@@ -940,6 +967,23 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
 
             game_state.piece_count[promoted_piece] += 1;
             game_state.piece_count[piece_index] -= 1;
+
+            if promote_to_captured!(game_state) {
+                let enemy_equiv = game_state.piece_swap_map
+                    [&(promoted_piece as u8)];
+                let hand =
+                    &mut game_state.piece_in_hand
+                    [1 - piece_color as usize][enemy_equiv as usize];
+                let old_hand = *hand;
+                *hand -= 1;
+
+                hash_update_in_hand!(
+                    game_state,
+                    enemy_equiv as usize,
+                    old_hand,
+                    *hand
+                );
+            }
         }
 
         game_state.piece_list[piece_index]
@@ -989,13 +1033,28 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
         }
 
         if drops!(game_state) || promote_to_captured!(game_state) {
-            let captured_index_u8 = captured_piece_index as u8;
-            game_state.piece_in_hand
-                [piece_color as usize][
-                    *game_state.piece_swap_map
-                    .get(&captured_index_u8)
-                    .unwrap() as usize
-                ] += 1;
+            let mut captured_index_u8 = captured_piece_index as u8;
+
+            if demote_upon_capture!(game_state) {
+                captured_index_u8 = game_state.piece_demotion_map
+                    .get(&(captured_index_u8))
+                    .unwrap()[0];                                               /* assume 1 to 1 mapping              */
+            }
+
+            let swap_index =
+                *game_state.piece_swap_map
+                .get(&captured_index_u8).unwrap() as usize;
+            let hand =
+                &mut game_state.piece_in_hand[piece_color as usize][swap_index];
+            let old_hand = *hand;
+            *hand += 1;
+
+            hash_update_in_hand!(
+                game_state,
+                captured_index_u8 as usize,
+                old_hand,
+                *hand
+            );
         }
 
         let end_rank = (captured_square as u16) / game_state.files as u16;
@@ -1153,6 +1212,23 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
 
             game_state.piece_count[promoted_piece] += 1;
             game_state.piece_count[piece_index] -= 1;
+
+            if promote_to_captured!(game_state) {
+                let enemy_equiv = game_state.piece_swap_map
+                    [&(promoted_piece as u8)];
+                let hand =
+                    &mut game_state.piece_in_hand
+                    [1 - piece_color as usize][enemy_equiv as usize];
+                let old_hand = *hand;
+                *hand -= 1;
+
+                hash_update_in_hand!(
+                    game_state,
+                    enemy_equiv as usize,
+                    old_hand,
+                    *hand
+                );
+            }
         }
 
         game_state.piece_list[piece_index]
@@ -1211,13 +1287,30 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
             );
 
             if drops!(game_state) || promote_to_captured!(game_state) {
-                let captured_index_u8 = captured_piece_index as u8;
-                game_state.piece_in_hand
-                    [piece_color as usize][
-                        *game_state.piece_swap_map
-                        .get(&captured_index_u8)
-                        .unwrap() as usize
-                    ] += 1;
+                let mut captured_index_u8 = captured_piece_index as u8;
+
+                if demote_upon_capture!(game_state) {
+                    captured_index_u8 = game_state.piece_demotion_map
+                        .get(&(captured_index_u8))
+                        .unwrap()[0];                                           /* assume 1 to 1 mapping              */
+                }
+
+                let swap_index =
+                    *game_state.piece_swap_map
+                    .get(&captured_index_u8)
+                    .unwrap() as usize;
+                let hand =
+                    &mut game_state.piece_in_hand
+                    [piece_color as usize][swap_index];
+                let old_hand = *hand;
+                *hand += 1;
+
+                hash_update_in_hand!(
+                    game_state,
+                    captured_index_u8 as usize,
+                    old_hand,
+                    *hand
+                );
             }
 
             let end_rank = (captured_square as u16) / game_state.files as u16;
@@ -1406,6 +1499,15 @@ pub fn undo_move(game_state: &mut State) {
 
             game_state.piece_count[promoted_piece] -= 1;
             game_state.piece_count[piece_index] += 1;
+
+            if promote_to_captured!(game_state) {
+                let enemy_equiv = game_state.piece_swap_map
+                    [&(promoted_piece as u8)];
+                let hand =
+                    &mut game_state.piece_in_hand
+                    [1 - piece_color as usize][enemy_equiv as usize];
+                *hand += 1;
+            }
         } else {
             game_state.piece_list[piece_index]
                 .retain(|&sq| sq != end_square as u16);
@@ -1476,6 +1578,15 @@ pub fn undo_move(game_state: &mut State) {
 
             game_state.piece_count[promoted_piece] -= 1;
             game_state.piece_count[piece_index] += 1;
+
+            if promote_to_captured!(game_state) {
+                let enemy_equiv = game_state.piece_swap_map
+                    [&(promoted_piece as u8)];
+                let hand =
+                    &mut game_state.piece_in_hand
+                    [1 - piece_color as usize][enemy_equiv as usize];
+                *hand += 1;
+            }
         } else {
             game_state.piece_list[piece_index]
                 .retain(|&sq| sq != end_square as u16);
@@ -1540,7 +1651,14 @@ pub fn undo_move(game_state: &mut State) {
         }
 
         if drops!(game_state) || promote_to_captured!(game_state) {
-            let captured_index_u8 = captured_piece_index as u8;
+            let mut captured_index_u8 = captured_piece_index as u8;
+
+            if demote_upon_capture!(game_state) {
+                captured_index_u8 = game_state.piece_demotion_map
+                    .get(&(captured_index_u8))
+                    .unwrap()[0];                                               /* assume 1 to 1 mapping              */
+            }
+
             game_state.piece_in_hand
                 [piece_color as usize][
                     *game_state.piece_swap_map
@@ -1605,6 +1723,15 @@ pub fn undo_move(game_state: &mut State) {
 
             game_state.piece_count[promoted_piece] -= 1;
             game_state.piece_count[piece_index] += 1;
+
+            if promote_to_captured!(game_state) {
+                let enemy_equiv = game_state.piece_swap_map
+                    [&(promoted_piece as u8)];
+                let hand =
+                    &mut game_state.piece_in_hand
+                    [1 - piece_color as usize][enemy_equiv as usize];
+                *hand += 1;
+            }
         } else {
             game_state.piece_list[piece_index]
                 .retain(|&sq| sq != end_square as u16);
@@ -1679,7 +1806,14 @@ pub fn undo_move(game_state: &mut State) {
             }
 
             if drops!(game_state) || promote_to_captured!(game_state) {
-                let captured_index_u8 = captured_piece_index as u8;
+                let mut captured_index_u8 = captured_piece_index as u8;
+
+                if demote_upon_capture!(game_state) {
+                    captured_index_u8 = game_state.piece_demotion_map
+                        .get(&(captured_index_u8))
+                        .unwrap()[0];
+                }
+
                 game_state.piece_in_hand
                     [piece_color as usize]
                     [
@@ -1718,4 +1852,22 @@ pub fn generate_all_moves(state: &State) -> Vec<Move> {
         .collect();
 
     moves
+}
+
+pub fn generate_all_legal_moves(state: &mut State) -> Vec<Move> {
+    let all_moves = generate_all_moves(state);
+    let legal_moves: Vec<Move> = all_moves
+        .into_iter()
+        .filter(|mv| {
+            let result = make_move(state, mv.clone());
+
+            if result {
+                undo_move(state);
+            }
+
+            result
+        })
+        .collect();
+
+    legal_moves
 }

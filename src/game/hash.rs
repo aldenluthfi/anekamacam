@@ -45,7 +45,7 @@ lazy_static! {
             result
         };
 
-    pub static ref DROP_HASHES: Vec<[u128; MAX_SQUARES]>
+    pub static ref IN_HAND_HASHES: Vec<[u128; MAX_SQUARES]>
         = {
             let mut result: Vec<[u128; MAX_SQUARES]> =
                 Vec::with_capacity(256);
@@ -85,7 +85,7 @@ pub fn hash_position(state: &State) -> u128 {
             .iter()
             .enumerate()
         {
-            hash ^= &DROP_HASHES[index][count as usize];
+            hash ^= &IN_HAND_HASHES[index][count as usize];
         }
     }
 
@@ -134,4 +134,16 @@ macro_rules! hash_update_en_passant {
             }
         }
     };
+}
+
+#[macro_export]
+macro_rules! hash_update_in_hand {
+    ($game_state:expr, $piece_index:expr, $old_count:expr, $new_count:expr) => {
+        if $old_count != $new_count {
+            $game_state.position_hash ^= &IN_HAND_HASHES
+                [$piece_index][$old_count as usize];
+            $game_state.position_hash ^= &IN_HAND_HASHES
+                [$piece_index][$new_count as usize];
+        }
+     };
 }

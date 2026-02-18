@@ -60,10 +60,19 @@ pub fn format_move_template(mv: &Move) -> String {
 pub fn format_move(mv: &Move, state: &State) -> String {
     let start_square = start!(mv);
     let end_square = end!(mv);
+    let mut promoted_piece = "".to_string();
 
-    format!(
-        "{}{}",
+    if promotion!(mv) {
+        let promoted_index = promoted!(mv) as usize;
+        promoted_piece = state.pieces[promoted_index].char.to_string();
+    }
+
+    let result = format!(
+        "{}{}{}",
         format_square(start_square as u16, state),
-        format_square(end_square as u16, state)
-    )
+        format_square(end_square as u16, state),
+        &promoted_piece
+    );
+
+    format!("{:<5}", result)
 }

@@ -97,7 +97,7 @@ lazy_static! {
         r"^[mcdukvgtiplr!]+$"
     ).unwrap();
     pub static ref CASTLING_TOKEN: Regex = Regex::new(
-        r"^(?:O|o)\{(\d+)\}\{(\d+)\}$"
+        r"^(?:O|o)\{(\d+),(\d+)\}$"
     ).unwrap();
     pub static ref INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] = [
         ( 0,  1),

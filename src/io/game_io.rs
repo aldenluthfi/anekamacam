@@ -14,15 +14,16 @@
 //! # Date
 //! 25/01/2026
 
-use bnum::cast::As;
 use bnum::types::{U2048, U4096};
-use toml::Table;
+use bnum::cast::As;
+use lazy_static::lazy_static;
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
 use crate::game::representations::board::Board;
 use crate::{
-    board, castling, constants::*, count_limits, drops, en_passant, enc_castling, enc_count_limits, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, forbidden_zones, get, p_can_promote, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set
+    board, castling, clear, constants::*, count_limits, demote_upon_capture, drops, en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, forbidden_zones, get, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set
 };
 use crate::game::{
     hash::hash_position,
@@ -36,130 +37,200 @@ use crate::io::{
     piece_io::format_piece
 };
 
+lazy_static!{
+    pub static ref CASTLING_PATTERN: Regex =
+        Regex::new(r"^([KQkq]+)$|^-$").unwrap();
+    pub static ref ENP_PATTERN: Regex =
+        Regex::new(r"^([0-9a-fA-F]{3})([0-9a-fA-F]{3})(.)$|^\*$").unwrap();
+    pub static ref HAND_PATTERN: Regex =
+        Regex::new(r"^(.*)/(.*)$").unwrap();
+    pub static ref COMMENT_PATTERN: Regex =
+        Regex::new(r"//[^\n\r]*").unwrap();
+    pub static ref SECTION_PATTERN: Regex =
+        Regex::new(r"\[(.+)\][^\[\]]+").unwrap();
+    pub static ref IN_HAND_PATTERN: Regex =
+        Regex::new(r"(\d*)(.)").unwrap();
+}
+
+fn determine_board_dimensions(fen: &str) -> (u8, u8) {
+    let ranks_data: Vec<&str> = fen.split('/').collect();
+    let rank_count = ranks_data.len() as u8;
+    let file_count = ranks_data[0].chars().fold(0u8, |acc, c| {
+        if c.is_ascii_digit() {
+            acc + c.to_digit(10).unwrap() as u8
+        } else {
+            acc + 1
+        }
+    });
+    (file_count, rank_count)
+}
+
+// returns (castling, en_passant, pieces in hand)
+fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
+    let parts = &fen.split_whitespace()
+        .map(str::to_string)
+        .collect::<Vec<String>>()[2..];
+
+    let castling = parts.iter().any(|part| CASTLING_PATTERN.is_match(part));
+    let en_passant = parts.iter().any(|part| ENP_PATTERN.is_match(part));
+    let in_hand = parts.iter().any(|part| HAND_PATTERN.is_match(part));
+
+    (castling, en_passant, in_hand)
+}
+
 /// Parses a game configuration file and initializes a game state.
+/// See example.conf for the expected format of the configuration file.
+///
+/// pieces are parsed into a tuple first of:
+/// (string, string, char, U2048, u8, u8, bool, bool, bool, u16)
+///
+/// where the fields are:
+/// - string: the name of the piece
+/// - string: the movement pattern of the piece
+/// - char: the character representing the piece on the board
+/// - U2048: the promotions bitset representing which pieces this piece can
+///   promote to
+/// - u8: the piece index (0-255, with 255 reserved for "no piece")
+/// - u8: the piece color (0 for white, 1 for black)
+/// - bool: whether the piece is royal
+/// - bool: whether the piece is big
+/// - bool: whether the piece is major
+/// - u16: the value of the piece
 pub fn parse_config_file(path: &str) -> State {
     let file_str = fs::read_to_string(path)
         .expect("Failed to read configuration file");
-    let config = file_str.parse::<Table>()
-        .expect("Failed to parse configuration file as TOML");
 
-    let mut piece_char_to_idx = HashMap::new();
-    let mut pieces: Vec<Piece> = Vec::new();
-    let pieces_table = config["pieces"].as_array().expect(
-        "Pieces section not found in configuration file"
+    let uncommented_str = COMMENT_PATTERN.replace_all(&file_str, "");
+    let cleaned = uncommented_str
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let sections = SECTION_PATTERN.captures_iter(&cleaned)
+        .map(|cap| {
+            let section_name = cap[1].trim().to_string();
+            let section_body = cap[0]
+            .lines()
+            .skip(1)
+            .map(str::to_string)
+            .filter(|line| !line.trim().is_empty())
+            .collect::<Vec<String>>();
+            (section_name, section_body)
+        })
+        .collect::<HashMap<_, _>>();
+
+    let mandatory_sections = [
+        "general", "pieces", "piece moves", "piece values", "piece roles"
+    ];
+
+    let missing: Vec<_> = mandatory_sections
+        .iter()
+        .filter(|s| !sections.contains_key(**s))
+        .cloned()
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "Missing mandatory sections: {}",
+        missing.join(", ")
     );
 
-    for piece_table in pieces_table.iter() {
-        let piece_data = piece_table.as_table().expect(
-            "Piece entry is not a valid table"
-        );
+/*----------------------------------------------------------------------------*\
+                             PARSE GENERAL SECTION
+\*----------------------------------------------------------------------------*/
 
-        let name = piece_data["name"].as_str().unwrap_or_else(
-            || panic!("Piece name not found in configuration file")
-        ).to_string();
+    let title = sections["general"][0].trim();
+    let initial_position = sections["general"][1].trim();
+    let initial_board = initial_position.split_whitespace().next().unwrap();
+    let (files, ranks) = determine_board_dimensions(initial_board);
 
-        let charset = piece_data["charset"].as_str().unwrap_or_else(
-            || panic!("Piece char not found in configuration file")
-        );
+/*----------------------------------------------------------------------------*\
+                              PARSE RULES SECTION
+\*----------------------------------------------------------------------------*/
 
+    let castling = sections["rules"]
+        .contains(&"castling".to_string());
+    let en_passant = sections["rules"]
+        .contains(&"en passant".to_string());
+    let promotions = sections["rules"]
+        .contains(&"promotions".to_string());
+    let drops = sections["rules"]
+        .contains(&"drops".to_string());
+    let piece_count_limits = sections["rules"]
+        .contains(&"piece count limits".to_string());
+    let forbidden_zones = sections["rules"]
+        .contains(&"forbidden zones".to_string());
+    let promote_to_captured = sections["rules"]
+        .contains(&"promote to captured".to_string());
+    let demote_upon_capture = sections["rules"]
+        .contains(&"demote upon capture".to_string());
+
+    let (fen_castling, fen_en_passant, fen_in_hand) =
+        extract_fen_components(initial_position);
+
+    if castling {
         assert!(
-            charset.len() == 2,
-            "Piece char must be a single character"
+            fen_castling,
+            "No castling rights found in FEN"
         );
-
-        let white_char = charset.chars().next().unwrap();
-        let black_char = charset.chars().nth(1).unwrap();
-
-        let value = match &piece_data["value"] {
-            v if v.is_integer() => v.as_integer().unwrap() as u16,
-            v if v.is_float() => u16::MAX,
-            _ => panic!(
-                "Piece value not found or invalid in configuration file"
-            ),
-        };
-
-        let movement = piece_data["movement"].as_str().unwrap_or_else(
-            || panic!("Piece movement not found in configuration file")
-        ).to_string();
-
-        let is_royal = piece_data["royal"].as_bool().unwrap_or(false);
-        let is_big = piece_data["big"].as_bool().unwrap_or(false);
-        let is_major = piece_data["major"].as_bool().unwrap_or(false);
-
-        if white_char != '_' {
-            pieces.push(
-                Piece::new(
-                    name.clone(),
-                    movement.clone(),
-                    white_char,
-                    U2048::ZERO,
-                    0,                                                          /* placeholder                        */
-                    WHITE,
-                    is_royal,
-                    is_big,
-                    is_major,
-                    value,
-                    movement.contains("o"),
-                    movement.contains("O"),
-                )
-            );
-        }
-
-        if black_char != '_' {
-            pieces.push(
-                Piece::new(
-                    name.clone(),
-                    movement.clone(),
-                    black_char,
-                    U2048::ZERO,
-                    0,                                                          /* placeholder                        */
-                    BLACK,
-                    is_royal,
-                    is_big,
-                    is_major,
-                    value,
-                    movement.contains("o"),
-                    movement.contains("O"),
-                )
-            );
-        }
     }
 
-    pieces.sort_by_key(|piece| p_color!(piece));
+    if !castling {
+        assert!(
+            !fen_castling,
+            "Castling rights found in FEN"
+        );
+    }
 
-    for (i, piece) in pieces.iter_mut().enumerate() {
-        piece.encoded_piece |= i as u32;                                        /* set the piece index correctly       */
-        piece_char_to_idx.insert(piece.char, p_index!(piece));
+    if en_passant {
+        assert!(
+            fen_en_passant,
+            "No en passant square found in FEN"
+        );
+    }
+
+    if !en_passant {
+        assert!(
+            !fen_en_passant,
+            "En passant square found in FEN"
+        );
+    }
+
+    if drops || promote_to_captured || demote_upon_capture {
+        assert!(
+            fen_in_hand,
+            "No pieces in hand found in FEN"
+        );
+    }
+
+    if promotions {
+        assert!(
+            sections.contains_key("promotions"),
+            "[promotions] section is missing"
+        );
+        assert!(
+            sections.contains_key("mandatory promotion zones") ||
+            sections.contains_key("optional promotion zones"),
+            "No promotion zones section found"
+        );
+    }
+
+    if piece_count_limits {
+        assert!(
+            sections.contains_key("piece count limits"),
+            "[piece count limits] section is missing"
+        );
+    }
+
+    if forbidden_zones {
+        assert!(
+            sections.contains_key("forbidden zones"),
+            "[forbidden zones] section is missing"
+        );
     }
 
     let mut special_rules = 0u32;
-    let special_rules_table = config.get("special_rules").expect(
-        "Special rules section not found in configuration file"
-    ).as_table().expect(
-        "Special rules section is not a valid table"
-    );
-
-    let castling = special_rules_table.get("castling")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let en_passant = special_rules_table.get("en_passant")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let promotions = special_rules_table.get("promotions")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let drops = special_rules_table.get("drops")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let count_limits = special_rules_table.get("count_limits")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let forbidden_zones = special_rules_table.get("forbidden_zones")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let promote_to_captured = special_rules_table.get("promote_to_captured")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
 
     if castling {
         enc_castling!(special_rules);
@@ -177,7 +248,7 @@ pub fn parse_config_file(path: &str) -> State {
         enc_drops!(special_rules);
     }
 
-    if count_limits {
+    if piece_count_limits {
         enc_count_limits!(special_rules);
     }
 
@@ -189,190 +260,597 @@ pub fn parse_config_file(path: &str) -> State {
         enc_promote_to_captured!(special_rules);
     }
 
-    let mut result = State::new(
-        config["title"].as_str().unwrap_or_else(
-            || panic!("Game title not found in configuration file")
-        ).to_string(),
-        config["files"].as_integer().unwrap_or_else(
-            || panic!("Files not found in configuration file")
-        ) as u8,
-        config["ranks"].as_integer().unwrap_or_else(
-            || panic!("Ranks not found in configuration file")
-        ) as u8,
-        pieces,
-        special_rules,
-    );
+    if demote_upon_capture {
+        enc_demote_upon_capture!(special_rules);
+    }
 
-    let mut piece_swap_map = HashMap::new();
-    for (i, piece) in result.pieces.iter().enumerate() {
-        let my_color = p_color!(piece);
-        if let Some((j, _)) = result.pieces.iter().enumerate()
-            .find(|(j, other)|
-                *j != i &&
-                other.name == piece.name &&
-                p_color!(other) != my_color
-            )
-        {
-            piece_swap_map.insert(i as u8, j as u8);
+/*----------------------------------------------------------------------------*\
+                                  PARSE PIECES
+\*----------------------------------------------------------------------------*/
+
+    let mut pieces = Vec::with_capacity(sections["pieces"].len());
+    let mut char_to_index: HashMap<char, usize> = HashMap::new();
+    for bare_piece in &sections["pieces"] {
+        let parts: Vec<&str> = bare_piece.split(':').map(str::trim).collect();
+
+        assert!(
+            parts.len() == 2,
+            "Invalid piece definition: {}",
+            bare_piece
+        );
+
+        let white_char = parts[0].chars().next().unwrap();
+        let black_char = parts[0].chars().nth(1).unwrap();
+        let name = parts[1].to_string();
+
+        pieces.push((
+            name.clone(),
+            String::new(),
+            white_char,
+            U2048::ZERO,
+            0,
+            WHITE,
+            false,
+            false,
+            false,
+            0,
+        ));
+
+        pieces.push((
+            name.clone(),
+            String::new(),
+            black_char,
+            U2048::ZERO,
+            0,
+            BLACK,
+            false,
+            false,
+            false,
+            0,
+        ));
+    }
+
+    pieces.sort_by_key(|piece| piece.5);
+
+    for (i, piece) in pieces.iter_mut().enumerate() {
+        piece.4 = i as u8;
+        char_to_index.insert(piece.2, i);
+    }
+
+    for piece_values in &sections["piece values"] {
+        let parts: Vec<&str> = piece_values.split(':').map(str::trim).collect();
+
+        assert!(
+            parts.len() == 2,
+            "Invalid piece value definition: {}",
+            piece_values
+        );
+
+        let piece_chars = parts[0];
+        let value_str = parts[1];
+
+        if piece_chars.len() == 2 {
+            let white_char = piece_chars.chars().next().unwrap();
+            let black_char = piece_chars.chars().nth(1).unwrap();
+
+            let value = value_str.parse::<u16>().unwrap_or_else(
+                |_| panic!("Invalid piece value: {}", value_str.trim())
+            );
+
+            if let Some(&white_index) = char_to_index.get(&white_char) {
+                pieces[white_index].9 = value;
+            } else {
+                panic!("Unknown piece character: {}", white_char);
+            }
+
+            if let Some(&black_index) = char_to_index.get(&black_char) {
+                pieces[black_index].9 = value;
+            } else {
+                panic!("Unknown piece character: {}", black_char);
+            }
+        } else if piece_chars.len() == 1 {
+            let piece_char = piece_chars.chars().next().unwrap();
+
+            let value = value_str.parse::<u16>().unwrap_or_else(
+                |_| panic!("Invalid piece value: {}", value_str.trim())
+            );
+
+            if let Some(&index) = char_to_index.get(&piece_char) {
+                pieces[index].9 = value;
+            } else {
+                panic!("Unknown piece character: {}", piece_char);
+            }
+        } else {
+            panic!("Invalid piece character(s): {}", piece_chars);
         }
     }
 
-    result.piece_swap_map = piece_swap_map;
+    for piece_moves in &sections["piece moves"] {
+        let parts: Vec<&str> = piece_moves.split(':').map(str::trim).collect();
 
-    let default_initial_setup = Table::new();
-    let initial_setup_table = config.get("initial_setup")
-        .and_then(|v| v.as_table())
-        .unwrap_or(&default_initial_setup);
-
-    for piece_char in initial_setup_table.keys() {
-        let piece_index = piece_char_to_idx.get(
-            &piece_char.chars().next().unwrap()
-        ).unwrap_or_else(
-            || panic!("Unknown promotion piece character: {}", piece_char)
+        assert!(
+            parts.len() == 2,
+            "Invalid piece move definition: {}",
+            piece_moves
         );
 
-        let bit_fen = initial_setup_table[piece_char]
-            .as_str();
+        let piece_chars = parts[0];
+        let move_pattern = parts[1].to_string();
 
-        result.initial_setup[*piece_index as usize] =
-            parse_bit_fen(bit_fen, &result);
+        if piece_chars.len() == 2 {
+            let white_char = piece_chars.chars().next().unwrap();
+            let black_char = piece_chars.chars().nth(1).unwrap();
+
+            if let Some(&white_index) = char_to_index.get(&white_char) {
+                pieces[white_index].1 = move_pattern.clone();
+            } else {
+                panic!("Unknown piece character: {}", white_char);
+            }
+
+            if let Some(&black_index) = char_to_index.get(&black_char) {
+                pieces[black_index].1 = move_pattern.clone();
+            } else {
+                panic!("Unknown piece character: {}", black_char);
+            }
+        } else if piece_chars.len() == 1 {
+            let piece_char = piece_chars.chars().next().unwrap();
+
+            if let Some(&index) = char_to_index.get(&piece_char) {
+                pieces[index].1 = move_pattern.clone();
+            } else {
+                panic!("Unknown piece character: {}", piece_char);
+            }
+        } else {
+            panic!("Invalid piece character(s): {}", piece_chars);
+        }
     }
 
-    if promotions {
-        let piece_promotions_table = config.get("promotions").expect(
-            "Piece promotions section not found in configuration file"
-        ).as_table().expect(
-            "Piece promotions section is not a valid table"
+    for piece_roles in &sections["piece roles"] {
+        let parts: Vec<&str> = piece_roles.split(':').map(str::trim).collect();
+
+        assert!(
+            parts.len() == 2,
+            "Invalid piece move definition: {}",
+            piece_roles
         );
 
-        let default_mandatory_table = Table::new();
-        let promotion_mandatory_table = config.get("promotion_zones_mandatory")
-            .and_then(|v| v.as_table())
-            .unwrap_or(&default_mandatory_table);
-
-        let default_optional_table = Table::new();
-        let promotion_optional_table = config.get("promotion_zones_optional")
-            .and_then(|v| v.as_table())
-            .unwrap_or(&default_optional_table);
-
-        for piece_char in piece_promotions_table.keys() {
-            let mut promotions_encoded = U2048::ZERO;
-
-            let piece_index = piece_char_to_idx.get(
-                &piece_char.chars().next().unwrap()
-            ).unwrap_or_else(
-                || panic!("Unknown promoting piece character: {}", piece_char)
-            );
-
-            let promoted_chars = piece_promotions_table[piece_char]
-                .as_str()
-                .unwrap_or_else(
-                    || panic!("Piece promotions entry is not a valid string")
-                );
-
-            promotions_encoded |= U2048::from(promoted_chars.len());
-
-            for (i, char) in promoted_chars.chars().enumerate() {
-                let promoted_idx = piece_char_to_idx.get(&char).unwrap_or_else(
-                    || panic!("Unknown promotion piece character: {}", char)
-                );
-
-                promotions_encoded |=
-                    U2048::from(*promoted_idx as u32) << ((i + 1) * 8);
-            }
-
-            let piece = &mut result.pieces[*piece_index as usize];
-            piece.promotions = promotions_encoded;
-
-            let bit_fen_mandatory = promotion_mandatory_table
-                .get(piece_char)
-                .and_then(|v| v.as_str());
-
-            result.promotion_zones_mandatory[*piece_index as usize] =
-                parse_bit_fen(bit_fen_mandatory, &result);
-
-            let bit_fen_optional = promotion_optional_table
-                .get(piece_char)
-                .and_then(|v| v.as_str());
-
-            result.promotion_zones_optional[*piece_index as usize] =
-                parse_bit_fen(bit_fen_optional, &result);
-        };
-
-        let mut piece_demotion_map = HashMap::new();
-        for (big_idx, big_piece) in result.pieces.iter().enumerate() {
-            if p_can_promote!(big_piece) {
-                continue;
-            }
-            let mut demoters = Vec::new();
-            for (small_idx, small_piece) in result.pieces.iter().enumerate() {
-                if !p_can_promote!(small_piece) {
-                    continue;
-                }
-
-                for promotion_index in p_promotions!(small_piece) {
-                    if promotion_index == big_idx {
-                        demoters.push(small_idx as u8);
-                        break;
+        match parts[0] {
+            "royal" => {
+                for piece_char in parts[1].chars() {
+                    if let Some(&index) = char_to_index.get(&piece_char) {
+                        pieces[index].6 = true;
+                    } else {
+                        panic!("Unknown piece character: {}", piece_char);
                     }
                 }
             }
-            if !demoters.is_empty() {
-                piece_demotion_map.insert(big_idx as u8, demoters);
+            "big" => {
+                for piece_char in parts[1].chars() {
+                    if let Some(&index) = char_to_index.get(&piece_char) {
+                        pieces[index].7 = true;
+                    } else {
+                        panic!("Unknown piece character: {}", piece_char);
+                    }
+                }
+            }
+            "major" => {
+                for piece_char in parts[1].chars() {
+                    if let Some(&index) = char_to_index.get(&piece_char) {
+                        pieces[index].8 = true;
+                    } else {
+                        panic!("Unknown piece character: {}", piece_char);
+                    }
+                }
+            }
+            _ => panic!("Invalid piece role type: {}", parts[0])
+        }
+    }
+
+    if promotions {
+        for piece_promotion in &sections["promotions"] {
+            let parts: Vec<&str> =
+                piece_promotion.split(':').map(str::trim).collect();
+
+            assert!(
+                parts.len() == 2,
+                "Invalid piece promotion definition: {}",
+                piece_promotion
+            );
+
+            let piece_chars = parts[0];
+
+            if piece_chars.len() == 2 {
+                let white_char = piece_chars.chars().next().unwrap();
+                let black_char = piece_chars.chars().nth(1).unwrap();
+
+                let white_index = char_to_index
+                    .get(&white_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", white_char)
+                    );
+
+                let black_index = char_to_index
+                    .get(&black_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", black_char)
+                    );
+
+                let promotions_str = parts[1];
+                let promotion_count = promotions_str.chars().count();
+
+                let mut promotions_bitset = U2048::from(promotion_count);
+
+                for (index, promo_char) in promotions_str.chars().enumerate() {
+                    if let Some(&promo_index) = char_to_index.get(&promo_char) {
+                        promotions_bitset |=
+                            U2048::from(promo_index) << ((index + 1) * 8);
+                    } else {
+                        panic!(
+                            "Unknown promotion piece character: {}", promo_char
+                        );
+                    }
+                }
+
+                pieces[white_index].3 = promotions_bitset;
+                pieces[black_index].3 = promotions_bitset;
+            } else if piece_chars.len() == 1 {
+                let piece_char = piece_chars.chars().next().unwrap();
+
+                let piece_index = char_to_index
+                    .get(&piece_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", piece_char)
+                    );
+
+                let promotions_str = parts[1];
+                let promotion_count = promotions_str.chars().count();
+
+                let mut promotions_bitset = U2048::from(promotion_count);
+
+                for (index, promo_char) in promotions_str.chars().enumerate() {
+                    if let Some(&promo_index) = char_to_index.get(&promo_char) {
+                        promotions_bitset |=
+                            U2048::from(promo_index) << ((index + 1) * 8);
+                    } else {
+                        panic!(
+                            "Unknown promotion piece character: {}", promo_char
+                        );
+                    }
+                }
+
+                pieces[piece_index].3 = promotions_bitset;
+            } else {
+                panic!("Invalid piece character(s): {}", piece_chars);
+            }
+        }
+    }
+
+/*----------------------------------------------------------------------------*\
+                             POPULATE STATIC FIELDS
+\*----------------------------------------------------------------------------*/
+
+    let mut result = State::new(
+        title.to_string(),
+        files,
+        ranks,
+        pieces.into_iter().map(|p| Piece::new(
+            p.0, p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.9
+        )).collect(),
+        special_rules,
+    );
+
+    let template_bit_fen = initial_position.split_whitespace().next().unwrap();
+    for (index, piece) in result.pieces.iter().enumerate() {
+        let bit_fen = template_bit_fen
+            .chars()
+            .map(|c| {
+            if c == piece.char {
+                'X'
+            } else if c.is_ascii_alphabetic() {
+                'O'
+            } else {
+                c
+            }
+            })
+            .collect::<String>();
+        result.initial_setup[index] = parse_bit_fen(Some(&bit_fen), &result);
+    }
+
+    for (i, piece) in result.pieces.iter().enumerate() {
+        if let Some(other_idx) = result.pieces.iter().position(|p| {
+            p.name == piece.name && p_color!(p) != p_color!(piece)
+        }) {
+            result.piece_swap_map.insert(i as u8, other_idx as u8);
+        }
+    }
+
+    for piece in &result.pieces {
+        if !p_can_promote!(piece) {
+            continue;
+        }
+        for promotion_index in p_promotions!(piece) {
+            result.piece_demotion_map
+                .entry(promotion_index as u8)
+                .or_default()
+                .push(p_index!(piece));
+        }
+    }
+
+    if castling {
+        assert!(
+            result.pieces.iter().any(
+                |p| p_castle_left!(p) || p_castle_right!(p)
+            ),
+            "No castling rights found in piece definitions"
+        );
+    }
+
+    if en_passant {
+        assert!(
+            result.pieces.iter().any(
+                |p| p.movement.contains('p') || p.movement.contains('t')
+            ),
+            "No en passant movement found in piece definitions"
+        );
+    }
+
+    if !castling {
+        assert!(
+            result.pieces.iter().all(
+                |p| !p_castle_left!(p) && !p_castle_right!(p)
+            ),
+            "Castling rights found in piece definitions"
+        );
+    }
+
+    if !en_passant {
+        assert!(
+            result.pieces.iter().all(
+                |p| !p.movement.contains('p') && !p.movement.contains('t')
+            ),
+            "En passant movement found in piece definitions"
+        );
+    }
+
+    if promotions {
+        if sections.contains_key("mandatory promotion zones") {
+            for mandatory in &sections["mandatory promotion zones"] {
+                let parts: Vec<&str> =
+                    mandatory.split(':').map(str::trim).collect();
+
+                assert!(
+                    parts.len() == 2,
+                    "Invalid mandatory promotion zone definition: {}",
+                    mandatory
+                );
+
+                let piece_chars = parts[0];
+
+                if piece_chars.len() == 2 {
+                    let white_char = piece_chars.chars().next().unwrap();
+                    let black_char = piece_chars.chars().nth(1).unwrap();
+
+                    let white_index = char_to_index
+                        .get(&white_char)
+                        .copied()
+                        .unwrap_or_else(
+                            || panic!("Unknown piece character: {}", white_char)
+                        );
+
+                    let black_index = char_to_index
+                        .get(&black_char)
+                        .copied()
+                        .unwrap_or_else(
+                            || panic!("Unknown piece character: {}", black_char)
+                        );
+
+                    let zone_str = parts[1];
+
+                    result.promotion_zones_mandatory[white_index] =
+                        parse_bit_fen(Some(zone_str), &result);
+
+                    result.promotion_zones_mandatory[black_index] =
+                        parse_bit_fen(Some(zone_str), &result);
+                } else if piece_chars.len() == 1 {
+                    let piece_char = piece_chars.chars().next().unwrap();
+
+                    let piece_index = char_to_index
+                        .get(&piece_char)
+                        .copied()
+                        .unwrap_or_else(
+                            || panic!("Unknown piece character: {}", piece_char)
+                        );
+
+                    let zone_str = parts[1];
+
+                    result.promotion_zones_mandatory[piece_index] =
+                        parse_bit_fen(Some(zone_str), &result);
+                } else {
+                    panic!("Invalid piece character(s): {}", piece_chars);
+                }
             }
         }
 
-        result.piece_demotion_map = piece_demotion_map;
-    }
+        if sections.contains_key("optional promotion zones") {
+            for optional in &sections["optional promotion zones"] {
+                let parts: Vec<&str> =
+                    optional.split(':').map(str::trim).collect();
 
-    if count_limits {
-        let default_count_limits = Table::new();
-        let count_limits_table = config.get("count_limits")
-            .and_then(|v| v.as_table())
-            .unwrap_or(&default_count_limits);
-
-        for piece_char in count_limits_table.keys() {
-            let piece_index = piece_char_to_idx.get(
-                &piece_char.chars().next().unwrap()
-            ).unwrap_or_else(
-                || panic!("Unknown piece character: {}", piece_char)
-            );
-
-            let limit = count_limits_table[piece_char]
-                .as_integer()
-                .unwrap_or_else(
-                    || panic!("Count limit entry is not a valid integer")
+                assert!(
+                    parts.len() == 2,
+                    "Invalid optional promotion zone definition: {}",
+                    optional
                 );
 
-            result.piece_limit[*piece_index as usize] = limit as u32;
+                let piece_chars = parts[0];
+
+                if piece_chars.len() == 2 {
+                    let white_char = piece_chars.chars().next().unwrap();
+                    let black_char = piece_chars.chars().nth(1).unwrap();
+
+                    let white_index = char_to_index
+                        .get(&white_char)
+                        .copied()
+                        .unwrap_or_else(
+                            || panic!("Unknown piece character: {}", white_char)
+                        );
+
+                    let black_index = char_to_index
+                        .get(&black_char)
+                        .copied()
+                        .unwrap_or_else(
+                            || panic!("Unknown piece character: {}", black_char)
+                        );
+
+                    let zone_str = parts[1];
+
+                    result.promotion_zones_optional[white_index] =
+                        parse_bit_fen(Some(zone_str), &result);
+
+                    result.promotion_zones_optional[black_index] =
+                        parse_bit_fen(Some(zone_str), &result);
+                } else if piece_chars.len() == 1 {
+                    let piece_char = piece_chars.chars().next().unwrap();
+
+                    let piece_index = char_to_index
+                        .get(&piece_char)
+                        .copied()
+                        .unwrap_or_else(
+                            || panic!("Unknown piece character: {}", piece_char)
+                        );
+
+                    let zone_str = parts[1];
+
+                    result.promotion_zones_optional[piece_index] =
+                        parse_bit_fen(Some(zone_str), &result);
+                } else {
+                    panic!("Invalid piece character(s): {}", piece_chars);
+                }
+            }
+        }
+    }
+
+    if piece_count_limits {
+        for limit in &sections["piece count limits"] {
+            let parts: Vec<&str> = limit.split(':').map(str::trim).collect();
+
+            assert!(
+                parts.len() == 2,
+                "Invalid piece count limit definition: {}",
+                limit
+            );
+
+            let piece_chars = parts[0];
+
+            if piece_chars.len() == 2 {
+                let white_char = piece_chars.chars().next().unwrap();
+                let black_char = piece_chars.chars().nth(1).unwrap();
+
+                let white_index = char_to_index
+                    .get(&white_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", white_char)
+                    );
+
+                let black_index = char_to_index
+                    .get(&black_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", black_char)
+                    );
+
+                let limit_str = parts[1];
+
+                let limit_value = limit_str.parse::<u32>().unwrap_or_else(
+                    |_| panic!("Invalid piece count limit: {}", limit_str.trim())
+                );
+
+                result.piece_limit[white_index] = limit_value;
+                result.piece_limit[black_index] = limit_value;
+            } else if piece_chars.len() == 1 {
+                let piece_char = piece_chars.chars().next().unwrap();
+
+                let piece_index = char_to_index
+                    .get(&piece_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", piece_char)
+                    );
+
+                let limit_str = parts[1];
+
+                let limit_value = limit_str.parse::<u32>().unwrap_or_else(
+                    |_| panic!("Invalid piece count limit: {}", limit_str.trim())
+                );
+
+                result.piece_limit[piece_index] = limit_value;
+            } else {
+                panic!("Invalid piece character(s): {}", piece_chars);
+            }
         }
     }
 
     if forbidden_zones {
-        let forbidden_zones_table = config.get("forbidden_zones").expect(
-            "Forbidden zones section not found in configuration file"
-        ).as_table().expect(
-            "Forbidden zones section is not a valid table"
-        );
+        for forbidden in &sections["forbidden zones"] {
+            let parts: Vec<&str> =
+                forbidden.split(':').map(str::trim).collect();
 
-        for piece_char in forbidden_zones_table.keys() {
-            let piece_index = piece_char_to_idx.get(
-                &piece_char.chars().next().unwrap()
-            ).unwrap_or_else(
-                || panic!("Unknown piece character: {}", piece_char)
+            assert!(
+                parts.len() == 2,
+                "Invalid forbidden zone definition: {}",
+                forbidden
             );
 
-            let bit_fen = forbidden_zones_table[piece_char]
-                .as_str();
+            let piece_chars = parts[0];
 
-            result.forbidden_zones[*piece_index as usize] =
-                parse_bit_fen(bit_fen, &result);
+            if piece_chars.len() == 2 {
+                let white_char = piece_chars.chars().next().unwrap();
+                let black_char = piece_chars.chars().nth(1).unwrap();
+
+                let white_index = char_to_index
+                    .get(&white_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", white_char)
+                    );
+
+                let black_index = char_to_index
+                    .get(&black_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", black_char)
+                    );
+
+                let zone_str = parts[1];
+
+                result.forbidden_zones[white_index] =
+                    parse_bit_fen(Some(zone_str), &result);
+
+                result.forbidden_zones[black_index] =
+                    parse_bit_fen(Some(zone_str), &result);
+            } else if piece_chars.len() == 1 {
+                let piece_char = piece_chars.chars().next().unwrap();
+
+                let piece_index = char_to_index
+                    .get(&piece_char)
+                    .copied()
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character: {}", piece_char)
+                    );
+
+                let zone_str = parts[1];
+
+                result.forbidden_zones[piece_index] =
+                    parse_bit_fen(Some(zone_str), &result);
+            } else {
+                panic!("Invalid piece character(s): {}", piece_chars);
+            }
         }
     }
-
-    let initial_position = config["initial_position"].as_str().unwrap_or_else(
-        || panic!("Initial position not found in configuration file")
-    );
 
     result.load_fen(initial_position);
 
@@ -450,6 +928,13 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
                 }
                 file += num_str.parse::<u8>().unwrap();
             }
+            'O' => {
+                clear!(
+                    result,
+                    (rank as u32) * (state.files as u32) + (file as u32)
+                );
+                file += 1;
+            }
             _ => {
                 set!(
                     result,
@@ -467,13 +952,29 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// FEN implementation is slightly modified to accommodate arbitrary board
 /// sizes, the en passant square is represented as `xxyyzz` where `xx` is the
 /// file and `yy` is the rank (both 0-indexed) and zz is the piece index in hex.
+///
+/// For variants where there is pieces in hand, it is in the format
+/// (white)/(black) where each part is formatted as follows:
+/// 3P2N means 3 pawns and 2 knights in hand.
+/// RQ means 1 rook and 1 queen in hand.
+/// - means no pieces in hand. so both empty would be -/-
+///
+/// The piece characters are the same as the ones used in the board
+/// representation part of the FEN.
+///
+/// the order is as follows:
+/// 1. Board representation (ranks separated by '/')
+/// 2. Active color ('w' or 'b')
+/// 3. Castling rights (e.g. 'KQkq' or '-')
+/// 4. En passant square (e.g. 'e3' or '-')
+/// 5. Pieces in hand (e.g. '3P2N/1p' or '-')
+///
+/// Optional:
+/// 6. Halfmove clock (number of halfmoves since last capture or pawn move)
+/// 7. Fullmove number (starting at 1 and incremented after
 pub fn parse_fen(state: &mut State, fen: &str) {
 
     let mut needed_parts = 2;
-
-    if drops!(state) {
-        needed_parts += 1;
-    }
 
     if castling!(state) {
         needed_parts += 1;
@@ -483,8 +984,15 @@ pub fn parse_fen(state: &mut State, fen: &str) {
         needed_parts += 1;
     }
 
+    if drops!(state) || promote_to_captured!(state) {
+        needed_parts += 1;
+    }
+
     let parts: Vec<&str> = fen.split_whitespace().collect();
-    assert!(parts.len() >= needed_parts, "FEN must have at least 4 parts");
+    assert!(
+        parts.len() >= needed_parts,
+        "FEN must have at least {needed_parts} parts"
+    );
     let mut part_index = 0;
 
     let position = parts[part_index];
@@ -628,48 +1136,74 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     if en_passant!(state) {
         let en_passant = parts[part_index];
         part_index += 1;
-        state.en_passant_square = if en_passant == "-" {
-            u32::MAX
-        } else {                                                                /* enpassant square is a bit different*/
-            let file = en_passant[0..2].parse::<u8>()
-                .unwrap_or_else(
-                    |_| panic!(
-                        "Invalid en passant file: {}", en_passant[0..2].trim()  /* xxyyppqq -> [filefilerankrank; 2]  */
-                    )
-                );                                                              /* x and y are capturing square       */
-            let rank = en_passant[2..4].parse::<u8>()
-                .unwrap_or_else(
-                    |_| panic!(
-                        "Invalid en passant rank: {}", en_passant[2..4].trim()
-                    )                                                           /* p and q are captured piece square  */
-                );
+        state.en_passant_square = if en_passant == "*" {
+            NO_EN_PASSANT
+        } else {
+            let s = &en_passant[0..3];
+            let e = &en_passant[3..6];
+            let z = &en_passant[6..7];
 
-            let p_file = en_passant[4..6].parse::<u8>()
+            let square_index = u32::from_str_radix(s, 16)
                 .unwrap_or_else(
-                    |_| panic!(
-                        "Invalid en passant file: {}", en_passant[4..6].trim()  /* xxyyppqq -> [filefilerankrank; 2]  */
-                    )
-                );                                                              /* x and y are capturing square       */
-            let p_rank = en_passant[6..8].parse::<u8>()
+                    |_| panic!("Invalid en passant square: {}", s)
+                );
+            let piece_square_index = u32::from_str_radix(e, 16)
                 .unwrap_or_else(
-                    |_| panic!(
-                        "Invalid en passant rank: {}", en_passant[6..8].trim()  /* p and q are captured piece square  */
-                    )
+                    |_| panic!("Invalid en passant captured square: {}", e)
                 );
-            let piece_index = u32::from_str_radix(&en_passant[8..10], 16)
-                .unwrap_or_else(                                                /* last 2 digit hex num is piece indx */
-                    |_| panic!(
-                        "Invalid en passant rank: {}", en_passant[8..10].trim()
-                    )
-                );
-
-            let square_index =
-                (rank as u32) * (state.files as u32) + (file as u32);
-            let piece_square_index =
-                (p_rank as u32) * (state.files as u32) + (p_file as u32);
+            let piece_index = state.pieces.iter().position(
+                |piece| piece.char == z.chars().next().unwrap()
+            ).unwrap_or_else(
+                || panic!("Unknown piece character: {}", z)
+            ) as u32;
 
             square_index | (piece_square_index << 12) | piece_index << 24
         };
+    }
+
+    if drops!(state)
+    || promote_to_captured!(state)
+    || demote_upon_capture!(state)
+    {
+        let hands = parts[part_index];
+        part_index += 1;
+
+        let char_to_index: HashMap<char, u8> = state.pieces.iter()
+            .map(|p| (p.char, p_index!(p)))
+            .collect();
+        let hand_parts: Vec<&str> = hands.split('/').collect();
+        assert!(
+            hand_parts.len() == 2,
+            "Invalid pieces in hand format: {}",
+            hands
+        );
+
+        for (color_idx, hand_part) in hand_parts.iter().enumerate() {
+            if hand_part == &"-" {
+                continue;
+            }
+
+            for m in IN_HAND_PATTERN.captures_iter(hand_part) {
+                let count_str = m.get(1)
+                    .unwrap().as_str();
+                let piece_char = m.get(2)
+                    .unwrap().as_str().chars().next().unwrap();
+
+                let count = if count_str.is_empty() {
+                    1
+                } else {
+                    count_str.parse::<u16>().unwrap_or_else(
+                        |_| panic!("Invalid piece count: {}", count_str.trim())
+                    )
+                };
+
+                let piece_index = char_to_index.get(&piece_char).unwrap_or_else(
+                    || panic!("Unknown piece character in hand: {}", piece_char)
+                );
+
+                state.piece_in_hand[color_idx][*piece_index as usize] = count;
+            }
+        }
     }
 
     if parts.len() > part_index {
@@ -677,6 +1211,16 @@ pub fn parse_fen(state: &mut State, fen: &str) {
             .unwrap_or_else(
                 |_| panic!(
                     "Invalid halfmove clock: {}", parts[part_index].trim()
+                )
+            );
+        part_index += 1;
+    }
+
+    if parts.len() > part_index {
+        state.ply_counter = parts[part_index].parse()
+            .unwrap_or_else(
+                |_| panic!(
+                    "Invalid ply number: {}", parts[part_index].trim()
                 )
             );
     }
@@ -840,16 +1384,20 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             result.push_str("White's hand\t: ");
             for (i, piece) in state.pieces.iter().enumerate() {
                 let count = pieces_in_white[i];
-                if count > 0 {
-                    result.push_str(&format!("{}x{} ", count, piece.char));
+                if count == 1 {
+                    result.push_str(&format!("{}", piece.char));
+                } else if count > 1 {
+                    result.push_str(&format!("{}{}", count, piece.char));
                 }
             }
 
             result.push_str("\nBlack's hand\t: ");
             for (i, piece) in state.pieces.iter().enumerate() {
                 let count = pieces_in_black[i];
-                if count > 0 {
-                    result.push_str(&format!("{}x{} ", count, piece.char));
+                if count == 1 {
+                    result.push_str(&format!("{}", piece.char));
+                } else if count > 1 {
+                    result.push_str(&format!("{}{}", count, piece.char));
                 }
             }
         }

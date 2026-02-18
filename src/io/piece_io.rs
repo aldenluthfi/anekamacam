@@ -63,11 +63,13 @@ pub fn format_piece(piece: &Piece, state: &State) -> String {
             if !state.piece_demotion_map.contains_key(&p_index!(piece)) {
                 "-".to_string()
             } else {
-                state.piece_demotion_map.get(&p_index!(piece))
-                .unwrap()
-                .iter()
-                .map(|piece_idx| state.pieces[*piece_idx as usize].char)
-                .collect::<String>()
+                state.piece_demotion_map
+                    .get(&p_index!(piece))
+                    .unwrap()
+                    .iter()
+                    .map(|&idx| state.pieces[idx as usize].char.to_string())
+                    .collect::<Vec<String>>()
+                    .join("")
             }
         );
     }
