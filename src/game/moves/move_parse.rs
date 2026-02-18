@@ -358,6 +358,9 @@ fn normalize(expr: &str) -> Option<String> {
 fn atomize(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
+    #[cfg(debug_assertions)]
+    println!("DEBUG: Starting atomization of expression: {}", expr);
+
     let mut atoms = Vec::with_capacity(expr.len());
     for c in expr.chars() {
         atoms.push(betza_atoms(c));
@@ -374,6 +377,9 @@ fn atomize(expr: &str) -> Option<String> {
 #[hotpath::measure]
 fn expand_directions(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: Starting direction expansion of expression: {}", expr);
 
     let mut expanded = expr.to_string();
 
@@ -431,6 +437,9 @@ fn expand_directions(expr: &str) -> Option<String> {
 fn expand_ranges(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
+    #[cfg(debug_assertions)]
+    println!("DEBUG: Starting range expansion of expression: {}", expr);
+
     if !expr.contains('{') && !expr.contains('*') {
         return Some(expr.to_string());
     }
@@ -466,6 +475,9 @@ fn expand_ranges(expr: &str) -> Option<String> {
 #[hotpath::measure]
 fn expand_cardinals(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: Starting cardinal expansion of expression: {}", expr);
 
     if !expr.contains('+') {
         return Some(expr.to_string());
@@ -513,7 +525,7 @@ fn split_and_process<T>(
 where
     T: Send + Sync,
 {
-    assert!(!expr.is_empty(), "{expr} must not empty.");
+    assert!(!expr.is_empty(), "expr must not be empty.");
 
     expr.split('|')
         .map(|s| f(s.trim()))
@@ -528,9 +540,15 @@ where
 /// - `leg_to_vector`
 #[hotpath::measure]
 fn parse_move(expr: &str) -> String {
+    #[cfg(debug_assertions)]
+    println!("DEBUG: Starting parse_move with expression: {}", expr);
+
     let expr = normalize(expr).unwrap_or_else(
         || panic!("Failed to normalize expression: {}", expr)
     );
+
+    #[cfg(debug_assertions)]
+    println!("DEBUG: Normalized expression: {}", expr);
 
     let pipeline = [
         atomize,
@@ -3010,6 +3028,13 @@ pub fn generate_move_vectors(
     game_state: &State
 ) -> Vec<MultiLegVector> {
     let parsed_expr = parse_move(expr);
+
+    #[cfg(debug_assertions)]
+    println!(
+        "DEBUG: generate_move_vectors parsed expression for {}: {:#?}",
+        expr, parsed_expr
+    );
+
     split_and_process(&parsed_expr, |m| Some(
             multi_leg_to_vector(m, "n", game_state))
         )

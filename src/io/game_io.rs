@@ -23,7 +23,7 @@ use std::fs;
 
 use crate::game::representations::board::Board;
 use crate::{
-    board, castling, clear, constants::*, count_limits, demote_upon_capture, drops, en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, forbidden_zones, get, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set
+    board, castling, clear, constants::*, count_limits, demote_upon_capture, drops, en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, enc_stalemate_loss, forbidden_zones, get, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set
 };
 use crate::game::{
     hash::hash_position,
@@ -47,7 +47,7 @@ lazy_static!{
     pub static ref COMMENT_PATTERN: Regex =
         Regex::new(r"//[^\n\r]*").unwrap();
     pub static ref SECTION_PATTERN: Regex =
-        Regex::new(r"\[(.+)\][^\[\]]+").unwrap();
+        Regex::new(r"= (.+) =[^=]+").unwrap();
     pub static ref IN_HAND_PATTERN: Regex =
         Regex::new(r"(\d*)(.)").unwrap();
 }
@@ -165,6 +165,8 @@ pub fn parse_config_file(path: &str) -> State {
         .contains(&"promote to captured".to_string());
     let demote_upon_capture = sections["rules"]
         .contains(&"demote upon capture".to_string());
+    let stalemate_loss = sections["rules"]
+        .contains(&"stalemate loss".to_string());
 
     let (fen_castling, fen_en_passant, fen_in_hand) =
         extract_fen_components(initial_position);
@@ -262,6 +264,10 @@ pub fn parse_config_file(path: &str) -> State {
 
     if demote_upon_capture {
         enc_demote_upon_capture!(special_rules);
+    }
+
+    if stalemate_loss {
+        enc_stalemate_loss!(special_rules);
     }
 
 /*----------------------------------------------------------------------------*\
@@ -568,15 +574,17 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     for piece in &result.pieces {
-        if !p_can_promote!(piece) {
-            continue;
-        }
         for promotion_index in p_promotions!(piece) {
             result.piece_demotion_map
                 .entry(promotion_index as u8)
                 .or_default()
                 .push(p_index!(piece));
         }
+    }
+
+    for (index, _) in result.pieces.iter().enumerate() {
+        result.piece_demotion_map
+            .entry(index as u8).or_insert_with(|| vec![index as u8]);
     }
 
     if castling {
@@ -733,6 +741,48 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    if drops && sections.contains_key("drops") {
+        for drop in &sections["drops"] {
+            let parts: Vec<&str> = drop.split(':').map(str::trim).collect();
+
+            assert!(
+                parts.len() == 2,
+                "Invalid drop definition: {}",
+                drop
+            );
+
+            let piece_chars = parts[0];
+            let drop_pattern = parts[1].to_string();
+
+            if piece_chars.len() == 2 {
+                let white_char = piece_chars.chars().next().unwrap();
+                let black_char = piece_chars.chars().nth(1).unwrap();
+
+                if let Some(&white_index) = char_to_index.get(&white_char) {
+                    result.pieces[white_index].drop = drop_pattern.clone();
+                } else {
+                    panic!("Unknown piece character: {}", white_char);
+                }
+
+                if let Some(&black_index) = char_to_index.get(&black_char) {
+                    result.pieces[black_index].drop = drop_pattern.clone();
+                } else {
+                    panic!("Unknown piece character: {}", black_char);
+                }
+            } else if piece_chars.len() == 1 {
+                let piece_char = piece_chars.chars().next().unwrap();
+
+                if let Some(&index) = char_to_index.get(&piece_char) {
+                    result.pieces[index].drop = drop_pattern.clone();
+                } else {
+                    panic!("Unknown piece character: {}", piece_char);
+                }
+            } else {
+                panic!("Invalid piece character(s): {}", piece_chars);
+            }
+        }
+    }
+
     if piece_count_limits {
         for limit in &sections["piece count limits"] {
             let parts: Vec<&str> = limit.split(':').map(str::trim).collect();
@@ -870,9 +920,10 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     let ranks_data: Vec<&str> = fen.split('/').collect();
     assert!(
         ranks_data.len() == state.ranks as usize,
-        "FEN rank count ({}) doesn't match board ranks ({})",
+        "FEN rank count ({}) doesn't match board ranks ({}) for fen {}",
         ranks_data.len(),
-        state.ranks
+        state.ranks,
+        fen
     );                                                                          /* assert number of ranks in the FEN  */
 
     for (rank_idx, rank_data) in ranks_data.iter().enumerate() {                /* assert number of files in each rank*/
@@ -1447,7 +1498,8 @@ pub fn format_piece_types(state: &State) -> String {
     let num_tables = state.pieces.len().div_ceil(pieces_per_table);
 
     const HEADER_WIDTH: usize = 16;
-    const PIECE_WIDTH: usize = 12;
+    let piece_width: usize =
+        state.pieces.iter().map(|p| p.name.len()).max().unwrap() + 2;
 
     for table_idx in 0..num_tables {
         let start_idx = table_idx * pieces_per_table;
@@ -1486,7 +1538,7 @@ pub fn format_piece_types(state: &State) -> String {
         result.push_str(&"═".repeat(HEADER_WIDTH + 2));
         result.push('╤');
         for i in 0..pieces_in_table {
-            result.push_str(&"═".repeat(PIECE_WIDTH + 2));
+            result.push_str(&"═".repeat(piece_width + 2));
             if i < pieces_in_table - 1 {
                 result.push('╤');
             }
@@ -1501,7 +1553,7 @@ pub fn format_piece_types(state: &State) -> String {
 
             for (col_idx, piece_col) in piece_columns.iter().enumerate() {
                 result.push_str(
-                    &format!(" {:^PIECE_WIDTH$} ", piece_col[row_idx])
+                    &format!(" {:^piece_width$} ", piece_col[row_idx])
                 );
                 if col_idx < piece_columns.len() - 1 {
                     result.push('│');
@@ -1515,7 +1567,7 @@ pub fn format_piece_types(state: &State) -> String {
                 result.push_str(&"─".repeat(HEADER_WIDTH + 2));
                 result.push('┼');
                 for i in 0..pieces_in_table {
-                    result.push_str(&"─".repeat(PIECE_WIDTH + 2));
+                    result.push_str(&"─".repeat(piece_width + 2));
                     if i < pieces_in_table - 1 {
                         result.push('┼');
                     }
@@ -1528,7 +1580,7 @@ pub fn format_piece_types(state: &State) -> String {
         result.push_str(&"═".repeat(HEADER_WIDTH + 2));
         result.push('╧');
         for i in 0..pieces_in_table {
-            result.push_str(&"═".repeat(PIECE_WIDTH + 2));
+            result.push_str(&"═".repeat(piece_width + 2));
             if i < pieces_in_table - 1 {
                 result.push('╧');
             }

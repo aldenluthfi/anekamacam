@@ -19,6 +19,9 @@ use std::{collections::VecDeque, fmt::Debug};
 
 use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
 
+/// A simple (x, y) vector for drop generations.
+pub type PlainVector = u16;
+
 /*----------------------------------------------------------------------------*\
                         MOVE GENERATION REPRESENTATIONS
 \*----------------------------------------------------------------------------*/

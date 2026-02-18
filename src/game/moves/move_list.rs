@@ -5,17 +5,16 @@ use bnum::cast::As;
 use crate::game::util::verify_game_state;
 use crate::{
     c, captured_piece, captured_square, captured_unmoved, clear, constants::{
-        BK_CASTLE, BQ_CASTLE, CASTLING, MULTI_CAPTURE_MOVE, NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE
+        BK_CASTLE, BQ_CASTLE, CASTLING, DROP_MOVE, MULTI_CAPTURE_MOVE, NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE
     }, count_limits, created_enp, creates_enp, d, demote_upon_capture, drops, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, end, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
         hash::{
             CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES, SIDE_HASHES,
-        },
-        representations::{
+        }, moves::drop_list::generate_all_drops, representations::{
             moves::Move,
             piece::Piece,
             state::{EnPassantSquare, Snapshot, Square, State},
             vector::{MoveSet, MoveVector},
-        },
+        }
     }, get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling, hash_update_en_passant, hash_update_in_hand, i, is_initial, is_unload, k, l, m, move_type, multi_move_captured_piece, multi_move_captured_square, multi_move_captured_unmoved, multi_move_is_unload, multi_move_unload_square, not_g, not_i, not_k, not_v, p, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, piece, promote_to_captured, promoted, promotion, promotions, r, set, start, t, u, unload_square, v, x, y
 };
 
@@ -1395,6 +1394,37 @@ pub fn make_move(game_state: &mut State, mv: Move) -> bool {
                 game_state.piece_count[captured_piece_index] -= 1;
             }
         }
+    } else if move_type == DROP_MOVE {
+        let piece_index = piece!(mv) as usize;
+        let drop_square = start!(mv) as u32;
+
+        let piece_color = p_color!(game_state.pieces[piece_index]);
+
+        set!(game_state.pieces_board[piece_color as usize], drop_square);
+
+        if p_is_royal!(game_state.pieces[piece_index]) {
+            game_state.royal_list[piece_color as usize]
+                .push(drop_square as Square);
+        }
+
+        hash_in_or_out_piece!(game_state, piece_index, drop_square as u16);
+
+        game_state.main_board[drop_square as usize] = piece_index as u8;
+        game_state.piece_list[piece_index].push(drop_square as u16);
+
+        let hand =
+            &mut game_state.piece_in_hand[piece_color as usize][piece_index];
+        let old_hand = *hand;
+        *hand -= 1;
+
+        hash_update_in_hand!(
+            game_state,
+            piece_index,
+            old_hand,
+            *hand
+        );
+
+        game_state.halfmove_clock = 0;
     }
 
     game_state.playing = 1 - game_state.playing;
@@ -1823,19 +1853,71 @@ pub fn undo_move(game_state: &mut State) {
                     ] -= 1;
             }
         }
+    } else if move_type == DROP_MOVE {
+        let piece_index = piece!(mv) as usize;
+        let drop_square = start!(mv) as u32;
+
+        let piece_color = p_color!(game_state.pieces[piece_index]);
+
+        clear!(game_state.pieces_board[piece_color as usize], drop_square);
+
+        if p_is_royal!(game_state.pieces[piece_index]) {
+            game_state.royal_list[piece_color as usize]
+                .retain(|&sq| sq as u32 != drop_square);
+        }
+
+        game_state.main_board[drop_square as usize] = NO_PIECE;
+        game_state.piece_list[piece_index]
+            .retain(|&sq| sq != drop_square as u16);
+
+        let hand =
+            &mut game_state.piece_in_hand[piece_color as usize][piece_index];
+        *hand += 1;
     }
 
     #[cfg(debug_assertions)]
     verify_game_state(game_state);
 }
 
+pub fn generate_all_legal_moves(state: &mut State) -> Vec<Move> {
+    let all_moves = generate_all_moves_and_drops(state);
+    let legal_moves: Vec<Move> = all_moves
+        .into_iter()
+        .filter(|mv| {
+            let result = make_move(state, mv.clone());
+
+            if result {
+                undo_move(state);
+            }
+
+            result
+        })
+        .collect();
+
+    legal_moves
+}
+
+pub fn there_is_legal_move(state: &mut State) -> bool {
+    let all_moves = generate_all_moves_and_drops(state);
+    for mv in all_moves {
+        let result = make_move(state, mv.clone());
+
+        if result {
+            undo_move(state);
+            return true;
+        }
+    }
+
+    false
+}
+
 #[hotpath::measure]
-pub fn generate_all_moves(state: &State) -> Vec<Move> {
+pub fn generate_all_moves_and_drops(state: &mut State) -> Vec<Move> {
     let piece_count = state.pieces.len() / 2;
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
 
-    let moves: Vec<Move> = (start_index..end_index)
+    let mut moves: Vec<Move> = (start_index..end_index)
         .flat_map(|piece_index| {
             let piece = &state.pieces[piece_index];
             state.piece_list[piece_index]
@@ -1851,23 +1933,10 @@ pub fn generate_all_moves(state: &State) -> Vec<Move> {
         })
         .collect();
 
+    if drops!(state) {
+        let drop_moves = generate_all_drops(state);
+        moves.extend(drop_moves);
+    }
+
     moves
-}
-
-pub fn generate_all_legal_moves(state: &mut State) -> Vec<Move> {
-    let all_moves = generate_all_moves(state);
-    let legal_moves: Vec<Move> = all_moves
-        .into_iter()
-        .filter(|mv| {
-            let result = make_move(state, mv.clone());
-
-            if result {
-                undo_move(state);
-            }
-
-            result
-        })
-        .collect();
-
-    legal_moves
 }

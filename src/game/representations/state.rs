@@ -21,13 +21,13 @@ use crate::{
             move_list::{
                 generate_attack_masks, generate_relevant_moves
             },
+            drop_list::{
+                generate_relevant_drops
+            },
             move_parse::generate_move_vectors,
         },
         representations::{
-            board::Board,
-            moves::{AttackMask, Move},
-            piece::{Piece},
-            vector::{Leg, LegVector, MoveSet},
+            board::Board, drop::{Drops, parse_drop}, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet}
         },
     },
     io::game_io::parse_fen,
@@ -153,6 +153,20 @@ macro_rules! enc_demote_upon_capture {
     };
 }
 
+#[macro_export]
+macro_rules! stalemate_loss {
+    ($state:expr) => {
+        ($state.special_rules >> 8 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_stalemate_loss {
+    ($rules:expr) => {
+        $rules |= 1 << 8;
+    };
+}
+
 /*----------------------------------------------------------------------------*\
                             EN PASSANT REPRESENTATION
 \*----------------------------------------------------------------------------*/
@@ -223,6 +237,7 @@ impl Default for Snapshot {
 /// - bit 5: Some pieces have forbidden zones
 /// - bit 6: Can only promote to captured friendly pieces by the enemy
 /// - bit 7: Demote piece in hand upon capture
+/// - bit 8: Stalemate is a loss for the stalemated player
 /// - but 8-31: reserved for future use
 ///
 pub struct State {
@@ -246,9 +261,10 @@ pub struct State {
     pub ranks: u8,
 
     pub relevant_moves: Vec<Vec<MoveSet>>,
-    pub relevant_drops: Vec<Vec<MoveSet>>,
+    pub relevant_drops: Vec<Vec<Drops>>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub piece_moves: Vec<MoveSet>,
+    pub piece_drops: Vec<Drops>,
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: HashMap<u8, Vec<u8>>,                               /* piece index to demotion piece idx  */
 
@@ -314,10 +330,11 @@ impl State {
             relevant_moves:
                 vec![vec![MoveSet::new(); board_size]; piece_count],
             relevant_drops:
-                vec![vec![MoveSet::new(); board_size]; piece_count],
+                vec![vec![Drops::default(); board_size]; piece_count],
             relevant_attacks:
                 [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
             piece_moves: vec![MoveSet::new(); piece_count],
+            piece_drops: vec![Drops::default(); piece_count],
             piece_swap_map: HashMap::new(),
             piece_demotion_map: HashMap::new(),
 
@@ -404,11 +421,30 @@ impl State {
         }
     }
 
+    fn populate_piece_drops(&mut self) {
+        for (index, piece) in self.pieces.iter().enumerate() {
+            self.piece_drops[index] = parse_drop(piece, self);
+        }
+    }
+
     fn populate_relevant_moves(&mut self) {
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_moves[index][square as usize]
                     = generate_relevant_moves(
+                        piece,
+                        square,
+                        self
+                    );
+            }
+        }
+    }
+
+    fn populate_relevant_drops(&mut self) {
+        for (index, piece) in self.pieces.iter().enumerate() {
+            for square in 0..(self.files as u32 * self.ranks as u32) {
+                self.relevant_drops[index][square as usize]
+                    = generate_relevant_drops(
                         piece,
                         square,
                         self
@@ -425,7 +461,17 @@ impl State {
 
     pub fn precompute(&mut self) {
         self.populate_piece_moves();
+
+        if drops!(self) {
+            self.populate_piece_drops();
+        }
+
         self.populate_relevant_moves();
+
+        if drops!(self) {
+            self.populate_relevant_drops();
+        }
+
         self.populate_relevant_attacks();
     }
 }

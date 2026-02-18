@@ -63,5 +63,6 @@ pub const NO_EN_PASSANT: u32 = u32::MAX;
 pub const QUIET_MOVE: u128 = 0;
 pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
+pub const DROP_MOVE: u128 = 3;
 
 pub const NULL_MOVE: Move = (!0u128, Vec::new());
