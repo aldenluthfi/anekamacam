@@ -221,7 +221,7 @@ impl Default for Snapshot {
 /// - bit 3: Drops allowed
 /// - bit 4: Some pieces have a count limit
 /// - bit 5: Some pieces have forbidden zones
-/// - bit 6: Can only promote to captured pieces
+/// - bit 6: Can only promote to captured friendly pieces by the enemy
 /// - bit 7: Demote piece in hand upon capture
 /// - but 8-31: reserved for future use
 ///
@@ -246,6 +246,7 @@ pub struct State {
     pub ranks: u8,
 
     pub relevant_moves: Vec<Vec<MoveSet>>,
+    pub relevant_drops: Vec<Vec<MoveSet>>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub piece_moves: Vec<MoveSet>,
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
@@ -311,6 +312,8 @@ impl State {
             ranks,
 
             relevant_moves:
+                vec![vec![MoveSet::new(); board_size]; piece_count],
+            relevant_drops:
                 vec![vec![MoveSet::new(); board_size]; piece_count],
             relevant_attacks:
                 [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
