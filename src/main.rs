@@ -10,11 +10,13 @@ pub mod game {
         pub mod state;
         pub mod moves;
         pub mod vector;
+        pub mod drop;
     }
 
     pub mod moves {
         pub mod move_parse;
         pub mod move_list;
+        pub mod drop_list;
         pub mod perft;
     }
 
@@ -33,7 +35,7 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let variant = "xiangqi";
+    let variant = "shogi";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 
@@ -41,5 +43,5 @@ fn main() {
 
     println!("{}", format_entire_game(&state));
 
-    start_perft(&mut state, &perft_path, 5, false, Some(0));
+    start_perft(&mut state, &perft_path, 6, -1);
 }

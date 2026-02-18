@@ -2,7 +2,7 @@ use std::fs;
 
 use crate::{
     game::{
-        moves::move_list::{generate_all_moves, make_move, undo_move},
+        moves::move_list::{generate_all_moves_and_drops, make_move, undo_move},
         representations::state::State
     },
     io::{game_io::format_game_state, move_io::format_move}
@@ -42,8 +42,7 @@ pub fn start_perft(
     state: &mut State,
     path: &str,
     depth: u8,
-    debug: bool,
-    branch: Option<u8>,
+    branch: i8,
 ) {
     let perft_cases = parse_perft_file(path);
 
@@ -73,7 +72,7 @@ pub fn start_perft(
 
         for d in 1..=depth {
             let start_time = std::time::Instant::now();
-            let result = perft(state, d, debug, branch);
+            let result = perft(state, d, branch, "");
             let elapsed = start_time.elapsed().as_nanos();
 
             let expected = expected_perfts[(d - 1) as usize];
@@ -109,65 +108,35 @@ pub fn start_perft(
 fn perft(
     state: &mut State,
     depth: u8,
-    debug: bool,
-    branch: Option<u8>,
-) -> u64 {
-    perft_impl(
-        state, depth, debug, branch, if debug {Some(String::new())} else {None}
-    )
-}
-
-fn perft_impl(
-    state: &mut State,
-    depth: u8,
-    debug: bool,
-    branch: Option<u8>,
-    prefix: Option<String>,
+    branch: i8,
+    prefix: &str,
 ) -> u64 {
     if depth == 0 {
-        if debug {
-            println!("{} Reached leaf node", prefix.unwrap());
+        if branch >= 0 {
+            println!("{} Reached leaf node", prefix);
         }
         return 1;
     }
 
-    let possible_moves = generate_all_moves(state);
+    let possible_moves = generate_all_moves_and_drops(state);
     let mut nodes = 0;
 
     for mv in possible_moves {
-        if debug {
-            let formatted_move = &mut format_move(&mv, state);
-            formatted_move.push(' ');
+        let formatted_move = format_move(&mv, state);
 
-            if make_move(state, mv) {
-                nodes += perft_impl(
-                    state,
-                    depth - 1,
-                    debug && depth > branch.unwrap_or(0),
-                    branch,
-                    Some(format!(
-                        "{}{}",
-                        prefix.as_ref().unwrap(),
-                        formatted_move
-                    )),
-                );
-                undo_move(state);
+        if make_move(state, mv) {
+            if branch >= 0 {
+                let new_prefix = format!("{}{}", prefix, formatted_move);
+                nodes += perft(state, depth - 1, branch - 1, &new_prefix);
+            } else {
+                nodes += perft(state, depth - 1, branch - 1, "");
             }
-        } else if make_move(state, mv) {
-            nodes += perft_impl(
-                state,
-                depth - 1,
-                false,
-                None,
-                None,
-            );
-
             undo_move(state);
         }
     }
 
-    if debug {
-        println!("{}moves | Nodes: {}", prefix.unwrap(), nodes);
+    if branch >= 0 {
+        println!("{}moves | Nodes: {}", prefix, nodes);
     }
 
     nodes
