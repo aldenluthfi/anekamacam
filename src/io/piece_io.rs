@@ -67,6 +67,7 @@ pub fn format_piece(piece: &Piece, state: &State) -> String {
                     .get(&p_index!(piece))
                     .unwrap()
                     .iter()
+                    .filter(|&&idx| idx != p_index!(piece))
                     .map(|&idx| state.pieces[idx as usize].char.to_string())
                     .collect::<Vec<String>>()
                     .join("")
