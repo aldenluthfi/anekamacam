@@ -20,7 +20,17 @@ pub mod game {
         pub mod perft;
     }
 
-    pub mod hash;
+    pub mod search {
+        pub mod quiescence;
+    }
+
+    pub mod evaluation {
+        pub mod r#static;
+    }
+
+    pub mod hash {
+        pub mod zobrist;
+    }
     pub mod util;
 }
 
@@ -29,13 +39,17 @@ pub mod io {
 	pub mod game_io;
 	pub mod piece_io;
     pub mod move_io;
+
+    pub mod protocols {
+        pub mod uci;
+    }
 }
 
 pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let variant = "crazyhouse";
+    let variant = "fide";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 
@@ -43,5 +57,5 @@ fn main() {
 
     println!("{}", format_entire_game(&state));
 
-    start_perft(&mut state, &perft_path, 5, -1);
+    start_perft(&mut state, &perft_path, 6, -1, 100);
 }

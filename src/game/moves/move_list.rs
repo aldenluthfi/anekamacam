@@ -4,20 +4,43 @@ use bnum::cast::As;
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 use crate::{
-    c, captured_piece, captured_square, captured_unmoved, clear, constants::{
-        BK_CASTLE, BQ_CASTLE, CASTLING, DROP_MOVE, MULTI_CAPTURE_MOVE, NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE
-    }, count_limits, created_enp, creates_enp, d, demote_upon_capture, drops, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, end, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
-        hash::{
-            CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES, SIDE_HASHES,
-        }, moves::drop_list::generate_all_drops, representations::{
+    c, captured_piece, captured_square, captured_unmoved, clear,
+    constants::{
+        BK_CASTLE, BQ_CASTLE, CASTLING, DROP_MOVE, MULTI_CAPTURE_MOVE,
+        NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE,
+        WK_CASTLE, WQ_CASTLE,
+    },
+    count_limits, created_enp, creates_enp, d, demote_upon_capture, drops,
+    enc_capture_part, enc_created_enp, enc_creates_enp, enc_end,
+    enc_is_initial, enc_move_type, enc_multi_move_captured_piece,
+    enc_multi_move_captured_square, enc_multi_move_captured_unmoved,
+    enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece,
+    enc_promoted, enc_promotion, enc_start, end, enp_captured, enp_piece,
+    enp_square, forbidden_zones, g,
+    game::{
+        hash::zobrist::{
+            CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES,
+            PIECE_HASHES, SIDE_HASHES,
+        },
+        moves::drop_list::generate_drop_list,
+        representations::{
             moves::Move,
             piece::Piece,
             state::{EnPassantSquare, Snapshot, Square, State},
             vector::{MoveSet, MoveVector},
-        }
-    }, get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling, hash_update_en_passant, hash_update_in_hand, i, is_initial, is_unload, k, l, m, move_type, multi_move_captured_piece, multi_move_captured_square, multi_move_captured_unmoved, multi_move_is_unload, multi_move_unload_square, not_g, not_i, not_k, not_v, p, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, piece, promote_to_captured, promoted, promotion, promotions, r, set, start, t, u, unload_square, v, x, y
+        },
+    },
+    get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling,
+    hash_update_en_passant, hash_update_in_hand, i, is_initial, is_unload,
+    k, l, m, move_type, multi_move_captured_piece, multi_move_captured_square,
+    multi_move_captured_unmoved, multi_move_is_unload, multi_move_unload_square,
+    not_g, not_i, not_k, not_v, p, p_can_promote, p_castle_left,
+    p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor,
+    p_is_royal, p_promotions, p_value, piece, promote_to_captured, promoted,
+    promotion, promotions, r, set, start, t, u, unload_square, v, x, y,
 };
 
+#[inline(always)]
 fn is_square_attacked(
     square: u32,
     attacked_side: u8,
@@ -49,26 +72,25 @@ fn is_square_attacked(
     false
 }
 
+#[inline(always)]
 pub fn is_in_check(
     side: u8,
     game_state: &State
 ) -> bool {
     let monarch_indices = &game_state.royal_list[side as usize];
 
-    for square in monarch_indices {
-        if is_square_attacked(
-            *square as u32,
-            side,
-            get!(game_state.virgin_board, *square as u32),
-            true,
-            u16::MAX,
-            game_state
-        ) {
-            return true;
-        }
+    if monarch_indices.len() > 1 {
+        return false;
     }
 
-    false
+    is_square_attacked(
+        monarch_indices[0] as u32,
+        side,
+        get!(game_state.virgin_board, monarch_indices[0] as u32),
+        true,
+        u16::MAX,
+        game_state
+    )
 }
 
 pub fn generate_relevant_moves(
@@ -432,7 +454,7 @@ pub fn generate_move_list(
             let castling_rights = piece_color as usize * 2 + l as usize;
 
             if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
-            || special_i
+            || (special_i
             && is_square_attacked(
                 accumulated_index as u32,
                 piece_color,
@@ -440,9 +462,9 @@ pub fn generate_move_list(
                 p_is_royal!(piece),
                 p_value!(piece),
                 game_state
-            )
-            || (l || r)
-            && game_state.castling_state & CASTLING[castling_rights] == 0
+            ))
+            || ((l || r)
+            && game_state.castling_state & CASTLING[castling_rights] == 0)
             {
                 continue 'multi_leg;
             }
@@ -724,1159 +746,1260 @@ pub fn generate_move_list(
     result
 }
 
-pub fn make_move(game_state: &mut State, mv: Move) -> bool {
-
-    game_state.ply += 1;
-    game_state.ply_counter += 1;
-
-    let last_en_passant_square = game_state.en_passant_square;
-    let last_halfmove_clock = game_state.halfmove_clock;
-    let last_castling_state = game_state.castling_state;
-    let last_position_hash = game_state.position_hash;
-
-    #[cfg(debug_assertions)]
-    verify_game_state(game_state);
-
-    let move_type = move_type!(mv);
-
-    if move_type == QUIET_MOVE {
-        let piece_index = piece!(mv) as usize;
-        let start_square = start!(mv) as u32;
-        let end_square = end!(mv) as u32;
-        let is_promotion = promotion!(mv);
-        let creates_enp = creates_enp!(mv);
-        let promoted_piece = promoted!(mv) as usize;
-        let enp_square = created_enp!(mv) as u32;
-
-        let piece_color = p_color!(game_state.pieces[piece_index]);
-        let piece_unmoved = get!(game_state.virgin_board, start_square);
-
-        clear!(game_state.pieces_board[piece_color as usize], start_square);
-        set!(game_state.pieces_board[piece_color as usize], end_square);
-
-        if p_is_royal!(game_state.pieces[piece_index]) {
-            game_state.royal_list[piece_color as usize].retain(
-                |&sq| sq as u32 != start_square
-            );
-            game_state.royal_list[piece_color as usize]
-                .push(end_square as Square);
-        }
-
-        clear!(game_state.virgin_board, start_square);
-
-        if creates_enp {
-            game_state.en_passant_square = enp_square as EnPassantSquare;
-        } else {
-            game_state.en_passant_square = NO_EN_PASSANT;
-        }
-
-        hash_update_en_passant!(
-            game_state,
-            last_en_passant_square,
-            game_state.en_passant_square
-        );
-
-        hash_in_or_out_piece!(game_state, piece_index, start_square as u16);
-        hash_in_or_out_piece!(
-            game_state,
-            if is_promotion { promoted_piece } else { piece_index },
-            end_square as u16
-        );
-
-        game_state.main_board[start_square as usize] = NO_PIECE;
-        game_state.main_board[end_square as usize] =
-            if is_promotion { promoted_piece as u8 } else { piece_index as u8 };
-
-        if is_promotion {
-            let old_piece = &game_state.pieces[piece_index];
-            let new_piece = &game_state.pieces[promoted_piece];
-
-            if p_is_big!(old_piece) {
-            game_state.big_pieces[piece_color as usize] -= 1;
-            }
-            if p_is_major!(old_piece) {
-            game_state.major_pieces[piece_color as usize] -= 1;
-            } else if p_is_minor!(old_piece) {
-            game_state.minor_pieces[piece_color as usize] -= 1;
-            }
-
-            if p_is_big!(new_piece) {
-            game_state.big_pieces[piece_color as usize] += 1;
-            }
-            if p_is_major!(new_piece) {
-            game_state.major_pieces[piece_color as usize] += 1;
-            } else if p_is_minor!(new_piece) {
-            game_state.minor_pieces[piece_color as usize] += 1;
-            }
-
-            game_state.material[piece_color as usize] +=
-            p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
-
-            game_state.piece_count[promoted_piece] += 1;
-            game_state.piece_count[piece_index] -= 1;
-
-            if promote_to_captured!(game_state) {
-                let enemy_equiv = game_state.piece_swap_map
-                    [&(promoted_piece as u8)];
-                let hand =
-                    &mut game_state.piece_in_hand
-                    [1 - piece_color as usize][enemy_equiv as usize];
-                *hand -= 1;
-
-                hash_update_in_hand!(
-                    game_state,
-                    enemy_equiv as usize,
-                    *hand + 1,
-                    *hand
-                );
-            }
-        }
-
-        game_state.piece_list[piece_index]
-            .retain(|&sq| sq != start_square as u16);
-        game_state.piece_list[
-            if is_promotion { promoted_piece } else { piece_index }
-        ].push(end_square as u16);
-
-        if p_can_promote!(game_state.pieces[piece_index]) {
-            game_state.halfmove_clock = 0;
-        } else {
-            game_state.halfmove_clock += 1;
-        }
-
-        if piece_unmoved {
-            match (
-                p_castle_right!(game_state.pieces[piece_index]),
-                p_castle_left!(game_state.pieces[piece_index])
-            ) {
-                (true, true) => {
-                    game_state.castling_state &= !(
-                        [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
-                        [piece_color as usize]
-                    );
-                },
-                (true, false) => {
-                    let rights = [!WK_CASTLE, !BK_CASTLE][piece_color as usize];
-                    game_state.castling_state &= rights;
-                },
-                (false, true) => {
-                    let rights = [!WQ_CASTLE, !BQ_CASTLE][piece_color as usize];
-                    game_state.castling_state &= rights;
-                },
-                (false, false) => {
-                    let start_rank =
-                        (start_square as u16) / game_state.files as u16;
-                    let start_file =
-                        (start_square as u16) % game_state.files as u16;
-
-                    let is_queenside = start_file == 0;
-                    let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
-                        [piece_color as usize * 2 + is_queenside as usize];
-
-                    if  start_rank == 0 ||
-                        start_rank == game_state.ranks as u16 - 1
-                    {
-                        game_state.castling_state &= !rights;
-                    }
-                }
-            }
-        }
-
-        hash_update_castling!(
-            game_state, last_castling_state, game_state.castling_state
-        );
-
-    } else if move_type == SINGLE_CAPTURE_MOVE {
-        let piece_index = piece!(mv) as usize;
-        let start_square = start!(mv) as u32;
-        let end_square = end!(mv) as u32;
-        let is_promotion = promotion!(mv);
-        let creates_enp = creates_enp!(mv);
-        let promoted_piece = promoted!(mv) as usize;
-        let enp_square = created_enp!(mv) as u32;
-        let captured_piece_index = captured_piece!(mv) as usize;
-        let captured_square = captured_square!(mv) as u32;
-        let is_unload = is_unload!(mv);
-        let unload_square = unload_square!(mv) as u32;
-
-        let piece_color = p_color!(game_state.pieces[piece_index]);
-        let piece_unmoved = get!(game_state.virgin_board, start_square);
-        let captured_color = p_color!(game_state.pieces[captured_piece_index]);
-
-        clear!(game_state.pieces_board[piece_color as usize], start_square);
-        set!(game_state.pieces_board[piece_color as usize], end_square);
-
-        if p_is_royal!(game_state.pieces[piece_index]) {
-            game_state.royal_list[piece_color as usize].retain(
-                |&sq| sq as u32 != start_square
-            );
-            game_state.royal_list[piece_color as usize]
-                .push(end_square as Square);
-        }
-
-        clear!(game_state.virgin_board, start_square);
-
-        if creates_enp {
-            game_state.en_passant_square = enp_square as EnPassantSquare;
-        } else {
-            game_state.en_passant_square = NO_EN_PASSANT;
-        }
-
-        hash_update_en_passant!(
-            game_state,
-            last_en_passant_square,
-            game_state.en_passant_square
-        );
-
-        hash_in_or_out_piece!(game_state, piece_index, start_square as u16);
-        hash_in_or_out_piece!(
-            game_state,
-            if is_promotion { promoted_piece } else { piece_index },
-            end_square as u16
-        );
-
-        game_state.main_board[start_square as usize] = NO_PIECE;
-        game_state.main_board[end_square as usize] =
-            if is_promotion { promoted_piece as u8 } else { piece_index as u8 };
-
-        if is_promotion {
-            let old_piece = &game_state.pieces[piece_index];
-            let new_piece = &game_state.pieces[promoted_piece];
-
-            if p_is_big!(old_piece) {
-            game_state.big_pieces[piece_color as usize] -= 1;
-            }
-            if p_is_major!(old_piece) {
-            game_state.major_pieces[piece_color as usize] -= 1;
-            } else if p_is_minor!(old_piece) {
-            game_state.minor_pieces[piece_color as usize] -= 1;
-            }
-
-            if p_is_big!(new_piece) {
-            game_state.big_pieces[piece_color as usize] += 1;
-            }
-            if p_is_major!(new_piece) {
-            game_state.major_pieces[piece_color as usize] += 1;
-            } else if p_is_minor!(new_piece) {
-            game_state.minor_pieces[piece_color as usize] += 1;
-            }
-
-            game_state.material[piece_color as usize] +=
-             p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
-
-            game_state.piece_count[promoted_piece] += 1;
-            game_state.piece_count[piece_index] -= 1;
-
-            if promote_to_captured!(game_state) {
-                let enemy_equiv = game_state.piece_swap_map
-                    [&(promoted_piece as u8)];
-                let hand =
-                    &mut game_state.piece_in_hand
-                    [1 - piece_color as usize][enemy_equiv as usize];
-                let old_hand = *hand;
-                *hand -= 1;
-
-                hash_update_in_hand!(
-                    game_state,
-                    enemy_equiv as usize,
-                    old_hand,
-                    *hand
-                );
-            }
-        }
-
-        game_state.piece_list[piece_index]
-            .retain(|&sq| sq != start_square as u16);
-        game_state.piece_list[
-            if is_promotion { promoted_piece } else { piece_index }
-        ].push(end_square as u16);
-
-        game_state.halfmove_clock = 0;
-
-        if piece_unmoved {
-            match (
-                p_castle_right!(game_state.pieces[piece_index]),
-                p_castle_left!(game_state.pieces[piece_index])
-            ) {
-                (true, true) => {
-                    game_state.castling_state &= !(
-                        [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
-                        [piece_color as usize]
-                    );
-                },
-                (true, false) => {
-                    let rights = [!WK_CASTLE, !BK_CASTLE][piece_color as usize];
-                    game_state.castling_state &= rights;
-                },
-                (false, true) => {
-                    let rights = [!WQ_CASTLE, !BQ_CASTLE][piece_color as usize];
-                    game_state.castling_state &= rights;
-                },
-                (false, false) => {
-                    let start_rank =
-                        (start_square as u16) / game_state.files as u16;
-                    let start_file =
-                        (start_square as u16) % game_state.files as u16;
-
-                    let is_queenside = start_file == 0;
-                    let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
-                        [piece_color as usize * 2 + is_queenside as usize];
-
-                    if  start_rank == 0 ||
-                        start_rank == game_state.ranks as u16 - 1
-                    {
-                        game_state.castling_state &= !rights;
-                    }
-                }
-            }
-        }
-
-        if drops!(game_state) || promote_to_captured!(game_state) {
-            let mut captured_index_u8 = captured_piece_index as u8;
-
-            if demote_upon_capture!(game_state) {
-                captured_index_u8 = game_state.piece_demotion_map
-                    .get(&(captured_index_u8))
-                    .unwrap()[0];                                               /* assume 1 to 1 mapping              */
-            }
-
-            let swap_index =
-                *game_state.piece_swap_map
-                .get(&captured_index_u8).unwrap() as usize;
-            let hand =
-                &mut game_state.piece_in_hand[piece_color as usize][swap_index];
-            let old_hand = *hand;
-            *hand += 1;
-
-            hash_update_in_hand!(
-                game_state,
-                captured_index_u8 as usize,
-                old_hand,
-                *hand
-            );
-        }
-
-        let end_rank = (captured_square as u16) / game_state.files as u16;
-        let end_file = (captured_square as u16) % game_state.files as u16;
-
-        if get!(game_state.virgin_board, captured_square)
-            && (end_rank == 0 || end_rank == game_state.ranks as u16 - 1)
-            && (end_file == 0 || end_file == game_state.files as u16 - 1)
+#[macro_export]
+macro_rules! make_move {
+    ($state:expr, $mv:expr) => {
         {
-            let is_queenside = end_file == 0;
-            let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
-            [
-                (end_rank == game_state.ranks as u16 - 1) as usize * 2
-                + is_queenside as usize
-            ];
-            game_state.castling_state &= !rights;
-        }
+            $state.ply += 1;
+            $state.ply_counter += 1;
 
-        hash_update_castling!(
-            game_state, last_castling_state, game_state.castling_state
-        );
+            let last_en_passant_square = $state.en_passant_square;
+            let last_halfmove_clock = $state.halfmove_clock;
+            let last_castling_state = $state.castling_state;
+            let last_position_hash = $state.position_hash;
 
-        clear!(
-            game_state.pieces_board[captured_color as usize], captured_square
-        );
+            #[cfg(debug_assertions)]
+            verify_game_state($state);
 
-        hash_in_or_out_piece!(
-            game_state,
-            captured_piece_index,
-            captured_square as u16
-        );
+            let move_type = move_type!($mv);
 
-        clear!(game_state.virgin_board, captured_square);
+            if move_type == QUIET_MOVE {
+                let piece_index = piece!($mv) as usize;
+                let start_square = start!($mv) as u32;
+                let end_square = end!($mv) as u32;
+                let is_promotion = promotion!($mv);
+                let creates_enp = creates_enp!($mv);
+                let promoted_piece = promoted!($mv) as usize;
+                let enp_square = created_enp!($mv) as u32;
 
-        if is_unload {
-            set!(
-                game_state.pieces_board[captured_color as usize], unload_square
-            );
+                let piece_color =
+                    p_color!($state.pieces[piece_index]);
+                let piece_unmoved =
+                    get!($state.virgin_board, start_square);
 
-            hash_in_or_out_piece!(
-                game_state,
-                captured_piece_index,
-                unload_square as u16
-            );
-
-            set!(game_state.virgin_board, unload_square);
-        }
-
-        if captured_square != end_square {
-            game_state.main_board[captured_square as usize] = NO_PIECE;
-        }
-
-        if is_unload {
-            game_state.main_board[unload_square as usize] =
-                captured_piece_index as u8;
-            game_state.piece_list[captured_piece_index].retain(
-                |&sq| sq != captured_square as u16
-            );
-            game_state.piece_list[captured_piece_index]
-                .push(unload_square as u16);
-        } else {
-            game_state.piece_list[captured_piece_index].retain(
-                |&sq| sq != captured_square as u16
-            );
-        }
-
-        if !is_unload {
-            if p_is_big!(game_state.pieces[captured_piece_index]) {
-                game_state.big_pieces[captured_color as usize] -= 1;
-            }
-            if p_is_major!(game_state.pieces[captured_piece_index]) {
-                game_state.major_pieces[captured_color as usize] -= 1;
-            } else if p_is_minor!(game_state.pieces[captured_piece_index]) {
-                game_state.minor_pieces[captured_color as usize] -= 1;
-            }
-
-            game_state.material[captured_color as usize] -=
-                 p_value!(game_state.pieces[captured_piece_index]) as u32;
-
-            game_state.piece_count[captured_piece_index] -= 1;
-        }
-
-    } else if move_type == MULTI_CAPTURE_MOVE {
-        let piece_index = piece!(mv) as usize;
-        let start_square = start!(mv) as u32;
-        let end_square = end!(mv) as u32;
-        let is_promotion = promotion!(mv);
-        let creates_enp = creates_enp!(mv);
-        let promoted_piece = promoted!(mv) as usize;
-        let enp_square = created_enp!(mv) as u32;
-
-        let piece_color = p_color!(game_state.pieces[piece_index]);
-        let piece_unmoved = get!(game_state.virgin_board, start_square);
-
-        clear!(game_state.pieces_board[piece_color as usize], start_square);
-        set!(game_state.pieces_board[piece_color as usize], end_square);
-
-        if p_is_royal!(game_state.pieces[piece_index]) {
-            game_state.royal_list[piece_color as usize].retain(
-                |&sq| sq as u32 != start_square
-            );
-            game_state.royal_list[piece_color as usize]
-                .push(end_square as Square);
-        }
-
-        clear!(game_state.virgin_board, start_square);
-
-        if creates_enp {
-            game_state.en_passant_square = enp_square as EnPassantSquare;
-        } else {
-            game_state.en_passant_square = NO_EN_PASSANT;
-        }
-
-        hash_update_en_passant!(
-            game_state,
-            last_en_passant_square,
-            game_state.en_passant_square
-        );
-
-        hash_in_or_out_piece!(game_state, piece_index, start_square as u16);
-        hash_in_or_out_piece!(
-            game_state,
-            if is_promotion { promoted_piece } else { piece_index },
-            end_square as u16
-        );
-
-        game_state.main_board[start_square as usize] = NO_PIECE;
-        game_state.main_board[end_square as usize] =
-            if is_promotion { promoted_piece as u8 } else { piece_index as u8 };
-
-        if is_promotion {
-            let old_piece = &game_state.pieces[piece_index];
-            let new_piece = &game_state.pieces[promoted_piece];
-
-            if p_is_big!(old_piece) {
-            game_state.big_pieces[piece_color as usize] -= 1;
-            }
-            if p_is_major!(old_piece) {
-            game_state.major_pieces[piece_color as usize] -= 1;
-            } else if p_is_minor!(old_piece) {
-            game_state.minor_pieces[piece_color as usize] -= 1;
-            }
-
-            if p_is_big!(new_piece) {
-            game_state.big_pieces[piece_color as usize] += 1;
-            }
-            if p_is_major!(new_piece) {
-            game_state.major_pieces[piece_color as usize] += 1;
-            } else if p_is_minor!(new_piece) {
-            game_state.minor_pieces[piece_color as usize] += 1;
-            }
-
-            game_state.material[piece_color as usize] +=
-             p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
-
-            game_state.piece_count[promoted_piece] += 1;
-            game_state.piece_count[piece_index] -= 1;
-
-            if promote_to_captured!(game_state) {
-                let enemy_equiv = game_state.piece_swap_map
-                    [&(promoted_piece as u8)];
-                let hand =
-                    &mut game_state.piece_in_hand
-                    [1 - piece_color as usize][enemy_equiv as usize];
-                let old_hand = *hand;
-                *hand -= 1;
-
-                hash_update_in_hand!(
-                    game_state,
-                    enemy_equiv as usize,
-                    old_hand,
-                    *hand
+                clear!(
+                    $state.pieces_board[piece_color as usize],
+                    start_square
                 );
-            }
-        }
-
-        game_state.piece_list[piece_index]
-            .retain(|&sq| sq != start_square as u16);
-        game_state.piece_list[
-            if is_promotion { promoted_piece } else { piece_index }
-        ].push(end_square as u16);
-
-        game_state.halfmove_clock = 0;
-
-        if piece_unmoved {
-            match (
-                p_castle_right!(game_state.pieces[piece_index]),
-                p_castle_left!(game_state.pieces[piece_index])
-            ) {
-                (true, true) => {
-                    game_state.castling_state &= !(
-                        [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
-                        [piece_color as usize]
-                    );
-                },
-                (true, false) => {
-                    let rights = [!WK_CASTLE, !BK_CASTLE][piece_color as usize];
-                    game_state.castling_state &= rights;
-                },
-                (false, true) => {
-                    let rights = [!WQ_CASTLE, !BQ_CASTLE][piece_color as usize];
-                    game_state.castling_state &= rights;
-                },
-                (false, false) => {
-                    let start_rank =
-                        (start_square as u16) / game_state.files as u16;
-                    let start_file =
-                        (start_square as u16) % game_state.files as u16;
-
-                    let is_queenside = start_file == 0;
-                    let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
-                        [piece_color as usize * 2 + is_queenside as usize];
-
-                    if  start_rank == 0 ||
-                        start_rank == game_state.ranks as u16 - 1
-                    {
-                        game_state.castling_state &= !rights;
-                    }
-                }
-            }
-        }
-
-        for cap in &mv.1 {
-            let captured_piece_index = multi_move_captured_piece!(cap) as usize;
-            let captured_square = multi_move_captured_square!(cap) as u32;
-            let is_unload = multi_move_is_unload!(cap);
-            let unload_square = multi_move_unload_square!(cap) as u32;
-            let captured_color = p_color!(
-                game_state.pieces[captured_piece_index]
-            );
-
-            if drops!(game_state) || promote_to_captured!(game_state) {
-                let mut captured_index_u8 = captured_piece_index as u8;
-
-                if demote_upon_capture!(game_state) {
-                    captured_index_u8 = game_state.piece_demotion_map
-                        .get(&(captured_index_u8))
-                        .unwrap()[0];                                           /* assume 1 to 1 mapping              */
-                }
-
-                let swap_index =
-                    *game_state.piece_swap_map
-                    .get(&captured_index_u8)
-                    .unwrap() as usize;
-                let hand =
-                    &mut game_state.piece_in_hand
-                    [piece_color as usize][swap_index];
-                let old_hand = *hand;
-                *hand += 1;
-
-                hash_update_in_hand!(
-                    game_state,
-                    captured_index_u8 as usize,
-                    old_hand,
-                    *hand
-                );
-            }
-
-            let end_rank = (captured_square as u16) / game_state.files as u16;
-            let end_file = (captured_square as u16) % game_state.files as u16;
-
-            if get!(game_state.virgin_board, captured_square)
-                && (end_rank == 0 || end_rank == game_state.ranks as u16 - 1)
-                && (end_file == 0 || end_file == game_state.files as u16 - 1)
-            {
-                let is_queenside = end_file == 0;
-                let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
-                [
-                    (end_rank == game_state.ranks as u16 - 1) as usize * 2
-                    + is_queenside as usize
-                ];
-                game_state.castling_state &= !rights;
-            }
-
-            hash_update_castling!(
-                game_state, last_castling_state, game_state.castling_state
-            );
-
-            clear!(
-                game_state.pieces_board[captured_color as usize],
-                captured_square
-            );
-
-            hash_in_or_out_piece!(
-                game_state,
-                captured_piece_index,
-                captured_square as u16
-            );
-
-            clear!(game_state.virgin_board, captured_square);
-
-            if is_unload {
                 set!(
-                    game_state.pieces_board[captured_color as usize],
-                    unload_square
+                    $state.pieces_board[piece_color as usize],
+                    end_square
+                );
+
+                if p_is_royal!($state.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize].retain(
+                        |&sq| sq as u32 != start_square
+                    );
+                    $state.royal_list[piece_color as usize]
+                        .push(end_square as Square);
+                }
+
+                clear!($state.virgin_board, start_square);
+
+                if creates_enp {
+                    $state.en_passant_square =
+                        enp_square as EnPassantSquare;
+                } else {
+                    $state.en_passant_square = NO_EN_PASSANT;
+                }
+
+                hash_update_en_passant!(
+                    $state,
+                    last_en_passant_square,
+                    $state.en_passant_square
                 );
 
                 hash_in_or_out_piece!(
-                    game_state,
-                    captured_piece_index,
-                    unload_square as u16
+                    $state, piece_index, start_square as u16
+                );
+                hash_in_or_out_piece!(
+                    $state,
+                    if is_promotion { promoted_piece } else { piece_index },
+                    end_square as u16
                 );
 
-                set!(game_state.virgin_board, unload_square);
-            }
+                $state.main_board[start_square as usize] = NO_PIECE;
+                $state.main_board[end_square as usize] =
+                    if is_promotion { promoted_piece as u8 }
+                    else { piece_index as u8 };
 
-            if captured_square != end_square {
-                game_state.main_board[captured_square as usize] = NO_PIECE;
-            }
+                if is_promotion {
+                    let old_piece = &$state.pieces[piece_index];
+                    let new_piece = &$state.pieces[promoted_piece];
 
-            if is_unload {
-                game_state.main_board[unload_square as usize] =
-                    captured_piece_index as u8;
-                game_state.piece_list[captured_piece_index].retain(
-                    |&sq| sq != captured_square as u16
-                );
-                game_state.piece_list[captured_piece_index]
-                    .push(unload_square as u16);
-            } else {
-                game_state.piece_list[captured_piece_index].retain(
-                    |&sq| sq != captured_square as u16
-                );
-            }
+                    if p_is_big!(old_piece) {
+                    $state.big_pieces[piece_color as usize] -= 1;
+                    }
+                    if p_is_major!(old_piece) {
+                    $state.major_pieces[piece_color as usize] -= 1;
+                    } else if p_is_minor!(old_piece) {
+                    $state.minor_pieces[piece_color as usize] -= 1;
+                    }
 
-            if !is_unload {
-                if p_is_big!(game_state.pieces[captured_piece_index]) {
-                    game_state.big_pieces[captured_color as usize] -= 1;
+                    if p_is_big!(new_piece) {
+                    $state.big_pieces[piece_color as usize] += 1;
+                    }
+                    if p_is_major!(new_piece) {
+                    $state.major_pieces[piece_color as usize] += 1;
+                    } else if p_is_minor!(new_piece) {
+                    $state.minor_pieces[piece_color as usize] += 1;
+                    }
+
+                    $state.material[piece_color as usize] +=
+                    p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
+
+                    $state.piece_count[promoted_piece] += 1;
+                    $state.piece_count[piece_index] -= 1;
+
+                    if promote_to_captured!($state) {
+                        let enemy_equiv = $state.piece_swap_map
+                            [&(promoted_piece as u8)];
+                        let hand =
+                            &mut $state.piece_in_hand
+                            [1 - piece_color as usize][enemy_equiv as usize];
+                        *hand -= 1;
+
+                        hash_update_in_hand!(
+                            $state,
+                            enemy_equiv as usize,
+                            *hand + 1,
+                            *hand
+                        );
+                    }
                 }
-                if p_is_major!(game_state.pieces[captured_piece_index]) {
-                    game_state.major_pieces[captured_color as usize] -= 1;
-                } else if p_is_minor!(game_state.pieces[captured_piece_index]) {
-                    game_state.minor_pieces[captured_color as usize] -= 1;
+
+                $state.piece_list[piece_index]
+                    .retain(|&sq| sq != start_square as u16);
+                $state.piece_list[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ].push(end_square as u16);
+
+                if p_can_promote!($state.pieces[piece_index]) {
+                    $state.halfmove_clock = 0;
+                } else {
+                    $state.halfmove_clock += 1;
                 }
 
-                game_state.material[captured_color as usize] -=
-                    p_value!(game_state.pieces[captured_piece_index]) as u32;
+                if piece_unmoved {
+                    match (
+                        p_castle_right!($state.pieces[piece_index]),
+                        p_castle_left!($state.pieces[piece_index])
+                    ) {
+                        (true, true) => {
+                            $state.castling_state &= !(
+                                [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
+                                [piece_color as usize]
+                            );
+                        },
+                        (true, false) => {
+                            let rights = [!WK_CASTLE, !BK_CASTLE]
+                            [piece_color as usize];
+                            $state.castling_state &= rights;
+                        },
+                        (false, true) => {
+                            let rights = [!WQ_CASTLE, !BQ_CASTLE]
+                            [piece_color as usize];
+                            $state.castling_state &= rights;
+                        },
+                        (false, false) => {
+                            let start_rank =
+                                (start_square as u16) / $state.files as u16;
+                            let start_file =
+                                (start_square as u16) % $state.files as u16;
+
+                            let is_queenside = start_file == 0;
+                            let rights = [
+                                WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
+                            ][piece_color as usize * 2 + is_queenside as usize];
+
+                            if  start_rank == 0
+                            && (start_file == 0
+                            || start_file == $state.files as u16 - 1)
+                            || start_rank == $state.ranks as u16 - 1
+                            && (start_file == 0
+                            || start_file == $state.files as u16 - 1)
+                            {
+                                $state.castling_state &= !rights;
+                            }
+                        }
+                    }
+                }
+
+                hash_update_castling!(
+                    $state, last_castling_state, $state.castling_state
+                );
+
+            } else if move_type == SINGLE_CAPTURE_MOVE {
+                let piece_index = piece!($mv) as usize;
+                let start_square = start!($mv) as u32;
+                let end_square = end!($mv) as u32;
+                let is_promotion = promotion!($mv);
+                let creates_enp = creates_enp!($mv);
+                let promoted_piece = promoted!($mv) as usize;
+                let enp_square = created_enp!($mv) as u32;
+                let captured_piece_index = captured_piece!($mv) as usize;
+                let captured_square = captured_square!($mv) as u32;
+                let is_unload = is_unload!($mv);
+                let unload_square = unload_square!($mv) as u32;
+
+                let piece_color = p_color!($state.pieces[piece_index]);
+                let piece_unmoved = get!(
+                    $state.virgin_board, start_square
+                );
+                let captured_color = p_color!(
+                    $state.pieces[captured_piece_index]
+                );
 
-                game_state.piece_count[captured_piece_index] -= 1;
-            }
-        }
-    } else if move_type == DROP_MOVE {
-        let piece_index = piece!(mv) as usize;
-        let drop_square = start!(mv) as u32;
-
-        let piece_color = p_color!(game_state.pieces[piece_index]);
-
-        set!(game_state.pieces_board[piece_color as usize], drop_square);
-
-        if p_is_royal!(game_state.pieces[piece_index]) {
-            game_state.royal_list[piece_color as usize]
-                .push(drop_square as Square);
-        }
-
-        hash_in_or_out_piece!(game_state, piece_index, drop_square as u16);
-
-        game_state.main_board[drop_square as usize] = piece_index as u8;
-        game_state.piece_list[piece_index].push(drop_square as u16);
-
-        let hand =
-            &mut game_state.piece_in_hand[piece_color as usize][piece_index];
-        let old_hand = *hand;
-        *hand -= 1;
-
-        hash_update_in_hand!(
-            game_state,
-            piece_index,
-            old_hand,
-            *hand
-        );
-
-        game_state.halfmove_clock = 0;
-    }
-
-    game_state.playing = 1 - game_state.playing;
-    hash_toggle_side!(game_state);
-
-    let snapshot: Snapshot = Snapshot {
-        move_ply: mv,
-        castling_state: last_castling_state,
-        halfmove_clock: last_halfmove_clock,
-        en_passant_square: last_en_passant_square,
-        position_hash: last_position_hash
-    };
-
-    game_state.history.push(snapshot);
-
-    if is_in_check(1 - game_state.playing, game_state) {
-        undo_move(game_state);
-        return false;
-    }
-
-    #[cfg(debug_assertions)]
-    verify_game_state(game_state);
-
-    true
-}
-
-pub fn undo_move(game_state: &mut State) {
-
-    game_state.ply -= 1;
-    game_state.ply_counter -= 1;
-
-    let snapshot = game_state.history.pop().unwrap_or_else(
-        || panic!("No move to undo!")
-    );
-
-    #[cfg(debug_assertions)]
-    verify_game_state(game_state);
-
-    game_state.playing = 1 - game_state.playing;
-    game_state.castling_state = snapshot.castling_state;
-    game_state.halfmove_clock = snapshot.halfmove_clock;
-    game_state.en_passant_square = snapshot.en_passant_square;
-    game_state.position_hash = snapshot.position_hash;
-
-    let mv = snapshot.move_ply;
-    let move_type = move_type!(mv);
-
-    if move_type == QUIET_MOVE {
-        let piece_index = piece!(mv) as usize;
-        let start_square = start!(mv) as u32;
-        let end_square = end!(mv) as u32;
-        let piece_unmoved = is_initial!(mv) == 1;
-        let is_promotion = promotion!(mv);
-        let promoted_piece = promoted!(mv) as usize;
-
-        let piece_color = p_color!(game_state.pieces[piece_index]);
-
-        clear!(game_state.pieces_board[piece_color as usize], end_square);
-        set!(game_state.pieces_board[piece_color as usize], start_square);
-
-        if p_is_royal!(game_state.pieces[piece_index]) {
-            game_state.royal_list[piece_color as usize].retain(
-                |&sq| sq as u32 != end_square
-            );
-            game_state.royal_list[piece_color as usize]
-                .push(start_square as Square);
-        }
-
-        if piece_unmoved {
-            set!(game_state.virgin_board, start_square);
-        }
-
-        game_state.main_board[end_square as usize] = NO_PIECE;
-        game_state.main_board[start_square as usize] = piece_index as u8;
-
-        if is_promotion {
-            game_state.piece_list[promoted_piece]
-                .retain(|&sq| sq != end_square as u16);
-
-            if p_is_big!(game_state.pieces[promoted_piece]) {
-                game_state.big_pieces[piece_color as usize] -= 1;
-            }
-            if p_is_major!(game_state.pieces[promoted_piece]) {
-                game_state.major_pieces[piece_color as usize] -= 1;
-            } else if p_is_minor!(game_state.pieces[promoted_piece]) {
-                game_state.minor_pieces[piece_color as usize] -= 1;
-            }
-
-            if p_is_big!(game_state.pieces[piece_index]) {
-                game_state.big_pieces[piece_color as usize] += 1;
-            }
-            if p_is_major!(game_state.pieces[piece_index]) {
-                game_state.major_pieces[piece_color as usize] += 1;
-            } else if p_is_minor!(game_state.pieces[piece_index]) {
-                game_state.minor_pieces[piece_color as usize] += 1;
-            }
-
-            game_state.material[piece_color as usize] +=
-                 p_value!(game_state.pieces[piece_index]) as u32;
-            game_state.material[piece_color as usize] -=
-                 p_value!(game_state.pieces[promoted_piece]) as u32;
-
-            game_state.piece_count[promoted_piece] -= 1;
-            game_state.piece_count[piece_index] += 1;
-
-            if promote_to_captured!(game_state) {
-                let enemy_equiv = game_state.piece_swap_map
-                    [&(promoted_piece as u8)];
-                let hand =
-                    &mut game_state.piece_in_hand
-                    [1 - piece_color as usize][enemy_equiv as usize];
-                *hand += 1;
-            }
-        } else {
-            game_state.piece_list[piece_index]
-                .retain(|&sq| sq != end_square as u16);
-        }
-
-        game_state.piece_list[piece_index]
-            .push(start_square as u16);
-    } else if move_type == SINGLE_CAPTURE_MOVE {
-        let piece_index = piece!(mv) as usize;
-        let start_square = start!(mv) as u32;
-        let end_square = end!(mv) as u32;
-        let piece_unmoved = is_initial!(mv) == 1;
-        let is_promotion = promotion!(mv);
-        let promoted_piece = promoted!(mv) as usize;
-        let captured_piece_index = captured_piece!(mv) as usize;
-        let captured_square = captured_square!(mv) as u32;
-        let captured_unmoved = captured_unmoved!(mv);
-        let is_unload = is_unload!(mv);
-        let unload_square = unload_square!(mv) as u32;
-
-        let piece_color = p_color!(game_state.pieces[piece_index]);
-        let captured_color = p_color!(game_state.pieces[captured_piece_index]);
-
-        clear!(game_state.pieces_board[piece_color as usize], end_square);
-        set!(game_state.pieces_board[piece_color as usize], start_square);
-
-        if p_is_royal!(game_state.pieces[piece_index]) {
-            game_state.royal_list[piece_color as usize].retain(
-                |&sq| sq as u32 != end_square
-            );
-            game_state.royal_list[piece_color as usize]
-                .push(start_square as Square);
-        }
-
-        if piece_unmoved {
-            set!(game_state.virgin_board, start_square);
-        }
-
-        game_state.main_board[end_square as usize] = NO_PIECE;
-        game_state.main_board[start_square as usize] = piece_index as u8;
-
-        if is_promotion {
-            game_state.piece_list[promoted_piece]
-                .retain(|&sq| sq != end_square as u16);
-
-            if p_is_big!(game_state.pieces[promoted_piece]) {
-                game_state.big_pieces[piece_color as usize] -= 1;
-            }
-            if p_is_major!(game_state.pieces[promoted_piece]) {
-                game_state.major_pieces[piece_color as usize] -= 1;
-            } else if p_is_minor!(game_state.pieces[promoted_piece]) {
-                game_state.minor_pieces[piece_color as usize] -= 1;
-            }
-
-            if p_is_big!(game_state.pieces[piece_index]) {
-                game_state.big_pieces[piece_color as usize] += 1;
-            }
-            if p_is_major!(game_state.pieces[piece_index]) {
-                game_state.major_pieces[piece_color as usize] += 1;
-            } else if p_is_minor!(game_state.pieces[piece_index]) {
-                game_state.minor_pieces[piece_color as usize] += 1;
-            }
-
-            game_state.material[piece_color as usize] +=
-                 p_value!(game_state.pieces[piece_index]) as u32;
-            game_state.material[piece_color as usize] -=
-                 p_value!(game_state.pieces[promoted_piece]) as u32;
-
-            game_state.piece_count[promoted_piece] -= 1;
-            game_state.piece_count[piece_index] += 1;
-
-            if promote_to_captured!(game_state) {
-                let enemy_equiv = game_state.piece_swap_map
-                    [&(promoted_piece as u8)];
-                let hand =
-                    &mut game_state.piece_in_hand
-                    [1 - piece_color as usize][enemy_equiv as usize];
-                *hand += 1;
-            }
-        } else {
-            game_state.piece_list[piece_index]
-                .retain(|&sq| sq != end_square as u16);
-        }
-
-        game_state.piece_list[piece_index]
-            .push(start_square as u16);
-
-        if is_unload {
-            clear!(
-                game_state.pieces_board[captured_color as usize],
-                unload_square
-            );
-            set!(
-                game_state.pieces_board[captured_color as usize],
-                captured_square
-            );
-        } else {
-            set!(
-                game_state.pieces_board[captured_color as usize],
-                captured_square
-            );
-        }
-
-        if captured_unmoved {
-            set!(game_state.virgin_board, captured_square);
-
-            if is_unload {
-                clear!(game_state.virgin_board, unload_square);
-            }
-        }
-
-        if is_unload {
-            game_state.main_board[unload_square as usize] = NO_PIECE;
-        }
-        game_state.main_board[captured_square as usize] =
-            captured_piece_index as u8;
-
-        if is_unload {
-            game_state.piece_list[captured_piece_index].retain(
-                |&sq| sq != unload_square as u16
-            );
-        }
-        game_state.piece_list[captured_piece_index]
-            .push(captured_square as u16);
-
-        if !is_unload {
-            if p_is_big!(game_state.pieces[captured_piece_index]) {
-                game_state.big_pieces[captured_color as usize] += 1;
-            }
-
-            if p_is_major!(game_state.pieces[captured_piece_index]) {
-                game_state.major_pieces[captured_color as usize] += 1;
-            } else if p_is_minor!(game_state.pieces[captured_piece_index]) {
-                game_state.minor_pieces[captured_color as usize] += 1;
-            }
-
-            game_state.material[captured_color as usize] +=
-                 p_value!(game_state.pieces[captured_piece_index]) as u32;
-
-            game_state.piece_count[captured_piece_index] += 1;
-        }
-
-        if drops!(game_state) || promote_to_captured!(game_state) {
-            let mut captured_index_u8 = captured_piece_index as u8;
-
-            if demote_upon_capture!(game_state) {
-                captured_index_u8 = game_state.piece_demotion_map
-                    .get(&(captured_index_u8))
-                    .unwrap()[0];                                               /* assume 1 to 1 mapping              */
-            }
-
-            game_state.piece_in_hand
-                [piece_color as usize][
-                    *game_state.piece_swap_map
-                    .get(&captured_index_u8)
-                    .unwrap() as usize
-                ] -= 1;
-        }
-    } else if move_type == MULTI_CAPTURE_MOVE {
-                let piece_index = piece!(mv) as usize;
-        let start_square = start!(mv) as u32;
-        let end_square = end!(mv) as u32;
-        let piece_unmoved = is_initial!(mv) == 1;
-        let is_promotion = promotion!(mv);
-        let promoted_piece = promoted!(mv) as usize;
-
-        let piece_color = p_color!(game_state.pieces[piece_index]);
-
-        clear!(game_state.pieces_board[piece_color as usize], end_square);
-        set!(game_state.pieces_board[piece_color as usize], start_square);
-
-        if p_is_royal!(game_state.pieces[piece_index]) {
-            game_state.royal_list[piece_color as usize].retain(
-                |&sq| sq as u32 != end_square
-            );
-            game_state.royal_list[piece_color as usize]
-                .push(start_square as Square);
-        }
-
-        if piece_unmoved {
-            set!(game_state.virgin_board, start_square);
-        }
-
-        game_state.main_board[end_square as usize] = NO_PIECE;
-        game_state.main_board[start_square as usize] = piece_index as u8;
-
-        if is_promotion {
-            game_state.piece_list[promoted_piece]
-                .retain(|&sq| sq != end_square as u16);
-
-            if p_is_big!(game_state.pieces[promoted_piece]) {
-                game_state.big_pieces[piece_color as usize] -= 1;
-            }
-            if p_is_major!(game_state.pieces[promoted_piece]) {
-                game_state.major_pieces[piece_color as usize] -= 1;
-            } else if p_is_minor!(game_state.pieces[promoted_piece]) {
-                game_state.minor_pieces[piece_color as usize] -= 1;
-            }
-
-            if p_is_big!(game_state.pieces[piece_index]) {
-                game_state.big_pieces[piece_color as usize] += 1;
-            }
-            if p_is_major!(game_state.pieces[piece_index]) {
-                game_state.major_pieces[piece_color as usize] += 1;
-            } else if p_is_minor!(game_state.pieces[piece_index]) {
-                game_state.minor_pieces[piece_color as usize] += 1;
-            }
-
-            game_state.material[piece_color as usize] +=
-                 p_value!(game_state.pieces[piece_index]) as u32;
-            game_state.material[piece_color as usize] -=
-                 p_value!(game_state.pieces[promoted_piece]) as u32;
-
-            game_state.piece_count[promoted_piece] -= 1;
-            game_state.piece_count[piece_index] += 1;
-
-            if promote_to_captured!(game_state) {
-                let enemy_equiv = game_state.piece_swap_map
-                    [&(promoted_piece as u8)];
-                let hand =
-                    &mut game_state.piece_in_hand
-                    [1 - piece_color as usize][enemy_equiv as usize];
-                *hand += 1;
-            }
-        } else {
-            game_state.piece_list[piece_index]
-                .retain(|&sq| sq != end_square as u16);
-        }
-
-        game_state.piece_list[piece_index]
-            .push(start_square as u16);
-
-        for cap in &mv.1 {
-            let captured_piece_index = multi_move_captured_piece!(cap) as usize;
-            let captured_square = multi_move_captured_square!(cap) as u32;
-            let captured_unmoved = multi_move_captured_unmoved!(cap);
-            let is_unload = multi_move_is_unload!(cap);
-            let unload_square = multi_move_unload_square!(cap) as u32;
-            let captured_color = p_color!(
-                game_state.pieces[captured_piece_index]
-            );
-
-            if is_unload {
                 clear!(
-                    game_state.pieces_board[captured_color as usize],
-                    unload_square
+                    $state.pieces_board[piece_color as usize], start_square
                 );
                 set!(
-                    game_state.pieces_board[captured_color as usize],
-                    captured_square
+                    $state.pieces_board[piece_color as usize], end_square
                 );
-            } else {
-                set!(
-                    game_state.pieces_board[captured_color as usize],
-                    captured_square
-                );
-            }
 
-            if captured_unmoved {
-                set!(game_state.virgin_board, captured_square);
+                if p_is_royal!($state.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize].retain(
+                        |&sq| sq as u32 != start_square
+                    );
+                    $state.royal_list[piece_color as usize]
+                        .push(end_square as Square);
+                }
+
+                clear!($state.virgin_board, start_square);
+
+                if creates_enp {
+                    $state.en_passant_square =
+                        enp_square as EnPassantSquare;
+                } else {
+                    $state.en_passant_square = NO_EN_PASSANT;
+                }
+
+                hash_update_en_passant!(
+                    $state,
+                    last_en_passant_square,
+                    $state.en_passant_square
+                );
+
+                hash_in_or_out_piece!(
+                    $state, piece_index, start_square as u16
+                );
+                hash_in_or_out_piece!(
+                    $state,
+                    if is_promotion { promoted_piece } else { piece_index },
+                    end_square as u16
+                );
+
+                $state.main_board[start_square as usize] = NO_PIECE;
+                $state.main_board[end_square as usize] =
+                    if is_promotion { promoted_piece as u8 }
+                    else { piece_index as u8 };
+
+                if is_promotion {
+                    let old_piece = &$state.pieces[piece_index];
+                    let new_piece = &$state.pieces[promoted_piece];
+
+                    if p_is_big!(old_piece) {
+                    $state.big_pieces[piece_color as usize] -= 1;
+                    }
+                    if p_is_major!(old_piece) {
+                    $state.major_pieces[piece_color as usize] -= 1;
+                    } else if p_is_minor!(old_piece) {
+                    $state.minor_pieces[piece_color as usize] -= 1;
+                    }
+
+                    if p_is_big!(new_piece) {
+                    $state.big_pieces[piece_color as usize] += 1;
+                    }
+                    if p_is_major!(new_piece) {
+                    $state.major_pieces[piece_color as usize] += 1;
+                    } else if p_is_minor!(new_piece) {
+                    $state.minor_pieces[piece_color as usize] += 1;
+                    }
+
+                    $state.material[piece_color as usize] +=
+                    p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
+
+                    $state.piece_count[promoted_piece] += 1;
+                    $state.piece_count[piece_index] -= 1;
+
+                    if promote_to_captured!($state) {
+                        let enemy_equiv = $state.piece_swap_map
+                            [&(promoted_piece as u8)];
+                        let hand =
+                            &mut $state.piece_in_hand
+                            [1 - piece_color as usize][enemy_equiv as usize];
+                        let old_hand = *hand;
+                        *hand -= 1;
+
+                        hash_update_in_hand!(
+                            $state,
+                            enemy_equiv as usize,
+                            old_hand,
+                            *hand
+                        );
+                    }
+                }
+
+                $state.piece_list[piece_index]
+                    .retain(|&sq| sq != start_square as u16);
+                $state.piece_list[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ].push(end_square as u16);
+
+                $state.halfmove_clock = 0;
+
+                if piece_unmoved {
+                    match (
+                        p_castle_right!($state.pieces[piece_index]),
+                        p_castle_left!($state.pieces[piece_index])
+                    ) {
+                        (true, true) => {
+                            $state.castling_state &= !(
+                                [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
+                                [piece_color as usize]
+                            );
+                        },
+                        (true, false) => {
+                            let rights = [!WK_CASTLE, !BK_CASTLE]
+                            [piece_color as usize];
+                            $state.castling_state &= rights;
+                        },
+                        (false, true) => {
+                            let rights = [!WQ_CASTLE, !BQ_CASTLE]
+                            [piece_color as usize];
+                            $state.castling_state &= rights;
+                        },
+                        (false, false) => {
+                            let start_rank =
+                                (start_square as u16) / $state.files as u16;
+                            let start_file =
+                                (start_square as u16) % $state.files as u16;
+
+                            let is_queenside = start_file == 0;
+                            let rights = [
+                                WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
+                            ][piece_color as usize * 2 + is_queenside as usize];
+
+                            if  start_rank == 0
+                            && (start_file == 0
+                            || start_file == $state.files as u16 - 1)
+                            || start_rank == $state.ranks as u16 - 1
+                            && (start_file == 0
+                            || start_file == $state.files as u16 - 1)
+                            {
+                                $state.castling_state &= !rights;
+                            }
+                        }
+                    }
+                }
+
+                if drops!($state) || promote_to_captured!($state) {
+                    let mut captured_index_u8 = captured_piece_index as u8;
+
+                    if demote_upon_capture!($state) {
+                        captured_index_u8 = $state.piece_demotion_map
+                            .get(&(captured_index_u8))
+                            .unwrap()[0];                                       /* assume 1 to 1 mapping              */
+                    }
+
+                    let swap_index =
+                        *$state.piece_swap_map
+                        .get(&captured_index_u8).unwrap() as usize;
+                    let hand =
+                        &mut $state.piece_in_hand
+                        [piece_color as usize][swap_index];
+                    let old_hand = *hand;
+                    *hand += 1;
+
+                    hash_update_in_hand!(
+                        $state,
+                        captured_index_u8 as usize,
+                        old_hand,
+                        *hand
+                    );
+                }
+
+                let end_rank = (captured_square as u16) / $state.files as u16;
+                let end_file = (captured_square as u16) % $state.files as u16;
+
+                if get!($state.virgin_board, captured_square)
+                    && (end_rank == 0 || end_rank == $state.ranks as u16 - 1)
+                    && (end_file == 0 || end_file == $state.files as u16 - 1)
+                {
+                    let is_queenside = end_file == 0;
+                    let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
+                    [
+                        (end_rank == $state.ranks as u16 - 1) as usize * 2
+                        + is_queenside as usize
+                    ];
+                    $state.castling_state &= !rights;
+                }
+
+                hash_update_castling!(
+                    $state, last_castling_state, $state.castling_state
+                );
+
+                clear!(
+                    $state.pieces_board[captured_color as usize],
+                    captured_square
+                );
+
+                hash_in_or_out_piece!(
+                    $state,
+                    captured_piece_index,
+                    captured_square as u16
+                );
+
+                clear!($state.virgin_board, captured_square);
 
                 if is_unload {
-                    clear!(game_state.virgin_board, unload_square);
+                    set!(
+                        $state.pieces_board[captured_color as usize],
+                        unload_square
+                    );
+
+                    hash_in_or_out_piece!(
+                        $state,
+                        captured_piece_index,
+                        unload_square as u16
+                    );
+
+                    set!($state.virgin_board, unload_square);
                 }
-            }
 
-            if is_unload {
-                game_state.main_board[unload_square as usize] = NO_PIECE;
-            }
-            game_state.main_board[captured_square as usize] =
-                captured_piece_index as u8;
+                if captured_square != end_square {
+                    $state.main_board[captured_square as usize] = NO_PIECE;
+                }
 
-            if is_unload {
-                game_state.piece_list[captured_piece_index].retain(
-                    |&sq| sq != unload_square as u16
+                if is_unload {
+                    $state.main_board[unload_square as usize] =
+                        captured_piece_index as u8;
+                    $state.piece_list[captured_piece_index].retain(
+                        |&sq| sq != captured_square as u16
+                    );
+                    $state.piece_list[captured_piece_index]
+                        .push(unload_square as u16);
+                } else {
+                    $state.piece_list[captured_piece_index].retain(
+                        |&sq| sq != captured_square as u16
+                    );
+                }
+
+                if !is_unload {
+                    if p_is_big!($state.pieces[captured_piece_index]) {
+                        $state.big_pieces[captured_color as usize] -= 1;
+                    }
+                    if p_is_major!($state.pieces[captured_piece_index]) {
+                        $state.major_pieces[captured_color as usize] -= 1;
+                    } else if p_is_minor!(
+                        $state.pieces[captured_piece_index]
+                    ) {
+                        $state.minor_pieces[captured_color as usize] -= 1;
+                    }
+
+                    $state.material[captured_color as usize] -=
+                        p_value!(
+                            $state.pieces[captured_piece_index]
+                        ) as u32;
+
+                    $state.piece_count[captured_piece_index] -= 1;
+                }
+            } else if move_type == MULTI_CAPTURE_MOVE {
+                let piece_index = piece!($mv) as usize;
+                let start_square = start!($mv) as u32;
+                let end_square = end!($mv) as u32;
+                let is_promotion = promotion!($mv);
+                let creates_enp = creates_enp!($mv);
+                let promoted_piece = promoted!($mv) as usize;
+                let enp_square = created_enp!($mv) as u32;
+
+                let piece_color = p_color!($state.pieces[piece_index]);
+                let piece_unmoved = get!(
+                    $state.virgin_board, start_square
                 );
+
+                clear!(
+                    $state.pieces_board[piece_color as usize], start_square
+                );
+                set!(
+                    $state.pieces_board[piece_color as usize], end_square
+                );
+
+                if p_is_royal!($state.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize].retain(
+                        |&sq| sq as u32 != start_square
+                    );
+                    $state.royal_list[piece_color as usize]
+                        .push(end_square as Square);
+                }
+
+                clear!($state.virgin_board, start_square);
+
+                if creates_enp {
+                    $state.en_passant_square =
+                        enp_square as EnPassantSquare;
+                } else {
+                    $state.en_passant_square = NO_EN_PASSANT;
+                }
+
+                hash_update_en_passant!(
+                    $state,
+                    last_en_passant_square,
+                    $state.en_passant_square
+                );
+
+                hash_in_or_out_piece!(
+                    $state, piece_index, start_square as u16
+                );
+                hash_in_or_out_piece!(
+                    $state,
+                    if is_promotion { promoted_piece } else { piece_index },
+                    end_square as u16
+                );
+
+                $state.main_board[start_square as usize] = NO_PIECE;
+                $state.main_board[end_square as usize] =
+                    if is_promotion { promoted_piece as u8 }
+                    else { piece_index as u8 };
+
+                if is_promotion {
+                    let old_piece = &$state.pieces[piece_index];
+                    let new_piece = &$state.pieces[promoted_piece];
+
+                    if p_is_big!(old_piece) {
+                    $state.big_pieces[piece_color as usize] -= 1;
+                    }
+                    if p_is_major!(old_piece) {
+                    $state.major_pieces[piece_color as usize] -= 1;
+                    } else if p_is_minor!(old_piece) {
+                    $state.minor_pieces[piece_color as usize] -= 1;
+                    }
+
+                    if p_is_big!(new_piece) {
+                    $state.big_pieces[piece_color as usize] += 1;
+                    }
+                    if p_is_major!(new_piece) {
+                    $state.major_pieces[piece_color as usize] += 1;
+                    } else if p_is_minor!(new_piece) {
+                    $state.minor_pieces[piece_color as usize] += 1;
+                    }
+
+                    $state.material[piece_color as usize] +=
+                    p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
+
+                    $state.piece_count[promoted_piece] += 1;
+                    $state.piece_count[piece_index] -= 1;
+
+                    if promote_to_captured!($state) {
+                        let enemy_equiv = $state.piece_swap_map
+                            [&(promoted_piece as u8)];
+                        let hand =
+                            &mut $state.piece_in_hand
+                            [1 - piece_color as usize][enemy_equiv as usize];
+                        let old_hand = *hand;
+                        *hand -= 1;
+
+                        hash_update_in_hand!(
+                            $state,
+                            enemy_equiv as usize,
+                            old_hand,
+                            *hand
+                        );
+                    }
+                }
+
+                $state.piece_list[piece_index]
+                    .retain(|&sq| sq != start_square as u16);
+                $state.piece_list[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ].push(end_square as u16);
+
+                $state.halfmove_clock = 0;
+
+                if piece_unmoved {
+                    match (
+                        p_castle_right!($state.pieces[piece_index]),
+                        p_castle_left!($state.pieces[piece_index])
+                    ) {
+                        (true, true) => {
+                            $state.castling_state &= !(
+                                [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
+                                [piece_color as usize]
+                            );
+                        },
+                        (true, false) => {
+                            let rights = [!WK_CASTLE, !BK_CASTLE]
+                            [piece_color as usize];
+                            $state.castling_state &= rights;
+                        },
+                        (false, true) => {
+                            let rights = [!WQ_CASTLE, !BQ_CASTLE]
+                            [piece_color as usize];
+                            $state.castling_state &= rights;
+                        },
+                        (false, false) => {
+                            let start_rank =
+                                (start_square as u16) /
+                                $state.files as u16;
+                            let start_file =
+                                (start_square as u16) %
+                                $state.files as u16;
+
+                            let is_queenside = start_file == 0;
+                            let rights = [
+                                WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
+                            ][piece_color as usize * 2 + is_queenside as usize];
+
+                            if  start_rank == 0
+                            && (start_file == 0
+                            || start_file == $state.files as u16 - 1)
+                            || start_rank == $state.ranks as u16 - 1
+                            && (start_file == 0
+                            || start_file == $state.files as u16 - 1)
+                            {
+                                $state.castling_state &= !rights;
+                            }
+                        }
+                    }
+                }
+
+                for cap in &$mv.1 {
+                    let captured_piece_index =
+                        multi_move_captured_piece!(cap) as usize;
+                    let captured_square =
+                        multi_move_captured_square!(cap) as u32;
+                    let is_unload = multi_move_is_unload!(cap);
+                    let unload_square = multi_move_unload_square!(cap) as u32;
+                    let captured_color = p_color!(
+                        $state.pieces[captured_piece_index]
+                    );
+
+                    if drops!($state)
+                    || promote_to_captured!($state)
+                    {
+                        let mut captured_index_u8 = captured_piece_index as u8;
+
+                        if demote_upon_capture!($state) {
+                            captured_index_u8 = $state.piece_demotion_map
+                                .get(&(captured_index_u8))
+                                .unwrap()[0];                                   /* assume 1 to 1 mapping              */
+                        }
+
+                        let swap_index =
+                            *$state.piece_swap_map
+                            .get(&captured_index_u8)
+                            .unwrap() as usize;
+                        let hand =
+                            &mut $state.piece_in_hand
+                            [piece_color as usize][swap_index];
+                        let old_hand = *hand;
+                        *hand += 1;
+
+                        hash_update_in_hand!(
+                            $state,
+                            captured_index_u8 as usize,
+                            old_hand,
+                            *hand
+                        );
+                    }
+
+                    let end_rank = (captured_square as u16) /
+                        $state.files as u16;
+                    let end_file = (captured_square as u16) %
+                        $state.files as u16;
+
+                    if get!($state.virgin_board, captured_square)
+                        && (end_rank == 0
+                        || end_rank == $state.ranks as u16 - 1)
+                        && (end_file == 0
+                        || end_file == $state.files as u16 - 1)
+                    {
+                        let is_queenside = end_file == 0;
+                        let rights = [
+                            WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
+                        ]
+                        [
+                            (
+                                end_rank == $state.ranks as u16 - 1
+                            ) as usize * 2
+                            + is_queenside as usize
+                        ];
+                        $state.castling_state &= !rights;
+                    }
+
+                    hash_update_castling!(
+                        $state, last_castling_state,
+                        $state.castling_state
+                    );
+
+                    clear!(
+                        $state.pieces_board[captured_color as usize],
+                        captured_square
+                    );
+
+                    hash_in_or_out_piece!(
+                        $state,
+                        captured_piece_index,
+                        captured_square as u16
+                    );
+
+                    clear!($state.virgin_board, captured_square);
+
+                    if is_unload {
+                        set!(
+                            $state.pieces_board[captured_color as usize],
+                            unload_square
+                        );
+
+                        hash_in_or_out_piece!(
+                            $state,
+                            captured_piece_index,
+                            unload_square as u16
+                        );
+
+                        set!($state.virgin_board, unload_square);
+                    }
+
+                    if captured_square != end_square {
+                        $state.main_board[captured_square as usize] =
+                            NO_PIECE;
+                    }
+
+                    if is_unload {
+                        $state.main_board[unload_square as usize] =
+                            captured_piece_index as u8;
+                        $state.piece_list[captured_piece_index].retain(
+                            |&sq| sq != captured_square as u16
+                        );
+                        $state.piece_list[captured_piece_index]
+                            .push(unload_square as u16);
+                    } else {
+                        $state.piece_list[captured_piece_index].retain(
+                            |&sq| sq != captured_square as u16
+                        );
+                    }
+
+                    if !is_unload {
+                        if p_is_big!($state.pieces[captured_piece_index]) {
+                            $state.big_pieces[captured_color as usize] -= 1;
+                        }
+                        if p_is_major!($state.pieces[captured_piece_index]) {
+                            $state.major_pieces[captured_color as usize] -= 1;
+                        } else if p_is_minor!(
+                            $state.pieces[captured_piece_index]
+                        ) {
+                            $state.minor_pieces[captured_color as usize] -= 1;
+                        }
+
+                        $state.material[captured_color as usize] -=
+                            p_value!(
+                                $state.pieces[captured_piece_index]
+                            ) as u32;
+
+                        $state.piece_count[captured_piece_index] -= 1;
+                    }
+                }
+            } else if move_type == DROP_MOVE {
+                let piece_index = piece!($mv) as usize;
+                let drop_square = start!($mv) as u32;
+
+                let piece_color = p_color!($state.pieces[piece_index]);
+
+                set!(
+                    $state.pieces_board[piece_color as usize], drop_square
+                );
+
+                if p_is_royal!($state.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize]
+                        .push(drop_square as Square);
+                }
+
+                hash_in_or_out_piece!(
+                    $state, piece_index, drop_square as u16
+                );
+
+                $state.main_board[drop_square as usize] = piece_index as u8;
+                $state.piece_list[piece_index].push(drop_square as u16);
+
+                let hand =
+                    &mut $state.piece_in_hand
+                    [piece_color as usize][piece_index];
+                let old_hand = *hand;
+                *hand -= 1;
+
+                hash_update_in_hand!(
+                    $state,
+                    piece_index,
+                    old_hand,
+                    *hand
+                );
+
+                $state.halfmove_clock = 0;
             }
-            game_state.piece_list[captured_piece_index]
-                .push(captured_square as u16);
 
-            if !is_unload {
-                if p_is_big!(game_state.pieces[captured_piece_index]) {
-                    game_state.big_pieces[captured_color as usize] += 1;
-                }
+            $state.playing = 1 - $state.playing;
+            hash_toggle_side!($state);
 
-                if p_is_major!(game_state.pieces[captured_piece_index]) {
-                    game_state.major_pieces[captured_color as usize] += 1;
-                } else if p_is_minor!(game_state.pieces[captured_piece_index]) {
-                    game_state.minor_pieces[captured_color as usize] += 1;
-                }
+            let snapshot: Snapshot = Snapshot {
+                move_ply: $mv,
+                castling_state: last_castling_state,
+                halfmove_clock: last_halfmove_clock,
+                en_passant_square: last_en_passant_square,
+                position_hash: last_position_hash
+            };
 
-                game_state.material[captured_color as usize] +=
-                    p_value!(game_state.pieces[captured_piece_index]) as u32;
+            $state.history.push(snapshot);
 
-                game_state.piece_count[captured_piece_index] += 1;
-            }
-
-            if drops!(game_state) || promote_to_captured!(game_state) {
-                let mut captured_index_u8 = captured_piece_index as u8;
-
-                if demote_upon_capture!(game_state) {
-                    captured_index_u8 = game_state.piece_demotion_map
-                        .get(&(captured_index_u8))
-                        .unwrap()[0];
-                }
-
-                game_state.piece_in_hand
-                    [piece_color as usize]
-                    [
-                        *game_state.piece_swap_map
-                        .get(&captured_index_u8)
-                        .unwrap() as usize
-                    ] -= 1;
+            if is_in_check(1 - $state.playing, $state) {
+                undo_move!($state);
+                false
+            } else {
+                #[cfg(debug_assertions)]
+                verify_game_state($state);
+                true
             }
         }
-    } else if move_type == DROP_MOVE {
-        let piece_index = piece!(mv) as usize;
-        let drop_square = start!(mv) as u32;
+    };
+}
 
-        let piece_color = p_color!(game_state.pieces[piece_index]);
+#[macro_export]
+macro_rules! undo_move {
+    ($state:expr) => {
+        {
 
-        clear!(game_state.pieces_board[piece_color as usize], drop_square);
+            $state.ply -= 1;
+            $state.ply_counter -= 1;
 
-        if p_is_royal!(game_state.pieces[piece_index]) {
-            game_state.royal_list[piece_color as usize]
-                .retain(|&sq| sq as u32 != drop_square);
+            let snapshot = $state.history.pop().unwrap_or_else(
+                || panic!("No move to undo!")
+            );
+
+            #[cfg(debug_assertions)]
+            verify_game_state($state);
+
+            $state.playing = 1 - $state.playing;
+            $state.castling_state = snapshot.castling_state;
+            $state.halfmove_clock = snapshot.halfmove_clock;
+            $state.en_passant_square = snapshot.en_passant_square;
+            $state.position_hash = snapshot.position_hash;
+
+            let mv = snapshot.move_ply;
+            let move_type = move_type!(mv);
+
+            if move_type == QUIET_MOVE {
+                let piece_index = piece!(mv) as usize;
+                let start_square = start!(mv) as u32;
+                let end_square = end!(mv) as u32;
+                let piece_unmoved = is_initial!(mv) == 1;
+                let is_promotion = promotion!(mv);
+                let promoted_piece = promoted!(mv) as usize;
+
+                let piece_color = p_color!($state.pieces[piece_index]);
+
+                clear!($state.pieces_board[piece_color as usize], end_square);
+                set!($state.pieces_board[piece_color as usize], start_square);
+
+                if p_is_royal!($state.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize].retain(
+                        |&sq| sq as u32 != end_square
+                    );
+                    $state.royal_list[piece_color as usize]
+                        .push(start_square as Square);
+                }
+
+                if piece_unmoved {
+                    set!($state.virgin_board, start_square);
+                }
+
+                $state.main_board[end_square as usize] = NO_PIECE;
+                $state.main_board[start_square as usize] = piece_index as u8;
+
+                if is_promotion {
+                    $state.piece_list[promoted_piece]
+                        .retain(|&sq| sq != end_square as u16);
+
+                    if p_is_big!($state.pieces[promoted_piece]) {
+                        $state.big_pieces[piece_color as usize] -= 1;
+                    }
+                    if p_is_major!($state.pieces[promoted_piece]) {
+                        $state.major_pieces[piece_color as usize] -= 1;
+                    } else if p_is_minor!($state.pieces[promoted_piece]) {
+                        $state.minor_pieces[piece_color as usize] -= 1;
+                    }
+
+                    if p_is_big!($state.pieces[piece_index]) {
+                        $state.big_pieces[piece_color as usize] += 1;
+                    }
+                    if p_is_major!($state.pieces[piece_index]) {
+                        $state.major_pieces[piece_color as usize] += 1;
+                    } else if p_is_minor!($state.pieces[piece_index]) {
+                        $state.minor_pieces[piece_color as usize] += 1;
+                    }
+
+                    $state.material[piece_color as usize] +=
+                        p_value!($state.pieces[piece_index]) as u32;
+                    $state.material[piece_color as usize] -=
+                        p_value!($state.pieces[promoted_piece]) as u32;
+
+                    $state.piece_count[promoted_piece] -= 1;
+                    $state.piece_count[piece_index] += 1;
+
+                    if promote_to_captured!($state) {
+                        let enemy_equiv = $state.piece_swap_map
+                            [&(promoted_piece as u8)];
+                        let hand =
+                            &mut $state.piece_in_hand
+                            [1 - piece_color as usize][enemy_equiv as usize];
+                        *hand += 1;
+                    }
+                } else {
+                    $state.piece_list[piece_index]
+                        .retain(|&sq| sq != end_square as u16);
+                }
+
+                $state.piece_list[piece_index]
+                    .push(start_square as u16);
+            } else if move_type == SINGLE_CAPTURE_MOVE {
+                let piece_index = piece!(mv) as usize;
+                let start_square = start!(mv) as u32;
+                let end_square = end!(mv) as u32;
+                let piece_unmoved = is_initial!(mv) == 1;
+                let is_promotion = promotion!(mv);
+                let promoted_piece = promoted!(mv) as usize;
+                let captured_piece_index = captured_piece!(mv) as usize;
+                let captured_square = captured_square!(mv) as u32;
+                let captured_unmoved = captured_unmoved!(mv);
+                let is_unload = is_unload!(mv);
+                let unload_square = unload_square!(mv) as u32;
+
+                let piece_color = p_color!($state.pieces[piece_index]);
+                let captured_color = p_color!($state.pieces[captured_piece_index]);
+
+                clear!($state.pieces_board[piece_color as usize], end_square);
+                set!($state.pieces_board[piece_color as usize], start_square);
+
+                if p_is_royal!($state.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize].retain(
+                        |&sq| sq as u32 != end_square
+                    );
+                    $state.royal_list[piece_color as usize]
+                        .push(start_square as Square);
+                }
+
+                if piece_unmoved {
+                    set!($state.virgin_board, start_square);
+                }
+
+                $state.main_board[end_square as usize] = NO_PIECE;
+                $state.main_board[start_square as usize] = piece_index as u8;
+
+                if is_promotion {
+                    $state.piece_list[promoted_piece]
+                        .retain(|&sq| sq != end_square as u16);
+
+                    if p_is_big!($state.pieces[promoted_piece]) {
+                        $state.big_pieces[piece_color as usize] -= 1;
+                    }
+                    if p_is_major!($state.pieces[promoted_piece]) {
+                        $state.major_pieces[piece_color as usize] -= 1;
+                    } else if p_is_minor!($state.pieces[promoted_piece]) {
+                        $state.minor_pieces[piece_color as usize] -= 1;
+                    }
+
+                    if p_is_big!($state.pieces[piece_index]) {
+                        $state.big_pieces[piece_color as usize] += 1;
+                    }
+                    if p_is_major!($state.pieces[piece_index]) {
+                        $state.major_pieces[piece_color as usize] += 1;
+                    } else if p_is_minor!($state.pieces[piece_index]) {
+                        $state.minor_pieces[piece_color as usize] += 1;
+                    }
+
+                    $state.material[piece_color as usize] +=
+                        p_value!($state.pieces[piece_index]) as u32;
+                    $state.material[piece_color as usize] -=
+                        p_value!($state.pieces[promoted_piece]) as u32;
+
+                    $state.piece_count[promoted_piece] -= 1;
+                    $state.piece_count[piece_index] += 1;
+
+                    if promote_to_captured!($state) {
+                        let enemy_equiv = $state.piece_swap_map
+                            [&(promoted_piece as u8)];
+                        let hand =
+                            &mut $state.piece_in_hand
+                            [1 - piece_color as usize][enemy_equiv as usize];
+                        *hand += 1;
+                    }
+                } else {
+                    $state.piece_list[piece_index]
+                        .retain(|&sq| sq != end_square as u16);
+                }
+
+                $state.piece_list[piece_index]
+                    .push(start_square as u16);
+
+                if is_unload {
+                    clear!(
+                        $state.pieces_board[captured_color as usize],
+                        unload_square
+                    );
+                    set!(
+                        $state.pieces_board[captured_color as usize],
+                        captured_square
+                    );
+                } else {
+                    set!(
+                        $state.pieces_board[captured_color as usize],
+                        captured_square
+                    );
+                }
+
+                if captured_unmoved {
+                    set!($state.virgin_board, captured_square);
+
+                    if is_unload {
+                        clear!($state.virgin_board, unload_square);
+                    }
+                }
+
+                if is_unload {
+                    $state.main_board[unload_square as usize] = NO_PIECE;
+                }
+                $state.main_board[captured_square as usize] =
+                    captured_piece_index as u8;
+
+                if is_unload {
+                    $state.piece_list[captured_piece_index].retain(
+                        |&sq| sq != unload_square as u16
+                    );
+                }
+                $state.piece_list[captured_piece_index]
+                    .push(captured_square as u16);
+
+                if !is_unload {
+                    if p_is_big!($state.pieces[captured_piece_index]) {
+                        $state.big_pieces[captured_color as usize] += 1;
+                    }
+
+                    if p_is_major!($state.pieces[captured_piece_index]) {
+                        $state.major_pieces[captured_color as usize] += 1;
+                    } else if p_is_minor!($state.pieces[captured_piece_index]) {
+                        $state.minor_pieces[captured_color as usize] += 1;
+                    }
+
+                    $state.material[captured_color as usize] +=
+                        p_value!($state.pieces[captured_piece_index]) as u32;
+
+                    $state.piece_count[captured_piece_index] += 1;
+                }
+
+                if drops!($state) || promote_to_captured!($state) {
+                    let mut captured_index_u8 = captured_piece_index as u8;
+
+                    if demote_upon_capture!($state) {
+                        captured_index_u8 = $state.piece_demotion_map
+                            .get(&(captured_index_u8))
+                            .unwrap()[0];                                       /* assume 1 to 1 mapping              */
+                    }
+
+                    $state.piece_in_hand
+                        [piece_color as usize][
+                            *$state.piece_swap_map
+                            .get(&captured_index_u8)
+                            .unwrap() as usize
+                        ] -= 1;
+                }
+            } else if move_type == MULTI_CAPTURE_MOVE {
+                let piece_index = piece!(mv) as usize;
+                let start_square = start!(mv) as u32;
+                let end_square = end!(mv) as u32;
+                let piece_unmoved = is_initial!(mv) == 1;
+                let is_promotion = promotion!(mv);
+                let promoted_piece = promoted!(mv) as usize;
+
+                let piece_color = p_color!($state.pieces[piece_index]);
+
+                clear!($state.pieces_board[piece_color as usize], end_square);
+                set!($state.pieces_board[piece_color as usize], start_square);
+
+                if p_is_royal!($state.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize].retain(
+                        |&sq| sq as u32 != end_square
+                    );
+                    $state.royal_list[piece_color as usize]
+                        .push(start_square as Square);
+                }
+
+                if piece_unmoved {
+                    set!($state.virgin_board, start_square);
+                }
+
+                $state.main_board[end_square as usize] = NO_PIECE;
+                $state.main_board[start_square as usize] = piece_index as u8;
+
+                if is_promotion {
+                    $state.piece_list[promoted_piece]
+                        .retain(|&sq| sq != end_square as u16);
+
+                    if p_is_big!($state.pieces[promoted_piece]) {
+                        $state.big_pieces[piece_color as usize] -= 1;
+                    }
+                    if p_is_major!($state.pieces[promoted_piece]) {
+                        $state.major_pieces[piece_color as usize] -= 1;
+                    } else if p_is_minor!($state.pieces[promoted_piece]) {
+                        $state.minor_pieces[piece_color as usize] -= 1;
+                    }
+
+                    if p_is_big!($state.pieces[piece_index]) {
+                        $state.big_pieces[piece_color as usize] += 1;
+                    }
+                    if p_is_major!($state.pieces[piece_index]) {
+                        $state.major_pieces[piece_color as usize] += 1;
+                    } else if p_is_minor!($state.pieces[piece_index]) {
+                        $state.minor_pieces[piece_color as usize] += 1;
+                    }
+
+                    $state.material[piece_color as usize] +=
+                        p_value!($state.pieces[piece_index]) as u32;
+                    $state.material[piece_color as usize] -=
+                        p_value!($state.pieces[promoted_piece]) as u32;
+
+                    $state.piece_count[promoted_piece] -= 1;
+                    $state.piece_count[piece_index] += 1;
+
+                    if promote_to_captured!($state) {
+                        let enemy_equiv = $state.piece_swap_map
+                            [&(promoted_piece as u8)];
+                        let hand =
+                            &mut $state.piece_in_hand
+                            [1 - piece_color as usize][enemy_equiv as usize];
+                        *hand += 1;
+                    }
+                } else {
+                    $state.piece_list[piece_index]
+                        .retain(|&sq| sq != end_square as u16);
+                }
+
+                $state.piece_list[piece_index]
+                    .push(start_square as u16);
+
+                for cap in &mv.1 {
+                    let captured_piece_index =
+                        multi_move_captured_piece!(cap) as usize;
+                    let captured_square =
+                        multi_move_captured_square!(cap) as u32;
+                    let captured_unmoved = multi_move_captured_unmoved!(cap);
+                    let is_unload = multi_move_is_unload!(cap);
+                    let unload_square = multi_move_unload_square!(cap) as u32;
+                    let captured_color = p_color!(
+                        $state.pieces[captured_piece_index]
+                    );
+
+                    if is_unload {
+                        clear!(
+                            $state.pieces_board[captured_color as usize],
+                            unload_square
+                        );
+                        set!(
+                            $state.pieces_board[captured_color as usize],
+                            captured_square
+                        );
+                    } else {
+                        set!(
+                            $state.pieces_board[captured_color as usize],
+                            captured_square
+                        );
+                    }
+
+                    if captured_unmoved {
+                        set!($state.virgin_board, captured_square);
+
+                        if is_unload {
+                            clear!($state.virgin_board, unload_square);
+                        }
+                    }
+
+                    if is_unload {
+                        $state.main_board[unload_square as usize] = NO_PIECE;
+                    }
+                    $state.main_board[captured_square as usize] =
+                        captured_piece_index as u8;
+
+                    if is_unload {
+                        $state.piece_list[captured_piece_index].retain(
+                            |&sq| sq != unload_square as u16
+                        );
+                    }
+                    $state.piece_list[captured_piece_index]
+                        .push(captured_square as u16);
+
+                    if !is_unload {
+                        if p_is_big!($state.pieces[captured_piece_index]) {
+                            $state.big_pieces[captured_color as usize] += 1;
+                        }
+
+                        if p_is_major!($state.pieces[captured_piece_index]) {
+                            $state.major_pieces[captured_color as usize] += 1;
+                        } else if p_is_minor!(
+                            $state.pieces[captured_piece_index]
+                        ) {
+                            $state.minor_pieces[captured_color as usize] += 1;
+                        }
+
+                        $state.material[captured_color as usize] +=
+                            p_value!(
+                                $state.pieces[captured_piece_index]
+                            ) as u32;
+
+                        $state.piece_count[captured_piece_index] += 1;
+                    }
+
+                    if drops!($state) || promote_to_captured!($state) {
+                        let mut captured_index_u8 = captured_piece_index as u8;
+
+                        if demote_upon_capture!($state) {
+                            captured_index_u8 = $state.piece_demotion_map
+                                .get(&(captured_index_u8))
+                                .unwrap()[0];
+                        }
+
+                        $state.piece_in_hand
+                            [piece_color as usize]
+                            [
+                                *$state.piece_swap_map
+                                .get(&captured_index_u8)
+                                .unwrap() as usize
+                            ] -= 1;
+                    }
+                }
+            } else if move_type == DROP_MOVE {
+                let piece_index = piece!(mv) as usize;
+                let drop_square = start!(mv) as u32;
+
+                let piece_color = p_color!($state.pieces[piece_index]);
+
+                clear!($state.pieces_board[piece_color as usize], drop_square);
+
+                if p_is_royal!($state.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize]
+                        .retain(|&sq| sq as u32 != drop_square);
+                }
+
+                $state.main_board[drop_square as usize] = NO_PIECE;
+                $state.piece_list[piece_index]
+                    .retain(|&sq| sq != drop_square as u16);
+
+                let hand =
+                    &mut $state.piece_in_hand
+                    [piece_color as usize][piece_index];
+                *hand += 1;
+            }
+
+            #[cfg(debug_assertions)]
+            verify_game_state($state);
         }
-
-        game_state.main_board[drop_square as usize] = NO_PIECE;
-        game_state.piece_list[piece_index]
-            .retain(|&sq| sq != drop_square as u16);
-
-        let hand =
-            &mut game_state.piece_in_hand[piece_color as usize][piece_index];
-        *hand += 1;
-    }
-
-    #[cfg(debug_assertions)]
-    verify_game_state(game_state);
+    };
 }
 
 pub fn generate_all_legal_moves(state: &mut State) -> Vec<Move> {
@@ -1884,10 +2007,10 @@ pub fn generate_all_legal_moves(state: &mut State) -> Vec<Move> {
     let legal_moves: Vec<Move> = all_moves
         .into_iter()
         .filter(|mv| {
-            let result = make_move(state, mv.clone());
+            let result = make_move!(state, mv.clone());
 
             if result {
-                undo_move(state);
+                undo_move!(state);
             }
 
             result
@@ -1897,13 +2020,14 @@ pub fn generate_all_legal_moves(state: &mut State) -> Vec<Move> {
     legal_moves
 }
 
+#[hotpath::measure]
 pub fn there_is_legal_move(state: &mut State) -> bool {
     let all_moves = generate_all_moves_and_drops(state);
     for mv in all_moves {
-        let result = make_move(state, mv.clone());
+        let result = make_move!(state, mv);
 
         if result {
-            undo_move(state);
+            undo_move!(state);
             return true;
         }
     }
@@ -1934,8 +2058,20 @@ pub fn generate_all_moves_and_drops(state: &mut State) -> Vec<Move> {
         .collect();
 
     if drops!(state) {
-        let drop_moves = generate_all_drops(state);
-        moves.extend(drop_moves);
+        moves.extend({
+                (start_index..end_index)
+                .flat_map(|piece_index| {
+                    if state.piece_in_hand
+                    [state.playing as usize][piece_index] > 0
+                    {
+                        generate_drop_list(piece_index, state)
+                    } else {
+                        Vec::new()
+                    }
+                })
+                .collect::<Vec<_>>()
+            }
+        );
     }
 
     moves
