@@ -1,28 +1,34 @@
+
+#[cfg(debug_assertions)]
+use crate::game::util::verify_game_state;
 use crate::{
-    constants::{DROP_MOVE, NO_PIECE},
-    drop_f,
-    drop_k,
-    enc_move_type,
-    enc_piece,
-    enc_start,
+    constants::{DROP_MOVE, NO_PIECE, BK_CASTLE, BQ_CASTLE, MULTI_CAPTURE_MOVE,
+        NO_EN_PASSANT, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE},
+    drop_f, drop_k, enc_move_type, enc_piece, enc_start, get, make_move,
+    p_index, stalemate_loss, x, y, is_initial,
     game::{
-        moves::move_list::{
-            is_in_check,
-            make_move,
-            there_is_legal_move,
-            undo_move,
-        },
+        moves::move_list::{is_in_check, there_is_legal_move},
         representations::{
             drop::Drops,
             moves::Move,
             piece::Piece,
-            state::State,
+            state::{State, EnPassantSquare, Snapshot, Square},
+        },
+        hash::zobrist::{
+            CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES,
+            SIDE_HASHES,
         },
     },
-    get,
-    p_index,
-    stalemate_loss,
-    x, y
+    captured_piece, captured_square, captured_unmoved, clear,
+    created_enp, creates_enp, demote_upon_capture, drops, end, enp_square,
+    hash_in_or_out_piece, hash_toggle_side, hash_update_castling,
+    hash_update_en_passant, hash_update_in_hand, is_unload, move_type,
+    multi_move_captured_piece, multi_move_captured_square,
+    multi_move_captured_unmoved, multi_move_is_unload,
+    multi_move_unload_square, p_can_promote, p_castle_left, p_castle_right,
+    p_color, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, piece,
+    promote_to_captured, promoted, promotion, set, start, undo_move,
+    unload_square,
 };
 
 pub fn generate_relevant_drops(
@@ -100,7 +106,7 @@ pub fn generate_drop_list(piece_index: usize, state: &mut State) -> Vec<Move> {
         enc_start!(encoded_move, square as u128);
 
         if drop_k {
-            let make = make_move(state, encoded_move.clone());
+            let make = make_move!(state, encoded_move.clone());
 
             if !make {
                 continue 'square_loop;
@@ -109,39 +115,21 @@ pub fn generate_drop_list(piece_index: usize, state: &mut State) -> Vec<Move> {
             let is_in_check = is_in_check(state.playing, state);
 
             if !is_in_check && !stalemate_loss!(state) {
-                undo_move(state);
+                undo_move!(state);
                 drop_list.push(encoded_move);
                 continue 'square_loop;
             }
 
             if !there_is_legal_move(state) {
-                undo_move(state);
+                undo_move!(state);
                 continue 'square_loop;
             }
 
-            undo_move(state);
+            undo_move!(state);
         }
 
         drop_list.push(encoded_move);
     }
 
     drop_list
-}
-
-pub fn generate_all_drops(state: &mut State) -> Vec<Move> {
-    let piece_count = state.pieces.len() / 2;
-    let start_index = piece_count * state.playing as usize;
-    let end_index = start_index + piece_count;
-
-    let moves: Vec<Move> = (start_index..end_index)
-        .flat_map(|piece_index| {
-            if state.piece_in_hand[state.playing as usize][piece_index] > 0 {
-                generate_drop_list(piece_index, state)
-            } else {
-                Vec::new()
-            }
-        })
-        .collect();
-
-    moves
 }

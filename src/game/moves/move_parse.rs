@@ -193,7 +193,6 @@ lazy_static! {
 /// assert_eq!(apply_operator('|', "a", "b"), "a|b");
 /// assert_eq!(apply_operator('^', "a|b", "c|d"), "ac|ad|bc|bd");
 /// ```
-#[hotpath::measure]
 fn apply_operator(op: char, a: &str, b: &str) -> String {
     match op {
         '^' => {
@@ -230,7 +229,6 @@ fn precedence(op: char) -> usize {
 }
 
 /// Maps a Betza atom representation to a Cheesy King Notation string.
-#[hotpath::measure]
 fn betza_atoms(piece: char) -> String {
     match piece {
         'W' => "<[1357]K>".to_string(),
@@ -258,7 +256,6 @@ fn betza_atoms(piece: char) -> String {
 /// ```ignore
 /// assert_eq!(evaluate("(cQ|dQ-u#)-mnW"), "cQ-mnW|dQ-u#-mnW");
 /// ```
-#[hotpath::measure]
 fn evaluate(expr: &str) -> String {
     let mut operands: Vec<String> = Vec::new();
     let mut operators: Vec<char> = Vec::new();
@@ -331,7 +328,6 @@ fn evaluate(expr: &str) -> String {
 /// ```ignore
 /// assert_eq!(normalize("(a|b)^c"), Some("ac|bc".to_string()));
 /// ```
-#[hotpath::measure]
 fn normalize(expr: &str) -> Option<String> {
     let indices: Vec<usize> = NORMALIZE_PATTERN
         .find_iter(expr)
@@ -354,7 +350,6 @@ fn normalize(expr: &str) -> Option<String> {
     Some(evaluate(&processed_expr))                                             /* Eval the processed expr            */
 }
 
-#[hotpath::measure]
 fn atomize(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -374,7 +369,6 @@ fn atomize(expr: &str) -> Option<String> {
 /// - `[5..]` and similar: expands to [5678]
 /// - `[1..7$25]` and similar: expands to [13467]
 /// - `[1235678$2]` and similar: expands to [135678]
-#[hotpath::measure]
 fn expand_directions(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -433,7 +427,6 @@ fn expand_directions(expr: &str) -> Option<String> {
 /// assert_eq!(expand_ranges("{..5}"), Some("{1..5}".to_string()));
 /// assert_eq!(expand_ranges("{5..}"), Some("{5..*}".to_string()));
 /// ```
-#[hotpath::measure]
 fn expand_ranges(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -472,7 +465,6 @@ fn expand_ranges(expr: &str) -> Option<String> {
 /// - `n+s+e+w`: expands to `n|s|e|w`
 /// - `n+e`: expands to `n|e`
 /// - `n+e+s`: expands to `n|e|s`
-#[hotpath::measure]
 fn expand_cardinals(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -517,7 +509,6 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 
 /// Splits an expression by '|' delimiter and processes each part in parallel.
 /// Returns a vector of results of applying function `f` to each part.
-#[hotpath::measure]
 fn split_and_process<T>(
     expr: &str,
     f: impl Fn(&str) -> Option<T> + Sync
@@ -538,7 +529,6 @@ where
 /// - `chained_atomic_to_vector`
 /// - `compound_atomic_to_vector`
 /// - `leg_to_vector`
-#[hotpath::measure]
 fn parse_move(expr: &str) -> String {
     #[cfg(debug_assertions)]
     println!("DEBUG: Starting parse_move with expression: {}", expr);
@@ -577,7 +567,6 @@ fn parse_move(expr: &str) -> String {
 ///   atomic as "n" or (0, 1).
 /// - (2, 2) has the same magnitude so it will influence the next atomic
 ///   as "ne" or (1, 1).
-#[hotpath::measure]
 fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
     let abs_x = vector.0.saturating_abs();
     let abs_y = vector.1.saturating_abs();
@@ -605,7 +594,6 @@ fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
 
 /// sorts 8 cardinal direction vectors clockwise, starting from +y axis
 /// uses atan2 to determine the angle of each vector from +y
-#[hotpath::measure]
 fn sort_atomic_clockwise(
     mut vectors: Vec<AtomicVector>
 ) -> Vec<AtomicVector> {
@@ -639,7 +627,6 @@ fn sort_atomic_clockwise(
 /// - se: "right" is left of the line x=-y -> x + y < 0
 /// - nw: "up" is left of the line x=y -> x - y < 0
 /// - sw: "right" is right of the line x=y -> x - y > 0
-#[hotpath::measure]
 fn quadrant_function(
     direction: &str
 ) -> impl Fn(i8, i8) -> (bool, bool, bool, bool) {
@@ -656,7 +643,6 @@ fn quadrant_function(
     }
 }
 
-#[hotpath::measure]
 fn filter_atomic_by_index(
     mut vectors: Vec<AtomicVector>,
     index: Vec<usize>
@@ -683,7 +669,6 @@ fn filter_atomic_by_index(
     result
 }
 
-#[hotpath::measure]
 fn filter_atomic_by_cardinal_direction(
     mut vectors: Vec<AtomicVector>,
     direction: &str,
@@ -719,8 +704,9 @@ fn filter_atomic_by_cardinal_direction(
     vectors
 }
 
-#[hotpath::measure]
-fn filter_atomic_out_of_bounds(vector: &mut Vec<AtomicVector>, game_state: &State) {
+fn filter_atomic_out_of_bounds(
+    vector: &mut Vec<AtomicVector>, game_state: &State
+) {
     vector.retain(|vector| {
         let whole = vector.whole();
         whole.0.saturating_abs() <= game_state.files as i8 &&
@@ -728,7 +714,6 @@ fn filter_atomic_out_of_bounds(vector: &mut Vec<AtomicVector>, game_state: &Stat
     });
 }
 
-#[hotpath::measure]
 fn remove_duplicates_in_place<Element>(vectors: &mut Vec<Element>)
 where
     Element: Clone + Eq + Hash,
@@ -744,7 +729,6 @@ where
     });
 }
 
-#[hotpath::measure]
 fn process_atomic_dots_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -766,7 +750,6 @@ fn process_atomic_dots_token(
     updated_vectors
 }
 
-#[hotpath::measure]
 fn process_atomic_range_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -841,7 +824,6 @@ fn process_atomic_range_token(
     }
 }
 
-#[hotpath::measure]
 fn process_atomic_colon_range_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -952,7 +934,6 @@ fn process_atomic_colon_range_token(
     }
 }
 
-#[hotpath::measure]
 fn process_atomic_modifiers(
     mut vector_set: Vec<AtomicVector>,
     modifiers: &(Option<Token>, Option<Token>),
@@ -992,7 +973,6 @@ fn process_atomic_modifiers(
     }
 }
 
-#[hotpath::measure]
 fn evaluate_atomic_term (
     result: Vec<AtomicVector>,
     term: Token,
@@ -1030,7 +1010,6 @@ fn evaluate_atomic_term (
     new_result.into_iter().collect()
 }
 
-#[hotpath::measure]
 fn evaluate_atomic_subexpresion(
     result: Vec<AtomicVector>,
     subexpr: AtomicGroup,
@@ -1075,7 +1054,6 @@ fn evaluate_atomic_subexpresion(
     new_result.into_iter().collect()
 }
 
-#[hotpath::measure]
 fn evaluate_atomic_expression(
     expr: AtomicGroup,
     rotation: &str,
@@ -1185,7 +1163,6 @@ fn evaluate_atomic_expression(
     AtomicEval(result)
 }
 
-#[hotpath::measure]
 fn process_closing_bracket<Term, IsBracket, WrapResult>(
     stack: &mut VecDeque<Term>,
     is_bracket: IsBracket,
@@ -1333,7 +1310,6 @@ where
 ///
 /// All inputs are sanitized by `parse_move` before being passed
 /// here.
-#[hotpath::measure]
 fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 
     #[cfg(debug_assertions)]
@@ -1619,7 +1595,6 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// - <FnF>. means moving N followed by repeating the last vector of N once more
 ///   but N. will expand to FnF. so the final result is equivalent to N followed
 ///   by the last F move.
-#[hotpath::measure]
 fn chained_atomic_to_vector(
     expr: &str, rotation: &str
 ) -> Vec<AtomicVector> {
@@ -1796,7 +1771,6 @@ fn chained_atomic_to_vector(
 /// │    │    │    │    │    │    │    │    │    │
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
-#[hotpath::measure]
 fn compound_atomic_to_vector(
     expr: &str, rotation: &str, game_state: &State
 ) -> Vec<AtomicVector> {
@@ -1886,7 +1860,6 @@ fn compound_atomic_to_vector(
     }
 }
 
-#[hotpath::measure]
 fn sum_multi_leg_vectors(
     vectors: &MultiLegVector
 ) -> (i8, i8) {
@@ -1904,7 +1877,6 @@ fn sum_multi_leg_vectors(
 
 /// sorts 8 cardinal direction vectors clockwise, starting from +y axis
 /// uses atan2 to determine the angle of each vector from +y
-#[hotpath::measure]
 fn sort_multi_leg_clockwise(
     mut vectors: Vec<MultiLegVector>
 ) -> Vec<MultiLegVector> {
@@ -1927,7 +1899,6 @@ fn sort_multi_leg_clockwise(
     vectors
 }
 
-#[hotpath::measure]
 fn filter_multi_leg_by_index(
     mut vectors: Vec<MultiLegVector>,
     index: Vec<usize>
@@ -1953,7 +1924,6 @@ fn filter_multi_leg_by_index(
     result
 }
 
-#[hotpath::measure]
 fn filter_multi_leg_by_cardinal_direction(
     mut vectors: Vec<MultiLegVector>,
     direction: &str,
@@ -1989,7 +1959,6 @@ fn filter_multi_leg_by_cardinal_direction(
     vectors
 }
 
-#[hotpath::measure]
 fn filter_multi_leg_out_of_bounds(vectors: &mut Vec<MultiLegVector>, game_state: &State) {
     vectors.retain(| vector | {
         let sum = sum_multi_leg_vectors(vector);
@@ -1998,7 +1967,6 @@ fn filter_multi_leg_out_of_bounds(vectors: &mut Vec<MultiLegVector>, game_state:
     });
 }
 
-#[hotpath::measure]
 fn process_multi_leg_dots_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2025,7 +1993,6 @@ fn process_multi_leg_dots_token(
     updated_vectors
 }
 
-#[hotpath::measure]
 fn process_multi_leg_range_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2111,7 +2078,6 @@ let captures = RANGE_TOKEN.captures(token).unwrap();
     }
 }
 
-#[hotpath::measure]
 fn process_multi_leg_colon_range_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2269,7 +2235,6 @@ fn process_multi_leg_colon_range_token(
     }
 }
 
-#[hotpath::measure]
 fn process_multi_leg_modifiers(
     mut vector_set: Vec<MultiLegVector>,
     modifiers: &[Option<Token>; 3],
@@ -2313,7 +2278,6 @@ fn process_multi_leg_modifiers(
     vector_set
 }
 
-#[hotpath::measure]
 fn evaluate_multi_leg_term_leg(
     result: Vec<MultiLegVector>,
     term: Token,
@@ -2400,7 +2364,6 @@ fn evaluate_multi_leg_term_leg(
     new_result.into_iter().collect()
 }
 
-#[hotpath::measure]
 fn evaluate_multi_leg_subexpression(
     result: Vec<MultiLegVector>,
     expr: MultiLegElement,
@@ -2517,7 +2480,6 @@ fn evaluate_multi_leg_subexpression(
     new_result.into_iter().collect()
 }
 
-#[hotpath::measure]
 fn evaluate_multi_leg_expression(
     expr: MultiLegGroup,
     rotation: &str,
@@ -2671,7 +2633,6 @@ fn evaluate_multi_leg_expression(
     MultiLegEval(result)
 }
 
-#[hotpath::measure]
 fn tokenize_multi_leg_expression(
     expr: &str,
 ) -> Vec<String> {
@@ -2771,7 +2732,6 @@ fn tokenize_multi_leg_expression(
 }
 
 /// A leg is defined as a compound atomic that has move modifiers applied to it.
-#[hotpath::measure]
 fn leg_to_vector(
     expr: &str,
     rotation: &str,
@@ -2841,7 +2801,6 @@ fn leg_to_vector(
 ///    to the castling piece on the kingside of the castling piece
 ///
 /// Kingside castling is similar but on the other side.
-#[hotpath::measure]
 fn parse_castling(
     expr: &str,
 ) -> String {
@@ -2887,7 +2846,6 @@ fn parse_castling(
     string
 }
 
-#[hotpath::measure]
 fn multi_leg_to_vector(
     expr: &str,
     rotation: &str,
@@ -3022,7 +2980,6 @@ fn multi_leg_to_vector(
 }
 
 /// Generates all possible move vectors from the given move expression
-#[hotpath::measure]
 pub fn generate_move_vectors(
     expr: &str,
     game_state: &State
