@@ -167,6 +167,20 @@ macro_rules! enc_stalemate_loss {
     };
 }
 
+#[macro_export]
+macro_rules! setup_phase {
+    ($state:expr) => {
+        ($state.special_rules >> 9 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_setup_phase {
+    ($rules:expr) => {
+        $rules |= 1 << 9;
+    };
+}
+
 /*----------------------------------------------------------------------------*\
                             EN PASSANT REPRESENTATION
 \*----------------------------------------------------------------------------*/
@@ -238,7 +252,8 @@ impl Default for Snapshot {
 /// - bit 6: Can only promote to captured friendly pieces by the enemy
 /// - bit 7: Demote piece in hand upon capture
 /// - bit 8: Stalemate is a loss for the stalemated player
-/// - but 8-31: reserved for future use
+/// - bit 9: Game begins with a setup phase
+/// - but 10-31: reserved for future use
 ///
 pub struct State {
 

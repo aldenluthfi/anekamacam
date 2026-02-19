@@ -1,4 +1,4 @@
-//! # hash.rs
+//! # zobrist.rs
 //!
 //! Implements Zobrist hashing for game positions.
 //!

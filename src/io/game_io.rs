@@ -23,10 +23,10 @@ use std::fs;
 
 use crate::game::representations::board::Board;
 use crate::{
-    board, castling, clear, constants::*, count_limits, demote_upon_capture, drops, en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, enc_stalemate_loss, forbidden_zones, get, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set
+    board, castling, clear, constants::*, count_limits, demote_upon_capture, drops, en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, enc_setup_phase, enc_stalemate_loss, forbidden_zones, get, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set, setup_phase
 };
 use crate::game::{
-    hash::hash_position,
+    hash::zobrist::hash_position,
     representations::{
         state::State,
         piece::Piece,
@@ -96,6 +96,7 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 /// - bool: whether the piece is big
 /// - bool: whether the piece is major
 /// - u16: the value of the piece
+#[hotpath::measure]
 pub fn parse_config_file(path: &str) -> State {
     let file_str = fs::read_to_string(path)
         .expect("Failed to read configuration file");
@@ -167,6 +168,8 @@ pub fn parse_config_file(path: &str) -> State {
         .contains(&"demote upon capture".to_string());
     let stalemate_loss = sections["rules"]
         .contains(&"stalemate loss".to_string());
+    let setup_phase = sections["rules"]
+        .contains(&"setup phase".to_string());
 
     let (fen_castling, fen_en_passant, fen_in_hand) =
         extract_fen_components(initial_position);
@@ -199,7 +202,7 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
-    if drops || promote_to_captured || demote_upon_capture {
+    if drops || promote_to_captured || demote_upon_capture || setup_phase{
         assert!(
             fen_in_hand,
             "No pieces in hand found in FEN"
@@ -268,6 +271,10 @@ pub fn parse_config_file(path: &str) -> State {
 
     if stalemate_loss {
         enc_stalemate_loss!(special_rules);
+    }
+
+    if setup_phase {
+        enc_setup_phase!(special_rules);
     }
 
 /*----------------------------------------------------------------------------*\
@@ -1215,6 +1222,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     if drops!(state)
     || promote_to_captured!(state)
     || demote_upon_capture!(state)
+    || setup_phase!(state)
     {
         let hands = parts[part_index];
         part_index += 1;
@@ -1392,17 +1400,17 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
 
     if verbose {
         result.push_str(
-            &format!("\nPosition hash\t: {:32X}\n", state.position_hash)
+            &format!("\nPosition hash\t\t: {:32X}\n", state.position_hash)
         );
         result.push_str(
             &format!(
-                "Side to move\t: {}\n",
+                "Side to move\t\t: {}\n",
                 if state.playing == WHITE { "White" } else { "Black" }
             )
         );
 
         if castling!(state) {
-            result.push_str(&format!("Castling rights\t: {}\n", {
+            result.push_str(&format!("Castling rights\t\t: {}\n", {
                 let mut rights = String::new();
                 if state.castling_state & WK_CASTLE != 0 { rights.push('K'); }
                 if state.castling_state & WQ_CASTLE != 0 { rights.push('Q'); }
@@ -1413,7 +1421,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
         }
 
         if en_passant!(state) {
-            result.push_str(&format!("En passant\t: {}\n",
+            result.push_str(&format!("En passant\t\t: {}\n",
                 if state.en_passant_square == u32::MAX {
                     "-".to_string()
                 } else {
@@ -1425,7 +1433,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
         }
 
         result.push_str(
-            &format!("Halfmove clock\t: {}\n", state.halfmove_clock)
+            &format!("Halfmove clock\t\t: {}\n", state.halfmove_clock)
         );
 
         if drops!(state) || promote_to_captured!(state) {
@@ -1442,7 +1450,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
                 }
             }
 
-            result.push_str("\nBlack's hand\t: ");
+            result.push_str("\nBlack's hand\t\t: ");
             for (i, piece) in state.pieces.iter().enumerate() {
                 let count = pieces_in_black[i];
                 if count == 1 {
@@ -1453,8 +1461,6 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             }
         }
     }
-
-    result.push('\n');
     result
 }
 

@@ -59,9 +59,9 @@ pub fn format_move(mv: &Move, state: &State) -> String {
     if move_type == DROP_MOVE {
         let piece_type = piece!(mv) as usize;
         let result = format!(
-            "{}{}",
-            format_square(start_square as u16, state),
-            state.pieces[piece_type].char
+            "{}@{}",
+            state.pieces[piece_type].char,
+            format_square(start_square as u16, state)
         );
 
         return format!("{:<5}", result)

@@ -1,11 +1,39 @@
 use std::fs;
+use rand::seq::SliceRandom;
 
+#[cfg(debug_assertions)]
+use crate::game::util::verify_game_state;
 use crate::{
-    game::{
-        moves::move_list::{generate_all_moves_and_drops, make_move, undo_move},
-        representations::state::State
+    captured_piece, captured_square, captured_unmoved, clear,
+    constants::{
+        BK_CASTLE, BQ_CASTLE, DROP_MOVE, MULTI_CAPTURE_MOVE, NO_EN_PASSANT,
+        NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE,
     },
-    io::{game_io::format_game_state, move_io::format_move}
+    created_enp, creates_enp, demote_upon_capture, drops, end, enp_square,
+    game::{
+        hash::zobrist::{
+            CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES,
+            PIECE_HASHES, SIDE_HASHES,
+        },
+        moves::move_list::{
+            generate_all_moves_and_drops, is_in_check,
+        },
+        representations::state::{
+            EnPassantSquare, Snapshot, Square, State,
+        },
+        util::RNG,
+    },
+    get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling,
+    hash_update_en_passant, hash_update_in_hand, io::{
+        game_io::format_game_state,
+        move_io::format_move,
+    },
+    is_initial, is_unload, make_move, move_type, multi_move_captured_piece,
+    multi_move_captured_square, multi_move_captured_unmoved,
+    multi_move_is_unload, multi_move_unload_square, p_can_promote,
+    p_castle_left, p_castle_right, p_color, p_is_big, p_is_major,
+    p_is_minor, p_is_royal, p_value, piece, promote_to_captured, promoted,
+    promotion, set, start, undo_move, unload_square,
 };
 
 fn parse_perft_file(
@@ -43,8 +71,11 @@ pub fn start_perft(
     path: &str,
     depth: u8,
     branch: i8,
+    limit: usize
 ) {
-    let perft_cases = parse_perft_file(path);
+    let mut perft_cases = parse_perft_file(path);
+    let limit = limit.min(perft_cases.len());
+    perft_cases.shuffle(&mut RNG.lock().unwrap());
 
     let mut successful_cases = 0;
     let mut total_moves = 0;
@@ -61,10 +92,10 @@ pub fn start_perft(
         .len();
 
     for (i, (fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6)) in
-        perft_cases.iter().enumerate()
+        perft_cases.into_iter().take(limit).enumerate()
     {
-        state.load_fen(fen);
-        println!("{}", format_game_state(state, true));
+        state.load_fen(&fen);
+        println!("\n{}", format_game_state(state, true));
 
         let expected_perfts = [
             perft_1, perft_2, perft_3, perft_4, perft_5, perft_6,
@@ -77,7 +108,7 @@ pub fn start_perft(
 
             let expected = expected_perfts[(d - 1) as usize];
 
-            if result == *expected {
+            if result == expected {
                 successful_cases += 1;
                 total_moves += result;
                 println!(
@@ -113,7 +144,7 @@ fn perft(
 ) -> u64 {
     if depth == 0 {
         if branch >= 0 {
-            println!("{} Reached leaf node", prefix);
+            println!("{}moves | Nodes: 1", prefix);
         }
         return 1;
     }
@@ -122,16 +153,17 @@ fn perft(
     let mut nodes = 0;
 
     for mv in possible_moves {
-        let formatted_move = format_move(&mv, state);
+        if branch >= 0 {
+            let formatted_move = format_move(&mv, state);
+            let new_prefix = format!("{}{}", prefix, formatted_move);
 
-        if make_move(state, mv) {
-            if branch >= 0 {
-                let new_prefix = format!("{}{}", prefix, formatted_move);
+            if  make_move!(state, mv) {
                 nodes += perft(state, depth - 1, branch - 1, &new_prefix);
-            } else {
-                nodes += perft(state, depth - 1, branch - 1, "");
+                undo_move!(state);
             }
-            undo_move(state);
+        } else if make_move!(state, mv) {
+            nodes += perft(state, depth - 1, branch - 1, "");
+            undo_move!(state);
         }
     }
 

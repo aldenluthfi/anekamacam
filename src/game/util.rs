@@ -22,13 +22,13 @@ use bnum::types::U4096;
 
 use crate::{
     board, constants::*, enp_square, game::{
-        hash::{CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES, SIDE_HASHES},
+        hash::zobrist::{CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES, SIDE_HASHES},
         representations::state::State
     }, io::board_io::{format_board, format_square}, or, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
 };
 
 lazy_static!{
-    static ref RNG: Mutex<rand::rngs::StdRng> = {
+    pub static ref RNG: Mutex<rand::rngs::StdRng> = {
         Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED))
     };
 }
