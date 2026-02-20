@@ -18,6 +18,8 @@ use std::fmt::Debug;
 use bnum::cast::As;
 use bnum::types::U2048;
 
+use crate::constants::DEFAULT_DROP;
+
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
@@ -200,7 +202,7 @@ impl Piece {
             encoded_piece |= 1 << 9;
         }
 
-        let drop = "#".to_string();
+        let drop = DEFAULT_DROP.to_string();
 
         Self {
             name,

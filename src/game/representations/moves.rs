@@ -21,6 +21,28 @@ use crate::game::representations::{
     vector::MoveVector
 };
 
+/*----------------------------------------------------------------------------*\
+                          DROP REPRESENTATION ENCODING
+\*----------------------------------------------------------------------------*/
+
+#[macro_export]
+macro_rules! enc_can_checkmate {
+    ($mv:expr, $val:expr) => {
+        $mv.0 |= ($val & 1) << 23;
+    };
+}
+
+/*----------------------------------------------------------------------------*\
+                          DROP REPRESENTATION ENCODING
+\*----------------------------------------------------------------------------*/
+
+#[macro_export]
+macro_rules! drop_can_checkmate {
+    ($drop:expr) => {
+        ($drop.0 >> 23) & 1 == 1
+    };
+}
+
 pub type AttackMask = (PieceIndex, Square, MoveVector);
 
 /// A type representing a single move in the game.
@@ -70,6 +92,8 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// - The next 8 bits is the piece index of the piece being dropped.
 /// - The next 12 bits represent the square index where the piece is being
 ///   dropped.
+/// - The next bit represents whether this drop can deliver checkmate (0)
+///   or not (1).
 pub type Move = (u128, Vec<u64>);
 
 /*----------------------------------------------------------------------------*\

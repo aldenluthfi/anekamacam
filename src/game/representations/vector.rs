@@ -20,7 +20,7 @@ use std::{collections::VecDeque, fmt::Debug};
 use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
 
 /// A simple (x, y) + piece index vector for drop generations.
-pub type DropVector = u16;
+pub type DropVector = u32;
 
 /*----------------------------------------------------------------------------*\
                         MOVE GENERATION REPRESENTATIONS
