@@ -64,7 +64,7 @@ pub fn format_move(mv: &Move, state: &State) -> String {
             format_square(start_square as u16, state)
         );
 
-        return format!("{:<5}", result)
+        return format!("{:<6}", result)
     }
 
     if promotion!(mv) {
@@ -79,5 +79,5 @@ pub fn format_move(mv: &Move, state: &State) -> String {
         &promoted_piece
     );
 
-    format!("{:<5}", result)
+    format!("{:<6}", result)
 }

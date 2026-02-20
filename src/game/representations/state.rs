@@ -17,17 +17,18 @@ use std::collections::HashMap;
 use crate::{
     board, constants::*,
     game::{
+        drops::{
+            drop_list::generate_relevant_drops,
+            drop_parse::generate_drop_vectors
+        },
         moves::{
             move_list::{
                 generate_attack_masks, generate_relevant_moves
             },
-            drop_list::{
-                generate_relevant_drops
-            },
             move_parse::generate_move_vectors,
         },
         representations::{
-            board::Board, drop::{Drops, parse_drop}, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet}
+            board::Board, drop::Drops, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet}
         },
     },
     io::game_io::parse_fen,
@@ -438,7 +439,7 @@ impl State {
 
     fn populate_piece_drops(&mut self) {
         for (index, piece) in self.pieces.iter().enumerate() {
-            self.piece_drops[index] = parse_drop(piece, self);
+            self.piece_drops[index] = generate_drop_vectors(piece, self);
         }
     }
 
