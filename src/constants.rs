@@ -18,7 +18,7 @@ use crate::game::representations::moves::Move;
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 
-pub const RNG_SEED: u64 = 0xDEADBEEFCAAAAAAA;
+pub const RNG_SEED: u64 = 0xDEADBEEFCAFEBABE;
 
 pub const A: u8 = 0;
 pub const B: u8 = 1;
@@ -66,6 +66,7 @@ pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 
 pub const NULL_MOVE: Move = (!0u128, Vec::new());
+pub const DEFAULT_DROP: &str = "#~?@";
 
 pub const BLACK_WIN: i8 = -1;
 pub const WHITE_WIN: i8 = 1;
