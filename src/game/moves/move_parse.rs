@@ -354,7 +354,7 @@ fn atomize(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: Starting atomization of expression: {}", expr);
+    println!("[DEBUG] Starting atomization of expression: {}", expr);
 
     let mut atoms = Vec::with_capacity(expr.len());
     for c in expr.chars() {
@@ -373,7 +373,7 @@ fn expand_directions(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: Starting direction expansion of expression: {}", expr);
+    println!("[DEBUG] Starting direction expansion of expression: {}", expr);
 
     let mut expanded = expr.to_string();
 
@@ -431,7 +431,7 @@ fn expand_ranges(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: Starting range expansion of expression: {}", expr);
+    println!("[DEBUG] Starting range expansion of expression: {}", expr);
 
     if !expr.contains('{') && !expr.contains('*') {
         return Some(expr.to_string());
@@ -469,7 +469,7 @@ fn expand_cardinals(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: Starting cardinal expansion of expression: {}", expr);
+    println!("[DEBUG] Starting cardinal expansion of expression: {}", expr);
 
     if !expr.contains('+') {
         return Some(expr.to_string());
@@ -481,7 +481,7 @@ fn expand_cardinals(expr: &str) -> Option<String> {
     while let Some(term) = stack.pop() {
 
         #[cfg(debug_assertions)]
-        println!("DEBUG: expand_cardinals processing term: {}", term);
+        println!("[DEBUG] expand_cardinals processing term: {}", term);
 
         if !CARDINAL_PATTERN.is_match(&term) {
             result_stack.insert(term);
@@ -531,14 +531,14 @@ where
 /// - `leg_to_vector`
 fn parse_move(expr: &str) -> String {
     #[cfg(debug_assertions)]
-    println!("DEBUG: Starting parse_move with expression: {}", expr);
+    println!("[DEBUG] Starting parse_move with expression: {}", expr);
 
     let expr = normalize(expr).unwrap_or_else(
         || panic!("Failed to normalize expression: {}", expr)
     );
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: Normalized expression: {}", expr);
+    println!("[DEBUG] Normalized expression: {}", expr);
 
     let pipeline = [
         atomize,
@@ -650,7 +650,7 @@ fn filter_atomic_by_index(
     let mut result: Vec<AtomicVector> = Vec::new();
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: filter_atomic_by_index sorted indices: {:?}", index);
+    println!("[DEBUG] filter_atomic_by_index sorted indices: {:?}", index);
 
     assert_eq!(
         vectors.len(), 8,
@@ -660,7 +660,7 @@ fn filter_atomic_by_index(
     vectors = sort_atomic_clockwise(vectors);
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: filter_atomic_by_index sorted vectors: {:?}", vectors);
+    println!("[DEBUG] filter_atomic_by_index sorted vectors: {:?}", vectors);
 
     for i in index {
         result.push(vectors[i]);
@@ -676,7 +676,7 @@ fn filter_atomic_by_cardinal_direction(
 ) -> Vec<AtomicVector> {
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: filter_atomic_by_cardinal_direction direction: {} w.r.t {}",
+        "[DEBUG] filter_atomic_by_cardinal_direction direction: {} w.r.t {}",
         direction, pov
     );
 
@@ -758,7 +758,7 @@ fn process_atomic_range_token(
     let captures = RANGE_TOKEN.captures(token).unwrap();
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: range token captures: {:?}", captures);
+    println!("[DEBUG] range token captures: {:?}", captures);
 
     let start = captures.get(1);
     let end = captures.get(2);
@@ -851,7 +851,7 @@ fn process_atomic_colon_range_token(
     let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: colon-range token captures: {:?}", captures);
+    println!("[DEBUG] colon-range token captures: {:?}", captures);
 
     let start = captures.get(1);
     let end = captures.get(2);
@@ -942,7 +942,7 @@ fn process_atomic_modifiers(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: process_modifiers with modifiers: {:?}, rotation: {}",
+        "[DEBUG] process_modifiers with modifiers: {:?}, rotation: {}",
         modifiers, rotation
     );
 
@@ -1063,7 +1063,7 @@ fn evaluate_atomic_expression(
     #[cfg(debug_assertions)]
     println!(
         concat!(
-            "DEBUG: evaluate_atomic_expression with expression: {:?} ",
+            "[DEBUG] evaluate_atomic_expression with expression: {:?} ",
             "with rotation: {} "
         ),
         expr, rotation
@@ -1157,7 +1157,7 @@ fn evaluate_atomic_expression(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: evaluate_atomic_expression {:?} final len: {}",
+        "[DEBUG] evaluate_atomic_expression {:?} final len: {}",
         expr, result.len()
     );
     AtomicEval(result)
@@ -1314,7 +1314,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: atomic_to_vector expr {} with rotation {}",
+        "[DEBUG] atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
 
@@ -1601,7 +1601,7 @@ fn chained_atomic_to_vector(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: chained_atomic_to_vector expr {} with rotation {}",
+        "[DEBUG] chained_atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
 
@@ -1776,7 +1776,7 @@ fn compound_atomic_to_vector(
 ) -> Vec<AtomicVector> {
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: compound_atomic_to_vector expr {} with rotation {}",
+        "[DEBUG] compound_atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
 
@@ -1785,7 +1785,7 @@ fn compound_atomic_to_vector(
         .collect();
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: compound_atomic_to_vector tokens: {:?}", tokens);
+    println!("[DEBUG] compound_atomic_to_vector tokens: {:?}", tokens);
 
     let mut stack: AtomicGroup = VecDeque::new();
 
@@ -1907,13 +1907,13 @@ fn filter_multi_leg_by_index(
     let mut result: Vec<MultiLegVector> = Vec::new();
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: filter_atomic_by_index sorted indices: {:?}", index);
+    println!("[DEBUG] filter_atomic_by_index sorted indices: {:?}", index);
 
     vectors = sort_multi_leg_clockwise(vectors);
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: filter_multi_leg_by_index sorted vectors: {:#?}",
+        "[DEBUG] filter_multi_leg_by_index sorted vectors: {:#?}",
         vectors
     );
 
@@ -1931,7 +1931,7 @@ fn filter_multi_leg_by_cardinal_direction(
 ) -> Vec<MultiLegVector> {
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: filter_by_cardinal_direction direction: {} w.r.t {}",
+        "[DEBUG] filter_by_cardinal_direction direction: {} w.r.t {}",
         direction, pov
     );
 
@@ -2001,7 +2001,7 @@ fn process_multi_leg_range_token(
 let captures = RANGE_TOKEN.captures(token).unwrap();
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: range token captures: {:?}", captures);
+    println!("[DEBUG] range token captures: {:?}", captures);
 
     let start = captures.get(1);
     let end = captures.get(2);
@@ -2106,7 +2106,7 @@ fn process_multi_leg_colon_range_token(
     let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: colon-range token captures: {:?}", captures);
+    println!("[DEBUG] colon-range token captures: {:?}", captures);
 
     let start = captures.get(1);
     let end = captures.get(2);
@@ -2243,7 +2243,7 @@ fn process_multi_leg_modifiers(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: process_multi_leg_modifiers with modifiers: {:?} ",
+        "[DEBUG] process_multi_leg_modifiers with modifiers: {:?} ",
         modifiers
     );
 
@@ -2289,7 +2289,7 @@ fn evaluate_multi_leg_term_leg(
     #[cfg(debug_assertions)]
     println!(
         concat!(
-            "DEBUG: evaluate_multi_leg_term_leg with term: {:#?} ",
+            "[DEBUG] evaluate_multi_leg_term_leg with term: {:#?} ",
             "modifiers: {:?}"
         ),
         term, modifiers
@@ -2374,7 +2374,7 @@ fn evaluate_multi_leg_subexpression(
     #[cfg(debug_assertions)]
     println!(
         concat!(
-            "DEBUG: evaluate_multi_leg_subexpr with expr: {:#?} ",
+            "[DEBUG] evaluate_multi_leg_subexpr with expr: {:#?} ",
             "modifiers: {:?}, rotation: {}"
         ),
         expr, modifiers, rotation
@@ -2488,7 +2488,7 @@ fn evaluate_multi_leg_expression(
     #[cfg(debug_assertions)]
     println!(
         concat!(
-            "DEBUG: evaluate_multi_leg_expression with expression: {:#?} ",
+            "[DEBUG] evaluate_multi_leg_expression with expression: {:#?} ",
             "with rotation: {} "
         ),
         expr, rotation
@@ -2626,7 +2626,7 @@ fn evaluate_multi_leg_expression(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: evaluate_multi_leg_expression {:?} final len: {:#?} ",
+        "[DEBUG] evaluate_multi_leg_expression {:?} final len: {:#?} ",
         expr, result.len()
     );
 
@@ -2663,7 +2663,7 @@ fn tokenize_multi_leg_expression(
     }
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: tokenize_multi_leg_expression raw tokens: {:?}", tokens);
+    println!("[DEBUG] tokenize_multi_leg_expression raw tokens: {:?}", tokens);
 
     let mut prev_tokens: Vec<String> = vec![];
 
@@ -2699,7 +2699,7 @@ fn tokenize_multi_leg_expression(
     }
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: tokenize_multi_leg_expression first pass {:?}", tokens);
+    println!("[DEBUG] tokenize_multi_leg_expression first pass {:?}", tokens);
 
     let mut result: Vec<String> = vec![];
     tokens = tokens.into_iter().rev().collect();
@@ -2740,7 +2740,7 @@ fn leg_to_vector(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: leg_to_vector leg {} with rotation {}",
+        "[DEBUG] leg_to_vector leg {} with rotation {}",
         expr, rotation
     );
 
@@ -2749,7 +2749,7 @@ fn leg_to_vector(
     );
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: leg_to_vector captures: {:?}", captures);
+    println!("[DEBUG] leg_to_vector captures: {:?}", captures);
 
     let modifiers = captures.get(1).map_or("", |m| m.as_str());
     let exclusion = captures.get(3).map_or("", |m| m.as_str());
@@ -2841,7 +2841,7 @@ fn parse_castling(
     }
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: parse_castling generated move expression: {}", string);
+    println!("[DEBUG] parse_castling generated move expression: {}", string);
 
     string
 }
@@ -2854,7 +2854,7 @@ fn multi_leg_to_vector(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: multi_leg_to_vector leg {} with rotation {}",
+        "[DEBUG] multi_leg_to_vector leg {} with rotation {}",
         expr, rotation
     );
 
@@ -2869,7 +2869,7 @@ fn multi_leg_to_vector(
     let tokens = tokenize_multi_leg_expression(expr);
 
     #[cfg(debug_assertions)]
-    println!("DEBUG: multi_leg_to_vector final tokens: {:?}", tokens);
+    println!("[DEBUG] multi_leg_to_vector final tokens: {:?}", tokens);
 
     let mut stack: MultiLegGroup = VecDeque::new();
     for token in tokens {
@@ -2964,7 +2964,7 @@ fn multi_leg_to_vector(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: multi_leg_to_vector parsed stack: {:#?}",
+        "[DEBUG] multi_leg_to_vector parsed stack: {:#?}",
         stack
     );
 
@@ -2988,7 +2988,7 @@ pub fn generate_move_vectors(
 
     #[cfg(debug_assertions)]
     println!(
-        "DEBUG: generate_move_vectors parsed expression for {}: {:#?}",
+        "[DEBUG] generate_move_vectors parsed expression for {}: {:#?}",
         expr, parsed_expr
     );
 

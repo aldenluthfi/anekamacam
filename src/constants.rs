@@ -18,7 +18,7 @@ use crate::game::representations::moves::Move;
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 
-pub const RNG_SEED: u64 = 0xDEADBEEFCAFEBABE;
+pub const RNG_SEED: u64 = 0xDEADBEEFCAAAAAAA;
 
 pub const A: u8 = 0;
 pub const B: u8 = 1;

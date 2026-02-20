@@ -1440,7 +1440,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             let pieces_in_white = &state.piece_in_hand[WHITE as usize];
             let pieces_in_black = &state.piece_in_hand[BLACK as usize];
 
-            result.push_str("White's hand\t: ");
+            result.push_str("White's hand\t\t: ");
             for (i, piece) in state.pieces.iter().enumerate() {
                 let count = pieces_in_white[i];
                 if count == 1 {

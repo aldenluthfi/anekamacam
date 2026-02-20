@@ -22,7 +22,7 @@ use crate::{
             CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES,
             PIECE_HASHES, SIDE_HASHES,
         },
-        moves::drop_list::generate_drop_list,
+        drops::drop_list::generate_drop_list,
         representations::{
             moves::Move,
             piece::Piece,
@@ -1520,6 +1520,19 @@ macro_rules! make_move {
 
                 $state.main_board[drop_square as usize] = piece_index as u8;
                 $state.piece_list[piece_index].push(drop_square as u16);
+                $state.material[piece_color as usize] +=
+                    p_value!($state.pieces[piece_index]) as u32;
+                $state.piece_count[piece_index] += 1;
+
+                if p_is_big!($state.pieces[piece_index]) {
+                    $state.big_pieces[piece_color as usize] += 1;
+                }
+
+                if p_is_major!($state.pieces[piece_index]) {
+                    $state.major_pieces[piece_color as usize] += 1;
+                } else if p_is_minor!($state.pieces[piece_index]) {
+                    $state.minor_pieces[piece_color as usize] += 1;
+                }
 
                 let hand =
                     &mut $state.piece_in_hand
@@ -1989,6 +2002,19 @@ macro_rules! undo_move {
                 $state.main_board[drop_square as usize] = NO_PIECE;
                 $state.piece_list[piece_index]
                     .retain(|&sq| sq != drop_square as u16);
+                $state.material[piece_color as usize] -=
+                    p_value!($state.pieces[piece_index]) as u32;
+                $state.piece_count[piece_index] -= 1;
+
+                if p_is_big!($state.pieces[piece_index]) {
+                    $state.big_pieces[piece_color as usize] -= 1;
+                }
+
+                if p_is_major!($state.pieces[piece_index]) {
+                    $state.major_pieces[piece_color as usize] -= 1;
+                } else if p_is_minor!($state.pieces[piece_index]) {
+                    $state.minor_pieces[piece_color as usize] -= 1;
+                }
 
                 let hand =
                     &mut $state.piece_in_hand
