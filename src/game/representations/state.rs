@@ -28,7 +28,7 @@ use crate::{
             move_parse::generate_move_vectors,
         },
         representations::{
-            board::Board, drop::Drops, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet}
+            board::Board, drop::DropSet, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet}
         },
     },
     io::game_io::parse_fen,
@@ -277,12 +277,14 @@ pub struct State {
     pub ranks: u8,
 
     pub relevant_moves: Vec<Vec<MoveSet>>,
-    pub relevant_drops: Vec<Vec<Drops>>,
+    pub relevant_drops: Vec<Vec<DropSet>>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub piece_moves: Vec<MoveSet>,
-    pub piece_drops: Vec<Drops>,
+    pub piece_drops: Vec<DropSet>,
+
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: HashMap<u8, Vec<u8>>,                               /* piece index to demotion piece idx  */
+    pub piece_char_map: HashMap<char, u8>,                                      /* char to piece index map             */
 
 /*----------------------------------------------------------------------------*\
                                  DYNAMIC FIELDS
@@ -346,13 +348,15 @@ impl State {
             relevant_moves:
                 vec![vec![MoveSet::new(); board_size]; piece_count],
             relevant_drops:
-                vec![vec![Drops::default(); board_size]; piece_count],
+                vec![vec![DropSet::new(); board_size]; piece_count],
             relevant_attacks:
                 [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
             piece_moves: vec![MoveSet::new(); piece_count],
-            piece_drops: vec![Drops::default(); piece_count],
+            piece_drops: vec![DropSet::new(); piece_count],
+
             piece_swap_map: HashMap::new(),
             piece_demotion_map: HashMap::new(),
+            piece_char_map: HashMap::new(),
 
             playing: WHITE,
             main_board: vec![NO_PIECE; (files as usize) * (ranks as usize)],
@@ -420,6 +424,12 @@ impl State {
         parse_fen(self, fen);
     }
 
+    fn populate_char_map(&mut self) {
+        for (index, piece) in self.pieces.iter().enumerate() {
+            self.piece_char_map.insert(piece.char, index as u8);
+        }
+    }
+
     fn populate_piece_moves(&mut self) {
         for (index, piece) in self.pieces.iter().enumerate() {
             self.piece_moves[index] =
@@ -476,6 +486,7 @@ impl State {
     }
 
     pub fn precompute(&mut self) {
+        self.populate_char_map();
         self.populate_piece_moves();
 
         if drops!(self) {

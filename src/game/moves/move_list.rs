@@ -4,19 +4,19 @@ use bnum::cast::As;
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 use crate::{
-    c, captured_piece, captured_square, captured_unmoved, clear,
+    c, captured_piece, captured_square, captured_unmoved, castling, clear,
     constants::{
         BK_CASTLE, BQ_CASTLE, CASTLING, DROP_MOVE, MULTI_CAPTURE_MOVE,
         NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE,
         WK_CASTLE, WQ_CASTLE,
     },
-    count_limits, created_enp, creates_enp, d, demote_upon_capture, drops,
-    enc_capture_part, enc_created_enp, enc_creates_enp, enc_end,
-    enc_is_initial, enc_move_type, enc_multi_move_captured_piece,
-    enc_multi_move_captured_square, enc_multi_move_captured_unmoved,
-    enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece,
-    enc_promoted, enc_promotion, enc_start, end, enp_captured, enp_piece,
-    enp_square, forbidden_zones, g,
+    count_limits, created_enp, creates_enp, d,
+    demote_upon_capture, drops, enc_capture_part, enc_created_enp,
+    enc_creates_enp, enc_end, enc_is_initial, enc_move_type,
+    enc_multi_move_captured_piece, enc_multi_move_captured_square,
+    enc_multi_move_captured_unmoved, enc_multi_move_is_unload,
+    enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion,
+    enc_start, end, enp_captured, enp_piece, enp_square, forbidden_zones, g,
     game::{
         hash::zobrist::{
             CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES,
@@ -37,7 +37,8 @@ use crate::{
     not_g, not_i, not_k, not_v, p, p_can_promote, p_castle_left,
     p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor,
     p_is_royal, p_promotions, p_value, piece, promote_to_captured, promoted,
-    promotion, promotions, r, set, start, t, u, unload_square, v, x, y,
+    promotion, promotions, r, set, start, t, u, unload_square,
+    v, x, y,
 };
 
 #[inline(always)]
@@ -1122,7 +1123,8 @@ macro_rules! make_move {
                 let end_rank = (captured_square as u16) / $state.files as u16;
                 let end_file = (captured_square as u16) % $state.files as u16;
 
-                if get!($state.virgin_board, captured_square)
+                if castling!($state)
+                    && get!($state.virgin_board, captured_square)
                     && (end_rank == 0 || end_rank == $state.ranks as u16 - 1)
                     && (end_file == 0 || end_file == $state.files as u16 - 1)
                 {
@@ -1408,7 +1410,8 @@ macro_rules! make_move {
                     let end_file = (captured_square as u16) %
                         $state.files as u16;
 
-                    if get!($state.virgin_board, captured_square)
+                    if castling!($state)
+                        && get!($state.virgin_board, captured_square)
                         && (end_rank == 0
                         || end_rank == $state.ranks as u16 - 1)
                         && (end_file == 0
@@ -1548,6 +1551,68 @@ macro_rules! make_move {
                 );
 
                 $state.halfmove_clock = 0;
+
+                for cap in &$mv.1 {
+                    let captured_piece_index =
+                        multi_move_captured_piece!(cap) as usize;
+                    let captured_square =
+                        multi_move_captured_square!(cap) as u32;
+                    let captured_color = p_color!(
+                        $state.pieces[captured_piece_index]
+                    );
+
+                    let end_rank = (captured_square as u16) /
+                        $state.files as u16;
+                    let end_file = (captured_square as u16) %
+                        $state.files as u16;
+
+                    if castling!($state)
+                        && get!($state.virgin_board, captured_square)
+                        && (end_rank == 0
+                        || end_rank == $state.ranks as u16 - 1)
+                        && (end_file == 0
+                        || end_file == $state.files as u16 - 1)
+                    {
+                        let is_queenside = end_file == 0;
+                        let rights = [
+                            WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
+                        ]
+                        [
+                            (
+                                end_rank == $state.ranks as u16 - 1
+                            ) as usize * 2
+                            + is_queenside as usize
+                        ];
+                        $state.castling_state &= !rights;
+                    }
+
+                    hash_update_castling!(
+                        $state, last_castling_state,
+                        $state.castling_state
+                    );
+
+                    clear!(
+                        $state.pieces_board[captured_color as usize],
+                        captured_square
+                    );
+
+                    hash_in_or_out_piece!(
+                        $state,
+                        captured_piece_index,
+                        captured_square as u16
+                    );
+
+                    clear!($state.virgin_board, captured_square);
+
+                    if captured_square != drop_square {
+                        $state.main_board[captured_square as usize] =
+                            NO_PIECE;
+                    }
+
+                    $state.piece_list[captured_piece_index].retain(
+                        |&sq| sq != captured_square as u16
+                    );
+                }
             }
 
             $state.playing = 1 - $state.playing;
@@ -1569,6 +1634,7 @@ macro_rules! make_move {
             } else {
                 #[cfg(debug_assertions)]
                 verify_game_state($state);
+
                 true
             }
         }
@@ -2062,12 +2128,12 @@ pub fn there_is_legal_move(state: &mut State) -> bool {
 }
 
 #[hotpath::measure]
-pub fn generate_all_moves_and_drops(state: &mut State) -> Vec<Move> {
+pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
     let piece_count = state.pieces.len() / 2;
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
 
-    let mut moves: Vec<Move> = (start_index..end_index)
+    let mut moves = (start_index..end_index)
         .flat_map(|piece_index| {
             let piece = &state.pieces[piece_index];
             state.piece_list[piece_index]
@@ -2081,7 +2147,7 @@ pub fn generate_all_moves_and_drops(state: &mut State) -> Vec<Move> {
                 })
                 .collect::<Vec<_>>()
         })
-        .collect();
+        .collect::<Vec<Move>>();
 
     if drops!(state) {
         moves.extend({

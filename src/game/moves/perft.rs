@@ -4,19 +4,20 @@ use rand::seq::SliceRandom;
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 use crate::{
-    captured_piece, captured_square, captured_unmoved, clear,
+    captured_piece, captured_square, captured_unmoved, castling, clear,
     constants::{
         BK_CASTLE, BQ_CASTLE, DROP_MOVE, MULTI_CAPTURE_MOVE, NO_EN_PASSANT,
         NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE,
     },
-    created_enp, creates_enp, demote_upon_capture, drops, end, enp_square,
+    created_enp, creates_enp, demote_upon_capture, drops,
+    end, enp_square,
     game::{
         hash::zobrist::{
             CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES,
             PIECE_HASHES, SIDE_HASHES,
         },
         moves::move_list::{
-            generate_all_moves_and_drops, is_in_check,
+            generate_all_moves_and_drops, is_in_check
         },
         representations::state::{
             EnPassantSquare, Snapshot, Square, State,
@@ -25,7 +26,7 @@ use crate::{
     },
     get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling,
     hash_update_en_passant, hash_update_in_hand, io::{
-        game_io::format_game_state,
+        game_io::{COMMENT_PATTERN, format_game_state},
         move_io::format_move,
     },
     is_initial, is_unload, make_move, move_type, multi_move_captured_piece,
@@ -33,25 +34,30 @@ use crate::{
     multi_move_is_unload, multi_move_unload_square, p_can_promote,
     p_castle_left, p_castle_right, p_color, p_is_big, p_is_major,
     p_is_minor, p_is_royal, p_value, piece, promote_to_captured, promoted,
-    promotion, set, start, undo_move, unload_square,
+    promotion, set, start, undo_move, unload_square
 };
 
 fn parse_perft_file(
     path: &str
 ) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {                              /* until perft 6                      */
     let contents = fs::read_to_string(path).expect("Failed to read perft file");
-    contents.lines().map(|line| {
-        let parts: Vec<&str> = line.split(",").collect();
-        (
-            parts[0].to_string(),
-            parts[1].parse().unwrap(),
-            parts[2].parse().unwrap(),
-            parts[3].parse().unwrap(),
-            parts[4].parse().unwrap(),
-            parts[5].parse().unwrap(),
-            parts[6].parse().unwrap(),
-        )
-    }).collect()
+    let uncommented = COMMENT_PATTERN.replace_all(&contents, "");
+    uncommented
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let parts: Vec<&str> = line.split(",").collect();
+            (
+                parts[0].to_string(),
+                parts[1].parse().unwrap(),
+                parts[2].parse().unwrap(),
+                parts[3].parse().unwrap(),
+                parts[4].parse().unwrap(),
+                parts[5].parse().unwrap(),
+                parts[6].parse().unwrap(),
+            )
+        })
+        .collect()
 }
 
 fn format_time(nanos: u128) -> String {
@@ -143,7 +149,7 @@ fn perft(
     prefix: &str,
 ) -> u64 {
     if depth == 0 {
-        if branch >= 0 {
+        if branch >= 0 && prefix.contains("f5f6  S@h3  h2i1") {
             println!("{}moves | Nodes: 1", prefix);
         }
         return 1;
@@ -157,7 +163,7 @@ fn perft(
             let formatted_move = format_move(&mv, state);
             let new_prefix = format!("{}{}", prefix, formatted_move);
 
-            if  make_move!(state, mv) {
+            if make_move!(state, mv) {
                 nodes += perft(state, depth - 1, branch - 1, &new_prefix);
                 undo_move!(state);
             }
@@ -167,7 +173,7 @@ fn perft(
         }
     }
 
-    if branch >= 0 {
+    if branch >= 0 && prefix.contains("f5f6  S@h3  h2i1") {
         println!("{}moves | Nodes: {}", prefix, nodes);
     }
 
