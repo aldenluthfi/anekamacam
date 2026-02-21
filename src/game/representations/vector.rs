@@ -15,12 +15,12 @@
 //! # Date
 //! 12/02/2026
 
-use std::{collections::VecDeque, fmt::Debug};
+use std::{collections::{HashSet, VecDeque}, fmt::Debug};
 
 use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
 
 /// A simple (x, y) + piece index vector for drop generations.
-pub type DropVector = u32;
+pub type DropVector = (u16, HashSet<u8>);
 
 /*----------------------------------------------------------------------------*\
                         MOVE GENERATION REPRESENTATIONS
