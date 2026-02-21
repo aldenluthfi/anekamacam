@@ -202,7 +202,7 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
-    if drops || promote_to_captured || demote_upon_capture || setup_phase{
+    if drops || promote_to_captured || demote_upon_capture || setup_phase {
         assert!(
             fen_in_hand,
             "No pieces in hand found in FEN"
@@ -822,8 +822,10 @@ pub fn parse_config_file(path: &str) -> State {
 
                 let limit_str = parts[1];
 
-                let limit_value = limit_str.parse::<u32>().unwrap_or_else(
-                    |_| panic!("Invalid piece count limit: {}", limit_str.trim())
+                let limit_value = limit_str.parse::<i32>().unwrap_or_else(
+                    |_| panic!(
+                        "Invalid piece count limit: {}", limit_str.trim()
+                    )
                 );
 
                 result.piece_limit[white_index] = limit_value;
@@ -840,7 +842,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                 let limit_str = parts[1];
 
-                let limit_value = limit_str.parse::<u32>().unwrap_or_else(
+                let limit_value = limit_str.parse::<i32>().unwrap_or_else(
                     |_| panic!("Invalid piece count limit: {}", limit_str.trim())
                 );
 
@@ -903,6 +905,48 @@ pub fn parse_config_file(path: &str) -> State {
 
                 result.forbidden_zones[piece_index] =
                     parse_bit_fen(Some(zone_str), &result);
+            } else {
+                panic!("Invalid piece character(s): {}", piece_chars);
+            }
+        }
+    }
+
+    if setup_phase && sections.contains_key("setup rules") {
+        for setup in &sections["setup rules"] {
+            let parts: Vec<&str> = setup.split(':').map(str::trim).collect();
+
+            assert!(
+                parts.len() == 2,
+                "Invalid setup phase definition: {}",
+                setup
+            );
+
+            let piece_chars = parts[0];
+            let setup_pattern = parts[1].to_string();
+
+            if piece_chars.len() == 2 {
+                let white_char = piece_chars.chars().next().unwrap();
+                let black_char = piece_chars.chars().nth(1).unwrap();
+
+                if let Some(&white_index) = char_to_index.get(&white_char) {
+                    result.pieces[white_index].setup = setup_pattern.clone();
+                } else {
+                    panic!("Unknown piece character: {}", white_char);
+                }
+
+                if let Some(&black_index) = char_to_index.get(&black_char) {
+                    result.pieces[black_index].setup = setup_pattern.clone();
+                } else {
+                    panic!("Unknown piece character: {}", black_char);
+                }
+            } else if piece_chars.len() == 1 {
+                let piece_char = piece_chars.chars().next().unwrap();
+
+                if let Some(&index) = char_to_index.get(&piece_char) {
+                    result.pieces[index].setup = setup_pattern.clone();
+                } else {
+                    panic!("Unknown piece character: {}", piece_char);
+                }
             } else {
                 panic!("Invalid piece character(s): {}", piece_chars);
             }
@@ -1263,6 +1307,14 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 state.piece_in_hand[color_idx][*piece_index as usize] = count;
             }
         }
+    }
+
+    if setup_phase!(state) 
+    && !state.royal_list[0].is_empty() 
+    && !state.royal_list[1].is_empty() {
+        state.setup_phase = false;
+    } else if state.royal_list[0].is_empty() || state.royal_list[1].is_empty() {
+        state.setup_phase = true;
     }
 
     if parts.len() > part_index {

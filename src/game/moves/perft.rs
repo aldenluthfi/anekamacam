@@ -10,7 +10,7 @@ use crate::{
         NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, WK_CASTLE, WQ_CASTLE,
     },
     created_enp, creates_enp, demote_upon_capture, drops,
-    end, enp_square,
+    end, enp_square, drop_from_enemy_hand,
     game::{
         hash::zobrist::{
             CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES,
@@ -149,7 +149,7 @@ fn perft(
     prefix: &str,
 ) -> u64 {
     if depth == 0 {
-        if branch >= 0 && prefix.contains("f5f6  S@h3  h2i1") {
+        if branch >= 0 {
             println!("{}moves | Nodes: 1", prefix);
         }
         return 1;
@@ -173,7 +173,7 @@ fn perft(
         }
     }
 
-    if branch >= 0 && prefix.contains("f5f6  S@h3  h2i1") {
+    if branch >= 0 {
         println!("{}moves | Nodes: {}", prefix, nodes);
     }
 

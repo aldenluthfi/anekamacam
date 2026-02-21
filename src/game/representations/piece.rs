@@ -138,7 +138,8 @@ pub type PieceIndex = u8;
 pub struct Piece {
     pub name: String,
     pub movement: String,
-    pub drop: String,
+    pub drop: String,                                                           /* Drop rule in CDN                   */
+    pub setup: String,                                                          /* Setup rule in CDN                  */
     pub char: char,
 
     pub promotions: U2048,
@@ -203,11 +204,13 @@ impl Piece {
         }
 
         let drop = DEFAULT_DROP.to_string();
+        let setup = DEFAULT_DROP.to_string();
 
         Self {
             name,
             movement,
             drop,
+            setup,
             char: symbol,
             promotions,
             encoded_piece,
@@ -220,6 +223,8 @@ impl Debug for Piece {
         f.debug_struct("Piece")
             .field("name", &self.name)
             .field("movement", &self.movement)
+            .field("drop", &self.drop)
+            .field("setup", &self.setup)
             .field("char", &self.char)
             .field("promotions", &p_promotions!(self))
             .field("encoded_piece", &format_args!("{:#034b}", self.encoded_piece))

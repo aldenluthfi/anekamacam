@@ -10,8 +10,8 @@ use crate::{
         NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE,
         WK_CASTLE, WQ_CASTLE,
     },
-    count_limits, created_enp, creates_enp, d,
-    demote_upon_capture, drops, enc_capture_part, enc_created_enp,
+    count_limits, created_enp, creates_enp, d, drop_from_enemy_hand,
+    demote_upon_capture, drops, drop_e, enc_capture_part, enc_created_enp,
     enc_creates_enp, enc_end, enc_is_initial, enc_move_type,
     enc_multi_move_captured_piece, enc_multi_move_captured_square,
     enc_multi_move_captured_unmoved, enc_multi_move_is_unload,
@@ -698,7 +698,7 @@ pub fn generate_move_list(
 
                     if count_limits!(game_state) {
                         can_promote = can_promote &&
-                        game_state.piece_count[promo_piece_index] <
+                        (game_state.piece_count[promo_piece_index] as i32) <
                         game_state.piece_limit[promo_piece_index];
                     }
 
@@ -758,6 +758,7 @@ macro_rules! make_move {
             let last_halfmove_clock = $state.halfmove_clock;
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
+            let last_setup_phase = $state.setup_phase;
 
             #[cfg(debug_assertions)]
             verify_game_state($state);
@@ -1141,10 +1142,18 @@ macro_rules! make_move {
                     $state, last_castling_state, $state.castling_state
                 );
 
-                clear!(
-                    $state.pieces_board[captured_color as usize],
-                    captured_square
-                );
+                if captured_square != end_square {
+                    $state.main_board[captured_square as usize] =
+                        NO_PIECE;
+                }
+
+                if captured_square != end_square
+                || captured_color != piece_color {
+                    clear!(
+                        $state.pieces_board[captured_color as usize],
+                        captured_square
+                    );
+                }
 
                 hash_in_or_out_piece!(
                     $state,
@@ -1167,10 +1176,6 @@ macro_rules! make_move {
                     );
 
                     set!($state.virgin_board, unload_square);
-                }
-
-                if captured_square != end_square {
-                    $state.main_board[captured_square as usize] = NO_PIECE;
                 }
 
                 if is_unload {
@@ -1435,10 +1440,18 @@ macro_rules! make_move {
                         $state.castling_state
                     );
 
-                    clear!(
-                        $state.pieces_board[captured_color as usize],
-                        captured_square
-                    );
+                    if captured_square != end_square {
+                        $state.main_board[captured_square as usize] =
+                            NO_PIECE;
+                    }
+
+                    if captured_square != end_square
+                    || captured_color != piece_color {
+                        clear!(
+                            $state.pieces_board[captured_color as usize],
+                            captured_square
+                        );
+                    }
 
                     hash_in_or_out_piece!(
                         $state,
@@ -1461,11 +1474,6 @@ macro_rules! make_move {
                         );
 
                         set!($state.virgin_board, unload_square);
-                    }
-
-                    if captured_square != end_square {
-                        $state.main_board[captured_square as usize] =
-                            NO_PIECE;
                     }
 
                     if is_unload {
@@ -1537,20 +1545,44 @@ macro_rules! make_move {
                     $state.minor_pieces[piece_color as usize] += 1;
                 }
 
-                let hand =
-                    &mut $state.piece_in_hand
-                    [piece_color as usize][piece_index];
-                let old_hand = *hand;
-                *hand -= 1;
+                if !drop_from_enemy_hand!($mv) {
+                    let hand =
+                        &mut $state.piece_in_hand
+                        [piece_color as usize][piece_index];
+                    let old_hand = *hand;
+                    *hand -= 1;
 
-                hash_update_in_hand!(
-                    $state,
-                    piece_index,
-                    old_hand,
-                    *hand
-                );
+
+                    hash_update_in_hand!(
+                        $state,
+                        piece_index,
+                        old_hand,
+                        *hand
+                    );
+                } else {
+                    let enemy_equiv = $state.piece_swap_map
+                        [&(piece_index as u8)] as usize;
+                    let hand =
+                        &mut $state.piece_in_hand
+                        [1 - piece_color as usize][enemy_equiv];
+                    let old_hand = *hand;
+                    *hand -= 1;
+
+                    hash_update_in_hand!(
+                        $state,
+                        enemy_equiv,
+                        old_hand,
+                        *hand
+                    );
+                }
 
                 $state.halfmove_clock = 0;
+
+                if $state.setup_phase
+                && $state.piece_in_hand[0].is_empty()
+                && $state.piece_in_hand[1].is_empty() {
+                    $state.setup_phase = false;
+                }
 
                 for cap in &$mv.1 {
                     let captured_piece_index =
@@ -1591,10 +1623,18 @@ macro_rules! make_move {
                         $state.castling_state
                     );
 
-                    clear!(
-                        $state.pieces_board[captured_color as usize],
-                        captured_square
-                    );
+                    if captured_square != drop_square {
+                        $state.main_board[captured_square as usize] =
+                            NO_PIECE;
+                    }
+
+                    if captured_square != drop_square
+                    || captured_color != piece_color {
+                        clear!(
+                            $state.pieces_board[captured_color as usize],
+                            captured_square
+                        );
+                    }
 
                     hash_in_or_out_piece!(
                         $state,
@@ -1604,14 +1644,27 @@ macro_rules! make_move {
 
                     clear!($state.virgin_board, captured_square);
 
-                    if captured_square != drop_square {
-                        $state.main_board[captured_square as usize] =
-                            NO_PIECE;
-                    }
-
                     $state.piece_list[captured_piece_index].retain(
                         |&sq| sq != captured_square as u16
                     );
+
+                    if p_is_big!($state.pieces[captured_piece_index]) {
+                        $state.big_pieces[captured_color as usize] -= 1;
+                    }
+                    if p_is_major!($state.pieces[captured_piece_index]) {
+                        $state.major_pieces[captured_color as usize] -= 1;
+                    } else if p_is_minor!(
+                        $state.pieces[captured_piece_index]
+                    ) {
+                        $state.minor_pieces[captured_color as usize] -= 1;
+                    }
+
+                    $state.material[captured_color as usize] -=
+                        p_value!(
+                            $state.pieces[captured_piece_index]
+                        ) as u32;
+
+                    $state.piece_count[captured_piece_index] -= 1;
                 }
             }
 
@@ -1623,12 +1676,12 @@ macro_rules! make_move {
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
+                setup_phase: last_setup_phase,
                 position_hash: last_position_hash
             };
 
             $state.history.push(snapshot);
-
-            if is_in_check(1 - $state.playing, $state) {
+            if !$state.setup_phase && is_in_check(1 - $state.playing, $state) {
                 undo_move!($state);
                 false
             } else {
@@ -1661,6 +1714,7 @@ macro_rules! undo_move {
             $state.halfmove_clock = snapshot.halfmove_clock;
             $state.en_passant_square = snapshot.en_passant_square;
             $state.position_hash = snapshot.position_hash;
+            $state.setup_phase = snapshot.setup_phase;
 
             let mv = snapshot.move_ply;
             let move_type = move_type!(mv);
@@ -2082,12 +2136,81 @@ macro_rules! undo_move {
                     $state.minor_pieces[piece_color as usize] -= 1;
                 }
 
-                let hand =
-                    &mut $state.piece_in_hand
-                    [piece_color as usize][piece_index];
-                *hand += 1;
-            }
+                if !drop_from_enemy_hand!(mv) {
+                    let hand =
+                        &mut $state.piece_in_hand
+                        [piece_color as usize][piece_index];
+                    let old_hand = *hand;
+                    *hand += 1;
 
+                    hash_update_in_hand!(
+                        $state,
+                        piece_index,
+                        old_hand,
+                        *hand
+                    );
+                } else {
+                    let enemy_equiv = $state.piece_swap_map
+                        [&(piece_index as u8)] as usize;
+                    let hand =
+                        &mut $state.piece_in_hand
+                        [1 - piece_color as usize][enemy_equiv];
+                    let old_hand = *hand;
+                    *hand += 1;
+
+                    hash_update_in_hand!(
+                        $state,
+                        enemy_equiv,
+                        old_hand,
+                        *hand
+                    );
+                }
+
+                for cap in &mv.1 {
+                    let captured_piece_index =
+                        multi_move_captured_piece!(cap) as usize;
+                    let captured_square =
+                        multi_move_captured_square!(cap) as u32;
+                    let captured_unmoved = multi_move_captured_unmoved!(cap);
+                    let captured_color = p_color!(
+                        $state.pieces[captured_piece_index]
+                    );
+
+                    set!(
+                        $state.pieces_board[captured_color as usize],
+                        captured_square
+                    );
+
+                    if captured_unmoved {
+                        set!($state.virgin_board, captured_square);
+                    }
+
+                    $state.main_board[captured_square as usize] =
+                        captured_piece_index as u8;
+
+                    $state.piece_list[captured_piece_index]
+                        .push(captured_square as u16);
+
+                    if p_is_big!($state.pieces[captured_piece_index]) {
+                        $state.big_pieces[captured_color as usize] += 1;
+                    }
+
+                    if p_is_major!($state.pieces[captured_piece_index]) {
+                        $state.major_pieces[captured_color as usize] += 1;
+                    } else if p_is_minor!(
+                        $state.pieces[captured_piece_index]
+                    ) {
+                        $state.minor_pieces[captured_color as usize] += 1;
+                    }
+
+                    $state.material[captured_color as usize] +=
+                        p_value!(
+                            $state.pieces[captured_piece_index]
+                        ) as u32;
+
+                    $state.piece_count[captured_piece_index] += 1;
+                }
+            }
             #[cfg(debug_assertions)]
             verify_game_state($state);
         }
@@ -2133,32 +2256,54 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
 
-    let mut moves = (start_index..end_index)
-        .flat_map(|piece_index| {
-            let piece = &state.pieces[piece_index];
-            state.piece_list[piece_index]
-                .iter()
-                .flat_map(|index| {
-                    generate_move_list(
-                        *index,
-                        piece,
-                        state,
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<Move>>();
+    let mut moves = Vec::new();
+
+    if !state.setup_phase {
+        moves.extend({
+            (start_index..end_index)
+            .flat_map(|piece_index| {
+                let piece = &state.pieces[piece_index];
+                state.piece_list[piece_index]
+                    .iter()
+                    .flat_map(|index| {
+                        generate_move_list(
+                            *index,
+                            piece,
+                            state,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<Move>>()
+        });
+    }
 
     if drops!(state) {
         moves.extend({
                 (start_index..end_index)
                 .flat_map(|piece_index| {
-                    if state.piece_in_hand
-                    [state.playing as usize][piece_index] > 0
-                    {
-                        generate_drop_list(piece_index, state)
+                    let piece = &state.pieces[piece_index];
+                    let enemy_equiv =
+                        state.piece_swap_map[&(piece_index as u8)] as usize;
+
+                    let drop_from_own =
+                        state.piece_in_hand
+                        [state.playing as usize][piece_index] > 0;
+
+                    if drop_from_own {
+                        generate_drop_list(piece, state)
                     } else {
-                        Vec::new()
+                        let drop_from_enemy =
+                            state.piece_drops[piece_index]
+                            .iter().any(|drop| drop_e!(drop)) &&
+                            state.piece_in_hand
+                            [1 - state.playing as usize][enemy_equiv] > 0;
+
+                        if drop_from_enemy {
+                            generate_drop_list(piece, state)
+                        } else {
+                            Vec::new()
+                        }
                     }
                 })
                 .collect::<Vec<_>>()

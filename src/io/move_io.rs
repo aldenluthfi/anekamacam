@@ -60,7 +60,7 @@ pub fn format_move(mv: &Move, state: &State) -> String {
         let piece_type = piece!(mv) as usize;
         let result = format!(
             "{}@{}",
-            state.pieces[piece_type].char.to_uppercase(),
+            state.pieces[piece_type].char,
             format_square(start_square as u16, state)
         );
 
