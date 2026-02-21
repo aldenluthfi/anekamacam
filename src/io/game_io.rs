@@ -1171,8 +1171,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     (rank as u32) * (state.files as u32) + (file as u32);
 
                 if promotions!(state)
-                && !p_promotions!(piece).is_empty()
-                && !p_promotions!(piece).len() == 1
+                && p_promotions!(piece).len() == 1
                 && get!(state.promotion_zones_mandatory
                 [piece_index as usize], square_index)
                 {
