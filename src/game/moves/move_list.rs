@@ -1,43 +1,30 @@
 use bnum::types::U2048;
 use bnum::cast::As;
 
-#[cfg(debug_assertions)]
-use crate::game::util::verify_game_state;
 use crate::{
-    c, captured_piece, captured_square, captured_unmoved, castling, clear,
+    c,
     constants::{
-        BK_CASTLE, BQ_CASTLE, CASTLING, DROP_MOVE, MULTI_CAPTURE_MOVE,
-        NO_EN_PASSANT, NO_PIECE, QUIET_MOVE, SINGLE_CAPTURE_MOVE,
-        WK_CASTLE, WQ_CASTLE,
+        CASTLING, MULTI_CAPTURE_MOVE, QUIET_MOVE, SINGLE_CAPTURE_MOVE,
     },
-    count_limits, created_enp, creates_enp, d, drop_from_enemy_hand,
-    demote_upon_capture, drops, drop_e, enc_capture_part, enc_created_enp,
+    count_limits, d, drops, drop_e, enc_capture_part, enc_created_enp,
     enc_creates_enp, enc_end, enc_is_initial, enc_move_type,
     enc_multi_move_captured_piece, enc_multi_move_captured_square,
     enc_multi_move_captured_unmoved, enc_multi_move_is_unload,
     enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion,
-    enc_start, end, enp_captured, enp_piece, enp_square, forbidden_zones, g,
+    enc_start, enp_captured, enp_piece, enp_square, forbidden_zones, g,
     game::{
-        hash::zobrist::{
-            CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES,
-            PIECE_HASHES, SIDE_HASHES,
-        },
         drops::drop_list::generate_drop_list,
         representations::{
             moves::Move,
             piece::Piece,
-            state::{EnPassantSquare, Snapshot, Square, State},
+            state::State,
             vector::{MoveSet, MoveVector},
         },
     },
-    get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling,
-    hash_update_en_passant, hash_update_in_hand, i, is_initial, is_unload,
-    k, l, m, move_type, multi_move_captured_piece, multi_move_captured_square,
-    multi_move_captured_unmoved, multi_move_is_unload, multi_move_unload_square,
-    not_g, not_i, not_k, not_v, p, p_can_promote, p_castle_left,
-    p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor,
-    p_is_royal, p_promotions, p_value, piece, promote_to_captured, promoted,
-    promotion, promotions, r, set, start, t, u, unload_square,
+    get, i,
+    k, l, m, multi_move_captured_square,
+    not_g, not_i, not_k, not_v, p, p_can_promote, p_color, p_index,
+    p_is_royal, p_promotions, p_value, promote_to_captured, promotions, r, t, u,
     v, x, y,
 };
 
@@ -715,7 +702,14 @@ pub fn generate_move_list(
                     }
 
                     if can_promote {
-                        let mut promo_move = encoded_move.clone();
+                        let mut promo_move = Move::default();
+                        promo_move.0 = encoded_move.0;
+                        promo_move.1 = Vec::new();
+
+                        for taken_piece in &encoded_move.1 {
+                            promo_move.1.push(*taken_piece);
+                        }
+
                         enc_promotion!(promo_move, 1);
                         enc_promoted!(promo_move, promo_piece_index as u128);
                         result.push(promo_move);
@@ -2223,59 +2217,39 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
 
-    let mut moves = Vec::new();
+    let mut moves = Vec::with_capacity(256);
 
     if !state.setup_phase {
-        moves.extend({
-            (start_index..end_index)
-            .flat_map(|piece_index| {
-                let piece = &state.pieces[piece_index];
-                state.piece_list[piece_index]
-                    .iter()
-                    .flat_map(|index| {
-                        generate_move_list(
-                            *index,
-                            piece,
-                            state,
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<Move>>()
-        });
+        for piece_index in start_index..end_index {
+            let piece = &state.pieces[piece_index];
+            for &index in &state.piece_list[piece_index] {
+                moves.extend(generate_move_list(index, piece, state));
+            }
+        }
     }
 
-    if drops!(state) {
-        moves.extend({
-                (start_index..end_index)
-                .flat_map(|piece_index| {
-                    let piece = &state.pieces[piece_index];
-                    let enemy_equiv =
-                        state.piece_swap_map[&(piece_index as u8)] as usize;
+    if drops!(state) || state.setup_phase{
+        for piece_index in start_index..end_index {
+            let piece = &state.pieces[piece_index];
+            let enemy_equiv = state.piece_swap_map[&(piece_index as u8)] as usize;
 
-                    let drop_from_own =
-                        state.piece_in_hand
-                        [state.playing as usize][piece_index] > 0;
+            let drop_from_own =
+                state.piece_in_hand[state.playing as usize][piece_index] > 0;
 
-                    if drop_from_own {
-                        generate_drop_list(piece, state)
-                    } else {
-                        let drop_from_enemy =
-                            state.piece_drops[piece_index]
-                            .iter().any(|drop| drop_e!(drop)) &&
-                            state.piece_in_hand
-                            [1 - state.playing as usize][enemy_equiv] > 0;
+            if drop_from_own {
+                moves.extend(generate_drop_list(piece, state));
+            } else {
+                let drop_from_enemy =
+                    state.piece_drops[piece_index]
+                        .iter().any(|drop| drop_e!(drop)) &&
+                    state.piece_in_hand
+                    [1 - state.playing as usize][enemy_equiv] > 0;
 
-                        if drop_from_enemy {
-                            generate_drop_list(piece, state)
-                        } else {
-                            Vec::new()
-                        }
-                    }
-                })
-                .collect::<Vec<_>>()
+                if drop_from_enemy {
+                    moves.extend(generate_drop_list(piece, state));
+                }
             }
-        );
+        }
     }
 
     moves
