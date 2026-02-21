@@ -1165,42 +1165,56 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 ).unwrap_or_else(|| panic!("Unknown piece character: {}", c));
 
                 let piece = &state.pieces[piece_idx];
+                let mut piece_index = p_index!(piece);
+                let mut piece_color = p_color!(piece);
                 let square_index =
                     (rank as u32) * (state.files as u32) + (file as u32);
 
-                state.main_board[square_index as usize] = p_index!(piece);
+                if promotions!(state)
+                && !p_promotions!(piece).is_empty()
+                && !p_promotions!(piece).len() == 1
+                && get!(state.promotion_zones_mandatory
+                [piece_index as usize], square_index)
+                {
+                    let promotion_piece =
+                        &state.pieces[p_promotions!(piece)[0]];
+                    piece_index = p_index!(promotion_piece);
+                    piece_color = p_color!(promotion_piece);
+                }
 
-                state.piece_list[p_index!(piece) as usize]
+                state.main_board[square_index as usize] = piece_index;
+
+                state.piece_list[piece_index as usize]
                     .push(square_index as u16);
-                state.piece_count[p_index!(piece) as usize] += 1;
+                state.piece_count[piece_index as usize] += 1;
 
                 set!(
-                    state.pieces_board[p_color!(piece) as usize], square_index
+                    state.pieces_board[piece_color as usize], square_index
                 );
-                state.material[p_color!(piece) as usize] +=
+                state.material[piece_color as usize] +=
                     p_value!(piece) as u32;
 
                 if p_is_royal!(piece) {
-                    state.royal_list[p_color!(piece) as usize].push(
+                    state.royal_list[piece_color as usize].push(
                         square_index as u16
                     );
-                    state.royal_pieces[p_color!(piece) as usize] += 1;
+                    state.royal_pieces[piece_color as usize] += 1;
                 }
 
                 if p_is_major!(piece) {
-                    state.major_pieces[p_color!(piece) as usize] += 1;
+                    state.major_pieces[piece_color as usize] += 1;
                 }
 
                 if p_is_minor!(piece) {
-                    state.minor_pieces[p_color!(piece) as usize] += 1;
+                    state.minor_pieces[piece_color as usize] += 1;
                 }
 
                 if p_is_big!(piece) {
-                    state.big_pieces[p_color!(piece) as usize] += 1;
+                    state.big_pieces[piece_color as usize] += 1;
                 }
 
                 if get!(
-                    state.initial_setup[p_index!(piece) as usize], square_index
+                    state.initial_setup[piece_index as usize], square_index
                 ) {
                     set!(state.virgin_board, square_index);
                 }
@@ -1309,8 +1323,8 @@ pub fn parse_fen(state: &mut State, fen: &str) {
         }
     }
 
-    if setup_phase!(state) 
-    && !state.royal_list[0].is_empty() 
+    if setup_phase!(state)
+    && !state.royal_list[0].is_empty()
     && !state.royal_list[1].is_empty() {
         state.setup_phase = false;
     } else if state.royal_list[0].is_empty() || state.royal_list[1].is_empty() {

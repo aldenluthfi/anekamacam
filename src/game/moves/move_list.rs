@@ -2217,39 +2217,6 @@ macro_rules! undo_move {
     };
 }
 
-pub fn generate_all_legal_moves(state: &mut State) -> Vec<Move> {
-    let all_moves = generate_all_moves_and_drops(state);
-    let legal_moves: Vec<Move> = all_moves
-        .into_iter()
-        .filter(|mv| {
-            let result = make_move!(state, mv.clone());
-
-            if result {
-                undo_move!(state);
-            }
-
-            result
-        })
-        .collect();
-
-    legal_moves
-}
-
-#[hotpath::measure]
-pub fn there_is_legal_move(state: &mut State) -> bool {
-    let all_moves = generate_all_moves_and_drops(state);
-    for mv in all_moves {
-        let result = make_move!(state, mv);
-
-        if result {
-            undo_move!(state);
-            return true;
-        }
-    }
-
-    false
-}
-
 #[hotpath::measure]
 pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
     let piece_count = state.pieces.len() / 2;
