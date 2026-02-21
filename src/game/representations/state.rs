@@ -219,6 +219,7 @@ pub struct Snapshot {
     pub castling_state: u8,
     pub halfmove_clock: u8,
     pub en_passant_square: u32,
+    pub setup_phase: bool,
 
     pub position_hash: u128
 }
@@ -230,6 +231,7 @@ impl Default for Snapshot {
             castling_state: 0,
             halfmove_clock: 0,
             en_passant_square: u32::MAX,
+            setup_phase: false,
             position_hash: u128::default(),
         }
     }
@@ -271,16 +273,18 @@ pub struct State {
     pub forbidden_zones: Vec<Board>,                                            /* piece to forbidden zone bitboard   */
     pub promotion_zones_optional: Vec<Board>,                                   /* piece to promotion zone bitboard   */
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
-    pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
+    pub piece_limit: Vec<i32>,                                                  /* piece index to count limit         */
 
     pub files: u8,
     pub ranks: u8,
 
     pub relevant_moves: Vec<Vec<MoveSet>>,
     pub relevant_drops: Vec<Vec<DropSet>>,
+    pub relevant_setup: Vec<Vec<DropSet>>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub piece_moves: Vec<MoveSet>,
     pub piece_drops: Vec<DropSet>,
+    pub piece_setup: Vec<DropSet>,
 
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: HashMap<u8, Vec<u8>>,                               /* piece index to demotion piece idx  */
@@ -289,6 +293,8 @@ pub struct State {
 /*----------------------------------------------------------------------------*\
                                  DYNAMIC FIELDS
 \*----------------------------------------------------------------------------*/
+
+    pub setup_phase: bool,
 
     pub playing: u8,
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
@@ -340,7 +346,7 @@ impl State {
             forbidden_zones: vec![board!(files, ranks); piece_count],
             promotion_zones_optional: vec![board!(files, ranks); piece_count],
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
-            piece_limit: vec![0; piece_count],
+            piece_limit: vec![-1; piece_count],
 
             files,
             ranks,
@@ -349,14 +355,19 @@ impl State {
                 vec![vec![MoveSet::new(); board_size]; piece_count],
             relevant_drops:
                 vec![vec![DropSet::new(); board_size]; piece_count],
+            relevant_setup:
+                vec![vec![DropSet::new(); board_size]; piece_count],
             relevant_attacks:
                 [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
             piece_moves: vec![MoveSet::new(); piece_count],
             piece_drops: vec![DropSet::new(); piece_count],
+            piece_setup: vec![DropSet::new(); piece_count],
 
             piece_swap_map: HashMap::new(),
             piece_demotion_map: HashMap::new(),
             piece_char_map: HashMap::new(),
+
+            setup_phase: false,
 
             playing: WHITE,
             main_board: vec![NO_PIECE; (files as usize) * (ranks as usize)],
@@ -449,7 +460,13 @@ impl State {
 
     fn populate_piece_drops(&mut self) {
         for (index, piece) in self.pieces.iter().enumerate() {
-            self.piece_drops[index] = generate_drop_vectors(piece, self);
+            self.piece_drops[index] = generate_drop_vectors(piece, self, false);
+        }
+    }
+
+    fn populate_piece_setup(&mut self) {
+        for (index, piece) in self.pieces.iter().enumerate() {
+            self.piece_setup[index] = generate_drop_vectors(piece, self, true);
         }
     }
 
@@ -473,7 +490,22 @@ impl State {
                     = generate_relevant_drops(
                         piece,
                         square,
-                        self
+                        self,
+                        false
+                    );
+            }
+        }
+    }
+
+    fn populate_relevant_setup(&mut self) {
+        for (index, piece) in self.pieces.iter().enumerate() {
+            for square in 0..(self.files as u32 * self.ranks as u32) {
+                self.relevant_setup[index][square as usize]
+                    = generate_relevant_drops(
+                        piece,
+                        square,
+                        self,
+                        true
                     );
             }
         }
@@ -489,11 +521,19 @@ impl State {
         self.populate_char_map();
         self.populate_piece_moves();
 
+        if setup_phase!(self) {
+            self.populate_piece_setup();
+        }
+
         if drops!(self) {
             self.populate_piece_drops();
         }
 
         self.populate_relevant_moves();
+
+        if setup_phase!(self) {
+            self.populate_relevant_setup();
+        }
 
         if drops!(self) {
             self.populate_relevant_drops();

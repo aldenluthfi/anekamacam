@@ -66,7 +66,8 @@ pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 
 pub const NULL_MOVE: Move = (!0u128, Vec::new());
-pub const DEFAULT_DROP: &str = "#~?@";
+pub const DEFAULT_DROP: &str = "@#~?@";
+pub const NULL_DROP: &str = "@#~?@#~?";
 
 pub const BLACK_WIN: i8 = -1;
 pub const WHITE_WIN: i8 = 1;
