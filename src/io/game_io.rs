@@ -594,6 +594,32 @@ pub fn parse_config_file(path: &str) -> State {
             .entry(index as u8).or_insert_with(|| vec![index as u8]);
     }
 
+    if sections.contains_key("piece ranks") {
+        for piece_rank in &sections["piece ranks"] {
+            let parts: Vec<&str> = piece_rank.split(':').map(str::trim).collect();
+
+            assert!(
+                parts.len() == 2,
+                "Invalid piece rank definition: {}",
+                piece_rank
+            );
+
+            let rank_str = parts[0];
+            let pieces_str = parts[1];
+
+            let rank_value = rank_str.parse::<u8>().unwrap_or_else(
+                |_| panic!("Invalid piece rank: {}", rank_str.trim())
+            );
+            for piece_char in pieces_str.chars() {
+                if let Some(&index) = char_to_index.get(&piece_char) {
+                    result.pieces[index].rank = rank_value;
+                } else {
+                    panic!("Unknown piece character: {}", piece_char);
+                }
+            }
+        }
+    }
+
     if castling {
         assert!(
             result.pieces.iter().any(
@@ -1164,7 +1190,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     |piece| piece.char == c
                 ).unwrap_or_else(|| panic!("Unknown piece character: {}", c));
 
-                let piece = &state.pieces[piece_idx];
+                let mut piece = &state.pieces[piece_idx];
                 let mut piece_index = p_index!(piece);
                 let mut piece_color = p_color!(piece);
                 let square_index =
@@ -1175,10 +1201,11 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 && get!(state.promotion_zones_mandatory
                 [piece_index as usize], square_index)
                 {
-                    let promotion_piece =
+                    piece =
                         &state.pieces[p_promotions!(piece)[0]];
-                    piece_index = p_index!(promotion_piece);
-                    piece_color = p_color!(promotion_piece);
+                    piece_index = p_index!(piece);
+                    piece_color = p_color!(piece);
+
                 }
 
                 state.main_board[square_index as usize] = piece_index;

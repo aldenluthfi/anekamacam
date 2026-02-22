@@ -104,7 +104,7 @@ pub fn start_perft(
         println!("\n{}", format_game_state(state, true));
 
         let expected_perfts = [
-            perft_1, perft_2, perft_3, perft_4, perft_5, perft_6,
+            perft_1, perft_2, perft_3, perft_4, perft_5, perft_6
         ];
 
         for d in 1..=depth {
@@ -149,7 +149,7 @@ fn perft(
     prefix: &str,
 ) -> u64 {
     if depth == 0 {
-        if branch >= 0 {
+        if branch >= 0 && prefix.contains("") {
             println!("{}moves | Nodes: 1", prefix);
         }
         return 1;
@@ -173,7 +173,7 @@ fn perft(
         }
     }
 
-    if branch >= 0 {
+    if branch >= 0 && prefix.contains("") {
         println!("{}moves | Nodes: {}", prefix, nodes);
     }
 
