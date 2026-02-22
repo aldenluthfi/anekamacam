@@ -2686,7 +2686,8 @@ fn tokenize_multi_leg_expression(
                         break;
                     }
 
-                    if last.starts_with("-") || last == "</" {
+                    if last.starts_with("-") || last == "</" 
+                    || last == "/>" || MODIFIERS.is_match(&last) {
                         for t in candidate.into_iter().rev() {
                             result.push(t);
                         }

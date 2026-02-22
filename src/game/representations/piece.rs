@@ -144,6 +144,7 @@ pub struct Piece {
 
     pub promotions: U2048,
     pub encoded_piece: u32,
+    pub rank: u8,                                                               /* used for move modifiers           */
 }
 
 impl Piece {
@@ -205,6 +206,7 @@ impl Piece {
 
         let drop = DEFAULT_DROP.to_string();
         let setup = DEFAULT_DROP.to_string();
+        let rank = 0;
 
         Self {
             name,
@@ -214,6 +216,7 @@ impl Piece {
             char: symbol,
             promotions,
             encoded_piece,
+            rank,
         }
     }
 }

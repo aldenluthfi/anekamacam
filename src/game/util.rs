@@ -24,7 +24,7 @@ use crate::{
     board, constants::*, enp_square, game::{
         hash::zobrist::{CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES, SIDE_HASHES},
         representations::state::State
-    }, io::board_io::{format_board, format_square}, or, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
+    }, io::{board_io::{format_board, format_square}, game_io::format_game_state}, or, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
 };
 
 lazy_static!{
@@ -52,17 +52,19 @@ pub fn verify_game_state(state: &State) {
     assert_eq!(
         &temp_white_board,
         &state.pieces_board[WHITE as usize],
-        "Computed white board doesn't match state white board\n{}\n{}",
+        "Computed white board doesn't match state white board\n{}\n{}\n{}",
         format_board(&temp_white_board, None),
-        format_board(&state.pieces_board[WHITE as usize], None)
+        format_board(&state.pieces_board[WHITE as usize], None),
+        format_game_state(state, false)
     );
 
     assert_eq!(
         &temp_black_board,
         &state.pieces_board[BLACK as usize],
-        "Computed black board doesn't match state black board\n{}\n{}",
+        "Computed black board doesn't match state black board\n{}\n{}\n{}",
         format_board(&temp_black_board, None),
-        format_board(&state.pieces_board[BLACK as usize], None)
+        format_board(&state.pieces_board[BLACK as usize], None),
+        format_game_state(state, false)
     );
 
     let mut temp_pieces_board = board!(state.files, state.ranks);

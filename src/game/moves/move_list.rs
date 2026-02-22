@@ -24,8 +24,8 @@ use crate::{
     get, i,
     k, l, m, multi_move_captured_square,
     not_g, not_i, not_k, not_v, p, p_can_promote, p_color, p_index,
-    p_is_royal, p_promotions, p_value, promote_to_captured, promotions, r, t, u,
-    v, x, y,
+    p_is_royal, p_promotions, promote_to_captured, promotions, r, t, u, v,
+    x, y,
 };
 
 #[inline(always)]
@@ -34,7 +34,7 @@ fn is_square_attacked(
     attacked_side: u8,
     attacked_unmoved: bool,
     attacked_royal: bool,
-    attacked_value: u16,
+    attacked_rank: u8,
     game_state: &State
 ) -> bool {
     let possible_attacks = &game_state.relevant_attacks
@@ -49,7 +49,7 @@ fn is_square_attacked(
 
         if validate_attack_vector(
             move_vector, *start, piece,
-            attacked_unmoved, attacked_royal, attacked_value,
+            attacked_unmoved, attacked_royal, attacked_rank,
             square, game_state,
         )
         {
@@ -71,12 +71,14 @@ pub fn is_in_check(
         return false;
     }
 
+    let royal_piece = &game_state.main_board[monarch_indices[0] as usize];
+    let royal_rank = &game_state.pieces[*royal_piece as usize].rank;
     is_square_attacked(
         monarch_indices[0] as u32,
         side,
         get!(game_state.virgin_board, monarch_indices[0] as u32),
         true,
-        u16::MAX,
+        *royal_rank,
         game_state
     )
 }
@@ -195,13 +197,13 @@ pub fn validate_attack_vector(
     attacking_piece: &Piece,
     attacked_unmoved: bool,
     attacked_royal: bool,
-    attacked_value: u16,
+    attacked_rank: u8,
     attacked_square: u32,
     game_state: &State,
 ) -> bool {
 
     let piece_color = p_color!(attacking_piece);
-    let piece_value = p_value!(attacking_piece);
+    let piece_rank = attacking_piece.rank;
     let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
 
     let mut accumulated_index = square_index as i16;
@@ -264,8 +266,8 @@ pub fn validate_attack_vector(
         if imaginary_move {
             if k && !attacked_royal
             || not_k && attacked_royal
-            || g && piece_value <= attacked_value
-            || not_g && piece_value > attacked_value
+            || g && piece_rank >= attacked_rank
+            || not_g && piece_rank < attacked_rank
             || (v && !attacked_unmoved || not_v && attacked_unmoved)
             && !special_v
             || u
@@ -295,15 +297,14 @@ pub fn validate_attack_vector(
                             game_state.virgin_board,
                             enp_captured!(game_state.en_passant_square)
                         );
-                    let capt_value =
-                        p_value!(capt_piece);
+                    let capt_rank = capt_piece.rank;
                     let capt_royal =
                         p_is_royal!(capt_piece);
 
                     if k && !capt_royal
                     || not_k && capt_royal
-                    || g && piece_value <= capt_value
-                    || not_g && piece_value > capt_value
+                    || g && piece_rank >= capt_rank
+                    || not_g && piece_rank < capt_rank
                     || (v && !capt_unmoved || not_v && capt_unmoved)
                     && !special_v
                     {
@@ -328,15 +329,14 @@ pub fn validate_attack_vector(
                 &game_state.pieces[capt_piece_index as usize];
             let capt_unmoved =
                 get!(game_state.virgin_board, end_square);
-            let capt_value =
-                p_value!(capt_piece);
+            let capt_rank = capt_piece.rank;
             let capt_royal =
                 p_is_royal!(capt_piece);
 
             if k && !capt_royal
             || not_k && capt_royal
-            || g && piece_value <= capt_value
-            || not_g && piece_value > capt_value
+            || g && piece_rank >= capt_rank
+            || not_g && piece_rank < capt_rank
             || (v && !capt_unmoved || not_v && capt_unmoved)
             && !special_v
             {
@@ -355,15 +355,14 @@ pub fn validate_attack_vector(
                 &game_state.pieces[capt_piece_index as usize];
             let capt_unmoved =
                 get!(game_state.virgin_board, end_square);
-            let capt_value =
-                p_value!(capt_piece);
+            let capt_rank = capt_piece.rank;
             let capt_royal =
                 p_is_royal!(capt_piece);
 
             if k && !capt_royal
             || not_k && capt_royal
-            || g && piece_value <= capt_value
-            || not_g && piece_value > capt_value
+            || g && piece_rank >= capt_rank
+            || not_g && piece_rank < capt_rank
             || (v && !capt_unmoved || not_v && capt_unmoved)
             && !special_v
             {
@@ -387,7 +386,7 @@ pub fn generate_move_list(
 
     let piece_index = p_index!(piece);
     let piece_color = p_color!(piece);
-    let piece_value = p_value!(piece);
+    let piece_rank = piece.rank;
     let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
 
     let vector_set =
@@ -448,7 +447,7 @@ pub fn generate_move_list(
                 piece_color,
                 piece_unmoved,
                 p_is_royal!(piece),
-                p_value!(piece),
+                piece_rank,
                 game_state
             ))
             || ((l || r)
@@ -501,15 +500,14 @@ pub fn generate_move_list(
                                 game_state.virgin_board,
                                 enp_captured!(game_state.en_passant_square)
                             );
-                        let capt_value =
-                            p_value!(capt_piece);
+                        let capt_rank = capt_piece.rank;
                         let capt_royal =
                             p_is_royal!(capt_piece);
 
                         if k && !capt_royal
                         || not_k && capt_royal
-                        || g && piece_value <= capt_value
-                        || not_g && piece_value > capt_value
+                        || g && piece_rank >= capt_rank
+                        || not_g && piece_rank < capt_rank
                         || (v && !capt_unmoved || not_v && capt_unmoved)
                         && !special_v
                         {
@@ -539,20 +537,19 @@ pub fn generate_move_list(
                     &game_state.pieces[capt_piece_index as usize];
                 let capt_unmoved =
                     get!(game_state.virgin_board, end_square);
-                let capt_value =
-                    p_value!(capt_piece);
+                let capt_rank = capt_piece.rank;
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
                 if k && !capt_royal
                 || not_k && capt_royal
-                || g && piece_value <= capt_value
-                || not_g && piece_value > capt_value
+                || g && piece_rank >= capt_rank
+                || not_g && piece_rank < capt_rank
                 || (v && !capt_unmoved || not_v && capt_unmoved)
                 && !special_v
-                 {
-                      continue 'multi_leg;
-                 }
+                {
+                    continue 'multi_leg;
+                }
 
                 enc_multi_move_captured_piece!(
                      taken_piece,
@@ -581,15 +578,14 @@ pub fn generate_move_list(
                     &game_state.pieces[capt_piece_index as usize];
                 let capt_unmoved =
                     get!(game_state.virgin_board, end_square);
-                let capt_value =
-                    p_value!(capt_piece);
+                let capt_rank = capt_piece.rank;
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
                 if k && !capt_royal
                     || not_k && capt_royal
-                    || g && piece_value <= capt_value
-                    || not_g && piece_value > capt_value
+                    || g && piece_rank >= capt_rank
+                    || not_g && piece_rank < capt_rank
                     || (v && !capt_unmoved || not_v && capt_unmoved)
                     && !special_v
                  {
@@ -841,8 +837,10 @@ macro_rules! make_move {
                     $state.minor_pieces[piece_color as usize] += 1;
                     }
 
+                    $state.material[piece_color as usize] -=
+                        p_value!(old_piece) as u32;
                     $state.material[piece_color as usize] +=
-                    p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
+                        p_value!(new_piece) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
@@ -1012,8 +1010,10 @@ macro_rules! make_move {
                     $state.minor_pieces[piece_color as usize] += 1;
                     }
 
+                    $state.material[piece_color as usize] -=
+                        p_value!(old_piece) as u32;
                     $state.material[piece_color as usize] +=
-                    p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
+                        p_value!(new_piece) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
@@ -1285,8 +1285,10 @@ macro_rules! make_move {
                     $state.minor_pieces[piece_color as usize] += 1;
                     }
 
+                    $state.material[piece_color as usize] -=
+                        p_value!(old_piece) as u32;
                     $state.material[piece_color as usize] +=
-                    p_value!(new_piece) as u32 -  p_value!(old_piece) as u32;
+                        p_value!(new_piece) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
@@ -2228,7 +2230,7 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
         }
     }
 
-    if drops!(state) || state.setup_phase{
+    if drops!(state) || state.setup_phase {
         for piece_index in start_index..end_index {
             let piece = &state.pieces[piece_index];
             let enemy_equiv = state.piece_swap_map[&(piece_index as u8)] as usize;
