@@ -278,8 +278,8 @@ pub type MultiLegVector = Vec<LegVector>;
 /// I chose (> and <=) instead of (>= and <) because it in a lot of chess
 /// variants, capturing an equal rank piece is often allowed, while there
 /// are variants where its not alowed to capture a greater rank piece.
-/// 
-/// A rank is an arbitrary game rule defined when setting up a variant, if it 
+///
+/// A rank is an arbitrary game rule defined when setting up a variant, if it
 /// is not defined then all pieces will have the rank of 0
 ///
 /// usage of (g, !g):
@@ -326,9 +326,10 @@ pub type MultiLegVector = Vec<LegVector>;
 /// Special modifiers (r!r, v!v, g!g, i!i):
 ///
 /// - i!i: means that at the end of this leg, the moving piece cannot be in
-///   attacked, i.e. (i)mmune
-/// - k!k: TODO
-/// - v!v: this leg can bypass forbidden zones, i.e. (v)oid
+///   attacked.
+/// - k!k: means that can only perform this capture when its not the players
+///   turn.
+/// - v!v: this leg can bypass forbidden zones.
 /// - g!g: TODO
 ///
 /// Defaults:
@@ -340,6 +341,9 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - you can combine negation like `mc!kvg` means a move/capture leg that must
 ///   not be royal, must be moved, and must be of lesser or equal rank and
 ///   cannot capture en passant.
+/// - k!k might seem stupid but it is useful to implement 'bikjang' in janggi
+///   where a king can perform check (oppose the other king) but doesnt go into
+///   check itself, so it can only capture when its not the players turn.
 ///
 /// How to use (examples)
 ///
