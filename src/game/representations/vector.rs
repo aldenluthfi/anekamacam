@@ -268,21 +268,24 @@ pub type MultiLegVector = Vec<LegVector>;
 ///
 /// - (g)reater:
 ///     - g:
-///       indicates the capture must be of greater value than the capturing
+///       indicates the capture must be of greater rank than the capturing
 ///       piece (captured > capturing).
 ///     - !g:
-///       indicates the capture must not be of greater value than the capturing
+///       indicates the capture must not be of greater rank than the capturing
 ///       piece (captured <= capturing).
 ///
 /// design note:
 /// I chose (> and <=) instead of (>= and <) because it in a lot of chess
-/// variants, capturing an equal value piece is often allowed, while there
-/// are variants where its not alowed to capture a greater value piece.
+/// variants, capturing an equal rank piece is often allowed, while there
+/// are variants where its not alowed to capture a greater rank piece.
+/// 
+/// A rank is an arbitrary game rule defined when setting up a variant, if it 
+/// is not defined then all pieces will have the rank of 0
 ///
 /// usage of (g, !g):
-/// - (false, false): this capture can be of any value (regular capture).
-/// - (false, true) : this capture must not be of greater value.
-/// - (true, false) : this capture must be of greater value.
+/// - (false, false): this capture can be of any rank (regular capture).
+/// - (false, true) : this capture must not be of greater rank.
+/// - (true, false) : this capture must be of greater rank.
 /// - (true, true)  : special modifier g!g (explained below).
 ///
 /// - en-passan(t):
@@ -335,7 +338,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// Final notes:
 /// - capture/destroy modifiers must be used if the leg has has c or d set
 /// - you can combine negation like `mc!kvg` means a move/capture leg that must
-///   not be royal, must be moved, and must be of lesser or equal value and
+///   not be royal, must be moved, and must be of lesser or equal rank and
 ///   cannot capture en passant.
 ///
 /// How to use (examples)
