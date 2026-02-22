@@ -60,6 +60,7 @@ fn is_square_attacked(
     false
 }
 
+#[hotpath::measure]
 #[inline(always)]
 pub fn is_in_check(
     side: u8,
@@ -67,7 +68,7 @@ pub fn is_in_check(
 ) -> bool {
     let monarch_indices = &game_state.royal_list[side as usize];
 
-    if monarch_indices.len() > 1 {
+    if monarch_indices.len() > 1 || game_state.setup_phase {
         return false;
     }
 
@@ -240,6 +241,7 @@ pub fn validate_attack_vector(
         let not_i = not_i!(leg);
         let special_i = i && not_i;
         let special_v = v && not_v;
+        let special_k = k && not_k;
 
         if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
         {
@@ -264,8 +266,9 @@ pub fn validate_attack_vector(
         }
 
         if imaginary_move {
-            if k && !attacked_royal
-            || not_k && attacked_royal
+            if (k && !attacked_royal|| not_k && attacked_royal)
+            && !special_k
+            || special_k && piece_color == game_state.playing
             || g && piece_rank >= attacked_rank
             || not_g && piece_rank < attacked_rank
             || (v && !attacked_unmoved || not_v && attacked_unmoved)
@@ -301,8 +304,9 @@ pub fn validate_attack_vector(
                     let capt_royal =
                         p_is_royal!(capt_piece);
 
-                    if k && !capt_royal
-                    || not_k && capt_royal
+                    if (k && !capt_royal || not_k && capt_royal)
+                    && !special_k
+                    || special_k && piece_color == game_state.playing
                     || g && piece_rank >= capt_rank
                     || not_g && piece_rank < capt_rank
                     || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -333,8 +337,9 @@ pub fn validate_attack_vector(
             let capt_royal =
                 p_is_royal!(capt_piece);
 
-            if k && !capt_royal
-            || not_k && capt_royal
+            if (k && !capt_royal || not_k && capt_royal)
+            && !special_k
+            || special_k && piece_color == game_state.playing
             || g && piece_rank >= capt_rank
             || not_g && piece_rank < capt_rank
             || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -359,8 +364,9 @@ pub fn validate_attack_vector(
             let capt_royal =
                 p_is_royal!(capt_piece);
 
-            if k && !capt_royal
-            || not_k && capt_royal
+            if (k && !capt_royal || not_k && capt_royal)
+            && !special_k
+            || special_k && piece_color == game_state.playing
             || g && piece_rank >= capt_rank
             || not_g && piece_rank < capt_rank
             || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -438,6 +444,7 @@ pub fn generate_move_list(
             let r = r!(leg);
             let special_i = i && not_i;
             let special_v = v && not_v;
+            let special_k = k && not_k;
             let castling_rights = piece_color as usize * 2 + l as usize;
 
             if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
@@ -504,8 +511,9 @@ pub fn generate_move_list(
                         let capt_royal =
                             p_is_royal!(capt_piece);
 
-                        if k && !capt_royal
-                        || not_k && capt_royal
+                        if (k && !capt_royal || not_k && capt_royal)
+                        && !special_k
+                        || special_k && piece_color == game_state.playing
                         || g && piece_rank >= capt_rank
                         || not_g && piece_rank < capt_rank
                         || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -541,8 +549,9 @@ pub fn generate_move_list(
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
-                if k && !capt_royal
-                || not_k && capt_royal
+                if (k && !capt_royal || not_k && capt_royal)
+                && !special_k
+                || special_k && piece_color == game_state.playing
                 || g && piece_rank >= capt_rank
                 || not_g && piece_rank < capt_rank
                 || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -582,15 +591,16 @@ pub fn generate_move_list(
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
-                if k && !capt_royal
-                    || not_k && capt_royal
-                    || g && piece_rank >= capt_rank
-                    || not_g && piece_rank < capt_rank
-                    || (v && !capt_unmoved || not_v && capt_unmoved)
-                    && !special_v
-                 {
-                      continue 'multi_leg;
-                 }
+                if (k && !capt_royal || not_k && capt_royal)
+                && !special_k
+                || special_k && piece_color == game_state.playing
+                || g && piece_rank >= capt_rank
+                || not_g && piece_rank < capt_rank
+                || (v && !capt_unmoved || not_v && capt_unmoved)
+                && !special_v
+                {
+                    continue 'multi_leg;
+                }
 
                  enc_multi_move_captured_piece!(
                      taken_piece,
@@ -737,6 +747,21 @@ pub fn generate_move_list(
     result
 }
 
+/// Checking for legality takes in three parameters (you can blame janggi for
+/// this complexity):
+///
+/// a: If the player is in check before the move
+/// b: If the player is in check after the move, before the side change
+/// c: if the player is in check after the side has been changed
+/// d: if the move is a null move (i.e. the piece doesn't actually move)
+///
+/// The move is legal if:
+/// - The player is not in check before the move, and not in check after the
+///   move and changing sides
+/// - The player is in check before the move, but not in check after the move
+///   and not in check after changing sides.
+/// - The player is in check before the move, and is in check after the move
+///   and the move is a null move (i.e. the piece doesn't actually move)
 #[macro_export]
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
@@ -754,6 +779,8 @@ macro_rules! make_move {
             verify_game_state($state);
 
             let move_type = move_type!($mv);
+            let in_check_before = is_in_check($state.playing, &$state);
+            let mut null_move = false;
 
             if move_type == QUIET_MOVE {
                 let piece_index = piece!($mv) as usize;
@@ -763,6 +790,10 @@ macro_rules! make_move {
                 let creates_enp = creates_enp!($mv);
                 let promoted_piece = promoted!($mv) as usize;
                 let enp_square = created_enp!($mv) as u32;
+
+                if start_square == end_square {
+                    null_move = true;
+                }
 
                 let piece_color =
                     p_color!($state.pieces[piece_index]);
@@ -1664,7 +1695,15 @@ macro_rules! make_move {
                 }
             }
 
+            let in_check_after = is_in_check($state.playing, $state);
             $state.playing = 1 - $state.playing;
+            let in_check_changed = is_in_check(1 - $state.playing, $state);
+
+            let legal_check =
+                (!in_check_before && !in_check_changed) ||
+                (!in_check_after && !in_check_changed) ||
+                (!in_check_changed && null_move);
+
             hash_toggle_side!($state);
 
             let snapshot: Snapshot = Snapshot {
@@ -1677,7 +1716,7 @@ macro_rules! make_move {
             };
 
             $state.history.push(snapshot);
-            if !$state.setup_phase && is_in_check(1 - $state.playing, $state) {
+            if !$state.setup_phase && !legal_check {
                 undo_move!($state);
                 false
             } else {
@@ -2215,6 +2254,11 @@ macro_rules! undo_move {
 
 #[hotpath::measure]
 pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
+
+    if state.game_over {
+        return Vec::new();
+    }
+
     let piece_count = state.pieces.len() / 2;
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
