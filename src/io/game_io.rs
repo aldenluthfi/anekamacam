@@ -21,9 +21,11 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
+use crate::game::moves::move_list::generate_all_moves_and_drops;
 use crate::game::representations::board::Board;
+use crate::io::move_io::format_move;
 use crate::{
-    board, castling, clear, constants::*, count_limits, demote_upon_capture, drops, en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, enc_setup_phase, enc_stalemate_loss, forbidden_zones, get, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set, setup_phase
+    board, castling, clear, constants::*, count_limits, demote_upon_capture, drops, en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, enc_setup_phase, enc_stalemate_loss, forbidden_zones, get, make_move, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set, setup_phase
 };
 use crate::game::{
     hash::zobrist::hash_position,
@@ -1977,4 +1979,18 @@ pub fn format_entire_game(state: &State) -> String {
     result.push_str(&format_game_state(state, true));
 
     result
+}
+
+pub fn perform_moves(state: &mut State, moves: &[&str]) {
+    for m in moves {
+        let all_moves = generate_all_moves_and_drops(state);
+
+        let mv = all_moves.iter().find(|mv| {
+            format_move(mv, state) == *m
+        }).unwrap_or_else(|| panic!("Move not found: {}", m));
+
+        let legal = make_move!(state, mv);
+
+        assert!(legal, "Move was found but deemed illegal: {}", m);
+    }
 }

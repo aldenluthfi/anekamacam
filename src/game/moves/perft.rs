@@ -149,7 +149,7 @@ fn perft(
     prefix: &str,
 ) -> u64 {
     if depth == 0 {
-        if branch >= 0 && prefix.contains("") {
+        if branch >= 0 && prefix.contains("e4d4  e7d7") {
             println!("{}moves | Nodes: 1", prefix);
         }
         return 1;
@@ -173,7 +173,7 @@ fn perft(
         }
     }
 
-    if branch >= 0 && prefix.contains("") {
+    if branch >= 0 && prefix.contains("e4d4  e7d7") {
         println!("{}moves | Nodes: {}", prefix, nodes);
     }
 

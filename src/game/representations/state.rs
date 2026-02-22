@@ -295,6 +295,7 @@ pub struct State {
 \*----------------------------------------------------------------------------*/
 
     pub setup_phase: bool,
+    pub game_over: bool,
 
     pub playing: u8,
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
@@ -368,6 +369,7 @@ impl State {
             piece_char_map: HashMap::new(),
 
             setup_phase: false,
+            game_over: false,
 
             playing: WHITE,
             main_board: vec![NO_PIECE; (files as usize) * (ranks as usize)],
