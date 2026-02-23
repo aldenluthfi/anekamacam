@@ -17,7 +17,7 @@ use crate::{
             PIECE_HASHES, SIDE_HASHES,
         },
         moves::move_list::{
-            generate_all_moves_and_drops, is_in_check
+            generate_all_moves_and_drops, validate_attack_vector
         },
         representations::state::{
             EnPassantSquare, Snapshot, Square, State,
@@ -34,7 +34,8 @@ use crate::{
     multi_move_is_unload, multi_move_unload_square, p_can_promote,
     p_castle_left, p_castle_right, p_color, p_is_big, p_is_major,
     p_is_minor, p_is_royal, p_value, piece, promote_to_captured, promoted,
-    promotion, set, start, undo_move, unload_square
+    promotion, set, start, undo_move, unload_square, is_null,
+    null_snapshot, is_in_check, is_square_attacked
 };
 
 fn parse_perft_file(
@@ -142,14 +143,14 @@ pub fn start_perft(
     println!("Total moves generated: {}", total_moves);
 }
 
-fn perft(
+pub fn perft(
     state: &mut State,
     depth: u8,
     branch: i8,
     prefix: &str,
 ) -> u64 {
     if depth == 0 {
-        if branch >= 0 && prefix.contains("e4d4  e7d7") {
+        if branch >= 0 {
             println!("{}moves | Nodes: 1", prefix);
         }
         return 1;
@@ -173,7 +174,7 @@ fn perft(
         }
     }
 
-    if branch >= 0 && prefix.contains("e4d4  e7d7") {
+    if branch >= 0 {
         println!("{}moves | Nodes: {}", prefix, nodes);
     }
 

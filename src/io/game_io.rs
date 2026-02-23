@@ -4,9 +4,10 @@
 //!
 //! This file contains functionality for reading game configuration files,
 //! parsing FEN (Forsyth-Edwards Notation) strings, and formatting game state
-//! for display. It handles piece definitions, board setup, and state information
-//! such as castling rights, en passant squares, and move counters. The module
-//! provides both compact and verbose output formats for game visualization.
+//! for display. It handles piece definitions, board setup, and state
+//! information such as castling rights, en passant squares, and move counters.
+//! The module provides both compact and verbose output formats for game
+//! visualization.
 //!
 //! # Author
 //! Alden Luthfi
@@ -21,22 +22,47 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
-use crate::game::moves::move_list::generate_all_moves_and_drops;
-use crate::game::representations::board::Board;
-use crate::io::move_io::format_move;
+#[cfg(debug_assertions)]
+use crate::game::util::verify_game_state;
 use crate::{
-    board, castling, clear, constants::*, count_limits, demote_upon_capture, drops, en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture, enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured, enc_promotions, enc_setup_phase, enc_stalemate_loss, forbidden_zones, get, make_move, p_can_promote, p_castle_left, p_castle_right, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value, promote_to_captured, promotions, set, setup_phase
-};
-use crate::game::{
-    hash::zobrist::hash_position,
-    representations::{
-        state::State,
-        piece::Piece,
-    }
-};
-use crate::io::{
-    board_io::{format_board, format_square},
-    piece_io::format_piece
+    constants::{
+        BK_CASTLE, BLACK, BQ_CASTLE, NO_EN_PASSANT, NO_PIECE, WHITE, WK_CASTLE,
+        WQ_CASTLE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, MULTI_CAPTURE_MOVE,
+        DROP_MOVE,
+    },
+    board, castling, clear, count_limits, demote_upon_capture, drops,
+    en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture,
+    enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured,
+    enc_promotions, enc_setup_phase, enc_stalemate_loss, forbidden_zones, get,
+    make_move, p_can_promote, p_castle_left, p_castle_right, p_color, p_index,
+    p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value,
+    promote_to_captured, promotions, set, setup_phase, move_type, piece, start,
+    end, promotion, creates_enp, promoted, created_enp, hash_update_en_passant,
+    hash_in_or_out_piece, hash_update_in_hand, hash_update_castling, undo_move,
+    multi_move_captured_unmoved, multi_move_captured_square,
+    multi_move_captured_piece, drop_from_enemy_hand, multi_move_unload_square,
+    multi_move_is_unload, is_initial, unload_square, is_unload,
+    captured_unmoved, captured_square, captured_piece, hash_toggle_side,
+    enp_square, is_null, null_snapshot, is_in_check, is_square_attacked,
+    game::{
+        moves::move_list::{
+            generate_all_moves_and_drops, validate_attack_vector,
+        },
+        representations::{
+            board::Board,
+            state::{State, Snapshot, Square, EnPassantSquare},
+            piece::Piece,
+        },
+        hash::zobrist::{
+            hash_position, CASTLING_HASHES, IN_HAND_HASHES, PIECE_HASHES,
+            EN_PASSANT_HASHES, SIDE_HASHES,
+        },
+    },
+    io::{
+        move_io::format_move,
+        board_io::{format_board, format_square},
+        piece_io::format_piece,
+    },
 };
 
 lazy_static!{
@@ -598,7 +624,10 @@ pub fn parse_config_file(path: &str) -> State {
 
     if sections.contains_key("piece ranks") {
         for piece_rank in &sections["piece ranks"] {
-            let parts: Vec<&str> = piece_rank.split(':').map(str::trim).collect();
+            let parts: Vec<&str> = piece_rank
+                .split(':')
+                .map(str::trim)
+                .collect();
 
             assert!(
                 parts.len() == 2,
@@ -1981,16 +2010,20 @@ pub fn format_entire_game(state: &State) -> String {
     result
 }
 
-pub fn perform_moves(state: &mut State, moves: &[&str]) {
-    for m in moves {
+pub fn debug_perform_moves(state: &mut State, moves: &[&str]) {
+    'next_move: for m in moves {
         let all_moves = generate_all_moves_and_drops(state);
 
-        let mv = all_moves.iter().find(|mv| {
-            format_move(mv, state) == *m
-        }).unwrap_or_else(|| panic!("Move not found: {}", m));
+        for mv in all_moves {
+            if format_move(&mv, state).trim() == *m {
+                if !make_move!(state, mv) {
+                    panic!("Move was found but deemed illegal: {}", m);
+                }
+                println!("Performed move: {}", m);
+                continue 'next_move;
+            }
+        }
 
-        let legal = make_move!(state, mv);
-
-        assert!(legal, "Move was found but deemed illegal: {}", m);
+        panic!("Move not found: {}", m);
     }
 }

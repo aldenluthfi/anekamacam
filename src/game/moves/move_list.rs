@@ -2,17 +2,9 @@ use bnum::types::U2048;
 use bnum::cast::As;
 
 use crate::{
-    c,
-    constants::{
+    c, constants::{
         CASTLING, MULTI_CAPTURE_MOVE, QUIET_MOVE, SINGLE_CAPTURE_MOVE,
-    },
-    count_limits, d, drops, drop_e, enc_capture_part, enc_created_enp,
-    enc_creates_enp, enc_end, enc_is_initial, enc_move_type,
-    enc_multi_move_captured_piece, enc_multi_move_captured_square,
-    enc_multi_move_captured_unmoved, enc_multi_move_is_unload,
-    enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion,
-    enc_start, enp_captured, enp_piece, enp_square, forbidden_zones, g,
-    game::{
+    }, count_limits, d, drop_e, drops, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
         drops::drop_list::generate_drop_list,
         representations::{
             moves::Move,
@@ -20,68 +12,66 @@ use crate::{
             state::State,
             vector::{MoveSet, MoveVector},
         },
-    },
-    get, i,
-    k, l, m, multi_move_captured_square,
-    not_g, not_i, not_k, not_v, p, p_can_promote, p_color, p_index,
-    p_is_royal, p_promotions, promote_to_captured, promotions, r, t, u, v,
-    x, y,
+    }, get, i, k, l, m, multi_move_captured_square, not_g, not_i, not_k, not_v, p, p_can_promote, p_color, p_index, p_is_royal, p_promotions, promote_to_captured, promotions, r, t, u, v, x, y
 };
 
-#[inline(always)]
-fn is_square_attacked(
-    square: u32,
-    attacked_side: u8,
-    attacked_unmoved: bool,
-    attacked_royal: bool,
-    attacked_rank: u8,
-    game_state: &State
-) -> bool {
-    let possible_attacks = &game_state.relevant_attacks
-        [attacked_side as usize][square as usize];
+#[macro_export]
+macro_rules! is_square_attacked {
+    (
+        $square:expr,
+        $attacked_side:expr,
+        $attacked_unmoved:expr,
+        $attacked_royal:expr,
+        $attacked_rank:expr,
+        $game_state:expr
+    ) => {{
+        let possible_attacks = &$game_state.relevant_attacks
+            [$attacked_side as usize][$square as usize];
 
-    for (piece_index, start, move_vector) in possible_attacks {
-        if game_state.main_board[*start as usize] != *piece_index {
-            continue;
+        let mut attacked = false;
+        for (piece_index, start, move_vector) in possible_attacks {
+            if $game_state.main_board[*start as usize] != *piece_index {
+                continue;
+            }
+
+            let piece = &$game_state.pieces[*piece_index as usize];
+
+            if validate_attack_vector(
+                move_vector, *start, piece,
+                $attacked_unmoved, $attacked_royal, $attacked_rank,
+                $square, $game_state,
+            )
+            {
+                attacked = true;
+                break;
+            }
         }
 
-        let piece = &game_state.pieces[*piece_index as usize];
-
-        if validate_attack_vector(
-            move_vector, *start, piece,
-            attacked_unmoved, attacked_royal, attacked_rank,
-            square, game_state,
-        )
-        {
-            return true;
-        }
-    }
-
-    false
+        attacked
+    }};
 }
 
-#[hotpath::measure]
-#[inline(always)]
-pub fn is_in_check(
-    side: u8,
-    game_state: &State
-) -> bool {
-    let monarch_indices = &game_state.royal_list[side as usize];
+#[macro_export]
+macro_rules! is_in_check {
+    ($side:expr, $game_state:expr) => {{
+        let monarch_indices = &$game_state.royal_list[$side as usize];
 
-    if monarch_indices.len() > 1 || game_state.setup_phase {
-        return false;
-    }
+        if monarch_indices.len() > 1 || $game_state.setup_phase {
+            false
+        } else {
+            let royal_piece = &$game_state.main_board[monarch_indices[0] as usize];
+            let royal_rank = &$game_state.pieces[*royal_piece as usize].rank;
 
-    let royal_piece = &game_state.main_board[monarch_indices[0] as usize];
-    let royal_rank = &game_state.pieces[*royal_piece as usize].rank;
-    is_square_attacked(
-        monarch_indices[0] as u32,
-        side,
-        get!(game_state.virgin_board, monarch_indices[0] as u32),
-        true,
-        *royal_rank,
-        game_state
-    )
+            is_square_attacked!(
+                monarch_indices[0] as u32,
+                $side,
+                get!($game_state.virgin_board, monarch_indices[0] as u32),
+                true,
+                *royal_rank,
+                $game_state
+            )
+        }
+    }};
 }
 
 pub fn generate_relevant_moves(
@@ -241,7 +231,6 @@ pub fn validate_attack_vector(
         let not_i = not_i!(leg);
         let special_i = i && not_i;
         let special_v = v && not_v;
-        let special_k = k && not_k;
 
         if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
         {
@@ -266,9 +255,7 @@ pub fn validate_attack_vector(
         }
 
         if imaginary_move {
-            if (k && !attacked_royal|| not_k && attacked_royal)
-            && !special_k
-            || special_k && piece_color == game_state.playing
+            if k && !attacked_royal|| not_k && attacked_royal
             || g && piece_rank >= attacked_rank
             || not_g && piece_rank < attacked_rank
             || (v && !attacked_unmoved || not_v && attacked_unmoved)
@@ -304,9 +291,7 @@ pub fn validate_attack_vector(
                     let capt_royal =
                         p_is_royal!(capt_piece);
 
-                    if (k && !capt_royal || not_k && capt_royal)
-                    && !special_k
-                    || special_k && piece_color == game_state.playing
+                    if k && !capt_royal || not_k && capt_royal
                     || g && piece_rank >= capt_rank
                     || not_g && piece_rank < capt_rank
                     || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -337,9 +322,7 @@ pub fn validate_attack_vector(
             let capt_royal =
                 p_is_royal!(capt_piece);
 
-            if (k && !capt_royal || not_k && capt_royal)
-            && !special_k
-            || special_k && piece_color == game_state.playing
+            if k && !capt_royal || not_k && capt_royal
             || g && piece_rank >= capt_rank
             || not_g && piece_rank < capt_rank
             || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -364,9 +347,7 @@ pub fn validate_attack_vector(
             let capt_royal =
                 p_is_royal!(capt_piece);
 
-            if (k && !capt_royal || not_k && capt_royal)
-            && !special_k
-            || special_k && piece_color == game_state.playing
+            if k && !capt_royal || not_k && capt_royal
             || g && piece_rank >= capt_rank
             || not_g && piece_rank < capt_rank
             || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -444,12 +425,11 @@ pub fn generate_move_list(
             let r = r!(leg);
             let special_i = i && not_i;
             let special_v = v && not_v;
-            let special_k = k && not_k;
             let castling_rights = piece_color as usize * 2 + l as usize;
 
             if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
             || (special_i
-            && is_square_attacked(
+            && is_square_attacked!(
                 accumulated_index as u32,
                 piece_color,
                 piece_unmoved,
@@ -511,9 +491,7 @@ pub fn generate_move_list(
                         let capt_royal =
                             p_is_royal!(capt_piece);
 
-                        if (k && !capt_royal || not_k && capt_royal)
-                        && !special_k
-                        || special_k && piece_color == game_state.playing
+                        if k && !capt_royal || not_k && capt_royal
                         || g && piece_rank >= capt_rank
                         || not_g && piece_rank < capt_rank
                         || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -534,7 +512,7 @@ pub fn generate_move_list(
                 } else if !m {
                     continue 'multi_leg;
                 }
-            } else if friendly && !null_move{
+            } else if friendly && !null_move {
                 if !d {
                     continue 'multi_leg;
                 }
@@ -549,9 +527,7 @@ pub fn generate_move_list(
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
-                if (k && !capt_royal || not_k && capt_royal)
-                && !special_k
-                || special_k && piece_color == game_state.playing
+                if k && !capt_royal || not_k && capt_royal
                 || g && piece_rank >= capt_rank
                 || not_g && piece_rank < capt_rank
                 || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -591,9 +567,7 @@ pub fn generate_move_list(
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
-                if (k && !capt_royal || not_k && capt_royal)
-                && !special_k
-                || special_k && piece_color == game_state.playing
+                if k && !capt_royal || not_k && capt_royal
                 || g && piece_rank >= capt_rank
                 || not_g && piece_rank < capt_rank
                 || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -747,21 +721,6 @@ pub fn generate_move_list(
     result
 }
 
-/// Checking for legality takes in three parameters (you can blame janggi for
-/// this complexity):
-///
-/// a: If the player is in check before the move
-/// b: If the player is in check after the move, before the side change
-/// c: if the player is in check after the side has been changed
-/// d: if the move is a null move (i.e. the piece doesn't actually move)
-///
-/// The move is legal if:
-/// - The player is not in check before the move, and not in check after the
-///   move and changing sides
-/// - The player is in check before the move, but not in check after the move
-///   and not in check after changing sides.
-/// - The player is in check before the move, and is in check after the move
-///   and the move is a null move (i.e. the piece doesn't actually move)
 #[macro_export]
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
@@ -774,13 +733,13 @@ macro_rules! make_move {
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_setup_phase = $state.setup_phase;
+            let last_game_over = $state.game_over;
 
             #[cfg(debug_assertions)]
             verify_game_state($state);
 
             let move_type = move_type!($mv);
-            let in_check_before = is_in_check($state.playing, &$state);
-            let mut null_move = false;
+            let null_move = is_null!($mv);
 
             if move_type == QUIET_MOVE {
                 let piece_index = piece!($mv) as usize;
@@ -790,10 +749,6 @@ macro_rules! make_move {
                 let creates_enp = creates_enp!($mv);
                 let promoted_piece = promoted!($mv) as usize;
                 let enp_square = created_enp!($mv) as u32;
-
-                if start_square == end_square {
-                    null_move = true;
-                }
 
                 let piece_color =
                     p_color!($state.pieces[piece_index]);
@@ -1695,16 +1650,19 @@ macro_rules! make_move {
                 }
             }
 
-            let in_check_after = is_in_check($state.playing, $state);
             $state.playing = 1 - $state.playing;
-            let in_check_changed = is_in_check(1 - $state.playing, $state);
-
-            let legal_check =
-                (!in_check_before && !in_check_changed) ||
-                (!in_check_after && !in_check_changed) ||
-                (!in_check_changed && null_move);
 
             hash_toggle_side!($state);
+
+            let last_is_null = if let Some(last_mv) = $state.history.last() {
+                null_snapshot!(last_mv)
+            } else {
+                false
+            };
+
+            if null_move && last_is_null {
+                $state.game_over = true;
+            }
 
             let snapshot: Snapshot = Snapshot {
                 move_ply: $mv,
@@ -1712,11 +1670,12 @@ macro_rules! make_move {
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
                 setup_phase: last_setup_phase,
+                game_over: last_game_over,
                 position_hash: last_position_hash
             };
 
             $state.history.push(snapshot);
-            if !$state.setup_phase && !legal_check {
+            if !$state.setup_phase && is_in_check!(1 - $state.playing, $state) {
                 undo_move!($state);
                 false
             } else {
@@ -1750,6 +1709,7 @@ macro_rules! undo_move {
             $state.en_passant_square = snapshot.en_passant_square;
             $state.position_hash = snapshot.position_hash;
             $state.setup_phase = snapshot.setup_phase;
+            $state.game_over = snapshot.game_over;
 
             let mv = snapshot.move_ply;
             let move_type = move_type!(mv);
@@ -2246,13 +2206,14 @@ macro_rules! undo_move {
                     $state.piece_count[captured_piece_index] += 1;
                 }
             }
+
             #[cfg(debug_assertions)]
             verify_game_state($state);
         }
     };
 }
 
-#[hotpath::measure]
+#[inline(always)]
 pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
 
     if state.game_over {
