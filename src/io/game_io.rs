@@ -44,6 +44,7 @@ use crate::{
     multi_move_is_unload, is_initial, unload_square, is_unload,
     captured_unmoved, captured_square, captured_piece, hash_toggle_side,
     enp_square, is_null, null_snapshot, is_in_check, is_square_attacked,
+    enc_stand_offs, stand_offs,
     game::{
         moves::move_list::{
             generate_all_moves_and_drops, validate_attack_vector,
@@ -198,6 +199,8 @@ pub fn parse_config_file(path: &str) -> State {
         .contains(&"stalemate loss".to_string());
     let setup_phase = sections["rules"]
         .contains(&"setup phase".to_string());
+    let stand_offs = sections["rules"]
+        .contains(&"stand-offs".to_string());
 
     let (fen_castling, fen_en_passant, fen_in_hand) =
         extract_fen_components(initial_position);
@@ -303,6 +306,10 @@ pub fn parse_config_file(path: &str) -> State {
 
     if setup_phase {
         enc_setup_phase!(special_rules);
+    }
+
+    if stand_offs {
+        enc_stand_offs!(special_rules);
     }
 
 /*----------------------------------------------------------------------------*\
