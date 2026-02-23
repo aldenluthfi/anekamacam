@@ -1,6 +1,6 @@
 use crate::{
-    game::moves::perft::start_perft,
-    io::game_io::{format_entire_game, parse_config_file},
+    game::moves::perft::{perft, start_perft},
+    io::game_io::{debug_perform_moves, format_entire_game, format_game_state, parse_config_file},
 };
 
 pub mod game {
@@ -53,13 +53,18 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let variant = "sittuyin";
+    let variant = "janggi";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 
     let mut state = parse_config_file(&config_path);
+    state.load_fen("3k5/3ca4/3a5/9/2P6/9/7p1/2p1C4/4A4/4KC3 b -/-");
 
-    println!("{}", format_entire_game(&state));
+    debug_perform_moves(&mut state, &["e9f9a", "f1f10", "d10e9", "e1f1Q"]);
+    println!("State after moves:");
+    println!("{}", format_game_state(&state, false));
 
-    start_perft(&mut state, &perft_path, 6, -1, 100);
+    perft(&mut state, 1, 1, "");
+
+    // start_perft(&mut state, &perft_path, 5, -1, 100);
 }

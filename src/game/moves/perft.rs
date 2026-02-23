@@ -35,7 +35,7 @@ use crate::{
     p_castle_left, p_castle_right, p_color, p_is_big, p_is_major,
     p_is_minor, p_is_royal, p_value, piece, promote_to_captured, promoted,
     promotion, set, start, undo_move, unload_square, is_null,
-    null_snapshot, is_in_check, is_square_attacked
+    null_snapshot, is_in_check, is_square_attacked, stand_offs
 };
 
 fn parse_perft_file(
@@ -163,7 +163,6 @@ pub fn perft(
         if branch >= 0 {
             let formatted_move = format_move(&mv, state);
             let new_prefix = format!("{}{}", prefix, formatted_move);
-
             if make_move!(state, mv) {
                 nodes += perft(state, depth - 1, branch - 1, &new_prefix);
                 undo_move!(state);

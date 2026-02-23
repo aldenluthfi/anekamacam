@@ -182,6 +182,20 @@ macro_rules! enc_setup_phase {
     };
 }
 
+#[macro_export]
+macro_rules! stand_offs {
+    ($state:expr) => {
+        ($state.special_rules >> 10 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_stand_offs {
+    ($rules:expr) => {
+        $rules |= 1 << 10;
+    };
+}
+
 /*----------------------------------------------------------------------------*\
                             EN PASSANT REPRESENTATION
 \*----------------------------------------------------------------------------*/
@@ -265,7 +279,9 @@ macro_rules! null_snapshot {
 /// - bit 7: Demote piece in hand upon capture
 /// - bit 8: Stalemate is a loss for the stalemated player
 /// - bit 9: Game begins with a setup phase
-/// - but 10-31: reserved for future use
+/// - bit 10: A player can make a move that creates a stand-off that the
+///   opponent must break on their next turn
+/// - but 11-31: reserved for future use
 ///
 pub struct State {
 
