@@ -327,10 +327,9 @@ pub type MultiLegVector = Vec<LegVector>;
 ///
 /// - i!i: means that at the end of this leg, the moving piece cannot be in
 ///   attacked.
-/// - k!k: means that can only perform this capture when its not the players
-///   turn.
+/// - k!k: TBD
 /// - v!v: this leg can bypass forbidden zones.
-/// - g!g: TODO
+/// - g!g: TBD
 ///
 /// Defaults:
 /// - by default each leg will have m (can move) set. except for the last leg
@@ -341,9 +340,6 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - you can combine negation like `mc!kvg` means a move/capture leg that must
 ///   not be royal, must be moved, and must be of lesser or equal rank and
 ///   cannot capture en passant.
-/// - k!k might seem stupid but it is useful to implement 'bikjang' in janggi
-///   where a king can perform check (oppose the other king) but doesnt go into
-///   check itself, so it can only capture when its not the players turn.
 ///
 /// How to use (examples)
 ///

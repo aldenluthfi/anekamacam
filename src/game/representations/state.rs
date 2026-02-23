@@ -220,6 +220,7 @@ pub struct Snapshot {
     pub halfmove_clock: u8,
     pub en_passant_square: u32,
     pub setup_phase: bool,
+    pub game_over: bool,
 
     pub position_hash: u128
 }
@@ -232,9 +233,17 @@ impl Default for Snapshot {
             halfmove_clock: 0,
             en_passant_square: u32::MAX,
             setup_phase: false,
+            game_over: false,
             position_hash: u128::default(),
         }
     }
+}
+
+#[macro_export]
+macro_rules! null_snapshot {
+    ($snapshot:expr) => {
+        is_null!($snapshot.move_ply)
+    };
 }
 
 /*----------------------------------------------------------------------------*\
