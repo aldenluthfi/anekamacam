@@ -225,6 +225,13 @@ macro_rules! enc_capture_part {
 \*----------------------------------------------------------------------------*/
 
 #[macro_export]
+macro_rules! is_null {
+    ($mv:expr) => {
+        move_type!($mv) == QUIET_MOVE && end!($mv) == start!($mv)
+    };
+}
+
+#[macro_export]
 macro_rules! move_type {
     ($mv:expr) => {
         $mv.0 & 0x7
