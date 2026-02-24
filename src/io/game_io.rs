@@ -22,6 +22,7 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
+use crate::game::representations::vector::parse_pattern;
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 use crate::{
@@ -44,7 +45,7 @@ use crate::{
     multi_move_is_unload, is_initial, unload_square, is_unload,
     captured_unmoved, captured_square, captured_piece, hash_toggle_side,
     enp_square, is_null, null_snapshot, is_in_check, is_square_attacked,
-    enc_stand_offs, stand_offs,
+    enc_stand_offs, stand_offs, is_in_stand_off,
     game::{
         moves::move_list::{
             generate_all_moves_and_drops, validate_attack_vector,
@@ -58,6 +59,7 @@ use crate::{
             hash_position, CASTLING_HASHES, IN_HAND_HASHES, PIECE_HASHES,
             EN_PASSANT_HASHES, SIDE_HASHES,
         },
+        patterns::pattern_match::match_pattern,
     },
     io::{
         move_io::format_move,
@@ -264,6 +266,13 @@ pub fn parse_config_file(path: &str) -> State {
             sections.contains_key("forbidden zones"),
             "[forbidden zones] section is missing"
         );
+    }
+
+    if stand_offs {
+        assert!(
+            sections.contains_key("stand-off patterns"),
+            "[stand-off patterns] section is missing"
+        )
     }
 
     let mut special_rules = 0u32;
@@ -812,8 +821,8 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    if drops && sections.contains_key("drops") {
-        for drop in &sections["drops"] {
+    if drops && sections.contains_key("drop rules") {
+        for drop in &sections["drop rules"] {
             let parts: Vec<&str> = drop.split(':').map(str::trim).collect();
 
             assert!(
@@ -1017,10 +1026,67 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    result.load_fen(initial_position);
-
-    hash_position(&result);
     result.precompute();
+
+    if stand_offs {
+        for pattern in &sections["stand-off patterns"] {
+            let parts: Vec<&str> = pattern.split(':').map(str::trim).collect();
+
+            assert!(
+                parts.len() == 2,
+                "Invalid stand-off pattern definition: {}",
+                pattern
+            );
+
+            let piece_chars = parts[0];
+            let stand_off_patterns: Vec<&str> = parts[1].split('|').collect();
+
+            if piece_chars.len() == 2 {
+                let white_char = piece_chars.chars().next().unwrap();
+                let black_char = piece_chars.chars().nth(1).unwrap();
+
+                if let Some(&white_index) = char_to_index.get(&white_char) {
+                    for pattern in &stand_off_patterns {
+                        let result_pattern = parse_pattern(pattern, &result);
+                        result.stand_off_patterns[white_index].push(
+                            result_pattern
+                        );
+                    }
+                } else {
+                    panic!("Unknown piece character: {}", white_char);
+                }
+
+                if let Some(&black_index) = char_to_index.get(&black_char) {
+                    for pattern in &stand_off_patterns {
+                        let result_pattern = parse_pattern(pattern, &result);
+                        result.stand_off_patterns[black_index].push(
+                            result_pattern
+                        );
+                    }
+                } else {
+                    panic!("Unknown piece character: {}", black_char);
+                }
+            } else if piece_chars.len() == 1 {
+                let piece_char = piece_chars.chars().next().unwrap();
+
+                if let Some(&index) = char_to_index.get(&piece_char) {
+                    for pattern in &stand_off_patterns {
+                        let result_pattern = parse_pattern(pattern, &result);
+                        result.stand_off_patterns[index].push(
+                            result_pattern
+                        );
+                    }
+                } else {
+                    panic!("Unknown piece character: {}", piece_char);
+                }
+            } else {
+                panic!("Invalid piece character(s): {}", piece_chars);
+            }
+        }
+    }
+
+    result.load_fen(initial_position);
+    hash_position(&result);
 
     result
 }

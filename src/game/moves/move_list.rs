@@ -231,7 +231,6 @@ pub fn validate_attack_vector(
         let not_i = not_i!(leg);
         let special_i = i && not_i;
         let special_v = v && not_v;
-        let special_k = k && not_k;
 
         if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
         {
@@ -256,9 +255,8 @@ pub fn validate_attack_vector(
         }
 
         if imaginary_move {
-            if (k && !attacked_royal || not_k && attacked_royal)
-            && !special_k
-            || special_k && piece_color != game_state.playing
+            if k && !attacked_royal
+            || not_k && attacked_royal
             || g && piece_rank >= attacked_rank
             || not_g && piece_rank < attacked_rank
             || (v && !attacked_unmoved || not_v && attacked_unmoved)
@@ -294,7 +292,8 @@ pub fn validate_attack_vector(
                     let capt_royal =
                         p_is_royal!(capt_piece);
 
-                    if k && !capt_royal || not_k && capt_royal
+                    if k && !capt_royal
+                    || not_k && capt_royal
                     || g && piece_rank >= capt_rank
                     || not_g && piece_rank < capt_rank
                     || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -325,9 +324,8 @@ pub fn validate_attack_vector(
             let capt_royal =
                 p_is_royal!(capt_piece);
 
-            if (k && !capt_royal || not_k && capt_royal)
-            && !special_k
-            || special_k && piece_color != game_state.playing
+            if k && !capt_royal
+            || not_k && capt_royal
             || g && piece_rank >= capt_rank
             || not_g && piece_rank < capt_rank
             || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -352,9 +350,8 @@ pub fn validate_attack_vector(
             let capt_royal =
                 p_is_royal!(capt_piece);
 
-            if (k && !capt_royal || not_k && capt_royal)
-            && !special_k
-            || special_k && piece_color != game_state.playing
+            if k && !capt_royal
+            || not_k && capt_royal
             || g && piece_rank >= capt_rank
             || not_g && piece_rank < capt_rank
             || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -432,7 +429,6 @@ pub fn generate_move_list(
             let r = r!(leg);
             let special_i = i && not_i;
             let special_v = v && not_v;
-            let special_k = k && not_k;
             let castling_rights = piece_color as usize * 2 + l as usize;
 
             if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
@@ -499,7 +495,7 @@ pub fn generate_move_list(
                         let capt_royal =
                             p_is_royal!(capt_piece);
 
-                        if (k || not_k && capt_royal) && !special_k
+                        if k || not_k && capt_royal
                         || g && piece_rank >= capt_rank
                         || not_g && piece_rank < capt_rank
                         || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -535,7 +531,7 @@ pub fn generate_move_list(
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
-                if (k || not_k && capt_royal) && !special_k
+                if k || not_k && capt_royal
                 || g && piece_rank >= capt_rank
                 || not_g && piece_rank < capt_rank
                 || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -575,7 +571,7 @@ pub fn generate_move_list(
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
-                if (k || not_k && capt_royal) && !special_k
+                if k || not_k && capt_royal
                 || g && piece_rank >= capt_rank
                 || not_g && piece_rank < capt_rank
                 || (v && !capt_unmoved || not_v && capt_unmoved)
@@ -752,9 +748,7 @@ macro_rules! make_move {
             let mut stand_off_before = false;
 
             if stand_offs!($state) {
-                stand_off_before =
-                    is_in_check!($state.playing, $state) &&
-                    is_in_check!(1 - $state.playing, $state);
+                stand_off_before = is_in_stand_off!($state)
             }
 
             if move_type == QUIET_MOVE {
@@ -1672,21 +1666,19 @@ macro_rules! make_move {
             let mut stand_off_after = false;
 
             if stand_offs!($state) {
-                stand_off_after =
-                    in_check_after && is_in_check!($state.playing, $state);
+                stand_off_after = is_in_stand_off!($state)
             }
 
-            let mut illegal = in_check_after && !stand_off_after
-            || stand_off_before && stand_off_after;
+            let illegal =
+                in_check_after ||
+                stand_off_before && stand_off_after && !null_move;
 
             if null_move
-            && (stand_off_after
-            || $state.history.last().map_or(
+            && ($state.history.last().map_or(
                 false, |last_mv| null_snapshot!(last_mv)
-            ))
-            {
+            || stand_off_before)
+            ) {
                 $state.game_over = true;
-                illegal = false;                                                /* allow the null move but game over  */
             }
 
             hash_toggle_side!($state);

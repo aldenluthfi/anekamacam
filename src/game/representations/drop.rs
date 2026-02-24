@@ -1,4 +1,4 @@
-use crate::game::representations::vector::DropVector;
+use crate::game::representations::vector::{PatternAllower, PatternStopper};
 
 /// a DropMove cosnsists of the following bits:
 /// - The first 8 bits represent the piece index of the piece being dropped.
@@ -6,9 +6,7 @@ use crate::game::representations::vector::DropVector;
 ///   dropped.
 /// - The next 12 bits is reserved for drop modifiers
 pub type DropMove = u32;
-pub type DropAllower = Vec<DropVector>;
-pub type DropStopper = Vec<DropVector>;
-pub type Drops = (DropMove, DropAllower, DropStopper);
+pub type Drops = (DropMove, PatternAllower, PatternStopper);
 pub type DropSet = Vec<Drops>;
 
 #[macro_export]

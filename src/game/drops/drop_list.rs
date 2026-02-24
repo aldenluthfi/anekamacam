@@ -89,6 +89,16 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
         }
 
         'drop_loop: for drop in drops {
+
+            if drop.1.len() > 1 {
+                let drop_square = drop.1[0].0 as usize;
+
+                if square == 0                                                  /* current square                     */
+                && !drop.1[0].1.contains(&state.main_board[drop_square]) {      /* break as early as possible         */
+                    continue 'drop_loop;
+                }
+            }
+
             let drop_k = drop_k!(drop);
             let drop_f = drop_f!(drop);
             let drop_d = drop_d!(drop);

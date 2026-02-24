@@ -1,6 +1,7 @@
 use crate::{
     game::moves::perft::{perft, start_perft},
     io::game_io::{debug_perform_moves, format_entire_game, format_game_state, parse_config_file},
+    game::patterns::pattern_match::match_pattern,
 };
 
 pub mod game {
@@ -11,6 +12,10 @@ pub mod game {
         pub mod moves;
         pub mod vector;
         pub mod drop;
+    }
+
+    pub mod patterns {
+        pub mod pattern_match;
     }
 
     pub mod drops {
@@ -58,13 +63,13 @@ fn main() {
     let perft_path = format!("res/{}.perft", variant);
 
     let mut state = parse_config_file(&config_path);
-    state.load_fen("3k5/3ca4/3a5/9/2P6/9/7p1/2p1C4/4A4/4KC3 b -/-");
+    // state.load_fen("rhea1aehr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RHEA1AEHR w -/-");
 
-    debug_perform_moves(&mut state, &["e9f9a", "f1f10", "d10e9", "e1f1Q"]);
-    println!("State after moves:");
-    println!("{}", format_game_state(&state, false));
+    // debug_perform_moves(&mut state, &["e4d4", "e7d7"]);
+    // println!("State after moves:");
+    // println!("{}", format_game_state(&state, false));
 
-    perft(&mut state, 1, 1, "");
+    // perft(&mut state, 2, 1, "");
 
-    // start_perft(&mut state, &perft_path, 5, -1, 100);
+    start_perft(&mut state, &perft_path, 5, -1, 100);
 }

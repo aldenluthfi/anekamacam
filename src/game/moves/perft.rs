@@ -22,6 +22,7 @@ use crate::{
         representations::state::{
             EnPassantSquare, Snapshot, Square, State,
         },
+        patterns::pattern_match::match_pattern,
         util::RNG,
     },
     get, hash_in_or_out_piece, hash_toggle_side, hash_update_castling,
@@ -35,7 +36,8 @@ use crate::{
     p_castle_left, p_castle_right, p_color, p_is_big, p_is_major,
     p_is_minor, p_is_royal, p_value, piece, promote_to_captured, promoted,
     promotion, set, start, undo_move, unload_square, is_null,
-    null_snapshot, is_in_check, is_square_attacked, stand_offs
+    null_snapshot, is_in_check, is_square_attacked, stand_offs,
+    is_in_stand_off
 };
 
 fn parse_perft_file(
