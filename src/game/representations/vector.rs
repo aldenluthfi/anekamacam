@@ -17,10 +17,183 @@
 
 use std::{collections::{HashSet, VecDeque}, fmt::Debug};
 
-use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
+use lazy_static::lazy_static;
+use regex::Regex;
+
+use crate::{constants::NO_PIECE, game::{moves::move_parse::{INDEX_TO_CARDINAL_VECTORS, generate_move_vectors}, representations::state::State}, leg, x, y};
+
+lazy_static! {
+    pub static ref PATTERN_PATTERN: Regex =
+        Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap();
+    pub static ref CHAIN_PATTERN: Regex =
+        Regex::new(r"([^-]+)").unwrap();
+}
+
+/*----------------------------------------------------------------------------*\
+                        PATTERN MATCHING REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
 
 /// A simple (x, y) + piece index vector for drop generations.
-pub type DropVector = (u16, HashSet<u8>);
+pub type PatternVector = (u16, HashSet<u8>);
+pub type PatternAllower = Vec<PatternVector>;
+pub type PatternStopper = Vec<PatternVector>;
+pub type Pattern = (PatternAllower, PatternStopper);
+pub type PatternSet = Vec<Pattern>;
+
+fn expand_wildcard(expr: &str, state: &State) -> String {
+    let all_pieces = state.pieces.iter().map(|p| p.char).collect::<String>();
+
+    let expr = expr.replace("~*", &format!("~{}", all_pieces));
+    expr.replace("-*", &format!("-{}", all_pieces))
+}
+
+/// the Cheesy Pattern Match Notation (CPMN) is as follows:
+///
+/// [allower multi leg]~[pieces]@[stoppers multi leg]~[pieces]
+///
+/// The multi legs part wont be processed as a whole but each le will be
+/// processed. so #-W~P-P would match a pawn on the dropping square and a pawn
+/// on each W square. A drop is legal if all of the allowers are met and none
+/// of the stoppers are met.
+///
+/// Pieces are the chars of the pieces that are relevant to the allowers and
+/// stoppers. * means all pieces excluding no piece. ? means no piece.
+pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
+    let expr = &expand_wildcard(expr, state);
+    let captures = PATTERN_PATTERN
+        .captures(expr)
+        .unwrap_or_else(|| panic!("Invalid pattern format {}", expr));
+
+    #[cfg(debug_assertions)]
+    println!("[DEBUG] parse_pattern captures: {:?}", captures);
+
+    let (allowers, allower_pieces) =
+    match (captures.get(1), captures.get(2)) {
+        (Some(a), Some(p)) => (a.as_str(), p.as_str()),
+        (None, None) => ("", ""),
+        _ => panic!(
+            concat!(
+                "Invalid pattern format: ",
+                "allowers and allower_pieces must ",
+                "both be present or both absent"
+            ),
+        ),
+    };
+
+    let allowers_pieces = CHAIN_PATTERN
+        .captures_iter(allower_pieces)
+        .map(|cap| cap.get(1).unwrap().as_str())
+        .collect::<Vec<&str>>();
+    let allowers_vecs = if allowers.is_empty() {
+        Vec::new()
+    } else {
+        CHAIN_PATTERN
+            .captures_iter(allowers)
+            .enumerate()
+            .flat_map(|(idx, cap)| {
+                let compound = cap.get(1).unwrap().as_str();
+                generate_move_vectors(compound, state)
+                    .into_iter()
+                    .map(move |vec| (idx, vec))
+            })
+            .collect()
+    };
+
+    #[cfg(debug_assertions)]
+    println!(
+        "[DEBUG] Parsed allowers: {:#?}",
+        allowers_vecs
+    );
+
+    let allower_result = allowers_vecs.iter().map(
+        |(index, multi_leg_vector)| {
+            let leg = leg!(multi_leg_vector[0]);
+
+            let x = x!(leg) as u16 & 0xFF;
+            let y = y!(leg) as u16 & 0xFF;
+
+            let mut piece_set = HashSet::new();
+            for piece_char in allowers_pieces[*index].chars() {
+                let piece_index =
+                if piece_char == '?' {NO_PIECE as u16}
+                else {state.piece_char_map[&piece_char] as u16};
+                piece_set.insert(piece_index as u8);
+            }
+
+            ((y << 8) | x, piece_set)
+        }
+    ).collect::<PatternAllower>();
+
+    #[cfg(debug_assertions)]
+    println!(
+        "[DEBUG] Encoded allowers: {:?}",
+        allower_result
+    );
+
+    let (stoppers, stopper_pieces) =
+    match (captures.get(3), captures.get(4)) {
+        (Some(s), Some(p)) => (s.as_str(), p.as_str()),
+        (None, None) => ("", ""),
+        _ => panic!(
+            concat!(
+                "Invalid drop format: ",
+                "stoppers and stopper_pieces must ",
+                "both be present or both absent"
+            ),
+        ),
+    };
+    let stoppers_pieces = CHAIN_PATTERN
+        .captures_iter(stopper_pieces)
+        .map(|cap| cap.get(1).unwrap().as_str())
+        .collect::<Vec<&str>>();
+    let stoppers_vecs = if stoppers.is_empty() {
+        Vec::new()
+    } else {
+        CHAIN_PATTERN
+            .captures_iter(stoppers)
+            .enumerate()
+            .flat_map(|(idx, cap)| {
+                let compound = cap.get(1).unwrap().as_str();
+                generate_move_vectors(compound, state)
+                    .into_iter()
+                    .map(move |vec| (idx, vec))
+            })
+            .collect()
+    };
+
+    #[cfg(debug_assertions)]
+    println!(
+        "[DEBUG] Parsed drop: {:#?}",
+        stoppers_vecs
+    );
+
+    let stopper_result = stoppers_vecs.iter().map(
+        |(index, multi_leg_vector)| {
+        let leg = leg!(multi_leg_vector[0]);
+
+        let x = x!(leg) as u16 & 0xFF;
+        let y = y!(leg) as u16 & 0xFF;
+
+        let mut piece_set = HashSet::new();
+        for piece_char in stoppers_pieces[*index].chars() {
+            let piece_index =
+            if piece_char == '?' {NO_PIECE as u16}
+            else {state.piece_char_map[&piece_char] as u16};
+            piece_set.insert(piece_index as u8);
+        }
+
+        ((y << 8) | x, piece_set)
+        }
+    ).collect::<PatternStopper>();
+
+    #[cfg(debug_assertions)]
+    println!(
+        "[DEBUG] Encoded stoppers: {:?}",
+        stopper_result
+    );
+
+    (allower_result, stopper_result)
+}
 
 /*----------------------------------------------------------------------------*\
                         MOVE GENERATION REPRESENTATIONS
@@ -32,20 +205,6 @@ macro_rules! leg {
         ($l.get_atomic().whole().0 as u8 as Leg) |
         ($l.get_atomic().whole().1 as u8 as Leg) << 8 |
         ($l.get_modifiers() as Leg) << 16
-    };
-}
-
-#[macro_export]
-macro_rules! enc_checkpoint {
-    ($l:expr) => {
-        $l |= 1 << 63;
-    };
-}
-
-#[macro_export]
-macro_rules! is_checkpoint {
-    ($l:expr) => {
-        ($l >> 63) & 1 == 1
     };
 }
 
@@ -327,7 +486,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///
 /// - i!i: means that at the end of this leg, the moving piece cannot be in
 ///   attacked.
-/// - k!k: means this leg can only be performed on the players turn.
+/// - k!k: TBD
 /// - v!v: this leg can bypass forbidden zones.
 /// - g!g: TBD
 ///
@@ -343,7 +502,6 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - because capturing a royal piece is not legal, the moves with the k flag
 ///   will be skipped during move list generation but used when checking if a
 ///   square is attacked
-/// - k!k might seem stupid but its useful in janggi to determine bikjang
 ///
 /// How to use (examples)
 ///
