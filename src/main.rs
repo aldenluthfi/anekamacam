@@ -1,7 +1,6 @@
 use crate::{
-    game::moves::perft::{perft, start_perft},
-    io::game_io::{debug_perform_moves, format_entire_game, format_game_state, parse_config_file},
-    game::patterns::pattern_match::match_pattern,
+    game::moves::perft::start_perft,
+    io::game_io::{format_entire_game, parse_config_file},
 };
 
 pub mod game {
@@ -34,7 +33,7 @@ pub mod game {
     }
 
     pub mod evaluation {
-        pub mod r#static;
+        pub mod static_evaluation;
     }
 
     pub mod hash {
@@ -63,13 +62,8 @@ fn main() {
     let perft_path = format!("res/{}.perft", variant);
 
     let mut state = parse_config_file(&config_path);
-    // state.load_fen("rhea1aehr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RHEA1AEHR w -/-");
 
-    // debug_perform_moves(&mut state, &["e4d4", "e7d7"]);
-    // println!("State after moves:");
-    // println!("{}", format_game_state(&state, false));
+    println!("{}", format_entire_game(&state));
 
-    // perft(&mut state, 2, 1, "");
-
-    start_perft(&mut state, &perft_path, 5, -1, 100);
+    start_perft(&mut state, &perft_path, 6, -1, 100);
 }

@@ -22,4 +22,5 @@ timed = "*"
 rand = "*"
 fs = "*"
 hotpath = "*"
-
+hashbrown = "*"
+ndarray = "*"

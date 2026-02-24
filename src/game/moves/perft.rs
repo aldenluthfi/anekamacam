@@ -165,6 +165,7 @@ pub fn perft(
         if branch >= 0 {
             let formatted_move = format_move(&mv, state);
             let new_prefix = format!("{}{}", prefix, formatted_move);
+
             if make_move!(state, mv) {
                 nodes += perft(state, depth - 1, branch - 1, &new_prefix);
                 undo_move!(state);
