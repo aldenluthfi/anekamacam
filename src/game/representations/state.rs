@@ -12,7 +12,9 @@
 //! # Date
 //! 25/01/2025
 
-use std::collections::HashMap;
+use std::array;
+
+use hashbrown::HashMap;
 
 use crate::{
     board, constants::*,
@@ -303,9 +305,9 @@ pub struct State {
     pub files: u8,
     pub ranks: u8,
 
-    pub relevant_moves: Vec<Vec<MoveSet>>,
-    pub relevant_drops: Vec<Vec<DropSet>>,
-    pub relevant_setup: Vec<Vec<DropSet>>,
+    pub relevant_moves: [Vec<MoveSet>; MAX_PIECES],
+    pub relevant_drops: [Vec<DropSet>; MAX_PIECES],
+    pub relevant_setup: [Vec<DropSet>; MAX_PIECES],
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
 
     pub piece_moves: Vec<MoveSet>,
@@ -381,11 +383,11 @@ impl State {
             ranks,
 
             relevant_moves:
-                vec![vec![MoveSet::new(); board_size]; piece_count],
+                array::from_fn(|_| vec![MoveSet::new(); board_size]),
             relevant_drops:
-                vec![vec![DropSet::new(); board_size]; piece_count],
+                array::from_fn(|_| vec![DropSet::new(); board_size]),
             relevant_setup:
-                vec![vec![DropSet::new(); board_size]; piece_count],
+                array::from_fn(|_| vec![DropSet::new(); board_size]),
             relevant_attacks:
                 [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
 

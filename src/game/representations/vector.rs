@@ -15,8 +15,9 @@
 //! # Date
 //! 12/02/2026
 
-use std::{collections::{HashSet, VecDeque}, fmt::Debug};
+use std::{collections::VecDeque, fmt::Debug};
 
+use hashbrown::HashSet;
 use lazy_static::lazy_static;
 use regex::Regex;
 
