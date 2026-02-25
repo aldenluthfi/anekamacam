@@ -22,7 +22,6 @@ use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
-use crate::game::representations::vector::parse_pattern;
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 use crate::{
@@ -1026,8 +1025,6 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    result.precompute();
-
     if stand_offs {
         for pattern in &sections["stand-off patterns"] {
             let parts: Vec<&str> = pattern.split(':').map(str::trim).collect();
@@ -1039,30 +1036,22 @@ pub fn parse_config_file(path: &str) -> State {
             );
 
             let piece_chars = parts[0];
-            let stand_off_patterns: Vec<&str> = parts[1].split('|').collect();
+            let stand_off_patterns = parts[1].to_string();
 
             if piece_chars.len() == 2 {
                 let white_char = piece_chars.chars().next().unwrap();
                 let black_char = piece_chars.chars().nth(1).unwrap();
 
                 if let Some(&white_index) = char_to_index.get(&white_char) {
-                    for pattern in &stand_off_patterns {
-                        let result_pattern = parse_pattern(pattern, &result);
-                        result.stand_off_patterns[white_index].push(
-                            result_pattern
-                        );
-                    }
+                    result.pieces[white_index].stand_off =
+                        stand_off_patterns.clone();
                 } else {
                     panic!("Unknown piece character: {}", white_char);
                 }
 
                 if let Some(&black_index) = char_to_index.get(&black_char) {
-                    for pattern in &stand_off_patterns {
-                        let result_pattern = parse_pattern(pattern, &result);
-                        result.stand_off_patterns[black_index].push(
-                            result_pattern
-                        );
-                    }
+                    result.pieces[black_index].stand_off =
+                        stand_off_patterns.clone();
                 } else {
                     panic!("Unknown piece character: {}", black_char);
                 }
@@ -1070,12 +1059,8 @@ pub fn parse_config_file(path: &str) -> State {
                 let piece_char = piece_chars.chars().next().unwrap();
 
                 if let Some(&index) = char_to_index.get(&piece_char) {
-                    for pattern in &stand_off_patterns {
-                        let result_pattern = parse_pattern(pattern, &result);
-                        result.stand_off_patterns[index].push(
-                            result_pattern
-                        );
-                    }
+                    result.pieces[index].stand_off =
+                        stand_off_patterns.clone();
                 } else {
                     panic!("Unknown piece character: {}", piece_char);
                 }
@@ -1085,6 +1070,7 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    result.precompute();
     result.load_fen(initial_position);
     hash_position(&result);
 
