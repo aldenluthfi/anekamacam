@@ -1,4 +1,4 @@
-use crate::game::representations::vector::{PatternAllower, PatternStopper};
+use crate::game::patterns::pattern_match::{PatternAllower, PatternStopper};
 
 /// a DropMove cosnsists of the following bits:
 /// - The first 8 bits represent the piece index of the piece being dropped.

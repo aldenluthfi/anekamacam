@@ -1,10 +1,7 @@
-use bnum::types::U2048;
-use bnum::cast::As;
-
 use crate::{
     c, constants::{
         CASTLING, MULTI_CAPTURE_MOVE, QUIET_MOVE, SINGLE_CAPTURE_MOVE,
-    }, count_limits, d, drop_e, drops, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
+    }, count_limits, d, drops, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
         drops::drop_list::generate_drop_list,
         representations::{
             moves::Move,
@@ -12,7 +9,7 @@ use crate::{
             state::State,
             vector::{MoveSet, MoveVector},
         },
-    }, get, i, k, l, m, multi_move_captured_square, not_g, not_i, not_k, not_v, p, p_can_promote, p_color, p_index, p_is_royal, p_promotions, promote_to_captured, promotions, r, t, u, v, x, y
+    }, get, i, k, l, m, multi_move_captured_square, not_g, not_i, not_k, not_v, p, p_can_promote, p_color, p_index, p_is_royal, promote_to_captured, promotions, r, t, u, v, x, y
 };
 
 #[macro_export]
@@ -59,9 +56,9 @@ macro_rules! is_in_check {
         if monarch_indices.len() > 1 || $game_state.setup_phase {
             false
         } else {
-            let royal_piece = 
+            let royal_piece =
                 &$game_state.main_board[monarch_indices[0] as usize];
-            let royal_rank = 
+            let royal_rank =
                 &$game_state.pieces[*royal_piece as usize].rank;
 
             is_square_attacked!(
@@ -79,12 +76,13 @@ macro_rules! is_in_check {
 pub fn generate_relevant_moves(
     piece: &Piece,
     square_index: u32,
-    game_state: &State
+    game_state: &State,
+    piece_moves: &[MoveSet]
 ) -> MoveSet {
     let piece_index = p_index!(piece) as usize;
     let piece_color = p_color!(piece);
     let vector_set =
-        &game_state.piece_moves[piece_index];
+        &piece_moves[piece_index];
 
     let mut result = MoveSet::new();
     'multi_leg: for multi_leg_vector in vector_set {
@@ -665,20 +663,20 @@ pub fn generate_move_list(
                 entered_optional_promotion || moved_from_optional_zone;
 
             if mandatory || optional {
-                for promo_piece_index in p_promotions!(piece) {
+                for promo_piece_index in &piece.promotions {
 
                     let mut can_promote = true;
 
                     if count_limits!(game_state) {
                         can_promote = can_promote &&
-                        (game_state.piece_count[promo_piece_index] as i32) <
-                        game_state.piece_limit[promo_piece_index];
+                        game_state.piece_count[*promo_piece_index as usize] <
+                        game_state.piece_limit[*promo_piece_index as usize];
                     }
 
                     if promote_to_captured!(game_state) {
                         let enemy_equiv =
                             game_state.piece_swap_map[
-                                &(promo_piece_index as u8)
+                                promo_piece_index
                             ];
 
                         can_promote = can_promote &&
@@ -697,7 +695,7 @@ pub fn generate_move_list(
                         }
 
                         enc_promotion!(promo_move, 1);
-                        enc_promoted!(promo_move, promo_piece_index as u128);
+                        enc_promoted!(promo_move, *promo_piece_index as u128);
                         result.push(promo_move);
                     }
                 }
@@ -2232,24 +2230,16 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
     if drops!(state) || state.setup_phase {
         for piece_index in start_index..end_index {
             let piece = &state.pieces[piece_index];
-            let enemy_equiv = 
+            let enemy =
                 state.piece_swap_map[&(piece_index as u8)] as usize;
 
             let drop_from_own =
                 state.piece_in_hand[state.playing as usize][piece_index] > 0;
+            let drop_from_enemy =
+                state.piece_in_hand[1 - state.playing as usize][enemy] > 0;
 
-            if drop_from_own {
+            if drop_from_own || drop_from_enemy{
                 moves.extend(generate_drop_list(piece, state));
-            } else {
-                let drop_from_enemy =
-                    state.piece_drops[piece_index]
-                        .iter().any(|drop| drop_e!(drop)) &&
-                    state.piece_in_hand
-                    [1 - state.playing as usize][enemy_equiv] > 0;
-
-                if drop_from_enemy {
-                    moves.extend(generate_drop_list(piece, state));
-                }
             }
         }
     }
