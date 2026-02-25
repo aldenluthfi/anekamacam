@@ -57,7 +57,7 @@ pub mod constants;
 
 #[hotpath::main(limit=0)]
 fn main() {
-    let variant = "janggi";
+    let variant = "shogi";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 

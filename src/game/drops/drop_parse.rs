@@ -1,7 +1,7 @@
 use lazy_static::lazy_static;
 use regex::Regex;
 
-use crate::{constants::{NULL_DROP}, game::{representations::{drop::DropSet, piece::Piece, state::State, vector::parse_pattern}}, p_index};
+use crate::{constants::NULL_DROP, game::{patterns::pattern_match::parse_pattern, representations::{drop::DropSet, piece::Piece, state::State}}, p_index};
 
 
 lazy_static! {
@@ -20,11 +20,11 @@ lazy_static! {
 ///   allowers
 /// - e : this drop is from the enemy's hand not our hand
 pub fn generate_drop_vectors(
-    piece: &Piece, state: &State, setup: bool
+    piece: &Piece, state: &State, expr_set: &[String]
 ) -> DropSet {
 
     let piece_index = p_index!(piece) as usize;
-    let drop_expr = if setup {&piece.setup} else {&piece.drop};
+    let drop_expr = &expr_set[piece_index];
 
     if drop_expr == NULL_DROP {
         return Vec::new();
@@ -36,7 +36,7 @@ pub fn generate_drop_vectors(
     for part in parts {
         let captures = DROP_PATTERN
             .captures(part)
-            .unwrap_or_else(|| panic!("Invalid drop format {}", piece.drop));
+            .unwrap_or_else(|| panic!("Invalid drop format {}", part));
 
         #[cfg(debug_assertions)]
         println!(

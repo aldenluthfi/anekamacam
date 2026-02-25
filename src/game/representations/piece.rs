@@ -15,11 +15,6 @@
 
 use std::fmt::Debug;
 
-use bnum::cast::As;
-use bnum::types::U2048;
-
-use crate::constants::DEFAULT_DROP;
-
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
@@ -90,28 +85,6 @@ macro_rules! p_castle_left {
     };
 }
 
-#[macro_export]
-macro_rules! p_promotions {
-    ($piece:expr) => {
-        {
-
-            let promotions_count = (
-                $piece.promotions & U2048::from(0xFFu32)
-            ).as_::<u8>();
-
-            if !p_can_promote!($piece) || promotions_count == 0 {
-                Vec::new()
-            } else {
-                (1..=promotions_count)
-                    .map(|i| (
-                        ($piece.promotions >> (i * 8)) & U2048::from(0xFFu32)
-                    ).as_::<usize>())
-                    .collect::<Vec<usize>>()
-            }
-        }
-    };
-}
-
 pub type PieceIndex = u8;
 
 /// A structure representing a game piece with its properties.
@@ -131,19 +104,13 @@ pub type PieceIndex = u8;
 /// - Bit 31: Unused
 ///
 ///
-/// the promotions field is a 2048-bit number representing which pieces this
-/// piece can promote to. it consists of:
-/// - A byte to represent how many pieces can be promoted to (up to 255 pieces)
-/// - the next 255 bytes represents a piece index that this piece can promote to
+/// the promotions field is a Vec<u8> that encodes the pieces this piece can 
+/// promote to
 pub struct Piece {
     pub name: String,
-    pub movement: String,
-    pub drop: String,                                                           /* Drop rule in CDN                   */
-    pub stand_off: String,                                                      /* Stand-off rule in CDN              */
-    pub setup: String,                                                          /* Setup rule in CDN                  */
     pub char: char,
 
-    pub promotions: U2048,
+    pub promotions: Vec<PieceIndex>,
     pub encoded_piece: u32,
     pub rank: u8,                                                               /* used for move modifiers           */
 }
@@ -153,7 +120,6 @@ impl Piece {
     ///
     /// # Arguments
     /// * `name` - The name of the piece
-    /// * `movement` - Movement pattern in Cheesy King Notation
     /// * `symbol` - Display character for the piece
     /// * `promotions` - Bitset of pieces this can promote to
     /// * `piece_type` - Index of the piece type (0-254)
@@ -161,19 +127,20 @@ impl Piece {
     /// * `is_royal` - Whether this is a royal piece
     /// * `is_big` - Whether can be promoted to (true) or can promote (false)
     /// * `is_major` - Whether this is a major piece (true) or minor (false)
+    /// * `can_castle_right` - Whether can castle to the right (kingside)
+    /// * `can_castle_left` - Whether can castle to the left (queenside)
     /// * `value` - The piece value (0-65535, stored in 16 bits)
-    /// * `castle_right` - This piece can castle kingside (right)
-    /// * `castle_left` - This piece can castle queenside (left)
     pub fn new(
         name: String,
-        movement: String,
-        symbol: char,
-        promotions: U2048,
+        char: char,
+        promotions: Vec<PieceIndex>,
         index: u8,
         color: u8,
         is_royal: bool,
         is_big: bool,
         is_major: bool,
+        can_castle_right: bool,
+        can_castle_left: bool,
         value: u16,
     ) -> Self {
         let mut encoded_piece = index as u32;
@@ -193,30 +160,23 @@ impl Piece {
 
         encoded_piece |= (value as u32 & 0xFFFF) << 13;
 
-        if movement.contains('o') {
+        if can_castle_right {
             encoded_piece |= 1 << 29;
         }
 
-        if movement.contains('O') {
+        if can_castle_left {
             encoded_piece |= 1 << 30;
         }
 
-        if promotions != U2048::ZERO {
+        if !promotions.is_empty() {
             encoded_piece |= 1 << 9;
         }
 
-        let drop = DEFAULT_DROP.to_string();
-        let setup = DEFAULT_DROP.to_string();
-        let stand_off = "".to_string();
         let rank = 0;
 
         Self {
             name,
-            movement,
-            drop,
-            setup,
-            stand_off,
-            char: symbol,
+            char,
             promotions,
             encoded_piece,
             rank,
@@ -228,11 +188,8 @@ impl Debug for Piece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Piece")
             .field("name", &self.name)
-            .field("movement", &self.movement)
-            .field("drop", &self.drop)
-            .field("setup", &self.setup)
             .field("char", &self.char)
-            .field("promotions", &p_promotions!(self))
+            .field("promotions", &self.promotions)
             .field("encoded_piece", &format_args!("{:#034b}", self.encoded_piece))
             .finish()
     }

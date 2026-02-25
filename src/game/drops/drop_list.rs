@@ -4,15 +4,11 @@ pub fn generate_relevant_drops(
     piece: &Piece,
     square_index: u32,
     game_state: &State,
-    setup: bool
+    piece_setup_drops: &[DropSet],
 ) -> DropSet {
     let piece_index = p_index!(piece) as usize;
     let piece_color = p_color!(piece) as usize;
-    let drops = if setup {
-        &game_state.piece_setup[piece_index]
-    } else {
-        &game_state.piece_drops[piece_index]
-    };
+    let drops = &piece_setup_drops[piece_index];
 
     drops.iter()
         .filter(|drop| {
@@ -73,7 +69,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
     let mut drop_list = Vec::with_capacity(128);
 
     if count_limits!(state)
-    && state.piece_count[piece_index] as i32 >= state.piece_limit[piece_index] {
+    && state.piece_count[piece_index] >= state.piece_limit[piece_index] {
         return drop_list;
     }
 

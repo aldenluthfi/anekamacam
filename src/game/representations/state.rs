@@ -27,8 +27,8 @@ use crate::{
                 generate_attack_masks, generate_relevant_moves
             },
             move_parse::generate_move_vectors,
-        }, patterns::pattern_match::generate_relevant_stand_offs, representations::{
-            board::Board, drop::DropSet, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet, PatternSet, parse_pattern}
+        }, patterns::pattern_match::{PatternSet, generate_relevant_stand_offs, generate_stand_off_patterns}, representations::{
+            board::Board, drop::DropSet, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet}
         }
     },
     io::game_io::parse_fen,
@@ -298,7 +298,7 @@ pub struct State {
     pub forbidden_zones: Vec<Board>,                                            /* piece to forbidden zone bitboard   */
     pub promotion_zones_optional: Vec<Board>,                                   /* piece to promotion zone bitboard   */
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
-    pub piece_limit: Vec<i32>,                                                  /* piece index to count limit         */
+    pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
 
     pub files: u8,
     pub ranks: u8,
@@ -307,12 +307,6 @@ pub struct State {
     pub relevant_drops: [Vec<DropSet>; MAX_PIECES],
     pub relevant_setup: [Vec<DropSet>; MAX_PIECES],
     pub relevant_stand_offs: [Vec<PatternSet>; MAX_PIECES],
-
-    pub piece_moves: Vec<MoveSet>,
-    pub piece_drops: Vec<DropSet>,
-    pub piece_setup: Vec<DropSet>,
-    pub piece_stand_off: Vec<PatternSet>,
-
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
 
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
@@ -376,7 +370,7 @@ impl State {
             forbidden_zones: vec![board!(files, ranks); piece_count],
             promotion_zones_optional: vec![board!(files, ranks); piece_count],
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
-            piece_limit: vec![-1; piece_count],
+            piece_limit: vec![u32::MAX; piece_count],
 
             files,
             ranks,
@@ -389,12 +383,6 @@ impl State {
                 array::from_fn(|_| vec![Vec::new(); board_size]),
             relevant_stand_offs:
                 array::from_fn(|_| vec![Vec::new(); board_size]),
-
-            piece_moves: vec![Vec::new(); piece_count],
-            piece_drops: vec![Vec::new(); piece_count],
-            piece_setup: vec![Vec::new(); piece_count],
-            piece_stand_off: vec![Vec::new(); piece_count],
-
             relevant_attacks:
                 [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
 
@@ -477,64 +465,53 @@ impl State {
         }
     }
 
-    fn populate_piece_moves(&mut self) {
-        for (index, piece) in self.pieces.iter().enumerate() {
-            self.piece_moves[index] =
-                generate_move_vectors(&piece.movement, self)
-                    .iter()
-                    .map(
-                        |multi_leg_vector: &Vec<LegVector>| {
-                            multi_leg_vector
-                                .iter()
-                                .map(|leg_vector| leg!(leg_vector))
-                                .collect::<Vec<u32>>()
-                        }
-                    )
-                    .collect::<Vec<Vec<u32>>>();
+    fn generate_piece_moves(&mut self, expr_set: &Vec<String>) -> Vec<MoveSet> {
+        let mut piece_moves = Vec::with_capacity(self.pieces.len());
+        for expr in expr_set {
+            let move_vectors = generate_move_vectors(expr, self);
+            let moves_for_piece = move_vectors
+                .iter()
+                .map(|multi_leg_vector: &Vec<LegVector>| {
+                    multi_leg_vector
+                        .iter()
+                        .map(|leg_vector| leg!(leg_vector))
+                        .collect::<Vec<u32>>()
+                })
+                .collect::<Vec<Vec<u32>>>();
+            piece_moves.push(moves_for_piece);
         }
+        piece_moves
     }
 
-    fn populate_piece_drops(&mut self) {
-        for (index, piece) in self.pieces.iter().enumerate() {
-            self.piece_drops[index] = generate_drop_vectors(piece, self, false);
-        }
+    fn generate_piece_drops(&mut self, expr_set: &[String]) -> Vec<DropSet> {
+        self.pieces.iter().map(
+            |piece| generate_drop_vectors(piece, self, expr_set)
+        ).collect::<Vec<DropSet>>()
     }
 
-    fn populate_piece_setup(&mut self) {
-        for (index, piece) in self.pieces.iter().enumerate() {
-            self.piece_setup[index] = generate_drop_vectors(piece, self, true);
-        }
+    fn generate_piece_stand_off(
+        &mut self, expr_set: Vec<String>
+    ) -> Vec<PatternSet> {
+        expr_set.iter().map(
+            |expr| generate_stand_off_patterns(expr, self)
+        ).collect::<Vec<PatternSet>>()
     }
 
-    fn populate_piece_stand_off(&mut self) {
-        for (index, piece) in self.pieces.iter().enumerate() {
-            if piece.stand_off.is_empty() {
-                continue;
-            }
-
-            let patterns = piece.stand_off.split('|').collect::<Vec<&str>>();
-
-            for pattern in patterns {
-                let result_pattern = parse_pattern(pattern, self);
-                self.piece_stand_off[index].push(result_pattern);
-            }
-        }
-    }
-
-    fn populate_relevant_moves(&mut self) {
+    fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_moves[index][square as usize]
                     = generate_relevant_moves(
                         piece,
                         square,
-                        self
+                        self,
+                        piece_moves
                     );
             }
         }
     }
 
-    fn populate_relevant_drops(&mut self) {
+    fn populate_relevant_drops(&mut self, piece_setup_drops: &[DropSet]) {
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_drops[index][square as usize]
@@ -542,13 +519,13 @@ impl State {
                         piece,
                         square,
                         self,
-                        false
+                        piece_setup_drops
                     );
             }
         }
     }
 
-    fn populate_relevant_setup(&mut self) {
+    fn populate_relevant_setup(&mut self, piece_setup_drops: &[DropSet]) {
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_setup[index][square as usize]
@@ -556,20 +533,23 @@ impl State {
                         piece,
                         square,
                         self,
-                        true
+                        piece_setup_drops
                     );
             }
         }
     }
 
-    fn populate_relevant_stand_offs(&mut self) {
+    fn populate_relevant_stand_offs(
+        &mut self, piece_stand_off: &[PatternSet]
+    ) {
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_stand_offs[index][square as usize]
                     = generate_relevant_stand_offs(
                         piece,
                         square,
-                        self
+                        self,
+                        piece_stand_off
                     );
             }
         }
@@ -581,34 +561,45 @@ impl State {
         }
     }
 
-    pub fn precompute(&mut self) {
+    pub fn precompute(
+        &mut self,
+        moves_expr_set: Vec<String>,
+        drops_expr_set: Vec<String>,
+        setup_expr_set: Vec<String>,
+        stand_off_expr_set: Vec<String>
+    ) {
+        let piece_count = self.pieces.len();
         self.populate_char_map();
-        self.populate_piece_moves();
 
-        if setup_phase!(self) {
-            self.populate_piece_setup();
+        let piece_moves = self.generate_piece_moves(&moves_expr_set);
+
+        let mut piece_drops = vec![Vec::new(); piece_count];
+        if drops!(self) {
+            piece_drops = self.generate_piece_drops(&drops_expr_set);
         }
 
+        let mut piece_setup = vec![Vec::new(); piece_count];
+        if setup_phase!(self) {
+            piece_setup = self.generate_piece_drops(&setup_expr_set);
+        }
+
+        let mut piece_stand_off = vec![Vec::new(); piece_count];
+        if stand_offs!(self) {
+            piece_stand_off = self.generate_piece_stand_off(stand_off_expr_set);
+        }
+
+        self.populate_relevant_moves(&piece_moves);
+
         if drops!(self) {
-            self.populate_piece_drops();
+            self.populate_relevant_drops(&piece_drops);
+        }
+
+        if setup_phase!(self) {
+            self.populate_relevant_setup(&piece_setup);
         }
 
         if stand_offs!(self) {
-            self.populate_piece_stand_off();
-        }
-
-        self.populate_relevant_moves();
-
-        if setup_phase!(self) {
-            self.populate_relevant_setup();
-        }
-
-        if drops!(self) {
-            self.populate_relevant_drops();
-        }
-
-        if stand_offs!(self) {
-            self.populate_relevant_stand_offs();
+            self.populate_relevant_stand_offs(&piece_stand_off);
         }
 
         self.populate_relevant_attacks();
