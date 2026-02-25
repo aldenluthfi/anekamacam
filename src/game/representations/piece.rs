@@ -139,6 +139,7 @@ pub struct Piece {
     pub name: String,
     pub movement: String,
     pub drop: String,                                                           /* Drop rule in CDN                   */
+    pub stand_off: String,                                                      /* Stand-off rule in CDN              */
     pub setup: String,                                                          /* Setup rule in CDN                  */
     pub char: char,
 
@@ -206,6 +207,7 @@ impl Piece {
 
         let drop = DEFAULT_DROP.to_string();
         let setup = DEFAULT_DROP.to_string();
+        let stand_off = "".to_string();
         let rank = 0;
 
         Self {
@@ -213,6 +215,7 @@ impl Piece {
             movement,
             drop,
             setup,
+            stand_off,
             char: symbol,
             promotions,
             encoded_piece,

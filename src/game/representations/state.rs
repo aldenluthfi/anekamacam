@@ -22,16 +22,14 @@ use crate::{
         drops::{
             drop_list::generate_relevant_drops,
             drop_parse::generate_drop_vectors
-        },
-        moves::{
+        }, moves::{
             move_list::{
                 generate_attack_masks, generate_relevant_moves
             },
             move_parse::generate_move_vectors,
-        },
-        representations::{
-            board::Board, drop::DropSet, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet, PatternSet}
-        },
+        }, patterns::pattern_match::generate_relevant_stand_offs, representations::{
+            board::Board, drop::DropSet, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet, PatternSet, parse_pattern}
+        }
     },
     io::game_io::parse_fen,
     leg,
@@ -308,13 +306,14 @@ pub struct State {
     pub relevant_moves: [Vec<MoveSet>; MAX_PIECES],
     pub relevant_drops: [Vec<DropSet>; MAX_PIECES],
     pub relevant_setup: [Vec<DropSet>; MAX_PIECES],
-    pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
+    pub relevant_stand_offs: [Vec<PatternSet>; MAX_PIECES],
 
     pub piece_moves: Vec<MoveSet>,
     pub piece_drops: Vec<DropSet>,
     pub piece_setup: Vec<DropSet>,
+    pub piece_stand_off: Vec<PatternSet>,
 
-    pub stand_off_patterns: Vec<PatternSet>,
+    pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
 
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: HashMap<u8, Vec<u8>>,                               /* piece index to demotion piece idx  */
@@ -383,19 +382,21 @@ impl State {
             ranks,
 
             relevant_moves:
-                array::from_fn(|_| vec![MoveSet::new(); board_size]),
+                array::from_fn(|_| vec![Vec::new(); board_size]),
             relevant_drops:
-                array::from_fn(|_| vec![DropSet::new(); board_size]),
+                array::from_fn(|_| vec![Vec::new(); board_size]),
             relevant_setup:
-                array::from_fn(|_| vec![DropSet::new(); board_size]),
+                array::from_fn(|_| vec![Vec::new(); board_size]),
+            relevant_stand_offs:
+                array::from_fn(|_| vec![Vec::new(); board_size]),
+
+            piece_moves: vec![Vec::new(); piece_count],
+            piece_drops: vec![Vec::new(); piece_count],
+            piece_setup: vec![Vec::new(); piece_count],
+            piece_stand_off: vec![Vec::new(); piece_count],
+
             relevant_attacks:
                 [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
-
-            piece_moves: vec![MoveSet::new(); piece_count],
-            piece_drops: vec![DropSet::new(); piece_count],
-            piece_setup: vec![DropSet::new(); piece_count],
-
-            stand_off_patterns: vec![PatternSet::new(); piece_count],
 
             piece_swap_map: HashMap::new(),
             piece_demotion_map: HashMap::new(),
@@ -505,6 +506,21 @@ impl State {
         }
     }
 
+    fn populate_piece_stand_off(&mut self) {
+        for (index, piece) in self.pieces.iter().enumerate() {
+            if piece.stand_off.is_empty() {
+                continue;
+            }
+
+            let patterns = piece.stand_off.split('|').collect::<Vec<&str>>();
+
+            for pattern in patterns {
+                let result_pattern = parse_pattern(pattern, self);
+                self.piece_stand_off[index].push(result_pattern);
+            }
+        }
+    }
+
     fn populate_relevant_moves(&mut self) {
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
@@ -546,6 +562,19 @@ impl State {
         }
     }
 
+    fn populate_relevant_stand_offs(&mut self) {
+        for (index, piece) in self.pieces.iter().enumerate() {
+            for square in 0..(self.files as u32 * self.ranks as u32) {
+                self.relevant_stand_offs[index][square as usize]
+                    = generate_relevant_stand_offs(
+                        piece,
+                        square,
+                        self
+                    );
+            }
+        }
+    }
+
     fn populate_relevant_attacks(&mut self) {
         for square in 0..(self.files as u32 * self.ranks as u32) {
             generate_attack_masks(square as u16, self);
@@ -564,6 +593,10 @@ impl State {
             self.populate_piece_drops();
         }
 
+        if stand_offs!(self) {
+            self.populate_piece_stand_off();
+        }
+
         self.populate_relevant_moves();
 
         if setup_phase!(self) {
@@ -572,6 +605,10 @@ impl State {
 
         if drops!(self) {
             self.populate_relevant_drops();
+        }
+
+        if stand_offs!(self) {
+            self.populate_relevant_stand_offs();
         }
 
         self.populate_relevant_attacks();
