@@ -15,13 +15,13 @@
 //! # Date
 //! 25/01/2026
 
-use bnum::types::{U2048, U4096};
-use bnum::cast::As;
+use bnum::types::U4096;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
-use std::fs;
+use std::{fs, vec};
 
+use crate::constants::DEFAULT_DROP;
 #[cfg(debug_assertions)]
 use crate::game::util::verify_game_state;
 use crate::{
@@ -35,7 +35,7 @@ use crate::{
     enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured,
     enc_promotions, enc_setup_phase, enc_stalemate_loss, forbidden_zones, get,
     make_move, p_can_promote, p_castle_left, p_castle_right, p_color, p_index,
-    p_is_big, p_is_major, p_is_minor, p_is_royal, p_promotions, p_value,
+    p_is_big, p_is_major, p_is_minor, p_is_royal, p_value,
     promote_to_captured, promotions, set, setup_phase, move_type, piece, start,
     end, promotion, creates_enp, promoted, created_enp, hash_update_en_passant,
     hash_in_or_out_piece, hash_update_in_hand, hash_update_castling, undo_move,
@@ -325,6 +325,12 @@ pub fn parse_config_file(path: &str) -> State {
 \*----------------------------------------------------------------------------*/
 
     let mut pieces = Vec::with_capacity(sections["pieces"].len());
+
+    let mut pieces_moves;
+    let mut pieces_drops;
+    let mut pieces_setup;
+    let mut pieces_stand_off;
+
     let mut char_to_index: HashMap<char, usize> = HashMap::new();
     for bare_piece in &sections["pieces"] {
         let parts: Vec<&str> = bare_piece.split(':').map(str::trim).collect();
@@ -341,9 +347,8 @@ pub fn parse_config_file(path: &str) -> State {
 
         pieces.push((
             name.clone(),
-            String::new(),
             white_char,
-            U2048::ZERO,
+            Vec::new(),
             0,
             WHITE,
             false,
@@ -354,9 +359,8 @@ pub fn parse_config_file(path: &str) -> State {
 
         pieces.push((
             name.clone(),
-            String::new(),
             black_char,
-            U2048::ZERO,
+            Vec::new(),
             0,
             BLACK,
             false,
@@ -366,11 +370,11 @@ pub fn parse_config_file(path: &str) -> State {
         ));
     }
 
-    pieces.sort_by_key(|piece| piece.5);
+    pieces.sort_by_key(|piece| piece.4);
 
     for (i, piece) in pieces.iter_mut().enumerate() {
-        piece.4 = i as u8;
-        char_to_index.insert(piece.2, i);
+        piece.3 = i as u8;
+        char_to_index.insert(piece.1, i);
     }
 
     for piece_values in &sections["piece values"] {
@@ -394,13 +398,13 @@ pub fn parse_config_file(path: &str) -> State {
             );
 
             if let Some(&white_index) = char_to_index.get(&white_char) {
-                pieces[white_index].9 = value;
+                pieces[white_index].8 = value;
             } else {
                 panic!("Unknown piece character: {}", white_char);
             }
 
             if let Some(&black_index) = char_to_index.get(&black_char) {
-                pieces[black_index].9 = value;
+                pieces[black_index].8 = value;
             } else {
                 panic!("Unknown piece character: {}", black_char);
             }
@@ -412,7 +416,7 @@ pub fn parse_config_file(path: &str) -> State {
             );
 
             if let Some(&index) = char_to_index.get(&piece_char) {
-                pieces[index].9 = value;
+                pieces[index].8 = value;
             } else {
                 panic!("Unknown piece character: {}", piece_char);
             }
@@ -421,6 +425,7 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    pieces_moves = vec![String::new(); pieces.len()];
     for piece_moves in &sections["piece moves"] {
         let parts: Vec<&str> = piece_moves.split(':').map(str::trim).collect();
 
@@ -438,13 +443,13 @@ pub fn parse_config_file(path: &str) -> State {
             let black_char = piece_chars.chars().nth(1).unwrap();
 
             if let Some(&white_index) = char_to_index.get(&white_char) {
-                pieces[white_index].1 = move_pattern.clone();
+                pieces_moves[white_index] = move_pattern.clone();
             } else {
                 panic!("Unknown piece character: {}", white_char);
             }
 
             if let Some(&black_index) = char_to_index.get(&black_char) {
-                pieces[black_index].1 = move_pattern.clone();
+                pieces_moves[black_index] = move_pattern.clone();
             } else {
                 panic!("Unknown piece character: {}", black_char);
             }
@@ -452,7 +457,7 @@ pub fn parse_config_file(path: &str) -> State {
             let piece_char = piece_chars.chars().next().unwrap();
 
             if let Some(&index) = char_to_index.get(&piece_char) {
-                pieces[index].1 = move_pattern.clone();
+                pieces_moves[index] = move_pattern.clone();
             } else {
                 panic!("Unknown piece character: {}", piece_char);
             }
@@ -474,7 +479,7 @@ pub fn parse_config_file(path: &str) -> State {
             "royal" => {
                 for piece_char in parts[1].chars() {
                     if let Some(&index) = char_to_index.get(&piece_char) {
-                        pieces[index].6 = true;
+                        pieces[index].5 = true;
                     } else {
                         panic!("Unknown piece character: {}", piece_char);
                     }
@@ -483,7 +488,7 @@ pub fn parse_config_file(path: &str) -> State {
             "big" => {
                 for piece_char in parts[1].chars() {
                     if let Some(&index) = char_to_index.get(&piece_char) {
-                        pieces[index].7 = true;
+                        pieces[index].6 = true;
                     } else {
                         panic!("Unknown piece character: {}", piece_char);
                     }
@@ -492,7 +497,7 @@ pub fn parse_config_file(path: &str) -> State {
             "major" => {
                 for piece_char in parts[1].chars() {
                     if let Some(&index) = char_to_index.get(&piece_char) {
-                        pieces[index].8 = true;
+                        pieces[index].7 = true;
                     } else {
                         panic!("Unknown piece character: {}", piece_char);
                     }
@@ -534,23 +539,17 @@ pub fn parse_config_file(path: &str) -> State {
                     );
 
                 let promotions_str = parts[1];
-                let promotion_count = promotions_str.chars().count();
 
-                let mut promotions_bitset = U2048::from(promotion_count);
-
-                for (index, promo_char) in promotions_str.chars().enumerate() {
+                for promo_char in promotions_str.chars() {
                     if let Some(&promo_index) = char_to_index.get(&promo_char) {
-                        promotions_bitset |=
-                            U2048::from(promo_index) << ((index + 1) * 8);
+                        pieces[white_index].2.push(promo_index as u8);
+                        pieces[black_index].2.push(promo_index as u8);
                     } else {
                         panic!(
                             "Unknown promotion piece character: {}", promo_char
                         );
                     }
                 }
-
-                pieces[white_index].3 = promotions_bitset;
-                pieces[black_index].3 = promotions_bitset;
             } else if piece_chars.len() == 1 {
                 let piece_char = piece_chars.chars().next().unwrap();
 
@@ -562,22 +561,16 @@ pub fn parse_config_file(path: &str) -> State {
                     );
 
                 let promotions_str = parts[1];
-                let promotion_count = promotions_str.chars().count();
 
-                let mut promotions_bitset = U2048::from(promotion_count);
-
-                for (index, promo_char) in promotions_str.chars().enumerate() {
+                for promo_char in promotions_str.chars() {
                     if let Some(&promo_index) = char_to_index.get(&promo_char) {
-                        promotions_bitset |=
-                            U2048::from(promo_index) << ((index + 1) * 8);
+                        pieces[piece_index].2.push(promo_index as u8);
                     } else {
                         panic!(
                             "Unknown promotion piece character: {}", promo_char
                         );
                     }
                 }
-
-                pieces[piece_index].3 = promotions_bitset;
             } else {
                 panic!("Invalid piece character(s): {}", piece_chars);
             }
@@ -592,8 +585,10 @@ pub fn parse_config_file(path: &str) -> State {
         title.to_string(),
         files,
         ranks,
-        pieces.into_iter().map(|p| Piece::new(
-            p.0, p.1, p.2, p.3, p.4, p.5, p.6, p.7, p.8, p.9
+        pieces.iter().enumerate().map(|(i, p)| Piece::new(
+            p.0.clone(), p.1, p.2.clone(), p.3, p.4, p.5, p.6, p.7,
+            pieces_moves[i].contains("o"), pieces_moves[i].contains("O"),
+            p.8
         )).collect(),
         special_rules,
     );
@@ -624,9 +619,9 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     for piece in &result.pieces {
-        for promotion_index in p_promotions!(piece) {
+        for promotion_index in &piece.promotions {
             result.piece_demotion_map
-                .entry(promotion_index as u8)
+                .entry(*promotion_index)
                 .or_default()
                 .push(p_index!(piece));
         }
@@ -677,8 +672,8 @@ pub fn parse_config_file(path: &str) -> State {
 
     if en_passant {
         assert!(
-            result.pieces.iter().any(
-                |p| p.movement.contains('p') || p.movement.contains('t')
+            pieces_moves.iter().any(
+                |mv| mv.contains('p') || mv.contains('t')
             ),
             "No en passant movement found in piece definitions"
         );
@@ -695,8 +690,8 @@ pub fn parse_config_file(path: &str) -> State {
 
     if !en_passant {
         assert!(
-            result.pieces.iter().all(
-                |p| !p.movement.contains('p') && !p.movement.contains('t')
+            pieces_moves.iter().all(
+                |mv| !mv.contains('p') || !mv.contains('t')
             ),
             "En passant movement found in piece definitions"
         );
@@ -820,6 +815,7 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    pieces_drops = vec![DEFAULT_DROP.to_string(); result.pieces.len()];
     if drops && sections.contains_key("drop rules") {
         for drop in &sections["drop rules"] {
             let parts: Vec<&str> = drop.split(':').map(str::trim).collect();
@@ -838,13 +834,13 @@ pub fn parse_config_file(path: &str) -> State {
                 let black_char = piece_chars.chars().nth(1).unwrap();
 
                 if let Some(&white_index) = char_to_index.get(&white_char) {
-                    result.pieces[white_index].drop = drop_pattern.clone();
+                    pieces_drops[white_index] = drop_pattern.clone();
                 } else {
                     panic!("Unknown piece character: {}", white_char);
                 }
 
                 if let Some(&black_index) = char_to_index.get(&black_char) {
-                    result.pieces[black_index].drop = drop_pattern.clone();
+                    pieces_drops[black_index] = drop_pattern.clone();
                 } else {
                     panic!("Unknown piece character: {}", black_char);
                 }
@@ -852,7 +848,7 @@ pub fn parse_config_file(path: &str) -> State {
                 let piece_char = piece_chars.chars().next().unwrap();
 
                 if let Some(&index) = char_to_index.get(&piece_char) {
-                    result.pieces[index].drop = drop_pattern.clone();
+                    pieces_drops[index] = drop_pattern.clone();
                 } else {
                     panic!("Unknown piece character: {}", piece_char);
                 }
@@ -894,7 +890,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                 let limit_str = parts[1];
 
-                let limit_value = limit_str.parse::<i32>().unwrap_or_else(
+                let limit_value = limit_str.parse::<u32>().unwrap_or_else(
                     |_| panic!(
                         "Invalid piece count limit: {}", limit_str.trim()
                     )
@@ -914,7 +910,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                 let limit_str = parts[1];
 
-                let limit_value = limit_str.parse::<i32>().unwrap_or_else(
+                let limit_value = limit_str.parse::<u32>().unwrap_or_else(
                     |_| panic!("Invalid piece count limit: {}", limit_str.trim())
                 );
 
@@ -983,6 +979,7 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    pieces_setup = vec![DEFAULT_DROP.to_string(); result.pieces.len()];
     if setup_phase && sections.contains_key("setup rules") {
         for setup in &sections["setup rules"] {
             let parts: Vec<&str> = setup.split(':').map(str::trim).collect();
@@ -1001,13 +998,13 @@ pub fn parse_config_file(path: &str) -> State {
                 let black_char = piece_chars.chars().nth(1).unwrap();
 
                 if let Some(&white_index) = char_to_index.get(&white_char) {
-                    result.pieces[white_index].setup = setup_pattern.clone();
+                    pieces_setup[white_index] = setup_pattern.clone();
                 } else {
                     panic!("Unknown piece character: {}", white_char);
                 }
 
                 if let Some(&black_index) = char_to_index.get(&black_char) {
-                    result.pieces[black_index].setup = setup_pattern.clone();
+                    pieces_setup[black_index] = setup_pattern.clone();
                 } else {
                     panic!("Unknown piece character: {}", black_char);
                 }
@@ -1015,7 +1012,7 @@ pub fn parse_config_file(path: &str) -> State {
                 let piece_char = piece_chars.chars().next().unwrap();
 
                 if let Some(&index) = char_to_index.get(&piece_char) {
-                    result.pieces[index].setup = setup_pattern.clone();
+                    pieces_setup[index] = setup_pattern.clone();
                 } else {
                     panic!("Unknown piece character: {}", piece_char);
                 }
@@ -1025,6 +1022,7 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    pieces_stand_off = vec![String::new(); result.pieces.len()];
     if stand_offs {
         for pattern in &sections["stand-off patterns"] {
             let parts: Vec<&str> = pattern.split(':').map(str::trim).collect();
@@ -1043,15 +1041,13 @@ pub fn parse_config_file(path: &str) -> State {
                 let black_char = piece_chars.chars().nth(1).unwrap();
 
                 if let Some(&white_index) = char_to_index.get(&white_char) {
-                    result.pieces[white_index].stand_off =
-                        stand_off_patterns.clone();
+                    pieces_stand_off[white_index] = stand_off_patterns.clone();
                 } else {
                     panic!("Unknown piece character: {}", white_char);
                 }
 
                 if let Some(&black_index) = char_to_index.get(&black_char) {
-                    result.pieces[black_index].stand_off =
-                        stand_off_patterns.clone();
+                    pieces_stand_off[black_index] = stand_off_patterns.clone();
                 } else {
                     panic!("Unknown piece character: {}", black_char);
                 }
@@ -1059,8 +1055,7 @@ pub fn parse_config_file(path: &str) -> State {
                 let piece_char = piece_chars.chars().next().unwrap();
 
                 if let Some(&index) = char_to_index.get(&piece_char) {
-                    result.pieces[index].stand_off =
-                        stand_off_patterns.clone();
+                    pieces_stand_off[index] = stand_off_patterns.clone();
                 } else {
                     panic!("Unknown piece character: {}", piece_char);
                 }
@@ -1070,7 +1065,12 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    result.precompute();
+    result.precompute(
+        pieces_moves,
+        pieces_drops,
+        pieces_setup,
+        pieces_stand_off,
+    );
     result.load_fen(initial_position);
     hash_position(&result);
 
@@ -1287,12 +1287,12 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     (rank as u32) * (state.files as u32) + (file as u32);
 
                 if promotions!(state)
-                && p_promotions!(piece).len() == 1
+                && piece.promotions.len() == 1
                 && get!(state.promotion_zones_mandatory
                 [piece_index as usize], square_index)
                 {
                     piece =
-                        &state.pieces[p_promotions!(piece)[0]];
+                        &state.pieces[piece.promotions[0] as usize];
                     piece_index = p_index!(piece);
                     piece_color = p_color!(piece);
 
