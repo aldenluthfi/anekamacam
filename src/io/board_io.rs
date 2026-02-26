@@ -13,15 +13,7 @@
 //!
 //! # Date
 //! 25/01/2026
-
-use bnum::types::U4096;
-
-use crate::{
-    board, files, game::representations::{
-        board::Board,
-        state::State,
-    }, p_color, ranks, set, x, y
-};
+use crate::*;
 
 pub fn format_square(index: u16, game_state: &State) -> String {
     let file = (index % game_state.files as u16) as u8;
@@ -29,7 +21,7 @@ pub fn format_square(index: u16, game_state: &State) -> String {
 
     if game_state.files <= 26  {
         let file_char = (b'a' + file) as char;
-        format!("{}{}", file_char, rank+1).trim().to_string()
+        format!("{}{}", file_char, rank).trim().to_string()
     } else {
         format!("{:02}{:02}", file, rank).trim().to_string()
     }

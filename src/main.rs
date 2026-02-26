@@ -1,7 +1,4 @@
-use crate::{
-    game::moves::perft::start_perft,
-    io::game_io::{format_entire_game, parse_config_file},
-};
+use prelude::*;
 
 pub mod game {
     pub mod representations {
@@ -25,11 +22,11 @@ pub mod game {
     pub mod moves {
         pub mod move_parse;
         pub mod move_list;
-        pub mod perft;
     }
 
     pub mod search {
         pub mod quiescence;
+        pub mod pv_table;
     }
 
     pub mod evaluation {
@@ -54,16 +51,17 @@ pub mod io {
 }
 
 pub mod constants;
+pub mod prelude;
 
-#[hotpath::main(limit=0)]
+#[hotpath::main]
 fn main() {
-    let variant = "shogi";
+    let variant = "fide";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 
     let mut state = parse_config_file(&config_path);
 
-    println!("{}", format_entire_game(&state));
+    println!("{}\n", format_entire_game(&state));
 
-    start_perft(&mut state, &perft_path, 6, -1, 100);
+    start_perft(&mut state, &perft_path, 6, -1, 10);
 }

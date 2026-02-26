@@ -105,21 +105,14 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
             enc_piece!(encoded_move, piece_index as u128);
             enc_start!(encoded_move, square as u128);
 
-            if get!(state.forbidden_zones[piece_index], square) && !drop_f {
+            if get!(state.forbidden_zones[piece_index], square) && !drop_f
+            || !drop_e && state.piece_in_hand[piece_color][piece_index] == 0
+            || drop_e
+            && state.piece_in_hand
+            [1 - piece_color]
+            [state.piece_swap_map[&(piece_index as u8)] as usize] == 0
+            {
                 continue 'drop_loop;
-            }
-
-            if !drop_e && state.piece_in_hand[piece_color][piece_index] == 0 {
-                continue 'drop_loop;
-            }
-
-            if drop_e {
-                let enemy_equivalent =
-                    state.piece_swap_map[&(piece_index as u8)] as usize;
-
-                if state.piece_in_hand[1 - piece_color][enemy_equivalent] == 0 {
-                    continue 'drop_loop;
-                }
             }
 
             enc_can_checkmate!(encoded_move, !drop_k as u128);

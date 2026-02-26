@@ -12,30 +12,8 @@
 //! # Date
 //! 25/01/2025
 
-use std::array;
+use crate::*;
 
-use hashbrown::HashMap;
-
-use crate::{
-    board, constants::*,
-    game::{
-        drops::{
-            drop_list::generate_relevant_drops,
-            drop_parse::generate_drop_vectors
-        }, moves::{
-            move_list::{
-                generate_attack_masks, generate_relevant_moves
-            },
-            move_parse::generate_move_vectors,
-        }, patterns::pattern_match::{PatternSet, generate_relevant_stand_offs, generate_stand_off_patterns}, representations::{
-            board::Board, drop::DropSet, moves::{AttackMask, Move}, piece::Piece, vector::{Leg, LegVector, MoveSet}
-        }
-    },
-    io::game_io::parse_fen,
-    leg,
-};
-
-use bnum::types::U4096;
 pub type Square = u16;
 
 /*----------------------------------------------------------------------------*\
@@ -311,7 +289,7 @@ pub struct State {
 
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: HashMap<u8, Vec<u8>>,                               /* piece index to demotion piece idx  */
-    pub piece_char_map: HashMap<char, u8>,                                      /* char to piece index map             */
+    pub piece_char_map: HashMap<char, u8>,                                      /* char to piece index map            */
 
 /*----------------------------------------------------------------------------*\
                                  DYNAMIC FIELDS
