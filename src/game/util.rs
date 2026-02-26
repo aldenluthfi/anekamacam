@@ -15,23 +15,20 @@
 //! # Date
 //! 25/01/2025
 
-use lazy_static::lazy_static;
-use rand::{RngCore, SeedableRng};
-use std::sync::Mutex;
-use bnum::types::U4096;
-
-use crate::{
-    board, constants::*, enp_square, game::{
-        hash::zobrist::{CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES, SIDE_HASHES},
-        representations::state::State
-    }, io::{board_io::{format_board, format_square}, game_io::format_game_state}, or, p_color, p_index, p_is_big, p_is_major, p_is_minor, p_is_royal, p_value, set
-};
+use crate::*;
 
 lazy_static!{
     pub static ref RNG: Mutex<rand::rngs::StdRng> = {
         Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED))
     };
 }
+
+pub fn random_u128() -> u128 {
+    let mut rng = RNG.lock().unwrap();
+    u128::from(rng.next_u64()) << 64  |
+    u128::from(rng.next_u64())
+}
+
 
 pub fn verify_game_state(state: &State) {
     let mut temp_white_board = board!(state.files, state.ranks);
@@ -215,8 +212,150 @@ pub fn verify_game_state(state: &State) {
     );
 }
 
-pub fn random_u128() -> u128 {
-    let mut rng = RNG.lock().unwrap();
-    u128::from(rng.next_u64()) << 64  |
-    u128::from(rng.next_u64())
+fn parse_perft_file(
+    path: &str
+) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {                              /* until perft 6                      */
+    let contents = fs::read_to_string(path).expect("Failed to read perft file");
+    let uncommented = COMMENT_PATTERN.replace_all(&contents, "");
+    uncommented
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let parts: Vec<&str> = line.split(",").collect();
+            (
+                parts[0].to_string(),
+                parts[1].parse().unwrap(),
+                parts[2].parse().unwrap(),
+                parts[3].parse().unwrap(),
+                parts[4].parse().unwrap(),
+                parts[5].parse().unwrap(),
+                parts[6].parse().unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn format_time(nanos: u128) -> String {
+    if nanos < 1_000 {
+        format!("{} ns", nanos)
+    } else if nanos < 1_000_000 {
+        format!("{:.3} µs", nanos as f64 / 1_000.0)
+    } else if nanos < 1_000_000_000 {
+        format!("{:.3} ms", nanos as f64 / 1_000_000.0)
+    } else {
+        format!("{:.3}  s", nanos as f64 / 1_000_000_000.0)
+    }
+}
+
+pub fn start_perft(
+    state: &mut State,
+    path: &str,
+    depth: u8,
+    branch: i8,
+    limit: usize
+) {
+    let mut perft_cases = parse_perft_file(path);
+    let limit = limit.min(perft_cases.len());
+    perft_cases.shuffle(&mut RNG.lock().unwrap());
+
+    println!(
+        "Perft testing {} positions with depth {} and branching {}...",
+        limit, depth, branch
+    );
+
+    let mut successful_cases = 0;
+    let mut total_moves = 0;
+    let total_cases = limit * depth as usize;
+
+    let longest_fen: usize = perft_cases
+        .iter()
+        .max_by_key(
+            |(fen, _, _, _, _, _, _)|
+            fen.len()
+        )
+        .unwrap()
+        .0
+        .len();
+
+    for (i, (fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6)) in
+        perft_cases.into_iter().take(limit).enumerate()
+    {
+        state.load_fen(&fen);
+        println!("\n{}", format_game_state(state, true));
+
+        let expected_perfts = [
+            perft_1, perft_2, perft_3, perft_4, perft_5, perft_6
+        ];
+
+        for d in 1..=depth {
+            let start_time = std::time::Instant::now();
+            let result = perft(state, d, branch, "");
+            let elapsed = start_time.elapsed().as_nanos();
+
+            let expected = expected_perfts[(d - 1) as usize];
+
+            if result == expected {
+                successful_cases += 1;
+                total_moves += result;
+                println!(
+                    "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
+                    Result: {:>12} | Time: {:>12} [PASSED]",
+                    i, fen, d, expected, result, format_time(elapsed),
+                    width = longest_fen
+                );
+            } else {
+                println!(
+                    "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
+                    Result: {:>12} | Time: {:>12} [FAILED]",
+                    i, fen, d, expected, result, format_time(elapsed),
+                    width = longest_fen
+                );
+            }
+        }
+    }
+
+    println!(
+        "Perft testing completed: {}/{} cases passed.",
+        successful_cases,
+        total_cases
+    );
+    println!("Total moves generated: {}", total_moves);
+}
+
+pub fn perft(
+    state: &mut State,
+    depth: u8,
+    branch: i8,
+    prefix: &str,
+) -> u64 {
+    if depth == 0 {
+        if branch >= 0 {
+            println!("{}moves | Nodes: 1", prefix);
+        }
+        return 1;
+    }
+
+    let possible_moves = generate_all_moves_and_drops(state);
+    let mut nodes = 0;
+
+    for mv in possible_moves {
+        if branch >= 0 {
+            let formatted_move = format_move(&mv, state);
+            let new_prefix = format!("{}{}", prefix, formatted_move);
+
+            if make_move!(state, mv) {
+                nodes += perft(state, depth - 1, branch - 1, &new_prefix);
+                undo_move!(state);
+            }
+        } else if make_move!(state, mv) {
+            nodes += perft(state, depth - 1, branch - 1, "");
+            undo_move!(state);
+        }
+    }
+
+    if branch >= 0 {
+        println!("{}moves | Nodes: {}", prefix, nodes);
+    }
+
+    nodes
 }

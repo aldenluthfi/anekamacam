@@ -493,39 +493,39 @@ impl Debug for AtomicElement {
 
 #[derive(Clone)]
 pub enum Token {
-    Bracket(String),
-    SlashBracket(String),
+    BracketToken(String),
+    SlashBracketToken(String),
 
-    MoveModifier(String),
-    Cardinal(String),
-    Filter(String),
+    MoveModifierToken(String),
+    CardinalToken(String),
+    FilterToken(String),
 
-    Leg(String),
-    Atomic(String),
+    LegToken(String),
+    AtomicToken(String),
 
-    Colon(String),
-    Range(String),
-    Dots(String),
-    Exclusion(String),
+    ColonToken(String),
+    RangeToken(String),
+    DotsToken(String),
+    ExclusionToken(String),
 }
 
 impl Debug for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Token::Bracket(s) => write!(f, "{}", s),
-            Token::SlashBracket(s) => write!(f, "{}", s),
+            Token::BracketToken(s) => write!(f, "{}", s),
+            Token::SlashBracketToken(s) => write!(f, "{}", s),
 
-            Token::MoveModifier(s) => write!(f, "{}", s),
-            Token::Cardinal(s) => write!(f, "{}", s),
-            Token::Filter(s) => write!(f, "{}", s),
+            Token::MoveModifierToken(s) => write!(f, "{}", s),
+            Token::CardinalToken(s) => write!(f, "{}", s),
+            Token::FilterToken(s) => write!(f, "{}", s),
 
-            Token::Leg(s) => write!(f, "{}", s),
-            Token::Atomic(s) => write!(f, "{}", s),
+            Token::LegToken(s) => write!(f, "{}", s),
+            Token::AtomicToken(s) => write!(f, "{}", s),
 
-            Token::Colon(s) => write!(f, "{}", s),
-            Token::Range(s) => write!(f, "{}", s),
-            Token::Dots(s) => write!(f, "{}", s),
-            Token::Exclusion(s) => write!(f, "{}", s),
+            Token::ColonToken(s) => write!(f, "{}", s),
+            Token::RangeToken(s) => write!(f, "{}", s),
+            Token::DotsToken(s) => write!(f, "{}", s),
+            Token::ExclusionToken(s) => write!(f, "{}", s),
         }
     }
 }

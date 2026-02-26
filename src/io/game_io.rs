@@ -14,58 +14,7 @@
 //!
 //! # Date
 //! 25/01/2026
-
-use bnum::types::U4096;
-use lazy_static::lazy_static;
-use regex::Regex;
-use std::collections::{HashMap, HashSet};
-use std::{fs, vec};
-
-use crate::constants::DEFAULT_DROP;
-#[cfg(debug_assertions)]
-use crate::game::util::verify_game_state;
-use crate::{
-    constants::{
-        BK_CASTLE, BLACK, BQ_CASTLE, NO_EN_PASSANT, NO_PIECE, WHITE, WK_CASTLE,
-        WQ_CASTLE, QUIET_MOVE, SINGLE_CAPTURE_MOVE, MULTI_CAPTURE_MOVE,
-        DROP_MOVE,
-    },
-    board, castling, clear, count_limits, demote_upon_capture, drops,
-    en_passant, enc_castling, enc_count_limits, enc_demote_upon_capture,
-    enc_drops, enc_en_passant, enc_forbidden_zones, enc_promote_to_captured,
-    enc_promotions, enc_setup_phase, enc_stalemate_loss, forbidden_zones, get,
-    make_move, p_can_promote, p_castle_left, p_castle_right, p_color, p_index,
-    p_is_big, p_is_major, p_is_minor, p_is_royal, p_value,
-    promote_to_captured, promotions, set, setup_phase, move_type, piece, start,
-    end, promotion, creates_enp, promoted, created_enp, hash_update_en_passant,
-    hash_in_or_out_piece, hash_update_in_hand, hash_update_castling, undo_move,
-    multi_move_captured_unmoved, multi_move_captured_square,
-    multi_move_captured_piece, drop_from_enemy_hand, multi_move_unload_square,
-    multi_move_is_unload, is_initial, unload_square, is_unload,
-    captured_unmoved, captured_square, captured_piece, hash_toggle_side,
-    enp_square, is_null, null_snapshot, is_in_check, is_square_attacked,
-    enc_stand_offs, stand_offs, is_in_stand_off,
-    game::{
-        moves::move_list::{
-            generate_all_moves_and_drops, validate_attack_vector,
-        },
-        representations::{
-            board::Board,
-            state::{State, Snapshot, Square, EnPassantSquare},
-            piece::Piece,
-        },
-        hash::zobrist::{
-            hash_position, CASTLING_HASHES, IN_HAND_HASHES, PIECE_HASHES,
-            EN_PASSANT_HASHES, SIDE_HASHES,
-        },
-        patterns::pattern_match::match_pattern,
-    },
-    io::{
-        move_io::format_move,
-        board_io::{format_board, format_square},
-        piece_io::format_piece,
-    },
-};
+use crate::*;
 
 lazy_static!{
     pub static ref CASTLING_PATTERN: Regex =
@@ -112,21 +61,19 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 /// See example.conf for the expected format of the configuration file.
 ///
 /// pieces are parsed into a tuple first of:
-/// (string, string, char, U2048, u8, u8, bool, bool, bool, u16)
+/// (string, char, Vec<u8>, u8, u8, bool, bool, bool, u16)
 ///
 /// where the fields are:
-/// - string: the name of the piece
-/// - string: the movement pattern of the piece
-/// - char: the character representing the piece on the board
-/// - U2048: the promotions bitset representing which pieces this piece can
-///   promote to
-/// - u8: the piece index (0-255, with 255 reserved for "no piece")
-/// - u8: the piece color (0 for white, 1 for black)
-/// - bool: whether the piece is royal
-/// - bool: whether the piece is big
-/// - bool: whether the piece is major
-/// - u16: the value of the piece
-#[hotpath::measure]
+/// [0] string: the name of the piece
+/// [1] char: the character representing the piece on the board
+/// [2] Vec<u8>: the vec representing which pieces this piece can promote to
+/// [3] u8: the piece index (0-255, with 255 reserved for "no piece")
+/// [4] u8: the piece color (0 for white, 1 for black)
+/// [5] bool: whether the piece is royal
+/// [6] bool: whether the piece is big
+/// [7] bool: whether the piece is major
+/// [8] u16: the value of the piece
+///
 pub fn parse_config_file(path: &str) -> State {
     let file_str = fs::read_to_string(path)
         .expect("Failed to read configuration file");
@@ -1582,7 +1529,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
 
     if verbose {
         result.push_str(
-            &format!("\nPosition hash\t\t: {:32X}\n", state.position_hash)
+            &format!("\nPosition hash\t\t: {:032X}\n", state.position_hash)
         );
         result.push_str(
             &format!(
@@ -1618,7 +1565,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             &format!("Halfmove clock\t\t: {}\n", state.halfmove_clock)
         );
 
-        if drops!(state) || promote_to_captured!(state) {
+        if drops!(state) || promote_to_captured!(state) || setup_phase!(state) {
             let pieces_in_white = &state.piece_in_hand[WHITE as usize];
             let pieces_in_black = &state.piece_in_hand[BLACK as usize];
 
@@ -2065,24 +2012,7 @@ pub fn format_entire_game(state: &State) -> String {
     result.push_str(&format_forbidden_zones(state));
     result.push_str(&format_intial_setup(state));
     result.push_str(&format_game_state(state, true));
+    result.push('\n');
 
     result
-}
-
-pub fn debug_perform_moves(state: &mut State, moves: &[&str]) {
-    'next_move: for m in moves {
-        let all_moves = generate_all_moves_and_drops(state);
-
-        for mv in all_moves {
-            if format_move(&mv, state).trim() == *m {
-                if !make_move!(state, mv) {
-                    panic!("Move was found but deemed illegal: {}", m);
-                }
-                println!("Performed move: {}", m);
-                continue 'next_move;
-            }
-        }
-
-        panic!("Move not found: {}", m);
-    }
 }

@@ -10,19 +10,7 @@
 //!
 //! # Date
 //! 25/01/2026
-
-use crate::game::representations::piece::Piece;
-use crate::game::representations::state::State;
-use crate::{
-    constants::*,
-    count_limits,
-    p_can_promote,
-    p_color,
-    p_index,
-    p_is_major,
-    p_is_royal,
-    p_value, promotions
-};
+use crate::*;
 
 /// Formats a piece as a column vector with 9-10 rows of information.
 ///
@@ -38,6 +26,7 @@ use crate::{
 /// - Row 8: Piece count limit (if applicable, otherwise non-existent)
 /// - Row 9: Can Promote (if applicable, otherwise non-existent)
 /// - Row 10: Promotes From (if applicable, otherwise non-existent)
+///
 pub fn format_piece(piece: &Piece, state: &State) -> String {
     let mut rows = Vec::with_capacity(9);
 

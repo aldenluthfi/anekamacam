@@ -1,16 +1,4 @@
-use crate::{
-    c, constants::{
-        CASTLING, MULTI_CAPTURE_MOVE, QUIET_MOVE, SINGLE_CAPTURE_MOVE,
-    }, count_limits, d, drops, enc_capture_part, enc_created_enp, enc_creates_enp, enc_end, enc_is_initial, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_multi_move_is_unload, enc_multi_move_unload_square, enc_piece, enc_promoted, enc_promotion, enc_start, enp_captured, enp_piece, enp_square, forbidden_zones, g, game::{
-        drops::drop_list::generate_drop_list,
-        representations::{
-            moves::Move,
-            piece::Piece,
-            state::State,
-            vector::{MoveSet, MoveVector},
-        },
-    }, get, i, k, l, m, multi_move_captured_square, not_g, not_i, not_k, not_v, p, p_can_promote, p_color, p_index, p_is_royal, promote_to_captured, promotions, r, t, u, v, x, y
-};
+use crate::*;
 
 #[macro_export]
 macro_rules! is_square_attacked {
@@ -21,56 +9,47 @@ macro_rules! is_square_attacked {
         $attacked_royal:expr,
         $attacked_rank:expr,
         $game_state:expr
-    ) => {{
-        let possible_attacks = &$game_state.relevant_attacks
-            [$attacked_side as usize][$square as usize];
+    ) => {
+        {
+            let possible_attacks = &$game_state.relevant_attacks
+                [$attacked_side as usize][$square as usize];
 
-        let mut attacked = false;
-        for (piece_index, start, move_vector) in possible_attacks {
-            if $game_state.main_board[*start as usize] != *piece_index {
-                continue;
-            }
-
-            let piece = &$game_state.pieces[*piece_index as usize];
-
-            if validate_attack_vector(
-                move_vector, *start, piece,
-                $attacked_unmoved, $attacked_royal, $attacked_rank,
-                $square, $game_state,
-            )
-            {
-                attacked = true;
-                break;
-            }
+            possible_attacks.iter().any(|(piece_index, start, move_vector)| {
+                $game_state.main_board[*start as usize] == *piece_index &&
+                validate_attack_vector!(
+                    move_vector, *start,
+                    &$game_state.pieces[*piece_index as usize],
+                    $attacked_unmoved, $attacked_royal, $attacked_rank,
+                    $square, $game_state
+                )
+            })
         }
-
-        attacked
-    }};
+    };
 }
 
 #[macro_export]
 macro_rules! is_in_check {
-    ($side:expr, $game_state:expr) => {{
-        let monarch_indices = &$game_state.royal_list[$side as usize];
+    ($side:expr, $game_state:expr) => {
+        {
+            let monarch_indices = &$game_state.royal_list[$side as usize];
 
-        if monarch_indices.len() > 1 || $game_state.setup_phase {
-            false
-        } else {
-            let royal_piece =
-                &$game_state.main_board[monarch_indices[0] as usize];
-            let royal_rank =
-                &$game_state.pieces[*royal_piece as usize].rank;
+            (monarch_indices.len() == 1 && !$game_state.setup_phase) && {
+                let royal_piece =
+                    &$game_state.main_board[monarch_indices[0] as usize];
+                let royal_rank =
+                    &$game_state.pieces[*royal_piece as usize].rank;
 
-            is_square_attacked!(
-                monarch_indices[0] as u32,
-                $side,
-                get!($game_state.virgin_board, monarch_indices[0] as u32),
-                true,
-                *royal_rank,
-                $game_state
-            )
+                is_square_attacked!(
+                    monarch_indices[0] as u32,
+                    $side,
+                    get!($game_state.virgin_board, monarch_indices[0] as u32),
+                    true,
+                    *royal_rank,
+                    $game_state
+                )
+            }
         }
-    }};
+    };
 }
 
 pub fn generate_relevant_moves(
@@ -181,190 +160,203 @@ pub fn generate_attack_masks(
     }
 }
 
-#[inline(always)]
-pub fn validate_attack_vector(
-    multi_leg_vector: &MoveVector,
-    square_index: u16,
-    attacking_piece: &Piece,
-    attacked_unmoved: bool,
-    attacked_royal: bool,
-    attacked_rank: u8,
-    attacked_square: u32,
-    game_state: &State,
-) -> bool {
-
-    let piece_color = p_color!(attacking_piece);
-    let piece_rank = attacking_piece.rank;
-    let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
-
-    let mut accumulated_index = square_index as i16;
-    let mut target_was_last_captured = false;
-
-    let leg_count = multi_leg_vector.len();
-
-    for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
-        let last_leg = leg_index + 1 == leg_count;
-
-        let start_square = accumulated_index as u32;
-
-        let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
-        let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
-
-        accumulated_index += (
-            rank_offset * (game_state.files as i8) + file_offset
-        ) as i16;
-
-        let end_square = accumulated_index as u32;
-
-        let m = m!(leg) || (!c!(leg) && !d!(leg));
-        let c = c!(leg) || (last_leg && !m!(leg));
-        let d = d!(leg);
-        let u = u!(leg);
-        let k = k!(leg);
-        let g = g!(leg);
-        let v = v!(leg);
-        let t = t!(leg);
-        let i = i!(leg);
-        let not_k = not_k!(leg);
-        let not_g = not_g!(leg);
-        let not_v = not_v!(leg);
-        let not_i = not_i!(leg);
-        let special_i = i && not_i;
-        let special_v = v && not_v;
-
-        if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
-        {
-            return false;
-        }
-
-        let friendly = get!(
-            game_state.pieces_board[piece_color as usize],
-            end_square
-        ) && end_square != start_square;
-        let enemy = get!(
-            game_state.pieces_board[1 - piece_color as usize],
-            end_square
+#[macro_export]
+macro_rules! validate_attack_vector {
+    (
+        $multi_leg_vector:expr,
+        $square_index:expr,
+        $attacking_piece:expr,
+        $attacked_unmoved:expr,
+        $attacked_royal:expr,
+        $attacked_rank:expr,
+        $attacked_square:expr,
+        $game_state:expr
+    ) => {{
+        let piece_color = p_color!($attacking_piece);
+        let piece_rank = $attacking_piece.rank;
+        let piece_unmoved = get!(
+            $game_state.virgin_board, $square_index as u32
         );
-        let empty = !friendly && !enemy;
 
-        let null_move = file_offset == 0 && rank_offset == 0;
-        let imaginary_move = end_square == attacked_square;
+        let mut accumulated_index = $square_index as i16;
+        let mut target_was_last_captured = false;
 
-        if u && target_was_last_captured {
-            return false;
-        }
+        let leg_count = $multi_leg_vector.len();
 
-        if imaginary_move {
-            if k && !attacked_royal
-            || not_k && attacked_royal
-            || g && piece_rank >= attacked_rank
-            || not_g && piece_rank < attacked_rank
-            || (v && !attacked_unmoved || not_v && attacked_unmoved)
-            && !special_v
-            || u
-            {
-                return false;
+        let mut valid = true;
+
+        for (leg_index, leg) in $multi_leg_vector.iter().enumerate() {
+            let last_leg = leg_index + 1 == leg_count;
+
+            let start_square = accumulated_index as u32;
+
+            let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
+            let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
+
+            accumulated_index += (
+                rank_offset * ($game_state.files as i8) + file_offset
+            ) as i16;
+
+            let end_square = accumulated_index as u32;
+
+            let m = m!(leg) || (!c!(leg) && !d!(leg));
+            let c = c!(leg) || (last_leg && !m!(leg));
+            let d = d!(leg);
+            let u = u!(leg);
+            let k = k!(leg);
+            let g = g!(leg);
+            let v = v!(leg);
+            let t = t!(leg);
+            let i = i!(leg);
+            let not_k = not_k!(leg);
+            let not_g = not_g!(leg);
+            let not_v = not_v!(leg);
+            let not_i = not_i!(leg);
+            let special_i = i && not_i;
+            let special_v = v && not_v;
+
+            if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i {
+                valid = false;
+                break;
             }
 
-            target_was_last_captured = true;
-            continue;
-        }
+            let friendly = get!(
+                $game_state.pieces_board[piece_color as usize],
+                end_square
+            ) && end_square != start_square;
+            let enemy = get!(
+                $game_state.pieces_board[1 - piece_color as usize],
+                end_square
+            );
+            let empty = !friendly && !enemy;
 
-        if empty && !null_move {
-            if t && enp_square!(game_state.en_passant_square) == end_square
-            {
-                let capt_piece_index =
-                    enp_piece!(game_state.en_passant_square);
-                let capt_piece_color =
-                    p_color!(game_state.pieces[capt_piece_index as usize]);
+            let null_move = file_offset == 0 && rank_offset == 0;
+            let imaginary_move = end_square == $attacked_square;
 
-                if d && capt_piece_color == piece_color
-                || c && capt_piece_color != piece_color
+            if u && target_was_last_captured {
+                valid = false;
+                break;
+            }
+
+            if imaginary_move {
+                if k && !$attacked_royal
+                || not_k && $attacked_royal
+                || g && piece_rank >= $attacked_rank
+                || not_g && piece_rank < $attacked_rank
+                || (v && !$attacked_unmoved || not_v && $attacked_unmoved)
+                && !special_v
+                || u
                 {
-                    let capt_piece =
-                        &game_state.pieces[capt_piece_index as usize];
-                    let capt_unmoved =
-                        get!(
-                            game_state.virgin_board,
-                            enp_captured!(game_state.en_passant_square)
-                        );
-                    let capt_rank = capt_piece.rank;
-                    let capt_royal =
-                        p_is_royal!(capt_piece);
-
-                    if k && !capt_royal
-                    || not_k && capt_royal
-                    || g && piece_rank >= capt_rank
-                    || not_g && piece_rank < capt_rank
-                    || (v && !capt_unmoved || not_v && capt_unmoved)
-                    && !special_v
-                    {
-                        return false;
-                    }
-
-                    target_was_last_captured = false;
-                } else {
-                    return false;
+                    valid = false;
+                    break;
                 }
-            } else if !m {
-                return false;
-            }
-        } else if friendly && !null_move{
-            if !d {
-                return false;
+
+                target_was_last_captured = true;
+                continue;
             }
 
-            let capt_piece_index =
-                game_state.main_board[end_square as usize];
-            let capt_piece =
-                &game_state.pieces[capt_piece_index as usize];
-            let capt_unmoved =
-                get!(game_state.virgin_board, end_square);
-            let capt_rank = capt_piece.rank;
-            let capt_royal =
-                p_is_royal!(capt_piece);
+            if empty && !null_move {
+                if t && enp_square!($game_state.en_passant_square) == end_square {
+                    let capt_piece_index =
+                        enp_piece!($game_state.en_passant_square);
+                    let capt_piece_color =
+                        p_color!($game_state.pieces[capt_piece_index as usize]);
 
-            if k && !capt_royal
-            || not_k && capt_royal
-            || g && piece_rank >= capt_rank
-            || not_g && piece_rank < capt_rank
-            || (v && !capt_unmoved || not_v && capt_unmoved)
-            && !special_v
-            {
-                return false;
+                    if d && capt_piece_color == piece_color
+                    || c && capt_piece_color != piece_color
+                    {
+                        let capt_piece =
+                            &$game_state.pieces[capt_piece_index as usize];
+                        let capt_unmoved =
+                            get!(
+                                $game_state.virgin_board,
+                                enp_captured!($game_state.en_passant_square)
+                            );
+                        let capt_rank = capt_piece.rank;
+                        let capt_royal =
+                            p_is_royal!(capt_piece);
+
+                        if k && !capt_royal
+                        || not_k && capt_royal
+                        || g && piece_rank >= capt_rank
+                        || not_g && piece_rank < capt_rank
+                        || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
+                        {
+                            valid = false;
+                            break;
+                        }
+
+                        target_was_last_captured = false;
+                    } else {
+                        valid = false;
+                        break;
+                    }
+                } else if !m {
+                    valid = false;
+                    break;
+                }
+            } else if friendly && !null_move {
+                if !d {
+                    valid = false;
+                    break;
+                }
+
+                let capt_piece_index =
+                    $game_state.main_board[end_square as usize];
+                let capt_piece =
+                    &$game_state.pieces[capt_piece_index as usize];
+                let capt_unmoved =
+                    get!($game_state.virgin_board, end_square);
+                let capt_rank = capt_piece.rank;
+                let capt_royal =
+                    p_is_royal!(capt_piece);
+
+                if k && !capt_royal
+                || not_k && capt_royal
+                || g && piece_rank >= capt_rank
+                || not_g && piece_rank < capt_rank
+                || (v && !capt_unmoved || not_v && capt_unmoved)
+                && !special_v
+                {
+                    valid = false;
+                    break;
+                }
+
+                target_was_last_captured = false;
+            } else if enemy && !null_move {
+                if !c {
+                    valid = false;
+                    break;
+                }
+
+                let capt_piece_index =
+                    $game_state.main_board[end_square as usize];
+                let capt_piece =
+                    &$game_state.pieces[capt_piece_index as usize];
+                let capt_unmoved =
+                    get!($game_state.virgin_board, end_square);
+                let capt_rank = capt_piece.rank;
+                let capt_royal =
+                    p_is_royal!(capt_piece);
+
+                if k && !capt_royal
+                || not_k && capt_royal
+                || g && piece_rank >= capt_rank
+                || not_g && piece_rank < capt_rank
+                || (v && !capt_unmoved || not_v && capt_unmoved)
+                && !special_v
+                {
+                    valid = false;
+                    break;
+                }
+
+                target_was_last_captured = false;
             }
-
-            target_was_last_captured = false;
-        } else if enemy && !null_move {
-            if !c {
-                return false;
-            }
-
-            let capt_piece_index =
-                game_state.main_board[end_square as usize];
-            let capt_piece =
-                &game_state.pieces[capt_piece_index as usize];
-            let capt_unmoved =
-                get!(game_state.virgin_board, end_square);
-            let capt_rank = capt_piece.rank;
-            let capt_royal =
-                p_is_royal!(capt_piece);
-
-            if k && !capt_royal
-            || not_k && capt_royal
-            || g && piece_rank >= capt_rank
-            || not_g && piece_rank < capt_rank
-            || (v && !capt_unmoved || not_v && capt_unmoved)
-            && !special_v
-            {
-                return false;
-            }
-
-            target_was_last_captured = false;
         }
-    }
 
-    true
+        valid
+    }};
 }
 
 #[inline(always)]
@@ -1550,8 +1542,9 @@ macro_rules! make_move {
                 $state.halfmove_clock = 0;
 
                 if $state.setup_phase
-                && $state.piece_in_hand[0].is_empty()
-                && $state.piece_in_hand[1].is_empty() {
+                && $state.piece_in_hand[0].iter().all(|&count| count == 0)
+                && $state.piece_in_hand[1].iter().all(|&count| count == 0)
+                {
                     $state.setup_phase = false;
                 }
 

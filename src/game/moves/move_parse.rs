@@ -16,27 +16,7 @@
 //! # Date
 //! 18/02/2024
 
-use lazy_static::lazy_static;
-use regex::Regex;
-use core::panic;
-use std::char;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::hash::Hash;
-
-use crate::game::representations::vector::{
-    Token::{
-        self, *
-    },
-    AtomicElement::{
-        self, *
-    },
-    MultiLegElement::{
-        self,
-        *
-    },
-    AtomicGroup, AtomicVector, LegVector, MultiLegGroup, MultiLegVector,
-};
-use crate::game::representations::state::State;
+use crate::*;
 
 lazy_static! {
     pub static ref NORMALIZE_PATTERN: Regex = Regex::new(
@@ -947,7 +927,7 @@ fn process_atomic_modifiers(
     );
 
     match modifiers {
-        (Some(Cardinal(direction)), Some(Filter(indices))) => {
+        (Some(CardinalToken(direction)), Some(FilterToken(indices))) => {
             vector_set = filter_atomic_by_cardinal_direction(
                 vector_set, direction, rotation
             );
@@ -957,10 +937,10 @@ fn process_atomic_modifiers(
                 .collect();
             filter_atomic_by_index(vector_set, index_vec)
         }
-        (Some(Cardinal(direction)), None) => {
+        (Some(CardinalToken(direction)), None) => {
             filter_atomic_by_cardinal_direction(vector_set, direction, rotation)
         }
-        (None, Some(Filter(indices))) => {
+        (None, Some(FilterToken(indices))) => {
             let index_vec: Vec<usize> = indices
                 .chars()
                 .filter_map(|ch| ch.to_digit(10).map(|d| d as usize - 1))
@@ -980,7 +960,7 @@ fn evaluate_atomic_term (
 ) -> Vec<AtomicVector> {
 
     let atomic = match term {
-        Atomic(atomic) => atomic,
+        AtomicToken(atomic) => atomic,
         _ => {
             panic!(
                 "Unexpected atomic term in evaluate_atomic_term: {:?}",
@@ -1083,26 +1063,26 @@ fn evaluate_atomic_expression(
     while i < expr.len() {
         let element = &expr[i];
         match element {
-            AtomicTerm(Cardinal(direction)) => {
-                modifiers.0 = Some(Cardinal(direction.to_string()));
+            AtomicTerm(CardinalToken(direction)) => {
+                modifiers.0 = Some(CardinalToken(direction.to_string()));
             }
-            AtomicTerm(Filter(directions)) => {
-                modifiers.1 = Some(Filter(directions.to_string()));
+            AtomicTerm(FilterToken(directions)) => {
+                modifiers.1 = Some(FilterToken(directions.to_string()));
             }
-            AtomicTerm(Dots(token)) => {
+            AtomicTerm(DotsToken(token)) => {
                 result = process_atomic_dots_token(result, token, game_state);
             }
-            AtomicTerm(Range(token)) => {
+            AtomicTerm(RangeToken(token)) => {
                 result = process_atomic_range_token(result, token, game_state);
             }
-            AtomicTerm(Atomic(atomic)) => {                                     /* Base case                          */
+            AtomicTerm(AtomicToken(atomic)) => {                                     /* Base case                          */
                 if  i + 1 < expr.len() &&
-                    let AtomicTerm(Colon(token)) = &expr[i + 1]
+                    let AtomicTerm(ColonToken(token)) = &expr[i + 1]
                 {
                     result = process_atomic_colon_range_token(
                         result,
                         token,
-                        Some(AtomicTerm(Atomic(atomic.to_string()))),
+                        Some(AtomicTerm(AtomicToken(atomic.to_string()))),
                         &modifiers,
                         game_state
                     );
@@ -1112,7 +1092,7 @@ fn evaluate_atomic_expression(
 
                 result = evaluate_atomic_term(
                     result,
-                    Atomic(atomic.to_string()),
+                    AtomicToken(atomic.to_string()),
                     &modifiers,
                 );
 
@@ -1120,7 +1100,7 @@ fn evaluate_atomic_expression(
             }
             AtomicExpr(group) => {                                              /* Recursive case                     */
                 if i + 1 < expr.len() &&
-                    let AtomicTerm(Colon(token)) = &expr[i + 1]
+                    let AtomicTerm(ColonToken(token)) = &expr[i + 1]
                 {
                     result = process_atomic_colon_range_token(
                         result,
@@ -1794,56 +1774,56 @@ fn compound_atomic_to_vector(
             ">" => {
                 process_closing_bracket(
                     &mut stack,
-                    |term| matches!(term, AtomicTerm(Bracket(_))),
+                    |term| matches!(term, AtomicTerm(BracketToken(_))),
                     AtomicExpr,
                 );
             },
             "<" => {
                 stack.push_back(
                     AtomicTerm(
-                        Bracket(token.to_string())
+                        BracketToken(token.to_string())
                     )
                 );
             },
             "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw" => {
                 stack.push_back(
                     AtomicTerm(
-                        Cardinal(token.to_string())
+                        CardinalToken(token.to_string())
                     )
                 );
             },
             token if DIRECTION_FILTER_TOKEN.is_match(token) => {
                 stack.push_back(
                     AtomicTerm(
-                        Filter(token.to_string())
+                        FilterToken(token.to_string())
                     )
                 );
             },
             token if DOTS_TOKEN.is_match(token) => {
                 stack.push_back(
                     AtomicTerm(
-                        Dots(token.to_string())
+                        DotsToken(token.to_string())
                     )
                 );
             },
             token if RANGE_TOKEN.is_match(token) => {
                 stack.push_back(
                     AtomicTerm(
-                        Range(token.to_string())
+                        RangeToken(token.to_string())
                     )
                 );
             },
             token if COLON_RANGE_TOKEN.is_match(token) => {
                 stack.push_back(
                     AtomicTerm(
-                        Colon(token.to_string())
+                        ColonToken(token.to_string())
                     )
                 );
             },
             _ => {
                 stack.push_back(
                     AtomicTerm(
-                        Atomic(token.to_string())
+                        AtomicToken(token.to_string())
                     )
                 );
             }
@@ -2247,7 +2227,7 @@ fn process_multi_leg_modifiers(
         modifiers
     );
 
-    if let Some(Cardinal(directions)) = &modifiers[0] {
+    if let Some(CardinalToken(directions)) = &modifiers[0] {
         vector_set = filter_multi_leg_by_cardinal_direction(
             vector_set,
             directions,
@@ -2255,7 +2235,7 @@ fn process_multi_leg_modifiers(
         );
     }
 
-    if let Some(Filter(indices)) = &modifiers[1] {
+    if let Some(FilterToken(indices)) = &modifiers[1] {
         let index_vec = indices
             .chars()
             .filter_map(|ch| ch.to_digit(10).map(|d| d as usize - 1))
@@ -2266,7 +2246,7 @@ fn process_multi_leg_modifiers(
         );
     }
 
-    if let Some(MoveModifier(modifier)) = &modifiers[2] {
+    if let Some(MoveModifierToken(modifier)) = &modifiers[2] {
         for multi_leg_vector in &mut vector_set {
             let final_leg = multi_leg_vector.last_mut().expect(
                 "Expected at least one leg in multi leg vector."
@@ -2296,7 +2276,7 @@ fn evaluate_multi_leg_term_leg(
     );
 
     let atomic = match term {
-        Leg(atomic) => atomic,
+        LegToken(atomic) => atomic,
         _ => {
             panic!(
                 "Unexpected atomic term in evaluate_atomic_term: {:?}",
@@ -2502,23 +2482,23 @@ fn evaluate_multi_leg_expression(
     while i < expr.len() {
         let element = &expr[i];
         match element {
-            MultiLegTerm(Cardinal(direction)) => {
-                modifiers[0] = Some(Cardinal(direction.to_string()));
+            MultiLegTerm(CardinalToken(direction)) => {
+                modifiers[0] = Some(CardinalToken(direction.to_string()));
             }
-            MultiLegTerm(Filter(directions)) => {
-                modifiers[1] = Some(Filter(directions.to_string()));
+            MultiLegTerm(FilterToken(directions)) => {
+                modifiers[1] = Some(FilterToken(directions.to_string()));
             }
-            MultiLegTerm(MoveModifier(modifier)) => {
-                modifiers[2] = Some(MoveModifier(modifier.to_string()));
+            MultiLegTerm(MoveModifierToken(modifier)) => {
+                modifiers[2] = Some(MoveModifierToken(modifier.to_string()));
             }
-            MultiLegTerm(Leg(atomic)) => {
+            MultiLegTerm(LegToken(atomic)) => {
                 if  i + 1 < expr.len() &&
-                    let MultiLegTerm(Colon(token)) = &expr[i + 1]
+                    let MultiLegTerm(ColonToken(token)) = &expr[i + 1]
                 {
                     result = process_multi_leg_colon_range_token(
                         result,
                         token,
-                        Some(MultiLegTerm(Leg(atomic.to_string()))),
+                        Some(MultiLegTerm(LegToken(atomic.to_string()))),
                         &modifiers,
                         rotation,
                         game_state
@@ -2529,7 +2509,7 @@ fn evaluate_multi_leg_expression(
 
                 result = evaluate_multi_leg_term_leg(
                     result,
-                    Leg(atomic.to_string()),
+                    LegToken(atomic.to_string()),
                     modifiers,
                     rotation,
                     game_state
@@ -2537,17 +2517,17 @@ fn evaluate_multi_leg_expression(
 
                 modifiers = [None, None, None];
             }
-            MultiLegTerm(Dots(token)) => {
+            MultiLegTerm(DotsToken(token)) => {
                 result = process_multi_leg_dots_token(
                     result, token, game_state
                 );
             }
-            MultiLegTerm(Range(token)) => {
+            MultiLegTerm(RangeToken(token)) => {
                 result = process_multi_leg_range_token(
                     result, token, game_state
                 );
             }
-            MultiLegTerm(Exclusion(token)) => {
+            MultiLegTerm(ExclusionToken(token)) => {
                 exclusion = multi_leg_to_vector(
                     &token[1..],
                     rotation,
@@ -2556,7 +2536,7 @@ fn evaluate_multi_leg_expression(
             }
             MultiLegExpr(group) => {
                 if  i + 1 < expr.len() &&
-                    let MultiLegTerm(Colon(token)) = &expr[i + 1]
+                    let MultiLegTerm(ColonToken(token)) = &expr[i + 1]
                 {
                     result = process_multi_leg_colon_range_token(
                         result,
@@ -2582,7 +2562,7 @@ fn evaluate_multi_leg_expression(
             },
             MultiLegSlashExpr(group) => {
                 if  i + 1 < expr.len() &&
-                    let MultiLegTerm(Colon(token)) = &expr[i + 1]
+                    let MultiLegTerm(ColonToken(token)) = &expr[i + 1]
                 {
                     result = process_multi_leg_colon_range_token(
                         result,
@@ -2879,84 +2859,84 @@ fn multi_leg_to_vector(
             ">" => {
                 process_closing_bracket(
                     &mut stack,
-                    |term| matches!(term, MultiLegTerm(Bracket(_))),
+                    |term| matches!(term, MultiLegTerm(BracketToken(_))),
                     MultiLegExpr,
                 );
             },
             "/>" => {
                 process_closing_bracket(
                     &mut stack,
-                    |term| matches!(term, MultiLegTerm(SlashBracket(_))),
+                    |term| matches!(term, MultiLegTerm(SlashBracketToken(_))),
                     MultiLegSlashExpr,
                 );
             },
             "<" => {
                 stack.push_back(
                     MultiLegTerm(
-                        Bracket(token.to_string())
+                        BracketToken(token.to_string())
                     )
                 );
             },
             "</" => {
                 stack.push_back(
                     MultiLegTerm(
-                        SlashBracket(token.to_string())
+                        SlashBracketToken(token.to_string())
                     )
                 );
             },
             token if MODIFIERS.is_match(token) => {
                 stack.push_back(
                     MultiLegTerm(
-                        MoveModifier(token.to_string())
+                        MoveModifierToken(token.to_string())
                     )
                 );
             },
             "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw" => {
                 stack.push_back(
                     MultiLegTerm(
-                        Cardinal(token.to_string())
+                        CardinalToken(token.to_string())
                     )
                 );
             },
             token if DIRECTION_FILTER_TOKEN.is_match(token) => {
                 stack.push_back(
                     MultiLegTerm(
-                        Filter(token.to_string())
+                        FilterToken(token.to_string())
                     )
                 );
             },
             token if DOTS_TOKEN.is_match(token) => {
                 stack.push_back(
                     MultiLegTerm(
-                        Dots(token.to_string())
+                        DotsToken(token.to_string())
                     )
                 );
             },
             token if RANGE_TOKEN.is_match(token) => {
                 stack.push_back(
                     MultiLegTerm(
-                        Range(token.to_string())
+                        RangeToken(token.to_string())
                     )
                 );
             },
             token if COLON_RANGE_TOKEN.is_match(token) => {
                 stack.push_back(
                     MultiLegTerm(
-                        Colon(token.to_string())
+                        ColonToken(token.to_string())
                     )
                 );
             },
             token if token.starts_with("@") => {
                 stack.push_back(
                     MultiLegTerm(
-                        Exclusion(token.to_string())
+                        ExclusionToken(token.to_string())
                     )
                 );
             }
             _ => {
                 stack.push_back(
                     MultiLegTerm(
-                        Leg(token.to_string())
+                        LegToken(token.to_string())
                     )
                 );
             }

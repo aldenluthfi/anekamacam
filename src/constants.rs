@@ -13,7 +13,7 @@
 //! # Date
 //! 25/01/2026
 
-use crate::game::representations::moves::Move;
+use crate::*;
 
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
