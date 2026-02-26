@@ -1,83 +1,94 @@
-use crate::{
-    captured_piece, captured_square, captured_unmoved, constants::DROP_MOVE, created_enp, creates_enp, end, game::representations::{moves::Move, state::State}, io::board_io::format_square, is_initial, is_unload, move_type, multi_move_captured_piece, multi_move_captured_square, multi_move_captured_unmoved, multi_move_is_unload, multi_move_unload_square, piece, promoted, promotion, start, unload_square
-};
+use crate::*;
 
-pub fn format_move_template(mv: &Move) -> String {
-    let mut s = String::new();
-    s.push_str(&format!("Move encoding: 0x{:032X}\n", mv.0));
-    s.push_str(&format!("  move_type: {}\n", move_type!(mv)));
-    s.push_str(&format!("  piece: {}\n", piece!(mv)));
-    s.push_str(&format!("  start: {}\n", start!(mv)));
-    s.push_str(&format!("  end: {}\n", end!(mv)));
-    s.push_str(&format!("  must_initial: {}\n", is_initial!(mv)));
-    s.push_str(&format!("  promotion: {}\n", promotion!(mv)));
-    s.push_str(&format!("  creates_enp: {}\n", creates_enp!(mv)));
-    s.push_str(&format!("  promoted: {}\n", promoted!(mv)));
-    s.push_str(&format!("  created_enp: {}\n", created_enp!(mv)));
-    s.push_str(&format!("  is_unload: {}\n", is_unload!(mv)));
-    s.push_str(&format!("  unload_square: {}\n", unload_square!(mv)));
-    s.push_str(&format!(
-        "  captured_piece: {}\n",
-        captured_piece!(mv)
-    ));
-    s.push_str(&format!(
-        "  captured_square: {}\n",
-        captured_square!(mv)
-    ));
-    s.push_str(&format!(
-        "  captured_unmoved: {}\n",
-        captured_unmoved!(mv)
-    ));
-
-    if !mv.1.is_empty() {
-        s.push_str("Captured pieces (multi-capture):\n");
-        for (i, cap) in mv.1.iter().enumerate() {
-            s.push_str(&format!(
-                "  [{}]: \
-                 is_unload: {}, unload_square: {}, \
-                 captured_piece: {}, captured_square: {}, \
-                 captured_unmoved: {}\n",
-                i,
-                multi_move_is_unload!(*cap),
-                multi_move_unload_square!(*cap),
-                multi_move_captured_piece!(*cap),
-                multi_move_captured_square!(*cap),
-                multi_move_captured_unmoved!(*cap)
-            ));
-        }
-    }
-    s
-}
-
+/// a move is uniformly formatted as follows:
+/// [drop piece]@:[start]:[end]*[captured_1]...*[captured_n]=[promotion piece]
+#[hotpath::measure]
 pub fn format_move(mv: &Move, state: &State) -> String {
-    let start_square = start!(mv);
-    let end_square = end!(mv);
-    let mut promoted_piece = "".to_string();
+    let mut move_str = String::new();
 
     let move_type = move_type!(mv);
 
     if move_type == DROP_MOVE {
-        let piece_type = piece!(mv) as usize;
-        let result = format!(
-            "{}@{}",
-            state.pieces[piece_type].char,
-            format_square(start_square as u16, state)
-        );
+        let drop_piece = piece!(mv) as usize;
+        let piece_char = state.pieces[drop_piece].char;
 
-        return format!("{:<6}", result)
+        move_str.push_str(&format!("{}@", piece_char));
+    }
+
+    let start = start!(mv);
+    let start_str = format_square(start as u16, state);
+
+    move_str.push_str(&start_str);
+
+    if move_type == QUIET_MOVE {
+        let end = end!(mv);
+        let end_str = format_square(end as u16, state);
+
+        move_str.push_str(&format!(":{}", end_str));
+    }
+
+    if move_type == SINGLE_CAPTURE_MOVE {
+        let end = end!(mv);
+        let capt = captured_square!(mv);
+
+        if capt != end {
+            let end_str = format_square(end as u16, state);
+            let capt_str = format_square(capt as u16, state);
+
+            move_str.push_str(&format!(":{}*{}", end_str, capt_str));
+        } else {
+            let end_str = format_square(end as u16, state);
+            move_str.push_str(&format!("*{}", end_str));
+        }
+    }
+
+    if !mv.1.is_empty() {
+        for capture in mv.1.iter() {
+            let capt_sq = multi_move_captured_square!(capture);
+            let capt_sq_str = format_square(capt_sq as u16, state);
+
+            move_str.push_str(&format!("*{}", capt_sq_str));
+        }
     }
 
     if promotion!(mv) {
-        let promoted_index = promoted!(mv) as usize;
-        promoted_piece = state.pieces[promoted_index].char.to_string();
+        let promo_piece = promoted!(mv) as usize;
+        let promo_char = state.pieces[promo_piece].char;
+
+        move_str.push_str(&format!("={}", promo_char));
     }
 
-    let result = format!(
-        "{}{}{}",
-        format_square(start_square as u16, state),
-        format_square(end_square as u16, state),
-        &promoted_piece
-    );
+    move_str
+}
 
-    format!("{:<6}", result)
+#[hotpath::measure]
+pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
+    let all_moves = generate_all_moves_and_drops(state);
+
+    all_moves.into_iter().find(
+        |mv| format_move(mv, state).trim() == move_str.trim()
+    )
+}
+
+pub fn interactive_debug(state: &mut State) {
+    let mut input = String::new();
+
+    loop {
+        input.clear();
+        println!("\n{}\n", format_game_state(state, true));
+
+        if stdin().read_line(&mut input).is_err() {
+            eprintln!("Error reading stdin");
+            break;
+        }
+
+        match input.trim() {
+            "u" => undo_move!(state),
+            "q" => break,
+            _ => match parse_move(&input, state) {
+                Some(mv) => { make_move!(state, mv); },
+                None => eprintln!("Invalid move: {}", input.trim()),
+            },
+        }
+    }
 }
