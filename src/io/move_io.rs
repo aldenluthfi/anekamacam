@@ -2,7 +2,6 @@ use crate::*;
 
 /// a move is uniformly formatted as follows:
 /// [drop piece]@:[start]:[end]*[captured_1]...*[captured_n]=[promotion piece]
-#[hotpath::measure]
 pub fn format_move(mv: &Move, state: &State) -> String {
     let mut move_str = String::new();
 
@@ -61,7 +60,6 @@ pub fn format_move(mv: &Move, state: &State) -> String {
     move_str
 }
 
-#[hotpath::measure]
 pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
     let all_moves = generate_all_moves_and_drops(state);
 
@@ -70,12 +68,12 @@ pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
     )
 }
 
-pub fn interactive_debug(state: &mut State) {
+pub fn debug_interactive(state: &mut State) {
     let mut input = String::new();
 
     loop {
         input.clear();
-        println!("\n{}\n", format_game_state(state, true));
+        println!("\n{}", format_game_state(state, true));
 
         if stdin().read_line(&mut input).is_err() {
             eprintln!("Error reading stdin");
@@ -85,8 +83,26 @@ pub fn interactive_debug(state: &mut State) {
         match input.trim() {
             "u" => undo_move!(state),
             "q" => break,
+            "pv" => {
+                fill_pv_line(state, 4);
+
+                for pv_move in &state.pv_line {
+                    if pv_move == &NULL_MOVE {
+                        break;
+                    }
+
+                    let pv_move_str = format_move(pv_move, state);
+
+                    print!("{} ", pv_move_str);
+                }
+
+                println!();
+            }
             _ => match parse_move(&input, state) {
-                Some(mv) => { make_move!(state, mv); },
+                Some(mv) => {
+                    hash_pv_move(mv.clone(), state);
+                    make_move!(state, mv);
+                },
                 None => eprintln!("Invalid move: {}", input.trim()),
             },
         }

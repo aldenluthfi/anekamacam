@@ -72,3 +72,6 @@ pub const NULL_DROP: &str = "@#~?@#~?";
 pub const BLACK_WIN: i8 = -1;
 pub const WHITE_WIN: i8 = 1;
 pub const DRAW: i8 = 0;
+
+pub const PV_TABLE_SIZE: usize = (1000000 * 8) / size_of::<PVElement>();        /* 8MB                                */
+pub const MAX_DEPTH: usize = 64;

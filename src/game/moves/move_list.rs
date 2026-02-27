@@ -678,16 +678,11 @@ pub fn generate_move_list(
                     }
 
                     if can_promote {
-                        let mut promo_move = Move::default();
-                        promo_move.0 = encoded_move.0;
-                        promo_move.1 = Vec::new();
-
-                        for taken_piece in &encoded_move.1 {
-                            promo_move.1.push(*taken_piece);
-                        }
+                        let mut promo_move = encoded_move.clone();
 
                         enc_promotion!(promo_move, 1);
                         enc_promoted!(promo_move, *promo_piece_index as u128);
+
                         result.push(promo_move);
                     }
                 }
@@ -721,7 +716,7 @@ pub fn generate_move_list(
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
         {
-            $state.ply += 1;
+            $state.search_ply += 1;
             $state.ply_counter += 1;
 
             let last_en_passant_square = $state.en_passant_square;
@@ -844,10 +839,10 @@ macro_rules! make_move {
                 }
 
                 $state.piece_list[piece_index]
-                    .retain(|&sq| sq != start_square as u16);
+                    .remove(&(start_square as u16));
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].push(end_square as u16);
+                ].insert(end_square as u16);
 
                 if p_can_promote!($state.pieces[piece_index]) {
                     $state.halfmove_clock = 0;
@@ -1014,10 +1009,10 @@ macro_rules! make_move {
                 }
 
                 $state.piece_list[piece_index]
-                    .retain(|&sq| sq != start_square as u16);
+                    .remove(&(start_square as u16));
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].push(end_square as u16);
+                ].insert(end_square as u16);
 
                 $state.halfmove_clock = 0;
 
@@ -1152,14 +1147,14 @@ macro_rules! make_move {
                 if is_unload {
                     $state.main_board[unload_square as usize] =
                         captured_piece_index as u8;
-                    $state.piece_list[captured_piece_index].retain(
-                        |&sq| sq != captured_square as u16
+                    $state.piece_list[captured_piece_index].remove(
+                        &(captured_square as u16)
                     );
                     $state.piece_list[captured_piece_index]
-                        .push(unload_square as u16);
+                        .insert(unload_square as u16);
                 } else {
-                    $state.piece_list[captured_piece_index].retain(
-                        |&sq| sq != captured_square as u16
+                    $state.piece_list[captured_piece_index].remove(
+                        &(captured_square as u16)
                     );
                 }
 
@@ -1281,10 +1276,10 @@ macro_rules! make_move {
                 }
 
                 $state.piece_list[piece_index]
-                    .retain(|&sq| sq != start_square as u16);
+                    .remove(&(start_square as u16));
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].push(end_square as u16);
+                ].insert(end_square as u16);
 
                 $state.halfmove_clock = 0;
 
@@ -1444,14 +1439,14 @@ macro_rules! make_move {
                     if is_unload {
                         $state.main_board[unload_square as usize] =
                             captured_piece_index as u8;
-                        $state.piece_list[captured_piece_index].retain(
-                            |&sq| sq != captured_square as u16
+                        $state.piece_list[captured_piece_index].remove(
+                            &(captured_square as u16)
                         );
                         $state.piece_list[captured_piece_index]
-                            .push(unload_square as u16);
+                            .insert(unload_square as u16);
                     } else {
-                        $state.piece_list[captured_piece_index].retain(
-                            |&sq| sq != captured_square as u16
+                        $state.piece_list[captured_piece_index].remove(
+                            &(captured_square as u16)
                         );
                     }
 
@@ -1497,7 +1492,7 @@ macro_rules! make_move {
                 );
 
                 $state.main_board[drop_square as usize] = piece_index as u8;
-                $state.piece_list[piece_index].push(drop_square as u16);
+                $state.piece_list[piece_index].insert(drop_square as u16);
                 $state.material[piece_color as usize] +=
                     p_value!($state.pieces[piece_index]) as u32;
                 $state.piece_count[piece_index] += 1;
@@ -1647,6 +1642,16 @@ macro_rules! make_move {
 
             hash_toggle_side!($state);
 
+            let repetition_count = $state.position_hash_map
+                .entry($state.position_hash)
+                .or_insert(0);
+            *repetition_count += 1;
+
+            if repetition_limit!($state)
+            && *repetition_count >= $state.repetition_limit {
+                $state.game_over = true;
+            }
+
             let snapshot: Snapshot = Snapshot {
                 move_ply: $mv,
                 castling_state: last_castling_state,
@@ -1676,8 +1681,14 @@ macro_rules! undo_move {
     ($state:expr) => {
         {
 
-            $state.ply -= 1;
+            $state.search_ply -= 1;
             $state.ply_counter -= 1;
+
+            let repetition_count =
+                $state.position_hash_map
+                .get_mut(&$state.position_hash)
+                .unwrap();
+            *repetition_count -= 1;
 
             let snapshot = $state.history.pop().unwrap_or_else(
                 || panic!("No move to undo!")
@@ -1765,11 +1776,11 @@ macro_rules! undo_move {
                     }
                 } else {
                     $state.piece_list[piece_index]
-                        .retain(|&sq| sq != end_square as u16);
+                        .remove(&(end_square as u16));
                 }
 
                 $state.piece_list[piece_index]
-                    .push(start_square as u16);
+                    .insert(start_square as u16);
             } else if move_type == SINGLE_CAPTURE_MOVE {
                 let piece_index = piece!(mv) as usize;
                 let start_square = start!(mv) as u32;
@@ -1846,11 +1857,11 @@ macro_rules! undo_move {
                     }
                 } else {
                     $state.piece_list[piece_index]
-                        .retain(|&sq| sq != end_square as u16);
+                        .remove(&(end_square as u16));
                 }
 
                 $state.piece_list[piece_index]
-                    .push(start_square as u16);
+                    .insert(start_square as u16);
 
                 if is_unload {
                     clear!(
@@ -1883,12 +1894,12 @@ macro_rules! undo_move {
                     captured_piece_index as u8;
 
                 if is_unload {
-                    $state.piece_list[captured_piece_index].retain(
-                        |&sq| sq != unload_square as u16
+                    $state.piece_list[captured_piece_index].remove(
+                        &(unload_square as u16)
                     );
                 }
                 $state.piece_list[captured_piece_index]
-                    .push(captured_square as u16);
+                    .insert(captured_square as u16);
 
                 if !is_unload {
                     if p_is_big!($state.pieces[captured_piece_index]) {
@@ -1991,11 +2002,11 @@ macro_rules! undo_move {
                     }
                 } else {
                     $state.piece_list[piece_index]
-                        .retain(|&sq| sq != end_square as u16);
+                        .remove(&(end_square as u16));
                 }
 
                 $state.piece_list[piece_index]
-                    .push(start_square as u16);
+                    .insert(start_square as u16);
 
                 for cap in &mv.1 {
                     let captured_piece_index =
@@ -2040,12 +2051,12 @@ macro_rules! undo_move {
                         captured_piece_index as u8;
 
                     if is_unload {
-                        $state.piece_list[captured_piece_index].retain(
-                            |&sq| sq != unload_square as u16
+                        $state.piece_list[captured_piece_index].remove(
+                            &(unload_square as u16)
                         );
                     }
                     $state.piece_list[captured_piece_index]
-                        .push(captured_square as u16);
+                        .insert(captured_square as u16);
 
                     if !is_unload {
                         if p_is_big!($state.pieces[captured_piece_index]) {
@@ -2101,7 +2112,7 @@ macro_rules! undo_move {
 
                 $state.main_board[drop_square as usize] = NO_PIECE;
                 $state.piece_list[piece_index]
-                    .retain(|&sq| sq != drop_square as u16);
+                    .remove(&(drop_square as u16));
                 $state.material[piece_color as usize] -=
                     p_value!($state.pieces[piece_index]) as u32;
                 $state.piece_count[piece_index] -= 1;
@@ -2169,7 +2180,7 @@ macro_rules! undo_move {
                         captured_piece_index as u8;
 
                     $state.piece_list[captured_piece_index]
-                        .push(captured_square as u16);
+                        .insert(captured_square as u16);
 
                     if p_is_big!($state.pieces[captured_piece_index]) {
                         $state.big_pieces[captured_color as usize] += 1;
@@ -2195,6 +2206,24 @@ macro_rules! undo_move {
             #[cfg(debug_assertions)]
             verify_game_state($state);
         }
+    };
+}
+
+#[macro_export]
+macro_rules! is_move_legal {
+    ($state:expr, $mv:expr) => {
+        {{
+            let all_moves = generate_all_moves_and_drops($state);
+
+            let is_in_position = all_moves.contains(&$mv);
+            let is_legal = make_move!($state, $mv);
+
+            if is_legal {
+                undo_move!($state);
+            }
+
+            is_in_position && is_legal
+        }}
     };
 }
 

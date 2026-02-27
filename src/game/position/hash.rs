@@ -1,4 +1,4 @@
-//! # zobrist.rs
+//! # hash.rs
 //!
 //! Implements Zobrist hashing for game positions.
 //!
@@ -50,6 +50,8 @@ lazy_static! {
             result
         };
 }
+
+pub type PositionHash = u128;
 
 /// Computes the Zobrist hash for the given game state.
 pub fn hash_position(state: &State) -> u128 {

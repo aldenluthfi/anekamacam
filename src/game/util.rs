@@ -33,6 +33,7 @@ pub fn random_u128() -> u128 {
 pub fn verify_game_state(state: &State) {
     let mut temp_white_board = board!(state.files, state.ranks);
     let mut temp_black_board = board!(state.files, state.ranks);
+    let mut temp_piece_list = vec![HashSet::new(); state.pieces.len()];
 
     for (index, square) in state.main_board.iter().enumerate() {
         if *square != NO_PIECE {
@@ -43,8 +44,16 @@ pub fn verify_game_state(state: &State) {
             } else {
                 set!(temp_black_board, index as u32);
             }
+
+            temp_piece_list[p_index!(piece) as usize].insert(index as u16);
         }
     }
+
+    assert_eq!(
+        &temp_piece_list,
+        &state.piece_list,
+        "Computed piece list doesn't match state piece list",
+    );
 
     assert_eq!(
         &temp_white_board,

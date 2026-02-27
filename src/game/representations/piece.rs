@@ -46,21 +46,21 @@ macro_rules! p_is_royal {
 #[macro_export]
 macro_rules! p_is_big {
     ($piece:expr) => {
-        ($piece.encoded_piece & (1 << 11)) != 0
+        ($piece.encoded_piece & (1 << 11)) != 0 && !p_is_royal!($piece)
     };
 }
 
 #[macro_export]
 macro_rules! p_is_major {
     ($piece:expr) => {
-        ($piece.encoded_piece & (1 << 12)) != 0
+        ($piece.encoded_piece & (1 << 12)) != 0 && !p_is_royal!($piece)
     };
 }
 
 #[macro_export]
 macro_rules! p_is_minor {
     ($piece:expr) => {
-        ($piece.encoded_piece & (1 << 12)) == 0
+        ($piece.encoded_piece & (1 << 12)) == 0 && !p_is_royal!($piece)
     };
 }
 
