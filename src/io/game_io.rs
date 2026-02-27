@@ -149,6 +149,8 @@ pub fn parse_config_file(path: &str) -> State {
         .contains(&"setup phase".to_string());
     let stand_offs = sections["rules"]
         .contains(&"stand-offs".to_string());
+    let repetition_limit = sections["rules"]
+        .contains(&"repetition limit".to_string());
 
     let (fen_castling, fen_en_passant, fen_in_hand) =
         extract_fen_components(initial_position);
@@ -265,6 +267,10 @@ pub fn parse_config_file(path: &str) -> State {
 
     if stand_offs {
         enc_stand_offs!(special_rules);
+    }
+
+    if repetition_limit {
+        enc_repetition_limit!(special_rules);
     }
 
 /*----------------------------------------------------------------------------*\
@@ -644,6 +650,13 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
+    if repetition_limit {
+        assert!(
+            sections.contains_key("repetition limit"),
+            "[repetition limit] section is missing"
+        );
+    }
+
     if promotions {
         if sections.contains_key("mandatory promotion zones") {
             for mandatory in &sections["mandatory promotion zones"] {
@@ -1012,6 +1025,17 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    if repetition_limit {
+        let limit_parts: Vec<&str> =
+            sections["repetition limit"][0].split(':').collect();
+        let limit_str =
+            limit_parts.get(1).expect("Invalid repetition limit format");
+        let limit_value = limit_str.parse::<u8>().unwrap_or_else(
+            |_| panic!("Invalid repetition limit: {}", limit_str.trim())
+        );
+        result.repetition_limit = limit_value;
+    }
+
     result.precompute(
         pieces_moves,
         pieces_drops,
@@ -1248,7 +1272,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 state.main_board[square_index as usize] = piece_index;
 
                 state.piece_list[piece_index as usize]
-                    .push(square_index as u16);
+                    .insert(square_index as u16);
                 state.piece_count[piece_index as usize] += 1;
 
                 set!(
@@ -1578,8 +1602,9 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
                     result.push_str(&format!("{}{}", count, piece.char));
                 }
             }
+            result.push('\n');
 
-            result.push_str("\nBlack's hand\t\t: ");
+            result.push_str("Black's hand\t\t: ");
             for (i, piece) in state.pieces.iter().enumerate() {
                 let count = pieces_in_black[i];
                 if count == 1 {
@@ -1588,6 +1613,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
                     result.push_str(&format!("{}{}", count, piece.char));
                 }
             }
+            result.push('\n');
         }
     }
     result
@@ -2012,7 +2038,6 @@ pub fn format_entire_game(state: &State) -> String {
     result.push_str(&format_forbidden_zones(state));
     result.push_str(&format_intial_setup(state));
     result.push_str(&format_game_state(state, true));
-    result.push('\n');
 
     result
 }

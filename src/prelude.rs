@@ -44,9 +44,9 @@ pub use crate::game::representations::{
 pub use crate::game::util::{
     random_u128, start_perft, perft, verify_game_state
 };
-pub use crate::game::hash::zobrist::{
+pub use crate::game::position::hash::{
     hash_position, CASTLING_HASHES, EN_PASSANT_HASHES, SIDE_HASHES,
-    PIECE_HASHES, IN_HAND_HASHES
+    PIECE_HASHES, IN_HAND_HASHES, PositionHash
 };
 pub use crate::game::moves::move_list::{
     generate_move_list, generate_relevant_moves, generate_attack_masks,
@@ -61,6 +61,10 @@ pub use crate::game::patterns::pattern_match::{
     PatternSet, PatternAllower, PatternStopper, generate_relevant_stand_offs,
     generate_stand_off_patterns, parse_pattern, match_pattern
 };
+pub use crate::game::search::pv_table::{
+    PVTable, PVElement,
+    hash_pv_move, probe_pv_move, fill_pv_line
+};
 
 /// IO
 pub use crate::io::board_io::{
@@ -72,7 +76,7 @@ pub use crate::io::game_io::{
     COMMENT_PATTERN
 };
 pub use crate::io::move_io::{
-    format_move, parse_move as parse_move_io, interactive_debug
+    format_move, parse_move as parse_move_io, debug_interactive
 };
 pub use crate::io::protocols::uci;
 
@@ -96,7 +100,8 @@ pub use bnum::types::U4096;
 pub use regex::Regex;
 pub use hashbrown::{HashMap, HashSet};
 pub use std::{
-    fs, array, sync::Mutex, io::stdin, hash::Hash, collections::VecDeque
+    fs, array, sync::Mutex, io::stdin, hash::Hash, collections::VecDeque,
+    mem::size_of
 };
 pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
 
