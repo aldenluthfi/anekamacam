@@ -2216,13 +2216,13 @@ macro_rules! is_move_legal {
             let all_moves = generate_all_moves_and_drops($state);
 
             let is_in_position = all_moves.contains(&$mv);
-            let is_legal = make_move!($state, $mv);
+            let is_legal = is_in_position && make_move!($state, $mv);
 
             if is_legal {
                 undo_move!($state);
             }
 
-            is_in_position && is_legal
+            is_legal
         }}
     };
 }
