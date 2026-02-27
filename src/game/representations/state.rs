@@ -174,6 +174,20 @@ macro_rules! enc_stand_offs {
     };
 }
 
+#[macro_export]
+macro_rules! repetition_limit {
+    ($state:expr) => {
+        ($state.special_rules >> 11 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_repetition_limit {
+    ($rules:expr) => {
+        $rules |= 1 << 11;
+    };
+}
+
 /*----------------------------------------------------------------------------*\
                             EN PASSANT REPRESENTATION
 \*----------------------------------------------------------------------------*/
@@ -210,7 +224,7 @@ pub struct Snapshot {
 
     pub castling_state: u8,
     pub halfmove_clock: u8,
-    pub en_passant_square: u32,
+    pub en_passant_square: EnPassantSquare,
     pub setup_phase: bool,
     pub game_over: bool,
 
@@ -223,7 +237,7 @@ impl Default for Snapshot {
             move_ply: NULL_MOVE,
             castling_state: 0,
             halfmove_clock: 0,
-            en_passant_square: u32::MAX,
+            en_passant_square: EnPassantSquare::MAX,
             setup_phase: false,
             game_over: false,
             position_hash: u128::default(),
@@ -259,7 +273,8 @@ macro_rules! null_snapshot {
 /// - bit 9: Game begins with a setup phase
 /// - bit 10: A player can make a move that creates a stand-off that the
 ///   opponent must break on their next turn
-/// - but 11-31: reserved for future use
+/// - bit 11: There is a limit on the number of repetitions of a position
+/// - but 12-31: reserved for future use
 ///
 pub struct State {
 
@@ -276,7 +291,9 @@ pub struct State {
     pub forbidden_zones: Vec<Board>,                                            /* piece to forbidden zone bitboard   */
     pub promotion_zones_optional: Vec<Board>,                                   /* piece to promotion zone bitboard   */
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
+
     pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
+    pub repetition_limit: u8,                                                  /* number of repetitions for draw     */
 
     pub files: u8,
     pub ranks: u8,
@@ -311,7 +328,7 @@ pub struct State {
     pub position_hash: u128,
     pub history: Vec<Snapshot>,
 
-    pub ply: u32,
+    pub search_ply: u32,
     pub ply_counter: u32,
 
     pub material: [u32; 2],
@@ -322,8 +339,12 @@ pub struct State {
     pub royal_list: [Vec<Square>; 2],                                           /* color to royal piece square list   */
 
     pub piece_count: Vec<u32>,                                                  /* piece index to count               */
-    pub piece_list: Vec<Vec<Square>>,                                           /* piece index to square list         */
+    pub piece_list: Vec<HashSet<Square>>,                                       /* piece index to square set          */
     pub piece_in_hand: [Vec<u16>; 2],                                           /* color to pieces in hand list       */
+
+    pub position_hash_map: HashMap<PositionHash, u8>,                           /* position hash to repetition count  */
+    pub pv_table: PVTable,                                                      /* transposition table for search     */
+    pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search */
 }
 
 impl State {
@@ -348,7 +369,9 @@ impl State {
             forbidden_zones: vec![board!(files, ranks); piece_count],
             promotion_zones_optional: vec![board!(files, ranks); piece_count],
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
+
             piece_limit: vec![u32::MAX; piece_count],
+            repetition_limit: u8::MAX,
 
             files,
             ranks,
@@ -384,7 +407,7 @@ impl State {
             position_hash: u128::default(),
             history: Vec::with_capacity(8192),
 
-            ply: 0,
+            search_ply: 0,
             ply_counter: 0,
 
             big_pieces: [0; 2],
@@ -395,8 +418,13 @@ impl State {
             royal_list: [Vec::new(), Vec::new()],
 
             piece_count: vec![0u32; piece_count],
-            piece_list: vec![Vec::new(); piece_count],
+            piece_list: vec![HashSet::new(); piece_count],
             piece_in_hand: [vec![0; piece_count], vec![0; piece_count]],
+
+            position_hash_map: HashMap::with_capacity(128),
+
+            pv_table: vec![(NULL_MOVE, 0); PV_TABLE_SIZE],
+            pv_line: [NULL_MOVE; MAX_DEPTH],
         }
     }
 
@@ -417,7 +445,6 @@ impl State {
         self.position_hash = u128::default();
         self.history = Vec::with_capacity(8192);
 
-        self.ply = 0;
         self.ply_counter = 0;
 
         self.big_pieces = [0; 2];
@@ -428,8 +455,14 @@ impl State {
         self.royal_list = [Vec::new(), Vec::new()];
 
         self.piece_count = vec![0u32; piece_count];
-        self.piece_list = vec![Vec::new(); piece_count];
+        self.piece_list = vec![HashSet::new(); piece_count];
         self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
+
+        self.search_ply = 0;
+        self.position_hash_map.clear();
+
+        self.pv_table = vec![(NULL_MOVE, 0); PV_TABLE_SIZE];
+        self.pv_line = [NULL_MOVE; MAX_DEPTH];
     }
 
     pub fn load_fen(&mut self, fen: &str) {

@@ -29,13 +29,11 @@ pub mod game {
         pub mod pv_table;
     }
 
-    pub mod evaluation {
-        pub mod static_evaluation;
+    pub mod position {
+        pub mod hash;
+        pub mod evaluation;
     }
 
-    pub mod hash {
-        pub mod zobrist;
-    }
     pub mod util;
 }
 
@@ -61,7 +59,7 @@ fn main() {
 
     let mut state = parse_config_file(&config_path);
 
-    println!("{}\n", format_entire_game(&state));
+    println!("{}", format_entire_game(&state));
 
     start_perft(&mut state, &perft_path, 6, -1, 10);
 }

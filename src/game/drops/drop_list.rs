@@ -1,4 +1,4 @@
-use crate::{constants::{DROP_MOVE, NO_PIECE}, count_limits, drop_d, drop_e, drop_f, drop_k, enc_can_checkmate, enc_from_enemy_hand, enc_move_type, enc_multi_move_captured_piece, enc_multi_move_captured_square, enc_multi_move_captured_unmoved, enc_piece, enc_start, game::representations::{drop::DropSet, moves::Move, piece::Piece, state::State}, get, p_color, p_index, p_is_royal, x, y};
+use crate::*;
 
 pub fn generate_relevant_drops(
     piece: &Piece,
