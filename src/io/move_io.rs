@@ -83,24 +83,50 @@ pub fn debug_interactive(state: &mut State) {
         match input.trim() {
             "u" => undo_move!(state),
             "q" => break,
-            "pv" => {
-                fill_pv_line(state, 4);
+            input if input.starts_with("pv") => {
+                let parts = input.split_whitespace().collect::<Vec<_>>();
 
-                for pv_move in &state.pv_line {
-                    if pv_move == &NULL_MOVE {
-                        break;
-                    }
-
-                    let pv_move_str = format_move(pv_move, state);
-
-                    print!("{} ", pv_move_str);
+                if parts.len() < 2 {
+                    eprintln!("Usage: pv [hash/show] [args]");
+                    continue;
                 }
 
-                println!();
+                let command = *parts.get(1).unwrap();
+                let args = *parts.get(2).unwrap();
+
+                match command {
+                    "hash" => {
+                        if let Some(mv) = parse_move(args, state) {
+                            hash_pv_move(mv.clone(), state);
+                            make_move!(state, mv);
+                        } else {
+                            eprintln!("Invalid move for hashing: {}", args);
+                        }
+                    }
+                    "show" => {
+                        let depth = args.parse::<usize>().unwrap_or(0);
+                        fill_pv_line(state, depth);
+
+                        for pv_move in &state.pv_line {
+                            if pv_move == &NULL_MOVE {
+                                break;
+                            }
+
+                            let pv_move_str = format_move(pv_move, state);
+
+                            print!("{} ", pv_move_str);
+                        }
+
+                        println!();
+                        state.pv_line = [NULL_MOVE; MAX_DEPTH];
+                    }
+                    _ => {
+                        eprintln!("Unknown pv command: {}", command);
+                    }
+                }
             }
             _ => match parse_move(&input, state) {
                 Some(mv) => {
-                    hash_pv_move(mv.clone(), state);
                     make_move!(state, mv);
                 },
                 None => eprintln!("Invalid move: {}", input.trim()),

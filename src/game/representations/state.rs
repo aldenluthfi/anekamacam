@@ -293,15 +293,15 @@ pub struct State {
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
 
     pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
-    pub repetition_limit: u8,                                                  /* number of repetitions for draw     */
+    pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
 
     pub files: u8,
     pub ranks: u8,
 
-    pub relevant_moves: [Vec<MoveSet>; MAX_PIECES],
-    pub relevant_drops: [Vec<DropSet>; MAX_PIECES],
-    pub relevant_setup: [Vec<DropSet>; MAX_PIECES],
-    pub relevant_stand_offs: [Vec<PatternSet>; MAX_PIECES],
+    pub relevant_moves: Vec<Vec<MoveSet>>,
+    pub relevant_drops: Vec<Vec<DropSet>>,
+    pub relevant_setup: Vec<Vec<DropSet>>,
+    pub relevant_stand_offs: Vec<Vec<PatternSet>>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
 
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
@@ -344,7 +344,10 @@ pub struct State {
 
     pub position_hash_map: HashMap<PositionHash, u8>,                           /* position hash to repetition count  */
     pub pv_table: PVTable,                                                      /* transposition table for search     */
-    pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search */
+    pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
+
+    pub search_history: Vec<Vec<Move>>,
+    pub killer_history: Vec<[Move; 2]>,
 }
 
 impl State {
@@ -377,15 +380,18 @@ impl State {
             ranks,
 
             relevant_moves:
-                array::from_fn(|_| vec![Vec::new(); board_size]),
+                vec![vec![MoveSet::new(); board_size]; piece_count],
             relevant_drops:
-                array::from_fn(|_| vec![Vec::new(); board_size]),
+                vec![vec![DropSet::new(); board_size]; piece_count],
             relevant_setup:
-                array::from_fn(|_| vec![Vec::new(); board_size]),
+                vec![vec![DropSet::new(); board_size]; piece_count],
             relevant_stand_offs:
-                array::from_fn(|_| vec![Vec::new(); board_size]),
+                vec![vec![PatternSet::new(); board_size]; piece_count],
             relevant_attacks:
-                [vec![Vec::new(); board_size], vec![Vec::new(); board_size]],
+                [
+                    vec![Vec::new(); board_size],
+                    vec![Vec::new(); board_size]
+                ],
 
             piece_swap_map: HashMap::new(),
             piece_demotion_map: HashMap::new(),
@@ -425,6 +431,9 @@ impl State {
 
             pv_table: vec![(NULL_MOVE, 0); PV_TABLE_SIZE],
             pv_line: [NULL_MOVE; MAX_DEPTH],
+
+            search_history: vec![vec![NULL_MOVE; board_size]; piece_count],
+            killer_history: vec![[NULL_MOVE; 2]; piece_count],
         }
     }
 
@@ -463,6 +472,9 @@ impl State {
 
         self.pv_table = vec![(NULL_MOVE, 0); PV_TABLE_SIZE];
         self.pv_line = [NULL_MOVE; MAX_DEPTH];
+
+        self.search_history = vec![vec![NULL_MOVE; board_size]; piece_count];
+        self.killer_history = vec![[NULL_MOVE; 2]; piece_count];
     }
 
     pub fn load_fen(&mut self, fen: &str) {
