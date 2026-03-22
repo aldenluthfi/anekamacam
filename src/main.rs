@@ -32,6 +32,7 @@ pub mod game {
     pub mod position {
         pub mod hash;
         pub mod evaluation;
+        pub mod search;
     }
 
     pub mod util;
@@ -48,7 +49,6 @@ pub mod io {
     }
 }
 
-pub mod constants;
 pub mod prelude;
 
 #[hotpath::main]

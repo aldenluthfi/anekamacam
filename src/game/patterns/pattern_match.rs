@@ -1,8 +1,4 @@
-use hashbrown::HashSet;
-use lazy_static::lazy_static;
-use regex::Regex;
-
-use crate::{constants::NO_PIECE, game::{moves::move_parse::generate_move_vectors, representations::{piece::Piece, state::State, vector::Leg}}, leg, p_color, p_index, x, y};
+use crate::*;
 
 lazy_static! {
     pub static ref PATTERN_PATTERN: Regex =
