@@ -1,7 +1,4 @@
-use lazy_static::lazy_static;
-use regex::Regex;
-
-use crate::{constants::NULL_DROP, game::{patterns::pattern_match::parse_pattern, representations::{drop::DropSet, piece::Piece, state::State}}, p_index};
+use crate::*;
 
 
 lazy_static! {
