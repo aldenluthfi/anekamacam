@@ -1,5 +1,7 @@
 use crate::*;
 
+use std::sync::Arc;
+
 pub fn generate_relevant_drops(
     piece: &Piece,
     square_index: u32,
@@ -101,6 +103,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
             let drop_e = drop_e!(drop);
 
             let mut encoded_move = Move::default();
+            let mut taken_pieces: Vec<u64> = Vec::new();
             enc_move_type!(encoded_move, DROP_MOVE);
             enc_piece!(encoded_move, piece_index as u128);
             enc_start!(encoded_move, square as u128);
@@ -163,7 +166,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
                         ) as u64
                     );
 
-                    encoded_move.1.push(take_piece);
+                    taken_pieces.push(take_piece);
                 }
             }
 
@@ -184,6 +187,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
                 }
             }
 
+            encoded_move.1 = Arc::new(taken_pieces);
             drop_list.push(encoded_move);
         }
     }

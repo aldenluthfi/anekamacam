@@ -1,5 +1,41 @@
 use crate::game::patterns::pattern_match::{PatternAllower, PatternStopper};
 
+/*----------------------------------------------------------------------------*\
+                          DROP REPRESENTATION ENCODING
+\*----------------------------------------------------------------------------*/
+
+#[macro_export]
+macro_rules! enc_can_checkmate {
+    ($mv:expr, $val:expr) => {
+        $mv.0 |= ($val & 1) << 23;
+    };
+}
+
+#[macro_export]
+macro_rules! enc_from_enemy_hand {
+    ($mv:expr, $val:expr) => {
+        $mv.0 |= ($val & 1) << 24;
+    };
+}
+
+/*----------------------------------------------------------------------------*\
+                          DROP REPRESENTATION ENCODING
+\*----------------------------------------------------------------------------*/
+
+#[macro_export]
+macro_rules! drop_can_checkmate {
+    ($drop:expr) => {
+        ($drop.0 >> 23) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! drop_from_enemy_hand {
+    ($drop:expr) => {
+        ($drop.0 >> 24) & 1 == 1
+    };
+}
+
 /// a DropMove cosnsists of the following bits:
 /// - The first 8 bits represent the piece index of the piece being dropped.
 /// - The next 12 bits represent the square index where the piece is being
