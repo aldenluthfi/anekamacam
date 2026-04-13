@@ -15,47 +15,13 @@
 //! # Date
 //! 26/01/2026
 
+use std::sync::Arc;
+
 use crate::game::representations::{
     piece::PieceIndex,
     state::Square,
     vector::MoveVector
 };
-
-/*----------------------------------------------------------------------------*\
-                          DROP REPRESENTATION ENCODING
-\*----------------------------------------------------------------------------*/
-
-#[macro_export]
-macro_rules! enc_can_checkmate {
-    ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 23;
-    };
-}
-
-#[macro_export]
-macro_rules! enc_from_enemy_hand {
-    ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 24;
-    };
-}
-
-/*----------------------------------------------------------------------------*\
-                          DROP REPRESENTATION ENCODING
-\*----------------------------------------------------------------------------*/
-
-#[macro_export]
-macro_rules! drop_can_checkmate {
-    ($drop:expr) => {
-        ($drop.0 >> 23) & 1 == 1
-    };
-}
-
-#[macro_export]
-macro_rules! drop_from_enemy_hand {
-    ($drop:expr) => {
-        ($drop.0 >> 24) & 1 == 1
-    };
-}
 
 pub type AttackMask = (PieceIndex, Square, MoveVector);
 
@@ -108,7 +74,7 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 ///   dropped.
 /// - The next bit represents whether this drop can deliver checkmate (0)
 ///   or not (1).
-pub type Move = (u128, Vec<u64>);
+pub type Move = (u128, Arc<Vec<u64>>);
 
 /*----------------------------------------------------------------------------*\
                           MOVE REPRESENTATION ENCODING
