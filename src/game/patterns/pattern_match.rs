@@ -1,3 +1,14 @@
+//! # pattern_match.rs
+//!
+//! Parses and evaluates CPMN patterns used by drop and stand-off rules.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 24/02/2026
+
+
 use crate::*;
 
 lazy_static! {
@@ -21,14 +32,14 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
     expr.replace("-*", &format!("-{}", all_pieces))
 }
 
-/// the Cheesy Pattern Match Notation (CPMN) is as follows:
+/// The Cheesy Pattern Match Notation (CPMN) is as follows:
 ///
 /// [allower multi leg]~[pieces]@[stoppers multi leg]~[pieces]
 ///
-/// The multi legs part wont be processed as a whole but each le will be
-/// processed. so #-W~P-P would match a pawn on the dropping square and a pawn
-/// on each W square. A drop is legal if all of the allowers are met and none
-/// of the stoppers are met.
+/// The multi-leg part is not processed as a whole; each leg is processed
+/// separately. So `#-W~P-P` matches a pawn on the drop square and a pawn on
+/// each `W` square. A drop is legal if all allowers are met and no stopper
+/// is met.
 ///
 /// Pieces are the chars of the pieces that are relevant to the allowers and
 /// stoppers. * means all pieces excluding no piece. ? means no piece.
@@ -169,8 +180,8 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     (allower_result, stopper_result)
 }
 
-/// If associated with a piece, the POV of that piece's color will be used
-/// otherwise it will use White's POV
+/// If associated with a piece, that piece's color POV is used;
+/// otherwise, White's POV is used.
 pub fn match_pattern(
     pattern: &Pattern, square: u32, color: u8, state: &State
 ) -> bool {
@@ -217,6 +228,9 @@ pub fn match_pattern(
     true
 }
 
+/// Parses a `|`-separated stand-off expression into executable patterns.
+///
+/// Empty expressions produce no patterns.
 pub fn generate_stand_off_patterns(
     expr: &str, state: &State
 ) -> Vec<Pattern> {
@@ -229,6 +243,10 @@ pub fn generate_stand_off_patterns(
     parts.into_iter().map(|part| parse_pattern(part, state)).collect()
 }
 
+/// Filters stand-off patterns to those that stay in bounds from `square`.
+///
+/// Offsets are checked with color-relative orientation so runtime matching
+/// only evaluates geometrically possible patterns.
 pub fn generate_relevant_stand_offs(
     piece: &Piece,
     square: u32,

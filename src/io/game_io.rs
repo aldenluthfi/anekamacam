@@ -60,13 +60,13 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 /// Parses a game configuration file and initializes a game state.
 /// See example.conf for the expected format of the configuration file.
 ///
-/// pieces are parsed into a tuple first of:
+/// Pieces are first parsed into a tuple of:
 /// (string, char, Vec<u8>, u8, u8, bool, bool, bool, u16)
 ///
 /// where the fields are:
 /// [0] string: the name of the piece
 /// [1] char: the character representing the piece on the board
-/// [2] Vec<u8>: the vec representing which pieces this piece can promote to
+/// [2] Vec<u8>: the vector of pieces this piece can promote to
 /// [3] u8: the piece index (0-255, with 255 reserved for "no piece")
 /// [4] u8: the piece color (0 for white, 1 for black)
 /// [5] bool: whether the piece is royal
@@ -1151,7 +1151,7 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// The piece characters are the same as the ones used in the board
 /// representation part of the FEN.
 ///
-/// the order is as follows:
+/// The order is as follows:
 /// 1. Board representation (ranks separated by '/')
 /// 2. Active color ('w' or 'b')
 /// 3. Castling rights (e.g. 'KQkq' or '-')
@@ -1525,6 +1525,10 @@ pub fn combine_board_strings(
     result
 }
 
+/// Formats the current board, optionally with runtime state metadata.
+///
+/// With `verbose = true`, this appends side-to-move, hash, counters,
+/// castling/en-passant data, and hand contents when relevant.
 pub fn format_game_state(state: &State, verbose: bool) -> String {
     let mut result = String::new();
 
@@ -2024,6 +2028,10 @@ fn format_special_rules(state: &State) -> String {
     }
 }
 
+/// Formats a full variant overview including static rules and live state.
+///
+/// This aggregates piece tables, zones, initial setup maps, and the current
+/// board/state summary into one printable report.
 pub fn format_entire_game(state: &State) -> String {
     let mut result = String::new();
 

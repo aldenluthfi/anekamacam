@@ -1,3 +1,14 @@
+//! # move_list.rs
+//!
+//! Generates legal moves and attack data for pieces in the current position.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 01/02/2026
+
+
 use std::sync::Arc;
 
 use crate::*;
@@ -104,6 +115,10 @@ pub fn generate_relevant_moves(
     result
 }
 
+/// Populates `relevant_attacks` entries originating from one start square.
+///
+/// For each prefiltered move vector, this records whether each traversed
+/// target is attacked as enemy capture (`c`) and/or friendly destroy (`d`).
 pub fn generate_attack_masks(
     square_index: u16,
     game_state: &mut State,
@@ -362,6 +377,10 @@ macro_rules! validate_attack_vector {
 }
 
 #[inline(always)]
+/// Generates all pseudo-legal encoded moves for `piece` from `square_index`.
+///
+/// This resolves multi-leg constraints, captures/unloads, en-passant flags,
+/// castling side conditions, and promotion branching.
 pub fn generate_move_list(
     square_index: u16,
     piece: &Piece,
@@ -2230,6 +2249,10 @@ macro_rules! is_move_legal {
 }
 
 #[inline(always)]
+/// Generates all pseudo-legal moves for the side to move, including drops.
+///
+/// Normal moves are skipped during setup phase; drop generation may use
+/// either own-hand or enemy-hand inventory depending on drop flags.
 pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
 
     if state.game_over {
