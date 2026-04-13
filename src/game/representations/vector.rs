@@ -244,7 +244,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - (false, false): this capture can be royal or not royal (regular capture).
 /// - (false, true) : this capture must not be royal.
 /// - (true, false) : this capture must be royal.
-/// - (true, true)  : special modifier r!r (explained below).
+/// - (true, true)  : special modifier k!k (explained below).
 ///
 /// - (v)irgin:
 ///     - v:
@@ -267,9 +267,9 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       piece (captured <= capturing).
 ///
 /// design note:
-/// I chose (> and <=) instead of (>= and <) because it in a lot of chess
-/// variants, capturing an equal rank piece is often allowed, while there
-/// are variants where its not alowed to capture a greater rank piece.
+/// I chose (> and <=) instead of (>= and <) because in many chess
+/// variants, capturing an equal-rank piece is often allowed, while there
+/// are variants where it's not allowed to capture a greater-rank piece.
 ///
 /// A rank is an arbitrary game rule defined when setting up a variant, if it
 /// is not defined then all pieces will have the rank of 0
@@ -283,7 +283,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - en-passan(t):
 ///    - t: means this leg can capture en passant.
 ///
-/// usage of (s):
+/// usage of (t):
 /// - (true) : this leg can capture en passant.
 /// - (false): this leg cannot capture en passant.
 ///
@@ -317,18 +317,18 @@ pub type MultiLegVector = Vec<LegVector>;
 ///
 /// Special modifiers (r!r, v!v, g!g, i!i):
 ///
-/// - i!i: means that at the end of this leg, the moving piece cannot be in
-///   attacked.
+/// - i!i: means that at the end of this leg, the moving piece cannot end
+///   on an attacked square.
 /// - k!k: TBD
 /// - v!v: this leg can bypass forbidden zones.
 /// - g!g: TBD
 ///
 /// Defaults:
-/// - by default each leg will have m (can move) set. except for the last leg
-///   which wll have mc (can move and capture) set by default.
+/// - by default each leg has m (can move) set, except for the last leg,
+///   which will have mc (can move and capture) set by default.
 ///
 /// Final notes:
-/// - capture/destroy modifiers must be used if the leg has has c or d set
+/// - capture/destroy modifiers must be used if the leg has c or d set
 /// - you can combine negation like `mc!kvg` means a move/capture leg that must
 ///   not be royal, must be moved, and must be of lesser or equal rank and
 ///   cannot capture en passant.
@@ -532,7 +532,7 @@ impl Debug for Token {
 
 /// A 32 bit vector representation for atomic move vectors.
 ///
-/// - each vector is repreented as [(x1, y1), (x2, y2)]
+/// - each vector is represented as [(x1, y1), (x2, y2)]
 /// - (x1, y1) is the whole vector
 /// - (x2, y2) is the last vector applied
 ///

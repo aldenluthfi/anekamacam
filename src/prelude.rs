@@ -163,6 +163,10 @@ pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 
+/// Returns the sentinel move used for uninitialized PV/history slots.
+///
+/// The encoded payload is intentionally invalid for normal move generation
+/// and is recognized through `is_null!` checks.
 pub fn null_move() -> Move {
     (!0u128, Arc::new(Vec::new()))
 }

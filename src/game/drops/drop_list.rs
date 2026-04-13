@@ -1,7 +1,22 @@
+//! # drop_list.rs
+//!
+//! Generates legal drop moves and relevant drop templates.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 18/02/2026
+
+
 use crate::*;
 
 use std::sync::Arc;
 
+/// Filters and relocates precomputed drop patterns for a target square.
+///
+/// Relative allower/stopper offsets are validated against board bounds from
+/// `square_index` and rotated by piece color perspective.
 pub fn generate_relevant_drops(
     piece: &Piece,
     square_index: u32,
@@ -63,6 +78,10 @@ pub fn generate_relevant_drops(
         .collect()
 }
 
+/// Generates legal drop moves for `piece` in the current `state`.
+///
+/// This enforces drop flags (`k/f/d/e`), count limits, hand ownership,
+/// and allower/stopper pattern constraints before encoding each drop move.
 pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
 
     let board_size = state.files as u32 * state.ranks as u32;

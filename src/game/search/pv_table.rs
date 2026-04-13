@@ -1,3 +1,14 @@
+//! # pv_table.rs
+//!
+//! Implements principal variation table probing, storage, and extraction.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 29/01/2026
+
+
 use crate::*;
 
 pub type PVElement = (Move, PositionHash);
@@ -22,6 +33,10 @@ pub fn probe_pv_move(state: &State) -> Option<Move> {
 }
 
 #[hotpath::measure]
+/// Follows hash-linked PV moves up to `depth` and fills `state.pv_line`.
+///
+/// Stops on missing entries or illegal moves, then undoes all temporary
+/// plies so the caller's position is restored.
 pub fn fill_pv_line(state: &mut State, depth: usize) {
     let depth = depth.min(MAX_DEPTH);
 

@@ -30,6 +30,11 @@ pub fn random_u128() -> u128 {
 }
 
 
+/// Recomputes derived state and asserts it matches the stored caches.
+///
+/// This is a debug integrity check for boards, piece lists, material counts,
+/// royal lists, and the incremental Zobrist hash. On hash mismatch it also
+/// attempts to pinpoint likely sources before panicking.
 pub fn verify_game_state(state: &State) {
     let mut temp_white_board = board!(state.files, state.ranks);
     let mut temp_black_board = board!(state.files, state.ranks);
@@ -256,6 +261,11 @@ fn format_time(nanos: u128) -> String {
     }
 }
 
+/// Runs a perft suite loaded from `path` and reports pass/fail per depth.
+///
+/// Cases are shuffled, capped by `limit`, and each position is tested from
+/// depth 1 up to `depth`. `branch` controls diagnostic line printing when
+/// passed through to `perft`.
 pub fn start_perft(
     state: &mut State,
     path: &str,
@@ -331,6 +341,10 @@ pub fn start_perft(
     println!("Total moves generated: {}", total_moves);
 }
 
+/// Counts legal move tree nodes from the current state up to `depth`.
+///
+/// When `branch >= 0`, this also prints the explored move prefixes for the
+/// first levels to help inspect branching behavior.
 pub fn perft(
     state: &mut State,
     depth: u8,
