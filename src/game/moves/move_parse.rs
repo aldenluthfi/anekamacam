@@ -1,4 +1,4 @@
-//! move_parse.rs
+//! # move_parse.rs
 //!
 //! This module provides functionality for parsing chess moves from various
 //! string representations into internal move structures. It supports standard
@@ -503,7 +503,7 @@ where
         .collect()
 }
 
-/// This ensures movestrings that are suitable to be processed by functions
+/// This ensures move strings are suitable to be processed by functions
 /// below:
 /// - `atomic_to_vector`
 /// - `chained_atomic_to_vector`
@@ -538,7 +538,7 @@ fn parse_move(expr: &str) -> String {
         })                                                                      /* Process each step in the pipeline  */
 }
 
-/// takes the irregular vector and determines the gratest magnitude direction
+/// Takes an irregular vector and determines its dominant direction.
 ///
 /// Examples:
 /// - (2, 1) has +x as the greatest magnitude so it will influence the next
@@ -1556,8 +1556,8 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// │    │    │    │    │ oo │    │    │    │    │
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
-/// note that the piece by definition can jump to the square hopping over pieces
-/// since the notation havent defined "successful" check yet
+/// Note that this can jump to the target square by definition, hopping over
+/// pieces, since the notation hasn't defined "successful" checks yet.
 ///
 /// Example 4:
 /// W:{1} means W, W:{2} means WW, W:{3} means WWW, etc.
@@ -1567,9 +1567,9 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// colon-range :{i..j} or :{i} just like chained atomics but it applies to the
 /// whole atomic group, not just an atomic.
 ///
-/// We differentiate between chained atomic and compound atomic by the presence
-/// of the < and > symbols. if there is no < and >, then it is treated as a
-/// chained atomic. so only the last atomic will influence the next atomic.
+/// We differentiate chained and compound atomics by the presence of `<...>`.
+/// If there is no `<...>`, it is treated as a chained atomic, so only the
+/// last atomic influences the next atomic.
 ///
 /// Example:
 /// - <FnF>. means moving N followed by repeating the last vector of N once more
@@ -1634,13 +1634,13 @@ fn chained_atomic_to_vector(
 ///
 /// A compound atomic is defined as multiple chained atomics (see
 /// `chained_atomic_to_vector` for chained atomic definition).
-/// These chained atomics can be croub by enclosing it with <...>. If <...> is
-/// used it will be treated as one vector set so it will influence the direction
-/// of the next chained atomic.
+/// These chained atomics can be grouped by enclosing them in `<...>`.
+/// If `<...>` is used, it is treated as one vector set, so it influences
+/// the direction of the next chained atomic.
 ///
-/// in the case of non cardinal vectors, the direction influence will be the
-/// greatest magnitude vector among the compound atomics. if its the same, the
-/// direction will be diagonal. for example:
+/// For non-cardinal vectors, direction influence follows the greatest
+/// magnitude vector among the compound atomics. If tied, the direction
+/// is diagonal. For example:
 ///
 /// - (2, 1) has +x as the greatest magnitude so it will influence the next
 ///   atomic as "e" or (1, 0).

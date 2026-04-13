@@ -100,6 +100,10 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     result
 }
 
+/// Prints a board mask of destination squares from precomputed move vectors.
+///
+/// This is a debugging helper and does not check occupancy or legality;
+/// it only visualizes geometric reach from cached relevant moves.
 pub fn debug_print_relevant_moves(state: &State, piece_index: u8, square: u16) {
     let moves = &state.relevant_moves[piece_index as usize][square as usize];
 

@@ -219,6 +219,7 @@ macro_rules! enp_piece {
                               SNAPSHOT REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
+/// Captures reversible state needed to undo a move.
 pub struct Snapshot {
     pub move_ply: Move,
 
@@ -351,6 +352,10 @@ pub struct State {
 }
 
 impl State {
+    /// Constructs a new state with static data and cleared runtime fields.
+    ///
+    /// This allocates lookup/precompute containers sized to board and piece
+    /// counts, but does not parse an initial position.
     pub fn new(
         title: String,
         files: u8,
@@ -437,6 +442,7 @@ impl State {
         }
     }
 
+    /// Resets all dynamic position/search fields while keeping static config.
     pub fn reset(&mut self) {
         let piece_count: usize = self.pieces.len();
         let board_size: usize = (self.files as usize) * (self.ranks as usize);
@@ -477,6 +483,7 @@ impl State {
         self.killer_history = vec![std::array::from_fn(|_| null_move()); piece_count];
     }
 
+    /// Resets the state and loads a new position from a FEN-like string.
     pub fn load_fen(&mut self, fen: &str) {
         self.reset();
         parse_fen(self, fen);
@@ -584,6 +591,10 @@ impl State {
         }
     }
 
+    /// Builds cached move/drop/pattern/attack tables from parsed expressions.
+    ///
+    /// The enabled special-rule flags determine which optional caches are
+    /// populated.
     pub fn precompute(
         &mut self,
         moves_expr_set: Vec<String>,

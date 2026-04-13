@@ -1,7 +1,18 @@
+//! # move_io.rs
+//!
+//! Implements move formatting, move parsing, and interactive move debugging.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 04/02/2026
+
+
 use crate::*;
 
-/// a move is uniformly formatted as follows:
-/// [drop piece]@:[start]:[end]*[captured_1]...*[captured_n]=[promotion piece]
+/// A move is formatted as follows:
+/// `[drop piece]@:[start]:[end]*[captured_1]...*[captured_n]=[promotion]`
 pub fn format_move(mv: &Move, state: &State) -> String {
     let mut move_str = String::new();
 
@@ -66,6 +77,10 @@ pub fn format_move(mv: &Move, state: &State) -> String {
     move_str
 }
 
+/// Parses a textual move by matching against generated legal moves.
+///
+/// The input is compared to `format_move` output for each candidate and
+/// returns the first exact match after trimming whitespace.
 pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
     let all_moves = generate_all_moves_and_drops(state);
 
@@ -74,6 +89,10 @@ pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
     )
 }
 
+/// Runs a simple stdin-driven debug loop for making and undoing moves.
+///
+/// Supported commands include normal move strings, `u` (undo), `q` (quit),
+/// and `pv` subcommands for PV hash probing/display.
 pub fn debug_interactive(state: &mut State) {
     let mut input = String::new();
 

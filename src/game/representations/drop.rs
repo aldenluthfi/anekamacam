@@ -1,3 +1,14 @@
+//! # drop.rs
+//!
+//! Defines drop move encoding and helper macros for drop-related flags.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 29/01/2026
+
+
 use crate::game::patterns::pattern_match::{PatternAllower, PatternStopper};
 
 /*----------------------------------------------------------------------------*\
@@ -36,7 +47,7 @@ macro_rules! drop_from_enemy_hand {
     };
 }
 
-/// a DropMove cosnsists of the following bits:
+/// A `DropMove` consists of the following bits:
 /// - The first 8 bits represent the piece index of the piece being dropped.
 /// - The next 12 bits represent the square index where the piece is being
 ///   dropped.

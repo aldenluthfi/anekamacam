@@ -1,3 +1,14 @@
+//! # main.rs
+//!
+//! Entry point and top-level module declarations for the anekamacam engine.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 01/02/2026
+
+
 use prelude::*;
 
 pub mod game {

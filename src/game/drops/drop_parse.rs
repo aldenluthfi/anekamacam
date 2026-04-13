@@ -1,3 +1,14 @@
+//! # drop_parse.rs
+//!
+//! Parses drop expressions into internal drop vectors and modifiers.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 29/01/2026
+
+
 use crate::*;
 
 
@@ -15,7 +26,7 @@ lazy_static! {
 /// - f : if set, this drop can be used to drop to forbidden squares
 /// - d : if set, this drop will remove every non-royal piece detected by the
 ///   allowers
-/// - e : this drop is from the enemy's hand not our hand
+/// - e : this drop uses the enemy's hand rather than our own
 pub fn generate_drop_vectors(
     piece: &Piece, state: &State, expr_set: &[String]
 ) -> DropSet {
