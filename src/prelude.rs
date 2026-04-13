@@ -103,6 +103,7 @@ pub use std::{
     mem::size_of
 };
 pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
+pub use std::sync::Arc;
 
 /// Hotpath feature
 #[cfg(feature = "hotpath")]
@@ -162,7 +163,9 @@ pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 
-pub const NULL_MOVE: Move = (!0u128, Vec::new());
+pub fn null_move() -> Move {
+    (!0u128, Arc::new(Vec::new()))
+}
 pub const DEFAULT_DROP: &str = "@#~?@";
 pub const NULL_DROP: &str = "@#~?@#~?";
 

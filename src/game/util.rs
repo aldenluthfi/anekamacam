@@ -339,7 +339,7 @@ pub fn perft(
 ) -> u64 {
     if depth == 0 {
         if branch >= 0 {
-            println!("{}moves | Nodes: 1", prefix);
+            println!("{} moves | Nodes: 1", prefix);
         }
         return 1;
     }
@@ -363,7 +363,7 @@ pub fn perft(
     }
 
     if branch >= 0 {
-        println!("{}moves | Nodes: {}", prefix, nodes);
+        println!("{} moves | Nodes: {}", prefix, nodes);
     }
 
     nodes

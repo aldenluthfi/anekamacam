@@ -234,7 +234,7 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Snapshot {
-            move_ply: NULL_MOVE,
+            move_ply: null_move(),
             castling_state: 0,
             halfmove_clock: 0,
             en_passant_square: EnPassantSquare::MAX,
@@ -429,11 +429,11 @@ impl State {
 
             position_hash_map: HashMap::with_capacity(128),
 
-            pv_table: vec![(NULL_MOVE, 0); PV_TABLE_SIZE],
-            pv_line: [NULL_MOVE; MAX_DEPTH],
+            pv_table: vec![(null_move(), 0); PV_TABLE_SIZE],
+            pv_line: std::array::from_fn(|_| null_move()),
 
-            search_history: vec![vec![NULL_MOVE; board_size]; piece_count],
-            killer_history: vec![[NULL_MOVE; 2]; piece_count],
+            search_history: vec![vec![null_move(); board_size]; piece_count],
+            killer_history: vec![std::array::from_fn(|_| null_move()); piece_count],
         }
     }
 
@@ -470,11 +470,11 @@ impl State {
         self.search_ply = 0;
         self.position_hash_map.clear();
 
-        self.pv_table = vec![(NULL_MOVE, 0); PV_TABLE_SIZE];
-        self.pv_line = [NULL_MOVE; MAX_DEPTH];
+        self.pv_table = vec![(null_move(), 0); PV_TABLE_SIZE];
+        self.pv_line = std::array::from_fn(|_| null_move());
 
-        self.search_history = vec![vec![NULL_MOVE; board_size]; piece_count];
-        self.killer_history = vec![[NULL_MOVE; 2]; piece_count];
+        self.search_history = vec![vec![null_move(); board_size]; piece_count];
+        self.killer_history = vec![std::array::from_fn(|_| null_move()); piece_count];
     }
 
     pub fn load_fen(&mut self, fen: &str) {

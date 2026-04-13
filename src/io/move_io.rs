@@ -42,6 +42,12 @@ pub fn format_move(mv: &Move, state: &State) -> String {
     }
 
     if !mv.1.is_empty() {
+
+        let end = end!(mv);
+        let end_str = format_square(end as u16, state);
+
+        move_str.push_str(&format!(":{}", end_str));
+
         for capture in mv.1.iter() {
             let capt_sq = multi_move_captured_square!(capture);
             let capt_sq_str = format_square(capt_sq as u16, state);
@@ -108,7 +114,7 @@ pub fn debug_interactive(state: &mut State) {
                         fill_pv_line(state, depth);
 
                         for pv_move in &state.pv_line {
-                            if pv_move == &NULL_MOVE {
+                            if pv_move == &null_move() {
                                 break;
                             }
 
@@ -118,7 +124,7 @@ pub fn debug_interactive(state: &mut State) {
                         }
 
                         println!();
-                        state.pv_line = [NULL_MOVE; MAX_DEPTH];
+                        state.pv_line = std::array::from_fn(|_| null_move());
                     }
                     _ => {
                         eprintln!("Unknown pv command: {}", command);

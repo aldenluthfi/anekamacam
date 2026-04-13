@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::*;
 
 #[macro_export]
@@ -624,7 +626,7 @@ pub fn generate_move_list(
                 enc_capture_part!(encoded_move, taken_pieces[0] as u128);
             } else {
                 enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = taken_pieces;
+                encoded_move.1 = Arc::new(taken_pieces);
             }
 
             let entered_mandatory_promotion =
@@ -702,7 +704,7 @@ pub fn generate_move_list(
                 enc_capture_part!(encoded_move, taken_pieces[0] as u128);
             } else {
                 enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = taken_pieces;
+                encoded_move.1 = Arc::new(taken_pieces);
             }
 
             result.push(encoded_move);
@@ -1330,7 +1332,7 @@ macro_rules! make_move {
                     }
                 }
 
-                for cap in &$mv.1 {
+                for cap in $mv.1.iter() {
                     let captured_piece_index =
                         multi_move_captured_piece!(cap) as usize;
                     let captured_square =
@@ -1543,7 +1545,7 @@ macro_rules! make_move {
                     $state.setup_phase = false;
                 }
 
-                for cap in &$mv.1 {
+                for cap in $mv.1.iter() {
                     let captured_piece_index =
                         multi_move_captured_piece!(cap) as usize;
                     let captured_square =
@@ -2008,7 +2010,7 @@ macro_rules! undo_move {
                 $state.piece_list[piece_index]
                     .insert(start_square as u16);
 
-                for cap in &mv.1 {
+                for cap in mv.1.iter() {
                     let captured_piece_index =
                         multi_move_captured_piece!(cap) as usize;
                     let captured_square =
@@ -2157,7 +2159,7 @@ macro_rules! undo_move {
                     );
                 }
 
-                for cap in &mv.1 {
+                for cap in mv.1.iter() {
                     let captured_piece_index =
                         multi_move_captured_piece!(cap) as usize;
                     let captured_square =
