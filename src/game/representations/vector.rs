@@ -15,12 +15,7 @@
 //! # Date
 //! 12/02/2026
 
-use std::{collections::VecDeque, fmt::Debug};
-
-
-use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
-
-
+use crate::*;
 
 /*----------------------------------------------------------------------------*\
                         PATTERN MATCHING REPRESENTATIONS
@@ -32,6 +27,24 @@ use crate::game::moves::move_parse::INDEX_TO_CARDINAL_VECTORS;
                         MOVE GENERATION REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
+
+/// Leg encoding/decoding helper macros used by move generation.
+///
+/// A `Leg` is a packed `u32` where:
+/// - bits `0..=7`   encode `x` delta
+/// - bits `8..=15`  encode `y` delta
+/// - bits `16..=31` encode movement and capture modifiers
+///
+/// `leg!` performs packing from a parsed `LegVector` into the compact `Leg`.
+/// The remaining macros read individual fields from that packed representation.
+///
+/// Main modifier accessors:
+/// - `m`, `c`, `d`, `u`
+///
+/// Filter/constraint accessors:
+/// - `k`, `v`, `g`, `t`, `i`, `p`
+/// - `not_k`, `not_v`, `not_g`, `not_i`
+/// - `l`, `r`
 #[macro_export]
 macro_rules! leg {
     ($l:expr) => {
@@ -167,8 +180,11 @@ macro_rules! r {
     };
 }
 
-/// A single leg move representation. Similar to LegVector but only retaining
-/// the whole vector and modifier bits.
+/// Represents one compact leg used during move generation and validation.
+///
+/// This alias stores the fully encoded displacement and modifier flags in a
+/// single `u32`, matching the packed layout used by `LegVector` helpers.
+/// It is used when only whole-leg semantics are needed.
 pub type Leg = u32;
 pub type MoveVector = Vec<Leg>;
 pub type MoveSet = Vec<MoveVector>;
@@ -204,10 +220,10 @@ impl Debug for MultiLegElement {
 
 pub type MultiLegVector = Vec<LegVector>;
 
-/// A 64 bit vector representation for leg move vectors.
-/// the first 32 bits represent the whole AtomicVector,
+/// A 64-bit vector representation for leg move vectors.
+/// The first 32 bits represent the whole `AtomicVector`.
 ///
-/// the next 16 bits are move modifiers:
+/// The next 16 bits are move modifiers:
 /// - main: m, c, d, u,
 /// - capture/destroy modifier: k, v, g, s
 /// - miscellaneous modifier: i, p
@@ -222,7 +238,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// | r | l |!i |!g |!v |!k | p | i | t | g | v | k | u | d | c | m |
 /// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
 ///
-/// main modifiers:
+/// Main modifiers:
 /// - (m)ove:
 ///   can move with this leg.
 /// - (c)apture:
@@ -240,7 +256,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///     - !k:
 ///       indicates the capture must not be royal.
 ///
-/// usage of (k, !k):
+/// Usage of (k, !k):
 /// - (false, false): this capture can be royal or not royal (regular capture).
 /// - (false, true) : this capture must not be royal.
 /// - (true, false) : this capture must be royal.
@@ -252,7 +268,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///     - !v:
 ///       indicates the capture must not be virgin (has moved).
 ///
-/// usage of (v, !v):
+/// Usage of (v, !v):
 /// - (false, false): this capture can be virgin or not (regular capture).
 /// - (false, true) : this capture must not be virgin.
 /// - (true, false) : this capture must be virgin.
@@ -266,7 +282,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       indicates the capture must not be of greater rank than the capturing
 ///       piece (captured <= capturing).
 ///
-/// design note:
+/// Design note:
 /// I chose (> and <=) instead of (>= and <) because in many chess
 /// variants, capturing an equal-rank piece is often allowed, while there
 /// are variants where it's not allowed to capture a greater-rank piece.
@@ -274,7 +290,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// A rank is an arbitrary game rule defined when setting up a variant, if it
 /// is not defined then all pieces will have the rank of 0
 ///
-/// usage of (g, !g):
+/// Usage of (g, !g):
 /// - (false, false): this capture can be of any rank (regular capture).
 /// - (false, true) : this capture must not be of greater rank.
 /// - (true, false) : this capture must be of greater rank.
@@ -283,7 +299,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - en-passan(t):
 ///    - t: means this leg can capture en passant.
 ///
-/// usage of (t):
+/// Usage of (t):
 /// - (true) : this leg can capture en passant.
 /// - (false): this leg cannot capture en passant.
 ///
@@ -295,7 +311,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///     - !i:
 ///       indicates this leg must not be used as an initial move of the piece.
 ///
-/// usage of (i, !i):
+/// Usage of (i, !i):
 /// - (false, false): this leg can be used as initial or not (regular leg).
 /// - (false, true) : this leg must not be used as initial.
 /// - (true, false) : this leg must be used as initial.
@@ -305,14 +321,14 @@ pub type MultiLegVector = Vec<LegVector>;
 ///     - p:
 ///       indicates this leg's start square creates an en passant square.
 ///
-/// usage of (p):
+/// Usage of (p):
 /// - (true) : this leg's start square creates an en passant square.
 /// - (false): this leg's start square does not create an en passant square.
 ///
-/// additional modifier 'r' for 'right' can be used to indicate that the leg
+/// Additional modifier `r` ("right") can be used to indicate that the leg
 /// is to the right side (for castling purposes)
 ///
-/// similarly, modifier 'l' for 'left' can be used to indicate that the leg
+/// Similarly, modifier `l` ("left") can be used to indicate that the leg
 /// is to the left side (for castling purposes)
 ///
 /// Special modifiers (r!r, v!v, g!g, i!i):
@@ -336,7 +352,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///   will be skipped during move list generation but used when checking if a
 ///   square is attacked
 ///
-/// How to use (examples)
+/// How to use (examples):
 ///
 /// Xianqi "Cannon" move leg: cdR-u#-nR
 /// 1. First, capture/destroy as a rook, then unload it back to that square
@@ -536,7 +552,7 @@ impl Debug for Token {
 /// - (x1, y1) is the whole vector
 /// - (x2, y2) is the last vector applied
 ///
-/// each byte in the u32 represents a component of the vector:
+/// Each byte in the `u32` represents a component of the vector:
 /// - bits 0-7: x1
 /// - bits 8-15: y1
 /// - bits 16-23: x2

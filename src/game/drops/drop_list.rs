@@ -11,8 +11,6 @@
 
 use crate::*;
 
-use std::sync::Arc;
-
 /// Filters and relocates precomputed drop patterns for a target square.
 ///
 /// Relative allower/stopper offsets are validated against board bounds from

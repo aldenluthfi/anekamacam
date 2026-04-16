@@ -20,6 +20,27 @@ pub type Square = u16;
                           SPECIAL RULES REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
+
+/// Special-rules bitmask accessor/encoder macros.
+///
+/// The `special_rules` field in [`State`] uses one bit per optional rule.
+/// For each rule there is a pair of macros:
+/// - reader: `rule_name!(state)`
+/// - writer: `enc_rule_name!(rules)`
+///
+/// Current mapped bits:
+/// - `castling` (bit 0)
+/// - `en_passant` (bit 1)
+/// - `promotions` (bit 2)
+/// - `drops` (bit 3)
+/// - `count_limits` (bit 4)
+/// - `forbidden_zones` (bit 5)
+/// - `promote_to_captured` (bit 6)
+/// - `demote_upon_capture` (bit 7)
+/// - `stalemate_loss` (bit 8)
+/// - `setup_phase` (bit 9)
+/// - `stand_offs` (bit 10)
+/// - `repetition_limit` (bit 11)
 #[macro_export]
 macro_rules! castling {
     ($state:expr) => {
@@ -194,6 +215,13 @@ macro_rules! enc_repetition_limit {
 
 pub type EnPassantSquare = u32;
 
+
+/// En passant packed-field accessor macros.
+///
+/// [`EnPassantSquare`] stores:
+/// - bits `0..=11`   : target square
+/// - bits `12..=23`  : captured square
+/// - bits `24..=31`  : captured piece index
 #[macro_export]
 macro_rules! enp_square {
     ($en_passant:expr) => {
@@ -220,6 +248,10 @@ macro_rules! enp_piece {
 \*----------------------------------------------------------------------------*/
 
 /// Captures reversible state needed to undo a move.
+///
+/// Each snapshot stores move payload and dynamic counters/flags so `undo_move!`
+/// can restore the exact pre-move position, including hash-dependent state.
+/// It is appended to `State::history` during move execution.
 pub struct Snapshot {
     pub move_ply: Move,
 
@@ -246,10 +278,15 @@ impl Default for Snapshot {
     }
 }
 
+
+/// Returns whether a snapshot corresponds to a pass move.
+///
+/// This is used in repetition / stand-off flow where pass detection is needed
+/// while reading from undo history rather than the active move stream.
 #[macro_export]
-macro_rules! null_snapshot {
+macro_rules! pass_snapshot {
     ($snapshot:expr) => {
-        is_null!($snapshot.move_ply)
+        is_pass!($snapshot.move_ply)
     };
 }
 
@@ -257,7 +294,7 @@ macro_rules! null_snapshot {
                             GAME STATE REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// Main state of the game
+/// Main state of the game.
 ///
 /// The special rules field is a bitmask representing enabled special rules.
 ///
@@ -329,8 +366,8 @@ pub struct State {
     pub position_hash: u128,
     pub history: Vec<Snapshot>,
 
-    pub search_ply: u32,
-    pub ply_counter: u32,
+    pub search_ply: u32,                                                        /* the number of plies in the search  */
+    pub ply_counter: u32,                                                       /* the number of plies in the game    */
 
     pub material: [u32; 2],
     pub big_pieces: [u32; 2],
@@ -347,8 +384,8 @@ pub struct State {
     pub pv_table: PVTable,                                                      /* transposition table for search     */
     pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
 
-    pub search_history: Vec<Vec<Move>>,
-    pub killer_history: Vec<[Move; 2]>,
+    pub search_hist: Vec<Vec<Move>>,
+    pub killer_hist: Vec<[Move; 2]>,
 }
 
 impl State {
@@ -435,14 +472,18 @@ impl State {
             position_hash_map: HashMap::with_capacity(128),
 
             pv_table: vec![(null_move(), 0); PV_TABLE_SIZE],
-            pv_line: std::array::from_fn(|_| null_move()),
+            pv_line: array::from_fn(|_| null_move()),
 
-            search_history: vec![vec![null_move(); board_size]; piece_count],
-            killer_history: vec![std::array::from_fn(|_| null_move()); piece_count],
+            search_hist: vec![vec![null_move(); board_size]; piece_count],
+            killer_hist: vec![array::from_fn(|_| null_move()); piece_count],
         }
     }
 
     /// Resets all dynamic position/search fields while keeping static config.
+    ///
+    /// This clears board occupancy, counters, caches, histories, and search
+    /// bookkeeping while preserving static variant definitions.
+    /// It prepares the state for loading or initializing a fresh position.
     pub fn reset(&mut self) {
         let piece_count: usize = self.pieces.len();
         let board_size: usize = (self.files as usize) * (self.ranks as usize);
@@ -477,13 +518,17 @@ impl State {
         self.position_hash_map.clear();
 
         self.pv_table = vec![(null_move(), 0); PV_TABLE_SIZE];
-        self.pv_line = std::array::from_fn(|_| null_move());
+        self.pv_line = array::from_fn(|_| null_move());
 
-        self.search_history = vec![vec![null_move(); board_size]; piece_count];
-        self.killer_history = vec![std::array::from_fn(|_| null_move()); piece_count];
+        self.search_hist = vec![vec![null_move(); board_size]; piece_count];
+        self.killer_hist = vec![array::from_fn(|_| null_move()); piece_count];
     }
 
     /// Resets the state and loads a new position from a FEN-like string.
+    ///
+    /// This is a convenience wrapper that performs `reset()` first, then parses
+    /// and applies the supplied position text.
+    /// It guarantees stale runtime state is not carried into the new position.
     pub fn load_fen(&mut self, fen: &str) {
         self.reset();
         parse_fen(self, fen);

@@ -54,6 +54,10 @@ lazy_static! {
 pub type PositionHash = u128;
 
 /// Computes the Zobrist hash for the given game state.
+///
+/// The hash includes side to move, castling state, en passant square,
+/// on-board piece placement, and in-hand piece counts.
+/// It is used for repetition tracking and transposition table indexing.
 pub fn hash_position(state: &State) -> u128 {
     let mut hash = u128::default();
 
@@ -86,6 +90,18 @@ pub fn hash_position(state: &State) -> u128 {
     hash
 }
 
+
+/// Incremental Zobrist hash update helpers.
+///
+/// These macros keep `state.position_hash` in sync with mutable state updates
+/// during make/undo flow without recomputing from scratch.
+///
+/// Supported updates:
+/// - piece toggles (`hash_in_or_out_piece!`)
+/// - side-to-move toggle (`hash_toggle_side!`)
+/// - castling rights transitions (`hash_update_castling!`)
+/// - en passant transitions (`hash_update_en_passant!`)
+/// - in-hand count transitions (`hash_update_in_hand!`)
 #[macro_export]
 macro_rules! hash_in_or_out_piece {
     ($game_state:expr, $piece_index:expr, $square_index:expr) => {

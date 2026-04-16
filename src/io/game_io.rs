@@ -58,10 +58,10 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 }
 
 /// Parses a game configuration file and initializes a game state.
-/// See example.conf for the expected format of the configuration file.
+/// See `example.conf` for the expected format of the configuration file.
 ///
 /// Pieces are first parsed into a tuple of:
-/// (string, char, Vec<u8>, u8, u8, bool, bool, bool, u16)
+/// (string, char, Vec<u8>, u8, u8, bool, bool, bool, u16, u8)
 ///
 /// where the fields are:
 /// [0] string: the name of the piece
@@ -73,6 +73,7 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 /// [6] bool: whether the piece is big
 /// [7] bool: whether the piece is major
 /// [8] u16: the value of the piece
+/// [9] u8: the piece rank
 ///
 pub fn parse_config_file(path: &str) -> State {
     let file_str = fs::read_to_string(path)
@@ -308,6 +309,7 @@ pub fn parse_config_file(path: &str) -> State {
             false,
             false,
             0,
+            0,
         ));
 
         pieces.push((
@@ -319,6 +321,7 @@ pub fn parse_config_file(path: &str) -> State {
             false,
             false,
             false,
+            0,
             0,
         ));
     }
@@ -530,6 +533,35 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    if sections.contains_key("piece ranks") {
+        for piece_rank in &sections["piece ranks"] {
+            let parts: Vec<&str> = piece_rank
+                .split(':')
+                .map(str::trim)
+                .collect();
+
+            assert!(
+                parts.len() == 2,
+                "Invalid piece rank definition: {}",
+                piece_rank
+            );
+
+            let rank_str = parts[0];
+            let pieces_str = parts[1];
+
+            let rank_value = rank_str.parse::<u8>().unwrap_or_else(
+                |_| panic!("Invalid piece rank: {}", rank_str.trim())
+            );
+            for piece_char in pieces_str.chars() {
+                if let Some(&index) = char_to_index.get(&piece_char) {
+                    pieces[index].9 = rank_value;
+                } else {
+                    panic!("Unknown piece character: {}", piece_char);
+                }
+            }
+        }
+    }
+
 /*----------------------------------------------------------------------------*\
                              POPULATE STATIC FIELDS
 \*----------------------------------------------------------------------------*/
@@ -541,7 +573,7 @@ pub fn parse_config_file(path: &str) -> State {
         pieces.iter().enumerate().map(|(i, p)| Piece::new(
             p.0.clone(), p.1, p.2.clone(), p.3, p.4, p.5, p.6, p.7,
             pieces_moves[i].contains("o"), pieces_moves[i].contains("O"),
-            p.8
+            p.8, p.9
         )).collect(),
         special_rules,
     );
@@ -585,34 +617,6 @@ pub fn parse_config_file(path: &str) -> State {
             .entry(index as u8).or_insert_with(|| vec![index as u8]);
     }
 
-    if sections.contains_key("piece ranks") {
-        for piece_rank in &sections["piece ranks"] {
-            let parts: Vec<&str> = piece_rank
-                .split(':')
-                .map(str::trim)
-                .collect();
-
-            assert!(
-                parts.len() == 2,
-                "Invalid piece rank definition: {}",
-                piece_rank
-            );
-
-            let rank_str = parts[0];
-            let pieces_str = parts[1];
-
-            let rank_value = rank_str.parse::<u8>().unwrap_or_else(
-                |_| panic!("Invalid piece rank: {}", rank_str.trim())
-            );
-            for piece_char in pieces_str.chars() {
-                if let Some(&index) = char_to_index.get(&piece_char) {
-                    result.pieces[index].rank = rank_value;
-                } else {
-                    panic!("Unknown piece character: {}", piece_char);
-                }
-            }
-        }
-    }
 
     if castling {
         assert!(
@@ -1137,10 +1141,12 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     result
 }
 
-/// Parses a FEN string and updates the game state accordingly. Note that the
-/// FEN implementation is slightly modified to accommodate arbitrary board
-/// sizes, the en passant square is represented as `xxyyzz` where `xx` is the
-/// file and `yy` is the rank (both 0-indexed) and zz is the piece index in hex.
+/// Parses a FEN string and updates the game state accordingly.
+///
+/// Note that the FEN implementation is slightly modified to accommodate
+/// arbitrary board sizes. The en passant square is represented as `xxyyzz`
+/// where `xx` is the file and `yy` is the rank (both 0-indexed), and `zz`
+/// is the piece index in hex.
 ///
 /// For variants where there is pieces in hand, it is in the format
 /// (white)/(black) where each part is formatted as follows:
@@ -1440,20 +1446,20 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     state.position_hash = hash_position(state);
 }
 
-/// Combines two board string representations by overlaying non-whitespace
-/// characters from the first board onto the second board.
+/// Combines two board string representations by overlaying
+/// non-whitespace characters from the first board onto the second board.
 ///
 /// This function is used to merge multiple piece-specific board visualizations
 /// into a single composite board display. It performs a character-by-character
-/// merge where:
+/// merge rules:
 /// - If both characters are identical, use that character
 /// - If the first board has whitespace, use the character from the second board
 /// - Otherwise, use the character from the first board
 ///
 /// # Arguments
 ///
-/// * `board1` - The first board string
-/// * `board2` - The second board string
+/// - `board1` - The first board string
+/// - `board2` - The second board string
 ///
 /// # Returns
 ///
@@ -1462,7 +1468,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 ///
 /// # Examples
 ///
-/// **Before** - Two separate board strings (white pieces and black pieces):
+/// Before: two separate board strings (white pieces and black pieces):
 ///
 /// ```text
 /// Board 1 (White pieces):        Board 2 (Black pieces):
@@ -1486,7 +1492,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 ///      a   b   c   d                  a   b   c   d
 /// ```
 ///
-/// **After** - Combined result:
+/// After: combined result:
 ///
 /// ```text
 ///    ╔═══╤═══╤═══╤═══╗
@@ -1630,7 +1636,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
 ///
 /// # Arguments
 ///
-/// * `state` - The game state containing all piece definitions
+/// - `state` - The game state containing all piece definitions
 ///
 /// # Returns
 ///

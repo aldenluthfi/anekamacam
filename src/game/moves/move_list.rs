@@ -8,11 +8,21 @@
 //! # Date
 //! 01/02/2026
 
-
-use std::sync::Arc;
-
 use crate::*;
 
+
+/*----------------------------------------------------------------------------*\
+                        ATTACK QUERY REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
+
+/// Attack-query macros used by legality and check detection.
+///
+/// `is_square_attacked!` validates whether at least one precomputed attack mask
+/// can currently realize an attack on a target square, including directional,
+/// occupancy, and modifier constraints delegated to `validate_attack_vector!`.
+///
+/// `is_in_check!` evaluates all royal-piece squares for a side and reports
+/// whether the current side position is under attack (outside setup phase).
 #[macro_export]
 macro_rules! is_square_attacked {
     (
@@ -46,20 +56,22 @@ macro_rules! is_in_check {
         {
             let monarch_indices = &$game_state.royal_list[$side as usize];
 
-            (monarch_indices.len() == 1 && !$game_state.setup_phase) && {
-                let royal_piece =
-                    &$game_state.main_board[monarch_indices[0] as usize];
-                let royal_rank =
-                    &$game_state.pieces[*royal_piece as usize].rank;
+            (!monarch_indices.is_empty() && !$game_state.setup_phase) && {
+                monarch_indices.iter().all(|&idx| {
+                    let royal_piece =
+                        &$game_state.main_board[idx as usize];
+                    let royal_rank =
+                        p_rank!($game_state.pieces[*royal_piece as usize]);
 
-                is_square_attacked!(
-                    monarch_indices[0] as u32,
-                    $side,
-                    get!($game_state.virgin_board, monarch_indices[0] as u32),
-                    true,
-                    *royal_rank,
-                    $game_state
-                )
+                    is_square_attacked!(
+                        idx as u32,
+                        $side,
+                        get!($game_state.virgin_board, idx as u32),
+                        true,
+                        royal_rank,
+                        $game_state
+                    )
+                })
             }
         }
     };
@@ -177,6 +189,13 @@ pub fn generate_attack_masks(
     }
 }
 
+
+/// Validates whether an attack vector can legally reach a target square.
+///
+/// This macro executes the full per-leg simulation with movement/capture/
+/// destroy/unload semantics, occupancy checks, rank/royalty/virgin filters,
+/// and special modifier combinations. It is used as the runtime validator for
+/// precomputed attack candidates gathered in `relevant_attacks`.
 #[macro_export]
 macro_rules! validate_attack_vector {
     (
@@ -190,7 +209,7 @@ macro_rules! validate_attack_vector {
         $game_state:expr
     ) => {{
         let piece_color = p_color!($attacking_piece);
-        let piece_rank = $attacking_piece.rank;
+        let piece_rank = p_rank!($attacking_piece);
         let piece_unmoved = get!(
             $game_state.virgin_board, $square_index as u32
         );
@@ -289,7 +308,7 @@ macro_rules! validate_attack_vector {
                                 $game_state.virgin_board,
                                 enp_captured!($game_state.en_passant_square)
                             );
-                        let capt_rank = capt_piece.rank;
+                        let capt_rank = p_rank!(capt_piece);
                         let capt_royal =
                             p_is_royal!(capt_piece);
 
@@ -325,7 +344,7 @@ macro_rules! validate_attack_vector {
                     &$game_state.pieces[capt_piece_index as usize];
                 let capt_unmoved =
                     get!($game_state.virgin_board, end_square);
-                let capt_rank = capt_piece.rank;
+                let capt_rank = p_rank!(capt_piece);
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
@@ -353,7 +372,7 @@ macro_rules! validate_attack_vector {
                     &$game_state.pieces[capt_piece_index as usize];
                 let capt_unmoved =
                     get!($game_state.virgin_board, end_square);
-                let capt_rank = capt_piece.rank;
+                let capt_rank = p_rank!(capt_piece);
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
@@ -390,7 +409,7 @@ pub fn generate_move_list(
 
     let piece_index = p_index!(piece);
     let piece_color = p_color!(piece);
-    let piece_rank = piece.rank;
+    let piece_rank = p_rank!(piece);
     let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
 
     let vector_set =
@@ -504,7 +523,7 @@ pub fn generate_move_list(
                                 game_state.virgin_board,
                                 enp_captured!(game_state.en_passant_square)
                             );
-                        let capt_rank = capt_piece.rank;
+                        let capt_rank = p_rank!(capt_piece);
                         let capt_royal =
                             p_is_royal!(capt_piece);
 
@@ -540,7 +559,7 @@ pub fn generate_move_list(
                     &game_state.pieces[capt_piece_index as usize];
                 let capt_unmoved =
                     get!(game_state.virgin_board, end_square);
-                let capt_rank = capt_piece.rank;
+                let capt_rank = p_rank!(capt_piece);
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
@@ -580,7 +599,7 @@ pub fn generate_move_list(
                     &game_state.pieces[capt_piece_index as usize];
                 let capt_unmoved =
                     get!(game_state.virgin_board, end_square);
-                let capt_rank = capt_piece.rank;
+                let capt_rank = p_rank!(capt_piece);
                 let capt_royal =
                     p_is_royal!(capt_piece);
 
@@ -733,6 +752,20 @@ pub fn generate_move_list(
     result
 }
 
+
+/*----------------------------------------------------------------------------*\
+                           MOVE STATE TRANSITION MACROS
+\*----------------------------------------------------------------------------*/
+
+/// Applies a move to the game state with full incremental bookkeeping.
+///
+/// This macro performs a complete state transition:
+/// - advances ply counters
+/// - updates board occupancy, piece lists, virgin flags, castling/en-passant
+/// - handles quiet, capture, multi-capture, unload, promotion, and drop flows
+/// - updates material/piece-class counters and in-hand inventories
+/// - updates Zobrist hash and repetition map
+/// - pushes a reversible [`Snapshot`] and rejects illegal self-check outcomes
 #[macro_export]
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
@@ -751,7 +784,7 @@ macro_rules! make_move {
             verify_game_state($state);
 
             let move_type = move_type!($mv);
-            let null_move = is_null!($mv);
+            let pass_move = is_pass!($mv);
 
             let stand_off_before =
                 stand_offs!($state) && is_in_stand_off!($state);
@@ -1652,11 +1685,11 @@ macro_rules! make_move {
 
             let legal =
                 !in_check && !(stand_off_after && stand_off_before) ||
-                stand_off_after && stand_off_before && null_move;
+                stand_off_after && stand_off_before && pass_move;
 
-            if null_move
+            if pass_move
             && ($state.history.last().map_or(
-                false, |last_mv| null_snapshot!(last_mv))
+                false, |last_mv| pass_snapshot!(last_mv))
             || stand_off_before) {
                 $state.game_over = true;
             }
@@ -1667,11 +1700,6 @@ macro_rules! make_move {
                 .entry($state.position_hash)
                 .or_insert(0);
             *repetition_count += 1;
-
-            if repetition_limit!($state)
-            && *repetition_count >= $state.repetition_limit {
-                $state.game_over = true;
-            }
 
             let snapshot: Snapshot = Snapshot {
                 move_ply: $mv,
@@ -1697,6 +1725,12 @@ macro_rules! make_move {
     };
 }
 
+
+/// Reverts the last applied move using the most recent [`Snapshot`].
+///
+/// This macro restores all dynamic state fields and reverses side effects made
+/// by `make_move!`, including board occupancy, piece lists, counters, and the
+/// position repetition map.
 #[macro_export]
 macro_rules! undo_move {
     ($state:expr) => {
@@ -1710,6 +1744,10 @@ macro_rules! undo_move {
                 .get_mut(&$state.position_hash)
                 .unwrap();
             *repetition_count -= 1;
+
+            (*repetition_count == 0).then(|| {
+                $state.position_hash_map.remove(&$state.position_hash);
+            });
 
             let snapshot = $state.history.pop().unwrap_or_else(
                 || panic!("No move to undo!")
@@ -2230,6 +2268,11 @@ macro_rules! undo_move {
     };
 }
 
+
+/// Returns whether a move is legal in the current position.
+///
+/// The move must exist in generated pseudo-legal moves and survive a temporary
+/// `make_move!` / `undo_move!` legality cycle.
 #[macro_export]
 macro_rules! is_move_legal {
     ($state:expr, $mv:expr) => {
