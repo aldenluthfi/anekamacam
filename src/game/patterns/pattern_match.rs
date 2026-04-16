@@ -18,7 +18,11 @@ lazy_static! {
         Regex::new(r"([^-]+)").unwrap();
 }
 
-/// A simple (x, y) + piece index vector for drop generations.
+/// Represents one relative pattern offset with its allowed piece set.
+///
+/// The `u16` packs `(x, y)` displacement, and the `HashSet<u8>` stores piece
+/// indices accepted at that offset during drop/stand-off matching.
+/// This compact unit is shared by allower and stopper pattern lists.
 pub type PatternUnit = (u16, HashSet<u8>);
 pub type PatternAllower = Vec<PatternUnit>;
 pub type PatternStopper = Vec<PatternUnit>;
@@ -32,7 +36,7 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
     expr.replace("-*", &format!("-{}", all_pieces))
 }
 
-/// The Cheesy Pattern Match Notation (CPMN) is as follows:
+/// The Cheesy Pattern Match Notation (CPMN) is as follows.
 ///
 /// [allower multi leg]~[pieces]@[stoppers multi leg]~[pieces]
 ///
@@ -180,8 +184,11 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     (allower_result, stopper_result)
 }
 
-/// If associated with a piece, that piece's color POV is used;
-/// otherwise, White's POV is used.
+/// Matches a parsed pattern against a square using the given color viewpoint.
+///
+/// If a concrete piece context exists, use that piece's color for orientation;
+/// otherwise use White's orientation as the default perspective.
+/// Returns `true` only when all allowers pass and no stopper matches.
 pub fn match_pattern(
     pattern: &Pattern, square: u32, color: u8, state: &State
 ) -> bool {
@@ -230,6 +237,8 @@ pub fn match_pattern(
 
 /// Parses a `|`-separated stand-off expression into executable patterns.
 ///
+/// Each branch is parsed independently via `parse_pattern` and collected into a
+/// single vector.
 /// Empty expressions produce no patterns.
 pub fn generate_stand_off_patterns(
     expr: &str, state: &State
@@ -301,6 +310,13 @@ pub fn generate_relevant_stand_offs(
     result
 }
 
+
+/// Evaluates whether the current position contains any active
+/// stand-off pattern.
+///
+/// Iterates every piece instance on the board, checks precomputed stand-off
+/// candidate patterns for that piece-square pair, and returns `true` as soon as
+/// one pattern matches.
 #[macro_export]
 macro_rules! is_in_stand_off {
     ($state:expr) => {

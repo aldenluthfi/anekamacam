@@ -13,12 +13,30 @@
 //! # Date
 //! 18/02/2024
 
-use bnum::types::U4096;
+use crate::*;
 
-/// The board type is a triple with three entries, the first is the file count,
-/// followed by the rank count then the board itself.
+/// Represents a board as a compact `(files, ranks, bits)` triple.
+///
+/// The first element stores the file count and the second stores the rank
+/// count.
+/// The third element stores occupancy bits in a `U4096` bitboard.
 pub type Board = (u8, u8, U4096);
 
+
+/*----------------------------------------------------------------------------*\
+                        BITBOARD HELPER REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
+
+/// Bitboard helper macros used across move generation and state updates.
+/// 
+/// These macros operate on the compact [`Board`] tuple representation:
+/// `(files, ranks, bits)`, where `bits` is a `U4096` bitset.
+/// 
+/// Access helpers:
+/// - `board!`, `files!`, `ranks!`, `get!`
+/// 
+/// Mutation helpers:
+/// - `set!`, `clear!`, `or!`, `and!`, `xor!`, `not!`
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {
