@@ -11,8 +11,24 @@
 
 use crate::*;
 
-/// A move is formatted as follows:
-/// `[drop piece]@:[start]:[end]*[captured_1]...*[captured_n]=[promotion]`
+/*----------------------------------------------------------------------------*\
+                          MOVE STRING REPRESENTATION
+\*----------------------------------------------------------------------------*/
+
+/// Formats a move into the engine's canonical text representation.
+///
+/// Canonical grammar:
+/// - `[drop_piece]@` (optional drop prefix)
+/// - `[start]` (always present)
+/// - `:[end]` for quiet and multi-capture moves
+/// - `*[capture_square]` for capture segments (single or repeated)
+/// - `=[promotion_piece]` for promotions
+///
+/// Effective shape:
+/// `[drop_piece]@:[start]:[end]*[captured_1]...*[captured_n]=[promotion]`
+///
+/// The resulting string is used for user-facing display and as the matching
+/// key for `parse_move` when validating textual input.
 pub fn format_move(mv: &Move, state: &State) -> String {
     let mut move_str = String::new();
 
@@ -111,7 +127,7 @@ pub fn debug_interactive(state: &mut State) {
             input if input.starts_with("pv") => {
                 let parts = input.split_whitespace().collect::<Vec<_>>();
 
-                if parts.len() < 2 {
+                if parts.len() < 3 {
                     eprintln!("Usage: pv [hash/show] [args]");
                     continue;
                 }

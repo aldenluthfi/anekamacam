@@ -9,12 +9,17 @@
 //! 29/01/2026
 
 
-use crate::game::patterns::pattern_match::{PatternAllower, PatternStopper};
+use crate::*;
 
 /*----------------------------------------------------------------------------*\
                           DROP REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
+
+/// Encoding helpers for drop-specific flags in packed moves.
+///
+/// These macros set bitfields in `Move.0` used by drop generation and move
+/// execution paths.
 #[macro_export]
 macro_rules! enc_can_checkmate {
     ($mv:expr, $val:expr) => {
@@ -33,6 +38,12 @@ macro_rules! enc_from_enemy_hand {
                           DROP REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
+
+/// Decoding helpers for drop-specific flags in packed moves.
+///
+/// These macros read the same drop-flag bits written by the encoder helpers
+/// so drop legality and execution paths can branch on encoded options.
+/// They mirror `enc_can_checkmate!` and `enc_from_enemy_hand!` semantics.
 #[macro_export]
 macro_rules! drop_can_checkmate {
     ($drop:expr) => {
@@ -51,11 +62,20 @@ macro_rules! drop_from_enemy_hand {
 /// - The first 8 bits represent the piece index of the piece being dropped.
 /// - The next 12 bits represent the square index where the piece is being
 ///   dropped.
-/// - The next 12 bits is reserved for drop modifiers
+/// - The next 12 bits are reserved for drop modifiers.
 pub type DropMove = u32;
 pub type Drops = (DropMove, PatternAllower, PatternStopper);
 pub type DropSet = Vec<Drops>;
 
+
+/*----------------------------------------------------------------------------*\
+                        DROP MODIFIER REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
+
+/// Accessors for modifier bits carried by [`DropMove`] entries.
+///
+/// These are consumed by drop generation and legality filtering while building
+/// concrete drop moves.
 #[macro_export]
 macro_rules! drop_k {
     ($drop:expr) => {

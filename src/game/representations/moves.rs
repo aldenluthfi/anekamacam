@@ -15,14 +15,13 @@
 //! # Date
 //! 26/01/2026
 
-use std::sync::Arc;
+use crate::*;
 
-use crate::game::representations::{
-    piece::PieceIndex,
-    state::Square,
-    vector::MoveVector
-};
-
+/// Represents an attacking piece together with its target and attack path.
+///
+/// The tuple stores the attacking piece index, the attacked square, and the
+/// move vector that realizes the attack.
+/// It is used during move generation and legality validation.
 pub type AttackMask = (PieceIndex, Square, MoveVector);
 
 /// A type representing a single move in the game.
@@ -63,7 +62,7 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// - Next 12 bits: Unload square index (if applicable).
 /// - Next 8 bits: bits represent the captured piece type.
 /// - Next 12 bits: represent the captured piece square index.
-/// - the last bit indicates if the piece captured is unmoved (1) or not (0).
+/// The last bit indicates if the piece captured is unmoved (1) or not (0).
 ///
 /// For the drop move, the second array is not used, and the first 128-bit
 /// integer is used as follows:
@@ -80,6 +79,17 @@ pub type Move = (u128, Arc<Vec<u64>>);
                           MOVE REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
+
+/// Primary move-bitfield encoder macros.
+///
+/// These macros write individual fields into `Move.0` (`u128`) using the
+/// packed move layout described above the `Move` type alias.
+///
+/// They are intentionally low-level and composable: callers build a move in
+/// stages by applying only the fields relevant for the current move format.
+/// Capture payload bits (starting at bit 78) can be written either field-by-
+/// field (`enc_is_unload!`, `enc_captured_piece!`, ...) or as a single packed
+/// chunk using `enc_capture_part!`.
 #[macro_export]
 macro_rules! enc_move_type {
     ($mv:expr, $val:expr) => {
@@ -190,8 +200,16 @@ macro_rules! enc_capture_part {
                           MOVE REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
 
+
+/// Decoders for the primary packed `Move` representation.
+///
+/// These macros extract typed values and flags from `Move.0` for legality
+/// checks, make/undo logic, and IO serialization.
+///
+/// `is_pass!` is a semantic helper built on top of raw fields: a quiet move
+/// whose start and end squares are equal.
 #[macro_export]
-macro_rules! is_null {
+macro_rules! is_pass {
     ($mv:expr) => {
         move_type!($mv) == QUIET_MOVE && end!($mv) == start!($mv)
     };
@@ -299,6 +317,12 @@ macro_rules! captured_unmoved {
                         MOVE LIST REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
 
+
+/// Decoders for auxiliary multi-capture entries (`u64`) stored in `Move.1`.
+///
+/// Multi-capture moves keep their first capture in `Move.0` and any remaining
+/// captures in `Move.1` as compact 34-bit packed records. These macros unpack
+/// those records during make/undo and move display logic.
 #[macro_export]
 macro_rules! multi_move_is_unload {
     ($mv:expr) => {
@@ -338,6 +362,11 @@ macro_rules! multi_move_captured_unmoved {
                       MOVE LIST REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
+
+/// Encoders for auxiliary multi-capture entries (`u64`) stored in `Move.1`.
+///
+/// These macros mirror the `multi_move_*` decoders and are used when building
+/// the variable-length captured-piece list for `MULTI_CAPTURE_MOVE`.
 #[macro_export]
 macro_rules! enc_multi_move_is_unload {
     ($mv:expr, $val:expr) => {

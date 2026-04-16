@@ -4,7 +4,8 @@
 //!
 //! This file contains functionality for converting bitboard representations
 //! into human-readable ASCII art displays. It provides methods for formatting
-//! individual bitboards and complete boards with Unicode box-drawing characters,
+//! individual bitboards and complete boards with Unicode
+//! box-drawing characters,
 //! supporting various board sizes and piece symbols. The formatting includes
 //! rank and file labels for easy reference.
 //!

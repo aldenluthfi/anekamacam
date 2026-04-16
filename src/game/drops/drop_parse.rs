@@ -17,7 +17,9 @@ lazy_static! {
         Regex::new(r"^([kfde]*)@(.*@.*)$").unwrap();
 }
 
-/// For drops, there are modifiers
+/// Parses drop expressions into internal drop vectors and modifiers.
+///
+/// For drops, there are modifiers.
 ///
 /// [modifiers]@[CPMN]
 ///

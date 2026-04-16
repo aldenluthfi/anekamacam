@@ -208,7 +208,11 @@ fn precedence(op: char) -> usize {
     }
 }
 
-/// Maps a Betza atom representation to a Cheesy King Notation string.
+/// Maps a Betza atom symbol to its Cheesy King Notation (CKN) expansion.
+///
+/// This helper converts legacy single-character Betza atoms into equivalent
+/// normalized CKN fragments so later parsing stages can treat them uniformly.
+/// Unknown symbols are passed through unchanged so custom atoms are preserved.
 fn betza_atoms(piece: char) -> String {
     match piece {
         'W' => "<[1357]K>".to_string(),
@@ -300,7 +304,7 @@ fn evaluate(expr: &str) -> String {
 }
 
 /// Normalizes the expression by removing unnecessary parentheses and
-/// ensuring that the expression is in a canonical form. it also adds ^
+/// ensuring that the expression is in a canonical form. It also adds `^`
 /// between implicit concatenations.
 ///
 /// # Examples
@@ -343,12 +347,21 @@ fn atomize(expr: &str) -> Option<String> {
     Some(atoms.join(""))                                                        /* Return Some with joined atoms      */
 }
 
-/// Expands directions, it handles the following formats, for example:
+/// Expands directions in the expression.
+///
+/// It handles the following formats, for example:
 /// - `[1..8]` and similar: expands to [12345678]
 /// - `[..5]` and similar: expands to [12345]
 /// - `[5..]` and similar: expands to [5678]
 /// - `[1..7$25]` and similar: expands to [13467]
 /// - `[1235678$2]` and similar: expands to [135678]
+///
+/// # Examples
+/// ```ignore
+/// assert_eq!(expand_directions("[1..4]"), Some("[1234]".to_string()));
+/// assert_eq!(expand_directions("[..3]"), Some("[123]".to_string()));
+/// assert_eq!(expand_directions("[5..]"), Some("[5678]".to_string()));
+/// ```
 fn expand_directions(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -439,12 +452,25 @@ fn expand_ranges(expr: &str) -> Option<String> {
     Some(expanded.replace('&', "*"))                                            /* Return Some with expanded ranges   */
 }
 
-/// Expands cardinal directions in the expression. It handles the
-/// following formats:
+/// Expands cardinal directions in the expression.
+///
+/// It handles the following formats:
 ///
 /// - `n+s+e+w`: expands to `n|s|e|w`
 /// - `n+e`: expands to `n|e`
 /// - `n+e+s`: expands to `n|e|s`
+///
+/// # Examples
+/// ```ignore
+/// let out = expand_cardinals("n+e").unwrap();
+/// assert!(out == "n|e" || out == "e|n");
+///
+/// let out = expand_cardinals("n+e+s").unwrap();
+/// assert!(
+///     out == "n|e|s" || out == "n|s|e" || out == "e|n|s"
+///         || out == "e|s|n" || out == "s|n|e" || out == "s|e|n"
+/// );
+/// ```
 fn expand_cardinals(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -487,8 +513,11 @@ fn expand_cardinals(expr: &str) -> Option<String> {
     Some(result_stack.into_iter().collect::<Vec<String>>().join("|"))           /* Return Some with expanded cardinals*/
 }
 
-/// Splits an expression by '|' delimiter and processes each part in parallel.
-/// Returns a vector of results of applying function `f` to each part.
+/// Splits an expression on `|` and applies `f` to each branch independently.
+///
+/// This helper keeps branch handling consistent for every parse pipeline stage
+/// and returns one optional result per branch in input order.
+/// It is written to support parallel-friendly processing semantics.
 fn split_and_process<T>(
     expr: &str,
     f: impl Fn(&str) -> Option<T> + Sync
@@ -503,7 +532,7 @@ where
         .collect()
 }
 
-/// This ensures move strings are suitable to be processed by functions
+/// Ensures move strings are suitable for processing by the functions
 /// below:
 /// - `atomic_to_vector`
 /// - `chained_atomic_to_vector`
@@ -572,8 +601,11 @@ fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
     )
 }
 
-/// sorts 8 cardinal direction vectors clockwise, starting from +y axis
-/// uses atan2 to determine the angle of each vector from +y
+/// Sorts the eight cardinal atomic vectors clockwise from the `+y` axis.
+///
+/// Angles are computed with `atan2` against a `+y`-aligned reference frame so
+/// directional filters can index vectors in a stable canonical order.
+/// The input must contain exactly eight cardinal directions.
 fn sort_atomic_clockwise(
     mut vectors: Vec<AtomicVector>
 ) -> Vec<AtomicVector> {
@@ -596,12 +628,13 @@ fn sort_atomic_clockwise(
     vectors
 }
 
-/// returns a function that returns a tuple of 4 bools to determine whether a
-/// point lies:
+/// Returns a function that computes four directional half-plane checks.
 ///
-/// (north, east, south, west) of the perpendicular axes after rotation
+/// The returned function produces a tuple of four booleans indicating
+/// whether a point lies north, east, south, and west of the perpendicular
+/// axes after rotation.
 ///
-/// for diagonal directions for example:
+/// For diagonal directions, for example:
 ///
 /// - ne: "up" is right of the line x=-y -> x + y > 0
 /// - se: "right" is left of the line x=-y -> x + y < 0
@@ -1370,7 +1403,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// Example:
 /// - N -> FnF -> [2468]Kn[2468]K, starting from the `S` square
 ///
-/// 1. start with a Ferz (F -> [2468]K) move which produces the vectors:
+/// 1. Start with a Ferz (F -> [2468]K) move which produces the vectors:
 ///     - (1, 1)
 ///     - (1, -1)
 ///     - (-1, -1)
@@ -1398,7 +1431,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
 ///
-/// 2. for each of the vector, apply nF -> n[2468]K with respect to the last
+/// 2. For each of the vector, apply nF -> n[2468]K with respect to the last
 ///    vector:
 ///    - for (1, 1): direction is ne so n[2468]K rotated by ne produces (0, 1)
 ///      and (1, 0)
@@ -1457,7 +1490,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// Example 1:
 ///
 /// W. means W followed by repeating the last vector of W move once more
-/// 1. first do a W move
+/// 1. First do a W move
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
 /// │    │    │    │    │    │    │    │    │    │
@@ -1479,7 +1512,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// │    │    │    │    │    │    │    │    │    │
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
-/// 2. then for each vector produced by W, repeat the last vector once more (.)
+/// 2. Then for each vector produced by W, repeat the last vector once more (.)
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
 /// │    │    │    │    │    │    │    │    │    │
@@ -1526,7 +1559,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 ///
 /// Example 2:
 ///
-/// the {range} does not have to be a range, it could just be a number and the
+/// The {range} does not have to be a range; it could just be a number and the
 /// numbers mean "amount of dots + 1", so W{1} is W, W{2} is W., W{3} is W..,
 /// etc.
 ///
@@ -1653,7 +1686,7 @@ fn chained_atomic_to_vector(
 ///
 /// nW<nWnF>nW (following only one branch, starting from S)
 ///
-/// 1. move like a nW, for example (0, 1)
+/// 1. Move like a nW, for example (0, 1)
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
 /// │    │    │    │    │    │    │    │    │    │
@@ -1676,7 +1709,7 @@ fn chained_atomic_to_vector(
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
 ///
-/// 2. nWnF is inside <...> so it will be treated as one vector set and
+/// 2. Process `nWnF` inside `<...>` as one vector set, so it will
 ///    influence the next atomic as a whole. so we need to recursively process
 ///    nWnF first. So the move after processing nWnF (starting from S'):
 /// ```text
@@ -1705,7 +1738,7 @@ fn chained_atomic_to_vector(
 /// since as a whole it creates vector (-1, 2) and (1, 2) the greatest
 /// magnitude is +y so it will influence the next atomic as "n" or (0, 1).
 ///
-/// 3. finally apply nW (with respect to "n" from the previous step):
+/// 3. Finally apply nW (with respect to "n" from the previous step):
 ///    Final squares of the move (F Squares):
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
@@ -1855,8 +1888,11 @@ fn sum_multi_leg_vectors(
     sum
 }
 
-/// sorts 8 cardinal direction vectors clockwise, starting from +y axis
-/// uses atan2 to determine the angle of each vector from +y
+/// Sorts the eight cardinal multi-leg vectors clockwise from the `+y` axis.
+///
+/// Each entry is reduced to its net displacement and ordered by `atan2` so
+/// directional filters can use deterministic index-based selection.
+/// The input must contain exactly eight cardinal-direction outcomes.
 fn sort_multi_leg_clockwise(
     mut vectors: Vec<MultiLegVector>
 ) -> Vec<MultiLegVector> {
@@ -2712,7 +2748,11 @@ fn tokenize_multi_leg_expression(
     result.into_iter().collect()
 }
 
-/// A leg is defined as a compound atomic that has move modifiers applied to it.
+/// Converts one leg expression into concrete multi-leg vectors.
+///
+/// A leg is defined as a compound atomic with optional move modifiers applied,
+/// and may include exclusions that remove matching displacement outcomes.
+/// The result keeps exactly one `LegVector` per produced branch.
 fn leg_to_vector(
     expr: &str,
     rotation: &str,
@@ -2759,10 +2799,10 @@ fn leg_to_vector(
         .collect::<Vec<Vec<LegVector>>>()
 }
 
-/// Parses a castling move
+/// Parses a castling move.
 ///
-/// O{range} for left side (queen side in fide) castling and o{range} for right
-/// side (king side in fide) castling
+/// `O{range}` is for the left side (queenside in FIDE), and `o{range}` is
+/// for the right side (kingside in FIDE).
 ///
 /// A piece with a castling move can only castle with an unmoved piece on either
 /// side of the board. An implicit `i` modifier for a castling move. A piece
@@ -2776,9 +2816,9 @@ fn leg_to_vector(
 ///      piece
 ///
 /// Queenside castling is performed by:
-/// 1. making a null move (to verify not in check later on)
-/// 2. move to the edge of the board, captured the unmoved rook there
-/// 3. move back towards the center, placing the rook adjacent
+/// 1. Making a null move (to verify not in check later on)
+/// 2. Move to the edge of the board, captured the unmoved rook there
+/// 3. Move back towards the center, placing the rook adjacent
 ///    to the castling piece on the kingside of the castling piece
 ///
 /// Kingside castling is similar but on the other side.
@@ -2960,7 +3000,11 @@ fn multi_leg_to_vector(
     }
 }
 
-/// Generates all possible move vectors from the given move expression
+/// Generates all legal move-vector branches from a move expression.
+///
+/// The expression is first normalized and expanded by the parsing pipeline,
+/// then each branch is converted to concrete multi-leg vectors.
+/// Duplicate outcomes are removed before returning the final vector set.
 pub fn generate_move_vectors(
     expr: &str,
     game_state: &State
