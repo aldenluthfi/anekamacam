@@ -1458,8 +1458,8 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 ///
 /// # Arguments
 ///
-/// - `board1` - The first board string
-/// - `board2` - The second board string
+/// - `board1`  : The first board string
+/// - `board2`  : The second board string
 ///
 /// # Returns
 ///
@@ -1468,7 +1468,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 ///
 /// # Examples
 ///
-/// Before: two separate board strings (white pieces and black pieces):
+/// Before: two separate board strings (white pieces and black pieces)
 ///
 /// ```text
 /// Board 1 (White pieces):        Board 2 (Black pieces):
@@ -1492,7 +1492,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 ///      a   b   c   d                  a   b   c   d
 /// ```
 ///
-/// After: combined result:
+/// After: combined result
 ///
 /// ```text
 ///    ╔═══╤═══╤═══╤═══╗
@@ -1636,7 +1636,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
 ///
 /// # Arguments
 ///
-/// - `state` - The game state containing all piece definitions
+/// - `state`   : The game state containing all piece definitions
 ///
 /// # Returns
 ///

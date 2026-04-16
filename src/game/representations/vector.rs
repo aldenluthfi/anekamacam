@@ -31,9 +31,9 @@ use crate::*;
 /// Leg encoding/decoding helper macros used by move generation.
 ///
 /// A `Leg` is a packed `u32` where:
-/// - bits `0..=7`   encode `x` delta
-/// - bits `8..=15`  encode `y` delta
-/// - bits `16..=31` encode movement and capture modifiers
+/// - bits 0-7      : encode `x` delta
+/// - bits 8-15     : encode `y` delta
+/// - bits 16-31    : encode movement and capture modifiers
 ///
 /// `leg!` performs packing from a parsed `LegVector` into the compact `Leg`.
 /// The remaining macros read individual fields from that packed representation.

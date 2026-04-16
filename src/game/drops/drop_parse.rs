@@ -27,7 +27,7 @@ lazy_static! {
 /// - k : if set, this drop cannot deliver checkmate, otherwise, it can.
 /// - f : if set, this drop can be used to drop to forbidden squares
 /// - d : if set, this drop will remove every non-royal piece detected by the
-///   allowers
+///       allowers
 /// - e : this drop uses the enemy's hand rather than our own
 pub fn generate_drop_vectors(
     piece: &Piece, state: &State, expr_set: &[String]

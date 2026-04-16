@@ -25,7 +25,7 @@ use crate::*;
 /// - `=[promotion_piece]` for promotions
 ///
 /// Effective shape:
-/// `[drop_piece]@:[start]:[end]*[captured_1]...*[captured_n]=[promotion]`
+/// `[drop_piece]@[start]:[end]*[captured_1]...*[captured_n]=[promotion]`
 ///
 /// The resulting string is used for user-facing display and as the matching
 /// key for `parse_move` when validating textual input.

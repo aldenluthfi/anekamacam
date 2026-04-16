@@ -30,10 +30,10 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// SingleCapture, and HopperCapture).
 ///
 /// The first three bits is used to represent the type of format used:
-/// - 000: Single move without capture
-/// - 001: Single move with capture or unload
-/// - 010: Multi-capture move
-/// - 011: Drop move
+/// - `000` : Single move without capture
+/// - `001` : Single move with capture or unload
+/// - `010` : Multi-capture move
+/// - `011` : Drop move
 ///
 /// - The next 8 bits indicates the piece index of the piece making the move.
 /// - The next 12 bits represent the starting square index (0-4095).

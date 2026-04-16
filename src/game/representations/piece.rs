@@ -25,11 +25,11 @@ use crate::*;
 /// into readable attributes used throughout move generation and evaluation.
 ///
 /// Static accessors:
-/// - `p_index!`, `p_color!`, `p_can_promote!`, `p_is_royal!`, `p_rank!`
-/// - `p_castle_right!`, `p_castle_left!`
+/// `p_index!`, `p_color!`, `p_can_promote!`, `p_is_royal!`, `p_rank!`, 
+/// `p_castle_right!`, `p_castle_left!`
 ///
 /// Dynamic accessors:
-/// - `p_is_big!`, `p_is_major!`, `p_is_minor!`, `p_value!`
+/// `p_is_big!`, `p_is_major!`, `p_is_minor!`, `p_value!`
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
@@ -114,20 +114,20 @@ pub type PieceIndex = u8;
 /// A piece can have id from 0 - 254, with 255 reserved for "no piece".
 ///
 /// Static data (`encoded_static`) is encoded in 32 bits:
-/// - Bits 0-7: Piece index
-/// - Bit 8 : Color (0 for white, 1 for black)
-/// - Bit 9 : Piece can promote (1 if can promote, 0 otherwise)
-/// - Bit 10: Royal status (1 if royal, 0 otherwise)
-/// - Bits 11-18: Piece rank
-/// - Bit 29: Can castle kingside (right)
-/// - Bit 30: Can castle queenside (left)
-/// - Other bits: Unused
+/// - Bits 0-7      : Piece index
+/// - Bit 8         : Color (0 for white, 1 for black)
+/// - Bit 9         : Piece can promote (1 if can promote, 0 otherwise)
+/// - Bit 10        : Royal status (1 if royal, 0 otherwise)
+/// - Bits 11-18    : Piece rank
+/// - Bit 29        : Can castle kingside (right)
+/// - Bit 30        : Can castle queenside (left)
+/// - Other bits    : Unused
 ///
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
-/// - Bit 0: Big piece status
-/// - Bit 1: Major piece status (1 if major, 0 if minor)
-/// - Bits 2-17: Piece value
-/// - Other bits: Unused
+/// - Bit 0         : Big piece status
+/// - Bit 1         : Major piece status (1 if major, 0 if minor)
+/// - Bits 2-17     : Piece value
+/// - Other bits    : Unused
 ///
 /// The `promotions` field is a `Vec<u8>` that encodes the pieces this piece can
 /// promote to.
@@ -144,18 +144,18 @@ impl Piece {
     /// Creates a new piece with the specified properties.
     ///
     /// # Arguments
-    /// - `name` - The name of the piece
-    /// - `char` - Display character for the piece
-    /// - `promotions` - Pieces this can promote to
-    /// - `index` - Index of the piece type (0-254)
-    /// - `color` - Color of the piece (0 for white, 1 for black)
-    /// - `is_royal` - Whether this is a royal piece
-    /// - `is_big` - Whether this is a big piece
-    /// - `is_major` - Whether this is a major piece (true) or minor (false)
-    /// - `can_castle_right` - Whether can castle to the right (kingside)
-    /// - `can_castle_left` - Whether can castle to the left (queenside)
-    /// - `value` - The piece value (0-65535, stored in 16 bits)
-    /// - `rank` - The piece rank used for move modifiers
+    /// - `name`            : The name of the piece
+    /// - `char`            : Display character for the piece
+    /// - `promotions`      : Pieces this can promote to
+    /// - `index`           : Index of the piece type (0-254)
+    /// - `color`           : Color of the piece (0 for white, 1 for black)
+    /// - `is_royal`        : Whether this is a royal piece
+    /// - `is_big`          : Whether this is a big piece
+    /// - `is_major`        : Whether this is a major piece (T) or minor (F)
+    /// - `castle_right`    : Whether can castle to the right (kingside)
+    /// - `castle_left`     : Whether can castle to the left (queenside)
+    /// - `value`           : The piece value (0-65535, stored in 16 bits)
+    /// - `rank`            : The piece rank used for move modifiers
     pub fn new(
         name: String,
         char: char,
@@ -165,8 +165,8 @@ impl Piece {
         is_royal: bool,
         is_big: bool,
         is_major: bool,
-        can_castle_right: bool,
-        can_castle_left: bool,
+        castle_right: bool,
+        castle_left: bool,
         value: u16,
         rank: u8,
     ) -> Self {
@@ -181,11 +181,11 @@ impl Piece {
             encoded_static |= 1 << 10;
         }
 
-        if can_castle_right {
+        if castle_right {
             encoded_static |= 1 << 29;
         }
 
-        if can_castle_left {
+        if castle_left {
             encoded_static |= 1 << 30;
         }
 
