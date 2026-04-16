@@ -25,22 +25,9 @@ pub type Square = u16;
 ///
 /// The `special_rules` field in [`State`] uses one bit per optional rule.
 /// For each rule there is a pair of macros:
-/// - reader: `rule_name!(state)`
-/// - writer: `enc_rule_name!(rules)`
+/// - reader    : `rule_name!(state)`
+/// - writer    : `enc_rule_name!(rules)`
 ///
-/// Current mapped bits:
-/// - `castling` (bit 0)
-/// - `en_passant` (bit 1)
-/// - `promotions` (bit 2)
-/// - `drops` (bit 3)
-/// - `count_limits` (bit 4)
-/// - `forbidden_zones` (bit 5)
-/// - `promote_to_captured` (bit 6)
-/// - `demote_upon_capture` (bit 7)
-/// - `stalemate_loss` (bit 8)
-/// - `setup_phase` (bit 9)
-/// - `stand_offs` (bit 10)
-/// - `repetition_limit` (bit 11)
 #[macro_export]
 macro_rules! castling {
     ($state:expr) => {
@@ -219,9 +206,9 @@ pub type EnPassantSquare = u32;
 /// En passant packed-field accessor macros.
 ///
 /// [`EnPassantSquare`] stores:
-/// - bits `0..=11`   : target square
-/// - bits `12..=23`  : captured square
-/// - bits `24..=31`  : captured piece index
+/// - bits 0-11   : target square
+/// - bits 12-23  : captured square
+/// - bits 24-31  : captured piece index
 #[macro_export]
 macro_rules! enp_square {
     ($en_passant:expr) => {
@@ -299,20 +286,20 @@ macro_rules! pass_snapshot {
 /// The special rules field is a bitmask representing enabled special rules.
 ///
 /// The bits are defined as follows:
-/// - bit 0: castling allowed
-/// - bit 1: en passant allowed
-/// - bit 2: Promotions allowed
-/// - bit 3: Drops allowed
-/// - bit 4: Some pieces have a count limit
-/// - bit 5: Some pieces have forbidden zones
-/// - bit 6: Can only promote to captured friendly pieces by the enemy
-/// - bit 7: Demote piece in hand upon capture
-/// - bit 8: Stalemate is a loss for the stalemated player
-/// - bit 9: Game begins with a setup phase
-/// - bit 10: A player can make a move that creates a stand-off that the
-///   opponent must break on their next turn
-/// - bit 11: There is a limit on the number of repetitions of a position
-/// - but 12-31: reserved for future use
+/// - bit 0     : castling allowed
+/// - bit 1     : en passant allowed
+/// - bit 2     : Promotions allowed
+/// - bit 3     : Drops allowed
+/// - bit 4     : Some pieces have a count limit
+/// - bit 5     : Some pieces have forbidden zones
+/// - bit 6     : Can only promote to captured friendly pieces by the enemy
+/// - bit 7     : Demote piece in hand upon capture
+/// - bit 8     : Stalemate is a loss for the stalemated player
+/// - bit 9     : Game begins with a setup phase
+/// - bit 10    : A player can make a move that creates a stand-off that the
+///               opponent must break on their next turn
+/// - bit 11    : There is a limit on the number of repetitions of a position
+/// - bit 12-31 : reserved for future use
 ///
 pub struct State {
 
