@@ -31,7 +31,7 @@ pub fn generate_relevant_drops(
             !get!(game_state.forbidden_zones[piece_index], square_index)
             || drop_f
         })
-        .flat_map(|drop| {
+        .filter_map(|drop| {
             let new_drop_move = drop.0 | (square_index << 8);
             let mut new_drop_stoppers = Vec::new();
             let mut new_drop_allowers = Vec::new();
@@ -50,10 +50,10 @@ pub fn generate_relevant_drops(
                 || check_x >= game_state.files as i32
                 || check_y < 0
                 || check_y >= game_state.ranks as i32 {
-                    return Vec::new();
-                } else {
-                    new_drop_allowers.push(allower.clone());
+                    return None;
                 }
+
+                new_drop_allowers.push(allower.clone());
             }
 
             for stopper in drop.2.iter() {
@@ -71,7 +71,7 @@ pub fn generate_relevant_drops(
                 }
             }
 
-            vec![(new_drop_move, new_drop_allowers, new_drop_stoppers)]
+            Some((new_drop_move, new_drop_allowers, new_drop_stoppers))
         })
         .collect()
 }
@@ -109,7 +109,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
                 let drop_square = drop.1[0].0 as usize;
 
                 if square == 0                                                  /* current square                     */
-                && !drop.1[0].1.contains(&state.main_board[drop_square]) {      /* break as early as possible         */
+                && !drop.1[0].1.contains(state.main_board[drop_square]) {       /* break as early as possible         */
                     continue 'drop_loop;
                 }
             }
@@ -156,7 +156,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
 
                 let piece_check = state.main_board[check_index];
 
-                if !allower_pieces.contains(&piece_check) {
+                if !allower_pieces.contains(piece_check) {
                     continue 'drop_loop;
                 }
 
@@ -199,7 +199,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
 
                 let piece_check = state.main_board[check_index];
 
-                if stopper_pieces.contains(&piece_check) {
+                if stopper_pieces.contains(piece_check) {
                     continue 'drop_loop;
                 }
             }

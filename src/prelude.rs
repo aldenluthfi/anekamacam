@@ -90,6 +90,7 @@ pub use crate::io::board_io::{
 pub use crate::io::piece_io::format_piece;
 pub use crate::io::game_io::{
     parse_config_file, parse_fen, format_game_state, format_entire_game,
+    parse_tuned_parameters_file, export_tuned_parameters_file,
     COMMENT_PATTERN
 };
 pub use crate::io::move_io::{

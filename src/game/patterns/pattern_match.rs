@@ -18,12 +18,54 @@ lazy_static! {
         Regex::new(r"([^-]+)").unwrap();
 }
 
+/// Represents a compressed set of allowed or stopper pieces.
+///
+/// This structure provides O(1) membership checks to eliminate dynamic
+/// mapping overhead during pattern matching. Memory overhead is strictly
+/// bounded to 256 booleans, naturally fitting the maximum piece limit.
+#[derive(Clone)]
+pub struct PieceSet([bool; 256]);
+
+impl Default for PieceSet {
+    fn default() -> Self {
+        Self([false; 256])
+    }
+}
+
+impl PieceSet {
+    /// Creates a new, empty piece set.
+    pub fn new() -> Self { Self::default() }
+
+    /// Adds a piece index to the set.
+    pub fn insert(&mut self, piece: u8) {
+        self.0[piece as usize] = true;
+    }
+
+    /// Returns `true` if the given piece index is in the set.
+    pub fn contains(&self, piece: u8) -> bool {
+        self.0[piece as usize]
+    }
+}
+
+#[cfg(debug_assertions)]
+impl std::fmt::Debug for PieceSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut pieces = Vec::new();
+        for i in 0..256 {
+            if self.0[i] {
+                pieces.push(i as u8);
+            }
+        }
+        write!(f, "PieceSet({:?})", pieces)
+    }
+}
+
 /// Represents one relative pattern offset with its allowed piece set.
 ///
-/// The `u16` packs `(x, y)` displacement, and the `HashSet<u8>` stores piece
+/// The `u16` packs `(x, y)` displacement, and the `PieceSet` stores piece
 /// indices accepted at that offset during drop/stand-off matching.
 /// This compact unit is shared by allower and stopper pattern lists.
-pub type PatternUnit = (u16, HashSet<u8>);
+pub type PatternUnit = (u16, PieceSet);
 pub type PatternAllower = Vec<PatternUnit>;
 pub type PatternStopper = Vec<PatternUnit>;
 pub type Pattern = (PatternAllower, PatternStopper);
@@ -101,7 +143,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             let x = x!(leg) as u16 & 0xFF;
             let y = y!(leg) as u16 & 0xFF;
 
-            let mut piece_set = HashSet::new();
+            let mut piece_set = PieceSet::new();
             for piece_char in allowers_pieces[*index].chars() {
                 let piece_index =
                 if piece_char == '?' {NO_PIECE as u16}
@@ -163,7 +205,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         let x = x!(leg) as u16 & 0xFF;
         let y = y!(leg) as u16 & 0xFF;
 
-        let mut piece_set = HashSet::new();
+        let mut piece_set = PieceSet::new();
         for piece_char in stoppers_pieces[*index].chars() {
             let piece_index =
             if piece_char == '?' {NO_PIECE as u16}
@@ -210,7 +252,7 @@ pub fn match_pattern(
 
         let piece_check = state.main_board[check_index];
 
-        if !allower_pieces.contains(&piece_check) {
+        if !allower_pieces.contains(piece_check) {
             return false;
         }
     }
@@ -227,7 +269,7 @@ pub fn match_pattern(
 
         let piece_check = state.main_board[check_index];
 
-        if stopper_pieces.contains(&piece_check) {
+        if stopper_pieces.contains(piece_check) {
             return false;
         }
     }

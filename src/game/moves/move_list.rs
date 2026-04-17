@@ -94,7 +94,6 @@ pub fn generate_relevant_moves(
 
         let mut file = accumulated_index % (game_state.files as i32);
         let mut rank = accumulated_index / (game_state.files as i32);
-        let mut index_to_set = Vec::new();
 
         for leg in multi_leg_vector {
             let file_offset = x!(leg);
@@ -117,7 +116,7 @@ pub fn generate_relevant_moves(
                 continue 'multi_leg;
             }
 
-            index_to_set.push(accumulated_index as u32);
+
         }
 
         result.push(multi_leg_vector.clone());
@@ -1657,8 +1656,8 @@ macro_rules! make_move {
 
                     clear!($state.virgin_board, captured_square);
 
-                    $state.piece_list[captured_piece_index].retain(
-                        |&sq| sq != captured_square as u16
+                    $state.piece_list[captured_piece_index].remove(
+                        &(captured_square as u16)
                     );
 
                     $state.big_pieces[captured_color as usize] -=
@@ -1745,9 +1744,9 @@ macro_rules! undo_move {
                 .unwrap();
             *repetition_count -= 1;
 
-            (*repetition_count == 0).then(|| {
+            if *repetition_count == 0 {
                 $state.position_hash_map.remove(&$state.position_hash);
-            });
+            }
 
             let snapshot = $state.history.pop().unwrap_or_else(
                 || panic!("No move to undo!")
@@ -1797,7 +1796,7 @@ macro_rules! undo_move {
 
                 if is_promotion {
                     $state.piece_list[promoted_piece]
-                        .retain(|&sq| sq != end_square as u16);
+                        .remove(&(end_square as u16));
 
                     if p_is_big!($state.pieces[promoted_piece]) {
                         $state.big_pieces[piece_color as usize] -= 1;
@@ -1878,7 +1877,7 @@ macro_rules! undo_move {
 
                 if is_promotion {
                     $state.piece_list[promoted_piece]
-                        .retain(|&sq| sq != end_square as u16);
+                        .remove(&(end_square as u16));
 
                     if p_is_big!($state.pieces[promoted_piece]) {
                         $state.big_pieces[piece_color as usize] -= 1;
@@ -2023,7 +2022,7 @@ macro_rules! undo_move {
 
                 if is_promotion {
                     $state.piece_list[promoted_piece]
-                        .retain(|&sq| sq != end_square as u16);
+                        .remove(&(end_square as u16));
 
                     if p_is_big!($state.pieces[promoted_piece]) {
                         $state.big_pieces[piece_color as usize] -= 1;
