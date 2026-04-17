@@ -57,6 +57,302 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     (castling, en_passant, in_hand)
 }
 
+/// Parses a bracketed comma-separated integer row like `[1, -2, 3]`.
+fn parse_numeric_parameter_list(line: &str, label: &str) -> Vec<i32> {
+    let trimmed = line.trim();
+    assert!(
+        trimmed.starts_with('[') && trimmed.ends_with(']'),
+        "Invalid {} list format: {}",
+        label,
+        line
+    );
+
+    let inner = &trimmed[1..trimmed.len() - 1];
+    if inner.trim().is_empty() {
+        return Vec::new();
+    }
+
+    inner
+        .split(',')
+        .map(|value| {
+            value.trim().parse::<i32>().unwrap_or_else(
+                |_| panic!("Invalid {} entry: {}", label, value.trim())
+            )
+        })
+        .collect()
+}
+
+/// Parses a binary flag row (`0`/`1`) and validates its expected length.
+fn parse_binary_parameter_flags(
+    line: &str,
+    expected_len: usize,
+    label: &str,
+) -> Vec<bool> {
+    let parsed = parse_numeric_parameter_list(line, label);
+
+    assert!(
+        parsed.len() == expected_len,
+        "{} count ({}) doesn't match expected count ({})",
+        label,
+        parsed.len(),
+        expected_len
+    );
+
+    parsed.iter().map(|&value| {
+        assert!(
+            value == 0 || value == 1,
+            "{} entries must be 0 or 1, got {}",
+            label,
+            value
+        );
+        value == 1
+    }).collect()
+}
+
+/// Mirrors a PST across the horizontal axis by swapping board rows.
+fn mirror_pst_across_horizontal_axis(
+    pst: &[i32],
+    files: usize,
+    ranks: usize,
+) -> Vec<i32> {
+    assert!(
+        pst.len() == files * ranks,
+        "PST length ({}) doesn't match board size ({})",
+        pst.len(),
+        files * ranks
+    );
+
+    let mut mirrored = vec![0i32; pst.len()];
+
+    for rank in 0..ranks {
+        let src_rank = ranks - 1 - rank;
+        let dst_start = rank * files;
+        let src_start = src_rank * files;
+
+        mirrored[dst_start..dst_start + files]
+            .copy_from_slice(&pst[src_start..src_start + files]);
+    }
+
+    mirrored
+}
+
+fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
+    let mut type_pairs = Vec::new();
+
+    for (white_idx, piece) in state.pieces.iter().enumerate() {
+        if p_color!(piece) != WHITE {
+            continue;
+        }
+
+        let black_idx = state.piece_swap_map
+            .get(&(white_idx as u8))
+            .copied()
+            .unwrap_or_else(|| {
+                panic!(
+                    "Missing black counterpart for white piece index {} ({})",
+                    white_idx,
+                    piece.char
+                )
+            }) as usize;
+
+        assert!(
+            p_color!(state.pieces[black_idx]) == BLACK,
+            "Invalid black counterpart mapping for white piece index {}",
+            white_idx
+        );
+
+        type_pairs.push((white_idx, black_idx));
+    }
+
+    assert!(
+        !type_pairs.is_empty(),
+        "No white piece representatives found"
+    );
+
+    type_pairs
+}
+
+fn set_piece_dynamic_parameters(
+    piece: &mut Piece,
+    value: u16,
+    is_big: bool,
+    is_major: bool,
+) {
+    let mut dynamic_bits = 0u32;
+
+    if is_big {
+        dynamic_bits |= 1;
+    }
+
+    if is_major {
+        dynamic_bits |= 1 << 1;
+    }
+
+    dynamic_bits |= (value as u32 & 0xFFFF) << 2;
+
+    piece.encoded_dynamic =
+        (piece.encoded_dynamic & !((1u32 << 18) - 1)) | dynamic_bits;
+}
+
+fn piece_big_flag_raw(piece: &Piece) -> bool {
+    (piece.encoded_dynamic & 1) != 0
+}
+
+fn piece_major_flag_raw(piece: &Piece) -> bool {
+    (piece.encoded_dynamic & (1 << 1)) != 0
+}
+
+/// Parses tuned parameters from a flat space-separated file.
+///
+/// Token order:
+/// values (piece-type count), big flags, major flags,
+/// then white PST rows (piece-type count × board_size).
+///
+/// Black PST rows are derived by mirroring white rows across the
+/// horizontal axis.
+pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
+    let raw = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read parameter file {}: {}", path, e));
+
+    let tokens: Vec<i32> = raw
+        .split_whitespace()
+        .map(|token| {
+            token.parse::<i32>().unwrap_or_else(
+                |_| panic!("Invalid parameter value: {}", token)
+            )
+        })
+        .collect();
+
+    let piece_type_pairs = collect_piece_type_pairs(state);
+    let piece_type_count = piece_type_pairs.len();
+    let board_size = (state.files as usize) * (state.ranks as usize);
+    let expected_count = piece_type_count * 3 + piece_type_count * board_size;
+
+    assert!(
+        tokens.len() == expected_count,
+        "Parameter count mismatch: got {}, expected {}",
+        tokens.len(),
+        expected_count
+    );
+
+    let mut cursor = 0usize;
+    let values = &tokens[cursor..cursor + piece_type_count];
+    cursor += piece_type_count;
+
+    let big_flags = &tokens[cursor..cursor + piece_type_count];
+    cursor += piece_type_count;
+
+    let major_flags = &tokens[cursor..cursor + piece_type_count];
+    cursor += piece_type_count;
+
+    for piece_type_idx in 0..piece_type_count {
+        let value_i32 = values[piece_type_idx];
+        let abs_value = value_i32.unsigned_abs();
+        assert!(
+            abs_value <= u16::MAX as u32,
+            "Piece value out of range at index {}: {}",
+            piece_type_idx,
+            value_i32
+        );
+
+        let big_flag = big_flags[piece_type_idx];
+        assert!(
+            big_flag == 0 || big_flag == 1,
+            "Big flag must be 0 or 1 at index {}, got {}",
+            piece_type_idx,
+            big_flag
+        );
+
+        let major_flag = major_flags[piece_type_idx];
+        assert!(
+            major_flag == 0 || major_flag == 1,
+            "Major flag must be 0 or 1 at index {}, got {}",
+            piece_type_idx,
+            major_flag
+        );
+
+        let white_pst = &tokens[cursor..cursor + board_size];
+        cursor += board_size;
+
+        let (white_idx, black_idx) = piece_type_pairs[piece_type_idx];
+
+        set_piece_dynamic_parameters(
+            &mut state.pieces[white_idx],
+            abs_value as u16,
+            big_flag == 1,
+            major_flag == 1,
+        );
+
+        set_piece_dynamic_parameters(
+            &mut state.pieces[black_idx],
+            abs_value as u16,
+            big_flag == 1,
+            major_flag == 1,
+        );
+
+        state.piece_square_tables[white_idx] = white_pst.to_vec();
+        state.piece_square_tables[black_idx] = mirror_pst_across_horizontal_axis(
+            white_pst,
+            state.files as usize,
+            state.ranks as usize,
+        );
+    }
+
+    state.material = [0; 2];
+    state.big_pieces = [0; 2];
+    state.major_pieces = [0; 2];
+    state.minor_pieces = [0; 2];
+
+    for (piece_idx, piece) in state.pieces.iter().enumerate() {
+        let color = p_color!(piece) as usize;
+        let count = state.piece_count[piece_idx] as u32;
+
+        state.material[color] += count * p_value!(piece) as u32;
+        state.big_pieces[color] += count * (p_is_big!(piece) as u32);
+        state.major_pieces[color] += count * (p_is_major!(piece) as u32);
+        state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
+    }
+}
+
+/// Exports tuned parameters to `parameters/{variant}/{epoch}.param`
+/// in a flat space-separated format compatible with
+/// `parse_tuned_parameters_file`.
+pub fn export_tuned_parameters_file(state: &State, variant: &str, epoch: usize) {
+    assert!(
+        !variant.trim().is_empty(),
+        "Variant name cannot be empty"
+    );
+
+    let piece_type_pairs = collect_piece_type_pairs(state);
+    let mut output_tokens = Vec::new();
+
+    for (white_idx, _) in &piece_type_pairs {
+        output_tokens.push(p_value!(state.pieces[*white_idx]).to_string());
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        output_tokens.push((piece_big_flag_raw(&state.pieces[*white_idx]) as u8).to_string());
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        output_tokens.push((piece_major_flag_raw(&state.pieces[*white_idx]) as u8).to_string());
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        for value in &state.piece_square_tables[*white_idx] {
+            output_tokens.push(value.to_string());
+        }
+    }
+
+    let dir_path = format!("parameters/{}", variant);
+    fs::create_dir_all(&dir_path)
+        .unwrap_or_else(|e| panic!("Failed to create directory {}: {}", dir_path, e));
+
+    let file_path = format!("{}/{}.param", dir_path, epoch);
+    fs::write(&file_path, output_tokens.join(" "))
+        .unwrap_or_else(|e| panic!("Failed to write parameter file {}: {}", file_path, e));
+}
+
 /// Parses a game configuration file and initializes a game state.
 /// See `example.conf` for the expected format of the configuration file.
 ///
@@ -100,7 +396,8 @@ pub fn parse_config_file(path: &str) -> State {
         .collect::<HashMap<_, _>>();
 
     let mandatory_sections = [
-        "general", "pieces", "piece moves", "piece values", "piece roles"
+        "general", "pieces", "piece order", "piece moves",
+        "evaluation parameters", "piece roles"
     ];
 
     let missing: Vec<_> = mandatory_sections
@@ -278,14 +575,16 @@ pub fn parse_config_file(path: &str) -> State {
                                   PARSE PIECES
 \*----------------------------------------------------------------------------*/
 
-    let mut pieces = Vec::with_capacity(sections["pieces"].len());
+    let mut unordered_pieces = Vec::with_capacity(sections["pieces"].len());
 
     let mut pieces_moves;
     let mut pieces_drops;
     let mut pieces_setup;
     let mut pieces_stand_off;
+    let mut piece_square_tables;
 
-    let mut char_to_index: HashMap<char, usize> = HashMap::new();
+    let mut char_to_unordered_index: HashMap<char, usize> = HashMap::new();
+    let mut char_to_type_index: HashMap<char, usize> = HashMap::new();
     for bare_piece in &sections["pieces"] {
         let parts: Vec<&str> = bare_piece.split(':').map(str::trim).collect();
 
@@ -295,11 +594,19 @@ pub fn parse_config_file(path: &str) -> State {
             bare_piece
         );
 
-        let white_char = parts[0].chars().next().unwrap();
-        let black_char = parts[0].chars().nth(1).unwrap();
+        let chars = parts[0];
+        assert!(
+            chars.chars().count() == 2,
+            "Piece definition must have exactly 2 chars: {}",
+            bare_piece
+        );
+
+        let white_char = chars.chars().next().unwrap();
+        let black_char = chars.chars().nth(1).unwrap();
         let name = parts[1].to_string();
 
-        pieces.push((
+        let white_index = unordered_pieces.len();
+        unordered_pieces.push((
             name.clone(),
             white_char,
             Vec::new(),
@@ -311,9 +618,13 @@ pub fn parse_config_file(path: &str) -> State {
             0,
             0,
         ));
+        char_to_unordered_index.insert(white_char, white_index);
+        let piece_type_index = white_index / 2;
+        char_to_type_index.insert(white_char, piece_type_index);
 
-        pieces.push((
-            name.clone(),
+        let black_index = unordered_pieces.len();
+        unordered_pieces.push((
+            name,
             black_char,
             Vec::new(),
             0,
@@ -324,61 +635,184 @@ pub fn parse_config_file(path: &str) -> State {
             0,
             0,
         ));
+        char_to_unordered_index.insert(black_char, black_index);
+        char_to_type_index.insert(black_char, piece_type_index);
     }
 
-    pieces.sort_by_key(|piece| piece.4);
+    let piece_order = sections["piece order"][0].trim();
+    let piece_order_chars: Vec<char> = piece_order.chars().collect();
 
-    for (i, piece) in pieces.iter_mut().enumerate() {
-        piece.3 = i as u8;
-        char_to_index.insert(piece.1, i);
+    assert!(
+        piece_order_chars.len() == unordered_pieces.len(),
+        "Piece order count ({}) doesn't match piece count ({})",
+        piece_order_chars.len(),
+        unordered_pieces.len()
+    );
+
+    let mut seen_order_chars = HashSet::new();
+    for ch in &piece_order_chars {
+        assert!(
+            seen_order_chars.insert(*ch),
+            "Duplicate piece in piece order: {}",
+            ch
+        );
+        assert!(
+            char_to_unordered_index.contains_key(ch),
+            "Unknown piece in piece order: {}",
+            ch
+        );
     }
 
-    for piece_values in &sections["piece values"] {
-        let parts: Vec<&str> = piece_values.split(':').map(str::trim).collect();
+    let mut pieces = Vec::with_capacity(unordered_pieces.len());
+    let mut piece_type_indices = Vec::with_capacity(unordered_pieces.len());
+    let mut char_to_index: HashMap<char, usize> = HashMap::new();
 
+    for (i, &piece_char) in piece_order_chars.iter().enumerate() {
+        let old_index = *char_to_unordered_index.get(&piece_char).unwrap();
+        let mut piece_data = unordered_pieces[old_index].clone();
+        piece_data.3 = i as u8;
+        pieces.push(piece_data);
+        piece_type_indices.push(
+            *char_to_type_index
+                .get(&piece_char)
+                .unwrap_or_else(|| panic!("Unknown piece in piece order: {}", piece_char))
+        );
+        char_to_index.insert(piece_char, i);
+    }
+
+    let eval_parameters = &sections["evaluation parameters"];
+    let piece_count = pieces.len();
+    let board_size = (files as usize) * (ranks as usize);
+
+    let piece_type_count = sections["pieces"].len();
+    assert!(
+        piece_type_count > 0 && piece_type_count <= piece_count,
+        "Invalid piece type count ({}) for piece count ({})",
+        piece_type_count,
+        piece_count
+    );
+
+    assert!(
+        eval_parameters.len() >= 3,
+        "[evaluation parameters] must define at least values, big, and major"
+    );
+
+    let parsed_values = parse_numeric_parameter_list(
+        &eval_parameters[0],
+        "piece value"
+    );
+
+    let evaluation_row_len = parsed_values.len();
+    assert!(
+        evaluation_row_len == piece_type_count,
+        concat!(
+            "Piece value count ({}) doesn't match piece type count ({})"
+        ),
+        evaluation_row_len,
+        piece_type_count
+    );
+
+    let parsed_big_flags = parse_binary_parameter_flags(
+        &eval_parameters[1],
+        evaluation_row_len,
+        "big flag"
+    );
+    let parsed_major_flags = parse_binary_parameter_flags(
+        &eval_parameters[2],
+        evaluation_row_len,
+        "major flag"
+    );
+
+    let mut values = vec![0i32; piece_count];
+    let mut big_flags = vec![false; piece_count];
+    let mut major_flags = vec![false; piece_count];
+
+    for (piece_idx, piece_type_idx) in piece_type_indices.iter().enumerate() {
+        values[piece_idx] = parsed_values[*piece_type_idx];
+        big_flags[piece_idx] = parsed_big_flags[*piece_type_idx];
+        major_flags[piece_idx] = parsed_major_flags[*piece_type_idx];
+    }
+
+    assert!(
+        eval_parameters.len() == 3 + piece_type_count,
+        "[evaluation parameters] must contain values, big, major, and exactly one PST row per piece type"
+    );
+
+    let mut royal_flags = vec![false; piece_count];
+    let piece_roles = &sections["piece roles"];
+
+    for role_entry in piece_roles {
+        let parts: Vec<&str> = role_entry.split(':').map(str::trim).collect();
         assert!(
             parts.len() == 2,
-            "Invalid piece value definition: {}",
-            piece_values
+            "Invalid piece role definition: {}",
+            role_entry
         );
 
-        let piece_chars = parts[0];
-        let value_str = parts[1];
-
-        if piece_chars.len() == 2 {
-            let white_char = piece_chars.chars().next().unwrap();
-            let black_char = piece_chars.chars().nth(1).unwrap();
-
-            let value = value_str.parse::<u16>().unwrap_or_else(
-                |_| panic!("Invalid piece value: {}", value_str.trim())
-            );
-
-            if let Some(&white_index) = char_to_index.get(&white_char) {
-                pieces[white_index].8 = value;
-            } else {
-                panic!("Unknown piece character: {}", white_char);
+        match parts[0] {
+            "royal" => {
+                for piece_char in parts[1].chars() {
+                    if let Some(&piece_idx) = char_to_index.get(&piece_char) {
+                        royal_flags[piece_idx] = true;
+                    } else {
+                        panic!("Unknown piece character in royal role: {}", piece_char);
+                    }
+                }
             }
-
-            if let Some(&black_index) = char_to_index.get(&black_char) {
-                pieces[black_index].8 = value;
-            } else {
-                panic!("Unknown piece character: {}", black_char);
-            }
-        } else if piece_chars.len() == 1 {
-            let piece_char = piece_chars.chars().next().unwrap();
-
-            let value = value_str.parse::<u16>().unwrap_or_else(
-                |_| panic!("Invalid piece value: {}", value_str.trim())
-            );
-
-            if let Some(&index) = char_to_index.get(&piece_char) {
-                pieces[index].8 = value;
-            } else {
-                panic!("Unknown piece character: {}", piece_char);
-            }
-        } else {
-            panic!("Invalid piece character(s): {}", piece_chars);
+            _ => panic!(
+                "Unsupported piece role: {}. Only 'royal' is allowed in [piece roles]",
+                parts[0]
+            ),
         }
+    }
+
+    let pst_start_row = 3;
+
+    for i in 0..piece_count {
+        let abs_value = values[i].unsigned_abs();
+        assert!(
+            abs_value <= u16::MAX as u32,
+            "Piece value out of range for index {}: {}",
+            i,
+            values[i]
+        );
+
+        pieces[i].8 = abs_value as u16;
+        pieces[i].6 = big_flags[i];
+        pieces[i].7 = major_flags[i];
+        pieces[i].5 = royal_flags[i];
+    }
+
+    piece_square_tables = vec![vec![0i32; board_size]; piece_count];
+
+    let mut piece_type_psts = vec![vec![0i32; board_size]; piece_type_count];
+    for piece_type_idx in 0..piece_type_count {
+        let pst_values = parse_numeric_parameter_list(
+            &eval_parameters[pst_start_row + piece_type_idx],
+            "piece square table"
+        );
+        assert!(
+            pst_values.len() == board_size,
+            "PST length ({}) for piece type index {} doesn't match board size ({})",
+            pst_values.len(),
+            piece_type_idx,
+            board_size
+        );
+        piece_type_psts[piece_type_idx] = pst_values;
+    }
+
+    for (piece_idx, piece_type_idx) in piece_type_indices.iter().enumerate() {
+        let base_pst = &piece_type_psts[*piece_type_idx];
+
+        piece_square_tables[piece_idx] = if pieces[piece_idx].4 == BLACK {
+            mirror_pst_across_horizontal_axis(
+                base_pst,
+                files as usize,
+                ranks as usize
+            )
+        } else {
+            base_pst.clone()
+        };
     }
 
     pieces_moves = vec![String::new(); pieces.len()];
@@ -419,47 +853,6 @@ pub fn parse_config_file(path: &str) -> State {
             }
         } else {
             panic!("Invalid piece character(s): {}", piece_chars);
-        }
-    }
-
-    for piece_roles in &sections["piece roles"] {
-        let parts: Vec<&str> = piece_roles.split(':').map(str::trim).collect();
-
-        assert!(
-            parts.len() == 2,
-            "Invalid piece move definition: {}",
-            piece_roles
-        );
-
-        match parts[0] {
-            "royal" => {
-                for piece_char in parts[1].chars() {
-                    if let Some(&index) = char_to_index.get(&piece_char) {
-                        pieces[index].5 = true;
-                    } else {
-                        panic!("Unknown piece character: {}", piece_char);
-                    }
-                }
-            }
-            "big" => {
-                for piece_char in parts[1].chars() {
-                    if let Some(&index) = char_to_index.get(&piece_char) {
-                        pieces[index].6 = true;
-                    } else {
-                        panic!("Unknown piece character: {}", piece_char);
-                    }
-                }
-            }
-            "major" => {
-                for piece_char in parts[1].chars() {
-                    if let Some(&index) = char_to_index.get(&piece_char) {
-                        pieces[index].7 = true;
-                    } else {
-                        panic!("Unknown piece character: {}", piece_char);
-                    }
-                }
-            }
-            _ => panic!("Invalid piece role type: {}", parts[0])
         }
     }
 
@@ -577,6 +970,8 @@ pub fn parse_config_file(path: &str) -> State {
         )).collect(),
         special_rules,
     );
+
+    result.piece_square_tables = piece_square_tables;
 
     let template_bit_fen = initial_position.split_whitespace().next().unwrap();
     for (index, piece) in result.pieces.iter().enumerate() {
@@ -1253,9 +1648,9 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 file += num_str.parse::<u8>().unwrap();
             }
             _ => {
-                let piece_idx = state.pieces.iter().position(
-                    |piece| piece.char == c
-                ).unwrap_or_else(|| panic!("Unknown piece character: {}", c));
+                let piece_idx = *state.piece_char_map.get(&c)
+                    .unwrap_or_else(|| panic!("Unknown piece character: {}", c))
+                    as usize;
 
                 let mut piece = &state.pieces[piece_idx];
                 let mut piece_index = p_index!(piece);
@@ -1360,11 +1755,11 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 .unwrap_or_else(
                     |_| panic!("Invalid en passant captured square: {}", e)
                 );
-            let piece_index = state.pieces.iter().position(
-                |piece| piece.char == z.chars().next().unwrap()
-            ).unwrap_or_else(
-                || panic!("Unknown piece character: {}", z)
-            ) as u32;
+            let piece_char = z.chars().next().unwrap();
+            let piece_index = *state.piece_char_map.get(&piece_char)
+                .unwrap_or_else(
+                    || panic!("Unknown piece character: {}", z)
+                ) as u32;
 
             square_index | (piece_square_index << 12) | piece_index << 24
         };
@@ -1378,9 +1773,6 @@ pub fn parse_fen(state: &mut State, fen: &str) {
         let hands = parts[part_index];
         part_index += 1;
 
-        let char_to_index: HashMap<char, u8> = state.pieces.iter()
-            .map(|p| (p.char, p_index!(p)))
-            .collect();
         let hand_parts: Vec<&str> = hands.split('/').collect();
         assert!(
             hand_parts.len() == 2,
@@ -1407,11 +1799,12 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     )
                 };
 
-                let piece_index = char_to_index.get(&piece_char).unwrap_or_else(
-                    || panic!("Unknown piece character in hand: {}", piece_char)
-                );
+                let piece_index = *state.piece_char_map.get(&piece_char)
+                    .unwrap_or_else(
+                        || panic!("Unknown piece character in hand: {}", piece_char)
+                    ) as usize;
 
-                state.piece_in_hand[color_idx][*piece_index as usize] = count;
+                state.piece_in_hand[color_idx][piece_index] = count;
             }
         }
     }

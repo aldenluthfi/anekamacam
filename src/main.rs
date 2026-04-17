@@ -64,7 +64,7 @@ pub mod prelude;
 
 #[hotpath::main]
 fn main() {
-    let variant = "grand";
+    let variant = "sittuyin";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 

@@ -510,7 +510,8 @@ fn expand_cardinals(expr: &str) -> Option<String> {
         }
     }
 
-    Some(result_stack.into_iter().collect::<Vec<String>>().join("|"))           /* Return Some with expanded cardinals*/
+    let result_vec: Vec<String> = result_stack.into_iter().collect();
+    Some(result_vec.join("|"))                                                  /* Return Some with expanded cardinals*/
 }
 
 /// Splits an expression on `|` and applies `f` to each branch independently.
@@ -559,11 +560,11 @@ fn parse_move(expr: &str) -> String {
     pipeline
         .iter()
         .fold(expr, |acc, &step| {
-            split_and_process(&acc, step)
+            let parts: Vec<String> = split_and_process(&acc, step)
                 .into_iter()
                 .flatten()
-                .collect::<Vec<_>>()
-                .join("|")
+                .collect();
+            parts.join("|")
         })                                                                      /* Process each step in the pipeline  */
 }
 
@@ -732,14 +733,7 @@ where
     Element: Clone + Eq + Hash,
 {
     let mut seen = HashSet::new();
-    vectors.retain(|vector| {
-        if seen.contains(vector) {
-            false
-        } else {
-            seen.insert(vector.clone());
-            true
-        }
-    });
+    vectors.retain(|vector| seen.insert(vector.clone()));
 }
 
 fn process_atomic_dots_token(
@@ -1108,7 +1102,7 @@ fn evaluate_atomic_expression(
             AtomicTerm(RangeToken(token)) => {
                 result = process_atomic_range_token(result, token, game_state);
             }
-            AtomicTerm(AtomicToken(atomic)) => {                                     /* Base case                          */
+            AtomicTerm(AtomicToken(atomic)) => {                                /* Base case                          */
                 if  i + 1 < expr.len() &&
                     let AtomicTerm(ColonToken(token)) = &expr[i + 1]
                 {
