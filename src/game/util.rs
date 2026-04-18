@@ -19,7 +19,7 @@ use crate::*;
 
 lazy_static! {
     pub static ref RNG: Mutex<rand::rngs::StdRng> =
-        { Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED)) };
+        Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED));
 }
 
 pub fn random_u128() -> u128 {
@@ -55,9 +55,9 @@ pub fn refresh_eval_state(state: &mut State) {
     let game_phase_score = state.opening_material[WHITE as usize]
         + state.opening_material[BLACK as usize];
 
-    state.game_phase = if game_phase_score > state.opening_phase_score {
+    state.game_phase = if game_phase_score > state.opening_score {
         OPENING
-    } else if game_phase_score < state.endgame_phase_score {
+    } else if game_phase_score < state.endgame_score {
         ENDGAME
     } else {
         MIDDLEGAME
@@ -74,17 +74,17 @@ pub fn verify_game_state(state: &State) {
     let mut temp_black_board = board!(state.files, state.ranks);
     let mut temp_piece_list = vec![HashSet::new(); state.pieces.len()];
 
-    for (index, square) in state.main_board.iter().enumerate() {
-        if *square != NO_PIECE {
-            let piece = &state.pieces[*square as usize];
+    for (square, piece_idx) in state.main_board.iter().enumerate() {
+        if *piece_idx != NO_PIECE {
+            let piece = &state.pieces[*piece_idx as usize];
 
             if p_color!(piece) == WHITE {
-                set!(temp_white_board, index as u32);
+                set!(temp_white_board, square as u32);
             } else {
-                set!(temp_black_board, index as u32);
+                set!(temp_black_board, square as u32);
             }
 
-            temp_piece_list[p_index!(piece) as usize].insert(index as u16);
+            temp_piece_list[p_index!(piece) as usize].insert(square as Square);
         }
     }
 
@@ -197,11 +197,14 @@ pub fn verify_game_state(state: &State) {
 
     let mut temp_royal_list = [Vec::new(), Vec::new()];
 
-    for (index, square) in state.main_board.iter().enumerate() {
-        if *square != NO_PIECE && p_is_royal!(state.pieces[*square as usize]) {
-            let piece = &state.pieces[*square as usize];
+    for (square, piece_index) in state.main_board.iter().enumerate() {
+        if *piece_index != NO_PIECE 
+        && p_is_royal!(state.pieces[*piece_index as usize]) 
+        {
+            let piece = &state.pieces[*piece_index as usize];
 
-            temp_royal_list[p_color!(piece) as usize].push(index as u16);
+            temp_royal_list[p_color!(piece) as usize]
+                .push(square as Square);
         }
     }
 
@@ -252,7 +255,7 @@ pub fn verify_game_state(state: &State) {
                             "Hash mismatch! Missing/extra piece at ",
                             "position {} for piece {}"
                         ),
-                        format_square(pos_idx as u16, state),
+                        format_square(pos_idx as Square, state),
                         state.pieces[piece_idx].name,
                     );
                 }
@@ -293,20 +296,46 @@ pub fn verify_game_state(state: &State) {
 fn parse_perft_file(path: &str) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {/* until perft 6                      */
     let contents = fs::read_to_string(path).expect("Failed to read perft file");
     let uncommented = COMMENT_PATTERN.replace_all(&contents, "");
+
     uncommented
         .lines()
         .filter(|line| !line.trim().is_empty())
         .map(|line| {
-            let parts: Vec<&str> = line.split(",").collect();
-            (
-                parts[0].to_string(),
-                parts[1].parse().unwrap(),
-                parts[2].parse().unwrap(),
-                parts[3].parse().unwrap(),
-                parts[4].parse().unwrap(),
-                parts[5].parse().unwrap(),
-                parts[6].parse().unwrap(),
-            )
+            let mut parts = line.split(',').map(str::trim);
+
+            let fen = parts.next().expect("Missing FEN column").to_string();
+            let p1 = parts
+                .next()
+                .expect("Missing perft depth 1")
+                .parse()
+                .unwrap();
+            let p2 = parts
+                .next()
+                .expect("Missing perft depth 2")
+                .parse()
+                .unwrap();
+            let p3 = parts
+                .next()
+                .expect("Missing perft depth 3")
+                .parse()
+                .unwrap();
+            let p4 = parts
+                .next()
+                .expect("Missing perft depth 4")
+                .parse()
+                .unwrap();
+            let p5 = parts
+                .next()
+                .expect("Missing perft depth 5")
+                .parse()
+                .unwrap();
+            let p6 = parts
+                .next()
+                .expect("Missing perft depth 6")
+                .parse()
+                .unwrap();
+
+            (fen, p1, p2, p3, p4, p5, p6)
         })
         .collect()
 }
@@ -365,7 +394,7 @@ pub fn start_perft(
             [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
 
         for d in 1..=depth {
-            let start_time = std::time::Instant::now();
+            let start_time = Instant::now();
             let result = perft(state, d, branch, "");
             let elapsed = start_time.elapsed().as_nanos();
 
@@ -423,24 +452,119 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     let possible_moves = generate_all_moves_and_drops(state);
     let mut nodes = 0;
 
-    for mv in possible_moves {
-        if branch >= 0 {
-            let formatted_move = format_move(&mv, state);
-            let new_prefix = format!("{}{}", prefix, formatted_move);
-
+    if branch < 0 {
+        for mv in possible_moves {
             if make_move!(state, mv) {
-                nodes += perft(state, depth - 1, branch - 1, &new_prefix);
+                nodes += perft(state, depth - 1, branch - 1, "");
                 undo_move!(state);
             }
-        } else if make_move!(state, mv) {
-            nodes += perft(state, depth - 1, branch - 1, "");
+        }
+
+        return nodes;
+    }
+
+    for mv in possible_moves {
+        let formatted_move = format_move(&mv, state);
+        let new_prefix = format!("{}{}", prefix, formatted_move);
+
+        if make_move!(state, mv) {
+            nodes += perft(state, depth - 1, branch - 1, &new_prefix);
             undo_move!(state);
         }
     }
 
-    if branch >= 0 {
-        println!("{} moves | Nodes: {}", prefix, nodes);
-    }
+    println!("{} moves | Nodes: {}", prefix, nodes);
 
     nodes
+}
+
+/// Runs a simple stdin-driven debug loop for making and undoing moves.
+///
+/// Supported commands include normal move strings, `u` (undo), `q` (quit),
+/// and `pv` subcommands for PV hash probing/display.
+pub fn debug_interactive(state: &mut State) {
+    let mut input = String::new();
+
+    loop {
+        input.clear();
+        println!("\n{}", format_game_state(state, true));
+
+        if stdin().read_line(&mut input).is_err() {
+            eprintln!("Error reading stdin");
+            break;
+        }
+
+        match input.trim() {
+            "u" => undo_move!(state),
+            "q" => break,
+            input if input.starts_with("pv") => {
+                let parts = input.split_whitespace().collect::<Vec<_>>();
+
+                if parts.len() < 3 {
+                    eprintln!("Usage: pv [hash/show] [args]");
+                    continue;
+                }
+
+                let command = *parts.get(1).unwrap();
+                let args = *parts.get(2).unwrap();
+
+                match command {
+                    "hash" => {
+                        if let Some(mv) = parse_move(args, state) {
+                            hash_pv_move(mv.clone(), state);
+                            make_move!(state, mv);
+                        } else {
+                            eprintln!("Invalid move for hashing: {}", args);
+                        }
+                    }
+                    "show" => {
+                        let depth = args.parse::<usize>().unwrap_or(0);
+                        fill_pv_line(state, depth);
+
+                        for pv_move in &state.pv_line {
+                            if pv_move == &null_move() {
+                                println!();
+                                break;
+                            }
+
+                            let pv_move_str = format_move(pv_move, state);
+
+                            print!("{} ", pv_move_str);
+                        }
+
+                        state.pv_line = array::from_fn(|_| null_move());
+                    }
+                    _ => {
+                        eprintln!("Unknown pv command: {}", command);
+                    }
+                }
+            }
+            input if input.starts_with("fen ") => {
+                let fen = input[4..].trim();
+                state.load_fen(fen);
+            }
+            input if input.starts_with("search ") => {
+                let parts = input.split_whitespace().collect::<Vec<_>>();
+
+                if parts.len() < 2 {
+                    eprintln!("Usage: search [depth]");
+                    continue;
+                }
+
+                let mut info = SearchInfo::default();
+                info.depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
+                    eprintln!("Invalid depth for search: {}", parts[1]);
+                    0
+                });
+
+                search_position(state, &mut info);
+            }
+            _ => match parse_move(&input, state) {
+                Some(mv) => {
+                    make_move!(state, mv);
+                }
+                None => eprintln!("Invalid move: {}", input.trim()),
+            },
+        }
+    }
 }

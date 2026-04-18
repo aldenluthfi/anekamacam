@@ -13,7 +13,6 @@ use crate::*;
 lazy_static! {
     pub static ref PATTERN_PATTERN: Regex =
         Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap();
-    pub static ref CHAIN_PATTERN: Regex = Regex::new(r"([^-]+)").unwrap();
 }
 
 /// Represents a compressed set of allowed or stopper pieces.
@@ -108,18 +107,18 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         ),),
     };
 
-    let allowers_pieces = CHAIN_PATTERN
-        .captures_iter(allower_pieces)
-        .map(|cap| cap.get(1).unwrap().as_str())
+    let allowers_pieces = allower_pieces
+        .split('-')
+        .filter(|segment| !segment.is_empty())
         .collect::<Vec<&str>>();
     let allowers_vecs = if allowers.is_empty() {
         Vec::new()
     } else {
-        CHAIN_PATTERN
-            .captures_iter(allowers)
+        allowers
+            .split('-')
+            .filter(|segment| !segment.is_empty())
             .enumerate()
-            .flat_map(|(idx, cap)| {
-                let compound = cap.get(1).unwrap().as_str();
+            .flat_map(|(idx, compound)| {
                 generate_move_vectors(compound, state)
                     .into_iter()
                     .map(move |vec| (idx, vec))
@@ -141,7 +140,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             let mut piece_set = PieceSet::new();
             for piece_char in allowers_pieces[*index].chars() {
                 let piece_index = if piece_char == '?' {
-                    NO_PIECE as u16
+                    NO_PIECE as Square
                 } else {
                     state.piece_char_map[&piece_char] as u16
                 };
@@ -164,18 +163,18 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             "both be present or both absent"
         ),),
     };
-    let stoppers_pieces = CHAIN_PATTERN
-        .captures_iter(stopper_pieces)
-        .map(|cap| cap.get(1).unwrap().as_str())
+    let stoppers_pieces = stopper_pieces
+        .split('-')
+        .filter(|segment| !segment.is_empty())
         .collect::<Vec<&str>>();
     let stoppers_vecs = if stoppers.is_empty() {
         Vec::new()
     } else {
-        CHAIN_PATTERN
-            .captures_iter(stoppers)
+        stoppers
+            .split('-')
+            .filter(|segment| !segment.is_empty())
             .enumerate()
-            .flat_map(|(idx, cap)| {
-                let compound = cap.get(1).unwrap().as_str();
+            .flat_map(|(idx, compound)| {
                 generate_move_vectors(compound, state)
                     .into_iter()
                     .map(move |vec| (idx, vec))
@@ -197,7 +196,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             let mut piece_set = PieceSet::new();
             for piece_char in stoppers_pieces[*index].chars() {
                 let piece_index = if piece_char == '?' {
-                    NO_PIECE as u16
+                    NO_PIECE as Square
                 } else {
                     state.piece_char_map[&piece_char] as u16
                 };

@@ -16,15 +16,16 @@
 use crate::*;
 
 lazy_static! {
-    pub static ref CASTLING_HASHES: [u128; 16] = [random_u128(); 16];
+    pub static ref CASTLING_HASHES: [u128; 16] =
+        array::from_fn(|_| random_u128());
     pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
-        [random_u128(); MAX_SQUARES];
+        array::from_fn(|_| random_u128());
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
         let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
 
         for _ in 0..256 {
-            let piece_hashes = [random_u128(); MAX_SQUARES];
+            let piece_hashes = array::from_fn(|_| random_u128());
             result.push(piece_hashes);
         }
 
@@ -34,7 +35,7 @@ lazy_static! {
         let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
 
         for _ in 0..256 {
-            let drop_hashes = [random_u128(); MAX_SQUARES];
+            let drop_hashes = array::from_fn(|_| random_u128());
             result.push(drop_hashes);
         }
 

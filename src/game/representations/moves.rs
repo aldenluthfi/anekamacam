@@ -62,7 +62,7 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// - Next 12 bits: Unload square index (if applicable).
 /// - Next 8 bits: bits represent the captured piece type.
 /// - Next 12 bits: represent the captured piece square index.
-/// The last bit indicates if the piece captured is unmoved (1) or not (0).
+///   The last bit indicates if the piece captured is unmoved (1) or not (0).
 ///
 /// For the drop move, the second array is not used, and the first 128-bit
 /// integer is used as follows:
@@ -73,7 +73,16 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 ///   dropped.
 /// - The next bit represents whether this drop can deliver checkmate (0)
 ///   or not (1).
-pub type Move = (u128, Arc<Vec<u64>>);
+/// - The next bit represents whether this drop is taken from the enemy's hand 
+///   (0) or our own hand (1).
+#[derive(Clone, PartialEq, Eq)]
+pub struct Move(pub u128, pub Arc<Vec<u64>>);
+
+impl Default for Move {
+    fn default() -> Self {
+        Move(0u128, Arc::clone(&EMPTY_CAPTURE_LIST))
+    }
+}
 
 /*----------------------------------------------------------------------------*\
                           MOVE REPRESENTATION ENCODING

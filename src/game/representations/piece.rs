@@ -223,7 +223,6 @@ impl Piece {
     }
 }
 
-#[cfg(debug_assertions)]
 impl Debug for Piece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Piece")

@@ -43,13 +43,19 @@ fn determine_board_dimensions(fen: &str) -> (u8, u8) {
 
 // returns (castling, en_passant, pieces in hand)
 fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
-    let parts =
-        &fen.split_whitespace().map(str::to_string).collect::<Vec<String>>()
-            [2..];
+    let mut castling = false;
+    let mut en_passant = false;
+    let mut in_hand = false;
 
-    let castling = parts.iter().any(|part| CASTLING_PATTERN.is_match(part));
-    let en_passant = parts.iter().any(|part| ENP_PATTERN.is_match(part));
-    let in_hand = parts.iter().any(|part| HAND_PATTERN.is_match(part));
+    for part in fen.split_whitespace().skip(2) {
+        castling |= CASTLING_PATTERN.is_match(part);
+        en_passant |= ENP_PATTERN.is_match(part);
+        in_hand |= HAND_PATTERN.is_match(part);
+
+        if castling && en_passant && in_hand {
+            break;
+        }
+    }
 
     (castling, en_passant, in_hand)
 }
@@ -245,11 +251,11 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
 
     let mut cursor = 0usize;
 
-    state.opening_phase_score = tokens[cursor]
+    state.opening_score = tokens[cursor]
         .unsigned_abs();
     cursor += 1;
 
-    state.endgame_phase_score = tokens[cursor]
+    state.endgame_score = tokens[cursor]
         .unsigned_abs();
     cursor += 1;
 
@@ -346,7 +352,7 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
 
     for (piece_idx, piece) in state.pieces.iter().enumerate() {
         let color = p_color!(piece) as usize;
-        let count = state.piece_count[piece_idx] as u32;
+        let count = state.piece_count[piece_idx];
 
         state.big_pieces[color] += count * (p_is_big!(piece) as u32);
         state.major_pieces[color] += count * (p_is_major!(piece) as u32);
@@ -369,8 +375,8 @@ pub fn export_tuned_parameters_file(
     let piece_type_pairs = collect_piece_type_pairs(state);
     let mut output_tokens = Vec::new();
 
-    output_tokens.push(state.opening_phase_score.to_string());
-    output_tokens.push(state.endgame_phase_score.to_string());
+    output_tokens.push(state.opening_score.to_string());
+    output_tokens.push(state.endgame_score.to_string());
 
     for (white_idx, _) in &piece_type_pairs {
         output_tokens.push(p_ovalue!(state.pieces[*white_idx]).to_string());
@@ -1092,8 +1098,8 @@ pub fn parse_config_file(path: &str) -> State {
         special_rules,
     );
 
-    result.opening_phase_score = opening_phase_score;
-    result.endgame_phase_score = endgame_phase_score;
+    result.opening_score = opening_phase_score;
+    result.endgame_score = endgame_phase_score;
     result.pst_opening = pst_opening;
     result.pst_endgame = pst_endgame;
 
@@ -1789,7 +1795,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 state.main_board[square_index as usize] = piece_index;
 
                 state.piece_list[piece_index as usize]
-                    .insert(square_index as u16);
+                    .insert(square_index as Square);
                 state.piece_count[piece_index as usize] += 1;
 
                 set!(state.pieces_board[piece_color as usize], square_index);
@@ -1798,7 +1804,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 
                 if p_is_royal!(piece) {
                     state.royal_list[piece_color as usize]
-                        .push(square_index as u16);
+                        .push(square_index as Square);
                     state.royal_pieces[piece_color as usize] += 1;
                 }
 
@@ -2107,7 +2113,7 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
                     "-".to_string()
                 } else {
                     format_square(
-                        (state.en_passant_square & 0xFFF) as u16,
+                        (state.en_passant_square & 0xFFF) as Square,
                         state,
                     )
                 }
@@ -2627,4 +2633,79 @@ pub fn format_entire_game(state: &State) -> String {
     result.push_str(&format_game_state(state, true));
 
     result
+}
+
+/// Runs a simple stdin-driven debug loop for making and undoing moves.
+///
+/// Supported commands include normal move strings, `u` (undo), `q` (quit),
+/// and `pv` subcommands for PV hash probing/display.
+pub fn debug_interactive(state: &mut State) {
+    let mut input = String::new();
+
+    loop {
+        input.clear();
+        println!("\n{}", format_game_state(state, true));
+
+        if stdin().read_line(&mut input).is_err() {
+            eprintln!("Error reading stdin");
+            break;
+        }
+
+        match input.trim() {
+            "u" => undo_move!(state),
+            "q" => break,
+            input if input.starts_with("pv") => {
+                let parts = input.split_whitespace().collect::<Vec<_>>();
+
+                if parts.len() < 3 {
+                    eprintln!("Usage: pv [hash/show] [args]");
+                    continue;
+                }
+
+                let command = *parts.get(1).unwrap();
+                let args = *parts.get(2).unwrap();
+
+                match command {
+                    "hash" => {
+                        if let Some(mv) = parse_move(args, state) {
+                            hash_pv_move(mv.clone(), state);
+                            make_move!(state, mv);
+                        } else {
+                            eprintln!("Invalid move for hashing: {}", args);
+                        }
+                    }
+                    "show" => {
+                        let depth = args.parse::<usize>().unwrap_or(0);
+                        fill_pv_line(state, depth);
+
+                        for pv_move in &state.pv_line {
+                            if pv_move == &null_move() {
+                                println!();
+                                break;
+                            }
+
+                            let pv_move_str = format_move(pv_move, state);
+
+                            print!("{} ", pv_move_str);
+                        }
+
+                        state.pv_line = array::from_fn(|_| null_move());
+                    }
+                    _ => {
+                        eprintln!("Unknown pv command: {}", command);
+                    }
+                }
+            }
+            input if input.starts_with("fen ") => {
+                let fen = input[4..].trim();
+                state.load_fen(fen);
+            }
+            _ => match parse_move(&input, state) {
+                Some(mv) => {
+                    make_move!(state, mv);
+                }
+                None => eprintln!("Invalid move: {}", input.trim()),
+            },
+        }
+    }
 }

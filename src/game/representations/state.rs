@@ -299,7 +299,7 @@ macro_rules! pass_snapshot {
 /// - bit 8     : Stalemate is a loss for the stalemated player
 /// - bit 9     : Game begins with a setup phase
 /// - bit 10    : A player can make a move that creates a stand-off that the
-///               opponent must break on their next turn
+///   opponent must break on their next turn
 /// - bit 11    : There is a limit on the number of repetitions of a position
 /// - bit 12-31 : reserved for future use
 ///
@@ -321,8 +321,8 @@ pub struct State {
 
     pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
-    pub opening_phase_score: u32,                                               /* opening threshold                  */
-    pub endgame_phase_score: u32,                                               /* endgame threshold                  */
+    pub opening_score: u32,                                                     /* opening threshold                  */
+    pub endgame_score: u32,                                                     /* endgame threshold                  */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 
@@ -414,8 +414,8 @@ impl State {
 
             piece_limit: vec![u32::MAX; piece_count],
             repetition_limit: u8::MAX,
-            opening_phase_score: 0,
-            endgame_phase_score: 0,
+            opening_score: 0,
+            endgame_score: 0,
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
 
@@ -642,7 +642,7 @@ impl State {
 
     fn populate_relevant_attacks(&mut self) {
         for square in 0..(self.files as u32 * self.ranks as u32) {
-            generate_attack_masks(square as u16, self);
+            generate_attack_masks(square as Square, self);
         }
     }
 
