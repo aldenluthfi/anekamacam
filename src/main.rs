@@ -35,6 +35,7 @@ pub mod game {
     }
 
     pub mod search {
+        pub mod move_ordering;
         pub mod pv_table;
         pub mod quiescence;
     }
@@ -63,7 +64,7 @@ pub mod prelude;
 
 #[hotpath::main]
 fn main() {
-    let variant = "fide";
+let variant = "fide";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 

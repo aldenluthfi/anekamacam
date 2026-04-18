@@ -10,38 +10,45 @@
 
 use crate::*;
 
+/// Evaluates the current position from the side-to-move perspective.
+///
+/// The evaluation is phase-aware:
+/// - `OPENING` uses opening material + opening PST terms.
+/// - `ENDGAME` uses endgame material + endgame PST terms.
+/// - `MIDDLEGAME` linearly interpolates between the two scores using the
+///   current opening-material total against `opening_score`.
+///
+/// Positive values favor the side to move, negative values favor the opponent.
+#[inline(always)]
 pub fn evaluate_position(state: &State) -> i32 {
+    let white = WHITE as usize;
+    let black = BLACK as usize;
 
-    let mut score_opening =
-        state.opening_material[WHITE as usize] as i32 -
-        state.opening_material[BLACK as usize] as i32;
-    let mut score_endgame =
-        state.endgame_material[WHITE as usize] as i32 -
-        state.endgame_material[BLACK as usize] as i32;
+    let opening_material_white = state.opening_material[white] as i32;
+    let opening_material_black = state.opening_material[black] as i32;
+    let endgame_material_white = state.endgame_material[white] as i32;
+    let endgame_material_black = state.endgame_material[black] as i32;
 
-    let material_score =
-        state.opening_material[WHITE as usize] as i32 +
-        state.opening_material[BLACK as usize] as i32;
+    let score_opening = opening_material_white - opening_material_black
+        + state.opening_pst_bonus[white]
+        - state.opening_pst_bonus[black];
 
-    score_opening +=
-        state.opening_pst_bonus[WHITE as usize] -
-        state.opening_pst_bonus[BLACK as usize];
-    score_endgame +=
-        state.endgame_pst_bonus[WHITE as usize] -
-        state.endgame_pst_bonus[BLACK as usize];
+    let score_endgame = endgame_material_white - endgame_material_black
+        + state.endgame_pst_bonus[white]
+        - state.endgame_pst_bonus[black];
 
-    let result = match state.game_phase {
+    let material_score = opening_material_white + opening_material_black;
+
+    let blended_score = match state.game_phase {
         OPENING => score_opening,
         ENDGAME => score_endgame,
-        MIDDLEGAME => {                                                         /* interpolate for middlegame         */
-            (
-                score_opening * material_score +
-                score_endgame * (state.opening_score as i32 - material_score)
-            ) / state.opening_score as i32
-
+        MIDDLEGAME => {
+            (score_opening * material_score
+                + score_endgame * (state.opening_score as i32 - material_score))
+                / state.opening_score as i32
         }
         _ => panic!("Invalid game phase {}", state.game_phase),
     };
 
-    result * (-2 * state.playing as i32 + 1)
+    blended_score * (-2 * state.playing as i32 + 1)
 }
