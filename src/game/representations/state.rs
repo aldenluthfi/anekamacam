@@ -247,6 +247,7 @@ pub struct Snapshot {
     pub en_passant_square: EnPassantSquare,
     pub setup_phase: bool,
     pub game_over: bool,
+    pub game_phase: u8,                                                         /* OPENING/MIDDLEGAME/ENDGAME         */
 
     pub position_hash: u128
 }
@@ -260,6 +261,7 @@ impl Default for Snapshot {
             en_passant_square: EnPassantSquare::MAX,
             setup_phase: false,
             game_over: false,
+            game_phase: OPENING,
             position_hash: u128::default(),
         }
     }
@@ -319,6 +321,8 @@ pub struct State {
 
     pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
+    pub opening_phase_score: u32,                                               /* opening threshold                  */
+    pub endgame_phase_score: u32,                                               /* endgame threshold                  */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 
@@ -341,6 +345,7 @@ pub struct State {
 
     pub setup_phase: bool,
     pub game_over: bool,
+    pub game_phase: u8,                                                         /* OPENING/MIDDLEGAME/ENDGAME         */
 
     pub playing: u8,
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
@@ -358,7 +363,10 @@ pub struct State {
     pub search_ply: u32,                                                        /* the number of plies in the search  */
     pub ply_counter: u32,                                                       /* the number of plies in the game    */
 
-    pub material: [u32; 2],
+    pub opening_material: [u32; 2],                                             /* color to opening material          */
+    pub endgame_material: [u32; 2],                                             /* color to endgame material          */
+    pub opening_pst_bonus: [i32; 2],                                            /* color to opening pst bonus         */
+    pub endgame_pst_bonus: [i32; 2],                                            /* color to endgame pst bonus         */
     pub big_pieces: [u32; 2],
     pub major_pieces: [u32; 2],
     pub minor_pieces: [u32; 2],
@@ -406,6 +414,8 @@ impl State {
 
             piece_limit: vec![u32::MAX; piece_count],
             repetition_limit: u8::MAX,
+            opening_phase_score: 0,
+            endgame_phase_score: 0,
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
 
@@ -432,6 +442,7 @@ impl State {
 
             setup_phase: false,
             game_over: false,
+            game_phase: OPENING,
 
             playing: WHITE,
             main_board: vec![NO_PIECE; (files as usize) * (ranks as usize)],
@@ -449,11 +460,14 @@ impl State {
             search_ply: 0,
             ply_counter: 0,
 
+            opening_material: [0; 2],
+            endgame_material: [0; 2],
+            opening_pst_bonus: [0; 2],
+            endgame_pst_bonus: [0; 2],
             big_pieces: [0; 2],
             major_pieces: [0; 2],
             minor_pieces: [0; 2],
             royal_pieces: [0; 2],
-            material: [0; 2],
             royal_list: [Vec::new(), Vec::new()],
 
             piece_count: vec![0u32; piece_count],
@@ -494,11 +508,16 @@ impl State {
 
         self.ply_counter = 0;
 
+        self.game_phase = OPENING;
+
+        self.opening_material = [0; 2];
+        self.endgame_material = [0; 2];
+        self.opening_pst_bonus = [0; 2];
+        self.endgame_pst_bonus = [0; 2];
         self.big_pieces = [0; 2];
         self.major_pieces = [0; 2];
         self.minor_pieces = [0; 2];
         self.royal_pieces = [0; 2];
-        self.material = [0; 2];
         self.royal_list = [Vec::new(), Vec::new()];
 
         self.piece_count = vec![0u32; piece_count];

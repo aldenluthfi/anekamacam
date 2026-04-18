@@ -27,6 +27,43 @@ pub fn random_u128() -> u128 {
     u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
 }
 
+/// Recomputes opening/endgame eval caches and current game phase.
+///
+/// This function is used after position-level changes (load, tune import,
+/// make/undo move) to keep material, pst bonus, and phase classification in
+/// sync with `piece_list` and PST tables.
+pub fn refresh_eval_state(state: &mut State) {
+    state.opening_material = [0; 2];
+    state.endgame_material = [0; 2];
+    state.opening_pst_bonus = [0; 2];
+    state.endgame_pst_bonus = [0; 2];
+
+    for (piece_idx, piece) in state.pieces.iter().enumerate() {
+        let color = p_color!(piece) as usize;
+
+        for square in &state.piece_list[piece_idx] {
+            state.opening_material[color] += p_ovalue!(piece) as u32;
+            state.endgame_material[color] += p_evalue!(piece) as u32;
+
+            state.opening_pst_bonus[color] +=
+                state.pst_opening[piece_idx][*square as usize];
+            state.endgame_pst_bonus[color] +=
+                state.pst_endgame[piece_idx][*square as usize];
+        }
+    }
+
+    let game_phase_score = state.opening_material[WHITE as usize]
+        + state.opening_material[BLACK as usize];
+
+    state.game_phase = if game_phase_score > state.opening_phase_score {
+        OPENING
+    } else if game_phase_score < state.endgame_phase_score {
+        ENDGAME
+    } else {
+        MIDDLEGAME
+    };
+}
+
 /// Recomputes derived state and asserts it matches the stored caches.
 ///
 /// This is a debug integrity check for boards, piece lists, material counts,
@@ -82,23 +119,32 @@ pub fn verify_game_state(state: &State) {
     let mut temp_big_pieces = [0; 2];
     let mut temp_major_pieces = [0; 2];
     let mut temp_minor_pieces = [0; 2];
-    let mut temp_material = [0; 2];
+    let mut temp_opening_material = [0; 2];
+    let mut temp_endgame_material = [0; 2];
+    let mut temp_opening_pst_bonus = [0; 2];
+    let mut temp_endgame_pst_bonus = [0; 2];
 
     for (i, piece) in state.pieces.iter().enumerate() {
         let piece_indices = &state.piece_list[i];
 
-        for _ in piece_indices {
+        for square in piece_indices {
+            let color = p_color!(piece) as usize;
             if p_is_big!(piece) {
-                temp_big_pieces[p_color!(piece) as usize] += 1;
+                temp_big_pieces[color] += 1;
             }
             if p_is_major!(piece) {
-                temp_major_pieces[p_color!(piece) as usize] += 1;
+                temp_major_pieces[color] += 1;
             }
             if p_is_minor!(piece) {
-                temp_minor_pieces[p_color!(piece) as usize] += 1;
+                temp_minor_pieces[color] += 1;
             }
 
-            temp_material[p_color!(piece) as usize] += p_value!(piece) as u32;
+            temp_opening_material[color] += p_ovalue!(piece) as u32;
+            temp_endgame_material[color] += p_evalue!(piece) as u32;
+            temp_opening_pst_bonus[color] +=
+                state.pst_opening[i][*square as usize];
+            temp_endgame_pst_bonus[color] +=
+                state.pst_endgame[i][*square as usize];
         }
     }
 
@@ -118,8 +164,35 @@ pub fn verify_game_state(state: &State) {
     );
 
     assert_eq!(
-        temp_material, state.material,
-        "Computed material count doesn't match state material count"
+        temp_opening_material, state.opening_material,
+        concat!(
+            "Computed opening material count doesn't match state ",
+            "opening material count"
+        )
+    );
+
+    assert_eq!(
+        temp_endgame_material, state.endgame_material,
+        concat!(
+            "Computed endgame material count doesn't match state ",
+            "endgame material count"
+        )
+    );
+
+    assert_eq!(
+        temp_opening_pst_bonus, state.opening_pst_bonus,
+        concat!(
+            "Computed opening pst bonus doesn't match state ",
+            "opening pst bonus"
+        )
+    );
+
+    assert_eq!(
+        temp_endgame_pst_bonus, state.endgame_pst_bonus,
+        concat!(
+            "Computed endgame pst bonus doesn't match state ",
+            "endgame pst bonus"
+        )
     );
 
     let mut temp_royal_list = [Vec::new(), Vec::new()];

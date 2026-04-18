@@ -171,10 +171,22 @@ fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
 
 fn set_piece_dynamic_parameters(
     piece: &mut Piece,
-    value: u16,
+    ovalue: u16,
+    evalue: u16,
     is_big: bool,
     is_major: bool,
 ) {
+    assert!(
+        ovalue <= 0x3FFF,
+        "Opening piece value out of 14-bit range: {}",
+        ovalue
+    );
+    assert!(
+        evalue <= 0x3FFF,
+        "Endgame piece value out of 14-bit range: {}",
+        evalue
+    );
+
     let mut dynamic_bits = 0u32;
 
     if is_big {
@@ -185,24 +197,20 @@ fn set_piece_dynamic_parameters(
         dynamic_bits |= 1 << 1;
     }
 
-    dynamic_bits |= (value as u32 & 0xFFFF) << 2;
+    dynamic_bits |= (ovalue as u32 & 0x3FFF) << 2;
+    dynamic_bits |= (evalue as u32 & 0x3FFF) << 16;
 
     piece.encoded_dynamic =
-        (piece.encoded_dynamic & !((1u32 << 18) - 1)) | dynamic_bits;
+        (piece.encoded_dynamic & !((1u32 << 30) - 1)) | dynamic_bits;
 }
 
-fn piece_big_flag_raw(piece: &Piece) -> bool {
-    (piece.encoded_dynamic & 1) != 0
-}
-
-fn piece_major_flag_raw(piece: &Piece) -> bool {
-    (piece.encoded_dynamic & (1 << 1)) != 0
-}
 
 /// Parses tuned parameters from a flat space-separated file.
 ///
 /// Token order:
-/// values (piece-type count), big flags, major flags,
+/// opening phase score, endgame phase score,
+/// opening values (piece-type count), endgame values (piece-type count),
+/// big flags, major flags,
 /// then white opening/middlegame PST rows (piece-type count × board_size),
 /// then white endgame PST rows (piece-type count × board_size).
 ///
@@ -226,7 +234,7 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
     let piece_type_count = piece_type_pairs.len();
     let board_size = (state.files as usize) * (state.ranks as usize);
     let expected_count =
-        piece_type_count * 3 + piece_type_count * board_size * 2;
+        2 + piece_type_count * 4 + piece_type_count * board_size * 2;
 
     assert!(
         tokens.len() == expected_count,
@@ -236,7 +244,19 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
     );
 
     let mut cursor = 0usize;
-    let values = &tokens[cursor..cursor + piece_type_count];
+
+    state.opening_phase_score = tokens[cursor]
+        .unsigned_abs();
+    cursor += 1;
+
+    state.endgame_phase_score = tokens[cursor]
+        .unsigned_abs();
+    cursor += 1;
+
+    let ovalues = &tokens[cursor..cursor + piece_type_count];
+    cursor += piece_type_count;
+
+    let evalues = &tokens[cursor..cursor + piece_type_count];
     cursor += piece_type_count;
 
     let big_flags = &tokens[cursor..cursor + piece_type_count];
@@ -246,13 +266,23 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
     cursor += piece_type_count;
 
     for piece_type_idx in 0..piece_type_count {
-        let value_i32 = values[piece_type_idx];
-        let abs_value = value_i32.unsigned_abs();
+        let ovalue_i32 = ovalues[piece_type_idx];
+        let evalue_i32 = evalues[piece_type_idx];
+        let abs_ovalue = ovalue_i32.unsigned_abs();
+        let abs_evalue = evalue_i32.unsigned_abs();
+
         assert!(
-            abs_value <= u16::MAX as u32,
-            "Piece value out of range at index {}: {}",
+            abs_ovalue <= 0x3FFF,
+            "Opening piece value out of range at index {}: {}",
             piece_type_idx,
-            value_i32
+            ovalue_i32
+        );
+
+        assert!(
+            abs_evalue <= 0x3FFF,
+            "Endgame piece value out of range at index {}: {}",
+            piece_type_idx,
+            evalue_i32
         );
 
         let big_flag = big_flags[piece_type_idx];
@@ -281,14 +311,16 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
 
         set_piece_dynamic_parameters(
             &mut state.pieces[white_idx],
-            abs_value as u16,
+            abs_ovalue as u16,
+            abs_evalue as u16,
             big_flag == 1,
             major_flag == 1,
         );
 
         set_piece_dynamic_parameters(
             &mut state.pieces[black_idx],
-            abs_value as u16,
+            abs_ovalue as u16,
+            abs_evalue as u16,
             big_flag == 1,
             major_flag == 1,
         );
@@ -308,7 +340,6 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
         );
     }
 
-    state.material = [0; 2];
     state.big_pieces = [0; 2];
     state.major_pieces = [0; 2];
     state.minor_pieces = [0; 2];
@@ -317,11 +348,12 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
         let color = p_color!(piece) as usize;
         let count = state.piece_count[piece_idx] as u32;
 
-        state.material[color] += count * p_value!(piece) as u32;
         state.big_pieces[color] += count * (p_is_big!(piece) as u32);
         state.major_pieces[color] += count * (p_is_major!(piece) as u32);
         state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
     }
+
+    refresh_eval_state(state);
 }
 
 /// Exports tuned parameters to `parameters/{variant}/{epoch}.param`
@@ -337,19 +369,25 @@ pub fn export_tuned_parameters_file(
     let piece_type_pairs = collect_piece_type_pairs(state);
     let mut output_tokens = Vec::new();
 
+    output_tokens.push(state.opening_phase_score.to_string());
+    output_tokens.push(state.endgame_phase_score.to_string());
+
     for (white_idx, _) in &piece_type_pairs {
-        output_tokens.push(p_value!(state.pieces[*white_idx]).to_string());
+        output_tokens.push(p_ovalue!(state.pieces[*white_idx]).to_string());
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        output_tokens.push(p_evalue!(state.pieces[*white_idx]).to_string());
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        output_tokens
+            .push((p_is_big!(&state.pieces[*white_idx]) as u8).to_string());
     }
 
     for (white_idx, _) in &piece_type_pairs {
         output_tokens.push(
-            (piece_big_flag_raw(&state.pieces[*white_idx]) as u8).to_string(),
-        );
-    }
-
-    for (white_idx, _) in &piece_type_pairs {
-        output_tokens.push(
-            (piece_major_flag_raw(&state.pieces[*white_idx]) as u8).to_string(),
+            (p_is_major!(&state.pieces[*white_idx]) as u8).to_string(),
         );
     }
 
@@ -380,7 +418,7 @@ pub fn export_tuned_parameters_file(
 /// See `example.conf` for the expected format of the configuration file.
 ///
 /// Pieces are first parsed into a tuple of:
-/// (string, char, Vec<u8>, u8, u8, bool, bool, bool, u16, u8)
+/// (string, char, Vec<u8>, u8, u8, bool, bool, bool, u16, u16, u8)
 ///
 /// where the fields are:
 /// [0] string: the name of the piece
@@ -391,8 +429,9 @@ pub fn export_tuned_parameters_file(
 /// [5] bool: whether the piece is royal
 /// [6] bool: whether the piece is big
 /// [7] bool: whether the piece is major
-/// [8] u16: the value of the piece
-/// [9] u8: the piece rank
+/// [8] u16: the opening value of the piece
+/// [9] u16: the endgame value of the piece
+/// [10] u8: the piece rank
 ///
 pub fn parse_config_file(path: &str) -> State {
     let file_str =
@@ -621,6 +660,7 @@ pub fn parse_config_file(path: &str) -> State {
             false,
             0,
             0,
+            0,
         ));
         char_to_unordered_index.insert(white_char, white_index);
         let piece_type_index = white_index / 2;
@@ -636,6 +676,7 @@ pub fn parse_config_file(path: &str) -> State {
             false,
             false,
             false,
+            0,
             0,
             0,
         ));
@@ -697,45 +738,76 @@ pub fn parse_config_file(path: &str) -> State {
     );
 
     assert!(
-        eval_parameters.len() >= 3,
-        "[evaluation parameters] must define at least values, big, and major"
+        eval_parameters.len() >= 5,
+        concat!(
+            "[evaluation parameters] must define phase scores, opening values, ",
+            "endgame values, big, and major"
+        )
     );
 
-    let parsed_values =
-        parse_numeric_parameter_list(&eval_parameters[0], "piece value");
+    let parsed_phase_scores =
+        parse_numeric_parameter_list(&eval_parameters[0], "phase scores");
+    assert!(
+        parsed_phase_scores.len() == 2,
+        "Phase score row must contain exactly 2 entries: [opening, endgame]"
+    );
 
-    let evaluation_row_len = parsed_values.len();
+    let opening_phase_score = parsed_phase_scores[0].unsigned_abs();
+    let endgame_phase_score = parsed_phase_scores[1].unsigned_abs();
+
+    let parsed_ovalues =
+        parse_numeric_parameter_list(&eval_parameters[1], "opening value");
+    let parsed_evalues =
+        parse_numeric_parameter_list(&eval_parameters[2], "endgame value");
+
+    let evaluation_row_len = parsed_ovalues.len();
     assert!(
         evaluation_row_len == piece_type_count,
-        concat!("Piece value count ({}) doesn't match piece type count ({})"),
+        concat!(
+            "Opening value count ({}) doesn't match piece type count ({})"
+        ),
         evaluation_row_len,
+        piece_type_count
+    );
+    assert!(
+        parsed_evalues.len() == piece_type_count,
+        concat!(
+            "Endgame value count ({}) doesn't match piece type count ({})"
+        ),
+        parsed_evalues.len(),
         piece_type_count
     );
 
     let parsed_big_flags = parse_binary_parameter_flags(
-        &eval_parameters[1],
+        &eval_parameters[3],
         evaluation_row_len,
         "big flag",
     );
     let parsed_major_flags = parse_binary_parameter_flags(
-        &eval_parameters[2],
+        &eval_parameters[4],
         evaluation_row_len,
         "major flag",
     );
 
-    let mut values = vec![0i32; piece_count];
+    let mut ovalues = vec![0i32; piece_count];
+    let mut evalues = vec![0i32; piece_count];
     let mut big_flags = vec![false; piece_count];
     let mut major_flags = vec![false; piece_count];
 
     for (piece_idx, piece_type_idx) in piece_type_indices.iter().enumerate() {
-        values[piece_idx] = parsed_values[*piece_type_idx];
+        ovalues[piece_idx] = parsed_ovalues[*piece_type_idx];
+        evalues[piece_idx] = parsed_evalues[*piece_type_idx];
         big_flags[piece_idx] = parsed_big_flags[*piece_type_idx];
         major_flags[piece_idx] = parsed_major_flags[*piece_type_idx];
     }
 
     assert!(
-        eval_parameters.len() == 3 + piece_type_count * 2,
-        "[evaluation parameters] must contain values, big, major, and exactly two PST rows per piece type (opening/middlegame + endgame)"
+        eval_parameters.len() == 5 + piece_type_count * 2,
+        concat!(
+            "[evaluation parameters] must contain phase scores, opening ",
+            "values, endgame values, big, major, and exactly two PST rows ",
+            "per piece type (opening/middlegame + endgame)"
+        )
     );
 
     let mut royal_flags = vec![false; piece_count];
@@ -769,19 +841,29 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    let pst_opening_start_row = 3;
+    let pst_opening_start_row = 5;
     let pst_endgame_start_row = pst_opening_start_row + piece_type_count;
 
     for i in 0..piece_count {
-        let abs_value = values[i].unsigned_abs();
+        let abs_ovalue = ovalues[i].unsigned_abs();
+        let abs_evalue = evalues[i].unsigned_abs();
+
         assert!(
-            abs_value <= u16::MAX as u32,
-            "Piece value out of range for index {}: {}",
+            abs_ovalue <= 0x3FFF,
+            "Opening piece value out of range for index {}: {}",
             i,
-            values[i]
+            ovalues[i]
         );
 
-        pieces[i].8 = abs_value as u16;
+        assert!(
+            abs_evalue <= 0x3FFF,
+            "Endgame piece value out of range for index {}: {}",
+            i,
+            evalues[i]
+        );
+
+        pieces[i].8 = abs_ovalue as u16;
+        pieces[i].9 = abs_evalue as u16;
         pieces[i].6 = big_flags[i];
         pieces[i].7 = major_flags[i];
         pieces[i].5 = royal_flags[i];
@@ -970,7 +1052,7 @@ pub fn parse_config_file(path: &str) -> State {
             });
             for piece_char in pieces_str.chars() {
                 if let Some(&index) = char_to_index.get(&piece_char) {
-                    pieces[index].9 = rank_value;
+                    pieces[index].10 = rank_value;
                 } else {
                     panic!("Unknown piece character: {}", piece_char);
                 }
@@ -1003,12 +1085,15 @@ pub fn parse_config_file(path: &str) -> State {
                     pieces_moves[i].contains("O"),
                     p.8,
                     p.9,
+                    p.10,
                 )
             })
             .collect(),
         special_rules,
     );
 
+    result.opening_phase_score = opening_phase_score;
+    result.endgame_phase_score = endgame_phase_score;
     result.pst_opening = pst_opening;
     result.pst_endgame = pst_endgame;
 
@@ -1708,7 +1793,8 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 state.piece_count[piece_index as usize] += 1;
 
                 set!(state.pieces_board[piece_color as usize], square_index);
-                state.material[piece_color as usize] += p_value!(piece) as u32;
+
+
 
                 if p_is_royal!(piece) {
                     state.royal_list[piece_color as usize]
@@ -1859,6 +1945,8 @@ pub fn parse_fen(state: &mut State, fen: &str) {
             panic!("Invalid ply number: {}", parts[part_index].trim())
         });
     }
+
+    refresh_eval_state(state);
 
     state.position_hash = hash_position(state);
 }

@@ -19,7 +19,7 @@ use crate::*;
 /// - Row 1: Piece index
 /// - Row 2: Piece symbol
 /// - Row 3: Piece color ("White" or "Black")
-/// - Row 4: Piece value
+/// - Row 4: Opening/Endgame piece value
 /// - Row 5: Royal status ("*" if royal, empty otherwise)
 /// - Row 6: Promotion ability ("*" if can promote, empty otherwise)
 /// - Row 7: Major piece status ("*" if major, empty otherwise)
@@ -41,11 +41,7 @@ pub fn format_piece(piece: &Piece, state: &State) -> String {
         }
         .to_string(),
     );
-    rows.push(if p_value!(piece) == u16::MAX {
-        "∞".to_string()
-    } else {
-        p_value!(piece).to_string()
-    });
+    rows.push(format!("{}/{}", p_ovalue!(piece), p_evalue!(piece)));
     rows.push(
         if p_is_royal!(piece) {
             "*"
