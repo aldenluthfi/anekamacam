@@ -28,7 +28,7 @@ use crate::*;
 /// `p_castle_right!`, `p_castle_left!`
 ///
 /// Dynamic accessors:
-/// `p_is_big!`, `p_is_major!`, `p_is_minor!`, `p_value!`
+/// `p_is_big!`, `p_is_major!`, `p_is_minor!`, `p_ovalue!`, `p_evalue!`
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
@@ -86,9 +86,16 @@ macro_rules! p_is_minor {
 }
 
 #[macro_export]
-macro_rules! p_value {
+macro_rules! p_ovalue {
     ($piece:expr) => {
-        (($piece.encoded_dynamic >> 2) & 0xFFFF) as u16
+        (($piece.encoded_dynamic >> 2) & 0x3FFF) as u16
+    };
+}
+
+#[macro_export]
+macro_rules! p_evalue {
+    ($piece:expr) => {
+        (($piece.encoded_dynamic >> 16) & 0x3FFF) as u16
     };
 }
 
@@ -125,7 +132,8 @@ pub type PieceIndex = u8;
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
 /// - Bit 0         : Big piece status
 /// - Bit 1         : Major piece status (1 if major, 0 if minor)
-/// - Bits 2-17     : Piece value
+/// - Bits 2-15     : Opening piece value (14-bit)
+/// - Bits 16-29    : Endgame piece value (14-bit)
 /// - Other bits    : Unused
 ///
 /// The `promotions` field is a `Vec<u8>` that encodes the pieces this piece can
@@ -153,7 +161,8 @@ impl Piece {
     /// - `is_major`        : Whether this is a major piece (T) or minor (F)
     /// - `castle_right`    : Whether can castle to the right (kingside)
     /// - `castle_left`     : Whether can castle to the left (queenside)
-    /// - `value`           : The piece value (0-65535, stored in 16 bits)
+    /// - `ovalue`          : The opening piece value (0-16383, stored in 14 bits)
+    /// - `evalue`          : The endgame piece value (0-16383, stored in 14 bits)
     /// - `rank`            : The piece rank used for move modifiers
     pub fn new(
         name: String,
@@ -166,7 +175,8 @@ impl Piece {
         is_major: bool,
         castle_right: bool,
         castle_left: bool,
-        value: u16,
+        ovalue: u16,
+        evalue: u16,
         rank: u8,
     ) -> Self {
         let mut encoded_static = index as u32;
@@ -200,7 +210,8 @@ impl Piece {
             encoded_dynamic |= 1 << 1;
         }
 
-        encoded_dynamic |= (value as u32 & 0xFFFF) << 2;
+        encoded_dynamic |= (ovalue as u32 & 0x3FFF) << 2;
+        encoded_dynamic |= (evalue as u32 & 0x3FFF) << 16;
 
         Self {
             name,

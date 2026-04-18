@@ -73,7 +73,7 @@ pub use crate::game::search::{
     quiescence::quiescence_search,
 };
 pub use crate::game::util::{
-    perft, random_u128, start_perft, verify_game_state,
+    perft, random_u128, refresh_eval_state, start_perft, verify_game_state,
 };
 
 /*----------------------------------------------------------------------------*\
@@ -175,6 +175,10 @@ pub const NULL_DROP: &str = "@#~?@#~?";
 pub const BLACK_WIN: i8 = -1;
 pub const WHITE_WIN: i8 = 1;
 pub const DRAW: i8 = 0;
+
+pub const OPENING: u8 = 0;
+pub const MIDDLEGAME: u8 = 1;
+pub const ENDGAME: u8 = 2;
 
 pub const PV_TABLE_SIZE: usize = (1000000 * 8) / size_of::<PVElement>();        /* 8MB                                */
 pub const MAX_DEPTH: usize = 64;

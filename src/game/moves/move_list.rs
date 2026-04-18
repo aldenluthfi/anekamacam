@@ -734,6 +734,7 @@ macro_rules! make_move {
             let last_position_hash = $state.position_hash;
             let last_setup_phase = $state.setup_phase;
             let last_game_over = $state.game_over;
+            let last_game_phase = $state.game_phase;
 
             #[cfg(debug_assertions)]
             verify_game_state($state);
@@ -804,6 +805,19 @@ macro_rules! make_move {
                     if is_promotion { promoted_piece as u8 }
                     else { piece_index as u8 };
 
+                $state.opening_pst_bonus[piece_color as usize] -=
+                    $state.pst_opening[piece_index][start_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] -=
+                    $state.pst_endgame[piece_index][start_square as usize];
+                $state.opening_pst_bonus[piece_color as usize] +=
+                    $state.pst_opening[
+                        if is_promotion { promoted_piece } else { piece_index }
+                    ][end_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] +=
+                    $state.pst_endgame[
+                        if is_promotion { promoted_piece } else { piece_index }
+                    ][end_square as usize];
+
                 if is_promotion {
                     let old_piece = &$state.pieces[piece_index];
                     let new_piece = &$state.pieces[promoted_piece];
@@ -822,10 +836,14 @@ macro_rules! make_move {
                     $state.minor_pieces[piece_color as usize] +=
                         p_is_minor!(new_piece) as u32;
 
-                    $state.material[piece_color as usize] -=
-                        p_value!(old_piece) as u32;
-                    $state.material[piece_color as usize] +=
-                        p_value!(new_piece) as u32;
+                    $state.opening_material[piece_color as usize] -=
+                        p_ovalue!(old_piece) as u32;
+                    $state.endgame_material[piece_color as usize] -=
+                        p_evalue!(old_piece) as u32;
+                    $state.opening_material[piece_color as usize] +=
+                        p_ovalue!(new_piece) as u32;
+                    $state.endgame_material[piece_color as usize] +=
+                        p_evalue!(new_piece) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
@@ -973,6 +991,19 @@ macro_rules! make_move {
                     if is_promotion { promoted_piece as u8 }
                     else { piece_index as u8 };
 
+                $state.opening_pst_bonus[piece_color as usize] -=
+                    $state.pst_opening[piece_index][start_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] -=
+                    $state.pst_endgame[piece_index][start_square as usize];
+                $state.opening_pst_bonus[piece_color as usize] +=
+                    $state.pst_opening[
+                        if is_promotion { promoted_piece } else { piece_index }
+                    ][end_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] +=
+                    $state.pst_endgame[
+                        if is_promotion { promoted_piece } else { piece_index }
+                    ][end_square as usize];
+
                 if is_promotion {
                     let old_piece = &$state.pieces[piece_index];
                     let new_piece = &$state.pieces[promoted_piece];
@@ -991,10 +1022,14 @@ macro_rules! make_move {
                     $state.minor_pieces[piece_color as usize] +=
                         p_is_minor!(new_piece) as u32;
 
-                    $state.material[piece_color as usize] -=
-                        p_value!(old_piece) as u32;
-                    $state.material[piece_color as usize] +=
-                        p_value!(new_piece) as u32;
+                    $state.opening_material[piece_color as usize] -=
+                        p_ovalue!(old_piece) as u32;
+                    $state.endgame_material[piece_color as usize] -=
+                        p_evalue!(old_piece) as u32;
+                    $state.opening_material[piece_color as usize] +=
+                        p_ovalue!(new_piece) as u32;
+                    $state.endgame_material[piece_color as usize] +=
+                        p_evalue!(new_piece) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
@@ -1161,6 +1196,19 @@ macro_rules! make_move {
                     );
                     $state.piece_list[captured_piece_index]
                         .insert(unload_square as u16);
+
+                    $state.opening_pst_bonus[captured_color as usize] -=
+                        $state.pst_opening[captured_piece_index]
+                        [captured_square as usize];
+                    $state.endgame_pst_bonus[captured_color as usize] -=
+                        $state.pst_endgame[captured_piece_index]
+                        [captured_square as usize];
+                    $state.opening_pst_bonus[captured_color as usize] +=
+                        $state.pst_opening[captured_piece_index]
+                        [unload_square as usize];
+                    $state.endgame_pst_bonus[captured_color as usize] +=
+                        $state.pst_endgame[captured_piece_index]
+                        [unload_square as usize];
                 } else {
                     $state.piece_list[captured_piece_index].remove(
                         &(captured_square as u16)
@@ -1168,6 +1216,13 @@ macro_rules! make_move {
                 }
 
                 if !is_unload {
+                    $state.opening_pst_bonus[captured_color as usize] -=
+                        $state.pst_opening[captured_piece_index]
+                        [captured_square as usize];
+                    $state.endgame_pst_bonus[captured_color as usize] -=
+                        $state.pst_endgame[captured_piece_index]
+                        [captured_square as usize];
+
                     $state.big_pieces[captured_color as usize] -=
                         p_is_big!($state.pieces[captured_piece_index]) as u32;
                     $state.major_pieces[captured_color as usize] -=
@@ -1175,8 +1230,12 @@ macro_rules! make_move {
                     $state.minor_pieces[captured_color as usize] -=
                         p_is_minor!($state.pieces[captured_piece_index]) as u32;
 
-                    $state.material[captured_color as usize] -=
-                        p_value!(
+                    $state.opening_material[captured_color as usize] -=
+                        p_ovalue!(
+                            $state.pieces[captured_piece_index]
+                        ) as u32;
+                    $state.endgame_material[captured_color as usize] -=
+                        p_evalue!(
                             $state.pieces[captured_piece_index]
                         ) as u32;
 
@@ -1240,6 +1299,19 @@ macro_rules! make_move {
                     if is_promotion { promoted_piece as u8 }
                     else { piece_index as u8 };
 
+                $state.opening_pst_bonus[piece_color as usize] -=
+                    $state.pst_opening[piece_index][start_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] -=
+                    $state.pst_endgame[piece_index][start_square as usize];
+                $state.opening_pst_bonus[piece_color as usize] +=
+                    $state.pst_opening[
+                        if is_promotion { promoted_piece } else { piece_index }
+                    ][end_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] +=
+                    $state.pst_endgame[
+                        if is_promotion { promoted_piece } else { piece_index }
+                    ][end_square as usize];
+
                 if is_promotion {
                     let old_piece = &$state.pieces[piece_index];
                     let new_piece = &$state.pieces[promoted_piece];
@@ -1258,10 +1330,14 @@ macro_rules! make_move {
                     $state.minor_pieces[piece_color as usize] +=
                         p_is_minor!(new_piece) as u32;
 
-                    $state.material[piece_color as usize] -=
-                        p_value!(old_piece) as u32;
-                    $state.material[piece_color as usize] +=
-                        p_value!(new_piece) as u32;
+                    $state.opening_material[piece_color as usize] -=
+                        p_ovalue!(old_piece) as u32;
+                    $state.endgame_material[piece_color as usize] -=
+                        p_evalue!(old_piece) as u32;
+                    $state.opening_material[piece_color as usize] +=
+                        p_ovalue!(new_piece) as u32;
+                    $state.endgame_material[piece_color as usize] +=
+                        p_evalue!(new_piece) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
@@ -1453,6 +1529,19 @@ macro_rules! make_move {
                         );
                         $state.piece_list[captured_piece_index]
                             .insert(unload_square as u16);
+
+                        $state.opening_pst_bonus[captured_color as usize] -=
+                            $state.pst_opening[captured_piece_index]
+                            [captured_square as usize];
+                        $state.endgame_pst_bonus[captured_color as usize] -=
+                            $state.pst_endgame[captured_piece_index]
+                            [captured_square as usize];
+                        $state.opening_pst_bonus[captured_color as usize] +=
+                            $state.pst_opening[captured_piece_index]
+                            [unload_square as usize];
+                        $state.endgame_pst_bonus[captured_color as usize] +=
+                            $state.pst_endgame[captured_piece_index]
+                            [unload_square as usize];
                     } else {
                         $state.piece_list[captured_piece_index].remove(
                             &(captured_square as u16)
@@ -1460,6 +1549,13 @@ macro_rules! make_move {
                     }
 
                     if !is_unload {
+                        $state.opening_pst_bonus[captured_color as usize] -=
+                            $state.pst_opening[captured_piece_index]
+                            [captured_square as usize];
+                        $state.endgame_pst_bonus[captured_color as usize] -=
+                            $state.pst_endgame[captured_piece_index]
+                            [captured_square as usize];
+
                         $state.big_pieces[captured_color as usize] -=
                             p_is_big!(
                                 $state.pieces[captured_piece_index]
@@ -1473,8 +1569,12 @@ macro_rules! make_move {
                                 $state.pieces[captured_piece_index]
                             ) as u32;
 
-                        $state.material[captured_color as usize] -=
-                            p_value!(
+                        $state.opening_material[captured_color as usize] -=
+                            p_ovalue!(
+                                $state.pieces[captured_piece_index]
+                            ) as u32;
+                        $state.endgame_material[captured_color as usize] -=
+                            p_evalue!(
                                 $state.pieces[captured_piece_index]
                             ) as u32;
 
@@ -1502,8 +1602,14 @@ macro_rules! make_move {
 
                 $state.main_board[drop_square as usize] = piece_index as u8;
                 $state.piece_list[piece_index].insert(drop_square as u16);
-                $state.material[piece_color as usize] +=
-                    p_value!($state.pieces[piece_index]) as u32;
+                $state.opening_pst_bonus[piece_color as usize] +=
+                    $state.pst_opening[piece_index][drop_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] +=
+                    $state.pst_endgame[piece_index][drop_square as usize];
+                $state.opening_material[piece_color as usize] +=
+                    p_ovalue!($state.pieces[piece_index]) as u32;
+                $state.endgame_material[piece_color as usize] +=
+                    p_evalue!($state.pieces[piece_index]) as u32;
                 $state.piece_count[piece_index] += 1;
 
                 $state.big_pieces[piece_color as usize] +=
@@ -1616,6 +1722,13 @@ macro_rules! make_move {
                         &(captured_square as u16)
                     );
 
+                    $state.opening_pst_bonus[captured_color as usize] -=
+                        $state.pst_opening[captured_piece_index]
+                        [captured_square as usize];
+                    $state.endgame_pst_bonus[captured_color as usize] -=
+                        $state.pst_endgame[captured_piece_index]
+                        [captured_square as usize];
+
                     $state.big_pieces[captured_color as usize] -=
                         p_is_big!($state.pieces[captured_piece_index]) as u32;
                     $state.major_pieces[captured_color as usize] -=
@@ -1623,14 +1736,30 @@ macro_rules! make_move {
                     $state.minor_pieces[captured_color as usize] -=
                         p_is_minor!($state.pieces[captured_piece_index]) as u32;
 
-                    $state.material[captured_color as usize] -=
-                        p_value!(
+                    $state.opening_material[captured_color as usize] -=
+                        p_ovalue!(
+                            $state.pieces[captured_piece_index]
+                        ) as u32;
+                    $state.endgame_material[captured_color as usize] -=
+                        p_evalue!(
                             $state.pieces[captured_piece_index]
                         ) as u32;
 
                     $state.piece_count[captured_piece_index] -= 1;
                 }
             }
+
+            let game_phase_score =
+                $state.opening_material[WHITE as usize]
+                + $state.opening_material[BLACK as usize];
+            $state.game_phase =
+                if game_phase_score > $state.opening_phase_score {
+                    OPENING
+                } else if game_phase_score < $state.endgame_phase_score {
+                    ENDGAME
+                } else {
+                    MIDDLEGAME
+                };
 
             $state.playing = 1 - $state.playing;
 
@@ -1663,6 +1792,7 @@ macro_rules! make_move {
                 en_passant_square: last_en_passant_square,
                 setup_phase: last_setup_phase,
                 game_over: last_game_over,
+                game_phase: last_game_phase,
                 position_hash: last_position_hash
             };
 
@@ -1712,6 +1842,7 @@ macro_rules! undo_move {
         $state.position_hash = snapshot.position_hash;
         $state.setup_phase = snapshot.setup_phase;
         $state.game_over = snapshot.game_over;
+        $state.game_phase = snapshot.game_phase;
 
         let mv = snapshot.move_ply;
         let move_type = move_type!(mv);
@@ -1743,6 +1874,19 @@ macro_rules! undo_move {
             $state.main_board[end_square as usize] = NO_PIECE;
             $state.main_board[start_square as usize] = piece_index as u8;
 
+            $state.opening_pst_bonus[piece_color as usize] -=
+                $state.pst_opening[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ][end_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] -=
+                $state.pst_endgame[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ][end_square as usize];
+            $state.opening_pst_bonus[piece_color as usize] +=
+                $state.pst_opening[piece_index][start_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] +=
+                $state.pst_endgame[piece_index][start_square as usize];
+
             if is_promotion {
                 $state.piece_list[promoted_piece].remove(&(end_square as u16));
 
@@ -1764,10 +1908,14 @@ macro_rules! undo_move {
                     $state.minor_pieces[piece_color as usize] += 1;
                 }
 
-                $state.material[piece_color as usize] +=
-                    p_value!($state.pieces[piece_index]) as u32;
-                $state.material[piece_color as usize] -=
-                    p_value!($state.pieces[promoted_piece]) as u32;
+                $state.opening_material[piece_color as usize] +=
+                    p_ovalue!($state.pieces[piece_index]) as u32;
+                $state.endgame_material[piece_color as usize] +=
+                    p_evalue!($state.pieces[piece_index]) as u32;
+                $state.opening_material[piece_color as usize] -=
+                    p_ovalue!($state.pieces[promoted_piece]) as u32;
+                $state.endgame_material[piece_color as usize] -=
+                    p_evalue!($state.pieces[promoted_piece]) as u32;
 
                 $state.piece_count[promoted_piece] -= 1;
                 $state.piece_count[piece_index] += 1;
@@ -1818,6 +1966,19 @@ macro_rules! undo_move {
             $state.main_board[end_square as usize] = NO_PIECE;
             $state.main_board[start_square as usize] = piece_index as u8;
 
+            $state.opening_pst_bonus[piece_color as usize] -=
+                $state.pst_opening[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ][end_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] -=
+                $state.pst_endgame[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ][end_square as usize];
+            $state.opening_pst_bonus[piece_color as usize] +=
+                $state.pst_opening[piece_index][start_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] +=
+                $state.pst_endgame[piece_index][start_square as usize];
+
             if is_promotion {
                 $state.piece_list[promoted_piece].remove(&(end_square as u16));
 
@@ -1839,10 +2000,14 @@ macro_rules! undo_move {
                     $state.minor_pieces[piece_color as usize] += 1;
                 }
 
-                $state.material[piece_color as usize] +=
-                    p_value!($state.pieces[piece_index]) as u32;
-                $state.material[piece_color as usize] -=
-                    p_value!($state.pieces[promoted_piece]) as u32;
+                $state.opening_material[piece_color as usize] +=
+                    p_ovalue!($state.pieces[piece_index]) as u32;
+                $state.endgame_material[piece_color as usize] +=
+                    p_evalue!($state.pieces[piece_index]) as u32;
+                $state.opening_material[piece_color as usize] -=
+                    p_ovalue!($state.pieces[promoted_piece]) as u32;
+                $state.endgame_material[piece_color as usize] -=
+                    p_evalue!($state.pieces[promoted_piece]) as u32;
 
                 $state.piece_count[promoted_piece] -= 1;
                 $state.piece_count[piece_index] += 1;
@@ -1894,11 +2059,31 @@ macro_rules! undo_move {
             if is_unload {
                 $state.piece_list[captured_piece_index]
                     .remove(&(unload_square as u16));
+
+                $state.opening_pst_bonus[captured_color as usize] -=
+                    $state.pst_opening[captured_piece_index]
+                    [unload_square as usize];
+                $state.endgame_pst_bonus[captured_color as usize] -=
+                    $state.pst_endgame[captured_piece_index]
+                    [unload_square as usize];
+                $state.opening_pst_bonus[captured_color as usize] +=
+                    $state.pst_opening[captured_piece_index]
+                    [captured_square as usize];
+                $state.endgame_pst_bonus[captured_color as usize] +=
+                    $state.pst_endgame[captured_piece_index]
+                    [captured_square as usize];
             }
             $state.piece_list[captured_piece_index]
                 .insert(captured_square as u16);
 
             if !is_unload {
+                $state.opening_pst_bonus[captured_color as usize] +=
+                    $state.pst_opening[captured_piece_index]
+                    [captured_square as usize];
+                $state.endgame_pst_bonus[captured_color as usize] +=
+                    $state.pst_endgame[captured_piece_index]
+                    [captured_square as usize];
+
                 if p_is_big!($state.pieces[captured_piece_index]) {
                     $state.big_pieces[captured_color as usize] += 1;
                 }
@@ -1909,8 +2094,10 @@ macro_rules! undo_move {
                     $state.minor_pieces[captured_color as usize] += 1;
                 }
 
-                $state.material[captured_color as usize] +=
-                    p_value!($state.pieces[captured_piece_index]) as u32;
+                $state.opening_material[captured_color as usize] +=
+                    p_ovalue!($state.pieces[captured_piece_index]) as u32;
+                $state.endgame_material[captured_color as usize] +=
+                    p_evalue!($state.pieces[captured_piece_index]) as u32;
 
                 $state.piece_count[captured_piece_index] += 1;
             }
@@ -1922,7 +2109,7 @@ macro_rules! undo_move {
                     captured_index_u8 = $state
                         .piece_demotion_map
                         .get(&(captured_index_u8))
-                        .unwrap()[0]; /* assume 1 to 1 mapping              */
+                        .unwrap()[0];                                           /* assume 1 to 1 mapping              */
                 }
 
                 $state.piece_in_hand[piece_color as usize][*$state
@@ -1958,6 +2145,19 @@ macro_rules! undo_move {
             $state.main_board[end_square as usize] = NO_PIECE;
             $state.main_board[start_square as usize] = piece_index as u8;
 
+            $state.opening_pst_bonus[piece_color as usize] -=
+                $state.pst_opening[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ][end_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] -=
+                $state.pst_endgame[
+                    if is_promotion { promoted_piece } else { piece_index }
+                ][end_square as usize];
+            $state.opening_pst_bonus[piece_color as usize] +=
+                $state.pst_opening[piece_index][start_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] +=
+                $state.pst_endgame[piece_index][start_square as usize];
+
             if is_promotion {
                 $state.piece_list[promoted_piece].remove(&(end_square as u16));
 
@@ -1979,10 +2179,14 @@ macro_rules! undo_move {
                     $state.minor_pieces[piece_color as usize] += 1;
                 }
 
-                $state.material[piece_color as usize] +=
-                    p_value!($state.pieces[piece_index]) as u32;
-                $state.material[piece_color as usize] -=
-                    p_value!($state.pieces[promoted_piece]) as u32;
+                $state.opening_material[piece_color as usize] +=
+                    p_ovalue!($state.pieces[piece_index]) as u32;
+                $state.endgame_material[piece_color as usize] +=
+                    p_evalue!($state.pieces[piece_index]) as u32;
+                $state.opening_material[piece_color as usize] -=
+                    p_ovalue!($state.pieces[promoted_piece]) as u32;
+                $state.endgame_material[piece_color as usize] -=
+                    p_evalue!($state.pieces[promoted_piece]) as u32;
 
                 $state.piece_count[promoted_piece] -= 1;
                 $state.piece_count[piece_index] += 1;
@@ -2044,11 +2248,31 @@ macro_rules! undo_move {
                 if is_unload {
                     $state.piece_list[captured_piece_index]
                         .remove(&(unload_square as u16));
+
+                    $state.opening_pst_bonus[captured_color as usize] -=
+                        $state.pst_opening[captured_piece_index]
+                        [unload_square as usize];
+                    $state.endgame_pst_bonus[captured_color as usize] -=
+                        $state.pst_endgame[captured_piece_index]
+                        [unload_square as usize];
+                    $state.opening_pst_bonus[captured_color as usize] +=
+                        $state.pst_opening[captured_piece_index]
+                        [captured_square as usize];
+                    $state.endgame_pst_bonus[captured_color as usize] +=
+                        $state.pst_endgame[captured_piece_index]
+                        [captured_square as usize];
                 }
                 $state.piece_list[captured_piece_index]
                     .insert(captured_square as u16);
 
                 if !is_unload {
+                    $state.opening_pst_bonus[captured_color as usize] +=
+                        $state.pst_opening[captured_piece_index]
+                        [captured_square as usize];
+                    $state.endgame_pst_bonus[captured_color as usize] +=
+                        $state.pst_endgame[captured_piece_index]
+                        [captured_square as usize];
+
                     if p_is_big!($state.pieces[captured_piece_index]) {
                         $state.big_pieces[captured_color as usize] += 1;
                     }
@@ -2059,8 +2283,10 @@ macro_rules! undo_move {
                         $state.minor_pieces[captured_color as usize] += 1;
                     }
 
-                    $state.material[captured_color as usize] +=
-                        p_value!($state.pieces[captured_piece_index]) as u32;
+                    $state.opening_material[captured_color as usize] +=
+                        p_ovalue!($state.pieces[captured_piece_index]) as u32;
+                    $state.endgame_material[captured_color as usize] +=
+                        p_evalue!($state.pieces[captured_piece_index]) as u32;
 
                     $state.piece_count[captured_piece_index] += 1;
                 }
@@ -2097,8 +2323,14 @@ macro_rules! undo_move {
 
             $state.main_board[drop_square as usize] = NO_PIECE;
             $state.piece_list[piece_index].remove(&(drop_square as u16));
-            $state.material[piece_color as usize] -=
-                p_value!($state.pieces[piece_index]) as u32;
+            $state.opening_pst_bonus[piece_color as usize] -=
+                $state.pst_opening[piece_index][drop_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] -=
+                $state.pst_endgame[piece_index][drop_square as usize];
+            $state.opening_material[piece_color as usize] -=
+                p_ovalue!($state.pieces[piece_index]) as u32;
+            $state.endgame_material[piece_color as usize] -=
+                p_evalue!($state.pieces[piece_index]) as u32;
             $state.piece_count[piece_index] -= 1;
 
             if p_is_big!($state.pieces[piece_index]) {
@@ -2152,6 +2384,13 @@ macro_rules! undo_move {
                 $state.piece_list[captured_piece_index]
                     .insert(captured_square as u16);
 
+                $state.opening_pst_bonus[captured_color as usize] +=
+                    $state.pst_opening[captured_piece_index]
+                    [captured_square as usize];
+                $state.endgame_pst_bonus[captured_color as usize] +=
+                    $state.pst_endgame[captured_piece_index]
+                    [captured_square as usize];
+
                 if p_is_big!($state.pieces[captured_piece_index]) {
                     $state.big_pieces[captured_color as usize] += 1;
                 }
@@ -2162,8 +2401,10 @@ macro_rules! undo_move {
                     $state.minor_pieces[captured_color as usize] += 1;
                 }
 
-                $state.material[captured_color as usize] +=
-                    p_value!($state.pieces[captured_piece_index]) as u32;
+                $state.opening_material[captured_color as usize] +=
+                    p_ovalue!($state.pieces[captured_piece_index]) as u32;
+                $state.endgame_material[captured_color as usize] +=
+                    p_evalue!($state.pieces[captured_piece_index]) as u32;
 
                 $state.piece_count[captured_piece_index] += 1;
             }
