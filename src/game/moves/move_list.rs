@@ -251,7 +251,7 @@ macro_rules! validate_attack_vector {
             );
             let empty = !friendly && !enemy;
 
-            let null_move = file_offset == 0 && rank_offset == 0;
+            let pass_move = file_offset == 0 && rank_offset == 0;
             let imaginary_move = end_square == $attacked_square;
 
             if u && target_was_last_captured {
@@ -276,7 +276,7 @@ macro_rules! validate_attack_vector {
                 continue;
             }
 
-            if empty && !null_move {
+            if empty && !pass_move {
                 if t && enp_square!($game_state.en_passant_square) == end_square
                 {
                     let capt_piece_index =
@@ -316,7 +316,7 @@ macro_rules! validate_attack_vector {
                     valid = false;
                     break;
                 }
-            } else if friendly && !null_move {
+            } else if friendly && !pass_move {
                 if !d {
                     valid = false;
                     break;
@@ -341,7 +341,7 @@ macro_rules! validate_attack_vector {
                 }
 
                 target_was_last_captured = false;
-            } else if enemy && !null_move {
+            } else if enemy && !pass_move {
                 if !c {
                     valid = false;
                     break;
@@ -466,9 +466,9 @@ pub fn generate_move_list(
             );
             let empty = !friendly && !enemy;
 
-            let null_move = file_offset == 0 && rank_offset == 0;
+            let pass_move = file_offset == 0 && rank_offset == 0;
 
-            if empty && !null_move {
+            if empty && !pass_move {
                 if t && enp_square!(game_state.en_passant_square) == end_square
                 {
                     let capt_piece_index =
@@ -519,7 +519,7 @@ pub fn generate_move_list(
                 } else if !m {
                     continue 'multi_leg;
                 }
-            } else if friendly && !null_move {
+            } else if friendly && !pass_move {
                 if !d {
                     continue 'multi_leg;
                 }
@@ -553,7 +553,7 @@ pub fn generate_move_list(
                 );
 
                 taken_pieces.push(taken_piece);
-            } else if enemy && !null_move {
+            } else if enemy && !pass_move {
                 if !c {
                     continue 'multi_leg;
                 }
@@ -792,12 +792,12 @@ macro_rules! make_move {
                 );
 
                 hash_in_or_out_piece!(
-                    $state, piece_index, start_square as u16
+                    $state, piece_index, start_square as Square
                 );
                 hash_in_or_out_piece!(
                     $state,
                     if is_promotion { promoted_piece } else { piece_index },
-                    end_square as u16
+                    end_square as Square
                 );
 
                 $state.main_board[start_square as usize] = NO_PIECE;
@@ -866,10 +866,10 @@ macro_rules! make_move {
                 }
 
                 $state.piece_list[piece_index]
-                    .remove(&(start_square as u16));
+                    .remove(&(start_square as Square));
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].insert(end_square as u16);
+                ].insert(end_square as Square);
 
                 if p_can_promote!($state.pieces[piece_index]) {
                     $state.halfmove_clock = 0;
@@ -900,9 +900,9 @@ macro_rules! make_move {
                         },
                         (false, false) => {
                             let start_rank =
-                                (start_square as u16) / $state.files as u16;
+                                (start_square as Square) / $state.files as u16;
                             let start_file =
-                                (start_square as u16) % $state.files as u16;
+                                (start_square as Square) % $state.files as u16;
 
                             let is_queenside = start_file == 0;
                             let rights = [
@@ -978,12 +978,12 @@ macro_rules! make_move {
                 );
 
                 hash_in_or_out_piece!(
-                    $state, piece_index, start_square as u16
+                    $state, piece_index, start_square as Square
                 );
                 hash_in_or_out_piece!(
                     $state,
                     if is_promotion { promoted_piece } else { piece_index },
-                    end_square as u16
+                    end_square as Square
                 );
 
                 $state.main_board[start_square as usize] = NO_PIECE;
@@ -1053,10 +1053,10 @@ macro_rules! make_move {
                 }
 
                 $state.piece_list[piece_index]
-                    .remove(&(start_square as u16));
+                    .remove(&(start_square as Square));
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].insert(end_square as u16);
+                ].insert(end_square as Square);
 
                 $state.halfmove_clock = 0;
 
@@ -1083,9 +1083,9 @@ macro_rules! make_move {
                         },
                         (false, false) => {
                             let start_rank =
-                                (start_square as u16) / $state.files as u16;
+                                (start_square as Square) / $state.files as u16;
                             let start_file =
-                                (start_square as u16) % $state.files as u16;
+                                (start_square as Square) % $state.files as u16;
 
                             let is_queenside = start_file == 0;
                             let rights = [
@@ -1131,8 +1131,8 @@ macro_rules! make_move {
                     );
                 }
 
-                let end_rank = (captured_square as u16) / $state.files as u16;
-                let end_file = (captured_square as u16) % $state.files as u16;
+                let end_rank = (captured_square as Square) / $state.files as u16;
+                let end_file = (captured_square as Square) % $state.files as u16;
 
                 if castling!($state)
                     && get!($state.virgin_board, captured_square)
@@ -1168,7 +1168,7 @@ macro_rules! make_move {
                 hash_in_or_out_piece!(
                     $state,
                     captured_piece_index,
-                    captured_square as u16
+                    captured_square as Square
                 );
 
                 clear!($state.virgin_board, captured_square);
@@ -1182,7 +1182,7 @@ macro_rules! make_move {
                     hash_in_or_out_piece!(
                         $state,
                         captured_piece_index,
-                        unload_square as u16
+                        unload_square as Square
                     );
 
                     set!($state.virgin_board, unload_square);
@@ -1192,10 +1192,10 @@ macro_rules! make_move {
                     $state.main_board[unload_square as usize] =
                         captured_piece_index as u8;
                     $state.piece_list[captured_piece_index].remove(
-                        &(captured_square as u16)
+                        &(captured_square as Square)
                     );
                     $state.piece_list[captured_piece_index]
-                        .insert(unload_square as u16);
+                        .insert(unload_square as Square);
 
                     $state.opening_pst_bonus[captured_color as usize] -=
                         $state.pst_opening[captured_piece_index]
@@ -1211,7 +1211,7 @@ macro_rules! make_move {
                         [unload_square as usize];
                 } else {
                     $state.piece_list[captured_piece_index].remove(
-                        &(captured_square as u16)
+                        &(captured_square as Square)
                     );
                 }
 
@@ -1286,12 +1286,12 @@ macro_rules! make_move {
                 );
 
                 hash_in_or_out_piece!(
-                    $state, piece_index, start_square as u16
+                    $state, piece_index, start_square as Square
                 );
                 hash_in_or_out_piece!(
                     $state,
                     if is_promotion { promoted_piece } else { piece_index },
-                    end_square as u16
+                    end_square as Square
                 );
 
                 $state.main_board[start_square as usize] = NO_PIECE;
@@ -1361,10 +1361,10 @@ macro_rules! make_move {
                 }
 
                 $state.piece_list[piece_index]
-                    .remove(&(start_square as u16));
+                    .remove(&(start_square as Square));
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].insert(end_square as u16);
+                ].insert(end_square as Square);
 
                 $state.halfmove_clock = 0;
 
@@ -1391,10 +1391,10 @@ macro_rules! make_move {
                         },
                         (false, false) => {
                             let start_rank =
-                                (start_square as u16) /
+                                (start_square as Square) /
                                 $state.files as u16;
                             let start_file =
-                                (start_square as u16) %
+                                (start_square as Square) %
                                 $state.files as u16;
 
                             let is_queenside = start_file == 0;
@@ -1455,9 +1455,9 @@ macro_rules! make_move {
                         );
                     }
 
-                    let end_rank = (captured_square as u16) /
+                    let end_rank = (captured_square as Square) /
                         $state.files as u16;
-                    let end_file = (captured_square as u16) %
+                    let end_file = (captured_square as Square) %
                         $state.files as u16;
 
                     if castling!($state)
@@ -1501,7 +1501,7 @@ macro_rules! make_move {
                     hash_in_or_out_piece!(
                         $state,
                         captured_piece_index,
-                        captured_square as u16
+                        captured_square as Square
                     );
 
                     clear!($state.virgin_board, captured_square);
@@ -1515,7 +1515,7 @@ macro_rules! make_move {
                         hash_in_or_out_piece!(
                             $state,
                             captured_piece_index,
-                            unload_square as u16
+                            unload_square as Square
                         );
 
                         set!($state.virgin_board, unload_square);
@@ -1525,10 +1525,10 @@ macro_rules! make_move {
                         $state.main_board[unload_square as usize] =
                             captured_piece_index as u8;
                         $state.piece_list[captured_piece_index].remove(
-                            &(captured_square as u16)
+                            &(captured_square as Square)
                         );
                         $state.piece_list[captured_piece_index]
-                            .insert(unload_square as u16);
+                            .insert(unload_square as Square);
 
                         $state.opening_pst_bonus[captured_color as usize] -=
                             $state.pst_opening[captured_piece_index]
@@ -1544,7 +1544,7 @@ macro_rules! make_move {
                             [unload_square as usize];
                     } else {
                         $state.piece_list[captured_piece_index].remove(
-                            &(captured_square as u16)
+                            &(captured_square as Square)
                         );
                     }
 
@@ -1597,11 +1597,11 @@ macro_rules! make_move {
                 }
 
                 hash_in_or_out_piece!(
-                    $state, piece_index, drop_square as u16
+                    $state, piece_index, drop_square as Square
                 );
 
                 $state.main_board[drop_square as usize] = piece_index as u8;
-                $state.piece_list[piece_index].insert(drop_square as u16);
+                $state.piece_list[piece_index].insert(drop_square as Square);
                 $state.opening_pst_bonus[piece_color as usize] +=
                     $state.pst_opening[piece_index][drop_square as usize];
                 $state.endgame_pst_bonus[piece_color as usize] +=
@@ -1667,9 +1667,9 @@ macro_rules! make_move {
                         $state.pieces[captured_piece_index]
                     );
 
-                    let end_rank = (captured_square as u16) /
+                    let end_rank = (captured_square as Square) /
                         $state.files as u16;
-                    let end_file = (captured_square as u16) %
+                    let end_file = (captured_square as Square) %
                         $state.files as u16;
 
                     if castling!($state)
@@ -1713,13 +1713,13 @@ macro_rules! make_move {
                     hash_in_or_out_piece!(
                         $state,
                         captured_piece_index,
-                        captured_square as u16
+                        captured_square as Square
                     );
 
                     clear!($state.virgin_board, captured_square);
 
                     $state.piece_list[captured_piece_index].remove(
-                        &(captured_square as u16)
+                        &(captured_square as Square)
                     );
 
                     $state.opening_pst_bonus[captured_color as usize] -=
@@ -1753,9 +1753,9 @@ macro_rules! make_move {
                 $state.opening_material[WHITE as usize]
                 + $state.opening_material[BLACK as usize];
             $state.game_phase =
-                if game_phase_score > $state.opening_phase_score {
+                if game_phase_score > $state.opening_score {
                     OPENING
-                } else if game_phase_score < $state.endgame_phase_score {
+                } else if game_phase_score < $state.endgame_score {
                     ENDGAME
                 } else {
                     MIDDLEGAME
@@ -1773,7 +1773,7 @@ macro_rules! make_move {
 
             if pass_move
             && ($state.history.last().map_or(
-                false, |last_mv| pass_snapshot!(last_mv))
+                false, |snapshot| pass_snapshot!(snapshot))
             || stand_off_before) {
                 $state.game_over = true;
             }
@@ -1888,7 +1888,7 @@ macro_rules! undo_move {
                 $state.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece].remove(&(end_square as u16));
+                $state.piece_list[promoted_piece].remove(&(end_square as Square));
 
                 if p_is_big!($state.pieces[promoted_piece]) {
                     $state.big_pieces[piece_color as usize] -= 1;
@@ -1929,10 +1929,10 @@ macro_rules! undo_move {
                     *hand += 1;
                 }
             } else {
-                $state.piece_list[piece_index].remove(&(end_square as u16));
+                $state.piece_list[piece_index].remove(&(end_square as Square));
             }
 
-            $state.piece_list[piece_index].insert(start_square as u16);
+            $state.piece_list[piece_index].insert(start_square as Square);
         } else if move_type == SINGLE_CAPTURE_MOVE {
             let piece_index = piece!(mv) as usize;
             let start_square = start!(mv) as u32;
@@ -1980,7 +1980,7 @@ macro_rules! undo_move {
                 $state.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece].remove(&(end_square as u16));
+                $state.piece_list[promoted_piece].remove(&(end_square as Square));
 
                 if p_is_big!($state.pieces[promoted_piece]) {
                     $state.big_pieces[piece_color as usize] -= 1;
@@ -2021,10 +2021,10 @@ macro_rules! undo_move {
                     *hand += 1;
                 }
             } else {
-                $state.piece_list[piece_index].remove(&(end_square as u16));
+                $state.piece_list[piece_index].remove(&(end_square as Square));
             }
 
-            $state.piece_list[piece_index].insert(start_square as u16);
+            $state.piece_list[piece_index].insert(start_square as Square);
 
             if is_unload {
                 clear!(
@@ -2058,7 +2058,7 @@ macro_rules! undo_move {
 
             if is_unload {
                 $state.piece_list[captured_piece_index]
-                    .remove(&(unload_square as u16));
+                    .remove(&(unload_square as Square));
 
                 $state.opening_pst_bonus[captured_color as usize] -=
                     $state.pst_opening[captured_piece_index]
@@ -2074,7 +2074,7 @@ macro_rules! undo_move {
                     [captured_square as usize];
             }
             $state.piece_list[captured_piece_index]
-                .insert(captured_square as u16);
+                .insert(captured_square as Square);
 
             if !is_unload {
                 $state.opening_pst_bonus[captured_color as usize] +=
@@ -2159,7 +2159,7 @@ macro_rules! undo_move {
                 $state.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece].remove(&(end_square as u16));
+                $state.piece_list[promoted_piece].remove(&(end_square as Square));
 
                 if p_is_big!($state.pieces[promoted_piece]) {
                     $state.big_pieces[piece_color as usize] -= 1;
@@ -2200,10 +2200,10 @@ macro_rules! undo_move {
                     *hand += 1;
                 }
             } else {
-                $state.piece_list[piece_index].remove(&(end_square as u16));
+                $state.piece_list[piece_index].remove(&(end_square as Square));
             }
 
-            $state.piece_list[piece_index].insert(start_square as u16);
+            $state.piece_list[piece_index].insert(start_square as Square);
 
             for cap in mv.1.iter() {
                 let captured_piece_index =
@@ -2247,7 +2247,7 @@ macro_rules! undo_move {
 
                 if is_unload {
                     $state.piece_list[captured_piece_index]
-                        .remove(&(unload_square as u16));
+                        .remove(&(unload_square as Square));
 
                     $state.opening_pst_bonus[captured_color as usize] -=
                         $state.pst_opening[captured_piece_index]
@@ -2263,7 +2263,7 @@ macro_rules! undo_move {
                         [captured_square as usize];
                 }
                 $state.piece_list[captured_piece_index]
-                    .insert(captured_square as u16);
+                    .insert(captured_square as Square);
 
                 if !is_unload {
                     $state.opening_pst_bonus[captured_color as usize] +=
@@ -2322,7 +2322,7 @@ macro_rules! undo_move {
             }
 
             $state.main_board[drop_square as usize] = NO_PIECE;
-            $state.piece_list[piece_index].remove(&(drop_square as u16));
+            $state.piece_list[piece_index].remove(&(drop_square as Square));
             $state.opening_pst_bonus[piece_color as usize] -=
                 $state.pst_opening[piece_index][drop_square as usize];
             $state.endgame_pst_bonus[piece_color as usize] -=
@@ -2382,7 +2382,7 @@ macro_rules! undo_move {
                     captured_piece_index as u8;
 
                 $state.piece_list[captured_piece_index]
-                    .insert(captured_square as u16);
+                    .insert(captured_square as Square);
 
                 $state.opening_pst_bonus[captured_color as usize] +=
                     $state.pst_opening[captured_piece_index]
@@ -2424,15 +2424,21 @@ macro_rules! is_move_legal {
     ($state:expr, $mv:expr) => {{
         {
             let all_moves = generate_all_moves_and_drops($state);
-
-            let is_in_position = all_moves.contains(&$mv);
-            let is_legal = is_in_position && make_move!($state, $mv);
-
-            if is_legal {
+            
+            let mut legal = false;
+            for mv in all_moves {
+                if !make_move!($state, mv.clone()) {
+                    continue;
+                }
                 undo_move!($state);
+
+                if mv == $mv {
+                    legal = true;
+                    break;
+                }
             }
 
-            is_legal
+            legal
         }
     }};
 }

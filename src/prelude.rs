@@ -64,7 +64,7 @@ pub use crate::game::position::{
         PositionHash, SIDE_HASHES, hash_position,
     },
     search::{
-        SearchInfo, alpha_beta, check_interrupt, clear_search_info,
+        SearchInfo, alpha_beta, check_interrupt, clear_search,
         search_position,
     },
 };
@@ -74,6 +74,7 @@ pub use crate::game::search::{
 };
 pub use crate::game::util::{
     perft, random_u128, refresh_eval_state, start_perft, verify_game_state,
+    debug_interactive
 };
 
 /*----------------------------------------------------------------------------*\
@@ -88,7 +89,7 @@ pub use crate::io::game_io::{
     parse_tuned_parameters_file,
 };
 pub use crate::io::move_io::{
-    debug_interactive, format_move, parse_move
+    format_move, parse_move
 };
 pub use crate::io::piece_io::format_piece;
 pub use crate::io::protocols::uci;
@@ -101,10 +102,9 @@ pub use hashbrown::{HashMap, HashSet};
 pub use lazy_static::lazy_static;
 pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
 pub use regex::Regex;
-pub use std::sync::Arc;
 pub use std::{
     array, collections::VecDeque, fmt::Debug, fs, hash::Hash, io::stdin,
-    mem::size_of, sync::Mutex,
+    mem::size_of, sync::{Mutex, Arc}, time::Instant
 };
 
 /*----------------------------------------------------------------------------*\
@@ -166,19 +166,21 @@ pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 
+lazy_static! {
+    pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
+}
+
 pub fn null_move() -> Move {
-    (!0u128, Arc::new(Vec::new()))
+    Move(!0u128, Arc::clone(&EMPTY_CAPTURE_LIST))
 }
 pub const DEFAULT_DROP: &str = "@#~?@";
 pub const NULL_DROP: &str = "@#~?@#~?";
 
-pub const BLACK_WIN: i8 = -1;
-pub const WHITE_WIN: i8 = 1;
-pub const DRAW: i8 = 0;
+pub const MATE_SCORE: i32 = 1000000;
 
 pub const OPENING: u8 = 0;
 pub const MIDDLEGAME: u8 = 1;
 pub const ENDGAME: u8 = 2;
 
-pub const PV_TABLE_SIZE: usize = (1000000 * 8) / size_of::<PVElement>();        /* 8MB                                */
+pub const PV_TABLE_SIZE: usize = (10000000 * 8) / size_of::<PVElement>();       /* 8MB                                */
 pub const MAX_DEPTH: usize = 64;

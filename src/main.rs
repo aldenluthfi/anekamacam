@@ -71,5 +71,6 @@ fn main() {
 
     println!("{}", format_entire_game(&state));
 
-    start_perft(&mut state, &perft_path, 6, -1, 10);
+    // start_perft(&mut state, &perft_path, 6, -1, 3);
+    debug_interactive(&mut state);
 }
