@@ -486,9 +486,9 @@ where
 /// - `chained_atomic_to_vector`
 /// - `compound_atomic_to_vector`
 /// - `leg_to_vector`
-fn parse_move(expr: &str) -> String {
+fn parse_move_string(expr: &str) -> String {
     #[cfg(debug_assertions)]
-    println!("[DEBUG] Starting parse_move with expression: {}", expr);
+    println!("[DEBUG] Starting parse_move_string with expression: {}", expr);
 
     let expr = normalize(expr)
         .unwrap_or_else(|| panic!("Failed to normalize expression: {}", expr));
@@ -1222,7 +1222,7 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 /// An atomic is defined as having only one optional cardinal direction, an
 /// optional range, and ending with K.
 ///
-/// All inputs are sanitized by `parse_move` before being passed
+/// All inputs are sanitized by `parse_move_string` before being passed
 /// here.
 fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
     #[cfg(debug_assertions)]
@@ -2786,7 +2786,7 @@ pub fn generate_move_vectors(
     expr: &str,
     game_state: &State,
 ) -> Vec<MultiLegVector> {
-    let parsed_expr = parse_move(expr);
+    let parsed_expr = parse_move_string(expr);
 
     #[cfg(debug_assertions)]
     println!(

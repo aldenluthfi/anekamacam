@@ -88,7 +88,7 @@ pub use crate::io::game_io::{
     parse_tuned_parameters_file,
 };
 pub use crate::io::move_io::{
-    debug_interactive, format_move, parse_move as parse_move_io,
+    debug_interactive, format_move, parse_move
 };
 pub use crate::io::piece_io::format_piece;
 pub use crate::io::protocols::uci;
@@ -176,5 +176,5 @@ pub const BLACK_WIN: i8 = -1;
 pub const WHITE_WIN: i8 = 1;
 pub const DRAW: i8 = 0;
 
-pub const PV_TABLE_SIZE: usize = (1000000 * 8) / size_of::<PVElement>(); /* 8MB                                */
+pub const PV_TABLE_SIZE: usize = (1000000 * 8) / size_of::<PVElement>();        /* 8MB                                */
 pub const MAX_DEPTH: usize = 64;
