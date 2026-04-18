@@ -15,14 +15,14 @@ pub type PVTable = Vec<PVElement>;
 
 #[hotpath::measure]
 pub fn hash_pv_move(pv_move: Move, state: &mut State) {
-    let index = state.position_hash as usize % PV_TABLE_SIZE;
-    state.pv_table[index] = (pv_move, state.position_hash);
+    let index = state.position_hash % PV_TABLE_SIZE as u128;
+    state.pv_table[index as usize] = (pv_move, state.position_hash);
 }
 
 #[hotpath::measure]
 pub fn probe_pv_move(state: &State) -> Option<Move> {
-    let index = state.position_hash as usize % PV_TABLE_SIZE;
-    let (pv_move, hash) = &state.pv_table[index];
+    let index = state.position_hash % PV_TABLE_SIZE as u128;
+    let (pv_move, hash) = &state.pv_table[index as usize];
 
     if *hash == state.position_hash {
         Some(pv_move.clone())
@@ -38,19 +38,24 @@ pub fn probe_pv_move(state: &State) -> Option<Move> {
 /// plies so the caller's position is restored.
 pub fn fill_pv_line(state: &mut State, depth: usize) {
     let depth = depth.min(MAX_DEPTH);
+    let mut filled = 0;
 
     for i in 0..depth {
-        if let Some(pv_move) = probe_pv_move(state) {
-            if !is_move_legal!(state, pv_move.clone()) {
-                break;
-            }
+        let Some(pv_move) = probe_pv_move(state) else {
+            break;
+        };
 
-            make_move!(state, pv_move.clone());
-
-            state.pv_line[i] = pv_move;
-        } else {
+        if !is_move_legal!(state, pv_move.clone()) {
             break;
         }
+
+        make_move!(state, pv_move.clone());
+        state.pv_line[i] = pv_move;
+        filled = i + 1;
+    }
+
+    for i in filled..depth {
+        state.pv_line[i] = null_move();
     }
 
     while state.search_ply > 0 {
