@@ -8,13 +8,11 @@
 //! # Date
 //! 29/01/2026
 
-
 use crate::*;
 
 /*----------------------------------------------------------------------------*\
                           DROP REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
-
 
 /// Encoding helpers for drop-specific flags in packed moves.
 ///
@@ -37,7 +35,6 @@ macro_rules! enc_from_enemy_hand {
 /*----------------------------------------------------------------------------*\
                           DROP REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
-
 
 /// Decoding helpers for drop-specific flags in packed moves.
 ///
@@ -66,7 +63,6 @@ macro_rules! drop_from_enemy_hand {
 pub type DropMove = u32;
 pub type Drops = (DropMove, PatternAllower, PatternStopper);
 pub type DropSet = Vec<Drops>;
-
 
 /*----------------------------------------------------------------------------*\
                         DROP MODIFIER REPRESENTATIONS
@@ -103,5 +99,3 @@ macro_rules! drop_e {
         ($drop.0 >> 23) & 1 == 1
     };
 }
-
-

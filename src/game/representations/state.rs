@@ -319,7 +319,8 @@ pub struct State {
 
     pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
-    pub piece_square_tables: Vec<Vec<i32>>,                                     /* piece index to PST values          */
+    pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
+    pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 
     pub files: u8,
     pub ranks: u8,
@@ -405,7 +406,8 @@ impl State {
 
             piece_limit: vec![u32::MAX; piece_count],
             repetition_limit: u8::MAX,
-            piece_square_tables: vec![vec![0; board_size]; piece_count],
+            pst_opening: vec![vec![0; board_size]; piece_count],
+            pst_endgame: vec![vec![0; board_size]; piece_count],
 
             files,
             ranks,

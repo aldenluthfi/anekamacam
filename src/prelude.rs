@@ -21,97 +21,91 @@
 \*----------------------------------------------------------------------------*/
 pub use crate::game::representations::{
     board::Board,
-    piece::{Piece, PieceIndex},
-    state::{State, Square, EnPassantSquare, Snapshot},
     drop::DropSet,
-    moves::{Move, AttackMask},
+    moves::{AttackMask, Move},
+    piece::{Piece, PieceIndex},
+    state::{EnPassantSquare, Snapshot, Square, State},
     vector::{
-        Leg, LegVector, MultiLegVector, MoveSet, MoveVector,
         AtomicElement::{self, AtomicEval, AtomicExpr, AtomicTerm},
-        AtomicVector, AtomicGroup,
-        Token::{
-            self, CardinalToken, ColonToken, FilterToken, AtomicToken,
-            DotsToken, RangeToken, BracketToken, SlashBracketToken,
-            ExclusionToken, MoveModifierToken, LegToken
-        },
+        AtomicGroup, AtomicVector, Leg, LegVector, MoveSet, MoveVector,
         MultiLegElement::{
-            self, MultiLegEval, MultiLegExpr, MultiLegSlashExpr, MultiLegTerm
+            self, MultiLegEval, MultiLegExpr, MultiLegSlashExpr, MultiLegTerm,
         },
-        MultiLegGroup,
+        MultiLegGroup, MultiLegVector,
+        Token::{
+            self, AtomicToken, BracketToken, CardinalToken, ColonToken,
+            DotsToken, ExclusionToken, FilterToken, LegToken,
+            MoveModifierToken, RangeToken, SlashBracketToken,
+        },
     },
 };
 
 /*----------------------------------------------------------------------------*\
                                 GAME LOGIC API
 \*----------------------------------------------------------------------------*/
-pub use crate::game::util::{
-    random_u128, start_perft, perft, verify_game_state
+pub use crate::game::drops::drop_list::{
+    generate_drop_list, generate_relevant_drops,
+};
+pub use crate::game::drops::drop_parse::generate_drop_vectors;
+pub use crate::game::moves::move_list::{
+    generate_all_moves_and_drops, generate_attack_masks, generate_move_list,
+    generate_relevant_moves,
+};
+pub use crate::game::moves::move_parse::{
+    INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
+};
+pub use crate::game::patterns::pattern_match::{
+    PatternAllower, PatternSet, PatternStopper, generate_relevant_stand_offs,
+    generate_stand_off_patterns, match_pattern, parse_pattern,
 };
 pub use crate::game::position::{
     hash::{
-        hash_position, CASTLING_HASHES, EN_PASSANT_HASHES, SIDE_HASHES,
-        PIECE_HASHES, IN_HAND_HASHES, PositionHash
+        CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES,
+        PositionHash, SIDE_HASHES, hash_position,
     },
     search::{
-        SearchInfo, check_interrupt, clear_search_info,
-        search_position, alpha_beta
+        SearchInfo, alpha_beta, check_interrupt, clear_search_info,
+        search_position,
     },
-};
-pub use crate::game::moves::move_list::{
-    generate_move_list, generate_relevant_moves, generate_attack_masks,
-    generate_all_moves_and_drops
-};
-pub use crate::game::moves::move_parse::{
-    generate_move_vectors,
-    INDEX_TO_CARDINAL_VECTORS
-};
-pub use crate::game::drops::drop_list::{
-    generate_drop_list, generate_relevant_drops
-};
-pub use crate::game::drops::drop_parse::generate_drop_vectors;
-pub use crate::game::patterns::pattern_match::{
-    PatternSet, PatternAllower, PatternStopper, generate_relevant_stand_offs,
-    generate_stand_off_patterns, parse_pattern, match_pattern
 };
 pub use crate::game::search::{
-    pv_table::{
-        PVTable, PVElement,
-        hash_pv_move, probe_pv_move, fill_pv_line
-    },
-    quiescence::quiescence_search
+    pv_table::{PVElement, PVTable, fill_pv_line, hash_pv_move, probe_pv_move},
+    quiescence::quiescence_search,
+};
+pub use crate::game::util::{
+    perft, random_u128, start_perft, verify_game_state,
 };
 
 /*----------------------------------------------------------------------------*\
                                    IO API
 \*----------------------------------------------------------------------------*/
 pub use crate::io::board_io::{
-    format_board, format_square, debug_print_relevant_moves
+    debug_print_relevant_moves, format_board, format_square,
 };
-pub use crate::io::piece_io::format_piece;
 pub use crate::io::game_io::{
-    parse_config_file, parse_fen, format_game_state, format_entire_game,
-    parse_tuned_parameters_file, export_tuned_parameters_file,
-    COMMENT_PATTERN
+    COMMENT_PATTERN, export_tuned_parameters_file, format_entire_game,
+    format_game_state, parse_config_file, parse_fen,
+    parse_tuned_parameters_file,
 };
 pub use crate::io::move_io::{
-    format_move, parse_move as parse_move_io, debug_interactive
+    debug_interactive, format_move, parse_move as parse_move_io,
 };
+pub use crate::io::piece_io::format_piece;
 pub use crate::io::protocols::uci;
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
 \*----------------------------------------------------------------------------*/
-pub use lazy_static::lazy_static;
 pub use bnum::types::U4096;
-pub use regex::Regex;
 pub use hashbrown::{HashMap, HashSet};
-pub use std::{
-    fs, array, sync::Mutex, io::stdin,
-    hash::Hash, collections::VecDeque,
-    mem::size_of, fmt::Debug
-};
+pub use lazy_static::lazy_static;
 pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
+pub use regex::Regex;
 pub use std::sync::Arc;
+pub use std::{
+    array, collections::VecDeque, fmt::Debug, fs, hash::Hash, io::stdin,
+    mem::size_of, sync::Mutex,
+};
 
 /*----------------------------------------------------------------------------*\
                                FEATURE EXPORTS
@@ -119,10 +113,9 @@ pub use std::sync::Arc;
 #[cfg(feature = "hotpath")]
 pub use hotpath;
 
-// Constant definitions for board dimensions, piece colors, castling rights,
-// file/rank labels, and other game-related configuration values. These
-// constants are used throughout the codebase to ensure consistency and allow
-// for easy modification of game parameters.
+/*----------------------------------------------------------------------------*\
+                                  CONSTANTS
+\*----------------------------------------------------------------------------*/
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 
@@ -155,14 +148,14 @@ pub const X: u8 = 23;
 pub const Y: u8 = 24;
 pub const Z: u8 = 25;
 
-pub const WHITE : u8 = 0;
-pub const BLACK : u8 = 1;
-pub const BOTH : u8 = 2;
+pub const WHITE: u8 = 0;
+pub const BLACK: u8 = 1;
+pub const BOTH: u8 = 2;
 
-pub const WK_CASTLE : u8 = 0b0001;
-pub const WQ_CASTLE : u8 = 0b0010;
-pub const BK_CASTLE : u8 = 0b0100;
-pub const BQ_CASTLE : u8 = 0b1000;
+pub const WK_CASTLE: u8 = 0b0001;
+pub const WQ_CASTLE: u8 = 0b0010;
+pub const BK_CASTLE: u8 = 0b0100;
+pub const BQ_CASTLE: u8 = 0b1000;
 pub const CASTLING: [u8; 4] = [WK_CASTLE, WQ_CASTLE, BQ_CASTLE, BK_CASTLE];
 
 pub const NO_PIECE: u8 = u8::MAX;
@@ -183,5 +176,5 @@ pub const BLACK_WIN: i8 = -1;
 pub const WHITE_WIN: i8 = 1;
 pub const DRAW: i8 = 0;
 
-pub const PV_TABLE_SIZE: usize = (1000000 * 8) / size_of::<PVElement>();        /* 8MB                                */
+pub const PV_TABLE_SIZE: usize = (1000000 * 8) / size_of::<PVElement>(); /* 8MB                                */
 pub const MAX_DEPTH: usize = 64;

@@ -8,9 +8,7 @@
 //! # Date
 //! 29/01/2026
 
-
 use crate::*;
-
 
 lazy_static! {
     pub static ref DROP_PATTERN: Regex =
@@ -30,9 +28,10 @@ lazy_static! {
 ///       allowers
 /// - e : this drop uses the enemy's hand rather than our own
 pub fn generate_drop_vectors(
-    piece: &Piece, state: &State, expr_set: &[String]
+    piece: &Piece,
+    state: &State,
+    expr_set: &[String],
 ) -> DropSet {
-
     let piece_index = p_index!(piece) as usize;
     let drop_expr = &expr_set[piece_index];
 
@@ -77,7 +76,7 @@ pub fn generate_drop_vectors(
         let pattern = captures.get(2).unwrap().as_str();
         let (allower_result, stopper_result) = parse_pattern(pattern, state);
 
-        drop_set.push((move_result, allower_result,stopper_result));
+        drop_set.push((move_result, allower_result, stopper_result));
     }
 
     drop_set

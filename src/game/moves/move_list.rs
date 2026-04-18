@@ -10,10 +10,9 @@
 
 use crate::*;
 
-
-/*----------------------------------------------------------------------------*\
+/*---------------------------------------------------------------------------*\
                         ATTACK QUERY REPRESENTATIONS
-\*----------------------------------------------------------------------------*/
+\*---------------------------------------------------------------------------*/
 
 /// Attack-query macros used by legality and check detection.
 ///
@@ -32,61 +31,59 @@ macro_rules! is_square_attacked {
         $attacked_royal:expr,
         $attacked_rank:expr,
         $game_state:expr
-    ) => {
-        {
-            let possible_attacks = &$game_state.relevant_attacks
-                [$attacked_side as usize][$square as usize];
+    ) => {{
+        let possible_attacks = &$game_state.relevant_attacks
+            [$attacked_side as usize][$square as usize];
 
-            possible_attacks.iter().any(|(piece_index, start, move_vector)| {
-                $game_state.main_board[*start as usize] == *piece_index &&
-                validate_attack_vector!(
-                    move_vector, *start,
+        possible_attacks.iter().any(|(piece_index, start, move_vector)| {
+            $game_state.main_board[*start as usize] == *piece_index
+                && validate_attack_vector!(
+                    move_vector,
+                    *start,
                     &$game_state.pieces[*piece_index as usize],
-                    $attacked_unmoved, $attacked_royal, $attacked_rank,
-                    $square, $game_state
+                    $attacked_unmoved,
+                    $attacked_royal,
+                    $attacked_rank,
+                    $square,
+                    $game_state
                 )
-            })
-        }
-    };
+        })
+    }};
 }
 
 #[macro_export]
 macro_rules! is_in_check {
-    ($side:expr, $game_state:expr) => {
-        {
-            let monarch_indices = &$game_state.royal_list[$side as usize];
+    ($side:expr, $game_state:expr) => {{
+        let monarch_indices = &$game_state.royal_list[$side as usize];
 
-            (!monarch_indices.is_empty() && !$game_state.setup_phase) && {
-                monarch_indices.iter().all(|&idx| {
-                    let royal_piece =
-                        &$game_state.main_board[idx as usize];
-                    let royal_rank =
-                        p_rank!($game_state.pieces[*royal_piece as usize]);
+        (!monarch_indices.is_empty() && !$game_state.setup_phase) && {
+            monarch_indices.iter().all(|&idx| {
+                let royal_piece = &$game_state.main_board[idx as usize];
+                let royal_rank =
+                    p_rank!($game_state.pieces[*royal_piece as usize]);
 
-                    is_square_attacked!(
-                        idx as u32,
-                        $side,
-                        get!($game_state.virgin_board, idx as u32),
-                        true,
-                        royal_rank,
-                        $game_state
-                    )
-                })
-            }
+                is_square_attacked!(
+                    idx as u32,
+                    $side,
+                    get!($game_state.virgin_board, idx as u32),
+                    true,
+                    royal_rank,
+                    $game_state
+                )
+            })
         }
-    };
+    }};
 }
 
 pub fn generate_relevant_moves(
     piece: &Piece,
     square_index: u32,
     game_state: &State,
-    piece_moves: &[MoveSet]
+    piece_moves: &[MoveSet],
 ) -> MoveSet {
     let piece_index = p_index!(piece) as usize;
     let piece_color = p_color!(piece);
-    let vector_set =
-        &piece_moves[piece_index];
+    let vector_set = &piece_moves[piece_index];
 
     let mut result = MoveSet::new();
     'multi_leg: for multi_leg_vector in vector_set {
@@ -105,18 +102,19 @@ pub fn generate_relevant_moves(
             rank += rank_offset as i32 * (-2 * piece_color as i32 + 1);
             accumulated_index = rank * (game_state.files as i32) + file;
 
-            if  file < 0 || file >= game_state.files as i32 ||
-                rank < 0 || rank >= game_state.ranks as i32 ||
-                (forbidden_zones!(game_state) &&
-                get!(
-                    game_state.forbidden_zones[piece_index],
-                    accumulated_index as u32
-                ) && !bypass)
+            if file < 0
+                || file >= game_state.files as i32
+                || rank < 0
+                || rank >= game_state.ranks as i32
+                || (forbidden_zones!(game_state)
+                    && get!(
+                        game_state.forbidden_zones[piece_index],
+                        accumulated_index as u32
+                    )
+                    && !bypass)
             {
                 continue 'multi_leg;
             }
-
-
         }
 
         result.push(multi_leg_vector.clone());
@@ -130,17 +128,13 @@ pub fn generate_relevant_moves(
 ///
 /// For each prefiltered move vector, this records whether each traversed
 /// target is attacked as enemy capture (`c`) and/or friendly destroy (`d`).
-pub fn generate_attack_masks(
-    square_index: u16,
-    game_state: &mut State,
-) {
+pub fn generate_attack_masks(square_index: u16, game_state: &mut State) {
     for piece in &game_state.pieces {
         let piece_index = p_index!(piece);
         let piece_color = p_color!(piece);
 
-        let vector_set =
-            &game_state.relevant_moves
-            [piece_index as usize][square_index as usize];
+        let vector_set = &game_state.relevant_moves[piece_index as usize]
+            [square_index as usize];
 
         for multi_leg_vector in vector_set {
             let mut accumulated_index = square_index as i16;
@@ -153,9 +147,8 @@ pub fn generate_attack_masks(
                 let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
                 let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
-                accumulated_index += (
-                    rank_offset * (game_state.files as i8) + file_offset
-                ) as i16;
+                accumulated_index += (rank_offset * (game_state.files as i8)
+                    + file_offset) as i16;
 
                 let c = c!(leg) || (last_leg && !m!(leg));
                 let d = d!(leg);
@@ -163,31 +156,26 @@ pub fn generate_attack_masks(
                 if d {
                     game_state.relevant_attacks[piece_color as usize]
                         [accumulated_index as usize]
-                        .push(
-                            (
-                                piece_index,
-                                square_index,
-                                multi_leg_vector.to_vec()
-                            )
-                        );
+                        .push((
+                            piece_index,
+                            square_index,
+                            multi_leg_vector.to_vec(),
+                        ));
                 }
 
                 if c {
                     game_state.relevant_attacks[1 - piece_color as usize]
                         [accumulated_index as usize]
-                        .push(
-                            (
-                                piece_index,
-                                square_index,
-                                multi_leg_vector.to_vec()
-                            )
-                        );
+                        .push((
+                            piece_index,
+                            square_index,
+                            multi_leg_vector.to_vec(),
+                        ));
                 }
             }
         }
     }
 }
-
 
 /// Validates whether an attack vector can legally reach a target square.
 ///
@@ -209,9 +197,8 @@ macro_rules! validate_attack_vector {
     ) => {{
         let piece_color = p_color!($attacking_piece);
         let piece_rank = p_rank!($attacking_piece);
-        let piece_unmoved = get!(
-            $game_state.virgin_board, $square_index as u32
-        );
+        let piece_unmoved =
+            get!($game_state.virgin_board, $square_index as u32);
 
         let mut accumulated_index = $square_index as i16;
         let mut target_was_last_captured = false;
@@ -228,9 +215,8 @@ macro_rules! validate_attack_vector {
             let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
             let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
-            accumulated_index += (
-                rank_offset * ($game_state.files as i8) + file_offset
-            ) as i16;
+            accumulated_index +=
+                (rank_offset * ($game_state.files as i8) + file_offset) as i16;
 
             let end_square = accumulated_index as u32;
 
@@ -275,12 +261,12 @@ macro_rules! validate_attack_vector {
 
             if imaginary_move {
                 if k && !$attacked_royal
-                || not_k && $attacked_royal
-                || g && piece_rank >= $attacked_rank
-                || not_g && piece_rank < $attacked_rank
-                || (v && !$attacked_unmoved || not_v && $attacked_unmoved)
-                && !special_v
-                || u
+                    || not_k && $attacked_royal
+                    || g && piece_rank >= $attacked_rank
+                    || not_g && piece_rank < $attacked_rank
+                    || (v && !$attacked_unmoved || not_v && $attacked_unmoved)
+                        && !special_v
+                    || u
                 {
                     valid = false;
                     break;
@@ -291,32 +277,31 @@ macro_rules! validate_attack_vector {
             }
 
             if empty && !null_move {
-                if t && enp_square!($game_state.en_passant_square) == end_square {
+                if t && enp_square!($game_state.en_passant_square) == end_square
+                {
                     let capt_piece_index =
                         enp_piece!($game_state.en_passant_square);
                     let capt_piece_color =
                         p_color!($game_state.pieces[capt_piece_index as usize]);
 
                     if d && capt_piece_color == piece_color
-                    || c && capt_piece_color != piece_color
+                        || c && capt_piece_color != piece_color
                     {
                         let capt_piece =
                             &$game_state.pieces[capt_piece_index as usize];
-                        let capt_unmoved =
-                            get!(
-                                $game_state.virgin_board,
-                                enp_captured!($game_state.en_passant_square)
-                            );
+                        let capt_unmoved = get!(
+                            $game_state.virgin_board,
+                            enp_captured!($game_state.en_passant_square)
+                        );
                         let capt_rank = p_rank!(capt_piece);
-                        let capt_royal =
-                            p_is_royal!(capt_piece);
+                        let capt_royal = p_is_royal!(capt_piece);
 
                         if k && !capt_royal
-                        || not_k && capt_royal
-                        || g && piece_rank >= capt_rank
-                        || not_g && piece_rank < capt_rank
-                        || (v && !capt_unmoved || not_v && capt_unmoved)
-                        && !special_v
+                            || not_k && capt_royal
+                            || g && piece_rank >= capt_rank
+                            || not_g && piece_rank < capt_rank
+                            || (v && !capt_unmoved || not_v && capt_unmoved)
+                                && !special_v
                         {
                             valid = false;
                             break;
@@ -339,20 +324,17 @@ macro_rules! validate_attack_vector {
 
                 let capt_piece_index =
                     $game_state.main_board[end_square as usize];
-                let capt_piece =
-                    &$game_state.pieces[capt_piece_index as usize];
-                let capt_unmoved =
-                    get!($game_state.virgin_board, end_square);
+                let capt_piece = &$game_state.pieces[capt_piece_index as usize];
+                let capt_unmoved = get!($game_state.virgin_board, end_square);
                 let capt_rank = p_rank!(capt_piece);
-                let capt_royal =
-                    p_is_royal!(capt_piece);
+                let capt_royal = p_is_royal!(capt_piece);
 
                 if k && !capt_royal
-                || not_k && capt_royal
-                || g && piece_rank >= capt_rank
-                || not_g && piece_rank < capt_rank
-                || (v && !capt_unmoved || not_v && capt_unmoved)
-                && !special_v
+                    || not_k && capt_royal
+                    || g && piece_rank >= capt_rank
+                    || not_g && piece_rank < capt_rank
+                    || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
                 {
                     valid = false;
                     break;
@@ -367,20 +349,17 @@ macro_rules! validate_attack_vector {
 
                 let capt_piece_index =
                     $game_state.main_board[end_square as usize];
-                let capt_piece =
-                    &$game_state.pieces[capt_piece_index as usize];
-                let capt_unmoved =
-                    get!($game_state.virgin_board, end_square);
+                let capt_piece = &$game_state.pieces[capt_piece_index as usize];
+                let capt_unmoved = get!($game_state.virgin_board, end_square);
                 let capt_rank = p_rank!(capt_piece);
-                let capt_royal =
-                    p_is_royal!(capt_piece);
+                let capt_royal = p_is_royal!(capt_piece);
 
                 if k && !capt_royal
-                || not_k && capt_royal
-                || g && piece_rank >= capt_rank
-                || not_g && piece_rank < capt_rank
-                || (v && !capt_unmoved || not_v && capt_unmoved)
-                && !special_v
+                    || not_k && capt_royal
+                    || g && piece_rank >= capt_rank
+                    || not_g && piece_rank < capt_rank
+                    || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
                 {
                     valid = false;
                     break;
@@ -412,11 +391,9 @@ pub fn generate_move_list(
     let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
 
     let vector_set =
-        &game_state.relevant_moves
-        [piece_index as usize][square_index as usize];
+        &game_state.relevant_moves[piece_index as usize][square_index as usize];
 
     'multi_leg: for multi_leg_vector in vector_set {
-
         let mut encoded_move = Move::default();
         enc_start!(encoded_move, square_index as u128);
         enc_piece!(encoded_move, piece_index as u128);
@@ -436,9 +413,8 @@ pub fn generate_move_list(
             let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
             let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
-            accumulated_index += (
-                rank_offset * (game_state.files as i8) + file_offset
-            ) as i16;
+            accumulated_index +=
+                (rank_offset * (game_state.files as i8) + file_offset) as i16;
 
             let end_square = accumulated_index as u32;
 
@@ -463,29 +439,27 @@ pub fn generate_move_list(
             let castling_rights = piece_color as usize * 2 + l as usize;
 
             if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i
-            || (special_i
-            && is_square_attacked!(
-                accumulated_index as u32,
-                piece_color,
-                piece_unmoved,
-                p_is_royal!(piece),
-                piece_rank,
-                game_state
-            ))
-            || ((l || r)
-            && game_state.castling_state & CASTLING[castling_rights] == 0)
+                || (special_i
+                    && is_square_attacked!(
+                        accumulated_index as u32,
+                        piece_color,
+                        piece_unmoved,
+                        p_is_royal!(piece),
+                        piece_rank,
+                        game_state
+                    ))
+                || ((l || r)
+                    && game_state.castling_state & CASTLING[castling_rights]
+                        == 0)
             {
                 continue 'multi_leg;
             }
 
-            enc_is_initial!(
-                encoded_move, (i | piece_unmoved) as u128
-            );
+            enc_is_initial!(encoded_move, (i | piece_unmoved) as u128);
 
-            let friendly = get!(
-                game_state.pieces_board[piece_color as usize],
-                end_square
-            ) && end_square != start_square;
+            let friendly =
+                get!(game_state.pieces_board[piece_color as usize], end_square)
+                    && end_square != start_square;
             let enemy = get!(
                 game_state.pieces_board[1 - piece_color as usize],
                 end_square
@@ -503,7 +477,7 @@ pub fn generate_move_list(
                         p_color!(game_state.pieces[capt_piece_index as usize]);
 
                     if d && capt_piece_color == piece_color
-                    || c && capt_piece_color != piece_color
+                        || c && capt_piece_color != piece_color
                     {
                         enc_multi_move_captured_piece!(
                             taken_piece,
@@ -517,20 +491,18 @@ pub fn generate_move_list(
 
                         let capt_piece =
                             &game_state.pieces[capt_piece_index as usize];
-                        let capt_unmoved =
-                            get!(
-                                game_state.virgin_board,
-                                enp_captured!(game_state.en_passant_square)
-                            );
+                        let capt_unmoved = get!(
+                            game_state.virgin_board,
+                            enp_captured!(game_state.en_passant_square)
+                        );
                         let capt_rank = p_rank!(capt_piece);
-                        let capt_royal =
-                            p_is_royal!(capt_piece);
+                        let capt_royal = p_is_royal!(capt_piece);
 
                         if k || not_k && capt_royal
-                        || g && piece_rank >= capt_rank
-                        || not_g && piece_rank < capt_rank
-                        || (v && !capt_unmoved || not_v && capt_unmoved)
-                        && !special_v
+                            || g && piece_rank >= capt_rank
+                            || not_g && piece_rank < capt_rank
+                            || (v && !capt_unmoved || not_v && capt_unmoved)
+                                && !special_v
                         {
                             continue 'multi_leg;
                         }
@@ -554,32 +526,26 @@ pub fn generate_move_list(
 
                 let capt_piece_index =
                     game_state.main_board[end_square as usize];
-                let capt_piece =
-                    &game_state.pieces[capt_piece_index as usize];
-                let capt_unmoved =
-                    get!(game_state.virgin_board, end_square);
+                let capt_piece = &game_state.pieces[capt_piece_index as usize];
+                let capt_unmoved = get!(game_state.virgin_board, end_square);
                 let capt_rank = p_rank!(capt_piece);
-                let capt_royal =
-                    p_is_royal!(capt_piece);
+                let capt_royal = p_is_royal!(capt_piece);
 
                 if k || not_k && capt_royal
-                || g && piece_rank >= capt_rank
-                || not_g && piece_rank < capt_rank
-                || (v && !capt_unmoved || not_v && capt_unmoved)
-                && !special_v
+                    || g && piece_rank >= capt_rank
+                    || not_g && piece_rank < capt_rank
+                    || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
                 {
                     continue 'multi_leg;
                 }
 
                 enc_multi_move_captured_piece!(
-                     taken_piece,
-                     capt_piece_index as u64
-                 );
-
-                enc_multi_move_captured_square!(
                     taken_piece,
-                    end_square as u64
+                    capt_piece_index as u64
                 );
+
+                enc_multi_move_captured_square!(taken_piece, end_square as u64);
 
                 enc_multi_move_captured_unmoved!(
                     taken_piece,
@@ -594,32 +560,26 @@ pub fn generate_move_list(
 
                 let capt_piece_index =
                     game_state.main_board[end_square as usize];
-                let capt_piece =
-                    &game_state.pieces[capt_piece_index as usize];
-                let capt_unmoved =
-                    get!(game_state.virgin_board, end_square);
+                let capt_piece = &game_state.pieces[capt_piece_index as usize];
+                let capt_unmoved = get!(game_state.virgin_board, end_square);
                 let capt_rank = p_rank!(capt_piece);
-                let capt_royal =
-                    p_is_royal!(capt_piece);
+                let capt_royal = p_is_royal!(capt_piece);
 
                 if k || not_k && capt_royal
-                || g && piece_rank >= capt_rank
-                || not_g && piece_rank < capt_rank
-                || (v && !capt_unmoved || not_v && capt_unmoved)
-                && !special_v
+                    || g && piece_rank >= capt_rank
+                    || not_g && piece_rank < capt_rank
+                    || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
                 {
                     continue 'multi_leg;
                 }
 
-                 enc_multi_move_captured_piece!(
-                     taken_piece,
-                     capt_piece_index as u64
-                 );
-
-                enc_multi_move_captured_square!(
+                enc_multi_move_captured_piece!(
                     taken_piece,
-                    end_square as u64
+                    capt_piece_index as u64
                 );
+
+                enc_multi_move_captured_square!(taken_piece, end_square as u64);
 
                 enc_multi_move_captured_unmoved!(
                     taken_piece,
@@ -646,10 +606,12 @@ pub fn generate_move_list(
             }
 
             enc_creates_enp!(encoded_move, p as u128);
-            enc_created_enp!(encoded_move, p as u128 *
-                ((start_square as u128 & 0xFFF)
-                | (accumulated_index as u128) << 12
-                | (piece_index as u128) << 24)
+            enc_created_enp!(
+                encoded_move,
+                p as u128
+                    * ((start_square as u128 & 0xFFF)
+                        | (accumulated_index as u128) << 12
+                        | (piece_index as u128) << 24)
             );
         }
 
@@ -666,27 +628,23 @@ pub fn generate_move_list(
                 encoded_move.1 = Arc::new(taken_pieces);
             }
 
-            let entered_mandatory_promotion =
-                get!(
-                    game_state.promotion_zones_mandatory[piece_index as usize],
-                    accumulated_index as u32
-                );
-            let moved_from_mandatory_zone =
-                get!(
-                    game_state.promotion_zones_mandatory[piece_index as usize],
-                    square_index as u32
-                );
+            let entered_mandatory_promotion = get!(
+                game_state.promotion_zones_mandatory[piece_index as usize],
+                accumulated_index as u32
+            );
+            let moved_from_mandatory_zone = get!(
+                game_state.promotion_zones_mandatory[piece_index as usize],
+                square_index as u32
+            );
 
-            let entered_optional_promotion =
-                get!(
-                    game_state.promotion_zones_optional[piece_index as usize],
-                    accumulated_index as u32
-                );
-            let moved_from_optional_zone =
-                get!(
-                    game_state.promotion_zones_optional[piece_index as usize],
-                    square_index as u32
-                );
+            let entered_optional_promotion = get!(
+                game_state.promotion_zones_optional[piece_index as usize],
+                accumulated_index as u32
+            );
+            let moved_from_optional_zone = get!(
+                game_state.promotion_zones_optional[piece_index as usize],
+                square_index as u32
+            );
 
             let mandatory =
                 entered_mandatory_promotion || moved_from_mandatory_zone;
@@ -695,25 +653,25 @@ pub fn generate_move_list(
 
             if mandatory || optional {
                 for promo_piece_index in &piece.promotions {
-
                     let mut can_promote = true;
 
                     if count_limits!(game_state) {
-                        can_promote = can_promote &&
-                        game_state.piece_count[*promo_piece_index as usize] <
-                        game_state.piece_limit[*promo_piece_index as usize];
+                        can_promote = can_promote
+                            && game_state.piece_count
+                                [*promo_piece_index as usize]
+                                < game_state.piece_limit
+                                    [*promo_piece_index as usize];
                     }
 
                     if promote_to_captured!(game_state) {
                         let enemy_equiv =
-                            game_state.piece_swap_map[
-                                promo_piece_index
-                            ];
+                            game_state.piece_swap_map[promo_piece_index];
 
-                        can_promote = can_promote &&
-                            game_state.piece_in_hand
-                            [1 - piece_color as usize]
-                            [enemy_equiv as usize] > 0;
+                        can_promote = can_promote
+                            && game_state.piece_in_hand
+                                [1 - piece_color as usize]
+                                [enemy_equiv as usize]
+                                > 0;
                     }
 
                     if can_promote {
@@ -732,7 +690,6 @@ pub fn generate_move_list(
             } else {
                 result.push(encoded_move);
             }
-
         } else {
             if taken_pieces.is_empty() {
                 enc_move_type!(encoded_move, QUIET_MOVE);
@@ -751,10 +708,9 @@ pub fn generate_move_list(
     result
 }
 
-
-/*----------------------------------------------------------------------------*\
+/*---------------------------------------------------------------------------*\
                            MOVE STATE TRANSITION MACROS
-\*----------------------------------------------------------------------------*/
+\*---------------------------------------------------------------------------*/
 
 /// Applies a move to the game state with full incremental bookkeeping.
 ///
@@ -1724,7 +1680,6 @@ macro_rules! make_move {
     };
 }
 
-
 /// Reverts the last applied move using the most recent [`Snapshot`].
 ///
 /// This macro restores all dynamic state fields and reverses side effects made
@@ -1732,194 +1687,329 @@ macro_rules! make_move {
 /// position repetition map.
 #[macro_export]
 macro_rules! undo_move {
-    ($state:expr) => {
-        {
+    ($state:expr) => {{
+        $state.search_ply -= 1;
+        $state.ply_counter -= 1;
 
-            $state.search_ply -= 1;
-            $state.ply_counter -= 1;
+        let repetition_count =
+            $state.position_hash_map.get_mut(&$state.position_hash).unwrap();
+        *repetition_count -= 1;
 
-            let repetition_count =
-                $state.position_hash_map
-                .get_mut(&$state.position_hash)
-                .unwrap();
-            *repetition_count -= 1;
+        if *repetition_count == 0 {
+            $state.position_hash_map.remove(&$state.position_hash);
+        }
 
-            if *repetition_count == 0 {
-                $state.position_hash_map.remove(&$state.position_hash);
+        let snapshot =
+            $state.history.pop().unwrap_or_else(|| panic!("No move to undo!"));
+
+        #[cfg(debug_assertions)]
+        verify_game_state($state);
+
+        $state.playing = 1 - $state.playing;
+        $state.castling_state = snapshot.castling_state;
+        $state.halfmove_clock = snapshot.halfmove_clock;
+        $state.en_passant_square = snapshot.en_passant_square;
+        $state.position_hash = snapshot.position_hash;
+        $state.setup_phase = snapshot.setup_phase;
+        $state.game_over = snapshot.game_over;
+
+        let mv = snapshot.move_ply;
+        let move_type = move_type!(mv);
+
+        if move_type == QUIET_MOVE {
+            let piece_index = piece!(mv) as usize;
+            let start_square = start!(mv) as u32;
+            let end_square = end!(mv) as u32;
+            let piece_unmoved = is_initial!(mv) == 1;
+            let is_promotion = promotion!(mv);
+            let promoted_piece = promoted!(mv) as usize;
+
+            let piece_color = p_color!($state.pieces[piece_index]);
+
+            clear!($state.pieces_board[piece_color as usize], end_square);
+            set!($state.pieces_board[piece_color as usize], start_square);
+
+            if p_is_royal!($state.pieces[piece_index]) {
+                $state.royal_list[piece_color as usize]
+                    .retain(|&sq| sq as u32 != end_square);
+                $state.royal_list[piece_color as usize]
+                    .push(start_square as Square);
             }
 
-            let snapshot = $state.history.pop().unwrap_or_else(
-                || panic!("No move to undo!")
-            );
+            if piece_unmoved {
+                set!($state.virgin_board, start_square);
+            }
 
-            #[cfg(debug_assertions)]
-            verify_game_state($state);
+            $state.main_board[end_square as usize] = NO_PIECE;
+            $state.main_board[start_square as usize] = piece_index as u8;
 
-            $state.playing = 1 - $state.playing;
-            $state.castling_state = snapshot.castling_state;
-            $state.halfmove_clock = snapshot.halfmove_clock;
-            $state.en_passant_square = snapshot.en_passant_square;
-            $state.position_hash = snapshot.position_hash;
-            $state.setup_phase = snapshot.setup_phase;
-            $state.game_over = snapshot.game_over;
+            if is_promotion {
+                $state.piece_list[promoted_piece].remove(&(end_square as u16));
 
-            let mv = snapshot.move_ply;
-            let move_type = move_type!(mv);
-
-            if move_type == QUIET_MOVE {
-                let piece_index = piece!(mv) as usize;
-                let start_square = start!(mv) as u32;
-                let end_square = end!(mv) as u32;
-                let piece_unmoved = is_initial!(mv) == 1;
-                let is_promotion = promotion!(mv);
-                let promoted_piece = promoted!(mv) as usize;
-
-                let piece_color = p_color!($state.pieces[piece_index]);
-
-                clear!($state.pieces_board[piece_color as usize], end_square);
-                set!($state.pieces_board[piece_color as usize], start_square);
-
-                if p_is_royal!($state.pieces[piece_index]) {
-                    $state.royal_list[piece_color as usize].retain(
-                        |&sq| sq as u32 != end_square
-                    );
-                    $state.royal_list[piece_color as usize]
-                        .push(start_square as Square);
+                if p_is_big!($state.pieces[promoted_piece]) {
+                    $state.big_pieces[piece_color as usize] -= 1;
+                }
+                if p_is_major!($state.pieces[promoted_piece]) {
+                    $state.major_pieces[piece_color as usize] -= 1;
+                } else if p_is_minor!($state.pieces[promoted_piece]) {
+                    $state.minor_pieces[piece_color as usize] -= 1;
                 }
 
-                if piece_unmoved {
-                    set!($state.virgin_board, start_square);
+                if p_is_big!($state.pieces[piece_index]) {
+                    $state.big_pieces[piece_color as usize] += 1;
+                }
+                if p_is_major!($state.pieces[piece_index]) {
+                    $state.major_pieces[piece_color as usize] += 1;
+                } else if p_is_minor!($state.pieces[piece_index]) {
+                    $state.minor_pieces[piece_color as usize] += 1;
                 }
 
-                $state.main_board[end_square as usize] = NO_PIECE;
-                $state.main_board[start_square as usize] = piece_index as u8;
+                $state.material[piece_color as usize] +=
+                    p_value!($state.pieces[piece_index]) as u32;
+                $state.material[piece_color as usize] -=
+                    p_value!($state.pieces[promoted_piece]) as u32;
 
-                if is_promotion {
-                    $state.piece_list[promoted_piece]
-                        .remove(&(end_square as u16));
+                $state.piece_count[promoted_piece] -= 1;
+                $state.piece_count[piece_index] += 1;
 
-                    if p_is_big!($state.pieces[promoted_piece]) {
-                        $state.big_pieces[piece_color as usize] -= 1;
-                    }
-                    if p_is_major!($state.pieces[promoted_piece]) {
-                        $state.major_pieces[piece_color as usize] -= 1;
-                    } else if p_is_minor!($state.pieces[promoted_piece]) {
-                        $state.minor_pieces[piece_color as usize] -= 1;
-                    }
+                if promote_to_captured!($state) {
+                    let enemy_equiv =
+                        $state.piece_swap_map[&(promoted_piece as u8)];
+                    let hand = &mut $state.piece_in_hand
+                        [1 - piece_color as usize]
+                        [enemy_equiv as usize];
+                    *hand += 1;
+                }
+            } else {
+                $state.piece_list[piece_index].remove(&(end_square as u16));
+            }
 
-                    if p_is_big!($state.pieces[piece_index]) {
-                        $state.big_pieces[piece_color as usize] += 1;
-                    }
-                    if p_is_major!($state.pieces[piece_index]) {
-                        $state.major_pieces[piece_color as usize] += 1;
-                    } else if p_is_minor!($state.pieces[piece_index]) {
-                        $state.minor_pieces[piece_color as usize] += 1;
-                    }
+            $state.piece_list[piece_index].insert(start_square as u16);
+        } else if move_type == SINGLE_CAPTURE_MOVE {
+            let piece_index = piece!(mv) as usize;
+            let start_square = start!(mv) as u32;
+            let end_square = end!(mv) as u32;
+            let piece_unmoved = is_initial!(mv) == 1;
+            let is_promotion = promotion!(mv);
+            let promoted_piece = promoted!(mv) as usize;
+            let captured_piece_index = captured_piece!(mv) as usize;
+            let captured_square = captured_square!(mv) as u32;
+            let captured_unmoved = captured_unmoved!(mv);
+            let is_unload = is_unload!(mv);
+            let unload_square = unload_square!(mv) as u32;
 
-                    $state.material[piece_color as usize] +=
-                        p_value!($state.pieces[piece_index]) as u32;
-                    $state.material[piece_color as usize] -=
-                        p_value!($state.pieces[promoted_piece]) as u32;
+            let piece_color = p_color!($state.pieces[piece_index]);
+            let captured_color = p_color!($state.pieces[captured_piece_index]);
 
-                    $state.piece_count[promoted_piece] -= 1;
-                    $state.piece_count[piece_index] += 1;
+            clear!($state.pieces_board[piece_color as usize], end_square);
+            set!($state.pieces_board[piece_color as usize], start_square);
 
-                    if promote_to_captured!($state) {
-                        let enemy_equiv = $state.piece_swap_map
-                            [&(promoted_piece as u8)];
-                        let hand =
-                            &mut $state.piece_in_hand
-                            [1 - piece_color as usize][enemy_equiv as usize];
-                        *hand += 1;
-                    }
-                } else {
-                    $state.piece_list[piece_index]
-                        .remove(&(end_square as u16));
+            if p_is_royal!($state.pieces[piece_index]) {
+                $state.royal_list[piece_color as usize]
+                    .retain(|&sq| sq as u32 != end_square);
+                $state.royal_list[piece_color as usize]
+                    .push(start_square as Square);
+            }
+
+            if piece_unmoved {
+                set!($state.virgin_board, start_square);
+            }
+
+            $state.main_board[end_square as usize] = NO_PIECE;
+            $state.main_board[start_square as usize] = piece_index as u8;
+
+            if is_promotion {
+                $state.piece_list[promoted_piece].remove(&(end_square as u16));
+
+                if p_is_big!($state.pieces[promoted_piece]) {
+                    $state.big_pieces[piece_color as usize] -= 1;
+                }
+                if p_is_major!($state.pieces[promoted_piece]) {
+                    $state.major_pieces[piece_color as usize] -= 1;
+                } else if p_is_minor!($state.pieces[promoted_piece]) {
+                    $state.minor_pieces[piece_color as usize] -= 1;
                 }
 
-                $state.piece_list[piece_index]
-                    .insert(start_square as u16);
-            } else if move_type == SINGLE_CAPTURE_MOVE {
-                let piece_index = piece!(mv) as usize;
-                let start_square = start!(mv) as u32;
-                let end_square = end!(mv) as u32;
-                let piece_unmoved = is_initial!(mv) == 1;
-                let is_promotion = promotion!(mv);
-                let promoted_piece = promoted!(mv) as usize;
-                let captured_piece_index = captured_piece!(mv) as usize;
-                let captured_square = captured_square!(mv) as u32;
-                let captured_unmoved = captured_unmoved!(mv);
-                let is_unload = is_unload!(mv);
-                let unload_square = unload_square!(mv) as u32;
+                if p_is_big!($state.pieces[piece_index]) {
+                    $state.big_pieces[piece_color as usize] += 1;
+                }
+                if p_is_major!($state.pieces[piece_index]) {
+                    $state.major_pieces[piece_color as usize] += 1;
+                } else if p_is_minor!($state.pieces[piece_index]) {
+                    $state.minor_pieces[piece_color as usize] += 1;
+                }
 
-                let piece_color =
-                    p_color!($state.pieces[piece_index]);
+                $state.material[piece_color as usize] +=
+                    p_value!($state.pieces[piece_index]) as u32;
+                $state.material[piece_color as usize] -=
+                    p_value!($state.pieces[promoted_piece]) as u32;
+
+                $state.piece_count[promoted_piece] -= 1;
+                $state.piece_count[piece_index] += 1;
+
+                if promote_to_captured!($state) {
+                    let enemy_equiv =
+                        $state.piece_swap_map[&(promoted_piece as u8)];
+                    let hand = &mut $state.piece_in_hand
+                        [1 - piece_color as usize]
+                        [enemy_equiv as usize];
+                    *hand += 1;
+                }
+            } else {
+                $state.piece_list[piece_index].remove(&(end_square as u16));
+            }
+
+            $state.piece_list[piece_index].insert(start_square as u16);
+
+            if is_unload {
+                clear!(
+                    $state.pieces_board[captured_color as usize],
+                    unload_square
+                );
+                set!(
+                    $state.pieces_board[captured_color as usize],
+                    captured_square
+                );
+            } else {
+                set!(
+                    $state.pieces_board[captured_color as usize],
+                    captured_square
+                );
+            }
+
+            if captured_unmoved {
+                set!($state.virgin_board, captured_square);
+
+                if is_unload {
+                    clear!($state.virgin_board, unload_square);
+                }
+            }
+
+            if is_unload {
+                $state.main_board[unload_square as usize] = NO_PIECE;
+            }
+            $state.main_board[captured_square as usize] =
+                captured_piece_index as u8;
+
+            if is_unload {
+                $state.piece_list[captured_piece_index]
+                    .remove(&(unload_square as u16));
+            }
+            $state.piece_list[captured_piece_index]
+                .insert(captured_square as u16);
+
+            if !is_unload {
+                if p_is_big!($state.pieces[captured_piece_index]) {
+                    $state.big_pieces[captured_color as usize] += 1;
+                }
+
+                if p_is_major!($state.pieces[captured_piece_index]) {
+                    $state.major_pieces[captured_color as usize] += 1;
+                } else if p_is_minor!($state.pieces[captured_piece_index]) {
+                    $state.minor_pieces[captured_color as usize] += 1;
+                }
+
+                $state.material[captured_color as usize] +=
+                    p_value!($state.pieces[captured_piece_index]) as u32;
+
+                $state.piece_count[captured_piece_index] += 1;
+            }
+
+            if drops!($state) || promote_to_captured!($state) {
+                let mut captured_index_u8 = captured_piece_index as u8;
+
+                if demote_upon_capture!($state) {
+                    captured_index_u8 = $state
+                        .piece_demotion_map
+                        .get(&(captured_index_u8))
+                        .unwrap()[0]; /* assume 1 to 1 mapping              */
+                }
+
+                $state.piece_in_hand[piece_color as usize][*$state
+                    .piece_swap_map
+                    .get(&captured_index_u8)
+                    .unwrap()
+                    as usize] -= 1;
+            }
+        } else if move_type == MULTI_CAPTURE_MOVE {
+            let piece_index = piece!(mv) as usize;
+            let start_square = start!(mv) as u32;
+            let end_square = end!(mv) as u32;
+            let piece_unmoved = is_initial!(mv) == 1;
+            let is_promotion = promotion!(mv);
+            let promoted_piece = promoted!(mv) as usize;
+
+            let piece_color = p_color!($state.pieces[piece_index]);
+
+            clear!($state.pieces_board[piece_color as usize], end_square);
+            set!($state.pieces_board[piece_color as usize], start_square);
+
+            if p_is_royal!($state.pieces[piece_index]) {
+                $state.royal_list[piece_color as usize]
+                    .retain(|&sq| sq as u32 != end_square);
+                $state.royal_list[piece_color as usize]
+                    .push(start_square as Square);
+            }
+
+            if piece_unmoved {
+                set!($state.virgin_board, start_square);
+            }
+
+            $state.main_board[end_square as usize] = NO_PIECE;
+            $state.main_board[start_square as usize] = piece_index as u8;
+
+            if is_promotion {
+                $state.piece_list[promoted_piece].remove(&(end_square as u16));
+
+                if p_is_big!($state.pieces[promoted_piece]) {
+                    $state.big_pieces[piece_color as usize] -= 1;
+                }
+                if p_is_major!($state.pieces[promoted_piece]) {
+                    $state.major_pieces[piece_color as usize] -= 1;
+                } else if p_is_minor!($state.pieces[promoted_piece]) {
+                    $state.minor_pieces[piece_color as usize] -= 1;
+                }
+
+                if p_is_big!($state.pieces[piece_index]) {
+                    $state.big_pieces[piece_color as usize] += 1;
+                }
+                if p_is_major!($state.pieces[piece_index]) {
+                    $state.major_pieces[piece_color as usize] += 1;
+                } else if p_is_minor!($state.pieces[piece_index]) {
+                    $state.minor_pieces[piece_color as usize] += 1;
+                }
+
+                $state.material[piece_color as usize] +=
+                    p_value!($state.pieces[piece_index]) as u32;
+                $state.material[piece_color as usize] -=
+                    p_value!($state.pieces[promoted_piece]) as u32;
+
+                $state.piece_count[promoted_piece] -= 1;
+                $state.piece_count[piece_index] += 1;
+
+                if promote_to_captured!($state) {
+                    let enemy_equiv =
+                        $state.piece_swap_map[&(promoted_piece as u8)];
+                    let hand = &mut $state.piece_in_hand
+                        [1 - piece_color as usize]
+                        [enemy_equiv as usize];
+                    *hand += 1;
+                }
+            } else {
+                $state.piece_list[piece_index].remove(&(end_square as u16));
+            }
+
+            $state.piece_list[piece_index].insert(start_square as u16);
+
+            for cap in mv.1.iter() {
+                let captured_piece_index =
+                    multi_move_captured_piece!(cap) as usize;
+                let captured_square = multi_move_captured_square!(cap) as u32;
+                let captured_unmoved = multi_move_captured_unmoved!(cap);
+                let is_unload = multi_move_is_unload!(cap);
+                let unload_square = multi_move_unload_square!(cap) as u32;
                 let captured_color =
                     p_color!($state.pieces[captured_piece_index]);
-
-                clear!($state.pieces_board[piece_color as usize], end_square);
-                set!($state.pieces_board[piece_color as usize], start_square);
-
-                if p_is_royal!($state.pieces[piece_index]) {
-                    $state.royal_list[piece_color as usize].retain(
-                        |&sq| sq as u32 != end_square
-                    );
-                    $state.royal_list[piece_color as usize]
-                        .push(start_square as Square);
-                }
-
-                if piece_unmoved {
-                    set!($state.virgin_board, start_square);
-                }
-
-                $state.main_board[end_square as usize] = NO_PIECE;
-                $state.main_board[start_square as usize] = piece_index as u8;
-
-                if is_promotion {
-                    $state.piece_list[promoted_piece]
-                        .remove(&(end_square as u16));
-
-                    if p_is_big!($state.pieces[promoted_piece]) {
-                        $state.big_pieces[piece_color as usize] -= 1;
-                    }
-                    if p_is_major!($state.pieces[promoted_piece]) {
-                        $state.major_pieces[piece_color as usize] -= 1;
-                    } else if p_is_minor!($state.pieces[promoted_piece]) {
-                        $state.minor_pieces[piece_color as usize] -= 1;
-                    }
-
-                    if p_is_big!($state.pieces[piece_index]) {
-                        $state.big_pieces[piece_color as usize] += 1;
-                    }
-                    if p_is_major!($state.pieces[piece_index]) {
-                        $state.major_pieces[piece_color as usize] += 1;
-                    } else if p_is_minor!($state.pieces[piece_index]) {
-                        $state.minor_pieces[piece_color as usize] += 1;
-                    }
-
-                    $state.material[piece_color as usize] +=
-                        p_value!($state.pieces[piece_index]) as u32;
-                    $state.material[piece_color as usize] -=
-                        p_value!($state.pieces[promoted_piece]) as u32;
-
-                    $state.piece_count[promoted_piece] -= 1;
-                    $state.piece_count[piece_index] += 1;
-
-                    if promote_to_captured!($state) {
-                        let enemy_equiv = $state.piece_swap_map
-                            [&(promoted_piece as u8)];
-                        let hand =
-                            &mut $state.piece_in_hand
-                            [1 - piece_color as usize][enemy_equiv as usize];
-                        *hand += 1;
-                    }
-                } else {
-                    $state.piece_list[piece_index]
-                        .remove(&(end_square as u16));
-                }
-
-                $state.piece_list[piece_index]
-                    .insert(start_square as u16);
 
                 if is_unload {
                     clear!(
@@ -1952,9 +2042,8 @@ macro_rules! undo_move {
                     captured_piece_index as u8;
 
                 if is_unload {
-                    $state.piece_list[captured_piece_index].remove(
-                        &(unload_square as u16)
-                    );
+                    $state.piece_list[captured_piece_index]
+                        .remove(&(unload_square as u16));
                 }
                 $state.piece_list[captured_piece_index]
                     .insert(captured_square as u16);
@@ -1980,293 +2069,110 @@ macro_rules! undo_move {
                     let mut captured_index_u8 = captured_piece_index as u8;
 
                     if demote_upon_capture!($state) {
-                        captured_index_u8 = $state.piece_demotion_map
+                        captured_index_u8 = $state
+                            .piece_demotion_map
                             .get(&(captured_index_u8))
-                            .unwrap()[0];                                       /* assume 1 to 1 mapping              */
+                            .unwrap()[0];
                     }
 
-                    $state.piece_in_hand
-                        [piece_color as usize][
-                            *$state.piece_swap_map
-                            .get(&captured_index_u8)
-                            .unwrap() as usize
-                        ] -= 1;
-                }
-            } else if move_type == MULTI_CAPTURE_MOVE {
-                let piece_index = piece!(mv) as usize;
-                let start_square = start!(mv) as u32;
-                let end_square = end!(mv) as u32;
-                let piece_unmoved = is_initial!(mv) == 1;
-                let is_promotion = promotion!(mv);
-                let promoted_piece = promoted!(mv) as usize;
-
-                let piece_color = p_color!($state.pieces[piece_index]);
-
-                clear!($state.pieces_board[piece_color as usize], end_square);
-                set!($state.pieces_board[piece_color as usize], start_square);
-
-                if p_is_royal!($state.pieces[piece_index]) {
-                    $state.royal_list[piece_color as usize].retain(
-                        |&sq| sq as u32 != end_square
-                    );
-                    $state.royal_list[piece_color as usize]
-                        .push(start_square as Square);
-                }
-
-                if piece_unmoved {
-                    set!($state.virgin_board, start_square);
-                }
-
-                $state.main_board[end_square as usize] = NO_PIECE;
-                $state.main_board[start_square as usize] = piece_index as u8;
-
-                if is_promotion {
-                    $state.piece_list[promoted_piece]
-                        .remove(&(end_square as u16));
-
-                    if p_is_big!($state.pieces[promoted_piece]) {
-                        $state.big_pieces[piece_color as usize] -= 1;
-                    }
-                    if p_is_major!($state.pieces[promoted_piece]) {
-                        $state.major_pieces[piece_color as usize] -= 1;
-                    } else if p_is_minor!($state.pieces[promoted_piece]) {
-                        $state.minor_pieces[piece_color as usize] -= 1;
-                    }
-
-                    if p_is_big!($state.pieces[piece_index]) {
-                        $state.big_pieces[piece_color as usize] += 1;
-                    }
-                    if p_is_major!($state.pieces[piece_index]) {
-                        $state.major_pieces[piece_color as usize] += 1;
-                    } else if p_is_minor!($state.pieces[piece_index]) {
-                        $state.minor_pieces[piece_color as usize] += 1;
-                    }
-
-                    $state.material[piece_color as usize] +=
-                        p_value!($state.pieces[piece_index]) as u32;
-                    $state.material[piece_color as usize] -=
-                        p_value!($state.pieces[promoted_piece]) as u32;
-
-                    $state.piece_count[promoted_piece] -= 1;
-                    $state.piece_count[piece_index] += 1;
-
-                    if promote_to_captured!($state) {
-                        let enemy_equiv = $state.piece_swap_map
-                            [&(promoted_piece as u8)];
-                        let hand =
-                            &mut $state.piece_in_hand
-                            [1 - piece_color as usize][enemy_equiv as usize];
-                        *hand += 1;
-                    }
-                } else {
-                    $state.piece_list[piece_index]
-                        .remove(&(end_square as u16));
-                }
-
-                $state.piece_list[piece_index]
-                    .insert(start_square as u16);
-
-                for cap in mv.1.iter() {
-                    let captured_piece_index =
-                        multi_move_captured_piece!(cap) as usize;
-                    let captured_square =
-                        multi_move_captured_square!(cap) as u32;
-                    let captured_unmoved = multi_move_captured_unmoved!(cap);
-                    let is_unload = multi_move_is_unload!(cap);
-                    let unload_square = multi_move_unload_square!(cap) as u32;
-                    let captured_color = p_color!(
-                        $state.pieces[captured_piece_index]
-                    );
-
-                    if is_unload {
-                        clear!(
-                            $state.pieces_board[captured_color as usize],
-                            unload_square
-                        );
-                        set!(
-                            $state.pieces_board[captured_color as usize],
-                            captured_square
-                        );
-                    } else {
-                        set!(
-                            $state.pieces_board[captured_color as usize],
-                            captured_square
-                        );
-                    }
-
-                    if captured_unmoved {
-                        set!($state.virgin_board, captured_square);
-
-                        if is_unload {
-                            clear!($state.virgin_board, unload_square);
-                        }
-                    }
-
-                    if is_unload {
-                        $state.main_board[unload_square as usize] = NO_PIECE;
-                    }
-                    $state.main_board[captured_square as usize] =
-                        captured_piece_index as u8;
-
-                    if is_unload {
-                        $state.piece_list[captured_piece_index].remove(
-                            &(unload_square as u16)
-                        );
-                    }
-                    $state.piece_list[captured_piece_index]
-                        .insert(captured_square as u16);
-
-                    if !is_unload {
-                        if p_is_big!($state.pieces[captured_piece_index]) {
-                            $state.big_pieces[captured_color as usize] += 1;
-                        }
-
-                        if p_is_major!($state.pieces[captured_piece_index]) {
-                            $state.major_pieces[captured_color as usize] += 1;
-                        } else if p_is_minor!(
-                            $state.pieces[captured_piece_index]
-                        ) {
-                            $state.minor_pieces[captured_color as usize] += 1;
-                        }
-
-                        $state.material[captured_color as usize] +=
-                            p_value!(
-                                $state.pieces[captured_piece_index]
-                            ) as u32;
-
-                        $state.piece_count[captured_piece_index] += 1;
-                    }
-
-                    if drops!($state) || promote_to_captured!($state) {
-                        let mut captured_index_u8 = captured_piece_index as u8;
-
-                        if demote_upon_capture!($state) {
-                            captured_index_u8 = $state.piece_demotion_map
-                                .get(&(captured_index_u8))
-                                .unwrap()[0];
-                        }
-
-                        $state.piece_in_hand
-                            [piece_color as usize]
-                            [
-                                *$state.piece_swap_map
-                                .get(&captured_index_u8)
-                                .unwrap() as usize
-                            ] -= 1;
-                    }
-                }
-            } else if move_type == DROP_MOVE {
-                let piece_index = piece!(mv) as usize;
-                let drop_square = start!(mv) as u32;
-
-                let piece_color = p_color!($state.pieces[piece_index]);
-
-                clear!($state.pieces_board[piece_color as usize], drop_square);
-
-                if p_is_royal!($state.pieces[piece_index]) {
-                    $state.royal_list[piece_color as usize]
-                        .retain(|&sq| sq as u32 != drop_square);
-                }
-
-                $state.main_board[drop_square as usize] = NO_PIECE;
-                $state.piece_list[piece_index]
-                    .remove(&(drop_square as u16));
-                $state.material[piece_color as usize] -=
-                    p_value!($state.pieces[piece_index]) as u32;
-                $state.piece_count[piece_index] -= 1;
-
-                if p_is_big!($state.pieces[piece_index]) {
-                    $state.big_pieces[piece_color as usize] -= 1;
-                }
-
-                if p_is_major!($state.pieces[piece_index]) {
-                    $state.major_pieces[piece_color as usize] -= 1;
-                } else if p_is_minor!($state.pieces[piece_index]) {
-                    $state.minor_pieces[piece_color as usize] -= 1;
-                }
-
-                if !drop_from_enemy_hand!(mv) {
-                    let hand =
-                        &mut $state.piece_in_hand
-                        [piece_color as usize][piece_index];
-                    let old_hand = *hand;
-                    *hand += 1;
-
-                    hash_update_in_hand!(
-                        $state,
-                        piece_index,
-                        old_hand,
-                        *hand
-                    );
-                } else {
-                    let enemy_equiv = $state.piece_swap_map
-                        [&(piece_index as u8)] as usize;
-                    let hand =
-                        &mut $state.piece_in_hand
-                        [1 - piece_color as usize][enemy_equiv];
-                    let old_hand = *hand;
-                    *hand += 1;
-
-                    hash_update_in_hand!(
-                        $state,
-                        enemy_equiv,
-                        old_hand,
-                        *hand
-                    );
-                }
-
-                for cap in mv.1.iter() {
-                    let captured_piece_index =
-                        multi_move_captured_piece!(cap) as usize;
-                    let captured_square =
-                        multi_move_captured_square!(cap) as u32;
-                    let captured_unmoved = multi_move_captured_unmoved!(cap);
-                    let captured_color = p_color!(
-                        $state.pieces[captured_piece_index]
-                    );
-
-                    set!(
-                        $state.pieces_board[captured_color as usize],
-                        captured_square
-                    );
-
-                    if captured_unmoved {
-                        set!($state.virgin_board, captured_square);
-                    }
-
-                    $state.main_board[captured_square as usize] =
-                        captured_piece_index as u8;
-
-                    $state.piece_list[captured_piece_index]
-                        .insert(captured_square as u16);
-
-                    if p_is_big!($state.pieces[captured_piece_index]) {
-                        $state.big_pieces[captured_color as usize] += 1;
-                    }
-
-                    if p_is_major!($state.pieces[captured_piece_index]) {
-                        $state.major_pieces[captured_color as usize] += 1;
-                    } else if p_is_minor!(
-                        $state.pieces[captured_piece_index]
-                    ) {
-                        $state.minor_pieces[captured_color as usize] += 1;
-                    }
-
-                    $state.material[captured_color as usize] +=
-                        p_value!(
-                            $state.pieces[captured_piece_index]
-                        ) as u32;
-
-                    $state.piece_count[captured_piece_index] += 1;
+                    $state.piece_in_hand[piece_color as usize][*$state
+                        .piece_swap_map
+                        .get(&captured_index_u8)
+                        .unwrap()
+                        as usize] -= 1;
                 }
             }
+        } else if move_type == DROP_MOVE {
+            let piece_index = piece!(mv) as usize;
+            let drop_square = start!(mv) as u32;
 
-            #[cfg(debug_assertions)]
-            verify_game_state($state);
+            let piece_color = p_color!($state.pieces[piece_index]);
+
+            clear!($state.pieces_board[piece_color as usize], drop_square);
+
+            if p_is_royal!($state.pieces[piece_index]) {
+                $state.royal_list[piece_color as usize]
+                    .retain(|&sq| sq as u32 != drop_square);
+            }
+
+            $state.main_board[drop_square as usize] = NO_PIECE;
+            $state.piece_list[piece_index].remove(&(drop_square as u16));
+            $state.material[piece_color as usize] -=
+                p_value!($state.pieces[piece_index]) as u32;
+            $state.piece_count[piece_index] -= 1;
+
+            if p_is_big!($state.pieces[piece_index]) {
+                $state.big_pieces[piece_color as usize] -= 1;
+            }
+
+            if p_is_major!($state.pieces[piece_index]) {
+                $state.major_pieces[piece_color as usize] -= 1;
+            } else if p_is_minor!($state.pieces[piece_index]) {
+                $state.minor_pieces[piece_color as usize] -= 1;
+            }
+
+            if !drop_from_enemy_hand!(mv) {
+                let hand = &mut $state.piece_in_hand[piece_color as usize]
+                    [piece_index];
+                let old_hand = *hand;
+                *hand += 1;
+
+                hash_update_in_hand!($state, piece_index, old_hand, *hand);
+            } else {
+                let enemy_equiv =
+                    $state.piece_swap_map[&(piece_index as u8)] as usize;
+                let hand = &mut $state.piece_in_hand[1 - piece_color as usize]
+                    [enemy_equiv];
+                let old_hand = *hand;
+                *hand += 1;
+
+                hash_update_in_hand!($state, enemy_equiv, old_hand, *hand);
+            }
+
+            for cap in mv.1.iter() {
+                let captured_piece_index =
+                    multi_move_captured_piece!(cap) as usize;
+                let captured_square = multi_move_captured_square!(cap) as u32;
+                let captured_unmoved = multi_move_captured_unmoved!(cap);
+                let captured_color =
+                    p_color!($state.pieces[captured_piece_index]);
+
+                set!(
+                    $state.pieces_board[captured_color as usize],
+                    captured_square
+                );
+
+                if captured_unmoved {
+                    set!($state.virgin_board, captured_square);
+                }
+
+                $state.main_board[captured_square as usize] =
+                    captured_piece_index as u8;
+
+                $state.piece_list[captured_piece_index]
+                    .insert(captured_square as u16);
+
+                if p_is_big!($state.pieces[captured_piece_index]) {
+                    $state.big_pieces[captured_color as usize] += 1;
+                }
+
+                if p_is_major!($state.pieces[captured_piece_index]) {
+                    $state.major_pieces[captured_color as usize] += 1;
+                } else if p_is_minor!($state.pieces[captured_piece_index]) {
+                    $state.minor_pieces[captured_color as usize] += 1;
+                }
+
+                $state.material[captured_color as usize] +=
+                    p_value!($state.pieces[captured_piece_index]) as u32;
+
+                $state.piece_count[captured_piece_index] += 1;
+            }
         }
-    };
-}
 
+        #[cfg(debug_assertions)]
+        verify_game_state($state);
+    }};
+}
 
 /// Returns whether a move is legal in the current position.
 ///
@@ -2274,8 +2180,8 @@ macro_rules! undo_move {
 /// `make_move!` / `undo_move!` legality cycle.
 #[macro_export]
 macro_rules! is_move_legal {
-    ($state:expr, $mv:expr) => {
-        {{
+    ($state:expr, $mv:expr) => {{
+        {
             let all_moves = generate_all_moves_and_drops($state);
 
             let is_in_position = all_moves.contains(&$mv);
@@ -2286,8 +2192,8 @@ macro_rules! is_move_legal {
             }
 
             is_legal
-        }}
-    };
+        }
+    }};
 }
 
 #[inline(always)]
@@ -2296,7 +2202,6 @@ macro_rules! is_move_legal {
 /// Normal moves are skipped during setup phase; drop generation may use
 /// either own-hand or enemy-hand inventory depending on drop flags.
 pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
-
     if state.game_over {
         return Vec::new();
     }
@@ -2319,15 +2224,14 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
     if drops!(state) || state.setup_phase {
         for piece_index in start_index..end_index {
             let piece = &state.pieces[piece_index];
-            let enemy =
-                state.piece_swap_map[&(piece_index as u8)] as usize;
+            let enemy = state.piece_swap_map[&(piece_index as u8)] as usize;
 
             let drop_from_own =
                 state.piece_in_hand[state.playing as usize][piece_index] > 0;
             let drop_from_enemy =
                 state.piece_in_hand[1 - state.playing as usize][enemy] > 0;
 
-            if drop_from_own || drop_from_enemy{
+            if drop_from_own || drop_from_enemy {
                 moves.extend(generate_drop_list(piece, state));
             }
         }

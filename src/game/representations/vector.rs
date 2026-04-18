@@ -21,12 +21,9 @@ use crate::*;
                         PATTERN MATCHING REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-
-
 /*----------------------------------------------------------------------------*\
                         MOVE GENERATION REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
-
 
 /// Leg encoding/decoding helper macros used by move generation.
 ///
@@ -48,9 +45,9 @@ use crate::*;
 #[macro_export]
 macro_rules! leg {
     ($l:expr) => {
-        ($l.get_atomic().whole().0 as u8 as Leg) |
-        ($l.get_atomic().whole().1 as u8 as Leg) << 8 |
-        ($l.get_modifiers() as Leg) << 16
+        ($l.get_atomic().whole().0 as u8 as Leg)
+            | ($l.get_atomic().whole().1 as u8 as Leg) << 8
+            | ($l.get_modifiers() as Leg) << 16
     };
 }
 
@@ -206,14 +203,14 @@ pub enum MultiLegElement {
 impl Debug for MultiLegElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MultiLegElement::MultiLegTerm(token) =>
-                write!(f, "{:?}", token),
-            MultiLegElement::MultiLegExpr(group) =>
-                write!(f, "{:#?}", group),
-            MultiLegElement::MultiLegSlashExpr(group) =>
-                write!(f, "{:#?}#", group),
-            MultiLegElement::MultiLegEval(vectors) =>
-                write!(f, "{:#?}", vectors),
+            MultiLegElement::MultiLegTerm(token) => write!(f, "{:?}", token),
+            MultiLegElement::MultiLegExpr(group) => write!(f, "{:#?}", group),
+            MultiLegElement::MultiLegSlashExpr(group) => {
+                write!(f, "{:#?}#", group)
+            }
+            MultiLegElement::MultiLegEval(vectors) => {
+                write!(f, "{:#?}", vectors)
+            }
         }
     }
 }
@@ -366,7 +363,6 @@ pub type MultiLegVector = Vec<LegVector>;
 pub struct LegVector(u64);
 
 impl LegVector {
-
     pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
         let bits = Self::parse_modifiers(modifiers);
         let atomic_bits = atomic.0 as u64;
@@ -480,11 +476,11 @@ impl LegVector {
 impl Debug for LegVector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
-                f,
-                "LegVector {{ atomic: {:?}, modifiers: {} }}",
-                self.get_atomic(),
-                self.get_modifiers_str()
-            )
+            f,
+            "LegVector {{ atomic: {:?}, modifiers: {} }}",
+            self.get_atomic(),
+            self.get_modifiers_str()
+        )
     }
 }
 
@@ -616,9 +612,7 @@ impl AtomicVector {
         let (wx1, wy1) = self.whole();
         let (wx2, wy2) = other.whole();
 
-        let new_whole = (
-            wx1.saturating_add(wx2), wy1.saturating_add(wy2)
-        );
+        let new_whole = (wx1.saturating_add(wx2), wy1.saturating_add(wy2));
         let new_last = if other.whole() != (0, 0) {
             other.whole()
         } else {
@@ -634,7 +628,7 @@ impl AtomicVector {
 
         let new_whole = (
             wx1.saturating_add(lx2.saturating_mul(multiple)),
-            wy1.saturating_add(ly2.saturating_mul(multiple))
+            wy1.saturating_add(ly2.saturating_mul(multiple)),
         );
 
         AtomicVector::new(new_whole, self.last())

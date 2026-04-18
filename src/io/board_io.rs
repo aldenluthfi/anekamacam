@@ -20,7 +20,7 @@ pub fn format_square(index: u16, game_state: &State) -> String {
     let file = (index % game_state.files as u16) as u8;
     let rank = (index / game_state.files as u16) as u8;
 
-    if game_state.files <= 26  {
+    if game_state.files <= 26 {
         let file_char = (b'a' + file) as char;
         format!("{}{}", file_char, rank).trim().to_string()
     } else {
@@ -29,7 +29,6 @@ pub fn format_square(index: u16, game_state: &State) -> String {
 }
 
 fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
-
     let mut result = String::new();
 
     for row in (0..ranks).rev() {
@@ -52,40 +51,35 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     let mut bitboard_str = format_bitboard(&board.2, files, ranks);
 
     if let Some(piece) = piece_char {
-        bitboard_str = bitboard_str.replace(
-            "1",
-            piece
-                .to_string()
-                .as_str()
-        );
+        bitboard_str = bitboard_str.replace("1", piece.to_string().as_str());
     }
 
     let mut result = String::new();
-    result.push_str(
-        &format!("   ╔{}╗\n", "═══╤".repeat(files as usize - 1) + "═══")
-    );
+    result.push_str(&format!(
+        "   ╔{}╗\n",
+        "═══╤".repeat(files as usize - 1) + "═══"
+    ));
 
     for (i, line) in bitboard_str.lines().enumerate() {
-        result.push_str(
-            &format!(
-                "{:02} ║ {} ║\n",
-                ranks as usize - i - 1,
-                line.trim().replace("  ", " │ ")
-            )
-        );
+        result.push_str(&format!(
+            "{:02} ║ {} ║\n",
+            ranks as usize - i - 1,
+            line.trim().replace("  ", " │ ")
+        ));
 
         result.push_str(
             &(if i == (ranks as usize - 1) {
                 "".to_string()
             } else {
                 format!("   ╟{}╢\n", "───┼".repeat(files as usize - 1) + "───")
-            })
+            }),
         );
     }
 
-    result.push_str(
-        &format!("   ╚{}╝\n     ", "═══╧".repeat(files as usize - 1) + "═══")
-    );
+    result.push_str(&format!(
+        "   ╚{}╝\n     ",
+        "═══╧".repeat(files as usize - 1) + "═══"
+    ));
 
     for col in 0..files {
         let file_label = if files < 26 {

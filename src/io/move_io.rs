@@ -8,7 +8,6 @@
 //! # Date
 //! 04/02/2026
 
-
 use crate::*;
 
 /*----------------------------------------------------------------------------*\
@@ -69,7 +68,6 @@ pub fn format_move(mv: &Move, state: &State) -> String {
     }
 
     if !mv.1.is_empty() {
-
         let end = end!(mv);
         let end_str = format_square(end as u16, state);
 
@@ -100,9 +98,9 @@ pub fn format_move(mv: &Move, state: &State) -> String {
 pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
     let all_moves = generate_all_moves_and_drops(state);
 
-    all_moves.into_iter().find(
-        |mv| format_move(mv, state).trim() == move_str.trim()
-    )
+    all_moves
+        .into_iter()
+        .find(|mv| format_move(mv, state).trim() == move_str.trim())
 }
 
 /// Runs a simple stdin-driven debug loop for making and undoing moves.
@@ -169,7 +167,7 @@ pub fn debug_interactive(state: &mut State) {
             _ => match parse_move(&input, state) {
                 Some(mv) => {
                     make_move!(state, mv);
-                },
+                }
                 None => eprintln!("Invalid move: {}", input.trim()),
             },
         }
