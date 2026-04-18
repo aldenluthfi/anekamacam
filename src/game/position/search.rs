@@ -8,7 +8,7 @@
 //! # Date
 //! 22/03/2026
 
-use crate::{game::position::evaluation::evaluate_position, *};
+use crate::*;
 
 /// Tracks limits, counters, and stop flags for an active search.
 ///
@@ -47,8 +47,16 @@ impl Default for SearchInfo {
     }
 }
 
+/// Polls external stop conditions and updates search interrupt state.
+///
+/// This is currently a placeholder hook for future protocol/event integration.
+#[inline(always)]
 pub fn check_interrupt() {}
 
+/// Clears per-search history/table state before a fresh root search.
+///
+/// This resets node counters, interruption flags, PV/killer/history tables,
+/// and ply tracking. It does not alter the current board position.
 pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
     info.start_time = Instant::now().elapsed().as_nanos();
     info.nodes = 0;
@@ -64,6 +72,11 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
     state.search_ply = 0;
 }
 
+/// Runs iterative deepening alpha-beta and prints the current best line.
+///
+/// The search depth increases from `1..=info.depth`. After each completed
+/// iteration, the principal variation is extracted from the PV table and
+/// reported in UCI-style informational logs.
 pub fn search_position(state: &mut State, info: &mut SearchInfo) {
 
     let mut best_move: &Move;
@@ -115,6 +128,14 @@ pub fn search_position(state: &mut State, info: &mut SearchInfo) {
     }
 }
 
+/// Searches one node with negamax alpha-beta pruning.
+///
+/// This implementation preserves existing search semantics while applying
+/// lightweight ordering optimizations:
+/// - PV move is searched first when available.
+/// - Remaining moves are selected in-place by MVV-LVA each iteration.
+///
+/// Returns the best score for the current side to move.
 pub fn alpha_beta(
     state: &mut State,
     depth: usize,
@@ -123,40 +144,47 @@ pub fn alpha_beta(
     info: &mut SearchInfo,
     null: bool,
 ) -> i32 {
+    let _ = null;
     let mut alpha = alpha;
 
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
-    if depth == 0 {
-        info.nodes += 1;
-        return evaluate_position(state);
-
-    }
-
     info.nodes += 1;
 
-    let repetition_count = state
+    if depth == 0 {
+        return evaluate_position(state);
+    }
+
+    if state
         .position_hash_map
         .get(&state.position_hash)
         .copied()
-        .unwrap_or(0);
-
-    if repetition_count >= state.repetition_limit
-    || state.halfmove_clock >= 50
+        .unwrap_or(0)
+        >= state.repetition_limit
+        || state.halfmove_clock >= 50
     {
         return 0;
     }
 
-    if  state.search_ply >= MAX_DEPTH as u32 {
+    if state.search_ply >= MAX_DEPTH as u32 {
         return evaluate_position(state);
     }
 
     let mut legal_moves = 0;
     let alpha_start = alpha;
-    let mut best_move: Move = null_move();
+    let mut best_move = null_move();
 
-    for mv in generate_all_moves_and_drops(state) {
+    let mut all_moves = generate_all_moves_and_drops(state);
+    move_pv_to_front(state, &mut all_moves);
+
+    for i in 0..all_moves.len() {
+        if i != 0 {
+            pick_by_mvvlva(state, &mut all_moves, i);
+        }
+
+        let mv = all_moves[i].clone();
+
         if !make_move!(state, mv.clone()) {
             continue;
         }
@@ -180,14 +208,13 @@ pub fn alpha_beta(
             let mate_score = -MATE_SCORE + state.search_ply as i32;
 
             return if state.history.last().map_or(false, |s| {
-                move_type!(&s.move_ply) == DROP_MOVE &&
-                !drop_can_checkmate!(&s.move_ply)
+                move_type!(&s.move_ply) == DROP_MOVE
+                && !drop_can_checkmate!(&s.move_ply)
             }) {
                 -mate_score
             } else {
                 mate_score
             };
-
         }
 
         return 0;

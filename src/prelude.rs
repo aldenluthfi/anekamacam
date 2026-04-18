@@ -67,8 +67,10 @@ pub use crate::game::position::{
         SearchInfo, alpha_beta, check_interrupt, clear_search,
         search_position,
     },
+    evaluation::evaluate_position
 };
 pub use crate::game::search::{
+    move_ordering::{move_pv_to_front, pick_by_mvvlva, score_mvvlva},
     pv_table::{PVElement, PVTable, fill_pv_line, hash_pv_move, probe_pv_move},
     quiescence::quiescence_search,
 };

@@ -339,6 +339,8 @@ pub struct State {
     pub piece_demotion_map: HashMap<u8, Vec<u8>>,                               /* piece index to demotion piece idx  */
     pub piece_char_map: HashMap<char, u8>,                                      /* char to piece index map            */
 
+    pub most_valuable: u16,                                                     /* value of the most valuable piece   */
+
 /*----------------------------------------------------------------------------*\
                                  DYNAMIC FIELDS
 \*----------------------------------------------------------------------------*/
@@ -399,6 +401,8 @@ impl State {
     ) -> Self {
 
         let piece_count: usize = pieces.len();
+        let most_valuable: u16 =
+            pieces.iter().map(|p| p_ovalue!(p)).max().unwrap();
         let board_size: usize = (files as usize) * (ranks as usize);
 
         State {
@@ -439,6 +443,8 @@ impl State {
             piece_swap_map: HashMap::new(),
             piece_demotion_map: HashMap::new(),
             piece_char_map: HashMap::new(),
+
+            most_valuable,
 
             setup_phase: false,
             game_over: false,
