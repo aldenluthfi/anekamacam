@@ -8,7 +8,6 @@
 //! # Date
 //! 29/01/2026
 
-
 use crate::*;
 
 pub type PVElement = (Move, PositionHash);
@@ -42,7 +41,6 @@ pub fn fill_pv_line(state: &mut State, depth: usize) {
 
     for i in 0..depth {
         if let Some(pv_move) = probe_pv_move(state) {
-
             if !is_move_legal!(state, pv_move.clone()) {
                 break;
             }

@@ -16,19 +16,16 @@
 //! 25/01/2026
 use crate::*;
 
-lazy_static!{
+lazy_static! {
     pub static ref CASTLING_PATTERN: Regex =
         Regex::new(r"^([KQkq]+)$|^-$").unwrap();
     pub static ref ENP_PATTERN: Regex =
         Regex::new(r"^([0-9a-fA-F]{3})([0-9a-fA-F]{3})(.)$|^\*$").unwrap();
-    pub static ref HAND_PATTERN: Regex =
-        Regex::new(r"^(.*)/(.*)$").unwrap();
-    pub static ref COMMENT_PATTERN: Regex =
-        Regex::new(r"//[^\n\r]*").unwrap();
+    pub static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
+    pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*").unwrap();
     pub static ref SECTION_PATTERN: Regex =
         Regex::new(r"= (.+) =[^=]+").unwrap();
-    pub static ref IN_HAND_PATTERN: Regex =
-        Regex::new(r"(\d*)(.)").unwrap();
+    pub static ref IN_HAND_PATTERN: Regex = Regex::new(r"(\d*)(.)").unwrap();
 }
 
 fn determine_board_dimensions(fen: &str) -> (u8, u8) {
@@ -46,9 +43,9 @@ fn determine_board_dimensions(fen: &str) -> (u8, u8) {
 
 // returns (castling, en_passant, pieces in hand)
 fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
-    let parts = &fen.split_whitespace()
-        .map(str::to_string)
-        .collect::<Vec<String>>()[2..];
+    let parts =
+        &fen.split_whitespace().map(str::to_string).collect::<Vec<String>>()
+            [2..];
 
     let castling = parts.iter().any(|part| CASTLING_PATTERN.is_match(part));
     let en_passant = parts.iter().any(|part| ENP_PATTERN.is_match(part));
@@ -75,9 +72,9 @@ fn parse_numeric_parameter_list(line: &str, label: &str) -> Vec<i32> {
     inner
         .split(',')
         .map(|value| {
-            value.trim().parse::<i32>().unwrap_or_else(
-                |_| panic!("Invalid {} entry: {}", label, value.trim())
-            )
+            value.trim().parse::<i32>().unwrap_or_else(|_| {
+                panic!("Invalid {} entry: {}", label, value.trim())
+            })
         })
         .collect()
 }
@@ -98,15 +95,18 @@ fn parse_binary_parameter_flags(
         expected_len
     );
 
-    parsed.iter().map(|&value| {
-        assert!(
-            value == 0 || value == 1,
-            "{} entries must be 0 or 1, got {}",
-            label,
-            value
-        );
-        value == 1
-    }).collect()
+    parsed
+        .iter()
+        .map(|&value| {
+            assert!(
+                value == 0 || value == 1,
+                "{} entries must be 0 or 1, got {}",
+                label,
+                value
+            );
+            value == 1
+        })
+        .collect()
 }
 
 /// Mirrors a PST across the horizontal axis by swapping board rows.
@@ -144,14 +144,14 @@ fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
             continue;
         }
 
-        let black_idx = state.piece_swap_map
+        let black_idx = state
+            .piece_swap_map
             .get(&(white_idx as u8))
             .copied()
             .unwrap_or_else(|| {
                 panic!(
                     "Missing black counterpart for white piece index {} ({})",
-                    white_idx,
-                    piece.char
+                    white_idx, piece.char
                 )
             }) as usize;
 
@@ -164,10 +164,7 @@ fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
         type_pairs.push((white_idx, black_idx));
     }
 
-    assert!(
-        !type_pairs.is_empty(),
-        "No white piece representatives found"
-    );
+    assert!(!type_pairs.is_empty(), "No white piece representatives found");
 
     type_pairs
 }
@@ -206,27 +203,30 @@ fn piece_major_flag_raw(piece: &Piece) -> bool {
 ///
 /// Token order:
 /// values (piece-type count), big flags, major flags,
-/// then white PST rows (piece-type count × board_size).
+/// then white opening/middlegame PST rows (piece-type count × board_size),
+/// then white endgame PST rows (piece-type count × board_size).
 ///
 /// Black PST rows are derived by mirroring white rows across the
 /// horizontal axis.
 pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
-    let raw = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read parameter file {}: {}", path, e));
+    let raw = fs::read_to_string(path).unwrap_or_else(|e| {
+        panic!("Failed to read parameter file {}: {}", path, e)
+    });
 
     let tokens: Vec<i32> = raw
         .split_whitespace()
         .map(|token| {
-            token.parse::<i32>().unwrap_or_else(
-                |_| panic!("Invalid parameter value: {}", token)
-            )
+            token.parse::<i32>().unwrap_or_else(|_| {
+                panic!("Invalid parameter value: {}", token)
+            })
         })
         .collect();
 
     let piece_type_pairs = collect_piece_type_pairs(state);
     let piece_type_count = piece_type_pairs.len();
     let board_size = (state.files as usize) * (state.ranks as usize);
-    let expected_count = piece_type_count * 3 + piece_type_count * board_size;
+    let expected_count =
+        piece_type_count * 3 + piece_type_count * board_size * 2;
 
     assert!(
         tokens.len() == expected_count,
@@ -271,7 +271,10 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
             major_flag
         );
 
-        let white_pst = &tokens[cursor..cursor + board_size];
+        let white_pst_opening = &tokens[cursor..cursor + board_size];
+        cursor += board_size;
+
+        let white_pst_endgame = &tokens[cursor..cursor + board_size];
         cursor += board_size;
 
         let (white_idx, black_idx) = piece_type_pairs[piece_type_idx];
@@ -290,9 +293,16 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
             major_flag == 1,
         );
 
-        state.piece_square_tables[white_idx] = white_pst.to_vec();
-        state.piece_square_tables[black_idx] = mirror_pst_across_horizontal_axis(
-            white_pst,
+        state.pst_opening[white_idx] = white_pst_opening.to_vec();
+        state.pst_opening[black_idx] = mirror_pst_across_horizontal_axis(
+            white_pst_opening,
+            state.files as usize,
+            state.ranks as usize,
+        );
+
+        state.pst_endgame[white_idx] = white_pst_endgame.to_vec();
+        state.pst_endgame[black_idx] = mirror_pst_across_horizontal_axis(
+            white_pst_endgame,
             state.files as usize,
             state.ranks as usize,
         );
@@ -317,11 +327,12 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
 /// Exports tuned parameters to `parameters/{variant}/{epoch}.param`
 /// in a flat space-separated format compatible with
 /// `parse_tuned_parameters_file`.
-pub fn export_tuned_parameters_file(state: &State, variant: &str, epoch: usize) {
-    assert!(
-        !variant.trim().is_empty(),
-        "Variant name cannot be empty"
-    );
+pub fn export_tuned_parameters_file(
+    state: &State,
+    variant: &str,
+    epoch: usize,
+) {
+    assert!(!variant.trim().is_empty(), "Variant name cannot be empty");
 
     let piece_type_pairs = collect_piece_type_pairs(state);
     let mut output_tokens = Vec::new();
@@ -331,26 +342,38 @@ pub fn export_tuned_parameters_file(state: &State, variant: &str, epoch: usize) 
     }
 
     for (white_idx, _) in &piece_type_pairs {
-        output_tokens.push((piece_big_flag_raw(&state.pieces[*white_idx]) as u8).to_string());
+        output_tokens.push(
+            (piece_big_flag_raw(&state.pieces[*white_idx]) as u8).to_string(),
+        );
     }
 
     for (white_idx, _) in &piece_type_pairs {
-        output_tokens.push((piece_major_flag_raw(&state.pieces[*white_idx]) as u8).to_string());
+        output_tokens.push(
+            (piece_major_flag_raw(&state.pieces[*white_idx]) as u8).to_string(),
+        );
     }
 
     for (white_idx, _) in &piece_type_pairs {
-        for value in &state.piece_square_tables[*white_idx] {
+        for value in &state.pst_opening[*white_idx] {
+            output_tokens.push(value.to_string());
+        }
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        for value in &state.pst_endgame[*white_idx] {
             output_tokens.push(value.to_string());
         }
     }
 
     let dir_path = format!("parameters/{}", variant);
-    fs::create_dir_all(&dir_path)
-        .unwrap_or_else(|e| panic!("Failed to create directory {}: {}", dir_path, e));
+    fs::create_dir_all(&dir_path).unwrap_or_else(|e| {
+        panic!("Failed to create directory {}: {}", dir_path, e)
+    });
 
     let file_path = format!("{}/{}.param", dir_path, epoch);
-    fs::write(&file_path, output_tokens.join(" "))
-        .unwrap_or_else(|e| panic!("Failed to write parameter file {}: {}", file_path, e));
+    fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
+        panic!("Failed to write parameter file {}: {}", file_path, e)
+    });
 }
 
 /// Parses a game configuration file and initializes a game state.
@@ -372,8 +395,8 @@ pub fn export_tuned_parameters_file(state: &State, variant: &str, epoch: usize) 
 /// [9] u8: the piece rank
 ///
 pub fn parse_config_file(path: &str) -> State {
-    let file_str = fs::read_to_string(path)
-        .expect("Failed to read configuration file");
+    let file_str =
+        fs::read_to_string(path).expect("Failed to read configuration file");
 
     let uncommented_str = COMMENT_PATTERN.replace_all(&file_str, "");
     let cleaned = uncommented_str
@@ -382,22 +405,27 @@ pub fn parse_config_file(path: &str) -> State {
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
-    let sections = SECTION_PATTERN.captures_iter(&cleaned)
+    let sections = SECTION_PATTERN
+        .captures_iter(&cleaned)
         .map(|cap| {
             let section_name = cap[1].trim().to_string();
             let section_body = cap[0]
-            .lines()
-            .skip(1)
-            .map(str::to_string)
-            .filter(|line| !line.trim().is_empty())
-            .collect::<Vec<String>>();
+                .lines()
+                .skip(1)
+                .map(str::to_string)
+                .filter(|line| !line.trim().is_empty())
+                .collect::<Vec<String>>();
             (section_name, section_body)
         })
         .collect::<HashMap<_, _>>();
 
     let mandatory_sections = [
-        "general", "pieces", "piece order", "piece moves",
-        "evaluation parameters", "piece roles"
+        "general",
+        "pieces",
+        "piece order",
+        "piece moves",
+        "evaluation parameters",
+        "piece roles",
     ];
 
     let missing: Vec<_> = mandatory_sections
@@ -412,80 +440,59 @@ pub fn parse_config_file(path: &str) -> State {
         missing.join(", ")
     );
 
-/*----------------------------------------------------------------------------*\
-                             PARSE GENERAL SECTION
-\*----------------------------------------------------------------------------*/
+    /*-----------------------------------------------------------------------*\
+                                 PARSE GENERAL SECTION
+    \*-----------------------------------------------------------------------*/
 
     let title = sections["general"][0].trim();
     let initial_position = sections["general"][1].trim();
     let initial_board = initial_position.split_whitespace().next().unwrap();
     let (files, ranks) = determine_board_dimensions(initial_board);
 
-/*----------------------------------------------------------------------------*\
-                              PARSE RULES SECTION
-\*----------------------------------------------------------------------------*/
+    /*-----------------------------------------------------------------------*\
+                                  PARSE RULES SECTION
+    \*-----------------------------------------------------------------------*/
 
-    let castling = sections["rules"]
-        .contains(&"castling".to_string());
-    let en_passant = sections["rules"]
-        .contains(&"en passant".to_string());
-    let promotions = sections["rules"]
-        .contains(&"promotions".to_string());
-    let drops = sections["rules"]
-        .contains(&"drops".to_string());
-    let piece_count_limits = sections["rules"]
-        .contains(&"piece count limits".to_string());
-    let forbidden_zones = sections["rules"]
-        .contains(&"forbidden zones".to_string());
-    let promote_to_captured = sections["rules"]
-        .contains(&"promote to captured".to_string());
-    let demote_upon_capture = sections["rules"]
-        .contains(&"demote upon capture".to_string());
-    let stalemate_loss = sections["rules"]
-        .contains(&"stalemate loss".to_string());
-    let setup_phase = sections["rules"]
-        .contains(&"setup phase".to_string());
-    let stand_offs = sections["rules"]
-        .contains(&"stand-offs".to_string());
-    let repetition_limit = sections["rules"]
-        .contains(&"repetition limit".to_string());
+    let castling = sections["rules"].contains(&"castling".to_string());
+    let en_passant = sections["rules"].contains(&"en passant".to_string());
+    let promotions = sections["rules"].contains(&"promotions".to_string());
+    let drops = sections["rules"].contains(&"drops".to_string());
+    let piece_count_limits =
+        sections["rules"].contains(&"piece count limits".to_string());
+    let forbidden_zones =
+        sections["rules"].contains(&"forbidden zones".to_string());
+    let promote_to_captured =
+        sections["rules"].contains(&"promote to captured".to_string());
+    let demote_upon_capture =
+        sections["rules"].contains(&"demote upon capture".to_string());
+    let stalemate_loss =
+        sections["rules"].contains(&"stalemate loss".to_string());
+    let setup_phase = sections["rules"].contains(&"setup phase".to_string());
+    let stand_offs = sections["rules"].contains(&"stand-offs".to_string());
+    let repetition_limit =
+        sections["rules"].contains(&"repetition limit".to_string());
 
     let (fen_castling, fen_en_passant, fen_in_hand) =
         extract_fen_components(initial_position);
 
     if castling {
-        assert!(
-            fen_castling,
-            "No castling rights found in FEN"
-        );
+        assert!(fen_castling, "No castling rights found in FEN");
     }
 
     if !castling {
-        assert!(
-            !fen_castling,
-            "Castling rights found in FEN"
-        );
+        assert!(!fen_castling, "Castling rights found in FEN");
     }
 
     if en_passant {
-        assert!(
-            fen_en_passant,
-            "No en passant square found in FEN"
-        );
+        assert!(fen_en_passant, "No en passant square found in FEN");
     }
 
     if !en_passant {
-        assert!(
-            !fen_en_passant,
-            "En passant square found in FEN"
-        );
+        assert!(!fen_en_passant, "En passant square found in FEN");
     }
 
     if drops || promote_to_captured || demote_upon_capture || setup_phase {
-        assert!(
-            fen_in_hand,
-            "No pieces in hand found in FEN"
-        );
+        assert!(fen_in_hand, "No pieces in hand found in FEN");
     }
 
     if promotions {
@@ -494,8 +501,8 @@ pub fn parse_config_file(path: &str) -> State {
             "[promotions] section is missing"
         );
         assert!(
-            sections.contains_key("mandatory promotion zones") ||
-            sections.contains_key("optional promotion zones"),
+            sections.contains_key("mandatory promotion zones")
+                || sections.contains_key("optional promotion zones"),
             "No promotion zones section found"
         );
     }
@@ -571,9 +578,9 @@ pub fn parse_config_file(path: &str) -> State {
         enc_repetition_limit!(special_rules);
     }
 
-/*----------------------------------------------------------------------------*\
-                                  PARSE PIECES
-\*----------------------------------------------------------------------------*/
+    /*-----------------------------------------------------------------------*\
+                                      PARSE PIECES
+    \*-----------------------------------------------------------------------*/
 
     let mut unordered_pieces = Vec::with_capacity(sections["pieces"].len());
 
@@ -581,18 +588,15 @@ pub fn parse_config_file(path: &str) -> State {
     let mut pieces_drops;
     let mut pieces_setup;
     let mut pieces_stand_off;
-    let mut piece_square_tables;
+    let mut pst_opening;
+    let mut pst_endgame;
 
     let mut char_to_unordered_index: HashMap<char, usize> = HashMap::new();
     let mut char_to_type_index: HashMap<char, usize> = HashMap::new();
     for bare_piece in &sections["pieces"] {
         let parts: Vec<&str> = bare_piece.split(':').map(str::trim).collect();
 
-        assert!(
-            parts.len() == 2,
-            "Invalid piece definition: {}",
-            bare_piece
-        );
+        assert!(parts.len() == 2, "Invalid piece definition: {}", bare_piece);
 
         let chars = parts[0];
         assert!(
@@ -673,9 +677,9 @@ pub fn parse_config_file(path: &str) -> State {
         piece_data.3 = i as u8;
         pieces.push(piece_data);
         piece_type_indices.push(
-            *char_to_type_index
-                .get(&piece_char)
-                .unwrap_or_else(|| panic!("Unknown piece in piece order: {}", piece_char))
+            *char_to_type_index.get(&piece_char).unwrap_or_else(|| {
+                panic!("Unknown piece in piece order: {}", piece_char)
+            }),
         );
         char_to_index.insert(piece_char, i);
     }
@@ -697,17 +701,13 @@ pub fn parse_config_file(path: &str) -> State {
         "[evaluation parameters] must define at least values, big, and major"
     );
 
-    let parsed_values = parse_numeric_parameter_list(
-        &eval_parameters[0],
-        "piece value"
-    );
+    let parsed_values =
+        parse_numeric_parameter_list(&eval_parameters[0], "piece value");
 
     let evaluation_row_len = parsed_values.len();
     assert!(
         evaluation_row_len == piece_type_count,
-        concat!(
-            "Piece value count ({}) doesn't match piece type count ({})"
-        ),
+        concat!("Piece value count ({}) doesn't match piece type count ({})"),
         evaluation_row_len,
         piece_type_count
     );
@@ -715,12 +715,12 @@ pub fn parse_config_file(path: &str) -> State {
     let parsed_big_flags = parse_binary_parameter_flags(
         &eval_parameters[1],
         evaluation_row_len,
-        "big flag"
+        "big flag",
     );
     let parsed_major_flags = parse_binary_parameter_flags(
         &eval_parameters[2],
         evaluation_row_len,
-        "major flag"
+        "major flag",
     );
 
     let mut values = vec![0i32; piece_count];
@@ -734,8 +734,8 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     assert!(
-        eval_parameters.len() == 3 + piece_type_count,
-        "[evaluation parameters] must contain values, big, major, and exactly one PST row per piece type"
+        eval_parameters.len() == 3 + piece_type_count * 2,
+        "[evaluation parameters] must contain values, big, major, and exactly two PST rows per piece type (opening/middlegame + endgame)"
     );
 
     let mut royal_flags = vec![false; piece_count];
@@ -755,7 +755,10 @@ pub fn parse_config_file(path: &str) -> State {
                     if let Some(&piece_idx) = char_to_index.get(&piece_char) {
                         royal_flags[piece_idx] = true;
                     } else {
-                        panic!("Unknown piece character in royal role: {}", piece_char);
+                        panic!(
+                            "Unknown piece character in royal role: {}",
+                            piece_char
+                        );
                     }
                 }
             }
@@ -766,7 +769,8 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    let pst_start_row = 3;
+    let pst_opening_start_row = 3;
+    let pst_endgame_start_row = pst_opening_start_row + piece_type_count;
 
     for i in 0..piece_count {
         let abs_value = values[i].unsigned_abs();
@@ -783,36 +787,61 @@ pub fn parse_config_file(path: &str) -> State {
         pieces[i].5 = royal_flags[i];
     }
 
-    piece_square_tables = vec![vec![0i32; board_size]; piece_count];
+    pst_opening = vec![vec![0i32; board_size]; piece_count];
+    pst_endgame = vec![vec![0i32; board_size]; piece_count];
 
-    let mut piece_type_psts = vec![vec![0i32; board_size]; piece_type_count];
+    let mut piece_type_pst_opening =
+        vec![vec![0i32; board_size]; piece_type_count];
+    let mut piece_type_pst_endgame =
+        vec![vec![0i32; board_size]; piece_type_count];
     for piece_type_idx in 0..piece_type_count {
-        let pst_values = parse_numeric_parameter_list(
-            &eval_parameters[pst_start_row + piece_type_idx],
-            "piece square table"
+        let pst_opening_values = parse_numeric_parameter_list(
+            &eval_parameters[pst_opening_start_row + piece_type_idx],
+            "piece square table (opening/middlegame)",
         );
         assert!(
-            pst_values.len() == board_size,
-            "PST length ({}) for piece type index {} doesn't match board size ({})",
-            pst_values.len(),
+            pst_opening_values.len() == board_size,
+            "Opening/middlegame PST length ({}) for piece type index {} doesn't match board size ({})",
+            pst_opening_values.len(),
             piece_type_idx,
             board_size
         );
-        piece_type_psts[piece_type_idx] = pst_values;
+        piece_type_pst_opening[piece_type_idx] = pst_opening_values;
+
+        let pst_endgame_values = parse_numeric_parameter_list(
+            &eval_parameters[pst_endgame_start_row + piece_type_idx],
+            "piece square table (endgame)",
+        );
+
+        assert!(
+            pst_endgame_values.len() == board_size,
+            "Endgame PST length ({}) for piece type index {} doesn't match board size ({})",
+            pst_endgame_values.len(),
+            piece_type_idx,
+            board_size
+        );
+        piece_type_pst_endgame[piece_type_idx] = pst_endgame_values;
     }
 
     for (piece_idx, piece_type_idx) in piece_type_indices.iter().enumerate() {
-        let base_pst = &piece_type_psts[*piece_type_idx];
+        let base_pst_opening = &piece_type_pst_opening[*piece_type_idx];
+        let base_pst_endgame = &piece_type_pst_endgame[*piece_type_idx];
 
-        piece_square_tables[piece_idx] = if pieces[piece_idx].4 == BLACK {
-            mirror_pst_across_horizontal_axis(
-                base_pst,
+        if pieces[piece_idx].4 == BLACK {
+            pst_opening[piece_idx] = mirror_pst_across_horizontal_axis(
+                base_pst_opening,
                 files as usize,
-                ranks as usize
-            )
+                ranks as usize,
+            );
+            pst_endgame[piece_idx] = mirror_pst_across_horizontal_axis(
+                base_pst_endgame,
+                files as usize,
+                ranks as usize,
+            );
         } else {
-            base_pst.clone()
-        };
+            pst_opening[piece_idx] = base_pst_opening.clone();
+            pst_endgame[piece_idx] = base_pst_endgame.clone();
+        }
     }
 
     pieces_moves = vec![String::new(); pieces.len()];
@@ -873,18 +902,14 @@ pub fn parse_config_file(path: &str) -> State {
                 let white_char = piece_chars.chars().next().unwrap();
                 let black_char = piece_chars.chars().nth(1).unwrap();
 
-                let white_index = char_to_index
-                    .get(&white_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", white_char)
+                let white_index =
+                    char_to_index.get(&white_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", white_char),
                     );
 
-                let black_index = char_to_index
-                    .get(&black_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", black_char)
+                let black_index =
+                    char_to_index.get(&black_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", black_char),
                     );
 
                 let promotions_str = parts[1];
@@ -895,18 +920,17 @@ pub fn parse_config_file(path: &str) -> State {
                         pieces[black_index].2.push(promo_index as u8);
                     } else {
                         panic!(
-                            "Unknown promotion piece character: {}", promo_char
+                            "Unknown promotion piece character: {}",
+                            promo_char
                         );
                     }
                 }
             } else if piece_chars.len() == 1 {
                 let piece_char = piece_chars.chars().next().unwrap();
 
-                let piece_index = char_to_index
-                    .get(&piece_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", piece_char)
+                let piece_index =
+                    char_to_index.get(&piece_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", piece_char),
                     );
 
                 let promotions_str = parts[1];
@@ -916,7 +940,8 @@ pub fn parse_config_file(path: &str) -> State {
                         pieces[piece_index].2.push(promo_index as u8);
                     } else {
                         panic!(
-                            "Unknown promotion piece character: {}", promo_char
+                            "Unknown promotion piece character: {}",
+                            promo_char
                         );
                     }
                 }
@@ -928,10 +953,8 @@ pub fn parse_config_file(path: &str) -> State {
 
     if sections.contains_key("piece ranks") {
         for piece_rank in &sections["piece ranks"] {
-            let parts: Vec<&str> = piece_rank
-                .split(':')
-                .map(str::trim)
-                .collect();
+            let parts: Vec<&str> =
+                piece_rank.split(':').map(str::trim).collect();
 
             assert!(
                 parts.len() == 2,
@@ -942,9 +965,9 @@ pub fn parse_config_file(path: &str) -> State {
             let rank_str = parts[0];
             let pieces_str = parts[1];
 
-            let rank_value = rank_str.parse::<u8>().unwrap_or_else(
-                |_| panic!("Invalid piece rank: {}", rank_str.trim())
-            );
+            let rank_value = rank_str.parse::<u8>().unwrap_or_else(|_| {
+                panic!("Invalid piece rank: {}", rank_str.trim())
+            });
             for piece_char in pieces_str.chars() {
                 if let Some(&index) = char_to_index.get(&piece_char) {
                     pieces[index].9 = rank_value;
@@ -955,36 +978,52 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-/*----------------------------------------------------------------------------*\
-                             POPULATE STATIC FIELDS
-\*----------------------------------------------------------------------------*/
+    /*-----------------------------------------------------------------------*\
+                                 POPULATE STATIC FIELDS
+    \*-----------------------------------------------------------------------*/
 
     let mut result = State::new(
         title.to_string(),
         files,
         ranks,
-        pieces.iter().enumerate().map(|(i, p)| Piece::new(
-            p.0.clone(), p.1, p.2.clone(), p.3, p.4, p.5, p.6, p.7,
-            pieces_moves[i].contains("o"), pieces_moves[i].contains("O"),
-            p.8, p.9
-        )).collect(),
+        pieces
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                Piece::new(
+                    p.0.clone(),
+                    p.1,
+                    p.2.clone(),
+                    p.3,
+                    p.4,
+                    p.5,
+                    p.6,
+                    p.7,
+                    pieces_moves[i].contains("o"),
+                    pieces_moves[i].contains("O"),
+                    p.8,
+                    p.9,
+                )
+            })
+            .collect(),
         special_rules,
     );
 
-    result.piece_square_tables = piece_square_tables;
+    result.pst_opening = pst_opening;
+    result.pst_endgame = pst_endgame;
 
     let template_bit_fen = initial_position.split_whitespace().next().unwrap();
     for (index, piece) in result.pieces.iter().enumerate() {
         let bit_fen = template_bit_fen
             .chars()
             .map(|c| {
-            if c == piece.char {
-                'X'
-            } else if c.is_ascii_alphabetic() {
-                'O'
-            } else {
-                c
-            }
+                if c == piece.char {
+                    'X'
+                } else if c.is_ascii_alphabetic() {
+                    'O'
+                } else {
+                    c
+                }
             })
             .collect::<String>();
         result.initial_setup[index] = parse_bit_fen(Some(&bit_fen), &result);
@@ -1000,7 +1039,8 @@ pub fn parse_config_file(path: &str) -> State {
 
     for piece in &result.pieces {
         for promotion_index in &piece.promotions {
-            result.piece_demotion_map
+            result
+                .piece_demotion_map
                 .entry(*promotion_index)
                 .or_default()
                 .push(p_index!(piece));
@@ -1008,43 +1048,44 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     for (index, _) in result.pieces.iter().enumerate() {
-        result.piece_demotion_map
-            .entry(index as u8).or_insert_with(|| vec![index as u8]);
+        result
+            .piece_demotion_map
+            .entry(index as u8)
+            .or_insert_with(|| vec![index as u8]);
     }
-
 
     if castling {
         assert!(
-            result.pieces.iter().any(
-                |p| p_castle_left!(p) || p_castle_right!(p)
-            ),
+            result
+                .pieces
+                .iter()
+                .any(|p| p_castle_left!(p) || p_castle_right!(p)),
             "No castling rights found in piece definitions"
         );
     }
 
     if en_passant {
         assert!(
-            pieces_moves.iter().any(
-                |mv| mv.contains('p') || mv.contains('t')
-            ),
+            pieces_moves.iter().any(|mv| mv.contains('p') || mv.contains('t')),
             "No en passant movement found in piece definitions"
         );
     }
 
     if !castling {
         assert!(
-            result.pieces.iter().all(
-                |p| !p_castle_left!(p) && !p_castle_right!(p)
-            ),
+            result
+                .pieces
+                .iter()
+                .all(|p| !p_castle_left!(p) && !p_castle_right!(p)),
             "Castling rights found in piece definitions"
         );
     }
 
     if !en_passant {
         assert!(
-            pieces_moves.iter().all(
-                |mv| !mv.contains('p') || !mv.contains('t')
-            ),
+            pieces_moves
+                .iter()
+                .all(|mv| !mv.contains('p') || !mv.contains('t')),
             "En passant movement found in piece definitions"
         );
     }
@@ -1077,16 +1118,16 @@ pub fn parse_config_file(path: &str) -> State {
                     let white_index = char_to_index
                         .get(&white_char)
                         .copied()
-                        .unwrap_or_else(
-                            || panic!("Unknown piece character: {}", white_char)
-                        );
+                        .unwrap_or_else(|| {
+                            panic!("Unknown piece character: {}", white_char)
+                        });
 
                     let black_index = char_to_index
                         .get(&black_char)
                         .copied()
-                        .unwrap_or_else(
-                            || panic!("Unknown piece character: {}", black_char)
-                        );
+                        .unwrap_or_else(|| {
+                            panic!("Unknown piece character: {}", black_char)
+                        });
 
                     let zone_str = parts[1];
 
@@ -1101,9 +1142,9 @@ pub fn parse_config_file(path: &str) -> State {
                     let piece_index = char_to_index
                         .get(&piece_char)
                         .copied()
-                        .unwrap_or_else(
-                            || panic!("Unknown piece character: {}", piece_char)
-                        );
+                        .unwrap_or_else(|| {
+                            panic!("Unknown piece character: {}", piece_char)
+                        });
 
                     let zone_str = parts[1];
 
@@ -1135,16 +1176,16 @@ pub fn parse_config_file(path: &str) -> State {
                     let white_index = char_to_index
                         .get(&white_char)
                         .copied()
-                        .unwrap_or_else(
-                            || panic!("Unknown piece character: {}", white_char)
-                        );
+                        .unwrap_or_else(|| {
+                            panic!("Unknown piece character: {}", white_char)
+                        });
 
                     let black_index = char_to_index
                         .get(&black_char)
                         .copied()
-                        .unwrap_or_else(
-                            || panic!("Unknown piece character: {}", black_char)
-                        );
+                        .unwrap_or_else(|| {
+                            panic!("Unknown piece character: {}", black_char)
+                        });
 
                     let zone_str = parts[1];
 
@@ -1159,9 +1200,9 @@ pub fn parse_config_file(path: &str) -> State {
                     let piece_index = char_to_index
                         .get(&piece_char)
                         .copied()
-                        .unwrap_or_else(
-                            || panic!("Unknown piece character: {}", piece_char)
-                        );
+                        .unwrap_or_else(|| {
+                            panic!("Unknown piece character: {}", piece_char)
+                        });
 
                     let zone_str = parts[1];
 
@@ -1179,11 +1220,7 @@ pub fn parse_config_file(path: &str) -> State {
         for drop in &sections["drop rules"] {
             let parts: Vec<&str> = drop.split(':').map(str::trim).collect();
 
-            assert!(
-                parts.len() == 2,
-                "Invalid drop definition: {}",
-                drop
-            );
+            assert!(parts.len() == 2, "Invalid drop definition: {}", drop);
 
             let piece_chars = parts[0];
             let drop_pattern = parts[1].to_string();
@@ -1233,45 +1270,45 @@ pub fn parse_config_file(path: &str) -> State {
                 let white_char = piece_chars.chars().next().unwrap();
                 let black_char = piece_chars.chars().nth(1).unwrap();
 
-                let white_index = char_to_index
-                    .get(&white_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", white_char)
+                let white_index =
+                    char_to_index.get(&white_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", white_char),
                     );
 
-                let black_index = char_to_index
-                    .get(&black_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", black_char)
+                let black_index =
+                    char_to_index.get(&black_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", black_char),
                     );
 
                 let limit_str = parts[1];
 
-                let limit_value = limit_str.parse::<u32>().unwrap_or_else(
-                    |_| panic!(
-                        "Invalid piece count limit: {}", limit_str.trim()
-                    )
-                );
+                let limit_value =
+                    limit_str.parse::<u32>().unwrap_or_else(|_| {
+                        panic!(
+                            "Invalid piece count limit: {}",
+                            limit_str.trim()
+                        )
+                    });
 
                 result.piece_limit[white_index] = limit_value;
                 result.piece_limit[black_index] = limit_value;
             } else if piece_chars.len() == 1 {
                 let piece_char = piece_chars.chars().next().unwrap();
 
-                let piece_index = char_to_index
-                    .get(&piece_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", piece_char)
+                let piece_index =
+                    char_to_index.get(&piece_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", piece_char),
                     );
 
                 let limit_str = parts[1];
 
-                let limit_value = limit_str.parse::<u32>().unwrap_or_else(
-                    |_| panic!("Invalid piece count limit: {}", limit_str.trim())
-                );
+                let limit_value =
+                    limit_str.parse::<u32>().unwrap_or_else(|_| {
+                        panic!(
+                            "Invalid piece count limit: {}",
+                            limit_str.trim()
+                        )
+                    });
 
                 result.piece_limit[piece_index] = limit_value;
             } else {
@@ -1297,18 +1334,14 @@ pub fn parse_config_file(path: &str) -> State {
                 let white_char = piece_chars.chars().next().unwrap();
                 let black_char = piece_chars.chars().nth(1).unwrap();
 
-                let white_index = char_to_index
-                    .get(&white_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", white_char)
+                let white_index =
+                    char_to_index.get(&white_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", white_char),
                     );
 
-                let black_index = char_to_index
-                    .get(&black_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", black_char)
+                let black_index =
+                    char_to_index.get(&black_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", black_char),
                     );
 
                 let zone_str = parts[1];
@@ -1321,11 +1354,9 @@ pub fn parse_config_file(path: &str) -> State {
             } else if piece_chars.len() == 1 {
                 let piece_char = piece_chars.chars().next().unwrap();
 
-                let piece_index = char_to_index
-                    .get(&piece_char)
-                    .copied()
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character: {}", piece_char)
+                let piece_index =
+                    char_to_index.get(&piece_char).copied().unwrap_or_else(
+                        || panic!("Unknown piece character: {}", piece_char),
                     );
 
                 let zone_str = parts[1];
@@ -1429,9 +1460,9 @@ pub fn parse_config_file(path: &str) -> State {
             sections["repetition limit"][0].split(':').collect();
         let limit_str =
             limit_parts.get(1).expect("Invalid repetition limit format");
-        let limit_value = limit_str.parse::<u8>().unwrap_or_else(
-            |_| panic!("Invalid repetition limit: {}", limit_str.trim())
-        );
+        let limit_value = limit_str.parse::<u8>().unwrap_or_else(|_| {
+            panic!("Invalid repetition limit: {}", limit_str.trim())
+        });
         result.repetition_limit = limit_value;
     }
 
@@ -1563,7 +1594,6 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// 6. Halfmove clock (number of halfmoves since last capture or pawn move)
 /// 7. Fullmove number (starting at 1 and incremented after
 pub fn parse_fen(state: &mut State, fen: &str) {
-
     let mut needed_parts = 2;
 
     if castling!(state) {
@@ -1648,9 +1678,10 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                 file += num_str.parse::<u8>().unwrap();
             }
             _ => {
-                let piece_idx = *state.piece_char_map.get(&c)
-                    .unwrap_or_else(|| panic!("Unknown piece character: {}", c))
-                    as usize;
+                let piece_idx =
+                    *state.piece_char_map.get(&c).unwrap_or_else(|| {
+                        panic!("Unknown piece character: {}", c)
+                    }) as usize;
 
                 let mut piece = &state.pieces[piece_idx];
                 let mut piece_index = p_index!(piece);
@@ -1659,15 +1690,15 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     (rank as u32) * (state.files as u32) + (file as u32);
 
                 if promotions!(state)
-                && piece.promotions.len() == 1
-                && get!(state.promotion_zones_mandatory
-                [piece_index as usize], square_index)
+                    && piece.promotions.len() == 1
+                    && get!(
+                        state.promotion_zones_mandatory[piece_index as usize],
+                        square_index
+                    )
                 {
-                    piece =
-                        &state.pieces[piece.promotions[0] as usize];
+                    piece = &state.pieces[piece.promotions[0] as usize];
                     piece_index = p_index!(piece);
                     piece_color = p_color!(piece);
-
                 }
 
                 state.main_board[square_index as usize] = piece_index;
@@ -1676,16 +1707,12 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     .insert(square_index as u16);
                 state.piece_count[piece_index as usize] += 1;
 
-                set!(
-                    state.pieces_board[piece_color as usize], square_index
-                );
-                state.material[piece_color as usize] +=
-                    p_value!(piece) as u32;
+                set!(state.pieces_board[piece_color as usize], square_index);
+                state.material[piece_color as usize] += p_value!(piece) as u32;
 
                 if p_is_royal!(piece) {
-                    state.royal_list[piece_color as usize].push(
-                        square_index as u16
-                    );
+                    state.royal_list[piece_color as usize]
+                        .push(square_index as u16);
                     state.royal_pieces[piece_color as usize] += 1;
                 }
 
@@ -1701,9 +1728,8 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[piece_color as usize] += 1;
                 }
 
-                if get!(
-                    state.initial_setup[piece_index as usize], square_index
-                ) {
+                if get!(state.initial_setup[piece_index as usize], square_index)
+                {
                     set!(state.virgin_board, square_index);
                 }
 
@@ -1748,27 +1774,26 @@ pub fn parse_fen(state: &mut State, fen: &str) {
             let z = &en_passant[6..7];
 
             let square_index = u32::from_str_radix(s, 16)
-                .unwrap_or_else(
-                    |_| panic!("Invalid en passant square: {}", s)
-                );
-            let piece_square_index = u32::from_str_radix(e, 16)
-                .unwrap_or_else(
-                    |_| panic!("Invalid en passant captured square: {}", e)
-                );
+                .unwrap_or_else(|_| panic!("Invalid en passant square: {}", s));
+            let piece_square_index =
+                u32::from_str_radix(e, 16).unwrap_or_else(|_| {
+                    panic!("Invalid en passant captured square: {}", e)
+                });
             let piece_char = z.chars().next().unwrap();
-            let piece_index = *state.piece_char_map.get(&piece_char)
-                .unwrap_or_else(
-                    || panic!("Unknown piece character: {}", z)
-                ) as u32;
+            let piece_index = *state
+                .piece_char_map
+                .get(&piece_char)
+                .unwrap_or_else(|| panic!("Unknown piece character: {}", z))
+                as u32;
 
             square_index | (piece_square_index << 12) | piece_index << 24
         };
     }
 
     if drops!(state)
-    || promote_to_captured!(state)
-    || demote_upon_capture!(state)
-    || setup_phase!(state)
+        || promote_to_captured!(state)
+        || demote_upon_capture!(state)
+        || setup_phase!(state)
     {
         let hands = parts[part_index];
         part_index += 1;
@@ -1786,23 +1811,27 @@ pub fn parse_fen(state: &mut State, fen: &str) {
             }
 
             for m in IN_HAND_PATTERN.captures_iter(hand_part) {
-                let count_str = m.get(1)
-                    .unwrap().as_str();
-                let piece_char = m.get(2)
-                    .unwrap().as_str().chars().next().unwrap();
+                let count_str = m.get(1).unwrap().as_str();
+                let piece_char =
+                    m.get(2).unwrap().as_str().chars().next().unwrap();
 
                 let count = if count_str.is_empty() {
                     1
                 } else {
-                    count_str.parse::<u16>().unwrap_or_else(
-                        |_| panic!("Invalid piece count: {}", count_str.trim())
-                    )
+                    count_str.parse::<u16>().unwrap_or_else(|_| {
+                        panic!("Invalid piece count: {}", count_str.trim())
+                    })
                 };
 
-                let piece_index = *state.piece_char_map.get(&piece_char)
-                    .unwrap_or_else(
-                        || panic!("Unknown piece character in hand: {}", piece_char)
-                    ) as usize;
+                let piece_index = *state
+                    .piece_char_map
+                    .get(&piece_char)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Unknown piece character in hand: {}",
+                            piece_char
+                        )
+                    }) as usize;
 
                 state.piece_in_hand[color_idx][piece_index] = count;
             }
@@ -1810,30 +1839,25 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     }
 
     if setup_phase!(state)
-    && !state.royal_list[0].is_empty()
-    && !state.royal_list[1].is_empty() {
+        && !state.royal_list[0].is_empty()
+        && !state.royal_list[1].is_empty()
+    {
         state.setup_phase = false;
     } else if state.royal_list[0].is_empty() || state.royal_list[1].is_empty() {
         state.setup_phase = true;
     }
 
     if parts.len() > part_index {
-        state.halfmove_clock = parts[part_index].parse()
-            .unwrap_or_else(
-                |_| panic!(
-                    "Invalid halfmove clock: {}", parts[part_index].trim()
-                )
-            );
+        state.halfmove_clock = parts[part_index].parse().unwrap_or_else(|_| {
+            panic!("Invalid halfmove clock: {}", parts[part_index].trim())
+        });
         part_index += 1;
     }
 
     if parts.len() > part_index {
-        state.ply_counter = parts[part_index].parse()
-            .unwrap_or_else(
-                |_| panic!(
-                    "Invalid ply number: {}", parts[part_index].trim()
-                )
-            );
+        state.ply_counter = parts[part_index].parse().unwrap_or_else(|_| {
+            panic!("Invalid ply number: {}", parts[part_index].trim())
+        });
     }
 
     state.position_hash = hash_position(state);
@@ -1907,10 +1931,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 ///    ╚═══╧═══╧═══╧═══╝
 ///      a   b   c   d
 /// ```
-pub fn combine_board_strings(
-    board1: &str,
-    board2: &str,
-) -> String {
+pub fn combine_board_strings(board1: &str, board2: &str) -> String {
     let mut result = String::new();
 
     for ch in board1.chars().zip(board2.chars()) {
@@ -1931,8 +1952,7 @@ pub fn combine_board_strings(
 pub fn format_game_state(state: &State, verbose: bool) -> String {
     let mut result = String::new();
 
-    let board_size =
-        (state.files as usize) * (state.ranks as usize);
+    let board_size = (state.files as usize) * (state.ranks as usize);
     let piece_count = state.pieces.len();
 
     let mut all_boards = vec![board!(state.files, state.ranks); piece_count];
@@ -1945,52 +1965,71 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
     }
 
     result.push_str(
-        &all_boards.iter().enumerate().map(
-            |(i, b)| format_board(b, Some(state.pieces[i].char))
-        ).reduce(|board_str, next_board| {
-            combine_board_strings(&board_str, &next_board)
-        }).expect(
-            "Failed to format combined board string"
-        )
+        &all_boards
+            .iter()
+            .enumerate()
+            .map(|(i, b)| format_board(b, Some(state.pieces[i].char)))
+            .reduce(|board_str, next_board| {
+                combine_board_strings(&board_str, &next_board)
+            })
+            .expect("Failed to format combined board string"),
     );
 
     if verbose {
-        result.push_str(
-            &format!("\nPosition hash\t\t: {:032X}\n", state.position_hash)
-        );
-        result.push_str(
-            &format!(
-                "Side to move\t\t: {}\n",
-                if state.playing == WHITE { "White" } else { "Black" }
-            )
-        );
+        result.push_str(&format!(
+            "\nPosition hash\t\t: {:032X}\n",
+            state.position_hash
+        ));
+        result.push_str(&format!(
+            "Side to move\t\t: {}\n",
+            if state.playing == WHITE {
+                "White"
+            } else {
+                "Black"
+            }
+        ));
 
         if castling!(state) {
             result.push_str(&format!("Castling rights\t\t: {}\n", {
                 let mut rights = String::new();
-                if state.castling_state & WK_CASTLE != 0 { rights.push('K'); }
-                if state.castling_state & WQ_CASTLE != 0 { rights.push('Q'); }
-                if state.castling_state & BK_CASTLE != 0 { rights.push('k'); }
-                if state.castling_state & BQ_CASTLE != 0 { rights.push('q'); }
-                if rights.is_empty() { "-".to_string() } else { rights }
+                if state.castling_state & WK_CASTLE != 0 {
+                    rights.push('K');
+                }
+                if state.castling_state & WQ_CASTLE != 0 {
+                    rights.push('Q');
+                }
+                if state.castling_state & BK_CASTLE != 0 {
+                    rights.push('k');
+                }
+                if state.castling_state & BQ_CASTLE != 0 {
+                    rights.push('q');
+                }
+                if rights.is_empty() {
+                    "-".to_string()
+                } else {
+                    rights
+                }
             }));
         }
 
         if en_passant!(state) {
-            result.push_str(&format!("En passant\t\t: {}\n",
+            result.push_str(&format!(
+                "En passant\t\t: {}\n",
                 if state.en_passant_square == u32::MAX {
                     "-".to_string()
                 } else {
                     format_square(
-                        (state.en_passant_square & 0xFFF) as u16, state
+                        (state.en_passant_square & 0xFFF) as u16,
+                        state,
                     )
                 }
             ));
         }
 
-        result.push_str(
-            &format!("Halfmove clock\t\t: {}\n", state.halfmove_clock)
-        );
+        result.push_str(&format!(
+            "Halfmove clock\t\t: {}\n",
+            state.halfmove_clock
+        ));
 
         if drops!(state) || promote_to_captured!(state) || setup_phase!(state) {
             let pieces_in_white = &state.piece_in_hand[WHITE as usize];
@@ -2035,15 +2074,8 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
 ///
 /// A formatted string containing one or more piece type tables.
 pub fn format_piece_types(state: &State) -> String {
-    let mut headers = vec![
-        "Name",
-        "Index",
-        "Symbol",
-        "Color",
-        "Value",
-        "Royal",
-        "Major",
-    ];
+    let mut headers =
+        vec!["Name", "Index", "Symbol", "Color", "Value", "Royal", "Major"];
 
     if count_limits!(state) {
         headers.push("Count Limit");
@@ -2067,9 +2099,8 @@ pub fn format_piece_types(state: &State) -> String {
 
     for table_idx in 0..num_tables {
         let start_idx = table_idx * pieces_per_table;
-        let end_idx = (
-            (table_idx + 1) * pieces_per_table).min(state.pieces.len()
-        );
+        let end_idx =
+            ((table_idx + 1) * pieces_per_table).min(state.pieces.len());
         let pieces_in_table = end_idx - start_idx;
 
         let mut piece_columns: Vec<Vec<String>> = Vec::new();
@@ -2081,17 +2112,15 @@ pub fn format_piece_types(state: &State) -> String {
             let mut piece_data = Vec::new();
             let data_lines: Vec<_> = lines
                 .iter()
-                .filter(
-                    |line|
-                    line.trim_start().starts_with('│') &&
-                    line.trim_end().ends_with('│')
-                )
+                .filter(|line| {
+                    line.trim_start().starts_with('│')
+                        && line.trim_end().ends_with('│')
+                })
                 .collect();
 
             for line in data_lines {
-                let content = line
-                    .trim_start_matches("│ ")
-                    .trim_end_matches(" │");
+                let content =
+                    line.trim_start_matches("│ ").trim_end_matches(" │");
                 piece_data.push(content.to_string());
             }
 
@@ -2116,9 +2145,10 @@ pub fn format_piece_types(state: &State) -> String {
             result.push('│');
 
             for (col_idx, piece_col) in piece_columns.iter().enumerate() {
-                result.push_str(
-                    &format!(" {:^piece_width$} ", piece_col[row_idx].trim())
-                );
+                result.push_str(&format!(
+                    " {:^piece_width$} ",
+                    piece_col[row_idx].trim()
+                ));
                 if col_idx < piece_columns.len() - 1 {
                     result.push('│');
                 }
@@ -2169,20 +2199,30 @@ fn format_promotion_zones(state: &State) -> String {
             continue;
         }
 
-        let white = state.pieces
-            .iter().find(|p| p.name == piece.name && p_color!(p) == WHITE);
-        let black = state.pieces
-            .iter().find(|p| p.name == piece.name && p_color!(p) == BLACK);
+        let white = state
+            .pieces
+            .iter()
+            .find(|p| p.name == piece.name && p_color!(p) == WHITE);
+        let black = state
+            .pieces
+            .iter()
+            .find(|p| p.name == piece.name && p_color!(p) == BLACK);
 
         let (w_label, w_mand, w_opt) = if let Some(w) = white {
             let mand = &state.promotion_zones_mandatory[p_index!(w) as usize];
             let opt = &state.promotion_zones_optional[p_index!(w) as usize];
             (
                 format!("White ({})", w.char),
-                if mand.2 == U4096::ZERO { "".to_string() }
-                else { format_board(mand, Some(w.char)) },
-                if opt.2 == U4096::ZERO { "".to_string() }
-                else { format_board(opt, Some(w.char)) },
+                if mand.2 == U4096::ZERO {
+                    "".to_string()
+                } else {
+                    format_board(mand, Some(w.char))
+                },
+                if opt.2 == U4096::ZERO {
+                    "".to_string()
+                } else {
+                    format_board(opt, Some(w.char))
+                },
             )
         } else {
             ("White (-)".to_string(), "".to_string(), "".to_string())
@@ -2193,10 +2233,16 @@ fn format_promotion_zones(state: &State) -> String {
             let opt = &state.promotion_zones_optional[p_index!(b) as usize];
             (
                 format!("Black ({})", b.char),
-                if mand.2 == U4096::ZERO { "".to_string() }
-                else { format_board(mand, Some(b.char)) },
-                if opt.2 == U4096::ZERO { "".to_string() }
-                else { format_board(opt, Some(b.char)) },
+                if mand.2 == U4096::ZERO {
+                    "".to_string()
+                } else {
+                    format_board(mand, Some(b.char))
+                },
+                if opt.2 == U4096::ZERO {
+                    "".to_string()
+                } else {
+                    format_board(opt, Some(b.char))
+                },
             )
         } else {
             ("Black (-)".to_string(), "".to_string(), "".to_string())
@@ -2224,9 +2270,9 @@ fn format_promotion_zones(state: &State) -> String {
         let board_width = state.files as usize * 4 + 4;
 
         if !w_mand_lines.is_empty()
-        || !b_mand_lines.is_empty()
-        || !w_opt_lines.is_empty()
-        || !b_opt_lines.is_empty()
+            || !b_mand_lines.is_empty()
+            || !w_opt_lines.is_empty()
+            || !b_opt_lines.is_empty()
         {
             result.push_str(&format!(
                 "{:^width$}\n",
@@ -2235,35 +2281,45 @@ fn format_promotion_zones(state: &State) -> String {
             ));
             result.push_str(&format!(
                 "   {:<label_width$}    {:<label_width$}",
-                w_label, b_label, label_width = board_width + 2
+                w_label,
+                b_label,
+                label_width = board_width + 2
             ));
         }
         if !w_mand_lines.is_empty() || !b_mand_lines.is_empty() {
             result.push_str(&format!(
-            "\n   {:<label_width$}    {:<label_width$}\n",
-            "Mandatory", "Mandatory", label_width = board_width + 2
+                "\n   {:<label_width$}    {:<label_width$}\n",
+                "Mandatory",
+                "Mandatory",
+                label_width = board_width + 2
             ));
             for i in 0..max_lines {
                 let wl = w_mand_lines.get(i).unwrap_or(&"");
                 let bl = b_mand_lines.get(i).unwrap_or(&"");
                 result.push_str(&format!(
                     "{:<label_width$}    {:<label_width$}\n",
-                    wl, bl, label_width = board_width + 2
+                    wl,
+                    bl,
+                    label_width = board_width + 2
                 ));
             }
         }
 
         if !w_opt_lines.is_empty() || !b_opt_lines.is_empty() {
             result.push_str(&format!(
-            "\n   {:<label_width$}    {:<label_width$}\n",
-            "Optional", "Optional", label_width = board_width + 2
+                "\n   {:<label_width$}    {:<label_width$}\n",
+                "Optional",
+                "Optional",
+                label_width = board_width + 2
             ));
             for i in 0..max_lines {
                 let wl = w_opt_lines.get(i).unwrap_or(&"");
                 let bl = b_opt_lines.get(i).unwrap_or(&"");
                 result.push_str(&format!(
                     "{:<label_width$}    {:<label_width$}\n",
-                    wl, bl, label_width = board_width + 2
+                    wl,
+                    bl,
+                    label_width = board_width + 2
                 ));
             }
         }
@@ -2285,16 +2341,21 @@ fn format_intial_setup(state: &State) -> String {
             continue;
         }
 
-        let white = state.pieces
-            .iter().find(|p| p.name == piece.name && p_color!(p) == WHITE);
-        let black = state.pieces
-            .iter().find(|p| p.name == piece.name && p_color!(p) == BLACK);
+        let white = state
+            .pieces
+            .iter()
+            .find(|p| p.name == piece.name && p_color!(p) == WHITE);
+        let black = state
+            .pieces
+            .iter()
+            .find(|p| p.name == piece.name && p_color!(p) == BLACK);
 
         let (w_label, w_board) = if let Some(w) = white {
             (
                 format!("White ({})", w.char),
                 format_board(
-                    &state.initial_setup[p_index!(w) as usize], Some(w.char)
+                    &state.initial_setup[p_index!(w) as usize],
+                    Some(w.char),
                 ),
             )
         } else {
@@ -2304,7 +2365,8 @@ fn format_intial_setup(state: &State) -> String {
             (
                 format!("Black ({})", b.char),
                 format_board(
-                    &state.initial_setup[p_index!(b) as usize], Some(b.char)
+                    &state.initial_setup[p_index!(b) as usize],
+                    Some(b.char),
                 ),
             )
         } else {
@@ -2324,14 +2386,18 @@ fn format_intial_setup(state: &State) -> String {
         ));
         result.push_str(&format!(
             "   {:<label_width$}    {:<label_width$}\n",
-            w_label, b_label, label_width = board_width + 2
+            w_label,
+            b_label,
+            label_width = board_width + 2
         ));
         for i in 0..max_lines {
             let wl = w_lines.get(i).unwrap_or(&"");
             let bl = b_lines.get(i).unwrap_or(&"");
             result.push_str(&format!(
-            "{:<label_width$}    {:<label_width$}\n",
-            wl, bl, label_width = board_width + 2
+                "{:<label_width$}    {:<label_width$}\n",
+                wl,
+                bl,
+                label_width = board_width + 2
             ));
         }
         result.push('\n');
@@ -2348,8 +2414,14 @@ fn format_forbidden_zones(state: &State) -> String {
             continue;
         }
 
-        let white = state.pieces.iter().find(|p| p.name == piece.name && p_color!(p) == WHITE);
-        let black = state.pieces.iter().find(|p| p.name == piece.name && p_color!(p) == BLACK);
+        let white = state
+            .pieces
+            .iter()
+            .find(|p| p.name == piece.name && p_color!(p) == WHITE);
+        let black = state
+            .pieces
+            .iter()
+            .find(|p| p.name == piece.name && p_color!(p) == BLACK);
 
         let (w_label, w_board) = if let Some(w) = white {
             let forbidden_zone = &state.forbidden_zones[p_index!(w) as usize];
@@ -2358,7 +2430,7 @@ fn format_forbidden_zones(state: &State) -> String {
             } else {
                 (
                     format!("White ({})", w.char),
-                    format_board(forbidden_zone, Some('X'))
+                    format_board(forbidden_zone, Some('X')),
                 )
             }
         } else {
@@ -2372,7 +2444,7 @@ fn format_forbidden_zones(state: &State) -> String {
             } else {
                 (
                     format!("Black ({})", b.char),
-                    format_board(forbidden_zone, Some('X'))
+                    format_board(forbidden_zone, Some('X')),
                 )
             }
         } else {
@@ -2396,14 +2468,18 @@ fn format_forbidden_zones(state: &State) -> String {
         ));
         result.push_str(&format!(
             "   {:<label_width$}    {:<label_width$}\n",
-            w_label, b_label, label_width = board_width + 2
+            w_label,
+            b_label,
+            label_width = board_width + 2
         ));
         for i in 0..max_lines {
             let wl = w_lines.get(i).unwrap_or(&"");
             let bl = b_lines.get(i).unwrap_or(&"");
             result.push_str(&format!(
                 "{:<label_width$}    {:<label_width$}\n",
-                wl, bl, label_width = board_width + 2
+                wl,
+                bl,
+                label_width = board_width + 2
             ));
         }
         result.push('\n');
@@ -2416,13 +2492,27 @@ fn format_special_rules(state: &State) -> String {
         "".to_string()
     } else {
         let mut rules = Vec::new();
-        if castling!(state) { rules.push("Castling"); }
-        if en_passant!(state) { rules.push("En Passant"); }
-        if promotions!(state) { rules.push("Promotions"); }
-        if drops!(state) { rules.push("Drops"); }
-        if count_limits!(state) { rules.push("Count Limits"); }
-        if forbidden_zones!(state) { rules.push("Forbidden Zones"); }
-        if promote_to_captured!(state) { rules.push("Promote to Captured"); }
+        if castling!(state) {
+            rules.push("Castling");
+        }
+        if en_passant!(state) {
+            rules.push("En Passant");
+        }
+        if promotions!(state) {
+            rules.push("Promotions");
+        }
+        if drops!(state) {
+            rules.push("Drops");
+        }
+        if count_limits!(state) {
+            rules.push("Count Limits");
+        }
+        if forbidden_zones!(state) {
+            rules.push("Forbidden Zones");
+        }
+        if promote_to_captured!(state) {
+            rules.push("Promote to Captured");
+        }
         rules.join(", ")
     }
 }
@@ -2434,12 +2524,14 @@ fn format_special_rules(state: &State) -> String {
 pub fn format_entire_game(state: &State) -> String {
     let mut result = String::new();
 
-    result.push_str(
-        &format!("{} ({}x{})\n", state.title, state.files, state.ranks)
-    );
-    result.push_str(
-        &format!("Special rules: {}\n\n", format_special_rules(state))
-    );
+    result.push_str(&format!(
+        "{} ({}x{})\n",
+        state.title, state.files, state.ranks
+    ));
+    result.push_str(&format!(
+        "Special rules: {}\n\n",
+        format_special_rules(state)
+    ));
     result.push_str(&format_piece_types(state));
     result.push_str(&format_promotion_zones(state));
     result.push_str(&format_forbidden_zones(state));
