@@ -14,7 +14,6 @@
 
 use crate::*;
 
-
 /*----------------------------------------------------------------------------*\
                         PIECE BITFIELD REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
@@ -25,7 +24,7 @@ use crate::*;
 /// into readable attributes used throughout move generation and evaluation.
 ///
 /// Static accessors:
-/// `p_index!`, `p_color!`, `p_can_promote!`, `p_is_royal!`, `p_rank!`, 
+/// `p_index!`, `p_color!`, `p_can_promote!`, `p_is_royal!`, `p_rank!`,
 /// `p_castle_right!`, `p_castle_left!`
 ///
 /// Dynamic accessors:
@@ -213,15 +212,21 @@ impl Piece {
     }
 }
 
+#[cfg(debug_assertions)]
 impl Debug for Piece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Piece")
             .field("name", &self.name)
             .field("char", &self.char)
             .field("promotions", &self.promotions)
-            .field("encoded_static", &format_args!("{:#034b}", self.encoded_static))
-            .field("encoded_dynamic", &format_args!("{:#034b}", self.encoded_dynamic))
+            .field(
+                "encoded_static",
+                &format_args!("{:#034b}", self.encoded_static),
+            )
+            .field(
+                "encoded_dynamic",
+                &format_args!("{:#034b}", self.encoded_dynamic),
+            )
             .finish()
     }
 }
-

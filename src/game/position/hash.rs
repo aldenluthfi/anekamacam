@@ -16,39 +16,30 @@
 use crate::*;
 
 lazy_static! {
-    pub static ref CASTLING_HASHES: [u128; 16] =
-        [random_u128(); 16];
-
+    pub static ref CASTLING_HASHES: [u128; 16] = [random_u128(); 16];
     pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
         [random_u128(); MAX_SQUARES];
-
     pub static ref SIDE_HASHES: u128 = random_u128();
+    pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
+        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
 
-    pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]>
-        = {
-            let mut result: Vec<[u128; MAX_SQUARES]> =
-                Vec::with_capacity(256);
+        for _ in 0..256 {
+            let piece_hashes = [random_u128(); MAX_SQUARES];
+            result.push(piece_hashes);
+        }
 
-            for _ in 0..256 {
-                let piece_hashes = [random_u128(); MAX_SQUARES];
-                result.push(piece_hashes);
-            }
+        result
+    };
+    pub static ref IN_HAND_HASHES: Vec<[u128; MAX_SQUARES]> = {
+        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
 
-            result
-        };
+        for _ in 0..256 {
+            let drop_hashes = [random_u128(); MAX_SQUARES];
+            result.push(drop_hashes);
+        }
 
-    pub static ref IN_HAND_HASHES: Vec<[u128; MAX_SQUARES]>
-        = {
-            let mut result: Vec<[u128; MAX_SQUARES]> =
-                Vec::with_capacity(256);
-
-            for _ in 0..256 {
-                let drop_hashes = [random_u128(); MAX_SQUARES];
-                result.push(drop_hashes);
-            }
-
-            result
-        };
+        result
+    };
 }
 
 pub type PositionHash = u128;
@@ -68,8 +59,8 @@ pub fn hash_position(state: &State) -> u128 {
     hash ^= &CASTLING_HASHES[state.castling_state as usize];
 
     if state.en_passant_square != NO_EN_PASSANT {
-        hash ^= &EN_PASSANT_HASHES
-            [enp_square!(state.en_passant_square) as usize];
+        hash ^=
+            &EN_PASSANT_HASHES[enp_square!(state.en_passant_square) as usize];
     }
 
     for (index, piece_positions) in state.piece_list.iter().enumerate() {
@@ -79,9 +70,8 @@ pub fn hash_position(state: &State) -> u128 {
     }
 
     for color in [WHITE, BLACK] {
-        for (index, &count) in state.piece_in_hand[color as usize]
-            .iter()
-            .enumerate()
+        for (index, &count) in
+            state.piece_in_hand[color as usize].iter().enumerate()
         {
             hash ^= &IN_HAND_HASHES[index][count as usize];
         }
@@ -89,7 +79,6 @@ pub fn hash_position(state: &State) -> u128 {
 
     hash
 }
-
 
 /// Incremental Zobrist hash update helpers.
 ///
@@ -105,8 +94,8 @@ pub fn hash_position(state: &State) -> u128 {
 #[macro_export]
 macro_rules! hash_in_or_out_piece {
     ($game_state:expr, $piece_index:expr, $square_index:expr) => {
-        $game_state.position_hash ^= &PIECE_HASHES
-            [$piece_index][$square_index as usize];
+        $game_state.position_hash ^=
+            &PIECE_HASHES[$piece_index][$square_index as usize];
     };
 }
 
@@ -121,10 +110,10 @@ macro_rules! hash_toggle_side {
 macro_rules! hash_update_castling {
     ($game_state:expr, $old_castling_state:expr, $new_castling_state:expr) => {
         if $old_castling_state != $new_castling_state {
-            $game_state.position_hash ^= &CASTLING_HASHES
-                [$old_castling_state as usize];
-            $game_state.position_hash ^= &CASTLING_HASHES
-                [$new_castling_state as usize];
+            $game_state.position_hash ^=
+                &CASTLING_HASHES[$old_castling_state as usize];
+            $game_state.position_hash ^=
+                &CASTLING_HASHES[$new_castling_state as usize];
         }
     };
 }
@@ -150,10 +139,10 @@ macro_rules! hash_update_en_passant {
 macro_rules! hash_update_in_hand {
     ($game_state:expr, $piece_index:expr, $old_count:expr, $new_count:expr) => {
         if $old_count != $new_count {
-            $game_state.position_hash ^= &IN_HAND_HASHES
-                [$piece_index][$old_count as usize];
-            $game_state.position_hash ^= &IN_HAND_HASHES
-                [$piece_index][$new_count as usize];
+            $game_state.position_hash ^=
+                &IN_HAND_HASHES[$piece_index][$old_count as usize];
+            $game_state.position_hash ^=
+                &IN_HAND_HASHES[$piece_index][$new_count as usize];
         }
-     };
+    };
 }

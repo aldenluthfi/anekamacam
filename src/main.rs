@@ -8,17 +8,16 @@
 //! # Date
 //! 01/02/2026
 
-
 use prelude::*;
 
 pub mod game {
     pub mod representations {
         pub mod board;
+        pub mod drop;
+        pub mod moves;
         pub mod piece;
         pub mod state;
-        pub mod moves;
         pub mod vector;
-        pub mod drop;
     }
 
     pub mod patterns {
@@ -31,18 +30,18 @@ pub mod game {
     }
 
     pub mod moves {
-        pub mod move_parse;
         pub mod move_list;
+        pub mod move_parse;
     }
 
     pub mod search {
-        pub mod quiescence;
         pub mod pv_table;
+        pub mod quiescence;
     }
 
     pub mod position {
-        pub mod hash;
         pub mod evaluation;
+        pub mod hash;
         pub mod search;
     }
 
@@ -50,10 +49,10 @@ pub mod game {
 }
 
 pub mod io {
-	pub mod board_io;
-	pub mod game_io;
-	pub mod piece_io;
+    pub mod board_io;
+    pub mod game_io;
     pub mod move_io;
+    pub mod piece_io;
 
     pub mod protocols {
         pub mod uci;
@@ -64,7 +63,7 @@ pub mod prelude;
 
 #[hotpath::main]
 fn main() {
-    let variant = "sittuyin";
+    let variant = "fide";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 

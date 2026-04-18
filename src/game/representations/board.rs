@@ -22,19 +22,18 @@ use crate::*;
 /// The third element stores occupancy bits in a `U4096` bitboard.
 pub type Board = (u8, u8, U4096);
 
-
 /*----------------------------------------------------------------------------*\
                         BITBOARD HELPER REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
 /// Bitboard helper macros used across move generation and state updates.
-/// 
+///
 /// These macros operate on the compact [`Board`] tuple representation:
 /// `(files, ranks, bits)`, where `bits` is a `U4096` bitset.
-/// 
+///
 /// Access helpers:
 /// - `board!`, `files!`, `ranks!`, `get!`
-/// 
+///
 /// Mutation helpers:
 /// - `set!`, `clear!`, `or!`, `and!`, `xor!`, `not!`
 #[macro_export]

@@ -34,25 +34,52 @@ pub fn format_piece(piece: &Piece, state: &State) -> String {
     rows.push(p_index!(piece).to_string());
     rows.push(piece.char.to_string());
     rows.push(
-        if p_color!(piece) == BLACK { "Black" } else { "White" }.to_string()
+        if p_color!(piece) == BLACK {
+            "Black"
+        } else {
+            "White"
+        }
+        .to_string(),
     );
     rows.push(if p_value!(piece) == u16::MAX {
         "∞".to_string()
     } else {
         p_value!(piece).to_string()
     });
-    rows.push(if p_is_royal!(piece) { "*" } else { "" }.to_string());
-    rows.push(if p_is_major!(piece) { "*" } else { "" }.to_string());
+    rows.push(
+        if p_is_royal!(piece) {
+            "*"
+        } else {
+            ""
+        }
+        .to_string(),
+    );
+    rows.push(
+        if p_is_major!(piece) {
+            "*"
+        } else {
+            ""
+        }
+        .to_string(),
+    );
     if count_limits!(state) {
         rows.push(state.piece_limit[p_index!(piece) as usize].to_string());
     }
     if promotions!(state) {
-        rows.push(if p_can_promote!(piece) { "*" } else { "" }.to_string());
+        rows.push(
+            if p_can_promote!(piece) {
+                "*"
+            } else {
+                ""
+            }
+            .to_string(),
+        );
         rows.push(
             if !state.piece_demotion_map.contains_key(&p_index!(piece)) {
                 "-".to_string()
             } else {
-                state.piece_demotion_map
+                state
+                    .piece_demotion_map
                     .get(&p_index!(piece))
                     .unwrap()
                     .iter()
@@ -60,7 +87,7 @@ pub fn format_piece(piece: &Piece, state: &State) -> String {
                     .map(|&idx| state.pieces[idx as usize].char.to_string())
                     .collect::<Vec<String>>()
                     .join("")
-            }
+            },
         );
     }
 

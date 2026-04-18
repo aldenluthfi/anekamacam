@@ -8,7 +8,6 @@
 //! # Date
 //! 18/02/2026
 
-
 use crate::*;
 
 /// Filters and relocates precomputed drop patterns for a target square.
@@ -25,11 +24,12 @@ pub fn generate_relevant_drops(
     let piece_color = p_color!(piece) as usize;
     let drops = &piece_setup_drops[piece_index];
 
-    drops.iter()
+    drops
+        .iter()
         .filter(|drop| {
             let drop_f = drop_f!(drop);
             !get!(game_state.forbidden_zones[piece_index], square_index)
-            || drop_f
+                || drop_f
         })
         .filter_map(|drop| {
             let new_drop_move = drop.0 | (square_index << 8);
@@ -47,9 +47,10 @@ pub fn generate_relevant_drops(
                 let check_y = rank + y as i32;
 
                 if check_x < 0
-                || check_x >= game_state.files as i32
-                || check_y < 0
-                || check_y >= game_state.ranks as i32 {
+                    || check_x >= game_state.files as i32
+                    || check_y < 0
+                    || check_y >= game_state.ranks as i32
+                {
                     return None;
                 }
 
@@ -64,9 +65,10 @@ pub fn generate_relevant_drops(
                 let check_y = rank + y as i32;
 
                 if check_x >= 0
-                && check_x < game_state.files as i32
-                && check_y >= 0
-                && check_y < game_state.ranks as i32 {
+                    && check_x < game_state.files as i32
+                    && check_y >= 0
+                    && check_y < game_state.ranks as i32
+                {
                     new_drop_stoppers.push(stopper.clone());
                 }
             }
@@ -81,14 +83,14 @@ pub fn generate_relevant_drops(
 /// This enforces drop flags (`k/f/d/e`), count limits, hand ownership,
 /// and allower/stopper pattern constraints before encoding each drop move.
 pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
-
     let board_size = state.files as u32 * state.ranks as u32;
     let piece_index = p_index!(piece) as usize;
     let piece_color = p_color!(piece) as usize;
     let mut drop_list = Vec::with_capacity(128);
 
     if count_limits!(state)
-    && state.piece_count[piece_index] >= state.piece_limit[piece_index] {
+        && state.piece_count[piece_index] >= state.piece_limit[piece_index]
+    {
         return drop_list;
     }
 
@@ -104,13 +106,14 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
         }
 
         'drop_loop: for drop in drops {
-
             if drop.1.len() > 1 {
                 let drop_square = drop.1[0].0 as usize;
 
                 if square == 0                                                  /* current square                     */
-                && !drop.1[0].1.contains(state.main_board[drop_square]) {       /* break as early as possible         */
-                    continue 'drop_loop;
+                && !drop.1[0].1.contains(state.main_board[drop_square])
+                {
+                    continue 'drop_loop;                                        /* break as early as possible         */
+
                 }
             }
 
@@ -126,11 +129,11 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
             enc_start!(encoded_move, square as u128);
 
             if get!(state.forbidden_zones[piece_index], square) && !drop_f
-            || !drop_e && state.piece_in_hand[piece_color][piece_index] == 0
-            || drop_e
-            && state.piece_in_hand
-            [1 - piece_color]
-            [state.piece_swap_map[&(piece_index as u8)] as usize] == 0
+                || !drop_e && state.piece_in_hand[piece_color][piece_index] == 0
+                || drop_e
+                    && state.piece_in_hand[1 - piece_color]
+                        [state.piece_swap_map[&(piece_index as u8)] as usize]
+                        == 0
             {
                 continue 'drop_loop;
             }
@@ -170,17 +173,18 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
                     let mut take_piece = 0u64;
 
                     enc_multi_move_captured_piece!(
-                        take_piece, piece_check as u64
+                        take_piece,
+                        piece_check as u64
                     );
 
                     enc_multi_move_captured_square!(
-                        take_piece, check_index as u64
+                        take_piece,
+                        check_index as u64
                     );
 
                     enc_multi_move_captured_unmoved!(
-                        take_piece, get!(
-                            state.virgin_board, check_index as u32
-                        ) as u64
+                        take_piece,
+                        get!(state.virgin_board, check_index as u32) as u64
                     );
 
                     taken_pieces.push(take_piece);

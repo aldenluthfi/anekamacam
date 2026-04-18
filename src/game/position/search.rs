@@ -31,9 +31,7 @@ pub struct SearchInfo {
     pub infinite: bool,
 }
 
-pub fn check_interrupt() {
-
-}
+pub fn check_interrupt() {}
 
 pub fn clear_search_info(info: &mut SearchInfo) {
     info.start_time = 0;
@@ -52,7 +50,11 @@ pub fn search_position(state: &State, info: &mut SearchInfo) {
 }
 
 pub fn alpha_beta(
-    state: &State, depth: usize, alpha: i32, beta: i32, info: &mut SearchInfo
+    state: &State,
+    depth: usize,
+    alpha: i32,
+    beta: i32,
+    info: &mut SearchInfo,
 ) -> i32 {
     0
 }

@@ -79,7 +79,6 @@ pub type Move = (u128, Arc<Vec<u64>>);
                           MOVE REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
-
 /// Primary move-bitfield encoder macros.
 ///
 /// These macros write individual fields into `Move.0` (`u128`) using the
@@ -188,18 +187,16 @@ macro_rules! enc_captured_unmoved {
     };
 }
 
-
 #[macro_export]
 macro_rules! enc_capture_part {
     ($mv:expr, $taken_piece:expr) => {
         $mv.0 |= ($taken_piece & 0x3_FFFF_FFFF) << 78;
-    }
+    };
 }
 
 /*----------------------------------------------------------------------------*\
                           MOVE REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
-
 
 /// Decoders for the primary packed `Move` representation.
 ///
@@ -317,7 +314,6 @@ macro_rules! captured_unmoved {
                         MOVE LIST REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
 
-
 /// Decoders for auxiliary multi-capture entries (`u64`) stored in `Move.1`.
 ///
 /// Multi-capture moves keep their first capture in `Move.0` and any remaining
@@ -361,7 +357,6 @@ macro_rules! multi_move_captured_unmoved {
 /*----------------------------------------------------------------------------*\
                       MOVE LIST REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
-
 
 /// Encoders for auxiliary multi-capture entries (`u64`) stored in `Move.1`.
 ///

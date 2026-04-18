@@ -8,14 +8,12 @@
 //! # Date
 //! 24/02/2026
 
-
 use crate::*;
 
 lazy_static! {
     pub static ref PATTERN_PATTERN: Regex =
         Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap();
-    pub static ref CHAIN_PATTERN: Regex =
-        Regex::new(r"([^-]+)").unwrap();
+    pub static ref CHAIN_PATTERN: Regex = Regex::new(r"([^-]+)").unwrap();
 }
 
 /// Represents a compressed set of allowed or stopper pieces.
@@ -34,7 +32,9 @@ impl Default for PieceSet {
 
 impl PieceSet {
     /// Creates a new, empty piece set.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Adds a piece index to the set.
     pub fn insert(&mut self, piece: u8) {
@@ -98,17 +98,14 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     #[cfg(debug_assertions)]
     println!("[DEBUG] parse_pattern captures: {:?}", captures);
 
-    let (allowers, allower_pieces) =
-    match (captures.get(1), captures.get(2)) {
+    let (allowers, allower_pieces) = match (captures.get(1), captures.get(2)) {
         (Some(a), Some(p)) => (a.as_str(), p.as_str()),
         (None, None) => ("", ""),
-        _ => panic!(
-            concat!(
-                "Invalid pattern format: ",
-                "allowers and allower_pieces must ",
-                "both be present or both absent"
-            ),
-        ),
+        _ => panic!(concat!(
+            "Invalid pattern format: ",
+            "allowers and allower_pieces must ",
+            "both be present or both absent"
+        ),),
     };
 
     let allowers_pieces = CHAIN_PATTERN
@@ -131,13 +128,11 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     };
 
     #[cfg(debug_assertions)]
-    println!(
-        "[DEBUG] Parsed allowers: {:#?}",
-        allowers_vecs
-    );
+    println!("[DEBUG] Parsed allowers: {:#?}", allowers_vecs);
 
-    let allower_result = allowers_vecs.iter().map(
-        |(index, multi_leg_vector)| {
+    let allower_result = allowers_vecs
+        .iter()
+        .map(|(index, multi_leg_vector)| {
             let leg = leg!(multi_leg_vector[0]);
 
             let x = x!(leg) as u16 & 0xFF;
@@ -145,33 +140,29 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
 
             let mut piece_set = PieceSet::new();
             for piece_char in allowers_pieces[*index].chars() {
-                let piece_index =
-                if piece_char == '?' {NO_PIECE as u16}
-                else {state.piece_char_map[&piece_char] as u16};
+                let piece_index = if piece_char == '?' {
+                    NO_PIECE as u16
+                } else {
+                    state.piece_char_map[&piece_char] as u16
+                };
                 piece_set.insert(piece_index as u8);
             }
 
             ((y << 8) | x, piece_set)
-        }
-    ).collect::<PatternAllower>();
+        })
+        .collect::<PatternAllower>();
 
     #[cfg(debug_assertions)]
-    println!(
-        "[DEBUG] Encoded allowers: {:?}",
-        allower_result
-    );
+    println!("[DEBUG] Encoded allowers: {:?}", allower_result);
 
-    let (stoppers, stopper_pieces) =
-    match (captures.get(3), captures.get(4)) {
+    let (stoppers, stopper_pieces) = match (captures.get(3), captures.get(4)) {
         (Some(s), Some(p)) => (s.as_str(), p.as_str()),
         (None, None) => ("", ""),
-        _ => panic!(
-            concat!(
-                "Invalid drop format: ",
-                "stoppers and stopper_pieces must ",
-                "both be present or both absent"
-            ),
-        ),
+        _ => panic!(concat!(
+            "Invalid drop format: ",
+            "stoppers and stopper_pieces must ",
+            "both be present or both absent"
+        ),),
     };
     let stoppers_pieces = CHAIN_PATTERN
         .captures_iter(stopper_pieces)
@@ -193,35 +184,32 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     };
 
     #[cfg(debug_assertions)]
-    println!(
-        "[DEBUG] Parsed drop: {:#?}",
-        stoppers_vecs
-    );
+    println!("[DEBUG] Parsed drop: {:#?}", stoppers_vecs);
 
-    let stopper_result = stoppers_vecs.iter().map(
-        |(index, multi_leg_vector)| {
-        let leg = leg!(multi_leg_vector[0]);
+    let stopper_result = stoppers_vecs
+        .iter()
+        .map(|(index, multi_leg_vector)| {
+            let leg = leg!(multi_leg_vector[0]);
 
-        let x = x!(leg) as u16 & 0xFF;
-        let y = y!(leg) as u16 & 0xFF;
+            let x = x!(leg) as u16 & 0xFF;
+            let y = y!(leg) as u16 & 0xFF;
 
-        let mut piece_set = PieceSet::new();
-        for piece_char in stoppers_pieces[*index].chars() {
-            let piece_index =
-            if piece_char == '?' {NO_PIECE as u16}
-            else {state.piece_char_map[&piece_char] as u16};
-            piece_set.insert(piece_index as u8);
-        }
+            let mut piece_set = PieceSet::new();
+            for piece_char in stoppers_pieces[*index].chars() {
+                let piece_index = if piece_char == '?' {
+                    NO_PIECE as u16
+                } else {
+                    state.piece_char_map[&piece_char] as u16
+                };
+                piece_set.insert(piece_index as u8);
+            }
 
-        ((y << 8) | x, piece_set)
-        }
-    ).collect::<PatternStopper>();
+            ((y << 8) | x, piece_set)
+        })
+        .collect::<PatternStopper>();
 
     #[cfg(debug_assertions)]
-    println!(
-        "[DEBUG] Encoded stoppers: {:?}",
-        stopper_result
-    );
+    println!("[DEBUG] Encoded stoppers: {:?}", stopper_result);
 
     (allower_result, stopper_result)
 }
@@ -232,9 +220,11 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
 /// otherwise use White's orientation as the default perspective.
 /// Returns `true` only when all allowers pass and no stopper matches.
 pub fn match_pattern(
-    pattern: &Pattern, square: u32, color: u8, state: &State
+    pattern: &Pattern,
+    square: u32,
+    color: u8,
+    state: &State,
 ) -> bool {
-
     let (allowers, stoppers) = pattern;
 
     let file = square % state.files as u32;
@@ -247,8 +237,7 @@ pub fn match_pattern(
 
         let check_x = file as i32 + x;
         let check_y = rank as i32 + y;
-        let check_index =
-            (check_y * state.files as i32 + check_x) as usize;
+        let check_index = (check_y * state.files as i32 + check_x) as usize;
 
         let piece_check = state.main_board[check_index];
 
@@ -264,8 +253,7 @@ pub fn match_pattern(
 
         let check_x = file as i32 + x;
         let check_y = rank as i32 + y;
-        let check_index =
-            (check_y * state.files as i32 + check_x) as usize;
+        let check_index = (check_y * state.files as i32 + check_x) as usize;
 
         let piece_check = state.main_board[check_index];
 
@@ -282,10 +270,7 @@ pub fn match_pattern(
 /// Each branch is parsed independently via `parse_pattern` and collected into a
 /// single vector.
 /// Empty expressions produce no patterns.
-pub fn generate_stand_off_patterns(
-    expr: &str, state: &State
-) -> Vec<Pattern> {
-
+pub fn generate_stand_off_patterns(expr: &str, state: &State) -> Vec<Pattern> {
     if expr.is_empty() {
         return Vec::new();
     }
@@ -302,7 +287,7 @@ pub fn generate_relevant_stand_offs(
     piece: &Piece,
     square: u32,
     state: &State,
-    piece_stand_off: &[PatternSet]
+    piece_stand_off: &[PatternSet],
 ) -> Vec<Pattern> {
     let piece_color = p_color!(piece) as usize;
 
@@ -322,9 +307,9 @@ pub fn generate_relevant_stand_offs(
             let check_y = rank as i32 + y;
 
             if check_x < 0
-            || check_x >= state.files as i32
-            || check_y < 0
-            || check_y >= state.ranks as i32
+                || check_x >= state.files as i32
+                || check_y < 0
+                || check_y >= state.ranks as i32
             {
                 continue 'outer;
             }
@@ -338,9 +323,9 @@ pub fn generate_relevant_stand_offs(
             let check_y = rank as i32 + y;
 
             if check_x < 0
-            || check_x >= state.files as i32
-            || check_y < 0
-            || check_y >= state.ranks as i32
+                || check_x >= state.files as i32
+                || check_y < 0
+                || check_y >= state.ranks as i32
             {
                 continue 'outer;
             }
@@ -352,7 +337,6 @@ pub fn generate_relevant_stand_offs(
     result
 }
 
-
 /// Evaluates whether the current position contains any active
 /// stand-off pattern.
 ///
@@ -361,28 +345,27 @@ pub fn generate_relevant_stand_offs(
 /// one pattern matches.
 #[macro_export]
 macro_rules! is_in_stand_off {
-    ($state:expr) => {
-        {
-            let mut found = false;
+    ($state:expr) => {{
+        let mut found = false;
 
-            'main: for (index, position) in
-                $state.piece_list.iter().enumerate()
-            {
-                for &square in position {
-                    for pattern in
-                    &$state.relevant_stand_offs[index][square as usize] {
-                        if match_pattern(
-                            pattern, square as u32,
-                            p_color!($state.pieces[index]), &$state
-                        ) {
-                            found = true;
-                            break 'main;
-                        }
+        'main: for (index, position) in $state.piece_list.iter().enumerate() {
+            for &square in position {
+                for pattern in
+                    &$state.relevant_stand_offs[index][square as usize]
+                {
+                    if match_pattern(
+                        pattern,
+                        square as u32,
+                        p_color!($state.pieces[index]),
+                        &$state,
+                    ) {
+                        found = true;
+                        break 'main;
                     }
                 }
             }
-
-            found
         }
-    };
+
+        found
+    }};
 }

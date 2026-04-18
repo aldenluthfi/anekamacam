@@ -11,7 +11,10 @@
 use crate::*;
 
 pub fn quiescence_search(
-    state: &State, alpha: i32, beta: i32, info: &mut SearchInfo
+    state: &State,
+    alpha: i32,
+    beta: i32,
+    info: &mut SearchInfo,
 ) -> i32 {
     0
 }

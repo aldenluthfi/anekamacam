@@ -17,18 +17,15 @@
 
 use crate::*;
 
-lazy_static!{
-    pub static ref RNG: Mutex<rand::rngs::StdRng> = {
-        Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED))
-    };
+lazy_static! {
+    pub static ref RNG: Mutex<rand::rngs::StdRng> =
+        { Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED)) };
 }
 
 pub fn random_u128() -> u128 {
     let mut rng = RNG.lock().unwrap();
-    u128::from(rng.next_u64()) << 64  |
-    u128::from(rng.next_u64())
+    u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
 }
-
 
 /// Recomputes derived state and asserts it matches the stored caches.
 ///
@@ -55,8 +52,7 @@ pub fn verify_game_state(state: &State) {
     }
 
     assert_eq!(
-        &temp_piece_list,
-        &state.piece_list,
+        &temp_piece_list, &state.piece_list,
         "Computed piece list doesn't match state piece list",
     );
 
@@ -107,26 +103,22 @@ pub fn verify_game_state(state: &State) {
     }
 
     assert_eq!(
-        temp_big_pieces,
-        state.big_pieces,
+        temp_big_pieces, state.big_pieces,
         "Computed big pieces count doesn't match state big pieces count"
     );
 
     assert_eq!(
-        temp_major_pieces,
-        state.major_pieces,
+        temp_major_pieces, state.major_pieces,
         "Computed major pieces count doesn't match state major pieces count"
     );
 
     assert_eq!(
-        temp_minor_pieces,
-        state.minor_pieces,
+        temp_minor_pieces, state.minor_pieces,
         "Computed minor pieces count doesn't match state minor pieces count"
     );
 
     assert_eq!(
-        temp_material,
-        state.material,
+        temp_material, state.material,
         "Computed material count doesn't match state material count"
     );
 
@@ -141,8 +133,7 @@ pub fn verify_game_state(state: &State) {
     }
 
     assert_eq!(
-        &temp_royal_list,
-        &state.royal_list,
+        &temp_royal_list, &state.royal_list,
         "Computed royal list doesn't match state royal list"
     );
 
@@ -170,9 +161,8 @@ pub fn verify_game_state(state: &State) {
     }
 
     for color in [WHITE, BLACK] {
-        for (index, &count) in state.piece_in_hand[color as usize]
-            .iter()
-            .enumerate()
+        for (index, &count) in
+            state.piece_in_hand[color as usize].iter().enumerate()
         {
             temp_hash ^= &IN_HAND_HASHES[index][count as usize];
         }
@@ -199,7 +189,8 @@ pub fn verify_game_state(state: &State) {
         for (idx, &hash) in CASTLING_HASHES.iter().enumerate() {
             if hash == missing_hash {
                 panic!(
-                    "Hash mismatch! Castling state mismatch at index {}", idx
+                    "Hash mismatch! Castling state mismatch at index {}",
+                    idx
                 );
             }
         }
@@ -207,7 +198,8 @@ pub fn verify_game_state(state: &State) {
         for (idx, &hash) in EN_PASSANT_HASHES.iter().enumerate() {
             if hash == missing_hash {
                 panic!(
-                    "Hash mismatch! En passant square mismatch at index {}", idx
+                    "Hash mismatch! En passant square mismatch at index {}",
+                    idx
                 );
             }
         }
@@ -220,15 +212,12 @@ pub fn verify_game_state(state: &State) {
     }
 
     assert_eq!(
-        temp_hash,
-        state.position_hash,
+        temp_hash, state.position_hash,
         "Computed hash doesn't match state position hash"
     );
 }
 
-fn parse_perft_file(
-    path: &str
-) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {                              /* until perft 6                      */
+fn parse_perft_file(path: &str) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {/* until perft 6                      */
     let contents = fs::read_to_string(path).expect("Failed to read perft file");
     let uncommented = COMMENT_PATTERN.replace_all(&contents, "");
     uncommented
@@ -271,7 +260,7 @@ pub fn start_perft(
     path: &str,
     depth: u8,
     branch: i8,
-    limit: usize
+    limit: usize,
 ) {
     let mut perft_cases = parse_perft_file(path);
     let limit = limit.min(perft_cases.len());
@@ -288,10 +277,7 @@ pub fn start_perft(
 
     let longest_fen: usize = perft_cases
         .iter()
-        .max_by_key(
-            |(fen, _, _, _, _, _, _)|
-            fen.len()
-        )
+        .max_by_key(|(fen, _, _, _, _, _, _)| fen.len())
         .unwrap()
         .0
         .len();
@@ -302,9 +288,8 @@ pub fn start_perft(
         state.load_fen(&fen);
         println!("\n{}", format_game_state(state, true));
 
-        let expected_perfts = [
-            perft_1, perft_2, perft_3, perft_4, perft_5, perft_6
-        ];
+        let expected_perfts =
+            [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
 
         for d in 1..=depth {
             let start_time = std::time::Instant::now();
@@ -319,14 +304,24 @@ pub fn start_perft(
                 println!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [PASSED]",
-                    i, fen, d, expected, result, format_time(elapsed),
+                    i,
+                    fen,
+                    d,
+                    expected,
+                    result,
+                    format_time(elapsed),
                     width = longest_fen
                 );
             } else {
                 println!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [FAILED]",
-                    i, fen, d, expected, result, format_time(elapsed),
+                    i,
+                    fen,
+                    d,
+                    expected,
+                    result,
+                    format_time(elapsed),
                     width = longest_fen
                 );
             }
@@ -335,8 +330,7 @@ pub fn start_perft(
 
     println!(
         "Perft testing completed: {}/{} cases passed.",
-        successful_cases,
-        total_cases
+        successful_cases, total_cases
     );
     println!("Total moves generated: {}", total_moves);
 }
@@ -345,12 +339,7 @@ pub fn start_perft(
 ///
 /// When `branch >= 0`, this also prints the explored move prefixes for the
 /// first levels to help inspect branching behavior.
-pub fn perft(
-    state: &mut State,
-    depth: u8,
-    branch: i8,
-    prefix: &str,
-) -> u64 {
+pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     if depth == 0 {
         if branch >= 0 {
             println!("{} moves | Nodes: 1", prefix);
