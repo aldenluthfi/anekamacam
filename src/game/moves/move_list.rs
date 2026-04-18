@@ -2424,7 +2424,7 @@ macro_rules! is_move_legal {
     ($state:expr, $mv:expr) => {{
         {
             let all_moves = generate_all_moves_and_drops($state);
-            
+
             let mut legal = false;
             for mv in all_moves {
                 if !make_move!($state, mv.clone()) {
