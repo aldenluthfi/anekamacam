@@ -400,8 +400,8 @@ pub struct State {
     pub pv_table: PVTable,                                                      /* transposition table for search     */
     pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
 
-    pub search_hist: Vec<Vec<Move>>,
-    pub killer_hist: Vec<[Move; 2]>,
+    pub search_hist: Vec<Vec<u16>>,                                             /* piece index to square to score      */
+    pub killer_hist: Vec<[Move; 2]>                                             /* search ply to killer moves          */
 }
 
 impl State {
@@ -504,8 +504,8 @@ impl State {
             pv_table: vec![(null_move(), 0); PV_TABLE_SIZE],
             pv_line: array::from_fn(|_| null_move()),
 
-            search_hist: vec![vec![null_move(); board_size]; piece_count],
-            killer_hist: vec![array::from_fn(|_| null_move()); piece_count],
+            search_hist: vec![vec![0u16; board_size]; piece_count],
+            killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
         }
     }
 
@@ -555,8 +555,8 @@ impl State {
         self.pv_table = vec![(null_move(), 0); PV_TABLE_SIZE];
         self.pv_line = array::from_fn(|_| null_move());
 
-        self.search_hist = vec![vec![null_move(); board_size]; piece_count];
-        self.killer_hist = vec![array::from_fn(|_| null_move()); piece_count];
+        self.search_hist = vec![vec![0u16; board_size]; piece_count];
+        self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     }
 
     /// Resets the state and loads a new position from a FEN-like string.

@@ -65,8 +65,8 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
     let piece_count: usize = state.pieces.len();
     let board_size: usize = (state.files as usize) * (state.ranks as usize);
 
-    state.search_hist = vec![vec![null_move(); board_size]; piece_count];
-    state.killer_hist = vec![array::from_fn(|_| null_move()); piece_count];
+    state.search_hist = vec![vec![0u16; board_size]; piece_count];
+    state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     state.pv_table = vec![(null_move(), 0); PV_TABLE_SIZE];
 
     state.search_ply = 0;
@@ -130,10 +130,10 @@ pub fn search_position(state: &mut State, info: &mut SearchInfo) {
 
 /// Searches one node with negamax alpha-beta pruning.
 ///
-/// This implementation preserves existing search semantics while applying
-/// lightweight ordering optimizations:
-/// - PV move is searched first when available.
-/// - Remaining moves are selected in-place by MVV-LVA each iteration.
+/// Hot-path optimizations in this implementation:
+/// - PV move is probed once and reused for in-place move selection.
+/// - Remaining moves are selected in-place using MVV-LVA + killer/history.
+/// - Expensive full-state verification runs only in debug builds.
 ///
 /// Returns the best score for the current side to move.
 pub fn alpha_beta(
@@ -148,6 +148,7 @@ pub fn alpha_beta(
     let mut alpha = alpha;
 
 
+    #[cfg(debug_assertions)]
     verify_game_state(state);
 
     info.nodes += 1;
@@ -177,12 +178,10 @@ pub fn alpha_beta(
     let mut best_move = null_move();
 
     let mut all_moves = generate_all_moves_and_drops(state);
-    move_pv_to_front(state, &mut all_moves);
+    let pv_move = probe_pv_move(state);
 
     for i in 0..all_moves.len() {
-        if i != 0 {
-            pick_by_mvvlva(state, &mut all_moves, i);
-        }
+        pick_by_score(state, &mut all_moves, i, &pv_move);
 
         let mv = all_moves[i].clone();
 
@@ -196,11 +195,27 @@ pub fn alpha_beta(
 
         if score > alpha {
             if score >= beta {
+                if move_type!(mv) != SINGLE_CAPTURE_MOVE
+                && move_type!(mv) != MULTI_CAPTURE_MOVE
+                {
+                    state.killer_hist[state.search_ply as usize].swap(1, 0);
+                    state.killer_hist[state.search_ply as usize][0] =
+                        mv.clone();
+                }
+
                 return beta;
             }
 
             alpha = score;
             best_move = mv;
+
+            if move_type!(best_move) != SINGLE_CAPTURE_MOVE
+            && move_type!(best_move) != MULTI_CAPTURE_MOVE
+            {
+                state.search_hist
+                    [piece!(best_move) as usize]
+                    [end!(best_move) as usize] += depth as u16;
+            }
         }
     }
 
@@ -222,6 +237,7 @@ pub fn alpha_beta(
     }
 
 
+    #[cfg(debug_assertions)]
     verify_game_state(state);
 
     if alpha != alpha_start {
