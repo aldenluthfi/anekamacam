@@ -1,54 +1,62 @@
 //! # evaluation.rs
 //!
-//! Placeholder module for position evaluation logic.
+//! Position evaluation logic for alpha-beta search.
 //!
 //! # Author
 //! Alden Luthfi
 //!
 //! # Date
-//! 29/01/2026
+//! 19/04/2026
 
 use crate::*;
 
 /// Evaluates the current position from the side-to-move perspective.
 ///
-/// The evaluation is phase-aware:
-/// - `OPENING` uses opening material + opening PST terms.
-/// - `ENDGAME` uses endgame material + endgame PST terms.
-/// - `MIDDLEGAME` linearly interpolates between the two scores using the
-///   current opening-material total against `opening_score`.
+/// Evaluation model:
+/// - `OPENING`   : opening material delta + opening PST delta.
+/// - `ENDGAME`   : endgame material delta + endgame PST delta.
+/// - `MIDDLEGAME`: linear interpolation between opening and endgame scores.
 ///
-/// Positive values favor the side to move, negative values favor the opponent.
+/// Hot-path notes:
+/// - Uses cached per-side material/PST totals from `State`.
+/// - Uses a branch-light side-to-move sign (`WHITE => +1`, `BLACK => -1`).
+/// - Handles `opening_score == 0` safely during interpolation.
 #[inline(always)]
 pub fn evaluate_position(state: &State) -> i32 {
     let white = WHITE as usize;
     let black = BLACK as usize;
 
-    let opening_material_white = state.opening_material[white] as i32;
-    let opening_material_black = state.opening_material[black] as i32;
-    let endgame_material_white = state.endgame_material[white] as i32;
-    let endgame_material_black = state.endgame_material[black] as i32;
+    let opening_white = state.opening_material[white] as i32;
+    let opening_black = state.opening_material[black] as i32;
+    let endgame_white = state.endgame_material[white] as i32;
+    let endgame_black = state.endgame_material[black] as i32;
 
-    let score_opening = opening_material_white - opening_material_black
+    let score_opening = opening_white - opening_black
         + state.opening_pst_bonus[white]
         - state.opening_pst_bonus[black];
 
-    let score_endgame = endgame_material_white - endgame_material_black
+    let score_endgame = endgame_white - endgame_black
         + state.endgame_pst_bonus[white]
         - state.endgame_pst_bonus[black];
-
-    let material_score = opening_material_white + opening_material_black;
 
     let blended_score = match state.game_phase {
         OPENING => score_opening,
         ENDGAME => score_endgame,
         MIDDLEGAME => {
-            (score_opening * material_score
-                + score_endgame * (state.opening_score as i32 - material_score))
-                / state.opening_score as i32
+            let opening_total = opening_white + opening_black;
+            let opening_scale = state.opening_score as i32;
+
+            if opening_scale == 0 {
+                score_endgame
+            } else {
+                (score_opening * opening_total
+                    + score_endgame * (opening_scale - opening_total))
+                    / opening_scale
+            }
         }
         _ => panic!("Invalid game phase {}", state.game_phase),
     };
 
-    blended_score * (-2 * state.playing as i32 + 1)
+    let stm_sign = if state.playing == WHITE { 1 } else { -1 };
+    blended_score * stm_sign
 }
