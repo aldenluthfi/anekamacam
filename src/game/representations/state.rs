@@ -183,14 +183,14 @@ macro_rules! enc_stand_offs {
 }
 
 #[macro_export]
-macro_rules! halfmove_clock_rule {
+macro_rules! halfmove_clock {
     ($state:expr) => {
         ($state.special_rules >> 11 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_halfmove_clock_rule {
+macro_rules! enc_halfmove_clock {
     ($rules:expr) => {
         $rules |= 1 << 11;
     };

@@ -99,7 +99,7 @@ pub fn verify_game_state(state: &State) {
         "Computed white board doesn't match state white board\n{}\n{}\n{}",
         format_board(&temp_white_board, None),
         format_board(&state.pieces_board[WHITE as usize], None),
-        format_game_state(state, false)
+        format_game_state(state, FORMAT_VERBOSITY_INFO)
     );
 
     assert_eq!(
@@ -108,7 +108,7 @@ pub fn verify_game_state(state: &State) {
         "Computed black board doesn't match state black board\n{}\n{}\n{}",
         format_board(&temp_black_board, None),
         format_board(&state.pieces_board[BLACK as usize], None),
-        format_game_state(state, false)
+        format_game_state(state, FORMAT_VERBOSITY_INFO)
     );
 
     let mut temp_pieces_board = board!(state.files, state.ranks);
@@ -368,7 +368,7 @@ pub fn start_perft(
     let limit = limit.min(perft_cases.len());
     perft_cases.shuffle(&mut RNG.lock().unwrap());
 
-    println!(
+    info!(
         "Perft testing {} positions with depth {} and branching {}...",
         limit, depth, branch
     );
@@ -388,7 +388,7 @@ pub fn start_perft(
         perft_cases.into_iter().take(limit).enumerate()
     {
         state.load_fen(&fen);
-        println!("\n{}", format_game_state(state, true));
+        info!("\n{}", format_game_state(state, FORMAT_VERBOSITY_INFO));
 
         let expected_perfts =
             [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
@@ -403,7 +403,7 @@ pub fn start_perft(
             if result == expected {
                 successful_cases += 1;
                 total_moves += result;
-                println!(
+                info!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [PASSED]",
                     i,
@@ -415,7 +415,7 @@ pub fn start_perft(
                     width = longest_fen
                 );
             } else {
-                println!(
+                warn!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [FAILED]",
                     i,
@@ -430,11 +430,11 @@ pub fn start_perft(
         }
     }
 
-    println!(
+    info!(
         "Perft testing completed: {}/{} cases passed.",
         successful_cases, total_cases
     );
-    println!("Total moves generated: {}", total_moves);
+    info!("Total moves generated: {}", total_moves);
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.
@@ -444,7 +444,7 @@ pub fn start_perft(
 pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     if depth == 0 {
         if branch >= 0 {
-            println!("{} moves | Nodes: 1", prefix);
+            debug!("{} moves | Nodes: 1", prefix);
         }
         return 1;
     }
@@ -473,7 +473,7 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
         }
     }
 
-    println!("{} moves | Nodes: {}", prefix, nodes);
+    debug!("{} moves | Nodes: {}", prefix, nodes);
 
     nodes
 }
@@ -487,10 +487,10 @@ pub fn debug_interactive(state: &mut State) {
 
     loop {
         input.clear();
-        println!("\n{}", format_game_state(state, true));
+        info!("\n{}", format_game_state(state, FORMAT_VERBOSITY_INFO));
 
         if stdin().read_line(&mut input).is_err() {
-            eprintln!("Error reading stdin");
+            error!("Error reading stdin");
             break;
         }
 
@@ -501,7 +501,7 @@ pub fn debug_interactive(state: &mut State) {
                 let parts = input.split_whitespace().collect::<Vec<_>>();
 
                 if parts.len() < 3 {
-                    eprintln!("Usage: pv [hash/show] [args]");
+                    warn!("Usage: pv [hash/show] [args]");
                     continue;
                 }
 
@@ -514,28 +514,27 @@ pub fn debug_interactive(state: &mut State) {
                             hash_pv_move(mv.clone(), state);
                             make_move!(state, mv);
                         } else {
-                            eprintln!("Invalid move for hashing: {}", args);
+                            warn!("Invalid move for hashing: {}", args);
                         }
                     }
                     "show" => {
                         let depth = args.parse::<usize>().unwrap_or(0);
                         fill_pv_line(state, depth);
 
-                        for pv_move in &state.pv_line {
-                            if pv_move == &null_move() {
-                                println!();
-                                break;
-                            }
+                        let pv_line = state
+                            .pv_line
+                            .iter()
+                            .take_while(|pv_move| *pv_move != &null_move())
+                            .map(|pv_move| format_move(pv_move, state))
+                            .collect::<Vec<String>>()
+                            .join(" ");
 
-                            let pv_move_str = format_move(pv_move, state);
-
-                            print!("{} ", pv_move_str);
-                        }
+                        info!("PV line: {}", pv_line);
 
                         state.pv_line = array::from_fn(|_| null_move());
                     }
                     _ => {
-                        eprintln!("Unknown pv command: {}", command);
+                        warn!("Unknown pv command: {}", command);
                     }
                 }
             }
@@ -547,13 +546,13 @@ pub fn debug_interactive(state: &mut State) {
                 let parts = input.split_whitespace().collect::<Vec<_>>();
 
                 if parts.len() < 2 {
-                    eprintln!("Usage: search [depth]");
+                    warn!("Usage: search [depth]");
                     continue;
                 }
 
                 let mut info = SearchInfo::default();
                 info.depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
-                    eprintln!("Invalid depth for search: {}", parts[1]);
+                    warn!("Invalid depth for search: {}", parts[1]);
                     0
                 });
 
@@ -563,7 +562,7 @@ pub fn debug_interactive(state: &mut State) {
                 Some(mv) => {
                     make_move!(state, mv);
                 }
-                None => eprintln!("Invalid move: {}", input.trim()),
+                None => warn!("Invalid move: {}", input.trim()),
             },
         }
     }

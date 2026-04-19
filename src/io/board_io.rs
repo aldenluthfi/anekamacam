@@ -121,5 +121,5 @@ pub fn debug_print_relevant_moves(state: &State, piece_index: u8, square: u16) {
         }
     }
 
-    println!("{}", format_board(&result, Some('*')));
+    debug!("{}", format_board(&result, Some('*')));
 }
