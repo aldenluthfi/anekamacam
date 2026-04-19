@@ -162,7 +162,8 @@ pub fn alpha_beta(
         .copied()
         .unwrap_or(0)
         >= state.repetition_limit
-        || state.halfmove_clock >= 50
+        || (halfmove_clock_rule!(state)
+            && state.halfmove_clock >= state.halfmove_limit)
     {
         return 0;
     }

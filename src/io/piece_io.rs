@@ -19,13 +19,14 @@ use crate::*;
 /// - Row 1: Piece index
 /// - Row 2: Piece symbol
 /// - Row 3: Piece color ("White" or "Black")
-/// - Row 4: Opening/Endgame piece value
-/// - Row 5: Royal status ("*" if royal, empty otherwise)
-/// - Row 6: Promotion ability ("*" if can promote, empty otherwise)
-/// - Row 7: Major piece status ("*" if major, empty otherwise)
-/// - Row 8: Piece count limit (if applicable, otherwise non-existent)
-/// - Row 9: Can Promote (if applicable, otherwise non-existent)
-/// - Row 10: Promotes From (if applicable, otherwise non-existent)
+/// - Row 4: Opening piece value
+/// - Row 5: Endgame piece value
+/// - Row 6: Royal status ("*" if royal, empty otherwise)
+/// - Row 7: Promotion ability ("*" if can promote, empty otherwise)
+/// - Row 8: Major piece status ("*" if major, empty otherwise)
+/// - Row 9: Piece count limit (if applicable, otherwise non-existent)
+/// - Row 10: Can Promote (if applicable, otherwise non-existent)
+/// - Row 11: Promotes From (if applicable, otherwise non-existent)
 ///
 pub fn format_piece(piece: &Piece, state: &State) -> String {
     let mut rows = Vec::with_capacity(9);
@@ -41,7 +42,8 @@ pub fn format_piece(piece: &Piece, state: &State) -> String {
         }
         .to_string(),
     );
-    rows.push(format!("{}/{}", p_ovalue!(piece), p_evalue!(piece)));
+    rows.push(p_ovalue!(piece).to_string());
+    rows.push(p_evalue!(piece).to_string());
     rows.push(
         if p_is_royal!(piece) {
             "*"

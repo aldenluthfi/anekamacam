@@ -183,16 +183,30 @@ macro_rules! enc_stand_offs {
 }
 
 #[macro_export]
-macro_rules! repetition_limit {
+macro_rules! halfmove_clock_rule {
     ($state:expr) => {
         ($state.special_rules >> 11 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_repetition_limit {
+macro_rules! enc_halfmove_clock_rule {
     ($rules:expr) => {
         $rules |= 1 << 11;
+    };
+}
+
+#[macro_export]
+macro_rules! repetition_limit {
+    ($state:expr) => {
+        ($state.special_rules >> 12 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_repetition_limit {
+    ($rules:expr) => {
+        $rules |= 1 << 12;
     };
 }
 
@@ -300,8 +314,9 @@ macro_rules! pass_snapshot {
 /// - bit 9     : Game begins with a setup phase
 /// - bit 10    : A player can make a move that creates a stand-off that the
 ///   opponent must break on their next turn
-/// - bit 11    : There is a limit on the number of repetitions of a position
-/// - bit 12-31 : reserved for future use
+/// - bit 11    : Halfmove clock draw rule is enabled
+/// - bit 12    : There is a limit on the number of repetitions of a position
+/// - bit 13-31 : reserved for future use
 ///
 pub struct State {
 
@@ -320,6 +335,8 @@ pub struct State {
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
 
     pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
+    pub halfmove_limit: u8,                                                     /* halfmoves before draw              */
+    pub halfmove_pieces: Vec<bool>,                                             /* moving these pieces resets clock   */
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
     pub opening_score: u32,                                                     /* opening threshold                  */
     pub endgame_score: u32,                                                     /* endgame threshold                  */
@@ -417,6 +434,8 @@ impl State {
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
 
             piece_limit: vec![u32::MAX; piece_count],
+            halfmove_limit: u8::MAX,
+            halfmove_pieces: vec![false; piece_count],
             repetition_limit: u8::MAX,
             opening_score: 0,
             endgame_score: 0,
