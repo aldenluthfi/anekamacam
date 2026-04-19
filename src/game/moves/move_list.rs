@@ -736,7 +736,7 @@ macro_rules! make_move {
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
 
-
+            #[cfg(debug_assertions)]
             verify_game_state($state);
 
             let move_type = move_type!($mv);
@@ -1803,6 +1803,7 @@ macro_rules! make_move {
                 false
             } else {
 
+                #[cfg(debug_assertions)]
                 verify_game_state($state);
 
                 true
@@ -1833,7 +1834,7 @@ macro_rules! undo_move {
         let snapshot =
             $state.history.pop().unwrap_or_else(|| panic!("No move to undo!"));
 
-
+        #[cfg(debug_assertions)]
         verify_game_state($state);
 
         $state.playing = 1 - $state.playing;
@@ -2411,7 +2412,7 @@ macro_rules! undo_move {
             }
         }
 
-
+        #[cfg(debug_assertions)]
         verify_game_state($state);
     }};
 }
