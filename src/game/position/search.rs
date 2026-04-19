@@ -95,16 +95,16 @@ pub fn search_position(state: &mut State, info: &mut SearchInfo) {
             break;
         }
 
-        println!(
-            "[INFO] Depth: {}, Score: {}, Nodes: {}, Best Move: {}",
+        info!(
+            "Depth: {}, Score: {}, Nodes: {}, Best Move: {}",
             depth,
             best_score,
             info.nodes,
             format_move(best_move, state)
         );
 
-        println!(
-            "[INFO] Best Line: {}",
+        info!(
+            "Best Line: {}",
             state.pv_line
                 .iter()
                 .take(depth)
@@ -147,7 +147,7 @@ pub fn alpha_beta(
     let _ = null;
     let mut alpha = alpha;
 
-    #[cfg(debug_assertions)]
+
     verify_game_state(state);
 
     info.nodes += 1;
@@ -162,7 +162,7 @@ pub fn alpha_beta(
         .copied()
         .unwrap_or(0)
         >= state.repetition_limit
-        || (halfmove_clock_rule!(state)
+        || (halfmove_clock!(state)
             && state.halfmove_clock >= state.halfmove_limit)
     {
         return 0;
@@ -221,7 +221,7 @@ pub fn alpha_beta(
         return 0;
     }
 
-    #[cfg(debug_assertions)]
+
     verify_game_state(state);
 
     if alpha != alpha_start {

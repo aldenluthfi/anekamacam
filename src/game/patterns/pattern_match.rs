@@ -46,7 +46,6 @@ impl PieceSet {
     }
 }
 
-#[cfg(debug_assertions)]
 impl std::fmt::Debug for PieceSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut pieces = Vec::new();
@@ -94,8 +93,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         .captures(expr)
         .unwrap_or_else(|| panic!("Invalid pattern format {}", expr));
 
-    #[cfg(debug_assertions)]
-    println!("[DEBUG] parse_pattern captures: {:?}", captures);
+    debug!("parse_pattern captures: {:?}", captures);
 
     let (allowers, allower_pieces) = match (captures.get(1), captures.get(2)) {
         (Some(a), Some(p)) => (a.as_str(), p.as_str()),
@@ -126,8 +124,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             .collect()
     };
 
-    #[cfg(debug_assertions)]
-    println!("[DEBUG] Parsed allowers: {:#?}", allowers_vecs);
+    debug!("Parsed allowers: {:#?}", allowers_vecs);
 
     let allower_result = allowers_vecs
         .iter()
@@ -151,8 +148,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         })
         .collect::<PatternAllower>();
 
-    #[cfg(debug_assertions)]
-    println!("[DEBUG] Encoded allowers: {:?}", allower_result);
+    debug!("Encoded allowers: {:?}", allower_result);
 
     let (stoppers, stopper_pieces) = match (captures.get(3), captures.get(4)) {
         (Some(s), Some(p)) => (s.as_str(), p.as_str()),
@@ -182,8 +178,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             .collect()
     };
 
-    #[cfg(debug_assertions)]
-    println!("[DEBUG] Parsed drop: {:#?}", stoppers_vecs);
+    debug!("Parsed drop: {:#?}", stoppers_vecs);
 
     let stopper_result = stoppers_vecs
         .iter()
@@ -207,8 +202,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         })
         .collect::<PatternStopper>();
 
-    #[cfg(debug_assertions)]
-    println!("[DEBUG] Encoded stoppers: {:?}", stopper_result);
+    debug!("Encoded stoppers: {:?}", stopper_result);
 
     (allower_result, stopper_result)
 }

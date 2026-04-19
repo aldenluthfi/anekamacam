@@ -642,7 +642,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     if halfmove_clock {
-        enc_halfmove_clock_rule!(special_rules);
+        enc_halfmove_clock!(special_rules);
     }
 
     if repetition_limit {
@@ -2113,11 +2113,360 @@ pub fn combine_board_strings(board1: &str, board2: &str) -> String {
     result
 }
 
-/// Formats the current board, optionally with runtime state metadata.
+fn format_castling_rights(state: &State) -> String {
+    let mut rights = String::new();
+
+    if state.castling_state & WK_CASTLE != 0 {
+        rights.push('K');
+    }
+    if state.castling_state & WQ_CASTLE != 0 {
+        rights.push('Q');
+    }
+    if state.castling_state & BK_CASTLE != 0 {
+        rights.push('k');
+    }
+    if state.castling_state & BQ_CASTLE != 0 {
+        rights.push('q');
+    }
+
+    if rights.is_empty() {
+        "-".to_string()
+    } else {
+        rights
+    }
+}
+
+fn format_hand(state: &State, color: u8) -> String {
+    let pieces_in_hand = &state.piece_in_hand[color as usize];
+    let mut hand = String::new();
+
+    for (i, piece) in state.pieces.iter().enumerate() {
+        let count = pieces_in_hand[i];
+        if count == 1 {
+            hand.push(piece.char);
+        } else if count > 1 {
+            hand.push_str(&format!("{}{}", count, piece.char));
+        }
+    }
+
+    if hand.is_empty() {
+        "-".to_string()
+    } else {
+        hand
+    }
+}
+
+fn format_numeric_board(
+    values: &[i32], files: u8, ranks: u8, title: &str
+) -> String {
+    let mut result = String::new();
+    let width = 3;
+
+    let board_width = files as usize * (width + 3) + 3;
+    result.push_str(&format!("{:^board_width$}\n", title));
+    result.push_str(&format!(
+        "   ╔{}╗\n",
+        (0..files)
+            .map(|_| "═".repeat(width + 2))
+            .collect::<Vec<String>>()
+            .join("╤")
+    ));
+
+    for rank in (0..ranks).rev() {
+        result.push_str(&format!("{:02} ║", rank));
+        for file in 0..files {
+            let idx = rank as usize * files as usize + file as usize;
+            result.push_str(
+                &format!(" {:>width$} ", values[idx], width = width)
+            );
+            if file + 1 < files {
+                result.push('│');
+            }
+        }
+        result.push_str("║\n");
+
+        if rank > 0 {
+            result.push_str(&format!(
+                "   ╟{}╢\n",
+                (0..files)
+                    .map(|_| "─".repeat(width + 2))
+                    .collect::<Vec<String>>()
+                    .join("┼")
+            ));
+        }
+    }
+
+    result.push_str(&format!(
+        "   ╚{}╝\n",
+        (0..files)
+            .map(|_| "═".repeat(width + 2))
+            .collect::<Vec<String>>()
+            .join("╧")
+    ));
+
+    result.push_str("     ");
+    for file in 0..files {
+        if files <= 26 {
+            result.push_str(&format!(
+                " {:^width$} ",
+                (b'A' + file) as char,
+                width = width
+            ));
+        } else {
+            result.push_str(&format!(" {:^width$} ", file, width = width));
+        }
+        if file + 1 < files {
+            result.push(' ');
+        }
+    }
+
+    result.push('\n');
+    result
+}
+
+fn format_evaluation_parameters(state: &State) -> String {
+    let phase_score =
+        state.opening_material[WHITE as usize] +
+        state.opening_material[BLACK as usize];
+
+    let global_rows = vec![
+        ("Opening threshold", state.opening_score.to_string()),
+        ("Endgame threshold", state.endgame_score.to_string()),
+        ("Current phase score", phase_score.to_string()),
+    ];
+
+    let side_rows = vec![
+        (
+            "Opening material",
+            state.opening_material[WHITE as usize].to_string(),
+            state.opening_material[BLACK as usize].to_string(),
+        ),
+        (
+            "Endgame material",
+            state.endgame_material[WHITE as usize].to_string(),
+            state.endgame_material[BLACK as usize].to_string(),
+        ),
+        (
+            "Opening PST bonus",
+            state.opening_pst_bonus[WHITE as usize].to_string(),
+            state.opening_pst_bonus[BLACK as usize].to_string(),
+        ),
+        (
+            "Endgame PST bonus",
+            state.endgame_pst_bonus[WHITE as usize].to_string(),
+            state.endgame_pst_bonus[BLACK as usize].to_string(),
+        ),
+    ];
+
+    let global_label_width = global_rows
+        .iter()
+        .map(|(label, _)| label.len())
+        .max()
+        .unwrap_or(10)
+        .max("Parameter".len());
+    let global_value_width = global_rows
+        .iter()
+        .map(|(_, value)| value.len())
+        .max()
+        .unwrap_or(5)
+        .max("Value".len());
+
+    let side_label_width = side_rows
+        .iter()
+        .map(|(label, _, _)| label.len())
+        .max()
+        .unwrap_or(10)
+        .max("Parameter".len());
+    let side_white_width = side_rows
+        .iter()
+        .map(|(_, value, _)| value.len())
+        .max()
+        .unwrap_or(5)
+        .max("White".len());
+    let side_black_width = side_rows
+        .iter()
+        .map(|(_, _, value)| value.len())
+        .max()
+        .unwrap_or(5)
+        .max("Black".len());
+
+    let global_table_width = global_label_width + global_value_width + 7;
+    let side_table_width = side_label_width + side_white_width + side_black_width + 10;
+
+    let mut result = String::new();
+
+    result.push_str(&format!("\n{:^global_table_width$}\n", "Evaluation Parameters"));
+    result.push_str(&format!(
+        "╔{}╤{}╗\n",
+        "═".repeat(global_label_width + 2),
+        "═".repeat(global_value_width + 2)
+    ));
+    result.push_str(&format!(
+        "║ {:^global_label_width$} │ {:^global_value_width$} ║\n",
+        "Parameter",
+        "Value"
+    ));
+    result.push_str(&format!(
+        "╟{}┼{}╢\n",
+        "─".repeat(global_label_width + 2),
+        "─".repeat(global_value_width + 2)
+    ));
+
+    for (idx, (label, value)) in global_rows.iter().enumerate() {
+        result.push_str(&format!(
+            "║ {:<global_label_width$} │ {:>global_value_width$} ║\n",
+            label,
+            value
+        ));
+
+        if idx + 1 < global_rows.len() {
+            result.push_str(&format!(
+                "╟{}┼{}╢\n",
+                "─".repeat(global_label_width + 2),
+                "─".repeat(global_value_width + 2)
+            ));
+        }
+    }
+
+    result.push_str(&format!(
+        "╚{}╧{}╝\n",
+        "═".repeat(global_label_width + 2),
+        "═".repeat(global_value_width + 2)
+    ));
+
+    result.push_str(&format!("\n{:^side_table_width$}\n", "Side Evaluation Totals"));
+    result.push_str(&format!(
+        "╔{}╤{}╤{}╗\n",
+        "═".repeat(side_label_width + 2),
+        "═".repeat(side_white_width + 2),
+        "═".repeat(side_black_width + 2)
+    ));
+    result.push_str(&format!(
+        "║ {:^side_label_width$} │ {:^side_white_width$} │ {:^side_black_width$} ║\n",
+        "Parameter",
+        "White",
+        "Black"
+    ));
+    result.push_str(&format!(
+        "╟{}┼{}┼{}╢\n",
+        "─".repeat(side_label_width + 2),
+        "─".repeat(side_white_width + 2),
+        "─".repeat(side_black_width + 2)
+    ));
+
+    for (idx, (label, white_value, black_value)) in side_rows.iter().enumerate() {
+        result.push_str(&format!(
+            "║ {:<side_label_width$} │ {:>side_white_width$} │ {:>side_black_width$} ║\n",
+            label,
+            white_value,
+            black_value
+        ));
+
+        if idx + 1 < side_rows.len() {
+            result.push_str(&format!(
+                "╟{}┼{}┼{}╢\n",
+                "─".repeat(side_label_width + 2),
+                "─".repeat(side_white_width + 2),
+                "─".repeat(side_black_width + 2)
+            ));
+        }
+    }
+
+    result.push_str(&format!(
+        "╚{}╧{}╧{}╝\n",
+        "═".repeat(side_label_width + 2),
+        "═".repeat(side_white_width + 2),
+        "═".repeat(side_black_width + 2)
+    ));
+
+    result
+}
+
+fn format_piece_square_tables(state: &State) -> String {
+    let mut result = String::new();
+    let board_width = state.files as usize * 7;
+    let panel_width = board_width * 2 + 4;
+
+    result.push_str(&format!("\n{:^panel_width$}\n", "Piece-Square Tables"));
+
+    for (white_idx, black_idx) in collect_piece_type_pairs(state) {
+        let white_piece = &state.pieces[white_idx];
+        let black_piece = &state.pieces[black_idx];
+
+        let white_opening = format_numeric_board(
+            &state.pst_opening[white_idx],
+            state.files,
+            state.ranks,
+            "Opening / Middlegame PST",
+        );
+        let black_opening = format_numeric_board(
+            &state.pst_opening[black_idx],
+            state.files,
+            state.ranks,
+            "Opening / Middlegame PST",
+        );
+
+        let white_endgame = format_numeric_board(
+            &state.pst_endgame[white_idx],
+            state.files,
+            state.ranks,
+            "Endgame PST",
+        );
+        let black_endgame = format_numeric_board(
+            &state.pst_endgame[black_idx],
+            state.files,
+            state.ranks,
+            "Endgame PST",
+        );
+
+        let white_opening_lines = white_opening.lines().collect::<Vec<&str>>();
+        let black_opening_lines = black_opening.lines().collect::<Vec<&str>>();
+        let white_endgame_lines = white_endgame.lines().collect::<Vec<&str>>();
+        let black_endgame_lines = black_endgame.lines().collect::<Vec<&str>>();
+
+        result.push_str(&format!(
+            "\n{:^panel_width$}\n\n",
+            format!("PST for the {}", white_piece.name)
+        ));
+        result.push_str(&format!(
+            "{:^board_width$}    {:^board_width$}\n",
+            format!("White ({})", white_piece.char),
+            format!("Black ({})", black_piece.char)
+        ));
+
+        for line_idx in 0..white_opening_lines.len().max(black_opening_lines.len()) {
+            let left = white_opening_lines.get(line_idx).copied().unwrap_or("");
+            let right = black_opening_lines.get(line_idx).copied().unwrap_or("");
+            result.push_str(&format!(
+                "{:<board_width$}    {:<board_width$}\n",
+                left,
+                right
+            ));
+        }
+
+        result.push('\n');
+
+        for line_idx in 0..white_endgame_lines.len().max(black_endgame_lines.len()) {
+            let left = white_endgame_lines.get(line_idx).copied().unwrap_or("");
+            let right = black_endgame_lines.get(line_idx).copied().unwrap_or("");
+            result.push_str(&format!(
+                "{:<board_width$}    {:<board_width$}\n",
+                left,
+                right
+            ));
+        }
+
+        result.push('\n');
+    }
+
+    result
+}
+
+/// Formats the current board and runtime state details by verbosity level.
 ///
-/// With `verbose = true`, this appends side-to-move, hash, counters,
-/// castling/en-passant data, and hand contents when relevant.
-pub fn format_game_state(state: &State, verbose: bool) -> String {
+/// - [`FORMAT_VERBOSITY_ERROR`] / minimal: board only.
+/// - [`FORMAT_VERBOSITY_INFO`] and above: board + runtime metadata.
+pub fn format_game_state(state: &State, verbosity: u8) -> String {
     let mut result = String::new();
 
     let board_size = (state.files as usize) * (state.ranks as usize);
@@ -2143,46 +2492,39 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             .expect("Failed to format combined board string"),
     );
 
-    if verbose {
+    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_INFO) {
         result.push_str(&format!(
-            "\nPosition hash\t\t: {:032X}\n",
+            "\nPosition hash\t: {:032X}\n",
             state.position_hash
         ));
         result.push_str(&format!(
-            "Side to move\t\t: {}\n",
+            "Side to move\t: {}\n",
             if state.playing == WHITE {
                 "White"
             } else {
                 "Black"
             }
         ));
+        result.push_str(&format!(
+            "Game phase\t: {}\n",
+            match state.game_phase {
+                OPENING => "Opening",
+                MIDDLEGAME => "Middlegame",
+                ENDGAME => "Endgame",
+                _ => "Unknown",
+            }
+        ));
 
         if castling!(state) {
-            result.push_str(&format!("Castling rights\t\t: {}\n", {
-                let mut rights = String::new();
-                if state.castling_state & WK_CASTLE != 0 {
-                    rights.push('K');
-                }
-                if state.castling_state & WQ_CASTLE != 0 {
-                    rights.push('Q');
-                }
-                if state.castling_state & BK_CASTLE != 0 {
-                    rights.push('k');
-                }
-                if state.castling_state & BQ_CASTLE != 0 {
-                    rights.push('q');
-                }
-                if rights.is_empty() {
-                    "-".to_string()
-                } else {
-                    rights
-                }
-            }));
+            result.push_str(&format!(
+                "Castling rights\t: {}\n",
+                format_castling_rights(state)
+            ));
         }
 
         if en_passant!(state) {
             result.push_str(&format!(
-                "En passant\t\t: {}\n",
+                "En passant\t: {}\n",
                 if state.en_passant_square == u32::MAX {
                     "-".to_string()
                 } else {
@@ -2194,73 +2536,31 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             ));
         }
 
-        result.push_str(&format!(
-            "Halfmove clock\t\t: {}\n",
-            state.halfmove_clock
-        ));
-
-        if halfmove_clock_rule!(state) {
-            let reset_pieces = state
-                .pieces
-                .iter()
-                .enumerate()
-                .filter_map(|(idx, piece)| {
-                    if state.halfmove_pieces[idx] {
-                        Some(piece.char)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<String>();
-
-            result.push_str(&format!(
-                "Halfmove limit\t\t: {}\n",
-                state.halfmove_limit
-            ));
-            result.push_str(&format!(
-                "Halfmove reset pieces\t: {}\n",
-                if reset_pieces.is_empty() {
-                    "-".to_string()
-                } else {
-                    reset_pieces
-                }
-            ));
+        if halfmove_clock!(state) {
+            result.push_str(
+                &format!("Halfmove clock\t: {}\n", state.halfmove_clock)
+            );
         }
 
         if drops!(state) || promote_to_captured!(state) || setup_phase!(state) {
-            let pieces_in_white = &state.piece_in_hand[WHITE as usize];
-            let pieces_in_black = &state.piece_in_hand[BLACK as usize];
-
-            result.push_str("White's hand\t\t: ");
-            for (i, piece) in state.pieces.iter().enumerate() {
-                let count = pieces_in_white[i];
-                if count == 1 {
-                    result.push_str(&format!("{}", piece.char));
-                } else if count > 1 {
-                    result.push_str(&format!("{}{}", count, piece.char));
-                }
-            }
-            result.push('\n');
-
-            result.push_str("Black's hand\t\t: ");
-            for (i, piece) in state.pieces.iter().enumerate() {
-                let count = pieces_in_black[i];
-                if count == 1 {
-                    result.push_str(&format!("{}", piece.char));
-                } else if count > 1 {
-                    result.push_str(&format!("{}{}", count, piece.char));
-                }
-            }
-            result.push('\n');
+            result.push_str(
+                &format!("White's hand\t: {}\n", format_hand(state, WHITE))
+            );
+            result.push_str(
+                &format!("Black's hand\t: {}\n", format_hand(state, BLACK))
+            );
         }
     }
+
     result
 }
 
 /// Formats all piece types in the game state as tables.
 ///
 /// Each column represents one piece with the following rows:
-/// Name, Index, Symbol, Color, Value, Royal, Can Promote, Major, Promotes From
+/// Name, Index, Symbol, Color, Opening Value, Endgame Value,
+/// Royal, Major, Count Limit (optional), Can Promote (optional),
+/// Promotes To (optional), Promotes From (optional)
 ///
 /// # Arguments
 ///
@@ -2270,8 +2570,16 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
 ///
 /// A formatted string containing one or more piece type tables.
 pub fn format_piece_types(state: &State) -> String {
-    let mut headers =
-        vec!["Name", "Index", "Symbol", "Color", "Value", "Royal", "Major"];
+    let mut headers = vec![
+        "Name",
+        "Index",
+        "Symbol",
+        "Color",
+        "Opening Value",
+        "Endgame Value",
+        "Royal",
+        "Major",
+    ];
 
     if count_limits!(state) {
         headers.push("Count Limit");
@@ -2279,6 +2587,7 @@ pub fn format_piece_types(state: &State) -> String {
 
     if promotions!(state) {
         headers.push("Can Promote");
+        headers.push("Promotes To");
         headers.push("Promotes From");
     }
 
@@ -2290,8 +2599,6 @@ pub fn format_piece_types(state: &State) -> String {
     let num_tables = state.pieces.len().div_ceil(pieces_per_table);
 
     const HEADER_WIDTH: usize = 16;
-    let piece_width: usize =
-        state.pieces.iter().map(|p| p.name.len()).max().unwrap() + 2;
 
     for table_idx in 0..num_tables {
         let start_idx = table_idx * pieces_per_table;
@@ -2322,6 +2629,14 @@ pub fn format_piece_types(state: &State) -> String {
 
             piece_columns.push(piece_data);
         }
+
+        let piece_width = piece_columns
+            .iter()
+            .flat_map(|column| column.iter())
+            .map(|cell| cell.trim().len())
+            .max()
+            .unwrap_or(12)
+            .max(12);
 
         result.push('╔');
         result.push_str(&"═".repeat(HEADER_WIDTH + 2));
@@ -2683,11 +2998,96 @@ fn format_forbidden_zones(state: &State) -> String {
     result
 }
 
+fn format_halfmove_clock_rules(state: &State) -> String {
+    if !halfmove_clock!(state) {
+        return String::new();
+    }
+
+    let reset_pieces = state
+        .pieces
+        .iter()
+        .enumerate()
+        .filter_map(
+            |(idx, piece)| state.halfmove_pieces[idx].then_some(piece.char)
+        )
+        .collect::<String>();
+
+    let rows = vec![
+        ("Halfmove limit", state.halfmove_limit.to_string()),
+        (
+            "Halfmove resetters",
+            if reset_pieces.is_empty() {
+                "-".to_string()
+            } else {
+                reset_pieces
+            },
+        ),
+    ];
+
+    let label_width = rows
+        .iter()
+        .map(|(label, _)| label.len())
+        .max()
+        .unwrap_or(10)
+        .max("Parameter".len());
+    let value_width = rows
+        .iter()
+        .map(|(_, value)| value.len())
+        .max()
+        .unwrap_or(5)
+        .max("Value".len());
+
+    let table_width = label_width + value_width + 7;
+    let mut result = String::new();
+
+    result.push_str(&format!("\n{:^table_width$}\n", "Halfmove Clock Rules"));
+    result.push_str(&format!(
+        "╔{}╤{}╗\n",
+        "═".repeat(label_width + 2),
+        "═".repeat(value_width + 2)
+    ));
+    result.push_str(&format!(
+        "║ {:^label_width$} │ {:^value_width$} ║\n",
+        "Parameter",
+        "Value"
+    ));
+    result.push_str(&format!(
+        "╟{}┼{}╢\n",
+        "─".repeat(label_width + 2),
+        "─".repeat(value_width + 2)
+    ));
+
+    for (idx, (label, value)) in rows.iter().enumerate() {
+        result.push_str(&format!(
+            "║ {:<label_width$} │ {:>value_width$} ║\n",
+            label,
+            value
+        ));
+
+        if idx + 1 < rows.len() {
+            result.push_str(&format!(
+                "╟{}┼{}╢\n",
+                "─".repeat(label_width + 2),
+                "─".repeat(value_width + 2)
+            ));
+        }
+    }
+
+    result.push_str(&format!(
+        "╚{}╧{}╝\n\n",
+        "═".repeat(label_width + 2),
+        "═".repeat(value_width + 2)
+    ));
+
+    result
+}
+
 fn format_special_rules(state: &State) -> String {
     if state.special_rules == 0 {
         "".to_string()
     } else {
         let mut rules = Vec::new();
+
         if castling!(state) {
             rules.push("Castling");
         }
@@ -2709,15 +3109,37 @@ fn format_special_rules(state: &State) -> String {
         if promote_to_captured!(state) {
             rules.push("Promote to Captured");
         }
+        if demote_upon_capture!(state) {
+            rules.push("Demote Upon Capture");
+        }
+        if stalemate_loss!(state) {
+            rules.push("Stalemate Loss");
+        }
+        if setup_phase!(state) {
+            rules.push("Setup Phase");
+        }
+        if stand_offs!(state) {
+            rules.push("Stand-Offs");
+        }
+        if halfmove_clock!(state) {
+            rules.push("Halfmove Clock");
+        }
+        if repetition_limit!(state) {
+            rules.push("Repetition Limit");
+        }
+
         rules.join(", ")
     }
 }
 
-/// Formats a full variant overview including static rules and live state.
+/// Formats a full variant overview using verbosity levels.
 ///
-/// This aggregates piece tables, zones, initial setup maps, and the current
-/// board/state summary into one printable report.
-pub fn format_entire_game(state: &State) -> String {
+/// - [`FORMAT_VERBOSITY_ERROR`] / minimal: title, rules, and board only.
+/// - [`FORMAT_VERBOSITY_WARN`]: include piece type definitions.
+/// - [`FORMAT_VERBOSITY_INFO`] and above: include zones, setup maps,
+///   and evaluation-parameter tables.
+/// - [`FORMAT_VERBOSITY_DEBUG`]: include PST board tables.
+pub fn format_entire_game(state: &State, verbosity: u8) -> String {
     let mut result = String::new();
 
     result.push_str(&format!(
@@ -2728,11 +3150,28 @@ pub fn format_entire_game(state: &State) -> String {
         "Special rules: {}\n\n",
         format_special_rules(state)
     ));
-    result.push_str(&format_piece_types(state));
-    result.push_str(&format_promotion_zones(state));
-    result.push_str(&format_forbidden_zones(state));
-    result.push_str(&format_intial_setup(state));
-    result.push_str(&format_game_state(state, true));
+
+    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_WARN) {
+        result.push_str(&format_piece_types(state));
+    }
+
+    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_INFO) {
+        result.push_str(&format_promotion_zones(state));
+        result.push_str(&format_forbidden_zones(state));
+        result.push_str(&format_halfmove_clock_rules(state));
+        result.push_str(&format_intial_setup(state));
+        result.push_str(&format_evaluation_parameters(state));
+    }
+
+    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_DEBUG) {
+        result.push_str(&format_piece_square_tables(state));
+    }
+
+    if !result.ends_with('\n') {
+        result.push('\n');
+    }
+
+    result.push_str(&format_game_state(state, verbosity));
 
     result
 }
