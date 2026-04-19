@@ -5,7 +5,8 @@
 //! This file contains functionality for reading game configuration files,
 //! parsing FEN (Forsyth-Edwards Notation) strings, and formatting game state
 //! for display. It handles piece definitions, board setup, and state
-//! information such as castling rights, en passant squares, and move counters.
+//! information such as castling rights, en passant squares, and configurable
+//! halfmove-clock/repetition counters.
 //! The module provides both compact and verbose output formats for game
 //! visualization.
 //!
@@ -26,6 +27,18 @@ lazy_static! {
     pub static ref SECTION_PATTERN: Regex =
         Regex::new(r"= (.+) =[^=]+").unwrap();
     pub static ref IN_HAND_PATTERN: Regex = Regex::new(r"(\d*)(.)").unwrap();
+}
+
+pub const FORMAT_VERBOSITY_ERROR: u8 = 1;
+pub const FORMAT_VERBOSITY_WARN: u8 = 2;
+pub const FORMAT_VERBOSITY_INFO: u8 = 3;
+pub const FORMAT_VERBOSITY_DEBUG: u8 = 4;
+
+pub const FORMAT_VERBOSITY_MINIMAL: u8 = FORMAT_VERBOSITY_ERROR;
+pub const FORMAT_VERBOSITY_STANDARD: u8 = FORMAT_VERBOSITY_INFO;
+
+fn verbosity_enabled(current: u8, required: u8) -> bool {
+    current >= required
 }
 
 fn determine_board_dimensions(fen: &str) -> (u8, u8) {
@@ -514,6 +527,8 @@ pub fn parse_config_file(path: &str) -> State {
         sections["rules"].contains(&"stalemate loss".to_string());
     let setup_phase = sections["rules"].contains(&"setup phase".to_string());
     let stand_offs = sections["rules"].contains(&"stand-offs".to_string());
+    let halfmove_clock =
+        sections["rules"].contains(&"halfmove clock".to_string());
     let repetition_limit =
         sections["rules"].contains(&"repetition limit".to_string());
 
@@ -573,6 +588,13 @@ pub fn parse_config_file(path: &str) -> State {
         )
     }
 
+    if halfmove_clock {
+        assert!(
+            sections.contains_key("halfmove clock"),
+            "[halfmove clock] section is missing"
+        )
+    }
+
     let mut special_rules = 0u32;
 
     if castling {
@@ -617,6 +639,10 @@ pub fn parse_config_file(path: &str) -> State {
 
     if stand_offs {
         enc_stand_offs!(special_rules);
+    }
+
+    if halfmove_clock {
+        enc_halfmove_clock_rule!(special_rules);
     }
 
     if repetition_limit {
@@ -1546,6 +1572,54 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    if halfmove_clock {
+        let mut parsed_limit: Option<u8> = None;
+        let mut parsed_pieces: Option<Vec<bool>> = None;
+
+        for entry in &sections["halfmove clock"] {
+            let parts: Vec<&str> = entry.split(':').map(str::trim).collect();
+            assert!(
+                parts.len() == 2,
+                "Invalid halfmove clock definition: {}",
+                entry
+            );
+
+            match parts[0] {
+                "limit" => {
+                    let limit_value = parts[1].parse::<u8>().unwrap_or_else(|_| {
+                        panic!("Invalid halfmove limit: {}", parts[1].trim())
+                    });
+                    parsed_limit = Some(limit_value);
+                }
+                "pieces" => {
+                    let mut reset_mask = vec![false; result.pieces.len()];
+                    for piece_char in parts[1].chars() {
+                        let piece_index = char_to_index
+                            .get(&piece_char)
+                            .copied()
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "Unknown piece character in halfmove clock pieces: {}",
+                                    piece_char
+                                )
+                            });
+                        reset_mask[piece_index] = true;
+                    }
+                    parsed_pieces = Some(reset_mask);
+                }
+                _ => panic!(
+                    "Unknown halfmove clock field: {}",
+                    parts[0]
+                ),
+            }
+        }
+
+        result.halfmove_limit = parsed_limit
+            .expect("Halfmove clock limit is missing");
+        result.halfmove_pieces = parsed_pieces
+            .expect("Halfmove clock pieces are missing");
+    }
+
     if repetition_limit {
         let limit_parts: Vec<&str> =
             sections["repetition limit"][0].split(':').collect();
@@ -2124,6 +2198,34 @@ pub fn format_game_state(state: &State, verbose: bool) -> String {
             "Halfmove clock\t\t: {}\n",
             state.halfmove_clock
         ));
+
+        if halfmove_clock_rule!(state) {
+            let reset_pieces = state
+                .pieces
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, piece)| {
+                    if state.halfmove_pieces[idx] {
+                        Some(piece.char)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<String>();
+
+            result.push_str(&format!(
+                "Halfmove limit\t\t: {}\n",
+                state.halfmove_limit
+            ));
+            result.push_str(&format!(
+                "Halfmove reset pieces\t: {}\n",
+                if reset_pieces.is_empty() {
+                    "-".to_string()
+                } else {
+                    reset_pieces
+                }
+            ));
+        }
 
         if drops!(state) || promote_to_captured!(state) || setup_phase!(state) {
             let pieces_in_white = &state.piece_in_hand[WHITE as usize];

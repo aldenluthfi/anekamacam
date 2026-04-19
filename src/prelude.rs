@@ -86,8 +86,9 @@ pub use crate::io::board_io::{
     debug_print_relevant_moves, format_board, format_square,
 };
 pub use crate::io::game_io::{
-    COMMENT_PATTERN, export_tuned_parameters_file, format_entire_game,
-    format_game_state, parse_config_file, parse_fen,
+    COMMENT_PATTERN, FORMAT_VERBOSITY_DEBUG, FORMAT_VERBOSITY_MINIMAL,
+    FORMAT_VERBOSITY_STANDARD, export_tuned_parameters_file,
+    format_entire_game, format_game_state, parse_config_file, parse_fen,
     parse_tuned_parameters_file,
 };
 pub use crate::io::move_io::{
@@ -102,6 +103,7 @@ pub use crate::io::protocols::uci;
 pub use bnum::types::U4096;
 pub use hashbrown::{HashMap, HashSet};
 pub use lazy_static::lazy_static;
+pub use log::{debug, error, info, warn};
 pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
 pub use regex::Regex;
 pub use std::{

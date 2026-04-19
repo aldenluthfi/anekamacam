@@ -62,15 +62,35 @@ pub mod io {
 
 pub mod prelude;
 
+fn configured_log_level() -> log::LevelFilter {
+    if cfg!(feature = "log-level-debug") {
+        log::LevelFilter::Debug
+    } else if cfg!(feature = "log-level-info") {
+        log::LevelFilter::Info
+    } else if cfg!(feature = "log-level-warn") {
+        log::LevelFilter::Warn
+    } else if cfg!(feature = "log-level-error") {
+        log::LevelFilter::Error
+    } else {
+        log::LevelFilter::Info
+    }
+}
+
 #[hotpath::main]
 fn main() {
-let variant = "fide";
+    env_logger::Builder::new()
+        .filter_level(configured_log_level())
+        .format_timestamp_millis()
+        .init();
+
+    let variant = "fide";
     let config_path = format!("configs/{}.conf", variant);
     let perft_path = format!("res/{}.perft", variant);
 
+    info!("Loading variant config: {}", config_path);
     let mut state = parse_config_file(&config_path);
 
-    println!("{}", format_entire_game(&state));
+    info!("{}", format_entire_game(&state, FORMAT_VERBOSITY_DEBUG));
 
     // start_perft(&mut state, &perft_path, 6, -1, 3);
     debug_interactive(&mut state);

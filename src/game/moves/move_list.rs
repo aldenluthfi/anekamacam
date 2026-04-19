@@ -871,7 +871,8 @@ macro_rules! make_move {
                     if is_promotion { promoted_piece } else { piece_index }
                 ].insert(end_square as Square);
 
-                if p_can_promote!($state.pieces[piece_index]) {
+                if halfmove_clock_rule!($state)
+                && $state.halfmove_pieces[piece_index] {
                     $state.halfmove_clock = 0;
                 } else {
                     $state.halfmove_clock += 1;
