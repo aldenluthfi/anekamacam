@@ -86,10 +86,11 @@ pub use crate::io::board_io::{
     debug_print_relevant_moves, format_board, format_square,
 };
 pub use crate::io::game_io::{
-    COMMENT_PATTERN, FORMAT_VERBOSITY_DEBUG, FORMAT_VERBOSITY_MINIMAL,
-    FORMAT_VERBOSITY_STANDARD, export_tuned_parameters_file,
-    format_entire_game, format_game_state, parse_config_file, parse_fen,
-    parse_tuned_parameters_file,
+    COMMENT_PATTERN, FORMAT_VERBOSITY_DEBUG, FORMAT_VERBOSITY_ERROR,
+    FORMAT_VERBOSITY_INFO, FORMAT_VERBOSITY_MINIMAL,
+    FORMAT_VERBOSITY_STANDARD, FORMAT_VERBOSITY_WARN,
+    export_tuned_parameters_file, format_entire_game, format_game_state,
+    parse_config_file, parse_fen, parse_tuned_parameters_file,
 };
 pub use crate::io::move_io::{
     format_move, parse_move
@@ -107,8 +108,9 @@ pub use log::{debug, error, info, warn};
 pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
 pub use regex::Regex;
 pub use std::{
-    array, collections::VecDeque, fmt::Debug, fs, hash::Hash, io::stdin,
-    mem::size_of, sync::{Mutex, Arc}, time::Instant
+    array, collections::VecDeque, fmt::Debug, fs, hash::Hash,
+    io::{stdin, Write}, mem::size_of, sync::{Mutex, Arc}, time::Instant,
+    path::Path,
 };
 
 /*----------------------------------------------------------------------------*\

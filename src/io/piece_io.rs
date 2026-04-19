@@ -26,7 +26,8 @@ use crate::*;
 /// - Row 8: Major piece status ("*" if major, empty otherwise)
 /// - Row 9: Piece count limit (if applicable, otherwise non-existent)
 /// - Row 10: Can Promote (if applicable, otherwise non-existent)
-/// - Row 11: Promotes From (if applicable, otherwise non-existent)
+/// - Row 11: Promotes To (if applicable, otherwise non-existent)
+/// - Row 12: Promotes From (if applicable, otherwise non-existent)
 ///
 pub fn format_piece(piece: &Piece, state: &State) -> String {
     let mut rows = Vec::with_capacity(9);
@@ -72,6 +73,20 @@ pub fn format_piece(piece: &Piece, state: &State) -> String {
             }
             .to_string(),
         );
+
+        rows.push(
+            if piece.promotions.is_empty() {
+                "-".to_string()
+            } else {
+                piece
+                    .promotions
+                    .iter()
+                    .map(|&idx| state.pieces[idx as usize].char.to_string())
+                    .collect::<Vec<String>>()
+                    .join("")
+            },
+        );
+
         rows.push(
             if !state.piece_demotion_map.contains_key(&p_index!(piece)) {
                 "-".to_string()

@@ -80,18 +80,48 @@ fn configured_log_level() -> log::LevelFilter {
 fn main() {
     env_logger::Builder::new()
         .filter_level(configured_log_level())
-        .format_timestamp_millis()
+        .format_target(false)
+        .format_module_path(false)
+        .format_source_path(false)
+        .format(|buf, record| {
+            let timestamp_raw = buf.timestamp_millis().to_string();
+            let timestamp = timestamp_raw
+                .trim_end_matches('Z')
+                .split('.')
+                .next()
+                .unwrap_or(&timestamp_raw)
+                .replace('T', " ");
+
+            let file = record
+                .file()
+                .and_then(
+                    |p| Path::new(p).file_name().and_then(|n| n.to_str())
+                ).unwrap_or("?");
+            let line = record.line().map_or("?".to_string(), |l| l.to_string());
+
+            let level_style = buf.default_level_style(record.level());
+
+            writeln!(
+                buf,
+                "[{}{}{}]-[{} {}:{}] {}",
+                level_style.render(),
+                record.level(),
+                level_style.render_reset(),
+                timestamp,
+                file,
+                line,
+                record.args()
+            )
+        })
         .init();
 
     let variant = "fide";
     let config_path = format!("configs/{}.conf", variant);
-    let perft_path = format!("res/{}.perft", variant);
 
     info!("Loading variant config: {}", config_path);
     let mut state = parse_config_file(&config_path);
 
     info!("{}", format_entire_game(&state, FORMAT_VERBOSITY_DEBUG));
 
-    // start_perft(&mut state, &perft_path, 6, -1, 3);
     debug_interactive(&mut state);
 }

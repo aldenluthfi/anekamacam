@@ -47,9 +47,9 @@ pub fn generate_drop_vectors(
             .captures(part)
             .unwrap_or_else(|| panic!("Invalid drop format {}", part));
 
-        #[cfg(debug_assertions)]
-        println!(
-            "[DEBUG] Captured groups for piece {}: {:?}",
+
+        debug!(
+            "Captured groups for piece {}: {:?}",
             piece.name, captures
         );
 
