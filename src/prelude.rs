@@ -70,7 +70,7 @@ pub use crate::game::position::{
     evaluation::evaluate_position
 };
 pub use crate::game::search::{
-    move_ordering::{move_pv_to_front, pick_by_mvvlva, score_mvvlva},
+    move_ordering::{pick_by_score, score_move},
     pv_table::{PVElement, PVTable, fill_pv_line, hash_pv_move, probe_pv_move},
     quiescence::quiescence_search,
 };
@@ -96,6 +96,7 @@ pub use crate::io::move_io::{
     format_move, parse_move
 };
 pub use crate::io::piece_io::format_piece;
+pub use crate::io::logger::init_logging;
 pub use crate::io::protocols::uci;
 
 /*----------------------------------------------------------------------------*\
