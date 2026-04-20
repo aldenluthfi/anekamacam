@@ -16,49 +16,63 @@ use crate::*;
 /// and interruption controls used by iterative search routines.
 /// It is mutated throughout one search invocation lifecycle.
 pub struct SearchInfo {
-    pub start_time: u128,
-    pub stop_time: u128,
+    pub start_time: u128,                                                       /* Start time since search start.     */
 
-    pub depth: usize,
+    pub set_depth: usize,                                                       /* Maximum search depth.              */
+    pub set_timed: u128,                                                        /* Time limit in ns (0 = inf)         */
+    pub set_moves: usize,                                                       /* Moves to go until time control.    */
 
-    pub set_depth: usize,
-    pub set_timed: u128,
-    pub set_moves: usize,
+    pub nodes: u128,                                                            /* Total nodes searched so far.       */
 
-    pub nodes: u128,
-
-    pub interrupt: bool,
-    pub infinite: bool,
+    pub interrupt: bool,                                                        /* Flag set by external stop events.  */
 }
 
 impl Default for SearchInfo {
     fn default() -> Self {
         Self {
             start_time: 0,
-            stop_time: 0,
-            depth: 0,
             set_depth: 0,
             set_timed: 0,
             set_moves: 0,
             nodes: 0,
             interrupt: false,
-            infinite: false,
         }
     }
 }
 
-/// Polls external stop conditions and updates search interrupt state.
+pub struct SearchResult {
+    pub best_score: i32,
+    pub best_move: Move,
+    pub total_nodes: u128,
+    pub total_elapsed: u128,
+}
+
+/// Polls stop conditions and updates search interrupt state.
 ///
-/// This is currently a placeholder hook for future protocol/event integration.
+/// A timed search is interrupted when elapsed nanoseconds from `start_time`
+/// reaches or exceeds `set_timed`.
 #[inline(always)]
-pub fn check_interrupt() {}
+pub fn check_interrupt(info: &mut SearchInfo) {
+    if info.interrupt || info.set_timed == 0 {
+        return;
+    }
+
+    let elapsed = ENGINE_START
+        .elapsed()
+        .as_nanos()
+        .saturating_sub(info.start_time);
+
+    if elapsed >= info.set_timed {
+        info.interrupt = true;
+    }
+}
 
 /// Clears per-search history/table state before a fresh root search.
 ///
 /// This resets node counters, interruption flags, PV/killer/history tables,
 /// and ply tracking. It does not alter the current board position.
 pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
-    info.start_time = Instant::now().elapsed().as_nanos();
+    info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;
     info.interrupt = false;
 
@@ -67,7 +81,7 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
 
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
-    state.pv_table = vec![(null_move(), 0); PV_TABLE_SIZE];
+    state.pv_table = vec![(null_move(), 0, 0); PV_TABLE_SIZE];
 
     state.search_ply = 0;
 }
@@ -77,30 +91,61 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
 /// The search depth increases from `1..=info.depth`. After each completed
 /// iteration, the principal variation is extracted from the PV table and
 /// reported in UCI-style informational logs.
-pub fn search_position(state: &mut State, info: &mut SearchInfo) {
+pub fn search_position(
+    state: &mut State, info: &mut SearchInfo
+) -> SearchResult {
 
-    let mut best_move: &Move;
-    let mut best_score: i32;
+    let mut best_move = null_move();
+    let mut best_score: i32 = 0;
 
     clear_search(state, info);
 
-    for depth in 1..=info.depth {
+    let mut total_elapsed = 0;
+
+    for depth in 1..=info.set_depth {
+        let depth_start_nodes = info.nodes;
+        let depth_start_time = ENGINE_START.elapsed().as_nanos();
+
         best_score = alpha_beta(
             state, depth, i32::MIN + 1, i32::MAX, info, true                    /* i32::MIN + 1 to avoid overflow     */
         );
-        fill_pv_line(state, depth);
-        best_move = &state.pv_line[0];
 
         if info.interrupt {
             break;
         }
 
+        fill_pv_line!(state, depth);
+        best_move = state.pv_line[0].clone();
+
+        let elapsed = ENGINE_START
+            .elapsed()
+            .as_nanos()
+            .saturating_sub(depth_start_time);
+        let nodes = info.nodes - depth_start_nodes;
+        total_elapsed += elapsed;
+
+        let depth_nps = if elapsed == 0 {
+            0
+        } else {
+            ((nodes as f64) * 1_000_000_000.0 / elapsed as f64).round() as u128
+        };
+
         info!(
-            "Depth: {}, Score: {}, Nodes: {}, Best Move: {}",
+            "Depth {:>2} | Score: {:>6} | Best Move: {:<8}",
             depth,
             best_score,
-            info.nodes,
-            format_move(best_move, state)
+            format_move(&best_move, state),
+        );
+
+        info!(
+            "Depth Nodes: {:>12}",
+            nodes,
+        );
+
+        info!(
+            "Time: {:>10} | NPS: {:>12}",
+            format_time(elapsed),
+            depth_nps,
         );
 
         info!(
@@ -113,18 +158,15 @@ pub fn search_position(state: &mut State, info: &mut SearchInfo) {
                 .collect::<Vec<String>>()
                 .join(" ")
         );
+    }
 
-        for mv in state.pv_line.iter().take(depth) {
-            if mv == &null_move() {
-                break;
-            }
+    let total_nodes = info.nodes;
 
-            make_move!(state, mv.clone());
-        }
-
-        while state.search_ply > 0 {
-            undo_move!(state);
-        }
+    SearchResult {
+        best_score,
+        best_move,
+        total_nodes,
+        total_elapsed,
     }
 }
 
@@ -136,6 +178,7 @@ pub fn search_position(state: &mut State, info: &mut SearchInfo) {
 /// - Expensive full-state verification runs only in debug builds.
 ///
 /// Returns the best score for the current side to move.
+#[hotpath::measure]
 pub fn alpha_beta(
     state: &mut State,
     depth: usize,
@@ -152,20 +195,27 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     info.nodes += 1;
+    check_interrupt(info);
 
-    if depth == 0 {
-        return evaluate_position(state);
+    if info.interrupt {
+        return alpha;
     }
 
-    if state
+    if depth == 0 {
+        return quiescence_search(state, alpha, beta, info);
+    }
+
+    let is_repetition = state
         .position_hash_map
         .get(&state.position_hash)
         .copied()
         .unwrap_or(0)
-        >= state.repetition_limit
-        || (halfmove_clock!(state)
-            && state.halfmove_clock >= state.halfmove_limit)
-    {
+        >= state.repetition_limit;
+
+    let is_halfmove_draw =
+        halfmove_clock!(state) && state.halfmove_clock >= state.halfmove_limit;
+
+    if state.search_ply > 0 && (is_repetition || is_halfmove_draw) {
         return 0;
     }
 
@@ -178,14 +228,19 @@ pub fn alpha_beta(
     let mut best_move = null_move();
 
     let mut all_moves = generate_all_moves_and_drops(state);
-    let pv_move = probe_pv_move(state);
+    let pv_move = probe_pv_move!(state);
 
     for i in 0..all_moves.len() {
         pick_by_score(state, &mut all_moves, i, &pv_move);
 
         let mv = all_moves[i].clone();
+        let mv_type = move_type!(mv);
+        let mv_piece = piece!(mv) as usize;
+        let mv_end = end!(mv) as usize;
+        let is_capture =
+            mv_type == SINGLE_CAPTURE_MOVE || mv_type == MULTI_CAPTURE_MOVE;
 
-        if !make_move!(state, mv.clone()) {
+        if !make_move!(state, mv) {
             continue;
         }
 
@@ -195,27 +250,22 @@ pub fn alpha_beta(
 
         if score > alpha {
             if score >= beta {
-                if move_type!(mv) != SINGLE_CAPTURE_MOVE
-                && move_type!(mv) != MULTI_CAPTURE_MOVE
-                {
+                if !is_capture {
                     state.killer_hist[state.search_ply as usize].swap(1, 0);
                     state.killer_hist[state.search_ply as usize][0] =
-                        mv.clone();
+                        all_moves[i].clone();
                 }
 
                 return beta;
             }
 
             alpha = score;
-            best_move = mv;
 
-            if move_type!(best_move) != SINGLE_CAPTURE_MOVE
-            && move_type!(best_move) != MULTI_CAPTURE_MOVE
-            {
-                state.search_hist
-                    [piece!(best_move) as usize]
-                    [end!(best_move) as usize] += depth as u16;
+            if !is_capture {
+                state.search_hist[mv_piece][mv_end] += depth as u16;
             }
+
+            best_move = all_moves[i].clone();
         }
     }
 
@@ -241,7 +291,7 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     if alpha != alpha_start {
-        hash_pv_move(best_move, state);
+        hash_pv_move!(best_move, state);
     }
 
     alpha

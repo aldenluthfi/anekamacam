@@ -52,8 +52,7 @@ pub fn refresh_eval_state(state: &mut State) {
         }
     }
 
-    let game_phase_score = state.opening_material[WHITE as usize]
-        + state.opening_material[BLACK as usize];
+    let game_phase_score = game_phase_score!(state);
 
     state.game_phase = if game_phase_score > state.opening_score {
         OPENING
@@ -340,7 +339,7 @@ fn parse_perft_file(path: &str) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
         .collect()
 }
 
-fn format_time(nanos: u128) -> String {
+pub fn format_time(nanos: u128) -> String {
     if nanos < 1_000 {
         format!("{} ns", nanos)
     } else if nanos < 1_000_000 {
@@ -357,7 +356,7 @@ fn format_time(nanos: u128) -> String {
 /// Cases are shuffled, capped by `limit`, and each position is tested from
 /// depth 1 up to `depth`. `branch` controls diagnostic line printing when
 /// passed through to `perft`.
-pub fn start_perft(
+pub fn benchmark_perft(
     state: &mut State,
     path: &str,
     depth: u8,
@@ -394,9 +393,12 @@ pub fn start_perft(
             [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
 
         for d in 1..=depth {
-            let start_time = Instant::now();
+            let start_time = ENGINE_START.elapsed().as_nanos();
             let result = perft(state, d, branch, "");
-            let elapsed = start_time.elapsed().as_nanos();
+            let elapsed = ENGINE_START
+                .elapsed()
+                .as_nanos()
+                .saturating_sub(start_time);
 
             let expected = expected_perfts[(d - 1) as usize];
 
@@ -435,6 +437,46 @@ pub fn start_perft(
         successful_cases, total_cases
     );
     info!("Total moves generated: {}", total_moves);
+}
+
+/// Runs a fixed-depth search benchmark from the current position.
+///
+/// This reports the current position, executes search, and logs total nodes,
+/// elapsed wall time, and aggregate nodes-per-second.
+pub fn benchmark_search(state: &mut State, depth: usize) {
+    info!("Search benchmark started with depth {}...", depth);
+    info!("\n{}", format_game_state(state, FORMAT_VERBOSITY_INFO));
+
+    let mut info = SearchInfo::default();
+    info.set_depth = depth;
+
+    let start_time = ENGINE_START.elapsed().as_nanos();
+    let result = search_position(state, &mut info);
+    let elapsed = ENGINE_START
+        .elapsed()
+        .as_nanos()
+        .saturating_sub(start_time);
+
+    let nps = if elapsed == 0 {
+        0
+    } else {
+        ((result.total_nodes as f64) * 1_000_000_000.0 / elapsed as f64)
+            .round() as u128
+    };
+
+    info!(
+        "Search testing completed | Depth: {} | Nodes: {}",
+        depth,
+        result.total_nodes,
+    );
+
+    info!(
+        "Time: {} | NPS: {} | Best Score: {} | Best Move: {}",
+        format_time(elapsed),
+        nps,
+        result.best_score,
+        format_move(&result.best_move, state),
+    );
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.
@@ -497,7 +539,7 @@ pub fn debug_interactive(state: &mut State) {
         match input.trim() {
             "u" => undo_move!(state),
             "q" => break,
-            input if input.starts_with("pv") => {
+            input if input.starts_with("pv ") => {
                 let parts = input.split_whitespace().collect::<Vec<_>>();
 
                 if parts.len() < 3 {
@@ -511,7 +553,7 @@ pub fn debug_interactive(state: &mut State) {
                 match command {
                     "hash" => {
                         if let Some(mv) = parse_move(args, state) {
-                            hash_pv_move(mv.clone(), state);
+                            hash_pv_move!(mv.clone(), state);
                             make_move!(state, mv);
                         } else {
                             warn!("Invalid move for hashing: {}", args);
@@ -519,7 +561,7 @@ pub fn debug_interactive(state: &mut State) {
                     }
                     "show" => {
                         let depth = args.parse::<usize>().unwrap_or(0);
-                        fill_pv_line(state, depth);
+                        fill_pv_line!(state, depth);
 
                         let pv_line = state
                             .pv_line
@@ -551,12 +593,38 @@ pub fn debug_interactive(state: &mut State) {
                 }
 
                 let mut info = SearchInfo::default();
-                info.depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
+                info.set_depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
                     warn!("Invalid depth for search: {}", parts[1]);
                     0
                 });
 
                 search_position(state, &mut info);
+            }
+            input if input.starts_with("go ") => {
+                let parts = input.split_whitespace().collect::<Vec<_>>();
+
+                if parts.len() < 2 {
+                    warn!("Usage: go [depth]");
+                    continue;
+                }
+
+                let mut info = SearchInfo::default();
+                info.set_depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
+                    warn!("Invalid depth for search: {}", parts[1]);
+                    0
+                });
+
+                let result = search_position(state, &mut info);
+
+                info!(
+                    "Best Move: {} | Score: {} | Nodes: {} | Time: {}",
+                    format_move(&result.best_move, state),
+                    result.best_score,
+                    result.total_nodes,
+                    format_time(result.total_elapsed)
+                );
+
+                make_move!(state, result.best_move);
             }
             _ => match parse_move(&input, state) {
                 Some(mv) => {
