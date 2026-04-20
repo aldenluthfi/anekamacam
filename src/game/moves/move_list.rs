@@ -124,6 +124,80 @@ pub fn generate_relevant_moves(
     result
 }
 
+/// Precomputes vector candidates that can produce at least one capture/destroy
+/// action for a given piece and origin square.
+///
+/// This mirrors `generate_relevant_moves` in structure (same bounds and
+/// forbidden-zone checks), but keeps only multi-leg vectors containing a leg
+/// with effective capture semantics:
+/// - explicit capture (`c`)
+/// - destroy (`d`)
+/// - implicit last-leg capture
+///
+/// Result: capture-only generation can reuse the full normal move-construction
+/// pipeline while starting from a narrower prefiltered vector set.
+pub fn generate_relevant_captures(
+    piece: &Piece,
+    square_index: u32,
+    game_state: &State,
+    piece_moves: &[MoveSet],
+) -> MoveSet {
+    let piece_index = p_index!(piece) as usize;
+    let piece_color = p_color!(piece);
+    let vector_set = &piece_moves[piece_index];
+
+    let mut result = MoveSet::new();
+    'multi_leg: for multi_leg_vector in vector_set {
+        let mut accumulated_index = square_index as i32;
+
+        let mut file = accumulated_index % (game_state.files as i32);
+        let mut rank = accumulated_index / (game_state.files as i32);
+
+        let mut has_capture_leg = false;
+
+        for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
+            let last_leg = leg_index + 1 == multi_leg_vector.len();
+
+            let file_offset = x!(leg);
+            let rank_offset = y!(leg);
+
+            let bypass = v!(leg) && not_v!(leg);
+
+            file += file_offset as i32 * (-2 * piece_color as i32 + 1);
+            rank += rank_offset as i32 * (-2 * piece_color as i32 + 1);
+            accumulated_index = rank * (game_state.files as i32) + file;
+
+            if file < 0
+                || file >= game_state.files as i32
+                || rank < 0
+                || rank >= game_state.ranks as i32
+                || (forbidden_zones!(game_state)
+                    && get!(
+                        game_state.forbidden_zones[piece_index],
+                        accumulated_index as u32
+                    )
+                    && !bypass)
+            {
+                continue 'multi_leg;
+            }
+
+            let c = c!(leg) || (last_leg && !m!(leg));
+            let d = d!(leg);
+
+            if c || d {
+                has_capture_leg = true;
+            }
+        }
+
+        if has_capture_leg {
+            result.push(multi_leg_vector.clone());
+        }
+    }
+
+    result.sort_by_key(|v| -(v.len() as isize));
+    result
+}
+
 /// Populates `relevant_attacks` entries originating from one start square.
 ///
 /// For each prefiltered move vector, this records whether each traversed
@@ -378,9 +452,15 @@ macro_rules! validate_attack_vector {
 ///
 /// This resolves multi-leg constraints, captures/unloads, en-passant flags,
 /// castling side conditions, and promotion branching.
-pub fn generate_move_list(
+/// Shared move constructor used by both normal and capture-only generation.
+///
+/// Caller controls behavior by selecting the precomputed vector source:
+/// - `relevant_moves`    -> full pseudo-legal move list
+/// - `relevant_captures` -> capture-focused pseudo-legal list
+fn generate_move_list_from_vectors(
     square_index: u16,
     piece: &Piece,
+    vector_set: &MoveSet,
     game_state: &State,
 ) -> Vec<Move> {
     let mut result = Vec::with_capacity(64);
@@ -389,9 +469,6 @@ pub fn generate_move_list(
     let piece_color = p_color!(piece);
     let piece_rank = p_rank!(piece);
     let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
-
-    let vector_set =
-        &game_state.relevant_moves[piece_index as usize][square_index as usize];
 
     'multi_leg: for multi_leg_vector in vector_set {
         let mut encoded_move = Move::default();
@@ -706,6 +783,86 @@ pub fn generate_move_list(
     }
 
     result
+}
+
+#[inline(always)]
+/// Generates all pseudo-legal encoded moves for `piece` from `square_index`.
+///
+/// This resolves multi-leg constraints, captures/unloads, en-passant flags,
+/// castling side conditions, and promotion branching.
+pub fn generate_move_list(
+    square_index: u16,
+    piece: &Piece,
+    game_state: &State,
+) -> Vec<Move> {
+    let vector_set =
+        &game_state.relevant_moves
+        [p_index!(piece) as usize][square_index as usize];
+
+    generate_move_list_from_vectors(
+        square_index, piece, vector_set, game_state
+    )
+}
+
+#[inline(always)]
+/// Generates only pseudo-legal capture moves for `piece` from `square_index`.
+///
+/// Uses precomputed `relevant_captures` so generation follows the same flow as
+/// normal move generation without generating quiet moves first.
+pub fn generate_capture_list(
+    square_index: u16,
+    piece: &Piece,
+    game_state: &State,
+) -> Vec<Move> {
+    let vector_set =
+        &game_state.relevant_captures
+        [p_index!(piece) as usize][square_index as usize];
+
+    let result =
+        generate_move_list_from_vectors(
+            square_index, piece, vector_set, game_state
+        );
+
+    result
+        .iter()
+        .filter(
+            |mv|
+            move_type!(mv) == SINGLE_CAPTURE_MOVE ||
+            move_type!(mv) == MULTI_CAPTURE_MOVE
+        )
+        .cloned()
+        .collect()
+}
+
+#[inline(always)]
+/// Generates all pseudo-legal capture moves for the side to move.
+///
+/// Flow is intentionally parallel to `generate_all_moves_and_drops`:
+/// - iterate active side piece range
+/// - iterate each piece's occupied squares
+/// - extend result with per-piece generation
+///
+/// Difference: each piece uses `generate_capture_list`, which is backed by
+/// `state.relevant_captures` instead of `state.relevant_moves`.
+pub fn generate_all_captures(state: &State) -> Vec<Move> {
+    if state.game_over || state.setup_phase {
+        return Vec::new();
+    }
+
+    let piece_count = state.pieces.len() / 2;
+    let start_index = piece_count * state.playing as usize;
+    let end_index = start_index + piece_count;
+
+    let mut moves = Vec::with_capacity(128);
+
+    for piece_index in start_index..end_index {
+        let piece = &state.pieces[piece_index];
+        for &index in &state.piece_list[piece_index] {
+            moves.extend(generate_capture_list(index, piece, state));
+        }
+    }
+
+    moves
 }
 
 /*---------------------------------------------------------------------------*\
@@ -1750,16 +1907,14 @@ macro_rules! make_move {
                 }
             }
 
-            let game_phase_score =
-                $state.opening_material[WHITE as usize]
-                + $state.opening_material[BLACK as usize];
+            let game_phase_score = game_phase_score!($state);
             $state.game_phase =
                 if game_phase_score > $state.opening_score {
-                    OPENING
+                    cmp::max(OPENING, $state.game_phase)
                 } else if game_phase_score < $state.endgame_score {
-                    ENDGAME
+                    cmp::max(ENDGAME, $state.game_phase)
                 } else {
-                    MIDDLEGAME
+                    cmp::max(MIDDLEGAME, $state.game_phase)
                 };
 
             $state.playing = 1 - $state.playing;

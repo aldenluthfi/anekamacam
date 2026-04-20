@@ -55,10 +55,6 @@ pub mod io {
     pub mod move_io;
     pub mod piece_io;
 
-    pub mod protocols {
-        pub mod uci;
-    }
-
     pub mod logger;
 }
 
@@ -76,5 +72,5 @@ fn main() {
 
     info!("{}", format_entire_game(&state, FORMAT_VERBOSITY_DEBUG));
 
-    debug_interactive(&mut state);
+    benchmark_search(&mut state, 10);
 }

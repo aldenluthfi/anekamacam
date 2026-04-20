@@ -293,6 +293,22 @@ macro_rules! pass_snapshot {
     };
 }
 
+#[macro_export]
+macro_rules! game_phase_score {
+    ($state:expr) => {{
+        let mut game_phase_score = 0;
+
+        for (piece_idx, piece) in $state.pieces.iter().enumerate() {
+            if p_is_big!(piece) && !p_is_royal!(piece) {
+                game_phase_score += (p_ovalue!(piece) as u32)
+                    * ($state.piece_list[piece_idx].len() as u32);
+            }
+        }
+
+        game_phase_score
+    }};
+}
+
 /*----------------------------------------------------------------------------*\
                             GAME STATE REPRESENTATION
 \*----------------------------------------------------------------------------*/
@@ -347,6 +363,7 @@ pub struct State {
     pub ranks: u8,
 
     pub relevant_moves: Vec<Vec<MoveSet>>,
+    pub relevant_captures: Vec<Vec<MoveSet>>,
     pub relevant_drops: Vec<Vec<DropSet>>,
     pub relevant_setup: Vec<Vec<DropSet>>,
     pub relevant_stand_offs: Vec<Vec<PatternSet>>,
@@ -447,6 +464,8 @@ impl State {
 
             relevant_moves:
                 vec![vec![MoveSet::new(); board_size]; piece_count],
+            relevant_captures:
+                vec![vec![MoveSet::new(); board_size]; piece_count],
             relevant_drops:
                 vec![vec![DropSet::new(); board_size]; piece_count],
             relevant_setup:
@@ -501,7 +520,7 @@ impl State {
 
             position_hash_map: HashMap::with_capacity(128),
 
-            pv_table: vec![(null_move(), 0); PV_TABLE_SIZE],
+            pv_table: vec![(null_move(), 0, 0); PV_TABLE_SIZE],
             pv_line: array::from_fn(|_| null_move()),
 
             search_hist: vec![vec![0u16; board_size]; piece_count],
@@ -552,7 +571,7 @@ impl State {
         self.search_ply = 0;
         self.position_hash_map.clear();
 
-        self.pv_table = vec![(null_move(), 0); PV_TABLE_SIZE];
+        self.pv_table = vec![(null_move(), 0, 0); PV_TABLE_SIZE];
         self.pv_line = array::from_fn(|_| null_move());
 
         self.search_hist = vec![vec![0u16; board_size]; piece_count];
@@ -612,6 +631,20 @@ impl State {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_moves[index][square as usize]
                     = generate_relevant_moves(
+                        piece,
+                        square,
+                        self,
+                        piece_moves
+                    );
+            }
+        }
+    }
+
+    fn populate_relevant_captures(&mut self, piece_moves: &[MoveSet]) {
+        for (index, piece) in self.pieces.iter().enumerate() {
+            for square in 0..(self.files as u32 * self.ranks as u32) {
+                self.relevant_captures[index][square as usize]
+                    = generate_relevant_captures(
                         piece,
                         square,
                         self,
@@ -703,6 +736,7 @@ impl State {
         }
 
         self.populate_relevant_moves(&piece_moves);
+        self.populate_relevant_captures(&piece_moves);
 
         if drops!(self) {
             self.populate_relevant_drops(&piece_drops);
