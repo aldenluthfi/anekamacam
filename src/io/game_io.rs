@@ -2225,14 +2225,9 @@ fn format_numeric_board(
 }
 
 fn format_evaluation_parameters(state: &State) -> String {
-    let phase_score =
-        state.opening_material[WHITE as usize] +
-        state.opening_material[BLACK as usize];
-
     let global_rows = vec![
         ("Opening threshold", state.opening_score.to_string()),
         ("Endgame threshold", state.endgame_score.to_string()),
-        ("Current phase score", phase_score.to_string()),
     ];
 
     let side_rows = vec![
@@ -2513,6 +2508,10 @@ pub fn format_game_state(state: &State, verbosity: u8) -> String {
                 ENDGAME => "Endgame",
                 _ => "Unknown",
             }
+        ));
+        result.push_str(&format!(
+            "Phase score\t: {}\n",
+            game_phase_score!(state)
         ));
 
         if castling!(state) {

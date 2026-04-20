@@ -48,7 +48,8 @@ pub use crate::game::drops::drop_list::{
 };
 pub use crate::game::drops::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
-    generate_all_moves_and_drops, generate_attack_masks, generate_move_list,
+    generate_all_captures, generate_all_moves_and_drops, generate_attack_masks,
+    generate_capture_list, generate_move_list, generate_relevant_captures,
     generate_relevant_moves,
 };
 pub use crate::game::moves::move_parse::{
@@ -71,12 +72,12 @@ pub use crate::game::position::{
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
-    pv_table::{PVElement, PVTable, fill_pv_line, hash_pv_move, probe_pv_move},
+    pv_table::{PVElement, PVTable},
     quiescence::quiescence_search,
 };
 pub use crate::game::util::{
-    perft, random_u128, refresh_eval_state, start_perft, verify_game_state,
-    debug_interactive
+    perft, random_u128, refresh_eval_state, benchmark_perft, benchmark_search,
+    verify_game_state, debug_interactive, format_time
 };
 
 /*----------------------------------------------------------------------------*\
@@ -97,7 +98,6 @@ pub use crate::io::move_io::{
 };
 pub use crate::io::piece_io::format_piece;
 pub use crate::io::logger::init_logging;
-pub use crate::io::protocols::uci;
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
@@ -111,7 +111,7 @@ pub use regex::Regex;
 pub use std::{
     array, collections::VecDeque, fmt::Debug, fs, hash::Hash,
     io::{stdin, Write}, mem::size_of, sync::{Mutex, Arc}, time::Instant,
-    path::Path,
+    path::Path, cmp
 };
 
 /*----------------------------------------------------------------------------*\
@@ -175,6 +175,7 @@ pub const DROP_MOVE: u128 = 3;
 
 lazy_static! {
     pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
+    pub static ref ENGINE_START: Instant = Instant::now();
 }
 
 pub fn null_move() -> Move {
@@ -189,5 +190,6 @@ pub const OPENING: u8 = 0;
 pub const MIDDLEGAME: u8 = 1;
 pub const ENDGAME: u8 = 2;
 
-pub const PV_TABLE_SIZE: usize = (10000000 * 8) / size_of::<PVElement>();       /* 8MB                                */
+pub const PV_TABLE_SIZE: usize = (0x1000000 * 8) / size_of::<PVElement>();      /* 8MB                                */
+pub const PV_BUCKET_SIZE: usize = 4;
 pub const MAX_DEPTH: usize = 64;
