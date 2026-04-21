@@ -69,7 +69,7 @@ pub use crate::game::position::{
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
-    tt_table::{TTEntry, TTTable},
+    tt_table::{TTEntry, TTTable, probe_tt_entry},
     quiescence::quiescence_search,
 };
 
@@ -231,5 +231,5 @@ pub const OPENING: u8 = 0;
 pub const MIDDLEGAME: u8 = 1;
 pub const ENDGAME: u8 = 2;
 
-pub const TT_TABLE_SIZE: usize = (0x1000000 * 8) / size_of::<TTEntry>();      /* 8MB                                */
+pub const TT_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();      /* 256MB                              */
 pub const MAX_DEPTH: usize = 64;
