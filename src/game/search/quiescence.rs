@@ -18,7 +18,6 @@ use crate::*;
 /// 3. Otherwise generate only tactical continuations from
 ///    `generate_all_captures`.
 /// 4. Search legal captures with negamax alpha-beta recursion.
-#[hotpath::measure]
 pub fn quiescence_search(
     state: &mut State,
     alpha: i32,
@@ -32,10 +31,6 @@ pub fn quiescence_search(
 
     info.nodes += 1;
     check_interrupt(info);
-
-    if info.interrupt {
-        return alpha;
-    }
 
     let is_repetition = state
         .position_hash_map
@@ -52,10 +47,10 @@ pub fn quiescence_search(
     }
 
     if state.search_ply >= MAX_DEPTH as u32 {
-        return evaluate_position(state);
+        return evaluate_position!(state);
     }
 
-    let stand_pat = evaluate_position(state);
+    let stand_pat = evaluate_position!(state);
 
     if stand_pat >= beta {
         return beta;
@@ -82,6 +77,10 @@ pub fn quiescence_search(
 
         let score = -quiescence_search(state, -beta, -alpha, info);
         undo_move!(state);
+
+        if info.interrupt {
+            return alpha;
+        }
 
         if score > alpha {
             if score >= beta {

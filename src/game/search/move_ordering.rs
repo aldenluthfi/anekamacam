@@ -20,7 +20,8 @@ use crate::*;
 /// - Quiet/drop moves: killer/history priority
 /// - Single capture : `captured_value + most_valuable - attacker_value`
 /// - Multi-capture  : `sum(captured_values) + most_valuable - attacker_value`
-/// - PV move        : score strictly higher than the rest (`2 * most_valuable + 1`)
+/// - PV move        : score strictly higher than others
+///                    (`2 * most_valuable + 1`)
 ///
 /// `pv_move` should be probed once per node and forwarded into this function
 /// to avoid repeated hash-table lookups while ordering the full move list.

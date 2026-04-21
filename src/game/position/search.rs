@@ -97,22 +97,23 @@ pub fn search_position(
 
     let mut best_move = null_move();
     let mut best_score: i32 = 0;
+    let start_time = ENGINE_START.elapsed().as_nanos();
 
     clear_search(state, info);
-
-    let mut total_elapsed = 0;
 
     for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
-        best_score = alpha_beta(
+        let score = alpha_beta(
             state, depth, i32::MIN + 1, i32::MAX, info, true                    /* i32::MIN + 1 to avoid overflow     */
         );
 
         if info.interrupt {
             break;
         }
+
+        best_score = score;
 
         fill_pv_line!(state, depth);
         best_move = state.pv_line[0].clone();
@@ -122,28 +123,23 @@ pub fn search_position(
             .as_nanos()
             .saturating_sub(depth_start_time);
         let nodes = info.nodes - depth_start_nodes;
-        total_elapsed += elapsed;
 
         let depth_nps = if elapsed == 0 {
             0
         } else {
-            ((nodes as f64) * 1_000_000_000.0 / elapsed as f64).round() as u128
+            nodes * 1_000_000_000 / elapsed
         };
 
         info!(
-            "Depth {:>2} | Score: {:>6} | Best Move: {:<8}",
+            concat!(
+                "Depth {:>2} | Score: {:>6} | Best Move: {:<8} | ",
+                "Depth Nodes: {:>12} | ",
+                "Time: {:>10} | NPS: {:>12}",
+            ),
             depth,
             best_score,
             format_move(&best_move, state),
-        );
-
-        info!(
-            "Depth Nodes: {:>12}",
             nodes,
-        );
-
-        info!(
-            "Time: {:>10} | NPS: {:>12}",
             format_time(elapsed),
             depth_nps,
         );
@@ -161,6 +157,25 @@ pub fn search_position(
     }
 
     let total_nodes = info.nodes;
+    let total_elapsed =
+        ENGINE_START.elapsed().as_nanos().saturating_sub(start_time);
+    let nps = if total_elapsed == 0 {
+        0
+    } else {
+        total_nodes * 1_000_000_000 / total_elapsed
+    };
+
+    info!(
+        concat!(
+            "Search complete | Final Score: {:>6} | Best Move: {:<8} | ",
+            "Total Nodes: {:>12} | Total Time: {:>10} | NPS: {:>12}"
+        ),
+        best_score,
+        format_move(&best_move, state),
+        total_nodes,
+        format_time(total_elapsed),
+        nps
+    );
 
     SearchResult {
         best_score,
@@ -178,7 +193,6 @@ pub fn search_position(
 /// - Expensive full-state verification runs only in debug builds.
 ///
 /// Returns the best score for the current side to move.
-#[hotpath::measure]
 pub fn alpha_beta(
     state: &mut State,
     depth: usize,
@@ -187,19 +201,14 @@ pub fn alpha_beta(
     info: &mut SearchInfo,
     null: bool,
 ) -> i32 {
-    let _ = null;
     let mut alpha = alpha;
-
+    let mut depth = depth;
 
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
     info.nodes += 1;
     check_interrupt(info);
-
-    if info.interrupt {
-        return alpha;
-    }
 
     if depth == 0 {
         return quiescence_search(state, alpha, beta, info);
@@ -220,7 +229,33 @@ pub fn alpha_beta(
     }
 
     if state.search_ply >= MAX_DEPTH as u32 {
-        return evaluate_position(state);
+        return evaluate_position!(state);
+    }
+
+    let in_check = is_in_check!(state.playing, state);
+
+    if in_check {
+        depth += 1;
+    }
+
+    if null
+    && !in_check
+    && depth >= 3
+    && state.search_ply > 0
+    && state.big_pieces[state.playing as usize] > 0 {
+        make_null_move!(state);
+        let score = -alpha_beta(
+            state, depth - 3, -beta, -beta + 1, info, false
+        );
+        undo_null_move!(state);
+
+        if info.interrupt {
+            return 0;
+        }
+
+        if score >= beta {
+            return beta;
+        }
     }
 
     let mut legal_moves = 0;
@@ -248,6 +283,10 @@ pub fn alpha_beta(
         let score = -alpha_beta(state, depth - 1, -beta, -alpha, info, true);
         undo_move!(state);
 
+        if info.interrupt {
+            return 0;
+        }
+
         if score > alpha {
             if score >= beta {
                 if !is_capture {
@@ -270,7 +309,7 @@ pub fn alpha_beta(
     }
 
     if legal_moves == 0 {
-        if is_in_check!(state.playing, state) {
+        if is_in_check!(state.playing, state) || stalemate_loss!(&state) {
             let mate_score = -MATE_SCORE + state.search_ply as i32;
 
             return if state.history.last().map_or(false, |s| {

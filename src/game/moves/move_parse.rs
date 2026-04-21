@@ -80,7 +80,8 @@ lazy_static! {
         m.insert((-1, 1), 7);
         m
     };
-    pub static ref DIRECTION_VECTOR_SETS: HashMap<&'static str, HashSet<(i8, i8)>> = {
+    pub static ref DIRECTION_VECTOR_SETS:
+        HashMap<&'static str, HashSet<(i8, i8)>> = {
         let mut m = HashMap::new();
         m.insert("n", HashSet::from([(-1, 1), (0, 1), (1, 1)]));
         m.insert("e", HashSet::from([(1, 1), (1, 0), (1, -1)]));

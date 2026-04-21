@@ -834,37 +834,6 @@ pub fn generate_capture_list(
         .collect()
 }
 
-#[inline(always)]
-/// Generates all pseudo-legal capture moves for the side to move.
-///
-/// Flow is intentionally parallel to `generate_all_moves_and_drops`:
-/// - iterate active side piece range
-/// - iterate each piece's occupied squares
-/// - extend result with per-piece generation
-///
-/// Difference: each piece uses `generate_capture_list`, which is backed by
-/// `state.relevant_captures` instead of `state.relevant_moves`.
-pub fn generate_all_captures(state: &State) -> Vec<Move> {
-    if state.game_over || state.setup_phase {
-        return Vec::new();
-    }
-
-    let piece_count = state.pieces.len() / 2;
-    let start_index = piece_count * state.playing as usize;
-    let end_index = start_index + piece_count;
-
-    let mut moves = Vec::with_capacity(128);
-
-    for piece_index in start_index..end_index {
-        let piece = &state.pieces[piece_index];
-        for &index in &state.piece_list[piece_index] {
-            moves.extend(generate_capture_list(index, piece, state));
-        }
-    }
-
-    moves
-}
-
 /*---------------------------------------------------------------------------*\
                            MOVE STATE TRANSITION MACROS
 \*---------------------------------------------------------------------------*/
@@ -1289,8 +1258,10 @@ macro_rules! make_move {
                     );
                 }
 
-                let end_rank = (captured_square as Square) / $state.files as u16;
-                let end_file = (captured_square as Square) % $state.files as u16;
+                let end_rank =
+                    (captured_square as Square) / $state.files as u16;
+                let end_file =
+                    (captured_square as Square) % $state.files as u16;
 
                 if castling!($state)
                     && get!($state.virgin_board, captured_square)
@@ -1927,19 +1898,33 @@ macro_rules! make_move {
                 !in_check && !(stand_off_after && stand_off_before) ||
                 stand_off_after && stand_off_before && pass_move;
 
-            if pass_move
-            && ($state.history.last().map_or(
-                false, |snapshot| pass_snapshot!(snapshot))
-            || stand_off_before) {
-                $state.game_over = true;
-            }
-
             hash_toggle_side!($state);
 
             let repetition_count = $state.position_hash_map
                 .entry($state.position_hash)
                 .or_insert(0);
             *repetition_count += 1;
+
+            let double_pass = pass_move && $state.history.last().map_or(
+                false, |snapshot| pass_snapshot!(snapshot)
+            );
+            let passing_in_stand_off = pass_move && stand_off_before;
+            let is_repetition =
+                repetition_limit!($state) && $state
+                .position_hash_map
+                .get(&$state.position_hash)
+                .unwrap_or(&1)
+                >= &$state.repetition_limit;
+            let is_halfmove_draw =
+                halfmove_clock!($state) && $state.halfmove_clock
+                >= $state.halfmove_limit;
+
+            if double_pass
+            || passing_in_stand_off
+            || is_repetition
+            || is_halfmove_draw {
+                $state.game_over = true;
+            }
 
             let snapshot: Snapshot = Snapshot {
                 move_ply: $mv,
@@ -2045,7 +2030,8 @@ macro_rules! undo_move {
                 $state.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece].remove(&(end_square as Square));
+                $state.piece_list[promoted_piece]
+                    .remove(&(end_square as Square));
 
                 if p_is_big!($state.pieces[promoted_piece]) {
                     $state.big_pieces[piece_color as usize] -= 1;
@@ -2137,7 +2123,8 @@ macro_rules! undo_move {
                 $state.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece].remove(&(end_square as Square));
+                $state.piece_list[promoted_piece]
+                    .remove(&(end_square as Square));
 
                 if p_is_big!($state.pieces[promoted_piece]) {
                     $state.big_pieces[piece_color as usize] -= 1;
@@ -2316,7 +2303,8 @@ macro_rules! undo_move {
                 $state.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece].remove(&(end_square as Square));
+                $state.piece_list[promoted_piece]
+                    .remove(&(end_square as Square));
 
                 if p_is_big!($state.pieces[promoted_piece]) {
                     $state.big_pieces[piece_color as usize] -= 1;
@@ -2572,31 +2560,83 @@ macro_rules! undo_move {
     }};
 }
 
-/// Returns whether a move is legal in the current position.
-///
-/// The move must exist in generated pseudo-legal moves and survive a temporary
-/// `make_move!` / `undo_move!` legality cycle.
 #[macro_export]
-macro_rules! is_move_legal {
-    ($state:expr, $mv:expr) => {{
+/// Applies a null move for the side to move.
+///
+/// A null move:
+/// - Advances `search_ply` and `ply_counter`.
+/// - Flips `playing` and updates side-to-move hash.
+/// - Pushes a `Snapshot` containing reversible state to history.
+///
+/// This is used by null-move pruning in search and does not modify board
+/// occupancy or piece lists.
+macro_rules! make_null_move {
+    ($state:expr) => {
         {
-            let all_moves = generate_all_moves_and_drops($state);
+            $state.search_ply += 1;
+            $state.ply_counter += 1;
 
-            let mut legal = false;
-            for mv in all_moves {
-                if !make_move!($state, mv.clone()) {
-                    continue;
-                }
-                undo_move!($state);
+            let last_en_passant_square = $state.en_passant_square;
+            let last_halfmove_clock = $state.halfmove_clock;
+            let last_castling_state = $state.castling_state;
+            let last_position_hash = $state.position_hash;
+            let last_setup_phase = $state.setup_phase;
+            let last_game_over = $state.game_over;
+            let last_game_phase = $state.game_phase;
 
-                if mv == $mv {
-                    legal = true;
-                    break;
-                }
-            }
+            $state.playing = 1 - $state.playing;
 
-            legal
+            hash_toggle_side!($state);
+
+            #[cfg(debug_assertions)]
+            verify_game_state($state);
+
+            let snapshot: Snapshot = Snapshot {
+                move_ply: null_move(),
+                castling_state: last_castling_state,
+                halfmove_clock: last_halfmove_clock,
+                en_passant_square: last_en_passant_square,
+                setup_phase: last_setup_phase,
+                game_over: last_game_over,
+                game_phase: last_game_phase,
+                position_hash: last_position_hash
+            };
+
+            $state.history.push(snapshot);
         }
+    };
+}
+
+#[macro_export]
+/// Reverts the most recent null move.
+///
+/// This restores the `Snapshot` saved by `make_null_move!`, including turn,
+/// clocks, castling/en-passant data, phase flags, and position hash.
+///
+/// # Panics
+/// Panics if no history snapshot exists to undo.
+macro_rules! undo_null_move {
+    ($state:expr) => {{
+        $state.search_ply -= 1;
+        $state.ply_counter -= 1;
+
+        #[cfg(debug_assertions)]
+        verify_game_state($state);
+
+        let snapshot =
+            $state.history.pop().unwrap_or_else(|| panic!("No move to undo!"));
+
+        $state.playing = 1 - $state.playing;
+        $state.castling_state = snapshot.castling_state;
+        $state.halfmove_clock = snapshot.halfmove_clock;
+        $state.en_passant_square = snapshot.en_passant_square;
+        $state.position_hash = snapshot.position_hash;
+        $state.setup_phase = snapshot.setup_phase;
+        $state.game_over = snapshot.game_over;
+        $state.game_phase = snapshot.game_phase;
+
+        #[cfg(debug_assertions)]
+        verify_game_state($state);
     }};
 }
 
@@ -2606,9 +2646,6 @@ macro_rules! is_move_legal {
 /// Normal moves are skipped during setup phase; drop generation may use
 /// either own-hand or enemy-hand inventory depending on drop flags.
 pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
-    if state.game_over {
-        return Vec::new();
-    }
 
     let piece_count = state.pieces.len() / 2;
     let start_index = piece_count * state.playing as usize;
@@ -2638,6 +2675,28 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
             if drop_from_own || drop_from_enemy {
                 moves.extend(generate_drop_list(piece, state));
             }
+        }
+    }
+
+    moves
+}
+
+#[inline(always)]
+pub fn generate_all_captures(state: &State) -> Vec<Move> {
+    if state.game_over || state.setup_phase {
+        return Vec::new();
+    }
+
+    let piece_count = state.pieces.len() / 2;
+    let start_index = piece_count * state.playing as usize;
+    let end_index = start_index + piece_count;
+
+    let mut moves = Vec::with_capacity(256);
+
+    for piece_index in start_index..end_index {
+        let piece = &state.pieces[piece_index];
+        for &index in &state.piece_list[piece_index] {
+            moves.extend(generate_capture_list(index, piece, state));
         }
     }
 

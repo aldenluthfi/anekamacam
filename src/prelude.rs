@@ -55,20 +55,17 @@ pub use crate::game::moves::move_list::{
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
 };
+
 pub use crate::game::patterns::pattern_match::{
     PatternAllower, PatternSet, PatternStopper, generate_relevant_stand_offs,
     generate_stand_off_patterns, match_pattern, parse_pattern,
 };
 pub use crate::game::position::{
-    hash::{
-        CASTLING_HASHES, EN_PASSANT_HASHES, IN_HAND_HASHES, PIECE_HASHES,
-        PositionHash, SIDE_HASHES, hash_position,
-    },
+    hash::{PositionHash, hash_position},
     search::{
         SearchInfo, alpha_beta, check_interrupt, clear_search,
         search_position,
     },
-    evaluation::evaluate_position
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
@@ -87,9 +84,6 @@ pub use crate::io::board_io::{
     debug_print_relevant_moves, format_board, format_square,
 };
 pub use crate::io::game_io::{
-    COMMENT_PATTERN, FORMAT_VERBOSITY_DEBUG, FORMAT_VERBOSITY_ERROR,
-    FORMAT_VERBOSITY_INFO, FORMAT_VERBOSITY_MINIMAL,
-    FORMAT_VERBOSITY_STANDARD, FORMAT_VERBOSITY_WARN,
     export_tuned_parameters_file, format_entire_game, format_game_state,
     parse_config_file, parse_fen, parse_tuned_parameters_file,
 };
@@ -110,7 +104,8 @@ pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
 pub use regex::Regex;
 pub use std::{
     array, collections::VecDeque, fmt::Debug, fs, hash::Hash,
-    io::{stdin, Write}, mem::size_of, sync::{Mutex, Arc}, time::Instant,
+    io::{stdin, stdout, Write}, mem::size_of, sync::{Mutex, Arc},
+    time::Instant,
     path::Path, cmp
 };
 
@@ -123,6 +118,14 @@ pub use hotpath;
 /*----------------------------------------------------------------------------*\
                                   CONSTANTS
 \*----------------------------------------------------------------------------*/
+pub const FORMAT_VERBOSITY_ERROR: u8 = 1;
+pub const FORMAT_VERBOSITY_WARN: u8 = 2;
+pub const FORMAT_VERBOSITY_INFO: u8 = 3;
+pub const FORMAT_VERBOSITY_DEBUG: u8 = 4;
+
+pub const FORMAT_VERBOSITY_MINIMAL: u8 = FORMAT_VERBOSITY_ERROR;
+pub const FORMAT_VERBOSITY_STANDARD: u8 = FORMAT_VERBOSITY_INFO;
+
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 
@@ -174,8 +177,39 @@ pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 
 lazy_static! {
+    pub static ref RNG: Mutex<rand::rngs::StdRng> =
+        Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED));
+
     pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
     pub static ref ENGINE_START: Instant = Instant::now();
+
+    pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*").unwrap();
+
+    pub static ref CASTLING_HASHES: [u128; 16] =
+        array::from_fn(|_| random_u128());
+    pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
+        array::from_fn(|_| random_u128());
+    pub static ref SIDE_HASHES: u128 = random_u128();
+    pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
+        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
+
+        for _ in 0..256 {
+            let piece_hashes = array::from_fn(|_| random_u128());
+            result.push(piece_hashes);
+        }
+
+        result
+    };
+    pub static ref IN_HAND_HASHES: Vec<[u128; MAX_SQUARES]> = {
+        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
+
+        for _ in 0..256 {
+            let drop_hashes = array::from_fn(|_| random_u128());
+            result.push(drop_hashes);
+        }
+
+        result
+    };
 }
 
 pub fn null_move() -> Move {
