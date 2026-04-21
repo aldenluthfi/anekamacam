@@ -513,47 +513,6 @@ pub fn debug_interactive(state: &mut State) {
                     undo_move!(state);
                 }
             }
-            input if input.starts_with("pv ") => {
-                let parts = input.split_whitespace().collect::<Vec<_>>();
-
-                if parts.len() < 3 {
-                    warn!("Usage: pv [hash/show] [args]");
-                    continue;
-                }
-
-                let command = *parts.get(1).unwrap();
-                let args = *parts.get(2).unwrap();
-
-                match command {
-                    "hash" => {
-                        if let Some(mv) = parse_move(args, state) {
-                            hash_tt_entry!(mv.clone(), 0, HFEXACT, 0, state);
-                            make_move!(state, mv);
-                        } else {
-                            warn!("Invalid move for hashing: {}", args);
-                        }
-                    }
-                    "show" => {
-                        let depth = args.parse::<usize>().unwrap_or(0);
-                        fill_pv_line!(state, depth);
-
-                        let pv_line = state
-                            .pv_line
-                            .iter()
-                            .take_while(|pv_move| *pv_move != &null_move())
-                            .map(|pv_move| format_move(pv_move, state))
-                            .collect::<Vec<String>>()
-                            .join(" ");
-
-                        info!("PV line: {}", pv_line);
-
-                        state.pv_line = array::from_fn(|_| null_move());
-                    }
-                    _ => {
-                        warn!("Unknown pv command: {}", command);
-                    }
-                }
-            }
             input if input.starts_with("fen ") => {
                 let fen = input[4..].trim();
                 state.load_fen(fen);

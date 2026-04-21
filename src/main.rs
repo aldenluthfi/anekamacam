@@ -72,5 +72,5 @@ fn main() {
 
     info!("{}", format_entire_game(&state, FORMAT_VERBOSITY_DEBUG));
 
-    benchmark_search(&mut state, 10);
+    debug_interactive(&mut state);
 }

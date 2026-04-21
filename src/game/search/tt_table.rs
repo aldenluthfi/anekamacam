@@ -62,7 +62,8 @@ macro_rules! tt_index {
 #[macro_export]
 macro_rules! hash_tt_entry {
     ($tt_move:expr, $score:expr, $flags:expr, $depth:expr, $state:expr) => {{
-        let index = tt_index!($state.position_hash);
+        let hash = $state.position_hash;
+        let index = tt_index!(hash);
 
         if $state.transposition_table.p_table[index].position_hash == 0 {
             $state.transposition_table.new_write += 1;
@@ -79,7 +80,7 @@ macro_rules! hash_tt_entry {
         }
 
         $state.transposition_table.p_table[index].tt_move = $tt_move;
-        $state.transposition_table.p_table[index].position_hash = $state.position_hash;
+        $state.transposition_table.p_table[index].position_hash = hash;
         $state.transposition_table.p_table[index].flags = $flags;
         $state.transposition_table.p_table[index].score = adjusted_score;
         $state.transposition_table.p_table[index].depth = $depth;
@@ -89,23 +90,17 @@ macro_rules! hash_tt_entry {
 /// Probes a TT entry and returns whether the entry can be used.
 pub fn probe_tt_entry(
     state: &mut State,
-    tt_move: &mut Move,
-    score: &mut i32,
     alpha: i32,
     beta: i32,
     depth: usize,
-) -> bool {
+) -> (bool, Move, i32) {
     let index = tt_index!(state.position_hash);
-
-    debug_assert!(depth < MAX_DEPTH);
-    debug_assert!(alpha < beta);
-    debug_assert!(state.search_ply < MAX_DEPTH as u32);
 
     let (entry_move, mut entry_score, entry_depth, entry_flags) = {
         let entry = &state.transposition_table.p_table[index];
 
         if entry.position_hash != state.position_hash {
-            return false;
+            return (false, null_move(), i32::MIN);
         }
 
         (
@@ -116,10 +111,8 @@ pub fn probe_tt_entry(
         )
     };
 
-    *tt_move = entry_move;
-
     if entry_depth < depth {
-        return false;
+        return (false, entry_move, i32::MIN);
     }
 
     state.transposition_table.hit += 1;
@@ -133,27 +126,24 @@ pub fn probe_tt_entry(
     match entry_flags {
         HFALPHA => {
             if entry_score <= alpha {
-                *score = alpha;
                 state.transposition_table.cut += 1;
-                return true;
+                return (true, entry_move, alpha);
             }
         }
         HFBETA => {
             if entry_score >= beta {
-                *score = beta;
                 state.transposition_table.cut += 1;
-                return true;
+                return (true, entry_move, beta);
             }
         }
         HFEXACT => {
-            *score = entry_score;
             state.transposition_table.cut += 1;
-            return true;
+            return (true, entry_move, entry_score);
         }
         _ => {}
     }
 
-    false
+    (false, entry_move, entry_score)
 }
 
 /// Probes a PV move from a direct-mapped slot.

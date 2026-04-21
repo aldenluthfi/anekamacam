@@ -81,7 +81,10 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
 
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
-    state.transposition_table = TTTable::new();
+
+    state.transposition_table.over_write = 0;
+    state.transposition_table.hit = 0;
+    state.transposition_table.cut = 0;
 
     state.search_ply = 0;
 }
@@ -238,6 +241,18 @@ pub fn alpha_beta(
         depth += 1;
     }
 
+    let mut pv_move = None;
+    let tt_entry = probe_tt_entry(state, alpha, beta, depth);
+
+    if tt_entry.1 != null_move() {
+        pv_move = Some(tt_entry.1);
+    }
+
+    if tt_entry.0 {
+        state.transposition_table.cut += 1;
+        return tt_entry.2;
+    }
+
     if null
     && !in_check
     && depth >= 3
@@ -258,12 +273,12 @@ pub fn alpha_beta(
         }
     }
 
+    let mut best_move = null_move();
+    let mut best_score = i32::MIN + 1;                                          /* Avoid overflow                     */
     let mut legal_moves = 0;
     let alpha_start = alpha;
-    let mut best_move = null_move();
 
     let mut all_moves = generate_all_moves_and_drops(state);
-    let pv_move = probe_pv_move!(state);
 
     for i in 0..all_moves.len() {
         pick_by_score(state, &mut all_moves, i, &pv_move);
@@ -275,7 +290,7 @@ pub fn alpha_beta(
         let is_capture =
             mv_type == SINGLE_CAPTURE_MOVE || mv_type == MULTI_CAPTURE_MOVE;
 
-        if !make_move!(state, mv) {
+        if !make_move!(state, mv.clone()) {
             continue;
         }
 
@@ -287,24 +302,29 @@ pub fn alpha_beta(
             return 0;
         }
 
-        if score > alpha {
-            if score >= beta {
-                if !is_capture {
-                    state.killer_hist[state.search_ply as usize].swap(1, 0);
-                    state.killer_hist[state.search_ply as usize][0] =
-                        all_moves[i].clone();
+        if score > best_score {
+            best_score = score;
+            best_move = mv.clone();
+
+            if score > alpha {
+                if score >= beta {
+                    if !is_capture {
+                        state.killer_hist[state.search_ply as usize].swap(1, 0);
+                        state.killer_hist[state.search_ply as usize][0] =
+                            mv.clone();
+                    }
+
+                    hash_tt_entry!(best_move, beta, HFBETA, depth, state);
+
+                    return beta;
                 }
 
-                return beta;
+                alpha = score;
+
+                if !is_capture {
+                    state.search_hist[mv_piece][mv_end] += depth as u16;
+                }
             }
-
-            alpha = score;
-
-            if !is_capture {
-                state.search_hist[mv_piece][mv_end] += depth as u16;
-            }
-
-            best_move = all_moves[i].clone();
         }
     }
 
@@ -330,7 +350,9 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     if alpha != alpha_start {
-        hash_tt_entry!(best_move, alpha, HFEXACT, depth, state);
+        hash_tt_entry!(best_move, best_score, HFEXACT, depth, state);
+    } else {
+        hash_tt_entry!(best_move, alpha, HFALPHA, depth, state);
     }
 
     alpha
