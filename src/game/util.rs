@@ -527,7 +527,7 @@ pub fn debug_interactive(state: &mut State) {
                 match command {
                     "hash" => {
                         if let Some(mv) = parse_move(args, state) {
-                            hash_pv_move!(mv.clone(), state);
+                            hash_tt_entry!(mv.clone(), 0, HFEXACT, 0, state);
                             make_move!(state, mv);
                         } else {
                             warn!("Invalid move for hashing: {}", args);
