@@ -36,8 +36,8 @@ pub mod game {
 
     pub mod search {
         pub mod move_ordering;
-        pub mod tt_table;
         pub mod quiescence;
+        pub mod transposition_table;
     }
 
     pub mod position {
@@ -64,13 +64,13 @@ pub mod prelude;
 fn main() {
     init_logging();
 
-    let variant = "fide";
+    let variant = "berolina";
     let config_path = format!("configs/{}.conf", variant);
 
     info!("Loading variant config: {}", config_path);
     let mut state = parse_config_file(&config_path);
 
-    info!("{}", format_entire_game(&state, FORMAT_VERBOSITY_DEBUG));
+    info!("{}", format_entire_game(&state));
 
     debug_interactive(&mut state);
 }

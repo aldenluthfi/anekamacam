@@ -109,7 +109,7 @@ pub fn search_position(
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
         let score = alpha_beta(
-            state, depth, i32::MIN + 1, i32::MAX, info, true                    /* i32::MIN + 1 to avoid overflow     */
+            state, depth, -INFINITE_SCORE, INFINITE_SCORE, info, true
         );
 
         if info.interrupt {
@@ -242,7 +242,7 @@ pub fn alpha_beta(
     }
 
     let mut pv_move = None;
-    let tt_entry = probe_tt_entry(state, alpha, beta, depth);
+    let tt_entry = probe_tt_entry!(state, alpha, beta, depth);
 
     if tt_entry.1 != null_move() {
         pv_move = Some(tt_entry.1);
@@ -274,7 +274,7 @@ pub fn alpha_beta(
     }
 
     let mut best_move = null_move();
-    let mut best_score = i32::MIN + 1;                                          /* Avoid overflow                     */
+    let mut best_score = -INFINITE_SCORE;
     let mut legal_moves = 0;
     let alpha_start = alpha;
 
