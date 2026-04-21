@@ -13,7 +13,7 @@
 
 use crate::*;
 
-fn configured_log_level() -> log::LevelFilter {
+pub fn configured_log_level() -> log::LevelFilter {
     if cfg!(feature = "log-level-debug") {
         log::LevelFilter::Debug
     } else if cfg!(feature = "log-level-info") {

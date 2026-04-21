@@ -413,13 +413,16 @@ pub struct State {
     pub piece_list: Vec<HashSet<Square>>,                                       /* piece index to square set          */
     pub piece_in_hand: [Vec<u16>; 2],                                           /* color to pieces in hand list       */
 
+/*----------------------------------------------------------------------------*\
+                                 SEARCH FIELDS
+\*----------------------------------------------------------------------------*/
+
     pub position_hash_map: HashMap<PositionHash, u8>,                           /* position hash to repetition count  */
-    pub transposition_table: TTTable,                                           /* transposition table for search     */
+    pub transposition_table: TTable,                                            /* transposition table for search     */
     pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
 
-
-    pub search_hist: Vec<Vec<u16>>,                                             /* piece index to square to score      */
-    pub killer_hist: Vec<[Move; 2]>                                             /* search ply to killer moves          */
+    pub search_hist: Vec<Vec<u16>>,                                             /* piece index to square to score     */
+    pub killer_hist: Vec<[Move; 2]>                                             /* search ply to killer moves         */
 }
 
 impl State {
@@ -517,7 +520,7 @@ impl State {
 
             position_hash_map: HashMap::with_capacity(128),
 
-            transposition_table: TTTable::new(),
+            transposition_table: TTable::new(),
             pv_line: array::from_fn(|_| null_move()),
 
             search_hist: vec![vec![0u16; board_size]; piece_count],
@@ -568,7 +571,7 @@ impl State {
         self.search_ply = 0;
         self.position_hash_map.clear();
 
-        self.transposition_table = TTTable::new();
+        self.transposition_table = TTable::new();
         self.pv_line = array::from_fn(|_| null_move());
 
         self.search_hist = vec![vec![0u16; board_size]; piece_count];
