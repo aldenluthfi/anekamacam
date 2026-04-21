@@ -23,19 +23,10 @@ lazy_static! {
     pub static ref ENP_PATTERN: Regex =
         Regex::new(r"^([0-9a-fA-F]{3})([0-9a-fA-F]{3})(.)$|^\*$").unwrap();
     pub static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
-    pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*").unwrap();
     pub static ref SECTION_PATTERN: Regex =
         Regex::new(r"= (.+) =[^=]+").unwrap();
     pub static ref IN_HAND_PATTERN: Regex = Regex::new(r"(\d*)(.)").unwrap();
 }
-
-pub const FORMAT_VERBOSITY_ERROR: u8 = 1;
-pub const FORMAT_VERBOSITY_WARN: u8 = 2;
-pub const FORMAT_VERBOSITY_INFO: u8 = 3;
-pub const FORMAT_VERBOSITY_DEBUG: u8 = 4;
-
-pub const FORMAT_VERBOSITY_MINIMAL: u8 = FORMAT_VERBOSITY_ERROR;
-pub const FORMAT_VERBOSITY_STANDARD: u8 = FORMAT_VERBOSITY_INFO;
 
 fn verbosity_enabled(current: u8, required: u8) -> bool {
     current >= required
@@ -867,7 +858,10 @@ pub fn parse_config_file(path: &str) -> State {
                 }
             }
             _ => panic!(
-                "Unsupported piece role: {}. Only 'royal' is allowed in [piece roles]",
+                concat!(
+                    "Unsupported piece role: {}. ",
+                    "Only 'royal' is allowed in [piece roles]"
+                ),
                 parts[0]
             ),
         }
@@ -915,7 +909,10 @@ pub fn parse_config_file(path: &str) -> State {
         );
         assert!(
             pst_opening_values.len() == board_size,
-            "Opening/middlegame PST length ({}) for piece type index {} doesn't match board size ({})",
+            concat!(
+                "Opening/middlegame PST length ({}) for piece type index {} ",
+                "doesn't match board size ({})"
+            ),
             pst_opening_values.len(),
             piece_type_idx,
             board_size
@@ -929,7 +926,10 @@ pub fn parse_config_file(path: &str) -> State {
 
         assert!(
             pst_endgame_values.len() == board_size,
-            "Endgame PST length ({}) for piece type index {} doesn't match board size ({})",
+            concat!(
+                "Endgame PST length ({}) for piece type index {} ",
+                "doesn't match board size ({})"
+            ),
             pst_endgame_values.len(),
             piece_type_idx,
             board_size
@@ -1586,7 +1586,8 @@ pub fn parse_config_file(path: &str) -> State {
 
             match parts[0] {
                 "limit" => {
-                    let limit_value = parts[1].parse::<u8>().unwrap_or_else(|_| {
+                    let limit_value =
+                        parts[1].parse::<u8>().unwrap_or_else(|_| {
                         panic!("Invalid halfmove limit: {}", parts[1].trim())
                     });
                     parsed_limit = Some(limit_value);
@@ -1599,7 +1600,10 @@ pub fn parse_config_file(path: &str) -> State {
                             .copied()
                             .unwrap_or_else(|| {
                                 panic!(
-                                    "Unknown piece character in halfmove clock pieces: {}",
+                                    concat!(
+                                        "Unknown piece character in ",
+                                        "halfmove clock pieces: {}"
+                                    ),
                                     piece_char
                                 )
                             });
@@ -2224,159 +2228,6 @@ fn format_numeric_board(
     result
 }
 
-fn format_evaluation_parameters(state: &State) -> String {
-    let global_rows = vec![
-        ("Opening threshold", state.opening_score.to_string()),
-        ("Endgame threshold", state.endgame_score.to_string()),
-    ];
-
-    let side_rows = vec![
-        (
-            "Opening material",
-            state.opening_material[WHITE as usize].to_string(),
-            state.opening_material[BLACK as usize].to_string(),
-        ),
-        (
-            "Endgame material",
-            state.endgame_material[WHITE as usize].to_string(),
-            state.endgame_material[BLACK as usize].to_string(),
-        ),
-        (
-            "Opening PST bonus",
-            state.opening_pst_bonus[WHITE as usize].to_string(),
-            state.opening_pst_bonus[BLACK as usize].to_string(),
-        ),
-        (
-            "Endgame PST bonus",
-            state.endgame_pst_bonus[WHITE as usize].to_string(),
-            state.endgame_pst_bonus[BLACK as usize].to_string(),
-        ),
-    ];
-
-    let global_label_width = global_rows
-        .iter()
-        .map(|(label, _)| label.len())
-        .max()
-        .unwrap_or(10)
-        .max("Parameter".len());
-    let global_value_width = global_rows
-        .iter()
-        .map(|(_, value)| value.len())
-        .max()
-        .unwrap_or(5)
-        .max("Value".len());
-
-    let side_label_width = side_rows
-        .iter()
-        .map(|(label, _, _)| label.len())
-        .max()
-        .unwrap_or(10)
-        .max("Parameter".len());
-    let side_white_width = side_rows
-        .iter()
-        .map(|(_, value, _)| value.len())
-        .max()
-        .unwrap_or(5)
-        .max("White".len());
-    let side_black_width = side_rows
-        .iter()
-        .map(|(_, _, value)| value.len())
-        .max()
-        .unwrap_or(5)
-        .max("Black".len());
-
-    let global_table_width = global_label_width + global_value_width + 7;
-    let side_table_width = side_label_width + side_white_width + side_black_width + 10;
-
-    let mut result = String::new();
-
-    result.push_str(&format!("\n{:^global_table_width$}\n", "Evaluation Parameters"));
-    result.push_str(&format!(
-        "╔{}╤{}╗\n",
-        "═".repeat(global_label_width + 2),
-        "═".repeat(global_value_width + 2)
-    ));
-    result.push_str(&format!(
-        "║ {:^global_label_width$} │ {:^global_value_width$} ║\n",
-        "Parameter",
-        "Value"
-    ));
-    result.push_str(&format!(
-        "╟{}┼{}╢\n",
-        "─".repeat(global_label_width + 2),
-        "─".repeat(global_value_width + 2)
-    ));
-
-    for (idx, (label, value)) in global_rows.iter().enumerate() {
-        result.push_str(&format!(
-            "║ {:<global_label_width$} │ {:>global_value_width$} ║\n",
-            label,
-            value
-        ));
-
-        if idx + 1 < global_rows.len() {
-            result.push_str(&format!(
-                "╟{}┼{}╢\n",
-                "─".repeat(global_label_width + 2),
-                "─".repeat(global_value_width + 2)
-            ));
-        }
-    }
-
-    result.push_str(&format!(
-        "╚{}╧{}╝\n",
-        "═".repeat(global_label_width + 2),
-        "═".repeat(global_value_width + 2)
-    ));
-
-    result.push_str(&format!("\n{:^side_table_width$}\n", "Side Evaluation Totals"));
-    result.push_str(&format!(
-        "╔{}╤{}╤{}╗\n",
-        "═".repeat(side_label_width + 2),
-        "═".repeat(side_white_width + 2),
-        "═".repeat(side_black_width + 2)
-    ));
-    result.push_str(&format!(
-        "║ {:^side_label_width$} │ {:^side_white_width$} │ {:^side_black_width$} ║\n",
-        "Parameter",
-        "White",
-        "Black"
-    ));
-    result.push_str(&format!(
-        "╟{}┼{}┼{}╢\n",
-        "─".repeat(side_label_width + 2),
-        "─".repeat(side_white_width + 2),
-        "─".repeat(side_black_width + 2)
-    ));
-
-    for (idx, (label, white_value, black_value)) in side_rows.iter().enumerate() {
-        result.push_str(&format!(
-            "║ {:<side_label_width$} │ {:>side_white_width$} │ {:>side_black_width$} ║\n",
-            label,
-            white_value,
-            black_value
-        ));
-
-        if idx + 1 < side_rows.len() {
-            result.push_str(&format!(
-                "╟{}┼{}┼{}╢\n",
-                "─".repeat(side_label_width + 2),
-                "─".repeat(side_white_width + 2),
-                "─".repeat(side_black_width + 2)
-            ));
-        }
-    }
-
-    result.push_str(&format!(
-        "╚{}╧{}╧{}╝\n",
-        "═".repeat(side_label_width + 2),
-        "═".repeat(side_white_width + 2),
-        "═".repeat(side_black_width + 2)
-    ));
-
-    result
-}
-
 fn format_piece_square_tables(state: &State) -> String {
     let mut result = String::new();
     let board_width = state.files as usize * 7;
@@ -2429,9 +2280,12 @@ fn format_piece_square_tables(state: &State) -> String {
             format!("Black ({})", black_piece.char)
         ));
 
-        for line_idx in 0..white_opening_lines.len().max(black_opening_lines.len()) {
+        for line_idx in
+            0..white_opening_lines.len().max(black_opening_lines.len())
+        {
             let left = white_opening_lines.get(line_idx).copied().unwrap_or("");
-            let right = black_opening_lines.get(line_idx).copied().unwrap_or("");
+            let right =
+                black_opening_lines.get(line_idx).copied().unwrap_or("");
             result.push_str(&format!(
                 "{:<board_width$}    {:<board_width$}\n",
                 left,
@@ -2441,9 +2295,12 @@ fn format_piece_square_tables(state: &State) -> String {
 
         result.push('\n');
 
-        for line_idx in 0..white_endgame_lines.len().max(black_endgame_lines.len()) {
+        for line_idx in
+            0..white_endgame_lines.len().max(black_endgame_lines.len())
+        {
             let left = white_endgame_lines.get(line_idx).copied().unwrap_or("");
-            let right = black_endgame_lines.get(line_idx).copied().unwrap_or("");
+            let right =
+                black_endgame_lines.get(line_idx).copied().unwrap_or("");
             result.push_str(&format!(
                 "{:<board_width$}    {:<board_width$}\n",
                 left,
@@ -2460,7 +2317,9 @@ fn format_piece_square_tables(state: &State) -> String {
 /// Formats the current board and runtime state details by verbosity level.
 ///
 /// - [`FORMAT_VERBOSITY_ERROR`] / minimal: board only.
-/// - [`FORMAT_VERBOSITY_INFO`] and above: board + runtime metadata.
+/// - [`FORMAT_VERBOSITY_WARN`]: board + core dynamic status line.
+/// - [`FORMAT_VERBOSITY_INFO`]: adds match-flow counters and tactical context.
+/// - [`FORMAT_VERBOSITY_DEBUG`]: adds hash and deep internals.
 pub fn format_game_state(state: &State, verbosity: u8) -> String {
     let mut result = String::new();
 
@@ -2487,67 +2346,100 @@ pub fn format_game_state(state: &State, verbosity: u8) -> String {
             .expect("Failed to format combined board string"),
     );
 
-    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_INFO) {
+    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_WARN) {
+        result.push_str("\n\n");
+
+        let side = if state.playing == WHITE { "White" } else { "Black" };
+        let phase_label = match state.game_phase {
+            OPENING => "Opening".to_string(),
+            MIDDLEGAME => "Middlegame".to_string(),
+            ENDGAME => "Endgame".to_string(),
+            _ => panic!("Unknown game phase: {}", state.game_phase),
+        };
+
         result.push_str(&format!(
-            "\nPosition hash\t: {:032X}\n",
-            state.position_hash
-        ));
-        result.push_str(&format!(
-            "Side to move\t: {}\n",
-            if state.playing == WHITE {
-                "White"
-            } else {
-                "Black"
-            }
-        ));
-        result.push_str(&format!(
-            "Game phase\t: {}\n",
-            match state.game_phase {
-                OPENING => "Opening",
-                MIDDLEGAME => "Middlegame",
-                ENDGAME => "Endgame",
-                _ => "Unknown",
-            }
-        ));
-        result.push_str(&format!(
-            "Phase score\t: {}\n",
-            game_phase_score!(state)
+            "Status     : {} to move | Phase {} | Ply {}\n",
+            side, phase_label, state.ply_counter
         ));
 
-        if castling!(state) {
-            result.push_str(&format!(
-                "Castling rights\t: {}\n",
-                format_castling_rights(state)
-            ));
-        }
+        if verbosity_enabled(verbosity, FORMAT_VERBOSITY_INFO) {
 
-        if en_passant!(state) {
-            result.push_str(&format!(
-                "En passant\t: {}\n",
-                if state.en_passant_square == u32::MAX {
+
+            if halfmove_clock!(state) {
+                result.push_str(&format!(
+                    "Halfmove   : {}/{}\n",
+                    state.halfmove_clock,
+                    state.halfmove_limit
+                ));
+            }
+
+            if repetition_limit!(state) {
+                let repetition_count = state
+                    .position_hash_map
+                    .get(&state.position_hash)
+                    .copied()
+                    .unwrap_or(1);
+                result.push_str(&format!(
+                    "Repetition : {}/{}\n",
+                    repetition_count, state.repetition_limit
+                ));
+            }
+
+            if castling!(state) {
+                result.push_str(&format!(
+                    "Castling   : {}\n",
+                    format_castling_rights(state)
+                ));
+            }
+
+            if en_passant!(state) {
+                let enp = if state.en_passant_square == NO_EN_PASSANT {
                     "-".to_string()
                 } else {
                     format_square(
-                        (state.en_passant_square & 0xFFF) as Square,
-                        state,
+                        enp_square!(state.en_passant_square) as Square, state
                     )
-                }
+                };
+
+                result.push_str(&format!("EnPassant  : {}\n", enp));
+            }
+
+            if drops!(state)
+            || promote_to_captured!(state)
+            || setup_phase!(state) {
+                result.push_str(&format!(
+                    "Hands      : White [{}] | Black [{}]\n",
+                    format_hand(state, WHITE),
+                    format_hand(state, BLACK)
+                ));
+            }
+        }
+
+        if verbosity_enabled(verbosity, FORMAT_VERBOSITY_DEBUG) {
+            result.push_str(&format!(
+                "Phase Eval : score {} | opening {} | endgame {}\n",
+                game_phase_score!(state),
+                state.opening_score,
+                state.endgame_score
             ));
-        }
-
-        if halfmove_clock!(state) {
-            result.push_str(
-                &format!("Halfmove clock\t: {}\n", state.halfmove_clock)
-            );
-        }
-
-        if drops!(state) || promote_to_captured!(state) || setup_phase!(state) {
-            result.push_str(
-                &format!("White's hand\t: {}\n", format_hand(state, WHITE))
-            );
-            result.push_str(
-                &format!("Black's hand\t: {}\n", format_hand(state, BLACK))
-            );
+            result.push_str(&format!(
+                concat!(
+                    "PST Eval   : opening White {} | opening Black {} | ",
+                    "endgame White {} | endgame Black {}\n",
+                ),
+                state.opening_pst_bonus[WHITE as usize],
+                state.opening_pst_bonus[BLACK as usize],
+                state.endgame_pst_bonus[WHITE as usize],
+                state.endgame_pst_bonus[BLACK as usize]
+            ));
+            result.push_str(&format!(
+                "Hash       : {:032X}\n",
+                state.position_hash
+            ));
+            result.push_str(&format!(
+                "Search     : ply {}\n",
+                state.search_ply
+            ));
         }
     }
 
@@ -3135,8 +3027,7 @@ fn format_special_rules(state: &State) -> String {
 ///
 /// - [`FORMAT_VERBOSITY_ERROR`] / minimal: title, rules, and board only.
 /// - [`FORMAT_VERBOSITY_WARN`]: include piece type definitions.
-/// - [`FORMAT_VERBOSITY_INFO`] and above: include zones, setup maps,
-///   and evaluation-parameter tables.
+/// - [`FORMAT_VERBOSITY_INFO`] and above: include zones and setup maps.
 /// - [`FORMAT_VERBOSITY_DEBUG`]: include PST board tables.
 pub fn format_entire_game(state: &State, verbosity: u8) -> String {
     let mut result = String::new();
@@ -3159,7 +3050,6 @@ pub fn format_entire_game(state: &State, verbosity: u8) -> String {
         result.push_str(&format_forbidden_zones(state));
         result.push_str(&format_halfmove_clock_rules(state));
         result.push_str(&format_intial_setup(state));
-        result.push_str(&format_evaluation_parameters(state));
     }
 
     if verbosity_enabled(verbosity, FORMAT_VERBOSITY_DEBUG) {

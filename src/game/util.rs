@@ -17,11 +17,6 @@
 
 use crate::*;
 
-lazy_static! {
-    pub static ref RNG: Mutex<rand::rngs::StdRng> =
-        Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED));
-}
-
 pub fn random_u128() -> u128 {
     let mut rng = RNG.lock().unwrap();
     u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
@@ -197,8 +192,8 @@ pub fn verify_game_state(state: &State) {
     let mut temp_royal_list = [Vec::new(), Vec::new()];
 
     for (square, piece_index) in state.main_board.iter().enumerate() {
-        if *piece_index != NO_PIECE 
-        && p_is_royal!(state.pieces[*piece_index as usize]) 
+        if *piece_index != NO_PIECE
+        && p_is_royal!(state.pieces[*piece_index as usize])
         {
             let piece = &state.pieces[*piece_index as usize];
 
@@ -450,33 +445,7 @@ pub fn benchmark_search(state: &mut State, depth: usize) {
     let mut info = SearchInfo::default();
     info.set_depth = depth;
 
-    let start_time = ENGINE_START.elapsed().as_nanos();
-    let result = search_position(state, &mut info);
-    let elapsed = ENGINE_START
-        .elapsed()
-        .as_nanos()
-        .saturating_sub(start_time);
-
-    let nps = if elapsed == 0 {
-        0
-    } else {
-        ((result.total_nodes as f64) * 1_000_000_000.0 / elapsed as f64)
-            .round() as u128
-    };
-
-    info!(
-        "Search testing completed | Depth: {} | Nodes: {}",
-        depth,
-        result.total_nodes,
-    );
-
-    info!(
-        "Time: {} | NPS: {} | Best Score: {} | Best Move: {}",
-        format_time(elapsed),
-        nps,
-        result.best_score,
-        format_move(&result.best_move, state),
-    );
+    search_position(state, &mut info);
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.
@@ -520,10 +489,10 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     nodes
 }
 
-/// Runs a simple stdin-driven debug loop for making and undoing moves.
+/// Runs an interactive stdin loop for analysis and engine play testing.
 ///
-/// Supported commands include normal move strings, `u` (undo), `q` (quit),
-/// and `pv` subcommands for PV hash probing/display.
+/// Supported commands include move strings, `u`, `q`, `pv`, `fen`, `search`,
+/// `go`, and `play [color] [thinking time sec]`.
 pub fn debug_interactive(state: &mut State) {
     let mut input = String::new();
 
@@ -539,6 +508,11 @@ pub fn debug_interactive(state: &mut State) {
         match input.trim() {
             "u" => undo_move!(state),
             "q" => break,
+            "r" => {
+                while state.ply_counter > 0 {
+                    undo_move!(state);
+                }
+            }
             input if input.starts_with("pv ") => {
                 let parts = input.split_whitespace().collect::<Vec<_>>();
 
@@ -625,6 +599,139 @@ pub fn debug_interactive(state: &mut State) {
                 );
 
                 make_move!(state, result.best_move);
+            }
+            input if input.starts_with("play ") => {
+                let parts = input.split_whitespace().collect::<Vec<_>>();
+
+                if parts.len() != 3 {
+                    warn!("Usage: play [color] [thinking time sec]");
+                    continue;
+                }
+
+                let engine_color =
+                    match parts[1].to_ascii_lowercase().as_str() {
+                        "white" | "w" => WHITE,
+                        "black" | "b" => BLACK,
+                        "both" => BOTH,
+                        _ => {
+                            warn!(
+                                "Invalid color: {} (use white/black)",
+                                parts[1]
+                            );
+                            continue;
+                        }
+                    };
+
+                let think_time_secs =
+                    parts[2].parse::<u128>().unwrap_or_else(|_| {
+                        warn!("Invalid thinking time: {}", parts[2]);
+                        0
+                    });
+
+                if think_time_secs <= 0 {
+                    warn!("Thinking time must be > 0 seconds");
+                    continue;
+                }
+
+                let think_time_ns = (think_time_secs * 1_000_000_000) as u128;
+
+                let side_text = match engine_color {
+                    WHITE => "White",
+                    BLACK => "Black",
+                    BOTH => "Both",
+                    _ => "Unknown",
+                };
+
+                info!(
+                    "Starting play mode | Engine: {} | Think time: {}s",
+                    side_text,
+                    think_time_secs
+                );
+
+                if engine_color == BOTH {
+                    info!(
+                        "Computer vs Computer mode enabled."
+                    );
+                } else {
+                    let human_color = if engine_color == WHITE {
+                        BLACK
+                    } else {
+                        WHITE
+                    };
+
+                    info!(
+                        "Human side: {}",
+                        if human_color == WHITE { "White" } else { "Black" }
+                    );
+                    info!(
+                        "Type your move when it's your turn, or `q` to leave \
+                        play mode."
+                    );
+                }
+
+                'play_mode: loop {
+                    info!(
+                        "\n{}",
+                        format_game_state(state, FORMAT_VERBOSITY_INFO)
+                    );
+
+                    if state.game_over {
+                        info!("Game over detected. Ending play mode.");
+                        break;
+                    }
+
+                    if state.playing == engine_color || engine_color == BOTH {
+                        let mut info = SearchInfo::default();
+                        info.set_depth = MAX_DEPTH;
+                        info.set_timed = think_time_ns;
+
+                        let result = search_position(state, &mut info);
+
+                        if result.best_move == null_move() {
+                            state.game_over = true;
+                            info!("No legal moves available. Game over.");
+                            continue;
+                        }
+
+                        info!(
+                            concat!(
+                                "Engine plays: {} | Score: {} | ",
+                                "Nodes: {} | Time: {}"
+                            ),
+                            format_move(&result.best_move, state),
+                            result.best_score,
+                            result.total_nodes,
+                            format_time(result.total_elapsed)
+                        );
+
+                        make_move!(state, result.best_move);
+                    } else {
+                        loop {
+                            let _ = stdout().flush();
+
+                            let mut user_input = String::new();
+                            if stdin().read_line(&mut user_input).is_err() {
+                                error!("Error reading stdin");
+                                break 'play_mode;
+                            }
+
+                            let user_input = user_input.trim();
+
+                            if matches!(user_input, "q" | "quit") {
+                                info!("Leaving play mode.");
+                                break 'play_mode;
+                            }
+
+                            if let Some(mv) = parse_move(user_input, state) {
+                                if make_move!(state, mv) {
+                                    break;
+                                }
+                            }
+
+                            warn!("Invalid move: {}", user_input);
+                        }
+                    }
+                }
             }
             _ => match parse_move(&input, state) {
                 Some(mv) => {

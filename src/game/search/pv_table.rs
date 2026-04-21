@@ -86,7 +86,8 @@ macro_rules! hash_pv_move {
     }};
 }
 
-/// Probes a PV move by scanning only the hashed bucket (`PV_BUCKET_SIZE` slots).
+/// Probes a PV move by scanning the hashed bucket
+/// (`PV_BUCKET_SIZE` slots).
 ///
 /// This is O(bucket_size), which is constant and tiny, while providing much
 /// lower effective collision loss than a single direct-mapped slot.
@@ -127,8 +128,18 @@ macro_rules! fill_pv_line {
                 break;
             };
 
-            if !is_move_legal!($state, pv_move.clone()) {
-                break;
+            let all_moves = generate_all_moves_and_drops($state);
+
+            for mv in all_moves {
+                let legal = make_move!($state, mv.clone());
+
+                if legal {
+                    undo_move!($state);
+                }
+
+                if mv == pv_move && legal {
+                    break;
+                }
             }
 
             make_move!($state, pv_move.clone());
