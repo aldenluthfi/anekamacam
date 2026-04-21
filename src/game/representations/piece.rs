@@ -161,8 +161,10 @@ impl Piece {
     /// - `is_major`        : Whether this is a major piece (T) or minor (F)
     /// - `castle_right`    : Whether can castle to the right (kingside)
     /// - `castle_left`     : Whether can castle to the left (queenside)
-    /// - `ovalue`          : The opening piece value (0-16383, stored in 14 bits)
-    /// - `evalue`          : The endgame piece value (0-16383, stored in 14 bits)
+    /// - `ovalue`          : Opening piece value
+    ///                       (0-16383, stored in 14 bits)
+    /// - `evalue`          : Endgame piece value
+    ///                       (0-16383, stored in 14 bits)
     /// - `rank`            : The piece rank used for move modifiers
     pub fn new(
         name: String,

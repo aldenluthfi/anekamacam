@@ -15,34 +15,6 @@
 //! 25/01/2026
 use crate::*;
 
-lazy_static! {
-    pub static ref CASTLING_HASHES: [u128; 16] =
-        array::from_fn(|_| random_u128());
-    pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
-        array::from_fn(|_| random_u128());
-    pub static ref SIDE_HASHES: u128 = random_u128();
-    pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
-        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
-
-        for _ in 0..256 {
-            let piece_hashes = array::from_fn(|_| random_u128());
-            result.push(piece_hashes);
-        }
-
-        result
-    };
-    pub static ref IN_HAND_HASHES: Vec<[u128; MAX_SQUARES]> = {
-        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
-
-        for _ in 0..256 {
-            let drop_hashes = array::from_fn(|_| random_u128());
-            result.push(drop_hashes);
-        }
-
-        result
-    };
-}
-
 pub type PositionHash = u128;
 
 /// Computes the Zobrist hash for the given game state.
