@@ -36,7 +36,7 @@ pub mod game {
 
     pub mod search {
         pub mod move_ordering;
-        pub mod pv_table;
+        pub mod tt_table;
         pub mod quiescence;
     }
 

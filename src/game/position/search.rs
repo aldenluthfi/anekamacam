@@ -81,7 +81,7 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
 
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
-    state.pv_table = vec![(null_move(), 0, 0); PV_TABLE_SIZE];
+    state.transposition_table = TTTable::new();
 
     state.search_ply = 0;
 }
@@ -330,7 +330,7 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     if alpha != alpha_start {
-        hash_pv_move!(best_move, state);
+        hash_tt_entry!(best_move, alpha, HFEXACT, depth, state);
     }
 
     alpha

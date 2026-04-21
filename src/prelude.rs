@@ -69,9 +69,11 @@ pub use crate::game::position::{
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
-    pv_table::{PVElement, PVTable},
+    tt_table::{TTEntry, TTTable},
     quiescence::quiescence_search,
 };
+
+
 pub use crate::game::util::{
     perft, random_u128, refresh_eval_state, benchmark_perft, benchmark_search,
     verify_game_state, debug_interactive, format_time
@@ -220,10 +222,14 @@ pub const NULL_DROP: &str = "@#~?@#~?";
 
 pub const MATE_SCORE: i32 = 1000000;
 
+pub const HFNONE: u8 = 0;
+pub const HFALPHA: u8 = 1;
+pub const HFBETA: u8 = 2;
+pub const HFEXACT: u8 = 3;
+
 pub const OPENING: u8 = 0;
 pub const MIDDLEGAME: u8 = 1;
 pub const ENDGAME: u8 = 2;
 
-pub const PV_TABLE_SIZE: usize = (0x1000000 * 8) / size_of::<PVElement>();      /* 8MB                                */
-pub const PV_BUCKET_SIZE: usize = 4;
+pub const TT_TABLE_SIZE: usize = (0x1000000 * 8) / size_of::<TTEntry>();      /* 8MB                                */
 pub const MAX_DEPTH: usize = 64;
