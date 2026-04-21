@@ -96,7 +96,7 @@ pub fn quiescence_search(
     verify_game_state(state);
 
     if alpha != alpha_start {
-        hash_pv_move!(best_move, state);
+        hash_tt_entry!(best_move, alpha, HFEXACT, 0, state);
     }
 
     alpha
