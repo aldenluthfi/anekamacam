@@ -785,53 +785,54 @@ fn generate_move_list_from_vectors(
     result
 }
 
-#[inline(always)]
 /// Generates all pseudo-legal encoded moves for `piece` from `square_index`.
 ///
 /// This resolves multi-leg constraints, captures/unloads, en-passant flags,
 /// castling side conditions, and promotion branching.
-pub fn generate_move_list(
-    square_index: u16,
-    piece: &Piece,
-    game_state: &State,
-) -> Vec<Move> {
-    let vector_set =
-        &game_state.relevant_moves
-        [p_index!(piece) as usize][square_index as usize];
+#[macro_export]
+macro_rules! generate_move_list {
+    ($square_index:expr, $piece:expr, $game_state:expr) => {{
+        let vector_set =
+            &$game_state.relevant_moves
+                [p_index!($piece) as usize][$square_index as usize];
 
-    generate_move_list_from_vectors(
-        square_index, piece, vector_set, game_state
-    )
+        generate_move_list_from_vectors(
+            $square_index,
+            $piece,
+            vector_set,
+            $game_state,
+        )
+    }};
 }
 
-#[inline(always)]
 /// Generates only pseudo-legal capture moves for `piece` from `square_index`.
 ///
 /// Uses precomputed `relevant_captures` so generation follows the same flow as
 /// normal move generation without generating quiet moves first.
-pub fn generate_capture_list(
-    square_index: u16,
-    piece: &Piece,
-    game_state: &State,
-) -> Vec<Move> {
-    let vector_set =
-        &game_state.relevant_captures
-        [p_index!(piece) as usize][square_index as usize];
+#[macro_export]
+macro_rules! generate_capture_list {
+    ($square_index:expr, $piece:expr, $game_state:expr) => {{
+        let vector_set =
+            &$game_state.relevant_captures
+                [p_index!($piece) as usize][$square_index as usize];
 
-    let result =
-        generate_move_list_from_vectors(
-            square_index, piece, vector_set, game_state
+        let result = generate_move_list_from_vectors(
+            $square_index,
+            $piece,
+            vector_set,
+            $game_state,
         );
 
-    result
-        .iter()
-        .filter(
-            |mv|
-            move_type!(mv) == SINGLE_CAPTURE_MOVE ||
-            move_type!(mv) == MULTI_CAPTURE_MOVE
-        )
-        .cloned()
-        .collect()
+        result
+            .iter()
+            .filter(
+                |mv|
+                    move_type!(mv) == SINGLE_CAPTURE_MOVE
+                    || move_type!(mv) == MULTI_CAPTURE_MOVE,
+            )
+            .cloned()
+            .collect::<Vec<Move>>()
+    }};
 }
 
 /*---------------------------------------------------------------------------*\
@@ -2640,7 +2641,6 @@ macro_rules! undo_null_move {
     }};
 }
 
-#[inline(always)]
 /// Generates all pseudo-legal moves for the side to move, including drops.
 ///
 /// Normal moves are skipped during setup phase; drop generation may use
@@ -2657,7 +2657,7 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
         for piece_index in start_index..end_index {
             let piece = &state.pieces[piece_index];
             for &index in &state.piece_list[piece_index] {
-                moves.extend(generate_move_list(index, piece, state));
+                moves.extend(generate_move_list!(index, piece, state));
             }
         }
     }
@@ -2681,7 +2681,6 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
     moves
 }
 
-#[inline(always)]
 pub fn generate_all_captures(state: &State) -> Vec<Move> {
     if state.game_over || state.setup_phase {
         return Vec::new();
@@ -2696,7 +2695,7 @@ pub fn generate_all_captures(state: &State) -> Vec<Move> {
     for piece_index in start_index..end_index {
         let piece = &state.pieces[piece_index];
         for &index in &state.piece_list[piece_index] {
-            moves.extend(generate_capture_list(index, piece, state));
+            moves.extend(generate_capture_list!(index, piece, state));
         }
     }
 

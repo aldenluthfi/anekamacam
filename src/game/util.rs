@@ -93,7 +93,7 @@ pub fn verify_game_state(state: &State) {
         "Computed white board doesn't match state white board\n{}\n{}\n{}",
         format_board(&temp_white_board, None),
         format_board(&state.pieces_board[WHITE as usize], None),
-        format_game_state(state, FORMAT_VERBOSITY_INFO)
+        format_game_state(state)
     );
 
     assert_eq!(
@@ -102,7 +102,7 @@ pub fn verify_game_state(state: &State) {
         "Computed black board doesn't match state black board\n{}\n{}\n{}",
         format_board(&temp_black_board, None),
         format_board(&state.pieces_board[BLACK as usize], None),
-        format_game_state(state, FORMAT_VERBOSITY_INFO)
+        format_game_state(state)
     );
 
     let mut temp_pieces_board = board!(state.files, state.ranks);
@@ -382,7 +382,7 @@ pub fn benchmark_perft(
         perft_cases.into_iter().take(limit).enumerate()
     {
         state.load_fen(&fen);
-        info!("\n{}", format_game_state(state, FORMAT_VERBOSITY_INFO));
+        info!("\n{}", format_game_state(state));
 
         let expected_perfts =
             [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
@@ -440,7 +440,7 @@ pub fn benchmark_perft(
 /// elapsed wall time, and aggregate nodes-per-second.
 pub fn benchmark_search(state: &mut State, depth: usize) {
     info!("Search benchmark started with depth {}...", depth);
-    info!("\n{}", format_game_state(state, FORMAT_VERBOSITY_INFO));
+    info!("\n{}", format_game_state(state));
 
     let mut info = SearchInfo::default();
     info.set_depth = depth;
@@ -498,7 +498,7 @@ pub fn debug_interactive(state: &mut State) {
 
     loop {
         input.clear();
-        info!("\n{}", format_game_state(state, FORMAT_VERBOSITY_INFO));
+        info!("\n{}", format_game_state(state));
 
         if stdin().read_line(&mut input).is_err() {
             error!("Error reading stdin");
@@ -582,17 +582,17 @@ pub fn debug_interactive(state: &mut State) {
                     };
 
                 let think_time_secs =
-                    parts[2].parse::<u128>().unwrap_or_else(|_| {
+                    parts[2].parse::<f64>().unwrap_or_else(|_| {
                         warn!("Invalid thinking time: {}", parts[2]);
-                        0
+                        0.0
                     });
 
-                if think_time_secs <= 0 {
+                if think_time_secs <= 0.0 {
                     warn!("Thinking time must be > 0 seconds");
                     continue;
                 }
 
-                let think_time_ns = (think_time_secs * 1_000_000_000) as u128;
+                let think_time_ns = (think_time_secs * 1_000_000_000.0) as u128;
 
                 let side_text = match engine_color {
                     WHITE => "White",
@@ -631,7 +631,7 @@ pub fn debug_interactive(state: &mut State) {
                 'play_mode: loop {
                     info!(
                         "\n{}",
-                        format_game_state(state, FORMAT_VERBOSITY_INFO)
+                        format_game_state(state)
                     );
 
                     if state.game_over {

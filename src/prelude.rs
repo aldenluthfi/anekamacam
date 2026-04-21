@@ -49,8 +49,7 @@ pub use crate::game::drops::drop_list::{
 pub use crate::game::drops::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
     generate_all_captures, generate_all_moves_and_drops, generate_attack_masks,
-    generate_capture_list, generate_move_list, generate_relevant_captures,
-    generate_relevant_moves,
+    generate_relevant_captures, generate_relevant_moves,
 };
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
@@ -69,8 +68,8 @@ pub use crate::game::position::{
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
-    tt_table::{TTEntry, TTTable, probe_tt_entry},
     quiescence::quiescence_search,
+    transposition_table::{TTable, TTEntry},
 };
 
 
@@ -93,7 +92,7 @@ pub use crate::io::move_io::{
     format_move, parse_move
 };
 pub use crate::io::piece_io::format_piece;
-pub use crate::io::logger::init_logging;
+pub use crate::io::logger::{init_logging, configured_log_level};
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
@@ -124,9 +123,6 @@ pub const FORMAT_VERBOSITY_ERROR: u8 = 1;
 pub const FORMAT_VERBOSITY_WARN: u8 = 2;
 pub const FORMAT_VERBOSITY_INFO: u8 = 3;
 pub const FORMAT_VERBOSITY_DEBUG: u8 = 4;
-
-pub const FORMAT_VERBOSITY_MINIMAL: u8 = FORMAT_VERBOSITY_ERROR;
-pub const FORMAT_VERBOSITY_STANDARD: u8 = FORMAT_VERBOSITY_INFO;
 
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
@@ -221,6 +217,7 @@ pub const DEFAULT_DROP: &str = "@#~?@";
 pub const NULL_DROP: &str = "@#~?@#~?";
 
 pub const MATE_SCORE: i32 = 1000000;
+pub const INFINITE_SCORE: i32 = 2000000;
 
 pub const HFNONE: u8 = 0;
 pub const HFALPHA: u8 = 1;

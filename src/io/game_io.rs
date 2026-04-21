@@ -28,8 +28,16 @@ lazy_static! {
     pub static ref IN_HAND_PATTERN: Regex = Regex::new(r"(\d*)(.)").unwrap();
 }
 
-fn verbosity_enabled(current: u8, required: u8) -> bool {
-    current >= required
+fn verbosity_enabled(current: log::LevelFilter, required: u8) -> bool {
+    let level_value = match current {
+        log::LevelFilter::Error => FORMAT_VERBOSITY_ERROR,
+        log::LevelFilter::Warn => FORMAT_VERBOSITY_WARN,
+        log::LevelFilter::Info => FORMAT_VERBOSITY_INFO,
+        log::LevelFilter::Debug => FORMAT_VERBOSITY_DEBUG,
+        _ => FORMAT_VERBOSITY_INFO
+    };
+
+    level_value >= required
 }
 
 fn determine_board_dimensions(fen: &str) -> (u8, u8) {
@@ -763,16 +771,22 @@ pub fn parse_config_file(path: &str) -> State {
     assert!(
         eval_parameters.len() >= 5,
         concat!(
-            "[evaluation parameters] must define phase scores, opening values, ",
+            "[evaluation parameters] must define ",
+            "phase scores, opening values, ",
             "endgame values, big, and major"
         )
     );
 
-    let parsed_phase_scores =
-        parse_numeric_parameter_list(&eval_parameters[0], "phase scores");
+    let parsed_phase_scores = parse_numeric_parameter_list(
+        &eval_parameters[0],
+        "phase scores",
+    );
     assert!(
         parsed_phase_scores.len() == 2,
-        "Phase score row must contain exactly 2 entries: [opening, endgame]"
+        concat!(
+            "Phase score row must contain exactly 2 entries: ",
+            "[opening, endgame]"
+        )
     );
 
     let opening_phase_score = parsed_phase_scores[0].unsigned_abs();
@@ -2320,7 +2334,7 @@ fn format_piece_square_tables(state: &State) -> String {
 /// - [`FORMAT_VERBOSITY_WARN`]: board + core dynamic status line.
 /// - [`FORMAT_VERBOSITY_INFO`]: adds match-flow counters and tactical context.
 /// - [`FORMAT_VERBOSITY_DEBUG`]: adds hash and deep internals.
-pub fn format_game_state(state: &State, verbosity: u8) -> String {
+pub fn format_game_state(state: &State) -> String {
     let mut result = String::new();
 
     let board_size = (state.files as usize) * (state.ranks as usize);
@@ -2346,7 +2360,7 @@ pub fn format_game_state(state: &State, verbosity: u8) -> String {
             .expect("Failed to format combined board string"),
     );
 
-    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_WARN) {
+    if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_WARN) {
         result.push_str("\n\n");
 
         let side = if state.playing == WHITE { "White" } else { "Black" };
@@ -2362,7 +2376,7 @@ pub fn format_game_state(state: &State, verbosity: u8) -> String {
             side, phase_label, state.ply_counter
         ));
 
-        if verbosity_enabled(verbosity, FORMAT_VERBOSITY_INFO) {
+        if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_INFO) {
 
 
             if halfmove_clock!(state) {
@@ -2415,7 +2429,7 @@ pub fn format_game_state(state: &State, verbosity: u8) -> String {
             }
         }
 
-        if verbosity_enabled(verbosity, FORMAT_VERBOSITY_DEBUG) {
+        if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_DEBUG) {
             result.push_str(&format!(
                 "Phase Eval : score {} | opening {} | endgame {}\n",
                 game_phase_score!(state),
@@ -3029,7 +3043,7 @@ fn format_special_rules(state: &State) -> String {
 /// - [`FORMAT_VERBOSITY_WARN`]: include piece type definitions.
 /// - [`FORMAT_VERBOSITY_INFO`] and above: include zones and setup maps.
 /// - [`FORMAT_VERBOSITY_DEBUG`]: include PST board tables.
-pub fn format_entire_game(state: &State, verbosity: u8) -> String {
+pub fn format_entire_game(state: &State) -> String {
     let mut result = String::new();
 
     result.push_str(&format!(
@@ -3041,18 +3055,18 @@ pub fn format_entire_game(state: &State, verbosity: u8) -> String {
         format_special_rules(state)
     ));
 
-    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_WARN) {
+    if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_WARN) {
         result.push_str(&format_piece_types(state));
     }
 
-    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_INFO) {
+    if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_INFO) {
         result.push_str(&format_promotion_zones(state));
         result.push_str(&format_forbidden_zones(state));
         result.push_str(&format_halfmove_clock_rules(state));
         result.push_str(&format_intial_setup(state));
     }
 
-    if verbosity_enabled(verbosity, FORMAT_VERBOSITY_DEBUG) {
+    if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_DEBUG) {
         result.push_str(&format_piece_square_tables(state));
     }
 
@@ -3060,7 +3074,7 @@ pub fn format_entire_game(state: &State, verbosity: u8) -> String {
         result.push('\n');
     }
 
-    result.push_str(&format_game_state(state, verbosity));
+    result.push_str(&format_game_state(state));
 
     result
 }
