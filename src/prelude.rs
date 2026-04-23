@@ -75,7 +75,7 @@ pub use crate::game::search::{
 
 pub use crate::game::util::{
     perft, random_u128, refresh_eval_state, benchmark_perft, benchmark_search,
-    verify_game_state, debug_interactive, format_time
+    verify_game_state, format_time
 };
 
 /*----------------------------------------------------------------------------*\
@@ -85,14 +85,18 @@ pub use crate::io::board_io::{
     debug_print_relevant_moves, format_board, format_square,
 };
 pub use crate::io::game_io::{
-    export_tuned_parameters_file, format_entire_game, format_game_state,
+    build_game_details, export_tuned_parameters_file, format_game_state,
     parse_config_file, parse_fen, parse_tuned_parameters_file,
 };
 pub use crate::io::move_io::{
     format_move, parse_move
 };
-pub use crate::io::piece_io::format_piece;
-pub use crate::io::logger::{init_logging, configured_log_level};
+pub use crate::io::logger::{
+    configured_log_level, configured_verbosity_level, init_logging,
+    take_log_messages, push_log_message, verbosity_enabled,
+};
+pub use crate::io::tui::run_tui;
+pub use crate::{log_1, log_2, log_3, log_4, log_5};
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
@@ -100,14 +104,34 @@ pub use crate::io::logger::{init_logging, configured_log_level};
 pub use bnum::types::U4096;
 pub use hashbrown::{HashMap, HashSet};
 pub use lazy_static::lazy_static;
-pub use log::{debug, error, info, warn};
+pub use log::{debug, error, info, trace, warn};
+pub use crossterm::{
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode,
+        KeyEventKind,
+    },
+    execute,
+    terminal::{
+        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode,
+    },
+};
 pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
+pub use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, Paragraph, Tabs, Wrap,
+    },
+    Frame, Terminal,
+};
 pub use regex::Regex;
 pub use std::{
-    array, collections::VecDeque, fmt::Debug, fs, hash::Hash,
-    io::{stdin, stdout, Write}, mem::size_of, sync::{Mutex, Arc},
-    time::Instant,
-    path::Path, cmp
+    array, cmp, collections::VecDeque, fmt::Debug, fs, hash::Hash,
+    io::{stdin, stdout, Write}, mem::size_of, path::Path,
+    sync::{Arc, Mutex}, time::{Duration, Instant},
 };
 
 /*----------------------------------------------------------------------------*\
@@ -119,10 +143,11 @@ pub use hotpath;
 /*----------------------------------------------------------------------------*\
                                   CONSTANTS
 \*----------------------------------------------------------------------------*/
-pub const FORMAT_VERBOSITY_ERROR: u8 = 1;
-pub const FORMAT_VERBOSITY_WARN: u8 = 2;
-pub const FORMAT_VERBOSITY_INFO: u8 = 3;
-pub const FORMAT_VERBOSITY_DEBUG: u8 = 4;
+pub const FORMAT_VERBOSITY_1: u8 = 1;
+pub const FORMAT_VERBOSITY_2: u8 = 2;
+pub const FORMAT_VERBOSITY_3: u8 = 3;
+pub const FORMAT_VERBOSITY_4: u8 = 4;
+pub const FORMAT_VERBOSITY_5: u8 = 5;
 
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
@@ -181,7 +206,10 @@ lazy_static! {
     pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
     pub static ref ENGINE_START: Instant = Instant::now();
 
-    pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*").unwrap();
+    pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")
+        .unwrap_or_else(|e| {
+            panic!("Failed to compile COMMENT_PATTERN regex: {e}")
+        });
 
     pub static ref CASTLING_HASHES: [u128; 16] =
         array::from_fn(|_| random_u128());
@@ -217,7 +245,6 @@ pub const DEFAULT_DROP: &str = "@#~?@";
 pub const NULL_DROP: &str = "@#~?@#~?";
 
 pub const MATE_SCORE: i32 = 1000000;
-pub const INFINITE_SCORE: i32 = 2000000;
 
 pub const HFNONE: u8 = 0;
 pub const HFALPHA: u8 = 1;

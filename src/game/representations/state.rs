@@ -435,8 +435,13 @@ impl State {
     ) -> Self {
 
         let piece_count: usize = pieces.len();
-        let most_valuable: u16 =
-            pieces.iter().map(|p| p_ovalue!(p)).max().unwrap();
+        let most_valuable: u16 = pieces
+            .iter()
+            .map(|p| p_ovalue!(p))
+            .max()
+            .unwrap_or_else(|| {
+                panic!("Cannot derive most valuable piece from empty list")
+            });
         let board_size: usize = (files as usize) * (ranks as usize);
 
         State {

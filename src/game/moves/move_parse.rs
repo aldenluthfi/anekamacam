@@ -20,16 +20,27 @@ use crate::*;
 
 lazy_static! {
     pub static ref NORMALIZE_PATTERN: Regex =
-        Regex::new(r"[^(^|]\(|\)[^()^|]").unwrap();
+        Regex::new(r"[^(^|]\(|\)[^()^|]").unwrap_or_else(|e| {
+            panic!("Failed to compile NORMALIZE_PATTERN regex: {e}")
+        });
     pub static ref RANGE_PATTERN: Regex =
-        Regex::new(r"(-?)(?:\{(?:\.\.(\d+)|(\d+)\.\.|\.\.)\}|\*)").unwrap();
+        Regex::new(r"(-?)(?:\{(?:\.\.(\d+)|(\d+)\.\.|\.\.)\}|\*)")
+            .unwrap_or_else(|e| {
+                panic!("Failed to compile RANGE_PATTERN regex: {e}")
+            });
     pub static ref DIRECTION_PATTERN: Regex =
         Regex::new(r"\[(\d+)?\.\.(\d+)?(?:\$(\d+))?\]|\[(\d+)\$(\d+)\]")
-            .unwrap();
+            .unwrap_or_else(|e| {
+                panic!("Failed to compile DIRECTION_PATTERN regex: {e}")
+            });
     pub static ref CARDINAL_PATTERN: Regex =
-        Regex::new(r"([nsew]{1,2}\+[nsew]{1,2})+").unwrap();
+        Regex::new(r"([nsew]{1,2}\+[nsew]{1,2})+").unwrap_or_else(|e| {
+            panic!("Failed to compile CARDINAL_PATTERN regex: {e}")
+        });
     pub static ref ATOMIC: Regex =
-        Regex::new(r"(ne|nw|se|sw|n|s|e|w)?(\[\d+\])?K").unwrap();
+        Regex::new(r"(ne|nw|se|sw|n|s|e|w)?(\[\d+\])?K").unwrap_or_else(|e| {
+            panic!("Failed to compile ATOMIC regex: {e}")
+        });
     pub static ref ATOMIC_TOKENS: Regex = Regex::new(concat!(
         r"(?:(?:ne|nw|se|sw|n|s|e|w)?(?:\[\d+\])?K)+|",
         r"(?:ne|nw|se|sw|n|s|e|w)|",
@@ -38,17 +49,27 @@ lazy_static! {
         r":?\{\d+(?:\.\.(?:\d+|\*))?\}|",
         r"<|>|#"
     ))
-    .unwrap();
-    pub static ref DOTS_TOKEN: Regex = Regex::new(r"^-?\.+$").unwrap();
+    .unwrap_or_else(|e| {
+        panic!("Failed to compile ATOMIC_TOKENS regex: {e}")
+    });
+    pub static ref DOTS_TOKEN: Regex = Regex::new(r"^-?\.+$")
+        .unwrap_or_else(|e| panic!("Failed to compile DOTS_TOKEN regex: {e}"));
     pub static ref DIRECTION_FILTER_TOKEN: Regex =
-        Regex::new(r"^\[\d+\]$").unwrap();
+        Regex::new(r"^\[\d+\]$").unwrap_or_else(|e| {
+            panic!("Failed to compile DIRECTION_FILTER_TOKEN regex: {e}")
+        });
     pub static ref RANGE_TOKEN: Regex =
-        Regex::new(r"^-?\{(\d+)(?:\.\.(\d+|\*))?\}$").unwrap();
+        Regex::new(r"^-?\{(\d+)(?:\.\.(\d+|\*))?\}$").unwrap_or_else(|e| {
+            panic!("Failed to compile RANGE_TOKEN regex: {e}")
+        });
     pub static ref COLON_RANGE_TOKEN: Regex =
-        Regex::new(r"^-?:\{(\d+)(?:\.\.(\d+|\*))?\}$").unwrap();
+        Regex::new(r"^-?:\{(\d+)(?:\.\.(\d+|\*))?\}$")
+            .unwrap_or_else(|e| {
+                panic!("Failed to compile COLON_RANGE_TOKEN regex: {e}")
+            });
     pub static ref LEG: Regex =
         Regex::new(r"^([mcdukvgtiplr!]+)?([^@mcdukvgtiplr]+)@?([^@]+)?$")
-            .unwrap();
+            .unwrap_or_else(|e| panic!("Failed to compile LEG regex: {e}"));
     pub static ref LEG_TOKENS: Regex = Regex::new(concat!(
         r"(?:(?:ne|nw|se|sw|n|s|e|w)?(?:\[\d+\])?K)+|",
         r"(?:ne|nw|se|sw|n|s|e|w)|",
@@ -61,11 +82,17 @@ lazy_static! {
         r"-\{\d+(?:\.\.(?:\d+|\*))?\}|",
         r"</?|/?>|-",
     ))
-    .unwrap();
+    .unwrap_or_else(|e| {
+        panic!("Failed to compile LEG_TOKENS regex: {e}")
+    });
     pub static ref MODIFIERS: Regex =
-        Regex::new(r"^[mcdukvgtiplr!]+$").unwrap();
+        Regex::new(r"^[mcdukvgtiplr!]+$").unwrap_or_else(|e| {
+            panic!("Failed to compile MODIFIERS regex: {e}")
+        });
     pub static ref CASTLING_TOKEN: Regex =
-        Regex::new(r"^(?:O|o)\{(\d+),(\d+)\}$").unwrap();
+        Regex::new(r"^(?:O|o)\{(\d+),(\d+)\}$").unwrap_or_else(|e| {
+            panic!("Failed to compile CASTLING_TOKEN regex: {e}")
+        });
     pub static ref INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] =
         [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)];
     pub static ref CARDINAL_VECTORS_TO_INDEX: HashMap<(i8, i8), usize> = {
@@ -214,8 +241,18 @@ fn evaluate(expr: &str) -> String {
                     if op == '(' {
                         break;
                     }                                                           /* Eval subexpr until '(' is found    */
-                    let a = operands.pop().unwrap();
-                    let b = operands.pop().unwrap();
+                    let a = operands.pop().unwrap_or_else(|| {
+                        panic!(
+                            "Malformed expression '{}': missing right operand",
+                            expr
+                        )
+                    });
+                    let b = operands.pop().unwrap_or_else(|| {
+                        panic!(
+                            "Malformed expression '{}': missing left operand",
+                            expr
+                        )
+                    });
                     let combined = apply_operator(op, &b, &a);
                     operands.push(combined);
                 }
@@ -224,8 +261,18 @@ fn evaluate(expr: &str) -> String {
             '^' | '|' => {
                 while let Some(&op) = operators.last() {
                     if op != '(' && precedence(op) >= precedence(c) {
-                        let a = operands.pop().unwrap();
-                        let b = operands.pop().unwrap();
+                        let a = operands.pop().unwrap_or_else(|| {
+                            panic!(
+                                "Malformed expression '{}': missing right operand",
+                                expr
+                            )
+                        });
+                        let b = operands.pop().unwrap_or_else(|| {
+                            panic!(
+                                "Malformed expression '{}': missing left operand",
+                                expr
+                            )
+                        });
                         let combined = apply_operator(op, &b, &a);
                         operands.push(combined);
                         operators.pop();
@@ -248,13 +295,25 @@ fn evaluate(expr: &str) -> String {
     }
 
     while let Some(op) = operators.pop() {                                      /* Eval remaining operators           */
-        let a = operands.pop().unwrap();
-        let b = operands.pop().unwrap();
+        let a = operands.pop().unwrap_or_else(|| {
+            panic!(
+                "Malformed expression '{}': missing right operand",
+                expr
+            )
+        });
+        let b = operands.pop().unwrap_or_else(|| {
+            panic!(
+                "Malformed expression '{}': missing left operand",
+                expr
+            )
+        });
         let combined = apply_operator(op, &b, &a);
         operands.push(combined);
     }
 
-    operands.pop().unwrap()                                                     /* Final result is the only operand   */
+    operands.pop().unwrap_or_else(|| {
+        panic!("Malformed expression '{}': no final operand", expr)
+    })                                                                       /* Final result is the only operand   */
 }
 
 /// Normalizes the expression by removing unnecessary parentheses and
@@ -292,7 +351,7 @@ fn atomize(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
 
-    debug!("Starting atomization of expression: {}", expr);
+    log_4!("Starting atomization of expression: {}", expr);
 
     let mut atoms = Vec::with_capacity(expr.len());
     for c in expr.chars() {
@@ -320,13 +379,15 @@ fn expand_directions(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
 
-    debug!("Starting direction expansion of expression: {}", expr);
+    log_4!("Starting direction expansion of expression: {}", expr);
 
     let mut expanded = expr.to_string();
 
     while let Some(cap) = DIRECTION_PATTERN.captures(&expanded) {
         let digits = if cap.get(4).is_some() {
-            let digits_str = cap.get(4).unwrap().as_str();
+            let digits_str = cap.get(4).unwrap_or_else(|| {
+                panic!("Direction capture is missing explicit digit group")
+            }).as_str();
             let exclusions = cap.get(5).map_or("", |m| m.as_str());
 
             let mut result = String::new();
@@ -357,7 +418,9 @@ fn expand_directions(expr: &str) -> Option<String> {
         };
 
         let replacement = format!("[{}]", digits);
-        let cap_str = cap.get(0).unwrap().as_str();
+        let cap_str = cap.get(0).unwrap_or_else(|| {
+            panic!("Direction pattern capture has no full-match group")
+        }).as_str();
         expanded = expanded.replacen(cap_str, &replacement, 1);
     }
 
@@ -380,7 +443,7 @@ fn expand_ranges(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
 
-    debug!("Starting range expansion of expression: {}", expr);
+    log_4!("Starting range expansion of expression: {}", expr);
 
     if !expr.contains('{') && !expr.contains('*') {
         return Some(expr.to_string());
@@ -401,7 +464,9 @@ fn expand_ranges(expr: &str) -> Option<String> {
             }
             _ => format!("{}{{1..&}}", prefix),                                 /* Handle .. format                   */
         };
-        let cap_str = cap.get(0).unwrap().as_str();
+        let cap_str = cap.get(0).unwrap_or_else(|| {
+            panic!("Range pattern capture has no full-match group")
+        }).as_str();
         expanded = expanded.replacen(cap_str, &replacement, 1);
     }
 
@@ -418,10 +483,14 @@ fn expand_ranges(expr: &str) -> Option<String> {
 ///
 /// # Examples
 /// ```ignore
-/// let out = expand_cardinals("n+e").unwrap();
+/// let out = expand_cardinals("n+e").unwrap_or_else(|| {
+///     panic!("Expected expand_cardinals to return output for n+e")
+/// });
 /// assert!(out == "n|e" || out == "e|n");
 ///
-/// let out = expand_cardinals("n+e+s").unwrap();
+/// let out = expand_cardinals("n+e+s").unwrap_or_else(|| {
+///     panic!("Expected expand_cardinals to return output for n+e+s")
+/// });
 /// assert!(
 ///     out == "n|e|s" || out == "n|s|e" || out == "e|n|s"
 ///         || out == "e|s|n" || out == "s|n|e" || out == "s|e|n"
@@ -431,7 +500,7 @@ fn expand_cardinals(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
 
-    debug!("Starting cardinal expansion of expression: {}", expr);
+    log_4!("Starting cardinal expansion of expression: {}", expr);
 
     if !expr.contains('+') {
         return Some(expr.to_string());
@@ -442,16 +511,25 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 
     while let Some(term) = stack.pop() {
 
-        debug!("expand_cardinals processing term: {}", term);
+        log_4!("expand_cardinals processing term: {}", term);
 
         if !CARDINAL_PATTERN.is_match(&term) {
             result_stack.insert(term);
             continue;
         }
 
-        let cap = CARDINAL_PATTERN.captures(&term).unwrap();
+        let cap = CARDINAL_PATTERN
+            .captures(&term)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Cardinal pattern failed to match term '{}', despite pre-check",
+                    term
+                )
+            });
 
-        let cardinals = cap.get(0).unwrap().as_str();
+        let cardinals = cap.get(0).unwrap_or_else(|| {
+            panic!("Cardinal capture missing full-match group for '{term}'")
+        }).as_str();
 
         let split = cardinals.split('+').collect::<Vec<&str>>();
 
@@ -489,13 +567,13 @@ where
 /// - `leg_to_vector`
 fn parse_move_string(expr: &str) -> String {
 
-    debug!("Starting parse_move_string with expression: {}", expr);
+    log_4!("Starting parse_move_string with expression: {}", expr);
 
     let expr = normalize(expr)
         .unwrap_or_else(|| panic!("Failed to normalize expression: {}", expr));
 
 
-    debug!("Normalized expression: {}", expr);
+    log_4!("Normalized expression: {}", expr);
 
     let pipeline =
         [atomize, expand_directions, expand_ranges, expand_cardinals];
@@ -556,7 +634,11 @@ fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
         let a_angle = (-a_tuple[0].0 as f32).atan2(-a_tuple[0].1 as f32);
         let b_angle = (-b_tuple[0].0 as f32).atan2(-b_tuple[0].1 as f32);
 
-        a_angle.partial_cmp(&b_angle).unwrap()
+        a_angle.partial_cmp(&b_angle).unwrap_or_else(|| {
+            panic!(
+                "Failed to compare atomic angles: {a_angle} vs {b_angle}"
+            )
+        })
     });
 
     vectors
@@ -597,7 +679,7 @@ fn filter_atomic_by_index(
     let mut result: Vec<AtomicVector> = Vec::new();
 
 
-    debug!("filter_atomic_by_index sorted indices: {:?}", index);
+    log_4!("filter_atomic_by_index sorted indices: {:?}", index);
 
     assert_eq!(
         vectors.len(),
@@ -608,7 +690,7 @@ fn filter_atomic_by_index(
     vectors = sort_atomic_clockwise(vectors);
 
 
-    debug!("filter_atomic_by_index sorted vectors: {:?}", vectors);
+    log_4!("filter_atomic_by_index sorted vectors: {:?}", vectors);
 
     for i in index {
         result.push(vectors[i]);
@@ -623,7 +705,7 @@ fn filter_atomic_by_cardinal_direction(
     pov: &str,
 ) -> Vec<AtomicVector> {
 
-    debug!(
+    log_4!(
         "filter_atomic_by_cardinal_direction direction: {} w.r.t {}",
         direction, pov
     );
@@ -697,7 +779,7 @@ fn process_atomic_range_token(
     let captures = RANGE_TOKEN.captures(token).unwrap();
 
 
-    debug!("range token captures: {:?}", captures);
+    log_4!("range token captures: {:?}", captures);
 
     let start = captures.get(1);
     let end = captures.get(2);
@@ -788,7 +870,7 @@ fn process_atomic_colon_range_token(
     let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
 
 
-    debug!("colon-range token captures: {:?}", captures);
+    log_4!("colon-range token captures: {:?}", captures);
 
     let start = captures.get(1);
     let end = captures.get(2);
@@ -870,7 +952,7 @@ fn process_atomic_modifiers(
     rotation: &str,
 ) -> Vec<AtomicVector> {
 
-    debug!(
+    log_4!(
         "process_modifiers with modifiers: {:?}, rotation: {}",
         modifiers, rotation
     );
@@ -980,7 +1062,7 @@ fn evaluate_atomic_expression(
     game_state: &State,
 ) -> AtomicElement {
 
-    debug!(
+    log_4!(
         concat!(
             "evaluate_atomic_expression with expression: {:?} ",
             "with rotation: {} "
@@ -1071,7 +1153,7 @@ fn evaluate_atomic_expression(
     filter_atomic_out_of_bounds(&mut result, game_state);
 
 
-    debug!(
+    log_4!(
         "evaluate_atomic_expression {:?} final len: {}",
         expr,
         result.len()
@@ -1227,7 +1309,7 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 /// here.
 fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 
-    debug!(
+    log_4!(
         "atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1505,7 +1587,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 ///   by the last F move.
 fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 
-    debug!(
+    log_4!(
         "chained_atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1680,7 +1762,7 @@ fn compound_atomic_to_vector(
     game_state: &State,
 ) -> Vec<AtomicVector> {
 
-    debug!(
+    log_4!(
         "compound_atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1689,7 +1771,7 @@ fn compound_atomic_to_vector(
         ATOMIC_TOKENS.find_iter(expr).map(|m| m.as_str()).collect();
 
 
-    debug!("compound_atomic_to_vector tokens: {:?}", tokens);
+    log_4!("compound_atomic_to_vector tokens: {:?}", tokens);
 
     let mut stack: AtomicGroup = VecDeque::new();
 
@@ -1780,12 +1862,12 @@ fn filter_multi_leg_by_index(
     let mut result: Vec<MultiLegVector> = Vec::new();
 
 
-    debug!("filter_atomic_by_index sorted indices: {:?}", index);
+    log_4!("filter_atomic_by_index sorted indices: {:?}", index);
 
     vectors = sort_multi_leg_clockwise(vectors);
 
 
-    debug!(
+    log_4!(
         "filter_multi_leg_by_index sorted vectors: {:#?}",
         vectors
     );
@@ -1803,7 +1885,7 @@ fn filter_multi_leg_by_cardinal_direction(
     pov: &str,
 ) -> Vec<MultiLegVector> {
 
-    debug!(
+    log_4!(
         "filter_by_cardinal_direction direction: {} w.r.t {}",
         direction, pov
     );
@@ -1874,7 +1956,7 @@ fn process_multi_leg_range_token(
     let captures = RANGE_TOKEN.captures(token).unwrap();
 
 
-    debug!("range token captures: {:?}", captures);
+    log_4!("range token captures: {:?}", captures);
 
     let start = captures.get(1);
     let end = captures.get(2);
@@ -1977,7 +2059,7 @@ fn process_multi_leg_colon_range_token(
     let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
 
 
-    debug!("colon-range token captures: {:?}", captures);
+    log_4!("colon-range token captures: {:?}", captures);
 
     let start = captures.get(1);
     let end = captures.get(2);
@@ -2103,7 +2185,7 @@ fn process_multi_leg_modifiers(
     rotation: &str,
 ) -> Vec<MultiLegVector> {
 
-    debug!(
+    log_4!(
         "process_multi_leg_modifiers with modifiers: {:?} ",
         modifiers
     );
@@ -2142,7 +2224,7 @@ fn evaluate_multi_leg_term_leg(
     game_state: &State,
 ) -> Vec<MultiLegVector> {
 
-    debug!(
+    log_4!(
         concat!(
             "evaluate_multi_leg_term_leg with term: {:#?} ",
             "modifiers: {:?}"
@@ -2222,7 +2304,7 @@ fn evaluate_multi_leg_subexpression(
     game_state: &State,
 ) -> Vec<MultiLegVector> {
 
-    debug!(
+    log_4!(
         concat!(
             "evaluate_multi_leg_subexpr with expr: {:#?} ",
             "modifiers: {:?}, rotation: {}"
@@ -2324,7 +2406,7 @@ fn evaluate_multi_leg_expression(
     game_state: &State,
 ) -> MultiLegElement {
 
-    debug!(
+    log_4!(
         concat!(
             "evaluate_multi_leg_expression with expression: {:#?} ",
             "with rotation: {} "
@@ -2454,7 +2536,7 @@ fn evaluate_multi_leg_expression(
     result.retain(|vector| !exclusion.contains(vector));
 
 
-    debug!(
+    log_4!(
         "evaluate_multi_leg_expression {:?} final len: {:#?} ",
         expr,
         result.len()
@@ -2492,7 +2574,7 @@ fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
     }
 
 
-    debug!("tokenize_multi_leg_expression raw tokens: {:?}", tokens);
+    log_4!("tokenize_multi_leg_expression raw tokens: {:?}", tokens);
 
     let mut prev_tokens: Vec<String> = vec![];
 
@@ -2532,7 +2614,7 @@ fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
     }
 
 
-    debug!("tokenize_multi_leg_expression first pass {:?}", tokens);
+    log_4!("tokenize_multi_leg_expression first pass {:?}", tokens);
 
     let mut result: Vec<String> = vec![];
     tokens = tokens.into_iter().rev().collect();
@@ -2581,14 +2663,14 @@ fn leg_to_vector(
     game_state: &State,
 ) -> Vec<MultiLegVector> {
 
-    debug!("leg_to_vector leg {} with rotation {}", expr, rotation);
+    log_4!("leg_to_vector leg {} with rotation {}", expr, rotation);
 
     let captures = LEG
         .captures(expr)
         .unwrap_or_else(|| panic!("Invalid leg expression: {}", expr));
 
 
-    debug!("leg_to_vector captures: {:?}", captures);
+    log_4!("leg_to_vector captures: {:?}", captures);
 
     let modifiers = captures.get(1).map_or("", |m| m.as_str());
     let exclusion = captures.get(3).map_or("", |m| m.as_str());
@@ -2679,7 +2761,7 @@ fn parse_castling(expr: &str) -> String {
     }
 
 
-    debug!("parse_castling generated move expression: {}", string);
+    log_4!("parse_castling generated move expression: {}", string);
 
     string
 }
@@ -2690,7 +2772,7 @@ fn multi_leg_to_vector(
     game_state: &State,
 ) -> Vec<MultiLegVector> {
 
-    debug!(
+    log_4!(
         "multi_leg_to_vector leg {} with rotation {}",
         expr, rotation
     );
@@ -2706,7 +2788,7 @@ fn multi_leg_to_vector(
     let tokens = tokenize_multi_leg_expression(expr);
 
 
-    debug!("multi_leg_to_vector final tokens: {:?}", tokens);
+    log_4!("multi_leg_to_vector final tokens: {:?}", tokens);
 
     let mut stack: MultiLegGroup = VecDeque::new();
     for token in tokens {
@@ -2765,7 +2847,7 @@ fn multi_leg_to_vector(
     }
 
 
-    debug!("multi_leg_to_vector parsed stack: {:#?}", stack);
+    log_4!("multi_leg_to_vector parsed stack: {:#?}", stack);
 
     let result = evaluate_multi_leg_expression(stack, rotation, game_state);    /* Evaluate recursively               */
 
@@ -2790,7 +2872,7 @@ pub fn generate_move_vectors(
     let parsed_expr = parse_move_string(expr);
 
 
-    debug!(
+    log_4!(
         "generate_move_vectors parsed expression for {}: {:#?}",
         expr, parsed_expr
     );

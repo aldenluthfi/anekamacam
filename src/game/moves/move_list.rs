@@ -667,7 +667,11 @@ fn generate_move_list_from_vectors(
             }
 
             if u {
-                let mut last_captured = taken_pieces.pop().unwrap();
+                let mut last_captured = taken_pieces.pop().unwrap_or_else(|| {
+                    panic!(
+                        "Unload flag is set but no captured piece is available"
+                    )
+                });
                 let captured_square =
                     multi_move_captured_square!(last_captured);
 
@@ -1239,12 +1243,26 @@ macro_rules! make_move {
                     if demote_upon_capture!($state) {
                         captured_index_u8 = $state.piece_demotion_map
                             .get(&(captured_index_u8))
-                            .unwrap()[0];                                       /* assume 1 to 1 mapping              */
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    concat!(
+                                        "Missing demotion mapping for ",
+                                        "captured piece index {}"
+                                    ),
+                                    captured_index_u8
+                                )
+                            })[0];                                              /* assume 1 to 1 mapping              */
                     }
 
                     let swap_index =
                         *$state.piece_swap_map
-                        .get(&captured_index_u8).unwrap() as usize;
+                        .get(&captured_index_u8)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Missing swap-map entry for piece index {}",
+                                captured_index_u8
+                            )
+                        }) as usize;
                     let hand =
                         &mut $state.piece_in_hand
                         [piece_color as usize][swap_index];
@@ -1564,13 +1582,26 @@ macro_rules! make_move {
                         if demote_upon_capture!($state) {
                             captured_index_u8 = $state.piece_demotion_map
                                 .get(&(captured_index_u8))
-                                .unwrap()[0];                                   /* assume 1 to 1 mapping              */
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        concat!(
+                                            "Missing demotion mapping for ",
+                                            "captured piece index {}"
+                                        ),
+                                        captured_index_u8
+                                    )
+                                })[0];                                          /* assume 1 to 1 mapping              */
                         }
 
                         let swap_index =
                             *$state.piece_swap_map
                             .get(&captured_index_u8)
-                            .unwrap() as usize;
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "Missing swap-map entry for piece index {}",
+                                    captured_index_u8
+                                )
+                            }) as usize;
                         let hand =
                             &mut $state.piece_in_hand
                             [piece_color as usize][swap_index];
@@ -1964,8 +1995,18 @@ macro_rules! undo_move {
         $state.search_ply -= 1;
         $state.ply_counter -= 1;
 
-        let repetition_count =
-            $state.position_hash_map.get_mut(&$state.position_hash).unwrap();
+        let repetition_count = $state
+            .position_hash_map
+            .get_mut(&$state.position_hash)
+            .unwrap_or_else(|| {
+                panic!(
+                    concat!(
+                        "Missing repetition entry for current ",
+                        "position hash {} during undo"
+                    ),
+                    $state.position_hash
+                )
+            });
         *repetition_count -= 1;
 
         if *repetition_count == 0 {
@@ -2254,13 +2295,26 @@ macro_rules! undo_move {
                     captured_index_u8 = $state
                         .piece_demotion_map
                         .get(&(captured_index_u8))
-                        .unwrap()[0];                                           /* assume 1 to 1 mapping              */
+                        .unwrap_or_else(|| {
+                            panic!(
+                                concat!(
+                                    "Missing demotion mapping for captured ",
+                                    "piece index {}"
+                                ),
+                                captured_index_u8
+                            )
+                        })[0];                                                  /* assume 1 to 1 mapping              */
                 }
 
                 $state.piece_in_hand[piece_color as usize][*$state
                     .piece_swap_map
                     .get(&captured_index_u8)
-                    .unwrap()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "Missing swap-map entry for piece index {}",
+                            captured_index_u8
+                        )
+                    })
                     as usize] -= 1;
             }
         } else if move_type == MULTI_CAPTURE_MOVE {
@@ -2444,13 +2498,26 @@ macro_rules! undo_move {
                         captured_index_u8 = $state
                             .piece_demotion_map
                             .get(&(captured_index_u8))
-                            .unwrap()[0];
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    concat!(
+                                        "Missing demotion mapping for ",
+                                        "captured piece index {}"
+                                    ),
+                                    captured_index_u8
+                                )
+                            })[0];
                     }
 
                     $state.piece_in_hand[piece_color as usize][*$state
                         .piece_swap_map
                         .get(&captured_index_u8)
-                        .unwrap()
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "Missing swap-map entry for piece index {}",
+                                captured_index_u8
+                            )
+                        })
                         as usize] -= 1;
                 }
             }
@@ -2492,19 +2559,13 @@ macro_rules! undo_move {
             if !drop_from_enemy_hand!(mv) {
                 let hand = &mut $state.piece_in_hand[piece_color as usize]
                     [piece_index];
-                let old_hand = *hand;
                 *hand += 1;
-
-                hash_update_in_hand!($state, piece_index, old_hand, *hand);
             } else {
                 let enemy_equiv =
                     $state.piece_swap_map[&(piece_index as u8)] as usize;
                 let hand = &mut $state.piece_in_hand[1 - piece_color as usize]
                     [enemy_equiv];
-                let old_hand = *hand;
                 *hand += 1;
-
-                hash_update_in_hand!($state, enemy_equiv, old_hand, *hand);
             }
 
             for cap in mv.1.iter() {

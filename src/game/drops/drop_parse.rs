@@ -12,7 +12,9 @@ use crate::*;
 
 lazy_static! {
     pub static ref DROP_PATTERN: Regex =
-        Regex::new(r"^([kfde]*)@(.*@.*)$").unwrap();
+        Regex::new(r"^([kfde]*)@(.*@.*)$").unwrap_or_else(|e| {
+            panic!("Failed to compile DROP_PATTERN regex: {e}")
+        });
 }
 
 /// Parses drop expressions into internal drop vectors and modifiers.
@@ -48,7 +50,7 @@ pub fn generate_drop_vectors(
             .unwrap_or_else(|| panic!("Invalid drop format {}", part));
 
 
-        debug!(
+        log_4!(
             "Captured groups for piece {}: {:?}",
             piece.name, captures
         );
@@ -73,7 +75,9 @@ pub fn generate_drop_vectors(
             move_result |= 1 << 23;
         }
 
-        let pattern = captures.get(2).unwrap().as_str();
+        let pattern = captures.get(2).unwrap_or_else(|| {
+            panic!("Drop pattern missing matcher body in: {}", part)
+        }).as_str();
         let (allower_result, stopper_result) = parse_pattern(pattern, state);
 
         drop_set.push((move_result, allower_result, stopper_result));
