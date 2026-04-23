@@ -109,7 +109,7 @@ pub fn search_position(
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
         let score = alpha_beta(
-            state, depth, -INFINITE_SCORE, INFINITE_SCORE, info, true
+            state, depth, -MATE_SCORE, MATE_SCORE, info, true
         );
 
         if info.interrupt {
@@ -133,7 +133,7 @@ pub fn search_position(
             nodes * 1_000_000_000 / elapsed
         };
 
-        info!(
+        log_4!(
             concat!(
                 "Depth {:>2} | Score: {:>6} | Best Move: {:<8} | ",
                 "Depth Nodes: {:>12} | ",
@@ -147,7 +147,7 @@ pub fn search_position(
             depth_nps,
         );
 
-        info!(
+        log_4!(
             "Best Line: {}",
             state.pv_line
                 .iter()
@@ -168,7 +168,7 @@ pub fn search_position(
         total_nodes * 1_000_000_000 / total_elapsed
     };
 
-    info!(
+    log_2!(
         concat!(
             "Search complete | Final Score: {:>6} | Best Move: {:<8} | ",
             "Total Nodes: {:>12} | Total Time: {:>10} | NPS: {:>12}"
@@ -211,7 +211,15 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     info.nodes += 1;
-    check_interrupt(info);
+    if info.nodes ^ 2047 == 0 {
+        check_interrupt(info);
+    }
+
+    let in_check = is_in_check!(state.playing, state);
+
+    if in_check {
+        depth += 1;
+    }
 
     if depth == 0 {
         return quiescence_search(state, alpha, beta, info);
@@ -231,18 +239,14 @@ pub fn alpha_beta(
         return 0;
     }
 
+    let static_eval = evaluate_position!(state);
+
     if state.search_ply >= MAX_DEPTH as u32 {
-        return evaluate_position!(state);
-    }
-
-    let in_check = is_in_check!(state.playing, state);
-
-    if in_check {
-        depth += 1;
+        return static_eval;
     }
 
     let mut pv_move = None;
-    let tt_entry = probe_tt_entry!(state, alpha, beta, depth);
+    let tt_entry = probe_tt_entry!(state, alpha, beta, depth);                  /* Transposition table lookup         */
 
     if tt_entry.1 != null_move() {
         pv_move = Some(tt_entry.1);
@@ -253,14 +257,28 @@ pub fn alpha_beta(
         return tt_entry.2;
     }
 
+    if depth < 3
+    && pv_move.is_none()
+    && !in_check
+    && (beta - 1).abs() > -MATE_SCORE + MAX_DEPTH as i32 + 1                    /* Static eval pruning                */
+    {
+        let eval_margin = 120 * depth as i32;
+        if static_eval >= beta + eval_margin {
+            return static_eval - eval_margin;
+        }
+    }
+
     if null
     && !in_check
+    && pv_move.is_none()
     && depth >= 3
     && state.search_ply > 0
-    && state.big_pieces[state.playing as usize] > 0 {
+    && state.game_phase != ENDGAME
+    {                                                                           /* Null move pruning                  */
+        let reduction = 3 + if depth >= 6 { 1 } else { 0 };
         make_null_move!(state);
         let score = -alpha_beta(
-            state, depth - 3, -beta, -beta + 1, info, false
+            state, depth - reduction, -beta, -beta + 1, info, false
         );
         undo_null_move!(state);
 
@@ -273,8 +291,20 @@ pub fn alpha_beta(
         }
     }
 
+    let mut futile = false;
+    let futility_margin = [ 0, 200, 300, 500 ];
+
+    if depth < 4
+    && !in_check
+    && pv_move.is_none()
+    && alpha.abs() < MATE_SCORE - MAX_DEPTH as i32 - 1
+    && static_eval + futility_margin[depth] <= alpha
+    {
+        futile = true;                                                          /* Futility pruning                   */
+    }
+
     let mut best_move = null_move();
-    let mut best_score = -INFINITE_SCORE;
+    let mut best_score = -MATE_SCORE;
     let mut legal_moves = 0;
     let alpha_start = alpha;
 
@@ -286,16 +316,70 @@ pub fn alpha_beta(
         let mv = all_moves[i].clone();
         let mv_type = move_type!(mv);
         let mv_piece = piece!(mv) as usize;
-        let mv_end = end!(mv) as usize;
+        let mv_start = start!(mv);
+        let mv_end = end!(mv);
         let is_capture =
             mv_type == SINGLE_CAPTURE_MOVE || mv_type == MULTI_CAPTURE_MOVE;
+        let is_promotion = promotion!(mv);
+        let is_drop = mv_type == DROP_MOVE;
 
         if !make_move!(state, mv.clone()) {
             continue;
         }
 
         legal_moves += 1;
-        let score = -alpha_beta(state, depth - 1, -beta, -alpha, info, true);
+
+        let mut reduction = 1;
+        let mut score;
+
+        let opponent_in_check = is_in_check!(state.playing, state);
+
+        if futile
+        && !opponent_in_check
+        && !is_capture
+        && !is_promotion
+        && !is_drop
+        {                                                                       /* Futility pruning                   */
+            undo_move!(state);
+            continue;
+        }
+
+        if depth > 4
+        && legal_moves > 3
+        && !opponent_in_check
+        && !in_check
+        && (mv_end != end!(state.killer_hist[state.search_ply as usize][0])
+        || mv_start != start!(state.killer_hist[state.search_ply as usize][0]))
+        && (mv_end != end!(state.killer_hist[state.search_ply as usize][1])
+        || mv_start != start!(state.killer_hist[state.search_ply as usize][1]))
+        && !is_capture
+        && !is_promotion
+        && !is_drop
+        {
+            reduction += 1;                                                     /* Late move reduction                */
+
+            if legal_moves > 6 {
+                reduction += 1;
+            }
+
+            score =
+                -alpha_beta(
+                    state, depth - reduction, -alpha - 1, -alpha, info, true
+                );
+
+            if score > alpha {
+                score =
+                    -alpha_beta(
+                        state, depth - 1, -beta, -alpha, info, true
+                    );
+            }
+        } else {
+            score =
+                -alpha_beta(
+                    state, depth - reduction, -beta, -alpha, info, true
+                );
+        }
+
         undo_move!(state);
 
         if info.interrupt {
@@ -322,7 +406,8 @@ pub fn alpha_beta(
                 alpha = score;
 
                 if !is_capture {
-                    state.search_hist[mv_piece][mv_end] += depth as u16;
+                    state.search_hist[mv_piece][mv_end as usize] +=
+                        depth as u16;
                 }
             }
         }

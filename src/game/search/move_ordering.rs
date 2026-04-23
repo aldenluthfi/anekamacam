@@ -37,9 +37,9 @@ pub fn score_move(state: &State, mv: &Move, pv_move: &Option<Move>) -> u16 {
     {
         let killers = &state.killer_hist[state.search_ply as usize];
         if *mv == killers[0] {
-            state.most_valuable - 1
+            state.most_valuable - 1 + MAX_DEPTH as u16                          /* + MAX_DEPTH so it beats history    */
         } else if *mv == killers[1] {
-            state.most_valuable - 2
+            state.most_valuable - 2 + MAX_DEPTH as u16                          /* + MAX_DEPTH so it beats history    */
         } else {
             state.search_hist[piece!(mv) as usize][end!(mv) as usize]
         }
@@ -47,24 +47,24 @@ pub fn score_move(state: &State, mv: &Move, pv_move: &Option<Move>) -> u16 {
         let attacker_value = p_ovalue!(state.pieces[piece!(mv) as usize]);
 
         if move_type == SINGLE_CAPTURE_MOVE {
-            let captured_value =
+            let captured =
                 p_ovalue!(state.pieces[captured_piece!(mv) as usize]);
-            captured_value + state.most_valuable - attacker_value
+            captured + state.most_valuable - attacker_value + MAX_DEPTH as u16  /* + MAX_DEPTH so it beats history    */
         } else {
-            let mut total_value = 0;
+            let mut total = 0;
             for cap in mv.1.iter() {
-                total_value +=
+                total +=
                     p_ovalue!(
                         state.pieces[multi_move_captured_piece!(cap) as usize]
                     );
             }
 
-            total_value + state.most_valuable - attacker_value
+            total + state.most_valuable - attacker_value + MAX_DEPTH as u16     /* + MAX_DEPTH so it beats history    */
         }
     };
 
     if pv_move.as_ref() == Some(mv) {
-        score = (state.most_valuable + state.most_valuable).saturating_add(1);
+        score = u16::MAX                                                        /* PV move should always be best      */
     }
 
     score

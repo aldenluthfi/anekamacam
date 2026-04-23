@@ -28,18 +28,6 @@ lazy_static! {
     pub static ref IN_HAND_PATTERN: Regex = Regex::new(r"(\d*)(.)").unwrap();
 }
 
-fn verbosity_enabled(current: log::LevelFilter, required: u8) -> bool {
-    let level_value = match current {
-        log::LevelFilter::Error => FORMAT_VERBOSITY_ERROR,
-        log::LevelFilter::Warn => FORMAT_VERBOSITY_WARN,
-        log::LevelFilter::Info => FORMAT_VERBOSITY_INFO,
-        log::LevelFilter::Debug => FORMAT_VERBOSITY_DEBUG,
-        _ => FORMAT_VERBOSITY_INFO
-    };
-
-    level_value >= required
-}
-
 fn determine_board_dimensions(fen: &str) -> (u8, u8) {
     let ranks_data: Vec<&str> = fen.split('/').collect();
     let rank_count = ranks_data.len() as u8;
@@ -2174,166 +2162,12 @@ fn format_hand(state: &State, color: u8) -> String {
     }
 }
 
-fn format_numeric_board(
-    values: &[i32], files: u8, ranks: u8, title: &str
-) -> String {
-    let mut result = String::new();
-    let width = 3;
-
-    let board_width = files as usize * (width + 3) + 3;
-    result.push_str(&format!("{:^board_width$}\n", title));
-    result.push_str(&format!(
-        "   ╔{}╗\n",
-        (0..files)
-            .map(|_| "═".repeat(width + 2))
-            .collect::<Vec<String>>()
-            .join("╤")
-    ));
-
-    for rank in (0..ranks).rev() {
-        result.push_str(&format!("{:02} ║", rank));
-        for file in 0..files {
-            let idx = rank as usize * files as usize + file as usize;
-            result.push_str(
-                &format!(" {:>width$} ", values[idx], width = width)
-            );
-            if file + 1 < files {
-                result.push('│');
-            }
-        }
-        result.push_str("║\n");
-
-        if rank > 0 {
-            result.push_str(&format!(
-                "   ╟{}╢\n",
-                (0..files)
-                    .map(|_| "─".repeat(width + 2))
-                    .collect::<Vec<String>>()
-                    .join("┼")
-            ));
-        }
-    }
-
-    result.push_str(&format!(
-        "   ╚{}╝\n",
-        (0..files)
-            .map(|_| "═".repeat(width + 2))
-            .collect::<Vec<String>>()
-            .join("╧")
-    ));
-
-    result.push_str("     ");
-    for file in 0..files {
-        if files <= 26 {
-            result.push_str(&format!(
-                " {:^width$} ",
-                (b'A' + file) as char,
-                width = width
-            ));
-        } else {
-            result.push_str(&format!(" {:^width$} ", file, width = width));
-        }
-        if file + 1 < files {
-            result.push(' ');
-        }
-    }
-
-    result.push('\n');
-    result
-}
-
-fn format_piece_square_tables(state: &State) -> String {
-    let mut result = String::new();
-    let board_width = state.files as usize * 7;
-    let panel_width = board_width * 2 + 4;
-
-    result.push_str(&format!("\n{:^panel_width$}\n", "Piece-Square Tables"));
-
-    for (white_idx, black_idx) in collect_piece_type_pairs(state) {
-        let white_piece = &state.pieces[white_idx];
-        let black_piece = &state.pieces[black_idx];
-
-        let white_opening = format_numeric_board(
-            &state.pst_opening[white_idx],
-            state.files,
-            state.ranks,
-            "Opening / Middlegame PST",
-        );
-        let black_opening = format_numeric_board(
-            &state.pst_opening[black_idx],
-            state.files,
-            state.ranks,
-            "Opening / Middlegame PST",
-        );
-
-        let white_endgame = format_numeric_board(
-            &state.pst_endgame[white_idx],
-            state.files,
-            state.ranks,
-            "Endgame PST",
-        );
-        let black_endgame = format_numeric_board(
-            &state.pst_endgame[black_idx],
-            state.files,
-            state.ranks,
-            "Endgame PST",
-        );
-
-        let white_opening_lines = white_opening.lines().collect::<Vec<&str>>();
-        let black_opening_lines = black_opening.lines().collect::<Vec<&str>>();
-        let white_endgame_lines = white_endgame.lines().collect::<Vec<&str>>();
-        let black_endgame_lines = black_endgame.lines().collect::<Vec<&str>>();
-
-        result.push_str(&format!(
-            "\n{:^panel_width$}\n\n",
-            format!("PST for the {}", white_piece.name)
-        ));
-        result.push_str(&format!(
-            "{:^board_width$}    {:^board_width$}\n",
-            format!("White ({})", white_piece.char),
-            format!("Black ({})", black_piece.char)
-        ));
-
-        for line_idx in
-            0..white_opening_lines.len().max(black_opening_lines.len())
-        {
-            let left = white_opening_lines.get(line_idx).copied().unwrap_or("");
-            let right =
-                black_opening_lines.get(line_idx).copied().unwrap_or("");
-            result.push_str(&format!(
-                "{:<board_width$}    {:<board_width$}\n",
-                left,
-                right
-            ));
-        }
-
-        result.push('\n');
-
-        for line_idx in
-            0..white_endgame_lines.len().max(black_endgame_lines.len())
-        {
-            let left = white_endgame_lines.get(line_idx).copied().unwrap_or("");
-            let right =
-                black_endgame_lines.get(line_idx).copied().unwrap_or("");
-            result.push_str(&format!(
-                "{:<board_width$}    {:<board_width$}\n",
-                left,
-                right
-            ));
-        }
-
-        result.push('\n');
-    }
-
-    result
-}
-
 /// Formats the current board and runtime state details by verbosity level.
 ///
-/// - [`FORMAT_VERBOSITY_ERROR`] / minimal: board only.
-/// - [`FORMAT_VERBOSITY_WARN`]: board + core dynamic status line.
-/// - [`FORMAT_VERBOSITY_INFO`]: adds match-flow counters and tactical context.
-/// - [`FORMAT_VERBOSITY_DEBUG`]: adds hash and deep internals.
+/// - [`FORMAT_VERBOSITY_1`] / minimal: board only.
+/// - [`FORMAT_VERBOSITY_2`]: board + core dynamic status line.
+/// - [`FORMAT_VERBOSITY_3`]: adds match-flow counters and tactical context.
+/// - [`FORMAT_VERBOSITY_4`]: adds hash and deep internals.
 pub fn format_game_state(state: &State) -> String {
     let mut result = String::new();
 
@@ -2360,7 +2194,7 @@ pub fn format_game_state(state: &State) -> String {
             .expect("Failed to format combined board string"),
     );
 
-    if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_WARN) {
+    if verbosity_enabled(FORMAT_VERBOSITY_2) {
         result.push_str("\n\n");
 
         let side = if state.playing == WHITE { "White" } else { "Black" };
@@ -2376,9 +2210,7 @@ pub fn format_game_state(state: &State) -> String {
             side, phase_label, state.ply_counter
         ));
 
-        if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_INFO) {
-
-
+        if verbosity_enabled(FORMAT_VERBOSITY_3) {
             if halfmove_clock!(state) {
                 result.push_str(&format!(
                     "Halfmove   : {}/{}\n",
@@ -2419,8 +2251,9 @@ pub fn format_game_state(state: &State) -> String {
             }
 
             if drops!(state)
-            || promote_to_captured!(state)
-            || setup_phase!(state) {
+                || promote_to_captured!(state)
+                || setup_phase!(state)
+            {
                 result.push_str(&format!(
                     "Hands      : White [{}] | Black [{}]\n",
                     format_hand(state, WHITE),
@@ -2429,7 +2262,7 @@ pub fn format_game_state(state: &State) -> String {
             }
         }
 
-        if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_DEBUG) {
+        if verbosity_enabled(FORMAT_VERBOSITY_4) {
             result.push_str(&format!(
                 "Phase Eval : score {} | opening {} | endgame {}\n",
                 game_phase_score!(state),
@@ -2460,620 +2293,162 @@ pub fn format_game_state(state: &State) -> String {
     result
 }
 
-/// Formats all piece types in the game state as tables.
-///
-/// Each column represents one piece with the following rows:
-/// Name, Index, Symbol, Color, Opening Value, Endgame Value,
-/// Royal, Major, Count Limit (optional), Can Promote (optional),
-/// Promotes To (optional), Promotes From (optional)
-///
-/// # Arguments
-///
-/// - `state`   : The game state containing all piece definitions
-///
-/// # Returns
-///
-/// A formatted string containing one or more piece type tables.
-pub fn format_piece_types(state: &State) -> String {
-    let mut headers = vec![
-        "Name",
-        "Index",
-        "Symbol",
-        "Color",
-        "Opening Value",
-        "Endgame Value",
-        "Royal",
-        "Major",
-    ];
-
-    if count_limits!(state) {
-        headers.push("Count Limit");
-    }
-
-    if promotions!(state) {
-        headers.push("Can Promote");
-        headers.push("Promotes To");
-        headers.push("Promotes From");
-    }
-
-    let mut result = String::new();
-    let mut pieces_per_table = state.pieces.len();
-    while pieces_per_table > 9 {
-        pieces_per_table = pieces_per_table.div_ceil(2);
-    }
-    let num_tables = state.pieces.len().div_ceil(pieces_per_table);
-
-    const HEADER_WIDTH: usize = 16;
-
-    for table_idx in 0..num_tables {
-        let start_idx = table_idx * pieces_per_table;
-        let end_idx =
-            ((table_idx + 1) * pieces_per_table).min(state.pieces.len());
-        let pieces_in_table = end_idx - start_idx;
-
-        let mut piece_columns: Vec<Vec<String>> = Vec::new();
-
-        for piece_idx in start_idx..end_idx {
-            let formatted = format_piece(&state.pieces[piece_idx], state);
-            let lines: Vec<&str> = formatted.lines().collect();
-
-            let mut piece_data = Vec::new();
-            let data_lines: Vec<_> = lines
-                .iter()
-                .filter(|line| {
-                    line.trim_start().starts_with('│')
-                        && line.trim_end().ends_with('│')
-                })
-                .collect();
-
-            for line in data_lines {
-                let content =
-                    line.trim_start_matches("│ ").trim_end_matches(" │");
-                piece_data.push(content.to_string());
-            }
-
-            piece_columns.push(piece_data);
-        }
-
-        let piece_width = piece_columns
-            .iter()
-            .flat_map(|column| column.iter())
-            .map(|cell| cell.trim().len())
-            .max()
-            .unwrap_or(12)
-            .max(12);
-
-        result.push('╔');
-        result.push_str(&"═".repeat(HEADER_WIDTH + 2));
-        result.push('╤');
-        for i in 0..pieces_in_table {
-            result.push_str(&"═".repeat(piece_width + 2));
-            if i < pieces_in_table - 1 {
-                result.push('╤');
-            }
-        }
-        result.push_str("╗\n");
-
-        for row_idx in 0..headers.len() {
-            result.push('║');
-
-            result.push_str(&format!(" {:<HEADER_WIDTH$} ", headers[row_idx]));
-            result.push('│');
-
-            for (col_idx, piece_col) in piece_columns.iter().enumerate() {
-                result.push_str(&format!(
-                    " {:^piece_width$} ",
-                    piece_col[row_idx].trim()
-                ));
-                if col_idx < piece_columns.len() - 1 {
-                    result.push('│');
-                }
-            }
-
-            result.push_str("║\n");
-
-            if row_idx < headers.len() - 1 {
-                result.push('╟');
-                result.push_str(&"─".repeat(HEADER_WIDTH + 2));
-                result.push('┼');
-                for i in 0..pieces_in_table {
-                    result.push_str(&"─".repeat(piece_width + 2));
-                    if i < pieces_in_table - 1 {
-                        result.push('┼');
-                    }
-                }
-                result.push_str("╢\n");
-            }
-        }
-
-        result.push('╚');
-        result.push_str(&"═".repeat(HEADER_WIDTH + 2));
-        result.push('╧');
-        for i in 0..pieces_in_table {
-            result.push_str(&"═".repeat(piece_width + 2));
-            if i < pieces_in_table - 1 {
-                result.push('╧');
-            }
-        }
-        result.push_str("╝\n");
-
-        if table_idx < num_tables - 1 {
-            result.push('\n');
-        }
-    }
-
-    result.push('\n');
-    result
-}
-
-fn format_promotion_zones(state: &State) -> String {
-    let mut result = String::new();
-    let mut seen_names = HashSet::new();
-
-    for piece in &state.pieces {
-        if !p_can_promote!(piece) || !seen_names.insert(piece.name.clone()) {
-            continue;
-        }
-
-        let white = state
-            .pieces
-            .iter()
-            .find(|p| p.name == piece.name && p_color!(p) == WHITE);
-        let black = state
-            .pieces
-            .iter()
-            .find(|p| p.name == piece.name && p_color!(p) == BLACK);
-
-        let (w_label, w_mand, w_opt) = if let Some(w) = white {
-            let mand = &state.promotion_zones_mandatory[p_index!(w) as usize];
-            let opt = &state.promotion_zones_optional[p_index!(w) as usize];
-            (
-                format!("White ({})", w.char),
-                if mand.2 == U4096::ZERO {
-                    "".to_string()
-                } else {
-                    format_board(mand, Some(w.char))
-                },
-                if opt.2 == U4096::ZERO {
-                    "".to_string()
-                } else {
-                    format_board(opt, Some(w.char))
-                },
-            )
-        } else {
-            ("White (-)".to_string(), "".to_string(), "".to_string())
-        };
-
-        let (b_label, b_mand, b_opt) = if let Some(b) = black {
-            let mand = &state.promotion_zones_mandatory[p_index!(b) as usize];
-            let opt = &state.promotion_zones_optional[p_index!(b) as usize];
-            (
-                format!("Black ({})", b.char),
-                if mand.2 == U4096::ZERO {
-                    "".to_string()
-                } else {
-                    format_board(mand, Some(b.char))
-                },
-                if opt.2 == U4096::ZERO {
-                    "".to_string()
-                } else {
-                    format_board(opt, Some(b.char))
-                },
-            )
-        } else {
-            ("Black (-)".to_string(), "".to_string(), "".to_string())
-        };
-
-        if w_label == "White (-)" && b_label == "Black (-)" {
-            continue;
-        }
-
-        let w_mand_lines: Vec<_> = w_mand.lines().collect();
-        let w_opt_lines: Vec<_> = w_opt.lines().collect();
-        let b_mand_lines: Vec<_> = b_mand.lines().collect();
-        let b_opt_lines: Vec<_> = b_opt.lines().collect();
-
-        let max_lines = [
-            w_mand_lines.len(),
-            w_opt_lines.len(),
-            b_mand_lines.len(),
-            b_opt_lines.len(),
-        ]
-        .into_iter()
-        .max()
-        .unwrap();
-
-        let board_width = state.files as usize * 4 + 4;
-
-        if !w_mand_lines.is_empty()
-            || !b_mand_lines.is_empty()
-            || !w_opt_lines.is_empty()
-            || !b_opt_lines.is_empty()
-        {
-            result.push_str(&format!(
-                "{:^width$}\n",
-                format!("Promotion Zones for the {}\n", piece.name),
-                width = board_width * 2 + 8
-            ));
-            result.push_str(&format!(
-                "   {:<label_width$}    {:<label_width$}",
-                w_label,
-                b_label,
-                label_width = board_width + 2
-            ));
-        }
-        if !w_mand_lines.is_empty() || !b_mand_lines.is_empty() {
-            result.push_str(&format!(
-                "\n   {:<label_width$}    {:<label_width$}\n",
-                "Mandatory",
-                "Mandatory",
-                label_width = board_width + 2
-            ));
-            for i in 0..max_lines {
-                let wl = w_mand_lines.get(i).unwrap_or(&"");
-                let bl = b_mand_lines.get(i).unwrap_or(&"");
-                result.push_str(&format!(
-                    "{:<label_width$}    {:<label_width$}\n",
-                    wl,
-                    bl,
-                    label_width = board_width + 2
-                ));
-            }
-        }
-
-        if !w_opt_lines.is_empty() || !b_opt_lines.is_empty() {
-            result.push_str(&format!(
-                "\n   {:<label_width$}    {:<label_width$}\n",
-                "Optional",
-                "Optional",
-                label_width = board_width + 2
-            ));
-            for i in 0..max_lines {
-                let wl = w_opt_lines.get(i).unwrap_or(&"");
-                let bl = b_opt_lines.get(i).unwrap_or(&"");
-                result.push_str(&format!(
-                    "{:<label_width$}    {:<label_width$}\n",
-                    wl,
-                    bl,
-                    label_width = board_width + 2
-                ));
-            }
-        }
-        result.push('\n');
-    }
-    result
-}
-
-fn format_intial_setup(state: &State) -> String {
-    let mut result = String::new();
-    let mut seen_names = HashSet::new();
-
-    for piece in &state.pieces {
-        if !seen_names.insert(piece.name.clone()) {
-            continue;
-        }
-
-        if state.initial_setup[p_index!(piece) as usize].2 == U4096::ZERO {
-            continue;
-        }
-
-        let white = state
-            .pieces
-            .iter()
-            .find(|p| p.name == piece.name && p_color!(p) == WHITE);
-        let black = state
-            .pieces
-            .iter()
-            .find(|p| p.name == piece.name && p_color!(p) == BLACK);
-
-        let (w_label, w_board) = if let Some(w) = white {
-            (
-                format!("White ({})", w.char),
-                format_board(
-                    &state.initial_setup[p_index!(w) as usize],
-                    Some(w.char),
-                ),
-            )
-        } else {
-            ("White (-)".to_string(), "".to_string())
-        };
-        let (b_label, b_board) = if let Some(b) = black {
-            (
-                format!("Black ({})", b.char),
-                format_board(
-                    &state.initial_setup[p_index!(b) as usize],
-                    Some(b.char),
-                ),
-            )
-        } else {
-            ("Black (-)".to_string(), "".to_string())
-        };
-
-        let w_lines: Vec<_> = w_board.lines().collect();
-        let b_lines: Vec<_> = b_board.lines().collect();
-        let max_lines = w_lines.len().max(b_lines.len());
-
-        let board_width = state.files as usize * 4 + 4;
-
-        result.push_str(&format!(
-            "{:^width$}\n",
-            format!("Initial Setup for the {}\n", piece.name),
-            width = board_width * 2 + 8
-        ));
-        result.push_str(&format!(
-            "   {:<label_width$}    {:<label_width$}\n",
-            w_label,
-            b_label,
-            label_width = board_width + 2
-        ));
-        for i in 0..max_lines {
-            let wl = w_lines.get(i).unwrap_or(&"");
-            let bl = b_lines.get(i).unwrap_or(&"");
-            result.push_str(&format!(
-                "{:<label_width$}    {:<label_width$}\n",
-                wl,
-                bl,
-                label_width = board_width + 2
-            ));
-        }
-        result.push('\n');
-    }
-    result
-}
-
-fn format_forbidden_zones(state: &State) -> String {
-    let mut result = String::new();
-    let mut seen_names = HashSet::new();
-
-    for piece in &state.pieces {
-        if !seen_names.insert(piece.name.clone()) {
-            continue;
-        }
-
-        let white = state
-            .pieces
-            .iter()
-            .find(|p| p.name == piece.name && p_color!(p) == WHITE);
-        let black = state
-            .pieces
-            .iter()
-            .find(|p| p.name == piece.name && p_color!(p) == BLACK);
-
-        let (w_label, w_board) = if let Some(w) = white {
-            let forbidden_zone = &state.forbidden_zones[p_index!(w) as usize];
-            if forbidden_zone.2 == U4096::ZERO {
-                ("White (-)".to_string(), "".to_string())
-            } else {
-                (
-                    format!("White ({})", w.char),
-                    format_board(forbidden_zone, Some('X')),
-                )
-            }
-        } else {
-            ("White (-)".to_string(), "".to_string())
-        };
-
-        let (b_label, b_board) = if let Some(b) = black {
-            let forbidden_zone = &state.forbidden_zones[p_index!(b) as usize];
-            if forbidden_zone.2 == U4096::ZERO {
-                ("Black (-)".to_string(), "".to_string())
-            } else {
-                (
-                    format!("Black ({})", b.char),
-                    format_board(forbidden_zone, Some('X')),
-                )
-            }
-        } else {
-            ("Black (-)".to_string(), "".to_string())
-        };
-
-        if w_label == "White (-)" && b_label == "Black (-)" {
-            continue;
-        }
-
-        let w_lines: Vec<_> = w_board.lines().collect();
-        let b_lines: Vec<_> = b_board.lines().collect();
-        let max_lines = w_lines.len().max(b_lines.len());
-
-        let board_width = state.files as usize * 4 + 4;
-
-        result.push_str(&format!(
-            "{:^width$}\n",
-            format!("Forbidden Zones for the {}\n", piece.name),
-            width = board_width * 2 + 8
-        ));
-        result.push_str(&format!(
-            "   {:<label_width$}    {:<label_width$}\n",
-            w_label,
-            b_label,
-            label_width = board_width + 2
-        ));
-        for i in 0..max_lines {
-            let wl = w_lines.get(i).unwrap_or(&"");
-            let bl = b_lines.get(i).unwrap_or(&"");
-            result.push_str(&format!(
-                "{:<label_width$}    {:<label_width$}\n",
-                wl,
-                bl,
-                label_width = board_width + 2
-            ));
-        }
-        result.push('\n');
-    }
-    result
-}
-
-fn format_halfmove_clock_rules(state: &State) -> String {
-    if !halfmove_clock!(state) {
-        return String::new();
-    }
-
-    let reset_pieces = state
-        .pieces
-        .iter()
-        .enumerate()
-        .filter_map(
-            |(idx, piece)| state.halfmove_pieces[idx].then_some(piece.char)
-        )
-        .collect::<String>();
-
-    let rows = vec![
-        ("Halfmove limit", state.halfmove_limit.to_string()),
-        (
-            "Halfmove resetters",
-            if reset_pieces.is_empty() {
-                "-".to_string()
-            } else {
-                reset_pieces
-            },
-        ),
-    ];
-
-    let label_width = rows
-        .iter()
-        .map(|(label, _)| label.len())
-        .max()
-        .unwrap_or(10)
-        .max("Parameter".len());
-    let value_width = rows
-        .iter()
-        .map(|(_, value)| value.len())
-        .max()
-        .unwrap_or(5)
-        .max("Value".len());
-
-    let table_width = label_width + value_width + 7;
-    let mut result = String::new();
-
-    result.push_str(&format!("\n{:^table_width$}\n", "Halfmove Clock Rules"));
-    result.push_str(&format!(
-        "╔{}╤{}╗\n",
-        "═".repeat(label_width + 2),
-        "═".repeat(value_width + 2)
-    ));
-    result.push_str(&format!(
-        "║ {:^label_width$} │ {:^value_width$} ║\n",
-        "Parameter",
-        "Value"
-    ));
-    result.push_str(&format!(
-        "╟{}┼{}╢\n",
-        "─".repeat(label_width + 2),
-        "─".repeat(value_width + 2)
-    ));
-
-    for (idx, (label, value)) in rows.iter().enumerate() {
-        result.push_str(&format!(
-            "║ {:<label_width$} │ {:>value_width$} ║\n",
-            label,
-            value
-        ));
-
-        if idx + 1 < rows.len() {
-            result.push_str(&format!(
-                "╟{}┼{}╢\n",
-                "─".repeat(label_width + 2),
-                "─".repeat(value_width + 2)
-            ));
-        }
-    }
-
-    result.push_str(&format!(
-        "╚{}╧{}╝\n\n",
-        "═".repeat(label_width + 2),
-        "═".repeat(value_width + 2)
-    ));
-
-    result
-}
-
-fn format_special_rules(state: &State) -> String {
+fn special_rules_text(state: &State) -> String {
     if state.special_rules == 0 {
-        "".to_string()
-    } else {
-        let mut rules = Vec::new();
-
-        if castling!(state) {
-            rules.push("Castling");
-        }
-        if en_passant!(state) {
-            rules.push("En Passant");
-        }
-        if promotions!(state) {
-            rules.push("Promotions");
-        }
-        if drops!(state) {
-            rules.push("Drops");
-        }
-        if count_limits!(state) {
-            rules.push("Count Limits");
-        }
-        if forbidden_zones!(state) {
-            rules.push("Forbidden Zones");
-        }
-        if promote_to_captured!(state) {
-            rules.push("Promote to Captured");
-        }
-        if demote_upon_capture!(state) {
-            rules.push("Demote Upon Capture");
-        }
-        if stalemate_loss!(state) {
-            rules.push("Stalemate Loss");
-        }
-        if setup_phase!(state) {
-            rules.push("Setup Phase");
-        }
-        if stand_offs!(state) {
-            rules.push("Stand-Offs");
-        }
-        if halfmove_clock!(state) {
-            rules.push("Halfmove Clock");
-        }
-        if repetition_limit!(state) {
-            rules.push("Repetition Limit");
-        }
-
-        rules.join(", ")
+        return "-".to_string();
     }
+
+    let mut rules = Vec::new();
+
+    if castling!(state) {
+        rules.push("Castling");
+    }
+    if en_passant!(state) {
+        rules.push("En Passant");
+    }
+    if promotions!(state) {
+        rules.push("Promotions");
+    }
+    if drops!(state) {
+        rules.push("Drops");
+    }
+    if count_limits!(state) {
+        rules.push("Count Limits");
+    }
+    if forbidden_zones!(state) {
+        rules.push("Forbidden Zones");
+    }
+    if promote_to_captured!(state) {
+        rules.push("Promote to Captured");
+    }
+    if demote_upon_capture!(state) {
+        rules.push("Demote Upon Capture");
+    }
+    if stalemate_loss!(state) {
+        rules.push("Stalemate Loss");
+    }
+    if setup_phase!(state) {
+        rules.push("Setup Phase");
+    }
+    if stand_offs!(state) {
+        rules.push("Stand-Offs");
+    }
+    if halfmove_clock!(state) {
+        rules.push("Halfmove Clock");
+    }
+    if repetition_limit!(state) {
+        rules.push("Repetition Limit");
+    }
+
+    rules.join(", ")
 }
 
-/// Formats a full variant overview using verbosity levels.
-///
-/// - [`FORMAT_VERBOSITY_ERROR`] / minimal: title, rules, and board only.
-/// - [`FORMAT_VERBOSITY_WARN`]: include piece type definitions.
-/// - [`FORMAT_VERBOSITY_INFO`] and above: include zones and setup maps.
-/// - [`FORMAT_VERBOSITY_DEBUG`]: include PST board tables.
-pub fn format_entire_game(state: &State) -> String {
+pub fn build_game_details(state: &State) -> String {
     let mut result = String::new();
 
+    result.push_str("== Variant ==\n");
+    result.push_str(&format!("Name         : {}\n", state.title));
     result.push_str(&format!(
-        "{} ({}x{})\n",
-        state.title, state.files, state.ranks
+        "Board        : {}x{}\n",
+        state.files,
+        state.ranks
     ));
     result.push_str(&format!(
-        "Special rules: {}\n\n",
-        format_special_rules(state)
+        "Special Rules: {}\n\n",
+        special_rules_text(state)
     ));
 
-    if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_WARN) {
-        result.push_str(&format_piece_types(state));
+    result.push_str("== Runtime ==\n");
+    result.push_str(&format!(
+        "Side to move : {}\n",
+        if state.playing == WHITE { "White" } else { "Black" }
+    ));
+    result.push_str(&format!("Ply counter  : {}\n", state.ply_counter));
+    result.push_str(&format!("Search ply   : {}\n", state.search_ply));
+    result.push_str(&format!("Hash         : {:032X}\n", state.position_hash));
+    result.push_str(&format!(
+        "Game phase   : {}\n",
+        match state.game_phase {
+            OPENING => "Opening",
+            MIDDLEGAME => "Middlegame",
+            ENDGAME => "Endgame",
+            _ => "Unknown",
+        }
+    ));
+
+    if castling!(state) {
+        result.push_str(&format!(
+            "Castling     : {}\n",
+            format_castling_rights(state)
+        ));
     }
 
-    if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_INFO) {
-        result.push_str(&format_promotion_zones(state));
-        result.push_str(&format_forbidden_zones(state));
-        result.push_str(&format_halfmove_clock_rules(state));
-        result.push_str(&format_intial_setup(state));
+    if en_passant!(state) {
+        let enp_text = if state.en_passant_square == NO_EN_PASSANT {
+            "-".to_string()
+        } else {
+            format_square(enp_square!(state.en_passant_square) as Square, state)
+        };
+
+        result.push_str(&format!("En Passant   : {}\n", enp_text));
     }
 
-    if verbosity_enabled(configured_log_level(), FORMAT_VERBOSITY_DEBUG) {
-        result.push_str(&format_piece_square_tables(state));
+    if drops!(state) || promote_to_captured!(state) || setup_phase!(state) {
+        result.push_str(&format!(
+            "Hands        : White [{}] | Black [{}]\n",
+            format_hand(state, WHITE),
+            format_hand(state, BLACK)
+        ));
     }
 
-    if !result.ends_with('\n') {
-        result.push('\n');
+    result.push_str("\n== Material ==\n");
+    result.push_str(&format!(
+        "Opening  : White {:>6} | Black {:>6}\n",
+        state.opening_material[WHITE as usize],
+        state.opening_material[BLACK as usize]
+    ));
+    result.push_str(&format!(
+        "Endgame  : White {:>6} | Black {:>6}\n",
+        state.endgame_material[WHITE as usize],
+        state.endgame_material[BLACK as usize]
+    ));
+    result.push_str(&format!(
+        "PST Open : White {:>6} | Black {:>6}\n",
+        state.opening_pst_bonus[WHITE as usize],
+        state.opening_pst_bonus[BLACK as usize]
+    ));
+    result.push_str(&format!(
+        "PST End  : White {:>6} | Black {:>6}\n",
+        state.endgame_pst_bonus[WHITE as usize],
+        state.endgame_pst_bonus[BLACK as usize]
+    ));
+
+    result.push_str("\n== Piece Counts ==\n");
+
+    for (idx, piece) in state.pieces.iter().enumerate() {
+        let on_board = state.piece_count[idx];
+        let white_hand = state.piece_in_hand[WHITE as usize][idx];
+        let black_hand = state.piece_in_hand[BLACK as usize][idx];
+
+        if on_board == 0 && white_hand == 0 && black_hand == 0 {
+            continue;
+        }
+
+        result.push_str(&format!(
+            concat!(
+                "{} ({}) idx {:>3}: board {:>3}, ",
+                "W-hand {:>3}, B-hand {:>3}\n"
+            ),
+            piece.name,
+            piece.char,
+            idx,
+            on_board,
+            white_hand,
+            black_hand
+        ));
     }
 
+    result.push_str("\n== Current Position ==\n");
     result.push_str(&format_game_state(state));
 
     result

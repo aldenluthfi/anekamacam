@@ -53,7 +53,7 @@ pub mod io {
     pub mod board_io;
     pub mod game_io;
     pub mod move_io;
-    pub mod piece_io;
+    pub mod tui;
 
     pub mod logger;
 }
@@ -64,13 +64,11 @@ pub mod prelude;
 fn main() {
     init_logging();
 
-    let variant = "berolina";
+    let variant = "los-alamos";
     let config_path = format!("configs/{}.conf", variant);
 
-    info!("Loading variant config: {}", config_path);
+    log_2!("Loading variant config: {}", config_path);
     let mut state = parse_config_file(&config_path);
 
-    info!("{}", format_entire_game(&state));
-
-    debug_interactive(&mut state);
+    run_tui(&mut state);
 }

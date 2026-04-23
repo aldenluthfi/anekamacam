@@ -18,7 +18,9 @@
 use crate::*;
 
 pub fn random_u128() -> u128 {
-    let mut rng = RNG.lock().unwrap();
+    let mut rng = RNG.lock().unwrap_or_else(|e| {
+        panic!("Failed to lock RNG mutex for random_u128: {e}")
+    });
     u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
 }
 
@@ -302,32 +304,44 @@ fn parse_perft_file(path: &str) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
                 .next()
                 .expect("Missing perft depth 1")
                 .parse()
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    panic!("Invalid perft depth 1 value in line '{line}': {e}")
+                });
             let p2 = parts
                 .next()
                 .expect("Missing perft depth 2")
                 .parse()
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    panic!("Invalid perft depth 2 value in line '{line}': {e}")
+                });
             let p3 = parts
                 .next()
                 .expect("Missing perft depth 3")
                 .parse()
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    panic!("Invalid perft depth 3 value in line '{line}': {e}")
+                });
             let p4 = parts
                 .next()
                 .expect("Missing perft depth 4")
                 .parse()
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    panic!("Invalid perft depth 4 value in line '{line}': {e}")
+                });
             let p5 = parts
                 .next()
                 .expect("Missing perft depth 5")
                 .parse()
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    panic!("Invalid perft depth 5 value in line '{line}': {e}")
+                });
             let p6 = parts
                 .next()
                 .expect("Missing perft depth 6")
                 .parse()
-                .unwrap();
+                .unwrap_or_else(|e| {
+                    panic!("Invalid perft depth 6 value in line '{line}': {e}")
+                });
 
             (fen, p1, p2, p3, p4, p5, p6)
         })
@@ -360,9 +374,11 @@ pub fn benchmark_perft(
 ) {
     let mut perft_cases = parse_perft_file(path);
     let limit = limit.min(perft_cases.len());
-    perft_cases.shuffle(&mut RNG.lock().unwrap());
+    perft_cases.shuffle(&mut RNG.lock().unwrap_or_else(|e| {
+        panic!("Failed to lock RNG mutex for perft shuffle: {e}")
+    }));
 
-    info!(
+    log_1!(
         "Perft testing {} positions with depth {} and branching {}...",
         limit, depth, branch
     );
@@ -374,7 +390,9 @@ pub fn benchmark_perft(
     let longest_fen: usize = perft_cases
         .iter()
         .max_by_key(|(fen, _, _, _, _, _, _)| fen.len())
-        .unwrap()
+        .unwrap_or_else(|| {
+            panic!("Perft benchmark requires at least one test case")
+        })
         .0
         .len();
 
@@ -382,7 +400,7 @@ pub fn benchmark_perft(
         perft_cases.into_iter().take(limit).enumerate()
     {
         state.load_fen(&fen);
-        info!("\n{}", format_game_state(state));
+        log_1!("\n{}", format_game_state(state));
 
         let expected_perfts =
             [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
@@ -400,7 +418,7 @@ pub fn benchmark_perft(
             if result == expected {
                 successful_cases += 1;
                 total_moves += result;
-                info!(
+                log_1!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [PASSED]",
                     i,
@@ -412,7 +430,7 @@ pub fn benchmark_perft(
                     width = longest_fen
                 );
             } else {
-                warn!(
+                log_2!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [FAILED]",
                     i,
@@ -427,11 +445,11 @@ pub fn benchmark_perft(
         }
     }
 
-    info!(
+    log_1!(
         "Perft testing completed: {}/{} cases passed.",
         successful_cases, total_cases
     );
-    info!("Total moves generated: {}", total_moves);
+    log_1!("Total moves generated: {}", total_moves);
 }
 
 /// Runs a fixed-depth search benchmark from the current position.
@@ -439,8 +457,8 @@ pub fn benchmark_perft(
 /// This reports the current position, executes search, and logs total nodes,
 /// elapsed wall time, and aggregate nodes-per-second.
 pub fn benchmark_search(state: &mut State, depth: usize) {
-    info!("Search benchmark started with depth {}...", depth);
-    info!("\n{}", format_game_state(state));
+    log_1!("Search benchmark started with depth {}...", depth);
+    log_1!("\n{}", format_game_state(state));
 
     let mut info = SearchInfo::default();
     info.set_depth = depth;
@@ -455,7 +473,7 @@ pub fn benchmark_search(state: &mut State, depth: usize) {
 pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     if depth == 0 {
         if branch >= 0 {
-            debug!("{} moves | Nodes: 1", prefix);
+            log_4!("{} moves | Nodes: 1", prefix);
         }
         return 1;
     }
@@ -484,220 +502,8 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
         }
     }
 
-    debug!("{} moves | Nodes: {}", prefix, nodes);
+    log_4!("{} moves | Nodes: {}", prefix, nodes);
 
     nodes
 }
 
-/// Runs an interactive stdin loop for analysis and engine play testing.
-///
-/// Supported commands include move strings, `u`, `q`, `pv`, `fen`, `search`,
-/// `go`, and `play [color] [thinking time sec]`.
-pub fn debug_interactive(state: &mut State) {
-    let mut input = String::new();
-
-    loop {
-        input.clear();
-        info!("\n{}", format_game_state(state));
-
-        if stdin().read_line(&mut input).is_err() {
-            error!("Error reading stdin");
-            break;
-        }
-
-        match input.trim() {
-            "u" => undo_move!(state),
-            "q" => break,
-            "r" => {
-                while state.ply_counter > 0 {
-                    undo_move!(state);
-                }
-            }
-            input if input.starts_with("fen ") => {
-                let fen = input[4..].trim();
-                state.load_fen(fen);
-            }
-            input if input.starts_with("search ") => {
-                let parts = input.split_whitespace().collect::<Vec<_>>();
-
-                if parts.len() < 2 {
-                    warn!("Usage: search [depth]");
-                    continue;
-                }
-
-                let mut info = SearchInfo::default();
-                info.set_depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
-                    warn!("Invalid depth for search: {}", parts[1]);
-                    0
-                });
-
-                search_position(state, &mut info);
-            }
-            input if input.starts_with("go ") => {
-                let parts = input.split_whitespace().collect::<Vec<_>>();
-
-                if parts.len() < 2 {
-                    warn!("Usage: go [depth]");
-                    continue;
-                }
-
-                let mut info = SearchInfo::default();
-                info.set_depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
-                    warn!("Invalid depth for search: {}", parts[1]);
-                    0
-                });
-
-                let result = search_position(state, &mut info);
-
-                info!(
-                    "Best Move: {} | Score: {} | Nodes: {} | Time: {}",
-                    format_move(&result.best_move, state),
-                    result.best_score,
-                    result.total_nodes,
-                    format_time(result.total_elapsed)
-                );
-
-                make_move!(state, result.best_move);
-            }
-            input if input.starts_with("play ") => {
-                let parts = input.split_whitespace().collect::<Vec<_>>();
-
-                if parts.len() != 3 {
-                    warn!("Usage: play [color] [thinking time sec]");
-                    continue;
-                }
-
-                let engine_color =
-                    match parts[1].to_ascii_lowercase().as_str() {
-                        "white" | "w" => WHITE,
-                        "black" | "b" => BLACK,
-                        "both" => BOTH,
-                        _ => {
-                            warn!(
-                                "Invalid color: {} (use white/black)",
-                                parts[1]
-                            );
-                            continue;
-                        }
-                    };
-
-                let think_time_secs =
-                    parts[2].parse::<f64>().unwrap_or_else(|_| {
-                        warn!("Invalid thinking time: {}", parts[2]);
-                        0.0
-                    });
-
-                if think_time_secs <= 0.0 {
-                    warn!("Thinking time must be > 0 seconds");
-                    continue;
-                }
-
-                let think_time_ns = (think_time_secs * 1_000_000_000.0) as u128;
-
-                let side_text = match engine_color {
-                    WHITE => "White",
-                    BLACK => "Black",
-                    BOTH => "Both",
-                    _ => "Unknown",
-                };
-
-                info!(
-                    "Starting play mode | Engine: {} | Think time: {}s",
-                    side_text,
-                    think_time_secs
-                );
-
-                if engine_color == BOTH {
-                    info!(
-                        "Computer vs Computer mode enabled."
-                    );
-                } else {
-                    let human_color = if engine_color == WHITE {
-                        BLACK
-                    } else {
-                        WHITE
-                    };
-
-                    info!(
-                        "Human side: {}",
-                        if human_color == WHITE { "White" } else { "Black" }
-                    );
-                    info!(
-                        "Type your move when it's your turn, or `q` to leave \
-                        play mode."
-                    );
-                }
-
-                'play_mode: loop {
-                    info!(
-                        "\n{}",
-                        format_game_state(state)
-                    );
-
-                    if state.game_over {
-                        info!("Game over detected. Ending play mode.");
-                        break;
-                    }
-
-                    if state.playing == engine_color || engine_color == BOTH {
-                        let mut info = SearchInfo::default();
-                        info.set_depth = MAX_DEPTH;
-                        info.set_timed = think_time_ns;
-
-                        let result = search_position(state, &mut info);
-
-                        if result.best_move == null_move() {
-                            state.game_over = true;
-                            info!("No legal moves available. Game over.");
-                            continue;
-                        }
-
-                        info!(
-                            concat!(
-                                "Engine plays: {} | Score: {} | ",
-                                "Nodes: {} | Time: {}"
-                            ),
-                            format_move(&result.best_move, state),
-                            result.best_score,
-                            result.total_nodes,
-                            format_time(result.total_elapsed)
-                        );
-
-                        make_move!(state, result.best_move);
-                    } else {
-                        loop {
-                            let _ = stdout().flush();
-
-                            let mut user_input = String::new();
-                            if stdin().read_line(&mut user_input).is_err() {
-                                error!("Error reading stdin");
-                                break 'play_mode;
-                            }
-
-                            let user_input = user_input.trim();
-
-                            if matches!(user_input, "q" | "quit") {
-                                info!("Leaving play mode.");
-                                break 'play_mode;
-                            }
-
-                            if let Some(mv) = parse_move(user_input, state) {
-                                if make_move!(state, mv) {
-                                    break;
-                                }
-                            }
-
-                            warn!("Invalid move: {}", user_input);
-                        }
-                    }
-                }
-            }
-            _ => match parse_move(&input, state) {
-                Some(mv) => {
-                    make_move!(state, mv);
-                }
-                None => warn!("Invalid move: {}", input.trim()),
-            },
-        }
-    }
-}
