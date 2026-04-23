@@ -12,7 +12,9 @@ use crate::*;
 
 lazy_static! {
     pub static ref PATTERN_PATTERN: Regex =
-        Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap();
+        Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap_or_else(|e| {
+            panic!("Failed to compile PATTERN_PATTERN regex: {e}")
+        });
 }
 
 /// Represents a compressed set of allowed or stopper pieces.
@@ -93,7 +95,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         .captures(expr)
         .unwrap_or_else(|| panic!("Invalid pattern format {}", expr));
 
-    debug!("parse_pattern captures: {:?}", captures);
+    log_4!("parse_pattern captures: {:?}", captures);
 
     let (allowers, allower_pieces) = match (captures.get(1), captures.get(2)) {
         (Some(a), Some(p)) => (a.as_str(), p.as_str()),
@@ -124,7 +126,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             .collect()
     };
 
-    debug!("Parsed allowers: {:#?}", allowers_vecs);
+    log_4!("Parsed allowers: {:#?}", allowers_vecs);
 
     let allower_result = allowers_vecs
         .iter()
@@ -148,7 +150,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         })
         .collect::<PatternAllower>();
 
-    debug!("Encoded allowers: {:?}", allower_result);
+    log_4!("Encoded allowers: {:?}", allower_result);
 
     let (stoppers, stopper_pieces) = match (captures.get(3), captures.get(4)) {
         (Some(s), Some(p)) => (s.as_str(), p.as_str()),
@@ -178,7 +180,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             .collect()
     };
 
-    debug!("Parsed drop: {:#?}", stoppers_vecs);
+    log_4!("Parsed drop: {:#?}", stoppers_vecs);
 
     let stopper_result = stoppers_vecs
         .iter()
@@ -202,7 +204,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         })
         .collect::<PatternStopper>();
 
-    debug!("Encoded stoppers: {:?}", stopper_result);
+    log_4!("Encoded stoppers: {:?}", stopper_result);
 
     (allower_result, stopper_result)
 }

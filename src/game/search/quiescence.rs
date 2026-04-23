@@ -30,7 +30,9 @@ pub fn quiescence_search(
     verify_game_state(state);
 
     info.nodes += 1;
-    check_interrupt(info);
+    if info.nodes % 2048 == 0 {
+        check_interrupt(info);
+    }
 
     let is_repetition = state
         .position_hash_map
@@ -70,6 +72,21 @@ pub fn quiescence_search(
         pick_by_score(state, &mut all_captures, i, &pv_move);
 
         let mv = all_captures[i].clone();
+
+        let move_type = move_type!(mv);
+        let captured_value = if move_type == SINGLE_CAPTURE_MOVE {
+            p_ovalue!(state.pieces[captured_piece!(mv.clone()) as usize])
+        } else {
+            let mut total = 0;
+            for cap in mv.1.iter() {
+                total += p_ovalue!(state.pieces[*cap as usize]);
+            }
+            total
+        };
+
+        if captured_value as i32 + 200 < alpha && state.game_phase != ENDGAME { /* delta pruning                      */
+            continue;
+        }
 
         if !make_move!(state, mv) {
             continue;

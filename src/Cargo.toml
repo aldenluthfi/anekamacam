@@ -23,11 +23,14 @@ rand = { workspace = true }
 hashbrown = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }
 
 [features]
 hotpath = ["hotpath/hotpath"]
 hotpath-alloc = ["hotpath/hotpath-alloc"]
-log-level-error = []
-log-level-warn = []
-log-level-info = []
-log-level-debug = []
+log-level-1 = []
+log-level-2 = []
+log-level-3 = []
+log-level-4 = []
+log-level-5 = []
