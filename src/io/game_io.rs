@@ -31,13 +31,26 @@ lazy_static! {
 fn determine_board_dimensions(fen: &str) -> (u8, u8) {
     let ranks_data: Vec<&str> = fen.split('/').collect();
     let rank_count = ranks_data.len() as u8;
-    let file_count = ranks_data[0].chars().fold(0u8, |acc, c| {
+    let mut file_count = 0u8;
+    let mut chars = ranks_data[0].chars().peekable();
+
+    while let Some(c) = chars.next() {
         if c.is_ascii_digit() {
-            acc + c.to_digit(10).unwrap() as u8
+            let mut run = c.to_digit(10).unwrap() as u16;
+            while let Some(next) = chars.peek() {
+                if next.is_ascii_digit() {
+                    run =
+                        run * 10 +
+                        chars.next().unwrap().to_digit(10).unwrap() as u16;
+                } else {
+                    break;
+                }
+            }
+            file_count += run as u8;
         } else {
-            acc + 1
+            file_count += 1;
         }
-    });
+    }
     (file_count, rank_count)
 }
 
@@ -2162,15 +2175,7 @@ fn format_hand(state: &State, color: u8) -> String {
     }
 }
 
-/// Formats the current board and runtime state details by verbosity level.
-///
-/// - [`FORMAT_VERBOSITY_1`] / minimal: board only.
-/// - [`FORMAT_VERBOSITY_2`]: board + core dynamic status line.
-/// - [`FORMAT_VERBOSITY_3`]: adds match-flow counters and tactical context.
-/// - [`FORMAT_VERBOSITY_4`]: adds hash and deep internals.
 pub fn format_game_state(state: &State) -> String {
-    let mut result = String::new();
-
     let board_size = (state.files as usize) * (state.ranks as usize);
     let piece_count = state.pieces.len();
 
@@ -2183,113 +2188,77 @@ pub fn format_game_state(state: &State) -> String {
         }
     }
 
-    result.push_str(
-        &all_boards
-            .iter()
-            .enumerate()
-            .map(|(i, b)| format_board(b, Some(state.pieces[i].char)))
-            .reduce(|board_str, next_board| {
-                combine_board_strings(&board_str, &next_board)
-            })
-            .expect("Failed to format combined board string"),
-    );
+    all_boards
+        .iter()
+        .enumerate()
+        .map(|(i, b)| format_board(b, Some(state.pieces[i].char)))
+        .reduce(|board_str, next_board| {
+            combine_board_strings(&board_str, &next_board)
+        })
+        .expect("Failed to format combined board string")
+}
 
-    if verbosity_enabled(FORMAT_VERBOSITY_2) {
-        result.push_str("\n\n");
+fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
+    let mut result = String::new();
+    let width = 3;
 
-        let side = if state.playing == WHITE { "White" } else { "Black" };
-        let phase_label = match state.game_phase {
-            OPENING => "Opening".to_string(),
-            MIDDLEGAME => "Middlegame".to_string(),
-            ENDGAME => "Endgame".to_string(),
-            _ => panic!("Unknown game phase: {}", state.game_phase),
-        };
+    result.push_str(&format!(
+        "   ╔{}╗\n",
+        (0..files)
+            .map(|_| "═".repeat(width + 2))
+            .collect::<Vec<String>>()
+            .join("╤")
+    ));
 
-        result.push_str(&format!(
-            "Status     : {} to move | Phase {} | Ply {}\n",
-            side, phase_label, state.ply_counter
-        ));
-
-        if verbosity_enabled(FORMAT_VERBOSITY_3) {
-            if halfmove_clock!(state) {
-                result.push_str(&format!(
-                    "Halfmove   : {}/{}\n",
-                    state.halfmove_clock,
-                    state.halfmove_limit
-                ));
-            }
-
-            if repetition_limit!(state) {
-                let repetition_count = state
-                    .position_hash_map
-                    .get(&state.position_hash)
-                    .copied()
-                    .unwrap_or(1);
-                result.push_str(&format!(
-                    "Repetition : {}/{}\n",
-                    repetition_count, state.repetition_limit
-                ));
-            }
-
-            if castling!(state) {
-                result.push_str(&format!(
-                    "Castling   : {}\n",
-                    format_castling_rights(state)
-                ));
-            }
-
-            if en_passant!(state) {
-                let enp = if state.en_passant_square == NO_EN_PASSANT {
-                    "-".to_string()
-                } else {
-                    format_square(
-                        enp_square!(state.en_passant_square) as Square, state
-                    )
-                };
-
-                result.push_str(&format!("EnPassant  : {}\n", enp));
-            }
-
-            if drops!(state)
-                || promote_to_captured!(state)
-                || setup_phase!(state)
-            {
-                result.push_str(&format!(
-                    "Hands      : White [{}] | Black [{}]\n",
-                    format_hand(state, WHITE),
-                    format_hand(state, BLACK)
-                ));
+    for rank in (0..ranks).rev() {
+        result.push_str(&format!("{:02} ║", rank));
+        for file in 0..files {
+            let idx = rank as usize * files as usize + file as usize;
+            result.push_str(
+                &format!(" {:>width$} ", values[idx], width = width)
+            );
+            if file + 1 < files {
+                result.push('│');
             }
         }
+        result.push_str("║\n");
 
-        if verbosity_enabled(FORMAT_VERBOSITY_4) {
+        if rank > 0 {
             result.push_str(&format!(
-                "Phase Eval : score {} | opening {} | endgame {}\n",
-                game_phase_score!(state),
-                state.opening_score,
-                state.endgame_score
-            ));
-            result.push_str(&format!(
-                concat!(
-                    "PST Eval   : opening White {} | opening Black {} | ",
-                    "endgame White {} | endgame Black {}\n",
-                ),
-                state.opening_pst_bonus[WHITE as usize],
-                state.opening_pst_bonus[BLACK as usize],
-                state.endgame_pst_bonus[WHITE as usize],
-                state.endgame_pst_bonus[BLACK as usize]
-            ));
-            result.push_str(&format!(
-                "Hash       : {:032X}\n",
-                state.position_hash
-            ));
-            result.push_str(&format!(
-                "Search     : ply {}\n",
-                state.search_ply
+                "   ╟{}╢\n",
+                (0..files)
+                    .map(|_| "─".repeat(width + 2))
+                    .collect::<Vec<String>>()
+                    .join("┼")
             ));
         }
     }
 
+    result.push_str(&format!(
+        "   ╚{}╝\n",
+        (0..files)
+            .map(|_| "═".repeat(width + 2))
+            .collect::<Vec<String>>()
+            .join("╧")
+    ));
+
+    result.push_str("     ");
+    for file in 0..files {
+        if files <= 26 {
+            result.push_str(&format!(
+                " {:^width$} ",
+                (b'A' + file) as char,
+                width = width
+            ));
+        } else {
+            result.push_str(&format!(" {:^width$} ", file, width = width));
+        }
+        if file + 1 < files {
+            result.push(' ');
+        }
+    }
+
+    result.push('\n');
     result
 }
 
@@ -2342,115 +2311,3 @@ fn special_rules_text(state: &State) -> String {
 
     rules.join(", ")
 }
-
-pub fn build_game_details(state: &State) -> String {
-    let mut result = String::new();
-
-    result.push_str("== Variant ==\n");
-    result.push_str(&format!("Name         : {}\n", state.title));
-    result.push_str(&format!(
-        "Board        : {}x{}\n",
-        state.files,
-        state.ranks
-    ));
-    result.push_str(&format!(
-        "Special Rules: {}\n\n",
-        special_rules_text(state)
-    ));
-
-    result.push_str("== Runtime ==\n");
-    result.push_str(&format!(
-        "Side to move : {}\n",
-        if state.playing == WHITE { "White" } else { "Black" }
-    ));
-    result.push_str(&format!("Ply counter  : {}\n", state.ply_counter));
-    result.push_str(&format!("Search ply   : {}\n", state.search_ply));
-    result.push_str(&format!("Hash         : {:032X}\n", state.position_hash));
-    result.push_str(&format!(
-        "Game phase   : {}\n",
-        match state.game_phase {
-            OPENING => "Opening",
-            MIDDLEGAME => "Middlegame",
-            ENDGAME => "Endgame",
-            _ => "Unknown",
-        }
-    ));
-
-    if castling!(state) {
-        result.push_str(&format!(
-            "Castling     : {}\n",
-            format_castling_rights(state)
-        ));
-    }
-
-    if en_passant!(state) {
-        let enp_text = if state.en_passant_square == NO_EN_PASSANT {
-            "-".to_string()
-        } else {
-            format_square(enp_square!(state.en_passant_square) as Square, state)
-        };
-
-        result.push_str(&format!("En Passant   : {}\n", enp_text));
-    }
-
-    if drops!(state) || promote_to_captured!(state) || setup_phase!(state) {
-        result.push_str(&format!(
-            "Hands        : White [{}] | Black [{}]\n",
-            format_hand(state, WHITE),
-            format_hand(state, BLACK)
-        ));
-    }
-
-    result.push_str("\n== Material ==\n");
-    result.push_str(&format!(
-        "Opening  : White {:>6} | Black {:>6}\n",
-        state.opening_material[WHITE as usize],
-        state.opening_material[BLACK as usize]
-    ));
-    result.push_str(&format!(
-        "Endgame  : White {:>6} | Black {:>6}\n",
-        state.endgame_material[WHITE as usize],
-        state.endgame_material[BLACK as usize]
-    ));
-    result.push_str(&format!(
-        "PST Open : White {:>6} | Black {:>6}\n",
-        state.opening_pst_bonus[WHITE as usize],
-        state.opening_pst_bonus[BLACK as usize]
-    ));
-    result.push_str(&format!(
-        "PST End  : White {:>6} | Black {:>6}\n",
-        state.endgame_pst_bonus[WHITE as usize],
-        state.endgame_pst_bonus[BLACK as usize]
-    ));
-
-    result.push_str("\n== Piece Counts ==\n");
-
-    for (idx, piece) in state.pieces.iter().enumerate() {
-        let on_board = state.piece_count[idx];
-        let white_hand = state.piece_in_hand[WHITE as usize][idx];
-        let black_hand = state.piece_in_hand[BLACK as usize][idx];
-
-        if on_board == 0 && white_hand == 0 && black_hand == 0 {
-            continue;
-        }
-
-        result.push_str(&format!(
-            concat!(
-                "{} ({}) idx {:>3}: board {:>3}, ",
-                "W-hand {:>3}, B-hand {:>3}\n"
-            ),
-            piece.name,
-            piece.char,
-            idx,
-            on_board,
-            white_hand,
-            black_hand
-        ));
-    }
-
-    result.push_str("\n== Current Position ==\n");
-    result.push_str(&format_game_state(state));
-
-    result
-}
-

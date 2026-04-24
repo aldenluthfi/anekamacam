@@ -87,7 +87,11 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
         } else {
             format!("{:02}", col)
         };
-        result.push_str(&format!("{:3} ", file_label));
+        if col < files - 1 {
+            result.push_str(&format!("{:3} ", file_label));
+        } else {
+            result.push_str(&format!("{:3}", file_label));
+        }
     }
     result.push('\n');
     result = result.replace(" 0 ", "   ");
