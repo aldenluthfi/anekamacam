@@ -1868,7 +1868,7 @@ fn filter_multi_leg_by_index(
 
 
     log_4!(
-        "filter_multi_leg_by_index sorted vectors: {:#?}",
+        "filter_multi_leg_by_index sorted vectors: {:?}",
         vectors
     );
 
@@ -2226,7 +2226,7 @@ fn evaluate_multi_leg_term_leg(
 
     log_4!(
         concat!(
-            "evaluate_multi_leg_term_leg with term: {:#?} ",
+            "evaluate_multi_leg_term_leg with term: {:?} ",
             "modifiers: {:?}"
         ),
         term, modifiers
@@ -2306,7 +2306,7 @@ fn evaluate_multi_leg_subexpression(
 
     log_4!(
         concat!(
-            "evaluate_multi_leg_subexpr with expr: {:#?} ",
+            "evaluate_multi_leg_subexpr with expr: {:?} ",
             "modifiers: {:?}, rotation: {}"
         ),
         expr, modifiers, rotation
@@ -2408,7 +2408,7 @@ fn evaluate_multi_leg_expression(
 
     log_4!(
         concat!(
-            "evaluate_multi_leg_expression with expression: {:#?} ",
+            "evaluate_multi_leg_expression with expression: {:?} ",
             "with rotation: {} "
         ),
         expr, rotation
@@ -2537,7 +2537,7 @@ fn evaluate_multi_leg_expression(
 
 
     log_4!(
-        "evaluate_multi_leg_expression {:?} final len: {:#?} ",
+        "evaluate_multi_leg_expression {:?} final len: {:?} ",
         expr,
         result.len()
     );
@@ -2847,7 +2847,7 @@ fn multi_leg_to_vector(
     }
 
 
-    log_4!("multi_leg_to_vector parsed stack: {:#?}", stack);
+    log_4!("multi_leg_to_vector parsed stack: {:?}", stack);
 
     let result = evaluate_multi_leg_expression(stack, rotation, game_state);    /* Evaluate recursively               */
 
@@ -2873,7 +2873,7 @@ pub fn generate_move_vectors(
 
 
     log_4!(
-        "generate_move_vectors parsed expression for {}: {:#?}",
+        "generate_move_vectors parsed expression for {}: {:?}",
         expr, parsed_expr
     );
 

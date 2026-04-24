@@ -126,7 +126,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             .collect()
     };
 
-    log_4!("Parsed allowers: {:#?}", allowers_vecs);
+    log_4!("Parsed allowers: {:?}", allowers_vecs);
 
     let allower_result = allowers_vecs
         .iter()
@@ -180,7 +180,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             .collect()
     };
 
-    log_4!("Parsed drop: {:#?}", stoppers_vecs);
+    log_4!("Parsed drop: {:?}", stoppers_vecs);
 
     let stopper_result = stoppers_vecs
         .iter()

@@ -204,12 +204,12 @@ impl Debug for MultiLegElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MultiLegElement::MultiLegTerm(token) => write!(f, "{:?}", token),
-            MultiLegElement::MultiLegExpr(group) => write!(f, "{:#?}", group),
+            MultiLegElement::MultiLegExpr(group) => write!(f, "{:?}", group),
             MultiLegElement::MultiLegSlashExpr(group) => {
-                write!(f, "{:#?}#", group)
+                write!(f, "{:?}#", group)
             }
             MultiLegElement::MultiLegEval(vectors) => {
-                write!(f, "{:#?}", vectors)
+                write!(f, "{:?}", vectors)
             }
         }
     }
@@ -497,8 +497,8 @@ impl Debug for AtomicElement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AtomicElement::AtomicTerm(token) => write!(f, "{:?}", token),
-            AtomicElement::AtomicExpr(group) => write!(f, "{:#?}", group),
-            AtomicElement::AtomicEval(vectors) => write!(f, "{:#?}", vectors),
+            AtomicElement::AtomicExpr(group) => write!(f, "{:?}", group),
+            AtomicElement::AtomicEval(vectors) => write!(f, "{:?}", vectors),
         }
     }
 }

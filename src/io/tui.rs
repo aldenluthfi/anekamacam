@@ -14,54 +14,113 @@
 
 use crate::*;
 
-struct TuiApp {
-    tab_idx: usize,
-    detail_scroll: u16,
-    log_scroll: u16,
-    show_help: bool,
-    logs: VecDeque<String>,
+struct Tui {
+    mode: u8,
+    tab: usize,
+    focus: usize,
+    scroll: u16,
     input: String,
+    help: bool,
 }
 
-impl TuiApp {
+impl Tui {
     fn new() -> Self {
         Self {
-            tab_idx: 0,
-            detail_scroll: 0,
-            log_scroll: 0,
-            show_help: false,
-            logs: VecDeque::with_capacity(1024),
+            mode: TUI_NORMAL_MODE,
+            tab: 0,
+            focus: 0,
+            scroll: 0,
             input: String::new(),
+            help: false,
         }
     }
 
-    fn push_logs(&mut self, entries: Vec<String>) {
-        let has_new_entries = !entries.is_empty();
+    fn run (
+        &mut self, state: &mut State, terminal: &mut DefaultTerminal
+    ) -> IoResult<()> {
+        loop {
+            terminal.draw(|frame| {
+                render(frame, state, self);
+            })?;
 
-        for entry in entries {
-            self.logs.push_back(entry);
+            if event::poll(Duration::from_millis(80))? {
+                if let Event::Key(key_event) = event::read()? {
+                    if key_event.kind == KeyEventKind::Press {
+                        let quit = handle_key(
+                            self,
+                            state,
+                            key_event.code,
+                        );
+
+                        if quit {
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
-        while self.logs.len() > 512 {
-            self.logs.pop_front();
-        }
-
-        if has_new_entries {
-            self.log_scroll = self.logs.len() as u16;
-        }
+        Ok(())
     }
 }
 
-const TAB_TITLES: [&str; 5] = ["Game", "Overview", "Pieces", "Zones", "PST"];
+#[derive(Debug, Default)]
+struct Popup<'a> {
+    content: Text<'a>,
+    border_style: Style,
+    title_style: Style,
+    style: Style,
+}
 
-fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &TuiApp) {
+impl<'a> Popup<'a> {
+
+    fn content(mut self, content: impl Into<Text<'a>>) -> Self {
+        self.content = content.into();
+        self
+    }
+
+    fn border_style(mut self, style: Style) -> Self {
+        self.border_style = style;
+        self
+    }
+
+    fn title_style(mut self, style: Style) -> Self {
+        self.title_style = style;
+        self
+    }
+
+    fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+}
+
+impl Widget for Popup<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Clear.render(area, buf);
+        let block = Block::new()
+            .title_style(self.title_style)
+            .borders(Borders::ALL)
+            .border_style(self.border_style);
+        Paragraph::new(self.content)
+            .wrap(Wrap { trim: true })
+            .style(self.style)
+            .block(block)
+            .render(area, buf);
+    }
+}
+
+const TAB_TITLES: [&str; 2] = ["Game", "Overview"];
+const TAB_FOCUSABLES: [u8; 2] = [2, 1];
+
+fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let titles = TAB_TITLES
         .iter()
         .map(|title| Line::from(*title))
         .collect::<Vec<_>>();
 
     let tabs = Tabs::new(titles)
-        .select(app.tab_idx)
+        .select(app.tab)
         .style(Style::default().fg(Color::Gray))
         .highlight_style(
             Style::default()
@@ -72,26 +131,205 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &TuiApp) {
     frame.render_widget(tabs, area);
 }
 
-fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, state: &State, app: &TuiApp) {
-    let columns = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-        .split(area);
+fn draw_input(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
+    let prompt = if app.mode == TUI_INPUT_MODE {
+        Line::from(vec![
+            Span::styled(" $> ", Style::default().fg(Color::Yellow)),
+            Span::raw(&app.input),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(" $> ", Style::default().fg(Color::Gray)),
+            Span::raw(&app.input),
+        ])
+    };
 
-    let left = Layout::default()
+    let command = Paragraph::new(prompt)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+        );
+
+    frame.render_widget(command, area);
+}
+
+fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
+    let help_line = if app.mode == TUI_INPUT_MODE {
+        Line::from(vec![
+            Span::styled("[INPUT] ", Style::default().fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)),
+            Span::raw("<Enter> Run | <Esc> Enter normal mode")
+                .style(Style::default().fg(Color::Gray)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("[NORMAL] ", Style::default().fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)),
+            Span::raw(
+                concat![
+                    "<i> Enter input mode | <?> Help | <←/→> Focus | ",
+                    "<j/k> Scroll | <Tab> Switch tab | <q> Quit",
+                ]
+            ).style(Style::default().fg(Color::Gray)),
+        ])
+    };
+
+    frame.render_widget(help_line, area);
+}
+
+fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
+
+    let normal_mode_rows = [
+        ("<i>", "Enter input mode"),
+        ("<?>", "Toggle help popup"),
+        ("<Tab>", "Switch tabs"),
+        ("<q>", "Quit TUI"),
+    ];
+
+    let input_mode_rows = [
+        ("<Enter>", "Run command"),
+        ("<Esc>", "Return to normal mode"),
+    ];
+
+    let mut lines = vec![];
+
+    lines.push(Line::from(vec![
+        Span::from("Normal mode")
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+    ]));
+
+    for (key, desc) in normal_mode_rows {
+        let row = Line::from(vec![
+            Span::from(format!("{:<20} ", key))
+                .style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                ),
+            Span::from(desc),
+        ]);
+
+        lines.push(row);
+    }
+
+    lines.push(Line::default());
+
+    lines.push(Line::from(vec![
+        Span::from("Input mode")
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+    ]));
+
+    for (key, desc) in input_mode_rows {
+        let row = Line::from(vec![
+            Span::from(format!("{:<20} ", key))
+                .style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                ),
+            Span::from(desc),
+        ]);
+
+        lines.push(row);
+    }
+
+    lines.push(Line::default());
+
+    lines.push(
+        Line::from("Press <?> again to close help")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray))
+    );
+
+    let longest_line = lines
+        .iter()
+        .map(|line| line.width()).max().unwrap_or(0) as u16 + 7;
+    let lines_height = lines.len() as u16 + 2;
+
+    let popup_area = Rect {
+        x: area.width / 2 - longest_line / 2,
+        y: area.height / 2 - lines_height / 2,
+        width: longest_line,
+        height: lines_height,
+    };
+
+    let popup = Popup::default()
+        .content(lines)
+        .border_style(
+            Style::default().fg(Color::Yellow)
+        )
+        .title_style(
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        )
+        .style(
+            Style::default().fg(Color::White)
+        );
+
+    frame.render_widget(
+        popup,
+        popup_area,
+    );
+}
+
+/// Draw the main game tab, which includes the board, move list, and logs.
+/// There are three main sections: the board on the left, and the move list
+/// and logs stacked, in that order.
+fn draw_game_tab(
+    frame: &mut Frame<'_>, area: Rect, state: &State, app: &mut Tui
+) {
+
+    let board = format_game_state(&state);
+    let main_layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(62), Constraint::Percentage(38)])
-        .split(columns[0]);
+        .constraints([
+            Constraint::Percentage(70),
+            Constraint::Percentage(30),
+        ])
+        .split(area);
+    let top_rect = main_layout[0];
+    let top_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(100),
+            Constraint::Min(80),
+        ])
+        .split(top_rect);
 
-    let board_text = format_game_state(state);
-    let board = Paragraph::new(board_text)
-        .style(Style::default().fg(Color::White))
-        .block(Block::default().borders(Borders::ALL).title("Board"))
-        .wrap(Wrap { trim: false });
-    frame.render_widget(board, left[0]);
+    let board_block = Block::default()
+        .borders(Borders::NONE);
+    let board_rect = top_layout[0];
+    let board_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .flex(Flex::Center)
+        .constraints([
+            Constraint::Length(board.split('\n').count() as u16),
+        ])
+        .split(board_rect);
+    let board_area = board_layout[0];
 
-    let log_lines = app
-        .logs
+    let mut moves_block = Block::default()
+        .borders(Borders::ALL);
+    let mut logs_block = Block::default()
+        .borders(Borders::ALL);
+    let moves_area = top_layout[1];
+    let logs_area = main_layout[1];
+
+    match app.focus {
+        0 if app.mode == TUI_NORMAL_MODE =>
+            moves_block = moves_block.border_style(
+                Style::default().fg(Color::Yellow)
+            ),
+        1 if app.mode == TUI_NORMAL_MODE =>
+            logs_block = logs_block.border_style(
+                Style::default().fg(Color::Yellow)
+            ),
+        _ => {}
+    }
+
+    let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| {
+        panic!("Failed to lock LOG_MESSAGES: {e}")
+    });
+    let log_lines = logs
         .iter()
         .map(|line| {
             let level_color = if line.starts_with("[1]") {
@@ -112,7 +350,9 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, state: &State, app: &TuiApp)
                 if let Some(end_idx) = line.find(']') {
                     let (level, rest) = line.split_at(end_idx + 1);
                     return Line::from(vec![
-                        Span::styled(level.to_string(), Style::default().fg(level_color)),
+                        Span::styled(
+                            level.to_string(), Style::default().fg(level_color)
+                        ),
                         Span::raw(rest.to_string()),
                     ]);
                 }
@@ -122,661 +362,41 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, state: &State, app: &TuiApp)
         })
         .collect::<Vec<_>>();
 
-    let log_view_height = left[1].height.saturating_sub(2);
-    let max_log_scroll = (app.logs.len() as u16).saturating_sub(log_view_height);
-    let log_scroll = app.log_scroll.min(max_log_scroll);
+    let board_paragraph = Paragraph::new(board)
+        .alignment(Alignment::Center)
+        .block(board_block);
+    let mut moves_paragraph = Paragraph::new("")
+        .block(moves_block);
+    let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
+        .block(logs_block);
 
-    let logs = Paragraph::new(Text::from(log_lines))
-        .block(Block::default().borders(Borders::ALL).title("Logs"))
-        .wrap(Wrap { trim: false })
-        .scroll((log_scroll, 0));
-    frame.render_widget(logs, left[1]);
 
-    let move_items = collect_move_items(state);
-    let moves = List::new(move_items).block(Block::default().borders(Borders::ALL).title("Moves"));
-    frame.render_widget(moves, columns[1]);
-}
-
-fn game_phase_label(phase: u8) -> &'static str {
-    match phase {
-        OPENING => "Opening",
-        MIDDLEGAME => "Middlegame",
-        ENDGAME => "Endgame",
-        _ => "Unknown",
-    }
-}
-
-fn board_to_square_list(board: &Board, state: &State) -> String {
-    let mut squares = Vec::new();
-    let board_size = (state.files as usize) * (state.ranks as usize);
-
-    for square_idx in 0..board_size {
-        if get!(board, square_idx as u32) {
-            squares.push(format_square(square_idx as Square, state));
-        }
-    }
-
-    if squares.is_empty() {
-        "-".to_string()
-    } else {
-        squares.join(", ")
-    }
-}
-
-fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
-    let mut type_pairs = Vec::new();
-
-    for (white_idx, piece) in state.pieces.iter().enumerate() {
-        if p_color!(piece) != WHITE {
-            continue;
-        }
-
-        let black_idx = state
-            .piece_swap_map
-            .get(&(white_idx as u8))
-            .copied()
-            .unwrap_or_else(|| {
-                panic!(
-                    "Missing black counterpart for white piece index {} ({})",
-                    white_idx, piece.char
-                )
-            }) as usize;
-
-        if p_color!(state.pieces[black_idx]) != BLACK {
-            panic!(
-                "Invalid black counterpart mapping for white piece index {}",
-                white_idx
-            );
-        }
-
-        type_pairs.push((white_idx, black_idx));
-    }
-
-    type_pairs
-}
-
-fn render_scrollable_table(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    title: &str,
-    headers: &[String],
-    rows: &[Vec<String>],
-    widths: &[Constraint],
-    scroll: u16,
-) {
-    let header = Row::new(
-        headers
-            .iter()
-            .map(|header| Cell::from((*header).to_string()))
-            .collect::<Vec<_>>(),
-    )
-    .style(
-        Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
+    let scroll = cmp::min(
+        match app.focus {
+            1 => (logs.len() as u16)
+                .saturating_sub(logs_area.height.saturating_sub(2)),
+            _ => 0,
+        },
+        app.scroll,
     );
+    app.scroll = scroll;
 
-    let visible_rows = area.height.saturating_sub(4).max(1) as usize;
-    let max_scroll = rows.len().saturating_sub(visible_rows) as u16;
-    let start = scroll.min(max_scroll) as usize;
-    let end = (start + visible_rows).min(rows.len());
-
-    let visible = rows[start..end]
-        .iter()
-        .map(|row| {
-            Row::new(
-                row.iter()
-                    .map(|cell| Cell::from(cell.clone()))
-                    .collect::<Vec<_>>(),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    let title = format!("{} ({}/{})", title, end, rows.len());
-
-    let table = Table::new(visible, widths.iter().copied())
-        .header(header)
-        .column_spacing(1)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .style(Style::default().fg(Color::White));
-
-    frame.render_widget(table, area);
-}
-
-fn build_overview_rows(state: &State) -> Vec<Vec<String>> {
-    let mut rows = vec![
-        vec!["Variant".to_string(), state.title.clone()],
-        vec![
-            "Board".to_string(),
-            format!("{}x{}", state.files, state.ranks),
-        ],
-        vec![
-            "Side to move".to_string(),
-            if state.playing == WHITE {
-                "White".to_string()
-            } else {
-                "Black".to_string()
-            },
-        ],
-        vec![
-            "Game phase".to_string(),
-            game_phase_label(state.game_phase).to_string(),
-        ],
-        vec!["Ply counter".to_string(), state.ply_counter.to_string()],
-        vec!["Search ply".to_string(), state.search_ply.to_string()],
-        vec!["Hash".to_string(), format!("{:032X}", state.position_hash)],
-        vec![
-            "Material (Opening)".to_string(),
-            format!(
-                "White {} | Black {}",
-                state.opening_material[WHITE as usize], state.opening_material[BLACK as usize]
-            ),
-        ],
-        vec![
-            "Material (Endgame)".to_string(),
-            format!(
-                "White {} | Black {}",
-                state.endgame_material[WHITE as usize], state.endgame_material[BLACK as usize]
-            ),
-        ],
-        vec![
-            "PST Bonus (Opening)".to_string(),
-            format!(
-                "White {} | Black {}",
-                state.opening_pst_bonus[WHITE as usize], state.opening_pst_bonus[BLACK as usize]
-            ),
-        ],
-        vec![
-            "PST Bonus (Endgame)".to_string(),
-            format!(
-                "White {} | Black {}",
-                state.endgame_pst_bonus[WHITE as usize], state.endgame_pst_bonus[BLACK as usize]
-            ),
-        ],
-        vec![
-            "Castling rights".to_string(),
-            if castling!(state) {
-                let mut rights = String::new();
-                if state.castling_state & WK_CASTLE != 0 {
-                    rights.push('K');
-                }
-                if state.castling_state & WQ_CASTLE != 0 {
-                    rights.push('Q');
-                }
-                if state.castling_state & BK_CASTLE != 0 {
-                    rights.push('k');
-                }
-                if state.castling_state & BQ_CASTLE != 0 {
-                    rights.push('q');
-                }
-
-                if rights.is_empty() {
-                    "-".to_string()
-                } else {
-                    rights
-                }
-            } else {
-                "N/A".to_string()
-            },
-        ],
-        vec![
-            "En passant".to_string(),
-            if en_passant!(state) {
-                if state.en_passant_square == NO_EN_PASSANT {
-                    "-".to_string()
-                } else {
-                    format_square(enp_square!(state.en_passant_square) as Square, state)
-                }
-            } else {
-                "N/A".to_string()
-            },
-        ],
-    ];
-
-    if halfmove_clock!(state) {
-        rows.push(vec![
-            "Halfmove".to_string(),
-            format!("{}/{}", state.halfmove_clock, state.halfmove_limit),
-        ]);
-    }
-
-    if repetition_limit!(state) {
-        let repetition_count = state
-            .position_hash_map
-            .get(&state.position_hash)
-            .copied()
-            .unwrap_or(1);
-
-        rows.push(vec![
-            "Repetition".to_string(),
-            format!("{}/{}", repetition_count, state.repetition_limit),
-        ]);
-    }
-
-    rows
-}
-
-fn build_piece_rows(state: &State) -> Vec<Vec<String>> {
-    let mut rows = Vec::new();
-
-    for (idx, piece) in state.pieces.iter().enumerate() {
-        let mut promotes_to = Vec::new();
-        for promoted in &piece.promotions {
-            promotes_to.push(state.pieces[*promoted as usize].char.to_string());
-        }
-
-        let promotes_from = state
-            .pieces
-            .iter()
-            .filter(|candidate| candidate.promotions.contains(&(idx as u8)))
-            .map(|candidate| candidate.char.to_string())
-            .collect::<Vec<_>>();
-
-        let count_limit = if count_limits!(state) {
-            let limit = state.piece_limit[idx];
-            if limit == u32::MAX {
-                "-".to_string()
-            } else {
-                limit.to_string()
-            }
-        } else {
-            "N/A".to_string()
-        };
-
-        rows.push(vec![
-            piece.name.clone(),
-            idx.to_string(),
-            piece.char.to_string(),
-            if p_color!(piece) == WHITE {
-                "White".to_string()
-            } else {
-                "Black".to_string()
-            },
-            p_ovalue!(piece).to_string(),
-            p_evalue!(piece).to_string(),
-            p_is_royal!(piece).to_string(),
-            p_is_big!(piece).to_string(),
-            p_is_major!(piece).to_string(),
-            count_limit,
-            p_can_promote!(piece).to_string(),
-            if promotes_to.is_empty() {
-                "-".to_string()
-            } else {
-                promotes_to.join(",")
-            },
-            if promotes_from.is_empty() {
-                "-".to_string()
-            } else {
-                promotes_from.join(",")
-            },
-            state.piece_count[idx].to_string(),
-            state.piece_in_hand[WHITE as usize][idx].to_string(),
-            state.piece_in_hand[BLACK as usize][idx].to_string(),
-        ]);
-    }
-
-    rows
-}
-
-fn build_zone_rows(state: &State) -> Vec<Vec<String>> {
-    let mut rows = Vec::new();
-
-    for (idx, piece) in state.pieces.iter().enumerate() {
-        if promotions!(state) && p_can_promote!(piece) {
-            let mandatory = board_to_square_list(&state.promotion_zones_mandatory[idx], state);
-            let optional = board_to_square_list(&state.promotion_zones_optional[idx], state);
-
-            if mandatory != "-" || optional != "-" {
-                rows.push(vec![
-                    "Promotion".to_string(),
-                    piece.name.clone(),
-                    piece.char.to_string(),
-                    if p_color!(piece) == WHITE {
-                        "White".to_string()
-                    } else {
-                        "Black".to_string()
-                    },
-                    mandatory,
-                    optional,
-                ]);
-            }
-        }
-
-        if forbidden_zones!(state) {
-            let forbidden = board_to_square_list(&state.forbidden_zones[idx], state);
-            if forbidden != "-" {
-                rows.push(vec![
-                    "Forbidden".to_string(),
-                    piece.name.clone(),
-                    piece.char.to_string(),
-                    if p_color!(piece) == WHITE {
-                        "White".to_string()
-                    } else {
-                        "Black".to_string()
-                    },
-                    forbidden,
-                    "-".to_string(),
-                ]);
-            }
-        }
-
-        if setup_phase!(state) {
-            let setup = board_to_square_list(&state.initial_setup[idx], state);
-            if setup != "-" {
-                rows.push(vec![
-                    "Initial Setup".to_string(),
-                    piece.name.clone(),
-                    piece.char.to_string(),
-                    if p_color!(piece) == WHITE {
-                        "White".to_string()
-                    } else {
-                        "Black".to_string()
-                    },
-                    setup,
-                    "-".to_string(),
-                ]);
-            }
-        }
-    }
-
-    if halfmove_clock!(state) {
-        let resetters = state
-            .pieces
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, piece)| state.halfmove_pieces[idx].then_some(piece.char.to_string()))
-            .collect::<Vec<_>>();
-
-        rows.push(vec![
-            "Halfmove Rule".to_string(),
-            "Global".to_string(),
-            "-".to_string(),
-            "-".to_string(),
-            format!("Limit: {}", state.halfmove_limit),
-            format!(
-                "Resetters: {}",
-                if resetters.is_empty() {
-                    "-".to_string()
-                } else {
-                    resetters.join(",")
-                }
-            ),
-        ]);
-    }
-
-    if rows.is_empty() {
-        rows.push(vec![
-            "-".to_string(),
-            "No zones/rules configured".to_string(),
-            "-".to_string(),
-            "-".to_string(),
-            "-".to_string(),
-            "-".to_string(),
-        ]);
-    }
-
-    rows
-}
-
-fn build_pst_rows(state: &State) -> (Vec<String>, Vec<Vec<String>>) {
-    let mut headers = vec![
-        "Piece".to_string(),
-        "Sym".to_string(),
-        "Color".to_string(),
-        "Phase".to_string(),
-        "Rank".to_string(),
-    ];
-    for file in 0..state.files {
-        if state.files <= 26 {
-            headers.push(((b'A' + file) as char).to_string());
-        } else {
-            headers.push(file.to_string());
-        }
-    }
-
-    let mut rows = Vec::new();
-
-    for (white_idx, black_idx) in collect_piece_type_pairs(state) {
-        for (piece_idx, color_label) in [(white_idx, "White"), (black_idx, "Black")] {
-            let piece = &state.pieces[piece_idx];
-
-            for (phase_label, pst) in [
-                ("Opening", &state.pst_opening[piece_idx]),
-                ("Endgame", &state.pst_endgame[piece_idx]),
-            ] {
-                for rank in (0..state.ranks).rev() {
-                    let mut row = vec![
-                        piece.name.clone(),
-                        piece.char.to_string(),
-                        color_label.to_string(),
-                        phase_label.to_string(),
-                        format!("{:02}", rank),
-                    ];
-
-                    for file in 0..state.files {
-                        let idx = rank as usize * state.files as usize + file as usize;
-                        row.push(pst[idx].to_string());
-                    }
-
-                    rows.push(row);
-                }
-            }
-        }
-    }
-
-    (headers, rows)
-}
-
-fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, state: &State, app: &TuiApp) {
-    let rows = build_overview_rows(state);
-    let widths = [Constraint::Length(22), Constraint::Min(20)];
-
-    render_scrollable_table(
-        frame,
-        area,
-        "Variant & Runtime Overview",
-        &["Field".to_string(), "Value".to_string()],
-        &rows,
-        &widths,
-        app.detail_scroll,
-    );
-}
-
-fn draw_pieces_tab(frame: &mut Frame<'_>, area: Rect, state: &State, app: &TuiApp) {
-    let rows = build_piece_rows(state);
-    let widths = [
-        Constraint::Length(14),
-        Constraint::Length(4),
-        Constraint::Length(4),
-        Constraint::Length(6),
-        Constraint::Length(6),
-        Constraint::Length(6),
-        Constraint::Length(5),
-        Constraint::Length(5),
-        Constraint::Length(5),
-        Constraint::Length(10),
-        Constraint::Length(7),
-        Constraint::Length(10),
-        Constraint::Length(12),
-        Constraint::Length(8),
-        Constraint::Length(8),
-        Constraint::Length(8),
-    ];
-
-    render_scrollable_table(
-        frame,
-        area,
-        "Piece Types",
-        &[
-            "Name".to_string(),
-            "Idx".to_string(),
-            "Sym".to_string(),
-            "Color".to_string(),
-            "OVal".to_string(),
-            "EVal".to_string(),
-            "Royal".to_string(),
-            "Big".to_string(),
-            "Major".to_string(),
-            "CountLim".to_string(),
-            "Promote".to_string(),
-            "To".to_string(),
-            "From".to_string(),
-            "Board".to_string(),
-            "W Hand".to_string(),
-            "B Hand".to_string(),
-        ],
-        &rows,
-        &widths,
-        app.detail_scroll,
-    );
-}
-
-fn draw_zones_tab(frame: &mut Frame<'_>, area: Rect, state: &State, app: &TuiApp) {
-    let rows = build_zone_rows(state);
-    let widths = [
-        Constraint::Length(13),
-        Constraint::Length(16),
-        Constraint::Length(4),
-        Constraint::Length(6),
-        Constraint::Percentage(42),
-        Constraint::Percentage(35),
-    ];
-
-    render_scrollable_table(
-        frame,
-        area,
-        "Zones, Setup, and Halfmove Rules",
-        &[
-            "Section".to_string(),
-            "Piece".to_string(),
-            "Sym".to_string(),
-            "Color".to_string(),
-            "Primary".to_string(),
-            "Secondary".to_string(),
-        ],
-        &rows,
-        &widths,
-        app.detail_scroll,
-    );
-}
-
-fn draw_pst_tab(frame: &mut Frame<'_>, area: Rect, state: &State, app: &TuiApp) {
-    let (headers, rows) = build_pst_rows(state);
-
-    let mut widths = vec![
-        Constraint::Length(14),
-        Constraint::Length(4),
-        Constraint::Length(6),
-        Constraint::Length(8),
-        Constraint::Length(5),
-    ];
-
-    for _ in 0..state.files {
-        widths.push(Constraint::Length(5));
-    }
-
-    render_scrollable_table(
-        frame,
-        area,
-        "Piece-Square Tables",
-        &headers,
-        &rows,
-        &widths,
-        app.detail_scroll,
-    );
-}
-
-fn draw_input(frame: &mut Frame<'_>, area: Rect, app: &TuiApp) {
-    let command = Paragraph::new(app.input.clone())
-        .block(Block::default().borders(Borders::ALL).title("Command"));
-
-    frame.render_widget(command, area);
-}
-
-fn draw_help_bar(frame: &mut Frame<'_>, area: Rect) {
-    let help =
-        Paragraph::new("? help | Tab switch tab | Up/Down scroll tables | Enter run | q quit")
-            .style(Style::default().fg(Color::DarkGray));
-
-    frame.render_widget(help, area);
-}
-
-fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - height) / 2),
-            Constraint::Percentage(height),
-            Constraint::Percentage((100 - height) / 2),
-        ])
-        .split(area);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - width) / 2),
-            Constraint::Percentage(width),
-            Constraint::Percentage((100 - width) / 2),
-        ])
-        .split(vertical[1])[1]
-}
-
-fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
-    let popup = centered_rect(70, 74, area);
-
-    let rows = [
-        ("?", "Toggle this help popup"),
-        ("Esc", "Close help popup or clear input"),
-        ("Tab", "Switch tabs"),
-        (
-            "Up / Down",
-            "Scroll logs (Game tab) or table rows (other tabs)",
+    match app.focus {
+        0 => moves_paragraph = moves_paragraph.scroll(
+            (scroll, 0)
         ),
-        ("Enter", "Run command"),
-        ("Backspace", "Delete last input character"),
-        ("q", "Quit TUI (only when input is empty)"),
-        ("u", "Undo one move"),
-        ("r", "Reset game to root position"),
-        ("fen <fen>", "Load a FEN position"),
-        ("search <d>", "Run search at depth d"),
-        ("go <d>", "Search and play best move at depth d"),
-        ("<move>", "Play a legal move in engine notation"),
-    ];
-
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "Keybinds",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-    ];
-
-    for (key, desc) in rows {
-        let row = format!("{:<12} {}", key, desc);
-        lines.push(Line::from(row));
+        1 => logs_paragraph = logs_paragraph.scroll(
+            (scroll, 0)
+        ),
+        _ => { }
     }
 
-    lines.push(Line::from(""));
-    lines.push(Line::from("Press ? or Esc to close"));
-
-    frame.render_widget(Clear, popup);
-    frame.render_widget(
-        Paragraph::new(Text::from(lines))
-            .style(Style::default().fg(Color::White))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Help")
-                    .border_style(Style::default().fg(Color::Yellow)),
-            )
-            .wrap(Wrap { trim: false }),
-        popup,
-    );
+    frame.render_widget(board_paragraph, board_area);
+    frame.render_widget(moves_paragraph, moves_area);
+    frame.render_widget(logs_paragraph, logs_area);
 }
 
-fn render(frame: &mut Frame<'_>, state: &State, app: &TuiApp) {
+fn render(frame: &mut Frame<'_>, state: &State, app: &mut Tui) {
     let root = frame.area();
 
     let chunks = Layout::default()
@@ -791,47 +411,17 @@ fn render(frame: &mut Frame<'_>, state: &State, app: &TuiApp) {
 
     draw_tabs(frame, chunks[0], app);
 
-    match app.tab_idx {
+    match app.tab {
         0 => draw_game_tab(frame, chunks[1], state, app),
-        1 => draw_overview_tab(frame, chunks[1], state, app),
-        2 => draw_pieces_tab(frame, chunks[1], state, app),
-        3 => draw_zones_tab(frame, chunks[1], state, app),
-        _ => draw_pst_tab(frame, chunks[1], state, app),
+        _ => {},
     }
 
     draw_input(frame, chunks[2], app);
-    draw_help_bar(frame, chunks[3]);
+    draw_help_bar(frame, chunks[3], app);
 
-    if app.show_help {
+    if app.help {
         draw_help_popup(frame, root);
     }
-}
-
-fn collect_move_items(state: &State) -> Vec<ListItem<'static>> {
-    let mut moves = Vec::new();
-
-    for snapshot in &state.history {
-        if snapshot.move_ply == null_move() {
-            continue;
-        }
-
-        moves.push(format_move(&snapshot.move_ply, state));
-    }
-
-    let mut items = Vec::new();
-
-    for (idx, pair) in moves.chunks(2).enumerate() {
-        let white = pair.first().cloned().unwrap_or_default();
-        let black = pair.get(1).cloned().unwrap_or_default();
-        let line = format!("{:>3}. {:<18} {}", idx + 1, white, black);
-        items.push(ListItem::new(line));
-    }
-
-    if items.is_empty() {
-        items.push(ListItem::new("No moves yet"));
-    }
-
-    items
 }
 
 fn execute_command(state: &mut State, command: &str) {
@@ -841,7 +431,7 @@ fn execute_command(state: &mut State, command: &str) {
         return;
     }
 
-    match trimmed {
+       match trimmed {
         "u" => {
             if state.ply_counter > 0 {
                 undo_move!(state);
@@ -918,107 +508,93 @@ fn execute_command(state: &mut State, command: &str) {
     }
 }
 
-fn handle_key(app: &mut TuiApp, state: &mut State, key: KeyCode) -> bool {
-    if app.show_help {
-        match key {
-            KeyCode::Char('?') | KeyCode::Esc => {
-                app.show_help = false;
-            }
-            _ => {}
-        }
+fn handle_key(
+    app: &mut Tui,
+    state: &mut State,
+    code: KeyCode,
+) -> bool {
 
-        return false;
-    }
-
-    match key {
-        KeyCode::Char('?') => {
-            app.show_help = true;
-        }
-        KeyCode::Tab => {
-            app.tab_idx = (app.tab_idx + 1) % TAB_TITLES.len();
-            app.detail_scroll = 0;
-        }
-        KeyCode::Char('q') if app.input.is_empty() => return true,
-        KeyCode::Esc => {
+    let result = match (app.mode, code) {
+        (TUI_INPUT_MODE, KeyCode::Enter) => {
+            execute_command(state, &app.input);
             app.input.clear();
-        }
-        KeyCode::Up => {
-            if app.tab_idx == 0 {
-                app.log_scroll = app.log_scroll.saturating_sub(1);
-            } else {
-                app.detail_scroll = app.detail_scroll.saturating_sub(1);
-            }
-        }
-        KeyCode::Down => {
-            if app.tab_idx == 0 {
-                app.log_scroll = app.log_scroll.saturating_add(1);
-            } else {
-                app.detail_scroll = app.detail_scroll.saturating_add(1);
-            }
-        }
-        KeyCode::Backspace => {
-            app.input.pop();
-        }
-        KeyCode::Enter => {
-            let command = app.input.clone();
-            app.input.clear();
-            execute_command(state, &command);
-        }
-        KeyCode::Char(c) => {
+            false
+        },
+        (TUI_INPUT_MODE, KeyCode::Esc) => {
+            app.mode = TUI_NORMAL_MODE;
+            false
+        },
+        (TUI_INPUT_MODE, KeyCode::Char(c)) => {
             app.input.push(c);
-        }
-        _ => {}
-    }
+            false
+        },
+        (TUI_INPUT_MODE, KeyCode::Backspace) => {
+            app.input.pop();
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('j')) => {
+            app.scroll = app.scroll.saturating_add(1);
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('k')) => {
+            app.scroll = app.scroll.saturating_sub(1);
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Left) => {
+            app.focus = app.focus
+                .saturating_sub(1)
+                .clamp(0, TAB_FOCUSABLES[app.tab] as usize - 1);
+            app.scroll = 0;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Right) => {
+            app.focus = app.focus
+                .saturating_add(1)
+                .clamp(0, TAB_FOCUSABLES[app.tab] as usize - 1);
+            app.scroll = 0;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('g')) => {
+            app.scroll = 0;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('G')) => {
+            app.scroll = u16::MAX;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('i')) => {
+            app.mode = TUI_INPUT_MODE;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('?')) => {
+            app.help = !app.help;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Tab) => {
+            app.tab = (app.tab + 1) % TAB_TITLES.len();
+            app.focus = 0;
+            app.scroll = 0;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('q')) => true,
+        _ => false,
+    };
 
-    false
+    result
 }
 
-pub fn run_tui(state: &mut State) {
-    if let Err(error) = run_tui_inner(state) {
-        eprintln!("TUI terminated with error: {}", error);
-    }
-}
+pub fn tui(state: &mut State) -> IoResult<()> {
+    log_2!("Starting TUI...");
+    let mut terminal = ratatui::init();
+    execute!(terminal.backend_mut(), EnableMouseCapture)?;
 
-fn run_tui_inner(state: &mut State) -> Result<(), Box<dyn std::error::Error>> {
-    enable_raw_mode()?;
+    let run_result = Tui::new().run(state, &mut terminal);
+    let mouse_result = execute!(terminal.backend_mut(), DisableMouseCapture);
 
-    let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    ratatui::restore();
 
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    let mut app = TuiApp::new();
-
-    log_2!("TUI started");
-    log_2!("Commands: move, u, r, fen <fen>, search <d>, go <d>");
-
-    loop {
-        app.push_logs(take_log_messages());
-
-        terminal.draw(|frame| {
-            render(frame, state, &app);
-        })?;
-
-        if event::poll(Duration::from_millis(80))? {
-            if let Event::Key(key_event) = event::read()? {
-                if key_event.kind == KeyEventKind::Press {
-                    let quit = handle_key(&mut app, state, key_event.code);
-                    if quit {
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    run_result?;
+    mouse_result?;
 
     Ok(())
 }
