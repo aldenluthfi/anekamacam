@@ -15,12 +15,11 @@ use crate::*;
 
 use env_logger::fmt::style;
 
-lazy_static! {
-    static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
-        Mutex::new(VecDeque::new());
-}
-
 pub fn push_log_message(level: u8, message: String) {
+    if level > configured_verbosity_level() {
+        return;
+    }
+
     let mut queue = LOG_MESSAGES.lock().unwrap_or_else(|e| {
         panic!("Failed to lock LOG_MESSAGES: {e}")
     });
@@ -86,23 +85,13 @@ macro_rules! log_4 {
     };
 }
 
-#[macro_export]
-macro_rules! log_5 {
-    ($($arg:tt)*) => {
-        {
-            let message = format!($($arg)*);
-            push_log_message(5, message);
-        }
-    };
-}
-
 fn level_to_verbosity(level: log::Level) -> u8 {
     match level {
         log::Level::Error => 1,
         log::Level::Warn => 2,
         log::Level::Info => 3,
         log::Level::Debug => 4,
-        log::Level::Trace => 5,
+        _ => 0,
     }
 }
 
@@ -112,15 +101,12 @@ fn verbosity_style(level: log::Level) -> style::Style {
         2 => style::AnsiColor::Cyan.on_default(),
         3 => style::AnsiColor::Yellow.on_default(),
         4 => style::AnsiColor::Magenta.on_default(),
-        5 => style::AnsiColor::Red.on_default().effects(style::Effects::BOLD),
         _ => style::Style::new(),
     }
 }
 
 pub fn configured_log_level() -> log::LevelFilter {
-    if cfg!(feature = "log-level-5") {
-        log::LevelFilter::Trace
-    } else if cfg!(feature = "log-level-4") {
+    if cfg!(feature = "log-level-4") {
         log::LevelFilter::Debug
     } else if cfg!(feature = "log-level-3") {
         log::LevelFilter::Info
@@ -129,12 +115,12 @@ pub fn configured_log_level() -> log::LevelFilter {
     } else if cfg!(feature = "log-level-1") {
         log::LevelFilter::Error
     } else {
-        log::LevelFilter::Info
+        log::LevelFilter::Off
     }
 }
 
 pub fn configured_verbosity_level() -> u8 {
-    configured_log_level().to_level().map_or(3, level_to_verbosity)
+    configured_log_level().to_level().map_or(0, level_to_verbosity)
 }
 
 pub fn verbosity_enabled(required: u8) -> bool {

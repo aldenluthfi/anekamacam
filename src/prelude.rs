@@ -28,11 +28,15 @@ pub use crate::game::representations::{
     vector::{
         AtomicElement::{self, AtomicEval, AtomicExpr, AtomicTerm},
         AtomicGroup, AtomicVector, Leg, LegVector, MoveSet, MoveVector,
-        MultiLegElement::{self, MultiLegEval, MultiLegExpr, MultiLegSlashExpr, MultiLegTerm},
+        MultiLegElement::{
+            self, MultiLegEval, MultiLegExpr, MultiLegSlashExpr,
+            MultiLegTerm,
+        },
         MultiLegGroup, MultiLegVector,
         Token::{
-            self, AtomicToken, BracketToken, CardinalToken, ColonToken, DotsToken, ExclusionToken,
-            FilterToken, LegToken, MoveModifierToken, RangeToken, SlashBracketToken,
+            self, AtomicToken, BracketToken, CardinalToken, ColonToken,
+            DotsToken, ExclusionToken, FilterToken, LegToken,
+            MoveModifierToken, RangeToken, SlashBracketToken,
         },
     },
 };
@@ -40,13 +44,17 @@ pub use crate::game::representations::{
 /*----------------------------------------------------------------------------*\
                                 GAME LOGIC API
 \*----------------------------------------------------------------------------*/
-pub use crate::game::drops::drop_list::{generate_drop_list, generate_relevant_drops};
+pub use crate::game::drops::drop_list::{
+    generate_drop_list, generate_relevant_drops,
+};
 pub use crate::game::drops::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
     generate_all_captures, generate_all_moves_and_drops, generate_attack_masks,
     generate_relevant_captures, generate_relevant_moves,
 };
-pub use crate::game::moves::move_parse::{INDEX_TO_CARDINAL_VECTORS, generate_move_vectors};
+pub use crate::game::moves::move_parse::{
+    INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
+};
 
 pub use crate::game::patterns::pattern_match::{
     PatternAllower, PatternSet, PatternStopper, generate_relevant_stand_offs,
@@ -54,7 +62,10 @@ pub use crate::game::patterns::pattern_match::{
 };
 pub use crate::game::position::{
     hash::{PositionHash, hash_position},
-    search::{SearchInfo, alpha_beta, check_interrupt, clear_search, search_position},
+    search::{
+        SearchInfo, alpha_beta, check_interrupt, clear_search,
+        search_position,
+    },
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
@@ -63,46 +74,58 @@ pub use crate::game::search::{
 };
 
 pub use crate::game::util::{
-    benchmark_perft, benchmark_search, format_time, perft, random_u128, refresh_eval_state,
-    verify_game_state,
+    benchmark_perft, benchmark_search, format_time, perft, random_u128,
+    refresh_eval_state, verify_game_state,
 };
 
 /*----------------------------------------------------------------------------*\
                                    IO API
 \*----------------------------------------------------------------------------*/
-pub use crate::io::board_io::{debug_print_relevant_moves, format_board, format_square};
+pub use crate::io::board_io::{
+    debug_print_relevant_moves, format_board, format_square,
+};
 pub use crate::io::game_io::{
-    build_game_details, export_tuned_parameters_file, format_game_state, parse_config_file,
-    parse_fen, parse_tuned_parameters_file,
+    export_tuned_parameters_file, format_game_state,
+    parse_config_file, parse_fen, parse_tuned_parameters_file,
 };
 pub use crate::io::logger::{
-    configured_log_level, configured_verbosity_level, init_logging, push_log_message,
-    take_log_messages, verbosity_enabled,
+    configured_log_level, configured_verbosity_level, init_logging,
+    push_log_message, take_log_messages, verbosity_enabled,
 };
 pub use crate::io::move_io::{format_move, parse_move};
-pub use crate::io::tui::run_tui;
-pub use crate::{log_1, log_2, log_3, log_4, log_5};
+pub use crate::io::tui::tui;
+pub use crate::{log_1, log_2, log_3, log_4};
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
 \*----------------------------------------------------------------------------*/
 pub use bnum::types::U4096;
 pub use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode,
+        KeyEventKind, KeyModifiers,
+    },
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{
+        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode,
+    },
 };
 pub use hashbrown::{HashMap, HashSet};
 pub use lazy_static::lazy_static;
-pub use log::{debug, error, info, trace, warn};
+pub use log::{debug, error, info, warn};
 pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
 pub use ratatui::{
-    Frame, Terminal,
+    Frame, DefaultTerminal,
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    buffer::Buffer,
+    layout::{Constraint, Direction, Layout, Rect, Alignment, Flex},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row, Table, Tabs, Wrap},
+    widgets::{
+        Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row,
+        Table, Tabs, Wrap, Widget
+    },
 };
 pub use regex::Regex;
 pub use std::{
@@ -111,10 +134,15 @@ pub use std::{
     fmt::Debug,
     fs,
     hash::Hash,
-    io::{Write, stdin, stdout},
+    io::{Write, stdin, stdout, Result as IoResult},
     mem::size_of,
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
+    thread,
     time::{Duration, Instant},
 };
 
@@ -189,9 +217,13 @@ lazy_static! {
     pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
     pub static ref ENGINE_START: Instant = Instant::now();
     pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")
-        .unwrap_or_else(|e| { panic!("Failed to compile COMMENT_PATTERN regex: {e}") });
-    pub static ref CASTLING_HASHES: [u128; 16] = array::from_fn(|_| random_u128());
-    pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] = array::from_fn(|_| random_u128());
+        .unwrap_or_else(|e| {
+            panic!("Failed to compile COMMENT_PATTERN regex: {e}")
+        });
+    pub static ref CASTLING_HASHES: [u128; 16] =
+        array::from_fn(|_| random_u128());
+    pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
+        array::from_fn(|_| random_u128());
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
         let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
@@ -213,6 +245,8 @@ lazy_static! {
 
         result
     };
+    pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
+        Mutex::new(VecDeque::new());
 }
 
 pub fn null_move() -> Move {
@@ -232,5 +266,8 @@ pub const OPENING: u8 = 0;
 pub const MIDDLEGAME: u8 = 1;
 pub const ENDGAME: u8 = 2;
 
-pub const TT_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>(); /* 256MB                              */
+pub const TT_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();      /* 256MB */
 pub const MAX_DEPTH: usize = 64;
+
+pub const TUI_NORMAL_MODE: u8 = 0;
+pub const TUI_INPUT_MODE: u8 = 1;

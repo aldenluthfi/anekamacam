@@ -53,9 +53,9 @@ pub mod io {
     pub mod board_io;
     pub mod game_io;
     pub mod move_io;
-    pub mod tui;
 
     pub mod logger;
+    pub mod tui;
 }
 
 pub mod prelude;
@@ -64,11 +64,11 @@ pub mod prelude;
 fn main() {
     init_logging();
 
-    let variant = "los-alamos";
+    let variant = "fide";
     let config_path = format!("configs/{}.conf", variant);
 
     log_2!("Loading variant config: {}", config_path);
     let mut state = parse_config_file(&config_path);
 
-    run_tui(&mut state);
+    let _ = tui(&mut state);
 }
