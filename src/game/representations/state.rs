@@ -20,7 +20,6 @@ pub type Square = u16;
                           SPECIAL RULES REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-
 /// Special-rules bitmask accessor/encoder macros.
 ///
 /// The `special_rules` field in [`State`] uses one bit per optional rule.
@@ -216,7 +215,6 @@ macro_rules! enc_repetition_limit {
 
 pub type EnPassantSquare = u32;
 
-
 /// En passant packed-field accessor macros.
 ///
 /// [`EnPassantSquare`] stores:
@@ -261,9 +259,9 @@ pub struct Snapshot {
     pub en_passant_square: EnPassantSquare,
     pub setup_phase: bool,
     pub game_over: bool,
-    pub game_phase: u8,                                                         /* OPENING/MIDDLEGAME/ENDGAME         */
+    pub game_phase: u8, /* OPENING/MIDDLEGAME/ENDGAME         */
 
-    pub position_hash: u128
+    pub position_hash: u128,
 }
 
 impl Default for Snapshot {
@@ -280,7 +278,6 @@ impl Default for Snapshot {
         }
     }
 }
-
 
 /// Returns whether a snapshot corresponds to a pass move.
 ///
@@ -300,8 +297,11 @@ macro_rules! game_phase_score {
 
         for (piece_idx, piece) in $state.pieces.iter().enumerate() {
             if p_is_big!(piece) && !p_is_royal!(piece) {
-                game_phase_score += (p_ovalue!(piece) as u32)
-                    * ($state.piece_list[piece_idx].len() as u32);
+                game_phase_score +=
+                    (
+                        p_ovalue!(piece) as u32) *
+                        ($state.piece_list[piece_idx].len() as u32
+                    );
             }
         }
 
@@ -316,6 +316,7 @@ macro_rules! game_phase_score {
 /// Main state of the game.
 ///
 /// The special rules field is a bitmask representing enabled special rules.
+/// (read configs/example.conf for more information)
 ///
 /// The bits are defined as follows:
 /// - bit 0     : castling allowed
@@ -328,8 +329,7 @@ macro_rules! game_phase_score {
 /// - bit 7     : Demote piece in hand upon capture
 /// - bit 8     : Stalemate is a loss for the stalemated player
 /// - bit 9     : Game begins with a setup phase
-/// - bit 10    : A player can make a move that creates a stand-off that the
-///   opponent must break on their next turn
+/// - bit 10    : A player can make a move that creates a stand-off
 /// - bit 11    : Halfmove clock draw rule is enabled
 /// - bit 12    : There is a limit on the number of repetitions of a position
 /// - bit 13-31 : reserved for future use
