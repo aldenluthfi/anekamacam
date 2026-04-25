@@ -14,22 +14,31 @@
 
 use crate::*;
 
+const TAB_TITLES: [&str; 2] = ["Game", "Overview"];
+const TAB_FOCUSABLES: [u8; 2] = [3, 1];
+
 struct Tui {
     mode: u8,
     tab: usize,
     focus: usize,
-    scroll: u16,
+    scroll_map: HashMap<(usize, usize), u16>,
     input: String,
     help: bool,
 }
 
 impl Tui {
     fn new() -> Self {
+        let mut init_hashmap = HashMap::new();
+        for tab in 0..TAB_TITLES.len() {
+            for focus in 0..TAB_FOCUSABLES[tab] as usize {
+                init_hashmap.insert((tab, focus), 0);
+            }
+        }
         Self {
             mode: TUI_NORMAL_MODE,
             tab: 0,
             focus: 0,
-            scroll: 0,
+            scroll_map: init_hashmap,
             input: String::new(),
             help: false,
         }
@@ -68,7 +77,7 @@ impl Tui {
 struct Popup<'a> {
     content: Text<'a>,
     border_style: Style,
-    title_style: Style,
+    padding: Padding,
     style: Style,
 }
 
@@ -84,8 +93,8 @@ impl<'a> Popup<'a> {
         self
     }
 
-    fn title_style(mut self, style: Style) -> Self {
-        self.title_style = style;
+    fn padding(mut self, padding: Padding) -> Self {
+        self.padding = padding;
         self
     }
 
@@ -99,9 +108,9 @@ impl Widget for Popup<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
         let block = Block::new()
-            .title_style(self.title_style)
             .borders(Borders::ALL)
-            .border_style(self.border_style);
+            .border_style(self.border_style)
+            .padding(self.padding);
         Paragraph::new(self.content)
             .wrap(Wrap { trim: true })
             .style(self.style)
@@ -110,9 +119,6 @@ impl Widget for Popup<'_> {
     }
 }
 
-const TAB_TITLES: [&str; 2] = ["Game", "Overview"];
-const TAB_FOCUSABLES: [u8; 2] = [2, 1];
-
 fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let titles = TAB_TITLES
         .iter()
@@ -120,6 +126,7 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         .collect::<Vec<_>>();
 
     let tabs = Tabs::new(titles)
+        .block(Block::default().borders(Borders::ALL))
         .select(app.tab)
         .style(Style::default().fg(Color::Gray))
         .highlight_style(
@@ -139,17 +146,20 @@ fn draw_input(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         ])
     } else {
         Line::from(vec![
-            Span::styled(" $> ", Style::default().fg(Color::Gray)),
-            Span::raw(&app.input),
+            Span::styled(" $> ", Style::default().fg(Color::DarkGray)),
+            Span::styled(&app.input, Style::default().fg(Color::DarkGray)),
         ])
     };
 
-    let command = Paragraph::new(prompt)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-        );
+    let mut command_block = Block::default().borders(Borders::ALL);
 
+    if app.mode == TUI_INPUT_MODE {
+        command_block = command_block.border_style(
+            Style::default().fg(Color::Yellow)
+        )
+    }
+
+    let command = Paragraph::new(prompt).block(command_block);
     frame.render_widget(command, area);
 }
 
@@ -187,8 +197,8 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
     ];
 
     let input_mode_rows = [
-        ("<Enter>", "Run command"),
-        ("<Esc>", "Return to normal mode"),
+        ("<Enter>", "Execute command"),
+        ("<Esc>", "Enter normal mode"),
     ];
 
     let mut lines = vec![];
@@ -200,7 +210,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
 
     for (key, desc) in normal_mode_rows {
         let row = Line::from(vec![
-            Span::from(format!("{:<20} ", key))
+            Span::from(format!("{:<15} ", key))
                 .style(
                     Style::default()
                         .fg(Color::Yellow)
@@ -221,7 +231,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
 
     for (key, desc) in input_mode_rows {
         let row = Line::from(vec![
-            Span::from(format!("{:<20} ", key))
+            Span::from(format!("{:<15} ", key))
                 .style(
                     Style::default()
                         .fg(Color::Yellow)
@@ -243,8 +253,8 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
 
     let longest_line = lines
         .iter()
-        .map(|line| line.width()).max().unwrap_or(0) as u16 + 7;
-    let lines_height = lines.len() as u16 + 2;
+        .map(|line| line.width()).max().unwrap_or(0) as u16 + 24;
+    let lines_height = lines.len() as u16 + 12;
 
     let popup_area = Rect {
         x: area.width / 2 - longest_line / 2,
@@ -258,8 +268,8 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
         .border_style(
             Style::default().fg(Color::Yellow)
         )
-        .title_style(
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        .padding(
+            Padding::proportional(5)
         )
         .style(
             Style::default().fg(Color::White)
@@ -279,6 +289,7 @@ fn draw_game_tab(
 ) {
 
     let board = format_game_state(&state);
+
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -286,32 +297,34 @@ fn draw_game_tab(
             Constraint::Percentage(30),
         ])
         .split(area);
+
     let top_rect = main_layout[0];
     let top_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(100),
-            Constraint::Min(80),
+            Constraint::Fill(3),
+            Constraint::Fill(1),
+            Constraint::Min(0),
         ])
         .split(top_rect);
 
+    let board_area = top_layout[0]
+        .centered_vertically(
+            Constraint::Length(board.lines().count() as u16 + 1)
+        );
+    let moves_area = top_layout[1];
+    let details_area = top_layout[2];
+
     let board_block = Block::default()
         .borders(Borders::NONE);
-    let board_rect = top_layout[0];
-    let board_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .flex(Flex::Center)
-        .constraints([
-            Constraint::Length(board.split('\n').count() as u16),
-        ])
-        .split(board_rect);
-    let board_area = board_layout[0];
-
     let mut moves_block = Block::default()
+        .padding(Padding::horizontal(1))
+        .borders(Borders::ALL);
+    let mut details_block = Block::default()
         .borders(Borders::ALL);
     let mut logs_block = Block::default()
         .borders(Borders::ALL);
-    let moves_area = top_layout[1];
+
     let logs_area = main_layout[1];
 
     match app.focus {
@@ -320,6 +333,10 @@ fn draw_game_tab(
                 Style::default().fg(Color::Yellow)
             ),
         1 if app.mode == TUI_NORMAL_MODE =>
+            details_block = details_block.border_style(
+                Style::default().fg(Color::Yellow)
+            ),
+        2 if app.mode == TUI_NORMAL_MODE =>
             logs_block = logs_block.border_style(
                 Style::default().fg(Color::Yellow)
             ),
@@ -365,34 +382,69 @@ fn draw_game_tab(
     let board_paragraph = Paragraph::new(board)
         .alignment(Alignment::Center)
         .block(board_block);
-    let mut moves_paragraph = Paragraph::new("")
+    let mut moves_paragraph = Paragraph::new(format_move_history(state))
+        .wrap(Wrap { trim: true })
         .block(moves_block);
+    let mut details_paragraph = Paragraph::new("")
+        .block(details_block);
     let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
+        .wrap(Wrap { trim: true })
         .block(logs_block);
 
-
-    let scroll = cmp::min(
-        match app.focus {
-            1 => (logs.len() as u16)
-                .saturating_sub(logs_area.height.saturating_sub(2)),
-            _ => 0,
-        },
-        app.scroll,
+    let max_moves_scroll = (moves_paragraph.line_count(moves_area.width) as u16)
+        .saturating_sub(moves_area.height);
+    let max_logs_scroll = (logs_paragraph.line_count(logs_area.width) as u16)
+        .saturating_sub(logs_area.height);
+    let current_moves_scroll = app.scroll_map.get(&(app.tab, 0)).copied()
+        .unwrap_or_else(
+        || {
+            panic!(
+                "Scroll value missing for tab {}, focus 0",
+                app.tab
+            )
+        }
     );
-    app.scroll = scroll;
+    let current_logs_scroll = app.scroll_map.get(&(app.tab, 2)).copied()
+        .unwrap_or_else(
+        || {
+            panic!(
+                "Scroll value missing for tab {}, focus 2",
+                app.tab
+            )
+        }
+    );
 
-    match app.focus {
-        0 => moves_paragraph = moves_paragraph.scroll(
-            (scroll, 0)
-        ),
-        1 => logs_paragraph = logs_paragraph.scroll(
-            (scroll, 0)
-        ),
-        _ => { }
+    let mut final_moves_scroll = current_moves_scroll;
+    let mut final_logs_scroll = current_logs_scroll;
+
+    if current_moves_scroll > max_moves_scroll
+    && current_moves_scroll < u16::MAX {
+        let offset = u16::MAX - current_moves_scroll;
+        final_moves_scroll = max_moves_scroll - offset;
+        app.scroll_map.insert((app.tab, 0), final_moves_scroll);
+    } else if current_moves_scroll > max_moves_scroll {
+        final_moves_scroll = max_moves_scroll;
+    } else if current_moves_scroll == max_moves_scroll {
+        app.scroll_map.insert((app.tab, 0), u16::MAX);
     }
+
+    if current_logs_scroll > max_logs_scroll
+    && current_logs_scroll < u16::MAX {
+        let offset = u16::MAX - current_logs_scroll;
+        final_logs_scroll = max_logs_scroll - offset;
+        app.scroll_map.insert((app.tab, 2), final_logs_scroll);
+    } else if current_logs_scroll > max_logs_scroll {
+        final_logs_scroll = max_logs_scroll;
+    } else if current_logs_scroll == max_logs_scroll {
+        app.scroll_map.insert((app.tab, 2), u16::MAX);
+    }
+
+    moves_paragraph = moves_paragraph.scroll((final_moves_scroll, 0));
+    logs_paragraph = logs_paragraph.scroll((final_logs_scroll, 0));
 
     frame.render_widget(board_paragraph, board_area);
     frame.render_widget(moves_paragraph, moves_area);
+    frame.render_widget(details_paragraph, details_area);
     frame.render_widget(logs_paragraph, logs_area);
 }
 
@@ -402,7 +454,7 @@ fn render(frame: &mut Frame<'_>, state: &State, app: &mut Tui) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
+            Constraint::Length(3),
             Constraint::Min(0),
             Constraint::Length(3),
             Constraint::Length(1),
@@ -533,33 +585,62 @@ fn handle_key(
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('j')) => {
-            app.scroll = app.scroll.saturating_add(1);
+            let scroll = app.scroll_map.get(&(app.tab, app.focus))
+                .copied()
+                .unwrap_or_else(
+                    || {
+                        panic!(
+                            "Scroll value missing for tab {}, focus {}",
+                            app.tab, app.focus
+                        )
+                    }
+                ).saturating_add(1);
+            app.scroll_map.insert((app.tab, app.focus), scroll);
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('k')) => {
-            app.scroll = app.scroll.saturating_sub(1);
+            let scroll = app.scroll_map.get(&(app.tab, app.focus))
+                .copied()
+                .unwrap_or_else(
+                    || {
+                        panic!(
+                            "Scroll value missing for tab {}, focus {}",
+                            app.tab, app.focus
+                        )
+                    }
+                ).saturating_sub(1);
+            app.scroll_map.insert((app.tab, app.focus), scroll);
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Left) => {
-            app.focus = app.focus
-                .saturating_sub(1)
-                .clamp(0, TAB_FOCUSABLES[app.tab] as usize - 1);
-            app.scroll = 0;
+            if app.focus == 0 {
+                app.focus = (TAB_FOCUSABLES[app.tab] as usize)
+                    .saturating_sub(1);
+            } else {
+                app.focus = app.focus
+                    .saturating_sub(1)
+            };
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Right) => {
             app.focus = app.focus
-                .saturating_add(1)
-                .clamp(0, TAB_FOCUSABLES[app.tab] as usize - 1);
-            app.scroll = 0;
+                .saturating_add(1);
+
+            if app.focus >= TAB_FOCUSABLES[app.tab] as usize {
+                app.focus = 0;
+            }
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('g')) => {
-            app.scroll = 0;
+            let scroll = app.scroll_map.entry((app.tab, app.focus))
+                .or_insert(0);
+            *scroll = 0;
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('G')) => {
-            app.scroll = u16::MAX;
+            let scroll = app.scroll_map.entry((app.tab, app.focus))
+                .or_insert(0);
+            *scroll = u16::MAX;
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('i')) => {
@@ -573,7 +654,6 @@ fn handle_key(
         (TUI_NORMAL_MODE, KeyCode::Tab) => {
             app.tab = (app.tab + 1) % TAB_TITLES.len();
             app.focus = 0;
-            app.scroll = 0;
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('q')) => true,

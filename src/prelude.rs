@@ -92,7 +92,7 @@ pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, init_logging,
     push_log_message, take_log_messages, verbosity_enabled,
 };
-pub use crate::io::move_io::{format_move, parse_move};
+pub use crate::io::move_io::{format_move, parse_move, format_move_history};
 pub use crate::io::tui::tui;
 pub use crate::{log_1, log_2, log_3, log_4};
 
@@ -111,6 +111,7 @@ pub use crossterm::{
         enable_raw_mode,
     },
 };
+pub use env_logger::fmt::{style as log_style};
 pub use hashbrown::{HashMap, HashSet};
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, warn};
@@ -119,11 +120,14 @@ pub use ratatui::{
     Frame, DefaultTerminal,
     backend::CrosstermBackend,
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect, Alignment, Flex},
+    layout::{
+        Constraint, Direction, Layout, Rect, Alignment, Flex, Spacing, Margin
+    },
     style::{Color, Modifier, Style},
+    symbols::merge::MergeStrategy,
     text::{Line, Span, Text},
     widgets::{
-        Block, Borders, Cell, Clear, List, ListItem, Paragraph, Row,
+        Block, Borders, Cell, Clear, List, ListItem, Padding, Paragraph, Row,
         Table, Tabs, Wrap, Widget
     },
 };
@@ -271,3 +275,5 @@ pub const MAX_DEPTH: usize = 64;
 
 pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;
+
+pub const MAX_LOGS_LEN: usize = 4096;

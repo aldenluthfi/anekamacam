@@ -26,5 +26,8 @@ hotpath = "*"
 hashbrown = "*"
 log = "*"
 env_logger = "*"
-ratatui = "*"
+ratatui = {
+    version = "*",
+    features = ["unstable-rendered-line-info"]
+}
 crossterm = "*"
