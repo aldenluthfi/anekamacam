@@ -13,8 +13,6 @@
 
 use crate::*;
 
-use env_logger::fmt::style;
-
 pub fn push_log_message(level: u8, message: String) {
     if level > configured_verbosity_level() {
         return;
@@ -26,7 +24,7 @@ pub fn push_log_message(level: u8, message: String) {
 
     queue.push_back(format!("[{}] {}", level, message));
 
-    while queue.len() > 1024 {
+    while queue.len() > MAX_LOGS_LEN {
         queue.pop_front();
     }
 }
@@ -95,13 +93,13 @@ fn level_to_verbosity(level: log::Level) -> u8 {
     }
 }
 
-fn verbosity_style(level: log::Level) -> style::Style {
+fn verbosity_style(level: log::Level) -> log_style::Style {
     match level_to_verbosity(level) {
-        1 => style::AnsiColor::Green.on_default(),
-        2 => style::AnsiColor::Cyan.on_default(),
-        3 => style::AnsiColor::Yellow.on_default(),
-        4 => style::AnsiColor::Magenta.on_default(),
-        _ => style::Style::new(),
+        1 => log_style::AnsiColor::Green.on_default(),
+        2 => log_style::AnsiColor::Cyan.on_default(),
+        3 => log_style::AnsiColor::Yellow.on_default(),
+        4 => log_style::AnsiColor::Magenta.on_default(),
+        _ => log_style::Style::new(),
     }
 }
 
@@ -115,7 +113,7 @@ pub fn configured_log_level() -> log::LevelFilter {
     } else if cfg!(feature = "log-level-1") {
         log::LevelFilter::Error
     } else {
-        log::LevelFilter::Off
+        log::LevelFilter::Info
     }
 }
 

@@ -107,3 +107,23 @@ pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
         .find(|mv| format_move(mv, state).trim() == move_str.trim())
 }
 
+pub fn format_move_history(state: &State) -> String {
+    let mut history_strings = Vec::new();
+
+    for snap in state.history.iter() {
+        history_strings.push(format_move(&snap.move_ply, state));
+    }
+
+    let mut result = String::new();
+
+    for (i, move_str) in history_strings.iter().enumerate() {
+        if i % 2 == 0 {
+            result.push_str(&format!("{}. {}", (i / 2) + 1, move_str));
+        } else {
+            result.push_str(&format!(" {}\n", move_str));
+        }
+    }
+
+    result.trim().to_string()
+}
+
