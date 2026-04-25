@@ -24,6 +24,7 @@ struct Tui {
     scroll_map: HashMap<(usize, usize), u16>,
     input: String,
     help: bool,
+    fps: f64,
 }
 
 impl Tui {
@@ -41,13 +42,19 @@ impl Tui {
             scroll_map: init_hashmap,
             input: String::new(),
             help: false,
+            fps: 0.0,
         }
     }
 
     fn run (
         &mut self, state: &mut State, terminal: &mut DefaultTerminal
     ) -> IoResult<()> {
+        let mut frame_timer = 0;
+        let mut frame_count = 0;
+
         loop {
+            let frame_start = ENGINE_START.elapsed();
+
             terminal.draw(|frame| {
                 render(frame, state, self);
             })?;
@@ -67,6 +74,17 @@ impl Tui {
                     }
                 }
             }
+
+            let frame_end = ENGINE_START.elapsed();
+            let frame_time = frame_end.as_millis() - frame_start.as_millis();
+            frame_count += 1;
+            frame_timer += frame_time;
+
+            if frame_timer >= 1000 {
+                self.fps = frame_count as f64 / (frame_timer as f64 / 1000.0);
+                frame_timer = 0;
+                frame_count = 0;
+            }
         }
 
         Ok(())
@@ -76,6 +94,7 @@ impl Tui {
 #[derive(Debug, Default)]
 struct Popup<'a> {
     content: Text<'a>,
+    title_bottom: Line<'a>,
     border_style: Style,
     padding: Padding,
     style: Style,
@@ -85,6 +104,11 @@ impl<'a> Popup<'a> {
 
     fn content(mut self, content: impl Into<Text<'a>>) -> Self {
         self.content = content.into();
+        self
+    }
+
+    fn title_bottom(mut self, title: impl Into<Line<'a>>) -> Self {
+        self.title_bottom = title.into();
         self
     }
 
@@ -109,6 +133,7 @@ impl Widget for Popup<'_> {
         Clear.render(area, buf);
         let block = Block::new()
             .borders(Borders::ALL)
+            .title_bottom(self.title_bottom)
             .border_style(self.border_style)
             .padding(self.padding);
         Paragraph::new(self.content)
@@ -151,13 +176,7 @@ fn draw_input(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         ])
     };
 
-    let mut command_block = Block::default().borders(Borders::ALL);
-
-    if app.mode == TUI_INPUT_MODE {
-        command_block = command_block.border_style(
-            Style::default().fg(Color::Yellow)
-        )
-    }
+    let command_block = Block::default().borders(Borders::ALL);
 
     let command = Paragraph::new(prompt).block(command_block);
     frame.render_widget(command, area);
@@ -187,7 +206,7 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     frame.render_widget(help_line, area);
 }
 
-fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
+fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let normal_mode_rows = [
         ("<i>", "Enter input mode"),
@@ -246,34 +265,31 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
     lines.push(Line::default());
 
     lines.push(
-        Line::from("Press <?> again to close help")
+        Line::from("Press <?> in normal mode again to close help")
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Gray))
     );
 
     let longest_line = lines
         .iter()
-        .map(|line| line.width()).max().unwrap_or(0) as u16 + 24;
-    let lines_height = lines.len() as u16 + 12;
+        .map(|line| line.width()).max().unwrap_or(0) as u16 + 4;
+    let lines_height = lines.len() as u16 + 2;
 
-    let popup_area = Rect {
-        x: area.width / 2 - longest_line / 2,
-        y: area.height / 2 - lines_height / 2,
-        width: longest_line,
-        height: lines_height,
-    };
+    let popup_area = area
+        .centered(
+            Constraint::Length(longest_line),
+            Constraint::Length(lines_height)
+        );
 
     let popup = Popup::default()
         .content(lines)
-        .border_style(
-            Style::default().fg(Color::Yellow)
+        .title_bottom(Line::from(format!(" {:.1} FPS ", app.fps))
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Yellow))
         )
-        .padding(
-            Padding::proportional(5)
-        )
-        .style(
-            Style::default().fg(Color::White)
-        );
+        .border_style(Style::default().fg(Color::Yellow))
+        .padding(Padding::horizontal(1))
+        .style(Style::default().fg(Color::White));
 
     frame.render_widget(
         popup,
@@ -293,8 +309,8 @@ fn draw_game_tab(
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(70),
-            Constraint::Percentage(30),
+            Constraint::Percentage(75),
+            Constraint::Percentage(25),
         ])
         .split(area);
 
@@ -302,9 +318,9 @@ fn draw_game_tab(
     let top_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Fill(3),
+            Constraint::Fill(4),
             Constraint::Fill(1),
-            Constraint::Min(0),
+            Constraint::Fill(2),
         ])
         .split(top_rect);
 
@@ -321,8 +337,10 @@ fn draw_game_tab(
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
     let mut details_block = Block::default()
+        .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
     let mut logs_block = Block::default()
+        .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
 
     let logs_area = main_layout[1];
@@ -340,8 +358,101 @@ fn draw_game_tab(
             logs_block = logs_block.border_style(
                 Style::default().fg(Color::Yellow)
             ),
-        _ => {}
+            _ => {}
     }
+
+    let detail_columns = [
+        Constraint::Fill(1),
+        Constraint::Fill(2),
+    ];
+    let mut details = Vec::new();
+    let position_hash = format_position_hash(state);
+    let game_phase = format_game_phase(state);
+    let search_ply = format!("{}", state.search_ply);
+
+    let castling_rights;
+    let en_passant;
+    let halfmove_clock;
+    let repetition_count;
+    let hand_info;
+
+    details.push(
+        Row::new(
+            vec!["Game Phase", &game_phase]
+        )
+    );
+    details.push(
+        Row::new(
+            vec!["Turn", if state.playing == WHITE { "White" } else { "Black" }]
+        )
+    );
+    details.push(
+        Row::new(
+            vec!["Position Hash", &position_hash]
+        )
+    );
+    if castling!(state) {
+        castling_rights = format_castling_rights(state);
+        details.push(
+            Row::new(
+                vec!["Castling Rights", &castling_rights]
+            )
+        );
+    }
+    if en_passant!(state) {
+        en_passant = format_en_passant_square(state);
+        details.push(
+            Row::new(
+                vec!["En Passant", &en_passant]
+            )
+        );
+    }
+    if halfmove_clock!(state) {
+        halfmove_clock = format!("{}/{}",
+            state.halfmove_clock,
+            state.halfmove_limit
+        );
+        details.push(
+            Row::new(
+                vec!["Halfmove Clock", &halfmove_clock]
+            )
+        );
+    }
+    if repetition_limit!(state) {
+        let count = state
+            .position_hash_map
+            .get(&state.position_hash)
+            .copied()
+            .unwrap_or(1);
+        repetition_count = format!("{}/{}",
+            count,
+            state.repetition_limit
+        );
+        details.push(
+            Row::new(
+                vec!["Repetition Count", &repetition_count]
+            )
+        );
+    }
+    if drops!(state)
+    || promote_to_captured!(state)
+    || setup_phase!(state) {
+        hand_info = format!(
+            "White [{}] | Black [{}]\n",
+            format_hand(state, WHITE),
+            format_hand(state, BLACK)
+        );
+        details.push(
+            Row::new(
+                vec!["Pieces in Hand", &hand_info]
+            )
+        );
+    }
+    details.push(
+        Row::new(
+            vec!["Search depth", &search_ply]
+        )
+    );
 
     let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| {
         panic!("Failed to lock LOG_MESSAGES: {e}")
@@ -385,7 +496,15 @@ fn draw_game_tab(
     let mut moves_paragraph = Paragraph::new(format_move_history(state))
         .wrap(Wrap { trim: true })
         .block(moves_block);
-    let mut details_paragraph = Paragraph::new("")
+    let details_table = Table::new(details.clone(), detail_columns)
+        .header(
+            Row::new(vec!["Parameter", "Value"])
+                .style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                    )
+        )
         .block(details_block);
     let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
         .wrap(Wrap { trim: true })
@@ -395,11 +514,22 @@ fn draw_game_tab(
         .saturating_sub(moves_area.height);
     let max_logs_scroll = (logs_paragraph.line_count(logs_area.width) as u16)
         .saturating_sub(logs_area.height);
+    let max_details_scroll = (details.len() as u16)
+        .saturating_sub(details_area.height);
     let current_moves_scroll = app.scroll_map.get(&(app.tab, 0)).copied()
         .unwrap_or_else(
         || {
             panic!(
                 "Scroll value missing for tab {}, focus 0",
+                app.tab
+            )
+        }
+    );
+    let current_details_scroll = app.scroll_map.get(&(app.tab, 1)).copied()
+        .unwrap_or_else(
+        || {
+            panic!(
+                "Scroll value missing for tab {}, focus 1",
                 app.tab
             )
         }
@@ -444,7 +574,7 @@ fn draw_game_tab(
 
     frame.render_widget(board_paragraph, board_area);
     frame.render_widget(moves_paragraph, moves_area);
-    frame.render_widget(details_paragraph, details_area);
+    frame.render_widget(details_table, details_area);
     frame.render_widget(logs_paragraph, logs_area);
 }
 
@@ -472,7 +602,7 @@ fn render(frame: &mut Frame<'_>, state: &State, app: &mut Tui) {
     draw_help_bar(frame, chunks[3], app);
 
     if app.help {
-        draw_help_popup(frame, root);
+        draw_help_popup(frame, root, app);
     }
 }
 
