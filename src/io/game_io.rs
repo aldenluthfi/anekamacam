@@ -2132,49 +2132,6 @@ pub fn combine_board_strings(board1: &str, board2: &str) -> String {
     result
 }
 
-fn format_castling_rights(state: &State) -> String {
-    let mut rights = String::new();
-
-    if state.castling_state & WK_CASTLE != 0 {
-        rights.push('K');
-    }
-    if state.castling_state & WQ_CASTLE != 0 {
-        rights.push('Q');
-    }
-    if state.castling_state & BK_CASTLE != 0 {
-        rights.push('k');
-    }
-    if state.castling_state & BQ_CASTLE != 0 {
-        rights.push('q');
-    }
-
-    if rights.is_empty() {
-        "-".to_string()
-    } else {
-        rights
-    }
-}
-
-fn format_hand(state: &State, color: u8) -> String {
-    let pieces_in_hand = &state.piece_in_hand[color as usize];
-    let mut hand = String::new();
-
-    for (i, piece) in state.pieces.iter().enumerate() {
-        let count = pieces_in_hand[i];
-        if count == 1 {
-            hand.push(piece.char);
-        } else if count > 1 {
-            hand.push_str(&format!("{}{}", count, piece.char));
-        }
-    }
-
-    if hand.is_empty() {
-        "-".to_string()
-    } else {
-        hand
-    }
-}
-
 pub fn format_game_state(state: &State) -> String {
     let board_size = (state.files as usize) * (state.ranks as usize);
     let piece_count = state.pieces.len();
@@ -2198,7 +2155,59 @@ pub fn format_game_state(state: &State) -> String {
         .expect("Failed to format combined board string")
 }
 
-fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
+pub fn format_castling_rights(state: &State) -> String {
+    let mut rights = String::new();
+
+    if state.castling_state & WK_CASTLE != 0 {
+        rights.push('K');
+    }
+    if state.castling_state & WQ_CASTLE != 0 {
+        rights.push('Q');
+    }
+    if state.castling_state & BK_CASTLE != 0 {
+        rights.push('k');
+    }
+    if state.castling_state & BQ_CASTLE != 0 {
+        rights.push('q');
+    }
+
+    if rights.is_empty() {
+        "-".to_string()
+    } else {
+        rights
+    }
+}
+
+pub fn format_en_passant_square(state: &State) -> String {
+    if state.en_passant_square == NO_EN_PASSANT {
+        "-".to_string()
+    } else {
+        let en_passant = enp_square!(state.en_passant_square);
+        format_square(en_passant as Square, state)
+    }
+}
+
+pub fn format_hand(state: &State, color: u8) -> String {
+    let pieces_in_hand = &state.piece_in_hand[color as usize];
+    let mut hand = String::new();
+
+    for (i, piece) in state.pieces.iter().enumerate() {
+        let count = pieces_in_hand[i];
+        if count == 1 {
+            hand.push(piece.char);
+        } else if count > 1 {
+            hand.push_str(&format!("{}{}", count, piece.char));
+        }
+    }
+
+    if hand.is_empty() {
+        "-".to_string()
+    } else {
+        hand
+    }
+}
+
+pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
     let mut result = String::new();
     let width = 3;
 
@@ -2262,7 +2271,27 @@ fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
     result
 }
 
-fn special_rules_text(state: &State) -> String {
+pub fn format_position_hash(state: &State) -> String {
+    format!("{:>016X}", state.position_hash)
+}
+
+pub fn format_game_phase(state: &State) -> String {
+    if state.setup_phase {
+        "Setup Phase".to_string()
+    } else if state.game_phase == OPENING {
+        "Opening".to_string()
+    } else if state.game_phase == MIDDLEGAME {
+        "Middlegame".to_string()
+    } else if state.game_phase == ENDGAME {
+        "Endgame".to_string()
+    } else if state.game_over {
+        "Game Over".to_string()
+    } else {
+        panic!("Unknown game phase: {}", state.game_phase);
+    }
+}
+
+pub fn format_special_rules(state: &State) -> String {
     if state.special_rules == 0 {
         return "-".to_string();
     }

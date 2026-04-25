@@ -87,6 +87,9 @@ pub use crate::io::board_io::{
 pub use crate::io::game_io::{
     export_tuned_parameters_file, format_game_state,
     parse_config_file, parse_fen, parse_tuned_parameters_file,
+    format_castling_rights, format_hand, format_numeric_board,
+    format_position_hash, format_special_rules, format_game_phase,
+    format_en_passant_square
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, init_logging,
@@ -128,7 +131,7 @@ pub use ratatui::{
     text::{Line, Span, Text},
     widgets::{
         Block, Borders, Cell, Clear, List, ListItem, Padding, Paragraph, Row,
-        Table, Tabs, Wrap, Widget
+        Table, TableState, Tabs, Wrap, Widget
     },
 };
 pub use regex::Regex;

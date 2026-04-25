@@ -64,7 +64,7 @@ pub mod prelude;
 fn main() {
     init_logging();
 
-    let variant = "fide";
+    let variant = "example";
     let config_path = format!("configs/{}.conf", variant);
 
     log_2!("Loading variant config: {}", config_path);
