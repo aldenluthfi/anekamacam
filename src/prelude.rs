@@ -106,7 +106,7 @@ pub use bnum::types::U4096;
 pub use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode,
-        KeyEventKind, KeyModifiers,
+        KeyEvent, KeyEventKind, KeyModifiers,
     },
     execute,
     terminal::{
@@ -116,22 +116,24 @@ pub use crossterm::{
 };
 pub use env_logger::fmt::{style as log_style};
 pub use hashbrown::{HashMap, HashSet};
+pub use hotpath;
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, warn};
-pub use rand::{RngCore, SeedableRng, seq::SliceRandom};
+pub use mpsc::{channel, Sender, Receiver, TryRecvError};
+pub use rand::{RngCore, SeedableRng, seq::SliceRandom, rngs::StdRng};
 pub use ratatui::{
     Frame, DefaultTerminal,
     backend::CrosstermBackend,
     buffer::Buffer,
     layout::{
-        Constraint, Direction, Layout, Rect, Alignment, Flex, Spacing, Margin
+        Alignment, Constraint, Direction, Flex, Layout, Margin, Rect, Spacing,
     },
     style::{Color, Modifier, Style},
     symbols::merge::MergeStrategy,
     text::{Line, Span, Text},
     widgets::{
-        Block, Borders, Cell, Clear, List, ListItem, Padding, Paragraph, Row,
-        Table, TableState, Tabs, Wrap, Widget
+        Block, Borders, Cell, Clear, List, ListItem, ListState, Padding,
+        Paragraph, Row, Table, TableState, Tabs, Wrap, Widget
     },
 };
 pub use regex::Regex;
@@ -149,15 +151,9 @@ pub use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
-
-/*----------------------------------------------------------------------------*\
-                               FEATURE EXPORTS
-\*----------------------------------------------------------------------------*/
-#[cfg(feature = "hotpath")]
-pub use hotpath;
 
 /*----------------------------------------------------------------------------*\
                                   CONSTANTS
@@ -219,8 +215,8 @@ pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 
 lazy_static! {
-    pub static ref RNG: Mutex<rand::rngs::StdRng> =
-        Mutex::new(rand::rngs::StdRng::seed_from_u64(RNG_SEED));
+    pub static ref RNG: Mutex<StdRng> =
+        Mutex::new(StdRng::seed_from_u64(RNG_SEED));
     pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
     pub static ref ENGINE_START: Instant = Instant::now();
     pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")
@@ -273,10 +269,11 @@ pub const OPENING: u8 = 0;
 pub const MIDDLEGAME: u8 = 1;
 pub const ENDGAME: u8 = 2;
 
-pub const TT_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();      /* 256MB */
+pub const TT_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();      /* 256MB                              */
 pub const MAX_DEPTH: usize = 64;
 
 pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;
 
 pub const MAX_LOGS_LEN: usize = 4096;
+pub const CONFIGS_DIR: &str = "configs";

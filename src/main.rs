@@ -63,12 +63,5 @@ pub mod prelude;
 #[hotpath::main]
 fn main() {
     init_logging();
-
-    let variant = "example";
-    let config_path = format!("configs/{}.conf", variant);
-
-    log_2!("Loading variant config: {}", config_path);
-    let mut state = parse_config_file(&config_path);
-
-    let _ = tui(&mut state);
+    let _ = tui();
 }
