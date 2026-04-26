@@ -851,6 +851,14 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                         }
                     );
                     execute_command(&command, &mut *state);
+
+                    sender.send(
+                        TuiEvent::StateUpdate(arc_state.clone())
+                    ).unwrap_or_else(
+                        |e| {
+                            panic!("Failed to send TuiEvent::StateUpdate: {e}")
+                        }
+                    );
                 }
             });
 
