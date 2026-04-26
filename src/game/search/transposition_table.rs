@@ -28,6 +28,7 @@ use crate::*;
 ///
 /// `position_hash` keeps the full key for collision checks in direct-mapped
 /// slots.
+#[derive(Clone)]
 pub struct TTEntry {
     pub position_hash: PositionHash,
     pub tt_move: Move,
@@ -44,6 +45,7 @@ impl Default for TTEntry {
     }
 }
 
+#[derive(Clone)]
 pub struct TTable {
     pub p_table: Vec<TTEntry>,
     pub new_write: u64,
