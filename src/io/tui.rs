@@ -17,6 +17,11 @@ use crate::*;
 const TAB_TITLES: [&str; 2] = ["Game", "Overview"];
 const TAB_FOCUSABLES: [u8; 2] = [3, 1];
 
+enum TuiEvent {
+    Input(KeyEvent),
+    StateUpdate(Arc<Mutex<State>>),
+}
+
 struct Tui {
     mode: u8,
     tab: usize,
@@ -24,66 +29,78 @@ struct Tui {
     scroll_map: HashMap<(usize, usize), u16>,
     input: String,
     help: bool,
-    fps: f64,
+    game_state: Option<Arc<Mutex<State>>>,
+    last_state: Option<State>,
+    receiver: Receiver<TuiEvent>,
+    sender: Sender<TuiEvent>,
 }
 
 impl Tui {
-    fn new() -> Self {
-        let mut init_hashmap = HashMap::new();
+    fn new(
+        receiver: Receiver<TuiEvent>, sender: Sender<TuiEvent>
+    ) -> Self {
+        let mut scroll_map = HashMap::new();
+
         for tab in 0..TAB_TITLES.len() {
             for focus in 0..TAB_FOCUSABLES[tab] as usize {
-                init_hashmap.insert((tab, focus), 0);
+                scroll_map.insert((tab, focus), 0);
             }
         }
+
+        scroll_map.insert((usize::MAX, usize::MAX), 0);                         /* Selection screen scroll            */
+
+        let mode = TUI_NORMAL_MODE;
+        let tab = usize::MAX;
+        let focus = usize::MAX;
+        let input = String::new();
+        let help = false;
+        let game_state = None;
+        let last_state = None;
+
         Self {
-            mode: TUI_NORMAL_MODE,
-            tab: 0,
-            focus: 0,
-            scroll_map: init_hashmap,
-            input: String::new(),
-            help: false,
-            fps: 0.0,
+            mode,
+            tab,
+            focus,
+            scroll_map,
+            input,
+            help,
+            game_state,
+            last_state,
+            receiver,
+            sender,
         }
     }
 
-    fn run (
-        &mut self, state: &mut State, terminal: &mut DefaultTerminal
-    ) -> IoResult<()> {
-        let mut frame_timer = 0;
-        let mut frame_count = 0;
+    fn reset(&mut self) {
+        self.mode = TUI_NORMAL_MODE;
+        self.tab = usize::MAX;
+        self.focus = usize::MAX;
+        self.input.clear();
+        self.help = false;
+        self.game_state = None;
+    }
 
+    fn run (&mut self, terminal: &mut DefaultTerminal) -> IoResult<()> {
         loop {
-            let frame_start = ENGINE_START.elapsed();
+            terminal.draw(|frame| render(frame, self))?;
 
-            terminal.draw(|frame| {
-                render(frame, state, self);
-            })?;
-
-            if event::poll(Duration::from_millis(80))? {
-                if let Event::Key(key_event) = event::read()? {
-                    if key_event.kind == KeyEventKind::Press {
-                        let quit = handle_key(
-                            self,
-                            state,
-                            key_event.code,
-                        );
-
-                        if quit {
-                            break;
-                        }
-                    }
+            if match self.receiver.try_recv() {
+                Ok(TuiEvent::Input(key_event)) => {
+                    handle_key(self, key_event)
                 }
-            }
-
-            let frame_end = ENGINE_START.elapsed();
-            let frame_time = frame_end.as_millis() - frame_start.as_millis();
-            frame_count += 1;
-            frame_timer += frame_time;
-
-            if frame_timer >= 1000 {
-                self.fps = frame_count as f64 / (frame_timer as f64 / 1000.0);
-                frame_timer = 0;
-                frame_count = 0;
+                Ok(TuiEvent::StateUpdate(state)) => {
+                    self.game_state = Some(state);
+                    self.last_state = None;
+                    false
+                }
+                Err(TryRecvError::Empty {..}) => {
+                    false
+                },
+                Err(TryRecvError::Disconnected {..}) => {
+                    true
+                }
+            } {
+                break;
             }
         }
 
@@ -94,7 +111,6 @@ impl Tui {
 #[derive(Debug, Default)]
 struct Popup<'a> {
     content: Text<'a>,
-    title_bottom: Line<'a>,
     border_style: Style,
     padding: Padding,
     style: Style,
@@ -104,11 +120,6 @@ impl<'a> Popup<'a> {
 
     fn content(mut self, content: impl Into<Text<'a>>) -> Self {
         self.content = content.into();
-        self
-    }
-
-    fn title_bottom(mut self, title: impl Into<Line<'a>>) -> Self {
-        self.title_bottom = title.into();
         self
     }
 
@@ -133,7 +144,6 @@ impl Widget for Popup<'_> {
         Clear.render(area, buf);
         let block = Block::new()
             .borders(Borders::ALL)
-            .title_bottom(self.title_bottom)
             .border_style(self.border_style)
             .padding(self.padding);
         Paragraph::new(self.content)
@@ -142,6 +152,54 @@ impl Widget for Popup<'_> {
             .block(block)
             .render(area, buf);
     }
+}
+
+fn draw_game_selection(
+    frame: &mut Frame<'_>, area: Rect, app: &mut Tui
+) -> Option<Arc<Mutex<State>>> {
+
+    let config_files = fs::read_dir(CONFIGS_DIR).ok()?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().is_file())
+        .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    let mut selected = app.scroll_map.get(&(usize::MAX, usize::MAX))
+        .copied()
+        .unwrap_or_else(
+            || {
+                panic!(
+                    "Scroll value missing for game selection screen"
+                )
+            }
+        );
+
+    let files_list = List::new(
+        config_files.clone()
+    )
+    .highlight_style(
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+    );
+
+    if selected >= config_files.len() as u16 {
+        app.scroll_map.insert((usize::MAX, usize::MAX), 0);
+        selected = 0;
+    }
+
+    app.input = config_files[selected as usize].clone();
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(selected as usize));
+
+    frame.render_stateful_widget(files_list, area, &mut list_state);
+
+    None
 }
 
 fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
@@ -197,7 +255,8 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             Span::raw(
                 concat![
                     "<i> Enter input mode | <?> Help | <←/→> Focus | ",
-                    "<j/k> Scroll | <Tab> Switch tab | <q> Quit",
+                    "<j/k> Scroll | <Tab> Switch tab | <q> Quit | ",
+                    "<n> New game"
                 ]
             ).style(Style::default().fg(Color::Gray)),
         ])
@@ -206,7 +265,7 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     frame.render_widget(help_line, area);
 }
 
-fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
+fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
 
     let normal_mode_rows = [
         ("<i>", "Enter input mode"),
@@ -265,7 +324,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     lines.push(Line::default());
 
     lines.push(
-        Line::from("Press <?> in normal mode again to close help")
+        Line::from("Press <?> again in normal mode to close help")
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Gray))
     );
@@ -283,10 +342,6 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let popup = Popup::default()
         .content(lines)
-        .title_bottom(Line::from(format!(" {:.1} FPS ", app.fps))
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Yellow))
-        )
         .border_style(Style::default().fg(Color::Yellow))
         .padding(Padding::horizontal(1))
         .style(Style::default().fg(Color::White));
@@ -300,9 +355,25 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 /// Draw the main game tab, which includes the board, move list, and logs.
 /// There are three main sections: the board on the left, and the move list
 /// and logs stacked, in that order.
-fn draw_game_tab(
-    frame: &mut Frame<'_>, area: Rect, state: &State, app: &mut Tui
-) {
+fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
+
+    let state = if app.last_state.is_none() {
+        &*app.game_state.as_ref().unwrap_or_else(
+            || {
+                panic!("Game state is None when drawing game tab")
+            }
+        ).lock().unwrap_or_else(
+            |e| {
+                panic!("Failed to lock game state: {e}")
+            }
+        )
+    } else {
+        app.last_state.as_ref().unwrap_or_else(
+            || {
+                panic!("Last state is None when drawing game tab")
+            }
+        )
+    };
 
     let board = format_game_state(&state);
 
@@ -366,8 +437,8 @@ fn draw_game_tab(
         Constraint::Fill(2),
     ];
     let mut details = Vec::new();
-    let position_hash = format_position_hash(state);
-    let game_phase = format_game_phase(state);
+    let position_hash = format_position_hash(&state);
+    let game_phase = format_game_phase(&state);
     let search_ply = format!("{}", state.search_ply);
 
     let castling_rights;
@@ -392,7 +463,7 @@ fn draw_game_tab(
         )
     );
     if castling!(state) {
-        castling_rights = format_castling_rights(state);
+        castling_rights = format_castling_rights(&state);
         details.push(
             Row::new(
                 vec!["Castling Rights", &castling_rights]
@@ -400,7 +471,7 @@ fn draw_game_tab(
         );
     }
     if en_passant!(state) {
-        en_passant = format_en_passant_square(state);
+        en_passant = format_en_passant_square(&state);
         details.push(
             Row::new(
                 vec!["En Passant", &en_passant]
@@ -439,8 +510,8 @@ fn draw_game_tab(
     || setup_phase!(state) {
         hand_info = format!(
             "White [{}] | Black [{}]\n",
-            format_hand(state, WHITE),
-            format_hand(state, BLACK)
+            format_hand(&state, WHITE),
+            format_hand(&state, BLACK)
         );
         details.push(
             Row::new(
@@ -493,8 +564,7 @@ fn draw_game_tab(
     let board_paragraph = Paragraph::new(board)
         .alignment(Alignment::Center)
         .block(board_block);
-    let mut moves_paragraph = Paragraph::new(format_move_history(state))
-        .wrap(Wrap { trim: true })
+    let mut moves_paragraph = Paragraph::new(format_move_history(&state))
         .block(moves_block);
     let details_table = Table::new(details.clone(), detail_columns)
         .header(
@@ -507,15 +577,13 @@ fn draw_game_tab(
         )
         .block(details_block);
     let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
-        .wrap(Wrap { trim: true })
         .block(logs_block);
 
     let max_moves_scroll = (moves_paragraph.line_count(moves_area.width) as u16)
         .saturating_sub(moves_area.height);
     let max_logs_scroll = (logs_paragraph.line_count(logs_area.width) as u16)
         .saturating_sub(logs_area.height);
-    let max_details_scroll = (details.len() as u16)
-        .saturating_sub(details_area.height);
+
     let current_moves_scroll = app.scroll_map.get(&(app.tab, 0)).copied()
         .unwrap_or_else(
         || {
@@ -525,15 +593,7 @@ fn draw_game_tab(
             )
         }
     );
-    let current_details_scroll = app.scroll_map.get(&(app.tab, 1)).copied()
-        .unwrap_or_else(
-        || {
-            panic!(
-                "Scroll value missing for tab {}, focus 1",
-                app.tab
-            )
-        }
-    );
+
     let current_logs_scroll = app.scroll_map.get(&(app.tab, 2)).copied()
         .unwrap_or_else(
         || {
@@ -550,7 +610,7 @@ fn draw_game_tab(
     if current_moves_scroll > max_moves_scroll
     && current_moves_scroll < u16::MAX {
         let offset = u16::MAX - current_moves_scroll;
-        final_moves_scroll = max_moves_scroll - offset;
+        final_moves_scroll = max_moves_scroll.saturating_sub(offset);
         app.scroll_map.insert((app.tab, 0), final_moves_scroll);
     } else if current_moves_scroll > max_moves_scroll {
         final_moves_scroll = max_moves_scroll;
@@ -561,7 +621,7 @@ fn draw_game_tab(
     if current_logs_scroll > max_logs_scroll
     && current_logs_scroll < u16::MAX {
         let offset = u16::MAX - current_logs_scroll;
-        final_logs_scroll = max_logs_scroll - offset;
+        final_logs_scroll = max_logs_scroll.saturating_sub(offset);
         app.scroll_map.insert((app.tab, 2), final_logs_scroll);
     } else if current_logs_scroll > max_logs_scroll {
         final_logs_scroll = max_logs_scroll;
@@ -578,47 +638,59 @@ fn draw_game_tab(
     frame.render_widget(logs_paragraph, logs_area);
 }
 
-fn render(frame: &mut Frame<'_>, state: &State, app: &mut Tui) {
+fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     let root = frame.area();
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(0),
-            Constraint::Length(3),
-            Constraint::Length(1),
-        ])
-        .split(root);
+    if app.game_state.is_none() {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(1),
+            ])
+            .split(root);
+        app.game_state = draw_game_selection(frame, chunks[0], app);
+        draw_help_bar(frame, chunks[1], app);
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(0),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ])
+            .split(root);
 
-    draw_tabs(frame, chunks[0], app);
+        draw_tabs(frame, chunks[0], app);
 
-    match app.tab {
-        0 => draw_game_tab(frame, chunks[1], state, app),
-        _ => {},
+        match app.tab {
+            0 => draw_game_tab(frame, chunks[1], app),
+            _ => {},
+        }
+
+        draw_input(frame, chunks[2], app);
+        draw_help_bar(frame, chunks[3], app);
     }
 
-    draw_input(frame, chunks[2], app);
-    draw_help_bar(frame, chunks[3], app);
-
     if app.help {
-        draw_help_popup(frame, root, app);
+        draw_help_popup(frame, root);
     }
 }
 
-fn execute_command(state: &mut State, command: &str) {
+fn execute_command(command: &str, state: &mut State) {
     let trimmed = command.trim();
 
     if trimmed.is_empty() {
         return;
     }
 
-       match trimmed {
+    match trimmed {
         "u" => {
             if state.ply_counter > 0 {
                 undo_move!(state);
             } else {
-                log_2!("Nothing to undo");
+                log_2!("No moves to undo");
             }
         }
         "r" => {
@@ -646,7 +718,12 @@ fn execute_command(state: &mut State, command: &str) {
 
             let mut info = SearchInfo::default();
             info.set_depth = depth;
-            search_position(state, &mut info);
+            let result = search_position(state, &mut info);
+
+            if result.best_move == null_move() {
+                log_2!("No legal move available");
+                return;
+            }
         }
         _ if trimmed.starts_with("go ") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
@@ -680,6 +757,39 @@ fn execute_command(state: &mut State, command: &str) {
 
             make_move!(state, result.best_move);
         }
+        _ if trimmed.starts_with("selfplay ") => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() != 3 {
+                log_2!("Usage: selfplay [depth] [time (s)]");
+                return;
+            }
+
+            let depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
+                log_2!("Invalid depth: {}", parts[1]);
+                0
+            });
+
+            let time_limit = parts[2].parse::<u128>().unwrap_or_else(|_| {
+                log_2!("Invalid time limit: {}", parts[2]);
+                0
+            });
+
+            let mut info = SearchInfo::default();
+            info.set_depth = depth;
+            info.set_timed = time_limit * 1_000_000_000;
+
+            while !state.game_over {
+                let result = search_position(state, &mut info);
+
+                if result.best_move == null_move() {
+                    log_2!("No legal move available");
+                    break;
+                }
+
+                make_move!(state, result.best_move);
+            }
+        }
         _ => {
             if let Some(mv) = parse_move(trimmed, state) {
                 make_move!(state, mv);
@@ -690,16 +800,62 @@ fn execute_command(state: &mut State, command: &str) {
     }
 }
 
-fn handle_key(
-    app: &mut Tui,
-    state: &mut State,
-    code: KeyCode,
-) -> bool {
+fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
+
+    if event.kind != KeyEventKind::Press {
+        return false;
+    }
+
+    let code = event.code;
 
     let result = match (app.mode, code) {
         (TUI_INPUT_MODE, KeyCode::Enter) => {
-            execute_command(state, &app.input);
+
+            if app.last_state.is_some() {
+                log_2!("Previous command is still processing");
+                app.input.clear();
+                return false;
+            }
+
+            thread::spawn({
+                let command = app.input.clone();
+                let arc_state = app.game_state.as_mut().unwrap_or_else(
+                    || {
+                        panic!("Game state is None when executing command")
+                    }
+                ).clone();
+                let sender = app.sender.clone();
+
+                app.last_state = Some(
+                    arc_state.lock().unwrap_or_else(
+                        |_| {
+                            panic!(
+                                concat!(
+                                    "Failed to lock game state ",
+                                    "for saving last state before",
+                                    "command execution"
+                                )
+                            )
+                        }
+                    ).clone()
+                );
+                move || {
+                    let mut state = arc_state.lock().unwrap_or_else(
+                        |_| {
+                            panic!(
+                                concat!(
+                                    "Failed to lock game state ",
+                                    "for command execution"
+                                )
+                            )
+                        }
+                    );
+                    execute_command(&command, &mut *state);
+                }
+            });
+
             app.input.clear();
+
             false
         },
         (TUI_INPUT_MODE, KeyCode::Esc) => {
@@ -761,6 +917,10 @@ fn handle_key(
             }
             false
         },
+        (TUI_NORMAL_MODE, KeyCode::Char('n')) => {
+            app.reset();
+            false
+        },
         (TUI_NORMAL_MODE, KeyCode::Char('g')) => {
             let scroll = app.scroll_map.entry((app.tab, app.focus))
                 .or_insert(0);
@@ -773,7 +933,7 @@ fn handle_key(
             *scroll = u16::MAX;
             false
         },
-        (TUI_NORMAL_MODE, KeyCode::Char('i')) => {
+        (TUI_NORMAL_MODE, KeyCode::Char('i')) if app.game_state.is_some() => {
             app.mode = TUI_INPUT_MODE;
             false
         },
@@ -786,6 +946,27 @@ fn handle_key(
             app.focus = 0;
             false
         },
+        (TUI_NORMAL_MODE, KeyCode::Enter) if app.game_state.is_none() => {
+            let filename = app.input.trim();
+            let path = Path::new(CONFIGS_DIR).join(filename);
+
+            app.input.clear();
+            app.tab = 0;
+            app.focus = 0;
+
+            if path.is_file() {
+                let path_str = path.to_string_lossy();
+                let state = parse_config_file(&path_str);
+                app.game_state = Some(Arc::new(Mutex::new(state)));
+            } else {
+                log_1!(
+                    "Config file not found at path: {}", path.to_string_lossy()
+                );
+            }
+
+
+            false
+        },
         (TUI_NORMAL_MODE, KeyCode::Char('q')) => true,
         _ => false,
     };
@@ -793,12 +974,42 @@ fn handle_key(
     result
 }
 
-pub fn tui(state: &mut State) -> IoResult<()> {
+fn input_listener(sender: Sender<TuiEvent>) {
+    loop {
+        let read_event = event::read().unwrap_or_else(
+            |e| {
+                panic!("Failed to read input event: {e}")
+            }
+        );
+
+        match read_event {
+            Event::Key(key_event) => {
+                sender.send(
+                    TuiEvent::Input(key_event)
+                ).unwrap_or_else(
+                    |e| {
+                        panic!("Failed to send TuiEvent::Input: {e}")
+                    }
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+pub fn tui() -> IoResult<()> {
     log_2!("Starting TUI...");
     let mut terminal = ratatui::init();
     execute!(terminal.backend_mut(), EnableMouseCapture)?;
 
-    let run_result = Tui::new().run(state, &mut terminal);
+    let (sender, receiver) = channel::<TuiEvent>();
+
+    let input_sender = sender.clone();
+    thread::spawn(move || {
+        input_listener(input_sender);
+    });
+
+    let run_result = Tui::new(receiver, sender).run(&mut terminal);
     let mouse_result = execute!(terminal.backend_mut(), DisableMouseCapture);
 
     ratatui::restore();

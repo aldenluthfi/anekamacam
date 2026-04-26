@@ -2017,7 +2017,7 @@ macro_rules! undo_move {
             $state.history.pop().unwrap_or_else(|| panic!("No move to undo!"));
 
         #[cfg(debug_assertions)]
-        verify_game_state($state);
+        verify_game_state(&$state);
 
         $state.playing = 1 - $state.playing;
         $state.castling_state = snapshot.castling_state;
@@ -2618,7 +2618,7 @@ macro_rules! undo_move {
         }
 
         #[cfg(debug_assertions)]
-        verify_game_state($state);
+        verify_game_state(&$state);
     }};
 }
 
