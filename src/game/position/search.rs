@@ -210,15 +210,16 @@ pub fn alpha_beta(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
-    info.nodes += 1;
-    if info.nodes ^ 2047 == 0 {
-        check_interrupt(info);
-    }
 
     let in_check = is_in_check!(state.playing, state);
 
     if in_check {
         depth += 1;
+    }
+
+    info.nodes += 1;
+    if info.nodes ^ 2047 == 0 {
+        check_interrupt(info);
     }
 
     if depth == 0 {
@@ -272,6 +273,7 @@ pub fn alpha_beta(
     && !in_check
     && pv_move.is_none()
     && depth >= 3
+    && static_eval >= beta
     && state.search_ply > 0
     && state.game_phase != ENDGAME
     {                                                                           /* Null move pruning                  */

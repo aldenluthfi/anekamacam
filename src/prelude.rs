@@ -82,7 +82,7 @@ pub use crate::game::util::{
                                    IO API
 \*----------------------------------------------------------------------------*/
 pub use crate::io::board_io::{
-    debug_print_relevant_moves, format_board, format_square,
+    format_board, format_square,
 };
 pub use crate::io::game_io::{
     export_tuned_parameters_file, format_game_state,

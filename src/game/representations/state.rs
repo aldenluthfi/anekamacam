@@ -260,7 +260,7 @@ pub struct Snapshot {
     pub en_passant_square: EnPassantSquare,
     pub setup_phase: bool,
     pub game_over: bool,
-    pub game_phase: u8, /* OPENING/MIDDLEGAME/ENDGAME         */
+    pub game_phase: u8,                                                         /* OPENING/MIDDLEGAME/ENDGAME         */
 
     pub position_hash: u128,
 }
@@ -364,11 +364,11 @@ pub struct State {
     pub files: u8,
     pub ranks: u8,
 
-    pub relevant_moves: Vec<Vec<MoveSet>>,
-    pub relevant_captures: Vec<Vec<MoveSet>>,
-    pub relevant_drops: Vec<Vec<DropSet>>,
-    pub relevant_setup: Vec<Vec<DropSet>>,
-    pub relevant_stand_offs: Vec<Vec<PatternSet>>,
+    pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
+    pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
+    pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
+    pub relevant_setup: Vec<DropSet>,
+    pub relevant_stand_offs: Vec<PatternSet>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
 
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
@@ -471,15 +471,15 @@ impl State {
             ranks,
 
             relevant_moves:
-                vec![vec![MoveSet::new(); board_size]; piece_count],
+                vec![MoveSet::new(); board_size * piece_count],
             relevant_captures:
-                vec![vec![MoveSet::new(); board_size]; piece_count],
+                vec![MoveSet::new(); board_size * piece_count],
             relevant_drops:
-                vec![vec![DropSet::new(); board_size]; piece_count],
+                vec![DropSet::new(); board_size * piece_count],
             relevant_setup:
-                vec![vec![DropSet::new(); board_size]; piece_count],
+                vec![DropSet::new(); board_size * piece_count],
             relevant_stand_offs:
-                vec![vec![PatternSet::new(); board_size]; piece_count],
+                vec![PatternSet::new(); board_size * piece_count],
             relevant_attacks:
                 [
                     vec![Vec::new(); board_size],
@@ -635,9 +635,10 @@ impl State {
     }
 
     fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
+        let board_size = (self.files as usize) * (self.ranks as usize);
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_moves[index][square as usize]
+                self.relevant_moves[index * board_size + square as usize]
                     = generate_relevant_moves(
                         piece,
                         square,
@@ -649,9 +650,10 @@ impl State {
     }
 
     fn populate_relevant_captures(&mut self, piece_moves: &[MoveSet]) {
+        let board_size = (self.files as usize) * (self.ranks as usize);
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_captures[index][square as usize]
+                self.relevant_captures[index * board_size + square as usize]
                     = generate_relevant_captures(
                         piece,
                         square,
@@ -663,9 +665,10 @@ impl State {
     }
 
     fn populate_relevant_drops(&mut self, piece_setup_drops: &[DropSet]) {
+        let board_size = (self.files as usize) * (self.ranks as usize);
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_drops[index][square as usize]
+                self.relevant_drops[index * board_size + square as usize]
                     = generate_relevant_drops(
                         piece,
                         square,
@@ -677,9 +680,10 @@ impl State {
     }
 
     fn populate_relevant_setup(&mut self, piece_setup_drops: &[DropSet]) {
+        let board_size = (self.files as usize) * (self.ranks as usize);
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_setup[index][square as usize]
+                self.relevant_setup[index * board_size + square as usize]
                     = generate_relevant_drops(
                         piece,
                         square,
@@ -693,9 +697,10 @@ impl State {
     fn populate_relevant_stand_offs(
         &mut self, piece_stand_off: &[PatternSet]
     ) {
+        let board_size = (self.files as usize) * (self.ranks as usize);
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_stand_offs[index][square as usize]
+                self.relevant_stand_offs[index * board_size + square as usize]
                     = generate_relevant_stand_offs(
                         piece,
                         square,
