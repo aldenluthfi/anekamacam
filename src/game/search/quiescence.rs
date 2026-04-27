@@ -74,6 +74,7 @@ pub fn quiescence_search(
         let mv = all_captures[i].clone();
 
         let move_type = move_type!(mv);
+        let promotion = promotion!(mv);
         let captured_value = if move_type == SINGLE_CAPTURE_MOVE {
             p_ovalue!(state.pieces[captured_piece!(mv.clone()) as usize])
         } else {
@@ -84,7 +85,10 @@ pub fn quiescence_search(
             total
         };
 
-        if captured_value as i32 + 200 < alpha && state.game_phase != ENDGAME { /* delta pruning                      */
+        if captured_value as i32 + 200 < alpha
+        && state.game_phase != ENDGAME
+        && !promotion
+        {                                                                       /* delta pruning                      */
             continue;
         }
 

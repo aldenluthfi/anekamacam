@@ -99,31 +99,3 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     result
 }
 
-/// Prints a board mask of destination squares from precomputed move vectors.
-///
-/// This is a debugging helper and does not check occupancy or legality;
-/// it only visualizes geometric reach from cached relevant moves.
-pub fn debug_print_relevant_moves(state: &State, piece_index: u8, square: u16) {
-    let moves = &state.relevant_moves[piece_index as usize][square as usize];
-
-    let piece_color = p_color!(state.pieces[piece_index as usize]);
-
-    let mut result = board!(state.files, state.ranks);
-
-    for multi_leg_vector in moves {
-        let mut file = (square % state.files as u16) as i32;
-        let mut rank = (square / state.files as u16) as i32;
-        for leg in multi_leg_vector {
-            let x = x!(leg);
-            let y = y!(leg);
-
-            file += x as i32 * (-2 * piece_color as i32 + 1);
-            rank += y as i32 * (-2 * piece_color as i32 + 1);
-            let accumulated_index = rank * (state.files as i32) + file;
-
-            set!(result, accumulated_index as u32);
-        }
-    }
-
-    log_4!("{}", format_board(&result, Some('*')));
-}

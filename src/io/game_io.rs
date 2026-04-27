@@ -2276,7 +2276,9 @@ pub fn format_position_hash(state: &State) -> String {
 }
 
 pub fn format_game_phase(state: &State) -> String {
-    if state.setup_phase {
+    if state.game_over {
+        "Game Over".to_string()
+    } else if state.setup_phase {
         "Setup Phase".to_string()
     } else if state.game_phase == OPENING {
         "Opening".to_string()
@@ -2284,8 +2286,6 @@ pub fn format_game_phase(state: &State) -> String {
         "Middlegame".to_string()
     } else if state.game_phase == ENDGAME {
         "Endgame".to_string()
-    } else if state.game_over {
-        "Game Over".to_string()
     } else {
         panic!("Unknown game phase: {}", state.game_phase);
     }

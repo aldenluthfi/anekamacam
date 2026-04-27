@@ -342,11 +342,13 @@ pub fn generate_relevant_stand_offs(
 macro_rules! is_in_stand_off {
     ($state:expr) => {{
         let mut found = false;
+        let board_size = $state.files as usize * $state.ranks as usize;
 
         'main: for (index, position) in $state.piece_list.iter().enumerate() {
             for &square in position {
                 for pattern in
-                    &$state.relevant_stand_offs[index][square as usize]
+                    &$state.relevant_stand_offs
+                        [index * board_size + square as usize]
                 {
                     if match_pattern(
                         pattern,
