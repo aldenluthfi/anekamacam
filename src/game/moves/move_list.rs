@@ -206,9 +206,10 @@ pub fn generate_attack_masks(square_index: u16, game_state: &mut State) {
     for piece in &game_state.pieces {
         let piece_index = p_index!(piece);
         let piece_color = p_color!(piece);
+        let board_size = (game_state.files * game_state.ranks) as usize;
 
-        let vector_set = &game_state.relevant_moves[piece_index as usize]
-            [square_index as usize];
+        let vector_set = &game_state.relevant_moves
+            [piece_index as usize * board_size + square_index as usize];
 
         for multi_leg_vector in vector_set {
             let mut accumulated_index = square_index as i16;
@@ -796,9 +797,11 @@ fn generate_move_list_from_vectors(
 #[macro_export]
 macro_rules! generate_move_list {
     ($square_index:expr, $piece:expr, $game_state:expr) => {{
+        let piece_index = p_index!($piece) as usize;
+        let board_size = ($game_state.files * $game_state.ranks) as usize;
         let vector_set =
             &$game_state.relevant_moves
-                [p_index!($piece) as usize][$square_index as usize];
+                [piece_index * board_size + $square_index as usize];
 
         generate_move_list_from_vectors(
             $square_index,
@@ -816,9 +819,11 @@ macro_rules! generate_move_list {
 #[macro_export]
 macro_rules! generate_capture_list {
     ($square_index:expr, $piece:expr, $game_state:expr) => {{
+        let piece_index = p_index!($piece) as usize;
+        let board_size = ($game_state.files * $game_state.ranks) as usize;
         let vector_set =
             &$game_state.relevant_captures
-                [p_index!($piece) as usize][$square_index as usize];
+                [piece_index * board_size + $square_index as usize];
 
         let result = generate_move_list_from_vectors(
             $square_index,

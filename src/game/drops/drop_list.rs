@@ -96,9 +96,11 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
 
     for square in 0..board_size {
         let drops = if state.setup_phase {
-            &state.relevant_setup[piece_index][square as usize]
+            &state.relevant_setup
+                [piece_index * board_size as usize + square as usize]
         } else {
-            &state.relevant_drops[piece_index][square as usize]
+            &state.relevant_drops
+                [piece_index * board_size as usize + square as usize]
         };
 
         if drops.is_empty() {

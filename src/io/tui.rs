@@ -19,7 +19,8 @@ const TAB_FOCUSABLES: [u8; 2] = [3, 1];
 
 enum TuiEvent {
     Input(KeyEvent),
-    StateUpdate(Arc<Mutex<State>>),
+    StateUpdate(BoardState),
+    Unlock,
 }
 
 struct Tui {
@@ -30,7 +31,8 @@ struct Tui {
     input: String,
     help: bool,
     game_state: Option<Arc<Mutex<State>>>,
-    last_state: Option<State>,
+    locked: bool,
+    board_state: Option<BoardState>,
     receiver: Receiver<TuiEvent>,
     sender: Sender<TuiEvent>,
 }
@@ -54,8 +56,9 @@ impl Tui {
         let focus = usize::MAX;
         let input = String::new();
         let help = false;
+        let locked = false;
         let game_state = None;
-        let last_state = None;
+        let board_state = None;
 
         Self {
             mode,
@@ -65,7 +68,8 @@ impl Tui {
             input,
             help,
             game_state,
-            last_state,
+            locked,
+            board_state,
             receiver,
             sender,
         }
@@ -89,8 +93,11 @@ impl Tui {
                     handle_key(self, key_event)
                 }
                 Ok(TuiEvent::StateUpdate(state)) => {
-                    self.game_state = Some(state);
-                    self.last_state = None;
+                    self.board_state = Some(state);
+                    false
+                }
+                Ok(TuiEvent::Unlock) => {
+                    self.locked = false;
                     false
                 }
                 Err(TryRecvError::Empty {..}) => {
@@ -105,6 +112,82 @@ impl Tui {
         }
 
         Ok(())
+    }
+}
+
+struct BoardState {
+    board: String,
+    move_history: String,
+    details: Vec<[String; 2]>,
+}
+
+impl BoardState {
+    fn from_state(state: &State) -> Self {
+        let board = format_game_state(state);
+        let move_history = format_move_history(state);
+        let mut details = Vec::new();
+
+        let position_hash = format_position_hash(&state);
+        let game_phase = format_game_phase(&state);
+
+        let castling_rights;
+        let en_passant;
+        let halfmove_clock;
+        let repetition_count;
+        let hand_info;
+
+        details.push(["Game Phase".to_string(), game_phase]);
+        details.push(
+            [
+                "Turn".to_string(),
+                if state.playing == WHITE { "White" } else { "Black" }
+                .to_string()
+            ]
+        );
+        details.push(["Position Hash".to_string(), position_hash]);
+        if castling!(state) {
+            castling_rights = format_castling_rights(&state);
+            details.push(["Castling Rights".to_string(), castling_rights]);
+        }
+        if en_passant!(state) {
+            en_passant = format_en_passant_square(&state);
+            details.push(["En Passant".to_string(), en_passant]);
+        }
+        if halfmove_clock!(state) {
+            halfmove_clock = format!("{}/{}",
+                state.halfmove_clock,
+                state.halfmove_limit
+            );
+            details.push(["Halfmove Clock".to_string(), halfmove_clock]);
+        }
+        if repetition_limit!(state) {
+            let count = state
+                .position_hash_map
+                .get(&state.position_hash)
+                .copied()
+                .unwrap_or(1);
+            repetition_count = format!("{}/{}",
+                count,
+                state.repetition_limit
+            );
+            details.push(["Repetition Count".to_string(), repetition_count]);
+        }
+        if drops!(state)
+        || promote_to_captured!(state)
+        || setup_phase!(state) {
+            hand_info = format!(
+                "White [{}] | Black [{}]\n",
+                format_hand(&state, WHITE),
+                format_hand(&state, BLACK)
+            );
+            details.push(["Pieces in Hand".to_string(), hand_info]);
+        }
+
+        Self {
+            board,
+            move_history,
+            details,
+        }
     }
 }
 
@@ -357,25 +440,9 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
 /// and logs stacked, in that order.
 fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
-    let state = if app.last_state.is_none() {
-        &*app.game_state.as_ref().unwrap_or_else(
-            || {
-                panic!("Game state is None when drawing game tab")
-            }
-        ).lock().unwrap_or_else(
-            |e| {
-                panic!("Failed to lock game state: {e}")
-            }
-        )
-    } else {
-        app.last_state.as_ref().unwrap_or_else(
-            || {
-                panic!("Last state is None when drawing game tab")
-            }
-        )
-    };
-
-    let board = format_game_state(&state);
+    let board = app.board_state.as_ref()
+        .map(|state| state.board.clone())
+        .unwrap_or_else(|| "Loading...".to_string());
 
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -436,94 +503,6 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         Constraint::Fill(1),
         Constraint::Fill(2),
     ];
-    let mut details = Vec::new();
-    let position_hash = format_position_hash(&state);
-    let game_phase = format_game_phase(&state);
-    let search_ply = format!("{}", state.search_ply);
-
-    let castling_rights;
-    let en_passant;
-    let halfmove_clock;
-    let repetition_count;
-    let hand_info;
-
-    details.push(
-        Row::new(
-            vec!["Game Phase", &game_phase]
-        )
-    );
-    details.push(
-        Row::new(
-            vec!["Turn", if state.playing == WHITE { "White" } else { "Black" }]
-        )
-    );
-    details.push(
-        Row::new(
-            vec!["Position Hash", &position_hash]
-        )
-    );
-    if castling!(state) {
-        castling_rights = format_castling_rights(&state);
-        details.push(
-            Row::new(
-                vec!["Castling Rights", &castling_rights]
-            )
-        );
-    }
-    if en_passant!(state) {
-        en_passant = format_en_passant_square(&state);
-        details.push(
-            Row::new(
-                vec!["En Passant", &en_passant]
-            )
-        );
-    }
-    if halfmove_clock!(state) {
-        halfmove_clock = format!("{}/{}",
-            state.halfmove_clock,
-            state.halfmove_limit
-        );
-        details.push(
-            Row::new(
-                vec!["Halfmove Clock", &halfmove_clock]
-            )
-        );
-    }
-    if repetition_limit!(state) {
-        let count = state
-            .position_hash_map
-            .get(&state.position_hash)
-            .copied()
-            .unwrap_or(1);
-        repetition_count = format!("{}/{}",
-            count,
-            state.repetition_limit
-        );
-        details.push(
-            Row::new(
-                vec!["Repetition Count", &repetition_count]
-            )
-        );
-    }
-    if drops!(state)
-    || promote_to_captured!(state)
-    || setup_phase!(state) {
-        hand_info = format!(
-            "White [{}] | Black [{}]\n",
-            format_hand(&state, WHITE),
-            format_hand(&state, BLACK)
-        );
-        details.push(
-            Row::new(
-                vec!["Pieces in Hand", &hand_info]
-            )
-        );
-    }
-    details.push(
-        Row::new(
-            vec!["Search depth", &search_ply]
-        )
-    );
 
     let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| {
         panic!("Failed to lock LOG_MESSAGES: {e}")
@@ -564,18 +543,31 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let board_paragraph = Paragraph::new(board)
         .alignment(Alignment::Center)
         .block(board_block);
-    let mut moves_paragraph = Paragraph::new(format_move_history(&state))
-        .block(moves_block);
-    let details_table = Table::new(details.clone(), detail_columns)
-        .header(
-            Row::new(vec!["Parameter", "Value"])
-                .style(
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
-                    )
-        )
-        .block(details_block);
+    let mut moves_paragraph = Paragraph::new(app.board_state.as_ref()
+        .map(|state| state.move_history.clone())
+        .unwrap_or_else(|| "Loading...".to_string())
+    ).block(moves_block);
+    let details_table = Table::new(
+        app.board_state
+            .as_ref()
+            .map(|state| state.details.clone())
+            .unwrap_or_else(
+                || vec![["Loading...".to_string(), "".to_string()]]
+            )
+            .into_iter()
+            .map(|row| {
+                Row::new(row.into_iter().map(Span::from).collect::<Vec<_>>())
+            }).collect::<Vec<_>>(),
+        detail_columns
+    ).header(
+        Row::new(vec!["Parameter", "Value"])
+            .style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                )
+    )
+    .block(details_block);
     let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
         .block(logs_block);
 
@@ -678,7 +670,7 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     }
 }
 
-fn execute_command(command: &str, state: &mut State) {
+fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
     let trimmed = command.trim();
 
     if trimmed.is_empty() {
@@ -692,16 +684,46 @@ fn execute_command(command: &str, state: &mut State) {
             } else {
                 log_2!("No moves to undo");
             }
+
+            let board_state = BoardState::from_state(&state);
+
+            sender.send(
+                TuiEvent::StateUpdate(board_state)
+            ).unwrap_or_else(
+                |e| {
+                    panic!("Failed to send TuiEvent::StateUpdate: {e}")
+                }
+            );
         }
         "r" => {
             while state.ply_counter > 0 {
                 undo_move!(state);
+
+                let board_state = BoardState::from_state(&state);
+
+                sender.send(
+                    TuiEvent::StateUpdate(board_state)
+                ).unwrap_or_else(
+                    |e| {
+                        panic!("Failed to send TuiEvent::StateUpdate: {e}")
+                    }
+                );
             }
         }
         _ if trimmed.starts_with("fen ") => {
             let fen = trimmed[4..].trim();
             state.load_fen(fen);
             log_2!("Loaded FEN");
+
+            let board_state = BoardState::from_state(&state);
+
+            sender.send(
+                TuiEvent::StateUpdate(board_state)
+            ).unwrap_or_else(
+                |e| {
+                    panic!("Failed to send TuiEvent::StateUpdate: {e}")
+                }
+            );
         }
         _ if trimmed.starts_with("search ") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
@@ -756,12 +778,22 @@ fn execute_command(command: &str, state: &mut State) {
             );
 
             make_move!(state, result.best_move);
+
+            let board_state = BoardState::from_state(&state);
+
+            sender.send(
+                TuiEvent::StateUpdate(board_state)
+            ).unwrap_or_else(
+                |e| {
+                    panic!("Failed to send TuiEvent::StateUpdate: {e}")
+                }
+            );
         }
-        _ if trimmed.starts_with("selfplay ") => {
+        _ if trimmed.starts_with("play ") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 3 {
-                log_2!("Usage: selfplay [depth] [time (s)]");
+                log_2!("Usage: play [depth] [time (s)]");
                 return;
             }
 
@@ -770,14 +802,14 @@ fn execute_command(command: &str, state: &mut State) {
                 0
             });
 
-            let time_limit = parts[2].parse::<u128>().unwrap_or_else(|_| {
+            let time_limit = parts[2].parse::<f64>().unwrap_or_else(|_| {
                 log_2!("Invalid time limit: {}", parts[2]);
-                0
+                0.0
             });
 
             let mut info = SearchInfo::default();
             info.set_depth = depth;
-            info.set_timed = time_limit * 1_000_000_000;
+            info.set_timed = (time_limit * 1_000_000_000.0) as u128;
 
             while !state.game_over {
                 let result = search_position(state, &mut info);
@@ -788,11 +820,31 @@ fn execute_command(command: &str, state: &mut State) {
                 }
 
                 make_move!(state, result.best_move);
+
+                let board_state = BoardState::from_state(&state);
+
+                sender.send(
+                    TuiEvent::StateUpdate(board_state)
+                ).unwrap_or_else(
+                    |e| {
+                        panic!("Failed to send TuiEvent::StateUpdate: {e}")
+                    }
+                );
             }
         }
         _ => {
             if let Some(mv) = parse_move(trimmed, state) {
                 make_move!(state, mv);
+
+                let board_state = BoardState::from_state(&state);
+
+                sender.send(
+                    TuiEvent::StateUpdate(board_state)
+                ).unwrap_or_else(
+                    |e| {
+                        panic!("Failed to send TuiEvent::StateUpdate: {e}")
+                    }
+                );
             } else {
                 log_2!("Invalid command or move: {}", trimmed);
             }
@@ -810,10 +862,8 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
     let result = match (app.mode, code) {
         (TUI_INPUT_MODE, KeyCode::Enter) => {
-
-            if app.last_state.is_some() {
-                log_2!("Previous command is still processing");
-                app.input.clear();
+            if app.locked {
+                log_2!("Command execution in progress, please wait...");
                 return false;
             }
 
@@ -826,19 +876,6 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 ).clone();
                 let sender = app.sender.clone();
 
-                app.last_state = Some(
-                    arc_state.lock().unwrap_or_else(
-                        |_| {
-                            panic!(
-                                concat!(
-                                    "Failed to lock game state ",
-                                    "for saving last state before",
-                                    "command execution"
-                                )
-                            )
-                        }
-                    ).clone()
-                );
                 move || {
                     let mut state = arc_state.lock().unwrap_or_else(
                         |_| {
@@ -850,13 +887,13 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                             )
                         }
                     );
-                    execute_command(&command, &mut *state);
+                    execute_command(&command, &mut *state, sender.clone());
 
                     sender.send(
-                        TuiEvent::StateUpdate(arc_state.clone())
+                        TuiEvent::Unlock
                     ).unwrap_or_else(
                         |e| {
-                            panic!("Failed to send TuiEvent::StateUpdate: {e}")
+                            panic!("Failed to send TuiEvent::Unlock: {e}")
                         }
                     );
                 }
@@ -965,6 +1002,10 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             if path.is_file() {
                 let path_str = path.to_string_lossy();
                 let state = parse_config_file(&path_str);
+
+                let board_state = BoardState::from_state(&state);
+
+                app.board_state = Some(board_state);
                 app.game_state = Some(Arc::new(Mutex::new(state)));
             } else {
                 log_1!(
