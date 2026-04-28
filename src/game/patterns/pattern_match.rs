@@ -17,6 +17,10 @@ lazy_static! {
         });
 }
 
+/*----------------------------------------------------------------------------*\
+                        PATTERN MATCHING REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
+
 /// Represents a compressed set of allowed or stopper pieces.
 ///
 /// This structure provides O(1) membership checks to eliminate dynamic
@@ -32,24 +36,21 @@ impl Default for PieceSet {
 }
 
 impl PieceSet {
-    /// Creates a new, empty piece set.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Adds a piece index to the set.
     pub fn insert(&mut self, piece: u8) {
         self.0[piece as usize] = true;
     }
 
-    /// Returns `true` if the given piece index is in the set.
     pub fn contains(&self, piece: u8) -> bool {
         self.0[piece as usize]
     }
 }
 
-impl std::fmt::Debug for PieceSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Debug for PieceSet {
+    fn fmt(&self, f: &mut FmtFormatter<'_>) -> FmtResult {
         let mut pieces = Vec::new();
         for i in 0..256 {
             if self.0[i] {
@@ -283,7 +284,7 @@ pub fn generate_relevant_stand_offs(
     square: u32,
     state: &State,
     piece_stand_off: &[PatternSet],
-) -> Vec<Pattern> {
+) -> PatternSet {
     let piece_color = p_color!(piece) as usize;
 
     let pattern_set = &piece_stand_off[p_index!(piece) as usize];

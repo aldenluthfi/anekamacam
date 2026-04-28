@@ -30,7 +30,7 @@ pub fn quiescence_search(
     verify_game_state(state);
 
     info.nodes += 1;
-    if info.nodes % 2048 == 0 {
+    if info.nodes.is_multiple_of(2048) {
         check_interrupt(info);
     }
 

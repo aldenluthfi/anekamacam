@@ -836,8 +836,11 @@ macro_rules! generate_capture_list {
             .iter()
             .filter(
                 |mv|
-                    move_type!(mv) == SINGLE_CAPTURE_MOVE
-                    || move_type!(mv) == MULTI_CAPTURE_MOVE,
+                    move_type!(mv) == SINGLE_CAPTURE_MOVE && !is_unload!(mv) ||
+                    move_type!(mv) == MULTI_CAPTURE_MOVE &&
+                    mv.1
+                        .iter()
+                        .all(|&captured| !multi_move_is_unload!(captured))
             )
             .cloned()
             .collect::<Vec<Move>>()
