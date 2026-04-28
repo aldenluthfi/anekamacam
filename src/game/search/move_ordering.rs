@@ -20,8 +20,7 @@ use crate::*;
 /// - Quiet/drop moves: killer/history priority
 /// - Single capture : `captured_value + most_valuable - attacker_value`
 /// - Multi-capture  : `sum(captured_values) + most_valuable - attacker_value`
-/// - PV move        : score strictly higher than others
-///                    (`2 * most_valuable + 1`)
+/// - PV move        : `2 * most_valuable_piece + 1`
 ///
 /// `pv_move` should be probed once per node and forwarded into this function
 /// to avoid repeated hash-table lookups while ordering the full move list.
@@ -91,8 +90,8 @@ pub fn pick_by_score(
     let mut best_index = index;
     let mut best_score = score_move(state, &moves[index], pv_move);
 
-    for i in (index + 1)..moves.len() {
-        let score = score_move(state, &moves[i], pv_move);
+    for (i, mv) in moves.iter().enumerate().skip(index + 1) {
+        let score = score_move(state, mv, pv_move);
         if score > best_score {
             best_score = score;
             best_index = i;

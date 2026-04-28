@@ -43,8 +43,10 @@ impl Tui {
     ) -> Self {
         let mut scroll_map = HashMap::new();
 
-        for tab in 0..TAB_TITLES.len() {
-            for focus in 0..TAB_FOCUSABLES[tab] as usize {
+        for (tab, focusables) in
+            TAB_FOCUSABLES.iter().enumerate().take(TAB_TITLES.len())
+        {
+            for focus in 0..*focusables as usize {
                 scroll_map.insert((tab, focus), 0);
             }
         }
@@ -100,10 +102,10 @@ impl Tui {
                     self.locked = false;
                     false
                 }
-                Err(TryRecvError::Empty {..}) => {
+                Err(TryRecvError::Empty) => {
                     false
                 },
-                Err(TryRecvError::Disconnected {..}) => {
+                Err(TryRecvError::Disconnected) => {
                     true
                 }
             } {
@@ -127,8 +129,8 @@ impl BoardState {
         let move_history = format_move_history(state);
         let mut details = Vec::new();
 
-        let position_hash = format_position_hash(&state);
-        let game_phase = format_game_phase(&state);
+        let position_hash = format_position_hash(state);
+        let game_phase = format_game_phase(state);
 
         let castling_rights;
         let en_passant;
@@ -146,11 +148,11 @@ impl BoardState {
         );
         details.push(["Position Hash".to_string(), position_hash]);
         if castling!(state) {
-            castling_rights = format_castling_rights(&state);
+            castling_rights = format_castling_rights(state);
             details.push(["Castling Rights".to_string(), castling_rights]);
         }
         if en_passant!(state) {
-            en_passant = format_en_passant_square(&state);
+            en_passant = format_en_passant_square(state);
             details.push(["En Passant".to_string(), en_passant]);
         }
         if halfmove_clock!(state) {
@@ -177,8 +179,8 @@ impl BoardState {
         || setup_phase!(state) {
             hand_info = format!(
                 "White [{}] | Black [{}]\n",
-                format_hand(&state, WHITE),
-                format_hand(&state, BLACK)
+                format_hand(state, WHITE),
+                format_hand(state, BLACK)
             );
             details.push(["Pieces in Hand".to_string(), hand_info]);
         }
@@ -328,7 +330,7 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         Line::from(vec![
             Span::styled("[INPUT] ", Style::default().fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)),
-            Span::raw("<Enter> Run | <Esc> Enter normal mode")
+            Span::raw("<Enter> Run")
                 .style(Style::default().fg(Color::Gray)),
         ])
     } else {
@@ -337,9 +339,9 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
                 .add_modifier(Modifier::BOLD)),
             Span::raw(
                 concat![
-                    "<i> Enter input mode | <?> Help | <←/→> Focus | ",
+                    "<?> Help | <←/→> Focus | ",
                     "<j/k> Scroll | <Tab> Switch tab | <q> Quit | ",
-                    "<n> New game"
+                    "<n> New game | <G> Scroll to bottom | <g> Scroll to top"
                 ]
             ).style(Style::default().fg(Color::Gray)),
         ])
@@ -524,16 +526,14 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 Color::Gray
             };
 
-            if line.starts_with('[') {
-                if let Some(end_idx) = line.find(']') {
-                    let (level, rest) = line.split_at(end_idx + 1);
-                    return Line::from(vec![
-                        Span::styled(
-                            level.to_string(), Style::default().fg(level_color)
-                        ),
-                        Span::raw(rest.to_string()),
-                    ]);
-                }
+            if line.starts_with('[') && let Some(end_idx) = line.find(']') {
+                let (level, rest) = line.split_at(end_idx + 1);
+                return Line::from(vec![
+                    Span::styled(
+                        level.to_string(), Style::default().fg(level_color)
+                    ),
+                    Span::raw(rest.to_string()),
+                ]);
             }
 
             Line::from(Span::raw(line.clone()))
@@ -685,7 +685,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                 log_2!("No moves to undo");
             }
 
-            let board_state = BoardState::from_state(&state);
+            let board_state = BoardState::from_state(state);
 
             sender.send(
                 TuiEvent::StateUpdate(board_state)
@@ -699,7 +699,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
             while state.ply_counter > 0 {
                 undo_move!(state);
 
-                let board_state = BoardState::from_state(&state);
+                let board_state = BoardState::from_state(state);
 
                 sender.send(
                     TuiEvent::StateUpdate(board_state)
@@ -715,7 +715,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
             state.load_fen(fen);
             log_2!("Loaded FEN");
 
-            let board_state = BoardState::from_state(&state);
+            let board_state = BoardState::from_state(state);
 
             sender.send(
                 TuiEvent::StateUpdate(board_state)
@@ -738,13 +738,13 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                 0
             });
 
-            let mut info = SearchInfo::default();
-            info.set_depth = depth;
+            let mut info = SearchInfo {
+                set_depth: depth, ..Default::default()
+            };
             let result = search_position(state, &mut info);
 
             if result.best_move == null_move() {
                 log_2!("No legal move available");
-                return;
             }
         }
         _ if trimmed.starts_with("go ") => {
@@ -760,8 +760,9 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                 0
             });
 
-            let mut info = SearchInfo::default();
-            info.set_depth = depth;
+            let mut info = SearchInfo {
+                set_depth: depth, ..Default::default()
+            };
             let result = search_position(state, &mut info);
 
             if result.best_move == null_move() {
@@ -779,7 +780,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
 
             make_move!(state, result.best_move);
 
-            let board_state = BoardState::from_state(&state);
+            let board_state = BoardState::from_state(state);
 
             sender.send(
                 TuiEvent::StateUpdate(board_state)
@@ -807,21 +808,33 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                 0.0
             });
 
-            let mut info = SearchInfo::default();
-            info.set_depth = depth;
-            info.set_timed = (time_limit * 1_000_000_000.0) as u128;
+            let mut info = SearchInfo {
+                set_depth: depth,
+                set_timed: (time_limit * 1_000_000_000.0) as u128,
+                ..Default::default()
+            };
 
             while !state.game_over {
                 let result = search_position(state, &mut info);
 
-                if result.best_move == null_move() {
-                    log_2!("No legal move available");
+                if result.best_score == MATE_SCORE {
+                    state.game_over = true;
+                    log_1!(
+                        "Checkmate! {} wins.",
+                        if state.playing == WHITE { "Black" } else { "White" }
+                    );
                     break;
                 }
 
+                if result.best_move == null_move() {
+                    log_1!(
+                        "Stalemate! It's a draw."
+                    );
+                    break;
+                }
                 make_move!(state, result.best_move);
 
-                let board_state = BoardState::from_state(&state);
+                let board_state = BoardState::from_state(state);
 
                 sender.send(
                     TuiEvent::StateUpdate(board_state)
@@ -836,7 +849,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
             if let Some(mv) = parse_move(trimmed, state) {
                 make_move!(state, mv);
 
-                let board_state = BoardState::from_state(&state);
+                let board_state = BoardState::from_state(state);
 
                 sender.send(
                     TuiEvent::StateUpdate(board_state)
@@ -860,7 +873,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
     let code = event.code;
 
-    let result = match (app.mode, code) {
+    match (app.mode, code) {
         (TUI_INPUT_MODE, KeyCode::Enter) => {
             if app.locked {
                 log_2!("Command execution in progress, please wait...");
@@ -887,7 +900,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                             )
                         }
                     );
-                    execute_command(&command, &mut *state, sender.clone());
+                    execute_command(&command, &mut state, sender.clone());
 
                     sender.send(
                         TuiEvent::Unlock
@@ -1018,9 +1031,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
         },
         (TUI_NORMAL_MODE, KeyCode::Char('q')) => true,
         _ => false,
-    };
-
-    result
+    }
 }
 
 fn input_listener(sender: Sender<TuiEvent>) {
@@ -1031,17 +1042,14 @@ fn input_listener(sender: Sender<TuiEvent>) {
             }
         );
 
-        match read_event {
-            Event::Key(key_event) => {
-                sender.send(
-                    TuiEvent::Input(key_event)
-                ).unwrap_or_else(
-                    |e| {
-                        panic!("Failed to send TuiEvent::Input: {e}")
-                    }
-                );
-            }
-            _ => {}
+        if let Event::Key(key_event) = read_event {
+            sender.send(
+                TuiEvent::Input(key_event)
+            ).unwrap_or_else(
+                |e| {
+                    panic!("Failed to send TuiEvent::Input: {e}")
+                }
+            );
         }
     }
 }

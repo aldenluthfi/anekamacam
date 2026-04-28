@@ -427,7 +427,6 @@ pub struct State {
     pub killer_hist: Vec<[Move; 2]>                                             /* search ply to killer moves         */
 }
 
-#[hotpath::measure_all]
 impl State {
     pub fn new(
         title: String,
@@ -528,7 +527,7 @@ impl State {
 
             position_hash_map: HashMap::with_capacity(128),
 
-            transposition_table: TTable::new(),
+            transposition_table: TTable::default(),
             pv_line: array::from_fn(|_| null_move()),
 
             search_hist: vec![vec![0u16; board_size]; piece_count],
@@ -579,7 +578,7 @@ impl State {
         self.search_ply = 0;
         self.position_hash_map.clear();
 
-        self.transposition_table = TTable::new();
+        self.transposition_table = TTable::default();
         self.pv_line = array::from_fn(|_| null_move());
 
         self.search_hist = vec![vec![0u16; board_size]; piece_count];

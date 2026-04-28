@@ -140,7 +140,7 @@ pub use regex::Regex;
 pub use std::{
     array, cmp,
     collections::VecDeque,
-    fmt::Debug,
+    fmt::{Debug, Formatter as FmtFormatter, Result as FmtResult},
     fs,
     hash::Hash,
     io::{Write, stdin, stdout, Result as IoResult},

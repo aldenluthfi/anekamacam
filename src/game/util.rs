@@ -400,7 +400,6 @@ pub fn benchmark_perft(
         perft_cases.into_iter().take(limit).enumerate()
     {
         state.load_fen(&fen);
-        log_1!("\n{}", format_game_state(state));
 
         let expected_perfts =
             [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
@@ -458,10 +457,8 @@ pub fn benchmark_perft(
 /// elapsed wall time, and aggregate nodes-per-second.
 pub fn benchmark_search(state: &mut State, depth: usize) {
     log_1!("Search benchmark started with depth {}...", depth);
-    log_1!("\n{}", format_game_state(state));
 
-    let mut info = SearchInfo::default();
-    info.set_depth = depth;
+    let mut info = SearchInfo { set_depth: depth, ..Default::default() };
 
     search_position(state, &mut info);
 }

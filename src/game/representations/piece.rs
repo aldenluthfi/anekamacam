@@ -162,10 +162,8 @@ impl Piece {
     /// - `is_major`        : Whether this is a major piece (T) or minor (F)
     /// - `castle_right`    : Whether can castle to the right (kingside)
     /// - `castle_left`     : Whether can castle to the left (queenside)
-    /// - `ovalue`          : Opening piece value
-    ///                       (0-16383, stored in 14 bits)
-    /// - `evalue`          : Endgame piece value
-    ///                       (0-16383, stored in 14 bits)
+    /// - `ovalue`          : Opening piece value (0-16383, stored in 14 bits)
+    /// - `evalue`          : Endgame piece value (0-16383, stored in 14 bits)
     /// - `rank`            : The piece rank used for move modifiers
     pub fn new(
         name: String,
@@ -227,7 +225,7 @@ impl Piece {
 }
 
 impl Debug for Piece {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut FmtFormatter<'_>) -> FmtResult {
         f.debug_struct("Piece")
             .field("name", &self.name)
             .field("char", &self.char)

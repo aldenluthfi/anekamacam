@@ -47,8 +47,10 @@ pub fn take_log_messages() -> Vec<String> {
 macro_rules! log_1 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message(1, message);
+            if verbosity_enabled(1) {
+                let message = format!($($arg)*);
+                push_log_message(1, message);
+            }
         }
     };
 }
@@ -57,8 +59,10 @@ macro_rules! log_1 {
 macro_rules! log_2 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message(2, message);
+            if verbosity_enabled(2) {
+                let message = format!($($arg)*);
+                push_log_message(2, message);
+            }
         }
     };
 }
@@ -67,8 +71,10 @@ macro_rules! log_2 {
 macro_rules! log_3 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message(3, message);
+            if verbosity_enabled(3) {
+                let message = format!($($arg)*);
+                push_log_message(3, message);
+            }
         }
     };
 }
@@ -77,8 +83,10 @@ macro_rules! log_3 {
 macro_rules! log_4 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message(4, message);
+            if verbosity_enabled(4) {
+                let message = format!($($arg)*);
+                push_log_message(4, message);
+            }
         }
     };
 }
@@ -89,7 +97,7 @@ fn level_to_verbosity(level: log::Level) -> u8 {
         log::Level::Warn => 2,
         log::Level::Info => 3,
         log::Level::Debug => 4,
-        _ => 0,
+        _ => panic!("Unsupported log level: {level}"),
     }
 }
 
@@ -99,7 +107,7 @@ fn verbosity_style(level: log::Level) -> log_style::Style {
         2 => log_style::AnsiColor::Cyan.on_default(),
         3 => log_style::AnsiColor::Yellow.on_default(),
         4 => log_style::AnsiColor::Magenta.on_default(),
-        _ => log_style::Style::new(),
+        _ => panic!("Unsupported log level: {level}"),
     }
 }
 

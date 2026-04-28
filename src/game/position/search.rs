@@ -15,6 +15,7 @@ use crate::*;
 /// This struct groups time controls, depth/move constraints, node accounting,
 /// and interruption controls used by iterative search routines.
 /// It is mutated throughout one search invocation lifecycle.
+#[derive(Default)]
 pub struct SearchInfo {
     pub start_time: u128,                                                       /* Start time since search start.     */
 
@@ -25,19 +26,6 @@ pub struct SearchInfo {
     pub nodes: u128,                                                            /* Total nodes searched so far.       */
 
     pub interrupt: bool,                                                        /* Flag set by external stop events.  */
-}
-
-impl Default for SearchInfo {
-    fn default() -> Self {
-        Self {
-            start_time: 0,
-            set_depth: 0,
-            set_timed: 0,
-            set_moves: 0,
-            nodes: 0,
-            interrupt: false,
-        }
-    }
 }
 
 pub struct SearchResult {
@@ -127,11 +115,10 @@ pub fn search_position(
             .saturating_sub(depth_start_time);
         let nodes = info.nodes - depth_start_nodes;
 
-        let depth_nps = if elapsed == 0 {
-            0
-        } else {
-            nodes * 1_000_000_000 / elapsed
-        };
+        let depth_nps = nodes
+            .checked_mul(1_000_000_000)
+            .and_then(|n| n.checked_div(elapsed))
+            .unwrap_or(0);
 
         log_4!(
             concat!(
@@ -162,11 +149,10 @@ pub fn search_position(
     let total_nodes = info.nodes;
     let total_elapsed =
         ENGINE_START.elapsed().as_nanos().saturating_sub(start_time);
-    let nps = if total_elapsed == 0 {
-        0
-    } else {
-        total_nodes * 1_000_000_000 / total_elapsed
-    };
+    let nps = total_nodes
+        .checked_mul(1_000_000_000)
+        .and_then(|n| n.checked_div(total_elapsed))
+        .unwrap_or(0);
 
     log_2!(
         concat!(
@@ -321,7 +307,10 @@ pub fn alpha_beta(
         let mv_start = start!(mv);
         let mv_end = end!(mv);
         let is_capture =
-            mv_type == SINGLE_CAPTURE_MOVE || mv_type == MULTI_CAPTURE_MOVE;
+            mv_type == SINGLE_CAPTURE_MOVE &&
+            !is_unload!(mv) ||
+            mv_type == MULTI_CAPTURE_MOVE &&
+            mv.1.iter().all(|cap| !multi_move_is_unload!(cap));
         let is_promotion = promotion!(mv);
         let is_drop = mv_type == DROP_MOVE;
 
@@ -419,7 +408,7 @@ pub fn alpha_beta(
         if is_in_check!(state.playing, state) || stalemate_loss!(&state) {
             let mate_score = -MATE_SCORE + state.search_ply as i32;
 
-            return if state.history.last().map_or(false, |s| {
+            return if state.history.last().is_some_and(|s| {
                 move_type!(&s.move_ply) == DROP_MOVE
                 && !drop_can_checkmate!(&s.move_ply)
             }) {
