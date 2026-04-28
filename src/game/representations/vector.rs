@@ -18,10 +18,6 @@
 use crate::*;
 
 /*----------------------------------------------------------------------------*\
-                        PATTERN MATCHING REPRESENTATIONS
-\*----------------------------------------------------------------------------*/
-
-/*----------------------------------------------------------------------------*\
                         MOVE GENERATION REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
@@ -201,7 +197,7 @@ pub enum MultiLegElement {
 }
 
 impl Debug for MultiLegElement {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut FmtFormatter<'_>) -> FmtResult {
         match self {
             MultiLegElement::MultiLegTerm(token) => write!(f, "{:?}", token),
             MultiLegElement::MultiLegExpr(group) => write!(f, "{:?}", group),
@@ -474,7 +470,7 @@ impl LegVector {
 }
 
 impl Debug for LegVector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut FmtFormatter<'_>) -> FmtResult {
         write!(
             f,
             "LegVector {{ atomic: {:?}, modifiers: {} }}",
@@ -494,7 +490,7 @@ pub enum AtomicElement {
 }
 
 impl Debug for AtomicElement {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut FmtFormatter<'_>) -> FmtResult {
         match self {
             AtomicElement::AtomicTerm(token) => write!(f, "{:?}", token),
             AtomicElement::AtomicExpr(group) => write!(f, "{:?}", group),
@@ -522,7 +518,7 @@ pub enum Token {
 }
 
 impl Debug for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut FmtFormatter<'_>) -> FmtResult {
         match self {
             Token::BracketToken(s) => write!(f, "{}", s),
             Token::SlashBracketToken(s) => write!(f, "{}", s),
@@ -648,7 +644,7 @@ impl From<AtomicVector> for [(i8, i8); 2] {
 }
 
 impl Debug for AtomicVector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut FmtFormatter<'_>) -> FmtResult {
         let (wx, wy) = self.whole();
         let (lx, ly) = self.last();
         write!(f, "[({}, {}), ({}, {})]", wx, wy, lx, ly)
