@@ -54,7 +54,6 @@ fn determine_board_dimensions(fen: &str) -> (u8, u8) {
     (file_count, rank_count)
 }
 
-// returns (castling, en_passant, pieces in hand)
 fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     let mut castling = false;
     let mut en_passant = false;
@@ -73,7 +72,6 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     (castling, en_passant, in_hand)
 }
 
-/// Parses a bracketed comma-separated integer row like `[1, -2, 3]`.
 fn parse_numeric_parameter_list(line: &str, label: &str) -> Vec<i32> {
     let trimmed = line.trim();
     assert!(
@@ -98,7 +96,6 @@ fn parse_numeric_parameter_list(line: &str, label: &str) -> Vec<i32> {
         .collect()
 }
 
-/// Parses a binary flag row (`0`/`1`) and validates its expected length.
 fn parse_binary_parameter_flags(
     line: &str,
     expected_len: usize,
@@ -128,7 +125,6 @@ fn parse_binary_parameter_flags(
         .collect()
 }
 
-/// Mirrors a PST across the horizontal axis by swapping board rows.
 fn mirror_pst_across_horizontal_axis(
     pst: &[i32],
     files: usize,
@@ -1771,8 +1767,8 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// 1. Board representation (ranks separated by '/')
 /// 2. Active color ('w' or 'b')
 /// 3. Castling rights (e.g. 'KQkq' or '-')
-/// 4. En passant square (e.g. 'e3' or '-')
-/// 5. Pieces in hand (e.g. '3P2N/1p' or '-')
+/// 4. En passant square (e.g. '008018P' or '*')
+/// 5. Pieces in hand (e.g. '3P2N/1p' or '-/-')
 ///
 /// Optional:
 /// 6. Halfmove clock (number of halfmoves since last capture or pawn move)
@@ -2155,6 +2151,66 @@ pub fn format_game_state(state: &State) -> String {
         .expect("Failed to format combined board string")
 }
 
+pub fn format_fen(state: &State) -> String {
+    let mut fen = String::new();
+
+    for rank in (0..state.ranks).rev() {
+        let mut empty_count = 0;
+
+        for file in 0..state.files {
+            let square_index =
+                (rank as u32) * (state.files as u32) + (file as u32);
+            let piece_idx = state.main_board[square_index as usize];
+            if piece_idx == NO_PIECE {
+                empty_count += 1;
+            } else {
+                if empty_count > 0 {
+                    fen.push_str(&empty_count.to_string());
+                    empty_count = 0;
+                }
+                fen.push(state.pieces[piece_idx as usize].char);
+            }
+        }
+
+        if empty_count > 0 {
+            fen.push_str(&empty_count.to_string());
+        }
+
+        if rank > 0 {
+            fen.push('/');
+        }
+    }
+
+    if state.playing == WHITE {
+        fen.push_str(" w");
+    } else {
+        fen.push_str(" b");
+    }
+
+    if castling!(state) {
+        fen.push(' ');
+        fen.push_str(&format_castling_rights(state));
+    }
+
+    if en_passant!(state) {
+        fen.push(' ');
+        fen.push_str(&format_en_passant_square(state));
+    }
+
+    if drops!(state)
+    || promote_to_captured!(state)
+    || demote_upon_capture!(state)
+    || setup_phase!(state)
+    {
+        fen.push(' ');
+        fen.push_str(&format_hand(state, WHITE));
+        fen.push('/');
+        fen.push_str(&format_hand(state, BLACK));
+    }
+
+    fen
+}
+
 pub fn format_castling_rights(state: &State) -> String {
     let mut rights = String::new();
 
@@ -2180,10 +2236,19 @@ pub fn format_castling_rights(state: &State) -> String {
 
 pub fn format_en_passant_square(state: &State) -> String {
     if state.en_passant_square == NO_EN_PASSANT {
-        "-".to_string()
+        "*".to_string()
     } else {
-        let en_passant = enp_square!(state.en_passant_square);
-        format_square(en_passant as Square, state)
+        let en_passant_sq = enp_square!(state.en_passant_square);
+        let en_passant_piece_idx = enp_piece!(state.en_passant_square);
+        let en_passant_piece_sq = enp_captured!(state.en_passant_square);
+
+        let en_passant_piece_char =
+            state.pieces[en_passant_piece_idx as usize].char;
+
+        format!(
+            "{:03x}{:03x}{}",
+            en_passant_sq, en_passant_piece_sq, en_passant_piece_char
+        )
     }
 }
 
