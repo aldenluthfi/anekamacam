@@ -15,7 +15,7 @@
 use crate::*;
 
 const TAB_TITLES: [&str; 2] = ["Game", "Overview"];
-const TAB_FOCUSABLES: [u8; 2] = [3, 1];
+const TAB_FOCUSABLES: [u8; 2] = [4, 1];
 
 enum TuiEvent {
     Input(KeyEvent),
@@ -121,6 +121,7 @@ struct BoardState {
     board: String,
     move_history: String,
     details: Vec<[String; 2]>,
+    fen: String,
 }
 
 #[hotpath::measure_all]
@@ -186,10 +187,13 @@ impl BoardState {
             details.push(["Pieces in Hand".to_string(), hand_info]);
         }
 
+        let fen = format_fen(state);
+
         Self {
             board,
             move_history,
             details,
+            fen,
         }
     }
 }
@@ -443,6 +447,10 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
 /// and logs stacked, in that order.
 fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
+    const TAB_FOCUS_MOVES: usize = 0;
+    const TAB_FOCUS_FEN: usize = 1;
+    const TAB_FOCUS_LOGS: usize = 2;
+
     let board = app.board_state.as_ref()
         .map(|state| state.board.clone())
         .unwrap_or_else(|| "Loading...".to_string());
@@ -470,7 +478,16 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             Constraint::Length(board.lines().count() as u16 + 1)
         );
     let moves_area = top_layout[1];
-    let details_area = top_layout[2];
+
+    let right_most_rect = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(3)
+        ])
+        .split(top_layout[2]);
+    let details_area = right_most_rect[0];
+    let fen_area = right_most_rect[1];
 
     let board_block = Block::default()
         .borders(Borders::NONE);
@@ -480,6 +497,9 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let mut details_block = Block::default()
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
+    let mut fen_block = Block::default()
+        .padding(Padding::horizontal(1))
+        .borders(Borders::ALL);
     let mut logs_block = Block::default()
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
@@ -487,19 +507,19 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let logs_area = main_layout[1];
 
     match app.focus {
-        0 if app.mode == TUI_NORMAL_MODE =>
+        TAB_FOCUS_MOVES if app.mode == TUI_NORMAL_MODE =>
             moves_block = moves_block.border_style(
                 Style::default().fg(Color::Yellow)
             ),
-        1 if app.mode == TUI_NORMAL_MODE =>
-            details_block = details_block.border_style(
+        TAB_FOCUS_FEN if app.mode == TUI_NORMAL_MODE =>
+            fen_block = fen_block.border_style(
                 Style::default().fg(Color::Yellow)
             ),
-        2 if app.mode == TUI_NORMAL_MODE =>
+        TAB_FOCUS_LOGS if app.mode == TUI_NORMAL_MODE =>
             logs_block = logs_block.border_style(
                 Style::default().fg(Color::Yellow)
             ),
-            _ => {}
+        _ => {}
     }
 
     let detail_columns = [
@@ -569,65 +589,99 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 )
     )
     .block(details_block);
+    let mut fen_paragraph = Paragraph::new(app.board_state.as_ref()
+        .map(|state| state.fen.clone())
+        .unwrap_or_else(|| "Loading...".to_string())
+    ).block(fen_block);
     let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
         .block(logs_block);
 
     let max_moves_scroll = (moves_paragraph.line_count(moves_area.width) as u16)
         .saturating_sub(moves_area.height);
+    let max_fen_scroll = (fen_paragraph.line_width() as u16)
+        .saturating_sub(fen_area.width);
     let max_logs_scroll = (logs_paragraph.line_count(logs_area.width) as u16)
         .saturating_sub(logs_area.height);
 
-    let current_moves_scroll = app.scroll_map.get(&(app.tab, 0)).copied()
+    let current_moves_scroll = app.scroll_map.get(&(app.tab, TAB_FOCUS_MOVES))
+        .copied()
         .unwrap_or_else(
         || {
             panic!(
-                "Scroll value missing for tab {}, focus 0",
-                app.tab
+                "Scroll value missing for tab {}, focus {}",
+                app.tab, TAB_FOCUS_MOVES
             )
         }
     );
 
-    let current_logs_scroll = app.scroll_map.get(&(app.tab, 2)).copied()
+    let current_fen_scroll = app.scroll_map.get(&(app.tab, TAB_FOCUS_FEN))
+        .copied()
         .unwrap_or_else(
         || {
             panic!(
-                "Scroll value missing for tab {}, focus 2",
-                app.tab
+                "Scroll value missing for tab {}, focus {}",
+                app.tab, TAB_FOCUS_FEN
             )
         }
     );
+
+    let current_logs_scroll = app.scroll_map.get(&(app.tab, TAB_FOCUS_LOGS))
+        .copied()
+        .unwrap_or_else(
+        || {
+            panic!(
+                "Scroll value missing for tab {}, focus {}",
+                app.tab, TAB_FOCUS_LOGS
+            )
+        }
+    );
+
 
     let mut final_moves_scroll = current_moves_scroll;
+    let mut final_fen_scroll = current_fen_scroll;
     let mut final_logs_scroll = current_logs_scroll;
 
     if current_moves_scroll > max_moves_scroll
     && current_moves_scroll < u16::MAX {
         let offset = u16::MAX - current_moves_scroll;
         final_moves_scroll = max_moves_scroll.saturating_sub(offset);
-        app.scroll_map.insert((app.tab, 0), final_moves_scroll);
+        app.scroll_map.insert((app.tab, TAB_FOCUS_MOVES), final_moves_scroll);
     } else if current_moves_scroll > max_moves_scroll {
         final_moves_scroll = max_moves_scroll;
     } else if current_moves_scroll == max_moves_scroll {
-        app.scroll_map.insert((app.tab, 0), u16::MAX);
+        app.scroll_map.insert((app.tab, TAB_FOCUS_MOVES), u16::MAX);
+    }
+
+    if current_fen_scroll > max_fen_scroll
+    && current_fen_scroll < u16::MAX {
+        let offset = u16::MAX - current_fen_scroll;
+        final_fen_scroll = max_fen_scroll.saturating_sub(offset);
+        app.scroll_map.insert((app.tab, TAB_FOCUS_FEN), final_fen_scroll);
+    } else if current_fen_scroll > max_fen_scroll {
+        final_fen_scroll = max_fen_scroll;
+    } else if current_fen_scroll == max_fen_scroll {
+        app.scroll_map.insert((app.tab, TAB_FOCUS_FEN), u16::MAX);
     }
 
     if current_logs_scroll > max_logs_scroll
     && current_logs_scroll < u16::MAX {
         let offset = u16::MAX - current_logs_scroll;
         final_logs_scroll = max_logs_scroll.saturating_sub(offset);
-        app.scroll_map.insert((app.tab, 2), final_logs_scroll);
+        app.scroll_map.insert((app.tab, TAB_FOCUS_LOGS), final_logs_scroll);
     } else if current_logs_scroll > max_logs_scroll {
         final_logs_scroll = max_logs_scroll;
     } else if current_logs_scroll == max_logs_scroll {
-        app.scroll_map.insert((app.tab, 2), u16::MAX);
+        app.scroll_map.insert((app.tab, TAB_FOCUS_LOGS), u16::MAX);
     }
 
     moves_paragraph = moves_paragraph.scroll((final_moves_scroll, 0));
+    fen_paragraph = fen_paragraph.scroll((0, final_fen_scroll));
     logs_paragraph = logs_paragraph.scroll((final_logs_scroll, 0));
 
     frame.render_widget(board_paragraph, board_area);
     frame.render_widget(moves_paragraph, moves_area);
     frame.render_widget(details_table, details_area);
+    frame.render_widget(fen_paragraph, fen_area);
     frame.render_widget(logs_paragraph, logs_area);
 }
 
@@ -818,7 +872,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
             while !state.game_over {
                 let result = search_position(state, &mut info);
 
-                if result.best_score == MATE_SCORE {
+                if result.best_score == -INFINITY {
                     state.game_over = true;
                     log_1!(
                         "Checkmate! {} wins.",
