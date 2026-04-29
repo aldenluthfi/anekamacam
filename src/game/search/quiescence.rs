@@ -34,7 +34,7 @@ pub fn quiescence_search(
         check_interrupt(info);
     }
 
-    let is_repetition = state
+    let is_repetition_draw = state
         .position_hash_map
         .get(&state.position_hash)
         .copied()
@@ -42,9 +42,10 @@ pub fn quiescence_search(
         >= state.repetition_limit;
 
     let is_halfmove_draw =
-        halfmove_clock!(state) && state.halfmove_clock >= state.halfmove_limit;
+        halfmove_clock!(state) && 
+        (state.halfmove_clock >= state.halfmove_limit);
 
-    if state.search_ply > 0 && (is_repetition || is_halfmove_draw) {
+    if state.search_ply > 0 && (is_repetition_draw || is_halfmove_draw) {
         return 0;
     }
 
@@ -117,7 +118,7 @@ pub fn quiescence_search(
     verify_game_state(state);
 
     if alpha != alpha_start {
-        hash_tt_entry!(best_move, alpha, HFEXACT, 0, state);
+        hash_tt_entry!(best_move, alpha, HFEXACT, 0 as usize, state);
     }
 
     alpha

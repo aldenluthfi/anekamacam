@@ -24,8 +24,8 @@ use crate::*;
 /// `encoded` layout:
 /// - bits 0-1     : bound flags (`HFALPHA`, `HFBETA`, `HFEXACT`)
 /// - bits 2-8     : searched depth (7 bits)
-/// - bits 9-30    : signed score stored as biased 22-bit integer
-///
+/// - bits 9-15    : entry age (7 bits)
+/// - bits 16-31   : signed score stored as a 16-bit integer
 /// `position_hash` keeps the full key for collision checks in direct-mapped
 /// slots.
 #[derive(Clone)]
@@ -45,30 +45,17 @@ impl Default for TTEntry {
     }
 }
 
-#[derive(Clone)]
 pub struct TTable {
-    pub p_table: Vec<TTEntry>,
-    pub new_write: u64,
-    pub over_write: u64,
-    pub hit: u64,
-    pub cut: u64,
-}
-
-impl TTable {
-    pub fn new() -> Self {
-        Self {
-            p_table: (0..TT_TABLE_SIZE).map(|_| TTEntry::default()).collect(),
-            new_write: 0,
-            over_write: 0,
-            hit: 0,
-            cut: 0,
-        }
-    }
+    pub table: Vec<TTEntry>,
+    pub age: u8,
 }
 
 impl Default for TTable {
     fn default() -> Self {
-        Self::new()
+        Self {
+            table: vec![TTEntry::default(); T_TABLE_SIZE],
+            age: 0
+        }
     }
 }
 
@@ -79,14 +66,10 @@ impl Default for TTable {
 #[macro_export]
 macro_rules! tt_index {
     ($hash:expr) => {{
-        ($hash as usize) % TT_TABLE_SIZE
+        ($hash as usize) % T_TABLE_SIZE
     }};
 }
 
-/// TT metadata bitfield accessors/encoders.
-///
-/// Encoders write fields into `TTEntry::encoded`, while accessors decode them.
-/// Score is packed with a +2^21 bias so a signed value fits into 22 bits.
 #[macro_export]
 macro_rules! tt_enc_flags {
     ($entry:expr, $val:expr) => {{
@@ -103,10 +86,17 @@ macro_rules! tt_enc_depth {
 }
 
 #[macro_export]
+macro_rules! tt_enc_age {
+    ($entry:expr, $val:expr) => {{
+        let age = (($val as u32).min(127)) & 0x7F;
+        $entry.encoded |= age << 9;
+    }};
+}
+
+#[macro_export]
 macro_rules! tt_enc_score {
     ($entry:expr, $val:expr) => {{
-        let packed = (($val as i32 + (1 << 21)) as u32) & ((1u32 << 22) - 1);
-        $entry.encoded |= packed << 9;
+        $entry.encoded |= ($val as u32 & 0xFFFF) << 16;
     }};
 }
 
@@ -125,9 +115,16 @@ macro_rules! tt_depth {
 }
 
 #[macro_export]
+macro_rules! tt_age {
+    ($entry:expr) => {
+        (($entry.encoded >> 9) & 0x7F) as u8
+    };
+}
+
+#[macro_export]
 macro_rules! tt_score {
     ($entry:expr) => {
-        ((($entry.encoded >> 9) & ((1u32 << 22) - 1)) as i32) - (1 << 21)
+        (($entry.encoded >> 16) as i32) << 16 >> 16
     };
 }
 
@@ -146,29 +143,38 @@ macro_rules! hash_tt_entry {
         let hash = $state.position_hash;
         let index = tt_index!(hash);
 
-        if $state.transposition_table.p_table[index].position_hash == 0 {
-            $state.transposition_table.new_write += 1;
-        } else {
-            $state.transposition_table.over_write += 1;
+        let mut replace = false;
+        if $state.transposition_table.table[index].position_hash == 0 {
+            replace = true
+        } else if
+        tt_age!($state.transposition_table.table[index]) <
+        $state.transposition_table.age ||
+        tt_depth!($state.transposition_table.table[index]) <=
+        $depth
+        {
+            replace = true
         }
 
-        let mut adjusted_score = $score;
+        let mut score = $score;
 
-        if adjusted_score > MATE_SCORE {
-            adjusted_score += $state.search_ply as i32;
-        } else if adjusted_score < -MATE_SCORE {
-            adjusted_score -= $state.search_ply as i32;
+        if score > MATE_SCORE {
+            score += $state.search_ply as i32;
+        } else if score < -MATE_SCORE {
+            score -= $state.search_ply as i32;
         }
 
-        let entry = &mut $state.transposition_table.p_table[index];
+        if replace {
+            let entry = &mut $state.transposition_table.table[index];
 
-        entry.position_hash = hash;
-        entry.tt_move = $tt_move;
-        entry.encoded = 0;
+            entry.position_hash = hash;
+            entry.tt_move = $tt_move;
+            entry.encoded = 0;
 
-        tt_enc_flags!(entry, $flags);
-        tt_enc_depth!(entry, $depth);
-        tt_enc_score!(entry, adjusted_score);
+            tt_enc_flags!(entry, $flags);
+            tt_enc_depth!(entry, $depth);
+            tt_enc_age!(entry, $state.transposition_table.age);
+            tt_enc_score!(entry, score);
+        }
     }};
 }
 
@@ -182,7 +188,7 @@ macro_rules! probe_tt_entry {
         let index = tt_index!($state.position_hash);
 
         let (entry_move, mut entry_score, entry_depth, entry_flags) = {
-            let entry = &$state.transposition_table.p_table[index];
+            let entry = &$state.transposition_table.table[index];
 
             if entry.position_hash != $state.position_hash {
                 (null_move(), i32::MIN, 0usize, HFNONE)
@@ -201,8 +207,6 @@ macro_rules! probe_tt_entry {
         } else if entry_depth < $depth {
             (false, entry_move, i32::MIN)
         } else {
-            $state.transposition_table.hit += 1;
-
             if entry_score > MATE_SCORE {
                 entry_score -= $state.search_ply as i32;
             } else if entry_score < -MATE_SCORE {
@@ -212,7 +216,6 @@ macro_rules! probe_tt_entry {
             match entry_flags {
                 HFALPHA => {
                     if entry_score <= $alpha {
-                        $state.transposition_table.cut += 1;
                         (true, entry_move, $alpha)
                     } else {
                         (false, entry_move, entry_score)
@@ -220,14 +223,12 @@ macro_rules! probe_tt_entry {
                 }
                 HFBETA => {
                     if entry_score >= $beta {
-                        $state.transposition_table.cut += 1;
                         (true, entry_move, $beta)
                     } else {
                         (false, entry_move, entry_score)
                     }
                 }
                 HFEXACT => {
-                    $state.transposition_table.cut += 1;
                     (true, entry_move, entry_score)
                 }
                 _ => (false, entry_move, entry_score),
@@ -239,7 +240,7 @@ macro_rules! probe_tt_entry {
 #[macro_export]
 macro_rules! probe_pv_move {
     ($state:expr) => {{
-        let entry = &$state.transposition_table.p_table
+        let entry = &$state.transposition_table.table
             [tt_index!($state.position_hash)];
 
         if entry.position_hash == $state.position_hash {

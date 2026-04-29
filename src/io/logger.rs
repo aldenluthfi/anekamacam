@@ -14,10 +14,6 @@
 use crate::*;
 
 pub fn push_log_message(level: u8, message: String) {
-    if level > configured_verbosity_level() {
-        return;
-    }
-
     let mut queue = LOG_MESSAGES.lock().unwrap_or_else(|e| {
         panic!("Failed to lock LOG_MESSAGES: {e}")
     });
@@ -27,20 +23,6 @@ pub fn push_log_message(level: u8, message: String) {
     while queue.len() > MAX_LOGS_LEN {
         queue.pop_front();
     }
-}
-
-pub fn take_log_messages() -> Vec<String> {
-    let mut queue = LOG_MESSAGES.lock().unwrap_or_else(|e| {
-        panic!("Failed to lock LOG_MESSAGES: {e}")
-    });
-
-    let mut drained = Vec::with_capacity(queue.len());
-
-    while let Some(message) = queue.pop_front() {
-        drained.push(message);
-    }
-
-    drained
 }
 
 #[macro_export]

@@ -93,7 +93,7 @@ pub use crate::io::game_io::{
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, init_logging,
-    push_log_message, take_log_messages, verbosity_enabled,
+    push_log_message, verbosity_enabled,
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
 pub use crate::io::tui::tui;
@@ -258,7 +258,8 @@ pub fn null_move() -> Move {
 pub const DEFAULT_DROP: &str = "@#~?@";
 pub const NULL_DROP: &str = "@#~?@#~?";
 
-pub const MATE_SCORE: i32 = 1000000;
+pub const INFINITY: i32 = 20000;
+pub const MATE_SCORE: i32 = INFINITY - MAX_DEPTH as i32;
 
 pub const HFNONE: u8 = 0;
 pub const HFALPHA: u8 = 1;
@@ -269,7 +270,7 @@ pub const OPENING: u8 = 0;
 pub const MIDDLEGAME: u8 = 1;
 pub const ENDGAME: u8 = 2;
 
-pub const TT_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();      /* 256MB                              */
+pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       /* 256MB                              */
 pub const MAX_DEPTH: usize = 64;
 
 pub const TUI_NORMAL_MODE: u8 = 0;
