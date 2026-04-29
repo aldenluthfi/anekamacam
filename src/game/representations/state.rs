@@ -251,7 +251,6 @@ macro_rules! enp_piece {
 /// Each snapshot stores move payload and dynamic counters/flags so `undo_move!`
 /// can restore the exact pre-move position, including hash-dependent state.
 /// It is appended to `State::history` during move execution.
-#[derive(Clone)]
 pub struct Snapshot {
     pub move_ply: Move,
 
@@ -335,7 +334,6 @@ macro_rules! game_phase_score {
 /// - bit 12    : There is a limit on the number of repetitions of a position
 /// - bit 13-31 : reserved for future use
 ///
-#[derive(Clone)]
 pub struct State {
 
 /*----------------------------------------------------------------------------*\

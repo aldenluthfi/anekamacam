@@ -70,10 +70,7 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
-    state.transposition_table.over_write = 0;
-    state.transposition_table.hit = 0;
-    state.transposition_table.cut = 0;
-
+    state.transposition_table.age += 1;
     state.search_ply = 0;
 }
 
@@ -97,7 +94,7 @@ pub fn search_position(
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
         let score = alpha_beta(
-            state, depth, -MATE_SCORE, MATE_SCORE, info, true
+            state, depth, -INFINITY, INFINITY, info, true
         );
 
         if info.interrupt {
@@ -212,7 +209,7 @@ pub fn alpha_beta(
         return quiescence_search(state, alpha, beta, info);
     }
 
-    let is_repetition = state
+    let is_repetition_draw = state
         .position_hash_map
         .get(&state.position_hash)
         .copied()
@@ -220,9 +217,10 @@ pub fn alpha_beta(
         >= state.repetition_limit;
 
     let is_halfmove_draw =
-        halfmove_clock!(state) && state.halfmove_clock >= state.halfmove_limit;
+        halfmove_clock!(state) &&
+        (state.halfmove_clock >= state.halfmove_limit);
 
-    if state.search_ply > 0 && (is_repetition || is_halfmove_draw) {
+    if state.search_ply > 0 && (is_repetition_draw || is_halfmove_draw) {
         return 0;
     }
 
@@ -240,16 +238,24 @@ pub fn alpha_beta(
     }
 
     if tt_entry.0 {
-        state.transposition_table.cut += 1;
         return tt_entry.2;
     }
 
+    let mut pv_capture = false;
+
+    if let Some(pv_mv) = &pv_move {
+        if move_type!(pv_mv) == SINGLE_CAPTURE_MOVE
+        || move_type!(pv_mv) == MULTI_CAPTURE_MOVE
+        {
+            pv_capture = true;
+        }
+    }
+
     if depth < 3
-    && pv_move.is_none()
-    && !in_check
-    && (beta - 1).abs() > -MATE_SCORE + MAX_DEPTH as i32 + 1                    /* Static eval pruning                */
+    && (pv_move.is_none() || !pv_capture)
+    && !in_check                                                                /* Static eval pruning                */
     {
-        let eval_margin = 120 * depth as i32;
+        let eval_margin = 150 * depth as i32;
         if static_eval >= beta + eval_margin {
             return static_eval - eval_margin;
         }
@@ -285,14 +291,14 @@ pub fn alpha_beta(
     if depth < 4
     && !in_check
     && pv_move.is_none()
-    && alpha.abs() < MATE_SCORE - MAX_DEPTH as i32 - 1
+    && alpha.abs() < MATE_SCORE
     && static_eval + futility_margin[depth] <= alpha
     {
         futile = true;                                                          /* Futility pruning                   */
     }
 
     let mut best_move = null_move();
-    let mut best_score = -MATE_SCORE;
+    let mut best_score = -INFINITY;
     let mut legal_moves = 0;
     let alpha_start = alpha;
 
@@ -406,7 +412,7 @@ pub fn alpha_beta(
 
     if legal_moves == 0 {
         if is_in_check!(state.playing, state) || stalemate_loss!(&state) {
-            let mate_score = -MATE_SCORE + state.search_ply as i32;
+            let mate_score = -INFINITY + state.search_ply as i32;
 
             return if state.history.last().is_some_and(|s| {
                 move_type!(&s.move_ply) == DROP_MOVE

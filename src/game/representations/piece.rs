@@ -138,7 +138,6 @@ pub type PieceIndex = u8;
 ///
 /// The `promotions` field is a `Vec<u8>` that encodes the pieces this piece can
 /// promote to.
-#[derive(Clone)]
 pub struct Piece {
     pub name: String,
     pub char: char,
