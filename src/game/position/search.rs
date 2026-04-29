@@ -209,18 +209,7 @@ pub fn alpha_beta(
         return quiescence_search(state, alpha, beta, info);
     }
 
-    let is_repetition_draw = state
-        .position_hash_map
-        .get(&state.position_hash)
-        .copied()
-        .unwrap_or(0)
-        >= state.repetition_limit;
-
-    let is_halfmove_draw =
-        halfmove_clock!(state) &&
-        (state.halfmove_clock >= state.halfmove_limit);
-
-    if state.search_ply > 0 && (is_repetition_draw || is_halfmove_draw) {
+    if state.search_ply > 0 && state.game_over {
         return 0;
     }
 
@@ -411,7 +400,7 @@ pub fn alpha_beta(
     }
 
     if legal_moves == 0 {
-        if is_in_check!(state.playing, state) || stalemate_loss!(&state) {
+        if is_in_check!(state.playing, state) && !stalemate_loss!(&state) {
             let mate_score = -INFINITY + state.search_ply as i32;
 
             return if state.history.last().is_some_and(|s| {

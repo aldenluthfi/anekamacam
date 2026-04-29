@@ -87,7 +87,7 @@ pub use crate::io::board_io::{
 pub use crate::io::game_io::{
     export_tuned_parameters_file, format_game_state,
     parse_config_file, parse_fen, parse_tuned_parameters_file,
-    format_castling_rights, format_hand, format_numeric_board,
+    format_castling_rights, format_fen, format_hand, format_numeric_board,
     format_position_hash, format_special_rules, format_game_phase,
     format_en_passant_square
 };
