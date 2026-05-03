@@ -540,7 +540,7 @@ impl State {
     /// It prepares the state for loading or initializing a fresh position.
     pub fn reset(&mut self) {
         let piece_count: usize = self.pieces.len();
-        let board_size: usize = (self.files as usize) * (self.ranks as usize);
+        let board_size: usize = self.main_board.len();
 
         self.playing = WHITE;
         self.main_board = vec![NO_PIECE; board_size];
@@ -632,7 +632,7 @@ impl State {
     }
 
     fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
-        let board_size = (self.files as usize) * (self.ranks as usize);
+        let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_moves[index * board_size + square as usize]
@@ -647,7 +647,7 @@ impl State {
     }
 
     fn populate_relevant_captures(&mut self, piece_moves: &[MoveSet]) {
-        let board_size = (self.files as usize) * (self.ranks as usize);
+        let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_captures[index * board_size + square as usize]
@@ -662,7 +662,7 @@ impl State {
     }
 
     fn populate_relevant_drops(&mut self, piece_setup_drops: &[DropSet]) {
-        let board_size = (self.files as usize) * (self.ranks as usize);
+        let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_drops[index * board_size + square as usize]
@@ -677,7 +677,7 @@ impl State {
     }
 
     fn populate_relevant_setup(&mut self, piece_setup_drops: &[DropSet]) {
-        let board_size = (self.files as usize) * (self.ranks as usize);
+        let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_setup[index * board_size + square as usize]
@@ -694,7 +694,7 @@ impl State {
     fn populate_relevant_stand_offs(
         &mut self, piece_stand_off: &[PatternSet]
     ) {
-        let board_size = (self.files as usize) * (self.ranks as usize);
+        let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
                 self.relevant_stand_offs[index * board_size + square as usize]

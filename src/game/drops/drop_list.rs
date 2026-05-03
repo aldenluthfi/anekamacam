@@ -83,7 +83,7 @@ pub fn generate_relevant_drops(
 /// This enforces drop flags (`k/f/d/e`), count limits, hand ownership,
 /// and allower/stopper pattern constraints before encoding each drop move.
 pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
-    let board_size = state.files as u32 * state.ranks as u32;
+    let board_size = state.main_board.len() as u32;
     let piece_index = p_index!(piece) as usize;
     let piece_color = p_color!(piece) as usize;
     let mut drop_list = Vec::with_capacity(128);

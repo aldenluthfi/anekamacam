@@ -15,11 +15,12 @@
 use crate::*;
 
 const TAB_TITLES: [&str; 2] = ["Game", "Overview"];
-const TAB_FOCUSABLES: [u8; 2] = [4, 1];
+const TAB_FOCUSABLES: [u8; 2] = [3, 1];
 
 enum TuiEvent {
     Input(KeyEvent),
     StateUpdate(BoardState),
+    StateInit(Arc<Mutex<State>>),
     Unlock,
 }
 
@@ -97,7 +98,13 @@ impl Tui {
                 Ok(TuiEvent::StateUpdate(state)) => {
                     self.board_state = Some(state);
                     false
-                }
+                },
+                Ok(TuiEvent::StateInit(state)) => {
+                    self.game_state = Some(state);
+                    self.tab = 0;
+                    self.focus = 0;
+                    false
+                },
                 Ok(TuiEvent::Unlock) => {
                     self.locked = false;
                     false
@@ -494,7 +501,7 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let mut moves_block = Block::default()
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
-    let mut details_block = Block::default()
+    let details_block = Block::default()
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
     let mut fen_block = Block::default()
@@ -688,7 +695,7 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     let root = frame.area();
 
-    if app.game_state.is_none() {
+    if !app.locked && app.game_state.is_none() {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -935,6 +942,8 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 return false;
             }
 
+            app.locked = true;
+
             thread::spawn({
                 let command = app.input.clone();
                 let arc_state = app.game_state.as_mut().unwrap_or_else(
@@ -1060,26 +1069,61 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Enter) if app.game_state.is_none() => {
-            let filename = app.input.trim();
-            let path = Path::new(CONFIGS_DIR).join(filename);
 
-            app.input.clear();
-            app.tab = 0;
-            app.focus = 0;
+            app.locked = true;
 
-            if path.is_file() {
-                let path_str = path.to_string_lossy();
-                let state = parse_config_file(&path_str);
+            thread::spawn({
+                let filename = app.input.trim();
+                let path = Path::new(CONFIGS_DIR).join(filename);
+                let sender = app.sender.clone();
 
-                let board_state = BoardState::from_state(&state);
+                app.input.clear();
 
-                app.board_state = Some(board_state);
-                app.game_state = Some(Arc::new(Mutex::new(state)));
-            } else {
-                log_1!(
-                    "Config file not found at path: {}", path.to_string_lossy()
-                );
-            }
+                move || {
+                    if path.is_file() {
+                        let path_str = path.to_string_lossy();
+                        let state = parse_config_file(&path_str);
+
+                        let board_state = BoardState::from_state(&state);
+
+                        let board_state = Some(board_state);
+                        let game_state = Some(Arc::new(Mutex::new(state)));
+
+                        sender.send(
+                            TuiEvent::StateInit(game_state.unwrap())
+                        ).unwrap_or_else(
+                            |e| {
+                                panic!(
+                                    "Failed to send TuiEvent::StateInit: {e}"
+                                )
+                            }
+                        );
+
+                        sender.send(
+                            TuiEvent::StateUpdate(board_state.unwrap())
+                        ).unwrap_or_else(
+                            |e| {
+                                panic!(
+                                    "Failed to send TuiEvent::StateUpdate: {e}"
+                                )
+                            }
+                        );
+
+                        sender.send(
+                            TuiEvent::Unlock
+                        ).unwrap_or_else(
+                            |e| {
+                                panic!("Failed to send TuiEvent::Unlock: {e}")
+                            }
+                        );
+                    } else {
+                        log_1!(
+                            "Config file not found at path: {}",
+                            path.to_string_lossy()
+                        );
+                    }
+                }
+            });
 
 
             false

@@ -157,12 +157,8 @@ impl Piece {
     /// - `index`           : Index of the piece type (0-254)
     /// - `color`           : Color of the piece (0 for white, 1 for black)
     /// - `is_royal`        : Whether this is a royal piece
-    /// - `is_big`          : Whether this is a big piece
-    /// - `is_major`        : Whether this is a major piece (T) or minor (F)
     /// - `castle_right`    : Whether can castle to the right (kingside)
     /// - `castle_left`     : Whether can castle to the left (queenside)
-    /// - `ovalue`          : Opening piece value (0-16383, stored in 14 bits)
-    /// - `evalue`          : Endgame piece value (0-16383, stored in 14 bits)
     /// - `rank`            : The piece rank used for move modifiers
     pub fn new(
         name: String,
@@ -171,12 +167,8 @@ impl Piece {
         index: u8,
         color: u8,
         is_royal: bool,
-        is_big: bool,
-        is_major: bool,
         castle_right: bool,
         castle_left: bool,
-        ovalue: u16,
-        evalue: u16,
         rank: u8,
     ) -> Self {
         let mut encoded_static = index as u32;
@@ -200,18 +192,7 @@ impl Piece {
 
         encoded_static |= (rank as u32) << 11;
 
-        let mut encoded_dynamic = 0u32;
-
-        if is_big {
-            encoded_dynamic |= 1;
-        }
-
-        if is_major {
-            encoded_dynamic |= 1 << 1;
-        }
-
-        encoded_dynamic |= (ovalue as u32 & 0x3FFF) << 2;
-        encoded_dynamic |= (evalue as u32 & 0x3FFF) << 16;
+        let encoded_dynamic = 0u32;
 
         Self {
             name,
