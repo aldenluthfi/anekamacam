@@ -343,7 +343,7 @@ pub fn generate_relevant_stand_offs(
 macro_rules! is_in_stand_off {
     ($state:expr) => {{
         let mut found = false;
-        let board_size = $state.files as usize * $state.ranks as usize;
+        let board_size = $state.main_board.len();
 
         'main: for (index, position) in $state.piece_list.iter().enumerate() {
             for &square in position {

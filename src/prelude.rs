@@ -70,7 +70,8 @@ pub use crate::game::position::{
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
     quiescence::quiescence_search,
-    transposition_table::{TTEntry, TTable},
+    transposition::{TTEntry, TTable},
+    parameters::{derive_parameters}
 };
 
 pub use crate::game::util::{
@@ -89,7 +90,7 @@ pub use crate::io::game_io::{
     parse_config_file, parse_fen, parse_tuned_parameters_file,
     format_castling_rights, format_fen, format_hand, format_numeric_board,
     format_position_hash, format_special_rules, format_game_phase,
-    format_en_passant_square
+    format_en_passant_square, set_piece_dynamic_parameters
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, init_logging,

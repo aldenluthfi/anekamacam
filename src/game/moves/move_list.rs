@@ -30,22 +30,22 @@ macro_rules! is_square_attacked {
         $attacked_unmoved:expr,
         $attacked_royal:expr,
         $attacked_rank:expr,
-        $game_state:expr
+        $state:expr
     ) => {{
-        let possible_attacks = &$game_state.relevant_attacks
+        let possible_attacks = &$state.relevant_attacks
             [$attacked_side as usize][$square as usize];
 
         possible_attacks.iter().any(|(piece_index, start, move_vector)| {
-            $game_state.main_board[*start as usize] == *piece_index
+            $state.main_board[*start as usize] == *piece_index
                 && validate_attack_vector!(
                     move_vector,
                     *start,
-                    &$game_state.pieces[*piece_index as usize],
+                    &$state.pieces[*piece_index as usize],
                     $attacked_unmoved,
                     $attacked_royal,
                     $attacked_rank,
                     $square,
-                    $game_state
+                    $state
                 )
         })
     }};
@@ -53,22 +53,22 @@ macro_rules! is_square_attacked {
 
 #[macro_export]
 macro_rules! is_in_check {
-    ($side:expr, $game_state:expr) => {{
-        let monarch_indices = &$game_state.royal_list[$side as usize];
+    ($side:expr, $state:expr) => {{
+        let monarch_indices = &$state.royal_list[$side as usize];
 
-        (!monarch_indices.is_empty() && !$game_state.setup_phase) && {
+        (!monarch_indices.is_empty() && !$state.setup_phase) && {
             monarch_indices.iter().all(|&idx| {
-                let royal_piece = &$game_state.main_board[idx as usize];
+                let royal_piece = &$state.main_board[idx as usize];
                 let royal_rank =
-                    p_rank!($game_state.pieces[*royal_piece as usize]);
+                    p_rank!($state.pieces[*royal_piece as usize]);
 
                 is_square_attacked!(
                     idx as u32,
                     $side,
-                    get!($game_state.virgin_board, idx as u32),
+                    get!($state.virgin_board, idx as u32),
                     true,
                     royal_rank,
-                    $game_state
+                    $state
                 )
             })
         }
@@ -78,7 +78,7 @@ macro_rules! is_in_check {
 pub fn generate_relevant_moves(
     piece: &Piece,
     square_index: u32,
-    game_state: &State,
+    state: &State,
     piece_moves: &[MoveSet],
 ) -> MoveSet {
     let piece_index = p_index!(piece) as usize;
@@ -89,8 +89,8 @@ pub fn generate_relevant_moves(
     'multi_leg: for multi_leg_vector in vector_set {
         let mut accumulated_index = square_index as i32;
 
-        let mut file = accumulated_index % (game_state.files as i32);
-        let mut rank = accumulated_index / (game_state.files as i32);
+        let mut file = accumulated_index % (state.files as i32);
+        let mut rank = accumulated_index / (state.files as i32);
 
         for leg in multi_leg_vector {
             let file_offset = x!(leg);
@@ -100,15 +100,15 @@ pub fn generate_relevant_moves(
 
             file += file_offset as i32 * (-2 * piece_color as i32 + 1);
             rank += rank_offset as i32 * (-2 * piece_color as i32 + 1);
-            accumulated_index = rank * (game_state.files as i32) + file;
+            accumulated_index = rank * (state.files as i32) + file;
 
             if file < 0
-                || file >= game_state.files as i32
+                || file >= state.files as i32
                 || rank < 0
-                || rank >= game_state.ranks as i32
-                || (forbidden_zones!(game_state)
+                || rank >= state.ranks as i32
+                || (forbidden_zones!(state)
                     && get!(
-                        game_state.forbidden_zones[piece_index],
+                        state.forbidden_zones[piece_index],
                         accumulated_index as u32
                     )
                     && !bypass)
@@ -139,7 +139,7 @@ pub fn generate_relevant_moves(
 pub fn generate_relevant_captures(
     piece: &Piece,
     square_index: u32,
-    game_state: &State,
+    state: &State,
     piece_moves: &[MoveSet],
 ) -> MoveSet {
     let piece_index = p_index!(piece) as usize;
@@ -150,8 +150,8 @@ pub fn generate_relevant_captures(
     'multi_leg: for multi_leg_vector in vector_set {
         let mut accumulated_index = square_index as i32;
 
-        let mut file = accumulated_index % (game_state.files as i32);
-        let mut rank = accumulated_index / (game_state.files as i32);
+        let mut file = accumulated_index % (state.files as i32);
+        let mut rank = accumulated_index / (state.files as i32);
 
         let mut has_capture_leg = false;
 
@@ -165,15 +165,15 @@ pub fn generate_relevant_captures(
 
             file += file_offset as i32 * (-2 * piece_color as i32 + 1);
             rank += rank_offset as i32 * (-2 * piece_color as i32 + 1);
-            accumulated_index = rank * (game_state.files as i32) + file;
+            accumulated_index = rank * (state.files as i32) + file;
 
             if file < 0
-                || file >= game_state.files as i32
+                || file >= state.files as i32
                 || rank < 0
-                || rank >= game_state.ranks as i32
-                || (forbidden_zones!(game_state)
+                || rank >= state.ranks as i32
+                || (forbidden_zones!(state)
                     && get!(
-                        game_state.forbidden_zones[piece_index],
+                        state.forbidden_zones[piece_index],
                         accumulated_index as u32
                     )
                     && !bypass)
@@ -202,13 +202,13 @@ pub fn generate_relevant_captures(
 ///
 /// For each prefiltered move vector, this records whether each traversed
 /// target is attacked as enemy capture (`c`) and/or friendly destroy (`d`).
-pub fn generate_attack_masks(square_index: u16, game_state: &mut State) {
-    for piece in &game_state.pieces {
+pub fn generate_attack_masks(square_index: u16, state: &mut State) {
+    for piece in &state.pieces {
         let piece_index = p_index!(piece);
         let piece_color = p_color!(piece);
-        let board_size = (game_state.files * game_state.ranks) as usize;
+        let board_size = state.main_board.len();
 
-        let vector_set = &game_state.relevant_moves
+        let vector_set = &state.relevant_moves
             [piece_index as usize * board_size + square_index as usize];
 
         for multi_leg_vector in vector_set {
@@ -222,14 +222,14 @@ pub fn generate_attack_masks(square_index: u16, game_state: &mut State) {
                 let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
                 let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
-                accumulated_index += (rank_offset * (game_state.files as i8)
+                accumulated_index += (rank_offset * (state.files as i8)
                     + file_offset) as i16;
 
                 let c = c!(leg) || (last_leg && !m!(leg));
                 let d = d!(leg);
 
                 if d {
-                    game_state.relevant_attacks[piece_color as usize]
+                    state.relevant_attacks[piece_color as usize]
                         [accumulated_index as usize]
                         .push((
                             piece_index,
@@ -239,7 +239,7 @@ pub fn generate_attack_masks(square_index: u16, game_state: &mut State) {
                 }
 
                 if c {
-                    game_state.relevant_attacks[1 - piece_color as usize]
+                    state.relevant_attacks[1 - piece_color as usize]
                         [accumulated_index as usize]
                         .push((
                             piece_index,
@@ -268,12 +268,12 @@ macro_rules! validate_attack_vector {
         $attacked_royal:expr,
         $attacked_rank:expr,
         $attacked_square:expr,
-        $game_state:expr
+        $state:expr
     ) => {{
         let piece_color = p_color!($attacking_piece);
         let piece_rank = p_rank!($attacking_piece);
         let piece_unmoved =
-            get!($game_state.virgin_board, $square_index as u32);
+            get!($state.virgin_board, $square_index as u32);
 
         let mut accumulated_index = $square_index as i16;
         let mut target_was_last_captured = false;
@@ -291,7 +291,7 @@ macro_rules! validate_attack_vector {
             let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
             accumulated_index +=
-                (rank_offset * ($game_state.files as i8) + file_offset) as i16;
+                (rank_offset * ($state.files as i8) + file_offset) as i16;
 
             let end_square = accumulated_index as u32;
 
@@ -317,11 +317,11 @@ macro_rules! validate_attack_vector {
             }
 
             let friendly = get!(
-                $game_state.pieces_board[piece_color as usize],
+                $state.pieces_board[piece_color as usize],
                 end_square
             ) && end_square != start_square;
             let enemy = get!(
-                $game_state.pieces_board[1 - piece_color as usize],
+                $state.pieces_board[1 - piece_color as usize],
                 end_square
             );
             let empty = !friendly && !enemy;
@@ -352,21 +352,21 @@ macro_rules! validate_attack_vector {
             }
 
             if empty && !pass_move {
-                if t && enp_square!($game_state.en_passant_square) == end_square
+                if t && enp_square!($state.en_passant_square) == end_square
                 {
                     let capt_piece_index =
-                        enp_piece!($game_state.en_passant_square);
+                        enp_piece!($state.en_passant_square);
                     let capt_piece_color =
-                        p_color!($game_state.pieces[capt_piece_index as usize]);
+                        p_color!($state.pieces[capt_piece_index as usize]);
 
                     if d && capt_piece_color == piece_color
                         || c && capt_piece_color != piece_color
                     {
                         let capt_piece =
-                            &$game_state.pieces[capt_piece_index as usize];
+                            &$state.pieces[capt_piece_index as usize];
                         let capt_unmoved = get!(
-                            $game_state.virgin_board,
-                            enp_captured!($game_state.en_passant_square)
+                            $state.virgin_board,
+                            enp_captured!($state.en_passant_square)
                         );
                         let capt_rank = p_rank!(capt_piece);
                         let capt_royal = p_is_royal!(capt_piece);
@@ -398,9 +398,9 @@ macro_rules! validate_attack_vector {
                 }
 
                 let capt_piece_index =
-                    $game_state.main_board[end_square as usize];
-                let capt_piece = &$game_state.pieces[capt_piece_index as usize];
-                let capt_unmoved = get!($game_state.virgin_board, end_square);
+                    $state.main_board[end_square as usize];
+                let capt_piece = &$state.pieces[capt_piece_index as usize];
+                let capt_unmoved = get!($state.virgin_board, end_square);
                 let capt_rank = p_rank!(capt_piece);
                 let capt_royal = p_is_royal!(capt_piece);
 
@@ -423,9 +423,9 @@ macro_rules! validate_attack_vector {
                 }
 
                 let capt_piece_index =
-                    $game_state.main_board[end_square as usize];
-                let capt_piece = &$game_state.pieces[capt_piece_index as usize];
-                let capt_unmoved = get!($game_state.virgin_board, end_square);
+                    $state.main_board[end_square as usize];
+                let capt_piece = &$state.pieces[capt_piece_index as usize];
+                let capt_unmoved = get!($state.virgin_board, end_square);
                 let capt_rank = p_rank!(capt_piece);
                 let capt_royal = p_is_royal!(capt_piece);
 
@@ -462,14 +462,14 @@ fn generate_move_list_from_vectors(
     square_index: u16,
     piece: &Piece,
     vector_set: &MoveSet,
-    game_state: &State,
+    state: &State,
 ) -> Vec<Move> {
     let mut result = Vec::with_capacity(64);
 
     let piece_index = p_index!(piece);
     let piece_color = p_color!(piece);
     let piece_rank = p_rank!(piece);
-    let piece_unmoved = get!(game_state.virgin_board, square_index as u32);
+    let piece_unmoved = get!(state.virgin_board, square_index as u32);
 
     'multi_leg: for multi_leg_vector in vector_set {
         let mut encoded_move = Move::default();
@@ -492,7 +492,7 @@ fn generate_move_list_from_vectors(
             let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
             accumulated_index +=
-                (rank_offset * (game_state.files as i8) + file_offset) as i16;
+                (rank_offset * (state.files as i8) + file_offset) as i16;
 
             let end_square = accumulated_index as u32;
 
@@ -524,10 +524,10 @@ fn generate_move_list_from_vectors(
                         piece_unmoved,
                         p_is_royal!(piece),
                         piece_rank,
-                        game_state
+                        state
                     ))
                 || ((l || r)
-                    && game_state.castling_state & CASTLING[castling_rights]
+                    && state.castling_state & CASTLING[castling_rights]
                         == 0)
             {
                 continue 'multi_leg;
@@ -536,10 +536,10 @@ fn generate_move_list_from_vectors(
             enc_is_initial!(encoded_move, (i | piece_unmoved) as u128);
 
             let friendly =
-                get!(game_state.pieces_board[piece_color as usize], end_square)
+                get!(state.pieces_board[piece_color as usize], end_square)
                     && end_square != start_square;
             let enemy = get!(
-                game_state.pieces_board[1 - piece_color as usize],
+                state.pieces_board[1 - piece_color as usize],
                 end_square
             );
             let empty = !friendly && !enemy;
@@ -547,12 +547,12 @@ fn generate_move_list_from_vectors(
             let pass_move = file_offset == 0 && rank_offset == 0;
 
             if empty && !pass_move {
-                if t && enp_square!(game_state.en_passant_square) == end_square
+                if t && enp_square!(state.en_passant_square) == end_square
                 {
                     let capt_piece_index =
-                        enp_piece!(game_state.en_passant_square);
+                        enp_piece!(state.en_passant_square);
                     let capt_piece_color =
-                        p_color!(game_state.pieces[capt_piece_index as usize]);
+                        p_color!(state.pieces[capt_piece_index as usize]);
 
                     if d && capt_piece_color == piece_color
                         || c && capt_piece_color != piece_color
@@ -564,14 +564,14 @@ fn generate_move_list_from_vectors(
 
                         enc_multi_move_captured_square!(
                             taken_piece,
-                            enp_captured!(game_state.en_passant_square) as u64
+                            enp_captured!(state.en_passant_square) as u64
                         );
 
                         let capt_piece =
-                            &game_state.pieces[capt_piece_index as usize];
+                            &state.pieces[capt_piece_index as usize];
                         let capt_unmoved = get!(
-                            game_state.virgin_board,
-                            enp_captured!(game_state.en_passant_square)
+                            state.virgin_board,
+                            enp_captured!(state.en_passant_square)
                         );
                         let capt_rank = p_rank!(capt_piece);
                         let capt_royal = p_is_royal!(capt_piece);
@@ -603,9 +603,9 @@ fn generate_move_list_from_vectors(
                 }
 
                 let capt_piece_index =
-                    game_state.main_board[end_square as usize];
-                let capt_piece = &game_state.pieces[capt_piece_index as usize];
-                let capt_unmoved = get!(game_state.virgin_board, end_square);
+                    state.main_board[end_square as usize];
+                let capt_piece = &state.pieces[capt_piece_index as usize];
+                let capt_unmoved = get!(state.virgin_board, end_square);
                 let capt_rank = p_rank!(capt_piece);
                 let capt_royal = p_is_royal!(capt_piece);
 
@@ -637,9 +637,9 @@ fn generate_move_list_from_vectors(
                 }
 
                 let capt_piece_index =
-                    game_state.main_board[end_square as usize];
-                let capt_piece = &game_state.pieces[capt_piece_index as usize];
-                let capt_unmoved = get!(game_state.virgin_board, end_square);
+                    state.main_board[end_square as usize];
+                let capt_piece = &state.pieces[capt_piece_index as usize];
+                let capt_unmoved = get!(state.virgin_board, end_square);
                 let capt_rank = p_rank!(capt_piece);
                 let capt_royal = p_is_royal!(capt_piece);
 
@@ -699,7 +699,7 @@ fn generate_move_list_from_vectors(
 
         enc_end!(encoded_move, accumulated_index as u128);
 
-        if promotions!(game_state) && p_can_promote!(piece) {
+        if promotions!(state) && p_can_promote!(piece) {
             if taken_pieces.is_empty() {
                 enc_move_type!(encoded_move, QUIET_MOVE);
             } else if taken_pieces.len() == 1 {
@@ -711,20 +711,20 @@ fn generate_move_list_from_vectors(
             }
 
             let entered_mandatory_promotion = get!(
-                game_state.promotion_zones_mandatory[piece_index as usize],
+                state.promotion_zones_mandatory[piece_index as usize],
                 accumulated_index as u32
             );
             let moved_from_mandatory_zone = get!(
-                game_state.promotion_zones_mandatory[piece_index as usize],
+                state.promotion_zones_mandatory[piece_index as usize],
                 square_index as u32
             );
 
             let entered_optional_promotion = get!(
-                game_state.promotion_zones_optional[piece_index as usize],
+                state.promotion_zones_optional[piece_index as usize],
                 accumulated_index as u32
             );
             let moved_from_optional_zone = get!(
-                game_state.promotion_zones_optional[piece_index as usize],
+                state.promotion_zones_optional[piece_index as usize],
                 square_index as u32
             );
 
@@ -737,20 +737,20 @@ fn generate_move_list_from_vectors(
                 for promo_piece_index in &piece.promotions {
                     let mut can_promote = true;
 
-                    if count_limits!(game_state) {
+                    if count_limits!(state) {
                         can_promote = can_promote
-                            && game_state.piece_count
+                            && state.piece_count
                                 [*promo_piece_index as usize]
-                                < game_state.piece_limit
+                                < state.piece_limit
                                     [*promo_piece_index as usize];
                     }
 
-                    if promote_to_captured!(game_state) {
+                    if promote_to_captured!(state) {
                         let enemy_equiv =
-                            game_state.piece_swap_map[promo_piece_index];
+                            state.piece_swap_map[promo_piece_index];
 
                         can_promote = can_promote
-                            && game_state.piece_in_hand
+                            && state.piece_in_hand
                                 [1 - piece_color as usize]
                                 [enemy_equiv as usize]
                                 > 0;
@@ -796,18 +796,18 @@ fn generate_move_list_from_vectors(
 /// castling side conditions, and promotion branching.
 #[macro_export]
 macro_rules! generate_move_list {
-    ($square_index:expr, $piece:expr, $game_state:expr) => {{
+    ($square_index:expr, $piece:expr, $state:expr) => {{
         let piece_index = p_index!($piece) as usize;
-        let board_size = ($game_state.files * $game_state.ranks) as usize;
+        let board_size = $state.main_board.len();
         let vector_set =
-            &$game_state.relevant_moves
+            &$state.relevant_moves
                 [piece_index * board_size + $square_index as usize];
 
         generate_move_list_from_vectors(
             $square_index,
             $piece,
             vector_set,
-            $game_state,
+            $state,
         )
     }};
 }
@@ -818,18 +818,18 @@ macro_rules! generate_move_list {
 /// normal move generation without generating quiet moves first.
 #[macro_export]
 macro_rules! generate_capture_list {
-    ($square_index:expr, $piece:expr, $game_state:expr) => {{
+    ($square_index:expr, $piece:expr, $state:expr) => {{
         let piece_index = p_index!($piece) as usize;
-        let board_size = ($game_state.files * $game_state.ranks) as usize;
+        let board_size = $state.main_board.len();
         let vector_set =
-            &$game_state.relevant_captures
+            &$state.relevant_captures
                 [piece_index * board_size + $square_index as usize];
 
         let result = generate_move_list_from_vectors(
             $square_index,
             $piece,
             vector_set,
-            $game_state,
+            $state,
         );
 
         result
