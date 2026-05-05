@@ -25,6 +25,7 @@ log = { workspace = true }
 env_logger = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
+arboard = { workspace = true }
 
 [features]
 hotpath = ["hotpath/hotpath"]

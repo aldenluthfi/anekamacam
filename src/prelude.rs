@@ -104,6 +104,7 @@ pub use crate::{log_1, log_2, log_3, log_4};
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
 \*----------------------------------------------------------------------------*/
+pub use arboard::Clipboard;
 pub use bnum::types::U4096;
 pub use crossterm::{
     event::{
