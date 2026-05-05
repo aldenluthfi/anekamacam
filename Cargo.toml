@@ -31,3 +31,4 @@ ratatui = {
     features = ["unstable-rendered-line-info"]
 }
 crossterm = "*"
+arboard = "*"

@@ -38,10 +38,6 @@ pub fn quiescence_search(
         return 0;
     }
 
-    if state.search_ply >= MAX_DEPTH as u32 {
-        return evaluate_position!(state);
-    }
-
     let stand_pat = evaluate_position!(state);
 
     if stand_pat >= beta {
