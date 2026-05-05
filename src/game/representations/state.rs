@@ -257,7 +257,6 @@ pub struct Snapshot {
     pub castling_state: u8,
     pub halfmove_clock: u8,
     pub en_passant_square: EnPassantSquare,
-    pub setup_phase: bool,
     pub game_over: bool,
     pub game_phase: u8,                                                         /* OPENING/MIDDLEGAME/ENDGAME         */
 
@@ -271,7 +270,6 @@ impl Default for Snapshot {
             castling_state: 0,
             halfmove_clock: 0,
             en_passant_square: EnPassantSquare::MAX,
-            setup_phase: false,
             game_over: false,
             game_phase: OPENING,
             position_hash: u128::default(),
@@ -379,9 +377,8 @@ pub struct State {
                                  DYNAMIC FIELDS
 \*----------------------------------------------------------------------------*/
 
-    pub setup_phase: bool,
     pub game_over: bool,
-    pub game_phase: u8,                                                         /* OPENING/MIDDLEGAME/ENDGAME         */
+    pub game_phase: u8,                                                         /* SETUP/OPENING/MIDDLEGAME/ENDGAME   */
 
     pub playing: u8,
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
@@ -489,7 +486,6 @@ impl State {
 
             most_valuable,
 
-            setup_phase: false,
             game_over: false,
             game_phase: OPENING,
 
@@ -583,11 +579,6 @@ impl State {
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     }
 
-    /// Resets the state and loads a new position from a FEN-like string.
-    ///
-    /// This is a convenience wrapper that performs `reset()` first, then parses
-    /// and applies the supplied position text.
-    /// It guarantees stale runtime state is not carried into the new position.
     pub fn load_fen(&mut self, fen: &str) {
         self.reset();
         parse_fen(self, fen);
@@ -595,7 +586,7 @@ impl State {
 
     fn populate_char_map(&mut self) {
         for (index, piece) in self.pieces.iter().enumerate() {
-            self.piece_char_map.insert(piece.char, index as u8);
+            self.piece_char_map.insert(piece.char, index as PieceIndex);
         }
     }
 

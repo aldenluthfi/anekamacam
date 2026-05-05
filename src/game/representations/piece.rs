@@ -32,7 +32,7 @@ use crate::*;
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
-        ($piece.encoded_static & 0xFF) as u8
+        ($piece.encoded_static & 0xFF) as PieceIndex
     };
 }
 
