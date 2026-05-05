@@ -537,6 +537,17 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         Constraint::Fill(2),
     ];
 
+    if app.focus == TAB_FOCUS_FEN {
+        Clipboard::new().unwrap_or_else(|e| {
+            panic!("Failed to initialize clipboard: {e}")
+        }).set_text(app.board_state.as_ref()
+            .map(|state| state.fen.clone())
+            .unwrap_or_else(|| "Loading...".to_string())
+        ).unwrap_or_else(|e| {
+            panic!("Failed to set clipboard text: {e}")
+        });
+    }
+
     let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| {
         panic!("Failed to lock LOG_MESSAGES: {e}")
     });
