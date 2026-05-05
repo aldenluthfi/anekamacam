@@ -62,6 +62,19 @@ pub fn refresh_eval_state(state: &mut State) {
     };
 }
 
+/// Calculates the distance between two squares on the board.
+pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
+    let file1 = sq1 % state.files as Square;
+    let rank1 = sq1 / state.files as Square;
+    let file2 = sq2 % state.files as Square;
+    let rank2 = sq2 / state.files as Square;
+
+    let df = (file1 as i32 - file2 as i32).abs() as f64;
+    let dr = (rank1 as i32 - rank2 as i32).abs() as f64;
+
+    (df.powi(2) + dr.powi(2)).sqrt()
+}
+
 /// Recomputes derived state and asserts it matches the stored caches.
 ///
 /// This is a debug integrity check for boards, piece lists, material counts,

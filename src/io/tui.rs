@@ -488,6 +488,7 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
     let right_most_rect = Layout::default()
         .direction(Direction::Vertical)
+        .spacing(Spacing::Overlap(1))
         .constraints([
             Constraint::Min(0),
             Constraint::Length(3)
@@ -502,9 +503,11 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
     let details_block = Block::default()
+        .merge_borders(MergeStrategy::Exact)
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
     let mut fen_block = Block::default()
+        .merge_borders(MergeStrategy::Exact)
         .padding(Padding::horizontal(1))
         .borders(Borders::ALL);
     let mut logs_block = Block::default()

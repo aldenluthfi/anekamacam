@@ -72,31 +72,7 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     (castling, en_passant, in_hand)
 }
 
-fn parse_numeric_parameter_list(line: &str, label: &str) -> Vec<i32> {
-    let trimmed = line.trim();
-    assert!(
-        trimmed.starts_with('[') && trimmed.ends_with(']'),
-        "Invalid {} list format: {}",
-        label,
-        line
-    );
-
-    let inner = &trimmed[1..trimmed.len() - 1];
-    if inner.trim().is_empty() {
-        return Vec::new();
-    }
-
-    inner
-        .split(',')
-        .map(|value| {
-            value.trim().parse::<i32>().unwrap_or_else(|_| {
-                panic!("Invalid {} entry: {}", label, value.trim())
-            })
-        })
-        .collect()
-}
-
-fn mirror_pst_across_horizontal_axis(
+pub fn mirror_pst_across_horizontal_axis(
     pst: &[i32],
     files: usize,
     ranks: usize,
@@ -445,7 +421,6 @@ pub fn parse_config_file(path: &str) -> State {
         "pieces",
         "piece order",
         "piece moves",
-        "evaluation parameters",
         "piece roles",
     ];
 
@@ -622,8 +597,6 @@ pub fn parse_config_file(path: &str) -> State {
     let mut pieces_drops;
     let mut pieces_setup;
     let mut pieces_stand_off;
-    let mut pst_opening;
-    let mut pst_endgame;
 
     let mut char_to_unordered_index: HashMap<char, usize> = HashMap::new();
     let mut char_to_type_index: HashMap<char, usize> = HashMap::new();
@@ -712,10 +685,7 @@ pub fn parse_config_file(path: &str) -> State {
         char_to_index.insert(piece_char, i);
     }
 
-    let eval_parameters = &sections["evaluation parameters"];
     let piece_count = pieces.len();
-    let board_size = (files as usize) * (ranks as usize);
-
     let piece_type_count = sections["pieces"].len();
     assert!(
         piece_type_count > 0 && piece_type_count <= piece_count,
@@ -758,74 +728,8 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    let pst_opening_start_row = 0;
-    let pst_endgame_start_row = pst_opening_start_row + piece_type_count;
-
     for i in 0..piece_count {
         pieces[i].5 = royal_flags[i];
-    }
-
-    pst_opening = vec![vec![0i32; board_size]; piece_count];
-    pst_endgame = vec![vec![0i32; board_size]; piece_count];
-
-    let mut piece_type_pst_opening =
-        vec![vec![0i32; board_size]; piece_type_count];
-    let mut piece_type_pst_endgame =
-        vec![vec![0i32; board_size]; piece_type_count];
-    for piece_type_idx in 0..piece_type_count {
-        let pst_opening_values = parse_numeric_parameter_list(
-            &eval_parameters[pst_opening_start_row + piece_type_idx],
-            "piece square table (opening/middlegame)",
-        );
-        assert!(
-            pst_opening_values.len() == board_size,
-            concat!(
-                "Opening/middlegame PST length ({}) for piece type index {} ",
-                "doesn't match board size ({})"
-            ),
-            pst_opening_values.len(),
-            piece_type_idx,
-            board_size
-        );
-        piece_type_pst_opening[piece_type_idx] = pst_opening_values;
-
-        let pst_endgame_values = parse_numeric_parameter_list(
-            &eval_parameters[pst_endgame_start_row + piece_type_idx],
-            "piece square table (endgame)",
-        );
-
-        assert!(
-            pst_endgame_values.len() == board_size,
-            concat!(
-                "Endgame PST length ({}) for piece type index {} ",
-                "doesn't match board size ({})"
-            ),
-            pst_endgame_values.len(),
-            piece_type_idx,
-            board_size
-        );
-        piece_type_pst_endgame[piece_type_idx] = pst_endgame_values;
-    }
-
-    for (piece_idx, piece_type_idx) in piece_type_indices.iter().enumerate() {
-        let base_pst_opening = &piece_type_pst_opening[*piece_type_idx];
-        let base_pst_endgame = &piece_type_pst_endgame[*piece_type_idx];
-
-        if pieces[piece_idx].4 == BLACK {
-            pst_opening[piece_idx] = mirror_pst_across_horizontal_axis(
-                base_pst_opening,
-                files as usize,
-                ranks as usize,
-            );
-            pst_endgame[piece_idx] = mirror_pst_across_horizontal_axis(
-                base_pst_endgame,
-                files as usize,
-                ranks as usize,
-            );
-        } else {
-            pst_opening[piece_idx] = base_pst_opening.clone();
-            pst_endgame[piece_idx] = base_pst_endgame.clone();
-        }
     }
 
     pieces_moves = vec![String::new(); pieces.len()];
@@ -989,9 +893,6 @@ pub fn parse_config_file(path: &str) -> State {
             .collect(),
         special_rules,
     );
-
-    result.pst_opening = pst_opening;
-    result.pst_endgame = pst_endgame;
 
     let template_bit_fen = initial_position.split_whitespace().next().unwrap();
     for (index, piece) in result.pieces.iter().enumerate() {
@@ -2127,7 +2028,7 @@ pub fn format_hand(state: &State, color: u8) -> String {
 
 pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
     let mut result = String::new();
-    let width = 3;
+    let width = 4;
 
     result.push_str(&format!(
         "   ╔{}╗\n",
