@@ -135,45 +135,8 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
         }
         i += 1;
 
-        let relevant_moves =
-            &state.relevant_moves[piece_index * board_size + square];
-
-        let mut mobility_sum = 0.0;
-
-        for multi_leg_vector in relevant_moves {
-            let mut mobility_product = 1.0;
-
-            for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
-                let last_leg = leg_index + 1 == multi_leg_vector.len();
-
-                let m = m!(leg) || (!c!(leg) && !d!(leg));
-                let d = d!(leg);
-                let c = c!(leg) || (last_leg && !m!(leg) && !d);
-
-                match (m, c, d) {
-                    (true, false, false) |
-                    (false, true, false) |
-                    (false, false, true) => {
-                        mobility_product *= 0.75;
-                    },
-                    (true, true, false) |
-                    (true, false, true) |
-                    (false, true, true) => {
-                        mobility_product *= 0.85;
-                    },
-                    (true, true, true) => {
-                        mobility_product *= 1.0;
-                    },
-                    _ => {
-                        panic!("Cannot move, destroy or capture with leg");
-                    }
-                }
-            }
-
-            mobility_sum += mobility_product;
-        }
-
-        mobility_values[square] = mobility_sum;
+        mobility_values[square] =
+            derive_piece_mobility(state, piece_index as PieceIndex, square);
     }
 
     let mobility_value =
@@ -181,6 +144,219 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
         / mobility_values.iter().filter(|&&v| v >= 0.0).count() as f64;
 
     2.0 * board_size as f64 * (0.4 * reach_value + 0.6 * mobility_value)
+}
+
+fn derive_piece_mobility(
+    state: &State, piece_index: PieceIndex, square: usize
+) -> f64 {
+    let board_size = state.main_board.len();
+
+    let relevant_moves =
+        &state.relevant_moves[piece_index as usize * board_size + square];
+
+    let mut mobility_sum = 0.0;
+
+    for multi_leg_vector in relevant_moves {
+        let mut mobility_product = 1.0;
+
+        for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
+            let last_leg = leg_index + 1 == multi_leg_vector.len();
+
+            let m = m!(leg) || (!c!(leg) && !d!(leg));
+            let d = d!(leg);
+            let c = c!(leg) || (last_leg && !m!(leg) && !d);
+
+            match (m, c, d) {
+                (true, false, false) |
+                (false, true, false) |
+                (false, false, true) => {
+                    mobility_product *= 0.75;
+                },
+                (true, true, false) |
+                (true, false, true) |
+                (false, true, true) => {
+                    mobility_product *= 0.85;
+                },
+                (true, true, true) => {
+                    mobility_product *= 1.0;
+                },
+                _ => {
+                    panic!("Cannot move, destroy or capture with leg");
+                }
+            }
+        }
+
+        mobility_sum += mobility_product;
+    }
+
+    mobility_sum
+}
+
+fn derive_piece_opening_value_on_square(
+    state: &State, piece_index: PieceIndex, square: usize
+) -> i32 {
+
+    let mobility = derive_piece_mobility(state, piece_index, square);
+    let center_file = if state.files % 2 == 1 {
+        vec![(state.files as f64 / 2.0).floor() as u8]
+    } else {
+        vec![state.files / 2, (state.files / 2) - 1]
+    };
+    let center_rank = if state.ranks % 2 == 1 {
+        vec![(state.ranks as f64 / 2.0).floor() as u8]
+    } else {
+        vec![state.ranks / 2, (state.ranks / 2) - 1]
+    };
+
+    let mut center_squares = vec![];
+
+    for file in &center_file {
+        for rank in &center_rank {
+            center_squares.push(*rank * state.files + *file);
+        }
+    }
+
+    let distance_from_center = center_squares
+        .iter()
+        .map(|&index| square_distance(state, square as Square, index as Square))
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_else(
+            || panic!("Error while getting distance from center squares")
+        );
+    let piece = &state.pieces[piece_index as usize];
+
+    if p_can_promote!(piece) {
+        let closest_mandatory = set_indices!(
+            state.promotion_zones_mandatory[piece_index as usize]
+        )
+        .iter()
+        .map(|&index| square_distance(state, square as Square, index as Square))
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(f64::INFINITY);
+
+        let closest_optional = set_indices!(
+            state.promotion_zones_optional[piece_index as usize]
+        )
+        .iter()
+        .map(|&index| square_distance(state, square as Square, index as Square))
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(f64::INFINITY);
+
+        let closest_promotion = closest_optional.min(closest_mandatory);
+
+        let opening_value =
+            10.0 *
+            (0.5 + 0.5 * mobility) *
+            (1.0 - 0.7 * distance_from_center as f64) *
+            (1.0 - 0.3 * closest_promotion as f64);
+
+        if p_is_royal!(piece) { -opening_value.round() as i32 }
+        else { opening_value.round() as i32 }
+    } else {
+        let opening_value =
+            10.0 *
+            (0.5 + 0.5 * mobility) *
+            (1.0 - 0.5 * distance_from_center as f64);
+
+        if p_is_royal!(piece) { -opening_value.round() as i32 }
+        else { opening_value.round() as i32 }
+    }
+}
+
+fn derive_opening_pst(index: PieceIndex, state: &State) -> Vec<i32> {
+    let mut pst = Vec::new();
+    let board_size = state.main_board.len();
+
+    for square in 0..board_size {
+        let value = derive_piece_opening_value_on_square(state, index, square);
+        pst.push(value);
+    }
+
+    pst
+}
+
+fn derive_piece_endgame_value_on_square(
+    state: &State, piece_index: PieceIndex, square: usize
+) -> i32 {
+    let mobility = derive_piece_mobility(state, piece_index, square);
+    let center_file = if state.files % 2 == 1 {
+        vec![(state.files as f64 / 2.0).floor() as u8]
+    } else {
+        vec![state.files / 2, (state.files / 2) - 1]
+    };
+    let center_rank = if state.ranks % 2 == 1 {
+        vec![(state.ranks as f64 / 2.0).floor() as u8]
+    } else {
+        vec![state.ranks / 2, (state.ranks / 2) - 1]
+    };
+
+    let mut center_squares = vec![];
+
+    for file in &center_file {
+        for rank in &center_rank {
+            center_squares.push(*rank * state.files + *file);
+        }
+    }
+
+    let distance_from_center = center_squares
+        .iter()
+        .map(|&index| square_distance(state, square as Square, index as Square))
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or_else(
+            || panic!("Error while getting distance from center squares")
+        );
+
+    let piece = &state.pieces[piece_index as usize];
+
+    if p_can_promote!(piece) {
+        let closest_mandatory = set_indices!(
+            state.promotion_zones_mandatory[piece_index as usize]
+        )
+        .iter()
+        .map(|&index| square_distance(state, square as Square, index as Square))
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(f64::INFINITY);
+
+
+        let closest_optional = set_indices!(
+            state.promotion_zones_optional[piece_index as usize]
+        )
+        .iter()
+        .map(|&index| square_distance(state, square as Square, index as Square))
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap_or(f64::INFINITY);
+
+        let closest_promotion = closest_optional.min(closest_mandatory);
+
+        let opening_value =
+            10.0 *
+            (0.5 + 0.5 * mobility) *
+            (1.0 - 0.2 * distance_from_center as f64) *
+            (1.0 - 0.8 * closest_promotion as f64);
+
+        opening_value.round() as i32
+
+    } else {
+        let opening_value =
+            10.0 *
+            (0.5 + 0.5 * mobility) *
+            (1.0 - 0.3 * distance_from_center as f64);
+
+        opening_value.round() as i32
+    }
+}
+
+
+fn derive_endgame_pst(index: PieceIndex, state: &State) -> Vec<i32> {
+    let mut pst = Vec::new();
+    let board_size = state.main_board.len();
+
+    for square in 0..board_size {
+        let value = derive_piece_endgame_value_on_square(state, index, square);
+        pst.push(value);
+    }
+
+    pst
 }
 
 pub fn derive_parameters(state: &mut State) {
@@ -272,4 +448,31 @@ pub fn derive_parameters(state: &mut State) {
         state.major_pieces[color] += count * (p_is_major!(piece) as u32);
         state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
     }
+
+    for piece in state.pieces.iter() {
+        let mut index = p_index!(piece);
+
+        if p_color!(piece) == BLACK {
+            index = state.piece_swap_map[&(index as u8)] as PieceIndex;
+        }
+
+        let mut opening_pst = derive_opening_pst(index, state);
+        let mut endgame_pst = derive_endgame_pst(index, state);
+
+        if p_color!(piece) == BLACK {
+            opening_pst = mirror_pst_across_horizontal_axis(
+                &opening_pst, state.files as usize, state.ranks as usize
+            );
+            endgame_pst = mirror_pst_across_horizontal_axis(
+                &endgame_pst, state.files as usize, state.ranks as usize
+            );
+
+            index = state.piece_swap_map[&(index as u8)] as PieceIndex;
+        }
+
+        state.pst_opening[index as usize] = opening_pst;
+        state.pst_endgame[index as usize] = endgame_pst;
+    }
+
+    refresh_eval_state(state);
 }

@@ -76,7 +76,7 @@ pub use crate::game::search::{
 
 pub use crate::game::util::{
     benchmark_perft, benchmark_search, format_time, perft, random_u128,
-    refresh_eval_state, verify_game_state,
+    refresh_eval_state, verify_game_state, square_distance
 };
 
 /*----------------------------------------------------------------------------*\
@@ -90,7 +90,8 @@ pub use crate::io::game_io::{
     parse_config_file, parse_fen, parse_tuned_parameters_file,
     format_castling_rights, format_fen, format_hand, format_numeric_board,
     format_position_hash, format_special_rules, format_game_phase,
-    format_en_passant_square, set_piece_dynamic_parameters
+    format_en_passant_square, set_piece_dynamic_parameters,
+    mirror_pst_across_horizontal_axis
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, init_logging,

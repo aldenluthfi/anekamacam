@@ -105,3 +105,16 @@ macro_rules! not {
         $board.2 = !$board.2;
     };
 }
+
+#[macro_export]
+macro_rules! set_indices {
+    ($board:expr) => {{
+        let mut indices = Vec::new();
+        for index in 0..(files!($board) as usize * ranks!($board) as usize) {
+            if get!($board, index as u32) {
+                indices.push(index);
+            }
+        }
+        indices
+    }};
+}

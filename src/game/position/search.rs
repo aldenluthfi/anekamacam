@@ -209,7 +209,7 @@ pub fn alpha_beta(
         return quiescence_search(state, alpha, beta, info);
     }
 
-    if state.search_ply > 0 && state.game_over {
+    if state.game_over {
         return 0;
     }
 
@@ -241,11 +241,11 @@ pub fn alpha_beta(
     }
 
     if depth < 3
-    && (pv_move.is_none() || !pv_capture)
+    && (pv_move.is_none() && !pv_capture)
     && !in_check                                                                /* Static eval pruning                */
     {
         let eval_margin = 150 * depth as i32;
-        if static_eval >= beta + eval_margin {
+        if static_eval - eval_margin >= beta {
             return static_eval - eval_margin;
         }
     }
