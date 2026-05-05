@@ -34,18 +34,7 @@ pub fn quiescence_search(
         check_interrupt(info);
     }
 
-    let is_repetition_draw = state
-        .position_hash_map
-        .get(&state.position_hash)
-        .copied()
-        .unwrap_or(0)
-        >= state.repetition_limit;
-
-    let is_halfmove_draw =
-        halfmove_clock!(state) && 
-        (state.halfmove_clock >= state.halfmove_limit);
-
-    if state.search_ply > 0 && (is_repetition_draw || is_halfmove_draw) {
+    if state.game_over {
         return 0;
     }
 
@@ -86,7 +75,7 @@ pub fn quiescence_search(
             total
         };
 
-        if captured_value as i32 + 200 < alpha
+        if stand_pat + captured_value as i32 + 200 < alpha
         && state.game_phase != ENDGAME
         && !promotion
         {                                                                       /* delta pruning                      */
