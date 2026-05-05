@@ -54,7 +54,7 @@ impl Debug for PieceSet {
         let mut pieces = Vec::new();
         for i in 0..256 {
             if self.0[i] {
-                pieces.push(i as u8);
+                pieces.push(i as PieceIndex);
             }
         }
         write!(f, "PieceSet({:?})", pieces)
@@ -144,7 +144,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
                 } else {
                     state.piece_char_map[&piece_char] as u16
                 };
-                piece_set.insert(piece_index as u8);
+                piece_set.insert(piece_index as PieceIndex);
             }
 
             ((y << 8) | x, piece_set)
@@ -198,7 +198,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
                 } else {
                     state.piece_char_map[&piece_char] as u16
                 };
-                piece_set.insert(piece_index as u8);
+                piece_set.insert(piece_index as PieceIndex);
             }
 
             ((y << 8) | x, piece_set)

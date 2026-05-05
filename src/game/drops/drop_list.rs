@@ -95,7 +95,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
     }
 
     for square in 0..board_size {
-        let drops = if state.setup_phase {
+        let drops = if state.game_phase == SETUP {
             &state.relevant_setup
                 [piece_index * board_size as usize + square as usize]
         } else {
@@ -134,8 +134,10 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
                 || !drop_e && state.piece_in_hand[piece_color][piece_index] == 0
                 || drop_e
                     && state.piece_in_hand[1 - piece_color]
-                        [state.piece_swap_map[&(piece_index as u8)] as usize]
-                        == 0
+                        [
+                            state.piece_swap_map[&(piece_index as PieceIndex)] 
+                            as usize
+                        ] == 0
             {
                 continue 'drop_loop;
             }

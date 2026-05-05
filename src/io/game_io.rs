@@ -702,7 +702,7 @@ pub fn parse_config_file(path: &str) -> State {
     for (i, &piece_char) in piece_order_chars.iter().enumerate() {
         let old_index = *char_to_unordered_index.get(&piece_char).unwrap();
         let mut piece_data = unordered_pieces[old_index].clone();
-        piece_data.3 = i as u8;
+        piece_data.3 = i as PieceIndex;
         pieces.push(piece_data);
         piece_type_indices.push(
             *char_to_type_index.get(&piece_char).unwrap_or_else(|| {
@@ -900,8 +900,8 @@ pub fn parse_config_file(path: &str) -> State {
 
                 for promo_char in promotions_str.chars() {
                     if let Some(&promo_index) = char_to_index.get(&promo_char) {
-                        pieces[white_index].2.push(promo_index as u8);
-                        pieces[black_index].2.push(promo_index as u8);
+                        pieces[white_index].2.push(promo_index as PieceIndex);
+                        pieces[black_index].2.push(promo_index as PieceIndex);
                     } else {
                         panic!(
                             "Unknown promotion piece character: {}",
@@ -921,7 +921,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                 for promo_char in promotions_str.chars() {
                     if let Some(&promo_index) = char_to_index.get(&promo_char) {
-                        pieces[piece_index].2.push(promo_index as u8);
+                        pieces[piece_index].2.push(promo_index as PieceIndex);
                     } else {
                         panic!(
                             "Unknown promotion piece character: {}",
@@ -1014,7 +1014,9 @@ pub fn parse_config_file(path: &str) -> State {
         if let Some(other_idx) = result.pieces.iter().position(|p| {
             p.name == piece.name && p_color!(p) != p_color!(piece)
         }) {
-            result.piece_swap_map.insert(i as u8, other_idx as u8);
+            result.piece_swap_map.insert(
+                i as PieceIndex, other_idx as PieceIndex
+            );
         }
     }
 
@@ -1031,8 +1033,8 @@ pub fn parse_config_file(path: &str) -> State {
     for (index, _) in result.pieces.iter().enumerate() {
         result
             .piece_demotion_map
-            .entry(index as u8)
-            .or_insert_with(|| vec![index as u8]);
+            .entry(index as PieceIndex)
+            .or_insert_with(|| vec![index as PieceIndex]);
     }
 
     if castling {
@@ -1875,12 +1877,8 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     }
 
     if setup_phase!(state)
-        && !state.royal_list[0].is_empty()
-        && !state.royal_list[1].is_empty()
-    {
-        state.setup_phase = false;
-    } else if state.royal_list[0].is_empty() || state.royal_list[1].is_empty() {
-        state.setup_phase = true;
+    && (state.royal_list[0].is_empty() || state.royal_list[1].is_empty()) {
+        state.game_phase = SETUP;
     }
 
     if parts.len() > part_index {
@@ -2198,7 +2196,7 @@ pub fn format_position_hash(state: &State) -> String {
 pub fn format_game_phase(state: &State) -> String {
     if state.game_over {
         "Game Over".to_string()
-    } else if state.setup_phase {
+    } else if state.game_phase == SETUP {
         "Setup Phase".to_string()
     } else if state.game_phase == OPENING {
         "Opening".to_string()

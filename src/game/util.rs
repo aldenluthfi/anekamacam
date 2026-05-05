@@ -51,7 +51,9 @@ pub fn refresh_eval_state(state: &mut State) {
 
     let game_phase_score = game_phase_score!(state);
 
-    state.game_phase = if game_phase_score > state.opening_score {
+    state.game_phase = if state.game_phase == SETUP {
+        SETUP
+    } else if game_phase_score > state.opening_score {
         OPENING
     } else if game_phase_score < state.endgame_score {
         ENDGAME

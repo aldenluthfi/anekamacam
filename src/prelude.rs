@@ -267,9 +267,10 @@ pub const HFALPHA: u8 = 1;
 pub const HFBETA: u8 = 2;
 pub const HFEXACT: u8 = 3;
 
-pub const OPENING: u8 = 0;
-pub const MIDDLEGAME: u8 = 1;
-pub const ENDGAME: u8 = 2;
+pub const SETUP: u8 = 0;
+pub const OPENING: u8 = 1;
+pub const MIDDLEGAME: u8 = 2;
+pub const ENDGAME: u8 = 3;
 
 pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       /* 256MB                              */
 pub const MAX_DEPTH: usize = 64;

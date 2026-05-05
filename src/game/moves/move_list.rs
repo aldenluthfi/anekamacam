@@ -56,7 +56,7 @@ macro_rules! is_in_check {
     ($side:expr, $state:expr) => {{
         let monarch_indices = &$state.royal_list[$side as usize];
 
-        (!monarch_indices.is_empty() && !$state.setup_phase) && {
+        (!monarch_indices.is_empty() && $state.game_phase != SETUP) && {
             monarch_indices.iter().all(|&idx| {
                 let royal_piece = &$state.main_board[idx as usize];
                 let royal_rank =
@@ -871,7 +871,6 @@ macro_rules! make_move {
             let last_halfmove_clock = $state.halfmove_clock;
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
-            let last_setup_phase = $state.setup_phase;
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
 
@@ -941,8 +940,8 @@ macro_rules! make_move {
 
                 $state.main_board[start_square as usize] = NO_PIECE;
                 $state.main_board[end_square as usize] =
-                    if is_promotion { promoted_piece as u8 }
-                    else { piece_index as u8 };
+                    if is_promotion { promoted_piece as PieceIndex }
+                    else { piece_index as PieceIndex };
 
                 $state.opening_pst_bonus[piece_color as usize] -=
                     $state.pst_opening[piece_index][start_square as usize];
@@ -989,7 +988,7 @@ macro_rules! make_move {
 
                     if promote_to_captured!($state) {
                         let enemy_equiv = $state.piece_swap_map
-                            [&(promoted_piece as u8)];
+                            [&(promoted_piece as PieceIndex)];
                         let hand =
                             &mut $state.piece_in_hand
                             [1 - piece_color as usize][enemy_equiv as usize];
@@ -1128,8 +1127,8 @@ macro_rules! make_move {
 
                 $state.main_board[start_square as usize] = NO_PIECE;
                 $state.main_board[end_square as usize] =
-                    if is_promotion { promoted_piece as u8 }
-                    else { piece_index as u8 };
+                    if is_promotion { promoted_piece as PieceIndex }
+                    else { piece_index as PieceIndex };
 
                 $state.opening_pst_bonus[piece_color as usize] -=
                     $state.pst_opening[piece_index][start_square as usize];
@@ -1176,7 +1175,7 @@ macro_rules! make_move {
 
                     if promote_to_captured!($state) {
                         let enemy_equiv = $state.piece_swap_map
-                            [&(promoted_piece as u8)];
+                            [&(promoted_piece as PieceIndex)];
                         let hand =
                             &mut $state.piece_in_hand
                             [1 - piece_color as usize][enemy_equiv as usize];
@@ -1246,7 +1245,8 @@ macro_rules! make_move {
                 }
 
                 if drops!($state) || promote_to_captured!($state) {
-                    let mut captured_index_u8 = captured_piece_index as u8;
+                    let mut captured_index_u8 =
+                        captured_piece_index as PieceIndex;
 
                     if demote_upon_capture!($state) {
                         captured_index_u8 = $state.piece_demotion_map
@@ -1346,7 +1346,7 @@ macro_rules! make_move {
 
                 if is_unload {
                     $state.main_board[unload_square as usize] =
-                        captured_piece_index as u8;
+                        captured_piece_index as PieceIndex;
                     $state.piece_list[captured_piece_index].remove(
                         &(captured_square as Square)
                     );
@@ -1452,8 +1452,8 @@ macro_rules! make_move {
 
                 $state.main_board[start_square as usize] = NO_PIECE;
                 $state.main_board[end_square as usize] =
-                    if is_promotion { promoted_piece as u8 }
-                    else { piece_index as u8 };
+                    if is_promotion { promoted_piece as PieceIndex }
+                    else { piece_index as PieceIndex };
 
                 $state.opening_pst_bonus[piece_color as usize] -=
                     $state.pst_opening[piece_index][start_square as usize];
@@ -1500,7 +1500,7 @@ macro_rules! make_move {
 
                     if promote_to_captured!($state) {
                         let enemy_equiv = $state.piece_swap_map
-                            [&(promoted_piece as u8)];
+                            [&(promoted_piece as PieceIndex)];
                         let hand =
                             &mut $state.piece_in_hand
                             [1 - piece_color as usize][enemy_equiv as usize];
@@ -1585,7 +1585,8 @@ macro_rules! make_move {
                     if drops!($state)
                     || promote_to_captured!($state)
                     {
-                        let mut captured_index_u8 = captured_piece_index as u8;
+                        let mut captured_index_u8 =
+                            captured_piece_index as PieceIndex;
 
                         if demote_upon_capture!($state) {
                             captured_index_u8 = $state.piece_demotion_map
@@ -1692,7 +1693,7 @@ macro_rules! make_move {
 
                     if is_unload {
                         $state.main_board[unload_square as usize] =
-                            captured_piece_index as u8;
+                            captured_piece_index as PieceIndex;
                         $state.piece_list[captured_piece_index].remove(
                             &(captured_square as Square)
                         );
@@ -1769,7 +1770,8 @@ macro_rules! make_move {
                     $state, piece_index, drop_square as Square
                 );
 
-                $state.main_board[drop_square as usize] = piece_index as u8;
+                $state.main_board[drop_square as usize] =
+                    piece_index as PieceIndex;
                 $state.piece_list[piece_index].insert(drop_square as Square);
                 $state.opening_pst_bonus[piece_color as usize] +=
                     $state.pst_opening[piece_index][drop_square as usize];
@@ -1803,7 +1805,7 @@ macro_rules! make_move {
                     );
                 } else {
                     let enemy_equiv = $state.piece_swap_map
-                        [&(piece_index as u8)] as usize;
+                        [&(piece_index as PieceIndex)] as usize;
                     let hand =
                         &mut $state.piece_in_hand
                         [1 - piece_color as usize][enemy_equiv];
@@ -1820,11 +1822,11 @@ macro_rules! make_move {
 
                 $state.halfmove_clock = 0;
 
-                if $state.setup_phase
+                if $state.game_phase == SETUP
                 && $state.piece_in_hand[0].iter().all(|&count| count == 0)
                 && $state.piece_in_hand[1].iter().all(|&count| count == 0)
                 {
-                    $state.setup_phase = false;
+                    $state.game_phase = OPENING;
                 }
 
                 for cap in $mv.1.iter() {
@@ -1971,14 +1973,13 @@ macro_rules! make_move {
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
-                setup_phase: last_setup_phase,
                 game_over: last_game_over,
                 game_phase: last_game_phase,
                 position_hash: last_position_hash
             };
 
             $state.history.push(snapshot);
-            if !$state.setup_phase && !legal {
+            if !legal {
                 undo_move!($state);
                 false
             } else {
@@ -2032,7 +2033,6 @@ macro_rules! undo_move {
         $state.halfmove_clock = snapshot.halfmove_clock;
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
-        $state.setup_phase = snapshot.setup_phase;
         $state.game_over = snapshot.game_over;
         $state.game_phase = snapshot.game_phase;
 
@@ -2064,7 +2064,8 @@ macro_rules! undo_move {
             }
 
             $state.main_board[end_square as usize] = NO_PIECE;
-            $state.main_board[start_square as usize] = piece_index as u8;
+            $state.main_board[start_square as usize] =
+                piece_index as PieceIndex;
 
             $state.opening_pst_bonus[piece_color as usize] -=
                 $state.pst_opening[
@@ -2115,7 +2116,7 @@ macro_rules! undo_move {
 
                 if promote_to_captured!($state) {
                     let enemy_equiv =
-                        $state.piece_swap_map[&(promoted_piece as u8)];
+                        $state.piece_swap_map[&(promoted_piece as PieceIndex)];
                     let hand = &mut $state.piece_in_hand
                         [1 - piece_color as usize]
                         [enemy_equiv as usize];
@@ -2157,7 +2158,8 @@ macro_rules! undo_move {
             }
 
             $state.main_board[end_square as usize] = NO_PIECE;
-            $state.main_board[start_square as usize] = piece_index as u8;
+            $state.main_board[start_square as usize] =
+                piece_index as PieceIndex;
 
             $state.opening_pst_bonus[piece_color as usize] -=
                 $state.pst_opening[
@@ -2208,7 +2210,7 @@ macro_rules! undo_move {
 
                 if promote_to_captured!($state) {
                     let enemy_equiv =
-                        $state.piece_swap_map[&(promoted_piece as u8)];
+                        $state.piece_swap_map[&(promoted_piece as PieceIndex)];
                     let hand = &mut $state.piece_in_hand
                         [1 - piece_color as usize]
                         [enemy_equiv as usize];
@@ -2248,7 +2250,7 @@ macro_rules! undo_move {
                 $state.main_board[unload_square as usize] = NO_PIECE;
             }
             $state.main_board[captured_square as usize] =
-                captured_piece_index as u8;
+                captured_piece_index as PieceIndex;
 
             if is_unload {
                 $state.piece_list[captured_piece_index]
@@ -2297,7 +2299,7 @@ macro_rules! undo_move {
             }
 
             if drops!($state) || promote_to_captured!($state) {
-                let mut captured_index_u8 = captured_piece_index as u8;
+                let mut captured_index_u8 = captured_piece_index as PieceIndex;
 
                 if demote_upon_capture!($state) {
                     captured_index_u8 = $state
@@ -2350,7 +2352,8 @@ macro_rules! undo_move {
             }
 
             $state.main_board[end_square as usize] = NO_PIECE;
-            $state.main_board[start_square as usize] = piece_index as u8;
+            $state.main_board[start_square as usize] =
+                piece_index as PieceIndex;
 
             $state.opening_pst_bonus[piece_color as usize] -=
                 $state.pst_opening[
@@ -2401,7 +2404,7 @@ macro_rules! undo_move {
 
                 if promote_to_captured!($state) {
                     let enemy_equiv =
-                        $state.piece_swap_map[&(promoted_piece as u8)];
+                        $state.piece_swap_map[&(promoted_piece as PieceIndex)];
                     let hand = &mut $state.piece_in_hand
                         [1 - piece_color as usize]
                         [enemy_equiv as usize];
@@ -2451,7 +2454,7 @@ macro_rules! undo_move {
                     $state.main_board[unload_square as usize] = NO_PIECE;
                 }
                 $state.main_board[captured_square as usize] =
-                    captured_piece_index as u8;
+                    captured_piece_index as PieceIndex;
 
                 if is_unload {
                     $state.piece_list[captured_piece_index]
@@ -2500,7 +2503,8 @@ macro_rules! undo_move {
                 }
 
                 if drops!($state) || promote_to_captured!($state) {
-                    let mut captured_index_u8 = captured_piece_index as u8;
+                    let mut captured_index_u8 =
+                        captured_piece_index as PieceIndex;
 
                     if demote_upon_capture!($state) {
                         captured_index_u8 = $state
@@ -2570,7 +2574,9 @@ macro_rules! undo_move {
                 *hand += 1;
             } else {
                 let enemy_equiv =
-                    $state.piece_swap_map[&(piece_index as u8)] as usize;
+                    $state.piece_swap_map[
+                        &(piece_index as PieceIndex)
+                    ] as usize;
                 let hand = &mut $state.piece_in_hand[1 - piece_color as usize]
                     [enemy_equiv];
                 *hand += 1;
@@ -2594,7 +2600,7 @@ macro_rules! undo_move {
                 }
 
                 $state.main_board[captured_square as usize] =
-                    captured_piece_index as u8;
+                    captured_piece_index as PieceIndex;
 
                 $state.piece_list[captured_piece_index]
                     .insert(captured_square as Square);
@@ -2650,7 +2656,6 @@ macro_rules! make_null_move {
             let last_halfmove_clock = $state.halfmove_clock;
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
-            let last_setup_phase = $state.setup_phase;
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
 
@@ -2666,7 +2671,6 @@ macro_rules! make_null_move {
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
-                setup_phase: last_setup_phase,
                 game_over: last_game_over,
                 game_phase: last_game_phase,
                 position_hash: last_position_hash
@@ -2701,7 +2705,6 @@ macro_rules! undo_null_move {
         $state.halfmove_clock = snapshot.halfmove_clock;
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
-        $state.setup_phase = snapshot.setup_phase;
         $state.game_over = snapshot.game_over;
         $state.game_phase = snapshot.game_phase;
 
@@ -2722,7 +2725,7 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
 
     let mut moves = Vec::with_capacity(256);
 
-    if !state.setup_phase {
+    if state.game_phase != SETUP {
         for piece_index in start_index..end_index {
             let piece = &state.pieces[piece_index];
             for &index in &state.piece_list[piece_index] {
@@ -2731,10 +2734,11 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
         }
     }
 
-    if drops!(state) || state.setup_phase {
+    if drops!(state) || state.game_phase == SETUP {
         for piece_index in start_index..end_index {
             let piece = &state.pieces[piece_index];
-            let enemy = state.piece_swap_map[&(piece_index as u8)] as usize;
+            let enemy =
+                state.piece_swap_map[&(piece_index as PieceIndex)] as usize;
 
             let drop_from_own =
                 state.piece_in_hand[state.playing as usize][piece_index] > 0;
@@ -2751,7 +2755,7 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
 }
 
 pub fn generate_all_captures(state: &State) -> Vec<Move> {
-    if state.game_over || state.setup_phase {
+    if state.game_over || state.game_phase == SETUP {
         return Vec::new();
     }
 
