@@ -29,13 +29,13 @@ pub fn quiescence_search(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
+    if state.game_over {
+        return 0;
+    }
+
     info.nodes += 1;
     if info.nodes.is_multiple_of(2048) {
         check_interrupt(info);
-    }
-
-    if state.game_over {
-        return 0;
     }
 
     let stand_pat = evaluate_position!(state);

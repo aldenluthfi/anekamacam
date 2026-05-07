@@ -193,6 +193,9 @@ pub fn alpha_beta(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
+    if state.game_over {
+        return 0;
+    }
 
     let in_check = is_in_check!(state.playing, state);
 
@@ -209,9 +212,6 @@ pub fn alpha_beta(
         return quiescence_search(state, alpha, beta, info);
     }
 
-    if state.game_over {
-        return 0;
-    }
 
     let static_eval = evaluate_position!(state);
 
