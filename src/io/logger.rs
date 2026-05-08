@@ -13,25 +13,38 @@
 
 use crate::*;
 
-pub fn push_log_message(level: u8, message: String) {
-    let mut queue = LOG_MESSAGES.lock().unwrap_or_else(|e| {
-        panic!("Failed to lock LOG_MESSAGES: {e}")
-    });
+#[macro_export]
+macro_rules! push_log_message {
+    ($level:expr, $message:expr) => {
+        let formatted = format!("[{}] {}", $level, $message);
 
-    queue.push_back(format!("[{}] {}", level, message));
+        let mut queue = LOG_MESSAGES.lock().unwrap_or_else(|e| {
+            panic!("Failed to lock LOG_MESSAGES: {e}")
+        });
 
-    while queue.len() > MAX_LOGS_LEN {
-        queue.pop_front();
-    }
+        queue.push_back(formatted.clone());
+
+        while queue.len() > MAX_LOGS_LEN {
+            queue.pop_front();
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! verbosity_enabled {
+    ($level:expr) => {
+        configured_verbosity_level() >= $level
+    };
 }
 
 #[macro_export]
 macro_rules! log_1 {
     ($($arg:tt)*) => {
         {
-            if verbosity_enabled(1) {
+            if verbosity_enabled!(1) {
                 let message = format!($($arg)*);
-                push_log_message(1, message);
+                push_log_message!(1, message);
+                error!("{}", format!($($arg)*));
             }
         }
     };
@@ -41,9 +54,10 @@ macro_rules! log_1 {
 macro_rules! log_2 {
     ($($arg:tt)*) => {
         {
-            if verbosity_enabled(2) {
+            if verbosity_enabled!(2) {
                 let message = format!($($arg)*);
-                push_log_message(2, message);
+                push_log_message!(2, message);
+                warn!("{}", format!($($arg)*));
             }
         }
     };
@@ -53,9 +67,10 @@ macro_rules! log_2 {
 macro_rules! log_3 {
     ($($arg:tt)*) => {
         {
-            if verbosity_enabled(3) {
+            if verbosity_enabled!(3) {
                 let message = format!($($arg)*);
-                push_log_message(3, message);
+                push_log_message!(3, message);
+                info!("{}", format!($($arg)*));
             }
         }
     };
@@ -65,9 +80,10 @@ macro_rules! log_3 {
 macro_rules! log_4 {
     ($($arg:tt)*) => {
         {
-            if verbosity_enabled(4) {
+            if verbosity_enabled!(4) {
                 let message = format!($($arg)*);
-                push_log_message(4, message);
+                push_log_message!(4, message);
+                debug!("{}", format!($($arg)*));
             }
         }
     };
@@ -111,12 +127,17 @@ pub fn configured_verbosity_level() -> u8 {
     configured_log_level().to_level().map_or(0, level_to_verbosity)
 }
 
-pub fn verbosity_enabled(required: u8) -> bool {
-    configured_verbosity_level() >= required
-}
-
 pub fn init_logging() {
-    env_logger::Builder::new()
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&*LOG_FILE_PATH)
+        .expect("Failed to open log file");
+
+    let target = Box::new(file);
+
+    LoggerBuilder::new()
+        .target(LoggerTarget::Pipe(target))
         .filter_level(configured_log_level())
         .format_target(false)
         .format_module_path(false)

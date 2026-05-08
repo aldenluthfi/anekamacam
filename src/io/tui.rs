@@ -1012,7 +1012,8 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                     .add_modifier(Modifier::BOLD)
                 ),
             info_ref
-                .map(|i| i.promotions.clone()).unwrap_or_else(|| "-".to_string())
+                .map(|i| i.promotions.clone())
+                .unwrap_or_else(|| "-".to_string())
                 .into(),
         ]));
 
@@ -1493,14 +1494,10 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                     if path.is_file() {
                         let path_str = path.to_string_lossy();
                         let state = parse_config_file(&path_str);
-
                         let board_state = BoardState::from_state(&state);
 
-                        let board_state = Some(board_state);
-                        let game_state = Some(Arc::new(Mutex::new(state)));
-
                         sender.send(
-                            TuiEvent::StateInit(game_state.unwrap())
+                            TuiEvent::StateInit(Arc::new(Mutex::new(state)))
                         ).unwrap_or_else(
                             |e| {
                                 panic!(
@@ -1510,7 +1507,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                         );
 
                         sender.send(
-                            TuiEvent::StateUpdate(board_state.unwrap())
+                            TuiEvent::StateUpdate(board_state)
                         ).unwrap_or_else(
                             |e| {
                                 panic!(

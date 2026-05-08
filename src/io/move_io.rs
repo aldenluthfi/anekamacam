@@ -21,10 +21,11 @@ use crate::*;
 /// - `[start]` (always present)
 /// - `:[end]` for quiet and multi-capture moves
 /// - `*[capture_square]` for capture segments (single or repeated)
+/// - `@[unload_square]` for unloads (optional, can appear after captures)
 /// - `=[promotion_piece]` for promotions
 ///
 /// Effective shape:
-/// `[drop_piece]@[start]:[end]*[captured_1]...*[captured_n]=[promotion]`
+/// `[drop]@[start]:[end]*[capt_1]@[unload_1]...*[capt_n]=[promotion]`
 ///
 /// The resulting string is used for user-facing display and as the matching
 /// key for `parse_move` when validating textual input.
@@ -69,6 +70,13 @@ pub fn format_move(mv: &Move, state: &State) -> String {
             let end_str = format_square(end as Square, state);
             move_str.push_str(&format!("*{}", end_str));
         }
+
+        if is_unload!(mv) {
+            let unload = unload_square!(mv);
+            let unload_str = format_square(unload as Square, state);
+
+            move_str.push_str(&format!("@{}", unload_str));
+        }
     }
 
     if !mv.1.is_empty() {
@@ -82,6 +90,13 @@ pub fn format_move(mv: &Move, state: &State) -> String {
             let capt_sq_str = format_square(capt_sq as Square, state);
 
             move_str.push_str(&format!("*{}", capt_sq_str));
+
+            if multi_move_is_unload!(capture) {
+                let unload = multi_move_unload_square!(capture);
+                let unload_str = format_square(unload as Square, state);
+
+                move_str.push_str(&format!("@{}", unload_str));
+            }
         }
     }
 
