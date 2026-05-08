@@ -1,8 +1,26 @@
+//! # parameters.rs
+//!
+//! Automatic derivation of dynamic evaluation parameters for pieces.
+//!
+//! This module implements heuristics to automatically score pieces based on
+//! their movement capabilities and constraints. It calculates raw piece values
+//! by analyzing board reach and mobility, derives piece roles (major, minor,
+//! big) based on relative value thresholds, and generates nuanced Piece-Square
+//! Tables (PSTs) for both opening and endgame phases, uniquely tailored to the
+//! specific variant's board size and piece definitions.
+//!
+//! # Author
+//! Alden Luthfi
+//!
+//! # Date
+//! 08/05/2026
+
 use rand::Rng;
 
 use crate::*;
 
 type PieceRoles = (PieceIndex, bool, bool);
+
 /// The peice roles are determined as follows:
 ///
 /// 1. Sort all the values of pieces except for the royal pieces
@@ -24,6 +42,11 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 
     let non_big_threshold = (values.len() as f32 * 0.1).ceil() as usize;
     let major_threshold = (values.len() as f32 * 0.8).ceil() as usize;
+
+    log_4!(
+        "Role thresholds - Non-big: {}, Major: {}",
+        non_big_threshold, major_threshold
+    );
 
     let mut piece_roles = Vec::new();
 
@@ -64,6 +87,8 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 /// - if piece is a non-big piece: Opening value * 1.5
 ///
 fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
+    log_4!("Deriving base value for piece '{}'", piece.char);
+
     let board_size = state.main_board.len();
     let mut reach_values = vec![-1; board_size];
 
@@ -192,11 +217,7 @@ fn derive_piece_mobility(
     mobility_sum
 }
 
-fn derive_piece_opening_value_on_square(
-    state: &State, piece_index: PieceIndex, square: usize
-) -> i32 {
-
-    let mobility = derive_piece_mobility(state, piece_index, square);
+fn derive_distance_from_center(state: &State, square: usize) -> f64 {
     let center_file = if state.files % 2 == 1 {
         vec![(state.files as f64 / 2.0).floor() as u8]
     } else {
@@ -216,143 +237,80 @@ fn derive_piece_opening_value_on_square(
         }
     }
 
-    let distance_from_center = center_squares
+    center_squares
         .iter()
         .map(|&index| square_distance(state, square as Square, index as Square))
         .min_by(|a, b| a.partial_cmp(b).unwrap())
         .unwrap_or_else(
             || panic!("Error while getting distance from center squares")
-        );
-    let piece = &state.pieces[piece_index as usize];
-
-    if p_can_promote!(piece) {
-        let closest_mandatory = set_indices!(
-            state.promotion_zones_mandatory[piece_index as usize]
         )
-        .iter()
-        .map(|&index| square_distance(state, square as Square, index as Square))
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or(f64::INFINITY);
-
-        let closest_optional = set_indices!(
-            state.promotion_zones_optional[piece_index as usize]
-        )
-        .iter()
-        .map(|&index| square_distance(state, square as Square, index as Square))
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or(f64::INFINITY);
-
-        let closest_promotion = closest_optional.min(closest_mandatory);
-
-        let opening_value =
-            10.0 *
-            (0.5 + 0.5 * mobility) *
-            (1.0 - 0.7 * distance_from_center as f64) *
-            (1.0 - 0.3 * closest_promotion as f64);
-
-        if p_is_royal!(piece) { -opening_value.round() as i32 }
-        else { opening_value.round() as i32 }
-    } else {
-        let opening_value =
-            10.0 *
-            (0.5 + 0.5 * mobility) *
-            (1.0 - 0.5 * distance_from_center as f64);
-
-        if p_is_royal!(piece) { -opening_value.round() as i32 }
-        else { opening_value.round() as i32 }
-    }
 }
 
-fn derive_opening_pst(index: PieceIndex, state: &State) -> Vec<i32> {
-    let mut pst = Vec::new();
-    let board_size = state.main_board.len();
-
-    for square in 0..board_size {
-        let value = derive_piece_opening_value_on_square(state, index, square);
-        pst.push(value);
-    }
-
-    pst
-}
-
-fn derive_piece_endgame_value_on_square(
+fn derive_closest_promotion(
     state: &State, piece_index: PieceIndex, square: usize
+) -> f64 {
+    let closest_mandatory = set_indices!(
+        state.promotion_zones_mandatory[piece_index as usize]
+    )
+    .iter()
+    .map(|&index| square_distance(state, square as Square, index as Square))
+    .min_by(|a, b| a.partial_cmp(b).unwrap())
+    .unwrap_or(f64::INFINITY);
+
+    let closest_optional = set_indices!(
+        state.promotion_zones_optional[piece_index as usize]
+    )
+    .iter()
+    .map(|&index| square_distance(state, square as Square, index as Square))
+    .min_by(|a, b| a.partial_cmp(b).unwrap())
+    .unwrap_or(f64::INFINITY);
+
+    closest_optional.min(closest_mandatory)
+}
+
+fn derive_piece_value_on_square(
+    state: &State, piece_index: PieceIndex, square: usize, is_endgame: bool
 ) -> i32 {
     let mobility = derive_piece_mobility(state, piece_index, square);
-    let center_file = if state.files % 2 == 1 {
-        vec![(state.files as f64 / 2.0).floor() as u8]
-    } else {
-        vec![state.files / 2, (state.files / 2) - 1]
-    };
-    let center_rank = if state.ranks % 2 == 1 {
-        vec![(state.ranks as f64 / 2.0).floor() as u8]
-    } else {
-        vec![state.ranks / 2, (state.ranks / 2) - 1]
-    };
-
-    let mut center_squares = vec![];
-
-    for file in &center_file {
-        for rank in &center_rank {
-            center_squares.push(*rank * state.files + *file);
-        }
-    }
-
-    let distance_from_center = center_squares
-        .iter()
-        .map(|&index| square_distance(state, square as Square, index as Square))
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or_else(
-            || panic!("Error while getting distance from center squares")
-        );
+    let distance_from_center = derive_distance_from_center(state, square);
 
     let piece = &state.pieces[piece_index as usize];
 
     if p_can_promote!(piece) {
-        let closest_mandatory = set_indices!(
-            state.promotion_zones_mandatory[piece_index as usize]
-        )
-        .iter()
-        .map(|&index| square_distance(state, square as Square, index as Square))
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or(f64::INFINITY);
+        let closest_promotion =
+            derive_closest_promotion(state, piece_index, square);
 
+        let distance_weight = if is_endgame { 0.1 } else { 0.15 };
+        let promotion_weight = if is_endgame { 0.4 } else { 0.2 };
 
-        let closest_optional = set_indices!(
-            state.promotion_zones_optional[piece_index as usize]
-        )
-        .iter()
-        .map(|&index| square_distance(state, square as Square, index as Square))
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap_or(f64::INFINITY);
-
-        let closest_promotion = closest_optional.min(closest_mandatory);
-
-        let opening_value =
+        let value =
             10.0 *
             (0.5 + 0.5 * mobility) *
-            (1.0 - 0.2 * distance_from_center as f64) *
-            (1.0 - 0.8 * closest_promotion as f64);
+            (1.0 - distance_weight * distance_from_center) *
+            (1.0 - promotion_weight * closest_promotion);
 
-        opening_value.round() as i32
-
+        if !is_endgame && p_is_royal!(piece) { -value.round() as i32 }
+        else { value.round() as i32 }
     } else {
-        let opening_value =
+        let distance_weight = if is_endgame { 0.03 } else { 0.05 };
+
+        let value =
             10.0 *
             (0.5 + 0.5 * mobility) *
-            (1.0 - 0.3 * distance_from_center as f64);
+            (1.0 - distance_weight * distance_from_center);
 
-        opening_value.round() as i32
+        if !is_endgame && p_is_royal!(piece) { -value.round() as i32 }
+        else { value.round() as i32 }
     }
 }
 
-
-fn derive_endgame_pst(index: PieceIndex, state: &State) -> Vec<i32> {
+fn derive_pst(index: PieceIndex, state: &State, is_endgame: bool) -> Vec<i32> {
     let mut pst = Vec::new();
     let board_size = state.main_board.len();
 
     for square in 0..board_size {
-        let value = derive_piece_endgame_value_on_square(state, index, square);
+        let value =
+            derive_piece_value_on_square(state, index, square, is_endgame);
         pst.push(value);
     }
 
@@ -360,6 +318,8 @@ fn derive_endgame_pst(index: PieceIndex, state: &State) -> Vec<i32> {
 }
 
 pub fn derive_parameters(state: &mut State) {
+    log_2!("Deriving dynamic evaluation parameters...");
+
     let mut values = Vec::new();
 
     let mut min = f64::INFINITY;
@@ -456,8 +416,8 @@ pub fn derive_parameters(state: &mut State) {
             index = state.piece_swap_map[&(index as u8)] as PieceIndex;
         }
 
-        let mut opening_pst = derive_opening_pst(index, state);
-        let mut endgame_pst = derive_endgame_pst(index, state);
+        let mut opening_pst = derive_pst(index, state, false);
+        let mut endgame_pst = derive_pst(index, state, true);
 
         if p_color!(piece) == BLACK {
             opening_pst = mirror_pst_across_horizontal_axis(
@@ -473,6 +433,10 @@ pub fn derive_parameters(state: &mut State) {
         state.pst_opening[index as usize] = opening_pst;
         state.pst_endgame[index as usize] = endgame_pst;
     }
+
+    log_3!("Derived Opening Score Threshold: {}", state.opening_score);
+    log_3!("Derived Endgame Score Threshold: {}", state.endgame_score);
+    log_2!("Dynamic evaluation parameters derived successfully.");
 
     refresh_eval_state(state);
 }

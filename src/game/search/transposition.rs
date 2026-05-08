@@ -24,14 +24,15 @@ use crate::*;
 /// `encoded` layout:
 /// - bits 0-1     : bound flags (`HFALPHA`, `HFBETA`, `HFEXACT`)
 /// - bits 2-8     : searched depth (7 bits)
-/// - bits 9-15    : entry age (7 bits)
-/// - bits 16-31   : signed score stored as a 16-bit integer
+/// - bits 9-24    : signed score stored as a 16-bit integer
+///
 /// `position_hash` keeps the full key for collision checks in direct-mapped
 /// slots.
 #[derive(Clone)]
 pub struct TTEntry {
     pub position_hash: PositionHash,
     pub tt_move: Move,
+    pub age: u64,
     pub encoded: u32,
 }
 
@@ -40,6 +41,7 @@ impl Default for TTEntry {
         Self {
             position_hash: 0,
             tt_move: null_move(),
+            age: 0,
             encoded: 0,
         }
     }
@@ -47,7 +49,7 @@ impl Default for TTEntry {
 
 pub struct TTable {
     pub table: Vec<TTEntry>,
-    pub age: u8,
+    pub age: u64,
 }
 
 impl Default for TTable {
@@ -86,17 +88,9 @@ macro_rules! tt_enc_depth {
 }
 
 #[macro_export]
-macro_rules! tt_enc_age {
-    ($entry:expr, $val:expr) => {{
-        let age = (($val as u32).min(127)) & 0x7F;
-        $entry.encoded |= age << 9;
-    }};
-}
-
-#[macro_export]
 macro_rules! tt_enc_score {
     ($entry:expr, $val:expr) => {{
-        $entry.encoded |= ($val as u32 & 0xFFFF) << 16;
+        $entry.encoded |= (($val as i16) as u32 & 0xFFFF) << 9;
     }};
 }
 
@@ -115,16 +109,9 @@ macro_rules! tt_depth {
 }
 
 #[macro_export]
-macro_rules! tt_age {
-    ($entry:expr) => {
-        (($entry.encoded >> 9) & 0x7F) as u8
-    };
-}
-
-#[macro_export]
 macro_rules! tt_score {
     ($entry:expr) => {
-        (($entry.encoded >> 16) as i32) << 16 >> 16
+        (($entry.encoded >> 9) as i32) << 16 >> 16
     };
 }
 
@@ -144,95 +131,80 @@ macro_rules! hash_tt_entry {
         let index = tt_index!(hash);
 
         let mut replace = false;
-        if $state.transposition_table.table[index].position_hash == 0 {
+        if $state.t_table.table[index].position_hash == 0 {
             replace = true
-        } else if
-        tt_age!($state.transposition_table.table[index]) <
-        $state.transposition_table.age ||
-        tt_depth!($state.transposition_table.table[index]) <=
-        $depth
+        } else if $state.t_table.table[index].age < $state.t_table.age ||
+            tt_depth!($state.t_table.table[index]) <= $depth
         {
             replace = true
         }
 
-        let mut score = $score;
-
-        if score > MATE_SCORE {
-            score += $state.search_ply as i32;
-        } else if score < -MATE_SCORE {
-            score -= $state.search_ply as i32;
-        }
-
         if replace {
-            let entry = &mut $state.transposition_table.table[index];
+            let mut score = $score;
+
+            if score > MATE_SCORE {
+                score += $state.search_ply as i32;
+            } else if score < -MATE_SCORE {
+                score -= $state.search_ply as i32;
+            }
+
+            let entry = &mut $state.t_table.table[index];
 
             entry.position_hash = hash;
             entry.tt_move = $tt_move;
+            entry.age = $state.t_table.age;
             entry.encoded = 0;
 
             tt_enc_flags!(entry, $flags);
             tt_enc_depth!(entry, $depth);
-            tt_enc_age!(entry, $state.transposition_table.age);
             tt_enc_score!(entry, score);
         }
     }};
 }
 
-/// Probes TT and returns `(cutoff, tt_move, score)`.
-///
-/// A matching move can still be reused for ordering when depth/flag checks
-/// reject the cached score for immediate alpha-beta cutoff.
 #[macro_export]
 macro_rules! probe_tt_entry {
     ($state:expr, $alpha:expr, $beta:expr, $depth:expr) => {{
         let index = tt_index!($state.position_hash);
+        let entry = &$state.t_table.table[index];
 
-        let (entry_move, mut entry_score, entry_depth, entry_flags) = {
-            let entry = &$state.transposition_table.table[index];
+        if entry.position_hash == $state.position_hash {
+            let entry_move = entry.tt_move.clone();
+            if tt_depth!(entry) >= $depth {
+                let entry_flags = tt_flags!(entry);
+                let mut entry_score = tt_score!(entry);
 
-            if entry.position_hash != $state.position_hash {
-                (null_move(), i32::MIN, 0usize, HFNONE)
+                if entry_score > MATE_SCORE {
+                    entry_score -= $state.search_ply as i32;
+                } else if entry_score < -MATE_SCORE {
+                    entry_score += $state.search_ply as i32;
+                }
+
+                let mut valid_cutoff = false;
+                match entry_flags {
+                    HFALPHA => {
+                        if entry_score <= $alpha {
+                            entry_score = $alpha;
+                            valid_cutoff = true;
+                        }
+                    }
+                    HFBETA => {
+                        if entry_score >= $beta {
+                            entry_score = $beta;
+                            valid_cutoff = true;
+                        }
+                    }
+                    HFEXACT => valid_cutoff = true,
+                    _ => unreachable!(),
+                }
+
+                (valid_cutoff, entry_score, entry_move)
+
             } else {
-                (
-                    entry.tt_move.clone(),
-                    tt_score!(entry),
-                    tt_depth!(entry),
-                    tt_flags!(entry),
-                )
+                (false, i32::MIN, entry_move)
             }
-        };
-
-        if entry_score == i32::MIN {
-            (false, null_move(), i32::MIN)
-        } else if entry_depth < $depth {
-            (false, entry_move, i32::MIN)
         } else {
-            if entry_score > MATE_SCORE {
-                entry_score -= $state.search_ply as i32;
-            } else if entry_score < -MATE_SCORE {
-                entry_score += $state.search_ply as i32;
-            }
-
-            match entry_flags {
-                HFALPHA => {
-                    if entry_score <= $alpha {
-                        (true, entry_move, $alpha)
-                    } else {
-                        (false, entry_move, entry_score)
-                    }
-                }
-                HFBETA => {
-                    if entry_score >= $beta {
-                        (true, entry_move, $beta)
-                    } else {
-                        (false, entry_move, entry_score)
-                    }
-                }
-                HFEXACT => {
-                    (true, entry_move, entry_score)
-                }
-                _ => (false, entry_move, entry_score),
-            }
+            (false, i32::MIN, null_move())
         }
     }};
 }
@@ -240,7 +212,7 @@ macro_rules! probe_tt_entry {
 #[macro_export]
 macro_rules! probe_pv_move {
     ($state:expr) => {{
-        let entry = &$state.transposition_table.table
+        let entry = &$state.t_table.table
             [tt_index!($state.position_hash)];
 
         if entry.position_hash == $state.position_hash {

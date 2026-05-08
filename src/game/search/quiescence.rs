@@ -34,7 +34,7 @@ pub fn quiescence_search(
     }
 
     info.nodes += 1;
-    if info.nodes.is_multiple_of(2048) {
+    if info.nodes & 2047 == 0 {
         check_interrupt(info);
     }
 
@@ -47,9 +47,6 @@ pub fn quiescence_search(
     if stand_pat > alpha {
         alpha = stand_pat;
     }
-
-    let alpha_start = alpha;
-    let mut best_move = null_move();
 
     let mut all_captures = generate_all_captures(state);
     let pv_move = probe_pv_move!(state);
@@ -95,16 +92,11 @@ pub fn quiescence_search(
             }
 
             alpha = score;
-            best_move = all_captures[i].clone();
         }
     }
 
     #[cfg(debug_assertions)]
     verify_game_state(state);
-
-    if alpha != alpha_start {
-        hash_tt_entry!(best_move, alpha, HFEXACT, 0 as usize, state);
-    }
 
     alpha
 }
