@@ -223,26 +223,28 @@ impl OverviewState {
 
         for (i, piece) in state.pieces.iter().enumerate() {
             let name = piece.name.clone();
-            if name.is_empty() || name == "None" { continue; }
-
             let char_str = piece.char.to_string();
-            let promotions = piece.promotions.iter()
-                .map(|&p| state.pieces[p as usize].name.clone())
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let promotions = if piece.promotions.is_empty() {
+                "-".to_string()
+            } else {
+                piece.promotions.iter()
+                    .map(|&p| state.pieces[p as usize].name.clone())
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
             let op_val = p_ovalue!(piece);
             let eg_val = p_evalue!(piece);
 
             let mut op_pst_str = String::from("None");
             if let Some(table) = state.pst_opening.get(i) {
-                op_pst_str = crate::io::game_io::format_numeric_board(
+                op_pst_str = format_numeric_board(
                     table, state.files, state.ranks
                 );
             }
             let mut eg_pst_str = String::from("None");
             if let Some(table) = state.pst_endgame.get(i) {
-                eg_pst_str = crate::io::game_io::format_numeric_board(
+                eg_pst_str = format_numeric_board(
                     table, state.files, state.ranks
                 );
             }
@@ -995,6 +997,15 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 .into(),
         ]));
         info_rows.push(Row::new(vec![
+            Span::from("Values (Opening / Endgame)".to_string())
+                .style(Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                ),
+            info_ref.map(|i| format!("{} / {}", i.op_val, i.eg_val))
+                .unwrap_or_else(|| "-".to_string()).into(),
+        ]));
+        info_rows.push(Row::new(vec![
             Span::from("Promotions".to_string())
                 .style(Style::default()
                     .fg(Color::Yellow)
@@ -1003,15 +1014,6 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             info_ref
                 .map(|i| i.promotions.clone()).unwrap_or_else(|| "-".to_string())
                 .into(),
-        ]));
-        info_rows.push(Row::new(vec![
-            Span::from("Values (Opening / Endgame)".to_string())
-                .style(Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-                ),
-            info_ref.map(|i| format!("{} / {}", i.op_val, i.eg_val))
-                .unwrap_or_else(|| "-".to_string()).into(),
         ]));
 
         let info_table = Table::new(
