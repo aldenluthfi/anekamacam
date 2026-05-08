@@ -70,7 +70,7 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
-    state.transposition_table.age += 1;
+    state.t_table.age += 1;
     state.search_ply = 0;
 }
 
@@ -119,20 +119,20 @@ pub fn search_position(
 
         log_4!(
             concat!(
-                "Depth {:>2} | Score: {:>6} | Best Move: {:<8} | ",
+                "Score: {:>6} | Best Move: {:<8} | ",
                 "Depth Nodes: {:>12} | ",
-                "Time: {:>10} | NPS: {:>12}",
+                "NPS: {:>12}",
             ),
-            depth,
             best_score,
             format_move(&best_move, state),
             nodes,
-            format_time(elapsed),
             depth_nps,
         );
 
-        log_4!(
-            "Best Line: {}",
+        log_3!(
+            "Depth {:>2} | Time: {:>10} | Best Line: {}",
+            depth,
+            format_time(elapsed),
             state.pv_line
                 .iter()
                 .take(depth)
@@ -204,7 +204,7 @@ pub fn alpha_beta(
     }
 
     info.nodes += 1;
-    if info.nodes ^ 2047 == 0 {
+    if info.nodes & 2047 == 0 {
         check_interrupt(info);
     }
 
@@ -222,12 +222,12 @@ pub fn alpha_beta(
     let mut pv_move = None;
     let tt_entry = probe_tt_entry!(state, alpha, beta, depth);                  /* Transposition table lookup         */
 
-    if tt_entry.1 != null_move() {
-        pv_move = Some(tt_entry.1);
+    if tt_entry.2 != null_move() {
+        pv_move = Some(tt_entry.2);
     }
 
     if tt_entry.0 {
-        return tt_entry.2;
+        return tt_entry.1;
     }
 
     let mut pv_capture = false;
@@ -400,7 +400,7 @@ pub fn alpha_beta(
     }
 
     if legal_moves == 0 {
-        if is_in_check!(state.playing, state) && !stalemate_loss!(&state) {
+        if in_check || stalemate_loss!(&state) {
             let mate_score = -INFINITY + state.search_ply as i32;
 
             return if state.history.last().is_some_and(|s| {

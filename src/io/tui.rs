@@ -15,7 +15,7 @@
 use crate::*;
 
 const TAB_TITLES: [&str; 2] = ["Game", "Overview"];
-const TAB_FOCUSABLES: [u8; 2] = [3, 1];
+const TAB_FOCUSABLES: [u8; 2] = [3, 2];
 
 enum TuiEvent {
     Input(KeyEvent),
@@ -34,6 +34,7 @@ struct Tui {
     game_state: Option<Arc<Mutex<State>>>,
     locked: bool,
     board_state: Option<BoardState>,
+    overview_state: Option<OverviewState>,
     receiver: Receiver<TuiEvent>,
     sender: Sender<TuiEvent>,
 }
@@ -62,6 +63,7 @@ impl Tui {
         let locked = false;
         let game_state = None;
         let board_state = None;
+        let overview_state = None;
 
         Self {
             mode,
@@ -73,6 +75,7 @@ impl Tui {
             game_state,
             locked,
             board_state,
+            overview_state,
             receiver,
             sender,
         }
@@ -100,9 +103,10 @@ impl Tui {
                     false
                 },
                 Ok(TuiEvent::StateInit(state)) => {
+                    self.overview_state = Some(OverviewState::from_state(
+                        &state.lock().unwrap()
+                    ));
                     self.game_state = Some(state);
-                    self.tab = 0;
-                    self.focus = 0;
                     false
                 },
                 Ok(TuiEvent::Unlock) => {
@@ -121,6 +125,163 @@ impl Tui {
         }
 
         Ok(())
+    }
+}
+
+struct OverviewPieceInfo {
+    char_str: String,
+    promotions: String,
+    op_val: u16,
+    eg_val: u16,
+    op_pst: String,
+    eg_pst: String,
+}
+
+struct OverviewPiece {
+    name: String,
+    info: Option<OverviewPieceInfo>,
+}
+
+struct OverviewState {
+    configs: Vec<(String, String, u16)>,
+    pieces: Vec<OverviewPiece>,
+}
+
+impl OverviewState {
+    fn from_state(state: &State) -> Self {
+        let mut configs = Vec::new();
+        configs.push(("Title".to_string(), state.title.clone(), 1));
+        configs.push((
+            "Board Size".to_string(),
+            format!("{}x{}", state.files, state.ranks),
+            1
+        ));
+        configs.push((
+            "Opening Score".to_string(), state.opening_score.to_string(), 1
+        ));
+        configs.push((
+            "Endgame Score".to_string(), state.endgame_score.to_string(), 1
+        ));
+
+        if halfmove_clock!(state) {
+            configs.push((
+                "Halfmove Limit".to_string(),
+                state.halfmove_limit.to_string(), 1
+            ));
+        }
+        if repetition_limit!(state) {
+            configs.push((
+                "Repetition Limit".to_string(),
+                state.repetition_limit.to_string(), 1
+            ));
+        }
+
+        let mut rules = Vec::new();
+
+        if castling!(state) {
+            rules.push("Castling");
+        }
+        if en_passant!(state) {
+            rules.push("En Passant");
+        }
+        if promotions!(state) {
+            rules.push("Promotions");
+        }
+        if drops!(state) {
+            rules.push("Drops");
+        }
+        if count_limits!(state) {
+            rules.push("Piece Limits");
+        }
+        if forbidden_zones!(state) {
+            rules.push("Forbidden Zones");
+        }
+        if promote_to_captured!(state) {
+            rules.push("Promote to Captured");
+        }
+        if demote_upon_capture!(state) {
+            rules.push("Demote upon Capture");
+        }
+        if stalemate_loss!(state) {
+            rules.push("Stalemate Loss");
+        }
+        if setup_phase!(state) {
+            rules.push("Setup Phase");
+        }
+        if stand_offs!(state) {
+            rules.push("Stand Offs");
+        }
+
+        let rules_str = rules.join("\n");
+        let rules_height = (rules.len()) as u16;
+        configs.push((
+            "Rules".to_string(), rules_str, rules_height.max(1)
+        ));
+
+        let mut piece_map: HashMap<String, OverviewPiece> = HashMap::new();
+        let mut piece_names = Vec::new();
+
+        for (i, piece) in state.pieces.iter().enumerate() {
+            let name = piece.name.clone();
+            if name.is_empty() || name == "None" { continue; }
+
+            let char_str = piece.char.to_string();
+            let promotions = piece.promotions.iter()
+                .map(|&p| state.pieces[p as usize].name.clone())
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let op_val = p_ovalue!(piece);
+            let eg_val = p_evalue!(piece);
+
+            let mut op_pst_str = String::from("None");
+            if let Some(table) = state.pst_opening.get(i) {
+                op_pst_str = crate::io::game_io::format_numeric_board(
+                    table, state.files, state.ranks
+                );
+            }
+            let mut eg_pst_str = String::from("None");
+            if let Some(table) = state.pst_endgame.get(i) {
+                eg_pst_str = crate::io::game_io::format_numeric_board(
+                    table, state.files, state.ranks
+                );
+            }
+
+            let info = OverviewPieceInfo {
+                char_str,
+                promotions,
+                op_val,
+                eg_val,
+                op_pst: op_pst_str,
+                eg_pst: eg_pst_str,
+            };
+
+            let color = p_color!(piece);
+
+            if !piece_map.contains_key(&name) {
+                piece_names.push(name.clone());
+                piece_map.insert(name.clone(), OverviewPiece {
+                    name: name.clone(),
+                    info: None,
+                });
+            }
+
+            if let Some(entry) = piece_map.get_mut(&name) {
+                if color == 0 {
+                    entry.info = Some(info);
+                }
+            }
+        }
+
+        let pieces = piece_names
+            .into_iter()
+            .filter_map(|n| piece_map.remove(&n))
+            .collect();
+
+        Self {
+            configs,
+            pieces,
+        }
     }
 }
 
@@ -282,11 +443,20 @@ fn draw_game_selection(
     .block(
         Block::default()
             .borders(Borders::ALL)
+            .padding(Padding::horizontal(1))
     );
 
-    if selected >= config_files.len() as u16 {
-        app.scroll_map.insert((usize::MAX, usize::MAX), 0);
+    if !config_files.is_empty() {
+        if selected == u16::MAX {
+            selected = config_files.len() as u16 - 1;
+            app.scroll_map.insert((usize::MAX, usize::MAX), selected);
+        } else if selected >= config_files.len() as u16 {
+            app.scroll_map.insert((usize::MAX, usize::MAX), 0);
+            selected = 0;
+        }
+    } else {
         selected = 0;
+        app.scroll_map.insert((usize::MAX, usize::MAX), 0);
     }
 
     app.input = config_files[selected as usize].clone();
@@ -342,20 +512,15 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         Line::from(vec![
             Span::styled("[INPUT] ", Style::default().fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)),
-            Span::raw("<Enter> Run")
+            Span::raw("<Enter> Run | <Esc> Normal")
                 .style(Style::default().fg(Color::Gray)),
         ])
     } else {
         Line::from(vec![
             Span::styled("[NORMAL] ", Style::default().fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)),
-            Span::raw(
-                concat![
-                    "<?> Help | <←/→> Focus | ",
-                    "<j/k> Scroll | <Tab> Switch tab | <q> Quit | ",
-                    "<n> New game | <G> Scroll to bottom | <g> Scroll to top"
-                ]
-            ).style(Style::default().fg(Color::Gray)),
+            Span::raw("<?> Help | <q> Quit")
+                .style(Style::default().fg(Color::Gray)),
         ])
     };
 
@@ -369,6 +534,10 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
         ("<?>", "Toggle help popup"),
         ("<Tab>", "Switch tabs"),
         ("<q>", "Quit TUI"),
+        ("<←/→>", "Change focus"),
+        ("<j/k>", "Scroll up/down"),
+        ("<g/G>", "Scroll to top/bottom"),
+        ("<n>", "New game"),
     ];
 
     let input_mode_rows = [
@@ -706,6 +875,232 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     frame.render_widget(logs_paragraph, logs_area);
 }
 
+fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
+    let default_state = OverviewState {
+        configs: vec![(
+            "Loading...".to_string(),
+            "".to_string(),
+            1
+        )],
+        pieces: Vec::new(),
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Percentage(75),
+        ])
+        .split(area);
+
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Percentage(60),
+        ])
+        .split(chunks[0]);
+
+    let configs_table = Table::new(
+        app.overview_state.as_ref().unwrap_or(
+            &default_state
+        ).configs.iter().map(|row| {
+            let title = &row.0;
+            let value = &row.1;
+            let height = row.2;
+
+            Row::new(
+                vec![
+                    Cell::from(title.clone()),
+                    Cell::from(value.clone())
+                ]
+            ).height(height)
+        }).collect::<Vec<_>>(),
+        [Constraint::Percentage(50), Constraint::Percentage(50)]
+    ).header(
+        Row::new(vec!["Parameter", "Value"])
+            .style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                )
+    )
+    .block(
+        Block::default().borders(Borders::ALL).padding(Padding::horizontal(1))
+    );
+
+    let pieces = &app.overview_state.as_ref().unwrap_or(
+        &default_state
+    ).pieces;
+    let items: Vec<ListItem> = pieces.iter()
+        .map(|p| ListItem::new(p.name.clone()))
+        .collect();
+
+    let mut sel_idx = *app.scroll_map.get(&(1, 0)).unwrap_or(&0);
+    if !pieces.is_empty() {
+        if sel_idx == u16::MAX {
+            sel_idx = pieces.len() as u16 - 1;
+            app.scroll_map.insert((1, 0), sel_idx);
+        } else if sel_idx >= pieces.len() as u16 {
+            sel_idx = 0;
+            app.scroll_map.insert((1, 0), sel_idx);
+        }
+    } else {
+        sel_idx = 0;
+        app.scroll_map.insert((1, 0), sel_idx);
+    }
+    let sel_idx = sel_idx as usize;
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(sel_idx));
+
+    let style = if app.focus == 0 {
+        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(style)
+                .padding(Padding::horizontal(1))
+        )
+        .highlight_style(
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        );
+
+
+    if let Some(piece) = pieces.get(sel_idx) {
+        let right_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(5),
+            ])
+            .split(chunks[1]);
+
+        let info_ref = piece.info.as_ref();
+
+        let mut info_rows = Vec::new();
+        info_rows.push(Row::new(vec![
+            Span::from("Char".to_string())
+                .style(Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                ),
+            info_ref
+                .map(|i| i.char_str.clone()).unwrap_or_else(|| "-".to_string())
+                .into(),
+        ]));
+        info_rows.push(Row::new(vec![
+            Span::from("Promotions".to_string())
+                .style(Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                ),
+            info_ref
+                .map(|i| i.promotions.clone()).unwrap_or_else(|| "-".to_string())
+                .into(),
+        ]));
+        info_rows.push(Row::new(vec![
+            Span::from("Values (Opening / Endgame)".to_string())
+                .style(Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                ),
+            info_ref.map(|i| format!("{} / {}", i.op_val, i.eg_val))
+                .unwrap_or_else(|| "-".to_string()).into(),
+        ]));
+
+        let info_table = Table::new(
+            info_rows,
+            [
+                Constraint::Percentage(20),
+                Constraint::Percentage(80),
+            ]
+        )
+        .block(
+            Block::default()
+            .padding(Padding::horizontal(1))
+            .borders(Borders::ALL)
+        );
+
+        frame.render_widget(info_table, right_chunks[1]);
+
+        let mut available_tables = Vec::new();
+        if let Some(info) = info_ref {
+            available_tables.push(("Opening PST", &info.op_pst));
+            available_tables.push(("Endgame PST", &info.eg_pst));
+        }
+
+        if !available_tables.is_empty() {
+            let num_tables = available_tables.len() as u16;
+            let mut pst_idx = *app.scroll_map.get(&(1, 1)).unwrap_or(&0);
+            if pst_idx == u16::MAX {
+                pst_idx = num_tables - 1;
+                app.scroll_map.insert((1, 1), pst_idx);
+            } else if pst_idx >= num_tables {
+                pst_idx = 0;
+                app.scroll_map.insert((1, 1), pst_idx);
+            }
+
+            let pst_idx_usize = pst_idx as usize;
+
+            let tab_titles: Vec<Line> = available_tables.iter()
+                .map(|(t, _)| Line::from(*t))
+                .collect();
+
+            let tabs_style = if app.focus == 1 {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
+            let tabs = Tabs::new(tab_titles)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(tabs_style)
+                )
+                .select(pst_idx_usize)
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                );
+
+            let pst_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                ])
+                .split(right_chunks[0]);
+
+            frame.render_widget(tabs, pst_chunks[0]);
+
+            let (_, sel_pst) = available_tables[pst_idx_usize];
+
+            let pst_p = Paragraph::new(sel_pst.clone())
+                .block(Block::default().borders(Borders::NONE));
+
+            let pw = sel_pst
+                .lines()
+                .map(|l| l.chars().count()).max().unwrap_or(0) as u16 + 4;
+            let ph = sel_pst.lines().count() as u16 + 2;
+
+            frame.render_widget(pst_p, pst_chunks[1].centered(
+                Constraint::Length(pw), Constraint::Length(ph)
+            ));
+        }
+    }
+
+    frame.render_stateful_widget(list, left_chunks[1], &mut list_state);
+    frame.render_widget(configs_table, left_chunks[0]);
+}
+
 fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     let root = frame.area();
 
@@ -731,9 +1126,9 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
             .split(root);
 
         draw_tabs(frame, chunks[0], app);
-
         match app.tab {
             0 => draw_game_tab(frame, chunks[1], app),
+            1 => draw_overview_tab(frame, chunks[1], app),
             _ => {},
         }
 
@@ -899,16 +1294,13 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                         "Checkmate! {} wins.",
                         if state.playing == WHITE { "Black" } else { "White" }
                     );
-                    break;
-                }
-
-                if result.best_move == null_move() {
+                } else if result.best_move == null_move() {
                     log_1!(
                         "Stalemate! It's a draw."
                     );
-                    break;
+                } else {
+                    make_move!(state, result.best_move);
                 }
-                make_move!(state, result.best_move);
 
                 let board_state = BoardState::from_state(state);
 
@@ -1030,7 +1422,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                             app.tab, app.focus
                         )
                     }
-                ).saturating_sub(1);
+                ).wrapping_sub(1);
             app.scroll_map.insert((app.tab, app.focus), scroll);
             false
         },
@@ -1085,6 +1477,8 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
         (TUI_NORMAL_MODE, KeyCode::Enter) if app.game_state.is_none() => {
 
             app.locked = true;
+            app.focus = 0;
+            app.tab = 0;
 
             thread::spawn({
                 let filename = app.input.trim();
