@@ -415,7 +415,7 @@ pub struct State {
 \*----------------------------------------------------------------------------*/
 
     pub position_hash_map: HashMap<PositionHash, u8>,                           /* position hash to repetition count  */
-    pub transposition_table: TTable,                                            /* transposition table for search     */
+    pub t_table: TTable,                                                        /* transposition table for search     */
     pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
 
     pub search_hist: Vec<Vec<u16>>,                                             /* piece index to square to score     */
@@ -521,7 +521,7 @@ impl State {
 
             position_hash_map: HashMap::with_capacity(128),
 
-            transposition_table: TTable::default(),
+            t_table: TTable::default(),
             pv_line: array::from_fn(|_| null_move()),
 
             search_hist: vec![vec![0u16; board_size]; piece_count],
@@ -572,7 +572,7 @@ impl State {
         self.search_ply = 0;
         self.position_hash_map.clear();
 
-        self.transposition_table = TTable::default();
+        self.t_table = TTable::default();
         self.pv_line = array::from_fn(|_| null_move());
 
         self.search_hist = vec![vec![0u16; board_size]; piece_count];
