@@ -16,7 +16,7 @@
 use crate::*;
 
 /*----------------------------------------------------------------------------*\
-                      TRANSPOSITION TABLE ENTRY REPRESENTATION
+                     TRANSPOSITION TABLE ENTRY REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
 /// Packed transposition-table entry.
@@ -199,7 +199,6 @@ macro_rules! probe_tt_entry {
                 }
 
                 (valid_cutoff, entry_score, entry_move)
-
             } else {
                 (false, i32::MIN, entry_move)
             }
@@ -212,8 +211,7 @@ macro_rules! probe_tt_entry {
 #[macro_export]
 macro_rules! probe_pv_move {
     ($state:expr) => {{
-        let entry = &$state.t_table.table
-            [tt_index!($state.position_hash)];
+        let entry = &$state.t_table.table[tt_index!($state.position_hash)];
 
         if entry.position_hash == $state.position_hash {
             Some(entry.tt_move.clone())

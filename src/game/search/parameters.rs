@@ -15,8 +15,6 @@
 //! # Date
 //! 08/05/2026
 
-use rand::Rng;
-
 use crate::*;
 
 type PieceRoles = (PieceIndex, bool, bool);
