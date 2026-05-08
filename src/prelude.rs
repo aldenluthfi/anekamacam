@@ -139,6 +139,7 @@ pub use ratatui::{
         Paragraph, Row, Table, TableState, Tabs, Wrap, Widget
     },
 };
+pub use rand::Rng;
 pub use regex::Regex;
 pub use std::{
     array, cmp,
