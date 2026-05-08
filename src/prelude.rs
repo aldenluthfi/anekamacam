@@ -258,7 +258,7 @@ lazy_static! {
         let since_the_epoch = start
             .duration_since(time::UNIX_EPOCH)
             .expect("Time went backwards");
-        format!("engine_{}.log", since_the_epoch.as_millis())
+        format!("logs/engine_{}.log", since_the_epoch.as_millis())
     };
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
