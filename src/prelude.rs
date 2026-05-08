@@ -95,11 +95,9 @@ pub use crate::io::game_io::{
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, init_logging,
-    push_log_message, verbosity_enabled,
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
 pub use crate::io::tui::tui;
-pub use crate::{log_1, log_2, log_3, log_4};
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
@@ -117,7 +115,10 @@ pub use crossterm::{
         enable_raw_mode,
     },
 };
-pub use env_logger::fmt::{style as log_style};
+pub use env_logger::{
+    fmt::{style as log_style},
+    Builder as LoggerBuilder, Target as LoggerTarget
+};
 pub use hashbrown::{HashMap, HashSet};
 pub use hotpath;
 pub use lazy_static::lazy_static;
@@ -145,7 +146,7 @@ pub use std::{
     array, cmp,
     collections::VecDeque,
     fmt::{Debug, Formatter as FmtFormatter, Result as FmtResult},
-    fs,
+    fs::{self, OpenOptions},
     hash::Hash,
     io::{Write, stdin, stdout, Result as IoResult},
     mem::size_of,
@@ -156,7 +157,7 @@ pub use std::{
         mpsc,
     },
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{self, Duration, Instant, SystemTime},
 };
 
 /*----------------------------------------------------------------------------*\
@@ -251,6 +252,13 @@ lazy_static! {
         }
 
         result
+    };
+    pub static ref LOG_FILE_PATH: String = {
+        let start = SystemTime::now();
+        let since_the_epoch = start
+            .duration_since(time::UNIX_EPOCH)
+            .expect("Time went backwards");
+        format!("engine_{}.log", since_the_epoch.as_millis())
     };
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());

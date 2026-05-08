@@ -232,13 +232,12 @@ pub fn alpha_beta(
 
     let mut pv_capture = false;
 
-    if let Some(pv_mv) = &pv_move {
-        if move_type!(pv_mv) == SINGLE_CAPTURE_MOVE
-        || move_type!(pv_mv) == MULTI_CAPTURE_MOVE
+    if let Some(pv_mv) = &pv_move
+        && (move_type!(pv_mv) == SINGLE_CAPTURE_MOVE
+        || move_type!(pv_mv) == MULTI_CAPTURE_MOVE)
         {
             pv_capture = true;
         }
-    }
 
     if depth < 3
     && (pv_move.is_none() && !pv_capture)
