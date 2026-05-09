@@ -203,7 +203,7 @@ fn betza_atoms(piece: char) -> String {
         'D' => "<[1357]K.>".to_string(),
         'S' => "<K.>".to_string(),
         'N' => "<[2468]Kn[2468]K>".to_string(),
-        'C' => "<[2468]Kn[2468]K.>".to_string(),
+        'C' => "<[2468]Kn<[2468]K>.>".to_string(),
         'Z' => "<[2468]K.n[2468]K>".to_string(),
         'G' => "<[2468]K..>".to_string(),
         'H' => "<[1357]K..>".to_string(),
