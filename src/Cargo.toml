@@ -24,6 +24,7 @@ hashbrown = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 ratatui = { workspace = true }
+chrono = { workspace = true }
 crossterm = { workspace = true }
 arboard = { workspace = true }
 

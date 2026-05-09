@@ -118,3 +118,10 @@ macro_rules! set_indices {
         indices
     }};
 }
+
+#[macro_export]
+macro_rules! is_empty {
+    ($board:expr) => {
+        $board.2.is_zero()
+    };
+}
