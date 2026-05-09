@@ -131,6 +131,7 @@ impl Tui {
 struct OverviewPieceInfo {
     char_str: String,
     promotions: String,
+    roles: String,
     op_val: u16,
     eg_val: u16,
     op_pst: String,
@@ -224,6 +225,29 @@ impl OverviewState {
         for (i, piece) in state.pieces.iter().enumerate() {
             let name = piece.name.clone();
             let char_str = piece.char.to_string();
+            let roles = if p_is_royal!(piece) {
+                "Royal".to_string()
+            } else {
+                let mut result = Vec::new();
+
+                if p_is_big!(piece) {
+                    result.push("Big");
+                } else {
+                    result.push("Non-Big");
+                }
+
+                if p_is_major!(piece) {
+                    result.push("Major");
+                } else if p_is_minor!(piece) {
+                    result.push("Minor");
+                }
+
+                if result.is_empty() {
+                    "-".to_string()
+                } else {
+                    result.join(", ")
+                }
+            };
             let promotions = if piece.promotions.is_empty() {
                 "-".to_string()
             } else {
@@ -251,6 +275,7 @@ impl OverviewState {
 
             let info = OverviewPieceInfo {
                 char_str,
+                roles,
                 promotions,
                 op_val,
                 eg_val,
@@ -979,7 +1004,7 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),
-                Constraint::Length(5),
+                Constraint::Length(6),
             ])
             .split(chunks[1]);
 
@@ -1004,6 +1029,17 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 ),
             info_ref.map(|i| format!("{} / {}", i.op_val, i.eg_val))
                 .unwrap_or_else(|| "-".to_string()).into(),
+        ]));
+        info_rows.push(Row::new(vec![
+            Span::from("Roles".to_string())
+                .style(Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+                ),
+            info_ref
+                .map(|i| i.roles.clone())
+                .unwrap_or_else(|| "-".to_string())
+                .into(),
         ]));
         info_rows.push(Row::new(vec![
             Span::from("Promotions".to_string())
@@ -1184,6 +1220,19 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                 );
             }
         }
+        "a" => {
+            let moves = generate_all_moves_and_drops(state);
+
+            if moves.is_empty() {
+                log_2!("No legal moves available");
+                return;
+            }
+
+            log_1!("Legal moves:");
+            for mv in moves {
+                log_1!("- {}", format_move(&mv, state));
+            }
+        }
         _ if trimmed.starts_with("fen ") => {
             let fen = trimmed[4..].trim();
             state.load_fen(fen);
@@ -1314,6 +1363,36 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                         panic!("Failed to send TuiEvent::StateUpdate: {e}")
                     }
                 );
+            }
+        }
+        _ if trimmed.starts_with("perft ") => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() != 3 && parts.len() != 4 {
+                log_2!("Usage: perft [depth] [branch] [file (optional)]");
+                return;
+            }
+
+            let depth = parts[1].parse::<u8>().unwrap_or_else(|_| {
+                log_2!("Invalid depth: {}", parts[1]);
+                0
+            });
+
+            let branch = parts[2].parse::<i8>().unwrap_or_else(|_| {
+                log_2!("Invalid branch: {}", parts[2]);
+                -1
+            });
+
+            let perft_file = if parts.len() == 4 {
+                Some(parts[3])
+            } else {
+                None
+            };
+
+            if let Some(file) = perft_file {
+                benchmark_perft(state, file, depth, branch, usize::MAX);
+            } else {
+                benchmark_headless_perft(state, depth, branch);
             }
         }
         _ => {
@@ -1494,6 +1573,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                     if path.is_file() {
                         let path_str = path.to_string_lossy();
                         let state = parse_config_file(&path_str);
+
                         let board_state = BoardState::from_state(&state);
 
                         sender.send(
