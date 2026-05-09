@@ -75,8 +75,8 @@ pub use crate::game::search::{
 };
 
 pub use crate::game::util::{
-    benchmark_perft, benchmark_search, format_time, perft, random_u128,
-    refresh_eval_state, verify_game_state, square_distance
+    benchmark_perft, benchmark_headless_perft, benchmark_search, format_time,
+    perft, random_u128, refresh_eval_state, verify_game_state, square_distance
 };
 
 /*----------------------------------------------------------------------------*\

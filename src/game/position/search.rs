@@ -151,7 +151,7 @@ pub fn search_position(
         .and_then(|n| n.checked_div(total_elapsed))
         .unwrap_or(0);
 
-    log_2!(
+    log_1!(
         concat!(
             "Search complete | Final Score: {:>6} | Best Move: {:<8} | ",
             "Total Nodes: {:>12} | Total Time: {:>10} | NPS: {:>12}"

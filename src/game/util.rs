@@ -305,7 +305,18 @@ pub fn verify_game_state(state: &State) {
 }
 
 fn parse_perft_file(path: &str) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {/* until perft 6                      */
-    let contents = fs::read_to_string(path).expect("Failed to read perft file");
+    let file = fs::read_to_string(path);
+
+    if let Err(ref e) = file {
+        log_1!("Failed to read perft file at '{}': {e}", path);
+        return Vec::new();
+    } else {
+        log_1!("Successfully read perft file at '{}'", path);
+    }
+
+    let contents = file.unwrap_or_else(|e| {
+        panic!("Failed to read perft file at '{}': {e}", path)
+    });
     let uncommented = COMMENT_PATTERN.replace_all(&contents, "");
 
     uncommented
@@ -375,6 +386,50 @@ pub fn format_time(nanos: u128) -> String {
     }
 }
 
+/// Runs a perft test without a truth suite, just reporting the total nodes and
+/// elapsed time for a given depth. This is useful for quick sanity checks and
+/// performance profiling without needing a full suite of expected results.
+pub fn benchmark_headless_perft(state: &mut State, depth: u8, branch: i8) {
+    log_1!(
+        "Headless perft started with depth {} and branching {}...",
+        depth,
+        branch
+    );
+
+    let mut total_nodes = 0;
+    let total_start_time = ENGINE_START.elapsed().as_nanos();
+
+    for d in 1..=depth {
+        let start_time = ENGINE_START.elapsed().as_nanos();
+        let nodes = perft(state, d, branch, "");
+        let elapsed = ENGINE_START
+            .elapsed()
+            .as_nanos()
+            .saturating_sub(start_time);
+
+
+        log_1!(
+            "Depth {} | Nodes: {:>12} | Elapsed Time: {:>12}",
+            d,
+            nodes,
+            format_time(elapsed)
+        );
+
+        total_nodes += nodes;
+    }
+
+    let total_elapsed = ENGINE_START
+        .elapsed()
+        .as_nanos()
+        .saturating_sub(total_start_time);
+
+    log_1!(
+        "Total moves generated: {:>12} | Elapsed Time: {:>12}",
+        total_nodes,
+        format_time(total_elapsed)
+    );
+}
+
 /// Runs a perft suite loaded from `path` and reports pass/fail per depth.
 ///
 /// Cases are shuffled, capped by `limit`, and each position is tested from
@@ -388,6 +443,11 @@ pub fn benchmark_perft(
     limit: usize,
 ) {
     let mut perft_cases = parse_perft_file(path);
+
+    if perft_cases.is_empty() {
+        return;
+    }
+
     let limit = limit.min(perft_cases.len());
     perft_cases.shuffle(&mut RNG.lock().unwrap_or_else(|e| {
         panic!("Failed to lock RNG mutex for perft shuffle: {e}")
@@ -485,7 +545,7 @@ pub fn benchmark_search(state: &mut State, depth: usize) {
 pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     if depth == 0 {
         if branch >= 0 {
-            log_4!("{} moves | Nodes: 1", prefix);
+            log_1!("{} moves | Nodes: 1", prefix);
         }
         return 1;
     }
@@ -514,7 +574,7 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
         }
     }
 
-    log_4!("{} moves | Nodes: {}", prefix, nodes);
+    log_1!("{} moves | Nodes: {}", prefix, nodes);
 
     nodes
 }
