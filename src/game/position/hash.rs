@@ -66,26 +66,26 @@ pub fn hash_position(state: &State) -> u128 {
 /// - in-hand count transitions (`hash_update_in_hand!`)
 #[macro_export]
 macro_rules! hash_in_or_out_piece {
-    ($game_state:expr, $piece_index:expr, $square_index:expr) => {
-        $game_state.position_hash ^=
+    ($state:expr, $piece_index:expr, $square_index:expr) => {
+        $state.position_hash ^=
             &PIECE_HASHES[$piece_index][$square_index as usize];
     };
 }
 
 #[macro_export]
 macro_rules! hash_toggle_side {
-    ($game_state:expr) => {
-        $game_state.position_hash ^= &*SIDE_HASHES;
+    ($state:expr) => {
+        $state.position_hash ^= &*SIDE_HASHES;
     };
 }
 
 #[macro_export]
 macro_rules! hash_update_castling {
-    ($game_state:expr, $old_castling_state:expr, $new_castling_state:expr) => {
+    ($state:expr, $old_castling_state:expr, $new_castling_state:expr) => {
         if $old_castling_state != $new_castling_state {
-            $game_state.position_hash ^=
+            $state.position_hash ^=
                 &CASTLING_HASHES[$old_castling_state as usize];
-            $game_state.position_hash ^=
+            $state.position_hash ^=
                 &CASTLING_HASHES[$new_castling_state as usize];
         }
     };
@@ -93,16 +93,16 @@ macro_rules! hash_update_castling {
 
 #[macro_export]
 macro_rules! hash_update_en_passant {
-    ($game_state:expr, $old_ep_square:expr, $new_ep_square:expr) => {
+    ($state:expr, $old_ep_square:expr, $new_ep_square:expr) => {
         if $old_ep_square != $new_ep_square {
             if $old_ep_square != NO_EN_PASSANT {
                 let index = enp_square!($old_ep_square) as usize;
-                $game_state.position_hash ^= &EN_PASSANT_HASHES[index];
+                $state.position_hash ^= &EN_PASSANT_HASHES[index];
             }
 
             if $new_ep_square != NO_EN_PASSANT {
                 let index = enp_square!($new_ep_square) as usize;
-                $game_state.position_hash ^= &EN_PASSANT_HASHES[index];
+                $state.position_hash ^= &EN_PASSANT_HASHES[index];
             }
         }
     };
@@ -110,11 +110,11 @@ macro_rules! hash_update_en_passant {
 
 #[macro_export]
 macro_rules! hash_update_in_hand {
-    ($game_state:expr, $piece_index:expr, $old_count:expr, $new_count:expr) => {
+    ($state:expr, $piece_index:expr, $old_count:expr, $new_count:expr) => {
         if $old_count != $new_count {
-            $game_state.position_hash ^=
+            $state.position_hash ^=
                 &IN_HAND_HASHES[$piece_index][$old_count as usize];
-            $game_state.position_hash ^=
+            $state.position_hash ^=
                 &IN_HAND_HASHES[$piece_index][$new_count as usize];
         }
     };

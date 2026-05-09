@@ -274,31 +274,35 @@ fn derive_piece_value_on_square(
 
     let piece = &state.pieces[piece_index as usize];
 
+    let mobility_weight = if is_endgame { 0.25 } else { 0.5 };
+    let center_weight = if is_endgame { 1.75 } else { 1.25 };
+    let promotion_weight = if is_endgame { 1.1 } else { 1.6 };
+
     if p_can_promote!(piece) {
         let closest_promotion =
             derive_closest_promotion(state, piece_index, square);
 
-        let distance_weight = if is_endgame { 0.1 } else { 0.15 };
-        let promotion_weight = if is_endgame { 0.4 } else { 0.2 };
-
         let value =
-            10.0 *
-            (0.5 + 0.5 * mobility) *
-            (1.0 - distance_weight * distance_from_center) *
-            (1.0 - promotion_weight * closest_promotion);
+            (mobility_weight * mobility) +
+            (state.files as f64 / 2.0 - center_weight * distance_from_center) +
+            (state.ranks as f64 - promotion_weight * closest_promotion);
 
-        if !is_endgame && p_is_royal!(piece) { -value.round() as i32 }
-        else { value.round() as i32 }
+        if !is_endgame && p_is_royal!(piece) {
+            -value.round() as i32
+        } else {
+            value.round() as i32
+        }
     } else {
-        let distance_weight = if is_endgame { 0.03 } else { 0.05 };
 
         let value =
-            10.0 *
-            (0.5 + 0.5 * mobility) *
-            (1.0 - distance_weight * distance_from_center);
+            (mobility_weight * mobility) +
+            (state.files as f64 / 2.0 - center_weight * distance_from_center);
 
-        if !is_endgame && p_is_royal!(piece) { -value.round() as i32 }
-        else { value.round() as i32 }
+        if !is_endgame && p_is_royal!(piece) {
+            -value.round() as i32
+        } else {
+            value.round() as i32
+        }
     }
 }
 
@@ -321,25 +325,32 @@ pub fn derive_parameters(state: &mut State) {
     let mut values = Vec::new();
 
     let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
     for (index, piece) in state.pieces.iter().enumerate() {
         if p_color!(piece) == BLACK {
             continue;
         }
 
         let value = derive_piece_value(state, piece);
+
         if value < min {
             min = value;
+        }
+
+        if value > max {
+            max = value;
         }
 
         values.push((index as PieceIndex, value));
     }
 
-    let offset = 100.0 - min;
 
     for (index, value) in values.clone() {
         let black_index = state.piece_swap_map[&index] as usize;
         let white_index = index as usize;
-        let value = (value + offset).round() as u16;
+        let normalized_value = (value - min) / (max - min);
+
+        let value = 100 + (normalized_value * 1400.0).round() as u16;           /* normalizes value from 100-1500     */
 
         set_piece_dynamic_parameters(
             &mut state.pieces[black_index], value, 0, false, false);

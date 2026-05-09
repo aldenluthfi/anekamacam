@@ -9,7 +9,7 @@ strip = true
 debug-assertions = true
 
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "src"
 ]
@@ -30,5 +30,6 @@ ratatui = {
     version = "*",
     features = ["unstable-rendered-line-info"]
 }
+chrono = "*"
 crossterm = "*"
 arboard = "*"

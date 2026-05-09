@@ -17,7 +17,7 @@ use crate::*;
 pub fn generate_relevant_drops(
     piece: &Piece,
     square_index: u32,
-    game_state: &State,
+    state: &State,
     piece_setup_drops: &[DropSet],
 ) -> DropSet {
     let piece_index = p_index!(piece) as usize;
@@ -28,7 +28,7 @@ pub fn generate_relevant_drops(
         .iter()
         .filter(|drop| {
             let drop_f = drop_f!(drop);
-            !get!(game_state.forbidden_zones[piece_index], square_index)
+            !get!(state.forbidden_zones[piece_index], square_index)
                 || drop_f
         })
         .filter_map(|drop| {
@@ -36,8 +36,8 @@ pub fn generate_relevant_drops(
             let mut new_drop_stoppers = Vec::new();
             let mut new_drop_allowers = Vec::new();
 
-            let file = square_index as i32 % game_state.files as i32;
-            let rank = square_index as i32 / game_state.files as i32;
+            let file = square_index as i32 % state.files as i32;
+            let rank = square_index as i32 / state.files as i32;
 
             for allower in drop.1.iter() {
                 let x = x!(allower.0) * (-2 * piece_color as i8 + 1);
@@ -47,9 +47,9 @@ pub fn generate_relevant_drops(
                 let check_y = rank + y as i32;
 
                 if check_x < 0
-                    || check_x >= game_state.files as i32
+                    || check_x >= state.files as i32
                     || check_y < 0
-                    || check_y >= game_state.ranks as i32
+                    || check_y >= state.ranks as i32
                 {
                     return None;
                 }
@@ -65,9 +65,9 @@ pub fn generate_relevant_drops(
                 let check_y = rank + y as i32;
 
                 if check_x >= 0
-                    && check_x < game_state.files as i32
+                    && check_x < state.files as i32
                     && check_y >= 0
-                    && check_y < game_state.ranks as i32
+                    && check_y < state.ranks as i32
                 {
                     new_drop_stoppers.push(stopper.clone());
                 }

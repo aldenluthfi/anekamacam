@@ -124,7 +124,7 @@ pub use hotpath;
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, warn};
 pub use mpsc::{channel, Sender, Receiver, TryRecvError};
-pub use rand::{RngCore, SeedableRng, seq::SliceRandom, rngs::StdRng};
+pub use rand::{RngCore, SeedableRng, seq::SliceRandom, rngs::StdRng, Rng};
 pub use ratatui::{
     Frame, DefaultTerminal,
     backend::CrosstermBackend,
@@ -140,7 +140,6 @@ pub use ratatui::{
         Paragraph, Row, Table, TableState, Tabs, Wrap, Widget
     },
 };
-pub use rand::Rng;
 pub use regex::Regex;
 pub use std::{
     array, cmp,
@@ -171,8 +170,6 @@ pub const FORMAT_VERBOSITY_5: u8 = 5;
 
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
-
-pub const RNG_SEED: u64 = 0xDEADBEEFCAFEBABE;
 
 pub const A: u8 = 0;
 pub const B: u8 = 1;
@@ -221,7 +218,7 @@ pub const DROP_MOVE: u128 = 3;
 
 lazy_static! {
     pub static ref RNG: Mutex<StdRng> =
-        Mutex::new(StdRng::seed_from_u64(RNG_SEED));
+        Mutex::new(StdRng::from_os_rng());
     pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
     pub static ref ENGINE_START: Instant = Instant::now();
     pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")
@@ -254,11 +251,8 @@ lazy_static! {
         result
     };
     pub static ref LOG_FILE_PATH: String = {
-        let start = SystemTime::now();
-        let since_the_epoch = start
-            .duration_since(time::UNIX_EPOCH)
-            .expect("Time went backwards");
-        format!("logs/engine_{}.log", since_the_epoch.as_millis())
+        let now = chrono::Local::now();
+        format!("logs/engine_{}.log", now.format("%Y-%m-%d_%H-%M-%S"))
     };
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
