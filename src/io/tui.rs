@@ -31,6 +31,7 @@ struct Tui {
     scroll_map: HashMap<(usize, usize), u16>,
     input: String,
     help: bool,
+    help_tab: usize,
     game_state: Option<Arc<Mutex<State>>>,
     locked: bool,
     board_state: Option<BoardState>,
@@ -60,6 +61,7 @@ impl Tui {
         let focus = usize::MAX;
         let input = String::new();
         let help = false;
+        let help_tab = 0;
         let locked = false;
         let game_state = None;
         let board_state = None;
@@ -72,6 +74,7 @@ impl Tui {
             scroll_map,
             input,
             help,
+            help_tab,
             game_state,
             locked,
             board_state,
@@ -87,6 +90,7 @@ impl Tui {
         self.focus = usize::MAX;
         self.input.clear();
         self.help = false;
+        self.help_tab = 0;
         self.game_state = None;
     }
 
@@ -136,6 +140,9 @@ struct OverviewPieceInfo {
     eg_val: u16,
     op_pst: String,
     eg_pst: String,
+    forbidden_zones: Option<String>,
+    mandatory_promotions: Option<String>,
+    optional_promotions: Option<String>,
 }
 
 struct OverviewPiece {
@@ -224,7 +231,17 @@ impl OverviewState {
 
         for (i, piece) in state.pieces.iter().enumerate() {
             let name = piece.name.clone();
-            let char_str = piece.char.to_string();
+            let color = p_color!(piece);
+
+            let char_str = if color == WHITE {
+                let black_char = state.piece_swap_map.get(&(i as u8))
+                    .map(|&idx| state.pieces[idx as usize].char.to_string())
+                    .unwrap_or_else(|| "-".to_string());
+                format!("{}{}", piece.char, black_char)
+            } else {
+                piece.char.to_string()
+            };
+
             let roles = if p_is_royal!(piece) {
                 "Royal".to_string()
             } else {
@@ -273,6 +290,33 @@ impl OverviewState {
                 );
             }
 
+            let forbidden_zones =
+            if forbidden_zones!(state) && !is_empty!(state.forbidden_zones[i]) {
+                Some(format_board(&state.forbidden_zones[i], Some('X')))
+            } else {
+                None
+            };
+
+            let mandatory_promotions =
+            if promotions!(state)
+            && !is_empty!(state.promotion_zones_mandatory[i]) {
+                Some(
+                    format_board(&state.promotion_zones_mandatory[i], Some('X'))
+                )
+            } else {
+                None
+            };
+
+            let optional_promotions =
+            if promotions!(state)
+            && !is_empty!(state.promotion_zones_optional[i]) {
+                Some(
+                    format_board(&state.promotion_zones_optional[i], Some('X'))
+                )
+            } else {
+                None
+            };
+
             let info = OverviewPieceInfo {
                 char_str,
                 roles,
@@ -281,9 +325,10 @@ impl OverviewState {
                 eg_val,
                 op_pst: op_pst_str,
                 eg_pst: eg_pst_str,
+                forbidden_zones,
+                mandatory_promotions,
+                optional_promotions,
             };
-
-            let color = p_color!(piece);
 
             if !piece_map.contains_key(&name) {
                 piece_names.push(name.clone());
@@ -293,10 +338,8 @@ impl OverviewState {
                 });
             }
 
-            if let Some(entry) = piece_map.get_mut(&name) {
-                if color == 0 {
-                    entry.info = Some(info);
-                }
+            if let Some(entry) = piece_map.get_mut(&name) && color == WHITE {
+                entry.info = Some(info);
             }
         }
 
@@ -390,52 +433,6 @@ impl BoardState {
             details,
             fen,
         }
-    }
-}
-
-#[derive(Debug, Default)]
-struct Popup<'a> {
-    content: Text<'a>,
-    border_style: Style,
-    padding: Padding,
-    style: Style,
-}
-
-impl<'a> Popup<'a> {
-
-    fn content(mut self, content: impl Into<Text<'a>>) -> Self {
-        self.content = content.into();
-        self
-    }
-
-    fn border_style(mut self, style: Style) -> Self {
-        self.border_style = style;
-        self
-    }
-
-    fn padding(mut self, padding: Padding) -> Self {
-        self.padding = padding;
-        self
-    }
-
-    fn style(mut self, style: Style) -> Self {
-        self.style = style;
-        self
-    }
-}
-
-impl Widget for Popup<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        Clear.render(area, buf);
-        let block = Block::new()
-            .borders(Borders::ALL)
-            .border_style(self.border_style)
-            .padding(self.padding);
-        Paragraph::new(self.content)
-            .wrap(Wrap { trim: true })
-            .style(self.style)
-            .block(block)
-            .render(area, buf);
     }
 }
 
@@ -554,7 +551,7 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     frame.render_widget(help_line, area);
 }
 
-fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
+fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let normal_mode_rows = [
         ("<i>", "Enter input mode"),
@@ -572,77 +569,136 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect) {
         ("<Esc>", "Enter normal mode"),
     ];
 
+    let command_rows = [
+        ("undo", "Undo the last move played on the board"),
+        ("reset", "Rewind the game all the way to the starting position"),
+        ("ls", "List all legal moves available in the current position"),
+        ("fen <fen>", "Load a specific game state from a given FEN string"),
+        (
+            "search <depth>",
+            "Search the current position up to the specified depth"
+        ),
+        (
+            "go <depth>",
+            "Calculate and play the best move up to the specified depth"
+        ),
+        (
+            "play <depth> <time>",
+            "Automatically play the game with specified depth and time limit"
+        ),
+        (
+            "perft <depth> <branch> [file]",
+            "Run a perft benchmark to verify move generation accuracy"
+        ),
+        ("move <move>", "Play a valid move using Cheesy Move Notation (CMN)"),
+    ];
+
     let mut lines = vec![];
 
-    lines.push(Line::from(vec![
-        Span::from("Normal mode")
-            .style(Style::default().add_modifier(Modifier::BOLD)),
-    ]));
+    let help_tabs = Tabs::new(vec!["Keybinds", "Commands"])
+        .select(app.help_tab)
+        .style(Style::default().fg(Color::Gray))
+        .padding_left("")
+        .divider(" ")
+        .highlight_style(
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        );
 
-    for (key, desc) in normal_mode_rows {
-        let row = Line::from(vec![
-            Span::from(format!("{:<15} ", key))
-                .style(
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
-                ),
-            Span::from(desc),
-        ]);
+    if app.help_tab == 0 {
+        lines.push(Line::from(vec![
+            Span::from("Normal mode")
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        ]));
 
-        lines.push(row);
+        for (key, desc) in normal_mode_rows {
+            let row = Line::from(vec![
+                Span::from(format!("{:<20} ", key))
+                    .style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    ),
+                Span::from(desc),
+            ]);
+
+            lines.push(row);
+        }
+
+        lines.push(Line::default());
+
+        lines.push(Line::from(vec![
+            Span::from("Input mode")
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        ]));
+
+        for (key, desc) in input_mode_rows {
+            let row = Line::from(vec![
+                Span::from(format!("{:<20} ", key))
+                    .style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    ),
+                Span::from(desc),
+            ]);
+
+            lines.push(row);
+        }
+    } else {
+        for (cmd, desc) in command_rows {
+            lines.push(Line::from(vec![
+                Span::from(format!("{} ", cmd))
+                    .style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    )
+            ]));
+            lines.push(Line::from(vec![
+                Span::from(desc)
+            ]));
+            lines.push(Line::default());
+        }
     }
-
-    lines.push(Line::default());
-
-    lines.push(Line::from(vec![
-        Span::from("Input mode")
-            .style(Style::default().add_modifier(Modifier::BOLD)),
-    ]));
-
-    for (key, desc) in input_mode_rows {
-        let row = Line::from(vec![
-            Span::from(format!("{:<15} ", key))
-                .style(
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD)
-                ),
-            Span::from(desc),
-        ]);
-
-        lines.push(row);
-    }
-
-    lines.push(Line::default());
-
-    lines.push(
-        Line::from("Press <?> again in normal mode to close help")
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Gray))
-    );
-
-    let longest_line = lines
-        .iter()
-        .map(|line| line.width()).max().unwrap_or(0) as u16 + 4;
-    let lines_height = lines.len() as u16 + 2;
 
     let popup_area = area
         .centered(
-            Constraint::Length(longest_line),
-            Constraint::Length(lines_height)
+            Constraint::Length(50),
+            Constraint::Length(40)
         );
 
-    let popup = Popup::default()
-        .content(lines)
+    let block = Block::default()
+        .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow))
         .padding(Padding::horizontal(1))
         .style(Style::default().fg(Color::White));
 
-    frame.render_widget(
-        popup,
-        popup_area,
-    );
+    frame.render_widget(Clear, popup_area);
+    let popup_inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(2), Constraint::Min(0)])
+        .split(popup_inner);
+
+    frame.render_widget(help_tabs, layout[0]);
+
+    let content_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(layout[1]);
+
+    let content = Paragraph::new(lines).wrap(Wrap { trim: true });
+    frame.render_widget(content, content_layout[0]);
+
+    let footer = vec![
+        Line::from(Span::from("Press <←/→> to switch tabs, <?> to close")
+            .style(Style::default().fg(Color::Gray))),
+    ];
+    let footer_paragraph = Paragraph::new(footer).alignment(Alignment::Center);
+
+    frame.render_widget(footer_paragraph, content_layout[1]);
 }
 
 /// Draw the main game tab, which includes the board, move list, and logs.
@@ -1072,6 +1128,16 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         if let Some(info) = info_ref {
             available_tables.push(("Opening PST", &info.op_pst));
             available_tables.push(("Endgame PST", &info.eg_pst));
+
+            if let Some(fz) = &info.forbidden_zones {
+                available_tables.push(("Forbidden Zones", fz));
+            }
+            if let Some(mp) = &info.mandatory_promotions {
+                available_tables.push(("Mandatory Promotions", mp));
+            }
+            if let Some(op) = &info.optional_promotions {
+                available_tables.push(("Optional Promotions", op));
+            }
         }
 
         if !available_tables.is_empty() {
@@ -1176,7 +1242,7 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     }
 
     if app.help {
-        draw_help_popup(frame, root);
+        draw_help_popup(frame, root, app);
     }
 }
 
@@ -1188,7 +1254,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
     }
 
     match trimmed {
-        "u" => {
+        "undo" => {
             if state.ply_counter > 0 {
                 undo_move!(state);
             } else {
@@ -1205,7 +1271,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                 }
             );
         }
-        "r" => {
+        "reset" => {
             while state.ply_counter > 0 {
                 undo_move!(state);
 
@@ -1220,7 +1286,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                 );
             }
         }
-        "a" => {
+        "ls" => {
             let moves = generate_all_moves_and_drops(state);
 
             if moves.is_empty() {
@@ -1346,10 +1412,8 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                         "Checkmate! {} wins.",
                         if state.playing == WHITE { "Black" } else { "White" }
                     );
-                } else if result.best_move == null_move() {
-                    log_1!(
-                        "Stalemate! It's a draw."
-                    );
+                } else if state.game_over {
+                    log_1!("It's a draw!");
                 } else {
                     make_move!(state, result.best_move);
                 }
@@ -1395,8 +1459,9 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                 benchmark_headless_perft(state, depth, branch);
             }
         }
-        _ => {
-            if let Some(mv) = parse_move(trimmed, state) {
+        _ if trimmed.starts_with("move ") => {
+            let mv_str = trimmed[5..].trim();
+            if let Some(mv) = parse_move(mv_str, state) {
                 make_move!(state, mv);
 
                 let board_state = BoardState::from_state(state);
@@ -1409,8 +1474,11 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
                     }
                 );
             } else {
-                log_2!("Invalid command or move: {}", trimmed);
+                log_2!("Invalid move: {}", mv_str);
             }
+        }
+        _ => {
+            log_2!("Invalid command: {}", trimmed);
         }
     }
 }
@@ -1509,21 +1577,29 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Left) => {
-            if app.focus == 0 {
-                app.focus = (TAB_FOCUSABLES[app.tab] as usize)
-                    .saturating_sub(1);
+            if app.help {
+                app.help_tab = app.help_tab.saturating_sub(1);
             } else {
-                app.focus = app.focus
-                    .saturating_sub(1)
-            };
+                if app.focus == 0 {
+                    app.focus = (TAB_FOCUSABLES[app.tab] as usize)
+                        .saturating_sub(1);
+                } else {
+                    app.focus = app.focus
+                        .saturating_sub(1)
+                };
+            }
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Right) => {
-            app.focus = app.focus
-                .saturating_add(1);
+            if app.help {
+                app.help_tab = app.help_tab.saturating_add(1).min(1);
+            } else if app.tab != usize::MAX {
+                app.focus = app.focus
+                    .saturating_add(1);
 
-            if app.focus >= TAB_FOCUSABLES[app.tab] as usize {
-                app.focus = 0;
+                if app.focus >= TAB_FOCUSABLES[app.tab] as usize {
+                    app.focus = 0;
+                }
             }
             false
         },
@@ -1552,7 +1628,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Tab) => {
-            app.tab = (app.tab + 1) % TAB_TITLES.len();
+            app.tab = (app.tab.saturating_add(1)) % TAB_TITLES.len();
             app.focus = 0;
             false
         },

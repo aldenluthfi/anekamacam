@@ -992,12 +992,13 @@ macro_rules! make_move {
                         let hand =
                             &mut $state.piece_in_hand
                             [1 - piece_color as usize][enemy_equiv as usize];
+                        let old_hand = *hand;
                         *hand -= 1;
 
                         hash_update_in_hand!(
                             $state,
                             enemy_equiv as usize,
-                            *hand + 1,
+                            old_hand,
                             *hand
                         );
                     }
@@ -1279,7 +1280,7 @@ macro_rules! make_move {
 
                     hash_update_in_hand!(
                         $state,
-                        captured_index_u8 as usize,
+                        swap_index,
                         old_hand,
                         *hand
                     );
@@ -1582,9 +1583,7 @@ macro_rules! make_move {
                         $state.pieces[captured_piece_index]
                     );
 
-                    if drops!($state)
-                    || promote_to_captured!($state)
-                    {
+                    if drops!($state) || promote_to_captured!($state) {
                         let mut captured_index_u8 =
                             captured_piece_index as PieceIndex;
 
@@ -1619,7 +1618,7 @@ macro_rules! make_move {
 
                         hash_update_in_hand!(
                             $state,
-                            captured_index_u8 as usize,
+                            swap_index,
                             old_hand,
                             *hand
                         );

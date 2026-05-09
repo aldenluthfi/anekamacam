@@ -16,11 +16,11 @@
 //! 25/01/2026
 use crate::*;
 
-pub fn format_square(index: u16, game_state: &State) -> String {
-    let file = (index % game_state.files as u16) as u8;
-    let rank = (index / game_state.files as u16) as u8;
+pub fn format_square(index: u16, state: &State) -> String {
+    let file = (index % state.files as u16) as u8;
+    let rank = (index / state.files as u16) as u8;
 
-    if game_state.files <= 26 {
+    if state.files <= 26 {
         let file_char = (b'a' + file) as char;
         format!("{}{}", file_char, rank).trim().to_string()
     } else {
