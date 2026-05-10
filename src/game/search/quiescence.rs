@@ -20,6 +20,7 @@ use crate::*;
 /// 4. Search legal captures with negamax alpha-beta recursion.
 pub fn quiescence_search(
     state: &mut State,
+    table: &mut TTable,
     alpha: i32,
     beta: i32,
     info: &mut SearchInfo,
@@ -49,7 +50,7 @@ pub fn quiescence_search(
     }
 
     let mut all_captures = generate_all_captures(state);
-    let pv_move = probe_pv_move!(state);
+    let pv_move = probe_pv_move!(state, table);
 
     for i in 0..all_captures.len() {
         pick_by_score(state, &mut all_captures, i, &pv_move);
@@ -79,7 +80,7 @@ pub fn quiescence_search(
             continue;
         }
 
-        let score = -quiescence_search(state, -beta, -alpha, info);
+        let score = -quiescence_search(state, table, -beta, -alpha, info);
         undo_move!(state);
 
         if info.interrupt {
