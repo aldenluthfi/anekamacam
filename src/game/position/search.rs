@@ -59,7 +59,9 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 ///
 /// This resets node counters, interruption flags, PV/killer/history tables,
 /// and ply tracking. It does not alter the current board position.
-pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
+pub fn clear_search(
+    state: &mut State, table: &mut TTable, info: &mut SearchInfo
+) {
     info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;
     info.interrupt = false;
@@ -70,7 +72,7 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
-    state.t_table.age += 1;
+    table.age += 1;
     state.search_ply = 0;
 }
 
@@ -80,21 +82,21 @@ pub fn clear_search(state: &mut State, info: &mut SearchInfo) {
 /// iteration, the principal variation is extracted from the PV table and
 /// reported in UCI-style informational logs.
 pub fn search_position(
-    state: &mut State, info: &mut SearchInfo
+    state: &mut State, table: &mut TTable, info: &mut SearchInfo
 ) -> SearchResult {
 
     let mut best_move = null_move();
     let mut best_score: i32 = 0;
     let start_time = ENGINE_START.elapsed().as_nanos();
 
-    clear_search(state, info);
+    clear_search(state, table, info);
 
     for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
         let score = alpha_beta(
-            state, depth, -INFINITY, INFINITY, info, true
+            state, table, depth, -INFINITY, INFINITY, info, true
         );
 
         if info.interrupt {
@@ -103,7 +105,7 @@ pub fn search_position(
 
         best_score = score;
 
-        fill_pv_line!(state, depth);
+        fill_pv_line!(state, table, depth);
         best_move = state.pv_line[0].clone();
 
         let elapsed = ENGINE_START
@@ -181,6 +183,7 @@ pub fn search_position(
 /// Returns the best score for the current side to move.
 pub fn alpha_beta(
     state: &mut State,
+    table: &mut TTable,
     depth: usize,
     alpha: i32,
     beta: i32,
@@ -209,7 +212,7 @@ pub fn alpha_beta(
     }
 
     if depth == 0 {
-        return quiescence_search(state, alpha, beta, info);
+        return quiescence_search(state, table, alpha, beta, info);
     }
 
 
@@ -220,7 +223,7 @@ pub fn alpha_beta(
     }
 
     let mut pv_move = None;
-    let tt_entry = probe_tt_entry!(state, alpha, beta, depth);                  /* Transposition table lookup         */
+    let tt_entry = probe_tt_entry!(state, table, alpha, beta, depth);           /* Transposition table lookup         */
 
     if tt_entry.2 != null_move() {
         pv_move = Some(tt_entry.2);
@@ -260,7 +263,7 @@ pub fn alpha_beta(
         let reduction = 3 + if depth >= 6 { 1 } else { 0 };
         make_null_move!(state);
         let score = -alpha_beta(
-            state, depth - reduction, -beta, -beta + 1, info, false
+            state, table, depth - reduction, -beta, -beta + 1, info, false
         );
         undo_null_move!(state);
 
@@ -314,7 +317,7 @@ pub fn alpha_beta(
 
         legal_moves += 1;
 
-        let mut reduction = 1;
+        let mut reduct = 1;
         let mut score;
 
         let opponent_in_check = is_in_check!(state.playing, state);
@@ -341,27 +344,27 @@ pub fn alpha_beta(
         && !is_promotion
         && !is_drop
         {
-            reduction += 1;                                                     /* Late move reduction                */
+            reduct += 1;                                                        /* Late move reduction                */
 
             if legal_moves > 6 {
-                reduction += 1;
+                reduct += 1;
             }
 
             score =
                 -alpha_beta(
-                    state, depth - reduction, -alpha - 1, -alpha, info, true
+                    state, table, depth - reduct, -alpha - 1, -alpha, info, true
                 );
 
             if score > alpha {
                 score =
                     -alpha_beta(
-                        state, depth - 1, -beta, -alpha, info, true
+                        state, table, depth - 1, -beta, -alpha, info, true
                     );
             }
         } else {
             score =
                 -alpha_beta(
-                    state, depth - reduction, -beta, -alpha, info, true
+                    state, table, depth - reduct, -beta, -alpha, info, true
                 );
         }
 
@@ -383,7 +386,7 @@ pub fn alpha_beta(
                             mv.clone();
                     }
 
-                    hash_tt_entry!(best_move, beta, HFBETA, depth, state);
+                    hash_tt_entry!(best_move, beta, FBETA, depth, state, table);
 
                     return beta;
                 }
@@ -420,9 +423,9 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     if alpha != alpha_start {
-        hash_tt_entry!(best_move, best_score, HFEXACT, depth, state);
+        hash_tt_entry!(best_move, best_score, FEXACT, depth, state, table);
     } else {
-        hash_tt_entry!(best_move, alpha, HFALPHA, depth, state);
+        hash_tt_entry!(best_move, alpha, FALPHA, depth, state, table);
     }
 
     alpha

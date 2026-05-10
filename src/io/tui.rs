@@ -1246,7 +1246,12 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     }
 }
 
-fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
+fn execute_command(
+    command: &str,
+    state: &mut State,
+    table: &mut TTable,
+    sender: Sender<TuiEvent>
+) {
     let trimmed = command.trim();
 
     if trimmed.is_empty() {
@@ -1330,7 +1335,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
             };
-            let result = search_position(state, &mut info);
+            let result = search_position(state, table, &mut info);
 
             if result.best_move == null_move() {
                 log_2!("No legal move available");
@@ -1352,7 +1357,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
             };
-            let result = search_position(state, &mut info);
+            let result = search_position(state, table, &mut info);
 
             if result.best_move == null_move() {
                 log_2!("No legal move available");
@@ -1404,7 +1409,7 @@ fn execute_command(command: &str, state: &mut State, sender: Sender<TuiEvent>) {
             };
 
             while !state.game_over {
-                let result = search_position(state, &mut info);
+                let result = search_position(state, table, &mut info);
 
                 if result.best_score == -INFINITY {
                     state.game_over = true;
@@ -1520,7 +1525,10 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                             )
                         }
                     );
-                    execute_command(&command, &mut state, sender.clone());
+                    let mut table = TTable::default();                          /* TODO: CHANGE THIS                  */
+                    execute_command(
+                        &command, &mut state, &mut table, sender.clone()
+                    );
 
                     sender.send(
                         TuiEvent::Unlock

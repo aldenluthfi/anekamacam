@@ -267,9 +267,9 @@ pub const NULL_DROP: &str = "@#~?@#~?";
 pub const INFINITY: i32 = 20000;
 pub const MATE_SCORE: i32 = INFINITY - MAX_DEPTH as i32;
 
-pub const HFALPHA: u8 = 0;
-pub const HFBETA: u8 = 1;
-pub const HFEXACT: u8 = 2;
+pub const FALPHA: u8 = 0;
+pub const FBETA: u8 = 1;
+pub const FEXACT: u8 = 2;
 
 pub const SETUP: u8 = 0;
 pub const OPENING: u8 = 1;

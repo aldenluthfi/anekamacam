@@ -126,15 +126,18 @@ macro_rules! tt_score {
 /// different ply restores the correct distance-to-mate semantics.
 #[macro_export]
 macro_rules! hash_tt_entry {
-    ($tt_move:expr, $score:expr, $flags:expr, $depth:expr, $state:expr) => {{
+    (
+        $tt_move:expr, $score:expr, $flags:expr,
+        $depth:expr, $state:expr, $table:expr
+    ) => {{
         let hash = $state.position_hash;
         let index = tt_index!(hash);
 
         let mut replace = false;
-        if $state.t_table.table[index].position_hash == 0 {
+        if $table.table[index].position_hash == 0 {
             replace = true
-        } else if $state.t_table.table[index].age < $state.t_table.age ||
-            tt_depth!($state.t_table.table[index]) <= $depth
+        } else if $table.table[index].age < $table.age ||
+            tt_depth!($table.table[index]) <= $depth
         {
             replace = true
         }
@@ -148,11 +151,11 @@ macro_rules! hash_tt_entry {
                 score -= $state.search_ply as i32;
             }
 
-            let entry = &mut $state.t_table.table[index];
+            let entry = &mut $table.table[index];
 
             entry.position_hash = hash;
             entry.tt_move = $tt_move;
-            entry.age = $state.t_table.age;
+            entry.age = $table.age;
             entry.encoded = 0;
 
             tt_enc_flags!(entry, $flags);
@@ -164,9 +167,9 @@ macro_rules! hash_tt_entry {
 
 #[macro_export]
 macro_rules! probe_tt_entry {
-    ($state:expr, $alpha:expr, $beta:expr, $depth:expr) => {{
+    ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {{
         let index = tt_index!($state.position_hash);
-        let entry = &$state.t_table.table[index];
+        let entry = &$table.table[index];
 
         if entry.position_hash == $state.position_hash {
             let entry_move = entry.tt_move.clone();
@@ -182,19 +185,19 @@ macro_rules! probe_tt_entry {
 
                 let mut valid_cutoff = false;
                 match entry_flags {
-                    HFALPHA => {
+                    FALPHA => {
                         if entry_score <= $alpha {
                             entry_score = $alpha;
                             valid_cutoff = true;
                         }
                     }
-                    HFBETA => {
+                    FBETA => {
                         if entry_score >= $beta {
                             entry_score = $beta;
                             valid_cutoff = true;
                         }
                     }
-                    HFEXACT => valid_cutoff = true,
+                    FEXACT => valid_cutoff = true,
                     _ => unreachable!(),
                 }
 
@@ -210,8 +213,8 @@ macro_rules! probe_tt_entry {
 
 #[macro_export]
 macro_rules! probe_pv_move {
-    ($state:expr) => {{
-        let entry = &$state.t_table.table[tt_index!($state.position_hash)];
+    ($state:expr, $table:expr) => {{
+        let entry = &$table.table[tt_index!($state.position_hash)];
 
         if entry.position_hash == $state.position_hash {
             Some(entry.tt_move.clone())
@@ -227,12 +230,12 @@ macro_rules! probe_pv_move {
 /// then undoes all temporary moves performed during reconstruction.
 #[macro_export]
 macro_rules! fill_pv_line {
-    ($state:expr, $depth:expr) => {{
+    ($state:expr, $table:expr, $depth:expr) => {{
         let depth = ($depth).min(MAX_DEPTH);
         let mut filled = 0;
 
         for i in 0..depth {
-            let Some(pv_move) = probe_pv_move!($state) else {
+            let Some(pv_move) = probe_pv_move!($state, $table) else {
                 break;
             };
 
