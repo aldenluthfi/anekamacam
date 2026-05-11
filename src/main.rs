@@ -36,6 +36,7 @@ pub mod game {
 
     pub mod search {
         pub mod move_ordering;
+        pub mod parallel;
         pub mod quiescence;
         pub mod transposition;
         pub mod parameters;
@@ -64,5 +65,9 @@ pub mod prelude;
 #[hotpath::main]
 fn main() {
     init_logging();
-    let _ = tui();
+    let mut state = parse_config_file("configs/fide.conf");
+    let mut table = TTable::default();
+
+    benchmark_search(&mut state, &mut table, 12);
+    // let _ = tui();
 }
