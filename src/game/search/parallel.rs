@@ -24,10 +24,8 @@ pub struct ThreadPool {
     thread_count: usize,
 }
 
-#[hotpath::measure_all]
 impl ThreadPool {
 
-    #[hotpath::measure]
     pub fn with_threads(root: &State, tt: Arc<TTable>, count: usize) -> Self {
         let thread_count = count.max(1);
 
@@ -38,7 +36,6 @@ impl ThreadPool {
         Self { main_state, tt, thread_count }
     }
 
-    #[hotpath::measure]
     pub fn run(&self, depth: usize, timed: u128) -> SearchResult {
         let tt = Arc::clone(&self.tt);
         let mut workers = Vec::with_capacity(self.thread_count);
@@ -52,7 +49,6 @@ impl ThreadPool {
             let handle = thread::Builder::new()
                 .name(format!("searcher-{}", i))
                 .spawn(move || {
-                hotpath::measure_block!("thread_spawn", {
                     let mut info = SearchInfo {
                         set_depth,
                         set_timed,
@@ -60,7 +56,6 @@ impl ThreadPool {
                     };
                     let mut state = state_clone;
                     iterative_deepening(&mut state, &tt_clone, &mut info, i)
-                })
             })
                 .unwrap_or_else(|e| {
                     panic!("Failed to spawn searcher-{}: {e}", i)

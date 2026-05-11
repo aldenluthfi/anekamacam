@@ -122,7 +122,6 @@ pub use env_logger::{
     Builder as LoggerBuilder, Target as LoggerTarget
 };
 pub use hashbrown::{HashMap, HashSet};
-pub use hotpath;
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, warn};
 pub use mpsc::{channel, Sender, Receiver, TryRecvError};
@@ -218,10 +217,13 @@ pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 
+thread_local! {
+    pub static EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
+}
+
 lazy_static! {
     pub static ref RNG: Mutex<StdRng> =
         Mutex::new(StdRng::seed_from_u64(0xDEADBEEFCAFEBABE));
-    pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
     pub static ref ENGINE_START: Instant = Instant::now();
     pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")
         .unwrap_or_else(|e| {
@@ -261,7 +263,7 @@ lazy_static! {
 }
 
 pub fn null_move() -> Move {
-    Move(!0u128, Arc::clone(&EMPTY_CAPTURE_LIST))
+    EMPTY_CAPTURE_LIST.with(|e| Move(!0u128, Arc::clone(e)))
 }
 
 pub fn null_pseudo_move() -> PseudoMove {
