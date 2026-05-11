@@ -20,7 +20,7 @@ use crate::*;
 /// 4. Search legal captures with negamax alpha-beta recursion.
 pub fn quiescence_search(
     state: &mut State,
-    table: &mut TTable,
+    table: &TTable,
     alpha: i32,
     beta: i32,
     info: &mut SearchInfo,

@@ -530,7 +530,7 @@ pub fn benchmark_perft(
 ///
 /// This reports the current position, executes search, and logs total nodes,
 /// elapsed wall time, and aggregate nodes-per-second.
-pub fn benchmark_search(state: &mut State, table: &mut TTable, depth: usize) {
+pub fn benchmark_search(state: &mut State, table: Arc<TTable>, depth: usize) {
     log_1!("Search benchmark started with depth {}...", depth);
 
     let mut info = SearchInfo { set_depth: depth, ..Default::default() };

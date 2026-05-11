@@ -105,6 +105,7 @@ pub use crate::io::tui::tui;
 \*----------------------------------------------------------------------------*/
 pub use arboard::Clipboard;
 pub use bnum::types::U4096;
+pub use core::cell::SyncUnsafeCell;
 pub use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode,
@@ -153,7 +154,7 @@ pub use std::{
     path::Path,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     thread::{self, JoinHandle},
