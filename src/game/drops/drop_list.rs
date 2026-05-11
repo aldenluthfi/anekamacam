@@ -82,16 +82,15 @@ pub fn generate_relevant_drops(
 ///
 /// This enforces drop flags (`k/f/d/e`), count limits, hand ownership,
 /// and allower/stopper pattern constraints before encoding each drop move.
-pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
+pub fn generate_drop_list(piece: &Piece, state: &State, out: &mut Vec<Move>, scratch: &mut Vec<u64>) {
     let board_size = state.main_board.len() as u32;
     let piece_index = p_index!(piece) as usize;
     let piece_color = p_color!(piece) as usize;
-    let mut drop_list = Vec::with_capacity(128);
 
     if count_limits!(state)
         && state.piece_count[piece_index] >= state.piece_limit[piece_index]
     {
-        return drop_list;
+        return;
     }
 
     for square in 0..board_size {
@@ -125,7 +124,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
             let drop_e = drop_e!(drop);
 
             let mut encoded_move = Move::default();
-            let mut taken_pieces: Vec<u64> = Vec::new();
+            scratch.clear();
             enc_move_type!(encoded_move, DROP_MOVE);
             enc_piece!(encoded_move, piece_index as u128);
             enc_start!(encoded_move, square as u128);
@@ -191,7 +190,7 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
                         get!(state.virgin_board, check_index as u32) as u64
                     );
 
-                    taken_pieces.push(take_piece);
+                    scratch.push(take_piece);
                 }
             }
 
@@ -212,10 +211,10 @@ pub fn generate_drop_list(piece: &Piece, state: &State) -> Vec<Move> {
                 }
             }
 
-            encoded_move.1 = Arc::new(taken_pieces);
-            drop_list.push(encoded_move);
+            if !scratch.is_empty() {
+                encoded_move.1 = Arc::new(scratch.drain(..).collect());
+            }
+            out.push(encoded_move);
         }
     }
-
-    drop_list
 }
