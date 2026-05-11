@@ -64,12 +64,12 @@ pub use crate::game::position::{
     hash::{PositionHash, hash_position},
     search::{
         SearchInfo, SearchResult, alpha_beta, check_interrupt, clear_search,
-        search_position,
+        search_position, iterative_deepening,
     },
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
-    parallel::{search_position_mt, ThreadPool},
+    parallel::{ThreadPool, ThreadWorker},
     quiescence::quiescence_search,
     transposition::{TTEntry, TTable},
     parameters::{derive_parameters}
@@ -220,7 +220,7 @@ pub const DROP_MOVE: u128 = 3;
 
 lazy_static! {
     pub static ref RNG: Mutex<StdRng> =
-        Mutex::new(StdRng::from_os_rng());
+        Mutex::new(StdRng::seed_from_u64(0xDEADBEEFCAFEBABE));
     pub static ref EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
     pub static ref ENGINE_START: Instant = Instant::now();
     pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")

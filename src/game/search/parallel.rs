@@ -13,46 +13,35 @@
 
 use crate::*;
 
-/*----------------------------------------------------------------------------*\
-                              THREAD POOL
-\*----------------------------------------------------------------------------*/
+pub struct ThreadWorker {
+    pub thread_num: usize,
+    pub thread_handle: JoinHandle<SearchResult>,
+}
 
-/// Manages the pool of search worker threads.
 pub struct ThreadPool {
     pub main_state: State,
     pub tt: Arc<TTable>,
     thread_count: usize,
 }
 
+#[hotpath::measure_all]
 impl ThreadPool {
 
-    /// Creates a new pool with auto-detected thread count.
-    ///
-    /// Thread count is rounded down to nearest power of 2 (2/4/8/16 max).
-    /// Falls back to single-thread if detection fails.
-    pub fn new(root: &State, tt: Arc<TTable>) -> Self {
-        let phys = thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1);
+    #[hotpath::measure]
+    pub fn with_threads(root: &State, tt: Arc<TTable>, count: usize) -> Self {
+        let thread_count = count.max(1);
 
-        let count = phys.min(16);
-        let power = count.next_power_of_two();
-        let thread_count = if power > count { power >> 1 } else { power };
-        let thread_count = thread_count.max(1);
-
-        log_2!(
-            "ThreadPool: {} threads (detected={})",
-            thread_count, phys
-        );
+        log_2!("ThreadPool: {} threads", thread_count);
 
         let main_state = root.clone();
 
         Self { main_state, tt, thread_count }
     }
 
+    #[hotpath::measure]
     pub fn run(&self, depth: usize, timed: u128) -> SearchResult {
         let tt = Arc::clone(&self.tt);
-        let mut handles = Vec::with_capacity(self.thread_count);
+        let mut workers = Vec::with_capacity(self.thread_count);
 
         for i in 0..self.thread_count {
             let state_clone = self.main_state.clone();
@@ -63,48 +52,42 @@ impl ThreadPool {
             let handle = thread::Builder::new()
                 .name(format!("searcher-{}", i))
                 .spawn(move || {
+                hotpath::measure_block!("thread_spawn", {
                     let mut info = SearchInfo {
                         set_depth,
                         set_timed,
                         ..Default::default()
                     };
                     let mut state = state_clone;
-                    search_position(&mut state, &tt_clone, &mut info);
+                    iterative_deepening(&mut state, &tt_clone, &mut info, i)
                 })
+            })
                 .unwrap_or_else(|e| {
                     panic!("Failed to spawn searcher-{}: {e}", i)
                 });
 
-            handles.push(handle);
+            workers.push(ThreadWorker {
+                thread_num: i,
+                thread_handle: handle,
+            });
         }
 
-        for (i, h) in handles.into_iter().enumerate() {
-            let _ = h.join();
-            log_3!("Thread {} joined", i);
-        }
-
-        SearchResult {
+        let mut main_result = SearchResult {
             best_score: 0,
             best_move: null_move(),
             total_nodes: 0,
             total_elapsed: 0,
+        };
+
+        for worker in workers {
+            let n = worker.thread_num;
+            let result = worker.thread_handle.join().unwrap_or_else(|_| {
+                panic!("Thread {} panicked", n)
+            });
+            if n == 0 { main_result = result; }
+            log_3!("Thread {} joined", n);
         }
+
+        main_result
     }
-}
-
-/*----------------------------------------------------------------------------*\
-                        PARALLEL SEARCH ENTRY POINT
-\*----------------------------------------------------------------------------*/
-
-/// Top-level multi-threaded search entry.
-///
-/// Detects available parallelism, spawns workers, joins them, returns result.
-/// Falls back to single-thread if parallelism detection fails or count = 1.
-pub fn search_position_mt(
-    state: &mut State,
-    table: Arc<TTable>,
-    info: &mut SearchInfo,
-) -> SearchResult {
-    let pool = ThreadPool::new(state, table);
-    pool.run(info.set_depth, info.set_timed)
 }

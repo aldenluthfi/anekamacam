@@ -72,7 +72,7 @@ pub fn clear_search(
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
-    table.age_sync.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    table.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     state.search_ply = 0;
 }
 
@@ -81,8 +81,40 @@ pub fn clear_search(
 /// The search depth increases from `1..=info.depth`. After each completed
 /// iteration, the principal variation is extracted from the PV table and
 /// reported in UCI-style informational logs.
+#[hotpath::measure]
 pub fn search_position(
-    state: &mut State, table: &TTable, info: &mut SearchInfo
+    state: &mut State, table: Arc<TTable>, info: &mut SearchInfo,
+    thread_num: usize,
+) -> SearchResult {
+    table.hit.store(0, Ordering::Relaxed);
+    table.valid.store(0, Ordering::Relaxed);
+    table.new_write.store(0, Ordering::Relaxed);
+    table.over_write.store(0, Ordering::Relaxed);
+
+    let result = if thread_num <= 1 {
+        iterative_deepening(state, &table, info, 0)
+    } else {
+        let pool = ThreadPool::with_threads(
+            state, Arc::clone(&table), thread_num
+        );
+        pool.run(info.set_depth, info.set_timed)
+    };
+
+    log_2!(
+        "TT | new: {} | over: {} | hit: {} | valid: {}",
+        table.new_write.load(Ordering::Relaxed),
+        table.over_write.load(Ordering::Relaxed),
+        table.hit.load(Ordering::Relaxed),
+        table.valid.load(Ordering::Relaxed),
+    );
+
+    result
+}
+
+#[hotpath::measure]
+pub fn iterative_deepening(
+    state: &mut State, table: &TTable, info: &mut SearchInfo,
+    thread_num: usize,
 ) -> SearchResult {
 
     let mut best_move = null_move();
@@ -119,30 +151,32 @@ pub fn search_position(
             .and_then(|n| n.checked_div(elapsed))
             .unwrap_or(0);
 
-        log_4!(
-            concat!(
-                "Score: {:>6} | Best Move: {:<8} | ",
-                "Depth Nodes: {:>12} | ",
-                "NPS: {:>12}",
-            ),
-            best_score,
-            format_move(&best_move, state),
-            nodes,
-            depth_nps,
-        );
+        if thread_num == 0 {
+            log_4!(
+                concat!(
+                    "Score: {:>6} | Best Move: {:<8} | ",
+                    "Depth Nodes: {:>12} | ",
+                    "NPS: {:>12}",
+                ),
+                best_score,
+                format_move(&best_move, state),
+                nodes,
+                depth_nps,
+            );
 
-        log_3!(
-            "Depth {:>2} | Time: {:>10} | Best Line: {}",
-            depth,
-            format_time(elapsed),
-            state.pv_line
-                .iter()
-                .take(depth)
-                .take_while(|m| m != &&null_move())
-                .map(|m| format_move(m, state))
-                .collect::<Vec<String>>()
-                .join(" ")
-        );
+            log_3!(
+                "Depth {:>2} | Time: {:>10} | Best Line: {}",
+                depth,
+                format_time(elapsed),
+                state.pv_line
+                    .iter()
+                    .take(depth)
+                    .take_while(|m| m != &&null_move())
+                    .map(|m| format_move(m, state))
+                    .collect::<Vec<String>>()
+                    .join(" ")
+            );
+        }
     }
 
     let total_nodes = info.nodes;
@@ -153,17 +187,19 @@ pub fn search_position(
         .and_then(|n| n.checked_div(total_elapsed))
         .unwrap_or(0);
 
-    log_1!(
-        concat!(
-            "Search complete | Final Score: {:>6} | Best Move: {:<8} | ",
-            "Total Nodes: {:>12} | Total Time: {:>10} | NPS: {:>12}"
-        ),
-        best_score,
-        format_move(&best_move, state),
-        total_nodes,
-        format_time(total_elapsed),
-        nps
-    );
+    if thread_num == 0 {
+        log_1!(
+            concat!(
+                "Search complete | Final Score: {:>6} | Best Move: {:<8} | ",
+                "Total Nodes: {:>12} | Total Time: {:>10} | NPS: {:>12}"
+            ),
+            best_score,
+            format_move(&best_move, state),
+            total_nodes,
+            format_time(total_elapsed),
+            nps
+        );
+    }
 
     SearchResult {
         best_score,
