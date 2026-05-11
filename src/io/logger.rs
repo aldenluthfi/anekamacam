@@ -137,7 +137,7 @@ pub fn init_logging() {
     let target = Box::new(file);
 
     LoggerBuilder::new()
-        // .target(LoggerTarget::Pipe(target))
+        .target(LoggerTarget::Pipe(target))
         .filter_level(configured_log_level())
         .format_target(false)
         .format_module_path(false)

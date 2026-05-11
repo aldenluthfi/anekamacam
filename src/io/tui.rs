@@ -26,16 +26,22 @@ enum TuiEvent {
 
 struct Tui {
     mode: u8,
+    threads: usize,
+
     tab: usize,
     focus: usize,
     scroll_map: HashMap<(usize, usize), u16>,
+
     input: String,
+
     help: bool,
-    help_tab: usize,
-    game_state: Option<Arc<Mutex<State>>>,
     locked: bool,
+    help_tab: usize,
+
+    game_state: Option<Arc<Mutex<State>>>,
     board_state: Option<BoardState>,
     overview_state: Option<OverviewState>,
+
     receiver: Receiver<TuiEvent>,
     sender: Sender<TuiEvent>,
 }
@@ -66,19 +72,26 @@ impl Tui {
         let game_state = None;
         let board_state = None;
         let overview_state = None;
+        let threads = 1;
 
         Self {
             mode,
+            threads,
+
             tab,
             focus,
             scroll_map,
+
             input,
+
             help,
-            help_tab,
-            game_state,
             locked,
+            help_tab,
+
+            game_state,
             board_state,
             overview_state,
+
             receiver,
             sender,
         }
@@ -88,9 +101,12 @@ impl Tui {
         self.mode = TUI_NORMAL_MODE;
         self.tab = usize::MAX;
         self.focus = usize::MAX;
+
         self.input.clear();
+
         self.help = false;
         self.help_tab = 0;
+
         self.game_state = None;
     }
 
@@ -1249,7 +1265,8 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 fn execute_command(
     command: &str,
     state: &mut State,
-    table: &mut TTable,
+    table: Arc<TTable>,
+    threads: usize,
     sender: Sender<TuiEvent>
 ) {
     let trimmed = command.trim();
@@ -1335,7 +1352,9 @@ fn execute_command(
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
             };
-            let result = search_position(state, table, &mut info);
+            let result = search_position(
+                state, Arc::clone(&table), &mut info, threads
+            );
 
             if result.best_move == null_move() {
                 log_2!("No legal move available");
@@ -1357,7 +1376,9 @@ fn execute_command(
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
             };
-            let result = search_position(state, table, &mut info);
+            let result = search_position(
+                state, Arc::clone(&table), &mut info, threads
+            );
 
             if result.best_move == null_move() {
                 log_2!("No legal move available");
@@ -1409,7 +1430,10 @@ fn execute_command(
             };
 
             while !state.game_over {
-                let result = search_position(state, table, &mut info);
+                let result =
+                    search_position(
+                        state, Arc::clone(&table), &mut info, threads
+                    );
 
                 if result.best_score == -INFINITY {
                     state.game_over = true;
@@ -1513,6 +1537,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                     }
                 ).clone();
                 let sender = app.sender.clone();
+                let threads = app.threads;
 
                 move || {
                     let mut state = arc_state.lock().unwrap_or_else(
@@ -1525,9 +1550,13 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                             )
                         }
                     );
-                    let mut table = TTable::default();                          /* TODO: CHANGE THIS                  */
+                    let table = TTable::default();
                     execute_command(
-                        &command, &mut state, &mut table, sender.clone()
+                        &command,
+                        &mut state,
+                        Arc::new(table),
+                        threads,
+                        sender.clone()
                     );
 
                     sender.send(
@@ -1554,6 +1583,23 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
         },
         (TUI_INPUT_MODE, KeyCode::Backspace) => {
             app.input.pop();
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char(']')) => {
+            let max_threads = thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1);
+            app.threads = (app.threads + 1).min(max_threads);
+
+            log_2!("Threads: {}", app.threads);
+
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('[')) => {
+            app.threads = app.threads.saturating_sub(1).max(1);
+
+            log_2!("Threads: {}", app.threads);
+
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('j')) => {
