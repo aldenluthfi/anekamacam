@@ -463,8 +463,9 @@ fn generate_move_list_from_vectors(
     piece: &Piece,
     vector_set: &MoveSet,
     state: &State,
-) -> Vec<Move> {
-    let mut result = Vec::with_capacity(64);
+    out: &mut Vec<Move>,
+    scratch: &mut Vec<u64>,
+) {
 
     let piece_index = p_index!(piece);
     let piece_color = p_color!(piece);
@@ -476,7 +477,7 @@ fn generate_move_list_from_vectors(
         enc_start!(encoded_move, square_index as u128);
         enc_piece!(encoded_move, piece_index as u128);
 
-        let mut taken_pieces: Vec<u64> = Vec::new();
+        scratch.clear();
 
         let mut accumulated_index = square_index as i16;
 
@@ -590,7 +591,7 @@ fn generate_move_list_from_vectors(
                             capt_unmoved as u64
                         );
 
-                        taken_pieces.push(taken_piece);
+                        scratch.push(taken_piece);
                     } else {
                         continue 'multi_leg;
                     }
@@ -630,7 +631,7 @@ fn generate_move_list_from_vectors(
                     capt_unmoved as u64
                 );
 
-                taken_pieces.push(taken_piece);
+                scratch.push(taken_piece);
             } else if enemy && !pass_move {
                 if !c {
                     continue 'multi_leg;
@@ -664,11 +665,11 @@ fn generate_move_list_from_vectors(
                     capt_unmoved as u64
                 );
 
-                taken_pieces.push(taken_piece);
+                scratch.push(taken_piece);
             }
 
             if u {
-                let mut last_captured = taken_pieces.pop().unwrap_or_else(|| {
+                let mut last_captured = scratch.pop().unwrap_or_else(|| {
                     panic!(
                         "Unload flag is set but no captured piece is available"
                     )
@@ -683,7 +684,7 @@ fn generate_move_list_from_vectors(
                         start_square as u64
                     );
 
-                    taken_pieces.push(last_captured);
+                    scratch.push(last_captured);
                 }
             }
 
@@ -700,14 +701,14 @@ fn generate_move_list_from_vectors(
         enc_end!(encoded_move, accumulated_index as u128);
 
         if promotions!(state) && p_can_promote!(piece) {
-            if taken_pieces.is_empty() {
+            if scratch.is_empty() {
                 enc_move_type!(encoded_move, QUIET_MOVE);
-            } else if taken_pieces.len() == 1 {
+            } else if scratch.len() == 1 {
                 enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
-                enc_capture_part!(encoded_move, taken_pieces[0] as u128);
+                enc_capture_part!(encoded_move, scratch[0] as u128);
             } else {
                 enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = Arc::new(taken_pieces);
+                encoded_move.1 = Arc::new(scratch.drain(..).collect());
             }
 
             let entered_mandatory_promotion = get!(
@@ -762,32 +763,30 @@ fn generate_move_list_from_vectors(
                         enc_promotion!(promo_move, 1);
                         enc_promoted!(promo_move, *promo_piece_index as u128);
 
-                        result.push(promo_move);
+                        out.push(promo_move);
                     }
                 }
 
                 if !mandatory {
-                    result.push(encoded_move);
+                    out.push(encoded_move);
                 }
             } else {
-                result.push(encoded_move);
+                out.push(encoded_move);
             }
         } else {
-            if taken_pieces.is_empty() {
+            if scratch.is_empty() {
                 enc_move_type!(encoded_move, QUIET_MOVE);
-            } else if taken_pieces.len() == 1 {
+            } else if scratch.len() == 1 {
                 enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
-                enc_capture_part!(encoded_move, taken_pieces[0] as u128);
+                enc_capture_part!(encoded_move, scratch[0] as u128);
             } else {
                 enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = Arc::new(taken_pieces);
+                encoded_move.1 = Arc::new(scratch.drain(..).collect());
             }
 
-            result.push(encoded_move);
+            out.push(encoded_move);
         }
     }
-
-    result
 }
 
 /// Generates all pseudo-legal encoded moves for `piece` from `square_index`.
@@ -796,7 +795,7 @@ fn generate_move_list_from_vectors(
 /// castling side conditions, and promotion branching.
 #[macro_export]
 macro_rules! generate_move_list {
-    ($square_index:expr, $piece:expr, $state:expr) => {{
+    ($square_index:expr, $piece:expr, $state:expr, $out:expr, $scratch:expr) => {{
         let piece_index = p_index!($piece) as usize;
         let board_size = $state.main_board.len();
         let vector_set =
@@ -808,6 +807,8 @@ macro_rules! generate_move_list {
             $piece,
             vector_set,
             $state,
+            $out,
+            $scratch,
         )
     }};
 }
@@ -818,32 +819,33 @@ macro_rules! generate_move_list {
 /// normal move generation without generating quiet moves first.
 #[macro_export]
 macro_rules! generate_capture_list {
-    ($square_index:expr, $piece:expr, $state:expr) => {{
+    ($square_index:expr, $piece:expr, $state:expr, $out:expr, $scratch:expr) => {{
         let piece_index = p_index!($piece) as usize;
         let board_size = $state.main_board.len();
         let vector_set =
             &$state.relevant_captures
                 [piece_index * board_size + $square_index as usize];
 
-        let result = generate_move_list_from_vectors(
+        let start = $out.len();
+        generate_move_list_from_vectors(
             $square_index,
             $piece,
             vector_set,
             $state,
+            $out,
+            $scratch,
         );
 
-        result
-            .iter()
-            .filter(
-                |mv|
-                    move_type!(mv) == SINGLE_CAPTURE_MOVE && !is_unload!(mv) ||
-                    move_type!(mv) == MULTI_CAPTURE_MOVE &&
-                    mv.1
-                        .iter()
-                        .all(|&captured| !multi_move_is_unload!(captured))
-            )
-            .cloned()
-            .collect::<Vec<Move>>()
+        let mut i = start;
+        while i < $out.len() {
+            let keep = {
+                let mv = &$out[i];
+                move_type!(mv) == SINGLE_CAPTURE_MOVE && !is_unload!(mv) ||
+                move_type!(mv) == MULTI_CAPTURE_MOVE &&
+                mv.1.iter().all(|&captured| !multi_move_is_unload!(captured))
+            };
+            if keep { i += 1; } else { $out.swap_remove(i); }
+        }
     }};
 }
 
@@ -2716,19 +2718,18 @@ macro_rules! undo_null_move {
 ///
 /// Normal moves are skipped during setup phase; drop generation may use
 /// either own-hand or enemy-hand inventory depending on drop flags.
-pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
+pub fn generate_all_moves_and_drops(state: &State, out: &mut Vec<Move>, scratch: &mut Vec<u64>) {
+    out.clear();
 
     let piece_count = state.pieces.len() / 2;
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
 
-    let mut moves = Vec::with_capacity(256);
-
     if state.game_phase != SETUP {
         for piece_index in start_index..end_index {
             let piece = &state.pieces[piece_index];
             for &index in &state.piece_list[piece_index] {
-                moves.extend(generate_move_list!(index, piece, state));
+                generate_move_list!(index, piece, state, out, scratch);
             }
         }
     }
@@ -2745,31 +2746,26 @@ pub fn generate_all_moves_and_drops(state: &State) -> Vec<Move> {
                 state.piece_in_hand[1 - state.playing as usize][enemy] > 0;
 
             if drop_from_own || drop_from_enemy {
-                moves.extend(generate_drop_list(piece, state));
+                generate_drop_list(piece, state, out, scratch);
             }
         }
     }
-
-    moves
 }
 
-pub fn generate_all_captures(state: &State) -> Vec<Move> {
+pub fn generate_all_captures(state: &State, out: &mut Vec<Move>, scratch: &mut Vec<u64>) {
+    out.clear();
     if state.game_over || state.game_phase == SETUP {
-        return Vec::new();
+        return;
     }
 
     let piece_count = state.pieces.len() / 2;
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
 
-    let mut moves = Vec::with_capacity(256);
-
     for piece_index in start_index..end_index {
         let piece = &state.pieces[piece_index];
         for &index in &state.piece_list[piece_index] {
-            moves.extend(generate_capture_list!(index, piece, state));
+            generate_capture_list!(index, piece, state, out, scratch);
         }
     }
-
-    moves
 }

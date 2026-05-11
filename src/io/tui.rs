@@ -1308,7 +1308,9 @@ fn execute_command(
             }
         }
         "ls" => {
-            let moves = generate_all_moves_and_drops(state);
+            let mut moves = Vec::with_capacity(64);
+            let mut scratch = Vec::with_capacity(16);
+            generate_all_moves_and_drops(state, &mut moves, &mut scratch);
 
             if moves.is_empty() {
                 log_2!("No legal moves available");
