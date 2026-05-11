@@ -8,6 +8,7 @@
 //! # Date
 //! 01/02/2026
 
+#![feature(sync_unsafe_cell)]
 use prelude::*;
 
 pub mod game {
@@ -66,8 +67,8 @@ pub mod prelude;
 fn main() {
     init_logging();
     let mut state = parse_config_file("configs/fide.conf");
-    let mut table = TTable::default();
+    let table = TTable::default();
 
-    benchmark_search(&mut state, &mut table, 12);
+    benchmark_search(&mut state, Arc::new(table), 12);
     // let _ = tui();
 }

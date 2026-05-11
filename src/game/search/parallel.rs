@@ -69,8 +69,7 @@ impl ThreadPool {
                         ..Default::default()
                     };
                     let mut state = state_clone;
-                    let mut table = (*tt_clone).clone();
-                    search_position(&mut state, &mut table, &mut info);
+                    search_position(&mut state, &tt_clone, &mut info);
                 })
                 .unwrap_or_else(|e| {
                     panic!("Failed to spawn searcher-{}: {e}", i)
@@ -103,9 +102,9 @@ impl ThreadPool {
 /// Falls back to single-thread if parallelism detection fails or count = 1.
 pub fn search_position_mt(
     state: &mut State,
-    table: &mut TTable,
+    table: Arc<TTable>,
     info: &mut SearchInfo,
 ) -> SearchResult {
-    let pool = ThreadPool::new(state, Arc::new(table.clone()));
+    let pool = ThreadPool::new(state, table);
     pool.run(info.set_depth, info.set_timed)
 }
