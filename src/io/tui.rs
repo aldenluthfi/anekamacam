@@ -378,7 +378,6 @@ struct BoardState {
     fen: String,
 }
 
-#[hotpath::measure_all]
 impl BoardState {
     fn from_state(state: &State) -> Self {
         let board = format_game_state(state);

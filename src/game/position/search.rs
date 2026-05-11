@@ -81,7 +81,6 @@ pub fn clear_search(
 /// The search depth increases from `1..=info.depth`. After each completed
 /// iteration, the principal variation is extracted from the PV table and
 /// reported in UCI-style informational logs.
-#[hotpath::measure]
 pub fn search_position(
     state: &mut State, table: Arc<TTable>, info: &mut SearchInfo,
     thread_num: usize,
@@ -111,7 +110,6 @@ pub fn search_position(
     result
 }
 
-#[hotpath::measure]
 pub fn iterative_deepening(
     state: &mut State, table: &TTable, info: &mut SearchInfo,
     thread_num: usize,
