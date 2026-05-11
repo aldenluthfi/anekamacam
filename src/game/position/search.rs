@@ -222,10 +222,10 @@ pub fn alpha_beta(
         return static_eval;
     }
 
-    let mut pv_move = None;
+    let mut pv_move: Option<PseudoMove> = None;
     let tt_entry = probe_tt_entry!(state, table, alpha, beta, depth);           /* Transposition table lookup         */
 
-    if tt_entry.2 != null_move() {
+    if tt_entry.2 != null_pseudo_move() {
         pv_move = Some(tt_entry.2);
     }
 

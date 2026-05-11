@@ -27,7 +27,7 @@ use crate::*;
 ///
 /// A larger score means the move should be searched earlier.
 #[inline(always)]
-pub fn score_move(state: &State, mv: &Move, pv_move: &Option<Move>) -> u16 {
+pub fn score_move(state: &State, mv: &Move, pv_move: &Option<PseudoMove>) -> u16 {
     let move_type = move_type!(mv);
 
     let mut score =
@@ -62,7 +62,7 @@ pub fn score_move(state: &State, mv: &Move, pv_move: &Option<Move>) -> u16 {
         }
     };
 
-    if pv_move.as_ref() == Some(mv) {
+    if pv_move.as_ref().is_some_and(|pm| pm.0 == mv.0 && pm.1 == move_signature!(mv)) {
         score = u16::MAX                                                        /* PV move should always be best      */
     }
 
@@ -81,7 +81,7 @@ pub fn pick_by_score(
     state: &State,
     moves: &mut [Move],
     index: usize,
-    pv_move: &Option<Move>,
+    pv_move: &Option<PseudoMove>,
 ) {
     if index >= moves.len() {
         return;
