@@ -63,12 +63,13 @@ pub use crate::game::patterns::pattern_match::{
 pub use crate::game::position::{
     hash::{PositionHash, hash_position},
     search::{
-        SearchInfo, alpha_beta, check_interrupt, clear_search,
+        SearchInfo, SearchResult, alpha_beta, check_interrupt, clear_search,
         search_position,
     },
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
+    parallel::{search_position_mt, ThreadPool},
     quiescence::quiescence_search,
     transposition::{TTEntry, TTable},
     parameters::{derive_parameters}

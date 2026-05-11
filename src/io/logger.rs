@@ -101,10 +101,10 @@ fn level_to_verbosity(level: log::Level) -> u8 {
 
 fn verbosity_style(level: log::Level) -> log_style::Style {
     match level_to_verbosity(level) {
-        1 => log_style::AnsiColor::Green.on_default(),
-        2 => log_style::AnsiColor::Cyan.on_default(),
-        3 => log_style::AnsiColor::Yellow.on_default(),
-        4 => log_style::AnsiColor::Magenta.on_default(),
+        1 => log_style::AnsiColor::Red.on_default(),
+        2 => log_style::AnsiColor::Yellow.on_default(),
+        3 => log_style::AnsiColor::Green.on_default(),
+        4 => log_style::AnsiColor::Blue.on_default(),
         _ => panic!("Unsupported log level: {level}"),
     }
 }
@@ -137,7 +137,7 @@ pub fn init_logging() {
     let target = Box::new(file);
 
     LoggerBuilder::new()
-        .target(LoggerTarget::Pipe(target))
+        // .target(LoggerTarget::Pipe(target))
         .filter_level(configured_log_level())
         .format_target(false)
         .format_module_path(false)
