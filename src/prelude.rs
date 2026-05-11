@@ -22,7 +22,7 @@
 pub use crate::game::representations::{
     board::Board,
     drop::DropSet,
-    moves::{AttackMask, Move},
+    moves::{AttackMask, Move, MoveSignature, PseudoMove},
     piece::{Piece, PieceIndex},
     state::{EnPassantSquare, Snapshot, Square, State},
     vector::{
@@ -261,6 +261,10 @@ lazy_static! {
 
 pub fn null_move() -> Move {
     Move(!0u128, Arc::clone(&EMPTY_CAPTURE_LIST))
+}
+
+pub fn null_pseudo_move() -> PseudoMove {
+    (!0u128, 0u64)
 }
 pub const DEFAULT_DROP: &str = "@#~?@";
 pub const NULL_DROP: &str = "@#~?@#~?";
