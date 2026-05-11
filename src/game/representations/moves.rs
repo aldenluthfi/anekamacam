@@ -92,7 +92,7 @@ pub struct Move(pub u128, pub Arc<Vec<u64>>);
 
 impl Default for Move {
     fn default() -> Self {
-        Move(0u128, Arc::clone(&EMPTY_CAPTURE_LIST))
+        EMPTY_CAPTURE_LIST.with(|e| Move(0u128, Arc::clone(e)))
     }
 }
 
