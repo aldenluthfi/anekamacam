@@ -66,9 +66,5 @@ pub mod prelude;
 #[hotpath::main]
 fn main() {
     init_logging();
-    let mut state = parse_config_file("configs/fide.conf");
-    let table = TTable::default();
-
-    benchmark_search(&mut state, Arc::new(table), 12);
-    // let _ = tui();
+    let _ = tui();
 }
