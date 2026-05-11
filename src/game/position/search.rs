@@ -15,7 +15,6 @@ use crate::*;
 /// This struct groups time controls, depth/move constraints, node accounting,
 /// and interruption controls used by iterative search routines.
 /// It is mutated throughout one search invocation lifecycle.
-#[derive(Default)]
 pub struct SearchInfo {
     pub start_time: u128,                                                       /* Start time since search start.     */
 
@@ -26,6 +25,24 @@ pub struct SearchInfo {
     pub nodes: u128,                                                            /* Total nodes searched so far.       */
 
     pub interrupt: bool,                                                        /* Flag set by external stop events.  */
+
+    pub move_buf: Vec<Vec<Move>>,                                               /* per-ply move lists, pre-allocated  */
+    pub scratch_buf: Vec<u64>,                                                  /* reused scratch for taken_pieces    */
+}
+
+impl Default for SearchInfo {
+    fn default() -> Self {
+        Self {
+            start_time: 0,
+            set_depth: 0,
+            set_timed: 0,
+            set_moves: 0,
+            nodes: 0,
+            interrupt: false,
+            move_buf: Vec::new(),
+            scratch_buf: Vec::new(),
+        }
+    }
 }
 
 pub struct SearchResult {
@@ -65,6 +82,11 @@ pub fn clear_search(
     info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;
     info.interrupt = false;
+
+    if info.move_buf.len() < MAX_DEPTH * 2 {
+        info.move_buf = (0..MAX_DEPTH * 2).map(|_| Vec::with_capacity(64)).collect();
+        info.scratch_buf = Vec::with_capacity(32);
+    }
 
     let piece_count: usize = state.pieces.len();
     let board_size: usize = (state.files as usize) * (state.ranks as usize);
@@ -327,12 +349,13 @@ pub fn alpha_beta(
     let mut legal_moves = 0;
     let alpha_start = alpha;
 
-    let mut all_moves = generate_all_moves_and_drops(state);
+    let ply = state.search_ply as usize;
+    generate_all_moves_and_drops(state, &mut info.move_buf[ply], &mut info.scratch_buf);
 
-    for i in 0..all_moves.len() {
-        pick_by_score(state, &mut all_moves, i, &pv_move);
+    for i in 0..info.move_buf[ply].len() {
+        pick_by_score(state, &mut info.move_buf[ply], i, &pv_move);
 
-        let mv = all_moves[i].clone();
+        let mv = info.move_buf[ply][i].clone();
         let mv_type = move_type!(mv);
         let mv_piece = piece!(mv) as usize;
         let mv_start = start!(mv);

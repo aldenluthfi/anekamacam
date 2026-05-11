@@ -335,10 +335,12 @@ macro_rules! fill_pv_line {
                 break;
             };
 
-            let all_moves = generate_all_moves_and_drops($state);
+            let mut pv_buf: Vec<Move> = Vec::with_capacity(64);
+            let mut pv_scratch: Vec<u64> = Vec::with_capacity(16);
+            generate_all_moves_and_drops($state, &mut pv_buf, &mut pv_scratch);
             let mut pv_match: Option<Move> = None;
 
-            for mv in all_moves {
+            for mv in pv_buf {
                 let legal = make_move!($state, mv.clone());
                 if legal { undo_move!($state); }
 

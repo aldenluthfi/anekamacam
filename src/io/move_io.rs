@@ -115,9 +115,11 @@ pub fn format_move(mv: &Move, state: &State) -> String {
 /// The input is compared to `format_move` output for each candidate and
 /// returns the first exact match after trimming whitespace.
 pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
-    let all_moves = generate_all_moves_and_drops(state);
+    let mut moves = Vec::with_capacity(64);
+    let mut scratch = Vec::with_capacity(16);
+    generate_all_moves_and_drops(state, &mut moves, &mut scratch);
 
-    all_moves
+    moves
         .into_iter()
         .find(|mv| format_move(mv, state).trim() == move_str.trim())
 }

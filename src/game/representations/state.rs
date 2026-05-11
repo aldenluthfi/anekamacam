@@ -362,11 +362,11 @@ pub struct State {
     pub files: u8,
     pub ranks: u8,
 
-    pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
-    pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
-    pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
-    pub relevant_setup: Vec<DropSet>,
-    pub relevant_stand_offs: Vec<PatternSet>,
+    pub relevant_moves: Arc<Vec<MoveSet>>,                                      /* idx = piece * board size + square  */
+    pub relevant_captures: Arc<Vec<MoveSet>>,                                   /* flattened because of cache         */
+    pub relevant_drops: Arc<Vec<DropSet>>,                                      /* optimization                       */
+    pub relevant_setup: Arc<Vec<DropSet>>,
+    pub relevant_stand_offs: Arc<Vec<PatternSet>>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
 
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
@@ -466,15 +466,15 @@ impl State {
             ranks,
 
             relevant_moves:
-                vec![MoveSet::new(); board_size * piece_count],
+                Arc::new(vec![MoveSet::new(); board_size * piece_count]),
             relevant_captures:
-                vec![MoveSet::new(); board_size * piece_count],
+                Arc::new(vec![MoveSet::new(); board_size * piece_count]),
             relevant_drops:
-                vec![DropSet::new(); board_size * piece_count],
+                Arc::new(vec![DropSet::new(); board_size * piece_count]),
             relevant_setup:
-                vec![DropSet::new(); board_size * piece_count],
+                Arc::new(vec![DropSet::new(); board_size * piece_count]),
             relevant_stand_offs:
-                vec![PatternSet::new(); board_size * piece_count],
+                Arc::new(vec![PatternSet::new(); board_size * piece_count]),
             relevant_attacks:
                 [
                     vec![Vec::new(); board_size],
@@ -623,13 +623,9 @@ impl State {
         let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_moves[index * board_size + square as usize]
-                    = generate_relevant_moves(
-                        piece,
-                        square,
-                        self,
-                        piece_moves
-                    );
+                let result = generate_relevant_moves(piece, square, self, piece_moves);
+                Arc::get_mut(&mut self.relevant_moves).unwrap()
+                    [index * board_size + square as usize] = result;
             }
         }
     }
@@ -638,13 +634,9 @@ impl State {
         let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_captures[index * board_size + square as usize]
-                    = generate_relevant_captures(
-                        piece,
-                        square,
-                        self,
-                        piece_moves
-                    );
+                let result = generate_relevant_captures(piece, square, self, piece_moves);
+                Arc::get_mut(&mut self.relevant_captures).unwrap()
+                    [index * board_size + square as usize] = result;
             }
         }
     }
@@ -653,13 +645,9 @@ impl State {
         let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_drops[index * board_size + square as usize]
-                    = generate_relevant_drops(
-                        piece,
-                        square,
-                        self,
-                        piece_setup_drops
-                    );
+                let result = generate_relevant_drops(piece, square, self, piece_setup_drops);
+                Arc::get_mut(&mut self.relevant_drops).unwrap()
+                    [index * board_size + square as usize] = result;
             }
         }
     }
@@ -668,13 +656,9 @@ impl State {
         let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_setup[index * board_size + square as usize]
-                    = generate_relevant_drops(
-                        piece,
-                        square,
-                        self,
-                        piece_setup_drops
-                    );
+                let result = generate_relevant_drops(piece, square, self, piece_setup_drops);
+                Arc::get_mut(&mut self.relevant_setup).unwrap()
+                    [index * board_size + square as usize] = result;
             }
         }
     }
@@ -685,13 +669,9 @@ impl State {
         let board_size = self.main_board.len();
         for (index, piece) in self.pieces.iter().enumerate() {
             for square in 0..(self.files as u32 * self.ranks as u32) {
-                self.relevant_stand_offs[index * board_size + square as usize]
-                    = generate_relevant_stand_offs(
-                        piece,
-                        square,
-                        self,
-                        piece_stand_off
-                    );
+                let result = generate_relevant_stand_offs(piece, square, self, piece_stand_off);
+                Arc::get_mut(&mut self.relevant_stand_offs).unwrap()
+                    [index * board_size + square as usize] = result;
             }
         }
     }

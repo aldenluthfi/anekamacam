@@ -552,7 +552,9 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
         return 1;
     }
 
-    let possible_moves = generate_all_moves_and_drops(state);
+    let mut possible_moves = Vec::with_capacity(64);
+    let mut scratch = Vec::with_capacity(16);
+    generate_all_moves_and_drops(state, &mut possible_moves, &mut scratch);
     let mut nodes = 0;
 
     if branch < 0 {
