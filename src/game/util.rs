@@ -535,7 +535,7 @@ pub fn benchmark_search(state: &mut State, table: &mut TTable, depth: usize) {
 
     let mut info = SearchInfo { set_depth: depth, ..Default::default() };
 
-    search_position(state, table, &mut info);
+    search_position_mt(state, table, &mut info);
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.
