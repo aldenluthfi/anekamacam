@@ -60,7 +60,7 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// This resets node counters, interruption flags, PV/killer/history tables,
 /// and ply tracking. It does not alter the current board position.
 pub fn clear_search(
-    state: &mut State, table: &mut TTable, info: &mut SearchInfo
+    state: &mut State, table: &TTable, info: &mut SearchInfo
 ) {
     info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;
@@ -72,7 +72,7 @@ pub fn clear_search(
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
-    table.age += 1;
+    table.age_sync.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     state.search_ply = 0;
 }
 
@@ -82,7 +82,7 @@ pub fn clear_search(
 /// iteration, the principal variation is extracted from the PV table and
 /// reported in UCI-style informational logs.
 pub fn search_position(
-    state: &mut State, table: &mut TTable, info: &mut SearchInfo
+    state: &mut State, table: &TTable, info: &mut SearchInfo
 ) -> SearchResult {
 
     let mut best_move = null_move();
@@ -183,7 +183,7 @@ pub fn search_position(
 /// Returns the best score for the current side to move.
 pub fn alpha_beta(
     state: &mut State,
-    table: &mut TTable,
+    table: &TTable,
     depth: usize,
     alpha: i32,
     beta: i32,

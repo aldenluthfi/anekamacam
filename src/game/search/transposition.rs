@@ -47,17 +47,21 @@ pub struct TTEntry {
     pub age: u64,                                                               /* search age for replacement policy  */
 }
 
-#[derive(Clone)]
 pub struct TTable {
-    pub table: Vec<TTEntry>,
+    pub table: SyncUnsafeCell<Vec<TTEntry>>,                                     /* shared mutable access              */
     pub age: u64,
+    pub age_sync: AtomicU64,                                                    /* atomic age writes                  */
 }
+
+unsafe impl Sync for TTable {}
+unsafe impl Send for TTable {}
 
 impl Default for TTable {
     fn default() -> Self {
         Self {
-            table: vec![TTEntry::default(); T_TABLE_SIZE],
+            table: SyncUnsafeCell::new(vec![TTEntry::default(); T_TABLE_SIZE]),
             age: 0,
+            age_sync: AtomicU64::new(0),
         }
     }
 }
@@ -132,7 +136,7 @@ macro_rules! probe_tt_entry {
     ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {{
         let hash = $state.position_hash;
         let index = tt_index!(hash);
-        let entry = &$table.table[index];
+        let entry = &mut unsafe { &mut *($table.table.get()) }[index];
 
         let key_check = entry.slot[0] ^ entry.slot[1];                          /* Step 1: verify hash component      */
         if key_check != hash {
@@ -191,7 +195,7 @@ macro_rules! probe_pv_move {
     ($state:expr, $table:expr) => {{
         let hash = $state.position_hash;
         let index = tt_index!(hash);
-        let entry = &$table.table[index];
+        let entry = &mut unsafe { &mut *($table.table.get()) }[index];
 
         let key_check = entry.slot[0] ^ entry.slot[1];
         if key_check != hash {
@@ -205,7 +209,11 @@ macro_rules! probe_pv_move {
             } else {
                 let sig = (b_prime >> 32) as u64;                               /* bits 32-95 = MoveSignature         */
                 let pseudo_mv: PseudoMove = (a_prime, sig);
-                if pseudo_mv == null_pseudo_move() { None } else { Some(pseudo_mv) }
+                if pseudo_mv == null_pseudo_move() {
+                    None
+                } else {
+                    Some(pseudo_mv)
+                }
             }
         }
     }};
@@ -222,7 +230,8 @@ macro_rules! hash_tt_entry {
     ) => {{
         let hash = $state.position_hash;
         let index = tt_index!(hash);
-        let entry = &mut $table.table[index];
+        let table_vec: &mut Vec<TTEntry> = unsafe { &mut *($table.table.get()) };
+        let entry = &mut table_vec[index];
 
         let mut encoded = 0u32;
         tt_enc_flags!(encoded, $flags);
@@ -243,7 +252,7 @@ macro_rules! hash_tt_entry {
         entry.slot[0] = a ^ b ^ hash;                                           /* key   = a ^ b ^ c                  */
         entry.slot[1] = a ^ b;                                                  /* data1 = a ^ b                      */
         entry.slot[2] = b ^ hash;                                               /* data2 = b ^ c                      */
-        entry.age = $table.age;
+        entry.age = $table.age_sync.fetch_add(1, Ordering::Relaxed);
     }};
 }
 
@@ -265,7 +274,9 @@ macro_rules! fill_pv_line {
                 let legal = make_move!($state, mv.clone());
                 if legal { undo_move!($state); }
 
-                if mv.0 == pv_pseudo.0 && move_signature!(mv) == pv_pseudo.1 && legal {
+                if mv.0 == pv_pseudo.0
+                && move_signature!(mv) == pv_pseudo.1
+                && legal {
                     pv_match = Some(mv);
                     break;
                 }
