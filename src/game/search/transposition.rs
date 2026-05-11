@@ -120,13 +120,13 @@ macro_rules! tt_score {
                         TRANSPOSITION TABLE STORE / PROBE
 \*----------------------------------------------------------------------------*/
 
-/// Probes the lock-free XOR TT and returns (valid, score, move).
+/// Probes the lock-free XOR TT and returns (valid, score, pseudo_move).
 ///
 /// Validation:
 ///   Step 1: (slot[0] ^ slot[1]) == position_hash
 ///   Step 2: recover a', b' and check (b' ^ a') == slot[1]
 ///
-/// On failure returns (false, i32::MIN, null_move()).
+/// On failure returns (false, i32::MIN, null_pseudo_move()).
 #[macro_export]
 macro_rules! probe_tt_entry {
     ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {{
@@ -136,28 +136,20 @@ macro_rules! probe_tt_entry {
 
         let key_check = entry.slot[0] ^ entry.slot[1];                          /* Step 1: verify hash component      */
         if key_check != hash {
-            (false, i32::MIN, null_move())
+            (false, i32::MIN, null_pseudo_move())
         } else {                                                                /* Step 2: verify move component      */
             let a_prime = entry.slot[0] ^ entry.slot[2];
             let b_prime = entry.slot[0] ^ hash ^ a_prime;
 
             if (b_prime ^ a_prime) != entry.slot[1] {
-                (false, i32::MIN, null_move())
+                (false, i32::MIN, null_pseudo_move())
             } else {
-                let encoded = (b_prime >> 32) as u32;
-                let move1_raw = (b_prime & 0xFFFFFFFF) as u64;
-                let move0 = a_prime;
-                let move1_ptr = move1_raw;
-
-                let cap_ptr = move1_ptr as *const Vec<u64>;
-                let mv = if cap_ptr.is_null() || (move1_ptr & 0x7) != 0 {
-                    null_move()
-                } else {
-                    Move(move0, unsafe { Arc::from_raw(cap_ptr) })
-                };
+                let encoded = (b_prime & 0xFFFF_FFFF) as u32;                   /* bits  0-31 = flags/depth/score     */
+                let sig     = (b_prime >> 32) as u64;                           /* bits 32-95 = MoveSignature         */
+                let pseudo_mv: PseudoMove = (a_prime, sig);
 
                 if tt_depth!(encoded) < $depth {
-                    (false, i32::MIN, mv)
+                    (false, i32::MIN, pseudo_mv)
                 } else {
                     let mut entry_score = tt_score!(encoded);
 
@@ -187,7 +179,7 @@ macro_rules! probe_tt_entry {
                         _ => unreachable!(),
                     }
 
-                    (valid_cutoff, entry_score, mv)
+                    (valid_cutoff, entry_score, pseudo_mv)
                 }
             }
         }
@@ -211,13 +203,9 @@ macro_rules! probe_pv_move {
             if (b_prime ^ a_prime) != entry.slot[1] {
                 None
             } else {
-                let move1_raw = (b_prime & 0xFFFFFFFF) as u64;
-                let cap_ptr = move1_raw as *const Vec<u64>;
-                if cap_ptr.is_null() || (move1_raw & 0x7) != 0 {
-                    None
-                } else {
-                    Some(Move(a_prime, unsafe { Arc::from_raw(cap_ptr) }))
-                }
+                let sig = (b_prime >> 32) as u64;                               /* bits 32-95 = MoveSignature         */
+                let pseudo_mv: PseudoMove = (a_prime, sig);
+                if pseudo_mv == null_pseudo_move() { None } else { Some(pseudo_mv) }
             }
         }
     }};
@@ -249,8 +237,8 @@ macro_rules! hash_tt_entry {
         tt_enc_score!(encoded, store_score);
 
         let a = $tt_move.0;                                                     /* move.0 128-bit                     */
-        let b_raw = Arc::as_ptr(&$tt_move.1) as u64;                            /* Arc ptr as u64                     */
-        let b = ((b_raw as u128) << 32) | (encoded as u128);                    /* move.1 << 32 | encoded             */
+        let sig = move_signature!($tt_move);                                    /* XOR of move.1 entries              */
+        let b = ((sig as u128) << 32) | (encoded as u128);                      /* sig << 32 | encoded                */
 
         entry.slot[0] = a ^ b ^ hash;                                           /* key   = a ^ b ^ c                  */
         entry.slot[1] = a ^ b;                                                  /* data1 = a ^ b                      */
@@ -266,23 +254,24 @@ macro_rules! fill_pv_line {
         let mut filled = 0;
 
         for i in 0..depth {
-            let Some(pv_move) = probe_pv_move!($state, $table) else {
+            let Some(pv_pseudo) = probe_pv_move!($state, $table) else {
                 break;
             };
 
             let all_moves = generate_all_moves_and_drops($state);
+            let mut pv_match: Option<Move> = None;
 
             for mv in all_moves {
                 let legal = make_move!($state, mv.clone());
+                if legal { undo_move!($state); }
 
-                if legal {
-                    undo_move!($state);
-                }
-
-                if mv == pv_move && legal {
+                if mv.0 == pv_pseudo.0 && move_signature!(mv) == pv_pseudo.1 && legal {
+                    pv_match = Some(mv);
                     break;
                 }
             }
+
+            let Some(pv_move) = pv_match else { break; };
 
             make_move!($state, pv_move.clone());
             $state.pv_line[i] = pv_move;

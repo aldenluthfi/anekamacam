@@ -51,10 +51,6 @@ impl ThreadPool {
     }
 
     pub fn run(&self, depth: usize, timed: u128) -> SearchResult {
-        if self.thread_count <= 1 {
-            return self.run_single(depth, timed);
-        }
-
         let tt = Arc::clone(&self.tt);
         let mut handles = Vec::with_capacity(self.thread_count);
 
@@ -94,17 +90,6 @@ impl ThreadPool {
             total_nodes: 0,
             total_elapsed: 0,
         }
-    }
-
-    fn run_single(&self, depth: usize, timed: u128) -> SearchResult {
-        let mut info = SearchInfo {
-            set_depth: depth,
-            set_timed: timed,
-            ..Default::default()
-        };
-        let mut table = (*self.tt).clone();
-        let mut state = self.main_state.clone();
-        search_position(&mut state, &mut table, &mut info)
     }
 }
 

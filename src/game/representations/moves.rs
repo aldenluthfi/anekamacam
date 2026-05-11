@@ -24,6 +24,18 @@ use crate::*;
 /// It is used during move generation and legality validation.
 pub type AttackMask = (PieceIndex, Square, MoveVector);
 
+/// XOR of every `u64` entry in `Move.1`. Used as a safe, pointer-free
+/// move identity token for transposition table storage.
+pub type MoveSignature = u64;
+
+/// A compact move descriptor stored in and returned by the transposition table.
+///
+/// The first field mirrors `Move.0` verbatim; the second field is the
+/// `MoveSignature` (XOR of all `u64` elements in `Move.1`).  A `PseudoMove`
+/// can be matched against a `Move` without holding a reference to the captures
+/// list, eliminating the dangling-pointer hazard of storing a raw `Arc` pointer.
+pub type PseudoMove = (u128, MoveSignature);
+
 /// A type representing a single move in the game.
 ///
 /// This structure is used for moves without multiple captures (SingleNoCapture,
@@ -82,6 +94,19 @@ impl Default for Move {
     fn default() -> Self {
         Move(0u128, Arc::clone(&EMPTY_CAPTURE_LIST))
     }
+}
+
+/*----------------------------------------------------------------------------*\
+                            MOVE SIGNATURE GENERATION
+\*----------------------------------------------------------------------------*/
+
+/// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
+/// `move.1`.  The result is 0 for moves with no captures (empty list).
+#[macro_export]
+macro_rules! move_signature {
+    ($mv:expr) => {
+        $mv.1.iter().fold(0u64, |acc, &x| acc ^ x)
+    };
 }
 
 /*----------------------------------------------------------------------------*\
