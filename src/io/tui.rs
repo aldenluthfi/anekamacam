@@ -1448,6 +1448,11 @@ fn execute_command(
                         state, Arc::clone(&table), &mut info, threads
                     );
 
+                if result.best_move == null_move() {
+                    log_2!("No legal move available");
+                    break;
+                }
+
                 if result.best_score == -INFINITY {
                     state.game_over = true;
                     log_1!(

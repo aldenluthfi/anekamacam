@@ -69,7 +69,7 @@ pub use crate::game::position::{
 };
 pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
-    parallel::{ThreadPool, ThreadWorker},
+    parallel::ThreadPool,
     quiescence::quiescence_search,
     transposition::{TTEntry, TTable},
     parameters::{derive_parameters}
