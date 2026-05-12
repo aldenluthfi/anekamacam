@@ -28,7 +28,7 @@ pub fn generate_relevant_drops(
         .iter()
         .filter(|drop| {
             let drop_f = drop_f!(drop);
-            !get!(state.forbidden_zones[piece_index], square_index)
+            !get!(state.statics.forbidden_zones[piece_index], square_index)
                 || drop_f
         })
         .filter_map(|drop| {
@@ -36,8 +36,8 @@ pub fn generate_relevant_drops(
             let mut new_drop_stoppers = Vec::new();
             let mut new_drop_allowers = Vec::new();
 
-            let file = square_index as i32 % state.files as i32;
-            let rank = square_index as i32 / state.files as i32;
+            let file = square_index as i32 % state.statics.files as i32;
+            let rank = square_index as i32 / state.statics.files as i32;
 
             for allower in drop.1.iter() {
                 let x = x!(allower.0) * (-2 * piece_color as i8 + 1);
@@ -47,9 +47,9 @@ pub fn generate_relevant_drops(
                 let check_y = rank + y as i32;
 
                 if check_x < 0
-                    || check_x >= state.files as i32
+                    || check_x >= state.statics.files as i32
                     || check_y < 0
-                    || check_y >= state.ranks as i32
+                    || check_y >= state.statics.ranks as i32
                 {
                     return None;
                 }
@@ -65,9 +65,9 @@ pub fn generate_relevant_drops(
                 let check_y = rank + y as i32;
 
                 if check_x >= 0
-                    && check_x < state.files as i32
+                    && check_x < state.statics.files as i32
                     && check_y >= 0
-                    && check_y < state.ranks as i32
+                    && check_y < state.statics.ranks as i32
                 {
                     new_drop_stoppers.push(stopper.clone());
                 }
@@ -82,23 +82,27 @@ pub fn generate_relevant_drops(
 ///
 /// This enforces drop flags (`k/f/d/e`), count limits, hand ownership,
 /// and allower/stopper pattern constraints before encoding each drop move.
-pub fn generate_drop_list(piece: &Piece, state: &State, out: &mut Vec<Move>, scratch: &mut Vec<u64>) {
+pub fn generate_drop_list(
+    piece: &Piece, state: &State,
+    out: &mut Vec<Move>, scratch: &mut Vec<u64>,
+) {
     let board_size = state.main_board.len() as u32;
     let piece_index = p_index!(piece) as usize;
     let piece_color = p_color!(piece) as usize;
 
     if count_limits!(state)
-        && state.piece_count[piece_index] >= state.piece_limit[piece_index]
+        && state.piece_count[piece_index]
+        >= state.statics.piece_limit[piece_index]
     {
         return;
     }
 
     for square in 0..board_size {
         let drops = if state.game_phase == SETUP {
-            &state.relevant_setup
+            &state.statics.relevant_setup
                 [piece_index * board_size as usize + square as usize]
         } else {
-            &state.relevant_drops
+            &state.statics.relevant_drops
                 [piece_index * board_size as usize + square as usize]
         };
 
@@ -129,14 +133,14 @@ pub fn generate_drop_list(piece: &Piece, state: &State, out: &mut Vec<Move>, scr
             enc_piece!(encoded_move, piece_index as u128);
             enc_start!(encoded_move, square as u128);
 
-            if get!(state.forbidden_zones[piece_index], square) && !drop_f
+            let enemy_idx = state.statics.piece_swap_map
+                [&(piece_index as PieceIndex)] as usize;
+
+            if get!(state.statics.forbidden_zones[piece_index], square)
+                && !drop_f
                 || !drop_e && state.piece_in_hand[piece_color][piece_index] == 0
                 || drop_e
-                    && state.piece_in_hand[1 - piece_color]
-                        [
-                            state.piece_swap_map[&(piece_index as PieceIndex)] 
-                            as usize
-                        ] == 0
+                    && state.piece_in_hand[1 - piece_color][enemy_idx] == 0
             {
                 continue 'drop_loop;
             }
@@ -147,8 +151,8 @@ pub fn generate_drop_list(piece: &Piece, state: &State, out: &mut Vec<Move>, scr
             let drop_allowers = &drop.1;
             let drop_stoppers = &drop.2;
 
-            let file = square % state.files as u32;
-            let rank = square / state.files as u32;
+            let file = square % state.statics.files as u32;
+            let rank = square / state.statics.files as u32;
 
             for allower in drop_allowers.iter() {
                 let x = x!(allower.0) as i32 * (-2 * piece_color as i32 + 1);
@@ -157,8 +161,9 @@ pub fn generate_drop_list(piece: &Piece, state: &State, out: &mut Vec<Move>, scr
 
                 let check_x = file as i32 + x;
                 let check_y = rank as i32 + y;
-                let check_index =
-                    (check_y * state.files as i32 + check_x) as usize;
+                let check_index = (
+                    check_y * state.statics.files as i32 + check_x
+                ) as usize;
 
                 let piece_check = state.main_board[check_index];
 
@@ -170,7 +175,9 @@ pub fn generate_drop_list(piece: &Piece, state: &State, out: &mut Vec<Move>, scr
                     continue;
                 }
 
-                if drop_d && p_is_royal!(state.pieces[piece_check as usize]) {
+                if drop_d
+                && p_is_royal!(state.statics.pieces[piece_check as usize])
+                {
                     continue 'drop_loop;
                 } else if drop_d {
                     let mut take_piece = 0u64;
@@ -201,8 +208,9 @@ pub fn generate_drop_list(piece: &Piece, state: &State, out: &mut Vec<Move>, scr
 
                 let check_x = file as i32 + x;
                 let check_y = rank as i32 + y;
-                let check_index =
-                    (check_y * state.files as i32 + check_x) as usize;
+                let check_index = (
+                    check_y * state.statics.files as i32 + check_x
+                ) as usize;
 
                 let piece_check = state.main_board[check_index];
 

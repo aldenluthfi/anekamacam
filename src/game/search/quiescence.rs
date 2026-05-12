@@ -50,7 +50,9 @@ pub fn quiescence_search(
     }
 
     let ply = state.search_ply as usize;
-    generate_all_captures(state, &mut info.move_buf[ply], &mut info.scratch_buf);
+    generate_all_captures(
+        state, &mut info.move_buf[ply], &mut info.scratch_buf
+    );
     let pv_move = probe_pv_move!(state, table);
 
     for i in 0..info.move_buf[ply].len() {
@@ -61,11 +63,13 @@ pub fn quiescence_search(
         let move_type = move_type!(mv);
         let promotion = promotion!(mv);
         let captured_value = if move_type == SINGLE_CAPTURE_MOVE {
-            p_ovalue!(state.pieces[captured_piece!(mv.clone()) as usize])
+            p_ovalue!(
+                state.statics.pieces[captured_piece!(mv.clone()) as usize]
+            )
         } else {
             let mut total = 0;
             for cap in mv.1.iter() {
-                total += p_ovalue!(state.pieces[*cap as usize]);
+                total += p_ovalue!(state.statics.pieces[*cap as usize]);
             }
             total
         };

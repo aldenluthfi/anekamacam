@@ -30,7 +30,7 @@ pub type Square = u16;
 #[macro_export]
 macro_rules! castling {
     ($state:expr) => {
-        ($state.special_rules & 1) == 1
+        ($state.statics.special_rules & 1) == 1
     };
 }
 
@@ -44,7 +44,7 @@ macro_rules! enc_castling {
 #[macro_export]
 macro_rules! en_passant {
     ($state:expr) => {
-        ($state.special_rules >> 1 & 1) == 1
+        ($state.statics.special_rules >> 1 & 1) == 1
     };
 }
 
@@ -58,7 +58,7 @@ macro_rules! enc_en_passant {
 #[macro_export]
 macro_rules! promotions {
     ($state:expr) => {
-        ($state.special_rules >> 2 & 1) == 1
+        ($state.statics.special_rules >> 2 & 1) == 1
     };
 }
 
@@ -72,7 +72,7 @@ macro_rules! enc_promotions {
 #[macro_export]
 macro_rules! drops {
     ($state:expr) => {
-        ($state.special_rules >> 3 & 1) == 1
+        ($state.statics.special_rules >> 3 & 1) == 1
     };
 }
 
@@ -86,7 +86,7 @@ macro_rules! enc_drops {
 #[macro_export]
 macro_rules! count_limits {
     ($state:expr) => {
-        ($state.special_rules >> 4 & 1) == 1
+        ($state.statics.special_rules >> 4 & 1) == 1
     };
 }
 
@@ -100,7 +100,7 @@ macro_rules! enc_count_limits {
 #[macro_export]
 macro_rules! forbidden_zones {
     ($state:expr) => {
-        ($state.special_rules >> 5 & 1) == 1
+        ($state.statics.special_rules >> 5 & 1) == 1
     };
 }
 
@@ -114,7 +114,7 @@ macro_rules! enc_forbidden_zones {
 #[macro_export]
 macro_rules! promote_to_captured {
     ($state:expr) => {
-        ($state.special_rules >> 6 & 1) == 1
+        ($state.statics.special_rules >> 6 & 1) == 1
     };
 }
 
@@ -128,7 +128,7 @@ macro_rules! enc_promote_to_captured {
 #[macro_export]
 macro_rules! demote_upon_capture {
     ($state:expr) => {
-        ($state.special_rules >> 7 & 1) == 1
+        ($state.statics.special_rules >> 7 & 1) == 1
     };
 }
 
@@ -142,7 +142,7 @@ macro_rules! enc_demote_upon_capture {
 #[macro_export]
 macro_rules! stalemate_loss {
     ($state:expr) => {
-        ($state.special_rules >> 8 & 1) == 1
+        ($state.statics.special_rules >> 8 & 1) == 1
     };
 }
 
@@ -156,7 +156,7 @@ macro_rules! enc_stalemate_loss {
 #[macro_export]
 macro_rules! setup_phase {
     ($state:expr) => {
-        ($state.special_rules >> 9 & 1) == 1
+        ($state.statics.special_rules >> 9 & 1) == 1
     };
 }
 
@@ -170,7 +170,7 @@ macro_rules! enc_setup_phase {
 #[macro_export]
 macro_rules! stand_offs {
     ($state:expr) => {
-        ($state.special_rules >> 10 & 1) == 1
+        ($state.statics.special_rules >> 10 & 1) == 1
     };
 }
 
@@ -184,7 +184,7 @@ macro_rules! enc_stand_offs {
 #[macro_export]
 macro_rules! halfmove_clock {
     ($state:expr) => {
-        ($state.special_rules >> 11 & 1) == 1
+        ($state.statics.special_rules >> 11 & 1) == 1
     };
 }
 
@@ -198,7 +198,7 @@ macro_rules! enc_halfmove_clock {
 #[macro_export]
 macro_rules! repetition_limit {
     ($state:expr) => {
-        ($state.special_rules >> 12 & 1) == 1
+        ($state.statics.special_rules >> 12 & 1) == 1
     };
 }
 
@@ -294,7 +294,7 @@ macro_rules! game_phase_score {
     ($state:expr) => {{
         let mut game_phase_score = 0;
 
-        for (piece_idx, piece) in $state.pieces.iter().enumerate() {
+        for (piece_idx, piece) in $state.statics.pieces.iter().enumerate() {
             if p_is_big!(piece) && !p_is_royal!(piece) {
                 game_phase_score +=
                     (
@@ -312,34 +312,11 @@ macro_rules! game_phase_score {
                             GAME STATE REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// Main state of the game.
+/// Immutable variant configuration, shared across threads via Arc.
 ///
-/// The special rules field is a bitmask representing enabled special rules.
-/// (read configs/example.conf for more information)
-///
-/// The bits are defined as follows:
-/// - bit 0     : castling allowed
-/// - bit 1     : en passant allowed
-/// - bit 2     : Promotions allowed
-/// - bit 3     : Drops allowed
-/// - bit 4     : Some pieces have a count limit
-/// - bit 5     : Some pieces have forbidden zones
-/// - bit 6     : Can only promote to captured friendly pieces by the enemy
-/// - bit 7     : Demote piece in hand upon capture
-/// - bit 8     : Stalemate is a loss for the stalemated player
-/// - bit 9     : Game begins with a setup phase
-/// - bit 10    : A player can make a move that creates a stand-off
-/// - bit 11    : Halfmove clock draw rule is enabled
-/// - bit 12    : There is a limit on the number of repetitions of a position
-/// - bit 13-31 : reserved for future use
-///
-#[derive(Clone)]
-pub struct State {
-
-/*----------------------------------------------------------------------------*\
-                                 STATIC FIELDS
-\*----------------------------------------------------------------------------*/
-
+/// All 27 static fields that are fixed after `precompute()` live here.
+/// `State::clone()` shares this via `Arc::clone` instead of deep-copying.
+pub struct StaticState {
     pub title: String,
     pub pieces: Vec<Piece>,
     pub special_rules: u32,
@@ -362,11 +339,11 @@ pub struct State {
     pub files: u8,
     pub ranks: u8,
 
-    pub relevant_moves: Arc<Vec<MoveSet>>,                                      /* idx = piece * board size + square  */
-    pub relevant_captures: Arc<Vec<MoveSet>>,                                   /* flattened because of cache         */
-    pub relevant_drops: Arc<Vec<DropSet>>,                                      /* optimization                       */
-    pub relevant_setup: Arc<Vec<DropSet>>,
-    pub relevant_stand_offs: Arc<Vec<PatternSet>>,
+    pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
+    pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
+    pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
+    pub relevant_setup: Vec<DropSet>,
+    pub relevant_stand_offs: Vec<PatternSet>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
 
     pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
@@ -374,6 +351,35 @@ pub struct State {
     pub piece_char_map: HashMap<char, u8>,                                      /* char to piece index map            */
 
     pub most_valuable: u16,                                                     /* value of the most valuable piece   */
+}
+
+/// Main state of the game.
+///
+/// The special rules field is a bitmask representing enabled special rules.
+/// (read configs/example.conf for more information)
+///
+/// The bits are defined as follows:
+/// - bit 0     : castling allowed
+/// - bit 1     : en passant allowed
+/// - bit 2     : Promotions allowed
+/// - bit 3     : Drops allowed
+/// - bit 4     : Some pieces have a count limit
+/// - bit 5     : Some pieces have forbidden zones
+/// - bit 6     : Can only promote to captured friendly pieces by the enemy
+/// - bit 7     : Demote piece in hand upon capture
+/// - bit 8     : Stalemate is a loss for the stalemated player
+/// - bit 9     : Game begins with a setup phase
+/// - bit 10    : A player can make a move that creates a stand-off
+/// - bit 11    : Halfmove clock draw rule is enabled
+/// - bit 12    : There is a limit on the number of repetitions of a position
+/// - bit 13-31 : reserved for future use
+///
+/// Static configuration lives in `static_data: Arc<StaticState>`, shared
+/// cheaply across threads. `State::clone()` calls `Arc::clone` for static_data
+/// and deep-copies only the 29 dynamic fields.
+pub struct State {
+
+    pub statics: Arc<StaticState>,
 
 /*----------------------------------------------------------------------------*\
                                  DYNAMIC FIELDS
@@ -423,6 +429,53 @@ pub struct State {
     pub killer_hist: Vec<[Move; 2]>                                             /* search ply to killer moves         */
 }
 
+impl Clone for State {
+    fn clone(&self) -> Self {
+        State {
+            statics: Arc::clone(&self.statics),
+
+            game_over: self.game_over,
+            game_phase: self.game_phase,
+
+            playing: self.playing,
+            main_board: self.main_board.clone(),
+
+            pieces_board: self.pieces_board.clone(),
+            virgin_board: self.virgin_board.clone(),
+
+            castling_state: self.castling_state,
+            halfmove_clock: self.halfmove_clock,
+            en_passant_square: self.en_passant_square,
+
+            position_hash: self.position_hash,
+            history: self.history.clone(),
+
+            search_ply: self.search_ply,
+            ply_counter: self.ply_counter,
+
+            opening_material: self.opening_material,
+            endgame_material: self.endgame_material,
+            opening_pst_bonus: self.opening_pst_bonus,
+            endgame_pst_bonus: self.endgame_pst_bonus,
+            big_pieces: self.big_pieces,
+            major_pieces: self.major_pieces,
+            minor_pieces: self.minor_pieces,
+            royal_pieces: self.royal_pieces,
+            royal_list: self.royal_list.clone(),
+
+            piece_count: self.piece_count.clone(),
+            piece_list: self.piece_list.clone(),
+            piece_in_hand: self.piece_in_hand.clone(),
+
+            position_hash_map: self.position_hash_map.clone(),
+            pv_line: self.pv_line.clone(),
+
+            search_hist: self.search_hist.clone(),
+            killer_hist: self.killer_hist.clone(),
+        }
+    }
+}
+
 impl State {
     pub fn new(
         title: String,
@@ -442,7 +495,7 @@ impl State {
             });
         let board_size: usize = (files as usize) * (ranks as usize);
 
-        State {
+        let statics = Arc::new(StaticState {
             title,
             pieces,
             special_rules,
@@ -465,33 +518,33 @@ impl State {
             files,
             ranks,
 
-            relevant_moves:
-                Arc::new(vec![MoveSet::new(); board_size * piece_count]),
-            relevant_captures:
-                Arc::new(vec![MoveSet::new(); board_size * piece_count]),
-            relevant_drops:
-                Arc::new(vec![DropSet::new(); board_size * piece_count]),
-            relevant_setup:
-                Arc::new(vec![DropSet::new(); board_size * piece_count]),
-            relevant_stand_offs:
-                Arc::new(vec![PatternSet::new(); board_size * piece_count]),
-            relevant_attacks:
-                [
-                    vec![Vec::new(); board_size],
-                    vec![Vec::new(); board_size]
-                ],
+            relevant_moves: vec![MoveSet::new(); board_size * piece_count],
+            relevant_captures: vec![MoveSet::new(); board_size * piece_count],
+            relevant_drops: vec![DropSet::new(); board_size * piece_count],
+            relevant_setup: vec![DropSet::new(); board_size * piece_count],
+            relevant_stand_offs: vec![
+                PatternSet::new(); board_size * piece_count
+            ],
+            relevant_attacks: [
+                vec![Vec::new(); board_size],
+                vec![Vec::new(); board_size],
+            ],
 
             piece_swap_map: HashMap::new(),
             piece_demotion_map: HashMap::new(),
             piece_char_map: HashMap::new(),
 
             most_valuable,
+        });
+
+        State {
+            statics,
 
             game_over: false,
             game_phase: OPENING,
 
             playing: WHITE,
-            main_board: vec![NO_PIECE; (files as usize) * (ranks as usize)],
+            main_board: vec![NO_PIECE; board_size],
 
             pieces_board: [board!(files, ranks); 2],
             virgin_board: board!(files, ranks),
@@ -528,20 +581,32 @@ impl State {
         }
     }
 
+    /// Mutable access to static configuration. Only valid before `State` is
+    /// cloned for multi-threaded search (Arc refcount == 1).
+    #[inline]
+    pub fn static_mut(&mut self) -> &mut StaticState {
+        Arc::get_mut(&mut self.statics)
+            .expect("static_data is shared; writes only allowed before search")
+    }
+
     /// Resets all dynamic position/search fields while keeping static config.
     ///
     /// This clears board occupancy, counters, caches, histories, and search
     /// bookkeeping while preserving static variant definitions.
     /// It prepares the state for loading or initializing a fresh position.
     pub fn reset(&mut self) {
-        let piece_count: usize = self.pieces.len();
+        let piece_count: usize = self.statics.pieces.len();
         let board_size: usize = self.main_board.len();
 
         self.playing = WHITE;
         self.main_board = vec![NO_PIECE; board_size];
 
-        self.pieces_board = [board!(self.files, self.ranks); 2];
-        self.virgin_board = board!(self.files, self.ranks);
+        self.pieces_board = [board!(
+            self.statics.files, self.statics.ranks
+        ); 2];
+        self.virgin_board = board!(
+            self.statics.files, self.statics.ranks
+        );
 
         self.castling_state = 0;
         self.halfmove_clock = 0;
@@ -582,13 +647,16 @@ impl State {
     }
 
     fn populate_char_map(&mut self) {
-        for (index, piece) in self.pieces.iter().enumerate() {
-            self.piece_char_map.insert(piece.char, index as PieceIndex);
-        }
+        let char_map: HashMap<char, u8> = self.statics.pieces
+            .iter()
+            .enumerate()
+            .map(|(index, piece)| (piece.char, index as PieceIndex))
+            .collect();
+        self.static_mut().piece_char_map = char_map;
     }
 
-    fn generate_piece_moves(&mut self, expr_set: &Vec<String>) -> Vec<MoveSet> {
-        let mut piece_moves = Vec::with_capacity(self.pieces.len());
+    fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
+        let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
         for expr in expr_set {
             let move_vectors = generate_move_vectors(expr, self);
             let moves_for_piece = move_vectors
@@ -605,14 +673,14 @@ impl State {
         piece_moves
     }
 
-    fn generate_piece_drops(&mut self, expr_set: &[String]) -> Vec<DropSet> {
-        self.pieces.iter().map(
+    fn generate_piece_drops(&self, expr_set: &[String]) -> Vec<DropSet> {
+        self.statics.pieces.iter().map(
             |piece| generate_drop_vectors(piece, self, expr_set)
         ).collect::<Vec<DropSet>>()
     }
 
     fn generate_piece_stand_off(
-        &mut self, expr_set: Vec<String>
+        &self, expr_set: Vec<String>
     ) -> Vec<PatternSet> {
         expr_set.iter().map(
             |expr| generate_stand_off_patterns(expr, self)
@@ -621,63 +689,98 @@ impl State {
 
     fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
         let board_size = self.main_board.len();
-        for (index, piece) in self.pieces.iter().enumerate() {
-            for square in 0..(self.files as u32 * self.ranks as u32) {
-                let result = generate_relevant_moves(piece, square, self, piece_moves);
-                Arc::get_mut(&mut self.relevant_moves).unwrap()
-                    [index * board_size + square as usize] = result;
+        let piece_count = self.statics.pieces.len();
+        let file_rank_count =
+            self.statics.files as u32 * self.statics.ranks as u32;
+
+        let mut results = vec![MoveSet::new(); piece_count * board_size];
+        for (index, piece) in self.statics.pieces.iter().enumerate() {
+            for square in 0..file_rank_count {
+                results[index * board_size + square as usize] =
+                    generate_relevant_moves(piece, square, self, piece_moves);
             }
         }
+        self.static_mut().relevant_moves = results;
     }
 
     fn populate_relevant_captures(&mut self, piece_moves: &[MoveSet]) {
         let board_size = self.main_board.len();
-        for (index, piece) in self.pieces.iter().enumerate() {
-            for square in 0..(self.files as u32 * self.ranks as u32) {
-                let result = generate_relevant_captures(piece, square, self, piece_moves);
-                Arc::get_mut(&mut self.relevant_captures).unwrap()
-                    [index * board_size + square as usize] = result;
+        let piece_count = self.statics.pieces.len();
+        let file_rank_count =
+            self.statics.files as u32 * self.statics.ranks as u32;
+
+        let mut results = vec![MoveSet::new(); piece_count * board_size];
+        for (index, piece) in self.statics.pieces.iter().enumerate() {
+            for square in 0..file_rank_count {
+                results[index * board_size + square as usize] =
+                    generate_relevant_captures(
+                        piece, square, self, piece_moves
+                    );
             }
         }
+        self.static_mut().relevant_captures = results;
     }
 
     fn populate_relevant_drops(&mut self, piece_setup_drops: &[DropSet]) {
         let board_size = self.main_board.len();
-        for (index, piece) in self.pieces.iter().enumerate() {
-            for square in 0..(self.files as u32 * self.ranks as u32) {
-                let result = generate_relevant_drops(piece, square, self, piece_setup_drops);
-                Arc::get_mut(&mut self.relevant_drops).unwrap()
-                    [index * board_size + square as usize] = result;
+        let piece_count = self.statics.pieces.len();
+        let file_rank_count =
+            self.statics.files as u32 * self.statics.ranks as u32;
+
+        let mut results = vec![DropSet::new(); piece_count * board_size];
+        for (index, piece) in self.statics.pieces.iter().enumerate() {
+            for square in 0..file_rank_count {
+                results[index * board_size + square as usize] =
+                    generate_relevant_drops(
+                        piece, square, self, piece_setup_drops
+                    );
             }
         }
+        self.static_mut().relevant_drops = results;
     }
 
     fn populate_relevant_setup(&mut self, piece_setup_drops: &[DropSet]) {
         let board_size = self.main_board.len();
-        for (index, piece) in self.pieces.iter().enumerate() {
-            for square in 0..(self.files as u32 * self.ranks as u32) {
-                let result = generate_relevant_drops(piece, square, self, piece_setup_drops);
-                Arc::get_mut(&mut self.relevant_setup).unwrap()
-                    [index * board_size + square as usize] = result;
+        let piece_count = self.statics.pieces.len();
+        let file_rank_count =
+            self.statics.files as u32 * self.statics.ranks as u32;
+
+        let mut results = vec![DropSet::new(); piece_count * board_size];
+        for (index, piece) in self.statics.pieces.iter().enumerate() {
+            for square in 0..file_rank_count {
+                results[index * board_size + square as usize] =
+                    generate_relevant_drops(
+                        piece, square, self, piece_setup_drops
+                    );
             }
         }
+        self.static_mut().relevant_setup = results;
     }
 
     fn populate_relevant_stand_offs(
         &mut self, piece_stand_off: &[PatternSet]
     ) {
         let board_size = self.main_board.len();
-        for (index, piece) in self.pieces.iter().enumerate() {
-            for square in 0..(self.files as u32 * self.ranks as u32) {
-                let result = generate_relevant_stand_offs(piece, square, self, piece_stand_off);
-                Arc::get_mut(&mut self.relevant_stand_offs).unwrap()
-                    [index * board_size + square as usize] = result;
+        let piece_count = self.statics.pieces.len();
+        let file_rank_count =
+            self.statics.files as u32 * self.statics.ranks as u32;
+
+        let mut results = vec![PatternSet::new(); piece_count * board_size];
+        for (index, piece) in self.statics.pieces.iter().enumerate() {
+            for square in 0..file_rank_count {
+                results[index * board_size + square as usize] =
+                    generate_relevant_stand_offs(
+                        piece, square, self, piece_stand_off
+                    );
             }
         }
+        self.static_mut().relevant_stand_offs = results;
     }
 
     fn populate_relevant_attacks(&mut self) {
-        for square in 0..(self.files as u32 * self.ranks as u32) {
+        let file_rank_count =
+            self.statics.files as u32 * self.statics.ranks as u32;
+        for square in 0..file_rank_count {
             generate_attack_masks(square as Square, self);
         }
     }
@@ -693,7 +796,7 @@ impl State {
         setup_expr_set: Vec<String>,
         stand_off_expr_set: Vec<String>
     ) {
-        let piece_count = self.pieces.len();
+        let piece_count = self.statics.pieces.len();
         self.populate_char_map();
 
         let piece_moves = self.generate_piece_moves(&moves_expr_set);

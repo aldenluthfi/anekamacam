@@ -84,12 +84,14 @@ pub fn clear_search(
     info.interrupt = false;
 
     if info.move_buf.len() < MAX_DEPTH * 2 {
-        info.move_buf = (0..MAX_DEPTH * 2).map(|_| Vec::with_capacity(64)).collect();
+        info.move_buf = (0..MAX_DEPTH * 2)
+            .map(|_| Vec::with_capacity(64)).collect();
         info.scratch_buf = Vec::with_capacity(32);
     }
 
-    let piece_count: usize = state.pieces.len();
-    let board_size: usize = (state.files as usize) * (state.ranks as usize);
+    let piece_count: usize = state.statics.pieces.len();
+    let board_size: usize =
+        (state.statics.files as usize) * (state.statics.ranks as usize);
 
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
@@ -350,7 +352,9 @@ pub fn alpha_beta(
     let alpha_start = alpha;
 
     let ply = state.search_ply as usize;
-    generate_all_moves_and_drops(state, &mut info.move_buf[ply], &mut info.scratch_buf);
+    generate_all_moves_and_drops(
+        state, &mut info.move_buf[ply], &mut info.scratch_buf
+    );
 
     for i in 0..info.move_buf[ply].len() {
         pick_by_score(state, &mut info.move_buf[ply], i, &pv_move);
