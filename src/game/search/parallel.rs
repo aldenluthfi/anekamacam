@@ -13,11 +13,6 @@
 
 use crate::*;
 
-pub struct ThreadWorker {
-    pub thread_num: usize,
-    pub thread_handle: JoinHandle<SearchResult>,
-}
-
 pub struct ThreadPool {
     pub main_state: State,
     pub tt: Arc<TTable>,
@@ -36,7 +31,7 @@ impl ThreadPool {
         Self { main_state, tt, thread_count }
     }
 
-    pub fn run(&self, depth: usize, timed: u128) -> SearchResult {
+    pub fn run(mut self, depth: usize, timed: u128) -> SearchResult {
         let tt = Arc::clone(&self.tt);
         let mut workers = Vec::with_capacity(self.thread_count);
 
@@ -61,26 +56,35 @@ impl ThreadPool {
                     panic!("Failed to spawn searcher-{}: {e}", i)
                 });
 
-            workers.push(ThreadWorker {
-                thread_num: i,
-                thread_handle: handle,
-            });
+            workers.push(handle);
         }
 
         let mut main_result = SearchResult {
-            best_score: 0,
+            best_score: -INFINITY,
             best_move: null_move(),
             total_nodes: 0,
             total_elapsed: 0,
         };
 
-        for worker in workers {
-            let n = worker.thread_num;
-            let result = worker.thread_handle.join().unwrap_or_else(|_| {
-                panic!("Thread {} panicked", n)
+        for (i, worker) in workers.into_iter().enumerate() {
+            let result = worker.join().unwrap_or_else(|_| {
+                panic!("Thread {} panicked", i)
             });
-            if n == 0 { main_result = result; }
-            log_3!("Thread {} joined", n);
+
+            if result.best_score >= main_result.best_score {
+                main_result = result;
+            }
+
+            log_3!("Thread {} joined", i);
+        }
+
+        if main_result.best_move == null_move() {
+            let state = &mut self.main_state;
+            fill_pv_line!(state, &self.tt, depth);
+        }
+
+        if main_result.best_move == null_move() {
+            log_1!("No valid moves found by any thread");
         }
 
         main_result
