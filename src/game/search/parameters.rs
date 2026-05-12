@@ -29,7 +29,7 @@ type PieceRoles = (PieceIndex, bool, bool);
 fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
     let mut values = HashSet::new();
 
-    for piece in state.pieces.iter() {
+    for piece in state.statics.pieces.iter() {
         let value = p_ovalue!(piece);
         values.insert(value);
     }
@@ -48,7 +48,7 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 
     let mut piece_roles = Vec::new();
 
-    for piece in state.pieces.iter() {
+    for piece in state.statics.pieces.iter() {
         let value = p_ovalue!(piece);
 
         let is_big = value > *values[non_big_threshold - 1];
@@ -109,13 +109,13 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
             reached_squares.insert(square);
 
             let relevant_moves =
-                &state.relevant_moves[piece_index * board_size + square];
+                &state.statics.relevant_moves[piece_index * board_size + square];
 
             for multi_leg_vector in relevant_moves {
                 let mut accumulated_index = square as i32;
 
-                let mut file = accumulated_index % (state.files as i32);
-                let mut rank = accumulated_index / (state.files as i32);
+                let mut file = accumulated_index % (state.statics.files as i32);
+                let mut rank = accumulated_index / (state.statics.files as i32);
 
                 for leg in multi_leg_vector {
                     let file_offset = x!(leg);
@@ -123,7 +123,7 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
 
                     file += file_offset as i32;
                     rank += rank_offset as i32;
-                    accumulated_index = rank * (state.files as i32) + file;
+                    accumulated_index = rank * (state.statics.files as i32) + file;
                 }
 
                 if !reached_squares.contains(&(accumulated_index as usize))
@@ -175,7 +175,7 @@ fn derive_piece_mobility(
     let board_size = state.main_board.len();
 
     let relevant_moves =
-        &state.relevant_moves[piece_index as usize * board_size + square];
+        &state.statics.relevant_moves[piece_index as usize * board_size + square];
 
     let mut mobility_sum = 0.0;
 
@@ -216,22 +216,22 @@ fn derive_piece_mobility(
 }
 
 fn derive_distance_from_center(state: &State, square: usize) -> f64 {
-    let center_file = if state.files % 2 == 1 {
-        vec![(state.files as f64 / 2.0).floor() as u8]
+    let center_file = if state.statics.files % 2 == 1 {
+        vec![(state.statics.files as f64 / 2.0).floor() as u8]
     } else {
-        vec![state.files / 2, (state.files / 2) - 1]
+        vec![state.statics.files / 2, (state.statics.files / 2) - 1]
     };
-    let center_rank = if state.ranks % 2 == 1 {
-        vec![(state.ranks as f64 / 2.0).floor() as u8]
+    let center_rank = if state.statics.ranks % 2 == 1 {
+        vec![(state.statics.ranks as f64 / 2.0).floor() as u8]
     } else {
-        vec![state.ranks / 2, (state.ranks / 2) - 1]
+        vec![state.statics.ranks / 2, (state.statics.ranks / 2) - 1]
     };
 
     let mut center_squares = vec![];
 
     for file in &center_file {
         for rank in &center_rank {
-            center_squares.push(*rank * state.files + *file);
+            center_squares.push(*rank * state.statics.files + *file);
         }
     }
 
@@ -248,7 +248,7 @@ fn derive_closest_promotion(
     state: &State, piece_index: PieceIndex, square: usize
 ) -> f64 {
     let closest_mandatory = set_indices!(
-        state.promotion_zones_mandatory[piece_index as usize]
+        state.statics.promotion_zones_mandatory[piece_index as usize]
     )
     .iter()
     .map(|&index| square_distance(state, square as Square, index as Square))
@@ -256,7 +256,7 @@ fn derive_closest_promotion(
     .unwrap_or(f64::INFINITY);
 
     let closest_optional = set_indices!(
-        state.promotion_zones_optional[piece_index as usize]
+        state.statics.promotion_zones_optional[piece_index as usize]
     )
     .iter()
     .map(|&index| square_distance(state, square as Square, index as Square))
@@ -272,7 +272,7 @@ fn derive_piece_value_on_square(
     let mobility = derive_piece_mobility(state, piece_index, square);
     let distance_from_center = derive_distance_from_center(state, square);
 
-    let piece = &state.pieces[piece_index as usize];
+    let piece = &state.statics.pieces[piece_index as usize];
 
     let mobility_weight = if is_endgame { 0.25 } else { 0.5 };
     let center_weight = if is_endgame { 1.75 } else { 1.25 };
@@ -284,8 +284,8 @@ fn derive_piece_value_on_square(
 
         let value =
             (mobility_weight * mobility) +
-            (state.files as f64 / 2.0 - center_weight * distance_from_center) +
-            (state.ranks as f64 - promotion_weight * closest_promotion);
+            (state.statics.files as f64 / 2.0 - center_weight * distance_from_center) +
+            (state.statics.ranks as f64 - promotion_weight * closest_promotion);
 
         if !is_endgame && p_is_royal!(piece) {
             -value.round() as i32
@@ -296,7 +296,7 @@ fn derive_piece_value_on_square(
 
         let value =
             (mobility_weight * mobility) +
-            (state.files as f64 / 2.0 - center_weight * distance_from_center);
+            (state.statics.files as f64 / 2.0 - center_weight * distance_from_center);
 
         if !is_endgame && p_is_royal!(piece) {
             -value.round() as i32
@@ -326,7 +326,7 @@ pub fn derive_parameters(state: &mut State) {
 
     let mut min = f64::INFINITY;
     let mut max = f64::NEG_INFINITY;
-    for (index, piece) in state.pieces.iter().enumerate() {
+    for (index, piece) in state.statics.pieces.iter().enumerate() {
         if p_color!(piece) == BLACK {
             continue;
         }
@@ -346,22 +346,22 @@ pub fn derive_parameters(state: &mut State) {
 
 
     for (index, value) in values.clone() {
-        let black_index = state.piece_swap_map[&index] as usize;
+        let black_index = state.statics.piece_swap_map[&index] as usize;
         let white_index = index as usize;
         let normalized_value = (value - min) / (max - min);
 
         let value = 100 + (normalized_value * 1400.0).round() as u16;           /* normalizes value from 100-1500     */
 
         set_piece_dynamic_parameters(
-            &mut state.pieces[black_index], value, 0, false, false);
+            &mut state.static_mut().pieces[black_index], value, 0, false, false);
         set_piece_dynamic_parameters(
-            &mut state.pieces[white_index], value, 0, false, false);
+            &mut state.static_mut().pieces[white_index], value, 0, false, false);
     }
 
     let piece_roles = derive_piece_roles(state);
 
     for (piece_index, is_big, is_major) in piece_roles {
-        let piece = &mut state.pieces[piece_index as usize];
+        let piece = &mut state.static_mut().pieces[piece_index as usize];
         let value = p_ovalue!(piece);
 
         set_piece_dynamic_parameters(
@@ -369,7 +369,7 @@ pub fn derive_parameters(state: &mut State) {
         );
     }
 
-    for piece in state.pieces.iter_mut() {
+    for piece in state.static_mut().pieces.iter_mut() {
         let ovalue = p_ovalue!(piece);
         let is_big = p_is_big!(piece);
         let is_major = p_is_major!(piece);
@@ -393,12 +393,12 @@ pub fn derive_parameters(state: &mut State) {
         .map(|(_, value)| value)
         .sum::<f64>() / total_values;
 
-    state.opening_score =
-        average_value.round() as u32 * state.pieces.len() as u32 * 2;
-    state.endgame_score =
+    state.static_mut().opening_score =
+        average_value.round() as u32 * state.statics.pieces.len() as u32 * 2;
+    state.static_mut().endgame_score =
         average_value.round() as u32 * 5;
 
-    state.most_valuable = state
+    state.static_mut().most_valuable = state.statics
         .pieces
         .iter()
         .map(|piece| p_ovalue!(piece))
@@ -409,7 +409,7 @@ pub fn derive_parameters(state: &mut State) {
     state.major_pieces = [0; 2];
     state.minor_pieces = [0; 2];
 
-    for (piece_idx, piece) in state.pieces.iter().enumerate() {
+    for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
         let color = p_color!(piece) as usize;
         let count = state.piece_list[piece_idx].len() as u32;
 
@@ -418,11 +418,11 @@ pub fn derive_parameters(state: &mut State) {
         state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
     }
 
-    for piece in state.pieces.iter() {
+    let pst_entries: Vec<(usize, Vec<i32>, Vec<i32>)> = state.statics.pieces.iter().map(|piece| {
         let mut index = p_index!(piece);
 
         if p_color!(piece) == BLACK {
-            index = state.piece_swap_map[&(index as u8)] as PieceIndex;
+            index = state.statics.piece_swap_map[&(index as u8)] as PieceIndex;
         }
 
         let mut opening_pst = derive_pst(index, state, false);
@@ -430,21 +430,25 @@ pub fn derive_parameters(state: &mut State) {
 
         if p_color!(piece) == BLACK {
             opening_pst = mirror_pst_across_horizontal_axis(
-                &opening_pst, state.files as usize, state.ranks as usize
+                &opening_pst, state.statics.files as usize, state.statics.ranks as usize
             );
             endgame_pst = mirror_pst_across_horizontal_axis(
-                &endgame_pst, state.files as usize, state.ranks as usize
+                &endgame_pst, state.statics.files as usize, state.statics.ranks as usize
             );
 
-            index = state.piece_swap_map[&(index as u8)] as PieceIndex;
+            index = state.statics.piece_swap_map[&(index as u8)] as PieceIndex;
         }
 
-        state.pst_opening[index as usize] = opening_pst;
-        state.pst_endgame[index as usize] = endgame_pst;
+        (index as usize, opening_pst, endgame_pst)
+    }).collect();
+
+    for (index, opening_pst, endgame_pst) in pst_entries {
+        state.static_mut().pst_opening[index] = opening_pst;
+        state.static_mut().pst_endgame[index] = endgame_pst;
     }
 
-    log_3!("Derived Opening Score Threshold: {}", state.opening_score);
-    log_3!("Derived Endgame Score Threshold: {}", state.endgame_score);
+    log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
+    log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
     log_2!("Dynamic evaluation parameters derived successfully.");
 
     refresh_eval_state(state);

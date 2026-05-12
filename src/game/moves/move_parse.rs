@@ -522,7 +522,8 @@ fn expand_cardinals(expr: &str) -> Option<String> {
             .captures(&term)
             .unwrap_or_else(|| {
                 panic!(
-                    "Cardinal pattern failed to match term '{}', despite pre-check",
+                    "Cardinal pattern failed to match \
+                     term '{}', despite pre-check",
                     term
                 )
             });
@@ -737,8 +738,8 @@ fn filter_atomic_out_of_bounds(
 ) {
     vector.retain(|vector| {
         let whole = vector.whole();
-        whole.0.saturating_abs() <= state.files as i8
-            && whole.1.saturating_abs() <= state.ranks as i8
+        whole.0.saturating_abs() <= state.statics.files as i8
+            && whole.1.saturating_abs() <= state.statics.ranks as i8
     });
 }
 
@@ -1917,8 +1918,8 @@ fn filter_multi_leg_out_of_bounds(
 ) {
     vectors.retain(|vector| {
         let sum = sum_multi_leg_vectors(vector);
-        sum.0.saturating_abs() <= state.files as i8
-            && sum.1.saturating_abs() <= state.ranks as i8
+        sum.0.saturating_abs() <= state.statics.files as i8
+            && sum.1.saturating_abs() <= state.statics.ranks as i8
     });
 }
 

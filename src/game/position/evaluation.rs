@@ -55,7 +55,7 @@ macro_rules! evaluate_position {
                     - $state.endgame_pst_bonus[black];
 
                 let opening_total = opening_white + opening_black;
-                let opening_scale = $state.opening_score as i32;
+                let opening_scale = $state.statics.opening_score as i32;
 
                 let blended_score = if opening_scale == 0 {
                     score_endgame

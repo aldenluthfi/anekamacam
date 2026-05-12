@@ -122,6 +122,7 @@ pub use env_logger::{
     Builder as LoggerBuilder, Target as LoggerTarget
 };
 pub use hashbrown::{HashMap, HashSet};
+pub use hotpath;
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, warn};
 pub use mpsc::{channel, Sender, Receiver, TryRecvError};

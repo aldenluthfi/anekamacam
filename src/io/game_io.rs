@@ -101,12 +101,12 @@ pub fn mirror_pst_across_horizontal_axis(
 fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
     let mut type_pairs = Vec::new();
 
-    for (white_idx, piece) in state.pieces.iter().enumerate() {
+    for (white_idx, piece) in state.statics.pieces.iter().enumerate() {
         if p_color!(piece) != WHITE {
             continue;
         }
 
-        let black_idx = state
+        let black_idx = state.statics
             .piece_swap_map
             .get(&(white_idx as u8))
             .copied()
@@ -118,7 +118,7 @@ fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
             }) as usize;
 
         assert!(
-            p_color!(state.pieces[black_idx]) == BLACK,
+            p_color!(state.statics.pieces[black_idx]) == BLACK,
             "Invalid black counterpart mapping for white piece index {}",
             white_idx
         );
@@ -207,11 +207,11 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
 
     let mut cursor = 0usize;
 
-    state.opening_score = tokens[cursor]
+    state.static_mut().opening_score = tokens[cursor]
         .unsigned_abs();
     cursor += 1;
 
-    state.endgame_score = tokens[cursor]
+    state.static_mut().endgame_score = tokens[cursor]
         .unsigned_abs();
     cursor += 1;
 
@@ -272,7 +272,7 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
         let (white_idx, black_idx) = piece_type_pairs[piece_type_idx];
 
         set_piece_dynamic_parameters(
-            &mut state.pieces[white_idx],
+            &mut state.static_mut().pieces[white_idx],
             abs_ovalue as u16,
             abs_evalue as u16,
             big_flag == 1,
@@ -280,33 +280,35 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
         );
 
         set_piece_dynamic_parameters(
-            &mut state.pieces[black_idx],
+            &mut state.static_mut().pieces[black_idx],
             abs_ovalue as u16,
             abs_evalue as u16,
             big_flag == 1,
             major_flag == 1,
         );
 
-        state.pst_opening[white_idx] = white_pst_opening.to_vec();
-        state.pst_opening[black_idx] = mirror_pst_across_horizontal_axis(
-            white_pst_opening,
-            state.files as usize,
-            state.ranks as usize,
-        );
+        state.static_mut().pst_opening[white_idx] = white_pst_opening.to_vec();
+        state.static_mut().pst_opening[black_idx] =
+            mirror_pst_across_horizontal_axis(
+                white_pst_opening,
+                state.statics.files as usize,
+                state.statics.ranks as usize,
+            );
 
-        state.pst_endgame[white_idx] = white_pst_endgame.to_vec();
-        state.pst_endgame[black_idx] = mirror_pst_across_horizontal_axis(
-            white_pst_endgame,
-            state.files as usize,
-            state.ranks as usize,
-        );
+        state.static_mut().pst_endgame[white_idx] = white_pst_endgame.to_vec();
+        state.static_mut().pst_endgame[black_idx] =
+            mirror_pst_across_horizontal_axis(
+                white_pst_endgame,
+                state.statics.files as usize,
+                state.statics.ranks as usize,
+            );
     }
 
     state.big_pieces = [0; 2];
     state.major_pieces = [0; 2];
     state.minor_pieces = [0; 2];
 
-    for (piece_idx, piece) in state.pieces.iter().enumerate() {
+    for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
         let color = p_color!(piece) as usize;
         let count = state.piece_count[piece_idx];
 
@@ -331,36 +333,42 @@ pub fn export_tuned_parameters_file(
     let piece_type_pairs = collect_piece_type_pairs(state);
     let mut output_tokens = Vec::new();
 
-    output_tokens.push(state.opening_score.to_string());
-    output_tokens.push(state.endgame_score.to_string());
-
-    for (white_idx, _) in &piece_type_pairs {
-        output_tokens.push(p_ovalue!(state.pieces[*white_idx]).to_string());
-    }
-
-    for (white_idx, _) in &piece_type_pairs {
-        output_tokens.push(p_evalue!(state.pieces[*white_idx]).to_string());
-    }
-
-    for (white_idx, _) in &piece_type_pairs {
-        output_tokens
-            .push((p_is_big!(&state.pieces[*white_idx]) as u8).to_string());
-    }
+    output_tokens.push(state.statics.opening_score.to_string());
+    output_tokens.push(state.statics.endgame_score.to_string());
 
     for (white_idx, _) in &piece_type_pairs {
         output_tokens.push(
-            (p_is_major!(&state.pieces[*white_idx]) as u8).to_string(),
+            p_ovalue!(state.statics.pieces[*white_idx]).to_string()
         );
     }
 
     for (white_idx, _) in &piece_type_pairs {
-        for value in &state.pst_opening[*white_idx] {
+        output_tokens.push(
+            p_evalue!(state.statics.pieces[*white_idx]).to_string()
+        );
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        output_tokens.push(
+            (p_is_big!(&state.statics.pieces[*white_idx]) as u8).to_string()
+        );
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        output_tokens.push(
+            (p_is_major!(&state.statics.pieces[*white_idx])
+                as u8).to_string()
+        );
+    }
+
+    for (white_idx, _) in &piece_type_pairs {
+        for value in &state.statics.pst_opening[*white_idx] {
             output_tokens.push(value.to_string());
         }
     }
 
     for (white_idx, _) in &piece_type_pairs {
-        for value in &state.pst_endgame[*white_idx] {
+        for value in &state.statics.pst_endgame[*white_idx] {
             output_tokens.push(value.to_string());
         }
     }
@@ -895,52 +903,54 @@ pub fn parse_config_file(path: &str) -> State {
     );
 
     let template_bit_fen = initial_position.split_whitespace().next().unwrap();
-    for (index, piece) in result.pieces.iter().enumerate() {
-        let bit_fen = template_bit_fen
-            .chars()
-            .map(|c| {
-                if c == piece.char {
-                    'X'
-                } else if c.is_ascii_alphabetic() {
-                    'O'
-                } else {
-                    c
-                }
-            })
-            .collect::<String>();
-        result.initial_setup[index] = parse_bit_fen(Some(&bit_fen), &result);
+    let bit_fens: Vec<String> = result.statics.pieces.iter().map(|piece| {
+        template_bit_fen.chars().map(|c| {
+            if c == piece.char { 'X' }
+            else if c.is_ascii_alphabetic() { 'O' }
+            else { c }
+        }).collect::<String>()
+    }).collect();
+    for (index, bit_fen) in bit_fens.iter().enumerate() {
+        let setup_board = parse_bit_fen(Some(bit_fen), &result);
+        result.static_mut().initial_setup[index] = setup_board;
     }
 
-    for (i, piece) in result.pieces.iter().enumerate() {
-        if let Some(other_idx) = result.pieces.iter().position(|p| {
-            p.name == piece.name && p_color!(p) != p_color!(piece)
-        }) {
-            result.piece_swap_map.insert(
-                i as PieceIndex, other_idx as PieceIndex
-            );
-        }
+    let swap_entries: Vec<(PieceIndex, PieceIndex)> = result.statics.pieces
+        .iter()
+        .enumerate()
+        .filter_map(|(i, piece)| {
+            result.statics.pieces.iter().position(|p| {
+                p.name == piece.name && p_color!(p) != p_color!(piece)
+            }).map(|other_idx| (i as PieceIndex, other_idx as PieceIndex))
+        })
+        .collect();
+    for (i, other_idx) in swap_entries {
+        result.static_mut().piece_swap_map.insert(i, other_idx);
     }
 
-    for piece in &result.pieces {
-        for promotion_index in &piece.promotions {
-            result
-                .piece_demotion_map
-                .entry(*promotion_index)
+    let pieces_promos: Vec<(PieceIndex, Vec<u8>)> = result.statics.pieces
+        .iter()
+        .map(|p| (p_index!(p), p.promotions.clone()))
+        .collect();
+    for (pi, promotions) in &pieces_promos {
+        for &promotion_index in promotions {
+            result.static_mut().piece_demotion_map
+                .entry(promotion_index)
                 .or_default()
-                .push(p_index!(piece));
+                .push(*pi);
         }
     }
 
-    for (index, _) in result.pieces.iter().enumerate() {
-        result
-            .piece_demotion_map
+    let piece_count = result.statics.pieces.len();
+    for index in 0..piece_count {
+        result.static_mut().piece_demotion_map
             .entry(index as PieceIndex)
             .or_insert_with(|| vec![index as PieceIndex]);
     }
 
     if castling {
         assert!(
-            result
+            result.statics
                 .pieces
                 .iter()
                 .any(|p| p_castle_left!(p) || p_castle_right!(p)),
@@ -957,7 +967,7 @@ pub fn parse_config_file(path: &str) -> State {
 
     if !castling {
         assert!(
-            result
+            result.statics
                 .pieces
                 .iter()
                 .all(|p| !p_castle_left!(p) && !p_castle_right!(p)),
@@ -1015,10 +1025,10 @@ pub fn parse_config_file(path: &str) -> State {
 
                     let zone_str = parts[1];
 
-                    result.promotion_zones_mandatory[white_index] =
+                    result.static_mut().promotion_zones_mandatory[white_index] =
                         parse_bit_fen(Some(zone_str), &result);
 
-                    result.promotion_zones_mandatory[black_index] =
+                    result.static_mut().promotion_zones_mandatory[black_index] =
                         parse_bit_fen(Some(zone_str), &result);
                 } else if piece_chars.len() == 1 {
                     let piece_char = piece_chars.chars().next().unwrap();
@@ -1032,7 +1042,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                     let zone_str = parts[1];
 
-                    result.promotion_zones_mandatory[piece_index] =
+                    result.static_mut().promotion_zones_mandatory[piece_index] =
                         parse_bit_fen(Some(zone_str), &result);
                 } else {
                     panic!("Invalid piece character(s): {}", piece_chars);
@@ -1073,10 +1083,10 @@ pub fn parse_config_file(path: &str) -> State {
 
                     let zone_str = parts[1];
 
-                    result.promotion_zones_optional[white_index] =
+                    result.static_mut().promotion_zones_optional[white_index] =
                         parse_bit_fen(Some(zone_str), &result);
 
-                    result.promotion_zones_optional[black_index] =
+                    result.static_mut().promotion_zones_optional[black_index] =
                         parse_bit_fen(Some(zone_str), &result);
                 } else if piece_chars.len() == 1 {
                     let piece_char = piece_chars.chars().next().unwrap();
@@ -1090,7 +1100,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                     let zone_str = parts[1];
 
-                    result.promotion_zones_optional[piece_index] =
+                    result.static_mut().promotion_zones_optional[piece_index] =
                         parse_bit_fen(Some(zone_str), &result);
                 } else {
                     panic!("Invalid piece character(s): {}", piece_chars);
@@ -1099,7 +1109,9 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    pieces_drops = vec![DEFAULT_DROP.to_string(); result.pieces.len()];
+    pieces_drops = vec![
+        DEFAULT_DROP.to_string(); result.static_mut().pieces.len()
+    ];
     if drops && sections.contains_key("drop rules") {
         for drop in &sections["drop rules"] {
             let parts: Vec<&str> = drop.split(':').map(str::trim).collect();
@@ -1174,8 +1186,8 @@ pub fn parse_config_file(path: &str) -> State {
                         )
                     });
 
-                result.piece_limit[white_index] = limit_value;
-                result.piece_limit[black_index] = limit_value;
+                result.static_mut().piece_limit[white_index] = limit_value;
+                result.static_mut().piece_limit[black_index] = limit_value;
             } else if piece_chars.len() == 1 {
                 let piece_char = piece_chars.chars().next().unwrap();
 
@@ -1194,7 +1206,7 @@ pub fn parse_config_file(path: &str) -> State {
                         )
                     });
 
-                result.piece_limit[piece_index] = limit_value;
+                result.static_mut().piece_limit[piece_index] = limit_value;
             } else {
                 panic!("Invalid piece character(s): {}", piece_chars);
             }
@@ -1230,10 +1242,10 @@ pub fn parse_config_file(path: &str) -> State {
 
                 let zone_str = parts[1];
 
-                result.forbidden_zones[white_index] =
+                result.static_mut().forbidden_zones[white_index] =
                     parse_bit_fen(Some(zone_str), &result);
 
-                result.forbidden_zones[black_index] =
+                result.static_mut().forbidden_zones[black_index] =
                     parse_bit_fen(Some(zone_str), &result);
             } else if piece_chars.len() == 1 {
                 let piece_char = piece_chars.chars().next().unwrap();
@@ -1245,7 +1257,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                 let zone_str = parts[1];
 
-                result.forbidden_zones[piece_index] =
+                result.static_mut().forbidden_zones[piece_index] =
                     parse_bit_fen(Some(zone_str), &result);
             } else {
                 panic!("Invalid piece character(s): {}", piece_chars);
@@ -1253,7 +1265,9 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    pieces_setup = vec![DEFAULT_DROP.to_string(); result.pieces.len()];
+    pieces_setup = vec![
+        DEFAULT_DROP.to_string(); result.static_mut().pieces.len()
+    ];
     if setup_phase && sections.contains_key("setup rules") {
         for setup in &sections["setup rules"] {
             let parts: Vec<&str> = setup.split(':').map(str::trim).collect();
@@ -1296,7 +1310,7 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    pieces_stand_off = vec![String::new(); result.pieces.len()];
+    pieces_stand_off = vec![String::new(); result.static_mut().pieces.len()];
     if stand_offs {
         for pattern in &sections["stand-off patterns"] {
             let parts: Vec<&str> = pattern.split(':').map(str::trim).collect();
@@ -1360,7 +1374,9 @@ pub fn parse_config_file(path: &str) -> State {
                     parsed_limit = Some(limit_value);
                 }
                 "pieces" => {
-                    let mut reset_mask = vec![false; result.pieces.len()];
+                    let mut reset_mask = vec![
+                        false; result.static_mut().pieces.len()
+                    ];
                     for piece_char in parts[1].chars() {
                         let piece_index = char_to_index
                             .get(&piece_char)
@@ -1385,9 +1401,9 @@ pub fn parse_config_file(path: &str) -> State {
             }
         }
 
-        result.halfmove_limit = parsed_limit
+        result.static_mut().halfmove_limit = parsed_limit
             .expect("Halfmove clock limit is missing");
-        result.halfmove_pieces = parsed_pieces
+        result.static_mut().halfmove_pieces = parsed_pieces
             .expect("Halfmove clock pieces are missing");
     }
 
@@ -1399,7 +1415,7 @@ pub fn parse_config_file(path: &str) -> State {
         let limit_value = limit_str.parse::<u8>().unwrap_or_else(|_| {
             panic!("Invalid repetition limit: {}", limit_str.trim())
         });
-        result.repetition_limit = limit_value;
+        result.static_mut().repetition_limit = limit_value;
     }
 
     result.precompute(
@@ -1418,17 +1434,17 @@ pub fn parse_config_file(path: &str) -> State {
 
 fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     if fen.is_none() {
-        return board!(state.files, state.ranks);
+        return board!(state.statics.files, state.statics.ranks);
     }
 
     let fen = fen.unwrap();
 
     let ranks_data: Vec<&str> = fen.split('/').collect();
     assert!(
-        ranks_data.len() == state.ranks as usize,
+        ranks_data.len() == state.statics.ranks as usize,
         "FEN rank count ({}) doesn't match board ranks ({}) for fen {}",
         ranks_data.len(),
-        state.ranks,
+        state.statics.ranks,
         fen
     );                                                                          /* assert number of ranks in the FEN  */
 
@@ -1452,17 +1468,17 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
             }
         }
         assert!(
-            file_count == state.files,
+            file_count == state.statics.files,
             "FEN rank {} has {} files but expected {}",
             rank_idx,
             file_count,
-            state.files
+            state.statics.files
         );
     }
 
-    let mut result = board!(state.files, state.ranks);
+    let mut result = board!(state.statics.files, state.statics.ranks);
 
-    let mut rank = state.ranks - 1;
+    let mut rank = state.statics.ranks - 1;
     let mut file = 0u8;
 
     let mut position_chars = fen.chars().peekable();
@@ -1488,14 +1504,16 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
             'O' => {
                 clear!(
                     result,
-                    (rank as u32) * (state.files as u32) + (file as u32)
+                    (rank as u32) * (state.statics.files as u32)
+                + (file as u32)
                 );
                 file += 1;
             }
             _ => {
                 set!(
                     result,
-                    (rank as u32) * (state.files as u32) + (file as u32)
+                    (rank as u32) * (state.statics.files as u32)
+                + (file as u32)
                 );
                 file += 1;
             }
@@ -1559,10 +1577,10 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 
     let ranks_data: Vec<&str> = position.split('/').collect();
     assert!(
-        ranks_data.len() == state.ranks as usize,
+        ranks_data.len() == state.statics.ranks as usize,
         "FEN rank count ({}) doesn't match board ranks ({})",
         ranks_data.len(),
-        state.ranks
+        state.statics.ranks
     );                                                                          /* assert number of ranks in the FEN  */
 
     for (rank_idx, rank_data) in ranks_data.iter().enumerate() {                /* assert number of files in each rank*/
@@ -1585,15 +1603,15 @@ pub fn parse_fen(state: &mut State, fen: &str) {
             }
         }
         assert!(
-            file_count == state.files,
+            file_count == state.statics.files,
             "FEN rank {} has {} files but expected {}",
             rank_idx,
             file_count,
-            state.files
+            state.statics.files
         );
     }
 
-    let mut rank = state.ranks - 1;
+    let mut rank = state.statics.ranks - 1;
     let mut file = 0u8;
 
     let mut position_chars = position.chars().peekable();
@@ -1617,24 +1635,29 @@ pub fn parse_fen(state: &mut State, fen: &str) {
             }
             _ => {
                 let piece_idx =
-                    *state.piece_char_map.get(&c).unwrap_or_else(|| {
+                    *state.statics.piece_char_map
+                    .get(&c).unwrap_or_else(|| {
                         panic!("Unknown piece character: {}", c)
                     }) as usize;
 
-                let mut piece = &state.pieces[piece_idx];
+                let mut piece = &state.statics.pieces[piece_idx];
                 let mut piece_index = p_index!(piece);
                 let mut piece_color = p_color!(piece);
                 let square_index =
-                    (rank as u32) * (state.files as u32) + (file as u32);
+                    (rank as u32) * (state.statics.files as u32)
+                + (file as u32);
 
                 if promotions!(state)
                     && piece.promotions.len() == 1
                     && get!(
-                        state.promotion_zones_mandatory[piece_index as usize],
+                        state.statics
+                            .promotion_zones_mandatory[piece_index as usize],
                         square_index
                     )
                 {
-                    piece = &state.pieces[piece.promotions[0] as usize];
+                    piece = &state.statics.pieces[
+                        piece.promotions[0] as usize
+                    ];
                     piece_index = p_index!(piece);
                     piece_color = p_color!(piece);
                 }
@@ -1667,7 +1690,10 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     state.big_pieces[piece_color as usize] += 1;
                 }
 
-                if get!(state.initial_setup[piece_index as usize], square_index)
+                if get!(
+                    state.statics.initial_setup[piece_index as usize],
+                    square_index
+                )
                 {
                     set!(state.virgin_board, square_index);
                 }
@@ -1719,7 +1745,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     panic!("Invalid en passant captured square: {}", e)
                 });
             let piece_char = z.chars().next().unwrap();
-            let piece_index = *state
+            let piece_index = *state.statics
                 .piece_char_map
                 .get(&piece_char)
                 .unwrap_or_else(|| panic!("Unknown piece character: {}", z))
@@ -1762,7 +1788,7 @@ pub fn parse_fen(state: &mut State, fen: &str) {
                     })
                 };
 
-                let piece_index = *state
+                let piece_index = *state.statics
                     .piece_char_map
                     .get(&piece_char)
                     .unwrap_or_else(|| {
@@ -1884,9 +1910,12 @@ pub fn combine_board_strings(board1: &str, board2: &str) -> String {
 
 pub fn format_game_state(state: &State) -> String {
     let board_size = state.main_board.len();
-    let piece_count = state.pieces.len();
+    let piece_count = state.statics.pieces.len();
 
-    let mut all_boards = vec![board!(state.files, state.ranks); piece_count];
+    let mut all_boards = vec![
+        board!(state.statics.files, state.statics.ranks);
+        piece_count
+    ];
 
     for square in 0..board_size {
         let piece_idx = state.main_board[square];
@@ -1898,7 +1927,7 @@ pub fn format_game_state(state: &State) -> String {
     all_boards
         .iter()
         .enumerate()
-        .map(|(i, b)| format_board(b, Some(state.pieces[i].char)))
+        .map(|(i, b)| format_board(b, Some(state.statics.pieces[i].char)))
         .reduce(|board_str, next_board| {
             combine_board_strings(&board_str, &next_board)
         })
@@ -1908,12 +1937,13 @@ pub fn format_game_state(state: &State) -> String {
 pub fn format_fen(state: &State) -> String {
     let mut fen = String::new();
 
-    for rank in (0..state.ranks).rev() {
+    for rank in (0..state.statics.ranks).rev() {
         let mut empty_count = 0;
 
-        for file in 0..state.files {
+        for file in 0..state.statics.files {
             let square_index =
-                (rank as u32) * (state.files as u32) + (file as u32);
+                (rank as u32) * (state.statics.files as u32)
+                + (file as u32);
             let piece_idx = state.main_board[square_index as usize];
             if piece_idx == NO_PIECE {
                 empty_count += 1;
@@ -1922,7 +1952,7 @@ pub fn format_fen(state: &State) -> String {
                     fen.push_str(&empty_count.to_string());
                     empty_count = 0;
                 }
-                fen.push(state.pieces[piece_idx as usize].char);
+                fen.push(state.statics.pieces[piece_idx as usize].char);
             }
         }
 
@@ -1997,7 +2027,7 @@ pub fn format_en_passant_square(state: &State) -> String {
         let en_passant_piece_sq = enp_captured!(state.en_passant_square);
 
         let en_passant_piece_char =
-            state.pieces[en_passant_piece_idx as usize].char;
+            state.statics.pieces[en_passant_piece_idx as usize].char;
 
         format!(
             "{:03x}{:03x}{}",
@@ -2010,7 +2040,7 @@ pub fn format_hand(state: &State, color: u8) -> String {
     let pieces_in_hand = &state.piece_in_hand[color as usize];
     let mut hand = String::new();
 
-    for (i, piece) in state.pieces.iter().enumerate() {
+    for (i, piece) in state.statics.pieces.iter().enumerate() {
         let count = pieces_in_hand[i];
         if count == 1 {
             hand.push(piece.char);
@@ -2111,7 +2141,7 @@ pub fn format_game_phase(state: &State) -> String {
 }
 
 pub fn format_special_rules(state: &State) -> String {
-    if state.special_rules == 0 {
+    if state.statics.special_rules == 0 {
         return "-".to_string();
     }
 

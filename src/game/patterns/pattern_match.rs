@@ -73,7 +73,8 @@ pub type Pattern = (PatternAllower, PatternStopper);
 pub type PatternSet = Vec<Pattern>;
 
 fn expand_wildcard(expr: &str, state: &State) -> String {
-    let all_pieces = state.pieces.iter().map(|p| p.char).collect::<String>();
+    let all_pieces = state.statics.pieces.iter()
+        .map(|p| p.char).collect::<String>();
 
     let expr = expr.replace("~*", &format!("~{}", all_pieces));
     expr.replace("-*", &format!("-{}", all_pieces))
@@ -142,7 +143,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
                 let piece_index = if piece_char == '?' {
                     NO_PIECE as Square
                 } else {
-                    state.piece_char_map[&piece_char] as u16
+                    state.statics.piece_char_map[&piece_char] as u16
                 };
                 piece_set.insert(piece_index as PieceIndex);
             }
@@ -196,7 +197,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
                 let piece_index = if piece_char == '?' {
                     NO_PIECE as Square
                 } else {
-                    state.piece_char_map[&piece_char] as u16
+                    state.statics.piece_char_map[&piece_char] as u16
                 };
                 piece_set.insert(piece_index as PieceIndex);
             }
@@ -223,8 +224,8 @@ pub fn match_pattern(
 ) -> bool {
     let (allowers, stoppers) = pattern;
 
-    let file = square % state.files as u32;
-    let rank = square / state.files as u32;
+    let file = square % state.statics.files as u32;
+    let rank = square / state.statics.files as u32;
 
     for allower in allowers {
         let x = x!(allower.0) as i32 * (-2 * color as i32 + 1);
@@ -233,7 +234,8 @@ pub fn match_pattern(
 
         let check_x = file as i32 + x;
         let check_y = rank as i32 + y;
-        let check_index = (check_y * state.files as i32 + check_x) as usize;
+        let check_index =
+            (check_y * state.statics.files as i32 + check_x) as usize;
 
         let piece_check = state.main_board[check_index];
 
@@ -249,7 +251,8 @@ pub fn match_pattern(
 
         let check_x = file as i32 + x;
         let check_y = rank as i32 + y;
-        let check_index = (check_y * state.files as i32 + check_x) as usize;
+        let check_index =
+            (check_y * state.statics.files as i32 + check_x) as usize;
 
         let piece_check = state.main_board[check_index];
 
@@ -292,8 +295,8 @@ pub fn generate_relevant_stand_offs(
 
     'outer: for pattern in pattern_set {
         let (allowers, stoppers) = pattern;
-        let file = square % state.files as u32;
-        let rank = square / state.files as u32;
+        let file = square % state.statics.files as u32;
+        let rank = square / state.statics.files as u32;
 
         for allower in allowers {
             let x = x!(allower.0) as i32 * (-2 * piece_color as i32 + 1);
@@ -303,9 +306,9 @@ pub fn generate_relevant_stand_offs(
             let check_y = rank as i32 + y;
 
             if check_x < 0
-                || check_x >= state.files as i32
+                || check_x >= state.statics.files as i32
                 || check_y < 0
-                || check_y >= state.ranks as i32
+                || check_y >= state.statics.ranks as i32
             {
                 continue 'outer;
             }
@@ -319,9 +322,9 @@ pub fn generate_relevant_stand_offs(
             let check_y = rank as i32 + y;
 
             if check_x < 0
-                || check_x >= state.files as i32
+                || check_x >= state.statics.files as i32
                 || check_y < 0
-                || check_y >= state.ranks as i32
+                || check_y >= state.statics.ranks as i32
             {
                 continue 'outer;
             }
@@ -348,13 +351,13 @@ macro_rules! is_in_stand_off {
         'main: for (index, position) in $state.piece_list.iter().enumerate() {
             for &square in position {
                 for pattern in
-                    &$state.relevant_stand_offs
+                    &$state.statics.relevant_stand_offs
                         [index * board_size + square as usize]
                 {
                     if match_pattern(
                         pattern,
                         square as u32,
-                        p_color!($state.pieces[index]),
+                        p_color!($state.statics.pieces[index]),
                         &$state,
                     ) {
                         found = true;

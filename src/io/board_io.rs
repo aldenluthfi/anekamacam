@@ -17,10 +17,10 @@
 use crate::*;
 
 pub fn format_square(index: u16, state: &State) -> String {
-    let file = (index % state.files as u16) as u8;
-    let rank = (index / state.files as u16) as u8;
+    let file = (index % state.statics.files as u16) as u8;
+    let rank = (index / state.statics.files as u16) as u8;
 
-    if state.files <= 26 {
+    if state.statics.files <= 26 {
         let file_char = (b'a' + file) as char;
         format!("{}{}", file_char, rank).trim().to_string()
     } else {
