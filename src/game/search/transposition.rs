@@ -152,7 +152,7 @@ macro_rules! tt_score {
                         TRANSPOSITION TABLE STORE / PROBE
 \*----------------------------------------------------------------------------*/
 
-/// Probes the TT with parity + seqlock integrity check; returns (valid, score, 
+/// Probes the TT with parity + seqlock integrity check; returns (valid, score,
 /// pseudo_move).
 ///
 /// Validation:
@@ -256,7 +256,7 @@ macro_rules! probe_pv_move {
                     None
                 } else {
                     $table.valid.fetch_add(1, Ordering::Relaxed);               /* consistent read confirmed          */
-                    
+
                     let a_prime = s0;                                           /* a = slot[0] (direct)               */
                     let b_prime = s1;                                           /* b = slot[1] (direct)               */
                     let sig = (b_prime >> 32) as u64;                           /* bits 32-95 = MoveSignature         */
@@ -274,11 +274,11 @@ macro_rules! probe_pv_move {
 
 /// Stores a search result in the TT with seqlock write protection and parity.
 ///
-/// Write order: 
+/// Write order:
 ///
 /// version++ (lock) → slot[0] → slot[1] → slot[2] → age → version++ (unlock).
-/// 
-/// Parity (slot[2]) is written last so a reader seeing fresh parity sees fresh 
+///
+/// Parity (slot[2]) is written last so a reader seeing fresh parity sees fresh
 /// data too.
 #[macro_export]
 macro_rules! hash_tt_entry {
@@ -296,13 +296,13 @@ macro_rules! hash_tt_entry {
         tt_enc_depth!(encoded, $depth);
 
         let mut store_score = $score;
-        
+
         if store_score > MATE_SCORE {
             store_score += $state.search_ply as i32;
         } else if store_score < -MATE_SCORE {
             store_score -= $state.search_ply as i32;
         }
-        
+
         tt_enc_score!(encoded, store_score);
 
         let a = $tt_move.0;                                                     /* move.0 128-bit                     */
@@ -321,7 +321,7 @@ macro_rules! hash_tt_entry {
         entry.slot[2] = a ^ b ^ hash;                                           /* parity = a ^ b ^ c (written last)  */
         entry.age = $table.age.load(Ordering::Relaxed);
         entry.version.fetch_add(1, Ordering::Release);                          /* seqlock unlock: version now even   */
-}};
+    }};
 }
 
 #[macro_export]
