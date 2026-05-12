@@ -143,12 +143,8 @@ pub fn init_logging() {
         .format_module_path(false)
         .format_source_path(false)
         .format(|buf, record| {
-            let timestamp_raw = buf.timestamp_millis().to_string();
+            let timestamp_raw = buf.timestamp_nanos().to_string();
             let timestamp = timestamp_raw
-                .trim_end_matches('Z')
-                .split('.')
-                .next()
-                .unwrap_or(&timestamp_raw)
                 .replace('T', " ");
 
             let file = record.file().and_then(|path| {

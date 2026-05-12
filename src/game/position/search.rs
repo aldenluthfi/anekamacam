@@ -173,32 +173,32 @@ pub fn iterative_deepening(
             .and_then(|n| n.checked_div(elapsed))
             .unwrap_or(0);
 
-        if thread_num == 0 {
-            log_4!(
-                concat!(
-                    "Score: {:>6} | Best Move: {:<8} | ",
-                    "Depth Nodes: {:>12} | ",
-                    "NPS: {:>12}",
-                ),
-                best_score,
-                format_move(&best_move, state),
-                nodes,
-                depth_nps,
-            );
+        log_4!(
+            concat!(
+                "(Thread {}) Score: {:>6} | Best Move: {:<8} | ",
+                "Depth Nodes: {:>12} | ",
+                "NPS: {:>12}",
+            ),
+            thread_num,
+            best_score,
+            format_move(&best_move, state),
+            nodes,
+            depth_nps,
+        );
 
-            log_3!(
-                "Depth {:>2} | Time: {:>10} | Best Line: {}",
-                depth,
-                format_time(elapsed),
-                state.pv_line
-                    .iter()
-                    .take(depth)
-                    .take_while(|m| m != &&null_move())
-                    .map(|m| format_move(m, state))
-                    .collect::<Vec<String>>()
-                    .join(" ")
-            );
-        }
+        log_3!(
+            "(Thread {}) Depth {:>2} | Time: {:>10} | Best Line: {}",
+            thread_num,
+            depth,
+            format_time(elapsed),
+            state.pv_line
+                .iter()
+                .take(depth)
+                .take_while(|m| m != &&null_move())
+                .map(|m| format_move(m, state))
+                .collect::<Vec<String>>()
+                .join(" ")
+        );
     }
 
     let total_nodes = info.nodes;
@@ -209,19 +209,19 @@ pub fn iterative_deepening(
         .and_then(|n| n.checked_div(total_elapsed))
         .unwrap_or(0);
 
-    if thread_num == 0 {
-        log_1!(
-            concat!(
-                "Search complete | Final Score: {:>6} | Best Move: {:<8} | ",
-                "Total Nodes: {:>12} | Total Time: {:>10} | NPS: {:>12}"
-            ),
-            best_score,
-            format_move(&best_move, state),
-            total_nodes,
-            format_time(total_elapsed),
-            nps
-        );
-    }
+    log_1!(
+        concat!(
+            "(Thread {}) ",
+            "Search complete | Final Score: {:>6} | Best Move: {:<8} | ",
+            "Total Nodes: {:>12} | Total Time: {:>10} | NPS: {:>12}"
+        ),
+        thread_num,
+        best_score,
+        format_move(&best_move, state),
+        total_nodes,
+        format_time(total_elapsed),
+        nps
+    );
 
     SearchResult {
         best_score,
@@ -254,10 +254,6 @@ pub fn alpha_beta(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
-    if state.game_over {
-        return 0;
-    }
-
     let in_check = is_in_check!(state.playing, state);
 
     if in_check {
@@ -272,7 +268,6 @@ pub fn alpha_beta(
     if depth == 0 {
         return quiescence_search(state, table, alpha, beta, info);
     }
-
 
     let static_eval = evaluate_position!(state);
 

@@ -30,10 +30,6 @@ pub fn quiescence_search(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
-    if state.game_over {
-        return 0;
-    }
-
     info.nodes += 1;
     if info.nodes & 2047 == 0 {
         check_interrupt(info);
