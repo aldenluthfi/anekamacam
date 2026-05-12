@@ -20,14 +20,16 @@ use crate::*;
 /// - Quiet/drop moves: killer/history priority
 /// - Single capture : `captured_value + most_valuable - attacker_value`
 /// - Multi-capture  : `sum(captured_values) + most_valuable - attacker_value`
-/// - PV move        : `2 * most_valuable_piece + 1`
+/// - PV move        : `u16::MAX`
 ///
 /// `pv_move` should be probed once per node and forwarded into this function
 /// to avoid repeated hash-table lookups while ordering the full move list.
 ///
 /// A larger score means the move should be searched earlier.
 #[inline(always)]
-pub fn score_move(state: &State, mv: &Move, pv_move: &Option<PseudoMove>) -> u16 {
+pub fn score_move(
+    state: &State, mv: &Move, pv_move: &Option<PseudoMove>,
+) -> u16 {
     let move_type = move_type!(mv);
 
     let mut score =
@@ -36,33 +38,44 @@ pub fn score_move(state: &State, mv: &Move, pv_move: &Option<PseudoMove>) -> u16
     {
         let killers = &state.killer_hist[state.search_ply as usize];
         if *mv == killers[0] {
-            state.most_valuable - 1 + MAX_DEPTH as u16                          /* + MAX_DEPTH so it beats history    */
+            state.statics.most_valuable - 1 + MAX_DEPTH as u16              /* + MAX_DEPTH so it beats history    */
         } else if *mv == killers[1] {
-            state.most_valuable - 2 + MAX_DEPTH as u16                          /* + MAX_DEPTH so it beats history    */
+            state.statics.most_valuable - 2 + MAX_DEPTH as u16              /* + MAX_DEPTH so it beats history    */
         } else {
             state.search_hist[piece!(mv) as usize][end!(mv) as usize]
         }
     } else {
-        let attacker_value = p_ovalue!(state.pieces[piece!(mv) as usize]);
+        let attacker_value =
+            p_ovalue!(state.statics.pieces[piece!(mv) as usize]);
 
         if move_type == SINGLE_CAPTURE_MOVE {
-            let captured =
-                p_ovalue!(state.pieces[captured_piece!(mv) as usize]);
-            captured + state.most_valuable - attacker_value + MAX_DEPTH as u16  /* + MAX_DEPTH so it beats history    */
+            let captured = p_ovalue!(
+                state.statics.pieces[captured_piece!(mv) as usize]
+            );
+            captured
+            + state.statics.most_valuable
+            - attacker_value
+            + MAX_DEPTH as u16                                                  /* + MAX_DEPTH so it beats history    */
         } else {
             let mut total = 0;
             for cap in mv.1.iter() {
-                total +=
-                    p_ovalue!(
-                        state.pieces[multi_move_captured_piece!(cap) as usize]
-                    );
+                total += p_ovalue!(
+                    state.statics.pieces[
+                        multi_move_captured_piece!(cap) as usize
+                    ]
+                );
             }
 
-            total + state.most_valuable - attacker_value + MAX_DEPTH as u16     /* + MAX_DEPTH so it beats history    */
+            total
+            + state.statics.most_valuable
+            - attacker_value
+            + MAX_DEPTH as u16                                                  /* + MAX_DEPTH so it beats history    */
         }
     };
 
-    if pv_move.as_ref().is_some_and(|pm| pm.0 == mv.0 && pm.1 == move_signature!(mv)) {
+    if pv_move.as_ref().is_some_and(
+        |pm| pm.0 == mv.0 && pm.1 == move_signature!(mv)
+    ) {
         score = u16::MAX                                                        /* PV move should always be best      */
     }
 
@@ -71,9 +84,9 @@ pub fn score_move(state: &State, mv: &Move, pv_move: &Option<PseudoMove>) -> u16
 
 /// Selects the best-scoring move in `moves[index..]` and swaps it into `index`.
 ///
-/// This is a selection-sort step used inside alpha-beta's move loop so we can
-/// avoid sorting the entire move list up front. Combined with cutoffs, this
-/// typically performs fewer comparisons and allocations than full sorting.
+/// A selection-sort step used inside alpha-beta's move loop to avoid sorting
+/// the entire move list up front. Combined with cutoffs, this typically
+/// performs fewer comparisons and allocations than full sorting.
 ///
 /// `pv_move` should be the value probed once at the current node.
 #[inline(always)]

@@ -63,6 +63,7 @@ pub mod io {
 
 pub mod prelude;
 
+#[hotpath::main]
 fn main() {
     init_logging();
     let _ = tui();

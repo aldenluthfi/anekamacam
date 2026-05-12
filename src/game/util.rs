@@ -26,16 +26,16 @@ pub fn random_u128() -> u128 {
 
 /// Recomputes opening/endgame eval caches and current game phase.
 ///
-/// This function is used after position-level changes (load, tune import,
-/// make/undo move) to keep material, pst bonus, and phase classification in
-/// sync with `piece_list` and PST tables.
+/// Used after position-level changes (load, tune import, make/undo move) to
+/// keep material, PST bonus, and phase classification in sync with `piece_list`
+/// and PST tables.
 pub fn refresh_eval_state(state: &mut State) {
     state.opening_material = [0; 2];
     state.endgame_material = [0; 2];
     state.opening_pst_bonus = [0; 2];
     state.endgame_pst_bonus = [0; 2];
 
-    for (piece_idx, piece) in state.pieces.iter().enumerate() {
+    for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
         let color = p_color!(piece) as usize;
 
         for square in &state.piece_list[piece_idx] {
@@ -43,9 +43,9 @@ pub fn refresh_eval_state(state: &mut State) {
             state.endgame_material[color] += p_evalue!(piece) as u32;
 
             state.opening_pst_bonus[color] +=
-                state.pst_opening[piece_idx][*square as usize];
+                state.statics.pst_opening[piece_idx][*square as usize];
             state.endgame_pst_bonus[color] +=
-                state.pst_endgame[piece_idx][*square as usize];
+                state.statics.pst_endgame[piece_idx][*square as usize];
         }
     }
 
@@ -53,9 +53,9 @@ pub fn refresh_eval_state(state: &mut State) {
 
     state.game_phase = if state.game_phase == SETUP {
         SETUP
-    } else if game_phase_score > state.opening_score {
+    } else if game_phase_score > state.statics.opening_score {
         OPENING
-    } else if game_phase_score < state.endgame_score {
+    } else if game_phase_score < state.statics.endgame_score {
         ENDGAME
     } else {
         MIDDLEGAME
@@ -64,10 +64,10 @@ pub fn refresh_eval_state(state: &mut State) {
 
 /// Calculates the distance between two squares on the board.
 pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
-    let file1 = sq1 % state.files as Square;
-    let rank1 = sq1 / state.files as Square;
-    let file2 = sq2 % state.files as Square;
-    let rank2 = sq2 / state.files as Square;
+    let file1 = sq1 % state.statics.files as Square;
+    let rank1 = sq1 / state.statics.files as Square;
+    let file2 = sq2 % state.statics.files as Square;
+    let rank2 = sq2 / state.statics.files as Square;
 
     let df = (file1 as i32 - file2 as i32).abs() as f64;
     let dr = (rank1 as i32 - rank2 as i32).abs() as f64;
@@ -77,17 +77,22 @@ pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
 
 /// Recomputes derived state and asserts it matches the stored caches.
 ///
-/// This is a debug integrity check for boards, piece lists, material counts,
-/// royal lists, and the incremental Zobrist hash. On hash mismatch it also
-/// attempts to pinpoint likely sources before panicking.
+/// Debug integrity check for boards, piece lists, material counts, royal
+/// lists, and the incremental Zobrist hash. On mismatch it also attempts to
+/// pinpoint the source before panicking.
 pub fn verify_game_state(state: &State) {
-    let mut temp_white_board = board!(state.files, state.ranks);
-    let mut temp_black_board = board!(state.files, state.ranks);
-    let mut temp_piece_list = vec![HashSet::new(); state.pieces.len()];
+    let mut temp_white_board = board!(
+        state.statics.files, state.statics.ranks
+    );
+    let mut temp_black_board = board!(
+        state.statics.files, state.statics.ranks
+    );
+    let mut temp_piece_list =
+        vec![HashSet::new(); state.statics.pieces.len()];
 
     for (square, piece_idx) in state.main_board.iter().enumerate() {
         if *piece_idx != NO_PIECE {
-            let piece = &state.pieces[*piece_idx as usize];
+            let piece = &state.statics.pieces[*piece_idx as usize];
 
             if p_color!(piece) == WHITE {
                 set!(temp_white_board, square as u32);
@@ -122,7 +127,9 @@ pub fn verify_game_state(state: &State) {
         format_game_state(state)
     );
 
-    let mut temp_pieces_board = board!(state.files, state.ranks);
+    let mut temp_pieces_board = board!(
+        state.statics.files, state.statics.ranks
+    );
 
     or!(temp_pieces_board, &temp_white_board);
     or!(temp_pieces_board, &temp_black_board);
@@ -135,7 +142,7 @@ pub fn verify_game_state(state: &State) {
     let mut temp_opening_pst_bonus = [0; 2];
     let mut temp_endgame_pst_bonus = [0; 2];
 
-    for (i, piece) in state.pieces.iter().enumerate() {
+    for (i, piece) in state.statics.pieces.iter().enumerate() {
         let piece_indices = &state.piece_list[i];
 
         for square in piece_indices {
@@ -153,9 +160,9 @@ pub fn verify_game_state(state: &State) {
             temp_opening_material[color] += p_ovalue!(piece) as u32;
             temp_endgame_material[color] += p_evalue!(piece) as u32;
             temp_opening_pst_bonus[color] +=
-                state.pst_opening[i][*square as usize];
+                state.statics.pst_opening[i][*square as usize];
             temp_endgame_pst_bonus[color] +=
-                state.pst_endgame[i][*square as usize];
+                state.statics.pst_endgame[i][*square as usize];
         }
     }
 
@@ -210,9 +217,9 @@ pub fn verify_game_state(state: &State) {
 
     for (square, piece_index) in state.main_board.iter().enumerate() {
         if *piece_index != NO_PIECE
-        && p_is_royal!(state.pieces[*piece_index as usize])
+        && p_is_royal!(state.statics.pieces[*piece_index as usize])
         {
-            let piece = &state.pieces[*piece_index as usize];
+            let piece = &state.statics.pieces[*piece_index as usize];
 
             temp_royal_list[p_color!(piece) as usize]
                 .push(square as Square);
@@ -237,7 +244,7 @@ pub fn verify_game_state(state: &State) {
             &EN_PASSANT_HASHES[enp_square!(state.en_passant_square) as usize];
     }
 
-    for piece in &state.pieces {
+    for piece in &state.statics.pieces {
         let i = p_index!(piece) as usize;
 
         let piece_indices = &state.piece_list[i];
@@ -267,7 +274,7 @@ pub fn verify_game_state(state: &State) {
                             "position {} for piece {}"
                         ),
                         format_square(pos_idx as Square, state),
-                        state.pieces[piece_idx].name,
+                        state.statics.pieces[piece_idx].name,
                     );
                 }
             }
@@ -386,9 +393,9 @@ pub fn format_time(nanos: u128) -> String {
     }
 }
 
-/// Runs a perft test without a truth suite, just reporting the total nodes and
-/// elapsed time for a given depth. This is useful for quick sanity checks and
-/// performance profiling without needing a full suite of expected results.
+/// Runs a perft test without a truth suite, reporting total nodes and elapsed
+/// time for a given depth. For quick sanity checks and performance profiling
+/// without needing a full suite of expected results.
 pub fn benchmark_headless_perft(state: &mut State, depth: u8, branch: i8) {
     log_1!(
         "Headless perft started with depth {} and branching {}...",
@@ -528,8 +535,8 @@ pub fn benchmark_perft(
 
 /// Runs a fixed-depth search benchmark from the current position.
 ///
-/// This reports the current position, executes search, and logs total nodes,
-/// elapsed wall time, and aggregate nodes-per-second.
+/// Reports the current position, executes search, and logs total nodes, elapsed
+/// wall time, and aggregate nodes-per-second.
 pub fn benchmark_search(
     state: &mut State, table: Arc<TTable>, depth: usize, thread_num: usize
 ) {
@@ -542,8 +549,8 @@ pub fn benchmark_search(
 
 /// Counts legal move tree nodes from the current state up to `depth`.
 ///
-/// When `branch >= 0`, this also prints the explored move prefixes for the
-/// first levels to help inspect branching behavior.
+/// When `branch >= 0`, prints the explored move prefixes for the first levels
+/// to help inspect branching behavior.
 pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     if depth == 0 {
         if branch >= 0 {

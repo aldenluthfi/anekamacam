@@ -174,29 +174,31 @@ struct OverviewState {
 impl OverviewState {
     fn from_state(state: &State) -> Self {
         let mut configs = Vec::new();
-        configs.push(("Title".to_string(), state.title.clone(), 1));
+        configs.push(("Title".to_string(), state.statics.title.clone(), 1));
         configs.push((
             "Board Size".to_string(),
-            format!("{}x{}", state.files, state.ranks),
+            format!("{}x{}", state.statics.files, state.statics.ranks),
             1
         ));
         configs.push((
-            "Opening Score".to_string(), state.opening_score.to_string(), 1
+            "Opening Score".to_string(),
+            state.statics.opening_score.to_string(), 1
         ));
         configs.push((
-            "Endgame Score".to_string(), state.endgame_score.to_string(), 1
+            "Endgame Score".to_string(),
+            state.statics.endgame_score.to_string(), 1
         ));
 
         if halfmove_clock!(state) {
             configs.push((
                 "Halfmove Limit".to_string(),
-                state.halfmove_limit.to_string(), 1
+                state.statics.halfmove_limit.to_string(), 1
             ));
         }
         if repetition_limit!(state) {
             configs.push((
                 "Repetition Limit".to_string(),
-                state.repetition_limit.to_string(), 1
+                state.statics.repetition_limit.to_string(), 1
             ));
         }
 
@@ -245,13 +247,17 @@ impl OverviewState {
         let mut piece_map: HashMap<String, OverviewPiece> = HashMap::new();
         let mut piece_names = Vec::new();
 
-        for (i, piece) in state.pieces.iter().enumerate() {
+        for (i, piece) in state.statics.pieces.iter().enumerate() {
             let name = piece.name.clone();
             let color = p_color!(piece);
 
             let char_str = if color == WHITE {
-                let black_char = state.piece_swap_map.get(&(i as u8))
-                    .map(|&idx| state.pieces[idx as usize].char.to_string())
+                let black_char = state.statics.piece_swap_map
+                    .get(&(i as u8))
+                    .map(|&idx| {
+                        state.statics.pieces[idx as usize]
+                            .char.to_string()
+                    })
                     .unwrap_or_else(|| "-".to_string());
                 format!("{}{}", piece.char, black_char)
             } else {
@@ -285,7 +291,7 @@ impl OverviewState {
                 "-".to_string()
             } else {
                 piece.promotions.iter()
-                    .map(|&p| state.pieces[p as usize].name.clone())
+                    .map(|&p| state.statics.pieces[p as usize].name.clone())
                     .map(|p| p.to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
@@ -294,41 +300,47 @@ impl OverviewState {
             let eg_val = p_evalue!(piece);
 
             let mut op_pst_str = String::from("None");
-            if let Some(table) = state.pst_opening.get(i) {
+            if let Some(table) = state.statics.pst_opening.get(i) {
                 op_pst_str = format_numeric_board(
-                    table, state.files, state.ranks
+                    table, state.statics.files, state.statics.ranks
                 );
             }
             let mut eg_pst_str = String::from("None");
-            if let Some(table) = state.pst_endgame.get(i) {
+            if let Some(table) = state.statics.pst_endgame.get(i) {
                 eg_pst_str = format_numeric_board(
-                    table, state.files, state.ranks
+                    table, state.statics.files, state.statics.ranks
                 );
             }
 
             let forbidden_zones =
-            if forbidden_zones!(state) && !is_empty!(state.forbidden_zones[i]) {
-                Some(format_board(&state.forbidden_zones[i], Some('X')))
+            if forbidden_zones!(state)
+            && !is_empty!(state.statics.forbidden_zones[i])
+            {
+                Some(format_board(
+                    &state.statics.forbidden_zones[i], Some('X')
+                ))
             } else {
                 None
             };
 
             let mandatory_promotions =
             if promotions!(state)
-            && !is_empty!(state.promotion_zones_mandatory[i]) {
-                Some(
-                    format_board(&state.promotion_zones_mandatory[i], Some('X'))
-                )
+            && !is_empty!(state.statics.promotion_zones_mandatory[i]) {
+                Some(format_board(
+                    &state.statics.promotion_zones_mandatory[i],
+                    Some('X')
+                ))
             } else {
                 None
             };
 
             let optional_promotions =
             if promotions!(state)
-            && !is_empty!(state.promotion_zones_optional[i]) {
-                Some(
-                    format_board(&state.promotion_zones_optional[i], Some('X'))
-                )
+            && !is_empty!(state.statics.promotion_zones_optional[i]) {
+                Some(format_board(
+                    &state.statics.promotion_zones_optional[i],
+                    Some('X')
+                ))
             } else {
                 None
             };
@@ -413,7 +425,7 @@ impl BoardState {
         if halfmove_clock!(state) {
             halfmove_clock = format!("{}/{}",
                 state.halfmove_clock,
-                state.halfmove_limit
+                state.statics.halfmove_limit
             );
             details.push(["Halfmove Clock".to_string(), halfmove_clock]);
         }
@@ -425,7 +437,7 @@ impl BoardState {
                 .unwrap_or(1);
             repetition_count = format!("{}/{}",
                 count,
-                state.repetition_limit
+                state.statics.repetition_limit
             );
             details.push(["Repetition Count".to_string(), repetition_count]);
         }

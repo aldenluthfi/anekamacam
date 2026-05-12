@@ -40,7 +40,7 @@ pub fn format_move(mv: &Move, state: &State) -> String {
 
     if move_type == DROP_MOVE {
         let drop_piece = piece!(mv) as usize;
-        let piece_char = state.pieces[drop_piece].char;
+        let piece_char = state.statics.pieces[drop_piece].char;
 
         move_str.push_str(&format!("{}@", piece_char));
     }
@@ -102,7 +102,7 @@ pub fn format_move(mv: &Move, state: &State) -> String {
 
     if promotion!(mv) {
         let promo_piece = promoted!(mv) as usize;
-        let promo_char = state.pieces[promo_piece].char;
+        let promo_char = state.statics.pieces[promo_piece].char;
 
         move_str.push_str(&format!("={}", promo_char));
     }
