@@ -353,9 +353,11 @@ pub fn derive_parameters(state: &mut State) {
         let value = 100 + (normalized_value * 1400.0).round() as u16;           /* normalizes value from 100-1500     */
 
         set_piece_dynamic_parameters(
-            &mut state.static_mut().pieces[black_index], value, 0, false, false);
+            &mut state.static_mut().pieces[black_index], value, 0, false, false
+        );
         set_piece_dynamic_parameters(
-            &mut state.static_mut().pieces[white_index], value, 0, false, false);
+            &mut state.static_mut().pieces[white_index], value, 0, false, false
+        );
     }
 
     let piece_roles = derive_piece_roles(state);
@@ -423,29 +425,34 @@ pub fn derive_parameters(state: &mut State) {
         state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
     }
 
-    let pst_entries: Vec<(usize, Vec<i32>, Vec<i32>)> = state.statics.pieces.iter().map(|piece| {
-        let mut index = p_index!(piece);
+    let pst_entries: Vec<(usize, Vec<i32>, Vec<i32>)> =
+        state.statics.pieces.iter().map(|piece| {
+            let mut index = p_index!(piece);
 
-        if p_color!(piece) == BLACK {
-            index = state.statics.piece_swap_map[&(index as u8)] as PieceIndex;
-        }
+            if p_color!(piece) == BLACK {
+                index = state.statics.piece_swap_map[&(index as u8)] as PieceIndex;
+            }
 
-        let mut opening_pst = derive_pst(index, state, false);
-        let mut endgame_pst = derive_pst(index, state, true);
+            let mut opening_pst = derive_pst(index, state, false);
+            let mut endgame_pst = derive_pst(index, state, true);
 
-        if p_color!(piece) == BLACK {
-            opening_pst = mirror_pst_across_horizontal_axis(
-                &opening_pst, state.statics.files as usize, state.statics.ranks as usize
-            );
-            endgame_pst = mirror_pst_across_horizontal_axis(
-                &endgame_pst, state.statics.files as usize, state.statics.ranks as usize
-            );
+            if p_color!(piece) == BLACK {
+                opening_pst = mirror_pst_across_horizontal_axis(
+                    &opening_pst,
+                    state.statics.files as usize,
+                    state.statics.ranks as usize
+                );
+                endgame_pst = mirror_pst_across_horizontal_axis(
+                    &endgame_pst,
+                    state.statics.files as usize,
+                    state.statics.ranks as usize
+                );
 
-            index = state.statics.piece_swap_map[&(index as u8)] as PieceIndex;
-        }
+                index = state.statics.piece_swap_map[&(index as u8)] as PieceIndex;
+            }
 
-        (index as usize, opening_pst, endgame_pst)
-    }).collect();
+            (index as usize, opening_pst, endgame_pst)
+        }).collect();
 
     for (index, opening_pst, endgame_pst) in pst_entries {
         state.static_mut().pst_opening[index] = opening_pst;
