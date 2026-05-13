@@ -145,13 +145,33 @@ pub fn iterative_deepening(
 
     clear_search(state, table, info);
 
-    for depth in 1..=info.set_depth {
+    let start_depth = if thread_num == 0 { 1 } else { 1 + (thread_num % 3) };
+
+    for depth in start_depth..=info.set_depth {
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
-        let score = alpha_beta(
-            state, table, depth, -INFINITY, INFINITY, info, true
-        );
+        let score = if depth == start_depth {
+            alpha_beta(state, table, depth, -INFINITY, INFINITY, info, true)
+        } else {
+            let mut delta: i32 = 50;
+            let mut lo = best_score - delta;
+            let mut hi = best_score + delta;
+            loop {
+                let s = alpha_beta(
+                    state, table, depth, lo, hi, info, true
+                );
+                if info.interrupt { break s; }
+                if s <= lo {
+                    lo = -INFINITY;
+                } else if s >= hi {
+                    hi = INFINITY;
+                } else {
+                    break s;
+                }
+                delta = delta.saturating_mul(2);
+            }
+        };
 
         if info.interrupt {
             break;
