@@ -44,9 +44,7 @@ pub use crate::game::representations::{
 /*----------------------------------------------------------------------------*\
                                 GAME LOGIC API
 \*----------------------------------------------------------------------------*/
-pub use crate::game::drops::drop_list::{
-    generate_drop_list, generate_relevant_drops,
-};
+pub use crate::game::drops::drop_list::generate_relevant_drops;
 pub use crate::game::drops::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
     generate_all_captures, generate_all_moves_and_drops, generate_attack_masks,
@@ -63,8 +61,8 @@ pub use crate::game::patterns::pattern_match::{
 pub use crate::game::position::{
     hash::{PositionHash, hash_position},
     search::{
-        SearchInfo, SearchResult, alpha_beta, check_interrupt, clear_search,
-        search_position, iterative_deepening,
+        SearchBufs, SearchInfo, SearchResult, alpha_beta, check_interrupt,
+        clear_search, search_position, iterative_deepening,
     },
 };
 pub use crate::game::search::{
@@ -73,7 +71,7 @@ pub use crate::game::search::{
     quiescence::quiescence_search,
     see::{SimSnapshot, see_move},
     transposition::{TTEntry, TTable},
-    parameters::{derive_parameters}
+    parameters::derive_parameters,
 };
 
 pub use crate::game::util::{
@@ -294,3 +292,4 @@ pub const TUI_INPUT_MODE: u8 = 1;
 
 pub const MAX_LOGS_LEN: usize = 4096;
 pub const CONFIGS_DIR: &str = "configs";
+pub const MAX_SEE_DEPTH: usize = 32;

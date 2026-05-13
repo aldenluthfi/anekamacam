@@ -543,8 +543,9 @@ pub fn benchmark_search(
     log_1!("Search benchmark started with depth {}...", depth);
 
     let mut info = SearchInfo { set_depth: depth, ..Default::default() };
+    let mut bufs = SearchBufs::default();
 
-    search_position(state, table, &mut info, thread_num);
+    search_position(state, table, &mut info, &mut bufs, thread_num);
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.
