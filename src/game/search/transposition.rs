@@ -35,11 +35,12 @@ use crate::*;
                      TRANSPOSITION TABLE ENTRY REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// Transposition-table entry with parity-based corruption detection and seqlock.
+/// Transposition-table entry with parity-based corruption detection and
+/// seqlock.
 ///
 /// Slots layout:
 /// - slot[0] = a       = move.0 (128-bit, stored directly)
-/// - slot[1] = b       = sig<<32|encoded (128-bit, stored directly)
+/// - slot[1] = b       = sig << 32 | encoded (128-bit, stored directly)
 /// - slot[2] = parity  = a ^ b ^ c (all-slot parity for corruption detection)
 /// - age     = plain u64 (age-based replacement, NOT in parity)
 /// - version = seqlock counter (odd = writing, even = readable)
