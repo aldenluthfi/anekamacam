@@ -92,6 +92,7 @@ pub fn clear_search(
 
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
+    state.countermove_hist = vec![vec![null_move(); 1]; MAX_DEPTH];
 
     table.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     state.search_ply = 0;
@@ -141,13 +142,11 @@ pub fn iterative_deepening(
 
     clear_search(state, table, info, bufs);
 
-    let start_depth = if thread_num == 0 { 1 } else { 1 + (thread_num % 3) };
-
-    for depth in start_depth..=info.set_depth {
+    for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
-        let score = if depth == start_depth {
+        let score = if depth == 1 {
             alpha_beta(
                 state, table, depth, -INFINITY, INFINITY, info, bufs, true
             )
@@ -358,10 +357,23 @@ pub fn alpha_beta(
     null: bool,
 ) -> i32 {
     let mut alpha = alpha;
+    let mut beta = beta;
     let mut depth = depth;
 
     #[cfg(debug_assertions)]
     verify_game_state(state);
+
+    if alpha < -MATE_SCORE {
+        alpha = -MATE_SCORE;
+    }
+
+    if beta > MATE_SCORE - 1 {
+        beta = MATE_SCORE - 1;
+    }
+
+    if alpha >= beta {
+        return alpha;
+    }
 
     let in_check = is_in_check!(state.playing, state);
 
@@ -398,19 +410,38 @@ pub fn alpha_beta(
     let mut pv_capture = false;
 
     if let Some(pv_mv) = &pv_move
-        && (move_type!(pv_mv) == SINGLE_CAPTURE_MOVE
-        || move_type!(pv_mv) == MULTI_CAPTURE_MOVE)
-        {
-            pv_capture = true;
-        }
+    && (move_type!(pv_mv) == SINGLE_CAPTURE_MOVE
+    || move_type!(pv_mv) == MULTI_CAPTURE_MOVE)
+    {
+        pv_capture = true;
+    }
 
     if depth < 3
-    && (pv_move.is_none() && !pv_capture)
-    && !in_check                                                                 /* static eval pruning                */
+    && (pv_move.is_none() || !pv_capture)
+    && !in_check                                                                /* static eval pruning                */
     {
         let eval_margin = 150 * depth as i32;
         if static_eval - eval_margin >= beta {
-            return static_eval - eval_margin;
+            return beta;
+        }
+    }
+
+    if depth <= 4
+    && !in_check
+    && pv_move.is_none()
+    && alpha.abs() < MATE_SCORE
+    && state.game_phase != ENDGAME
+    && static_eval + 200 + 150 * (depth as i32) < alpha
+    {                                                                           /* razoring                           */
+        let shallow = alpha_beta(
+            state, table,
+            depth.saturating_sub(2),
+            alpha, alpha + 1,
+            info, bufs, null
+        );
+
+        if shallow <= alpha {
+            return alpha;
         }
     }
 
@@ -421,7 +452,7 @@ pub fn alpha_beta(
     && static_eval >= beta
     && state.search_ply > 0
     && state.game_phase != ENDGAME
-    {                                                                            /* null move pruning                  */
+    {                                                                           /* null move pruning                  */
         let reduction = 3 + if depth >= 6 { 1 } else { 0 };
         make_null_move!(state);
         let score = -alpha_beta(
@@ -440,9 +471,14 @@ pub fn alpha_beta(
     }
 
     let mut futile = false;
-    let futility_margin = [ 0, 200, 300, 500 ];
+    let futility_margin = match state.game_phase {
+        OPENING | SETUP => [0, 200, 350, 600, 900],
+        MIDDLEGAME => [0, 200, 300, 500, 750],
+        ENDGAME => [0, 150, 250, 400, 600],
+        _ => unreachable!(),
+    };
 
-    if depth < 4
+    if depth < futility_margin.len()
     && !in_check
     && pv_move.is_none()
     && alpha.abs() < MATE_SCORE
@@ -451,8 +487,8 @@ pub fn alpha_beta(
         futile = true;                                                          /* futility pruning                   */
     }
 
-    if pv_move.is_none() && depth > 5 {                                         /* IID: search shallower to seed TT   */
-        alpha_beta(state, table, depth - 3, alpha, beta, info, bufs, true);
+    if pv_move.is_none() && depth >= 5 {                                        /* IID: search shallower to seed TT   */
+        alpha_beta(state, table, depth - 2, alpha, beta, info, bufs, true);
         if !info.interrupt {
             pv_move = probe_pv_move!(state, table);
         }
@@ -476,11 +512,9 @@ pub fn alpha_beta(
         let mv_piece = piece!(mv) as usize;
         let mv_start = start!(mv);
         let mv_end = end!(mv);
-        let is_capture =
-            mv_type == SINGLE_CAPTURE_MOVE &&
-            !is_unload!(mv) ||
-            mv_type == MULTI_CAPTURE_MOVE &&
-            mv.1.iter().all(|cap| !multi_move_is_unload!(cap));
+        let is_capture = (mv_type == SINGLE_CAPTURE_MOVE && !is_unload!(mv))
+            || (mv_type == MULTI_CAPTURE_MOVE
+            && mv.1.iter().all(|cap| !multi_move_is_unload!(cap)));
         let is_promotion = promotion!(mv);
         let is_drop = mv_type == DROP_MOVE;
 
@@ -505,8 +539,8 @@ pub fn alpha_beta(
             continue;
         }
 
-        if depth > 4
-        && legal_moves > 3
+        if depth > 3
+        && legal_moves > 2
         && !opponent_in_check
         && !in_check
         && (mv_end != end!(state.killer_hist[state.search_ply as usize][0])
@@ -516,11 +550,19 @@ pub fn alpha_beta(
         && !is_capture
         && !is_promotion
         && !is_drop
-        {
-            reduct += 1;                                                        /* late move reduction                */
-
-            if legal_moves > 6 {
+        {                                                                       /* late move reduction                */
+            let history_score =
+                state.search_hist[mv_piece][mv_end as usize] as i32;
+            if history_score < -100 {                                           /* low history: extra reduction       */
                 reduct += 1;
+            } else if history_score > 200 {                                     /* high history: no reduction         */
+                reduct = 0;
+            } else {
+                reduct += 1;
+
+                if legal_moves > 5 {
+                    reduct += 1;
+                }
             }
 
             score = -alpha_beta(
@@ -551,6 +593,13 @@ pub fn alpha_beta(
 
             if score > alpha {
                 if score >= beta {
+                    let prev_ply =
+                        (state.search_ply as usize).saturating_sub(1);
+
+                    if prev_ply < MAX_DEPTH {
+                        state.countermove_hist[prev_ply][0] = best_move.clone();
+                    }
+
                     if !is_capture {
                         state.killer_hist[state.search_ply as usize].swap(1, 0);
                         state.killer_hist[state.search_ply as usize][0] =
