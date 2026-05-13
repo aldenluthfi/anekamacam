@@ -1,6 +1,10 @@
 //! # search.rs
 //!
-//! Defines search-time control and accounting data used by the engine.
+//! Alpha-beta search with iterative deepening, aspiration windows, and
+//! quiescence.
+//!
+//! SearchInfo and SearchBufs carry search-time limits, counters, and scratch
+//! allocations; SearchResult packages the output.
 //!
 //! # Author
 //! Alden Luthfi
@@ -10,29 +14,27 @@
 
 use crate::*;
 
-/// Tracks limits, counters, and stop flags for an active search.
+/// Search limits, counters, and stop flags for an active search.
 ///
-/// Contains only informational data: time controls, depth/move constraints,
-/// node accounting, and interruption flag. Mutable scratch and move buffers
-/// are kept in `SearchBufs` to separate functional allocations from
-/// reporting state.
+/// Carries time controls, depth/move constraints, node count, and interrupt
+/// flag. Scratch and move buffers live in SearchBufs.
 #[derive(Default)]
 pub struct SearchInfo {
-    pub start_time: u128,                                                       /* Start time since search start.     */
+    pub start_time: u128,                                                       /* start time since engine launch     */
 
-    pub set_depth: usize,                                                       /* Maximum search depth.              */
-    pub set_timed: u128,                                                        /* Time limit in ns (0 = inf)         */
-    pub set_moves: usize,                                                       /* Moves to go until time control.    */
+    pub set_depth: usize,                                                       /* maximum search depth               */
+    pub set_timed: u128,                                                        /* time limit in ns (0 = unlimited)   */
+    pub set_moves: usize,                                                       /* moves to go until time control     */
 
-    pub nodes: u128,                                                            /* Total nodes searched so far.       */
+    pub nodes: u128,                                                            /* total nodes searched so far        */
 
-    pub interrupt: bool,                                                        /* Flag set by external stop events.  */
+    pub interrupt: bool,                                                        /* flag set by external stop events   */
 }
 
 /// Per-thread scratch allocations reused across the full search tree.
 ///
-/// Kept separate from `SearchInfo` so that informational search data is not
-/// co-located with large heap allocations.
+/// move_buf holds pre-allocated per-ply move lists; scratch_buf is reused
+/// for taken_pieces computations.
 #[derive(Default)]
 pub struct SearchBufs {
     pub move_buf: Vec<Vec<Move>>,                                               /* per-ply move lists, pre-allocated  */
@@ -66,10 +68,10 @@ pub fn check_interrupt(info: &mut SearchInfo) {
     }
 }
 
-/// Clears per-search history/table state before a fresh root search.
+/// Resets search state before a fresh root search.
 ///
-/// This resets node counters, interruption flags, PV/killer/history tables,
-/// and ply tracking. It does not alter the current board position.
+/// Zeroes node counters, interrupt flag, killer and history tables, and ply.
+/// Board position is unchanged.
 pub fn clear_search(
     state: &mut State, table: &TTable,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
@@ -95,11 +97,8 @@ pub fn clear_search(
     state.search_ply = 0;
 }
 
-/// Runs iterative deepening alpha-beta and prints the current best line.
-///
-/// The search depth increases from `1..=info.depth`. After each completed
-/// iteration, the principal variation is extracted from the PV table and
-/// reported in UCI-style informational logs.
+/// Runs iterative deepening on a single thread or a thread pool, then logs
+/// transposition table statistics.
 pub fn search_position(
     state: &mut State, table: Arc<TTable>,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
@@ -250,14 +249,104 @@ pub fn iterative_deepening(
     }
 }
 
-/// Searches one node with negamax alpha-beta pruning.
+/// Capture-only search at leaf nodes; reduces horizon effects.
 ///
-/// Hot-path optimizations in this implementation:
-/// - PV move is probed once and reused for in-place move selection.
-/// - Remaining moves are selected in-place using MVV-LVA + killer/history.
-/// - Expensive full-state verification runs only in debug builds.
+/// Stand-pat score provides a lower bound. Captures are ordered with
+/// pick_by_score and searched with negamax, with delta pruning to skip
+/// clearly losing captures unless in endgame or promotion.
+fn quiescence_search(
+    state: &mut State,
+    table: &TTable,
+    alpha: i32,
+    beta: i32,
+    info: &mut SearchInfo,
+    bufs: &mut SearchBufs,
+) -> i32 {
+    let mut alpha = alpha;
+
+    #[cfg(debug_assertions)]
+    verify_game_state(state);
+
+    info.nodes += 1;
+    if info.nodes & 2047 == 0 {
+        check_interrupt(info);
+    }
+
+    let stand_pat = evaluate_position!(state);
+
+    if stand_pat >= beta {
+        return beta;
+    }
+
+    if stand_pat > alpha {
+        alpha = stand_pat;
+    }
+
+    let ply = state.search_ply as usize;
+    generate_all_captures(
+        state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+    );
+    let pv_move = probe_pv_move!(state, table);
+
+    for i in 0..bufs.move_buf[ply].len() {
+        pick_by_score!(state, &mut bufs.move_buf[ply], i, &pv_move);
+
+        let mv = bufs.move_buf[ply][i].clone();
+
+        let move_type = move_type!(mv);
+        let promotion = promotion!(mv);
+        let captured_value = if move_type == SINGLE_CAPTURE_MOVE {
+            p_ovalue!(
+                state.statics.pieces[captured_piece!(mv.clone()) as usize]
+            )
+        } else {
+            let mut total = 0;
+            for cap in mv.1.iter() {
+                total += p_ovalue!(state.statics.pieces[*cap as usize]);
+            }
+            total
+        };
+
+        if stand_pat + captured_value as i32 + 200 < alpha
+        && state.game_phase != ENDGAME
+        && !promotion
+        {                                                                       /* delta pruning                      */
+            continue;
+        }
+
+        if !make_move!(state, mv) {
+            continue;
+        }
+
+        let score =
+            -quiescence_search(state, table, -beta, -alpha, info, bufs);
+        undo_move!(state);
+
+        if info.interrupt {
+            return alpha;
+        }
+
+        if score > alpha {
+            if score >= beta {
+                return beta;
+            }
+
+            alpha = score;
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    verify_game_state(state);
+
+    alpha
+}
+
+/// Negamax alpha-beta with transposition table, null-move, futility pruning,
+/// late move reduction, IID, and check extension.
 ///
-/// Returns the best score for the current side to move.
+/// PV move probed once per node for move ordering. Captures ordered by
+/// SEE + most_valuable; quiet moves by killer and history heuristics.
+/// Full state verification runs only in debug builds.
 pub fn alpha_beta(
     state: &mut State,
     table: &TTable,
@@ -296,7 +385,7 @@ pub fn alpha_beta(
     }
 
     let mut pv_move: Option<PseudoMove> = None;
-    let tt_entry = probe_tt_entry!(state, table, alpha, beta, depth);           /* Transposition table lookup         */
+    let tt_entry = probe_tt_entry!(state, table, alpha, beta, depth);           /* transposition table lookup         */
 
     if tt_entry.2 != null_pseudo_move() {
         pv_move = Some(tt_entry.2);
@@ -317,7 +406,7 @@ pub fn alpha_beta(
 
     if depth < 3
     && (pv_move.is_none() && !pv_capture)
-    && !in_check                                                                /* Static eval pruning                */
+    && !in_check                                                                 /* static eval pruning                */
     {
         let eval_margin = 150 * depth as i32;
         if static_eval - eval_margin >= beta {
@@ -332,7 +421,7 @@ pub fn alpha_beta(
     && static_eval >= beta
     && state.search_ply > 0
     && state.game_phase != ENDGAME
-    {                                                                           /* Null move pruning                  */
+    {                                                                            /* null move pruning                  */
         let reduction = 3 + if depth >= 6 { 1 } else { 0 };
         make_null_move!(state);
         let score = -alpha_beta(
@@ -359,10 +448,10 @@ pub fn alpha_beta(
     && alpha.abs() < MATE_SCORE
     && static_eval + futility_margin[depth] <= alpha
     {
-        futile = true;                                                          /* Futility pruning                   */
+        futile = true;                                                          /* futility pruning                   */
     }
 
-    if pv_move.is_none() && depth > 5 {                                        /* IID: search shallower to seed TT   */
+    if pv_move.is_none() && depth > 5 {                                         /* IID: search shallower to seed TT   */
         alpha_beta(state, table, depth - 3, alpha, beta, info, bufs, true);
         if !info.interrupt {
             pv_move = probe_pv_move!(state, table);
@@ -380,7 +469,7 @@ pub fn alpha_beta(
     );
 
     for i in 0..bufs.move_buf[ply].len() {
-        pick_by_score(state, &mut bufs.move_buf[ply], i, &pv_move);
+        pick_by_score!(state, &mut bufs.move_buf[ply], i, &pv_move);
 
         let mv = bufs.move_buf[ply][i].clone();
         let mv_type = move_type!(mv);
@@ -411,7 +500,7 @@ pub fn alpha_beta(
         && !is_capture
         && !is_promotion
         && !is_drop
-        {                                                                       /* Futility pruning                   */
+        {                                                                       /* futility pruning                   */
             undo_move!(state);
             continue;
         }
@@ -428,7 +517,7 @@ pub fn alpha_beta(
         && !is_promotion
         && !is_drop
         {
-            reduct += 1;                                                        /* Late move reduction                */
+            reduct += 1;                                                        /* late move reduction                */
 
             if legal_moves > 6 {
                 reduct += 1;
