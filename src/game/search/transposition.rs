@@ -309,11 +309,13 @@ macro_rules! hash_tt_entry {
         let old_enc = (old_s1 & 0xFFFF_FFFF) as u32;
         let old_depth = tt_depth!(old_enc);
         let old_flags = tt_flags!(old_enc);
+        let depth_diff = ($depth as i32) - (old_depth as i32);
         let should_write = empty
             || different
-            || entry.age < cur_age
-            || $depth >= old_depth
-            || ($flags == FEXACT && old_flags != FEXACT);
+            || entry.age < cur_age.saturating_sub(1)
+            || depth_diff >= 2
+            || ($flags == FEXACT && old_flags != FEXACT)
+            || ($flags == FBETA && old_flags == FALPHA && depth_diff >= 0);
 
         if should_write {
             if empty {

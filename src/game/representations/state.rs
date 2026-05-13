@@ -426,7 +426,8 @@ pub struct State {
     pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
 
     pub search_hist: Vec<Vec<u16>>,                                             /* piece index to square to score     */
-    pub killer_hist: Vec<[Move; 2]>                                             /* search ply to killer moves         */
+    pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
+    pub countermove_hist: Vec<Vec<Move>>,                                       /* search ply to counter move         */
 }
 
 impl Clone for State {
@@ -472,6 +473,7 @@ impl Clone for State {
 
             search_hist: self.search_hist.clone(),
             killer_hist: self.killer_hist.clone(),
+            countermove_hist: self.countermove_hist.clone(),
         }
     }
 }
@@ -578,6 +580,7 @@ impl State {
 
             search_hist: vec![vec![0u16; board_size]; piece_count],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
+            countermove_hist: vec![vec![null_move(); 1]; MAX_DEPTH],
         }
     }
 
@@ -639,6 +642,7 @@ impl State {
 
         self.search_hist = vec![vec![0u16; board_size]; piece_count];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
+        self.countermove_hist = vec![vec![null_move(); 1]; MAX_DEPTH];
     }
 
     pub fn load_fen(&mut self, fen: &str) {
