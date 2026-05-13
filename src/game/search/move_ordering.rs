@@ -28,7 +28,7 @@ use crate::*;
 /// A larger score means the move should be searched earlier.
 #[inline(always)]
 pub fn score_move(
-    state: &State, mv: &Move, pv_move: &Option<PseudoMove>,
+    state: &mut State, mv: &Move, pv_move: &Option<PseudoMove>,
 ) -> u16 {
     let move_type = move_type!(mv);
 
@@ -38,39 +38,18 @@ pub fn score_move(
     {
         let killers = &state.killer_hist[state.search_ply as usize];
         if *mv == killers[0] {
-            state.statics.most_valuable - 1 + MAX_DEPTH as u16              /* + MAX_DEPTH so it beats history    */
+            state.statics.most_valuable - 1 + MAX_DEPTH as u16                  /* + MAX_DEPTH so it beats history    */
         } else if *mv == killers[1] {
-            state.statics.most_valuable - 2 + MAX_DEPTH as u16              /* + MAX_DEPTH so it beats history    */
+            state.statics.most_valuable - 2 + MAX_DEPTH as u16                  /* + MAX_DEPTH so it beats history    */
         } else {
             state.search_hist[piece!(mv) as usize][end!(mv) as usize]
         }
     } else {
-        let attacker_value =
-            p_ovalue!(state.statics.pieces[piece!(mv) as usize]);
-
-        if move_type == SINGLE_CAPTURE_MOVE {
-            let captured = p_ovalue!(
-                state.statics.pieces[captured_piece!(mv) as usize]
-            );
-            captured
-            + state.statics.most_valuable
-            - attacker_value
-            + MAX_DEPTH as u16                                                  /* + MAX_DEPTH so it beats history    */
-        } else {
-            let mut total = 0;
-            for cap in mv.1.iter() {
-                total += p_ovalue!(
-                    state.statics.pieces[
-                        multi_move_captured_piece!(cap) as usize
-                    ]
-                );
-            }
-
-            total
-            + state.statics.most_valuable
-            - attacker_value
-            + MAX_DEPTH as u16                                                  /* + MAX_DEPTH so it beats history    */
-        }
+        let see = see_move(state, mv);
+        let raw = state.statics.most_valuable as i32
+            + see
+            + MAX_DEPTH as i32;
+        raw.clamp(0, u16::MAX as i32) as u16
     };
 
     if pv_move.as_ref().is_some_and(
@@ -91,7 +70,7 @@ pub fn score_move(
 /// `pv_move` should be the value probed once at the current node.
 #[inline(always)]
 pub fn pick_by_score(
-    state: &State,
+    state: &mut State,
     moves: &mut [Move],
     index: usize,
     pv_move: &Option<PseudoMove>,

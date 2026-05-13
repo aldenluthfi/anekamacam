@@ -730,7 +730,7 @@ fn generate_move_list_from_vectors(
                 enc_capture_part!(encoded_move, scratch[0] as u128);
             } else {
                 enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = Arc::new(scratch.drain(..).collect());
+                encoded_move.1 = Arc::new(mem::take(scratch));
             }
 
             let entered_mandatory_promotion = get!(
@@ -803,7 +803,7 @@ fn generate_move_list_from_vectors(
                 enc_capture_part!(encoded_move, scratch[0] as u128);
             } else {
                 enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = Arc::new(scratch.drain(..).collect());
+                encoded_move.1 = Arc::new(mem::take(scratch));
             }
 
             out.push(encoded_move);
@@ -2789,6 +2789,389 @@ macro_rules! undo_null_move {
 
         #[cfg(debug_assertions)]
         verify_game_state($state);
+    }};
+}
+
+/// Validates a single MoveVector from a given square, collecting captures.
+///
+/// Mirrors the inner leg loop of `generate_move_list_from_vectors` without
+/// building a Move object. Sets `$out_end_sq` and `$valid = true` on success,
+/// or `$valid = false` if any leg condition fails. Clears `$out_captures`.
+#[macro_export]
+macro_rules! process_vector {
+    (
+        $state:expr, $start_sq:expr, $piece:expr, $vector:expr,
+        $out_captures:expr, $out_end_sq:expr, $valid:expr
+    ) => {{
+        $out_captures.clear();
+        $valid = 'pv_block: {
+            let piece_color = p_color!($piece);
+            let piece_rank = p_rank!($piece);
+            let piece_unmoved =
+                get!($state.virgin_board, $start_sq as u32);
+            let mut accumulated_index = $start_sq as i16;
+            let leg_count = $vector.len();
+
+            for (leg_index, leg) in $vector.iter().enumerate() {
+                let last_leg = leg_index + 1 == leg_count;
+                let mut taken_piece = 0u64;
+                let start_square = accumulated_index as u32;
+                let file_offset =
+                    x!(leg) * (-2 * piece_color as i8 + 1);
+                let rank_offset =
+                    y!(leg) * (-2 * piece_color as i8 + 1);
+                accumulated_index += (
+                    rank_offset * ($state.statics.files as i8)
+                    + file_offset
+                ) as i16;
+                let end_square = accumulated_index as u32;
+
+                let m = m!(leg) || (!c!(leg) && !d!(leg));
+                let c = c!(leg) || (last_leg && !m!(leg));
+                let d = d!(leg);
+                let u = u!(leg);
+                let k = k!(leg);
+                let g = g!(leg);
+                let v = v!(leg);
+                let t = t!(leg);
+                let i = i!(leg);
+                let not_k = not_k!(leg);
+                let not_g = not_g!(leg);
+                let not_v = not_v!(leg);
+                let not_i = not_i!(leg);
+                let l = l!(leg);
+                let r = r!(leg);
+                let special_i = i && not_i;
+                let special_v = v && not_v;
+                let castling_rights =
+                    piece_color as usize * 2 + l as usize;
+
+                if (i && !piece_unmoved || not_i && piece_unmoved)
+                    && !special_i
+                    || (special_i
+                        && is_square_attacked!(
+                            accumulated_index as u32,
+                            piece_color,
+                            piece_unmoved,
+                            p_is_royal!($piece),
+                            piece_rank,
+                            $state
+                        ))
+                    || ((l || r)
+                        && $state.castling_state
+                            & CASTLING[castling_rights] == 0)
+                {
+                    break 'pv_block false;
+                }
+
+                let friendly = get!(
+                    $state.pieces_board[piece_color as usize],
+                    end_square
+                ) && end_square != start_square;
+                let enemy = get!(
+                    $state.pieces_board[1 - piece_color as usize],
+                    end_square
+                );
+                let empty = !friendly && !enemy;
+                let pass_move =
+                    file_offset == 0 && rank_offset == 0;
+
+                if empty && !pass_move {
+                    if t && enp_square!($state.en_passant_square)
+                        == end_square
+                    {
+                        let capt_piece_index =
+                            enp_piece!($state.en_passant_square);
+                        let capt_piece_color = p_color!(
+                            $state.statics.pieces[
+                                capt_piece_index as usize
+                            ]
+                        );
+                        if d && capt_piece_color == piece_color
+                            || c && capt_piece_color != piece_color
+                        {
+                            enc_multi_move_captured_piece!(
+                                taken_piece,
+                                capt_piece_index as u64
+                            );
+                            let enp_cap = enp_captured!(
+                                $state.en_passant_square
+                            );
+                            enc_multi_move_captured_square!(
+                                taken_piece,
+                                enp_cap as u64
+                            );
+                            let capt_piece = &$state.statics.pieces[
+                                capt_piece_index as usize
+                            ];
+                            let capt_unmoved =
+                                get!($state.virgin_board, enp_cap);
+                            let capt_rank = p_rank!(capt_piece);
+                            let capt_royal = p_is_royal!(capt_piece);
+                            if k || not_k && capt_royal
+                                || g && piece_rank >= capt_rank
+                                || not_g && piece_rank < capt_rank
+                                || (v && !capt_unmoved
+                                    || not_v && capt_unmoved)
+                                    && !special_v
+                            {
+                                break 'pv_block false;
+                            }
+                            enc_multi_move_captured_unmoved!(
+                                taken_piece,
+                                capt_unmoved as u64
+                            );
+                            $out_captures.push(taken_piece);
+                        } else {
+                            break 'pv_block false;
+                        }
+                    } else if !m {
+                        break 'pv_block false;
+                    }
+                } else if friendly && !pass_move {
+                    if !d {
+                        break 'pv_block false;
+                    }
+                    let capt_piece_index =
+                        $state.main_board[end_square as usize];
+                    let capt_piece = &$state.statics.pieces[
+                        capt_piece_index as usize
+                    ];
+                    let capt_unmoved =
+                        get!($state.virgin_board, end_square);
+                    let capt_rank = p_rank!(capt_piece);
+                    let capt_royal = p_is_royal!(capt_piece);
+                    if k || not_k && capt_royal
+                        || g && piece_rank >= capt_rank
+                        || not_g && piece_rank < capt_rank
+                        || (v && !capt_unmoved
+                            || not_v && capt_unmoved)
+                            && !special_v
+                    {
+                        break 'pv_block false;
+                    }
+                    enc_multi_move_captured_piece!(
+                        taken_piece,
+                        capt_piece_index as u64
+                    );
+                    enc_multi_move_captured_square!(
+                        taken_piece,
+                        end_square as u64
+                    );
+                    enc_multi_move_captured_unmoved!(
+                        taken_piece,
+                        capt_unmoved as u64
+                    );
+                    $out_captures.push(taken_piece);
+                } else if enemy && !pass_move {
+                    if !c {
+                        break 'pv_block false;
+                    }
+                    let capt_piece_index =
+                        $state.main_board[end_square as usize];
+                    let capt_piece = &$state.statics.pieces[
+                        capt_piece_index as usize
+                    ];
+                    let capt_unmoved =
+                        get!($state.virgin_board, end_square);
+                    let capt_rank = p_rank!(capt_piece);
+                    let capt_royal = p_is_royal!(capt_piece);
+                    if k || not_k && capt_royal
+                        || g && piece_rank >= capt_rank
+                        || not_g && piece_rank < capt_rank
+                        || (v && !capt_unmoved
+                            || not_v && capt_unmoved)
+                            && !special_v
+                    {
+                        break 'pv_block false;
+                    }
+                    enc_multi_move_captured_piece!(
+                        taken_piece,
+                        capt_piece_index as u64
+                    );
+                    enc_multi_move_captured_square!(
+                        taken_piece,
+                        end_square as u64
+                    );
+                    enc_multi_move_captured_unmoved!(
+                        taken_piece,
+                        capt_unmoved as u64
+                    );
+                    $out_captures.push(taken_piece);
+                }
+
+                if u {
+                    let mut last_captured =
+                        $out_captures.pop().unwrap_or_else(|| {
+                            panic!(
+                                "Unload flag set but no captured \
+                                 piece available"
+                            )
+                        });
+                    let cap_sq =
+                        multi_move_captured_square!(last_captured);
+                    if start_square != cap_sq as u32 {
+                        enc_multi_move_is_unload!(last_captured, 1);
+                        enc_multi_move_unload_square!(
+                            last_captured,
+                            start_square as u64
+                        );
+                        $out_captures.push(last_captured);
+                    }
+                }
+            }
+
+            $out_end_sq = accumulated_index as u32;
+            true
+        };
+    }};
+}
+
+/// Applies a minimal capture move to the board for SEE simulation.
+///
+/// Updates `main_board`, `pieces_board`, and `royal_list` for the moving
+/// piece and all non-unload captures. Checks `is_in_check!` for the moving
+/// color after applying; if illegal, immediately restores and returns false.
+/// On success, pushes a `SimSnapshot` to `$undo` and returns true.
+#[macro_export]
+macro_rules! simulate_move {
+    (
+        $state:expr, $undo:expr,
+        $start:expr, $pidx:expr, $caps:expr, $end:expr
+    ) => {{
+        let pidx = $pidx as usize;
+        let piece_color = p_color!($state.statics.pieces[pidx]);
+        let is_royal = p_is_royal!($state.statics.pieces[pidx]);
+
+        let mut saved_caps: Vec<(u32, u8, u8)> = Vec::new();
+        for &cap in ($caps).iter() {
+            if !multi_move_is_unload!(cap) {
+                let cap_sq =
+                    multi_move_captured_square!(cap) as u32;
+                let cap_piece =
+                    $state.main_board[cap_sq as usize];
+                let cap_color = p_color!(
+                    $state.statics.pieces[cap_piece as usize]
+                );
+                saved_caps.push((cap_sq, cap_piece, cap_color));
+                $state.main_board[cap_sq as usize] = NO_PIECE;
+                clear!(
+                    $state.pieces_board[cap_color as usize],
+                    cap_sq
+                );
+                if p_is_royal!(
+                    $state.statics.pieces[cap_piece as usize]
+                ) {
+                    $state.royal_list[cap_color as usize]
+                        .retain(|&sq| sq as u32 != cap_sq);
+                }
+            }
+        }
+
+        let prev_at_end = $state.main_board[$end as usize];
+
+        $state.main_board[$start as usize] = NO_PIECE;
+        $state.main_board[$end as usize] = $pidx;
+        clear!(
+            $state.pieces_board[piece_color as usize],
+            $start as u32
+        );
+        set!(
+            $state.pieces_board[piece_color as usize],
+            $end as u32
+        );
+        if is_royal {
+            $state.royal_list[piece_color as usize]
+                .retain(|&sq| sq as u32 != $start as u32);
+            $state.royal_list[piece_color as usize]
+                .push($end as Square);
+        }
+
+        let legal = !is_in_check!(piece_color, $state);
+
+        if !legal {
+            if is_royal {
+                $state.royal_list[piece_color as usize]
+                    .retain(|&sq| sq as u32 != $end as u32);
+                $state.royal_list[piece_color as usize]
+                    .push($start as Square);
+            }
+            clear!(
+                $state.pieces_board[piece_color as usize],
+                $end as u32
+            );
+            set!(
+                $state.pieces_board[piece_color as usize],
+                $start as u32
+            );
+            $state.main_board[$end as usize] = prev_at_end;
+            $state.main_board[$start as usize] = $pidx;
+            for &(cap_sq, cap_piece, cap_color) in
+                saved_caps.iter().rev()
+            {
+                $state.main_board[cap_sq as usize] = cap_piece;
+                set!(
+                    $state.pieces_board[cap_color as usize],
+                    cap_sq
+                );
+                if p_is_royal!(
+                    $state.statics.pieces[cap_piece as usize]
+                ) {
+                    $state.royal_list[cap_color as usize]
+                        .push(cap_sq as Square);
+                }
+            }
+        } else {
+            $undo.push(SimSnapshot {
+                piece_idx: $pidx,
+                piece_color,
+                start_sq: $start as u32,
+                end_sq: $end as u32,
+                prev_at_end,
+                is_royal,
+                caps: saved_caps,
+            });
+        }
+
+        legal
+    }};
+}
+
+#[macro_export]
+macro_rules! undo_simulate_move {
+    ($state:expr, $undo:expr) => {{
+        let snap: SimSnapshot =
+            $undo.pop().expect("SEE undo stack empty");
+
+        if snap.is_royal {
+            $state.royal_list[snap.piece_color as usize]
+                .retain(|&sq| sq as u32 != snap.end_sq);
+            $state.royal_list[snap.piece_color as usize]
+                .push(snap.start_sq as Square);
+        }
+        clear!(
+            $state.pieces_board[snap.piece_color as usize],
+            snap.end_sq as u32
+        );
+        set!(
+            $state.pieces_board[snap.piece_color as usize],
+            snap.start_sq as u32
+        );
+        $state.main_board[snap.end_sq as usize] = snap.prev_at_end;
+        $state.main_board[snap.start_sq as usize] = snap.piece_idx;
+        for &(cap_sq, cap_piece, cap_color) in snap.caps.iter().rev() {
+            $state.main_board[cap_sq as usize] = cap_piece;
+            set!(
+                $state.pieces_board[cap_color as usize],
+                cap_sq
+            );
+            if p_is_royal!(
+                $state.statics.pieces[cap_piece as usize]
+            ) {
+                $state.royal_list[cap_color as usize]
+                    .push(cap_sq as Square);
+            }
+        }
     }};
 }
 

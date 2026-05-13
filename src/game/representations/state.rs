@@ -440,8 +440,8 @@ impl Clone for State {
             playing: self.playing,
             main_board: self.main_board.clone(),
 
-            pieces_board: self.pieces_board.clone(),
-            virgin_board: self.virgin_board.clone(),
+            pieces_board: self.pieces_board,
+            virgin_board: self.virgin_board,
 
             castling_state: self.castling_state,
             halfmove_clock: self.halfmove_clock,

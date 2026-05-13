@@ -220,7 +220,7 @@ pub fn generate_drop_list(
             }
 
             if !scratch.is_empty() {
-                encoded_move.1 = Arc::new(scratch.drain(..).collect());
+                encoded_move.1 = Arc::new(mem::take(scratch));
             }
             out.push(encoded_move);
         }
