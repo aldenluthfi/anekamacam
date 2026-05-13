@@ -309,18 +309,35 @@ macro_rules! hash_tt_entry {
         let sig = move_signature!($tt_move);                                    /* XOR of move.1 entries              */
         let b = ((sig as u128) << 32) | (encoded as u128);                      /* sig << 32 | encoded                */
 
-        if entry.slot[0] == 0 && entry.slot[1] == 0 && entry.slot[2] == 0 {
-            $table.new_write.fetch_add(1, Ordering::Relaxed);
-        } else {
-            $table.over_write.fetch_add(1, Ordering::Relaxed);
-        }
+        let cur_age = $table.age.load(Ordering::Relaxed);
+        let old_s0 = entry.slot[0];
+        let old_s1 = entry.slot[1];
+        let old_s2 = entry.slot[2];
+        let empty = old_s0 == 0 && old_s1 == 0 && old_s2 == 0;
+        let different = old_s0 ^ old_s1 ^ old_s2 != hash;
+        let old_enc = (old_s1 & 0xFFFF_FFFF) as u32;
+        let old_depth = tt_depth!(old_enc);
+        let old_flags = tt_flags!(old_enc);
+        let should_write = empty
+            || different
+            || entry.age < cur_age
+            || $depth >= old_depth
+            || ($flags == FEXACT && old_flags != FEXACT);
 
-        entry.version.fetch_add(1, Ordering::Release);                          /* seqlock lock: version now odd      */
-        entry.slot[0] = a;                                                      /* a = move.0 (raw)                   */
-        entry.slot[1] = b;                                                      /* b = sig<<32|encoded (raw)          */
-        entry.slot[2] = a ^ b ^ hash;                                           /* parity = a ^ b ^ c (written last)  */
-        entry.age = $table.age.load(Ordering::Relaxed);
-        entry.version.fetch_add(1, Ordering::Release);                          /* seqlock unlock: version now even   */
+        if should_write {
+            if empty {
+                $table.new_write.fetch_add(1, Ordering::Relaxed);
+            } else {
+                $table.over_write.fetch_add(1, Ordering::Relaxed);
+            }
+
+            entry.version.fetch_add(1, Ordering::Release);                      /* seqlock lock: version now odd      */
+            entry.slot[0] = a;                                                  /* a = move.0 (raw)                   */
+            entry.slot[1] = b;                                                  /* b = sig<<32|encoded (raw)          */
+            entry.slot[2] = a ^ b ^ hash;                                       /* parity = a ^ b ^ c (written last)  */
+            entry.age = cur_age;
+            entry.version.fetch_add(1, Ordering::Release);                      /* seqlock unlock: version now even   */
+        }
     }};
 }
 
