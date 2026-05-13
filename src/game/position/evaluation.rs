@@ -11,9 +11,9 @@
 /// Evaluates the current position from the side-to-move perspective.
 ///
 /// Evaluation model:
-/// - `OPENING`   : opening material delta + opening PST delta.
-/// - `ENDGAME`   : endgame material delta + endgame PST delta.
-/// - `MIDDLEGAME`: linear interpolation between opening and endgame scores.
+/// - `OPENING` | `SETUP`   : opening material delta + opening PST delta.
+/// - `ENDGAME`             : endgame material delta + endgame PST delta.
+/// - `MIDDLEGAME`          : linear interpolation between opening and endgame.
 ///
 /// Hot-path notes:
 /// - Uses cached per-side material/PST totals from `State`.
@@ -33,7 +33,7 @@ macro_rules! evaluate_position {
         let side_sign = -2 * $state.playing as i32 + 1;
 
         match $state.game_phase {
-            OPENING => {
+            OPENING | SETUP => {
                 let score_opening = opening_white - opening_black
                     + $state.opening_pst_bonus[white]
                     - $state.opening_pst_bonus[black];
