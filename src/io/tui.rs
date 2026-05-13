@@ -398,6 +398,8 @@ impl BoardState {
 
         let position_hash = format_position_hash(state);
         let game_phase = format_game_phase(state);
+        let phase_score = game_phase_score!(state);
+        let phase = format!("{} ({})", game_phase, phase_score);
 
         let castling_rights;
         let en_passant;
@@ -405,7 +407,7 @@ impl BoardState {
         let repetition_count;
         let hand_info;
 
-        details.push(["Game Phase".to_string(), game_phase]);
+        details.push(["Game Phase".to_string(), phase]);
         details.push(
             [
                 "Turn".to_string(),
@@ -1365,8 +1367,9 @@ fn execute_command(
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
             };
+            let mut bufs = SearchBufs::default();
             let result = search_position(
-                state, Arc::clone(&table), &mut info, threads
+                state, Arc::clone(&table), &mut info, &mut bufs, threads
             );
 
             if result.best_move == null_move() {
@@ -1389,8 +1392,9 @@ fn execute_command(
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
             };
+            let mut bufs = SearchBufs::default();
             let result = search_position(
-                state, Arc::clone(&table), &mut info, threads
+                state, Arc::clone(&table), &mut info, &mut bufs, threads
             );
 
             if result.best_move == null_move() {
@@ -1441,17 +1445,12 @@ fn execute_command(
                 set_timed: (time_limit * 1_000_000_000.0) as u128,
                 ..Default::default()
             };
+            let mut bufs = SearchBufs::default();
 
             while !state.game_over {
-                let result =
-                    search_position(
-                        state, Arc::clone(&table), &mut info, threads
-                    );
-
-                if result.best_move == null_move() {
-                    log_2!("No legal move available");
-                    break;
-                }
+                let result = search_position(
+                    state, Arc::clone(&table), &mut info, &mut bufs, threads
+                );
 
                 if result.best_score == -INFINITY {
                     state.game_over = true;

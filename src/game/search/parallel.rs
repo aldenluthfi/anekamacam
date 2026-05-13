@@ -31,7 +31,7 @@ impl ThreadPool {
         Self { main_state, tt, thread_count }
     }
 
-    pub fn run(mut self, depth: usize, timed: u128) -> SearchResult {
+    pub fn run(self, depth: usize, timed: u128) -> SearchResult {
         let tt = Arc::clone(&self.tt);
         let mut workers = Vec::with_capacity(self.thread_count);
 
@@ -49,8 +49,11 @@ impl ThreadPool {
                         set_timed,
                         ..Default::default()
                     };
+                    let mut bufs = SearchBufs::default();
                     let mut state = state_clone;
-                    iterative_deepening(&mut state, &tt_clone, &mut info, i)
+                    iterative_deepening(
+                        &mut state, &tt_clone, &mut info, &mut bufs, i
+                    )
             })
                 .unwrap_or_else(|e| {
                     panic!("Failed to spawn searcher-{}: {e}", i)
@@ -71,20 +74,12 @@ impl ThreadPool {
                 panic!("Thread {} panicked", i)
             });
 
-            if result.best_score >= main_result.best_score {
+            if result.best_score >= main_result.best_score
+            && result.best_move != null_move() {
                 main_result = result;
             }
 
             log_3!("Thread {} joined", i);
-        }
-
-        if main_result.best_move == null_move() {
-            let state = &mut self.main_state;
-            fill_pv_line!(state, &self.tt, depth);
-        }
-
-        if main_result.best_move == null_move() {
-            log_1!("No valid moves found by any thread");
         }
 
         main_result
