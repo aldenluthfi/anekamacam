@@ -1,27 +1,12 @@
 //! # transposition.rs
 //!
-//! XOR-encoded transposition table with seqlock torn-read detection.
+//! Transposition table for caching and reusing search results across the tree.
 //!
-//! Each entry stores 3 × u128 slots plus a seqlock:
-//!   a = move.0 (128-bit, stored directly)
-//!   b = (sig << 32) | encoded_data (128-bit, stored directly)
-//!   c = position_hash (128-bit)
-//!
-//!   slot[0] = a       = move.0 (raw)
-//!   slot[1] = b       = (sig << 32) | encoded_data (raw)
-//!   slot[2] = parity  = a ^ b ^ c
-//!   age     = plain u64 (separate field)
-//!   version = seqlock counter (AtomicU64)
-//!
-//! Write order: version++ → slot[0] → slot[1] → slot[2] → age → version++
-//!
-//! Validation (2-step):
-//!   (1) (slot[0] ^ slot[1] ^ slot[2]) == c    → parity: corruption detected
-//!   (2) version unchanged during read         → seqlock: no torn write
-//!
-//! Decode (direct — no XOR recovery needed):
-//!   a = slot[0]
-//!   b = slot[1]
+//! Positions are keyed by Zobrist hash. A cache hit at sufficient depth returns
+//! the stored score directly, skipping the subtree. Entries record a bound
+//! type (exact, alpha, beta), depth, best move, and age for replacement
+//! policy. Thread safety uses a seqlock with parity verification across the
+//! 3×u128 slot layout.
 //!
 //! # Author
 //! Alden Luthfi
@@ -35,15 +20,20 @@ use crate::*;
                      TRANSPOSITION TABLE ENTRY REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// Transposition-table entry with parity-based corruption detection and
-/// seqlock.
+/// TT entry with a 3×u128 XOR-parity slot and a seqlock version counter.
 ///
-/// Slots layout:
-/// - slot[0] = a       = move.0 (128-bit, stored directly)
-/// - slot[1] = b       = sig << 32 | encoded (128-bit, stored directly)
-/// - slot[2] = parity  = a ^ b ^ c (all-slot parity for corruption detection)
-/// - age     = plain u64 (age-based replacement, NOT in parity)
-/// - version = seqlock counter (odd = writing, even = readable)
+/// Layout:
+/// - slot[0] = move.0 (128-bit, raw)
+/// - slot[1] = sig << 32 | encoded (128-bit, raw)
+/// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
+/// - age     = plain u64, excluded from parity
+/// - version = seqlock counter (odd = write in progress, even = readable)
+///
+/// Write order: version++ → slot[0] → slot[1] → slot[2] → age → version++
+///
+/// Validation:
+///   (1) slot[0] ^ slot[1] ^ slot[2] == position_hash  →  parity intact
+///   (2) version unchanged across read                  →  no torn write
 pub struct TTEntry {
     pub slot: [u128; 3],                                                        /* [key, data1, data2]                */
     pub age: u64,                                                               /* search age for replacement policy  */
