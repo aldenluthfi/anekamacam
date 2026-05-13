@@ -66,10 +66,8 @@ pub use crate::game::position::{
     },
 };
 pub use crate::game::search::{
-    move_ordering::{pick_by_score, score_move},
+    move_ordering::see_move,
     parallel::ThreadPool,
-    quiescence::quiescence_search,
-    see::{SimSnapshot, see_move},
     transposition::{TTEntry, TTable},
     parameters::derive_parameters,
 };
