@@ -71,6 +71,7 @@ pub use crate::game::search::{
     move_ordering::{pick_by_score, score_move},
     parallel::ThreadPool,
     quiescence::quiescence_search,
+    see::{SimSnapshot, see_move},
     transposition::{TTEntry, TTable},
     parameters::{derive_parameters}
 };
@@ -150,7 +151,7 @@ pub use std::{
     fs::{self, OpenOptions},
     hash::Hash,
     io::{Write, stdin, stdout, Result as IoResult},
-    mem::size_of,
+    mem::{self, size_of},
     path::Path,
     sync::{
         Arc, Mutex,

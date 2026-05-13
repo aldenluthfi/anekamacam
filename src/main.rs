@@ -39,6 +39,7 @@ pub mod game {
         pub mod move_ordering;
         pub mod parallel;
         pub mod quiescence;
+        pub mod see;
         pub mod transposition;
         pub mod parameters;
     }
