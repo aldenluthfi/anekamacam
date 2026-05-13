@@ -24,6 +24,7 @@ pub fn quiescence_search(
     alpha: i32,
     beta: i32,
     info: &mut SearchInfo,
+    bufs: &mut SearchBufs,
 ) -> i32 {
     let mut alpha = alpha;
 
@@ -47,14 +48,14 @@ pub fn quiescence_search(
 
     let ply = state.search_ply as usize;
     generate_all_captures(
-        state, &mut info.move_buf[ply], &mut info.scratch_buf
+        state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
     let pv_move = probe_pv_move!(state, table);
 
-    for i in 0..info.move_buf[ply].len() {
-        pick_by_score(state, &mut info.move_buf[ply], i, &pv_move);
+    for i in 0..bufs.move_buf[ply].len() {
+        pick_by_score(state, &mut bufs.move_buf[ply], i, &pv_move);
 
-        let mv = info.move_buf[ply][i].clone();
+        let mv = bufs.move_buf[ply][i].clone();
 
         let move_type = move_type!(mv);
         let promotion = promotion!(mv);
@@ -81,7 +82,8 @@ pub fn quiescence_search(
             continue;
         }
 
-        let score = -quiescence_search(state, table, -beta, -alpha, info);
+        let score =
+            -quiescence_search(state, table, -beta, -alpha, info, bufs);
         undo_move!(state);
 
         if info.interrupt {

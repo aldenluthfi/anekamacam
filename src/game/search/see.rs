@@ -14,8 +14,6 @@
 
 use crate::*;
 
-pub const MAX_SEE_DEPTH: usize = 32;
-
 pub struct SimSnapshot {
     pub piece_idx: u8,
     pub piece_color: u8,
@@ -49,7 +47,7 @@ fn find_lva(
 
         let mut end_sq = 0u32;
         let valid;
-        process_vector!(
+        process_capture_vector!(
             state,
             origin,
             &state.statics.pieces[piece_idx as usize],

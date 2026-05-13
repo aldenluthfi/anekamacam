@@ -12,9 +12,10 @@ use crate::*;
 
 /// Tracks limits, counters, and stop flags for an active search.
 ///
-/// This struct groups time controls, depth/move constraints, node accounting,
-/// and interruption controls used by iterative search routines.
-/// It is mutated throughout one search invocation lifecycle.
+/// Contains only informational data: time controls, depth/move constraints,
+/// node accounting, and interruption flag. Mutable scratch and move buffers
+/// are kept in `SearchBufs` to separate functional allocations from
+/// reporting state.
 #[derive(Default)]
 pub struct SearchInfo {
     pub start_time: u128,                                                       /* Start time since search start.     */
@@ -26,7 +27,14 @@ pub struct SearchInfo {
     pub nodes: u128,                                                            /* Total nodes searched so far.       */
 
     pub interrupt: bool,                                                        /* Flag set by external stop events.  */
+}
 
+/// Per-thread scratch allocations reused across the full search tree.
+///
+/// Kept separate from `SearchInfo` so that informational search data is not
+/// co-located with large heap allocations.
+#[derive(Default)]
+pub struct SearchBufs {
     pub move_buf: Vec<Vec<Move>>,                                               /* per-ply move lists, pre-allocated  */
     pub scratch_buf: Vec<u64>,                                                  /* reused scratch for taken_pieces    */
 }
@@ -63,16 +71,17 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// This resets node counters, interruption flags, PV/killer/history tables,
 /// and ply tracking. It does not alter the current board position.
 pub fn clear_search(
-    state: &mut State, table: &TTable, info: &mut SearchInfo
+    state: &mut State, table: &TTable,
+    info: &mut SearchInfo, bufs: &mut SearchBufs,
 ) {
     info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;
     info.interrupt = false;
 
-    if info.move_buf.len() < MAX_DEPTH * 2 {
-        info.move_buf = (0..MAX_DEPTH * 2)
+    if bufs.move_buf.len() < MAX_DEPTH * 2 {
+        bufs.move_buf = (0..MAX_DEPTH * 2)
             .map(|_| Vec::with_capacity(64)).collect();
-        info.scratch_buf = Vec::with_capacity(32);
+        bufs.scratch_buf = Vec::with_capacity(32);
     }
 
     let piece_count: usize = state.statics.pieces.len();
@@ -92,7 +101,8 @@ pub fn clear_search(
 /// iteration, the principal variation is extracted from the PV table and
 /// reported in UCI-style informational logs.
 pub fn search_position(
-    state: &mut State, table: Arc<TTable>, info: &mut SearchInfo,
+    state: &mut State, table: Arc<TTable>,
+    info: &mut SearchInfo, bufs: &mut SearchBufs,
     thread_num: usize,
 ) -> SearchResult {
     table.hit.store(0, Ordering::Relaxed);
@@ -101,7 +111,7 @@ pub fn search_position(
     table.over_write.store(0, Ordering::Relaxed);
 
     let result = if thread_num <= 1 {
-        iterative_deepening(state, &table, info, 0)
+        iterative_deepening(state, &table, info, bufs, 0)
     } else {
         let pool = ThreadPool::with_threads(
             state, Arc::clone(&table), thread_num
@@ -121,7 +131,8 @@ pub fn search_position(
 }
 
 pub fn iterative_deepening(
-    state: &mut State, table: &TTable, info: &mut SearchInfo,
+    state: &mut State, table: &TTable,
+    info: &mut SearchInfo, bufs: &mut SearchBufs,
     thread_num: usize,
 ) -> SearchResult {
 
@@ -129,7 +140,7 @@ pub fn iterative_deepening(
     let mut best_score: i32 = 0;
     let start_time = ENGINE_START.elapsed().as_nanos();
 
-    clear_search(state, table, info);
+    clear_search(state, table, info, bufs);
 
     let start_depth = if thread_num == 0 { 1 } else { 1 + (thread_num % 3) };
 
@@ -138,14 +149,16 @@ pub fn iterative_deepening(
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
         let score = if depth == start_depth {
-            alpha_beta(state, table, depth, -INFINITY, INFINITY, info, true)
+            alpha_beta(
+                state, table, depth, -INFINITY, INFINITY, info, bufs, true
+            )
         } else {
             let mut delta: i32 = 50;
             let mut lo = best_score - delta;
             let mut hi = best_score + delta;
             loop {
                 let s = alpha_beta(
-                    state, table, depth, lo, hi, info, true
+                    state, table, depth, lo, hi, info, bufs, true
                 );
                 if info.interrupt { break s; }
                 if s <= lo {
@@ -252,6 +265,7 @@ pub fn alpha_beta(
     alpha: i32,
     beta: i32,
     info: &mut SearchInfo,
+    bufs: &mut SearchBufs,
     null: bool,
 ) -> i32 {
     let mut alpha = alpha;
@@ -272,7 +286,7 @@ pub fn alpha_beta(
     }
 
     if depth == 0 {
-        return quiescence_search(state, table, alpha, beta, info);
+        return quiescence_search(state, table, alpha, beta, info, bufs);
     }
 
     let static_eval = evaluate_position!(state);
@@ -322,7 +336,8 @@ pub fn alpha_beta(
         let reduction = 3 + if depth >= 6 { 1 } else { 0 };
         make_null_move!(state);
         let score = -alpha_beta(
-            state, table, depth - reduction, -beta, -beta + 1, info, false
+            state, table, depth - reduction, -beta, -beta + 1, info, bufs,
+            false
         );
         undo_null_move!(state);
 
@@ -348,7 +363,7 @@ pub fn alpha_beta(
     }
 
     if pv_move.is_none() && depth > 5 {                                        /* IID: search shallower to seed TT   */
-        alpha_beta(state, table, depth - 3, alpha, beta, info, true);
+        alpha_beta(state, table, depth - 3, alpha, beta, info, bufs, true);
         if !info.interrupt {
             pv_move = probe_pv_move!(state, table);
         }
@@ -361,13 +376,13 @@ pub fn alpha_beta(
 
     let ply = state.search_ply as usize;
     generate_all_moves_and_drops(
-        state, &mut info.move_buf[ply], &mut info.scratch_buf
+        state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
 
-    for i in 0..info.move_buf[ply].len() {
-        pick_by_score(state, &mut info.move_buf[ply], i, &pv_move);
+    for i in 0..bufs.move_buf[ply].len() {
+        pick_by_score(state, &mut bufs.move_buf[ply], i, &pv_move);
 
-        let mv = info.move_buf[ply][i].clone();
+        let mv = bufs.move_buf[ply][i].clone();
         let mv_type = move_type!(mv);
         let mv_piece = piece!(mv) as usize;
         let mv_start = start!(mv);
@@ -419,22 +434,20 @@ pub fn alpha_beta(
                 reduct += 1;
             }
 
-            score =
-                -alpha_beta(
-                    state, table, depth - reduct, -alpha - 1, -alpha, info, true
-                );
+            score = -alpha_beta(
+                state, table, depth - reduct, -alpha - 1, -alpha,
+                info, bufs, true
+            );
 
             if score > alpha {
-                score =
-                    -alpha_beta(
-                        state, table, depth - 1, -beta, -alpha, info, true
-                    );
+                score = -alpha_beta(
+                    state, table, depth - 1, -beta, -alpha, info, bufs, true
+                );
             }
         } else {
-            score =
-                -alpha_beta(
-                    state, table, depth - reduct, -beta, -alpha, info, true
-                );
+            score = -alpha_beta(
+                state, table, depth - reduct, -beta, -alpha, info, bufs, true
+            );
         }
 
         undo_move!(state);

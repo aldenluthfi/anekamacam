@@ -390,6 +390,11 @@ pub fn derive_parameters(state: &mut State) {
     let total_values = values.len() as f64;
     let average_value = values
         .into_iter()
+        .filter(
+            |(index, _)|
+                p_is_big!(&state.statics.pieces[*index as usize]) &&
+                p_color!(&state.statics.pieces[*index as usize]) == WHITE
+        )
         .map(|(_, value)| value)
         .sum::<f64>() / total_values;
 
