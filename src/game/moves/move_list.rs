@@ -1337,7 +1337,9 @@ macro_rules! make_move {
                     let is_queenside = end_file == 0;
                     let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
                     [
-                        (end_rank == $state.statics.ranks as u16 - 1) as usize * 2
+                        (
+                            end_rank == $state.statics.ranks as u16 - 1
+                        ) as usize * 2
                         + is_queenside as usize
                     ];
                     $state.castling_state &= !rights;
@@ -1976,7 +1978,9 @@ macro_rules! make_move {
 
             let game_phase_score = game_phase_score!($state);
             $state.game_phase =
-                if game_phase_score > $state.statics.opening_score {
+                if $state.game_phase == SETUP {
+                    SETUP
+                } else if game_phase_score > $state.statics.opening_score {
                     cmp::max(OPENING, $state.game_phase)
                 } else if game_phase_score < $state.statics.endgame_score {
                     cmp::max(ENDGAME, $state.game_phase)
@@ -2715,7 +2719,6 @@ macro_rules! undo_move {
     }};
 }
 
-#[macro_export]
 /// Applies a null move for the side to move.
 ///
 /// A null move:
@@ -2725,6 +2728,7 @@ macro_rules! undo_move {
 ///
 /// This is used by null-move pruning in search and does not modify board
 /// occupancy or piece lists.
+#[macro_export]
 macro_rules! make_null_move {
     ($state:expr) => {
         {
@@ -2760,7 +2764,6 @@ macro_rules! make_null_move {
     };
 }
 
-#[macro_export]
 /// Reverts the most recent null move.
 ///
 /// This restores the `Snapshot` saved by `make_null_move!`, including turn,
@@ -2768,6 +2771,7 @@ macro_rules! make_null_move {
 ///
 /// # Panics
 /// Panics if no history snapshot exists to undo.
+#[macro_export]
 macro_rules! undo_null_move {
     ($state:expr) => {{
         $state.search_ply -= 1;
