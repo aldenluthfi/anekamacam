@@ -140,7 +140,7 @@ pub fn search_position(
     };
 
     log_2!(
-        "TT | new: {} | over: {} | hit: {} | valid: {}",
+        "TT | new: {:<7} | over: {:<7} | hit: {:<7} | valid: {:<7}",
         table.new_write.load(Ordering::Relaxed),
         table.over_write.load(Ordering::Relaxed),
         table.hit.load(Ordering::Relaxed),
@@ -148,7 +148,7 @@ pub fn search_position(
     );
 
     log_2!(
-        "QTT | new: {} | over: {} | hit: {} | valid: {}",
+        "QT | new: {:<7} | over: {:<7} | hit: {:<7} | valid: {:<7}",
         qtable.new_write.load(Ordering::Relaxed),
         qtable.over_write.load(Ordering::Relaxed),
         qtable.hit.load(Ordering::Relaxed),
@@ -398,7 +398,9 @@ fn quiescence_search(
         }
 
         let score =
-            -quiescence_search(state, ttable, qtable, -beta, -alpha, info, bufs);
+            -quiescence_search(
+                state, ttable, qtable, -beta, -alpha, info, bufs
+            );
         undo_move!(state);
 
         if info.interrupt {
@@ -575,7 +577,10 @@ pub fn alpha_beta(
     }
 
     if pv_move.is_none() && depth >= 5 {                                        /* IID: search shallower to seed TT   */
-        alpha_beta(state, ttable, qtable, depth - 2, alpha, beta, info, bufs, true);
+        alpha_beta(
+            state, ttable, qtable, depth - 2, alpha, beta, info, bufs, true
+        );
+
         if !info.interrupt {
             pv_move = probe_pv_move!(state, ttable);
         }
