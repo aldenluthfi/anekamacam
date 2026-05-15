@@ -276,7 +276,36 @@ macro_rules! score_move {
                 $state.search_hist[piece!($mv) as usize][end!($mv) as usize]
             }
         } else {
-            let see = see_move($state, $mv);
+            let capturing_piece_value = p_ovalue!(
+                $state.statics.pieces[piece!($mv) as usize]
+            ) as i32;
+            let captured_piece_value = if move_type == SINGLE_CAPTURE_MOVE {
+                if is_unload!($mv) {
+                    0
+                } else {
+                    p_ovalue!(
+                        $state.statics.pieces[captured_piece!($mv) as usize]
+                    ) as i32
+                }
+            } else {
+                $mv.1.iter()
+                    .filter(|&&cap| !multi_move_is_unload!(cap))
+                    .map(|&cap| {
+                        p_ovalue!(
+                            $state.statics.pieces[
+                                multi_move_captured_piece!(cap) as usize
+                            ]
+                        ) as i32
+                    })
+                    .sum()
+            };
+
+            let see = if captured_piece_value > capturing_piece_value * 2 {
+                captured_piece_value - capturing_piece_value
+            } else {
+                see_move($state, $mv)
+            };
+
             let raw = $state.statics.most_valuable as i32
                 + see
                 + MAX_DEPTH as i32;

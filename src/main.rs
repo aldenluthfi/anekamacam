@@ -21,18 +21,12 @@ pub mod game {
         pub mod vector;
     }
 
-    pub mod patterns {
-        pub mod pattern_match;
-    }
-
-    pub mod drops {
-        pub mod drop_list;
-        pub mod drop_parse;
-    }
-
     pub mod moves {
         pub mod move_list;
         pub mod move_parse;
+        pub mod drop_list;
+        pub mod drop_parse;
+        pub mod pattern_match;
     }
 
     pub mod search {

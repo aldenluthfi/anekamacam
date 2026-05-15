@@ -27,12 +27,8 @@ ratatui = { workspace = true }
 chrono = { workspace = true }
 crossterm = { workspace = true }
 arboard = { workspace = true }
+rayon = { workspace = true }
 
 [features]
 hotpath = ["hotpath/hotpath"]
 hotpath-alloc = ["hotpath/hotpath-alloc"]
-log-level-1 = []
-log-level-2 = []
-log-level-3 = []
-log-level-4 = []
-log-level-5 = []

@@ -108,6 +108,8 @@ impl Tui {
         self.help_tab = 0;
 
         self.game_state = None;
+        self.board_state = None;
+        self.overview_state = None;
     }
 
     fn run (&mut self, terminal: &mut DefaultTerminal) -> IoResult<()> {
@@ -130,6 +132,7 @@ impl Tui {
                     false
                 },
                 Ok(TuiEvent::Unlock) => {
+                    SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
                     self.locked = false;
                     false
                 }
@@ -247,18 +250,15 @@ impl OverviewState {
         let mut piece_map: HashMap<String, OverviewPiece> = HashMap::new();
         let mut piece_names = Vec::new();
 
-        for (i, piece) in state.statics.pieces.iter().enumerate() {
+        for piece in state.statics.pieces.iter() {
             let name = piece.name.clone();
             let color = p_color!(piece);
+            let index = p_index!(piece) as usize;
 
             let char_str = if color == WHITE {
-                let black_char = state.statics.piece_swap_map
-                    .get(&(i as u8))
-                    .map(|&idx| {
-                        state.statics.pieces[idx as usize]
-                            .char.to_string()
-                    })
-                    .unwrap_or_else(|| "-".to_string());
+                let black_char = state.statics.pieces[
+                    state.statics.piece_swap_map[index] as usize
+                ].char;
                 format!("{}{}", piece.char, black_char)
             } else {
                 piece.char.to_string()
@@ -300,13 +300,13 @@ impl OverviewState {
             let eg_val = p_evalue!(piece);
 
             let mut op_pst_str = String::from("None");
-            if let Some(table) = state.statics.pst_opening.get(i) {
+            if let Some(table) = state.statics.pst_opening.get(index) {
                 op_pst_str = format_numeric_board(
                     table, state.statics.files, state.statics.ranks
                 );
             }
             let mut eg_pst_str = String::from("None");
-            if let Some(table) = state.statics.pst_endgame.get(i) {
+            if let Some(table) = state.statics.pst_endgame.get(index) {
                 eg_pst_str = format_numeric_board(
                     table, state.statics.files, state.statics.ranks
                 );
@@ -314,10 +314,10 @@ impl OverviewState {
 
             let forbidden_zones =
             if forbidden_zones!(state)
-            && !is_empty!(state.statics.forbidden_zones[i])
+            && !is_empty!(state.statics.forbidden_zones[index])
             {
                 Some(format_board(
-                    &state.statics.forbidden_zones[i], Some('X')
+                    &state.statics.forbidden_zones[index], Some('X')
                 ))
             } else {
                 None
@@ -325,9 +325,9 @@ impl OverviewState {
 
             let mandatory_promotions =
             if promotions!(state)
-            && !is_empty!(state.statics.promotion_zones_mandatory[i]) {
+            && !is_empty!(state.statics.promotion_zones_mandatory[index]) {
                 Some(format_board(
-                    &state.statics.promotion_zones_mandatory[i],
+                    &state.statics.promotion_zones_mandatory[index],
                     Some('X')
                 ))
             } else {
@@ -336,9 +336,9 @@ impl OverviewState {
 
             let optional_promotions =
             if promotions!(state)
-            && !is_empty!(state.statics.promotion_zones_optional[i]) {
+            && !is_empty!(state.statics.promotion_zones_optional[index]) {
                 Some(format_board(
-                    &state.statics.promotion_zones_optional[i],
+                    &state.statics.promotion_zones_optional[index],
                     Some('X')
                 ))
             } else {
@@ -523,12 +523,22 @@ fn draw_game_selection(
 }
 
 fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
-    let titles = TAB_TITLES
-        .iter()
-        .map(|title| Line::from(*title))
-        .collect::<Vec<_>>();
+    let level = configured_verbosity_level();
 
-    let tabs = Tabs::new(titles)
+    let tab_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(17),
+        ])
+        .split(area);
+
+    let tab_titles: Vec<Line> = TAB_TITLES
+        .iter()
+        .map(|title| Line::raw(*title))
+        .collect();
+
+    let tabs = Tabs::new(tab_titles)
         .block(Block::default().borders(Borders::ALL))
         .select(app.tab)
         .style(Style::default().fg(Color::Gray))
@@ -538,7 +548,22 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    frame.render_widget(tabs, area);
+    let log_labels: Vec<Line> = vec!["1", "2", "3", "4"]
+        .iter()
+        .map(|label| Line::raw(*label))
+        .collect();
+    let log_tabs = Tabs::new(log_labels)
+        .block(Block::default().borders(Borders::ALL))
+        .select(if level == 0 { None } else { Some(level as usize - 1) })
+        .style(Style::default().fg(Color::Gray))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    frame.render_widget(tabs, tab_layout[0]);
+    frame.render_widget(log_tabs, tab_layout[1]);
 }
 
 fn draw_input(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
@@ -591,6 +616,8 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         ("<j/k>", "Scroll up/down"),
         ("<g/G>", "Scroll to top/bottom"),
         ("<n>", "New game"),
+        ("<{/}>", "Increase/decrease log verbosity"),
+        ("<]/[>", "Increase/decrease thread count"),
     ];
 
     let input_mode_rows = [
@@ -599,6 +626,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     ];
 
     let command_rows = [
+        ("abort", "Interrupt any running search immediately"),
         ("undo", "Undo the last move played on the board"),
         ("reset", "Rewind the game all the way to the starting position"),
         ("ls", "List all legal moves available in the current position"),
@@ -633,66 +661,9 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         );
 
-    if app.help_tab == 0 {
-        lines.push(Line::from(vec![
-            Span::from("Normal mode")
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-        ]));
-
-        for (key, desc) in normal_mode_rows {
-            let row = Line::from(vec![
-                Span::from(format!("{:<20} ", key))
-                    .style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    ),
-                Span::from(desc),
-            ]);
-
-            lines.push(row);
-        }
-
-        lines.push(Line::default());
-
-        lines.push(Line::from(vec![
-            Span::from("Input mode")
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-        ]));
-
-        for (key, desc) in input_mode_rows {
-            let row = Line::from(vec![
-                Span::from(format!("{:<20} ", key))
-                    .style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    ),
-                Span::from(desc),
-            ]);
-
-            lines.push(row);
-        }
-    } else {
-        for (cmd, desc) in command_rows {
-            lines.push(Line::from(vec![
-                Span::from(format!("{} ", cmd))
-                    .style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    )
-            ]));
-            lines.push(Line::from(vec![
-                Span::from(desc)
-            ]));
-            lines.push(Line::default());
-        }
-    }
-
     let popup_area = area
         .centered(
-            Constraint::Length(50),
+            Constraint::Length(70),
             Constraint::Length(40)
         );
 
@@ -718,8 +689,77 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(layout[1]);
 
-    let content = Paragraph::new(lines).wrap(Wrap { trim: true });
-    frame.render_widget(content, content_layout[0]);
+    if app.help_tab == 0 {
+        let mut keybind_rows = Vec::new();
+
+        keybind_rows.push(Row::new(vec![
+            Cell::from("Normal mode").style(
+                Style::default().add_modifier(Modifier::BOLD)
+            ),
+            Cell::from(""),
+        ]));
+
+        for (key, desc) in normal_mode_rows {
+            keybind_rows.push(Row::new(vec![
+                Cell::from(key).style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                ),
+                Cell::from(desc),
+            ]));
+        }
+
+        keybind_rows.push(Row::new(vec![
+            Cell::from(""),
+            Cell::from(""),
+        ]));
+
+        keybind_rows.push(Row::new(vec![
+            Cell::from("Input mode").style(
+                Style::default().add_modifier(Modifier::BOLD)
+            ),
+            Cell::from(""),
+        ]));
+
+        for (key, desc) in input_mode_rows {
+            keybind_rows.push(Row::new(vec![
+                Cell::from(key).style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
+                ),
+                Cell::from(desc),
+            ]));
+        }
+
+        let keybind_table = Table::new(
+            keybind_rows,
+            [Constraint::Percentage(100), Constraint::Percentage(100)]
+        ).block(
+            Block::default().borders(Borders::NONE)
+        );
+
+        frame.render_widget(keybind_table, content_layout[0]);
+    } else {
+        for (cmd, desc) in command_rows {
+            lines.push(Line::from(vec![
+                Span::from(format!("{} ", cmd))
+                    .style(
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    )
+            ]));
+            lines.push(Line::from(vec![
+                Span::from(desc)
+            ]));
+            lines.push(Line::default());
+        }
+
+        let content = Paragraph::new(lines).wrap(Wrap { trim: true });
+        frame.render_widget(content, content_layout[0]);
+    }
 
     let footer = vec![
         Line::from(Span::from("Press <←/→> to switch tabs, <?> to close")
@@ -730,9 +770,6 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     frame.render_widget(footer_paragraph, content_layout[1]);
 }
 
-/// Draw the main game tab, which includes the board, move list, and logs.
-/// There are three main sections: the board on the left, and the move list
-/// and logs stacked, in that order.
 fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
     const TAB_FOCUS_MOVES: usize = 0;
@@ -834,6 +871,24 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     });
     let log_lines = logs
         .iter()
+        .rev()
+        .take(MAX_LOGS_LEN)
+        .rev()
+        .filter(|line| {
+            let level = if line.starts_with("[1]") {
+                1
+            } else if line.starts_with("[2]") {
+                2
+            } else if line.starts_with("[3]") {
+                3
+            } else if line.starts_with("[4]") {
+                4
+            } else {
+                unreachable!()
+            };
+
+            level <= configured_verbosity_level()
+        })
         .map(|line| {
             let level_color = if line.starts_with("[1]") {
                 Color::LightRed
@@ -1336,7 +1391,7 @@ fn execute_command(
                 log_1!("- {}", format_move(&mv, state));
             }
         }
-        _ if trimmed.starts_with("fen ") => {
+        _ if trimmed.starts_with("fen") => {
             let fen = trimmed[4..].trim();
             state.load_fen(fen);
             log_2!("Loaded FEN");
@@ -1351,7 +1406,7 @@ fn execute_command(
                 }
             );
         }
-        _ if trimmed.starts_with("search ") => {
+        _ if trimmed.starts_with("search") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 2 {
@@ -1376,7 +1431,7 @@ fn execute_command(
                 log_2!("No legal move available");
             }
         }
-        _ if trimmed.starts_with("go ") => {
+        _ if trimmed.starts_with("go") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 2 {
@@ -1422,7 +1477,7 @@ fn execute_command(
                 }
             );
         }
-        _ if trimmed.starts_with("play ") => {
+        _ if trimmed.starts_with("play") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 3 {
@@ -1448,6 +1503,11 @@ fn execute_command(
             let mut bufs = SearchBufs::default();
 
             while !state.game_over {
+
+                if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+                    break;
+                }
+
                 let result = search_position(
                     state, Arc::clone(&table), &mut info, &mut bufs, threads
                 );
@@ -1475,7 +1535,7 @@ fn execute_command(
                 );
             }
         }
-        _ if trimmed.starts_with("perft ") => {
+        _ if trimmed.starts_with("perft") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 3 && parts.len() != 4 {
@@ -1505,7 +1565,7 @@ fn execute_command(
                 benchmark_headless_perft(state, depth, branch);
             }
         }
-        _ if trimmed.starts_with("move ") => {
+        _ if trimmed.starts_with("move") => {
             let mv_str = trimmed[5..].trim();
             if let Some(mv) = parse_move(mv_str, state) {
                 make_move!(state, mv);
@@ -1539,6 +1599,14 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
     match (app.mode, code) {
         (TUI_INPUT_MODE, KeyCode::Enter) => {
+
+            if app.input == "abort" {
+                SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+
+                app.input.clear();
+                return false;
+            }
+
             if app.locked {
                 log_2!("Command execution in progress, please wait...");
                 return false;
@@ -1607,16 +1675,18 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 .map(|n| n.get())
                 .unwrap_or(1);
             app.threads = (app.threads + 1).min(max_threads);
-
-            log_2!("Threads: {}", app.threads);
-
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('[')) => {
             app.threads = app.threads.saturating_sub(1).max(1);
-
-            log_2!("Threads: {}", app.threads);
-
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('}')) => {
+            inc_verbosity();
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('{')) => {
+            dec_verbosity();
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('j')) => {

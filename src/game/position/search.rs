@@ -54,7 +54,7 @@ pub struct SearchResult {
 /// reaches or exceeds `set_timed`.
 #[inline(always)]
 pub fn check_interrupt(info: &mut SearchInfo) {
-    if info.interrupt || info.set_timed == 0 {
+    if info.interrupt {
         return;
     }
 
@@ -62,6 +62,20 @@ pub fn check_interrupt(info: &mut SearchInfo) {
         .elapsed()
         .as_nanos()
         .saturating_sub(info.start_time);
+
+    if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+        log_4!(
+            "SIGINT | Elapsed Time: {} | Nodes: {} | ",
+            format_time(elapsed),
+            info.nodes,
+        );
+        info.interrupt = true;
+        return;
+    }
+
+    if info.set_timed == 0 {
+        return;
+    }
 
     if elapsed >= info.set_timed {
         info.interrupt = true;
@@ -263,13 +277,13 @@ fn quiescence_search(
 ) -> i32 {
     let mut alpha = alpha;
 
-    #[cfg(debug_assertions)]
-    verify_game_state(state);
-
     info.nodes += 1;
     if info.nodes & 2047 == 0 {
         check_interrupt(info);
     }
+
+    #[cfg(debug_assertions)]
+    verify_game_state(state);
 
     let stand_pat = evaluate_position!(state);
 
@@ -360,6 +374,11 @@ pub fn alpha_beta(
     let mut beta = beta;
     let mut depth = depth;
 
+    info.nodes += 1;
+    if info.nodes & 2047 == 0 {
+        check_interrupt(info);
+    }
+
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
@@ -379,11 +398,6 @@ pub fn alpha_beta(
 
     if in_check {
         depth += 1;
-    }
-
-    info.nodes += 1;
-    if info.nodes & 2047 == 0 {
-        check_interrupt(info);
     }
 
     if depth == 0 {
@@ -473,8 +487,8 @@ pub fn alpha_beta(
     let mut futile = false;
     let futility_margin = match state.game_phase {
         OPENING | SETUP => [0, 200, 350, 600, 900],
-        MIDDLEGAME => [0, 200, 300, 500, 750],
-        ENDGAME => [0, 150, 250, 400, 600],
+        MIDDLEGAME      => [0, 200, 300, 500, 750],
+        ENDGAME         => [0, 150, 250, 400, 600],
         _ => unreachable!(),
     };
 
@@ -497,7 +511,7 @@ pub fn alpha_beta(
     let mut best_move = null_move();
     let mut best_score = -INFINITY;
     let mut legal_moves = 0;
-    let alpha_start = alpha;
+    let alpha_start = alpha; ff
 
     let ply = state.search_ply as usize;
     generate_all_moves_and_drops(
@@ -570,7 +584,7 @@ pub fn alpha_beta(
                 info, bufs, true
             );
 
-            if score > alpha {
+            if score > alpha && beta - alpha > 1 {
                 score = -alpha_beta(
                     state, table, depth - 1, -beta, -alpha, info, bufs, true
                 );
@@ -637,7 +651,6 @@ pub fn alpha_beta(
 
         return 0;
     }
-
 
     #[cfg(debug_assertions)]
     verify_game_state(state);
