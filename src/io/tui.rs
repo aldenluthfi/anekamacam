@@ -1334,6 +1334,7 @@ fn execute_command(
     command: &str,
     state: &mut State,
     table: Arc<TTable>,
+    qtable: Arc<QTable>,
     threads: usize,
     sender: Sender<TuiEvent>
 ) {
@@ -1424,7 +1425,7 @@ fn execute_command(
             };
             let mut bufs = SearchBufs::default();
             let result = search_position(
-                state, Arc::clone(&table), &mut info, &mut bufs, threads
+                state, Arc::clone(&table), Arc::clone(&qtable), &mut info, &mut bufs, threads
             );
 
             if result.best_move == null_move() {
@@ -1449,7 +1450,9 @@ fn execute_command(
             };
             let mut bufs = SearchBufs::default();
             let result = search_position(
-                state, Arc::clone(&table), &mut info, &mut bufs, threads
+                state,
+                Arc::clone(&table), Arc::clone(&qtable),
+                &mut info, &mut bufs, threads
             );
 
             if result.best_move == null_move() {
@@ -1509,10 +1512,12 @@ fn execute_command(
                 }
 
                 let result = search_position(
-                    state, Arc::clone(&table), &mut info, &mut bufs, threads
+                    state,
+                    Arc::clone(&table), Arc::clone(&qtable),
+                    &mut info, &mut bufs, threads
                 );
 
-                if result.best_score == -INFINITY {
+                if result.best_score == -INF {
                     state.game_over = true;
                     log_1!(
                         "Checkmate! {} wins.",
@@ -1636,10 +1641,12 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                         }
                     );
                     let table = TTable::default();
+                    let qtable = QTable::default();
                     execute_command(
                         &command,
                         &mut state,
                         Arc::new(table),
+                        Arc::new(qtable),
                         threads,
                         sender.clone()
                     );

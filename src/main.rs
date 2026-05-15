@@ -33,6 +33,7 @@ pub mod game {
         pub mod move_ordering;
         pub mod parallel;
         pub mod transposition;
+        pub mod qsearch_tt;
         pub mod parameters;
     }
 

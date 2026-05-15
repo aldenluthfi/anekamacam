@@ -69,6 +69,7 @@ pub use crate::game::search::{
     move_ordering::see_move,
     parallel::ThreadPool,
     transposition::{TTEntry, TTable},
+    qsearch_tt::{QTable, QTEntry},
     parameters::derive_parameters,
 };
 
@@ -276,8 +277,8 @@ pub fn null_pseudo_move() -> PseudoMove {
 pub const DEFAULT_DROP: &str = "@#~?@";
 pub const NULL_DROP: &str = "@#~?@#~?";
 
-pub const INFINITY: i32 = 20000;
-pub const MATE_SCORE: i32 = INFINITY - MAX_DEPTH as i32;
+pub const INF: i32 = 20000;
+pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 
 pub const FALPHA: u8 = 0;
 pub const FBETA: u8 = 1;
@@ -289,7 +290,9 @@ pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
 pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       /* 256MB                              */
-pub const MAX_DEPTH: usize = 64;
+pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       /* 128MB                              */
+pub const MAX_DEPTH: usize = 128;
+pub const MTDF_MAX_ITERS: usize = 64;
 
 pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;

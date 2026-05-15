@@ -538,14 +538,15 @@ pub fn benchmark_perft(
 /// Reports the current position, executes search, and logs total nodes, elapsed
 /// wall time, and aggregate nodes-per-second.
 pub fn benchmark_search(
-    state: &mut State, table: Arc<TTable>, depth: usize, thread_num: usize
+    state: &mut State, table: Arc<TTable>, qtable: Arc<QTable>, depth: usize,
+    thread_num: usize
 ) {
     log_1!("Search benchmark started with depth {}...", depth);
 
     let mut info = SearchInfo { set_depth: depth, ..Default::default() };
     let mut bufs = SearchBufs::default();
 
-    search_position(state, table, &mut info, &mut bufs, thread_num);
+    search_position(state, table, qtable, &mut info, &mut bufs, thread_num);
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.
