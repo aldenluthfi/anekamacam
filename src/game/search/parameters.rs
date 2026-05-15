@@ -326,7 +326,7 @@ pub fn derive_parameters(state: &mut State) {
             }
 
             let index = p_index!(piece) as usize;
-            let value = derive_piece_value(state, &piece);
+            let value = derive_piece_value(state, piece);
 
             Some((index, value))
         })
@@ -339,7 +339,7 @@ pub fn derive_parameters(state: &mut State) {
 
     for (index, value) in values.clone() {
         let black_index = state.statics.piece_swap_map[index] as usize;
-        let white_index = index as usize;
+        let white_index = index;
         let value = (value - offset).round() as u16;
 
         set_piece_dynamic_parameters(
@@ -384,8 +384,8 @@ pub fn derive_parameters(state: &mut State) {
         .into_iter()
         .filter(
             |(index, _)|
-                p_is_big!(&state.statics.pieces[*index as usize]) &&
-                p_color!(&state.statics.pieces[*index as usize]) == WHITE
+                p_is_big!(&state.statics.pieces[*index]) &&
+                p_color!(&state.statics.pieces[*index]) == WHITE
         )
         .map(|(_, value)| value)
         .sum::<f64>() / total_values;

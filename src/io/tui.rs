@@ -473,6 +473,7 @@ fn draw_game_selection(
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.path().is_file())
         .map(|entry| entry.file_name().to_string_lossy().to_string())
+        .filter(|name| !name.starts_with("example"))
         .collect::<Vec<_>>();
 
     let mut selected = app.scroll_map.get(&(usize::MAX, usize::MAX))
@@ -548,7 +549,7 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    let log_labels: Vec<Line> = vec!["1", "2", "3", "4"]
+    let log_labels: Vec<Line> = ["1", "2", "3", "4"]
         .iter()
         .map(|label| Line::raw(*label))
         .collect();
@@ -1425,7 +1426,8 @@ fn execute_command(
             };
             let mut bufs = SearchBufs::default();
             let result = search_position(
-                state, Arc::clone(&table), Arc::clone(&qtable), &mut info, &mut bufs, threads
+                state, Arc::clone(&table), Arc::clone(&qtable), 
+                &mut info, &mut bufs, threads
             );
 
             if result.best_move == null_move() {
