@@ -16,28 +16,33 @@ use crate::*;
 pub struct ThreadPool {
     pub main_state: State,
     pub tt: Arc<TTable>,
+    pub qt: Arc<QTable>,
     thread_count: usize,
 }
 
 impl ThreadPool {
 
-    pub fn with_threads(root: &State, tt: Arc<TTable>, count: usize) -> Self {
+    pub fn with_threads(
+        root: &State, tt: Arc<TTable>, qt: Arc<QTable>, count: usize
+    ) -> Self {
         let thread_count = count.max(1);
 
         log_2!("ThreadPool: {} threads", thread_count);
 
         let main_state = root.clone();
 
-        Self { main_state, tt, thread_count }
+        Self { main_state, tt, qt, thread_count }
     }
 
     pub fn run(self, depth: usize, timed: u128) -> SearchResult {
         let tt = Arc::clone(&self.tt);
+        let qtable = Arc::clone(&self.qt);
         let mut workers = Vec::with_capacity(self.thread_count);
 
         for i in 0..self.thread_count {
             let state_clone = self.main_state.clone();
             let tt_clone = Arc::clone(&tt);
+            let qt_clone = Arc::clone(&qtable);
             let set_depth = depth;
             let set_timed = timed;
 
@@ -52,7 +57,9 @@ impl ThreadPool {
                     let mut bufs = SearchBufs::default();
                     let mut state = state_clone;
                     iterative_deepening(
-                        &mut state, &tt_clone, &mut info, &mut bufs, i
+                        &mut state,
+                        &tt_clone, &qt_clone,
+                        &mut info, &mut bufs, i
                     )
             })
                 .unwrap_or_else(|e| {
@@ -63,7 +70,7 @@ impl ThreadPool {
         }
 
         let mut main_result = SearchResult {
-            best_score: -INFINITY,
+            best_score: -INF,
             best_move: null_move(),
             total_nodes: 0,
             total_elapsed: 0,
