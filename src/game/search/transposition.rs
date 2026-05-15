@@ -34,6 +34,7 @@ use crate::*;
 /// Validation:
 ///   (1) slot[0] ^ slot[1] ^ slot[2] == position_hash  →  parity intact
 ///   (2) version unchanged across read                  →  no torn write
+#[derive(Default)]
 pub struct TTEntry {
     pub slot: [u128; 3],                                                        /* [key, data1, data2]                */
     pub age: u64,                                                               /* search age for replacement policy  */
@@ -46,16 +47,6 @@ impl Clone for TTEntry {
             slot: self.slot,
             age: self.age,
             version: AtomicU64::new(self.version.load(Ordering::Relaxed)),
-        }
-    }
-}
-
-impl Default for TTEntry {
-    fn default() -> Self {
-        TTEntry {
-            slot: [0, 0, 0],
-            age: 0,
-            version: AtomicU64::new(0),
         }
     }
 }

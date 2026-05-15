@@ -87,7 +87,7 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// Zeroes node counters, interrupt flag, killer and history tables, and ply.
 /// Board position is unchanged.
 pub fn clear_search(
-    state: &mut State, table: &TTable,
+    state: &mut State, ttable: &TTable, qtable: &QTable,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
 ) {
     info.start_time = ENGINE_START.elapsed().as_nanos();
@@ -108,14 +108,15 @@ pub fn clear_search(
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     state.countermove_hist = vec![vec![null_move(); 1]; MAX_DEPTH];
 
-    table.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    ttable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    qtable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     state.search_ply = 0;
 }
 
 /// Runs iterative deepening on a single thread or a thread pool, then logs
 /// transposition table statistics.
 pub fn search_position(
-    state: &mut State, table: Arc<TTable>,
+    state: &mut State, table: Arc<TTable>, qtable: Arc<QTable>,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
     thread_num: usize,
 ) -> SearchResult {
@@ -124,11 +125,16 @@ pub fn search_position(
     table.new_write.store(0, Ordering::Relaxed);
     table.over_write.store(0, Ordering::Relaxed);
 
+    qtable.hit.store(0, Ordering::Relaxed);
+    qtable.valid.store(0, Ordering::Relaxed);
+    qtable.new_write.store(0, Ordering::Relaxed);
+    qtable.over_write.store(0, Ordering::Relaxed);
+
     let result = if thread_num <= 1 {
-        iterative_deepening(state, &table, info, bufs, 0)
+        iterative_deepening(state, &table, &qtable, info, bufs, 0)
     } else {
         let pool = ThreadPool::with_threads(
-            state, Arc::clone(&table), thread_num
+            state, Arc::clone(&table), Arc::clone(&qtable), thread_num
         );
         pool.run(info.set_depth, info.set_timed)
     };
@@ -141,11 +147,73 @@ pub fn search_position(
         table.valid.load(Ordering::Relaxed),
     );
 
+    log_2!(
+        "QTT | new: {} | over: {} | hit: {} | valid: {}",
+        qtable.new_write.load(Ordering::Relaxed),
+        qtable.over_write.load(Ordering::Relaxed),
+        qtable.hit.load(Ordering::Relaxed),
+        qtable.valid.load(Ordering::Relaxed),
+    );
+
     result
 }
 
+/*----------------------------------------------------------------------------*\
+                              MTD(f) DRIVER
+\*----------------------------------------------------------------------------*/
+
+fn mtdf(
+    state: &mut State,
+    ttable: &TTable,
+    qtable: &QTable,
+    depth: usize,
+    mut f: i32,
+    info: &mut SearchInfo,
+    bufs: &mut SearchBufs,
+) -> i32 {
+    let mut lower = -INF;
+    let mut upper = INF;
+
+    for _ in 0..MTDF_MAX_ITERS {
+        let bound = if f == lower { f + 1 } else { f };
+
+        let beta = bound + 1;
+        let alpha = bound;
+
+        let local_alpha = alpha;
+        let local_beta = beta;
+
+        let s = alpha_beta(
+            state, ttable, qtable, depth,
+            local_alpha, local_beta, info, bufs, true
+        );
+
+        if info.interrupt {
+            return f;
+        }
+
+        if s <= bound {
+            upper = s;
+            f = s;
+        } else {
+            lower = s;
+            f = s;
+        }
+
+        if lower >= upper {
+            break;
+        }
+    }
+
+    f
+}
+
+/*----------------------------------------------------------------------------*\
+                         ITERATIVE DEEPENING
+\*----------------------------------------------------------------------------*/
+
 pub fn iterative_deepening(
-    state: &mut State, table: &TTable,
+    state: &mut State, ttable: &TTable, qtable: &QTable,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
     thread_num: usize,
 ) -> SearchResult {
@@ -154,7 +222,7 @@ pub fn iterative_deepening(
     let mut best_score: i32 = 0;
     let start_time = ENGINE_START.elapsed().as_nanos();
 
-    clear_search(state, table, info, bufs);
+    clear_search(state, ttable, qtable, info, bufs);
 
     for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
@@ -162,26 +230,10 @@ pub fn iterative_deepening(
 
         let score = if depth == 1 {
             alpha_beta(
-                state, table, depth, -INFINITY, INFINITY, info, bufs, true
+                state, ttable, qtable, depth, -INF, INF, info, bufs, true
             )
         } else {
-            let mut delta: i32 = 50;
-            let mut lo = best_score - delta;
-            let mut hi = best_score + delta;
-            loop {
-                let s = alpha_beta(
-                    state, table, depth, lo, hi, info, bufs, true
-                );
-                if info.interrupt { break s; }
-                if s <= lo {
-                    lo = -INFINITY;
-                } else if s >= hi {
-                    hi = INFINITY;
-                } else {
-                    break s;
-                }
-                delta = delta.saturating_mul(2);
-            }
+            mtdf(state, ttable, qtable, depth, best_score, info, bufs)
         };
 
         if info.interrupt {
@@ -190,7 +242,7 @@ pub fn iterative_deepening(
 
         best_score = score;
 
-        fill_pv_line!(state, table, depth);
+        fill_pv_line!(state, ttable, depth);
         best_move = state.pv_line[0].clone();
 
         let elapsed = ENGINE_START
@@ -269,7 +321,8 @@ pub fn iterative_deepening(
 /// clearly losing captures unless in endgame or promotion.
 fn quiescence_search(
     state: &mut State,
-    table: &TTable,
+    ttable: &TTable,
+    qtable: &QTable,
     alpha: i32,
     beta: i32,
     info: &mut SearchInfo,
@@ -299,15 +352,28 @@ fn quiescence_search(
     generate_all_captures(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
-    let pv_move = probe_pv_move!(state, table);
+    let tt_pv_move = probe_pv_move!(state, ttable);
+    let qtt_entry = probe_qtt_entry!(state, qtable, alpha, beta);
+
+    if qtt_entry.0 {
+        return qtt_entry.1;
+    }
+
+    let pv_move = match qtt_entry.2 {
+        pm if pm != null_pseudo_move() => Some(pm),
+        _ => tt_pv_move,
+    };
+
+    let mut best_move = null_move();
+    let best_score = alpha;
 
     for i in 0..bufs.move_buf[ply].len() {
         pick_by_score!(state, &mut bufs.move_buf[ply], i, &pv_move);
 
         let mv = bufs.move_buf[ply][i].clone();
 
-        let move_type = move_type!(mv);
-        let promotion = promotion!(mv);
+        let move_type = move_type!(mv.clone());
+        let promotion = promotion!(mv.clone());
         let captured_value = if move_type == SINGLE_CAPTURE_MOVE {
             p_ovalue!(
                 state.statics.pieces[captured_piece!(mv.clone()) as usize]
@@ -327,12 +393,12 @@ fn quiescence_search(
             continue;
         }
 
-        if !make_move!(state, mv) {
+        if !make_move!(state, mv.clone()) {
             continue;
         }
 
         let score =
-            -quiescence_search(state, table, -beta, -alpha, info, bufs);
+            -quiescence_search(state, ttable, qtable, -beta, -alpha, info, bufs);
         undo_move!(state);
 
         if info.interrupt {
@@ -341,15 +407,21 @@ fn quiescence_search(
 
         if score > alpha {
             if score >= beta {
+                hash_qtt_entry!(mv, beta, FBETA, state, qtable);
                 return beta;
             }
 
+            best_move = mv.clone();
             alpha = score;
         }
     }
 
     #[cfg(debug_assertions)]
     verify_game_state(state);
+
+    if alpha != best_score && best_move != null_move() {
+        hash_qtt_entry!(best_move, alpha, FEXACT, state, qtable);
+    }
 
     alpha
 }
@@ -362,7 +434,8 @@ fn quiescence_search(
 /// Full state verification runs only in debug builds.
 pub fn alpha_beta(
     state: &mut State,
-    table: &TTable,
+    ttable: &TTable,
+    qtable: &QTable,
     depth: usize,
     alpha: i32,
     beta: i32,
@@ -401,7 +474,7 @@ pub fn alpha_beta(
     }
 
     if depth == 0 {
-        return quiescence_search(state, table, alpha, beta, info, bufs);
+        return quiescence_search(state, ttable, qtable, alpha, beta, info, bufs);
     }
 
     let static_eval = evaluate_position!(state);
@@ -411,7 +484,7 @@ pub fn alpha_beta(
     }
 
     let mut pv_move: Option<PseudoMove> = None;
-    let tt_entry = probe_tt_entry!(state, table, alpha, beta, depth);           /* transposition table lookup         */
+    let tt_entry = probe_tt_entry!(state, ttable, alpha, beta, depth);           /* transposition table lookup         */
 
     if tt_entry.2 != null_pseudo_move() {
         pv_move = Some(tt_entry.2);
@@ -448,7 +521,7 @@ pub fn alpha_beta(
     && static_eval + 200 + 150 * (depth as i32) < alpha
     {                                                                           /* razoring                           */
         let shallow = alpha_beta(
-            state, table,
+            state, ttable, qtable,
             depth.saturating_sub(2),
             alpha, alpha + 1,
             info, bufs, null
@@ -467,10 +540,10 @@ pub fn alpha_beta(
     && state.search_ply > 0
     && state.game_phase != ENDGAME
     {                                                                           /* null move pruning                  */
-        let reduction = 3 + if depth >= 6 { 1 } else { 0 };
+        let reduct = 3 + if depth >= 6 { 1 } else { 0 };
         make_null_move!(state);
         let score = -alpha_beta(
-            state, table, depth - reduction, -beta, -beta + 1, info, bufs,
+            state, ttable, qtable, depth - reduct, -beta, -beta + 1, info, bufs,
             false
         );
         undo_null_move!(state);
@@ -502,14 +575,14 @@ pub fn alpha_beta(
     }
 
     if pv_move.is_none() && depth >= 5 {                                        /* IID: search shallower to seed TT   */
-        alpha_beta(state, table, depth - 2, alpha, beta, info, bufs, true);
+        alpha_beta(state, ttable, qtable, depth - 2, alpha, beta, info, bufs, true);
         if !info.interrupt {
-            pv_move = probe_pv_move!(state, table);
+            pv_move = probe_pv_move!(state, ttable);
         }
     }
 
     let mut best_move = null_move();
-    let mut best_score = -INFINITY;
+    let mut best_score = -INF;
     let mut legal_moves = 0;
     let alpha_start = alpha;
 
@@ -580,18 +653,18 @@ pub fn alpha_beta(
             }
 
             score = -alpha_beta(
-                state, table, depth - reduct, -alpha - 1, -alpha,
+                state, ttable, qtable, depth - reduct, -alpha - 1, -alpha,
                 info, bufs, true
             );
 
             if score > alpha && beta - alpha > 1 {
                 score = -alpha_beta(
-                    state, table, depth - 1, -beta, -alpha, info, bufs, true
+                    state, ttable, qtable, depth - 1, -beta, -alpha, info, bufs, true
                 );
             }
         } else {
             score = -alpha_beta(
-                state, table, depth - reduct, -beta, -alpha, info, bufs, true
+                state, ttable, qtable, depth - reduct, -beta, -alpha, info, bufs, true
             );
         }
 
@@ -620,7 +693,7 @@ pub fn alpha_beta(
                             mv.clone();
                     }
 
-                    hash_tt_entry!(best_move, beta, FBETA, depth, state, table);
+                    hash_tt_entry!(best_move, beta, FBETA, depth, state, ttable);
 
                     return beta;
                 }
@@ -637,7 +710,7 @@ pub fn alpha_beta(
 
     if legal_moves == 0 {
         if in_check || stalemate_loss!(&state) {
-            let mate_score = -INFINITY + state.search_ply as i32;
+            let mate_score = -INF + state.search_ply as i32;
 
             return if state.history.last().is_some_and(|s| {
                 move_type!(&s.move_ply) == DROP_MOVE
@@ -656,9 +729,9 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     if alpha != alpha_start {
-        hash_tt_entry!(best_move, best_score, FEXACT, depth, state, table);
+        hash_tt_entry!(best_move, best_score, FEXACT, depth, state, ttable);
     } else {
-        hash_tt_entry!(best_move, alpha, FALPHA, depth, state, table);
+        hash_tt_entry!(best_move, alpha, FALPHA, depth, state, ttable);
     }
 
     alpha
