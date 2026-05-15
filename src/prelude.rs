@@ -44,8 +44,8 @@ pub use crate::game::representations::{
 /*----------------------------------------------------------------------------*\
                                 GAME LOGIC API
 \*----------------------------------------------------------------------------*/
-pub use crate::game::drops::drop_list::generate_relevant_drops;
-pub use crate::game::drops::drop_parse::generate_drop_vectors;
+pub use crate::game::moves::drop_list::generate_relevant_drops;
+pub use crate::game::moves::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
     generate_all_captures, generate_all_moves_and_drops, generate_attack_masks,
     generate_relevant_captures, generate_relevant_moves,
@@ -54,7 +54,7 @@ pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
 };
 
-pub use crate::game::patterns::pattern_match::{
+pub use crate::game::moves::pattern_match::{
     PatternAllower, PatternSet, PatternStopper, generate_relevant_stand_offs,
     generate_stand_off_patterns, match_pattern, parse_pattern,
 };
@@ -92,7 +92,8 @@ pub use crate::io::game_io::{
     mirror_pst_across_horizontal_axis
 };
 pub use crate::io::logger::{
-    configured_log_level, configured_verbosity_level, init_logging,
+    configured_log_level, configured_verbosity_level, inc_verbosity,
+    dec_verbosity, init_logging,
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
 pub use crate::io::tui::tui;
@@ -119,6 +120,9 @@ pub use env_logger::{
     Builder as LoggerBuilder, Target as LoggerTarget
 };
 pub use hashbrown::{HashMap, HashSet};
+pub use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 pub use hotpath;
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, warn};
@@ -151,7 +155,7 @@ pub use std::{
     path::Path,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         mpsc,
     },
     thread::{self, JoinHandle},
@@ -258,6 +262,8 @@ lazy_static! {
     };
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
+    pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(3);
+    pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
 }
 
 pub fn null_move() -> Move {

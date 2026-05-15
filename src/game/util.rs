@@ -415,7 +415,7 @@ pub fn benchmark_headless_perft(state: &mut State, depth: u8, branch: i8) {
             .saturating_sub(start_time);
 
 
-        log_1!(
+        log_2!(
             "Depth {} | Nodes: {:>12} | Elapsed Time: {:>12}",
             d,
             nodes,
@@ -460,7 +460,7 @@ pub fn benchmark_perft(
         panic!("Failed to lock RNG mutex for perft shuffle: {e}")
     }));
 
-    log_1!(
+    log_3!(
         "Perft testing {} positions with depth {} and branching {}...",
         limit, depth, branch
     );
@@ -499,7 +499,7 @@ pub fn benchmark_perft(
             if result == expected {
                 successful_cases += 1;
                 total_moves += result;
-                log_1!(
+                log_2!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [PASSED]",
                     i,
@@ -530,7 +530,7 @@ pub fn benchmark_perft(
         "Perft testing completed: {}/{} cases passed.",
         successful_cases, total_cases
     );
-    log_1!("Total moves generated: {}", total_moves);
+    log_3!("Total moves generated: {}", total_moves);
 }
 
 /// Runs a fixed-depth search benchmark from the current position.
@@ -553,9 +553,18 @@ pub fn benchmark_search(
 /// When `branch >= 0`, prints the explored move prefixes for the first levels
 /// to help inspect branching behavior.
 pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
+
+    if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+        log_4!(
+            "SIGINT | Aborting perft at depth {} with prefix '{}'",
+            depth, prefix
+        );
+        return 0;
+    }
+
     if depth == 0 {
         if branch >= 0 {
-            log_1!("{} moves | Nodes: 1", prefix);
+            log_4!("{} moves | Nodes: 1", prefix);
         }
         return 1;
     }
@@ -586,7 +595,7 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
         }
     }
 
-    log_1!("{} moves | Nodes: {}", prefix, nodes);
+    log_4!("{} moves | Nodes: {}", prefix, nodes);
 
     nodes
 }
