@@ -1282,6 +1282,8 @@ macro_rules! make_move {
                 }
 
                 if drops!($state) || promote_to_captured!($state) {
+                    let old_captured_piece = captured_piece;
+
                     if demote_upon_capture!($state) {
                         captured_piece = $state.statics.piece_demotion_map
                             [captured_piece][0] as usize;                       /* assume 1 to 1 mapping              */
@@ -1301,6 +1303,8 @@ macro_rules! make_move {
                         old_hand,
                         *hand
                     );
+
+                    captured_piece = old_captured_piece;
                 }
 
                 let end_rank =
@@ -1613,6 +1617,7 @@ macro_rules! make_move {
                     );
 
                     if drops!($state) || promote_to_captured!($state) {
+                        let old_captured_piece = captured_piece;
 
                         if demote_upon_capture!($state) {
                             captured_piece = $state.statics.piece_demotion_map
@@ -1634,6 +1639,8 @@ macro_rules! make_move {
                             old_hand,
                             *hand
                         );
+
+                        captured_piece = old_captured_piece;
                     }
 
                     let end_rank = (captured_square as Square) /

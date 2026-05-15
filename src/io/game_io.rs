@@ -931,6 +931,14 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    for piece in &result.statics.pieces.clone() {
+        let pi = p_index!(piece) as usize;
+
+        if result.statics.piece_demotion_map[pi].is_empty() {
+            result.static_mut().piece_demotion_map[pi].push(pi as PieceIndex);
+        }
+    }
+
     if castling {
         assert!(
             result.statics

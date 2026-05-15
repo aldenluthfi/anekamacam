@@ -55,22 +55,21 @@ pub use crate::game::moves::move_parse::{
 };
 
 pub use crate::game::moves::pattern_match::{
-    PatternAllower, PatternSet, PatternStopper, generate_relevant_stand_offs,
-    generate_stand_off_patterns, match_pattern, parse_pattern,
+    generate_relevant_stand_offs, generate_stand_off_patterns, match_pattern,
+    parse_pattern, PatternAllower, PatternSet, PatternStopper,
 };
 pub use crate::game::position::{
-    hash::{PositionHash, hash_position},
+    hash::{hash_position, PositionHash},
     search::{
-        SearchBufs, SearchInfo, SearchResult, alpha_beta, check_interrupt,
-        clear_search, search_position, iterative_deepening,
+        alpha_beta, check_interrupt, clear_search, iterative_deepening,
+        search_position, SearchBufs, SearchInfo, SearchResult,
     },
 };
 pub use crate::game::search::{
     move_ordering::see_move,
     parallel::ThreadPool,
-    transposition::{TTEntry, TTable},
-    qsearch_tt::{QTable, QTEntry},
     parameters::derive_parameters,
+    transposition::{QTable, QTEntry, TTEntry, TTable},
 };
 
 pub use crate::game::util::{
@@ -85,16 +84,15 @@ pub use crate::io::board_io::{
     format_board, format_square,
 };
 pub use crate::io::game_io::{
-    export_tuned_parameters_file, format_game_state,
-    parse_config_file, parse_fen, parse_tuned_parameters_file,
-    format_castling_rights, format_fen, format_hand, format_numeric_board,
-    format_position_hash, format_special_rules, format_game_phase,
-    format_en_passant_square, set_piece_dynamic_parameters,
-    mirror_pst_across_horizontal_axis
+    export_tuned_parameters_file, format_castling_rights, format_en_passant_square,
+    format_fen, format_game_phase, format_game_state, format_hand,
+    format_numeric_board, format_position_hash, format_special_rules,
+    mirror_pst_across_horizontal_axis, parse_config_file, parse_fen,
+    parse_tuned_parameters_file, set_piece_dynamic_parameters,
 };
 pub use crate::io::logger::{
-    configured_log_level, configured_verbosity_level, inc_verbosity,
-    dec_verbosity, init_logging,
+    configured_log_level, configured_verbosity_level, dec_verbosity,
+    inc_verbosity, init_logging,
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
 pub use crate::io::tui::tui;
@@ -106,14 +104,15 @@ pub use arboard::Clipboard;
 pub use bnum::types::U4096;
 pub use core::cell::SyncUnsafeCell;
 pub use crossterm::{
+    event,
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode,
-        KeyEvent, KeyEventKind, KeyModifiers,
+        DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent,
+        KeyEventKind, KeyModifiers,
     },
     execute,
     terminal::{
-        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode,
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen,
+        LeaveAlternateScreen,
     },
 };
 pub use env_logger::{
@@ -127,10 +126,11 @@ pub use rayon::iter::{
 pub use hotpath;
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, warn};
-pub use mpsc::{channel, Sender, Receiver, TryRecvError};
-pub use rand::{RngCore, SeedableRng, seq::SliceRandom, rngs::StdRng, Rng};
+pub use mpsc::{channel, Receiver, Sender, TryRecvError};
+pub use rand::{
+    rngs::StdRng, seq::SliceRandom, Rng, RngCore, SeedableRng,
+};
 pub use ratatui::{
-    Frame, DefaultTerminal,
     backend::CrosstermBackend,
     buffer::Buffer,
     layout::{
@@ -141,8 +141,9 @@ pub use ratatui::{
     text::{Line, Span, Text},
     widgets::{
         Block, Borders, Cell, Clear, List, ListItem, ListState, Padding,
-        Paragraph, Row, Table, TableState, Tabs, Wrap, Widget
+        Paragraph, Row, Table, TableState, Tabs, Widget, Wrap,
     },
+    Frame, DefaultTerminal,
 };
 pub use regex::Regex;
 pub use std::{
@@ -151,13 +152,12 @@ pub use std::{
     fmt::{Debug, Formatter as FmtFormatter, Result as FmtResult},
     fs::{self, OpenOptions},
     hash::Hash,
-    io::{Write, stdin, stdout, Result as IoResult},
+    io::{stdin, stdout, Result as IoResult, Write},
     mem::{self, size_of},
     path::Path,
     sync::{
-        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
-        mpsc,
+        mpsc, Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::{self, Duration, Instant, SystemTime},
@@ -225,28 +225,15 @@ thread_local! {
 }
 
 lazy_static! {
-    pub static ref RNG: Mutex<StdRng> =
-        Mutex::new(StdRng::seed_from_u64(0xDEADBEEFCAFEBABE));
-    pub static ref ENGINE_START: Instant = Instant::now();
+    pub static ref CASTLING_HASHES: [u128; 16] =
+        array::from_fn(|_| random_u128());
     pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")
         .unwrap_or_else(|e| {
             panic!("Failed to compile COMMENT_PATTERN regex: {e}")
         });
-    pub static ref CASTLING_HASHES: [u128; 16] =
-        array::from_fn(|_| random_u128());
+    pub static ref ENGINE_START: Instant = Instant::now();
     pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
         array::from_fn(|_| random_u128());
-    pub static ref SIDE_HASHES: u128 = random_u128();
-    pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
-        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
-
-        for _ in 0..256 {
-            let piece_hashes = array::from_fn(|_| random_u128());
-            result.push(piece_hashes);
-        }
-
-        result
-    };
     pub static ref IN_HAND_HASHES: Vec<[u128; MAX_SQUARES]> = {
         let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
 
@@ -263,7 +250,20 @@ lazy_static! {
     };
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
+    pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
+        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
+
+        for _ in 0..256 {
+            let piece_hashes = array::from_fn(|_| random_u128());
+            result.push(piece_hashes);
+        }
+
+        result
+    };
+    pub static ref RNG: Mutex<StdRng> =
+        Mutex::new(StdRng::seed_from_u64(0xDEADBEEFCAFEBABE));
     pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(3);
+    pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
 }
 
