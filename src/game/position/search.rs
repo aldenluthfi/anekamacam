@@ -511,7 +511,7 @@ pub fn alpha_beta(
     let mut best_move = null_move();
     let mut best_score = -INFINITY;
     let mut legal_moves = 0;
-    let alpha_start = alpha; ff
+    let alpha_start = alpha;
 
     let ply = state.search_ply as usize;
     generate_all_moves_and_drops(
