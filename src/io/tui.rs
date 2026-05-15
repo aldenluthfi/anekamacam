@@ -568,6 +568,13 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 }
 
 fn draw_input(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
+    let input_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(13),
+        ])
+        .split(area);
     let prompt = if app.mode == TUI_INPUT_MODE {
         Line::from(vec![
             Span::styled(" $> ", Style::default().fg(Color::Yellow)),
@@ -583,7 +590,37 @@ fn draw_input(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let command_block = Block::default().borders(Borders::ALL);
 
     let command = Paragraph::new(prompt).block(command_block);
-    frame.render_widget(command, area);
+
+    let max_threads = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(8);
+
+    let thread_labels: Vec<Line> = if app.threads == 1 {
+        [1, 2, 3]
+    } else if app.threads == max_threads {
+        [max_threads - 2, max_threads - 1, max_threads]
+    } else {
+        [app.threads - 1, app.threads, app.threads + 1]
+    }.iter().map(|&n| Line::raw(n.to_string())).collect();
+    let thread_tabs = Tabs::new(thread_labels)
+        .block(Block::default().borders(Borders::ALL))
+        .select(if app.threads == 1 {
+            Some(0)
+        } else if app.threads == max_threads {
+            Some(2)
+        } else {
+            Some(1)
+        })
+        .style(Style::default().fg(Color::Gray))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+
+    frame.render_widget(command, input_layout[0]);
+    frame.render_widget(thread_tabs, input_layout[1]);
 }
 
 fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
@@ -618,7 +655,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         ("<g/G>", "Scroll to top/bottom"),
         ("<n>", "New game"),
         ("<{/}>", "Increase/decrease log verbosity"),
-        ("<]/[>", "Increase/decrease thread count"),
+        ("<]/[>", "Inctrease/decrease thread count"),
     ];
 
     let input_mode_rows = [
@@ -1426,7 +1463,7 @@ fn execute_command(
             };
             let mut bufs = SearchBufs::default();
             let result = search_position(
-                state, Arc::clone(&table), Arc::clone(&qtable), 
+                state, Arc::clone(&table), Arc::clone(&qtable),
                 &mut info, &mut bufs, threads
             );
 
@@ -1682,7 +1719,8 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
         (TUI_NORMAL_MODE, KeyCode::Char(']')) => {
             let max_threads = thread::available_parallelism()
                 .map(|n| n.get())
-                .unwrap_or(1);
+                .unwrap_or(1)
+                .min(8);
             app.threads = (app.threads + 1).min(max_threads);
             false
         },
