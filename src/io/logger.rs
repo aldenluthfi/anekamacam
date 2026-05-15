@@ -23,10 +23,6 @@ macro_rules! push_log_message {
         });
 
         queue.push_back(formatted.clone());
-
-        while queue.len() > MAX_LOGS_LEN {
-            queue.pop_front();
-        }
     };
 }
 
@@ -41,11 +37,9 @@ macro_rules! verbosity_enabled {
 macro_rules! log_1 {
     ($($arg:tt)*) => {
         {
-            if verbosity_enabled!(1) {
-                let message = format!($($arg)*);
-                push_log_message!(1, message);
-                error!("{}", format!($($arg)*));
-            }
+            let message = format!($($arg)*);
+            push_log_message!(1, message);
+            error!("{}", format!($($arg)*));
         }
     };
 }
@@ -54,11 +48,9 @@ macro_rules! log_1 {
 macro_rules! log_2 {
     ($($arg:tt)*) => {
         {
-            if verbosity_enabled!(2) {
-                let message = format!($($arg)*);
-                push_log_message!(2, message);
-                warn!("{}", format!($($arg)*));
-            }
+            let message = format!($($arg)*);
+            push_log_message!(2, message);
+            warn!("{}", format!($($arg)*));
         }
     };
 }
@@ -67,11 +59,9 @@ macro_rules! log_2 {
 macro_rules! log_3 {
     ($($arg:tt)*) => {
         {
-            if verbosity_enabled!(3) {
-                let message = format!($($arg)*);
-                push_log_message!(3, message);
-                info!("{}", format!($($arg)*));
-            }
+            let message = format!($($arg)*);
+            push_log_message!(3, message);
+            info!("{}", format!($($arg)*));
         }
     };
 }
@@ -80,11 +70,9 @@ macro_rules! log_3 {
 macro_rules! log_4 {
     ($($arg:tt)*) => {
         {
-            if verbosity_enabled!(4) {
-                let message = format!($($arg)*);
-                push_log_message!(4, message);
-                debug!("{}", format!($($arg)*));
-            }
+            let message = format!($($arg)*);
+            push_log_message!(4, message);
+            debug!("{}", format!($($arg)*));
         }
     };
 }
@@ -110,21 +98,28 @@ fn verbosity_style(level: log::Level) -> log_style::Style {
 }
 
 pub fn configured_log_level() -> log::LevelFilter {
-    if cfg!(feature = "log-level-4") {
-        log::LevelFilter::Debug
-    } else if cfg!(feature = "log-level-3") {
-        log::LevelFilter::Info
-    } else if cfg!(feature = "log-level-2") {
-        log::LevelFilter::Warn
-    } else if cfg!(feature = "log-level-1") {
-        log::LevelFilter::Error
-    } else {
-        log::LevelFilter::Info
+    match RUNTIME_VERBOSITY.load(Ordering::Relaxed) {
+        1 => log::LevelFilter::Error,
+        2 => log::LevelFilter::Warn,
+        3 => log::LevelFilter::Info,
+        4 => log::LevelFilter::Debug,
+        _ => log::LevelFilter::Info,
     }
 }
 
 pub fn configured_verbosity_level() -> u8 {
-    configured_log_level().to_level().map_or(0, level_to_verbosity)
+    RUNTIME_VERBOSITY.load(Ordering::Acquire)
+}
+
+pub fn inc_verbosity() {
+    RUNTIME_VERBOSITY.fetch_min(4, Ordering::Release);
+    RUNTIME_VERBOSITY.fetch_add(1, Ordering::Release);
+    RUNTIME_VERBOSITY.fetch_min(4, Ordering::Release);
+}
+
+pub fn dec_verbosity() {
+    RUNTIME_VERBOSITY.fetch_sub(1, Ordering::Release);
+    RUNTIME_VERBOSITY.fetch_max(1, Ordering::Release);
 }
 
 pub fn init_logging() {
@@ -143,8 +138,9 @@ pub fn init_logging() {
         .format_module_path(false)
         .format_source_path(false)
         .format(|buf, record| {
-            let timestamp_raw = buf.timestamp_nanos().to_string();
+            let timestamp_raw = buf.timestamp_millis().to_string();
             let timestamp = timestamp_raw
+                .trim_end_matches(".")
                 .replace('T', " ");
 
             let file = record.file().and_then(|path| {

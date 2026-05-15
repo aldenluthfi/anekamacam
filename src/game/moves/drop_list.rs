@@ -135,7 +135,7 @@ macro_rules! generate_drop_list {
                     enc_start!(encoded_move, square as u128);
 
                     let enemy_idx = $state.statics.piece_swap_map
-                        [&(piece_index as PieceIndex)] as usize;
+                        [piece_index] as usize;
 
                     if get!(
                         $state.statics.forbidden_zones[piece_index], square

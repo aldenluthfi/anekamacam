@@ -106,16 +106,7 @@ fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
             continue;
         }
 
-        let black_idx = state.statics
-            .piece_swap_map
-            .get(&(white_idx as u8))
-            .copied()
-            .unwrap_or_else(|| {
-                panic!(
-                    "Missing black counterpart for white piece index {} ({})",
-                    white_idx, piece.char
-                )
-            }) as usize;
+        let black_idx = state.statics.piece_swap_map[white_idx] as usize;
 
         assert!(
             p_color!(state.statics.pieces[black_idx]) == BLACK,
@@ -924,8 +915,9 @@ pub fn parse_config_file(path: &str) -> State {
             }).map(|other_idx| (i as PieceIndex, other_idx as PieceIndex))
         })
         .collect();
-    for (i, other_idx) in swap_entries {
-        result.static_mut().piece_swap_map.insert(i, other_idx);
+
+    for (i, j) in swap_entries {
+        result.static_mut().piece_swap_map[i as usize] = j;
     }
 
     let pieces_promos: Vec<(PieceIndex, Vec<u8>)> = result.statics.pieces
@@ -934,18 +926,9 @@ pub fn parse_config_file(path: &str) -> State {
         .collect();
     for (pi, promotions) in &pieces_promos {
         for &promotion_index in promotions {
-            result.static_mut().piece_demotion_map
-                .entry(promotion_index)
-                .or_default()
+            result.static_mut().piece_demotion_map[promotion_index as usize]
                 .push(*pi);
         }
-    }
-
-    let piece_count = result.statics.pieces.len();
-    for index in 0..piece_count {
-        result.static_mut().piece_demotion_map
-            .entry(index as PieceIndex)
-            .or_insert_with(|| vec![index as PieceIndex]);
     }
 
     if castling {

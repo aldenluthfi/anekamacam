@@ -31,5 +31,6 @@ ratatui = {
     features = ["unstable-rendered-line-info"]
 }
 chrono = "*"
+rayon = "*"
 crossterm = "*"
 arboard = "*"

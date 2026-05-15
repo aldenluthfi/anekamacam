@@ -346,9 +346,9 @@ pub struct StaticState {
     pub relevant_stand_offs: Vec<PatternSet>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
 
-    pub piece_swap_map: HashMap<u8, u8>,                                        /* piece index to swap color (if any) */
-    pub piece_demotion_map: HashMap<u8, Vec<u8>>,                               /* piece index to demotion piece idx  */
-    pub piece_char_map: HashMap<char, u8>,                                      /* char to piece index map            */
+    pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
+    pub piece_demotion_map: Vec<Vec<PieceIndex>>,                               /* piece index to demotion piece idx  */
+    pub piece_char_map: HashMap<char, PieceIndex>,                              /* char to piece index map            */
 
     pub most_valuable: u16,                                                     /* value of the most valuable piece   */
 }
@@ -532,8 +532,8 @@ impl State {
                 vec![Vec::new(); board_size],
             ],
 
-            piece_swap_map: HashMap::new(),
-            piece_demotion_map: HashMap::new(),
+            piece_swap_map: vec![0; piece_count],
+            piece_demotion_map: vec![Vec::new(); piece_count],
             piece_char_map: HashMap::new(),
 
             most_valuable,

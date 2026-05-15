@@ -88,19 +88,9 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
     log_4!("Deriving base value for piece '{}'", piece.char);
 
     let board_size = state.main_board.len();
-    let mut reach_values = vec![-1; board_size];
-
     let piece_index = p_index!(piece) as usize;
 
-    let mut i = 0;
-    while i < 100.min(board_size) {
-
-        let square = RNG.lock().unwrap().random_range(0..board_size);
-
-        if reach_values[square] >= 0 {
-            continue;
-        }
-
+    let reach_values: Vec<i32> = (0..board_size).into_par_iter().map(|square| {
         let mut reached_squares: HashSet<usize> = HashSet::new();
         let mut queue = VecDeque::new();
         queue.push_back(square);
@@ -108,14 +98,16 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
         while let Some(square) = queue.pop_front() {
             reached_squares.insert(square);
 
-            let relevant_moves =
-                &state.statics.relevant_moves[piece_index * board_size + square];
+            let relevant_moves = &state.statics.relevant_moves
+                [piece_index * board_size + square];
 
             for multi_leg_vector in relevant_moves {
                 let mut accumulated_index = square as i32;
 
-                let mut file = accumulated_index % (state.statics.files as i32);
-                let mut rank = accumulated_index / (state.statics.files as i32);
+                let mut file =
+                    accumulated_index % (state.statics.files as i32);
+                let mut rank =
+                    accumulated_index / (state.statics.files as i32);
 
                 for leg in multi_leg_vector {
                     let file_offset = x!(leg);
@@ -123,7 +115,8 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
 
                     file += file_offset as i32;
                     rank += rank_offset as i32;
-                    accumulated_index = rank * (state.statics.files as i32) + file;
+                    accumulated_index =
+                        rank * (state.statics.files as i32) + file;
                 }
 
                 if !reached_squares.contains(&(accumulated_index as usize))
@@ -134,37 +127,31 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
         }
 
         if reached_squares.len() == 1 {
-            reach_values[square] = 0;
+            0
         } else {
-            reach_values[square] = reached_squares.len() as i32;
+            reached_squares.len() as i32
         }
-
-        i += 1;
-    }
+    }).collect();
 
     let mean = reach_values.iter().filter(|&&v| v > 0).sum::<i32>() as f64
         / reach_values.iter().filter(|&&v| v > 0).count() as f64;
 
     let reach_value = mean / board_size as f64;
 
-    let mut mobility_values = vec![-1.0; board_size];
+    log_4!("Reach value for piece '{}': {:.4}", piece.char, reach_value);
 
-    let mut i = 0;
-    while i < 100.min(board_size) {
-        let square = RNG.lock().unwrap().random_range(0..board_size);
-
-        if mobility_values[square] >= 0.0 {
-            continue;
-        }
-        i += 1;
-
-        mobility_values[square] =
-            derive_piece_mobility(state, piece_index as PieceIndex, square);
-    }
+    let mobility_values: Vec<f64> = (0..board_size).into_par_iter().map(|square| {
+        derive_piece_mobility(state, piece_index as PieceIndex, square)
+    }).collect();
 
     let mobility_value =
         mobility_values.iter().filter(|&&v| v >= 0.0).sum::<f64>()
         / mobility_values.iter().filter(|&&v| v >= 0.0).count() as f64;
+
+    log_4!(
+        "Mobility value for piece '{}': {:.4}",
+        piece.char, mobility_value
+    );
 
     2.0 * board_size as f64 * (0.4 * reach_value + 0.6 * mobility_value)
 }
@@ -193,12 +180,12 @@ fn derive_piece_mobility(
                 (true, false, false) |
                 (false, true, false) |
                 (false, false, true) => {
-                    mobility_product *= 0.75;
+                    mobility_product *= 0.66;
                 },
                 (true, true, false) |
                 (true, false, true) |
                 (false, true, true) => {
-                    mobility_product *= 0.85;
+                    mobility_product *= 0.80;
                 },
                 (true, true, true) => {
                     mobility_product *= 1.0;
@@ -284,8 +271,14 @@ fn derive_piece_value_on_square(
 
         let value =
             (mobility_weight * mobility) +
-            (state.statics.files as f64 / 2.0 - center_weight * distance_from_center) +
-            (state.statics.ranks as f64 - promotion_weight * closest_promotion);
+            (
+                state.statics.files as f64 / 2.0 - center_weight *
+                distance_from_center
+            ) +
+            (
+                state.statics.ranks as f64 - promotion_weight *
+                closest_promotion
+            );
 
         if !is_endgame && p_is_royal!(piece) {
             -value.round() as i32
@@ -296,7 +289,10 @@ fn derive_piece_value_on_square(
 
         let value =
             (mobility_weight * mobility) +
-            (state.statics.files as f64 / 2.0 - center_weight * distance_from_center);
+            (
+                state.statics.files as f64 / 2.0 - center_weight *
+                distance_from_center
+            );
 
         if !is_endgame && p_is_royal!(piece) {
             -value.round() as i32
@@ -307,14 +303,11 @@ fn derive_piece_value_on_square(
 }
 
 fn derive_pst(index: PieceIndex, state: &State, is_endgame: bool) -> Vec<i32> {
-    let mut pst = Vec::new();
     let board_size = state.main_board.len();
 
-    for square in 0..board_size {
-        let value =
-            derive_piece_value_on_square(state, index, square, is_endgame);
-        pst.push(value);
-    }
+    let pst: Vec<i32> = (0..board_size).into_par_iter().map(|square| {
+        derive_piece_value_on_square(state, index, square, is_endgame)
+    }).collect();
 
     pst
 }
@@ -322,35 +315,32 @@ fn derive_pst(index: PieceIndex, state: &State, is_endgame: bool) -> Vec<i32> {
 pub fn derive_parameters(state: &mut State) {
     log_2!("Deriving dynamic evaluation parameters...");
 
-    let mut values = Vec::new();
+    let values = state.statics.pieces
+        .par_iter()
+        .filter_map(
+            |piece| {
+            let color = p_color!(piece);
 
-    let mut min = f64::INFINITY;
-    let mut max = f64::NEG_INFINITY;
-    for (index, piece) in state.statics.pieces.iter().enumerate() {
-        if p_color!(piece) == BLACK {
-            continue;
-        }
+            if color == BLACK {
+                return None;
+            }
 
-        let value = derive_piece_value(state, piece);
+            let index = p_index!(piece) as usize;
+            let value = derive_piece_value(state, &piece);
 
-        if value < min {
-            min = value;
-        }
+            Some((index, value))
+        })
+        .collect::<Vec<_>>();
 
-        if value > max {
-            max = value;
-        }
-
-        values.push((index as PieceIndex, value));
-    }
-
+    let offset = values
+        .iter()
+        .map(|(_, value)| *value)
+        .fold(f64::INFINITY, f64::min) - 100.0;
 
     for (index, value) in values.clone() {
-        let black_index = state.statics.piece_swap_map[&index] as usize;
+        let black_index = state.statics.piece_swap_map[index] as usize;
         let white_index = index as usize;
-        let normalized_value = (value - min) / (max - min);
-
-        let value = 100 + (normalized_value * 1400.0).round() as u16;           /* normalizes value from 100-1500     */
+        let value = (value - offset).round() as u16;
 
         set_piece_dynamic_parameters(
             &mut state.static_mut().pieces[black_index], value, 0, false, false
@@ -426,11 +416,11 @@ pub fn derive_parameters(state: &mut State) {
     }
 
     let pst_entries: Vec<(usize, Vec<i32>, Vec<i32>)> =
-        state.statics.pieces.iter().map(|piece| {
+        state.statics.pieces.par_iter().map(|piece| {
             let mut index = p_index!(piece);
 
             if p_color!(piece) == BLACK {
-                index = state.statics.piece_swap_map[&(index as u8)] as PieceIndex;
+                index = state.statics.piece_swap_map[index as usize];
             }
 
             let mut opening_pst = derive_pst(index, state, false);
@@ -448,7 +438,7 @@ pub fn derive_parameters(state: &mut State) {
                     state.statics.ranks as usize
                 );
 
-                index = state.statics.piece_swap_map[&(index as u8)] as PieceIndex;
+                index = state.statics.piece_swap_map[index as usize];
             }
 
             (index as usize, opening_pst, endgame_pst)
