@@ -287,26 +287,29 @@ macro_rules! hash_tt_entry {
 
         tt_enc_score!(encoded, store_score);
 
-        let a = $tt_move.0;                                                     /* move.0 128-bit                     */
         let sig = move_signature!($tt_move);                                    /* XOR of move.1 entries              */
+        let age = $table.age.load(Ordering::Relaxed);
+        let a = $tt_move.0;                                                     /* move.0 128-bit                     */
         let b = ((sig as u128) << 32) | (encoded as u128);                      /* sig << 32 | encoded                */
 
-        let cur_age = $table.age.load(Ordering::Relaxed);
         let old_s0 = entry.slot[0];
         let old_s1 = entry.slot[1];
         let old_s2 = entry.slot[2];
+
         let empty = old_s0 == 0 && old_s1 == 0 && old_s2 == 0;
         let different = old_s0 ^ old_s1 ^ old_s2 != hash;
+
         let old_enc = (old_s1 & 0xFFFF_FFFF) as u32;
         let old_depth = tt_depth!(old_enc);
+        let old_score = tt_score!(old_enc);
         let old_flags = tt_flags!(old_enc);
-        let depth_diff = ($depth as i32) - (old_depth as i32);
+
         let should_write = empty
             || different
-            || entry.age < cur_age.saturating_sub(1)
-            || depth_diff >= 2
-            || ($flags == FEXACT && old_flags != FEXACT)
-            || ($flags == FBETA && old_flags == FALPHA && depth_diff >= 0);
+            || entry.age < age
+            || old_depth <= $depth
+            || old_score <= $score
+            || old_flags != FEXACT && $flags == FEXACT;
 
         if should_write {
             if empty {
@@ -319,7 +322,7 @@ macro_rules! hash_tt_entry {
             entry.slot[0] = a;                                                  /* a = move.0 (raw)                   */
             entry.slot[1] = b;                                                  /* b = sig<<32|encoded (raw)          */
             entry.slot[2] = a ^ b ^ hash;                                       /* parity = a ^ b ^ c (written last)  */
-            entry.age = cur_age;
+            entry.age = age;
             entry.version.fetch_add(1, Ordering::Release);                      /* seqlock unlock: version now even   */
         }
     }};
@@ -374,23 +377,23 @@ macro_rules! fill_pv_line {
               QSEARCH TT ENTRY REPRESENTATION & CONSTANTS
 \*----------------------------------------------------------------------------*/
 
-/// QSearch TT entry — compact two-slot layout with seqlock.
+/// QSearch TT entry — 3×u128 XOR-parity slot with seqlock.
 ///
-/// Layout mirrors the main TT but stores no depth field (all entries are
-/// treated as depth=1 for replacement):
-///   slot[0] = move.0 (128-bit, raw)
-///   slot[1] = (sig << 32) | score_flags  (128-bit)
-///   age     = plain u64 (excluded from version)
-///   version = seqlock counter (odd = writing, even = readable)
+/// Layout:
+/// - slot[0] = move.0 (128-bit, raw)
+/// - slot[1] = sig << 32 | encoded (128-bit, raw)
+/// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
+/// - age     = plain u64 (excluded from parity)
+/// - version = seqlock counter (odd = writing, even = readable)
 ///
-/// Write order: version++ → slot[0] → slot[1] → age → version++
+/// Write order: version++ → slot[0] → slot[1] → slot[2] → age → version++
 ///
-/// Validation: version is even at read time, and unchanged after both reads
-/// (no torn write). The sig field guards against hash collisions on move.0
-/// alone.
+/// Validation:
+///   (1) slot[0] ^ slot[1] ^ slot[2] == position_hash  →  parity intact
+///   (2) version unchanged across read                  →  no torn write
 #[derive(Default)]
 pub struct QTEntry {
-    pub slot:   [u128; 2],                                                      /* [move.0, sig<<32|score_flags]      */
+    pub slot:   [u128; 3],                                                      /* [key, data1, data2]                */
     pub age:     u64,                                                           /* search age for staleness eviction  */
     pub version: AtomicU64,                                                     /* seqlock: odd = writing, even = ok  */
 }
@@ -481,9 +484,10 @@ macro_rules! qtt_flags {
 ///   Step 2: version unchanged after both reads (no torn write)
 ///   Step 3: sig field matches the stored MoveSignature (anti-collision)
 #[macro_export]
-macro_rules! probe_qtt_entry {
+macro_rules! probe_qt_entry {
     ($state:expr, $qtable:expr, $alpha:expr, $beta:expr) => {{
-        let index = qtt_index!($state.position_hash);
+        let hash = $state.position_hash;
+        let index = qtt_index!(hash);
         let entry = &mut unsafe { &mut *($qtable.table.get()) }[index];
 
         let v1 = entry.version.load(Ordering::Acquire);
@@ -492,22 +496,23 @@ macro_rules! probe_qtt_entry {
         } else {
             let s0 = entry.slot[0];
             let s1 = entry.slot[1];
-            let v2 = entry.version.load(Ordering::Acquire);
+            let s2 = entry.slot[2];
 
-            if v1 != v2 {                                                       /* torn read                          */
+            if s0 ^ s1 ^ s2 != hash {                                           /* parity check: all slots covered    */
                 (false, i32::MIN, null_pseudo_move())
             } else {
-                $qtable.valid.fetch_add(1, Ordering::Relaxed);
-                let move_0  = s0;                                               /* move.0 raw                         */
-                let encoded = (s1 & 0xFFFF_FFFF) as u32;                        /* bits  0–31 = score+flags          */
-                let sig     = (s1 >> 32) as u64;                                /* bits 32-95 = MoveSignature         */
-                let pseudo_mv: PseudoMove = (move_0, sig);
+                $qtable.hit.fetch_add(1, Ordering::Relaxed);                    /* parity matched                     */
+                let v2 = entry.version.load(Ordering::Acquire);
 
-                if pseudo_mv == null_pseudo_move() {
-                    $qtable.hit.fetch_add(1, Ordering::Relaxed);
+                if v1 != v2 {                                                   /* seqlock: torn read detected        */
                     (false, i32::MIN, null_pseudo_move())
                 } else {
-                    $qtable.hit.fetch_add(1, Ordering::Relaxed);
+                    $qtable.valid.fetch_add(1, Ordering::Relaxed);
+                    let move_0  = s0;                                           /* move.0 raw                         */
+                    let encoded = (s1 & 0xFFFF_FFFF) as u32;                    /* bits  0–31 = score+flags           */
+                    let sig     = (s1 >> 32) as u64;                            /* bits 32-95 = MoveSignature         */
+                    let pseudo_mv: PseudoMove = (move_0, sig);
+
                     let entry_flags   = qtt_flags!(encoded);
                     let mut entry_score = qtt_score!(encoded);
 
@@ -519,12 +524,6 @@ macro_rules! probe_qtt_entry {
 
                     let mut valid_cutoff = false;
                     match entry_flags {
-                        FALPHA => {
-                            if entry_score <= $alpha {
-                                entry_score = $alpha;
-                                valid_cutoff = true;
-                            }
-                        }
                         FBETA => {
                             if entry_score >= $beta {
                                 entry_score = $beta;
@@ -535,6 +534,10 @@ macro_rules! probe_qtt_entry {
                         _ => unreachable!(),
                     }
 
+                    if pseudo_mv == null_pseudo_move() {
+                        valid_cutoff = false;
+                    }
+
                     (valid_cutoff, entry_score, pseudo_mv)
                 }
             }
@@ -543,9 +546,10 @@ macro_rules! probe_qtt_entry {
 }
 
 #[macro_export]
-macro_rules! probe_qtt_move {
+macro_rules! probe_qt_move {
     ($state:expr, $qtable:expr) => {{
-        let index = qtt_index!($state.position_hash);
+        let hash = $state.position_hash;
+        let index = qtt_index!(hash);
         let entry = &mut unsafe { &mut *($qtable.table.get()) }[index];
 
         let v1 = entry.version.load(Ordering::Acquire);
@@ -554,20 +558,27 @@ macro_rules! probe_qtt_move {
         } else {
             let s0 = entry.slot[0];
             let s1 = entry.slot[1];
-            let v2 = entry.version.load(Ordering::Acquire);
+            let s2 = entry.slot[2];
 
-            if v1 != v2 {
-                None                                                            /* torn read                          */
+            if s0 ^ s1 ^ s2 != hash {                                           /* parity check: all slots covered    */
+                None
             } else {
-                $qtable.hit.fetch_add(1, Ordering::Relaxed);
-                let move_0 = s0;
-                let sig = (s1 >> 32) as u64;
-                let pseudo_mv: PseudoMove = (move_0, sig);
+                $qtable.hit.fetch_add(1, Ordering::Relaxed);                    /* parity matched                     */
+                let v2 = entry.version.load(Ordering::Acquire);
 
-                if pseudo_mv == null_pseudo_move() {
+                if v1 != v2 {                                                   /* seqlock: torn read detected        */
                     None
                 } else {
-                    Some(pseudo_mv)
+                    $qtable.valid.fetch_add(1, Ordering::Relaxed);
+                    let move_0 = s0;
+                    let sig = (s1 >> 32) as u64;
+                    let pseudo_mv: PseudoMove = (move_0, sig);
+
+                    if pseudo_mv == null_pseudo_move() {
+                        None
+                    } else {
+                        Some(pseudo_mv)
+                    }
                 }
             }
         }
@@ -580,47 +591,58 @@ macro_rules! probe_qtt_move {
 /// Replacement policy: empty slot → always write; occupied → write if
 /// entry is stale (age < cur_age - 1) or new entry is FEXACT.
 #[macro_export]
-macro_rules! hash_qtt_entry {
+macro_rules! hash_qt_entry {
     ($tt_move:expr, $score:expr, $flags:expr, $state:expr, $qtable:expr) => {{
-        let move_type = move_type!($tt_move);
-        if move_type != QUIET_MOVE {
-            let index = qtt_index!($state.position_hash);
-            let table_vec: &mut Vec<QTEntry> =
-                unsafe { &mut *($qtable.table.get()) };
-            let entry = &mut table_vec[index];
+        let hash = $state.position_hash;
+        let index = qtt_index!($state.position_hash);
+        let table_vec: &mut Vec<QTEntry> =
+            unsafe { &mut *($qtable.table.get()) };
+        let entry = &mut table_vec[index];
 
-            let mut store_score = $score;
-            if store_score > MATE_SCORE {
-                store_score += $state.search_ply as i32;
-            } else if store_score < -MATE_SCORE {
-                store_score -= $state.search_ply as i32;
+        let mut store_score = $score;
+        if store_score > MATE_SCORE {
+            store_score += $state.search_ply as i32;
+        } else if store_score < -MATE_SCORE {
+            store_score -= $state.search_ply as i32;
+        }
+
+        let encoded = qtt_enc_score!(store_score) | qtt_enc_flags!($flags);
+
+        let age = $qtable.age.load(Ordering::Relaxed);
+        let sig = move_signature!($tt_move);
+        let a = $tt_move.0;
+        let b = ((sig as u128) << 32) | (encoded as u128);
+
+        let old_s0 = entry.slot[0];
+        let old_s1 = entry.slot[1];
+        let old_s2 = entry.slot[2];
+
+        let empty = old_s0 == 0 && old_s1 == 0 && old_s2 == 0;
+        let different = old_s0 ^ old_s1 ^ old_s2 != hash;
+
+        let old_enc = (old_s1 & 0xFFFF_FFFF) as u32;
+        let old_score = qtt_score!(old_enc);
+        let old_flags = qtt_flags!(old_enc);
+
+        let should_write = empty
+            || different
+            || entry.age < age
+            || old_score <= $score
+            || old_flags != FEXACT && $flags == FEXACT;
+
+        if should_write {
+            if empty {
+                $qtable.new_write.fetch_add(1, Ordering::Relaxed);
+            } else {
+                $qtable.over_write.fetch_add(1, Ordering::Relaxed);
             }
 
-            let encoded = qtt_enc_score!(store_score) | qtt_enc_flags!($flags);
-            let a = $tt_move.0;
-            let sig = move_signature!($tt_move);
-            let b = ((sig as u128) << 32) | (encoded as u128);
-
-            let cur_age = $qtable.age.load(Ordering::Relaxed);
-            let empty = entry.slot[0] == 0 && entry.slot[1] == 0;
-
-            let should_write = empty
-                || entry.age < cur_age.saturating_sub(1)
-                || $flags == FEXACT;
-
-            if should_write {
-                if empty {
-                    $qtable.new_write.fetch_add(1, Ordering::Relaxed);
-                } else {
-                    $qtable.over_write.fetch_add(1, Ordering::Relaxed);
-                }
-
-                entry.version.fetch_add(1, Ordering::Release);
-                entry.slot[0] = a;
-                entry.slot[1] = b;
-                entry.age = cur_age;
-                entry.version.fetch_add(1, Ordering::Release);
-            }
+            entry.version.fetch_add(1, Ordering::Release);
+            entry.slot[0] = a;
+            entry.slot[1] = b;
+            entry.slot[2] = a ^ b ^ hash;
+            entry.age = age;
+            entry.version.fetch_add(1, Ordering::Release);
         }
     }};
 }

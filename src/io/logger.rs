@@ -103,7 +103,7 @@ pub fn configured_log_level() -> log::LevelFilter {
         2 => log::LevelFilter::Warn,
         3 => log::LevelFilter::Info,
         4 => log::LevelFilter::Debug,
-        _ => log::LevelFilter::Info,
+        _ => log::LevelFilter::Debug,
     }
 }
 
@@ -123,10 +123,25 @@ pub fn dec_verbosity() {
 }
 
 pub fn init_logging() {
+    let latest = Path::new(&*LATEST_LOG_PATH);
+
+    if latest.exists()
+    && let Ok(meta) = fs::metadata(latest)
+    && let Ok(modified) = meta.created() {
+        let datetime: chrono::DateTime<chrono::Local> =
+            modified.into();
+        let archive = format!(
+            "logs/engine_{}.log",
+            datetime.format("%Y-%m-%d_%H-%M-%S")
+        );
+        let _ = fs::rename(&*LATEST_LOG_PATH, &archive);
+    }
+
     let file = OpenOptions::new()
         .create(true)
-        .append(true)
-        .open(&*LOG_FILE_PATH)
+        .write(true)
+        .truncate(true)
+        .open(&*LATEST_LOG_PATH)
         .expect("Failed to open log file");
 
     let target = Box::new(file);
