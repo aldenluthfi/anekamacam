@@ -167,37 +167,25 @@ fn mtdf(
     ttable: &TTable,
     qtable: &QTable,
     depth: usize,
-    mut f: i32,
+    f: i32,
     info: &mut SearchInfo,
     bufs: &mut SearchBufs,
 ) -> i32 {
     let mut lower = -INF;
     let mut upper = INF;
+    let mut g = f;
 
     for _ in 0..MTDF_MAX_ITERS {
-        let bound = if f == lower { f + 1 } else { f };
+        let bound = if g == lower { g + 1 } else { g };
 
-        let beta = bound + 1;
-        let alpha = bound;
-
-        let local_alpha = alpha;
-        let local_beta = beta;
-
-        let s = alpha_beta(
-            state, ttable, qtable, depth,
-            local_alpha, local_beta, info, bufs, true
+        g = alpha_beta(
+            state, ttable, qtable, depth, bound - 1, bound, info, bufs, true
         );
 
-        if info.interrupt {
-            return f;
-        }
-
-        if s <= bound {
-            upper = s;
-            f = s;
+        if g < bound {
+            upper = g;
         } else {
-            lower = s;
-            f = s;
+            lower = g;
         }
 
         if lower >= upper {
@@ -205,7 +193,7 @@ fn mtdf(
         }
     }
 
-    f
+    g
 }
 
 /*----------------------------------------------------------------------------*\
@@ -353,7 +341,7 @@ fn quiescence_search(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
     let tt_pv_move = probe_pv_move!(state, ttable);
-    let qtt_entry = probe_qtt_entry!(state, qtable, alpha, beta);
+    let qtt_entry = probe_qt_entry!(state, qtable, alpha, beta);
 
     if qtt_entry.0 {
         return qtt_entry.1;
@@ -371,6 +359,7 @@ fn quiescence_search(
         pick_by_score!(state, &mut bufs.move_buf[ply], i, &pv_move);
 
         let mv = bufs.move_buf[ply][i].clone();
+
 
         let move_type = move_type!(mv.clone());
         let promotion = promotion!(mv.clone());
@@ -409,7 +398,7 @@ fn quiescence_search(
 
         if score > alpha {
             if score >= beta {
-                hash_qtt_entry!(mv, beta, FBETA, state, qtable);
+                hash_qt_entry!(mv, beta, FBETA, state, qtable);
                 return beta;
             }
 
@@ -422,7 +411,7 @@ fn quiescence_search(
     verify_game_state(state);
 
     if alpha != best_score && best_move != null_move() {
-        hash_qtt_entry!(best_move, alpha, FEXACT, state, qtable);
+        hash_qt_entry!(best_move, alpha, FEXACT, state, qtable);
     }
 
     alpha
@@ -446,7 +435,6 @@ pub fn alpha_beta(
     null: bool,
 ) -> i32 {
     let mut alpha = alpha;
-    let mut beta = beta;
     let mut depth = depth;
 
     info.nodes += 1;
@@ -457,18 +445,6 @@ pub fn alpha_beta(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
-    if alpha < -MATE_SCORE {
-        alpha = -MATE_SCORE;
-    }
-
-    if beta > MATE_SCORE - 1 {
-        beta = MATE_SCORE - 1;
-    }
-
-    if alpha >= beta {
-        return alpha;
-    }
-
     let in_check = is_in_check!(state.playing, state);
 
     if in_check {
@@ -476,7 +452,9 @@ pub fn alpha_beta(
     }
 
     if depth == 0 {
-        return quiescence_search(state, ttable, qtable, alpha, beta, info, bufs);
+        return quiescence_search(
+            state, ttable, qtable, alpha, beta, info, bufs
+        );
     }
 
     let static_eval = evaluate_position!(state);
@@ -486,7 +464,7 @@ pub fn alpha_beta(
     }
 
     let mut pv_move: Option<PseudoMove> = None;
-    let tt_entry = probe_tt_entry!(state, ttable, alpha, beta, depth);           /* transposition table lookup         */
+    let tt_entry = probe_tt_entry!(state, ttable, alpha, beta, depth);          /* transposition table lookup         */
 
     if tt_entry.2 != null_pseudo_move() {
         pv_move = Some(tt_entry.2);
@@ -592,6 +570,7 @@ pub fn alpha_beta(
     let alpha_start = alpha;
 
     let ply = state.search_ply as usize;
+
     generate_all_moves_and_drops(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
@@ -664,12 +643,14 @@ pub fn alpha_beta(
 
             if score > alpha && beta - alpha > 1 {
                 score = -alpha_beta(
-                    state, ttable, qtable, depth - 1, -beta, -alpha, info, bufs, true
+                    state, ttable, qtable, depth - 1,
+                    -beta, -alpha, info, bufs, true
                 );
             }
         } else {
             score = -alpha_beta(
-                state, ttable, qtable, depth - reduct, -beta, -alpha, info, bufs, true
+                state, ttable, qtable, depth - reduct,
+                -beta, -alpha, info, bufs, true
             );
         }
 
@@ -698,7 +679,9 @@ pub fn alpha_beta(
                             mv.clone();
                     }
 
-                    hash_tt_entry!(best_move, beta, FBETA, depth, state, ttable);
+                    hash_tt_entry!(
+                        best_move, beta, FBETA, depth, state, ttable
+                    );
 
                     return beta;
                 }

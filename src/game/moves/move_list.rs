@@ -2029,7 +2029,7 @@ macro_rules! make_move {
 #[macro_export]
 macro_rules! undo_move {
     ($state:expr) => {{
-        $state.search_ply -= 1;
+        $state.search_ply = $state.search_ply.saturating_sub(1);
         $state.ply_counter -= 1;
 
         let repetition_count = $state

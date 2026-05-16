@@ -84,11 +84,11 @@ pub use crate::io::board_io::{
     format_board, format_square,
 };
 pub use crate::io::game_io::{
-    export_tuned_parameters_file, format_castling_rights, format_en_passant_square,
-    format_fen, format_game_phase, format_game_state, format_hand,
-    format_numeric_board, format_position_hash, format_special_rules,
-    mirror_pst_across_horizontal_axis, parse_config_file, parse_fen,
-    parse_tuned_parameters_file, set_piece_dynamic_parameters,
+    export_tuned_parameters_file, format_castling_rights, 
+    format_en_passant_square, format_fen, format_game_phase, format_game_state, 
+    format_hand, format_numeric_board, format_position_hash, 
+    format_special_rules, mirror_pst_across_horizontal_axis, parse_config_file, 
+    parse_fen, parse_tuned_parameters_file, set_piece_dynamic_parameters,
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, dec_verbosity,
@@ -244,10 +244,9 @@ lazy_static! {
 
         result
     };
-    pub static ref LOG_FILE_PATH: String = {
-        let now = chrono::Local::now();
-        format!("logs/engine_{}.log", now.format("%Y-%m-%d_%H-%M-%S"))
-    };
+    pub static ref LOG_DIR: String = "logs".to_string();
+    pub static ref LATEST_LOG_PATH: String =
+        format!("{}/latest.log", *LOG_DIR);
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
@@ -262,7 +261,7 @@ lazy_static! {
     };
     pub static ref RNG: Mutex<StdRng> =
         Mutex::new(StdRng::seed_from_u64(0xDEADBEEFCAFEBABE));
-    pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(3);
+    pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(4);
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
 }
@@ -292,7 +291,7 @@ pub const ENDGAME: u8 = 3;
 pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       /* 256MB                              */
 pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       /* 128MB                              */
 pub const MAX_DEPTH: usize = 128;
-pub const MTDF_MAX_ITERS: usize = 64;
+pub const MTDF_MAX_ITERS: usize = 128;
 
 pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;
