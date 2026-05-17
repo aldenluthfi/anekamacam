@@ -84,11 +84,12 @@ pub use crate::io::board_io::{
     format_board, format_square,
 };
 pub use crate::io::game_io::{
-    export_tuned_parameters_file, format_castling_rights, 
-    format_en_passant_square, format_fen, format_game_phase, format_game_state, 
-    format_hand, format_numeric_board, format_position_hash, 
-    format_special_rules, mirror_pst_across_horizontal_axis, parse_config_file, 
-    parse_fen, parse_tuned_parameters_file, set_piece_dynamic_parameters,
+    export_tuned_parameters_file, format_castling_rights,
+    format_en_passant_square, format_fen, format_game_phase, format_game_state,
+    format_hand, format_numeric_board, format_position_hash,
+    format_special_rules, mirror_pst_across_horizontal_axis, parse_config_file,
+    parse_config_preview, parse_fen, parse_tuned_parameters_file,
+    set_piece_dynamic_parameters,
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, dec_verbosity,
