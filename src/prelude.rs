@@ -291,12 +291,17 @@ pub const ENDGAME: u8 = 3;
 
 pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       /* 256MB                              */
 pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       /* 128MB                              */
+
 pub const MAX_DEPTH: usize = 128;
 pub const MTDF_MAX_ITERS: usize = 128;
+pub const MAX_SEE_DEPTH: usize = 32;
 
 pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;
 
 pub const MAX_LOGS_LEN: usize = 4096;
+
 pub const CONFIGS_DIR: &str = "configs";
-pub const MAX_SEE_DEPTH: usize = 32;
+
+pub const PERFT_DIR: &str = "res/perft";
+pub const PARAM_DIR: &str = "res/param";

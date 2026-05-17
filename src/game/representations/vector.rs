@@ -218,7 +218,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///
 /// The next 16 bits are move modifiers:
 /// - main: m, c, d, u,
-/// - capture/destroy modifier: k, v, g, s
+/// - capture/destroy modifier: k, v, g, t
 /// - miscellaneous modifier: i, p
 /// - negated capture modifiers: !k, !v, !g
 /// - negated misc modifiers: !i
@@ -406,23 +406,23 @@ impl LegVector {
         let mut s = "".to_string();
 
         let mods = [
-            ('m', m!(self.0 >> 16)),
-            ('c', c!(self.0 >> 16)),
-            ('d', d!(self.0 >> 16)),
-            ('u', u!(self.0 >> 16)),
-            ('k', k!(self.0 >> 16)),
-            ('v', v!(self.0 >> 16)),
-            ('g', g!(self.0 >> 16)),
-            ('t', t!(self.0 >> 16)),
-            ('i', i!(self.0 >> 16)),
-            ('p', p!(self.0 >> 16)),
+            ('m', m!(self.0 >> 32)),
+            ('c', c!(self.0 >> 32)),
+            ('d', d!(self.0 >> 32)),
+            ('u', u!(self.0 >> 32)),
+            ('k', k!(self.0 >> 32)),
+            ('v', v!(self.0 >> 32)),
+            ('g', g!(self.0 >> 32)),
+            ('t', t!(self.0 >> 32)),
+            ('i', i!(self.0 >> 32)),
+            ('p', p!(self.0 >> 32)),
         ];
 
         let not_mods = [
-            ('k', not_k!(self.0 >> 16)),
-            ('v', not_v!(self.0 >> 16)),
-            ('g', not_g!(self.0 >> 16)),
-            ('i', not_i!(self.0 >> 16)),
+            ('k', not_k!(self.0 >> 32)),
+            ('v', not_v!(self.0 >> 32)),
+            ('g', not_g!(self.0 >> 32)),
+            ('i', not_i!(self.0 >> 32)),
         ];
 
         for (ch, val) in mods {

@@ -38,6 +38,7 @@ struct Tui {
     locked: bool,
     help_tab: usize,
 
+    file_name: Option<String>,
     game_state: Option<Arc<Mutex<State>>>,
     board_state: Option<BoardState>,
     overview_state: Option<OverviewState>,
@@ -69,6 +70,7 @@ impl Tui {
         let help = false;
         let help_tab = 0;
         let locked = false;
+        let file_name = None;
         let game_state = None;
         let board_state = None;
         let overview_state = None;
@@ -88,6 +90,7 @@ impl Tui {
             locked,
             help_tab,
 
+            file_name,
             game_state,
             board_state,
             overview_state,
@@ -104,9 +107,12 @@ impl Tui {
 
         self.input.clear();
 
+        self.file_name = None;
         self.game_state = None;
         self.board_state = None;
         self.overview_state = None;
+
+        SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
     }
 
     fn run (&mut self, terminal: &mut DefaultTerminal) -> IoResult<()> {
@@ -2124,6 +2130,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 return false;
             }
 
+            app.file_name = Some(app.input.clone());
             app.locked = true;
             app.focus = 0;
             app.tab = 0;

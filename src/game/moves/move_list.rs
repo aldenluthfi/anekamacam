@@ -350,12 +350,12 @@ macro_rules! validate_attack_vector {
 
             if imaginary_move {
                 if k && !$attacked_royal
-                    || not_k && $attacked_royal
-                    || g && piece_rank >= $attacked_rank
-                    || not_g && piece_rank < $attacked_rank
-                    || (v && !$attacked_unmoved || not_v && $attacked_unmoved)
-                        && !special_v
-                    || u
+                || not_k && $attacked_royal
+                || g && piece_rank >= $attacked_rank
+                || not_g && piece_rank < $attacked_rank
+                || (v && !$attacked_unmoved || not_v && $attacked_unmoved)
+                && !special_v
+                || u
                 {
                     valid = false;
                     break;
@@ -388,11 +388,11 @@ macro_rules! validate_attack_vector {
                         let capt_royal = p_is_royal!(capt_piece);
 
                         if k && !capt_royal
-                            || not_k && capt_royal
-                            || g && piece_rank >= capt_rank
-                            || not_g && piece_rank < capt_rank
-                            || (v && !capt_unmoved || not_v && capt_unmoved)
-                                && !special_v
+                        || not_k && capt_royal
+                        || g && piece_rank >= capt_rank
+                        || not_g && piece_rank < capt_rank
+                        || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
                         {
                             valid = false;
                             break;
@@ -422,11 +422,11 @@ macro_rules! validate_attack_vector {
                 let capt_royal = p_is_royal!(capt_piece);
 
                 if k && !capt_royal
-                    || not_k && capt_royal
-                    || g && piece_rank >= capt_rank
-                    || not_g && piece_rank < capt_rank
-                    || (v && !capt_unmoved || not_v && capt_unmoved)
-                        && !special_v
+                || not_k && capt_royal
+                || g && piece_rank >= capt_rank
+                || not_g && piece_rank < capt_rank
+                || (v && !capt_unmoved || not_v && capt_unmoved)
+                && !special_v
                 {
                     valid = false;
                     break;
@@ -448,11 +448,11 @@ macro_rules! validate_attack_vector {
                 let capt_royal = p_is_royal!(capt_piece);
 
                 if k && !capt_royal
-                    || not_k && capt_royal
-                    || g && piece_rank >= capt_rank
-                    || not_g && piece_rank < capt_rank
-                    || (v && !capt_unmoved || not_v && capt_unmoved)
-                        && !special_v
+                || not_k && capt_royal
+                || g && piece_rank >= capt_rank
+                || not_g && piece_rank < capt_rank
+                || (v && !capt_unmoved || not_v && capt_unmoved)
+                && !special_v
                 {
                     valid = false;
                     break;
@@ -892,6 +892,10 @@ macro_rules! generate_capture_list {
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
         {
+
+            #[cfg(debug_assertions)]
+            verify_game_state($state);
+
             $state.search_ply += 1;
             $state.ply_counter += 1;
 
@@ -901,10 +905,6 @@ macro_rules! make_move {
             let last_position_hash = $state.position_hash;
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
-
-            #[cfg(debug_assertions)]
-            verify_game_state($state);
-
             let move_type = move_type!($mv);
             let pass_move = is_pass!($mv);
 
@@ -2011,7 +2011,6 @@ macro_rules! make_move {
                 undo_move!($state);
                 false
             } else {
-
                 #[cfg(debug_assertions)]
                 verify_game_state($state);
 
@@ -2029,6 +2028,10 @@ macro_rules! make_move {
 #[macro_export]
 macro_rules! undo_move {
     ($state:expr) => {{
+
+        #[cfg(debug_assertions)]
+        verify_game_state($state);
+
         $state.search_ply = $state.search_ply.saturating_sub(1);
         $state.ply_counter -= 1;
 
@@ -2052,9 +2055,6 @@ macro_rules! undo_move {
 
         let snapshot =
             $state.history.pop().unwrap_or_else(|| panic!("No move to undo!"));
-
-        #[cfg(debug_assertions)]
-        verify_game_state(&$state);
 
         $state.playing = 1 - $state.playing;
         $state.castling_state = snapshot.castling_state;
@@ -2661,6 +2661,10 @@ macro_rules! undo_move {
 macro_rules! make_null_move {
     ($state:expr) => {
         {
+
+            #[cfg(debug_assertions)]
+            verify_game_state($state);
+
             $state.search_ply += 1;
             $state.ply_counter += 1;
 
@@ -2675,9 +2679,6 @@ macro_rules! make_null_move {
 
             hash_toggle_side!($state);
 
-            #[cfg(debug_assertions)]
-            verify_game_state($state);
-
             let snapshot: Snapshot = Snapshot {
                 move_ply: null_move(),
                 castling_state: last_castling_state,
@@ -2689,6 +2690,9 @@ macro_rules! make_null_move {
             };
 
             $state.history.push(snapshot);
+
+            #[cfg(debug_assertions)]
+            verify_game_state($state);
         }
     };
 }
@@ -2703,11 +2707,12 @@ macro_rules! make_null_move {
 #[macro_export]
 macro_rules! undo_null_move {
     ($state:expr) => {{
-        $state.search_ply -= 1;
-        $state.ply_counter -= 1;
 
         #[cfg(debug_assertions)]
         verify_game_state($state);
+
+        $state.search_ply -= 1;
+        $state.ply_counter -= 1;
 
         let snapshot =
             $state.history.pop().unwrap_or_else(|| panic!("No move to undo!"));
