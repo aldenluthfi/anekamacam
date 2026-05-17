@@ -360,6 +360,9 @@ fn quiescence_search(
 
         let mv = bufs.move_buf[ply][i].clone();
 
+        if see_move(state, &mv) < 0 {
+            continue;
+        }
 
         let move_type = move_type!(mv.clone());
         let promotion = promotion!(mv.clone());
