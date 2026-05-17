@@ -139,7 +139,7 @@ pub fn search_position(
         pool.run(info.set_depth, info.set_timed)
     };
 
-    log_2!(
+    log_3!(
         "TT | new: {:<7} | over: {:<7} | hit: {:<7} | valid: {:<7}",
         table.new_write.load(Ordering::Relaxed),
         table.over_write.load(Ordering::Relaxed),
@@ -147,7 +147,7 @@ pub fn search_position(
         table.valid.load(Ordering::Relaxed),
     );
 
-    log_2!(
+    log_3!(
         "QT | new: {:<7} | over: {:<7} | hit: {:<7} | valid: {:<7}",
         qtable.new_write.load(Ordering::Relaxed),
         qtable.over_write.load(Ordering::Relaxed),
