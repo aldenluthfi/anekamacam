@@ -104,9 +104,6 @@ impl Tui {
 
         self.input.clear();
 
-        self.help = false;
-        self.help_tab = 0;
-
         self.game_state = None;
         self.board_state = None;
         self.overview_state = None;
@@ -469,12 +466,26 @@ fn draw_game_selection(
     frame: &mut Frame<'_>, area: Rect, app: &mut Tui
 ) -> Option<Arc<Mutex<State>>> {
 
-    let config_files = fs::read_dir(CONFIGS_DIR).ok()?
+    let layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Percentage(75),
+        ])
+        .split(area);
+
+    let mut config_files = fs::read_dir(CONFIGS_DIR).ok()?
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.path().is_file())
         .map(|entry| entry.file_name().to_string_lossy().to_string())
         .filter(|name| !name.starts_with("example"))
-        .collect::<Vec<_>>();
+        .collect::<Vec<String>>();
+    config_files.sort();
+
+    let previews = config_files
+        .iter()
+        .map(|name| parse_config_preview(&format!("{}/{}", CONFIGS_DIR, name)))
+        .collect::<Vec<(String, String)>>();
 
     let mut selected = app.scroll_map.get(&(usize::MAX, usize::MAX))
         .copied()
@@ -487,7 +498,10 @@ fn draw_game_selection(
         );
 
     let files_list = List::new(
-        config_files.clone()
+        previews
+            .iter()
+            .map(|(title, _)| { title.to_string() })
+            .collect::<Vec<_>>()
     )
     .highlight_style(
         Style::default()
@@ -513,12 +527,27 @@ fn draw_game_selection(
         app.scroll_map.insert((usize::MAX, usize::MAX), 0);
     }
 
+    let board_preview = previews.get(selected as usize)
+        .map(|(_, preview)| preview)
+        .unwrap_or_else(|| panic!("No config files found in {}", CONFIGS_DIR));
+    let preview_paragraph = Paragraph::new(board_preview.clone())
+        .alignment(Alignment::Center);
+
     app.input = config_files[selected as usize].clone();
 
     let mut list_state = ListState::default();
     list_state.select(Some(selected as usize));
 
-    frame.render_stateful_widget(files_list, area, &mut list_state);
+    let width = board_preview
+        .lines()
+        .map(|l| l.chars().count()).max().unwrap_or(0) as u16;
+    let height = board_preview.lines().count() as u16;
+
+    frame.render_stateful_widget(files_list, layout[0], &mut list_state);
+    frame.render_widget(preview_paragraph, layout[1].centered(
+        Constraint::Length(width + 2),
+        Constraint::Length(height + 2)
+    ));
 
     None
 }
@@ -653,7 +682,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         ("<←/→>", "Change focus"),
         ("<j/k>", "Scroll up/down"),
         ("<g/G>", "Scroll to top/bottom"),
-        ("<n>", "New game"),
+        ("<n>", "Change variant"),
         ("<{/}>", "Increase/decrease log verbosity"),
         ("<]/[>", "Inctrease/decrease thread count"),
     ];
@@ -724,7 +753,19 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let content_layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .constraints(if app.help_tab == 0 {
+            [
+                Constraint::Min(0),
+                Constraint::Min(0),
+                Constraint::Length(2)
+            ]
+        } else {
+            [
+                Constraint::Min(0),
+                Constraint::Max(0),
+                Constraint::Length(2)
+            ]
+        })
         .split(layout[1]);
 
     if app.help_tab == 0 {
@@ -773,7 +814,10 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
         let keybind_table = Table::new(
             keybind_rows,
-            [Constraint::Percentage(100), Constraint::Percentage(100)]
+            [
+                Constraint::Percentage(100),
+                Constraint::Percentage(100)
+            ]
         ).block(
             Block::default().borders(Borders::NONE)
         );
@@ -800,12 +844,345 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     }
 
     let footer = vec![
+        Line::default(),
         Line::from(Span::from("Press <←/→> to switch tabs, <?> to close")
             .style(Style::default().fg(Color::Gray))),
     ];
     let footer_paragraph = Paragraph::new(footer).alignment(Alignment::Center);
 
-    frame.render_widget(footer_paragraph, content_layout[1]);
+    frame.render_widget(footer_paragraph, content_layout[2]);
+
+    if app.help_tab == 1 {
+        return;
+    }
+
+    let guide_frame = content_layout[1]
+        .centered(
+            Constraint::Length(64),
+            Constraint::Length(18)
+        );
+    let guide_frame_block = Block::bordered();
+    frame.render_widget(guide_frame_block, guide_frame);
+
+    let view_guide = content_layout[1]
+        .centered(
+            Constraint::Length(64),
+            Constraint::Length(18)
+        );
+
+    let view_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .spacing(Spacing::Overlap(1))
+        .constraints(if app.tab == usize::MAX {
+            [
+                Constraint::Max(0),
+                Constraint::Fill(1),
+                Constraint::Max(0)
+            ]
+        } else {
+            [
+                Constraint::Length(3),
+                Constraint::Fill(1),
+                Constraint::Length(3)
+            ]
+        })
+        .split(view_guide);
+
+    let tab_guide_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .spacing(Spacing::Overlap(1))
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(13)
+        ])
+        .split(view_layout[0]);
+    let tab_guide = Paragraph::new(vec![
+        Line::from(vec![
+            Span::from("Tab Bar"),
+        ]),
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .padding(Padding::horizontal(1))
+            .merge_borders(MergeStrategy::Exact)
+    );
+    let log_guide = Paragraph::new(vec![
+        Line::from(vec![
+            Span::from("Verbosity"),
+        ]),
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .padding(Padding::horizontal(1))
+            .merge_borders(MergeStrategy::Exact)
+    );
+
+    if app.tab != usize::MAX {
+        frame.render_widget(tab_guide, tab_guide_layout[0]);
+        frame.render_widget(log_guide, tab_guide_layout[1]);
+    }
+
+    match app.tab {
+        0 => {
+            let game_log_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Fill(1),
+                    Constraint::Length(5),
+                ])
+                .split(view_layout[1]);
+
+            let game_log_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Game Log"),
+                ]),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            let game_guide_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Fill(4),
+                    Constraint::Fill(1),
+                    Constraint::Fill(2),
+                ])
+                .split(game_log_layout[0]);
+
+            let board_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Board View"),
+                ]),
+            ])
+            .alignment(Alignment::Center);
+            let board_center = game_guide_layout[0]
+                .centered_vertically(Constraint::Length(1));
+
+            let moves_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Moves"),
+                ]),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            let right_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Min(0),
+                    Constraint::Length(3)
+                ])
+                .split(game_guide_layout[2]);
+
+            let field_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Details"),
+                ]),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            let fen_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("FEN"),
+                ]),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            frame.render_widget(game_log_guide, game_log_layout[1]);
+            frame.render_widget(board_guide, board_center);
+            frame.render_widget(moves_guide, game_guide_layout[1]);
+            frame.render_widget(field_guide, right_layout[0]);
+            frame.render_widget(fen_guide, right_layout[1]);
+
+        },
+        1 => {
+            let chunks_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Percentage(25),
+                    Constraint::Fill(1),
+                ])
+                .split(view_layout[1]);
+
+            let left_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Percentage(40),
+                    Constraint::Fill(1),
+                ])
+                .split(chunks_layout[0]);
+
+            let field_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Configs")
+                ])
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            let piece_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Pieces"),
+                ]),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            let right_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(0),
+                    Constraint::Length(3)
+                ])
+                .split(chunks_layout[1]);
+
+            let tables_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Tables"),
+                ]),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            let board_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Board View"),
+                ]),
+            ])
+            .alignment(Alignment::Center);
+            let board_center = right_layout[1]
+                .centered_vertically(Constraint::Length(1));
+
+            let piece_detail_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Piece Details"),
+                ]),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            frame.render_widget(field_guide, left_layout[0]);
+            frame.render_widget(piece_guide, left_layout[1]);
+            frame.render_widget(tables_guide, right_layout[0]);
+            frame.render_widget(board_guide, board_center);
+            frame.render_widget(piece_detail_guide, right_layout[2]);
+        },
+        usize::MAX => {
+            let selection_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Percentage(25),
+                    Constraint::Fill(1),
+                ])
+                .split(view_layout[1]);
+
+            let selection_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Variants"),
+                ]),
+            ])
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .padding(Padding::horizontal(1))
+                    .merge_borders(MergeStrategy::Exact)
+            );
+
+            let board_guide = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::from("Board View"),
+                ]),
+            ])
+            .alignment(Alignment::Center);
+            let board_center = selection_layout[1]
+                .centered_vertically(Constraint::Length(1));
+
+            frame.render_widget(selection_guide, selection_layout[0]);
+            frame.render_widget(board_guide, board_center);
+        },
+        _ => {}
+    }
+
+    let input_guide_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .spacing(Spacing::Overlap(1))
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(11)
+        ])
+        .split(view_layout[2]);
+
+    let command_guide = Paragraph::new(vec![
+        Line::from(vec![
+            Span::from("Input Bar"),
+        ]),
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .padding(Padding::horizontal(1))
+            .merge_borders(MergeStrategy::Exact)
+    );
+    let threads_guide = Paragraph::new(vec![
+        Line::from(vec![
+            Span::from("Threads"),
+        ]),
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .padding(Padding::horizontal(1))
+            .merge_borders(MergeStrategy::Exact)
+    );
+
+    if app.tab != usize::MAX {
+        frame.render_widget(command_guide, input_guide_layout[0]);
+        frame.render_widget(threads_guide, input_guide_layout[1]);
+    }
 }
 
 fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
@@ -1030,7 +1407,6 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             )
         }
     );
-
 
     let mut final_moves_scroll = current_moves_scroll;
     let mut final_fen_scroll = current_fen_scroll;
@@ -1263,17 +1639,15 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         }
 
         if !available_tables.is_empty() {
-            let num_tables = available_tables.len() as u16;
-            let mut pst_idx = *app.scroll_map.get(&(1, 1)).unwrap_or(&0);
-            if pst_idx == u16::MAX {
-                pst_idx = num_tables - 1;
-                app.scroll_map.insert((1, 1), pst_idx);
-            } else if pst_idx >= num_tables {
-                pst_idx = 0;
-                app.scroll_map.insert((1, 1), pst_idx);
+            let n_tables = available_tables.len() as u16;
+            let mut select = *app.scroll_map.get(&(1, 1)).unwrap_or(&0);
+            if select == u16::MAX {
+                select = 0;
+                app.scroll_map.insert((1, 1), select);
+            } else if select >= n_tables {
+                select = n_tables - 1;
+                app.scroll_map.insert((1, 1), select);
             }
-
-            let pst_idx_usize = pst_idx as usize;
 
             let tab_titles: Vec<Line> = available_tables.iter()
                 .map(|(t, _)| Line::from(*t))
@@ -1291,14 +1665,14 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                         .borders(Borders::ALL)
                         .border_style(tabs_style)
                 )
-                .select(pst_idx_usize)
+                .select((n_tables - select) as usize - 1)
                 .highlight_style(
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
                 );
 
-            let pst_chunks = Layout::default()
+            let table_view_layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(3),
@@ -1306,20 +1680,20 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 ])
                 .split(right_chunks[0]);
 
-            frame.render_widget(tabs, pst_chunks[0]);
+            frame.render_widget(tabs, table_view_layout[0]);
 
-            let (_, sel_pst) = available_tables[pst_idx_usize];
+            let (_, table) = available_tables[(n_tables - select) as usize - 1];
 
-            let pst_p = Paragraph::new(sel_pst.clone())
+            let table_paragraph = Paragraph::new(table.clone())
                 .block(Block::default().borders(Borders::NONE));
 
-            let pw = sel_pst
+            let width = table
                 .lines()
-                .map(|l| l.chars().count()).max().unwrap_or(0) as u16 + 4;
-            let ph = sel_pst.lines().count() as u16 + 2;
+                .map(|l| l.chars().count()).max().unwrap_or(0) as u16;
+            let height = table.lines().count() as u16;
 
-            frame.render_widget(pst_p, pst_chunks[1].centered(
-                Constraint::Length(pw), Constraint::Length(ph)
+            frame.render_widget(table_paragraph, table_view_layout[1].centered(
+                Constraint::Length(width), Constraint::Length(height)
             ));
         }
     }
@@ -1716,26 +2090,6 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             app.input.pop();
             false
         },
-        (TUI_NORMAL_MODE, KeyCode::Char(']')) => {
-            let max_threads = thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(1)
-                .min(8);
-            app.threads = (app.threads + 1).min(max_threads);
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Char('[')) => {
-            app.threads = app.threads.saturating_sub(1).max(1);
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Char('}')) => {
-            inc_verbosity();
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Char('{')) => {
-            dec_verbosity();
-            false
-        },
         (TUI_NORMAL_MODE, KeyCode::Char('j')) => {
             let scroll = app.scroll_map.get(&(app.tab, app.focus))
                 .copied()
@@ -1764,63 +2118,11 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             app.scroll_map.insert((app.tab, app.focus), scroll);
             false
         },
-        (TUI_NORMAL_MODE, KeyCode::Left) => {
-            if app.help {
-                app.help_tab = app.help_tab.saturating_sub(1);
-            } else {
-                if app.focus == 0 {
-                    app.focus = (TAB_FOCUSABLES[app.tab] as usize)
-                        .saturating_sub(1);
-                } else {
-                    app.focus = app.focus
-                        .saturating_sub(1)
-                };
-            }
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Right) => {
-            if app.help {
-                app.help_tab = app.help_tab.saturating_add(1).min(1);
-            } else if app.tab != usize::MAX {
-                app.focus = app.focus
-                    .saturating_add(1);
+        (TUI_NORMAL_MODE, KeyCode::Enter) => {
 
-                if app.focus >= TAB_FOCUSABLES[app.tab] as usize {
-                    app.focus = 0;
-                }
+            if app.tab != usize::MAX {
+                return false;
             }
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Char('n')) => {
-            app.reset();
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Char('g')) => {
-            let scroll = app.scroll_map.entry((app.tab, app.focus))
-                .or_insert(0);
-            *scroll = 0;
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Char('G')) => {
-            let scroll = app.scroll_map.entry((app.tab, app.focus))
-                .or_insert(0);
-            *scroll = u16::MAX;
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Char('i')) if app.game_state.is_some() => {
-            app.mode = TUI_INPUT_MODE;
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Char('?')) => {
-            app.help = !app.help;
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Tab) => {
-            app.tab = (app.tab.saturating_add(1)) % TAB_TITLES.len();
-            app.focus = 0;
-            false
-        },
-        (TUI_NORMAL_MODE, KeyCode::Enter) if app.game_state.is_none() => {
 
             app.locked = true;
             app.focus = 0;
@@ -1880,6 +2182,85 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('q')) => true,
+        (TUI_NORMAL_MODE, KeyCode::Char('?')) => {
+            app.help = !app.help;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Left) => {
+            if app.help {
+                app.help_tab = app.help_tab.saturating_sub(1);
+            } else if app.tab != usize::MAX {
+                if app.focus == 0 {
+                    app.focus = (TAB_FOCUSABLES[app.tab] as usize)
+                        .saturating_sub(1);
+                } else {
+                    app.focus = app.focus
+                        .saturating_sub(1)
+                };
+            }
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Right) => {
+            if app.help {
+                app.help_tab = app.help_tab.saturating_add(1).min(1);
+            } else if app.tab != usize::MAX {
+                app.focus = app.focus
+                    .saturating_add(1);
+
+                if app.focus >= TAB_FOCUSABLES[app.tab] as usize {
+                    app.focus = 0;
+                }
+            }
+            false
+        },
+        (TUI_NORMAL_MODE, _) if app.tab == usize::MAX => {                      /* everything else in is off          */
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char(']')) => {
+            let max_threads = thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+                .min(8);
+            app.threads = (app.threads + 1).min(max_threads);
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('[')) => {
+            app.threads = app.threads.saturating_sub(1).max(1);
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('}')) => {
+            inc_verbosity();
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('{')) => {
+            dec_verbosity();
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('n')) => {
+            app.reset();
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('g')) => {
+            let scroll = app.scroll_map.entry((app.tab, app.focus))
+                .or_insert(0);
+            *scroll = 0;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('G')) => {
+            let scroll = app.scroll_map.entry((app.tab, app.focus))
+                .or_insert(0);
+            *scroll = u16::MAX;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Char('i')) if app.game_state.is_some() => {
+            app.mode = TUI_INPUT_MODE;
+            false
+        },
+        (TUI_NORMAL_MODE, KeyCode::Tab) => {
+            app.tab = (app.tab.saturating_add(1)) % TAB_TITLES.len();
+            app.focus = 0;
+            false
+        },
         _ => false,
     }
 }

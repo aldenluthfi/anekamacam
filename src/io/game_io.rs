@@ -375,6 +375,158 @@ pub fn export_tuned_parameters_file(
     });
 }
 
+/// Parses a game configuration file for previewing purposes, without fully
+/// populating the `State` struct. Only parsing the:
+///
+/// - title
+/// - initial position
+/// - piece chars
+///
+/// Returns (title, board) to be shown in the TUI
+pub fn parse_config_preview(path: &str) -> (String, String) {
+    let file_str =
+        fs::read_to_string(path).expect("Failed to read configuration file");
+
+    let uncommented_str = COMMENT_PATTERN.replace_all(&file_str, "");
+    let cleaned = uncommented_str
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let sections = SECTION_PATTERN
+        .captures_iter(&cleaned)
+        .map(|cap| {
+            let section_name = cap[1].trim().to_string();
+            let section_body = cap[0]
+                .lines()
+                .skip(1)
+                .map(str::to_string)
+                .filter(|line| !line.trim().is_empty())
+                .collect::<Vec<String>>();
+            (section_name, section_body)
+        })
+        .collect::<HashMap<_, _>>();
+
+    let mandatory_sections = [
+        "general",
+        "piece order",
+    ];
+
+    let missing: Vec<_> = mandatory_sections
+        .iter()
+        .filter(|s| !sections.contains_key(**s))
+        .cloned()
+        .collect();
+
+    assert!(
+        missing.is_empty(),
+        "Missing mandatory sections: {}",
+        missing.join(", ")
+    );
+
+    let title = sections["general"][0].trim().to_string();
+    let position = sections["general"][1].split_whitespace().next().unwrap();
+    let pieces = sections["piece order"][0].chars().collect::<Vec<char>>();
+
+    let mut piece_index = HashMap::new();
+    for (index, char) in pieces.iter().enumerate() {
+        piece_index.insert(char, index);
+    }
+
+    let (files, ranks) = determine_board_dimensions(position);
+
+    let mut boards = vec![board!(files, ranks); piece_index.len()];
+
+    let ranks_data: Vec<&str> = position.split('/').collect();
+    assert!(
+        ranks_data.len() == ranks as usize,
+        "{}: FEN rank count ({}) doesn't match board ranks ({})",
+        title,
+        ranks_data.len(),
+        ranks
+    );                                                                          /* assert number of ranks in the FEN  */
+
+    for (rank_idx, rank_data) in ranks_data.iter().enumerate() {                /* assert number of files in each rank*/
+        let mut file_count = 0u8;
+        let mut chars = rank_data.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c.is_ascii_digit() {
+                let mut num_str = c.to_string();
+                while let Some(&next_c) = chars.peek() {
+                    if next_c.is_ascii_digit() {
+                        num_str.push(next_c);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                file_count += num_str.parse::<u8>().unwrap();
+            } else {
+                file_count += 1;
+            }
+        }
+        assert!(
+            file_count == files,
+            "FEN rank {} has {} files but expected {}",
+            rank_idx,
+            file_count,
+            files
+        );
+    }
+
+    let mut rank = ranks - 1;
+    let mut file = 0u8;
+
+    let mut position_chars = position.chars().peekable();
+    while let Some(c) = position_chars.next() {
+        match c {
+            '/' => {
+                rank -= 1;
+                file = 0;
+            }
+            '0'..='9' => {
+                let mut num_str = c.to_string();
+                while let Some(&next_c) = position_chars.peek() {
+                    if next_c.is_ascii_digit() {
+                        num_str.push(next_c);
+                        position_chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                file += num_str.parse::<u8>().unwrap();
+            }
+            _ => {
+                let piece_idx = piece_index.get(&c).unwrap_or_else(|| {
+                    panic!("Unknown piece character in FEN: {}", c)
+                });
+
+                let square_index =
+                    (rank as u32) * (files as u32) + (file as u32);
+
+                set!(&mut boards[*piece_idx], square_index);
+
+                file += 1;
+            }
+        }
+    }
+
+    let board_str = boards
+        .iter()
+        .enumerate()
+        .map(
+            | (index,  board) |
+            format_board(board, Some(pieces[index]))
+        )
+        .fold(
+            format_board(&board!(files, ranks), None),
+            |acc, board| combine_board_strings(&acc, &board)
+        );
+
+    (title, board_str)
+ }
+
 /// Parses a game configuration file and initializes a game state.
 /// See `example.conf` for the expected format of the configuration file.
 ///
@@ -390,6 +542,8 @@ pub fn export_tuned_parameters_file(
 /// [5] bool: whether the piece is royal
 /// [6] u8: the piece rank
 ///
+/// Which are then converted into `Piece` structs and stored in the `State`
+/// struct.
 pub fn parse_config_file(path: &str) -> State {
     let file_str =
         fs::read_to_string(path).expect("Failed to read configuration file");
@@ -1564,7 +1718,6 @@ pub fn parse_fen(state: &mut State, fen: &str) {
 
     let position = parts[part_index];
     part_index += 1;
-    assert!(!position.contains("_"), "_ is not a valid FEN character");
 
     let ranks_data: Vec<&str> = position.split('/').collect();
     assert!(
