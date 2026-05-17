@@ -364,7 +364,7 @@ pub fn export_tuned_parameters_file(
         }
     }
 
-    let dir_path = format!("parameters/{}", variant);
+    let dir_path = format!("{}/{}", PARAM_DIR, variant);
     fs::create_dir_all(&dir_path).unwrap_or_else(|e| {
         panic!("Failed to create directory {}: {}", dir_path, e)
     });
