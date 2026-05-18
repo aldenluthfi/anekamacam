@@ -260,19 +260,12 @@ macro_rules! score_move {
         {
             let killers =
                 &$state.killer_hist[$state.search_ply as usize];
-            let countermove =
-                &$state.countermove_hist[$state.search_ply as usize];
+
             if *$mv == killers[0] {
                 10000 - 1 + MAX_DEPTH as u16                                    /* killer scores above history         */
             } else if *$mv == killers[1] {
                 10000 - 2 + MAX_DEPTH as u16                                    /* killer scores above history         */
-            } else if !countermove.is_empty()
-                && countermove[0] != null_move()
-                && *$mv == countermove[0]
-                && piece!($mv) == piece!(countermove[0])
-            {
-                10000 - 3 + MAX_DEPTH as u16                                    /* countermove bonus                  */
-            } else {
+            }  else {
                 $state.search_hist[piece!($mv) as usize][end!($mv) as usize]
             }
         } else {
