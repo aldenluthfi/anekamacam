@@ -349,8 +349,6 @@ pub struct StaticState {
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: Vec<Vec<PieceIndex>>,                               /* piece index to demotion piece idx  */
     pub piece_char_map: HashMap<char, PieceIndex>,                              /* char to piece index map            */
-
-    pub most_valuable: u16,                                                     /* value of the most valuable piece   */
 }
 
 /// Main state of the game.
@@ -488,13 +486,6 @@ impl State {
     ) -> Self {
 
         let piece_count: usize = pieces.len();
-        let most_valuable: u16 = pieces
-            .iter()
-            .map(|p| p_ovalue!(p))
-            .max()
-            .unwrap_or_else(|| {
-                panic!("Cannot derive most valuable piece from empty list")
-            });
         let board_size: usize = (files as usize) * (ranks as usize);
 
         let statics = Arc::new(StaticState {
@@ -535,8 +526,6 @@ impl State {
             piece_swap_map: vec![0; piece_count],
             piece_demotion_map: vec![Vec::new(); piece_count],
             piece_char_map: HashMap::new(),
-
-            most_valuable,
         });
 
         State {

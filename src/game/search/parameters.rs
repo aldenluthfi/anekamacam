@@ -395,13 +395,6 @@ pub fn derive_parameters(state: &mut State) {
     state.static_mut().endgame_score =
         average_value.round() as u32 * 5;
 
-    state.static_mut().most_valuable = state.statics
-        .pieces
-        .iter()
-        .map(|piece| p_ovalue!(piece))
-        .max()
-        .unwrap_or(0);
-
     state.big_pieces = [0; 2];
     state.major_pieces = [0; 2];
     state.minor_pieces = [0; 2];
