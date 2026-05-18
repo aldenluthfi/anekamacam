@@ -311,13 +311,26 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
     refresh_eval_state(state);
 }
 
-/// Exports tuned parameters to `parameters/{variant}/{epoch}.param`
-/// in a flat space-separated format compatible with
-/// `parse_tuned_parameters_file`.
+fn find_last_epoch_in_dir(dir_path: &str) -> usize {
+    let mut max_epoch = 0usize;
+    if let Ok(entries) = fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            if let Ok(file_name) = entry.file_name().into_string()
+            && file_name.ends_with(".param") && file_name != "latest.param"
+            && let Ok(num) = file_name[..file_name.len() - 6].parse::<usize>() {
+                max_epoch = max_epoch.max(num);
+            }
+        }
+    }
+    max_epoch
+}
+
+/// Exports tuned parameters to `parameters/{variant}/latest.param`.
+/// If latest.param already has content, writes to an incremented epoch
+/// number instead.
 pub fn export_tuned_parameters_file(
     state: &State,
     variant: &str,
-    epoch: usize,
 ) {
     assert!(!variant.trim().is_empty(), "Variant name cannot be empty");
 
@@ -369,10 +382,24 @@ pub fn export_tuned_parameters_file(
         panic!("Failed to create directory {}: {}", dir_path, e)
     });
 
-    let file_path = format!("{}/{}.param", dir_path, epoch);
-    fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
-        panic!("Failed to write parameter file {}: {}", file_path, e)
-    });
+    let file_path = format!("{}/latest.param", dir_path);
+
+    if Path::new(&file_path).exists() {
+        let last_epoch = find_last_epoch_in_dir(&dir_path);
+        let new_path = format!("{}/{}.param", dir_path, last_epoch + 1);
+
+        fs::rename(&file_path, &new_path).unwrap_or_else(|e| {
+            panic!("Failed to rename parameter file {}: {}", new_path, e)
+        });
+
+        fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
+            panic!("Failed to write parameter file {}: {}", file_path, e)
+        });
+    } else {
+        fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
+            panic!("Failed to write parameter file {}: {}", file_path, e)
+        });
+    }
 }
 
 /// Parses a game configuration file for previewing purposes, without fully
@@ -1571,7 +1598,20 @@ pub fn parse_config_file(path: &str) -> State {
     );
     result.load_fen(initial_position);
 
-    derive_parameters(&mut result);
+    let variant = Path::new(path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    let param_file = format!("{}/{}/latest.param", PARAM_DIR, variant);
+
+    if Path::new(&param_file).is_file() {
+        log_4!("Loading parameters from file");
+        parse_tuned_parameters_file(&mut result, &param_file);
+    } else {
+        derive_parameters(&mut result);
+        export_tuned_parameters_file(&result, variant);
+    }
+
     hash_position(&result);
 
     result
@@ -1670,30 +1710,37 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 
 /// Parses a FEN string and updates the game state accordingly.
 ///
-/// Note that the FEN implementation is slightly modified to accommodate
-/// arbitrary board sizes. The en passant square is represented as `xxyyzz`
-/// where `xx` is the file and `yy` is the rank (both 0-indexed), and `zz`
-/// is the piece index in hex.
+/// Cheesy Forsyth-Edwards Notation (CFEN)
 ///
-/// For variants where there is pieces in hand, it is in the format
-/// (white)/(black) where each part is formatted as follows:
-/// 3P2N means 3 pawns and 2 knights in hand.
-/// RQ means 1 rook and 1 queen in hand.
-/// - means no pieces in hand. so both empty would be -/-
+/// The dimensions of the board are determined by the number of ranks and files
+/// in this section.
 ///
-/// The piece characters are the same as the ones used in the board
-/// representation part of the FEN.
+/// The format is similar to FEN depending on the ruleset there is 3-5 parts,
+/// the order is as follows:
 ///
-/// The order is as follows:
-/// 1. Board representation (ranks separated by '/')
-/// 2. Active color ('w' or 'b')
-/// 3. Castling rights (e.g. 'KQkq' or '-')
-/// 4. En passant square (e.g. '008018P' or '*')
-/// 5. Pieces in hand (e.g. '3P2N/1p' or '-/-')
+/// (position) (side) (castling rights) (en passant square) (in hand pieces)
+///
+/// 1. position           : Same as normal FEN
+///
+/// 2. side               : Same as normal FEN
+///
+/// 3. castling rights    : Same as normal FEN
+///
+/// 4. en passant square  : Formatted 'ssseeez' where s is the en passant square
+///                         index itself in hex, e is the square index of the
+///                         piece that can be captured en passant in hex, and z
+///                         is the char of the piece that can be captured en
+///                         passant. "*" if no en passant square.
+///
+/// 5. in hand pieces     : Formatted '(w)/(b)' where each w and b is formatted
+///                         with the pieces in hand. e.g. P2N means a pawn and
+///                         two knights in hand. "-" if no pieces in hand for
+///                         that color so an empty hand for both is -/-
 ///
 /// Optional:
-/// 6. Halfmove clock (number of halfmoves since last capture or pawn move)
-/// 7. Fullmove number (starting at 1 and incremented after
+///
+/// 6. Halfmove clock     : number of halfmoves towards the halfmove-clock rule
+/// 7. Fullmove number    : starting at 1 and incremented after
 pub fn parse_fen(state: &mut State, fen: &str) {
     let mut needed_parts = 2;
 
