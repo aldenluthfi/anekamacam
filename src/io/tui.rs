@@ -717,7 +717,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             "Automatically play the game with specified depth and time limit"
         ),
         (
-            "perft <depth> <branch> [file]",
+            "perft <depth> <branch>",
             "Run a perft benchmark to verify move generation accuracy"
         ),
         ("move <move>", "Play a valid move using Cheesy Move Notation (CMN)"),
@@ -1751,7 +1751,8 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 fn execute_command(
     command: &str,
     state: &mut State,
-    table: Arc<TTable>,
+    file_name: Option<String>,
+    ttable: Arc<TTable>,
     qtable: Arc<QTable>,
     threads: usize,
     sender: Sender<TuiEvent>
@@ -1843,7 +1844,7 @@ fn execute_command(
             };
             let mut bufs = SearchBufs::default();
             let result = search_position(
-                state, Arc::clone(&table), Arc::clone(&qtable),
+                state, Arc::clone(&ttable), Arc::clone(&qtable),
                 &mut info, &mut bufs, threads
             );
 
@@ -1870,7 +1871,7 @@ fn execute_command(
             let mut bufs = SearchBufs::default();
             let result = search_position(
                 state,
-                Arc::clone(&table), Arc::clone(&qtable),
+                Arc::clone(&ttable), Arc::clone(&qtable),
                 &mut info, &mut bufs, threads
             );
 
@@ -1932,7 +1933,7 @@ fn execute_command(
 
                 let result = search_position(
                     state,
-                    Arc::clone(&table), Arc::clone(&qtable),
+                    Arc::clone(&ttable), Arc::clone(&qtable),
                     &mut info, &mut bufs, threads
                 );
 
@@ -1962,8 +1963,8 @@ fn execute_command(
         _ if trimmed.starts_with("perft") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
-            if parts.len() != 3 && parts.len() != 4 {
-                log_2!("Usage: perft [depth] [branch] [file (optional)]");
+            if parts.len() != 3 {
+                log_2!("Usage: perft [depth] [branch]");
                 return;
             }
 
@@ -1977,17 +1978,20 @@ fn execute_command(
                 -1
             });
 
-            let perft_file = if parts.len() == 4 {
-                Some(parts[3])
-            } else {
-                None
-            };
+            if let Some(name) = file_name {
+                let variant = name.strip_suffix(".conf").unwrap_or(&name);
+                let perft_path = format!("{}/{}.perft", PERFT_DIR, variant);
 
-            if let Some(file) = perft_file {
-                benchmark_perft(state, file, depth, branch, usize::MAX);
-            } else {
-                benchmark_headless_perft(state, depth, branch);
+                if Path::new(&perft_path).is_file() {
+                    benchmark_perft(
+                        state, &perft_path, depth, branch, usize::MAX
+                    );
+                }
+
+                return;
             }
+
+            benchmark_headless_perft(state, depth, branch);
         }
         _ if trimmed.starts_with("move") => {
             let mv_str = trimmed[5..].trim();
@@ -2040,6 +2044,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
             thread::spawn({
                 let command = app.input.clone();
+                let file_name = app.file_name.clone();
                 let arc_state = app.game_state.as_mut().unwrap_or_else(
                     || {
                         panic!("Game state is None when executing command")
@@ -2064,6 +2069,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                     execute_command(
                         &command,
                         &mut state,
+                        file_name,
                         Arc::new(table),
                         Arc::new(qtable),
                         threads,
