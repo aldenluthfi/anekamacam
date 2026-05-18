@@ -106,7 +106,6 @@ pub fn clear_search(
 
     state.search_hist = vec![vec![0u16; board_size]; piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
-    state.countermove_hist = vec![vec![null_move(); 1]; MAX_DEPTH];
 
     ttable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     qtable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -583,9 +582,9 @@ pub fn alpha_beta(
 
         let mv = bufs.move_buf[ply][i].clone();
         let mv_type = move_type!(mv);
-        let mv_piece = piece!(mv) as usize;
-        let mv_start = start!(mv);
-        let mv_end = end!(mv);
+        let piece = piece!(mv) as usize;
+        let start = start!(mv);
+        let end = end!(mv);
         let is_capture = (mv_type == SINGLE_CAPTURE_MOVE && !is_unload!(mv))
             || (mv_type == MULTI_CAPTURE_MOVE
             && mv.1.iter().all(|cap| !multi_move_is_unload!(cap)));
@@ -617,16 +616,16 @@ pub fn alpha_beta(
         && legal_moves > 2
         && !opponent_in_check
         && !in_check
-        && (mv_end != end!(state.killer_hist[state.search_ply as usize][0])
-        || mv_start != start!(state.killer_hist[state.search_ply as usize][0]))
-        && (mv_end != end!(state.killer_hist[state.search_ply as usize][1])
-        || mv_start != start!(state.killer_hist[state.search_ply as usize][1]))
+        && (end != end!(state.killer_hist[state.search_ply as usize][0])
+        || start != start!(state.killer_hist[state.search_ply as usize][0]))
+        && (end != end!(state.killer_hist[state.search_ply as usize][1])
+        || start != start!(state.killer_hist[state.search_ply as usize][1]))
         && !is_capture
         && !is_promotion
         && !is_drop
         {                                                                       /* late move reduction                */
             let history_score =
-                state.search_hist[mv_piece][mv_end as usize] as i32;
+                state.search_hist[piece][end as usize] as i32;
             if history_score < -100 {                                           /* low history: extra reduction       */
                 reduct += 1;
             } else if history_score > 200 {                                     /* high history: no reduction         */
@@ -669,17 +668,11 @@ pub fn alpha_beta(
 
             if score > alpha {
                 if score >= beta {
-                    let prev_ply =
-                        (state.search_ply as usize).saturating_sub(1);
-
-                    if prev_ply < MAX_DEPTH {
-                        state.countermove_hist[prev_ply][0] = best_move.clone();
-                    }
+                    let ply = state.search_ply as usize;
 
                     if !is_capture {
-                        state.killer_hist[state.search_ply as usize].swap(1, 0);
-                        state.killer_hist[state.search_ply as usize][0] =
-                            mv.clone();
+                        state.killer_hist[ply].swap(1, 0);
+                        state.killer_hist[ply][0] = mv.clone();
                     }
 
                     hash_tt_entry!(
@@ -689,12 +682,12 @@ pub fn alpha_beta(
                     return beta;
                 }
 
-                alpha = score;
-
+                let depth_bonus = (depth * depth) as u16;
                 if !is_capture {
-                    state.search_hist[mv_piece][mv_end as usize] +=
-                        depth as u16;
+                    state.search_hist[piece][end as usize] += depth_bonus;
                 }
+
+                alpha = score;
             }
         }
     }
