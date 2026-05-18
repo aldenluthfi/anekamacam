@@ -263,15 +263,15 @@ macro_rules! score_move {
             let countermove =
                 &$state.countermove_hist[$state.search_ply as usize];
             if *$mv == killers[0] {
-                $state.statics.most_valuable - 1 + MAX_DEPTH as u16             /* killer scores above history         */
+                10000 - 1 + MAX_DEPTH as u16                                    /* killer scores above history         */
             } else if *$mv == killers[1] {
-                $state.statics.most_valuable - 2 + MAX_DEPTH as u16             /* killer scores above history         */
+                10000 - 2 + MAX_DEPTH as u16                                    /* killer scores above history         */
             } else if !countermove.is_empty()
                 && countermove[0] != null_move()
                 && *$mv == countermove[0]
                 && piece!($mv) == piece!(countermove[0])
             {
-                $state.statics.most_valuable - 3 + MAX_DEPTH as u16             /* countermove bonus                  */
+                10000 - 3 + MAX_DEPTH as u16                                    /* countermove bonus                  */
             } else {
                 $state.search_hist[piece!($mv) as usize][end!($mv) as usize]
             }
@@ -306,7 +306,7 @@ macro_rules! score_move {
                 see_move($state, $mv)
             };
 
-            let raw = $state.statics.most_valuable as i32
+            let raw = 10000 as i32
                 + see
                 + MAX_DEPTH as i32;
             raw.clamp(0, u16::MAX as i32) as u16
@@ -334,20 +334,20 @@ macro_rules! pick_by_score {
     ($state:expr, $moves:expr, $index:expr, $pv_move:expr) => {{
         let moves: &mut Vec<Move> = $moves;
         let index = $index;
-        if index < moves.len() {
-            let mut best_index = index;
-            let mut best_score =
-                score_move!($state, &moves[index], $pv_move);
-            for (i, mv) in moves.iter().enumerate().skip(index + 1) {
-                let score = score_move!($state, mv, $pv_move);
-                if score > best_score {
-                    best_score = score;
-                    best_index = i;
-                }
+
+        let mut best_index = index;
+        let mut best_score = score_move!($state, &moves[index], $pv_move);
+
+        for (i, mv) in moves.iter().enumerate().skip(index + 1) {
+            let score = score_move!($state, mv, $pv_move);
+            if score > best_score {
+                best_score = score;
+                best_index = i;
             }
-            if best_index != index {
-                moves.swap(index, best_index);
-            }
+        }
+
+        if best_index != index {
+            moves.swap(index, best_index);
         }
     }};
 }
