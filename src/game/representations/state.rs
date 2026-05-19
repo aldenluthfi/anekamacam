@@ -292,11 +292,11 @@ macro_rules! pass_snapshot {
 #[macro_export]
 macro_rules! game_phase_score {
     ($state:expr) => {{
-        let mut game_phase_score = 0;
+        let mut phase_score = 0;
 
         for (piece_idx, piece) in $state.statics.pieces.iter().enumerate() {
             if p_is_big!(piece) && !p_is_royal!(piece) {
-                game_phase_score +=
+                phase_score +=
                     (
                         p_ovalue!(piece) as u32) *
                         ($state.piece_list[piece_idx].len() as u32
@@ -304,7 +304,7 @@ macro_rules! game_phase_score {
             }
         }
 
-        game_phase_score
+        phase_score
     }};
 }
 
@@ -385,6 +385,7 @@ pub struct State {
 
     pub game_over: bool,
     pub game_phase: u8,                                                         /* SETUP/OPENING/MIDDLEGAME/ENDGAME   */
+    pub phase_score: u32,                                                       /* game phase score for transition    */
 
     pub playing: u8,
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
@@ -434,6 +435,7 @@ impl Clone for State {
 
             game_over: self.game_over,
             game_phase: self.game_phase,
+            phase_score: self.phase_score,
 
             playing: self.playing,
             main_board: self.main_board.clone(),
@@ -531,6 +533,7 @@ impl State {
 
             game_over: false,
             game_phase: OPENING,
+            phase_score: 0,
 
             playing: WHITE,
             main_board: vec![NO_PIECE; board_size],

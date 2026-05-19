@@ -385,13 +385,18 @@ pub fn derive_parameters(state: &mut State) {
         .filter(
             |(index, _)|
                 p_is_big!(&state.statics.pieces[*index]) &&
+                !p_is_royal!(&state.statics.pieces[*index]) &&
                 p_color!(&state.statics.pieces[*index]) == WHITE
         )
         .map(|(_, value)| value)
         .sum::<f64>() / total_values;
 
+    log_4!(
+        "Average piece value (for big non-royal pieces): {:.4}", average_value
+    );
+
     state.static_mut().opening_score =
-        average_value.round() as u32 * state.statics.pieces.len() as u32 * 2;
+        average_value.round() as u32 * state.statics.pieces.len() as u32;
     state.static_mut().endgame_score =
         average_value.round() as u32 * 5;
 

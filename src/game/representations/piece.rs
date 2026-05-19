@@ -28,7 +28,7 @@ macro_rules! p_value {
 
         let opening_score = $state.statics.opening_score;
         let endgame_score = $state.statics.endgame_score;
-        let current_score = game_phase_score!($state);
+        let current_score = $state.phase_score;
 
         match $state.game_phase {
             OPENING | SETUP => ovalue,
