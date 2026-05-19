@@ -38,7 +38,8 @@ pub struct SearchInfo {
 #[derive(Default)]
 pub struct SearchBufs {
     pub move_buf: Vec<Vec<Move>>,                                               /* per-ply move lists, pre-allocated  */
-    pub scratch_buf: Vec<u64>,                                                  /* reused scratch for taken_pieces    */
+    pub scratch_buf: Vec<u64>,                                                   /* reused scratch for taken_pieces    */
+    pub score_buf: Vec<Vec<u16>>,                                               /* pre-computed move ordering scores */
 }
 
 pub struct SearchResult {
@@ -98,6 +99,8 @@ pub fn clear_search(
         bufs.move_buf = (0..MAX_DEPTH * 2)
             .map(|_| Vec::with_capacity(64)).collect();
         bufs.scratch_buf = Vec::with_capacity(32);
+        bufs.score_buf = (0..MAX_DEPTH * 2)
+            .map(|_| vec![u16::MAX; MAX_SQUARES * 2]).collect();
     }
 
     let piece_count: usize = state.statics.pieces.len();
@@ -340,9 +343,7 @@ fn quiescence_search(
     }
 
     let ply = state.search_ply as usize;
-    generate_all_captures(
-        state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
-    );
+
     let tt_pv_move = probe_pv_move!(state, ttable);
     let qtt_entry = probe_qt_entry!(state, qtable, alpha, beta);
 
@@ -358,12 +359,22 @@ fn quiescence_search(
     let mut best_move = null_move();
     let best_score = alpha;
 
+    generate_all_captures(
+        state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+    );
+
+    bufs.score_buf[ply].fill(u16::MAX);
+
     for i in 0..bufs.move_buf[ply].len() {
-        pick_by_score!(state, &mut bufs.move_buf[ply], i, &pv_move);
+        pick_by_score!(
+            state,
+            &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
+            i, &pv_move
+        );
 
         let mv = bufs.move_buf[ply][i].clone();
 
-        if see(state, mv.clone()) < 0 {
+        if see!(state, mv.clone()) < 0 {
             continue;
         }
 
@@ -585,8 +596,14 @@ pub fn alpha_beta(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
 
+    bufs.score_buf[ply].fill(u16::MAX);
+
     for i in 0..bufs.move_buf[ply].len() {
-        pick_by_score!(state, &mut bufs.move_buf[ply], i, &pv_move);
+        pick_by_score!(
+            state,
+            &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
+            i, &pv_move
+        );
 
         let mv = bufs.move_buf[ply][i].clone();
         let mv_type = move_type!(mv);
@@ -676,8 +693,6 @@ pub fn alpha_beta(
 
             if score > alpha {
                 if score >= beta {
-                    let ply = state.search_ply as usize;
-
                     if !is_capture {
                         state.killer_hist[ply].swap(1, 0);
                         state.killer_hist[ply][0] = mv.clone();
@@ -690,9 +705,8 @@ pub fn alpha_beta(
                     return beta;
                 }
 
-                let depth_bonus = (depth * depth) as u16;
                 if !is_capture {
-                    state.search_hist[piece][end as usize] += depth_bonus;
+                    state.search_hist[piece][end as usize] += depth as u16;
                 }
 
                 alpha = score;
