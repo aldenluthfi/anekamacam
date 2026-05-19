@@ -929,6 +929,8 @@ macro_rules! make_move {
             let last_position_hash = $state.position_hash;
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
+            let last_phase_score = $state.phase_score;
+
             let move_type = move_type!($mv);
             let pass_move = is_pass!($mv);
 
@@ -2072,8 +2074,11 @@ macro_rules! make_move {
                 stand_offs!($state) && is_in_stand_off!($state);
 
             let legal =
-                !in_check && !(stand_off_after && stand_off_before) ||
-                stand_off_after && stand_off_before && pass_move;
+                !in_check && (
+                    !stand_off_after  ||
+                    !stand_off_before ||
+                    stand_off_after && stand_off_before && pass_move
+                );
 
             hash_toggle_side!($state);
 
@@ -2110,6 +2115,7 @@ macro_rules! make_move {
                 en_passant_square: last_en_passant_square,
                 game_over: last_game_over,
                 game_phase: last_game_phase,
+                phase_score: last_phase_score,
                 position_hash: last_position_hash
             };
 
@@ -2170,6 +2176,7 @@ macro_rules! undo_move {
         $state.position_hash = snapshot.position_hash;
         $state.game_over = snapshot.game_over;
         $state.game_phase = snapshot.game_phase;
+        $state.phase_score = snapshot.phase_score;
 
         let mv = snapshot.move_ply;
         let move_type = move_type!(mv);
@@ -2781,6 +2788,7 @@ macro_rules! make_null_move {
             let last_position_hash = $state.position_hash;
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
+            let last_phase_score = $state.phase_score;
 
             $state.playing = 1 - $state.playing;
 
@@ -2793,6 +2801,7 @@ macro_rules! make_null_move {
                 en_passant_square: last_en_passant_square,
                 game_over: last_game_over,
                 game_phase: last_game_phase,
+                phase_score: last_phase_score,
                 position_hash: last_position_hash
             };
 
@@ -2831,6 +2840,7 @@ macro_rules! undo_null_move {
         $state.position_hash = snapshot.position_hash;
         $state.game_over = snapshot.game_over;
         $state.game_phase = snapshot.game_phase;
+        $state.phase_score = snapshot.phase_score;
 
         #[cfg(debug_assertions)]
         verify_game_state($state);

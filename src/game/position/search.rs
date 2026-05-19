@@ -317,6 +317,10 @@ fn quiescence_search(
 ) -> i32 {
     let mut alpha = alpha;
 
+    if state.game_over {
+        return 0;
+    }
+
     info.nodes += 1;
     if info.nodes & 2047 == 0 {
         check_interrupt(info);
@@ -438,6 +442,10 @@ pub fn alpha_beta(
 ) -> i32 {
     let mut alpha = alpha;
     let mut depth = depth;
+
+    if state.game_over {
+        return 0;
+    }
 
     info.nodes += 1;
     if info.nodes & 2047 == 0 {

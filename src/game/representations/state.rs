@@ -259,7 +259,8 @@ pub struct Snapshot {
     pub halfmove_clock: u8,
     pub en_passant_square: EnPassantSquare,
     pub game_over: bool,
-    pub game_phase: u8,                                                         /* OPENING/MIDDLEGAME/ENDGAME         */
+    pub game_phase: u8,
+    pub phase_score: u32,
 
     pub position_hash: u128,
 }
@@ -273,6 +274,7 @@ impl Default for Snapshot {
             en_passant_square: EnPassantSquare::MAX,
             game_over: false,
             game_phase: OPENING,
+            phase_score: 0,
             position_hash: u128::default(),
         }
     }
