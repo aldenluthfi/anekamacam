@@ -15,6 +15,36 @@
 pub type PieceIndex = u8;
 
 /*----------------------------------------------------------------------------*\
+                               UTILTY PIECE MACROS
+\*----------------------------------------------------------------------------*/
+
+#[macro_export]
+macro_rules! p_value {
+    ($piece:expr, $state:expr) => {{
+        let piece = &$state.statics.pieces[$piece as usize];
+
+        let ovalue = p_ovalue!(piece) as u32;
+        let evalue = p_evalue!(piece) as u32;
+
+        let opening_score = $state.statics.opening_score;
+        let endgame_score = $state.statics.endgame_score;
+        let current_score = game_phase_score!($state);
+
+        match $state.game_phase {
+            OPENING | SETUP => ovalue,
+            ENDGAME => evalue,
+            MIDDLEGAME => {
+                (
+                    (ovalue * (current_score - endgame_score)) +
+                    (evalue * (opening_score - current_score))
+                ) / (opening_score - endgame_score)
+            }
+            _ => unreachable!(),
+        }
+    }};
+}
+
+/*----------------------------------------------------------------------------*\
                         PIECE BITFIELD REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
