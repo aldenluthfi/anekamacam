@@ -401,8 +401,7 @@ impl BoardState {
 
         let position_hash = format_position_hash(state);
         let game_phase = format_game_phase(state);
-        let phase_score = game_phase_score!(state);
-        let phase = format!("{} ({})", game_phase, phase_score);
+        let phase = format!("{} ({})", game_phase, state.phase_score);
 
         let castling_rights;
         let en_passant;
