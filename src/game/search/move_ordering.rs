@@ -51,7 +51,7 @@ fn lva(
     state: &State,
     target: Square,
     color: u8,
-) -> Move {
+) -> Vec<Move> {
     let attacks = &state.statics.relevant_attacks
         [1 - color as usize][target as usize];
 
@@ -74,12 +74,10 @@ fn lva(
         });
 
     out.sort_by_cached_key(
-        |mv| p_value!(piece!(mv), state)
+        |mv| -(p_value!(piece!(mv), state) as i32)
     );
 
-    out.first()
-        .cloned()
-        .unwrap_or_else(null_move)
+    out
 }
 
 /// Evaluates a capture sequence on a target square via negamax exchange
@@ -91,31 +89,42 @@ pub fn see(state: &mut State, mv: Move) -> i32 {
     let initial_attacker = attack_value!(mv, state);
     let initial_attackee = victim_value!(mv, state);
 
-    if initial_attackee > initial_attacker {
-        return initial_attackee - initial_attacker;
-    }
-
     let mut gain = Vec::with_capacity(32);
 
     gain.push(initial_attackee);
     gain.push(initial_attacker - initial_attackee);
-    make_move!(state, mv.clone());
+
+    if !make_move!(state, mv.clone()) {
+        return -20000;
+    }
+
+    if initial_attackee > initial_attacker {
+        undo_move!(state);
+        return initial_attackee - initial_attacker;
+    }
+
     let mut moves_to_undo = 1;
 
-    loop {
+    'main_loop: loop {
         let target = end!(mv) as Square;
-        let mv = lva(state, target, state.playing);
+        let mut move_list = lva(state, target, state.playing);
 
-        if mv == null_move() {
+        let Some(mut mv) = move_list.pop() else {
             break;
+        };
+
+        while !make_move!(state, mv.clone()) {
+            if move_list.is_empty() {
+                break 'main_loop;
+            }
+
+            mv = move_list.pop().unwrap();
         }
-
-        log_4!("SEE: {} captures on {}", format_move(&mv, state), target);
-
-        make_move!(state, mv.clone());
 
         gain.push(attack_value!(mv, state) - gain.last().unwrap());
         moves_to_undo += 1;
+
+        break;
     }
 
     gain.pop();                                                                 /* no recapture for last attacker     */

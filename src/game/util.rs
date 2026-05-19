@@ -81,6 +81,12 @@ pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
 /// lists, and the incremental Zobrist hash. On mismatch it also attempts to
 /// pinpoint the source before panicking.
 pub fn verify_game_state(state: &State) {
+
+    assert_eq!(
+        state.phase_score, game_phase_score!(state),
+        "Game phase score doesn't match expected value based on material counts"
+    );
+
     let mut temp_white_board = board!(
         state.statics.files, state.statics.ranks
     );
