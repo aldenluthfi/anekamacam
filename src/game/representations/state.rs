@@ -779,10 +779,6 @@ impl State {
         }
     }
 
-    /// Builds cached move/drop/pattern/attack tables from parsed expressions.
-    ///
-    /// The enabled special-rule flags determine which optional caches are
-    /// populated.
     pub fn precompute(
         &mut self,
         moves_expr_set: Vec<String>,
