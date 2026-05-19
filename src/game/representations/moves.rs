@@ -85,7 +85,7 @@ pub type PseudoMove = (u128, MoveSignature);
 ///   dropped.
 /// - The next bit represents whether this drop can deliver checkmate (0)
 ///   or not (1).
-/// - The next bit represents whether this drop is taken from the enemy's hand 
+/// - The next bit represents whether this drop is taken from the enemy's hand
 ///   (0) or our own hand (1).
 #[derive(Clone, PartialEq, Eq)]
 pub struct Move(pub u128, pub Arc<Vec<u64>>);
@@ -97,7 +97,7 @@ impl Default for Move {
 }
 
 /*----------------------------------------------------------------------------*\
-                            MOVE SIGNATURE GENERATION
+                               UTILTY MOVE MACROS
 \*----------------------------------------------------------------------------*/
 
 /// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
@@ -106,6 +106,14 @@ impl Default for Move {
 macro_rules! move_signature {
     ($mv:expr) => {
         $mv.1.iter().fold(0u64, |acc, &x| acc ^ x)
+    };
+}
+
+#[macro_export]
+macro_rules! is_capture {
+    ($mv:expr) => {
+        move_type!($mv) == SINGLE_CAPTURE_MOVE ||
+        move_type!($mv) == MULTI_CAPTURE_MOVE
     };
 }
 

@@ -46,25 +46,22 @@ macro_rules! evaluate_position {
                 score_endgame * side_sign
             }
             MIDDLEGAME => {
-                let score_opening = opening_white - opening_black
+                let score_opening = (opening_white - opening_black
                     + $state.opening_pst_bonus[white]
-                    - $state.opening_pst_bonus[black];
+                    - $state.opening_pst_bonus[black]);
 
-                let score_endgame = endgame_white - endgame_black
+                let score_endgame = (endgame_white - endgame_black
                     + $state.endgame_pst_bonus[white]
-                    - $state.endgame_pst_bonus[black];
+                    - $state.endgame_pst_bonus[black]);
 
-                let opening_total = opening_white + opening_black;
-                let opening_scale = $state.statics.opening_score as i32;
+                let opening_score = $state.statics.opening_score as i32;
+                let endgame_score = $state.statics.endgame_score as i32;
+                let current_score = game_phase_score!($state) as i32;
 
-                let blended_score = if opening_scale == 0 {
-                    score_endgame
-                } else {
-                    (score_opening * opening_total
-                        + score_endgame * (opening_scale - opening_total))
-                        / opening_scale
-                };
-
+                let blended_score = (
+                        (score_opening * (current_score - endgame_score)) +
+                        (score_endgame * (opening_score - current_score))
+                    ) / (opening_score - endgame_score);
                 blended_score * side_sign
             }
             _ => panic!("Invalid game phase {}", $state.game_phase),
