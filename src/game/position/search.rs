@@ -112,6 +112,14 @@ pub fn clear_search(
 
     ttable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     qtable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
+    let piece_count: usize = state.statics.pieces.len();
+    let board_size: usize =
+        (state.statics.files as usize) * (state.statics.ranks as usize);
+
+    state.search_hist = vec![vec![0u16; board_size]; piece_count];
+    state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
+
     state.search_ply = 0;
 }
 
@@ -444,18 +452,25 @@ pub fn alpha_beta(
     state: &mut State,
     ttable: &TTable,
     qtable: &QTable,
-    depth: usize,
-    alpha: i32,
-    beta: i32,
+    mut depth: usize,
+    mut alpha: i32,
+    mut beta: i32,
     info: &mut SearchInfo,
     bufs: &mut SearchBufs,
     null: bool,
 ) -> i32 {
-    let mut alpha = alpha;
-    let mut depth = depth;
 
     if state.game_over {
         return 0;
+    }
+
+    let ply = state.search_ply as usize;
+
+    alpha = alpha.max(-MATE_SCORE + ply as i32);
+    beta  = beta.min(MATE_SCORE - ply as i32);
+
+    if alpha >= beta {                                                          /* mate distance pruning               */
+        return alpha;
     }
 
     info.nodes += 1;
@@ -590,8 +605,6 @@ pub fn alpha_beta(
     let mut legal_moves = 0;
     let alpha_start = alpha;
 
-    let ply = state.search_ply as usize;
-
     generate_all_moves_and_drops(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
@@ -649,19 +662,7 @@ pub fn alpha_beta(
         && !is_promotion
         && !is_drop
         {                                                                       /* late move reduction                */
-            let history_score =
-                state.search_hist[piece][end as usize] as i32;
-            if history_score < -100 {                                           /* low history: extra reduction       */
-                reduct += 1;
-            } else if history_score > 200 {                                     /* high history: no reduction         */
-                reduct = 0;
-            } else {
-                reduct += 1;
-
-                if legal_moves > 5 {
-                    reduct += 1;
-                }
-            }
+            reduct += 1 + (legal_moves > 5) as usize;
 
             score = -alpha_beta(
                 state, ttable, qtable, depth - reduct, -alpha - 1, -alpha,
@@ -692,21 +693,25 @@ pub fn alpha_beta(
             best_move = mv.clone();
 
             if score > alpha {
+
+                let bonus = (depth * depth) as u16;
+
                 if score >= beta {
+
                     if !is_capture {
                         state.killer_hist[ply].swap(1, 0);
-                        state.killer_hist[ply][0] = mv.clone();
+                        state.killer_hist[ply][0] = best_move.clone();
                     }
 
                     hash_tt_entry!(
-                        best_move, beta, FBETA, depth, state, ttable
+                        mv, beta, FBETA, depth, state, ttable
                     );
 
                     return beta;
                 }
 
                 if !is_capture {
-                    state.search_hist[piece][end as usize] += depth as u16;
+                    state.search_hist[piece][end as usize] += bonus;
                 }
 
                 alpha = score;
