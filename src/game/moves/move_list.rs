@@ -466,6 +466,358 @@ macro_rules! validate_attack_vector {
     }};
 }
 
+#[macro_export]
+macro_rules! process_multi_leg_vector {
+    (
+        $square_index:expr, $piece:expr, $vector:expr,
+        $state:expr, $out:expr, $scratch:expr
+    ) => {{
+
+        let mut invalid = false;
+
+        let piece_index = p_index!($piece);
+        let piece_color = p_color!($piece);
+        let piece_rank = p_rank!($piece);
+        let piece_unmoved =
+            get!($state.virgin_board, $square_index as u32);
+
+        let mut encoded_move = Move::default();
+        enc_start!(encoded_move, $square_index as u128);
+        enc_piece!(encoded_move, piece_index as u128);
+
+        $scratch.clear();
+
+        let mut accumulated_index = $square_index as i16;
+
+        let leg_count = $vector.len();
+
+        for (leg_index, leg) in $vector.iter().enumerate() {
+            let last_leg = leg_index + 1 == leg_count;
+            let mut taken_piece = 0u64;
+
+            let start_square = accumulated_index as u32;
+
+            let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
+            let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
+
+            accumulated_index += (
+                rank_offset * ($state.statics.files as i8) + file_offset
+            ) as i16;
+
+            let end_square = accumulated_index as u32;
+
+            let m = m!(leg) || (!c!(leg) && !d!(leg));
+            let c = c!(leg) || (last_leg && !m!(leg));
+            let d = d!(leg);
+            let u = u!(leg);
+            let k = k!(leg);
+            let g = g!(leg);
+            let v = v!(leg);
+            let t = t!(leg);
+            let i = i!(leg);
+            let p = p!(leg);
+            let not_k = not_k!(leg);
+            let not_g = not_g!(leg);
+            let not_v = not_v!(leg);
+            let not_i = not_i!(leg);
+            let l = l!(leg);
+            let r = r!(leg);
+            let special_i = i && not_i;
+            let special_v = v && not_v;
+            let castling_rights =
+                piece_color as usize * 2 + l as usize;
+
+            if (i && !piece_unmoved || not_i && piece_unmoved)
+                && !special_i
+                || (special_i
+                    && is_square_attacked!(
+                        accumulated_index as u32,
+                        piece_color,
+                        piece_unmoved,
+                        p_is_royal!($piece),
+                        piece_rank,
+                        $state
+                    ))
+                || ((l || r)
+                    && $state.castling_state
+                        & CASTLING[castling_rights] == 0)
+            {
+                invalid = true;
+                break;
+            }
+
+            enc_is_initial!(encoded_move, (i | piece_unmoved) as u128);
+
+            let friendly = get!(
+                $state.pieces_board[piece_color as usize], end_square
+            ) && end_square != start_square;
+            let enemy = get!(
+                $state.pieces_board[1 - piece_color as usize], end_square
+            );
+            let empty = !friendly && !enemy;
+
+            let pass_move = file_offset == 0 && rank_offset == 0;
+
+            if empty && !pass_move {
+                if t && enp_square!($state.en_passant_square)
+                    == end_square
+                {
+                    let capt_piece_index =
+                        enp_piece!($state.en_passant_square);
+                    let capt_piece_color = p_color!(
+                        $state.statics.pieces[capt_piece_index as usize]
+                    );
+
+                    if d && capt_piece_color == piece_color
+                        || c && capt_piece_color != piece_color
+                    {
+                        enc_multi_move_captured_piece!(
+                            taken_piece, capt_piece_index as u64
+                        );
+                        enc_multi_move_captured_square!(
+                            taken_piece,
+                            enp_captured!($state.en_passant_square) as u64
+                        );
+
+                        let capt_piece = &$state.statics.pieces[
+                            capt_piece_index as usize
+                        ];
+                        let capt_unmoved = get!(
+                            $state.virgin_board,
+                            enp_captured!($state.en_passant_square)
+                        );
+                        let capt_rank = p_rank!(capt_piece);
+                        let capt_royal = p_is_royal!(capt_piece);
+
+                        if k || not_k && capt_royal
+                            || g && piece_rank >= capt_rank
+                            || not_g && piece_rank < capt_rank
+                            || (v && !capt_unmoved || not_v && capt_unmoved)
+                                && !special_v
+                        {
+                            invalid = true;
+                            break;
+                        }
+
+                        enc_multi_move_captured_unmoved!(
+                            taken_piece, capt_unmoved as u64
+                        );
+
+                        $scratch.push(taken_piece);
+                    } else {
+                        invalid = true;
+                        break;
+                    }
+                } else if !m {
+                    invalid = true;
+                    break;
+                }
+            } else if friendly && !pass_move {
+                if !d {
+                    invalid = true;
+                    break;
+                }
+
+                let capt_piece_index =
+                    $state.main_board[end_square as usize];
+                let capt_piece = &$state.statics.pieces[
+                    capt_piece_index as usize
+                ];
+                let capt_unmoved =
+                    get!($state.virgin_board, end_square);
+                let capt_rank = p_rank!(capt_piece);
+                let capt_royal = p_is_royal!(capt_piece);
+
+                if k || not_k && capt_royal
+                    || g && piece_rank >= capt_rank
+                    || not_g && piece_rank < capt_rank
+                    || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
+                {
+                    invalid = true;
+                    break;
+                }
+
+                enc_multi_move_captured_piece!(
+                    taken_piece, capt_piece_index as u64
+                );
+                enc_multi_move_captured_square!(
+                    taken_piece, end_square as u64
+                );
+                enc_multi_move_captured_unmoved!(
+                    taken_piece, capt_unmoved as u64
+                );
+
+                $scratch.push(taken_piece);
+            } else if enemy && !pass_move {
+                if !c {
+                    invalid = true;
+                    break;
+                }
+
+                let capt_piece_index =
+                    $state.main_board[end_square as usize];
+                let capt_piece = &$state.statics.pieces[
+                    capt_piece_index as usize
+                ];
+                let capt_unmoved =
+                    get!($state.virgin_board, end_square);
+                let capt_rank = p_rank!(capt_piece);
+                let capt_royal = p_is_royal!(capt_piece);
+
+                if k || not_k && capt_royal
+                    || g && piece_rank >= capt_rank
+                    || not_g && piece_rank < capt_rank
+                    || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
+                {
+                    invalid = true;
+                    break;
+                }
+
+                enc_multi_move_captured_piece!(
+                    taken_piece, capt_piece_index as u64
+                );
+                enc_multi_move_captured_square!(
+                    taken_piece, end_square as u64
+                );
+                enc_multi_move_captured_unmoved!(
+                    taken_piece, capt_unmoved as u64
+                );
+
+                $scratch.push(taken_piece);
+            }
+
+            if u {
+                let mut last_captured =
+                    $scratch.pop().unwrap_or_else(|| {
+                        panic!(
+                            "Unload flag is set but no captured piece \
+                             is available"
+                        )
+                    });
+                let captured_square =
+                    multi_move_captured_square!(last_captured);
+
+                if start_square != captured_square as u32 {
+                    enc_multi_move_is_unload!(last_captured, 1);
+                    enc_multi_move_unload_square!(
+                        last_captured, start_square as u64
+                    );
+
+                    $scratch.push(last_captured);
+                }
+            }
+
+            enc_creates_enp!(encoded_move, p as u128);
+            enc_created_enp!(
+                encoded_move,
+                p as u128
+                    * ((start_square as u128 & 0xFFF)
+                        | (accumulated_index as u128) << 12
+                        | (piece_index as u128) << 24)
+            );
+        }
+
+        enc_end!(encoded_move, accumulated_index as u128);
+
+        if promotions!($state) && p_can_promote!($piece) && !invalid {
+            if $scratch.is_empty() {
+                enc_move_type!(encoded_move, QUIET_MOVE);
+            } else if $scratch.len() == 1 {
+                enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
+                enc_capture_part!(encoded_move, $scratch[0] as u128);
+            } else {
+                enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
+                encoded_move.1 = Arc::new(mem::take($scratch));
+            }
+
+            let entered_mandatory = get!(
+                $state.statics.promotion_zones_mandatory[
+                    piece_index as usize
+                ],
+                accumulated_index as u32
+            );
+            let left_mandatory = get!(
+                $state.statics.promotion_zones_mandatory[
+                    piece_index as usize
+                ],
+                $square_index as u32
+            );
+            let entered_optional = get!(
+                $state.statics.promotion_zones_optional[
+                    piece_index as usize
+                ],
+                accumulated_index as u32
+            );
+            let left_optional = get!(
+                $state.statics.promotion_zones_optional[
+                    piece_index as usize
+                ],
+                $square_index as u32
+            );
+
+            let mandatory = entered_mandatory || left_mandatory;
+            let optional = entered_optional || left_optional;
+
+            if mandatory || optional {
+                for promo_piece_index in &$piece.promotions {
+                    let mut can_promote = true;
+
+                    if count_limits!($state) {
+                        can_promote = can_promote
+                            && $state.piece_count[
+                                *promo_piece_index as usize
+                            ] < $state.statics.piece_limit[
+                                *promo_piece_index as usize
+                            ];
+                    }
+
+                    if promote_to_captured!($state) {
+                        let enemy_equiv = $state.statics.piece_swap_map[
+                            *promo_piece_index as usize
+                        ];
+
+                        can_promote = can_promote
+                            && $state.piece_in_hand[
+                                1 - piece_color as usize
+                            ][enemy_equiv as usize] > 0;
+                    }
+
+                    if can_promote {
+                        let mut promo_move = encoded_move.clone();
+
+                        enc_promotion!(promo_move, 1);
+                        enc_promoted!(
+                            promo_move, *promo_piece_index as u128
+                        );
+
+                        $out.push(promo_move);
+                    }
+                }
+
+                if !mandatory {
+                    $out.push(encoded_move);
+                }
+            } else {
+                $out.push(encoded_move);
+            }
+        } else if !invalid {
+            if $scratch.is_empty() {
+                enc_move_type!(encoded_move, QUIET_MOVE);
+            } else if $scratch.len() == 1 {
+                enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
+                enc_capture_part!(encoded_move, $scratch[0] as u128);
+            } else {
+                enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
+                encoded_move.1 = Arc::new(mem::take($scratch));
+            }
+
+            $out.push(encoded_move);
+        }
+    }};
+}
+
 /// Generates all pseudo-legal encoded moves for `$piece` from `$square_index`.
 ///
 /// Resolves multi-leg constraints, captures/unloads, en-passant flags, castling
@@ -484,339 +836,11 @@ macro_rules! generate_move_list_from_vectors {
         $square_index:expr, $piece:expr, $vector_set:expr,
         $state:expr, $out:expr, $scratch:expr
     ) => {{
-        let piece_index = p_index!($piece);
-        let piece_color = p_color!($piece);
-        let piece_rank = p_rank!($piece);
-        let piece_unmoved =
-            get!($state.virgin_board, $square_index as u32);
-
-        'multi_leg: for multi_leg_vector in $vector_set {
-            let mut encoded_move = Move::default();
-            enc_start!(encoded_move, $square_index as u128);
-            enc_piece!(encoded_move, piece_index as u128);
-
-            $scratch.clear();
-
-            let mut accumulated_index = $square_index as i16;
-
-            let leg_count = multi_leg_vector.len();
-
-            for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
-                let last_leg = leg_index + 1 == leg_count;
-                let mut taken_piece = 0u64;
-
-                let start_square = accumulated_index as u32;
-
-                let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
-                let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
-
-                accumulated_index += (
-                    rank_offset * ($state.statics.files as i8) + file_offset
-                ) as i16;
-
-                let end_square = accumulated_index as u32;
-
-                let m = m!(leg) || (!c!(leg) && !d!(leg));
-                let c = c!(leg) || (last_leg && !m!(leg));
-                let d = d!(leg);
-                let u = u!(leg);
-                let k = k!(leg);
-                let g = g!(leg);
-                let v = v!(leg);
-                let t = t!(leg);
-                let i = i!(leg);
-                let p = p!(leg);
-                let not_k = not_k!(leg);
-                let not_g = not_g!(leg);
-                let not_v = not_v!(leg);
-                let not_i = not_i!(leg);
-                let l = l!(leg);
-                let r = r!(leg);
-                let special_i = i && not_i;
-                let special_v = v && not_v;
-                let castling_rights =
-                    piece_color as usize * 2 + l as usize;
-
-                if (i && !piece_unmoved || not_i && piece_unmoved)
-                    && !special_i
-                    || (special_i
-                        && is_square_attacked!(
-                            accumulated_index as u32,
-                            piece_color,
-                            piece_unmoved,
-                            p_is_royal!($piece),
-                            piece_rank,
-                            $state
-                        ))
-                    || ((l || r)
-                        && $state.castling_state
-                            & CASTLING[castling_rights] == 0)
-                {
-                    continue 'multi_leg;
-                }
-
-                enc_is_initial!(encoded_move, (i | piece_unmoved) as u128);
-
-                let friendly = get!(
-                    $state.pieces_board[piece_color as usize], end_square
-                ) && end_square != start_square;
-                let enemy = get!(
-                    $state.pieces_board[1 - piece_color as usize], end_square
-                );
-                let empty = !friendly && !enemy;
-
-                let pass_move = file_offset == 0 && rank_offset == 0;
-
-                if empty && !pass_move {
-                    if t && enp_square!($state.en_passant_square)
-                        == end_square
-                    {
-                        let capt_piece_index =
-                            enp_piece!($state.en_passant_square);
-                        let capt_piece_color = p_color!(
-                            $state.statics.pieces[capt_piece_index as usize]
-                        );
-
-                        if d && capt_piece_color == piece_color
-                            || c && capt_piece_color != piece_color
-                        {
-                            enc_multi_move_captured_piece!(
-                                taken_piece, capt_piece_index as u64
-                            );
-                            enc_multi_move_captured_square!(
-                                taken_piece,
-                                enp_captured!($state.en_passant_square) as u64
-                            );
-
-                            let capt_piece = &$state.statics.pieces[
-                                capt_piece_index as usize
-                            ];
-                            let capt_unmoved = get!(
-                                $state.virgin_board,
-                                enp_captured!($state.en_passant_square)
-                            );
-                            let capt_rank = p_rank!(capt_piece);
-                            let capt_royal = p_is_royal!(capt_piece);
-
-                            if k || not_k && capt_royal
-                                || g && piece_rank >= capt_rank
-                                || not_g && piece_rank < capt_rank
-                                || (v && !capt_unmoved || not_v && capt_unmoved)
-                                    && !special_v
-                            {
-                                continue 'multi_leg;
-                            }
-
-                            enc_multi_move_captured_unmoved!(
-                                taken_piece, capt_unmoved as u64
-                            );
-
-                            $scratch.push(taken_piece);
-                        } else {
-                            continue 'multi_leg;
-                        }
-                    } else if !m {
-                        continue 'multi_leg;
-                    }
-                } else if friendly && !pass_move {
-                    if !d {
-                        continue 'multi_leg;
-                    }
-
-                    let capt_piece_index =
-                        $state.main_board[end_square as usize];
-                    let capt_piece = &$state.statics.pieces[
-                        capt_piece_index as usize
-                    ];
-                    let capt_unmoved =
-                        get!($state.virgin_board, end_square);
-                    let capt_rank = p_rank!(capt_piece);
-                    let capt_royal = p_is_royal!(capt_piece);
-
-                    if k || not_k && capt_royal
-                        || g && piece_rank >= capt_rank
-                        || not_g && piece_rank < capt_rank
-                        || (v && !capt_unmoved || not_v && capt_unmoved)
-                            && !special_v
-                    {
-                        continue 'multi_leg;
-                    }
-
-                    enc_multi_move_captured_piece!(
-                        taken_piece, capt_piece_index as u64
-                    );
-                    enc_multi_move_captured_square!(
-                        taken_piece, end_square as u64
-                    );
-                    enc_multi_move_captured_unmoved!(
-                        taken_piece, capt_unmoved as u64
-                    );
-
-                    $scratch.push(taken_piece);
-                } else if enemy && !pass_move {
-                    if !c {
-                        continue 'multi_leg;
-                    }
-
-                    let capt_piece_index =
-                        $state.main_board[end_square as usize];
-                    let capt_piece = &$state.statics.pieces[
-                        capt_piece_index as usize
-                    ];
-                    let capt_unmoved =
-                        get!($state.virgin_board, end_square);
-                    let capt_rank = p_rank!(capt_piece);
-                    let capt_royal = p_is_royal!(capt_piece);
-
-                    if k || not_k && capt_royal
-                        || g && piece_rank >= capt_rank
-                        || not_g && piece_rank < capt_rank
-                        || (v && !capt_unmoved || not_v && capt_unmoved)
-                            && !special_v
-                    {
-                        continue 'multi_leg;
-                    }
-
-                    enc_multi_move_captured_piece!(
-                        taken_piece, capt_piece_index as u64
-                    );
-                    enc_multi_move_captured_square!(
-                        taken_piece, end_square as u64
-                    );
-                    enc_multi_move_captured_unmoved!(
-                        taken_piece, capt_unmoved as u64
-                    );
-
-                    $scratch.push(taken_piece);
-                }
-
-                if u {
-                    let mut last_captured =
-                        $scratch.pop().unwrap_or_else(|| {
-                            panic!(
-                                "Unload flag is set but no captured piece \
-                                 is available"
-                            )
-                        });
-                    let captured_square =
-                        multi_move_captured_square!(last_captured);
-
-                    if start_square != captured_square as u32 {
-                        enc_multi_move_is_unload!(last_captured, 1);
-                        enc_multi_move_unload_square!(
-                            last_captured, start_square as u64
-                        );
-
-                        $scratch.push(last_captured);
-                    }
-                }
-
-                enc_creates_enp!(encoded_move, p as u128);
-                enc_created_enp!(
-                    encoded_move,
-                    p as u128
-                        * ((start_square as u128 & 0xFFF)
-                            | (accumulated_index as u128) << 12
-                            | (piece_index as u128) << 24)
-                );
-            }
-
-            enc_end!(encoded_move, accumulated_index as u128);
-
-            if promotions!($state) && p_can_promote!($piece) {
-                if $scratch.is_empty() {
-                    enc_move_type!(encoded_move, QUIET_MOVE);
-                } else if $scratch.len() == 1 {
-                    enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
-                    enc_capture_part!(encoded_move, $scratch[0] as u128);
-                } else {
-                    enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                    encoded_move.1 = Arc::new(mem::take($scratch));
-                }
-
-                let entered_mandatory = get!(
-                    $state.statics.promotion_zones_mandatory[
-                        piece_index as usize
-                    ],
-                    accumulated_index as u32
-                );
-                let left_mandatory = get!(
-                    $state.statics.promotion_zones_mandatory[
-                        piece_index as usize
-                    ],
-                    $square_index as u32
-                );
-                let entered_optional = get!(
-                    $state.statics.promotion_zones_optional[
-                        piece_index as usize
-                    ],
-                    accumulated_index as u32
-                );
-                let left_optional = get!(
-                    $state.statics.promotion_zones_optional[
-                        piece_index as usize
-                    ],
-                    $square_index as u32
-                );
-
-                let mandatory = entered_mandatory || left_mandatory;
-                let optional = entered_optional || left_optional;
-
-                if mandatory || optional {
-                    for promo_piece_index in &$piece.promotions {
-                        let mut can_promote = true;
-
-                        if count_limits!($state) {
-                            can_promote = can_promote
-                                && $state.piece_count[
-                                    *promo_piece_index as usize
-                                ] < $state.statics.piece_limit[
-                                    *promo_piece_index as usize
-                                ];
-                        }
-
-                        if promote_to_captured!($state) {
-                            let enemy_equiv = $state.statics.piece_swap_map[
-                                *promo_piece_index as usize
-                            ];
-
-                            can_promote = can_promote
-                                && $state.piece_in_hand[
-                                    1 - piece_color as usize
-                                ][enemy_equiv as usize] > 0;
-                        }
-
-                        if can_promote {
-                            let mut promo_move = encoded_move.clone();
-
-                            enc_promotion!(promo_move, 1);
-                            enc_promoted!(
-                                promo_move, *promo_piece_index as u128
-                            );
-
-                            $out.push(promo_move);
-                        }
-                    }
-
-                    if !mandatory {
-                        $out.push(encoded_move);
-                    }
-                } else {
-                    $out.push(encoded_move);
-                }
-            } else {
-                if $scratch.is_empty() {
-                    enc_move_type!(encoded_move, QUIET_MOVE);
-                } else if $scratch.len() == 1 {
-                    enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
-                    enc_capture_part!(encoded_move, $scratch[0] as u128);
-                } else {
-                    enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                    encoded_move.1 = Arc::new(mem::take($scratch));
-                }
-
-                $out.push(encoded_move);
-            }
+        for multi_leg_vector in $vector_set {
+            process_multi_leg_vector!(
+                $square_index, $piece, multi_leg_vector,
+                $state, $out, $scratch
+            );
         }
     }};
 }
