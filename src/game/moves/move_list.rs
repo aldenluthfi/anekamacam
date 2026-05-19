@@ -1013,6 +1013,22 @@ macro_rules! make_move {
                     $state.endgame_material[piece_color as usize] +=
                         p_evalue!(new_piece) as u32;
 
+                    $state.phase_score -= p_ovalue!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32 * p_is_big!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32 * !p_is_royal!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32;
+
+                    $state.phase_score += p_ovalue!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32 * p_is_big!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32 * !p_is_royal!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32;
+
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
 
@@ -1204,6 +1220,22 @@ macro_rules! make_move {
                         p_ovalue!(new_piece) as u32;
                     $state.endgame_material[piece_color as usize] +=
                         p_evalue!(new_piece) as u32;
+
+                    $state.phase_score -= p_ovalue!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32 * p_is_big!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32 * !p_is_royal!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32;
+
+                    $state.phase_score += p_ovalue!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32 * p_is_big!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32 * !p_is_royal!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
@@ -1427,6 +1459,14 @@ macro_rules! make_move {
                             $state.statics.pieces[captured_piece]
                         ) as u32;
 
+                    $state.phase_score -= p_ovalue!(
+                        $state.statics.pieces[captured_piece]
+                    ) as u32 * p_is_big!(
+                        $state.statics.pieces[captured_piece]
+                    ) as u32 * !p_is_royal!(
+                        $state.statics.pieces[captured_piece]
+                    ) as u32;
+
                     $state.piece_count[captured_piece] -= 1;
                 }
             } else if move_type == MULTI_CAPTURE_MOVE {
@@ -1528,6 +1568,22 @@ macro_rules! make_move {
                         p_ovalue!(new_piece) as u32;
                     $state.endgame_material[piece_color as usize] +=
                         p_evalue!(new_piece) as u32;
+
+                    $state.phase_score -= p_ovalue!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32 * p_is_big!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32 * !p_is_royal!(
+                        $state.statics.pieces[piece_index]
+                    ) as u32;
+
+                    $state.phase_score += p_ovalue!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32 * p_is_big!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32 * !p_is_royal!(
+                        $state.statics.pieces[promoted_piece]
+                    ) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
                     $state.piece_count[piece_index] -= 1;
@@ -1766,6 +1822,14 @@ macro_rules! make_move {
                                 $state.statics.pieces[captured_piece]
                             ) as u32;
 
+                        $state.phase_score -= p_ovalue!(
+                            $state.statics.pieces[captured_piece]
+                        ) as u32 * p_is_big!(
+                            $state.statics.pieces[captured_piece]
+                        ) as u32 * !p_is_royal!(
+                            $state.statics.pieces[captured_piece]
+                        ) as u32;
+
                         $state.piece_count[captured_piece] -= 1;
                     }
                 }
@@ -1791,17 +1855,13 @@ macro_rules! make_move {
                 $state.main_board[drop_square as usize] =
                     piece_index as PieceIndex;
                 $state.piece_list[piece_index].insert(drop_square as Square);
+
                 $state.opening_pst_bonus[piece_color as usize] +=
                     $state.statics.pst_opening
                     [piece_index][drop_square as usize];
                 $state.endgame_pst_bonus[piece_color as usize] +=
                     $state.statics.pst_endgame
                     [piece_index][drop_square as usize];
-                $state.opening_material[piece_color as usize] +=
-                    p_ovalue!($state.statics.pieces[piece_index]) as u32;
-                $state.endgame_material[piece_color as usize] +=
-                    p_evalue!($state.statics.pieces[piece_index]) as u32;
-                $state.piece_count[piece_index] += 1;
 
                 $state.big_pieces[piece_color as usize] +=
                     p_is_big!($state.statics.pieces[piece_index]) as u32;
@@ -1809,6 +1869,21 @@ macro_rules! make_move {
                     p_is_major!($state.statics.pieces[piece_index]) as u32;
                 $state.minor_pieces[piece_color as usize] +=
                     p_is_minor!($state.statics.pieces[piece_index]) as u32;
+
+                $state.opening_material[piece_color as usize] +=
+                    p_ovalue!($state.statics.pieces[piece_index]) as u32;
+                $state.endgame_material[piece_color as usize] +=
+                    p_evalue!($state.statics.pieces[piece_index]) as u32;
+
+                $state.phase_score += p_ovalue!(
+                    $state.statics.pieces[piece_index]
+                ) as u32 * p_is_big!(
+                    $state.statics.pieces[piece_index]
+                ) as u32 * !p_is_royal!(
+                    $state.statics.pieces[piece_index]
+                ) as u32;
+
+                $state.piece_count[piece_index] += 1;
 
                 if !drop_from_enemy_hand!($mv) {
                     let hand =
@@ -1942,17 +2017,25 @@ macro_rules! make_move {
                             $state.statics.pieces[captured_piece]
                         ) as u32;
 
+                    $state.phase_score -= p_ovalue!(
+                        $state.statics.pieces[captured_piece]
+                    ) as u32 * p_is_big!(
+                        $state.statics.pieces[captured_piece]
+                    ) as u32 * !p_is_royal!(
+                        $state.statics.pieces[captured_piece]
+                    ) as u32;
+
                     $state.piece_count[captured_piece] -= 1;
                 }
             }
 
-            let game_phase_score = game_phase_score!($state);
+            let phase_score = $state.phase_score;
             $state.game_phase =
                 if $state.game_phase == SETUP {
                     SETUP
-                } else if game_phase_score > $state.statics.opening_score {
+                } else if phase_score > $state.statics.opening_score {
                     cmp::max(OPENING, $state.game_phase)
-                } else if game_phase_score < $state.statics.endgame_score {
+                } else if phase_score < $state.statics.endgame_score {
                     cmp::max(ENDGAME, $state.game_phase)
                 } else {
                     cmp::max(MIDDLEGAME, $state.game_phase)

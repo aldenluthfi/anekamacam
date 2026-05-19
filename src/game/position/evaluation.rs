@@ -56,7 +56,7 @@ macro_rules! evaluate_position {
 
                 let opening_score = $state.statics.opening_score as i32;
                 let endgame_score = $state.statics.endgame_score as i32;
-                let current_score = game_phase_score!($state) as i32;
+                let current_score = $state.phase_score as i32;
 
                 let blended_score = (
                         (score_opening * (current_score - endgame_score)) +
