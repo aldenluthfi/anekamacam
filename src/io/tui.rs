@@ -1828,7 +1828,7 @@ fn execute_command(
                 return;
             }
 
-            let see_score = see(state, mv.clone());
+            let see_score = see!(state, mv.clone());
 
             log_1!("SEE for {}: {}", format_move(&mv, state), see_score);
         }

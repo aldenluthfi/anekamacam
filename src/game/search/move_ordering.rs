@@ -12,8 +12,6 @@
 //! # Date
 //! 19/04/2026
 
-use crate::*;
-
 /*----------------------------------------------------------------------------*\
                           STATIC EXCHANGE EVALUATION
 \*----------------------------------------------------------------------------*/
@@ -47,37 +45,41 @@ macro_rules! victim_value {
     }};
 }
 
-fn lva(
-    state: &State,
-    target: Square,
-    color: u8,
-) -> Vec<Move> {
-    let attacks = &state.statics.relevant_attacks
-        [1 - color as usize][target as usize];
+#[macro_export]
+macro_rules! lva {
+    ($state:expr, $target:expr, $color:expr) => {{
+        let state: &State = $state;
+        let target: Square = $target;
+        let color: u8 = $color;
 
-    let mut out = Vec::with_capacity(attacks.len());
-    let scratch = &mut Vec::with_capacity(attacks.len());
-    attacks.iter()
-        .filter_map(|(piece, square, vector)| {
-            let real_piece = state.main_board[*square as usize];
-            if real_piece == *piece {
-                Some((piece, square, vector))
-            } else {
-                None
-            }
-        })
-        .for_each(|(p_index, s_index, vector)| {
-            let piece = &state.statics.pieces[*p_index as usize];
-            process_multi_leg_vector!(
-                *s_index, piece, vector, state, out, scratch
-            );
-        });
+        let attacks = &state.statics.relevant_attacks
+            [1 - color as usize][target as usize];
 
-    out.sort_by_cached_key(
-        |mv| -(p_value!(piece!(mv), state) as i32)
-    );
+        let mut out = Vec::with_capacity(attacks.len());
+        let scratch = &mut Vec::with_capacity(attacks.len());
 
-    out
+        attacks.iter()
+            .filter_map(|(piece, square, vector)| {
+                let real_piece = state.main_board[*square as usize];
+                if real_piece == *piece {
+                    Some((piece, square, vector))
+                } else {
+                    None
+                }
+            })
+            .for_each(|(p_index, s_index, vector)| {
+                let piece = &state.statics.pieces[*p_index as usize];
+                process_multi_leg_vector!(
+                    *s_index, piece, vector, state, out, scratch
+                );
+            });
+
+        out.sort_by_cached_key(
+            |mv| -(p_value!(piece!(mv), state) as i32)
+        );
+
+        out
+    }};
 }
 
 /// Evaluates a capture sequence on a target square via negamax exchange
@@ -85,62 +87,66 @@ fn lva(
 ///
 /// A positive result means the capture wins material; negative means it loses.
 /// Non-capture moves return 0.
-pub fn see(state: &mut State, mv: Move) -> i32 {
-    let initial_attacker = attack_value!(mv, state);
-    let initial_attackee = victim_value!(mv, state);
+#[macro_export]
+macro_rules! see {
+    ($state:expr, $mv:expr) => {{
+        let state: &mut State = $state;
+        let mv: Move = $mv.clone();
 
-    let mut gain = Vec::with_capacity(32);
+        let initial_attacker = attack_value!(mv, state);
+        let initial_attackee = victim_value!(mv, state);
 
-    gain.push(initial_attackee);
-    gain.push(initial_attacker - initial_attackee);
+        let mut gain = Vec::with_capacity(32);
 
-    if !make_move!(state, mv.clone()) {
-        return -20000;
-    }
+        gain.push(initial_attackee);
+        gain.push(initial_attacker - initial_attackee);
 
-    if initial_attackee > initial_attacker {
-        undo_move!(state);
-        return initial_attackee - initial_attacker;
-    }
+        if !make_move!(state, mv.clone()) {
+            -20000
+        } else if initial_attackee > initial_attacker {
+            undo_move!(state);
+            initial_attackee - initial_attacker
+        } else {
+            let mut moves_to_undo = 1;
 
-    let mut moves_to_undo = 1;
+            'main_loop: loop {
+                let target = end!(mv) as Square;
+                let mut move_list = lva!(state, target, state.playing);
 
-    'main_loop: loop {
-        let target = end!(mv) as Square;
-        let mut move_list = lva(state, target, state.playing);
+                let Some(mut mv) = move_list.pop() else {
+                    break;
+                };
 
-        let Some(mut mv) = move_list.pop() else {
-            break;
-        };
+                while !make_move!(state, mv.clone()) {
+                    if move_list.is_empty() {
+                        break 'main_loop;
+                    }
 
-        while !make_move!(state, mv.clone()) {
-            if move_list.is_empty() {
-                break 'main_loop;
+                    mv = move_list.pop().unwrap();
+                }
+
+                gain.push(attack_value!(mv, state) - gain[gain.len() - 1]);
+                moves_to_undo += 1;
+
+                break;
             }
 
-            mv = move_list.pop().unwrap();
+            gain.pop();                                                         /* no recapture for last attacker     */
+
+            if gain.len() > 1 {
+                for i in (1..gain.len()).rev() {
+                    gain[i - 1] = -cmp::max(-gain[i - 1], gain[i]);
+                }
+            }
+
+            while moves_to_undo > 0 {
+                undo_move!(state);
+                moves_to_undo -= 1;
+            }
+
+            gain[0]
         }
-
-        gain.push(attack_value!(mv, state) - gain.last().unwrap());
-        moves_to_undo += 1;
-
-        break;
-    }
-
-    gain.pop();                                                                 /* no recapture for last attacker     */
-
-    if gain.len() > 1 {
-        for i in (1..gain.len()).rev() {
-            gain[i - 1] = -cmp::max(-gain[i - 1], gain[i]);
-        }
-    }
-
-    while moves_to_undo > 0 {
-        undo_move!(state);
-        moves_to_undo -= 1;
-    }
-
-    gain[0]
+    }};
 }
 
 /*----------------------------------------------------------------------------*\
@@ -164,7 +170,7 @@ macro_rules! score_move {
         if $pv_move.as_ref().is_some_and(
             |pm| pm.0 == $mv.0 && pm.1 == move_signature!($mv)
         ) {
-            50000                                                                /* PV move always ordered first        */
+            50000                                                               /* PV move always ordered first        */
         } else if !is_capture!($mv) {
             let killers =
                 &$state.killer_hist[$state.search_ply as usize];
@@ -180,7 +186,7 @@ macro_rules! score_move {
                 10000 + $state.search_hist[piece][end] as u16                   /* history score for quiet moves       */
             }
         } else {
-            let see_score = see($state, $mv);
+            let see_score = see!($state, $mv);
 
             if see_score >= 0 {
                 (40000 + see_score) as u16                                      /* winning captures ordered second     */
@@ -200,25 +206,36 @@ macro_rules! score_move {
 /// `$pv_move` is the TT best move for this node.
 #[macro_export]
 macro_rules! pick_by_score {
-    ($state:expr, $moves:expr, $index:expr, $pv_move:expr) => {{
+    ($state:expr, $moves:expr, $scores:expr, $index:expr, $pv_move:expr) => {{
         let moves: &mut Vec<Move> = $moves;
+        let scores: &mut Vec<u16> = $scores;
         let index = $index;
 
-        let mut best_index = index;
-        let mut best_score = score_move!(
-            $state, moves[index].clone(), $pv_move
-        );
+        if scores[index] == u16::MAX {
+            scores[index] = score_move!(
+                $state, moves[index].clone(), $pv_move
+            );
+        }
 
-        for (i, mv) in moves.iter().enumerate().skip(index + 1) {
-            let score = score_move!($state, mv.clone(), $pv_move);
-            if score > best_score {
-                best_score = score;
+        let mut best_index = index;
+        let mut best_score = scores[index];
+
+        for i in (index + 1)..moves.len() {
+            if scores[i] == u16::MAX {
+                scores[i] = score_move!(
+                    $state, moves[i].clone(), $pv_move
+                );
+            }
+
+            if scores[i] > best_score {
+                best_score = scores[i];
                 best_index = i;
             }
         }
 
         if best_index != index {
             moves.swap(index, best_index);
+            scores.swap(index, best_index);
         }
     }};
 }
