@@ -179,7 +179,7 @@ macro_rules! score_move {
                 10000 + (MAX_DEPTH * MAX_DEPTH) as u16 + 2                      /* killer scores above history         */
             } else if $mv == killers[1] {
                 10000 + (MAX_DEPTH * MAX_DEPTH) as u16 + 1                      /* killer scores above history         */
-            }  else {
+            } else {
                 let piece = piece!($mv) as usize;
                 let end = end!($mv) as usize;
 

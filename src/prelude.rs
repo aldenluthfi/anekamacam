@@ -292,8 +292,8 @@ pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       
 pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       /* 128MB                              */
 
 pub const MAX_DEPTH: usize = 128;
+
 pub const MTDF_MAX_ITERS: usize = 128;
-pub const MAX_SEE_DEPTH: usize = 32;
 
 pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;
