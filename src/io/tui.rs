@@ -1810,6 +1810,28 @@ fn execute_command(
                 log_1!("- {}", format_move(&mv, state));
             }
         }
+        _ if trimmed.starts_with("see") => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() != 2 {
+                log_2!("Usage: see [move]");
+                return;
+            }
+
+            let mv_str = parts[1];
+            let mv = parse_move(mv_str, state).unwrap_or_else(|| {
+                log_2!("Invalid move: {}", mv_str);
+                null_move()
+            });
+
+            if mv == null_move() {
+                return;
+            }
+
+            let see_score = see(state, mv.clone());
+
+            log_1!("SEE for {}: {}", format_move(&mv, state), see_score);
+        }
         _ if trimmed.starts_with("fen") => {
             let fen = trimmed[4..].trim();
             state.load_fen(fen);
