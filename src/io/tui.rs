@@ -583,7 +583,7 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
                 .add_modifier(Modifier::BOLD),
         );
 
-    let log_labels: Vec<Line> = ["1", "2", "3", "4"]
+    let log_labels: Vec<Line> = ["1", "2", "3", "4", "5"]
         .iter()
         .map(|label| Line::raw(*label))
         .collect();
