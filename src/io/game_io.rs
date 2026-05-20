@@ -1605,7 +1605,7 @@ pub fn parse_config_file(path: &str) -> State {
     let param_file = format!("{}/{}/latest.param", PARAM_DIR, variant);
 
     if Path::new(&param_file).is_file() {
-        log_4!("Loading parameters from file");
+        log_3!("Loading parameters from file");
         parse_tuned_parameters_file(&mut result, &param_file);
     } else {
         derive_parameters(&mut result);
