@@ -19,7 +19,7 @@ macro_rules! push_log_message {
         let formatted = format!("[{}] {}", $level, $message);
 
         let mut queue = LOG_MESSAGES.lock().unwrap_or_else(|e| {
-            panic!("Failed to lock LOG_MESSAGES: {e}")
+            e.into_inner()
         });
 
         queue.push_back(formatted.clone());
@@ -139,16 +139,19 @@ pub fn dec_verbosity() {
 ///
 /// This module uses 5 numeric verbosity levels. The semantics are:
 ///
-/// - `log_1`: Most critical. Application state changes, operation completions,
-///   game-over states, benchmark results.
-/// - `log_2`: Warning. User-facing confirmations, command acknowledgements,
-///   non-fatal operational feedback.
-/// - `log_3`: Info. Engine/search telemetry — TT/QT stats, thread lifecycle,
-///   perft summaries, derived parameter values.
+/// - `log_1`: Critical. Benchmark/suite final results, game-over states,
+///   state-change failures that abort an operation.
+/// - `log_2`: User-facing results and confirmations. Command results,
+///   per-case perft output, user-initiated interrupts (e.g. SIGINT),
+///   invalid command feedback, TUI state messages.
+/// - `log_3`: Engine telemetry. TT/QT stats, thread lifecycle, perft/suite
+///   summary stats, parameter derivation progress, per-depth search output,
+///   SIGINT diagnostics, perft file I/O.
 /// - `log_4`: Debug. Parsing internals, token captures, filter results,
-///   mid-level diagnostic output.
+///   search diagnostics, mid-level diagnostic output, perft test case
+///   pass/fail results, piece value derivation details.
 /// - `log_5`: Trace. Deepest call-stack traces — atomic/coordinate evaluation
-///   entry points and final-result logging.
+///   entry points and final-result logging, perft depth-0 node output.
 pub fn init_logging() {
     let latest = Path::new(&*LATEST_LOG_PATH);
 

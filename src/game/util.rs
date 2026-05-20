@@ -321,10 +321,10 @@ fn parse_perft_file(path: &str) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
     let file = fs::read_to_string(path);
 
     if let Err(ref e) = file {
-        log_1!("Failed to read perft file at '{}': {e}", path);
+        log_3!("Failed to read perft file at '{}': {e}", path);
         return Vec::new();
     } else {
-        log_1!("Successfully read perft file at '{}'", path);
+        log_3!("Successfully read perft file at '{}'", path);
     }
 
     let contents = file.unwrap_or_else(|e| {
@@ -403,7 +403,7 @@ pub fn format_time(nanos: u128) -> String {
 /// time for a given depth. For quick sanity checks and performance profiling
 /// without needing a full suite of expected results.
 pub fn benchmark_headless_perft(state: &mut State, depth: u8, branch: i8) {
-    log_1!(
+    log_3!(
         "Headless perft started with depth {} and branching {}...",
         depth,
         branch
@@ -436,7 +436,7 @@ pub fn benchmark_headless_perft(state: &mut State, depth: u8, branch: i8) {
         .as_nanos()
         .saturating_sub(total_start_time);
 
-    log_1!(
+    log_3!(
         "Total moves generated: {:>12} | Elapsed Time: {:>12}",
         total_nodes,
         format_time(total_elapsed)
@@ -466,7 +466,7 @@ pub fn benchmark_perft(
         panic!("Failed to lock RNG mutex for perft shuffle: {e}")
     }));
 
-    log_3!(
+    log_2!(
         "Perft testing {} positions with depth {} and branching {}...",
         limit, depth, branch
     );
@@ -505,7 +505,7 @@ pub fn benchmark_perft(
             if result == expected {
                 successful_cases += 1;
                 total_moves += result;
-                log_2!(
+                log_5!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [PASSED]",
                     i,
@@ -517,7 +517,7 @@ pub fn benchmark_perft(
                     width = longest_fen
                 );
             } else {
-                log_2!(
+                log_5!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [FAILED]",
                     i,
@@ -532,11 +532,11 @@ pub fn benchmark_perft(
         }
     }
 
-    log_1!(
+    log_3!(
         "Perft testing completed: {}/{} cases passed.",
         successful_cases, total_cases
     );
-    log_3!("Total moves generated: {}", total_moves);
+    log_2!("Total moves generated: {}", total_moves);
 }
 
 /// Runs a fixed-depth search benchmark from the current position.
@@ -547,7 +547,7 @@ pub fn benchmark_search(
     state: &mut State, ttable: Arc<TTable>, qtable: Arc<QTable>, depth: usize,
     thread_num: usize
 ) {
-    log_1!("Search benchmark started with depth {}...", depth);
+    log_3!("Search benchmark started with depth {}...", depth);
 
     let mut info = SearchInfo { set_depth: depth, ..Default::default() };
     let mut bufs = SearchBufs::default();
@@ -562,7 +562,7 @@ pub fn benchmark_search(
 pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
 
     if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
-        log_4!(
+        log_3!(
             "SIGINT | Aborting perft at depth {} with prefix '{}'",
             depth, prefix
         );
@@ -571,7 +571,7 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
 
     if depth == 0 {
         if branch >= 0 {
-            log_4!("{} moves | Nodes: 1", prefix);
+            log_5!("{} moves | Nodes: 1", prefix);
         }
         return 1;
     }
@@ -602,7 +602,7 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
         }
     }
 
-    log_4!("{} moves | Nodes: {}", prefix, nodes);
+    log_5!("{} moves | Nodes: {}", prefix, nodes);
 
     nodes
 }
