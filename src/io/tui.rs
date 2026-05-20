@@ -1805,9 +1805,9 @@ fn execute_command(
                 return;
             }
 
-            log_1!("Legal moves:");
+            log_2!("Legal moves:");
             for mv in moves {
-                log_1!("- {}", format_move(&mv, state));
+                log_2!("- {}", format_move(&mv, state));
             }
         }
         _ if trimmed.starts_with("see") => {
@@ -1830,7 +1830,7 @@ fn execute_command(
 
             let see_score = see!(state, mv.clone());
 
-            log_1!("SEE for {}: {}", format_move(&mv, state), see_score);
+            log_2!("SEE for {}: {}", format_move(&mv, state), see_score);
         }
         _ if trimmed.starts_with("fen") => {
             let fen = trimmed[4..].trim();
@@ -2204,7 +2204,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                             }
                         );
                     } else {
-                        log_1!(
+                        log_2!(
                             "Config file not found at path: {}",
                             path.to_string_lossy()
                         );

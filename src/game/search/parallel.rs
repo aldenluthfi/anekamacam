@@ -27,7 +27,7 @@ impl ThreadPool {
     ) -> Self {
         let thread_count = count.max(1);
 
-        log_2!("ThreadPool: {} threads", thread_count);
+        log_3!("ThreadPool: {} threads", thread_count);
 
         let main_state = root.clone();
 
