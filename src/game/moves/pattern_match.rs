@@ -97,7 +97,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         .captures(expr)
         .unwrap_or_else(|| panic!("Invalid pattern format {}", expr));
 
-    log_5!("parse_pattern captures: {:?}", captures);
+    log_4!("parse_pattern captures: {:?}", captures);
 
     let (allowers, allower_pieces) = match (captures.get(1), captures.get(2)) {
         (Some(a), Some(p)) => (a.as_str(), p.as_str()),
@@ -128,7 +128,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             .collect()
     };
 
-    log_5!("Parsed allowers: {:?}", allowers_vecs);
+    log_4!("Parsed allowers: {:?}", allowers_vecs);
 
     let allower_result = allowers_vecs
         .iter()
@@ -152,7 +152,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         })
         .collect::<PatternAllower>();
 
-    log_5!("Encoded allowers: {:?}", allower_result);
+    log_4!("Encoded allowers: {:?}", allower_result);
 
     let (stoppers, stopper_pieces) = match (captures.get(3), captures.get(4)) {
         (Some(s), Some(p)) => (s.as_str(), p.as_str()),
@@ -182,7 +182,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
             .collect()
     };
 
-    log_5!("Parsed drop: {:?}", stoppers_vecs);
+    log_4!("Parsed drop: {:?}", stoppers_vecs);
 
     let stopper_result = stoppers_vecs
         .iter()
@@ -206,7 +206,7 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
         })
         .collect::<PatternStopper>();
 
-    log_5!("Encoded stoppers: {:?}", stopper_result);
+    log_4!("Encoded stoppers: {:?}", stopper_result);
 
     (allower_result, stopper_result)
 }

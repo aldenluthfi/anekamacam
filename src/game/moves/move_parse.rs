@@ -1154,7 +1154,7 @@ fn evaluate_atomic_expression(
     filter_atomic_out_of_bounds(&mut result, state);
 
 
-    log_5!(
+    log_4!(
         "evaluate_atomic_expression {:?} final len: {}",
         expr,
         result.len()
@@ -1310,7 +1310,7 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 /// here.
 fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 
-    log_5!(
+    log_4!(
         "atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1588,7 +1588,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 ///   by the last F move.
 fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 
-    log_5!(
+    log_4!(
         "chained_atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1763,7 +1763,7 @@ fn compound_atomic_to_vector(
     state: &State,
 ) -> Vec<AtomicVector> {
 
-    log_5!(
+    log_4!(
         "compound_atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1772,7 +1772,7 @@ fn compound_atomic_to_vector(
         ATOMIC_TOKENS.find_iter(expr).map(|m| m.as_str()).collect();
 
 
-    log_5!("compound_atomic_to_vector tokens: {:?}", tokens);
+    log_4!("compound_atomic_to_vector tokens: {:?}", tokens);
 
     let mut stack: AtomicGroup = VecDeque::new();
 
@@ -1868,7 +1868,7 @@ fn filter_multi_leg_by_index(
     vectors = sort_multi_leg_clockwise(vectors);
 
 
-    log_4!(
+    log_5!(
         "filter_multi_leg_by_index sorted vectors: {:?}",
         vectors
     );
@@ -2225,7 +2225,7 @@ fn evaluate_multi_leg_term_leg(
     state: &State,
 ) -> Vec<MultiLegVector> {
 
-    log_4!(
+    log_5!(
         concat!(
             "evaluate_multi_leg_term_leg with term: {:?} ",
             "modifiers: {:?}"
@@ -2537,7 +2537,7 @@ fn evaluate_multi_leg_expression(
     result.retain(|vector| !exclusion.contains(vector));
 
 
-    log_5!(
+    log_4!(
         "evaluate_multi_leg_expression {:?} final len: {:?} ",
         expr,
         result.len()
@@ -2575,7 +2575,7 @@ fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
     }
 
 
-    log_4!("tokenize_multi_leg_expression raw tokens: {:?}", tokens);
+    log_5!("tokenize_multi_leg_expression raw tokens: {:?}", tokens);
 
     let mut prev_tokens: Vec<String> = vec![];
 
@@ -2615,7 +2615,7 @@ fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
     }
 
 
-    log_4!("tokenize_multi_leg_expression first pass {:?}", tokens);
+    log_5!("tokenize_multi_leg_expression first pass {:?}", tokens);
 
     let mut result: Vec<String> = vec![];
     tokens = tokens.into_iter().rev().collect();
@@ -2664,14 +2664,14 @@ fn leg_to_vector(
     state: &State,
 ) -> Vec<MultiLegVector> {
 
-    log_4!("leg_to_vector leg {} with rotation {}", expr, rotation);
+    log_5!("leg_to_vector leg {} with rotation {}", expr, rotation);
 
     let captures = LEG
         .captures(expr)
         .unwrap_or_else(|| panic!("Invalid leg expression: {}", expr));
 
 
-    log_4!("leg_to_vector captures: {:?}", captures);
+    log_5!("leg_to_vector captures: {:?}", captures);
 
     let modifiers = captures.get(1).map_or("", |m| m.as_str());
     let exclusion = captures.get(3).map_or("", |m| m.as_str());
@@ -2773,7 +2773,7 @@ fn multi_leg_to_vector(
     state: &State,
 ) -> Vec<MultiLegVector> {
 
-    log_4!(
+    log_5!(
         "multi_leg_to_vector leg {} with rotation {}",
         expr, rotation
     );
@@ -2789,7 +2789,7 @@ fn multi_leg_to_vector(
     let tokens = tokenize_multi_leg_expression(expr);
 
 
-    log_4!("multi_leg_to_vector final tokens: {:?}", tokens);
+    log_5!("multi_leg_to_vector final tokens: {:?}", tokens);
 
     let mut stack: MultiLegGroup = VecDeque::new();
     for token in tokens {
@@ -2848,7 +2848,7 @@ fn multi_leg_to_vector(
     }
 
 
-    log_4!("multi_leg_to_vector parsed stack: {:?}", stack);
+    log_5!("multi_leg_to_vector parsed stack: {:?}", stack);
 
     let result = evaluate_multi_leg_expression(stack, rotation, state);         /* Evaluate recursively               */
 

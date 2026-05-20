@@ -65,7 +65,7 @@ pub fn check_interrupt(info: &mut SearchInfo) {
         .saturating_sub(info.start_time);
 
     if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
-        log_4!(
+        log_3!(
             "SIGINT | Elapsed Time: {} | Nodes: {} | ",
             format_time(elapsed),
             info.nodes,
@@ -254,7 +254,7 @@ pub fn iterative_deepening(
             .and_then(|n| n.checked_div(elapsed))
             .unwrap_or(0);
 
-        log_4!(
+        log_5!(
             concat!(
                 "(Thread {}) Score: {:>6} | Best Move: {:<8} | ",
                 "Depth Nodes: {:>12} | ",
@@ -267,7 +267,7 @@ pub fn iterative_deepening(
             depth_nps,
         );
 
-        log_3!(
+        log_2!(
             "(Thread {}) Depth {:>2} | Time: {:>10} | Best Line: {}",
             thread_num,
             depth,

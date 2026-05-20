@@ -41,7 +41,7 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
     let non_big_threshold = (values.len() as f32 * 0.1).ceil() as usize;
     let major_threshold = (values.len() as f32 * 0.8).ceil() as usize;
 
-    log_4!(
+    log_5!(
         "Role thresholds - Non-big: {}, Major: {}",
         non_big_threshold, major_threshold
     );
@@ -85,7 +85,7 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 /// - if piece is a non-big piece: Opening value * 1.5
 ///
 fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
-    log_4!("Deriving base value for piece '{}'", piece.char);
+    log_5!("Deriving base value for piece '{}'", piece.char);
 
     let board_size = state.main_board.len();
     let piece_index = p_index!(piece) as usize;
@@ -138,7 +138,7 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
 
     let reach_value = mean / board_size as f64;
 
-    log_4!("Reach value for piece '{}': {:.4}", piece.char, reach_value);
+    log_5!("Reach value for piece '{}': {:.4}", piece.char, reach_value);
 
     let mobility_values: Vec<f64> = (0..board_size).into_par_iter().map(|square| {
         derive_piece_mobility(state, piece_index as PieceIndex, square)
@@ -148,7 +148,7 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
         mobility_values.iter().filter(|&&v| v >= 0.0).sum::<f64>()
         / mobility_values.iter().filter(|&&v| v >= 0.0).count() as f64;
 
-    log_4!(
+    log_5!(
         "Mobility value for piece '{}': {:.4}",
         piece.char, mobility_value
     );
@@ -313,7 +313,7 @@ fn derive_pst(index: PieceIndex, state: &State, is_endgame: bool) -> Vec<i32> {
 }
 
 pub fn derive_parameters(state: &mut State) {
-    log_2!("Deriving dynamic evaluation parameters...");
+    log_3!("Deriving dynamic evaluation parameters...");
 
     let values = state.statics.pieces
         .par_iter()
@@ -391,7 +391,7 @@ pub fn derive_parameters(state: &mut State) {
         .map(|(_, value)| value)
         .sum::<f64>() / total_values;
 
-    log_4!(
+    log_5!(
         "Average piece value (for big non-royal pieces): {:.4}", average_value
     );
 
@@ -449,7 +449,7 @@ pub fn derive_parameters(state: &mut State) {
 
     log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
-    log_2!("Dynamic evaluation parameters derived successfully.");
+    log_3!("Dynamic evaluation parameters derived successfully.");
 
     refresh_eval_state(state);
 }

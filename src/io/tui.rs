@@ -564,7 +564,7 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Min(0),
-            Constraint::Length(17),
+            Constraint::Length(21),
         ])
         .split(area);
 
@@ -1287,7 +1287,7 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     }
 
     let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| {
-        panic!("Failed to lock LOG_MESSAGES: {e}")
+        e.into_inner()
     });
     let log_lines = logs
         .iter()
@@ -1303,6 +1303,8 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 3
             } else if line.starts_with("[4]") {
                 4
+            } else if line.starts_with("[5]") {
+                5
             } else {
                 unreachable!()
             };
