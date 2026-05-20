@@ -112,8 +112,9 @@ macro_rules! move_signature {
 #[macro_export]
 macro_rules! is_capture {
     ($mv:expr) => {
-        move_type!($mv) == SINGLE_CAPTURE_MOVE ||
-        move_type!($mv) == MULTI_CAPTURE_MOVE
+        move_type!($mv) == SINGLE_CAPTURE_MOVE && !is_unload!($mv) ||
+        move_type!($mv) == MULTI_CAPTURE_MOVE  &&
+        $mv.1.iter().any(|&capture| !multi_move_is_unload!(capture))
     };
 }
 

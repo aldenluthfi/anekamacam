@@ -254,7 +254,7 @@ pub fn iterative_deepening(
             .and_then(|n| n.checked_div(elapsed))
             .unwrap_or(0);
 
-        log_5!(
+        log_3!(
             concat!(
                 "(Thread {}) Score: {:>6} | Best Move: {:<8} | ",
                 "Depth Nodes: {:>12} | ",
@@ -442,6 +442,49 @@ fn quiescence_search(
     alpha
 }
 
+
+/// Heuristic reduction for late move reduction, based on depth, move count,
+/// checks, and move type.
+///
+/// For captures, promotions, and drops:
+///
+/// reduction = 0.20 + (sqrt(depth) * ln(moves) / 3.35)
+///
+/// For quiet moves:
+///
+/// reduction = 1.35 + (sqrt(depth) * ln(moves) / 2.75)
+///
+/// In either case, if the side to move is in check or the opponent is in check,
+/// reduction is reduced by 1.25.
+#[macro_export]
+macro_rules! reduction {
+    (
+        $depth:expr,
+        $moves:expr,
+        $in_check:expr,
+        $opponent_in_check:expr,
+        $is_capture:expr,
+        $is_promotion:expr,
+        $is_drop:expr
+    ) => {{
+        let base_reduction = LMR_TABLE
+            [$depth.min(MAX_DEPTH - 1)]
+            [$moves.min(MAX_DEPTH * 2 - 1)];
+
+        let mut reduction = if $is_capture || $is_promotion || $is_drop {
+            0.20 + (base_reduction / 3.35)
+        } else {
+            1.35 + (base_reduction / 2.75)
+        };
+
+        if $in_check || $opponent_in_check {
+            reduction -= 1.25;
+        }
+
+        reduction.clamp(0.0, $depth as f64 - 1.0) as usize
+    }};
+}
+
 /// Negamax alpha-beta with transposition table, null-move, futility pruning,
 /// late move reduction, IID, and check extension.
 ///
@@ -521,7 +564,7 @@ pub fn alpha_beta(
 
     if depth < 3
     && (pv_move.is_none() || !pv_capture)
-    && !in_check                                                                /* static eval pruning                */
+    && !in_check                                                                /* reverse futility pruning           */
     {
         let eval_margin = 150 * depth as i32;
         if static_eval - eval_margin >= beta {
@@ -574,18 +617,18 @@ pub fn alpha_beta(
     }
 
     let mut futile = false;
-    let futility_margin = match state.game_phase {
-        OPENING | SETUP => [0, 200, 350, 600, 900],
-        MIDDLEGAME      => [0, 200, 300, 500, 750],
-        ENDGAME         => [0, 150, 250, 400, 600],
+    let margin = state.statics.futility_margin[match state.game_phase {
+        OPENING | SETUP => 0,
+        MIDDLEGAME      => 1,
+        ENDGAME         => 2,
         _ => unreachable!(),
-    };
+    }];
 
-    if depth < futility_margin.len()
+    if depth < margin.len()
     && !in_check
     && pv_move.is_none()
     && alpha.abs() < MATE_SCORE
-    && static_eval + futility_margin[depth] <= alpha
+    && static_eval + margin[depth] <= alpha
     {
         futile = true;                                                          /* futility pruning                   */
     }
@@ -620,12 +663,11 @@ pub fn alpha_beta(
 
         let mv = bufs.move_buf[ply][i].clone();
         let mv_type = move_type!(mv);
+
         let piece = piece!(mv) as usize;
-        let start = start!(mv);
         let end = end!(mv);
-        let is_capture = (mv_type == SINGLE_CAPTURE_MOVE && !is_unload!(mv))
-            || (mv_type == MULTI_CAPTURE_MOVE
-            && mv.1.iter().all(|cap| !multi_move_is_unload!(cap)));
+
+        let is_capture = is_capture!(mv);
         let is_promotion = promotion!(mv);
         let is_drop = mv_type == DROP_MOVE;
 
@@ -635,7 +677,7 @@ pub fn alpha_beta(
 
         legal_moves += 1;
 
-        let mut reduct = 1;
+        let mut reduction = 1;
         let mut score;
 
         let opponent_in_check = is_in_check!(state.playing, state);
@@ -652,21 +694,29 @@ pub fn alpha_beta(
 
         if depth > 3
         && legal_moves > 2
-        && !opponent_in_check
-        && !in_check
-        && (end != end!(state.killer_hist[state.search_ply as usize][0])
-        || start != start!(state.killer_hist[state.search_ply as usize][0]))
-        && (end != end!(state.killer_hist[state.search_ply as usize][1])
-        || start != start!(state.killer_hist[state.search_ply as usize][1]))
-        && !is_capture
-        && !is_promotion
-        && !is_drop
+        && mv != state.killer_hist[state.search_ply as usize][0]
+        && mv != state.killer_hist[state.search_ply as usize][1]
         {                                                                       /* late move reduction                */
-            reduct += 1 + (legal_moves > 5) as usize;
+            reduction += reduction!(
+                depth, legal_moves, in_check, opponent_in_check,
+                is_capture, is_promotion, is_drop
+            );
 
             score = -alpha_beta(
-                state, ttable, qtable, depth - reduct, -alpha - 1, -alpha,
+                state, ttable, qtable, depth - reduction, -alpha - 1, -alpha,
                 info, bufs, true
+            );
+
+            if score > alpha && beta - alpha > 1 {
+                score = -alpha_beta(
+                    state, ttable, qtable, depth - 1,
+                    -beta, -alpha, info, bufs, true
+                );
+            }
+        } else if legal_moves > 1 {                                             /* PVS: null window for non-first     */
+            score = -alpha_beta(
+                state, ttable, qtable, depth - 1,
+                -alpha - 1, -alpha, info, bufs, true
             );
 
             if score > alpha && beta - alpha > 1 {
@@ -677,7 +727,7 @@ pub fn alpha_beta(
             }
         } else {
             score = -alpha_beta(
-                state, ttable, qtable, depth - reduct,
+                state, ttable, qtable, depth - 1,
                 -beta, -alpha, info, bufs, true
             );
         }

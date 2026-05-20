@@ -335,6 +335,7 @@ pub struct StaticState {
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
     pub opening_score: u32,                                                     /* opening threshold                  */
     pub endgame_score: u32,                                                     /* endgame threshold                  */
+    pub futility_margin: [[i32; 5]; 3],                                         /* [phase 0-2][depth 0-4]             */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 
@@ -507,6 +508,7 @@ impl State {
             repetition_limit: u8::MAX,
             opening_score: 0,
             endgame_score: 0,
+            futility_margin: [[0; 5]; 3],
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
 
