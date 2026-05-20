@@ -185,7 +185,7 @@ fn mtdf(
     let mut upper = INF;
     let mut g = f;
 
-    for _ in 0..MTDF_MAX_ITERS {
+    for _ in 0..MAX_DEPTH {
         let bound = if g == lower { g + 1 } else { g };
 
         g = alpha_beta(

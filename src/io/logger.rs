@@ -77,12 +77,24 @@ macro_rules! log_4 {
     };
 }
 
+#[macro_export]
+macro_rules! log_5 {
+    ($($arg:tt)*) => {
+        {
+            let message = format!($($arg)*);
+            push_log_message!(5, message);
+            trace!("{}", format!($($arg)*));
+        }
+    };
+}
+
 fn level_to_verbosity(level: log::Level) -> u8 {
     match level {
         log::Level::Error => 1,
         log::Level::Warn => 2,
         log::Level::Info => 3,
         log::Level::Debug => 4,
+        log::Level::Trace => 5,
         _ => panic!("Unsupported log level: {level}"),
     }
 }
@@ -93,6 +105,7 @@ fn verbosity_style(level: log::Level) -> log_style::Style {
         2 => log_style::AnsiColor::Yellow.on_default(),
         3 => log_style::AnsiColor::Green.on_default(),
         4 => log_style::AnsiColor::Blue.on_default(),
+        5 => log_style::AnsiColor::Magenta.on_default(),
         _ => panic!("Unsupported log level: {level}"),
     }
 }
@@ -103,6 +116,7 @@ pub fn configured_log_level() -> log::LevelFilter {
         2 => log::LevelFilter::Warn,
         3 => log::LevelFilter::Info,
         4 => log::LevelFilter::Debug,
+        5 => log::LevelFilter::Trace,
         _ => log::LevelFilter::Debug,
     }
 }
@@ -112,9 +126,9 @@ pub fn configured_verbosity_level() -> u8 {
 }
 
 pub fn inc_verbosity() {
-    RUNTIME_VERBOSITY.fetch_min(4, Ordering::Release);
+    RUNTIME_VERBOSITY.fetch_min(5, Ordering::Release);
     RUNTIME_VERBOSITY.fetch_add(1, Ordering::Release);
-    RUNTIME_VERBOSITY.fetch_min(4, Ordering::Release);
+    RUNTIME_VERBOSITY.fetch_min(5, Ordering::Release);
 }
 
 pub fn dec_verbosity() {
