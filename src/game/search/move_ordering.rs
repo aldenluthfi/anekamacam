@@ -35,12 +35,13 @@ macro_rules! victim_value {
                 0,
                 |acc, &captured|
                 {
+                    let is_unload = multi_move_is_unload!(captured);
                     let piece = multi_move_captured_piece!(captured);
-                    acc + p_value!(piece, $state) as i32
+                    acc + p_value!(piece, $state) as i32 * !is_unload as i32
                 }
             )
         } else {
-            0
+            unreachable!()
         }
     }};
 }
@@ -73,6 +74,27 @@ macro_rules! lva {
                     *s_index, piece, vector, state, out, scratch
                 );
             });
+
+        out = out.into_iter().filter_map(|mv| {
+            if is_capture!(mv)
+            && move_type!(mv) == SINGLE_CAPTURE_MOVE
+            && captured_square!(mv) as u16 == $target
+            && !is_unload!(mv) {
+                Some(mv)
+            } else if is_capture!(mv)
+            && move_type!(mv) == MULTI_CAPTURE_MOVE
+            && mv.1.iter().any({
+                |captured| {
+                    !multi_move_is_unload!(captured) &&
+                    multi_move_captured_square!(captured) as u16 == $target
+                }
+            }) {
+                Some(mv)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<Move>>();
 
         out.sort_by_cached_key(
             |mv| -(p_value!(piece!(mv), state) as i32)
