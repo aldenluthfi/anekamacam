@@ -95,7 +95,6 @@ fn level_to_verbosity(level: log::Level) -> u8 {
         log::Level::Info => 3,
         log::Level::Debug => 4,
         log::Level::Trace => 5,
-        _ => panic!("Unsupported log level: {level}"),
     }
 }
 
@@ -136,6 +135,20 @@ pub fn dec_verbosity() {
     RUNTIME_VERBOSITY.fetch_max(1, Ordering::Release);
 }
 
+/// # Verbosity Levels
+///
+/// This module uses 5 numeric verbosity levels. The semantics are:
+///
+/// - `log_1`: Most critical. Application state changes, operation completions,
+///   game-over states, benchmark results.
+/// - `log_2`: Warning. User-facing confirmations, command acknowledgements,
+///   non-fatal operational feedback.
+/// - `log_3`: Info. Engine/search telemetry — TT/QT stats, thread lifecycle,
+///   perft summaries, derived parameter values.
+/// - `log_4`: Debug. Parsing internals, token captures, filter results,
+///   mid-level diagnostic output.
+/// - `log_5`: Trace. Deepest call-stack traces — atomic/coordinate evaluation
+///   entry points and final-result logging.
 pub fn init_logging() {
     let latest = Path::new(&*LATEST_LOG_PATH);
 
@@ -162,7 +175,7 @@ pub fn init_logging() {
 
     LoggerBuilder::new()
         .target(LoggerTarget::Pipe(target))
-        .filter_level(configured_log_level())
+        .filter_level(log::LevelFilter::Trace)
         .format_target(false)
         .format_module_path(false)
         .format_source_path(false)

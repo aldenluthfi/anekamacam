@@ -125,7 +125,7 @@ pub use rayon::iter::{
 };
 pub use hotpath;
 pub use lazy_static::lazy_static;
-pub use log::{debug, error, info, warn};
+pub use log::{debug, error, info, trace, warn};
 pub use mpsc::{channel, Receiver, Sender, TryRecvError};
 pub use rand::{
     rngs::StdRng, seq::SliceRandom, Rng, RngCore, SeedableRng,
@@ -233,8 +233,8 @@ lazy_static! {
         result
     };
     pub static ref RNG: Mutex<StdRng> =
-        Mutex::new(StdRng::seed_from_u64(0xDEADBEEFCAFEBABE));
-    pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(4);
+        Mutex::new(StdRng::from_os_rng());
+    pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(5);
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
 }

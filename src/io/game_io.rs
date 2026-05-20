@@ -1721,26 +1721,24 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// (position) (side) (castling rights) (en passant square) (in hand pieces)
 ///
 /// 1. position           : Same as normal FEN
-///
 /// 2. side               : Same as normal FEN
-///
 /// 3. castling rights    : Same as normal FEN
-///
-/// 4. en passant square  : Formatted 'ssseeez' where s is the en passant square
-///                         index itself in hex, e is the square index of the
-///                         piece that can be captured en passant in hex, and z
-///                         is the char of the piece that can be captured en
-///                         passant. "*" if no en passant square.
-///
-/// 5. in hand pieces     : Formatted '(w)/(b)' where each w and b is formatted
-///                         with the pieces in hand. e.g. P2N means a pawn and
-///                         two knights in hand. "-" if no pieces in hand for
-///                         that color so an empty hand for both is -/-
+/// 4. en passant square  : Formatted 'ssseeez'*
+/// 5. in hand pieces     : Formatted '(w)/(b)'**
 ///
 /// Optional:
 ///
 /// 6. Halfmove clock     : number of halfmoves towards the halfmove-clock rule
 /// 7. Fullmove number    : starting at 1 and incremented after
+///
+/// *: s is the en passant square index itself in hex, e is the square index
+///   of the piece that can be captured en passant in hex, and z is the char
+///   of the piece that can be captured en passant. "*" if no en passant square.
+///
+/// **: where each w and b is formatted with the pieces in hand. e.g. P2N means
+///   a pawn and two knights in hand. "-" if no pieces in hand for that color
+///   so an empty hand for both is -/-.
+///
 pub fn parse_fen(state: &mut State, fen: &str) {
     let mut needed_parts = 2;
 

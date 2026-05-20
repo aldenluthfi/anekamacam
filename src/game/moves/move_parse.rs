@@ -1154,7 +1154,7 @@ fn evaluate_atomic_expression(
     filter_atomic_out_of_bounds(&mut result, state);
 
 
-    log_4!(
+    log_5!(
         "evaluate_atomic_expression {:?} final len: {}",
         expr,
         result.len()
@@ -1310,7 +1310,7 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 /// here.
 fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 
-    log_4!(
+    log_5!(
         "atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1588,7 +1588,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 ///   by the last F move.
 fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 
-    log_4!(
+    log_5!(
         "chained_atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1763,7 +1763,7 @@ fn compound_atomic_to_vector(
     state: &State,
 ) -> Vec<AtomicVector> {
 
-    log_4!(
+    log_5!(
         "compound_atomic_to_vector expr {} with rotation {}",
         expr, rotation
     );
@@ -1772,7 +1772,7 @@ fn compound_atomic_to_vector(
         ATOMIC_TOKENS.find_iter(expr).map(|m| m.as_str()).collect();
 
 
-    log_4!("compound_atomic_to_vector tokens: {:?}", tokens);
+    log_5!("compound_atomic_to_vector tokens: {:?}", tokens);
 
     let mut stack: AtomicGroup = VecDeque::new();
 
@@ -2305,7 +2305,7 @@ fn evaluate_multi_leg_subexpression(
     state: &State,
 ) -> Vec<MultiLegVector> {
 
-    log_4!(
+    log_5!(
         concat!(
             "evaluate_multi_leg_subexpr with expr: {:?} ",
             "modifiers: {:?}, rotation: {}"
@@ -2407,7 +2407,7 @@ fn evaluate_multi_leg_expression(
     state: &State,
 ) -> MultiLegElement {
 
-    log_4!(
+    log_5!(
         concat!(
             "evaluate_multi_leg_expression with expression: {:?} ",
             "with rotation: {} "
@@ -2537,7 +2537,7 @@ fn evaluate_multi_leg_expression(
     result.retain(|vector| !exclusion.contains(vector));
 
 
-    log_4!(
+    log_5!(
         "evaluate_multi_leg_expression {:?} final len: {:?} ",
         expr,
         result.len()
@@ -2762,7 +2762,7 @@ fn parse_castling(expr: &str) -> String {
     }
 
 
-    log_4!("parse_castling generated move expression: {}", string);
+    log_5!("parse_castling generated move expression: {}", string);
 
     string
 }
@@ -2873,7 +2873,7 @@ pub fn generate_move_vectors(
     let parsed_expr = parse_move_string(expr);
 
 
-    log_4!(
+    log_5!(
         "generate_move_vectors parsed expression for {}: {:?}",
         expr, parsed_expr
     );
