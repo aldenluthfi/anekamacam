@@ -161,11 +161,13 @@ pub fn set_piece_dynamic_parameters(
 /// Parses tuned parameters from a flat space-separated file.
 ///
 /// Token order:
-/// opening phase score, endgame phase score,
-/// opening values (piece-type count), endgame values (piece-type count),
-/// big flags, major flags,
-/// then white opening/middlegame PST rows (piece-type count × board_size),
-/// then white endgame PST rows (piece-type count × board_size).
+/// 
+/// 1. opening phase score, endgame phase score,
+/// 2. opening values (piece-type count), endgame values (piece-type count),
+/// 3. big flags, major flags,
+/// 4. then white opening/middlegame PST rows (piece-type count × board_size),
+/// 5. then white endgame PST rows (piece-type count × board_size),
+/// 6. then futility margins (3 phases × 5 depths = 15 tokens).
 ///
 /// Black PST rows are derived by mirroring white rows across the
 /// horizontal axis.
@@ -187,7 +189,7 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
     let piece_type_count = piece_type_pairs.len();
     let board_size = state.main_board.len();
     let expected_count =
-        2 + piece_type_count * 4 + piece_type_count * board_size * 2;
+        2 + piece_type_count * 4 + piece_type_count * board_size * 2 + 15;
 
     assert!(
         tokens.len() == expected_count,
@@ -295,6 +297,13 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
             );
     }
 
+    for phase in 0..3 {
+        for depth in 0..5 {
+            state.static_mut().futility_margin[phase][depth] = tokens[cursor];
+            cursor += 1;
+        }
+    }
+
     state.big_pieces = [0; 2];
     state.major_pieces = [0; 2];
     state.minor_pieces = [0; 2];
@@ -374,6 +383,14 @@ pub fn export_tuned_parameters_file(
     for (white_idx, _) in &piece_type_pairs {
         for value in &state.statics.pst_endgame[*white_idx] {
             output_tokens.push(value.to_string());
+        }
+    }
+
+    for phase in 0..3 {
+        for depth in 0..5 {
+            output_tokens.push(
+                state.statics.futility_margin[phase][depth].to_string()
+            );
         }
     }
 

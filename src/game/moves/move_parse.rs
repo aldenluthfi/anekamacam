@@ -2407,7 +2407,7 @@ fn evaluate_multi_leg_expression(
     state: &State,
 ) -> MultiLegElement {
 
-    log_5!(
+    log_4!(
         concat!(
             "evaluate_multi_leg_expression with expression: {:?} ",
             "with rotation: {} "
@@ -2537,7 +2537,7 @@ fn evaluate_multi_leg_expression(
     result.retain(|vector| !exclusion.contains(vector));
 
 
-    log_4!(
+    log_5!(
         "evaluate_multi_leg_expression {:?} final len: {:?} ",
         expr,
         result.len()
@@ -2873,7 +2873,7 @@ pub fn generate_move_vectors(
     let parsed_expr = parse_move_string(expr);
 
 
-    log_5!(
+    log_4!(
         "generate_move_vectors parsed expression for {}: {:?}",
         expr, parsed_expr
     );

@@ -220,6 +220,21 @@ lazy_static! {
     pub static ref LOG_DIR: String = "logs".to_string();
     pub static ref LATEST_LOG_PATH: String =
         format!("{}/latest.log", *LOG_DIR);
+    pub static ref LMR_TABLE: Vec<Vec<f64>> = {
+        let mut result = vec![vec![0.0; MAX_DEPTH * 2]; MAX_DEPTH];
+
+        for (depth, table) in result.iter_mut().enumerate() {
+            for (moves, entry) in table.iter_mut().enumerate() {
+                if depth < 2 || moves < 2 {
+                    *entry = 0.0;
+                } else {
+                    *entry = (depth as f64).sqrt() * (moves as f64).ln();
+                }
+            }
+        }
+
+        result
+    };
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
@@ -250,7 +265,7 @@ pub fn null_pseudo_move() -> PseudoMove {
 pub const DEFAULT_DROP: &str = "@#~?@";
 pub const NULL_DROP: &str = "@#~?@#~?";
 
-pub const INF: i32 = 20000;
+pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 
 pub const FALPHA: u8 = 0;

@@ -436,7 +436,7 @@ pub fn benchmark_headless_perft(state: &mut State, depth: u8, branch: i8) {
         .as_nanos()
         .saturating_sub(total_start_time);
 
-    log_3!(
+    log_1!(
         "Total moves generated: {:>12} | Elapsed Time: {:>12}",
         total_nodes,
         format_time(total_elapsed)
@@ -466,7 +466,7 @@ pub fn benchmark_perft(
         panic!("Failed to lock RNG mutex for perft shuffle: {e}")
     }));
 
-    log_2!(
+    log_3!(
         "Perft testing {} positions with depth {} and branching {}...",
         limit, depth, branch
     );
@@ -487,6 +487,12 @@ pub fn benchmark_perft(
     for (i, (fen, perft_1, perft_2, perft_3, perft_4, perft_5, perft_6)) in
         perft_cases.into_iter().take(limit).enumerate()
     {
+
+        if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+            log_3!("SIGINT | Aborting perft benchmark at case {}", i);
+            break;
+        }
+
         state.load_fen(&fen);
 
         let expected_perfts =
@@ -532,11 +538,11 @@ pub fn benchmark_perft(
         }
     }
 
-    log_3!(
+    log_1!(
         "Perft testing completed: {}/{} cases passed.",
         successful_cases, total_cases
     );
-    log_2!("Total moves generated: {}", total_moves);
+    log_1!("Total moves generated: {}", total_moves);
 }
 
 /// Runs a fixed-depth search benchmark from the current position.

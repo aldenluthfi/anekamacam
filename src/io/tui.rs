@@ -2322,7 +2322,7 @@ fn input_listener(sender: Sender<TuiEvent>) {
 }
 
 pub fn tui() -> IoResult<()> {
-    log_2!("Starting TUI...");
+    log_3!("Starting TUI...");
     let mut terminal = ratatui::init();
     execute!(terminal.backend_mut(), EnableMouseCapture)?;
 
