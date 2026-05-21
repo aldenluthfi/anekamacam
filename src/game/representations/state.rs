@@ -355,7 +355,7 @@ pub struct StaticState {
 /*----------------------------------------------------------------------------*\
                                  SEARCH FIELDS
 \*----------------------------------------------------------------------------*/
-    
+
     pub futility_margin: [[i32; 5]; 3],                                         /* [phase 0-2][depth 0-4]             */
     pub quiesce_lmr: Vec<f64>,                                                  /* [depth * MAX_DEPTH + moves checked]*/
     pub capture_lmr: Vec<f64>,                                                  /* [depth * MAX_DEPTH + moves checked]*/
@@ -541,10 +541,10 @@ impl State {
             quiesce_lmr: {
                 let mut result = vec![0.0; MAX_DEPTH * MAX_LMR_DEPTH];
 
-                for depth in 0..MAX_DEPTH {
+                for depth in 1..(MAX_DEPTH + 1) {
                     for moves in 0..MAX_LMR_DEPTH {
-                        let index = depth * MAX_LMR_DEPTH + moves;
-                        let base = (depth as f64).sqrt() * (moves as f64).ln();
+                        let index = (depth - 1) * MAX_LMR_DEPTH + moves;
+                        let base = (depth as f64).ln() * (moves as f64).sqrt();
                         result[index] =
                             1.35 + (base / 2.75);
                     }
@@ -555,10 +555,10 @@ impl State {
             capture_lmr: {
                 let mut result = vec![0.0; MAX_DEPTH * MAX_LMR_DEPTH];
 
-                for depth in 0..MAX_DEPTH {
+                for depth in 1..(MAX_DEPTH + 1) {
                     for moves in 0..MAX_LMR_DEPTH {
-                        let index = depth * MAX_LMR_DEPTH + moves;
-                        let base = (depth as f64).sqrt() * (moves as f64).ln();
+                        let index = (depth - 1) * MAX_LMR_DEPTH + moves;
+                        let base = (depth as f64).ln() * (moves as f64).sqrt();
                         result[index] =
                             0.20 + (base / 3.35);
                     }
