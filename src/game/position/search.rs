@@ -462,6 +462,7 @@ fn quiescence_search(
 #[macro_export]
 macro_rules! reduction {
     (
+        $state:expr,
         $depth:expr,
         $moves:expr,
         $in_check:expr,
@@ -470,14 +471,12 @@ macro_rules! reduction {
         $is_promotion:expr,
         $is_drop:expr
     ) => {{
-        let base_reduction = LMR_TABLE
-            [$depth.min(MAX_DEPTH - 1)]
-            [$moves.min(MAX_DEPTH * 2 - 1)];
-
         let mut reduction = if $is_capture || $is_promotion || $is_drop {
-            0.20 + (base_reduction / 3.35)
+            $state.statics.capture_lmr
+                [$depth * MAX_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
         } else {
-            1.35 + (base_reduction / 2.75)
+            $state.statics.quiesce_lmr
+                [$depth * MAX_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
         };
 
         if $in_check || $opponent_in_check {
@@ -697,7 +696,8 @@ pub fn alpha_beta(
         && mv != state.killer_hist[state.search_ply as usize][1]
         {                                                                       /* late move reduction                */
             reduction += reduction!(
-                depth, legal_moves, in_check, opponent_in_check,
+                state, depth, legal_moves,
+                in_check, opponent_in_check,
                 is_capture, is_promotion, is_drop
             );
 
