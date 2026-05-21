@@ -38,8 +38,8 @@ pub struct SearchInfo {
 #[derive(Default)]
 pub struct SearchBufs {
     pub move_buf: Vec<Vec<Move>>,                                               /* per-ply move lists, pre-allocated  */
-    pub scratch_buf: Vec<u64>,                                                   /* reused scratch for taken_pieces    */
-    pub score_buf: Vec<Vec<u16>>,                                               /* pre-computed move ordering scores */
+    pub score_buf: Vec<Vec<usize>>,                                             /* pre-computed move ordering scores  */
+    pub scratch_buf: Vec<u64>,                                                  /* reused scratch for taken_pieces    */
 }
 
 pub struct SearchResult {
@@ -98,9 +98,9 @@ pub fn clear_search(
     if bufs.move_buf.len() < MAX_DEPTH * 2 {
         bufs.move_buf = (0..MAX_DEPTH * 2)
             .map(|_| Vec::with_capacity(64)).collect();
-        bufs.scratch_buf = Vec::with_capacity(32);
         bufs.score_buf = (0..MAX_DEPTH * 2)
-            .map(|_| vec![u16::MAX; MAX_SQUARES * 2]).collect();
+            .map(|_| Vec::with_capacity(64)).collect();
+        bufs.scratch_buf = Vec::with_capacity(32);
     }
 
     let piece_count: usize = state.statics.pieces.len();
@@ -123,8 +123,6 @@ pub fn clear_search(
     state.search_ply = 0;
 }
 
-/// Runs iterative deepening on a single thread or a thread pool, then logs
-/// transposition table statistics.
 pub fn search_position(
     state: &mut State, table: Arc<TTable>, qtable: Arc<QTable>,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
@@ -150,7 +148,7 @@ pub fn search_position(
     };
 
     log_3!(
-        "TT | new: {:<7} | over: {:<7} | hit: {:<7} | valid: {:<7}",
+        "TT | new: {:<8} | over: {:<8} | hit: {:<8} | valid: {:<8}",
         table.new_write.load(Ordering::Relaxed),
         table.over_write.load(Ordering::Relaxed),
         table.hit.load(Ordering::Relaxed),
@@ -158,7 +156,7 @@ pub fn search_position(
     );
 
     log_3!(
-        "QT | new: {:<7} | over: {:<7} | hit: {:<7} | valid: {:<7}",
+        "QT | new: {:<8} | over: {:<8} | hit: {:<8} | valid: {:<8}",
         qtable.new_write.load(Ordering::Relaxed),
         qtable.over_write.load(Ordering::Relaxed),
         qtable.hit.load(Ordering::Relaxed),
@@ -332,6 +330,7 @@ fn quiescence_search(
         return 0;
     }
 
+
     info.nodes += 1;
     if info.nodes & 2047 == 0 {
         check_interrupt(info);
@@ -344,6 +343,10 @@ fn quiescence_search(
 
     if stand_pat >= beta {
         return beta;
+    }
+
+    if state.search_ply > MAX_DEPTH as u32 {
+        return stand_pat
     }
 
     if stand_pat > alpha {
@@ -371,7 +374,7 @@ fn quiescence_search(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
 
-    bufs.score_buf[ply].fill(u16::MAX);
+    bufs.score_buf[ply] = vec![usize::MAX; bufs.move_buf[ply].len()];
 
     for i in 0..bufs.move_buf[ply].len() {
         pick_by_score!(
@@ -538,10 +541,6 @@ pub fn alpha_beta(
 
     let static_eval = evaluate_position!(state);
 
-    if state.search_ply >= MAX_DEPTH as u32 {
-        return static_eval;
-    }
-
     let mut pv_move: Option<PseudoMove> = None;
     let tt_entry = probe_tt_entry!(state, ttable, alpha, beta, depth);          /* transposition table lookup         */
 
@@ -652,7 +651,7 @@ pub fn alpha_beta(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
 
-    bufs.score_buf[ply].fill(u16::MAX);
+    bufs.score_buf[ply] = vec![usize::MAX; bufs.move_buf[ply].len()];
 
     for i in 0..bufs.move_buf[ply].len() {
         pick_by_score!(
