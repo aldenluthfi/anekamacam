@@ -178,11 +178,11 @@ macro_rules! see {
 /// Returns a static ordering score for one move in the current position.
 ///
 /// Scoring order:
-/// 1. PV move                  -> 50000
-/// 2. Winning/Equal captures   -> 40000 + SEE score [0, MAX_PIECE_VALUE]
-/// 3. Killer moves             -> 20000 + MAX_DEPTH^2 + 2 - killer rank [0,1]
-/// 4. History heuristic        -> 20000 + history score [0, MAX_DEPTH^2]
-/// 5. Losing captures          -> 20000 + SEE score [-MAX_PIECE_VALUE, -1]
+/// 1. PV move                  -> 5000000
+/// 2. Winning/Equal captures   -> 4000000 + SEE score [0, MAX_PIECE_VALUE]
+/// 3. Killer moves             -> 1000000 + MAX_DEPTH^3 + 2 - killer rank [0,1]
+/// 4. History heuristic        -> 1000000 + history score [0, ~MAX_DEPTH^3]
+/// 5. Losing captures          -> 1000000 + SEE score [-MAX_PIECE_VALUE, -1]
 ///
 /// `$pv_move` is the TT best move for this node. A larger score means the
 /// move is searched earlier.
@@ -192,28 +192,28 @@ macro_rules! score_move {
         if $pv_move.as_ref().is_some_and(
             |pm| pm.0 == $mv.0 && pm.1 == move_signature!($mv)
         ) {
-            50000                                                               /* PV move always ordered first        */
+            5_000_000                                                           /* PV move always ordered first        */
         } else if !is_capture!($mv) {
             let killers =
                 &$state.killer_hist[$state.search_ply as usize];
 
             if $mv == killers[0] {
-                10000 + (MAX_DEPTH * MAX_DEPTH) as u16 + 2                      /* killer scores above history         */
+                1_000_000 + MAX_HISTORY_BONUS + 2                               /* killer scores above history         */
             } else if $mv == killers[1] {
-                10000 + (MAX_DEPTH * MAX_DEPTH) as u16 + 1                      /* killer scores above history         */
+                1_000_000 + MAX_HISTORY_BONUS + 1                               /* killer scores above history         */
             } else {
                 let piece = piece!($mv) as usize;
                 let end = end!($mv) as usize;
 
-                10000 + $state.search_hist[piece][end] as u16                   /* history score for quiet moves       */
+                1_000_000 + $state.search_hist[piece][end] as usize             /* history score for quiet moves       */
             }
         } else {
             let see_score = see!($state, $mv);
 
             if see_score >= 0 {
-                (40000 + see_score) as u16                                      /* winning captures ordered second     */
+                (4_000_000 + see_score) as usize                                /* winning captures ordered second     */
             } else {
-                (20000 + see_score) as u16                                      /* losing captures ordered last        */
+                (1_000_000 + see_score) as usize                                /* losing captures ordered last        */
             }
         }
     }};
@@ -230,10 +230,10 @@ macro_rules! score_move {
 macro_rules! pick_by_score {
     ($state:expr, $moves:expr, $scores:expr, $index:expr, $pv_move:expr) => {{
         let moves: &mut Vec<Move> = $moves;
-        let scores: &mut Vec<u16> = $scores;
+        let scores: &mut Vec<usize> = $scores;
         let index = $index;
 
-        if scores[index] == u16::MAX {
+        if scores[index] == usize::MAX {
             scores[index] = score_move!(
                 $state, moves[index].clone(), $pv_move
             );
@@ -243,7 +243,7 @@ macro_rules! pick_by_score {
         let mut best_score = scores[index];
 
         for i in (index + 1)..moves.len() {
-            if scores[i] == u16::MAX {
+            if scores[i] == usize::MAX {
                 scores[i] = score_move!(
                     $state, moves[i].clone(), $pv_move
                 );

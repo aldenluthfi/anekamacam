@@ -174,10 +174,12 @@ pub const FORMAT_VERBOSITY_5: u8 = 5;
 
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
+pub const MAX_DEPTH: usize = 128;
+pub const MAX_LOGS_LEN: usize = u16::MAX as usize;
+pub const MAX_HISTORY_BONUS: usize = MAX_DEPTH.pow(3);
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
-pub const BOTH: u8 = 2;
 
 pub const WK_CASTLE: u8 = 0b0001;
 pub const WQ_CASTLE: u8 = 0b0010;
@@ -280,12 +282,8 @@ pub const ENDGAME: u8 = 3;
 pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       /* 256MB                              */
 pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       /* 128MB                              */
 
-pub const MAX_DEPTH: usize = 128;
-
 pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;
-
-pub const MAX_LOGS_LEN: usize = 4096;
 
 pub const CONFIGS_DIR: &str = "configs";
 pub const PERFT_DIR: &str = "res/perft";
