@@ -451,11 +451,11 @@ fn quiescence_search(
 ///
 /// For captures, promotions, and drops:
 ///
-/// reduction = 0.20 + (sqrt(depth) * ln(moves) / 3.35)
+/// reduction = 0.20 + (ln(depth) * sqrt(moves) / 3.35)
 ///
 /// For quiet moves:
 ///
-/// reduction = 1.35 + (sqrt(depth) * ln(moves) / 2.75)
+/// reduction = 1.35 + (ln(depth) * sqrt(moves) / 2.75)
 ///
 /// In either case, if the side to move is in check or the opponent is in check,
 /// reduction is reduced by 1.25.
@@ -473,10 +473,10 @@ macro_rules! reduction {
     ) => {{
         let mut reduction = if $is_capture || $is_promotion || $is_drop {
             $state.statics.capture_lmr
-                [$depth * MAX_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
+                [$depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
         } else {
             $state.statics.quiesce_lmr
-                [$depth * MAX_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
+                [$depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
         };
 
         if $in_check || $opponent_in_check {
