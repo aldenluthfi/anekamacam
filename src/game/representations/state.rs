@@ -335,7 +335,6 @@ pub struct StaticState {
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
     pub opening_score: u32,                                                     /* opening threshold                  */
     pub endgame_score: u32,                                                     /* endgame threshold                  */
-    pub futility_margin: [[i32; 5]; 3],                                         /* [phase 0-2][depth 0-4]             */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 
@@ -352,6 +351,14 @@ pub struct StaticState {
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: Vec<Vec<PieceIndex>>,                               /* piece index to demotion piece idx  */
     pub piece_char_map: HashMap<char, PieceIndex>,                              /* char to piece index map            */
+
+/*----------------------------------------------------------------------------*\
+                                 SEARCH FIELDS
+\*----------------------------------------------------------------------------*/
+    
+    pub futility_margin: [[i32; 5]; 3],                                         /* [phase 0-2][depth 0-4]             */
+    pub quiesce_lmr: Vec<f64>,                                                  /* [depth * MAX_DEPTH + moves checked]*/
+    pub capture_lmr: Vec<f64>,                                                  /* [depth * MAX_DEPTH + moves checked]*/
 }
 
 /// Main state of the game.
@@ -508,7 +515,6 @@ impl State {
             repetition_limit: u8::MAX,
             opening_score: 0,
             endgame_score: 0,
-            futility_margin: [[0; 5]; 3],
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
 
@@ -530,6 +536,36 @@ impl State {
             piece_swap_map: vec![0; piece_count],
             piece_demotion_map: vec![Vec::new(); piece_count],
             piece_char_map: HashMap::new(),
+
+            futility_margin: [[0; 5]; 3],
+            quiesce_lmr: {
+                let mut result = vec![0.0; MAX_DEPTH * MAX_LMR_DEPTH];
+
+                for depth in 0..MAX_DEPTH {
+                    for moves in 0..MAX_LMR_DEPTH {
+                        let index = depth * MAX_LMR_DEPTH + moves;
+                        let base = (depth as f64).sqrt() * (moves as f64).ln();
+                        result[index] =
+                            1.35 + (base / 2.75);
+                    }
+                }
+
+                result
+            },
+            capture_lmr: {
+                let mut result = vec![0.0; MAX_DEPTH * MAX_LMR_DEPTH];
+
+                for depth in 0..MAX_DEPTH {
+                    for moves in 0..MAX_LMR_DEPTH {
+                        let index = depth * MAX_LMR_DEPTH + moves;
+                        let base = (depth as f64).sqrt() * (moves as f64).ln();
+                        result[index] =
+                            0.20 + (base / 3.35);
+                    }
+                }
+
+                result
+            }
         });
 
         State {

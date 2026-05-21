@@ -175,6 +175,7 @@ pub const FORMAT_VERBOSITY_5: u8 = 5;
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 pub const MAX_DEPTH: usize = 128;
+pub const MAX_LMR_DEPTH: usize = 32;
 pub const MAX_LOGS_LEN: usize = u16::MAX as usize;
 pub const MAX_HISTORY_BONUS: usize = MAX_DEPTH.pow(3);
 
@@ -222,21 +223,6 @@ lazy_static! {
     pub static ref LOG_DIR: String = "logs".to_string();
     pub static ref LATEST_LOG_PATH: String =
         format!("{}/latest.log", *LOG_DIR);
-    pub static ref LMR_TABLE: Vec<Vec<f64>> = {
-        let mut result = vec![vec![0.0; MAX_DEPTH * 2]; MAX_DEPTH];
-
-        for (depth, table) in result.iter_mut().enumerate() {
-            for (moves, entry) in table.iter_mut().enumerate() {
-                if depth < 2 || moves < 2 {
-                    *entry = 0.0;
-                } else {
-                    *entry = (depth as f64).sqrt() * (moves as f64).ln();
-                }
-            }
-        }
-
-        result
-    };
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
