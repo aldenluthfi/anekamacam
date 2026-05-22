@@ -660,14 +660,13 @@ pub fn alpha_beta(
         );
 
         let mv = bufs.move_buf[ply][i].clone();
-        let mv_type = move_type!(mv);
 
         let piece = piece!(mv) as usize;
         let end = end!(mv);
 
-        let is_capture = is_capture!(mv);
-        let is_promotion = promotion!(mv);
-        let is_drop = mv_type == DROP_MOVE;
+        let is_capture = m_capture!(mv);
+        let is_promotion = m_promotion!(mv);
+        let is_drop = m_drop!(mv);
 
         if !make_move!(state, mv.clone()) {
             continue;

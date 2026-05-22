@@ -90,21 +90,21 @@ pub fn generate_relevant_drops(
 macro_rules! generate_drop_list {
     ($piece:expr, $state:expr, $out:expr, $scratch:expr) => {{
         let board_size = $state.main_board.len() as u32;
-        let piece_index = p_index!($piece) as usize;
-        let piece_color = p_color!($piece) as usize;
+        let index = p_index!($piece) as usize;
+        let color = p_color!($piece) as usize;
 
         if !(count_limits!($state)
-            && $state.piece_count[piece_index]
-            >= $state.statics.piece_limit[piece_index])
+            && $state.piece_count[index]
+            >= $state.statics.piece_limit[index])
         {
             for square in 0..board_size {
                 let drops = if $state.game_phase == SETUP {
                     &$state.statics.relevant_setup[
-                        piece_index * board_size as usize + square as usize
+                        index * board_size as usize + square as usize
                     ]
                 } else {
                     &$state.statics.relevant_drops[
-                        piece_index * board_size as usize + square as usize
+                        index * board_size as usize + square as usize
                     ]
                 };
 
@@ -131,20 +131,19 @@ macro_rules! generate_drop_list {
                     let mut encoded_move = Move::default();
                     $scratch.clear();
                     enc_move_type!(encoded_move, DROP_MOVE);
-                    enc_piece!(encoded_move, piece_index as u128);
+                    enc_piece!(encoded_move, index as u128);
                     enc_start!(encoded_move, square as u128);
 
                     let enemy_idx = $state.statics.piece_swap_map
-                        [piece_index] as usize;
+                        [index] as usize;
 
                     if get!(
-                        $state.statics.forbidden_zones[piece_index], square
+                        $state.statics.forbidden_zones[index], square
                     ) && !drop_f
                     || !drop_e
-                        && $state.piece_in_hand[piece_color][piece_index] == 0
+                        && $state.piece_in_hand[color][index] == 0
                     || drop_e
-                        && $state.piece_in_hand[1 - piece_color][enemy_idx]
-                            == 0
+                        && $state.piece_in_hand[1 - color][enemy_idx] == 0
                     {
                         continue 'drop_loop;
                     }
@@ -160,9 +159,9 @@ macro_rules! generate_drop_list {
 
                     for allower in drop_allowers.iter() {
                         let ax = x!(allower.0) as i32
-                            * (-2 * piece_color as i32 + 1);
+                            * (-2 * color as i32 + 1);
                         let ay = y!(allower.0) as i32
-                            * (-2 * piece_color as i32 + 1);
+                            * (-2 * color as i32 + 1);
                         let allower_pieces = &allower.1;
 
                         let check_x = file as i32 + ax;
@@ -208,9 +207,9 @@ macro_rules! generate_drop_list {
 
                     for stopper in drop_stoppers.iter() {
                         let sx = x!(stopper.0) as i32
-                            * (-2 * piece_color as i32 + 1);
+                            * (-2 * color as i32 + 1);
                         let sy = y!(stopper.0) as i32
-                            * (-2 * piece_color as i32 + 1);
+                            * (-2 * color as i32 + 1);
                         let stopper_pieces = &stopper.1;
 
                         let check_x = file as i32 + sx;

@@ -55,7 +55,7 @@ pub use crate::game::moves::move_parse::{
 };
 
 pub use crate::game::moves::pattern_match::{
-    generate_relevant_stand_offs, generate_stand_off_patterns, match_pattern,
+    generate_relevant_stand_offs, generate_stand_off_patterns,
     parse_pattern, PatternAllower, PatternSet, PatternStopper,
 };
 pub use crate::game::position::{
@@ -80,10 +80,10 @@ pub use crate::game::util::{
                                    IO API
 \*----------------------------------------------------------------------------*/
 pub use crate::io::board_io::{
-    format_board, format_square,
+    format_board, format_square, parse_square,
 };
 pub use crate::io::game_io::{
-    export_tuned_parameters_file, format_castling_rights,
+    combine_board_strings, export_tuned_parameters_file, format_castling_rights,
     format_en_passant_square, format_fen, format_game_phase, format_game_state,
     format_hand, format_numeric_board, format_position_hash,
     format_special_rules, mirror_pst_across_horizontal_axis, parse_config_file,

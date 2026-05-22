@@ -28,6 +28,38 @@ pub fn format_square(index: u16, state: &State) -> String {
     }
 }
 
+pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
+    let files = state.statics.files as u16;
+    let ranks = state.statics.ranks as u16;
+
+    if square_str.len() < 2 {
+        return None;
+    }
+
+    if state.statics.files <= 26 {
+        let file_char = square_str.chars().next().unwrap();
+        let file = (file_char as u8).wrapping_sub(b'a') as u16;
+        let rank_str = &square_str[1..];
+        if let Ok(rank) = rank_str.parse::<u16>() {
+            if file < files && rank < ranks {
+                return Some(rank * files + file);
+            }
+        }
+    } else {
+        if let Ok(file) = square_str[0..2].parse::<u16>() {
+            let rank_str = &square_str[2..];
+
+            if let Ok(rank) = rank_str.parse::<u16>()
+            && file < files
+            && rank < ranks {
+                return Some(rank * files + file);
+            }
+        }
+    }
+
+    None
+}
+
 fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
     let mut result = String::new();
 
