@@ -40,10 +40,10 @@ pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
         let file_char = square_str.chars().next().unwrap();
         let file = (file_char as u8).wrapping_sub(b'a') as u16;
         let rank_str = &square_str[1..];
-        if let Ok(rank) = rank_str.parse::<u16>() {
-            if file < files && rank < ranks {
-                return Some(rank * files + file);
-            }
+        if let Ok(rank) = rank_str.parse::<u16>()
+        && file < files
+        && rank < ranks {
+            return Some(rank * files + file);
         }
     } else {
         if let Ok(file) = square_str[0..2].parse::<u16>() {
@@ -83,7 +83,7 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     let mut bitboard_str = format_bitboard(&board.2, files, ranks);
 
     if let Some(piece) = piece_char {
-        bitboard_str = bitboard_str.replace("1", piece.to_string().as_str());
+        bitboard_str = bitboard_str.replace('1', &piece.to_string());
     }
 
     let mut result = String::new();
