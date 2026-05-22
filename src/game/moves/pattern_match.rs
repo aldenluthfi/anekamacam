@@ -216,54 +216,55 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
 /// If a concrete piece context exists, use that piece's color for orientation;
 /// otherwise use White's orientation as the default perspective.
 /// Returns `true` only when all allowers pass and no stopper matches.
-pub fn match_pattern(
-    pattern: &Pattern,
-    square: u32,
-    color: u8,
-    state: &State,
-) -> bool {
-    let (allowers, stoppers) = pattern;
+#[macro_export]
+macro_rules! match_pattern {
+    ($pattern:expr, $square:expr, $color:expr, $state:expr) => {{
+        let (allowers, stoppers) = $pattern;
 
-    let file = square % state.statics.files as u32;
-    let rank = square / state.statics.files as u32;
+        let file = $square % $state.statics.files as u32;
+        let rank = $square / $state.statics.files as u32;
 
-    for allower in allowers {
-        let x = x!(allower.0) as i32 * (-2 * color as i32 + 1);
-        let y = y!(allower.0) as i32 * (-2 * color as i32 + 1);
-        let allower_pieces = &allower.1;
+        let mut invalid = false;
 
-        let check_x = file as i32 + x;
-        let check_y = rank as i32 + y;
-        let check_index =
-            (check_y * state.statics.files as i32 + check_x) as usize;
+        for allower in allowers {
+            let x = x!(allower.0) as i32 * (-2 * $color as i32 + 1);
+            let y = y!(allower.0) as i32 * (-2 * $color as i32 + 1);
+            let allower_pieces = &allower.1;
 
-        let piece_check = state.main_board[check_index];
+            let check_x = file as i32 + x;
+            let check_y = rank as i32 + y;
+            let check_index =
+                (check_y * $state.statics.files as i32 + check_x) as usize;
 
-        if !allower_pieces.contains(piece_check) {
-            return false;
+            let piece_check = $state.main_board[check_index];
+
+            if !allower_pieces.contains(piece_check) {
+                invalid = true;
+            }
         }
-    }
 
-    for stopper in stoppers {
-        let x = x!(stopper.0) as i32 * (-2 * color as i32 + 1);
-        let y = y!(stopper.0) as i32 * (-2 * color as i32 + 1);
-        let stopper_pieces = &stopper.1;
+        if !invalid {
+            for stopper in stoppers {
+                let x = x!(stopper.0) as i32 * (-2 * $color as i32 + 1);
+                let y = y!(stopper.0) as i32 * (-2 * $color as i32 + 1);
+                let stopper_pieces = &stopper.1;
 
-        let check_x = file as i32 + x;
-        let check_y = rank as i32 + y;
-        let check_index =
-            (check_y * state.statics.files as i32 + check_x) as usize;
+                let check_x = file as i32 + x;
+                let check_y = rank as i32 + y;
+                let check_index =
+                    (check_y * $state.statics.files as i32 + check_x) as usize;
 
-        let piece_check = state.main_board[check_index];
+                let piece_check = $state.main_board[check_index];
 
-        if stopper_pieces.contains(piece_check) {
-            return false;
+                if stopper_pieces.contains(piece_check) {
+                    invalid = true;
+                }
+            }
         }
-    }
 
-    true
+        !invalid
+    }};
 }
-
 /// Parses a `|`-separated stand-off expression into executable patterns.
 ///
 /// Each branch is parsed independently via `parse_pattern` and collected into a
@@ -354,11 +355,11 @@ macro_rules! is_in_stand_off {
                     &$state.statics.relevant_stand_offs
                         [index * board_size + square as usize]
                 {
-                    if match_pattern(
+                    if match_pattern!(
                         pattern,
                         square as u32,
                         p_color!($state.statics.pieces[index]),
-                        &$state,
+                        &$state
                     ) {
                         found = true;
                         break 'main;
