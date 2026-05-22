@@ -254,7 +254,7 @@ impl OverviewState {
         }
 
         let rules_str = rules.join("\n");
-        let rules_height = (rules.len()) as u16;
+        let rules_height = rules.len() as u16;
         configs.push((
             "Rules".to_string(), rules_str, rules_height.max(1)
         ));
@@ -299,12 +299,12 @@ impl OverviewState {
                     result.join(", ")
                 }
             };
+
             let promotions = if piece.promotions.is_empty() {
                 "-".to_string()
             } else {
                 piece.promotions.iter()
                     .map(|&p| state.statics.pieces[p as usize].name.clone())
-                    .map(|p| p.to_string())
                     .collect::<Vec<_>>()
                     .join(", ")
             };
@@ -370,15 +370,12 @@ impl OverviewState {
                 optional_promotions,
             };
 
-            if !piece_map.contains_key(&name) {
+            let entry = piece_map.entry(name.clone()).or_insert_with(|| {
                 piece_names.push(name.clone());
-                piece_map.insert(name.clone(), OverviewPiece {
-                    name: name.clone(),
-                    info: None,
-                });
-            }
+                OverviewPiece { name: name.clone(), info: None }
+            });
 
-            if let Some(entry) = piece_map.get_mut(&name) && color == WHITE {
+            if color == WHITE {
                 entry.info = Some(info);
             }
         }
@@ -482,10 +479,9 @@ fn init_playground(state: &mut State, index: PieceIndex) {
 
     let mut empty_fen = String::new();
 
-    let empty_ranks = vec![state.statics.files; state.statics.ranks as usize]
-        .iter()
-        .map(|n| format!("{}", n))
-        .collect::<Vec<String>>()
+    let empty_ranks = (0..state.statics.ranks)
+        .map(|_| state.statics.files.to_string())
+        .collect::<Vec<_>>()
         .join("/");
 
     empty_fen.push_str(&empty_ranks);
@@ -555,7 +551,7 @@ fn draw_game_selection(
     let files_list = List::new(
         previews
             .iter()
-            .map(|(title, _)| { title.to_string() })
+            .map(|(title, _)| title.to_string())
             .collect::<Vec<_>>()
     )
     .highlight_style(
@@ -1544,42 +1540,35 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         }
     );
 
-    let mut final_moves_scroll = current_moves_scroll;
-    let mut final_fen_scroll = current_fen_scroll;
-    let mut final_logs_scroll = current_logs_scroll;
-
-    if current_moves_scroll > max_moves_scroll
-    && current_moves_scroll < u16::MAX {
-        let offset = u16::MAX - current_moves_scroll;
-        final_moves_scroll = max_moves_scroll.saturating_sub(offset);
-        app.scroll_map.insert((app.tab, TAB_FOCUS_MOVES), final_moves_scroll);
-    } else if current_moves_scroll > max_moves_scroll {
-        final_moves_scroll = max_moves_scroll;
-    } else if current_moves_scroll == max_moves_scroll {
-        app.scroll_map.insert((app.tab, TAB_FOCUS_MOVES), u16::MAX);
-    }
-
-    if current_fen_scroll > max_fen_scroll
-    && current_fen_scroll < u16::MAX {
-        let offset = u16::MAX - current_fen_scroll;
-        final_fen_scroll = max_fen_scroll.saturating_sub(offset);
-        app.scroll_map.insert((app.tab, TAB_FOCUS_FEN), final_fen_scroll);
-    } else if current_fen_scroll > max_fen_scroll {
-        final_fen_scroll = max_fen_scroll;
-    } else if current_fen_scroll == max_fen_scroll {
-        app.scroll_map.insert((app.tab, TAB_FOCUS_FEN), u16::MAX);
-    }
-
-    if current_logs_scroll > max_logs_scroll
-    && current_logs_scroll < u16::MAX {
-        let offset = u16::MAX - current_logs_scroll;
-        final_logs_scroll = max_logs_scroll.saturating_sub(offset);
-        app.scroll_map.insert((app.tab, TAB_FOCUS_LOGS), final_logs_scroll);
-    } else if current_logs_scroll > max_logs_scroll {
-        final_logs_scroll = max_logs_scroll;
-    } else if current_logs_scroll == max_logs_scroll {
-        app.scroll_map.insert((app.tab, TAB_FOCUS_LOGS), u16::MAX);
-    }
+    let clamp_scroll = |current: u16, max: u16,
+        scroll_map: &mut HashMap<(usize, usize), u16>,
+        key: (usize, usize)| -> u16 {
+        if current > max && current < u16::MAX {
+            let clamped = max.saturating_sub(u16::MAX - current);
+            scroll_map.insert(key, clamped);
+            clamped
+        } else if current > max {
+            max
+        } else if current == max {
+            scroll_map.insert(key, u16::MAX);
+            max
+        } else {
+            current
+        }
+    };
+    let tab = app.tab;
+    let final_moves_scroll = clamp_scroll(
+        current_moves_scroll, max_moves_scroll,
+        &mut app.scroll_map, (tab, TAB_FOCUS_MOVES)
+    );
+    let final_fen_scroll = clamp_scroll(
+        current_fen_scroll, max_fen_scroll,
+        &mut app.scroll_map, (tab, TAB_FOCUS_FEN)
+    );
+    let final_logs_scroll = clamp_scroll(
+        current_logs_scroll, max_logs_scroll,
+        &mut app.scroll_map, (tab, TAB_FOCUS_LOGS)
+    );
 
     moves_paragraph = moves_paragraph.scroll((final_moves_scroll, 0));
     fen_paragraph = fen_paragraph.scroll((0, final_fen_scroll));
@@ -1668,7 +1657,7 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let mut list_state = ListState::default();
     list_state.select(Some(selected as usize));
 
-    let style = if app.focus == 0 {
+    let style = if app.focus == 0 && app.mode == TUI_NORMAL_MODE {
         Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
     } else {
         Style::default()
@@ -1795,7 +1784,7 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 .map(|(t, _)| Line::from(*t))
                 .collect();
 
-            let tabs_style = if app.focus == 1 {
+            let tabs_style = if app.focus == 1 && app.mode == TUI_NORMAL_MODE {
                 Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::Gray)
@@ -1871,9 +1860,9 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let width;
     let height;
 
-    if state_mutex.is_some() {
+    if let Some(pg_mutex) = state_mutex {
 
-        let mut state = state_mutex.unwrap().lock().unwrap_or_else(|e| {
+        let mut state = pg_mutex.lock().unwrap_or_else(|e| {
             panic!("Failed to lock playground state: {e}")
         });
 
@@ -1924,7 +1913,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             list_state.select(None);
         }
 
-        let style = if app.focus == 0 {
+        let style = if app.focus == 0 && app.mode == TUI_NORMAL_MODE {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
@@ -1949,11 +1938,9 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             enabled.get(selected as usize - 1).copied()
         };
 
-        state.playing = if selected_piece.is_some() {
-            p_color!(state.statics.pieces[selected_piece.unwrap() as usize])
-        } else {
-            state.playing
-        };
+        if let Some(piece_idx) = selected_piece {
+            state.playing = p_color!(state.statics.pieces[piece_idx]);
+        }
         state.position_hash = hash_position(&state);
 
         let mut out = Vec::with_capacity(64);
@@ -1974,15 +1961,13 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         let moves = legal_moves.iter()
             .filter(|mv| {
                 selected_piece
-                    .map_or(true, |idx| piece!(mv) == idx as u128)
+                    .is_none_or(|idx| piece!(mv) == idx as u128)
             })
             .collect::<Vec<_>>();
 
-        let piece_char = if selected_piece.is_some() {
-            state.statics.pieces[selected_piece.unwrap() as usize].char
-        } else {
-            ' '
-        };
+        let piece_char = selected_piece
+            .map(|idx| state.statics.pieces[idx].char)
+            .unwrap_or(' ');
 
         let mut piece_board = board!(state.statics.files, state.statics.ranks);
         let mut captr_board = board!(state.statics.files, state.statics.ranks);
@@ -2031,7 +2016,6 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 piece_diagram,
                 captr_diagram,
                 quiet_diagram,
-                format_game_state(&state)
             ]
             .iter()
             .fold(empty_diagram, |acc, s| combine_board_strings(&acc, s))
@@ -2411,7 +2395,7 @@ fn execute_playground_command(
     pg_state: &mut State,
     original_state: Option<&State>,
 ) {
-    let parts: Vec<&str> = command.trim().split_whitespace().collect();
+    let parts: Vec<&str> = command.split_whitespace().collect();
 
     match parts.as_slice() {
         ["reset"] => {
@@ -2420,7 +2404,7 @@ fn execute_playground_command(
             }
             init_playground(pg_state, 0);
         }
-        ["add", piece_char_str, square_str, ..] => {
+        ["add", piece_char_str, square_str] => {
             let piece_char = piece_char_str.chars().next();
             let piece_idx = piece_char.and_then(|c| {
                 pg_state.statics.pieces
@@ -2436,7 +2420,7 @@ fn execute_playground_command(
                 _ => log_2!("Usage: add [piece] [square]"),
             }
         }
-        ["del", piece_char_str, square_str, ..] => {
+        ["del", piece_char_str, square_str] => {
             let piece_char = piece_char_str.chars().next();
             let square = parse_square(square_str, pg_state);
             match (square, piece_char) {
@@ -2446,7 +2430,7 @@ fn execute_playground_command(
                         .iter()
                         .find(|p| p.char == c)
                         .map(|p| p_index!(p));
-                    if expected.map_or(false, |idx| board_piece == idx) {
+                    if expected == Some(board_piece) {
                         set_playground_piece(pg_state, NO_PIECE, sq);
                     } else {
                         log_2!("Usage: del [piece] [square]");

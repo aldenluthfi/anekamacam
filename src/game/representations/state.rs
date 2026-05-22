@@ -333,10 +333,7 @@ pub struct StaticState {
     pub halfmove_limit: u8,                                                     /* halfmoves before draw              */
     pub halfmove_pieces: Vec<bool>,                                             /* moving these pieces resets clock   */
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
-    pub opening_score: u32,                                                     /* opening threshold                  */
-    pub endgame_score: u32,                                                     /* endgame threshold                  */
-    pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
-    pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
+
 
     pub files: u8,
     pub ranks: u8,
@@ -359,6 +356,10 @@ pub struct StaticState {
     pub futility_margin: [[i32; 5]; 3],                                         /* [phase 0-2][depth 0-4]             */
     pub quiesce_lmr: Vec<f64>,                                                  /* [depth * MAX_DEPTH + moves checked]*/
     pub capture_lmr: Vec<f64>,                                                  /* [depth * MAX_DEPTH + moves checked]*/
+    pub opening_score: u32,                                                     /* opening threshold                  */
+    pub endgame_score: u32,                                                     /* endgame threshold                  */
+    pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
+    pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 }
 
 /// Main state of the game.
@@ -513,10 +514,6 @@ impl State {
             halfmove_limit: u8::MAX,
             halfmove_pieces: vec![false; piece_count],
             repetition_limit: u8::MAX,
-            opening_score: 0,
-            endgame_score: 0,
-            pst_opening: vec![vec![0; board_size]; piece_count],
-            pst_endgame: vec![vec![0; board_size]; piece_count],
 
             files,
             ranks,
@@ -565,7 +562,11 @@ impl State {
                 }
 
                 result
-            }
+            },
+            opening_score: 0,
+            endgame_score: 0,
+            pst_opening: vec![vec![0; board_size]; piece_count],
+            pst_endgame: vec![vec![0; board_size]; piece_count],
         });
 
         State {
