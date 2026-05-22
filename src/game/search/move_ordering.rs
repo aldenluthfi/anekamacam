@@ -76,12 +76,12 @@ macro_rules! lva {
             });
 
         out = out.into_iter().filter_map(|mv| {
-            if is_capture!(mv)
+            if m_capture!(mv)
             && move_type!(mv) == SINGLE_CAPTURE_MOVE
             && captured_square!(mv) as u16 == $target
             && !is_unload!(mv) {
                 Some(mv)
-            } else if is_capture!(mv)
+            } else if m_capture!(mv)
             && move_type!(mv) == MULTI_CAPTURE_MOVE
             && mv.1.iter().any({
                 |captured| {
@@ -193,7 +193,7 @@ macro_rules! score_move {
             |pm| pm.0 == $mv.0 && pm.1 == move_signature!($mv)
         ) {
             5_000_000                                                           /* PV move always ordered first        */
-        } else if !is_capture!($mv) {
+        } else if !m_capture!($mv) {
             let killers =
                 &$state.killer_hist[$state.search_ply as usize];
 

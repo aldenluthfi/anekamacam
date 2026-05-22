@@ -2010,9 +2010,12 @@ macro_rules! make_move {
 
                     clear!($state.virgin_board, captured_square);
 
-                    $state.piece_list[captured_piece].remove(
-                        &(captured_square as Square)
-                    );
+                    if captured_piece != piece_index
+                    || captured_square != drop_square {
+                        $state.piece_list[captured_piece].remove(
+                            &(captured_square as Square)
+                        );
+                    }
 
                     $state.opening_pst_bonus[captured_color as usize] -=
                         $state.statics.pst_opening[captured_piece]
