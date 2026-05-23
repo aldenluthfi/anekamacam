@@ -2689,9 +2689,9 @@ fn execute_command(
                     benchmark_perft(
                         state, &perft_path, depth, branch, usize::MAX
                     );
-                }
 
-                return;
+                    return;
+                }
             }
 
             benchmark_headless_perft(state, depth, branch);

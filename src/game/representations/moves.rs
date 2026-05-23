@@ -105,7 +105,9 @@ impl Default for Move {
 #[macro_export]
 macro_rules! move_signature {
     ($mv:expr) => {
-        $mv.1.iter().fold(0u64, |acc, &x| acc ^ x)
+        $mv.1.iter().fold(0u64, |acc, &x| acc ^ x) |
+        ($mv.1.iter().any(|&capture| !multi_move_is_unload!(capture)) as u64)
+        << 34                                                                   /* Set if its an actual capture       */
     };
 }
 
@@ -115,6 +117,14 @@ macro_rules! m_capture {
         move_type!($mv) == SINGLE_CAPTURE_MOVE && !is_unload!($mv) ||
         move_type!($mv) == MULTI_CAPTURE_MOVE  &&
         $mv.1.iter().any(|&capture| !multi_move_is_unload!(capture))
+    };
+}
+
+#[macro_export]
+macro_rules! m_pseudocapture {
+    ($mv:expr) => {
+        move_type!($mv) == SINGLE_CAPTURE_MOVE && !is_unload!($mv) ||
+        move_type!($mv) == MULTI_CAPTURE_MOVE && ($mv.1 >> 34) & 1 == 1
     };
 }
 

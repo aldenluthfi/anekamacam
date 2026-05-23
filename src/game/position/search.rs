@@ -553,11 +553,8 @@ pub fn alpha_beta(
 
     let mut pv_capture = false;
 
-    if let Some(pv_mv) = &pv_move
-    && (move_type!(pv_mv) == SINGLE_CAPTURE_MOVE
-    || move_type!(pv_mv) == MULTI_CAPTURE_MOVE)
-    {
-        pv_capture = true;
+    if let Some(pv_mv) = &pv_move {
+        pv_capture = m_pseudocapture!(pv_mv);
     }
 
     if depth < 3
@@ -604,10 +601,6 @@ pub fn alpha_beta(
             false
         );
         undo_null_move!(state);
-
-        if info.interrupt {
-            return 0;
-        }
 
         if score >= beta {
             return beta;
