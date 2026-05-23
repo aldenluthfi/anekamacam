@@ -15,7 +15,7 @@
 use crate::*;
 
 const TAB_TITLES: [&str; 3] = ["Game", "Overview", "Playground"];
-const TAB_FOCUSABLES: [u8; 3] = [3, 2, 1];
+const TAB_FOCUSABLES: [u8; 3] = [3, 2, 3];
 
 const PICKER_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX);
 const HELP_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX - 1);
@@ -24,6 +24,7 @@ enum TuiEvent {
     Input(KeyEvent),
     StateUpdate(BoardState),
     StateInit(Arc<Mutex<State>>),
+    PlaygroundUpdate(State),
     Unlock,
 }
 
@@ -141,6 +142,12 @@ impl Tui {
                     self.playground_state =
                         Some(Arc::new(Mutex::new(pg_state)));
                     self.game_state = Some(state);
+                    false
+                },
+                Ok(TuiEvent::PlaygroundUpdate(state)) => {
+                    if let Some(arc) = &self.playground_state {
+                        *arc.lock().unwrap() = state;
+                    }
                     false
                 },
                 Ok(TuiEvent::Unlock) => {
@@ -613,7 +620,16 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let tab_titles: Vec<Line> = TAB_TITLES
         .iter()
-        .map(|title| Line::raw(*title))
+        .enumerate()
+        .map(|(i, title)| {
+            if i == 2 && app.locked {
+                Line::styled(
+                    *title, Style::default().fg(Color::DarkGray)
+                )
+            } else {
+                Line::raw(*title)
+            }
+        })
         .collect();
 
     let tabs = Tabs::new(tab_titles)
@@ -750,8 +766,8 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             "Add a piece to the playground board at the given square"
         ),
         (
-            "del <piece> <square>",
-            "Remove a piece from the playground board at the given square"
+            "del <square>",
+            "Remove any piece from the playground board at the given square"
         ),
         ("reset", "Reset the playground board to its initial state"),
     ] } else { &[
@@ -1000,6 +1016,10 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     match app.tab {
         0 => {
+            let has_moves = app.board_state.as_ref()
+                .map(|s| !s.move_history.trim().is_empty())
+                .unwrap_or(false);
+
             let game_log_layout = Layout::default()
                 .direction(Direction::Vertical)
                 .spacing(Spacing::Overlap(1))
@@ -1021,45 +1041,12 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
                     .merge_borders(MergeStrategy::Exact)
             );
 
-            let game_guide_layout = Layout::default()
-                .direction(Direction::Horizontal)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Fill(4),
-                    Constraint::Fill(1),
-                    Constraint::Fill(2),
-                ])
-                .split(game_log_layout[0]);
-
             let board_guide = Paragraph::new(vec![
                 Line::from(vec![
                     Span::from("Board View"),
                 ]),
             ])
             .alignment(Alignment::Center);
-            let board_center = game_guide_layout[0]
-                .centered_vertically(Constraint::Length(1));
-
-            let moves_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Moves"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
-
-            let right_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Min(0),
-                    Constraint::Length(3)
-                ])
-                .split(game_guide_layout[2]);
 
             let field_guide = Paragraph::new(vec![
                 Line::from(vec![
@@ -1086,10 +1073,74 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             );
 
             frame.render_widget(game_log_guide, game_log_layout[1]);
-            frame.render_widget(board_guide, board_center);
-            frame.render_widget(moves_guide, game_guide_layout[1]);
-            frame.render_widget(field_guide, right_layout[0]);
-            frame.render_widget(fen_guide, right_layout[1]);
+
+            if has_moves {
+                let game_guide_layout = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .spacing(Spacing::Overlap(1))
+                    .constraints([
+                        Constraint::Fill(4),
+                        Constraint::Fill(1),
+                        Constraint::Fill(2),
+                    ])
+                    .split(game_log_layout[0]);
+
+                let board_center = game_guide_layout[0]
+                    .centered_vertically(Constraint::Length(1));
+
+                let moves_guide = Paragraph::new(vec![
+                    Line::from(vec![
+                        Span::from("Moves"),
+                    ]),
+                ])
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .padding(Padding::horizontal(1))
+                        .merge_borders(MergeStrategy::Exact)
+                );
+
+                let right_layout = Layout::default()
+                    .direction(Direction::Vertical)
+                    .spacing(Spacing::Overlap(1))
+                    .constraints([
+                        Constraint::Min(0),
+                        Constraint::Length(3)
+                    ])
+                    .split(game_guide_layout[2]);
+
+                frame.render_widget(board_guide, board_center);
+                frame.render_widget(
+                    moves_guide, game_guide_layout[1]
+                );
+                frame.render_widget(field_guide, right_layout[0]);
+                frame.render_widget(fen_guide, right_layout[1]);
+            } else {
+                let game_guide_layout = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .spacing(Spacing::Overlap(1))
+                    .constraints([
+                        Constraint::Fill(5),
+                        Constraint::Fill(2),
+                    ])
+                    .split(game_log_layout[0]);
+
+                let board_center = game_guide_layout[0]
+                    .centered_vertically(Constraint::Length(1));
+
+                let right_layout = Layout::default()
+                    .direction(Direction::Vertical)
+                    .spacing(Spacing::Overlap(1))
+                    .constraints([
+                        Constraint::Min(0),
+                        Constraint::Length(3)
+                    ])
+                    .split(game_guide_layout[1]);
+
+                frame.render_widget(board_guide, board_center);
+                frame.render_widget(field_guide, right_layout[0]);
+                frame.render_widget(fen_guide, right_layout[1]);
+            }
 
         },
         1 => {
@@ -1185,28 +1236,22 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             frame.render_widget(piece_detail_guide, right_layout[2]);
         },
         2 => {
-            let chunks_layout = Layout::default()
-                .direction(Direction::Horizontal)
+            let piece_selected =
+                *app.scroll_map.get(&(2, 0)).unwrap_or(&0) > 0;
+
+            let pg_log_layout = Layout::default()
+                .direction(Direction::Vertical)
                 .spacing(Spacing::Overlap(1))
                 .constraints([
-                    Constraint::Percentage(30),
                     Constraint::Fill(1),
+                    Constraint::Length(5),
                 ])
                 .split(view_layout[1]);
 
-            let left_layout = Layout::default()
-                .direction(Direction::Horizontal)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Percentage(50),
-                    Constraint::Fill(1),
-                ])
-                .split(chunks_layout[0]);
-
-            let piece_list = Paragraph::new(vec![
+            let log_guide = Paragraph::new(vec![
                 Line::from(vec![
-                    Span::from("Pieces")
-                ])
+                    Span::from("Logs"),
+                ]),
             ])
             .block(
                 Block::default()
@@ -1215,10 +1260,19 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
                     .merge_borders(MergeStrategy::Exact)
             );
 
-            let move_list = Paragraph::new(vec![
+            let chunks_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .spacing(Spacing::Overlap(1))
+                .constraints([
+                    Constraint::Fill(5),
+                    Constraint::Fill(2),
+                ])
+                .split(pg_log_layout[0]);
+
+            let piece_list_guide = Paragraph::new(vec![
                 Line::from(vec![
-                    Span::from("Moves"),
-                ]),
+                    Span::from("Pieces")
+                ])
             ])
             .block(
                 Block::default()
@@ -1233,12 +1287,41 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
                 ]),
             ])
             .alignment(Alignment::Center);
-            let board_center = chunks_layout[1]
+            let board_center = chunks_layout[0]
                 .centered_vertically(Constraint::Length(1));
 
-            frame.render_widget(piece_list, left_layout[0]);
-            frame.render_widget(move_list, left_layout[1]);
+            frame.render_widget(log_guide, pg_log_layout[1]);
             frame.render_widget(board_guide, board_center);
+
+            if piece_selected {
+                let left_layout = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .spacing(Spacing::Overlap(1))
+                    .constraints([
+                        Constraint::Percentage(50),
+                        Constraint::Fill(1),
+                    ])
+                    .split(chunks_layout[1]);
+
+                let move_list_guide = Paragraph::new(vec![
+                    Line::from(vec![
+                        Span::from("Moves"),
+                    ]),
+                ])
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .padding(Padding::horizontal(1))
+                        .merge_borders(MergeStrategy::Exact)
+                );
+
+                frame.render_widget(piece_list_guide, left_layout[0]);
+                frame.render_widget(move_list_guide, left_layout[1]);
+            } else {
+                frame.render_widget(
+                    piece_list_guide, chunks_layout[1]
+                );
+            }
         },
         usize::MAX => {
             let selection_layout = Layout::default()
@@ -1334,31 +1417,66 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         .split(area);
 
     let top_rect = main_layout[0];
-    let top_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Fill(4),
-            Constraint::Fill(1),
-            Constraint::Fill(2),
-        ])
-        .split(top_rect);
 
-    let board_area = top_layout[0]
-        .centered_vertically(
+    let has_moves = app.board_state.as_ref()
+        .map(|s| !s.move_history.trim().is_empty())
+        .unwrap_or(false);
+
+    if !has_moves && app.focus == TAB_FOCUS_MOVES {
+        app.focus = TAB_FOCUS_FEN;
+    }
+
+    let board_area;
+    let moves_area;
+    let details_area;
+    let fen_area;
+
+    if has_moves {
+        let top_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Fill(4),
+                Constraint::Fill(1),
+                Constraint::Fill(2),
+            ])
+            .split(top_rect);
+        board_area = top_layout[0].centered_vertically(
             Constraint::Length(board.lines().count() as u16 + 1)
         );
-    let moves_area = top_layout[1];
-
-    let right_most_rect = Layout::default()
-        .direction(Direction::Vertical)
-        .spacing(Spacing::Overlap(1))
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(3)
-        ])
-        .split(top_layout[2]);
-    let details_area = right_most_rect[0];
-    let fen_area = right_most_rect[1];
+        moves_area = top_layout[1];
+        let right_most_rect = Layout::default()
+            .direction(Direction::Vertical)
+            .spacing(Spacing::Overlap(1))
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(3)
+            ])
+            .split(top_layout[2]);
+        details_area = right_most_rect[0];
+        fen_area = right_most_rect[1];
+    } else {
+        let top_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Fill(5),
+                Constraint::Fill(2),
+            ])
+            .split(top_rect);
+        board_area = top_layout[0].centered_vertically(
+            Constraint::Length(board.lines().count() as u16 + 1)
+        );
+        moves_area = Rect::default();
+        let right_most_rect = Layout::default()
+            .direction(Direction::Vertical)
+            .spacing(Spacing::Overlap(1))
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(3)
+            ])
+            .split(top_layout[1]);
+        details_area = right_most_rect[0];
+        fen_area = right_most_rect[1];
+    }
 
     let board_block = Block::default()
         .borders(Borders::NONE);
@@ -1575,7 +1693,9 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     logs_paragraph = logs_paragraph.scroll((final_logs_scroll, 0));
 
     frame.render_widget(board_paragraph, board_area);
-    frame.render_widget(moves_paragraph, moves_area);
+    if has_moves {
+        frame.render_widget(moves_paragraph, moves_area);
+    }
     frame.render_widget(details_table, details_area);
     frame.render_widget(fen_paragraph, fen_area);
     frame.render_widget(logs_paragraph, logs_area);
@@ -1835,28 +1955,33 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
 fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
-    let layout = Layout::default()
-        .direction(Direction::Horizontal)
+    const TAB_FOCUS_LOGS: usize = 2;
+
+    let main_layout = Layout::default()
+        .direction(Direction::Vertical)
         .constraints([
+            Constraint::Percentage(75),
             Constraint::Percentage(25),
-            Constraint::Fill(1)
         ])
         .split(area);
 
-    let left_layout = Layout::default()
+    let layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
+            Constraint::Fill(5),
+            Constraint::Fill(2)
         ])
-        .split(layout[0]);
+        .split(main_layout[0]);
+
+    let logs_area = main_layout[1];
 
     let state_mutex = app.playground_state.as_mut();
-    let mut list_state = ListState::default();
+    let mut piece_list_state = ListState::default();
+    let mut move_list_state = ListState::default();
 
     let piece_list;
     let board_str;
-    let moves_list;
+    let move_list_opt;
     let width;
     let height;
 
@@ -1905,15 +2030,27 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             }
 
             if selected == 0 {
-                list_state.select(None);
+                piece_list_state.select(None);
             } else {
-                list_state.select(Some(enabled[selected as usize - 1]));
+                piece_list_state.select(
+                    Some(enabled[selected as usize - 1])
+                );
             }
-        } else{
-            list_state.select(None);
+        } else {
+            piece_list_state.select(None);
         }
 
-        let style = if app.focus == 0 && app.mode == TUI_NORMAL_MODE {
+        let selected_piece = if selected == 0 {
+            None
+        } else {
+            enabled.get(selected as usize - 1).copied()
+        };
+
+        if selected_piece.is_none() && app.focus == 1 {
+            app.focus = 0;
+        }
+
+        let piece_style = if app.focus == 0 && app.mode == TUI_NORMAL_MODE {
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
         } else {
             Style::default()
@@ -1923,7 +2060,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .border_style(style)
+                    .border_style(piece_style)
                     .padding(Padding::horizontal(1))
             )
             .highlight_style(
@@ -1932,96 +2069,144 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                     .add_modifier(Modifier::BOLD)
             );
 
-        let selected_piece = if selected == 0 {
-            None
-        } else {
-            enabled.get(selected as usize - 1).copied()
-        };
+        match selected_piece {
+            Some(piece_idx) => {
+                state.playing = p_color!(state.statics.pieces[piece_idx]);
+                state.position_hash = hash_position(&state);
 
-        if let Some(piece_idx) = selected_piece {
-            state.playing = p_color!(state.statics.pieces[piece_idx]);
-        }
-        state.position_hash = hash_position(&state);
+                let mut out = Vec::with_capacity(64);
+                let mut scratch = Vec::with_capacity(16);
 
-        let mut out = Vec::with_capacity(64);
-        let mut scratch = Vec::with_capacity(16);
+                generate_all_moves_and_drops(
+                    &state, &mut out, &mut scratch
+                );
 
-        generate_all_moves_and_drops(&state, &mut out, &mut scratch);
+                let mut legal_moves = Vec::with_capacity(out.len());
 
-        let mut legal_moves = Vec::with_capacity(out.len());
-
-        let temp_state = &mut state.clone();
-        for mv in out.iter() {
-            if make_move!(temp_state, mv.clone()) {
-                undo_move!(temp_state);
-                legal_moves.push(mv.clone());
-            }
-        }
-
-        let moves = legal_moves.iter()
-            .filter(|mv| {
-                selected_piece
-                    .is_none_or(|idx| piece!(mv) == idx as u128)
-            })
-            .collect::<Vec<_>>();
-
-        let piece_char = selected_piece
-            .map(|idx| state.statics.pieces[idx].char)
-            .unwrap_or(' ');
-
-        let mut piece_board = board!(state.statics.files, state.statics.ranks);
-        let mut captr_board = board!(state.statics.files, state.statics.ranks);
-        let mut quiet_board = board!(state.statics.files, state.statics.ranks);
-        let empty_board = board!(state.statics.files, state.statics.ranks);
-
-        moves.iter().for_each(|mv| {
-            set!(piece_board, start!(mv) as u32);
-            if m_capture!(mv) {
-                if move_type!(mv) == SINGLE_CAPTURE_MOVE {
-                    set!(captr_board, captured_square!(mv) as u32);
-                    set!(quiet_board, end!(mv) as u32);
-                } else if move_type!(mv) == MULTI_CAPTURE_MOVE {
-                    mv.1.iter().for_each(|&cap| {
-                        set!(
-                            captr_board,
-                            multi_move_captured_square!(cap) as u32
-                        );
-                    });
-                    set!(quiet_board, end!(mv) as u32);
+                let temp_state = &mut state.clone();
+                for mv in out.iter() {
+                    if make_move!(temp_state, mv.clone()) {
+                        undo_move!(temp_state);
+                        legal_moves.push(mv.clone());
+                    }
                 }
-            } else {
-                set!(quiet_board, end!(mv) as u32);
-            }
-        });
 
-        let piece_diagram = format_board(&piece_board, Some(piece_char));
-        let captr_diagram = format_board(&captr_board, Some('✻'));
-        let quiet_diagram = format_board(&quiet_board, Some('◯'));
-        let empty_diagram = format_board(&empty_board, None);
+                let filtered_moves: Vec<&Move> = legal_moves.iter()
+                    .filter(|mv| piece!(mv) == piece_idx as u128)
+                    .collect();
 
-        let moves_strs = moves.iter()
-            .map(|mv| format_move(mv, &state))
-            .map(Span::from)
-            .collect::<Vec<_>>();
+                let mut selected_move =
+                    *app.scroll_map.get(&(2, 1)).unwrap_or(&0);
+                if selected_move > filtered_moves.len() as u16 {
+                    selected_move = filtered_moves.len() as u16;
+                    app.scroll_map.insert((2, 1), selected_move);
+                }
+                if selected_move == 0 {
+                    move_list_state.select(None);
+                } else {
+                    move_list_state.select(
+                        Some(selected_move as usize - 1)
+                    );
+                }
 
-        moves_list = List::new(moves_strs)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-            );
+                let mut move_items =
+                    Vec::with_capacity(filtered_moves.len());
+                for mv in filtered_moves.iter() {
+                    move_items.push(
+                        ListItem::new(format_move(mv, &state))
+                    );
+                }
 
-        board_str = if selected_piece.is_some() {
-            [
-                piece_diagram,
-                captr_diagram,
-                quiet_diagram,
-            ]
-            .iter()
-            .fold(empty_diagram, |acc, s| combine_board_strings(&acc, s))
-        } else {
-            format_game_state(&state)
-        };
+                let move_style =
+                    if app.focus == 1 && app.mode == TUI_NORMAL_MODE {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    };
+
+                move_list_opt = Some(
+                    List::new(move_items)
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .border_style(move_style)
+                                .padding(Padding::horizontal(1))
+                        )
+                        .highlight_style(
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        )
+                );
+
+                let piece_char = state.statics.pieces[piece_idx].char;
+                let active_moves: Vec<&Move> = if selected_move == 0 {
+                    filtered_moves.iter().copied().collect()
+                } else {
+                    filtered_moves
+                        .get(selected_move as usize - 1)
+                        .copied()
+                        .into_iter()
+                        .collect()
+                };
+
+                let mut piece_board =
+                    board!(state.statics.files, state.statics.ranks);
+                let mut captr_board =
+                    board!(state.statics.files, state.statics.ranks);
+                let mut quiet_board =
+                    board!(state.statics.files, state.statics.ranks);
+                let empty_board =
+                    board!(state.statics.files, state.statics.ranks);
+
+                active_moves.iter().for_each(|mv| {
+                    set!(piece_board, start!(mv) as u32);
+                    if m_capture!(mv) {
+                        if move_type!(mv) == SINGLE_CAPTURE_MOVE {
+                            set!(
+                                captr_board,
+                                captured_square!(mv) as u32
+                            );
+                            set!(quiet_board, end!(mv) as u32);
+                        } else if move_type!(mv) == MULTI_CAPTURE_MOVE {
+                            mv.1.iter().for_each(|&cap| {
+                                set!(
+                                    captr_board,
+                                    multi_move_captured_square!(cap) as u32
+                                );
+                            });
+                            set!(quiet_board, end!(mv) as u32);
+                        }
+                    } else {
+                        set!(quiet_board, end!(mv) as u32);
+                    }
+                });
+
+                let piece_diagram =
+                    format_board(&piece_board, Some(piece_char));
+                let captr_diagram =
+                    format_board(&captr_board, Some('✻'));
+                let quiet_diagram =
+                    format_board(&quiet_board, Some('◯'));
+                let empty_diagram = format_board(&empty_board, None);
+
+                board_str = [
+                    piece_diagram,
+                    captr_diagram,
+                    quiet_diagram,
+                ]
+                .iter()
+                .fold(empty_diagram, |acc, s| {
+                    combine_board_strings(&acc, s)
+                });
+            },
+            None => {
+                move_list_opt = None;
+                board_str = format_game_state(&state);
+            },
+        }
 
         width = board_str
             .lines()
@@ -2037,25 +2222,140 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 .padding(Padding::horizontal(1))
         );
         board_str = "Loading...".to_string();
-        moves_list = List::new(vec![
-            Span::from("Loading...")
-        ]).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .padding(Padding::horizontal(1))
-        );
+        move_list_opt = None;
         width = board_str.chars().count() as u16;
         height = 1;
     }
 
-    frame.render_stateful_widget(piece_list, left_layout[0], &mut list_state);
-    frame.render_widget(moves_list, left_layout[1]);
+    if let Some(move_list) = move_list_opt {
+        let left_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(50),
+                Constraint::Percentage(50),
+            ])
+            .split(layout[1]);
+        frame.render_stateful_widget(
+            piece_list, left_layout[0], &mut piece_list_state
+        );
+        frame.render_stateful_widget(
+            move_list, left_layout[1], &mut move_list_state
+        );
+    } else {
+        frame.render_stateful_widget(
+            piece_list, layout[1], &mut piece_list_state
+        );
+    }
+
     frame.render_widget(
         Paragraph::new(board_str),
-        layout[1].centered(
+        layout[0].centered(
             Constraint::Length(width), Constraint::Length(height)
         )
     );
+
+    let mut logs_block = Block::default()
+        .padding(Padding::horizontal(1))
+        .borders(Borders::ALL);
+    if app.focus == TAB_FOCUS_LOGS && app.mode == TUI_NORMAL_MODE {
+        logs_block = logs_block.border_style(
+            Style::default().fg(Color::Yellow)
+        );
+    }
+
+    let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| {
+        e.into_inner()
+    });
+    let log_lines = logs
+        .iter()
+        .rev()
+        .take(MAX_LOGS_LEN)
+        .rev()
+        .filter(|line| {
+            let level = if line.starts_with("[1]") {
+                1
+            } else if line.starts_with("[2]") {
+                2
+            } else if line.starts_with("[3]") {
+                3
+            } else if line.starts_with("[4]") {
+                4
+            } else if line.starts_with("[5]") {
+                5
+            } else {
+                unreachable!()
+            };
+
+            level <= configured_verbosity_level()
+        })
+        .map(|line| {
+            let level_color = if line.starts_with("[1]") {
+                Color::LightRed
+            } else if line.starts_with("[2]") {
+                Color::Yellow
+            } else if line.starts_with("[3]") {
+                Color::LightGreen
+            } else if line.starts_with("[4]") {
+                Color::LightBlue
+            } else if line.starts_with("[5]") {
+                Color::Magenta
+            } else {
+                Color::Gray
+            };
+
+            if line.starts_with('[') && let Some(end_idx) = line.find(']') {
+                let (level_str, rest) = line.split_at(end_idx + 1);
+                return Line::from(vec![
+                    Span::styled(
+                        level_str.to_string(),
+                        Style::default().fg(level_color)
+                    ),
+                    Span::raw(rest.to_string()),
+                ]);
+            }
+
+            Line::from(Span::raw(line.clone()))
+        })
+        .collect::<Vec<_>>();
+
+    let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
+        .block(logs_block);
+
+    let clamp_scroll = |current: u16, max: u16,
+        scroll_map: &mut HashMap<(usize, usize), u16>,
+        key: (usize, usize)| -> u16 {
+        if current > max && current < u16::MAX {
+            let clamped = max.saturating_sub(u16::MAX - current);
+            scroll_map.insert(key, clamped);
+            clamped
+        } else if current > max {
+            max
+        } else if current == max {
+            scroll_map.insert(key, u16::MAX);
+            max
+        } else {
+            current
+        }
+    };
+
+    let max_logs_scroll =
+        (logs_paragraph.line_count(logs_area.width) as u16)
+            .saturating_sub(logs_area.height);
+    let current_logs_scroll = app.scroll_map
+        .get(&(0, TAB_FOCUS_LOGS))
+        .copied()
+        .unwrap_or_else(|| {
+            panic!(
+                "Scroll value missing for tab 0, focus {}",
+                TAB_FOCUS_LOGS
+            )
+        });
+    let final_logs_scroll = clamp_scroll(
+        current_logs_scroll, max_logs_scroll,
+        &mut app.scroll_map, (0, TAB_FOCUS_LOGS)
+    );
+    logs_paragraph = logs_paragraph.scroll((final_logs_scroll, 0));
+    frame.render_widget(logs_paragraph, logs_area);
 }
 
 fn render(frame: &mut Frame<'_>, app: &mut Tui) {
@@ -2102,6 +2402,7 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 fn execute_command(
     command: &str,
     state: &mut State,
+    playground: Option<&mut State>,
     file_name: Option<String>,
     ttable: Arc<TTable>,
     qtable: Arc<QTable>,
@@ -2111,6 +2412,24 @@ fn execute_command(
     let trimmed = command.trim();
 
     if trimmed.is_empty() {
+        return;
+    }
+
+    let is_playground = playground.is_some();
+
+    if is_playground && !matches!(
+        trimmed.split_whitespace().next().unwrap_or(""),
+        "reset" | "add" | "del"
+    ) {
+        log_2!("Invalid command: {}", trimmed);
+        return;
+    }
+
+    if !is_playground && matches!(
+        trimmed.split_whitespace().next().unwrap_or(""),
+        "add" | "del"
+    ) {
+        log_2!("Invalid command: {}", trimmed);
         return;
     }
 
@@ -2133,18 +2452,29 @@ fn execute_command(
             );
         }
         "reset" => {
-            while state.ply_counter > 0 {
-                undo_move!(state);
-
-                let board_state = BoardState::from_state(state);
+            if let Some(pg) = playground {
+                *pg = state.clone();
+                init_playground(pg, 0);
 
                 sender.send(
-                    TuiEvent::StateUpdate(board_state)
-                ).unwrap_or_else(
-                    |e| {
+                    TuiEvent::PlaygroundUpdate((*pg).clone())
+                ).unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to send TuiEvent::PlaygroundUpdate: {e}"
+                    )
+                });
+            } else {
+                while state.ply_counter > 0 {
+                    undo_move!(state);
+
+                    let board_state = BoardState::from_state(state);
+
+                    sender.send(
+                        TuiEvent::StateUpdate(board_state)
+                    ).unwrap_or_else(|e| {
                         panic!("Failed to send TuiEvent::StateUpdate: {e}")
-                    }
-                );
+                    });
+                }
             }
         }
         "ls" => {
@@ -2384,62 +2714,74 @@ fn execute_command(
                 log_2!("Invalid move: {}", mv_str);
             }
         }
+        _ if trimmed.starts_with("add") => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() != 3 {
+                log_2!("Usage: add [piece] [square]");
+                return;
+            }
+
+            let playground_state = playground.unwrap();
+
+            let piece_character = parts[1].chars().next();
+            let piece_index = piece_character.and_then(|character| {
+                playground_state.statics.pieces
+                    .iter()
+                    .position(|piece| piece.char == character)
+                    .map(|index| index as PieceIndex)
+            });
+            let target_square = parse_square(parts[2], playground_state);
+
+            match (piece_index, target_square) {
+                (Some(index), Some(square)) =>
+                    set_playground_piece(playground_state, index, square),
+                _ => {
+                    log_2!("Usage: add [piece] [square]");
+                    return;
+                }
+            }
+
+            sender.send(
+                TuiEvent::PlaygroundUpdate(playground_state.clone())
+            ).unwrap_or_else(|e| {
+                panic!(
+                    "Failed to send TuiEvent::PlaygroundUpdate: {e}"
+                )
+            });
+        }
+        _ if trimmed.starts_with("del") => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() != 2 {
+                log_2!("Usage: del [square]");
+                return;
+            }
+
+            let playground_state = playground.unwrap();
+
+            let target_square = parse_square(parts[1], playground_state);
+
+            if target_square.is_none() {
+                log_2!("Usage: del [square]");
+                return;
+            }
+
+            let square = target_square.unwrap();
+
+            set_playground_piece(playground_state, NO_PIECE, square);
+
+            sender.send(
+                TuiEvent::PlaygroundUpdate(playground_state.clone())
+            ).unwrap_or_else(|e| {
+                panic!(
+                    "Failed to send TuiEvent::PlaygroundUpdate: {e}"
+                )
+            });
+        }
         _ => {
             log_2!("Invalid command: {}", trimmed);
         }
-    }
-}
-
-fn execute_playground_command(
-    command: &str,
-    pg_state: &mut State,
-    original_state: Option<&State>,
-) {
-    let parts: Vec<&str> = command.split_whitespace().collect();
-
-    match parts.as_slice() {
-        ["reset"] => {
-            if let Some(src) = original_state {
-                *pg_state = src.clone();
-            }
-            init_playground(pg_state, 0);
-        }
-        ["add", piece_char_str, square_str] => {
-            let piece_char = piece_char_str.chars().next();
-            let piece_idx = piece_char.and_then(|c| {
-                pg_state.statics.pieces
-                    .iter()
-                    .position(|p| p.char == c)
-                    .map(|i| i as PieceIndex)
-            });
-            let square = parse_square(square_str, pg_state);
-            match (piece_idx, square) {
-                (Some(idx), Some(sq)) => {
-                    set_playground_piece(pg_state, idx, sq);
-                }
-                _ => log_2!("Usage: add [piece] [square]"),
-            }
-        }
-        ["del", piece_char_str, square_str] => {
-            let piece_char = piece_char_str.chars().next();
-            let square = parse_square(square_str, pg_state);
-            match (square, piece_char) {
-                (Some(sq), Some(c)) => {
-                    let board_piece = pg_state.main_board[sq as usize];
-                    let expected = pg_state.statics.pieces
-                        .iter()
-                        .find(|p| p.char == c)
-                        .map(|p| p_index!(p));
-                    if expected == Some(board_piece) {
-                        set_playground_piece(pg_state, NO_PIECE, sq);
-                    } else {
-                        log_2!("Usage: del [piece] [square]");
-                    }
-                }
-                _ => log_2!("Usage: del [piece] [square]"),
-            }
-        }
-        _ => log_2!("Usage: add/del [piece] [square] | reset"),
     }
 }
 
@@ -2461,23 +2803,6 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 return false;
             }
 
-            if app.tab == 2 {
-                let command = app.input.clone();
-                app.input.clear();
-                let game_guard = app.game_state
-                    .as_ref()
-                    .map(|arc| arc.lock().unwrap());
-                if let Some(pg_arc) = &app.playground_state {
-                    let mut pg_state = pg_arc.lock().unwrap();
-                    execute_playground_command(
-                        &command,
-                        &mut pg_state,
-                        game_guard.as_deref(),
-                    );
-                }
-                return false;
-            }
-
             if app.locked {
                 log_2!("Command execution in progress, please wait...");
                 return false;
@@ -2488,30 +2813,54 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             thread::spawn({
                 let command = app.input.clone();
                 let file_name = app.file_name.clone();
+
                 let arc_state = app.game_state.as_mut().unwrap_or_else(
                     || {
                         panic!("Game state is None when executing command")
                     }
                 ).clone();
+
+                let arc_playground = app.playground_state.as_mut()
+                    .unwrap_or_else(
+                    || {
+                        panic!(
+                            "Playground state is None when executing command"
+                        )
+                    }
+                ).clone();
+
                 let sender = app.sender.clone();
                 let threads = app.threads;
+                let tab = app.tab;
 
                 move || {
-                    let mut state = arc_state.lock().unwrap_or_else(
-                        |_| {
+                    let table = TTable::default();
+                    let qtable = QTable::default();
+
+                    let mut state = arc_state.lock()
+                        .unwrap_or_else(|_| {
                             panic!(
                                 concat!(
                                     "Failed to lock game state ",
                                     "for command execution"
                                 )
                             )
-                        }
-                    );
-                    let table = TTable::default();
-                    let qtable = QTable::default();
+                        });
+
+                    let mut playground = arc_playground.lock()
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                concat!(
+                                    "Failed to lock playground state ",
+                                    "for command execution"
+                                )
+                            )
+                        });
+
                     execute_command(
                         &command,
                         &mut state,
+                        if tab == 2 { Some(&mut playground) } else { None },
                         file_name,
                         Arc::new(table),
                         Arc::new(qtable),
@@ -2719,7 +3068,12 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Tab) => {
-            app.tab = (app.tab.saturating_add(1)) % TAB_TITLES.len();
+            let next = (app.tab.saturating_add(1)) % TAB_TITLES.len();
+            app.tab = if next == 2 && app.locked {
+                (next + 1) % TAB_TITLES.len()
+            } else {
+                next
+            };
             app.focus = 0;
             false
         },
