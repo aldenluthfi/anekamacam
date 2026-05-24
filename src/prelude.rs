@@ -96,6 +96,7 @@ pub use crate::io::logger::{
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
 pub use crate::io::tui::tui;
+pub use crate::io::protocols::translation::Translator;
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
@@ -207,6 +208,8 @@ lazy_static! {
         .unwrap_or_else(|e| {
             panic!("Failed to compile COMMENT_PATTERN regex: {e}")
         });
+    pub static ref SECTION_PATTERN: Regex =
+        Regex::new(r"= (.+) =").unwrap();
     pub static ref ENGINE_START: Instant = Instant::now();
     pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
         array::from_fn(|_| random_u128());

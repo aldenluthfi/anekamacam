@@ -14,9 +14,10 @@ use crate::*;
                           MOVE STRING REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// Formats a move into the engine's canonical text representation.
+/// Formats a move into the engine's canonical text representation. Applies
+/// protocol translation if needed.
 ///
-/// Canonical grammar:
+/// Cheesy Move Notation (CMN):
 /// - `[drop_piece]@` (optional drop prefix)
 /// - `[start]` (always present)
 /// - `:[end]` for quiet and multi-capture moves
@@ -29,7 +30,9 @@ use crate::*;
 ///
 /// The resulting string is used for user-facing display and as the matching
 /// key for `parse_move` when validating textual input.
-pub fn format_move(mv: &Move, state: &State) -> String {
+pub fn format_move(
+    mv: &Move, state: &State, dict: Option<&Translator>
+) -> String {
     let mut move_str = String::new();
 
     if mv == &null_move() {
@@ -107,6 +110,12 @@ pub fn format_move(mv: &Move, state: &State) -> String {
         move_str.push_str(&format!("={}", promo_char));
     }
 
+    if let Some(translator) = dict {
+        for (k, v) in &translator.moves {
+            move_str = k.replace_all(&move_str, v).into_owned();
+        }
+    }
+
     move_str
 }
 
@@ -114,21 +123,23 @@ pub fn format_move(mv: &Move, state: &State) -> String {
 ///
 /// The input is compared to `format_move` output for each candidate and
 /// returns the first exact match after trimming whitespace.
-pub fn parse_move(move_str: &str, state: &State) -> Option<Move> {
-    let mut moves = Vec::with_capacity(64);
+pub fn parse_move(
+    move_str: &str, state: &State, dict: Option<&Translator>
+) -> Option<Move> {
+    let mut out = Vec::with_capacity(64);
     let mut scratch = Vec::with_capacity(16);
-    generate_all_moves_and_drops(state, &mut moves, &mut scratch);
+    generate_all_moves_and_drops(state, &mut out, &mut scratch);
 
-    moves
+    out
         .into_iter()
-        .find(|mv| format_move(mv, state).trim() == move_str.trim())
+        .find(|mv| format_move(mv, state, dict).trim() == move_str.trim())
 }
 
 pub fn format_move_history(state: &State) -> String {
     let mut history_strings = Vec::new();
 
     for snap in state.history.iter() {
-        history_strings.push(format_move(&snap.move_ply, state));
+        history_strings.push(format_move(&snap.move_ply, state, None));
     }
 
     let mut result = String::new();

@@ -493,7 +493,7 @@ pub fn benchmark_perft(
             break;
         }
 
-        state.load_fen(&fen);
+        state.load_fen(&fen, None);
 
         let expected_perfts =
             [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
@@ -599,7 +599,7 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     }
 
     for mv in possible_moves {
-        let formatted_move = format_move(&mv, state);
+        let formatted_move = format_move(&mv, state, None);
         let new_prefix = format!("{}{}", prefix, formatted_move);
 
         if make_move!(state, mv) {
