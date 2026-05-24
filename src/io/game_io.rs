@@ -23,8 +23,6 @@ lazy_static! {
     pub static ref ENP_PATTERN: Regex =
         Regex::new(r"^([0-9a-fA-F]{3})([0-9a-fA-F]{3})(.)$|^\*$").unwrap();
     pub static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
-    pub static ref SECTION_PATTERN: Regex =
-        Regex::new(r"= (.+) =[^=]+").unwrap();
     pub static ref IN_HAND_PATTERN: Regex = Regex::new(r"(\d*)(.)").unwrap();
 }
 
@@ -161,7 +159,7 @@ pub fn set_piece_dynamic_parameters(
 /// Parses tuned parameters from a flat space-separated file.
 ///
 /// Token order:
-/// 
+///
 /// 1. opening phase score, endgame phase score,
 /// 2. opening values (piece-type count), endgame values (piece-type count),
 /// 3. big flags, major flags,
@@ -438,19 +436,23 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
-    let sections = SECTION_PATTERN
-        .captures_iter(&cleaned)
-        .map(|cap| {
-            let section_name = cap[1].trim().to_string();
-            let section_body = cap[0]
-                .lines()
-                .skip(1)
-                .map(str::to_string)
-                .filter(|line| !line.trim().is_empty())
-                .collect::<Vec<String>>();
-            (section_name, section_body)
-        })
-        .collect::<HashMap<_, _>>();
+    let section_titles = SECTION_PATTERN
+        .captures_iter(&cleaned);
+    let section_contents = SECTION_PATTERN
+        .split(&cleaned)
+        .filter(|content| !content.trim().is_empty());
+
+    let mut sections = HashMap::new();
+
+    for (title, content) in section_titles.zip(section_contents) {
+        let section_name = title[1].trim().to_string();
+        let section_body = content
+            .lines()
+            .map(str::to_string)
+            .filter(|line| !line.trim().is_empty())
+            .collect::<Vec<String>>();
+        sections.insert(section_name, section_body);
+    }
 
     let mandatory_sections = [
         "general",
@@ -599,19 +601,23 @@ pub fn parse_config_file(path: &str) -> State {
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("\n");
-    let sections = SECTION_PATTERN
-        .captures_iter(&cleaned)
-        .map(|cap| {
-            let section_name = cap[1].trim().to_string();
-            let section_body = cap[0]
-                .lines()
-                .skip(1)
-                .map(str::to_string)
-                .filter(|line| !line.trim().is_empty())
-                .collect::<Vec<String>>();
-            (section_name, section_body)
-        })
-        .collect::<HashMap<_, _>>();
+    let section_titles = SECTION_PATTERN
+        .captures_iter(&cleaned);
+    let section_contents = SECTION_PATTERN
+        .split(&cleaned)
+        .filter(|content| !content.trim().is_empty());
+
+    let mut sections = HashMap::new();
+
+    for (title, content) in section_titles.zip(section_contents) {
+        let section_name = title[1].trim().to_string();
+        let section_body = content
+            .lines()
+            .map(str::to_string)
+            .filter(|line| !line.trim().is_empty())
+            .collect::<Vec<String>>();
+        sections.insert(section_name, section_body);
+    }
 
     let mandatory_sections = [
         "general",
@@ -1069,6 +1075,7 @@ pub fn parse_config_file(path: &str) -> State {
 
     let mut result = State::new(
         title.to_string(),
+        initial_position.to_string(),
         files,
         ranks,
         pieces
@@ -1613,7 +1620,7 @@ pub fn parse_config_file(path: &str) -> State {
         pieces_setup,
         pieces_stand_off,
     );
-    result.load_fen(initial_position);
+    result.load_fen(initial_position, None);
 
     let variant = Path::new(path)
         .file_stem()
@@ -1725,7 +1732,8 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     result
 }
 
-/// Parses a FEN string and updates the game state accordingly.
+/// Parses a FEN string and updates the game state accordingly. Applies
+/// protocol translation if needed.
 ///
 /// Cheesy Forsyth-Edwards Notation (CFEN)
 ///
@@ -1756,7 +1764,7 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 ///   a pawn and two knights in hand. "-" if no pieces in hand for that color
 ///   so an empty hand for both is -/-.
 ///
-pub fn parse_fen(state: &mut State, fen: &str) {
+pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
     let mut needed_parts = 2;
 
     if castling!(state) {
@@ -1770,6 +1778,14 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     if drops!(state) || promote_to_captured!(state) {
         needed_parts += 1;
     }
+
+    let mut translated = fen.to_string();
+    if let Some(translator) = dict {
+        for (k, v) in &translator.inverse_fen {
+            translated = k.replace_all(&translated, v).into_owned();
+        }
+    }
+    let fen = &translated;
 
     let parts: Vec<&str> = fen.split_whitespace().collect();
     assert!(
@@ -2022,9 +2038,10 @@ pub fn parse_fen(state: &mut State, fen: &str) {
     }
 
     if parts.len() > part_index {
-        state.ply_counter = parts[part_index].parse().unwrap_or_else(|_| {
-            panic!("Invalid ply number: {}", parts[part_index].trim())
-        });
+        state.ply_counter = match parts[part_index].trim().parse::<u32>() {
+            Ok(ply_num) => (ply_num - 1) * 2 + (state.playing as u32),
+            Err(_) => panic!("Invalid ply count: {}", parts[part_index].trim()),
+        };
     }
 
     refresh_eval_state(state);
@@ -2140,7 +2157,7 @@ pub fn format_game_state(state: &State) -> String {
         .expect("Failed to format combined board string")
 }
 
-pub fn format_fen(state: &State) -> String {
+pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
     let mut fen = String::new();
 
     for rank in (0..state.statics.ranks).rev() {
@@ -2184,8 +2201,36 @@ pub fn format_fen(state: &State) -> String {
 
     if en_passant!(state) {
         fen.push(' ');
-        fen.push_str(&format_en_passant_square(state));
-    }
+
+        let mut out = Vec::new();
+        let mut scratch = Vec::new();
+
+        generate_all_captures(state, &mut out, &mut scratch);
+
+        if out
+            .iter()
+            .find(
+                |m|
+                captured_square!(m) as u32 ==
+                enp_captured!(state.en_passant_square) &&
+                captured_piece!(m) as u32 ==
+                enp_piece!(state.en_passant_square) &&
+                end!(m) as u32 ==
+                enp_square!(state.en_passant_square) ||
+                m.1.iter().any(|&cap|
+                    multi_move_captured_square!(cap) as u32 ==
+                    enp_captured!(state.en_passant_square) &&
+                    multi_move_captured_piece!(cap) as u32 ==
+                    enp_piece!(state.en_passant_square)
+                ) &&
+                end!(m) as u32 ==
+                enp_square!(state.en_passant_square)
+        ).is_some() {
+            fen.push_str(&format_en_passant_square(state));
+        } else {
+            fen.push('*');
+        }
+            }
 
     if drops!(state)
     || promote_to_captured!(state)
@@ -2196,6 +2241,20 @@ pub fn format_fen(state: &State) -> String {
         fen.push_str(&format_hand(state, WHITE));
         fen.push('/');
         fen.push_str(&format_hand(state, BLACK));
+    }
+
+    if halfmove_clock!(state) {
+        fen.push(' ');
+        fen.push_str(&state.halfmove_clock.to_string());
+    }
+
+    fen.push(' ');
+    fen.push_str(&(state.ply_counter / 2 + 1).to_string());
+
+    if let Some(translator) = dict {
+        for (k, v) in &translator.fen {
+            fen = k.replace_all(&fen, v).into_owned();
+        }
     }
 
     fen

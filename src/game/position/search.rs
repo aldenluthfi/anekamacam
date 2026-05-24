@@ -260,7 +260,7 @@ pub fn iterative_deepening(
             ),
             thread_num,
             best_score,
-            format_move(&best_move, state),
+            format_move(&best_move, state, None),
             nodes,
             depth_nps,
         );
@@ -274,7 +274,7 @@ pub fn iterative_deepening(
                 .iter()
                 .take(depth)
                 .take_while(|m| m != &&null_move())
-                .map(|m| format_move(m, state))
+                .map(|m| format_move(m, state, None))
                 .collect::<Vec<String>>()
                 .join(" ")
         );
@@ -296,7 +296,7 @@ pub fn iterative_deepening(
         ),
         thread_num,
         best_score,
-        format_move(&best_move, state),
+        format_move(&best_move, state, None),
         total_nodes,
         format_time(total_elapsed),
         nps

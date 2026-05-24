@@ -50,6 +50,11 @@ pub mod io {
     pub mod game_io;
     pub mod move_io;
 
+    pub mod protocols {
+        pub mod translation;
+        pub mod uci;
+    }
+
     pub mod logger;
     pub mod tui;
 }

@@ -469,7 +469,7 @@ impl BoardState {
             details.push(["Pieces in Hand".to_string(), hand_info]);
         }
 
-        let fen = format_fen(state);
+        let fen = format_fen(state, None);
 
         Self {
             board,
@@ -506,7 +506,7 @@ fn init_playground(state: &mut State, index: PieceIndex) {
         empty_fen.push_str(" -/-");
     }
 
-    state.load_fen(&empty_fen);
+    state.load_fen(&empty_fen, None);
 
     state.game_phase = OPENING;
 }
@@ -514,8 +514,8 @@ fn init_playground(state: &mut State, index: PieceIndex) {
 fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
     state.main_board[square as usize] = index;
 
-    let fen = format_fen(state);
-    state.load_fen(&fen);
+    let fen = format_fen(state, None);
+    state.load_fen(&fen, None);
 
     state.game_phase = OPENING;
 }
@@ -2113,7 +2113,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                     Vec::with_capacity(filtered_moves.len());
                 for mv in filtered_moves.iter() {
                     move_items.push(
-                        ListItem::new(format_move(mv, &state))
+                        ListItem::new(format_move(mv, &state, None))
                     );
                 }
 
@@ -2489,7 +2489,7 @@ fn execute_command(
 
             log_2!("Legal moves:");
             for mv in moves {
-                log_2!("- {}", format_move(&mv, state));
+                log_2!("- {}", format_move(&mv, state, None));
             }
         }
         _ if trimmed.starts_with("see") => {
@@ -2501,7 +2501,7 @@ fn execute_command(
             }
 
             let mv_str = parts[1];
-            let mv = parse_move(mv_str, state).unwrap_or_else(|| {
+            let mv = parse_move(mv_str, state, None).unwrap_or_else(|| {
                 log_2!("Invalid move: {}", mv_str);
                 null_move()
             });
@@ -2512,11 +2512,11 @@ fn execute_command(
 
             let see_score = see!(state, mv.clone());
 
-            log_2!("SEE for {}: {}", format_move(&mv, state), see_score);
+            log_2!("SEE for {}: {}", format_move(&mv, state, None), see_score);
         }
         _ if trimmed.starts_with("fen") => {
             let fen = trimmed[4..].trim();
-            state.load_fen(fen);
+            state.load_fen(fen, None);
             log_2!("Loaded FEN");
 
             let board_state = BoardState::from_state(state);
@@ -2585,7 +2585,7 @@ fn execute_command(
 
             log_1!(
                 "Best Move: {} | Score: {} | Nodes: {} | Time: {}",
-                format_move(&result.best_move, state),
+                format_move(&result.best_move, state, None),
                 result.best_score,
                 result.total_nodes,
                 format_time(result.total_elapsed)
@@ -2698,7 +2698,7 @@ fn execute_command(
         }
         _ if trimmed.starts_with("move") => {
             let mv_str = trimmed[5..].trim();
-            if let Some(mv) = parse_move(mv_str, state) {
+            if let Some(mv) = parse_move(mv_str, state, None) {
                 make_move!(state, mv);
 
                 let board_state = BoardState::from_state(state);
