@@ -1034,19 +1034,19 @@ macro_rules! make_move {
                         p_evalue!(new_piece) as u32;
 
                     $state.phase_score -= p_ovalue!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32 * p_is_big!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32 * !p_is_royal!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32;
 
                     $state.phase_score += p_ovalue!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32 * p_is_big!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32 * !p_is_royal!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
@@ -1242,19 +1242,19 @@ macro_rules! make_move {
                         p_evalue!(new_piece) as u32;
 
                     $state.phase_score -= p_ovalue!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32 * p_is_big!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32 * !p_is_royal!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32;
 
                     $state.phase_score += p_ovalue!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32 * p_is_big!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32 * !p_is_royal!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
@@ -1590,19 +1590,19 @@ macro_rules! make_move {
                         p_evalue!(new_piece) as u32;
 
                     $state.phase_score -= p_ovalue!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32 * p_is_big!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32 * !p_is_royal!(
-                        $state.statics.pieces[piece_index]
+                        old_piece
                     ) as u32;
 
                     $state.phase_score += p_ovalue!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32 * p_is_big!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32 * !p_is_royal!(
-                        $state.statics.pieces[promoted_piece]
+                        new_piece
                     ) as u32;
 
                     $state.piece_count[promoted_piece] += 1;
@@ -2052,13 +2052,12 @@ macro_rules! make_move {
                 }
             }
 
-            let phase_score = $state.phase_score;
             $state.game_phase =
                 if $state.game_phase == SETUP {
                     SETUP
-                } else if phase_score > $state.statics.opening_score {
+                } else if $state.phase_score > $state.statics.opening_score {
                     cmp::max(OPENING, $state.game_phase)
-                } else if phase_score < $state.statics.endgame_score {
+                } else if $state.phase_score < $state.statics.endgame_score {
                     cmp::max(ENDGAME, $state.game_phase)
                 } else {
                     cmp::max(MIDDLEGAME, $state.game_phase)
