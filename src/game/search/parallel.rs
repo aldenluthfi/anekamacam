@@ -55,6 +55,7 @@ impl ThreadPool {
 
             let handle = thread::Builder::new()
                 .name(format!("searcher-{}", i))
+                .stack_size(64 * 1024 * 1024)
                 .spawn(move || {
                     let mut info = SearchInfo {
                         set_depth,
@@ -80,6 +81,7 @@ impl ThreadPool {
         let mut main_result = SearchResult {
             best_score: -INF,
             best_move: null_move(),
+            ponder_move: null_move(),
             total_nodes: 0,
             total_elapsed: 0,
         };
