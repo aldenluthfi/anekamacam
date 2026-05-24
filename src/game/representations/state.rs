@@ -320,6 +320,8 @@ macro_rules! game_phase_score {
 /// `State::clone()` shares this via `Arc::clone` instead of deep-copying.
 pub struct StaticState {
     pub title: String,
+    pub startpos: String,
+
     pub pieces: Vec<Piece>,
     pub special_rules: u32,
 
@@ -490,6 +492,7 @@ impl Clone for State {
 impl State {
     pub fn new(
         title: String,
+        startpos: String,
         files: u8,
         ranks: u8,
         pieces: Vec<Piece>,
@@ -501,6 +504,7 @@ impl State {
 
         let statics = Arc::new(StaticState {
             title,
+            startpos,
             pieces,
             special_rules,
 
@@ -674,9 +678,9 @@ impl State {
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     }
 
-    pub fn load_fen(&mut self, fen: &str) {
+    pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
         self.reset();
-        parse_fen(self, fen);
+        parse_fen(self, fen, dict);
     }
 
     fn populate_char_map(&mut self) {
