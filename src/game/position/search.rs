@@ -45,6 +45,7 @@ pub struct SearchBufs {
 pub struct SearchResult {
     pub best_score: i32,
     pub best_move: Move,
+    pub ponder_move: Move,
     pub total_nodes: u128,
     pub total_elapsed: u128,
 }
@@ -353,9 +354,16 @@ pub fn iterative_deepening(
         nps
     );
 
+    let ponder_move = state.pv_line
+        .get(1)
+        .filter(|m| *m != &null_move())
+        .cloned()
+        .unwrap_or_else(null_move);
+
     SearchResult {
         best_score,
         best_move,
+        ponder_move,
         total_nodes,
         total_elapsed,
     }
@@ -381,7 +389,6 @@ fn quiescence_search(
         return 0;
     }
 
-
     info.nodes += 1;
     if info.nodes & 2047 == 0 {
         check_interrupt(info);
@@ -396,7 +403,7 @@ fn quiescence_search(
         return beta;
     }
 
-    if state.search_ply > MAX_DEPTH as u32 {
+    if state.search_ply >= MAX_DEPTH as u32 {
         return stand_pat
     }
 
@@ -571,7 +578,7 @@ pub fn alpha_beta(
 
     let static_eval = evaluate_position!(state);
 
-    if state.search_ply > MAX_DEPTH as u32 {
+    if state.search_ply >= MAX_DEPTH as u32 {
         return static_eval;
     }
 

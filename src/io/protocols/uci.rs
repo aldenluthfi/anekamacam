@@ -2,10 +2,11 @@
 //!
 //! Implements the Universal Chess Interface (UCI) protocol.
 //!
-//! Supports uci, isready, ucinewgame, position, go, setoption (Variant),
-//! and quit. Available variants are discovered by scanning res/dicts/ for
-//! dict files that list "uci" under their = protocols = section and have a
-//! matching .conf file in configs/.
+//! Supports uci, isready, ucinewgame, position, go (with ponder, movestogo,
+//! wtime/btime/winc/binc, movetime, depth, infinite), ponderhit, stop,
+//! setoption (Variant, Threads, Ponder), and quit. Available variants are
+//! discovered by scanning res/dicts/ for dict files that list "uci" under
+//! their = protocols = section and have a matching .conf file in configs/.
 //!
 //! # Author
 //! Alden Luthfi
@@ -24,7 +25,8 @@ fn list_uci_variants() -> Vec<String> {
     for entry in entries.flatten() {
         let path = entry.path();
 
-        if path.extension().and_then(|e| e.to_str()) != Some("dict") {
+        if path.extension().and_then(|e| e.to_str()) != Some("dict")
+        || path.file_stem().and_then(|s| s.to_str()) == Some("example") {
             continue;
         }
 
@@ -126,13 +128,14 @@ fn handle_go(
     qtable: Arc<QTable>,
     thread_count: usize,
     protocol: u8,
-) {
+) -> SearchResult {
     let mut depth = 0usize;
     let mut movetime_ms = 0u128;
     let mut wtime_ms = 0u128;
     let mut btime_ms = 0u128;
     let mut winc_ms = 0u128;
     let mut binc_ms = 0u128;
+    let mut movestogo = 0usize;
     let mut infinite = false;
 
     let mut index = 1;
@@ -180,6 +183,13 @@ fn handle_go(
                     .unwrap_or(0);
                 index += 2;
             }
+            "movestogo" => {
+                movestogo = tokens
+                    .get(index + 1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                index += 2;
+            }
             "infinite" => {
                 infinite = true;
                 index += 1;
@@ -199,23 +209,186 @@ fn handle_go(
             (btime_ms, binc_ms)
         };
         if time_ms > 0 {
-            info.set_timed = (time_ms / 20 + inc_ms) * 1_000_000;
+            let divisor =
+                if movestogo > 0 { movestogo as u128 } else { 20 };
+            info.set_timed = (time_ms / divisor + inc_ms) * 1_000_000;
         }
     }
 
     info.set_depth = if depth > 0 { depth } else { MAX_DEPTH };
+    info.set_moves = movestogo;
 
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
 
     let mut bufs = SearchBufs::default();
-    let result = search_position(
+    search_position(
         state, ttable, qtable,
         &mut info, &mut bufs, thread_count, dict, protocol,
-    );
+    )
+}
 
+fn print_bestmove(
+    result: &SearchResult,
+    state: &State,
+    dict: Option<&Translator>,
+) {
     let best = format_move(&result.best_move, state, dict);
-    println!("bestmove {}", best);
+    if result.ponder_move != null_move() {
+        let ponder = format_move(&result.ponder_move, state, dict);
+        println!("bestmove {} ponder {}", best, ponder);
+    } else {
+        println!("bestmove {}", best);
+    }
     stdout().flush().ok();
+}
+
+fn handle_ponder(
+    state: &mut State,
+    tokens: &[&str],
+    dict: Option<&Translator>,
+    ttable: Arc<TTable>,
+    qtable: Arc<QTable>,
+    thread_count: usize,
+    receiver: &Receiver<String>,
+) -> bool {
+    let mut wtime_ms = 0u128;
+    let mut btime_ms = 0u128;
+    let mut winc_ms = 0u128;
+    let mut binc_ms = 0u128;
+    let mut movestogo = 0usize;
+    let mut movetime_ms = 0u128;
+
+    let mut i = 1;
+    while i < tokens.len() {
+        match tokens[i] {
+            "wtime" => {
+                wtime_ms = tokens.get(i + 1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                i += 2;
+            }
+            "btime" => {
+                btime_ms = tokens.get(i + 1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                i += 2;
+            }
+            "winc" => {
+                winc_ms = tokens.get(i + 1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                i += 2;
+            }
+            "binc" => {
+                binc_ms = tokens.get(i + 1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                i += 2;
+            }
+            "movestogo" => {
+                movestogo = tokens.get(i + 1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                i += 2;
+            }
+            "movetime" => {
+                movetime_ms = tokens.get(i + 1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                i += 2;
+            }
+            _ => { i += 1; }
+        }
+    }
+
+    let (time_ms, inc_ms) = if state.playing == WHITE {
+        (wtime_ms, winc_ms)
+    } else {
+        (btime_ms, binc_ms)
+    };
+    let divisor =
+        if movestogo > 0 { movestogo as u128 } else { 20 };
+    let ponder_time_ns = if movetime_ms > 0 {
+        movetime_ms * 1_000_000
+    } else if time_ms > 0 {
+        (time_ms / divisor + inc_ms) * 1_000_000
+    } else {
+        0
+    };
+
+    let state_clone = state.clone();
+    let tt_clone = Arc::clone(&ttable);
+    let qt_clone = Arc::clone(&qtable);
+    let dict_clone = dict.cloned();
+    let tc = thread_count;
+
+    SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
+
+    let ponder_thread = thread::Builder::new()
+        .name("ponder".to_string())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || {
+            let mut s = state_clone;
+            let mut info = SearchInfo {
+                set_depth: MAX_DEPTH,
+                ..Default::default()
+            };
+            let mut bufs = SearchBufs::default();
+            search_position(
+                &mut s, tt_clone, qt_clone,
+                &mut info, &mut bufs, tc,
+                dict_clone.as_ref(), PROTOCOL_UCI,
+            )
+        }).expect("failed to spawn ponder thread");
+
+    loop {
+        let ponder_line = match receiver.recv() {
+            Ok(l) => l,
+            Err(_) => {
+                SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+                let _ = ponder_thread.join();
+                return false;
+            }
+        };
+        let ponder_toks: Vec<&str> =
+            ponder_line.split_whitespace().collect();
+        match ponder_toks.first().copied().unwrap_or("") {
+            "ponderhit" => {
+                SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+                let _ = ponder_thread.join();
+                SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
+                let mut info = SearchInfo {
+                    set_depth: MAX_DEPTH,
+                    set_timed: ponder_time_ns,
+                    ..Default::default()
+                };
+                let mut bufs = SearchBufs::default();
+                let result = search_position(
+                    state,
+                    Arc::clone(&ttable),
+                    Arc::clone(&qtable),
+                    &mut info, &mut bufs, thread_count,
+                    dict, PROTOCOL_UCI,
+                );
+                print_bestmove(&result, state, dict);
+                return true;
+            }
+            "stop" => {
+                let result = ponder_thread.join()
+                    .unwrap_or_else(|_| {
+                        panic!("ponder thread panicked")
+                    });
+                print_bestmove(&result, state, dict);
+                return true;
+            }
+            "quit" => {
+                SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+                let _ = ponder_thread.join();
+                return false;
+            }
+            _ => {}
+        }
+    }
 }
 
 pub fn uci() -> IoResult<()> {
@@ -245,6 +418,8 @@ pub fn uci() -> IoResult<()> {
 
     let ttable = Arc::new(TTable::default());
     let qtable = Arc::new(QTable::default());
+
+    let mut ponder_enabled = false;
 
     let (sender, receiver) = channel::<String>();
 
@@ -288,6 +463,9 @@ pub fn uci() -> IoResult<()> {
                      default 1 min 1 max {}",
                     max_threads,
                 );
+                println!(
+                    "option name Ponder type check default false"
+                );
                 println!("uciok");
                 stdout().flush().ok();
             }
@@ -309,15 +487,34 @@ pub fn uci() -> IoResult<()> {
                 );
             }
             "go" => {
-                handle_go(
-                    &mut state,
-                    &tokens,
-                    translator.as_ref(),
-                    Arc::clone(&ttable),
-                    Arc::clone(&qtable),
-                    thread_count,
-                    PROTOCOL_UCI,
-                );
+                let is_ponder = tokens.contains(&"ponder");
+                if is_ponder && ponder_enabled {
+                    let keep_going = handle_ponder(
+                        &mut state,
+                        &tokens,
+                        translator.as_ref(),
+                        Arc::clone(&ttable),
+                        Arc::clone(&qtable),
+                        thread_count,
+                        &receiver,
+                    );
+                    if !keep_going {
+                        return Ok(());
+                    }
+                } else {
+                    let result = handle_go(
+                        &mut state,
+                        &tokens,
+                        translator.as_ref(),
+                        Arc::clone(&ttable),
+                        Arc::clone(&qtable),
+                        thread_count,
+                        PROTOCOL_UCI,
+                    );
+                    print_bestmove(
+                        &result, &state, translator.as_ref()
+                    );
+                }
             }
             "setoption" => {
                 let name_pos = tokens
@@ -355,6 +552,10 @@ pub fn uci() -> IoResult<()> {
                             if let Ok(n) = value.parse::<usize>() {
                                 thread_count = n.clamp(1, max_threads);
                             }
+                        },
+                        "ponder" => {
+                            ponder_enabled =
+                                value.to_lowercase() == "true";
                         },
                         _ => {}
                     }
