@@ -402,7 +402,9 @@ pub fn format_time(nanos: u128) -> String {
 /// Runs a perft test without a truth suite, reporting total nodes and elapsed
 /// time for a given depth. For quick sanity checks and performance profiling
 /// without needing a full suite of expected results.
-pub fn benchmark_headless_perft(state: &mut State, depth: u8, branch: i8) {
+pub fn benchmark_headless_perft(
+    state: &mut State, depth: u8, branch: i8, dict: Option<&Translator>
+) {
     log_3!(
         "Headless perft started with depth {} and branching {}...",
         depth,
@@ -414,7 +416,7 @@ pub fn benchmark_headless_perft(state: &mut State, depth: u8, branch: i8) {
 
     for d in 1..=depth {
         let start_time = ENGINE_START.elapsed().as_nanos();
-        let nodes = perft(state, d, branch, "");
+        let nodes = perft(state, d, branch, "", dict);
         let elapsed = ENGINE_START
             .elapsed()
             .as_nanos()
@@ -454,6 +456,7 @@ pub fn benchmark_perft(
     depth: u8,
     branch: i8,
     limit: usize,
+    dict: Option<&Translator>,
 ) {
     let mut perft_cases = parse_perft_file(path);
 
@@ -500,7 +503,7 @@ pub fn benchmark_perft(
 
         for d in 1..=depth {
             let start_time = ENGINE_START.elapsed().as_nanos();
-            let result = perft(state, d, branch, "");
+            let result = perft(state, d, branch, "", dict);
             let elapsed = ENGINE_START
                 .elapsed()
                 .as_nanos()
@@ -551,21 +554,24 @@ pub fn benchmark_perft(
 /// wall time, and aggregate nodes-per-second.
 pub fn benchmark_search(
     state: &mut State, ttable: Arc<TTable>, qtable: Arc<QTable>, depth: usize,
-    thread_num: usize
+    thread_num: usize, dict: Option<&Translator>,
 ) {
     log_3!("Search benchmark started with depth {}...", depth);
 
     let mut info = SearchInfo { set_depth: depth, ..Default::default() };
     let mut bufs = SearchBufs::default();
 
-    search_position(state, ttable, qtable, &mut info, &mut bufs, thread_num);
+    search_position(state, ttable, qtable, &mut info, &mut bufs, thread_num, dict);
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.
 ///
 /// When `branch >= 0`, prints the explored move prefixes for the first levels
 /// to help inspect branching behavior.
-pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
+pub fn perft(
+    state: &mut State, depth: u8, branch: i8, prefix: &str,
+    dict: Option<&Translator>,
+) -> u64 {
 
     if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
         log_3!(
@@ -590,7 +596,7 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     if branch < 0 {
         for mv in possible_moves {
             if make_move!(state, mv) {
-                nodes += perft(state, depth - 1, branch - 1, "");
+                nodes += perft(state, depth - 1, branch - 1, "", dict);
                 undo_move!(state);
             }
         }
@@ -599,11 +605,11 @@ pub fn perft(state: &mut State, depth: u8, branch: i8, prefix: &str) -> u64 {
     }
 
     for mv in possible_moves {
-        let formatted_move = format_move(&mv, state, None);
+        let formatted_move = format_move(&mv, state, dict);
         let new_prefix = format!("{}{}", prefix, formatted_move);
 
         if make_move!(state, mv) {
-            nodes += perft(state, depth - 1, branch - 1, &new_prefix);
+            nodes += perft(state, depth - 1, branch - 1, &new_prefix, dict);
             undo_move!(state);
         }
     }

@@ -20,6 +20,7 @@ pub struct TranslatorGroup {
     pub list: Vec<Translator>,
 }
 
+#[derive(Clone)]
 pub struct Translator {
     pub protocol: String,
     pub fen: Vec<(Regex, String)>,
@@ -28,6 +29,16 @@ pub struct Translator {
 }
 
 impl Translator {
+    pub fn find(variant: &str, target_protocol: &str) -> Option<Self> {
+        let path = format!("{}/{}.dict", DICTS_DIR, variant);
+
+        if !Path::new(&path).is_file() {
+            return None;
+        }
+
+        Some(Translator::from_file(&path, target_protocol))
+    }
+
     pub fn from_file(path: &str, target_protocol: &str) -> Self {
         let file_str =
             fs::read_to_string(path).expect("Failed to read dictionary file");

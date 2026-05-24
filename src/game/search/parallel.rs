@@ -34,7 +34,9 @@ impl ThreadPool {
         Self { main_state, tt, qt, thread_count }
     }
 
-    pub fn run(self, depth: usize, timed: u128) -> SearchResult {
+    pub fn run(
+        self, depth: usize, timed: u128, dict: Option<&Translator>
+    ) -> SearchResult {
         let tt = Arc::clone(&self.tt);
         let qtable = Arc::clone(&self.qt);
         let mut workers = Vec::with_capacity(self.thread_count);
@@ -45,6 +47,7 @@ impl ThreadPool {
             let qt_clone = Arc::clone(&qtable);
             let set_depth = depth;
             let set_timed = timed;
+            let dict_clone = dict.cloned();
 
             let handle = thread::Builder::new()
                 .name(format!("searcher-{}", i))
@@ -59,7 +62,7 @@ impl ThreadPool {
                     iterative_deepening(
                         &mut state,
                         &tt_clone, &qt_clone,
-                        &mut info, &mut bufs, i
+                        &mut info, &mut bufs, i, dict_clone.as_ref()
                     )
             })
                 .unwrap_or_else(|e| {

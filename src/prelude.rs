@@ -275,5 +275,6 @@ pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;
 
 pub const CONFIGS_DIR: &str = "configs";
+pub const DICTS_DIR: &str = "res/dicts";
 pub const PERFT_DIR: &str = "res/perft";
 pub const PARAM_DIR: &str = "res/param";
