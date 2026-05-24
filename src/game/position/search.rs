@@ -808,10 +808,10 @@ pub fn alpha_beta(
                     }
 
                     hash_tt_entry!(
-                        mv, beta, FBETA, depth, state, ttable
+                        mv, score, FBETA, depth, state, ttable
                     );
 
-                    return beta;
+                    return score;
                 }
 
                 if !is_capture {

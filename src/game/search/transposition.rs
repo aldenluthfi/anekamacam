@@ -24,7 +24,7 @@ use crate::*;
 ///
 /// Layout:
 /// - slot[0] = move.0 (128-bit, raw)
-/// - slot[1] = sig << 32 | encoded (128-bit, raw)
+/// - slot[1] = sig << 41 | score << 9 | flags_depth (128-bit, raw)
 /// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
 /// - age     = plain u64, excluded from parity
 /// - version = seqlock counter (odd = write in progress, even = readable)
@@ -105,7 +105,7 @@ macro_rules! tt_enc_depth {
 #[macro_export]
 macro_rules! tt_enc_score {
     ($encoded:expr, $val:expr) => {{
-        $encoded |= (($val as i16) as u32 & 0xFFFF) << 9;
+        $encoded |= ($val as u32 as u128) << 9;
     }};
 }
 
@@ -125,8 +125,8 @@ macro_rules! tt_depth {
 
 #[macro_export]
 macro_rules! tt_score {
-    ($encoded:expr) => {
-        (($encoded >> 9) as i32) << 16 >> 16
+    ($b_prime:expr) => {
+        (($b_prime >> 9) & 0xFFFF_FFFF) as u32 as i32
     };
 }
 
@@ -170,14 +170,14 @@ macro_rules! probe_tt_entry {
                     $table.valid.fetch_add(1, Ordering::Relaxed);               /* consistent read confirmed          */
                     let a_prime = s0;                                           /* a = slot[0] (direct)               */
                     let b_prime = s1;                                           /* b = slot[1] (direct)               */
-                    let encoded = (b_prime & 0xFFFF_FFFF) as u32;               /* bits  0-31 = flags/depth/score     */
-                    let sig     = (b_prime >> 32) as u64;                       /* bits 32-95 = MoveSignature         */
+                    let encoded = (b_prime & 0x1FF) as u32;                     /* bits  0-8  = flags/depth           */
+                    let sig     = (b_prime >> 41) as u64;                       /* bits 41-104 = MoveSignature        */
                     let pseudo_mv: PseudoMove = (a_prime, sig);
 
                     if tt_depth!(encoded) < $depth {
                         (false, i32::MIN, pseudo_mv)
                     } else {
-                        let mut entry_score = tt_score!(encoded);
+                        let mut entry_score = tt_score!(b_prime);
 
                         if entry_score > MATE_SCORE {
                             entry_score -= $state.search_ply as i32;
@@ -241,7 +241,7 @@ macro_rules! probe_pv_move {
 
                     let a_prime = s0;                                           /* a = slot[0] (direct)               */
                     let b_prime = s1;                                           /* b = slot[1] (direct)               */
-                    let sig = (b_prime >> 32) as u64;                           /* bits 32-95 = MoveSignature         */
+                    let sig = (b_prime >> 41) as u64;                           /* bits 41-104 = MoveSignature        */
                     let pseudo_mv: PseudoMove = (a_prime, sig);
                     if pseudo_mv == null_pseudo_move() {
                         None
@@ -273,9 +273,9 @@ macro_rules! hash_tt_entry {
         let table_vec: &mut Vec<TTEntry> = unsafe { &mut *($table.table.get()) };
         let entry = &mut table_vec[index];
 
-        let mut encoded = 0u32;
-        tt_enc_flags!(encoded, $flags);
-        tt_enc_depth!(encoded, $depth);
+        let mut flags_depth = 0u32;
+        tt_enc_flags!(flags_depth, $flags);
+        tt_enc_depth!(flags_depth, $depth);
 
         let mut store_score = $score;
 
@@ -285,12 +285,13 @@ macro_rules! hash_tt_entry {
             store_score -= $state.search_ply as i32;
         }
 
+        let mut encoded: u128 = flags_depth as u128;
         tt_enc_score!(encoded, store_score);
 
         let sig = move_signature!($tt_move);                                    /* XOR of move.1 entries              */
         let age = $table.age.load(Ordering::Relaxed);
         let a = $tt_move.0;                                                     /* move.0 128-bit                     */
-        let b = ((sig as u128) << 32) | (encoded as u128);                      /* sig << 32 | encoded                */
+        let b = ((sig as u128) << 41) | encoded;                                /* sig << 41 | score<<9 | flags_depth */
 
         let old_s0 = entry.slot[0];
         let old_s1 = entry.slot[1];
@@ -299,9 +300,9 @@ macro_rules! hash_tt_entry {
         let empty = old_s0 == 0 && old_s1 == 0 && old_s2 == 0;
         let different = old_s0 ^ old_s1 ^ old_s2 != hash;
 
-        let old_enc = (old_s1 & 0xFFFF_FFFF) as u32;
+        let old_enc = (old_s1 & 0x1FF) as u32;
         let old_depth = tt_depth!(old_enc);
-        let old_score = tt_score!(old_enc);
+        let old_score = tt_score!(old_s1);
         let old_flags = tt_flags!(old_enc);
 
         let should_write = empty
