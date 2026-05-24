@@ -135,11 +135,13 @@ pub fn parse_move(
         .find(|mv| format_move(mv, state, dict).trim() == move_str.trim())
 }
 
-pub fn format_move_history(state: &State) -> String {
+pub fn format_move_history(
+    state: &State, dict: Option<&Translator>
+) -> String {
     let mut history_strings = Vec::new();
 
     for snap in state.history.iter() {
-        history_strings.push(format_move(&snap.move_ply, state, None));
+        history_strings.push(format_move(&snap.move_ply, state, dict));
     }
 
     let mut result = String::new();
