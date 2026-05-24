@@ -126,7 +126,7 @@ pub fn clear_search(
 pub fn search_position(
     state: &mut State, table: Arc<TTable>, qtable: Arc<QTable>,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
-    thread_num: usize,
+    thread_num: usize, dict: Option<&Translator>,
 ) -> SearchResult {
     table.hit.store(0, Ordering::Relaxed);
     table.valid.store(0, Ordering::Relaxed);
@@ -139,12 +139,12 @@ pub fn search_position(
     qtable.over_write.store(0, Ordering::Relaxed);
 
     let result = if thread_num <= 1 {
-        iterative_deepening(state, &table, &qtable, info, bufs, 0)
+        iterative_deepening(state, &table, &qtable, info, bufs, 0, dict)
     } else {
         let pool = ThreadPool::with_threads(
             state, Arc::clone(&table), Arc::clone(&qtable), thread_num
         );
-        pool.run(info.set_depth, info.set_timed)
+        pool.run(info.set_depth, info.set_timed, dict)
     };
 
     log_3!(
@@ -211,7 +211,7 @@ fn mtdf(
 pub fn iterative_deepening(
     state: &mut State, ttable: &TTable, qtable: &QTable,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
-    thread_num: usize,
+    thread_num: usize, dict: Option<&Translator>,
 ) -> SearchResult {
 
     let mut best_move = null_move();
@@ -260,7 +260,7 @@ pub fn iterative_deepening(
             ),
             thread_num,
             best_score,
-            format_move(&best_move, state, None),
+            format_move(&best_move, state, dict),
             nodes,
             depth_nps,
         );
@@ -274,7 +274,7 @@ pub fn iterative_deepening(
                 .iter()
                 .take(depth)
                 .take_while(|m| m != &&null_move())
-                .map(|m| format_move(m, state, None))
+                .map(|m| format_move(m, state, dict))
                 .collect::<Vec<String>>()
                 .join(" ")
         );

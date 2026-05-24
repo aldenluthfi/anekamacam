@@ -25,6 +25,7 @@ enum TuiEvent {
     StateUpdate(BoardState),
     StateInit(Arc<Mutex<State>>),
     PlaygroundUpdate(State),
+    SwitchDict(Option<Translator>),
     Unlock,
 }
 
@@ -41,7 +42,9 @@ struct Tui {
     help: bool,
     locked: bool,
 
-    file_name: Option<String>,
+    translator: Option<Translator>,
+
+    variant: Option<String>,
     game_state: Option<Arc<Mutex<State>>>,
     board_state: Option<BoardState>,
     overview_state: Option<OverviewState>,
@@ -74,12 +77,13 @@ impl Tui {
         let input = String::new();
         let help = false;
         let locked = false;
-        let file_name = None;
+        let variant = None;
         let game_state = None;
         let board_state = None;
         let overview_state = None;
         let playground_state = None;
         let threads = 1;
+        let translator = None;
 
         Self {
             mode,
@@ -94,7 +98,9 @@ impl Tui {
             help,
             locked,
 
-            file_name,
+            translator,
+
+            variant,
             game_state,
             board_state,
             overview_state,
@@ -112,7 +118,7 @@ impl Tui {
 
         self.input.clear();
 
-        self.file_name = None;
+        self.variant = None;
         self.game_state = None;
         self.board_state = None;
         self.overview_state = None;
@@ -150,6 +156,17 @@ impl Tui {
                     }
                     false
                 },
+                Ok(TuiEvent::SwitchDict(dict)) => {
+                    self.translator = dict;
+                    if let Some(arc) = self.game_state.clone() {
+                        let state = arc.lock().unwrap();
+                        self.board_state = Some(BoardState::from_state(
+                            &state,
+                            self.translator.as_ref(),
+                        ));
+                    }
+                    false
+                }
                 Ok(TuiEvent::Unlock) => {
                     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
                     self.locked = false;
@@ -407,17 +424,17 @@ struct BoardState {
 }
 
 impl BoardState {
-    fn from_state(state: &State) -> Self {
+    fn from_state(state: &State, dict: Option<&Translator>) -> Self {
         let board = format_game_state(state);
-        let move_history = format_move_history(state);
+        let move_history = format_move_history(state, dict);
+        let fen = format_fen(state, dict);
         let mut details = Vec::new();
 
+        let fen_parts: Vec<&str> = fen.split_whitespace().collect();
         let position_hash = format_position_hash(state);
         let game_phase = format_game_phase(state);
         let phase = format!("{} ({})", game_phase, state.phase_score);
 
-        let castling_rights;
-        let en_passant;
         let halfmove_clock;
         let repetition_count;
         let hand_info;
@@ -432,12 +449,16 @@ impl BoardState {
         );
         details.push(["Position Hash".to_string(), position_hash]);
         if castling!(state) {
-            castling_rights = format_castling_rights(state);
-            details.push(["Castling Rights".to_string(), castling_rights]);
+            details.push([
+                "Castling Rights".to_string(),
+                fen_parts[2].to_string(),
+            ]);
         }
         if en_passant!(state) {
-            en_passant = format_en_passant_square(state);
-            details.push(["En Passant".to_string(), en_passant]);
+            details.push([
+                "En Passant".to_string(),
+                fen_parts[2 + castling!(state) as usize].to_string(),
+            ]);
         }
         if halfmove_clock!(state) {
             halfmove_clock = format!("{}/{}",
@@ -468,8 +489,6 @@ impl BoardState {
             );
             details.push(["Pieces in Hand".to_string(), hand_info]);
         }
-
-        let fen = format_fen(state, None);
 
         Self {
             board,
@@ -2113,7 +2132,9 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                     Vec::with_capacity(filtered_moves.len());
                 for mv in filtered_moves.iter() {
                     move_items.push(
-                        ListItem::new(format_move(mv, &state, None))
+                        ListItem::new(
+                            format_move(mv, &state, app.translator.as_ref())
+                        )
                     );
                 }
 
@@ -2403,7 +2424,8 @@ fn execute_command(
     command: &str,
     state: &mut State,
     playground: Option<&mut State>,
-    file_name: Option<String>,
+    variant: Option<String>,
+    dict: Option<&Translator>,
     ttable: Arc<TTable>,
     qtable: Arc<QTable>,
     threads: usize,
@@ -2419,7 +2441,7 @@ fn execute_command(
 
     if is_playground && !matches!(
         trimmed.split_whitespace().next().unwrap_or(""),
-        "reset" | "add" | "del"
+        "reset" | "add" | "del" | "protocol"
     ) {
         log_2!("Invalid command: {}", trimmed);
         return;
@@ -2441,7 +2463,7 @@ fn execute_command(
                 log_2!("No moves to undo");
             }
 
-            let board_state = BoardState::from_state(state);
+            let board_state = BoardState::from_state(state, dict);
 
             sender.send(
                 TuiEvent::StateUpdate(board_state)
@@ -2467,7 +2489,7 @@ fn execute_command(
                 while state.ply_counter > 0 {
                     undo_move!(state);
 
-                    let board_state = BoardState::from_state(state);
+                    let board_state = BoardState::from_state(state, dict);
 
                     sender.send(
                         TuiEvent::StateUpdate(board_state)
@@ -2489,7 +2511,7 @@ fn execute_command(
 
             log_2!("Legal moves:");
             for mv in moves {
-                log_2!("- {}", format_move(&mv, state, None));
+                log_2!("- {}", format_move(&mv, state, dict));
             }
         }
         _ if trimmed.starts_with("see") => {
@@ -2501,7 +2523,7 @@ fn execute_command(
             }
 
             let mv_str = parts[1];
-            let mv = parse_move(mv_str, state, None).unwrap_or_else(|| {
+            let mv = parse_move(mv_str, state, dict).unwrap_or_else(|| {
                 log_2!("Invalid move: {}", mv_str);
                 null_move()
             });
@@ -2512,14 +2534,14 @@ fn execute_command(
 
             let see_score = see!(state, mv.clone());
 
-            log_2!("SEE for {}: {}", format_move(&mv, state, None), see_score);
+            log_2!("SEE for {}: {}", format_move(&mv, state, dict), see_score);
         }
         _ if trimmed.starts_with("fen") => {
             let fen = trimmed[4..].trim();
-            state.load_fen(fen, None);
+            state.load_fen(fen, dict);
             log_2!("Loaded FEN");
 
-            let board_state = BoardState::from_state(state);
+            let board_state = BoardState::from_state(state, dict);
 
             sender.send(
                 TuiEvent::StateUpdate(board_state)
@@ -2548,7 +2570,7 @@ fn execute_command(
             let mut bufs = SearchBufs::default();
             let result = search_position(
                 state, Arc::clone(&ttable), Arc::clone(&qtable),
-                &mut info, &mut bufs, threads
+                &mut info, &mut bufs, threads, dict
             );
 
             if result.best_move == null_move() {
@@ -2575,7 +2597,7 @@ fn execute_command(
             let result = search_position(
                 state,
                 Arc::clone(&ttable), Arc::clone(&qtable),
-                &mut info, &mut bufs, threads
+                &mut info, &mut bufs, threads, dict
             );
 
             if result.best_move == null_move() {
@@ -2585,7 +2607,7 @@ fn execute_command(
 
             log_1!(
                 "Best Move: {} | Score: {} | Nodes: {} | Time: {}",
-                format_move(&result.best_move, state, None),
+                format_move(&result.best_move, state, dict),
                 result.best_score,
                 result.total_nodes,
                 format_time(result.total_elapsed)
@@ -2593,7 +2615,7 @@ fn execute_command(
 
             make_move!(state, result.best_move);
 
-            let board_state = BoardState::from_state(state);
+            let board_state = BoardState::from_state(state, dict);
 
             sender.send(
                 TuiEvent::StateUpdate(board_state)
@@ -2637,7 +2659,7 @@ fn execute_command(
                 let result = search_position(
                     state,
                     Arc::clone(&ttable), Arc::clone(&qtable),
-                    &mut info, &mut bufs, threads
+                    &mut info, &mut bufs, threads, dict
                 );
 
                 if result.best_score == -INF {
@@ -2652,7 +2674,7 @@ fn execute_command(
                     make_move!(state, result.best_move);
                 }
 
-                let board_state = BoardState::from_state(state);
+                let board_state = BoardState::from_state(state, dict);
 
                 sender.send(
                     TuiEvent::StateUpdate(board_state)
@@ -2681,27 +2703,26 @@ fn execute_command(
                 -1
             });
 
-            if let Some(name) = file_name {
-                let variant = name.strip_suffix(".conf").unwrap_or(&name);
+            if let Some(ref variant) = variant {
                 let perft_path = format!("{}/{}.perft", PERFT_DIR, variant);
 
                 if Path::new(&perft_path).is_file() {
                     benchmark_perft(
-                        state, &perft_path, depth, branch, usize::MAX
+                        state, &perft_path, depth, branch, usize::MAX, dict
                     );
 
                     return;
                 }
             }
 
-            benchmark_headless_perft(state, depth, branch);
+            benchmark_headless_perft(state, depth, branch, dict);
         }
         _ if trimmed.starts_with("move") => {
             let mv_str = trimmed[5..].trim();
-            if let Some(mv) = parse_move(mv_str, state, None) {
+            if let Some(mv) = parse_move(mv_str, state, dict) {
                 make_move!(state, mv);
 
-                let board_state = BoardState::from_state(state);
+                let board_state = BoardState::from_state(state, dict);
 
                 sender.send(
                     TuiEvent::StateUpdate(board_state)
@@ -2779,6 +2800,38 @@ fn execute_command(
                 )
             });
         }
+        _ if trimmed.starts_with("protocol") => {
+            let parts: Vec<_> = trimmed.split_whitespace().collect();
+
+            if parts.len() != 2 {
+                log_2!("Usage: protocol [protocol]");
+                return;
+            }
+
+            let protocol_name = parts[1];
+
+            let new_dict = if protocol_name == "cheesy" {
+                None
+            } else {
+                let Some(ref v) = variant else {
+                    log_2!("No variant loaded");
+                    return;
+                };
+
+                match Translator::find(v, protocol_name) {
+                    Some(translator) => Some(translator),
+                    None => {
+                        log_2!("Unknown protocol: {}", protocol_name);
+                        return;
+                    }
+                }
+            };
+
+            sender.send(TuiEvent::SwitchDict(new_dict))
+                .unwrap_or_else(|e| {
+                    panic!("Failed to send TuiEvent::SwitchDict: {e}")
+                });
+        }
         _ => {
             log_2!("Invalid command: {}", trimmed);
         }
@@ -2812,7 +2865,8 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
             thread::spawn({
                 let command = app.input.clone();
-                let file_name = app.file_name.clone();
+                let variant = app.variant.clone();
+                let dict = app.translator.clone();
 
                 let arc_state = app.game_state.as_mut().unwrap_or_else(
                     || {
@@ -2861,7 +2915,8 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                         &command,
                         &mut state,
                         if tab == 2 { Some(&mut playground) } else { None },
-                        file_name,
+                        variant,
+                        dict.as_ref(),
                         Arc::new(table),
                         Arc::new(qtable),
                         threads,
@@ -2944,7 +2999,12 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Enter) if app.tab == PICKER_SCROLL_KEY.0 => {
-            app.file_name = Some(app.input.clone());
+            let input_trimmed = app.input.trim();
+            app.variant = Some(
+                input_trimmed.strip_suffix(".conf")
+                    .unwrap_or(input_trimmed)
+                    .to_string()
+            );
             app.locked = true;
             app.focus = 0;
             app.tab = 0;
@@ -2953,6 +3013,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 let filename = app.input.trim();
                 let path = Path::new(CONFIGS_DIR).join(filename);
                 let sender = app.sender.clone();
+                let dict = app.translator.clone();
 
                 app.input.clear();
 
@@ -2961,7 +3022,9 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                         let path_str = path.to_string_lossy();
                         let state = parse_config_file(&path_str);
 
-                        let board_state = BoardState::from_state(&state);
+                        let board_state = BoardState::from_state(
+                            &state, dict.as_ref()
+                        );
 
                         sender.send(
                             TuiEvent::StateInit(Arc::new(Mutex::new(state)))
