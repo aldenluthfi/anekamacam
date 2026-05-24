@@ -2570,7 +2570,7 @@ fn execute_command(
             let mut bufs = SearchBufs::default();
             let result = search_position(
                 state, Arc::clone(&ttable), Arc::clone(&qtable),
-                &mut info, &mut bufs, threads, dict
+                &mut info, &mut bufs, threads, dict, PROTOCOL_TUI,
             );
 
             if result.best_move == null_move() {
@@ -2597,7 +2597,7 @@ fn execute_command(
             let result = search_position(
                 state,
                 Arc::clone(&ttable), Arc::clone(&qtable),
-                &mut info, &mut bufs, threads, dict
+                &mut info, &mut bufs, threads, dict, PROTOCOL_TUI,
             );
 
             if result.best_move == null_move() {
@@ -2659,7 +2659,7 @@ fn execute_command(
                 let result = search_position(
                     state,
                     Arc::clone(&ttable), Arc::clone(&qtable),
-                    &mut info, &mut bufs, threads, dict
+                    &mut info, &mut bufs, threads, dict, PROTOCOL_TUI,
                 );
 
                 if result.best_score == -INF {

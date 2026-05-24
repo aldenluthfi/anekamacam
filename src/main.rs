@@ -64,5 +64,10 @@ pub mod prelude;
 #[hotpath::main]
 fn main() {
     init_logging();
-    let _ = tui();
+    let args: Vec<String> = env::args().collect();
+    match args.get(1).map(|s| s.as_str()) {
+        Some("uci") => { let _ = uci(); }
+        Some("tui") => { let _ = tui(); }
+        _ => { let _ = uci(); }
+    }
 }
