@@ -36,7 +36,7 @@ uci
 // moves are different, it only stores from CMN to protocol move format, not
 // vice versa. Each move is parsed by matching the movestring that is
 // translated by the protocol.
-= uci move =
+= uci moves =
 7 -> 8
 6 -> 7
 5 -> 6

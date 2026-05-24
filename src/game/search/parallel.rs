@@ -35,7 +35,11 @@ impl ThreadPool {
     }
 
     pub fn run(
-        self, depth: usize, timed: u128, dict: Option<&Translator>
+        self, 
+        depth: usize, 
+        timed: u128,
+        dict: Option<&Translator>, 
+        protocol: u8,
     ) -> SearchResult {
         let tt = Arc::clone(&self.tt);
         let qtable = Arc::clone(&self.qt);
@@ -62,7 +66,8 @@ impl ThreadPool {
                     iterative_deepening(
                         &mut state,
                         &tt_clone, &qt_clone,
-                        &mut info, &mut bufs, i, dict_clone.as_ref()
+                        &mut info, &mut bufs,
+                        i, dict_clone.as_ref(), protocol,
                     )
             })
                 .unwrap_or_else(|e| {

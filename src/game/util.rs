@@ -561,7 +561,10 @@ pub fn benchmark_search(
     let mut info = SearchInfo { set_depth: depth, ..Default::default() };
     let mut bufs = SearchBufs::default();
 
-    search_position(state, ttable, qtable, &mut info, &mut bufs, thread_num, dict);
+    search_position(
+        state, ttable, qtable,
+        &mut info, &mut bufs, thread_num, dict, PROTOCOL_TUI,
+    );
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.

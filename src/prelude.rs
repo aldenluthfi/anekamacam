@@ -96,7 +96,10 @@ pub use crate::io::logger::{
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
 pub use crate::io::tui::tui;
-pub use crate::io::protocols::translation::Translator;
+pub use crate::io::protocols::{
+    translation::Translator,
+    uci::uci,
+};
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
@@ -148,12 +151,12 @@ pub use ratatui::{
 };
 pub use regex::Regex;
 pub use std::{
-    array, cmp,
+    array, cmp, env,
     collections::VecDeque,
     fmt::{Debug, Formatter as FmtFormatter, Result as FmtResult},
     fs::{self, OpenOptions},
     hash::Hash,
-    io::{stdin, stdout, Result as IoResult, Write},
+    io::{stdin, stdout, BufRead, Result as IoResult, Write},
     mem::{self, size_of},
     path::Path,
     sync::{
@@ -273,6 +276,9 @@ pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       
 
 pub const TUI_NORMAL_MODE: u8 = 0;
 pub const TUI_INPUT_MODE: u8 = 1;
+
+pub const PROTOCOL_TUI: u8 = 0;
+pub const PROTOCOL_UCI: u8 = 1;
 
 pub const CONFIGS_DIR: &str = "configs";
 pub const DICTS_DIR: &str = "res/dicts";

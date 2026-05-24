@@ -124,9 +124,14 @@ pub fn clear_search(
 }
 
 pub fn search_position(
-    state: &mut State, table: Arc<TTable>, qtable: Arc<QTable>,
-    info: &mut SearchInfo, bufs: &mut SearchBufs,
-    thread_num: usize, dict: Option<&Translator>,
+    state: &mut State,
+    table: Arc<TTable>,
+    qtable: Arc<QTable>,
+    info: &mut SearchInfo,
+    bufs: &mut SearchBufs,
+    thread_num: usize,
+    dict: Option<&Translator>,
+    protocol: u8,
 ) -> SearchResult {
     table.hit.store(0, Ordering::Relaxed);
     table.valid.store(0, Ordering::Relaxed);
@@ -139,12 +144,14 @@ pub fn search_position(
     qtable.over_write.store(0, Ordering::Relaxed);
 
     let result = if thread_num <= 1 {
-        iterative_deepening(state, &table, &qtable, info, bufs, 0, dict)
+        iterative_deepening(
+            state, &table, &qtable, info, bufs, 0, dict, protocol,
+        )
     } else {
         let pool = ThreadPool::with_threads(
             state, Arc::clone(&table), Arc::clone(&qtable), thread_num
         );
-        pool.run(info.set_depth, info.set_timed, dict)
+        pool.run(info.set_depth, info.set_timed, dict, protocol)
     };
 
     log_3!(
@@ -209,9 +216,14 @@ fn mtdf(
 \*----------------------------------------------------------------------------*/
 
 pub fn iterative_deepening(
-    state: &mut State, ttable: &TTable, qtable: &QTable,
-    info: &mut SearchInfo, bufs: &mut SearchBufs,
-    thread_num: usize, dict: Option<&Translator>,
+    state: &mut State,
+    ttable: &TTable,
+    qtable: &QTable,
+    info: &mut SearchInfo,
+    bufs: &mut SearchBufs,
+    thread_num: usize,
+    dict: Option<&Translator>,
+    protocol: u8,
 ) -> SearchResult {
 
     let mut best_move = null_move();
@@ -278,6 +290,45 @@ pub fn iterative_deepening(
                 .collect::<Vec<String>>()
                 .join(" ")
         );
+
+        match protocol {
+            PROTOCOL_UCI if thread_num == 0 => {
+                let total = ENGINE_START
+                    .elapsed()
+                    .as_nanos()
+                    .saturating_sub(start_time);
+                let ms = total / 1_000_000;
+                let nps = info.nodes
+                    .checked_mul(1_000_000_000)
+                    .and_then(|n| n.checked_div(total))
+                    .unwrap_or(0);
+                let score_str = if best_score.abs() >= MATE_SCORE {
+                    let ply = INF - best_score.abs();
+                    let moves = (ply + 1) / 2;
+                    if best_score > 0 {
+                        format!("mate {}", moves)
+                    } else {
+                        format!("mate -{}", moves)
+                    }
+                } else {
+                    format!("cp {}", best_score)
+                };
+                let pv = state.pv_line
+                    .iter()
+                    .take(depth)
+                    .take_while(|m| m != &&null_move())
+                    .map(|m| format_move(m, state, dict))
+                    .collect::<Vec<String>>()
+                    .join(" ");
+                println!(
+                    "info depth {} score {} time {} \
+                     nodes {} nps {} pv {}",
+                    depth, score_str, ms, info.nodes, nps, pv,
+                );
+                stdout().flush().ok();
+            }
+            _ => {}
+        }
     }
 
     let total_nodes = info.nodes;
@@ -511,11 +562,17 @@ pub fn alpha_beta(
 
     let ply = state.search_ply as usize;
 
-    alpha = alpha.max(-MATE_SCORE + ply as i32);
-    beta  = beta.min(MATE_SCORE - ply as i32);
+    alpha = alpha.max(-INF + ply as i32);
+    beta  = beta.min(INF - ply as i32 - 1);
 
     if alpha >= beta {                                                          /* mate distance pruning               */
         return alpha;
+    }
+
+    let static_eval = evaluate_position!(state);
+
+    if state.search_ply > MAX_DEPTH as u32 {
+        return static_eval;
     }
 
     info.nodes += 1;
@@ -538,7 +595,6 @@ pub fn alpha_beta(
         );
     }
 
-    let static_eval = evaluate_position!(state);
 
     let mut pv_move: Option<PseudoMove> = None;
     let tt_entry = probe_tt_entry!(state, ttable, alpha, beta, depth);          /* transposition table lookup         */
