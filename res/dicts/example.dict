@@ -1,0 +1,55 @@
+// Lists the protocols supported by the variant (uci, usi, etc.)
+= protocols =
+uci
+
+// Rules for converting the CFEN string to the matching protocol and vice versa
+// rules are written on every line, with the format
+//
+// 1. [Regex] <-> [Regex]
+// 2. [Regex] -> [String]
+// 3. [String] <- [Regex]
+//
+// - lines with <-> will be inserted to the dictionary and inverse dictionary
+// - lines with -> will only be inserted to the dictionary
+// - lines with <- will only be inserted to the inverse dictionary
+//
+// to convert from CFEN to a target protocol FEN, rules from the dictionary
+// will be applied to the CFEN from top to bottom
+//
+// to convert from protocol FEN to CFEN, rules from the inverse dictionary will
+// be applied to the CFEN from top to bottom
+= uci fen =
+* <- [^wb] -
+010018P <-> a3
+011019P <-> b3
+01201aP <-> c3
+01301bP <-> d3
+01401cP <-> e3
+01501dP <-> f3
+01601eP <-> g3
+01701fP <-> h3
+028020p <-> a6
+029021p <-> b6
+02c024p <-> e6
+\* -> -
+
+// moves are different, it only stores from CMN to protocol move format, not
+// vice versa. Each move is parsed by matching the movestring that is
+// translated by the protocol.
+= uci move =
+7 -> 8
+6 -> 7
+5 -> 6
+4 -> 5
+3 -> 4
+2 -> 3
+1 -> 2
+0 -> 1
+8=Q -> 8q
+8=R -> 8r
+8=B -> 8b
+8=N -> 8n
+\*.{2}@.{2} ->
+= ->
+\* ->
+: ->
