@@ -15,6 +15,8 @@
 //! 24/05/2026
 use crate::*;
 
+const TIME_OVERHEAD_MS: u128 = 50;
+
 fn list_uci_variants() -> Vec<String> {
     let mut variants = Vec::new();
 
@@ -201,7 +203,8 @@ fn handle_go(
     let mut info = SearchInfo::default();
 
     if movetime_ms > 0 {
-        info.set_timed = movetime_ms * 1_000_000;
+        let safe = movetime_ms.saturating_sub(TIME_OVERHEAD_MS);
+        info.set_timed = safe * 1_000_000;
     } else if !infinite {
         let (time_ms, inc_ms) = if state.playing == WHITE {
             (wtime_ms, winc_ms)
@@ -210,8 +213,10 @@ fn handle_go(
         };
         if time_ms > 0 {
             let divisor =
-                if movestogo > 0 { movestogo as u128 } else { 20 };
-            info.set_timed = (time_ms / divisor + inc_ms) * 1_000_000;
+                if movestogo > 0 { movestogo as u128 } else { 40 };
+            let raw_alloc = time_ms / divisor + inc_ms * 2 / 3;
+            let cap = time_ms.saturating_sub(TIME_OVERHEAD_MS);
+            info.set_timed = raw_alloc.min(cap) * 1_000_000;
         }
     }
 
@@ -307,11 +312,13 @@ fn handle_ponder(
         (btime_ms, binc_ms)
     };
     let divisor =
-        if movestogo > 0 { movestogo as u128 } else { 20 };
+        if movestogo > 0 { movestogo as u128 } else { 40 };
     let ponder_time_ns = if movetime_ms > 0 {
-        movetime_ms * 1_000_000
+        movetime_ms.saturating_sub(TIME_OVERHEAD_MS) * 1_000_000
     } else if time_ms > 0 {
-        (time_ms / divisor + inc_ms) * 1_000_000
+        let raw = time_ms / divisor + inc_ms * 2 / 3;
+        let cap = time_ms.saturating_sub(TIME_OVERHEAD_MS);
+        raw.min(cap) * 1_000_000
     } else {
         0
     };
@@ -424,7 +431,7 @@ pub fn uci() -> IoResult<()> {
     let (sender, receiver) = channel::<String>();
 
     thread::spawn(move || {
-        for line in stdin().lock().lines().flatten() {
+        for line in stdin().lock().lines().map_while(Result::ok) {
             let trimmed = line.trim().to_string();
             if trimmed.split_whitespace().next() == Some("stop") {
                 SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
@@ -435,12 +442,7 @@ pub fn uci() -> IoResult<()> {
         }
     });
 
-    loop {
-        let line = match receiver.recv() {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-
+    while let Ok(line) = receiver.recv() {
         let tokens: Vec<&str> = line.split_whitespace().collect();
         let command = tokens.first().copied().unwrap_or("");
 

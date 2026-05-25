@@ -226,9 +226,8 @@ lazy_static! {
 
         result
     };
-    pub static ref LOG_DIR: String = "logs".to_string();
-    pub static ref LATEST_LOG_PATH: String =
-        format!("{}/latest.log", *LOG_DIR);
+
+
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
@@ -280,6 +279,7 @@ pub const TUI_INPUT_MODE: u8 = 1;
 pub const PROTOCOL_TUI: u8 = 0;
 pub const PROTOCOL_UCI: u8 = 1;
 
+pub const LOG_DIR: &str = "logs";
 pub const CONFIGS_DIR: &str = "configs";
 pub const DICTS_DIR: &str = "res/dicts";
 pub const PERFT_DIR: &str = "res/perft";
