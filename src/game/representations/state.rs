@@ -656,6 +656,7 @@ impl State {
         self.ply_counter = 0;
 
         self.game_phase = OPENING;
+        self.game_over = false;
 
         self.opening_material = [0; 2];
         self.endgame_material = [0; 2];
