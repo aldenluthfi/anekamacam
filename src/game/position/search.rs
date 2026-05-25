@@ -702,6 +702,7 @@ pub fn alpha_beta(
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
         let is_drop = m_drop!(mv);
+        let is_quiet = m_quiet!(mv);
 
         if !make_move!(state, mv.clone()) {
             continue;
@@ -771,15 +772,15 @@ pub fn alpha_beta(
             return 0;
         }
 
+        let bonus = (depth * depth) as u16;
         if score > best_score {
             best_score = score;
             best_move = mv.clone();
 
-            let bonus = (depth * depth) as u16;
             if score > alpha {
                 if score >= beta {
 
-                    if !is_capture {
+                    if is_quiet {
                         state.killer_hist[ply].swap(1, 0);
                         state.killer_hist[ply][0] = best_move.clone();
                         state.search_hist[piece][end as usize] =
@@ -794,7 +795,7 @@ pub fn alpha_beta(
                     return beta;
                 }
 
-                if !is_capture {
+                if is_quiet {
                     state.search_hist[piece][end as usize] =
                         state.search_hist[piece][end as usize]
                         .saturating_add(bonus);
@@ -805,9 +806,7 @@ pub fn alpha_beta(
         }
 
         if score <= alpha
-        && !is_capture
-        && !is_promotion
-        && !is_drop
+        && is_quiet
         {                                                                       /* history malus                      */
             state.search_hist[piece][end as usize] =
                 state.search_hist[piece][end as usize]
