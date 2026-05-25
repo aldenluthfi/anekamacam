@@ -175,44 +175,6 @@ pub fn search_position(
 }
 
 /*----------------------------------------------------------------------------*\
-                              MTD(f) DRIVER
-\*----------------------------------------------------------------------------*/
-
-fn mtdf(
-    state: &mut State,
-    ttable: &TTable,
-    qtable: &QTable,
-    depth: usize,
-    f: i32,
-    info: &mut SearchInfo,
-    bufs: &mut SearchBufs,
-) -> i32 {
-    let mut lower = -INF;
-    let mut upper = INF;
-    let mut g = f;
-
-    for _ in 0..MAX_DEPTH {
-        let bound = if g == lower { g + 1 } else { g };
-
-        g = alpha_beta(
-            state, ttable, qtable, depth, bound - 1, bound, info, bufs, true
-        );
-
-        if g < bound {
-            upper = g;
-        } else {
-            lower = g;
-        }
-
-        if lower >= upper {
-            break;
-        }
-    }
-
-    g
-}
-
-/*----------------------------------------------------------------------------*\
                          ITERATIVE DEEPENING
 \*----------------------------------------------------------------------------*/
 
@@ -237,13 +199,9 @@ pub fn iterative_deepening(
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
-        let score = if depth == 1 {
-            alpha_beta(
-                state, ttable, qtable, depth, -INF, INF, info, bufs, true
-            )
-        } else {
-            mtdf(state, ttable, qtable, depth, best_score, info, bufs)
-        };
+        let score = alpha_beta(
+            state, ttable, qtable, depth, -INF, INF, info, bufs, true
+        );
 
         if info.interrupt {
             break;
@@ -529,12 +487,13 @@ macro_rules! reduction {
         $is_promotion:expr,
         $is_drop:expr
     ) => {{
+        let depth = $depth.min(MAX_DEPTH - 1);
         let mut reduction = if $is_capture || $is_promotion || $is_drop {
             $state.statics.capture_lmr
-                [$depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
+                [depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
         } else {
             $state.statics.quiesce_lmr
-                [$depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
+                [depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
         };
 
         if $in_check || $opponent_in_check {
@@ -808,10 +767,10 @@ pub fn alpha_beta(
                     }
 
                     hash_tt_entry!(
-                        mv, score, FBETA, depth, state, ttable
+                        mv, beta, FBETA, depth, state, ttable
                     );
 
-                    return score;
+                    return beta;
                 }
 
                 if !is_capture {

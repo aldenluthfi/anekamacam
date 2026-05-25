@@ -393,9 +393,12 @@ pub fn export_tuned_parameters_file(
     }
 
     let dir_path = format!("{}/{}", PARAM_DIR, variant);
-    fs::create_dir_all(&dir_path).unwrap_or_else(|e| {
-        panic!("Failed to create directory {}: {}", dir_path, e)
-    });
+
+    if !Path::new(&dir_path).exists() {
+        fs::create_dir_all(&dir_path).unwrap_or_else(|e| {
+            panic!("Failed to create directory {}: {}", dir_path, e)
+        });
+    }
 
     let file_path = format!("{}/latest.param", dir_path);
 

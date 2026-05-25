@@ -24,7 +24,7 @@ enum TuiEvent {
     Input(KeyEvent),
     StateUpdate(BoardState),
     StateInit(Arc<Mutex<State>>),
-    PlaygroundUpdate(State),
+    PlaygroundUpdate(Box<State>),
     SwitchDict(Option<Translator>),
     Unlock,
 }
@@ -152,7 +152,7 @@ impl Tui {
                 },
                 Ok(TuiEvent::PlaygroundUpdate(state)) => {
                     if let Some(arc) = &self.playground_state {
-                        *arc.lock().unwrap() = state;
+                        *arc.lock().unwrap() = *state;
                     }
                     false
                 },
@@ -2164,7 +2164,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
                 let piece_char = state.statics.pieces[piece_idx].char;
                 let active_moves: Vec<&Move> = if selected_move == 0 {
-                    filtered_moves.iter().copied().collect()
+                    filtered_moves.to_vec()
                 } else {
                     filtered_moves
                         .get(selected_move as usize - 1)
@@ -2479,7 +2479,7 @@ fn execute_command(
                 init_playground(pg, 0);
 
                 sender.send(
-                    TuiEvent::PlaygroundUpdate((*pg).clone())
+                    TuiEvent::PlaygroundUpdate(Box::new((*pg).clone()))
                 ).unwrap_or_else(|e| {
                     panic!(
                         "Failed to send TuiEvent::PlaygroundUpdate: {e}"
@@ -2764,7 +2764,7 @@ fn execute_command(
             }
 
             sender.send(
-                TuiEvent::PlaygroundUpdate(playground_state.clone())
+                TuiEvent::PlaygroundUpdate(Box::new(playground_state.clone()))
             ).unwrap_or_else(|e| {
                 panic!(
                     "Failed to send TuiEvent::PlaygroundUpdate: {e}"
@@ -2793,7 +2793,7 @@ fn execute_command(
             set_playground_piece(playground_state, NO_PIECE, square);
 
             sender.send(
-                TuiEvent::PlaygroundUpdate(playground_state.clone())
+                TuiEvent::PlaygroundUpdate(Box::new(playground_state.clone()))
             ).unwrap_or_else(|e| {
                 panic!(
                     "Failed to send TuiEvent::PlaygroundUpdate: {e}"

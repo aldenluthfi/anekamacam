@@ -153,7 +153,13 @@ pub fn dec_verbosity() {
 /// - `log_5`: Trace. Deepest call-stack traces — atomic/coordinate evaluation
 ///   entry points and final-result logging, perft depth-0 node output.
 pub fn init_logging() {
-    let latest = Path::new(&*LATEST_LOG_PATH);
+
+    if !Path::new(LOG_DIR).exists() {
+        fs::create_dir_all(LOG_DIR).expect("Failed to create log directory");
+    }
+
+    let log_path = format!("{}/latest.log", LOG_DIR);
+    let latest = Path::new(&log_path);
 
     if latest.exists()
     && let Ok(meta) = fs::metadata(latest)
@@ -164,14 +170,14 @@ pub fn init_logging() {
             "logs/engine_{}.log",
             datetime.format("%Y-%m-%d_%H-%M-%S")
         );
-        let _ = fs::rename(&*LATEST_LOG_PATH, &archive);
+        let _ = fs::rename(latest, &archive);
     }
 
     let file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open(&*LATEST_LOG_PATH)
+        .open(latest)
         .expect("Failed to open log file");
 
     let target = Box::new(file);
