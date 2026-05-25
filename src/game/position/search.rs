@@ -199,9 +199,30 @@ pub fn iterative_deepening(
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
-        let score = alpha_beta(
-            state, ttable, qtable, depth, -INF, INF, info, bufs, true
-        );
+        let score = if depth < 4 || best_score.abs() >= MATE_SCORE {
+            alpha_beta(
+                state, ttable, qtable, depth, -INF, INF, info, bufs, true
+            )
+        } else {
+            let mut asp_delta = 50i32;
+            let mut asp_alpha = best_score - asp_delta;
+            let mut asp_beta  = best_score + asp_delta;
+            loop {
+                let s = alpha_beta(
+                    state, ttable, qtable, depth,
+                    asp_alpha, asp_beta, info, bufs, true
+                );
+                if info.interrupt || (s > asp_alpha && s < asp_beta) {
+                    break s;
+                }
+                asp_delta = asp_delta.saturating_mul(2).min(INF);
+                if s <= asp_alpha {
+                    asp_alpha = (asp_alpha - asp_delta).max(-INF);
+                } else {
+                    asp_beta = (asp_beta + asp_delta).min(INF);
+                }
+            }
+        };
 
         if info.interrupt {
             break;
@@ -610,13 +631,12 @@ pub fn alpha_beta(
 
     if null
     && !in_check
-    && pv_move.is_none()
     && depth >= 3
     && static_eval >= beta
     && state.search_ply > 0
     && state.game_phase != ENDGAME
     {                                                                           /* null move pruning                  */
-        let reduct = 3 + if depth >= 6 { 1 } else { 0 };
+        let reduct = 3 + depth / 4;
         make_null_move!(state);
         let score = -alpha_beta(
             state, ttable, qtable, depth - reduct, -beta, -beta + 1, info, bufs,
@@ -755,15 +775,16 @@ pub fn alpha_beta(
             best_score = score;
             best_move = mv.clone();
 
+            let bonus = (depth * depth) as u16;
             if score > alpha {
-
-                let bonus = (depth * depth) as u16;
-
                 if score >= beta {
 
                     if !is_capture {
                         state.killer_hist[ply].swap(1, 0);
                         state.killer_hist[ply][0] = best_move.clone();
+                        state.search_hist[piece][end as usize] =
+                            state.search_hist[piece][end as usize]
+                            .saturating_add(bonus);
                     }
 
                     hash_tt_entry!(
@@ -774,11 +795,23 @@ pub fn alpha_beta(
                 }
 
                 if !is_capture {
-                    state.search_hist[piece][end as usize] += bonus;
+                    state.search_hist[piece][end as usize] =
+                        state.search_hist[piece][end as usize]
+                        .saturating_add(bonus);
                 }
 
                 alpha = score;
             }
+        }
+
+        if score <= alpha
+        && !is_capture
+        && !is_promotion
+        && !is_drop
+        {                                                                       /* history malus                      */
+            state.search_hist[piece][end as usize] =
+                state.search_hist[piece][end as usize]
+                .saturating_sub(bonus);
         }
     }
 
