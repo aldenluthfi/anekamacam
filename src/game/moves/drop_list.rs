@@ -89,7 +89,7 @@ pub fn generate_relevant_drops(
 #[macro_export]
 macro_rules! generate_drop_list {
     ($piece:expr, $state:expr, $out:expr, $scratch:expr) => {{
-        let board_size = $state.main_board.len() as u32;
+        let board_size = $state.statics.board_size as u32;
         let index = p_index!($piece) as usize;
         let color = p_color!($piece) as usize;
 

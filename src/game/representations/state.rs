@@ -339,6 +339,7 @@ pub struct StaticState {
 
     pub files: u8,
     pub ranks: u8,
+    pub board_size: usize,
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
@@ -356,8 +357,10 @@ pub struct StaticState {
 \*----------------------------------------------------------------------------*/
 
     pub futility_margin: [[i32; 5]; 3],                                         /* [phase 0-2][depth 0-4]             */
-    pub quiesce_lmr: Vec<f64>,                                                  /* [depth * MAX_DEPTH + moves checked]*/
-    pub capture_lmr: Vec<f64>,                                                  /* [depth * MAX_DEPTH + moves checked]*/
+    pub quiesce_lmr:       Vec<u8>,                                             /* [depth * MAX_LMR_DEPTH + moves]    */
+    pub quiesce_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
+    pub capture_lmr:       Vec<u8>,                                             /* [depth * MAX_LMR_DEPTH + moves]    */
+    pub capture_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
     pub opening_score: u32,                                                     /* opening threshold                  */
     pub endgame_score: u32,                                                     /* endgame threshold                  */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
@@ -437,7 +440,7 @@ pub struct State {
     pub position_hash_map: HashMap<PositionHash, u8>,                           /* position hash to repetition count  */
     pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
 
-    pub search_hist: Vec<Vec<u16>>,                                             /* piece index to square to score     */
+    pub search_hist: Vec<u16>,                                                   /* [piece * board_size + square]      */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 }
 
@@ -521,6 +524,7 @@ impl State {
 
             files,
             ranks,
+            board_size,
 
             relevant_moves: vec![MoveSet::new(); board_size * piece_count],
             relevant_captures: vec![MoveSet::new(); board_size * piece_count],
@@ -539,34 +543,34 @@ impl State {
             piece_char_map: HashMap::new(),
 
             futility_margin: [[0; 5]; 3],
-            quiesce_lmr: {
-                let mut result = vec![0.0; MAX_DEPTH * MAX_LMR_DEPTH];
-
-                for depth in 1..(MAX_DEPTH + 1) {
-                    for moves in 0..MAX_LMR_DEPTH {
-                        let index = (depth - 1) * MAX_LMR_DEPTH + moves;
-                        let base = (depth as f64).ln() * (moves as f64).sqrt();
-                        result[index] =
-                            1.35 + (base / 2.75);
-                    }
-                }
-
-                result
-            },
-            capture_lmr: {
-                let mut result = vec![0.0; MAX_DEPTH * MAX_LMR_DEPTH];
-
-                for depth in 1..(MAX_DEPTH + 1) {
-                    for moves in 0..MAX_LMR_DEPTH {
-                        let index = (depth - 1) * MAX_LMR_DEPTH + moves;
-                        let base = (depth as f64).ln() * (moves as f64).sqrt();
-                        result[index] =
-                            0.20 + (base / 3.35);
-                    }
-                }
-
-                result
-            },
+            quiesce_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
+                let depth = i / MAX_LMR_DEPTH + 1;
+                let moves = i % MAX_LMR_DEPTH;
+                let base = (depth as f64).ln() * (moves as f64).sqrt();
+                (1.35 + base / 2.75)
+                    .clamp(0.0, depth as f64 - 1.0) as u8
+            }).collect(),
+            quiesce_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
+                let depth = i / MAX_LMR_DEPTH + 1;
+                let moves = i % MAX_LMR_DEPTH;
+                let base = (depth as f64).ln() * (moves as f64).sqrt();
+                (1.35 + base / 2.75 - 1.25)
+                    .clamp(0.0, depth as f64 - 1.0) as u8
+            }).collect(),
+            capture_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
+                let depth = i / MAX_LMR_DEPTH + 1;
+                let moves = i % MAX_LMR_DEPTH;
+                let base = (depth as f64).ln() * (moves as f64).sqrt();
+                (0.20 + base / 3.35)
+                    .clamp(0.0, depth as f64 - 1.0) as u8
+            }).collect(),
+            capture_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
+                let depth = i / MAX_LMR_DEPTH + 1;
+                let moves = i % MAX_LMR_DEPTH;
+                let base = (depth as f64).ln() * (moves as f64).sqrt();
+                (0.20 + base / 3.35 - 1.25)
+                    .clamp(0.0, depth as f64 - 1.0) as u8
+            }).collect(),
             opening_score: 0,
             endgame_score: 0,
             pst_opening: vec![vec![0; board_size]; piece_count],
@@ -613,7 +617,7 @@ impl State {
             position_hash_map: HashMap::with_capacity(128),
             pv_line: array::from_fn(|_| null_move()),
 
-            search_hist: vec![vec![0u16; board_size]; piece_count],
+            search_hist: vec![0u16; board_size * piece_count],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
         }
     }
@@ -632,8 +636,8 @@ impl State {
     /// bookkeeping while preserving static variant definitions.
     /// It prepares the state for loading or initializing a fresh position.
     pub fn reset(&mut self) {
-        let piece_count: usize = self.statics.pieces.len();
-        let board_size: usize = self.main_board.len();
+        let piece_count = self.statics.pieces.len();
+        let board_size = self.statics.board_size;
 
         self.playing = WHITE;
         self.main_board = vec![NO_PIECE; board_size];
@@ -675,7 +679,7 @@ impl State {
         self.position_hash_map.clear();
         self.pv_line = array::from_fn(|_| null_move());
 
-        self.search_hist = vec![vec![0u16; board_size]; piece_count];
+        self.search_hist = vec![0u16; board_size * piece_count];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     }
 
@@ -726,33 +730,31 @@ impl State {
     }
 
     fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
-        let board_size = self.main_board.len();
+        let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
-        let file_rank_count =
-            self.statics.files as u32 * self.statics.ranks as u32;
 
         let mut results = vec![MoveSet::new(); piece_count * board_size];
         for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..file_rank_count {
-                results[index * board_size + square as usize] =
-                    generate_relevant_moves(piece, square, self, piece_moves);
+            for square in 0..board_size {
+                results[index * board_size + square] =
+                    generate_relevant_moves(
+                        piece, square as u32, self, piece_moves
+                    );
             }
         }
         self.static_mut().relevant_moves = results;
     }
 
     fn populate_relevant_captures(&mut self, piece_moves: &[MoveSet]) {
-        let board_size = self.main_board.len();
+        let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
-        let file_rank_count =
-            self.statics.files as u32 * self.statics.ranks as u32;
 
         let mut results = vec![MoveSet::new(); piece_count * board_size];
         for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..file_rank_count {
-                results[index * board_size + square as usize] =
+            for square in 0..board_size {
+                results[index * board_size + square] =
                     generate_relevant_captures(
-                        piece, square, self, piece_moves
+                        piece, square as u32, self, piece_moves
                     );
             }
         }
@@ -760,17 +762,15 @@ impl State {
     }
 
     fn populate_relevant_drops(&mut self, piece_setup_drops: &[DropSet]) {
-        let board_size = self.main_board.len();
+        let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
-        let file_rank_count =
-            self.statics.files as u32 * self.statics.ranks as u32;
 
         let mut results = vec![DropSet::new(); piece_count * board_size];
         for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..file_rank_count {
-                results[index * board_size + square as usize] =
+            for square in 0..board_size {
+                results[index * board_size + square] =
                     generate_relevant_drops(
-                        piece, square, self, piece_setup_drops
+                        piece, square as u32, self, piece_setup_drops
                     );
             }
         }
@@ -778,17 +778,15 @@ impl State {
     }
 
     fn populate_relevant_setup(&mut self, piece_setup_drops: &[DropSet]) {
-        let board_size = self.main_board.len();
+        let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
-        let file_rank_count =
-            self.statics.files as u32 * self.statics.ranks as u32;
 
         let mut results = vec![DropSet::new(); piece_count * board_size];
         for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..file_rank_count {
-                results[index * board_size + square as usize] =
+            for square in 0..board_size {
+                results[index * board_size + square] =
                     generate_relevant_drops(
-                        piece, square, self, piece_setup_drops
+                        piece, square as u32, self, piece_setup_drops
                     );
             }
         }
@@ -798,17 +796,15 @@ impl State {
     fn populate_relevant_stand_offs(
         &mut self, piece_stand_off: &[PatternSet]
     ) {
-        let board_size = self.main_board.len();
+        let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
-        let file_rank_count =
-            self.statics.files as u32 * self.statics.ranks as u32;
 
         let mut results = vec![PatternSet::new(); piece_count * board_size];
         for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..file_rank_count {
-                results[index * board_size + square as usize] =
+            for square in 0..board_size {
+                results[index * board_size + square] =
                     generate_relevant_stand_offs(
-                        piece, square, self, piece_stand_off
+                        piece, square as u32, self, piece_stand_off
                     );
             }
         }
@@ -816,9 +812,7 @@ impl State {
     }
 
     fn populate_relevant_attacks(&mut self) {
-        let file_rank_count =
-            self.statics.files as u32 * self.statics.ranks as u32;
-        for square in 0..file_rank_count {
+        for square in 0..self.statics.board_size {
             generate_attack_masks(square as Square, self);
         }
     }

@@ -118,10 +118,11 @@ macro_rules! see {
         let initial_attacker = attack_value!(mv, state);
         let initial_attackee = victim_value!(mv, state);
 
-        let mut gain = Vec::with_capacity(32);
+        let mut gain     = [0i32; 32];
+        let mut gain_len = 0usize;
 
-        gain.push(initial_attackee);
-        gain.push(initial_attacker - initial_attackee);
+        gain[gain_len] = initial_attackee;     gain_len += 1;
+        gain[gain_len] = initial_attacker - initial_attackee; gain_len += 1;
 
         if !make_move!(state, mv.clone()) {
             -20000
@@ -147,16 +148,18 @@ macro_rules! see {
                     mv = move_list.pop().unwrap();
                 }
 
-                gain.push(attack_value!(mv, state) - gain[gain.len() - 1]);
+                gain[gain_len] =
+                    attack_value!(mv, state) - gain[gain_len - 1];
+                gain_len += 1;
                 moves_to_undo += 1;
 
                 break;
             }
 
-            gain.pop();                                                         /* no recapture for last attacker     */
+            gain_len -= 1;                                                      /* no recapture for last attacker     */
 
-            if gain.len() > 1 {
-                for i in (1..gain.len()).rev() {
+            if gain_len > 1 {
+                for i in (1..gain_len).rev() {
                     gain[i - 1] = -cmp::max(-gain[i - 1], gain[i]);
                 }
             }
@@ -203,9 +206,10 @@ macro_rules! score_move {
                 1_000_000 + MAX_HISTORY_BONUS + 1                               /* killer scores above history         */
             } else {
                 let piece = piece!($mv) as usize;
-                let end = end!($mv) as usize;
+                let end   = end!($mv) as usize;
+                let idx   = piece * $state.statics.board_size + end;
 
-                1_000_000 + $state.search_hist[piece][end] as usize             /* history score for quiet moves       */
+                1_000_000 + $state.search_hist[idx] as usize                    /* history score for quiet moves       */
             }
         } else {
             let see_score = see!($state, $mv);

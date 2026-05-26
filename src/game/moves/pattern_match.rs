@@ -347,7 +347,7 @@ pub fn generate_relevant_stand_offs(
 macro_rules! is_in_stand_off {
     ($state:expr) => {{
         let mut found = false;
-        let board_size = $state.main_board.len();
+        let board_size = $state.statics.board_size;
 
         'main: for (index, position) in $state.piece_list.iter().enumerate() {
             for &square in position {

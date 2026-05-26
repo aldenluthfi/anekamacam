@@ -206,7 +206,7 @@ pub fn generate_relevant_captures(
 /// Two-phase: collect pending writes while holding only shared borrows, then
 /// apply via Arc::get_mut after all borrows expire.
 pub fn generate_attack_masks(square_index: u16, state: &mut State) {
-    let board_size = state.main_board.len();
+    let board_size = state.statics.board_size;
     let files = state.statics.files;
 
     let mut pending: Vec<(usize, usize, AttackMask)> = Vec::new();
@@ -855,7 +855,7 @@ macro_rules! generate_move_list {
         $square_index:expr, $piece:expr, $state:expr, $out:expr, $scratch:expr
     ) => {{
         let piece_index = p_index!($piece) as usize;
-        let board_size = $state.main_board.len();
+        let board_size = $state.statics.board_size;
         let vector_set =
             &$state.statics.relevant_moves
                 [piece_index * board_size + $square_index as usize];
@@ -876,7 +876,7 @@ macro_rules! generate_capture_list {
         $square_index:expr, $piece:expr, $state:expr, $out:expr, $scratch:expr
     ) => {{
         let piece_index = p_index!($piece) as usize;
-        let board_size = $state.main_board.len();
+        let board_size = $state.statics.board_size;
         let vector_set =
             &$state.statics.relevant_captures
                 [piece_index * board_size + $square_index as usize];
