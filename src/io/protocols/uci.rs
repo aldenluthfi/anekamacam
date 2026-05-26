@@ -4,7 +4,7 @@
 //!
 //! Supports uci, isready, ucinewgame, position, go (with ponder, movestogo,
 //! wtime/btime/winc/binc, movetime, depth, infinite), ponderhit, stop,
-//! setoption (Variant, Threads, Ponder), and quit. Available variants are
+//! setoption (UCI_Variant, Threads, Ponder), and quit. Available variants are
 //! discovered by scanning res/dicts/ for dict files that list "uci" under
 //! their = protocols = section and have a matching .conf file in configs/.
 //!
@@ -16,6 +16,9 @@
 use crate::*;
 
 const TIME_OVERHEAD_MS: u128 = 50;
+const OPT_VARIANT: &str = "UCI_Variant";
+const OPT_THREADS: &str = "Threads";
+const OPT_PONDERS: &str = "Ponder";
 
 fn list_uci_variants() -> Vec<String> {
     let mut variants = Vec::new();
@@ -399,6 +402,8 @@ fn handle_ponder(
 }
 
 pub fn uci() -> IoResult<()> {
+    println!("AnekaMacam {} by Alden Luthfi", env!("CARGO_PKG_VERSION"));
+
     let variants = list_uci_variants();
     let default_variant = variants
         .iter()
@@ -457,16 +462,16 @@ pub fn uci() -> IoResult<()> {
                     .map(|v| format!(" var {}", v))
                     .collect();
                 println!(
-                    "option name Variant type combo default {}{}",
-                    current_variant, vars_str,
+                    "option name {} type combo default {}{}",
+                    OPT_VARIANT, current_variant, vars_str,
                 );
                 println!(
-                    "option name Threads type spin \
-                     default 1 min 1 max {}",
-                    max_threads,
+                    "option name {} type spin default 1 min 1 max {}",
+                    OPT_THREADS, max_threads,
                 );
                 println!(
-                    "option name Ponder type check default false"
+                    "option name {} type check default false",
+                    OPT_PONDERS,
                 );
                 println!("uciok");
                 stdout().flush().ok();
@@ -519,46 +524,42 @@ pub fn uci() -> IoResult<()> {
                 }
             }
             "setoption" => {
-                let name_pos = tokens
+                let name = tokens
                     .iter()
                     .position(|&t| t == "name");
-                let value_pos = tokens
+                let value = tokens
                     .iter()
                     .position(|&t| t == "value");
 
-                if let (Some(ni), Some(vi)) = (name_pos, value_pos) {
-                    let name = tokens[ni + 1..vi].join(" ");
-                    let value = tokens[vi + 1..].join(" ");
+                if let (Some(a), Some(b)) = (name, value) {
+                    let name  = tokens[(a + 1)..b].join(" ");
+                    let value = tokens[(b + 1)..].join(" ");
 
-                    match name.to_lowercase().as_str() {
-                        "variant" if variants.contains(&value) => {
+                    match name.as_str() {
+                        OPT_VARIANT if variants.contains(&value) => {
                             let conf = format!(
-                                "{}/{}.conf",
-                                CONFIGS_DIR,
-                                value
+                                "{}/{}.conf", CONFIGS_DIR, value
                             );
-
                             state = parse_config_file(&conf);
 
                             let position = state.statics.startpos.clone();
 
                             state.reset();
-
                             parse_fen(&mut state, &position, None);
+
                             refresh_eval_state(&mut state);
 
                             translator = Translator::find(&value, "uci");
                             current_variant = value;
-                        },
-                        "threads" => {
+                        }
+                        OPT_THREADS => {
                             if let Ok(n) = value.parse::<usize>() {
                                 thread_count = n.clamp(1, max_threads);
                             }
-                        },
-                        "ponder" => {
-                            ponder_enabled =
-                                value.to_lowercase() == "true";
-                        },
+                        }
+                        OPT_PONDERS => {
+                            ponder_enabled = value.to_lowercase() == "true";
+                        }
                         _ => {}
                     }
                 }
