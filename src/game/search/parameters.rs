@@ -87,7 +87,7 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
     log_4!("Deriving base value for piece '{}'", piece.char);
 
-    let board_size = state.main_board.len();
+    let board_size = state.statics.board_size;
     let piece_index = p_index!(piece) as usize;
 
     let reach_values: Vec<i32> = (0..board_size).into_par_iter().map(|square| {
@@ -159,7 +159,7 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
 fn derive_piece_mobility(
     state: &State, piece_index: PieceIndex, square: usize
 ) -> f64 {
-    let board_size = state.main_board.len();
+    let board_size = state.statics.board_size;
 
     let relevant_moves =
         &state.statics.relevant_moves[piece_index as usize * board_size + square];
@@ -180,12 +180,12 @@ fn derive_piece_mobility(
                 (true, false, false) |
                 (false, true, false) |
                 (false, false, true) => {
-                    mobility_product *= 0.66;
+                    mobility_product *= 0.75;
                 },
                 (true, true, false) |
                 (true, false, true) |
                 (false, true, true) => {
-                    mobility_product *= 0.80;
+                    mobility_product *= 0.85;
                 },
                 (true, true, true) => {
                     mobility_product *= 1.0;
@@ -303,7 +303,7 @@ fn derive_piece_value_on_square(
 }
 
 fn derive_pst(index: PieceIndex, state: &State, is_endgame: bool) -> Vec<i32> {
-    let board_size = state.main_board.len();
+    let board_size = state.statics.board_size;
 
     let pst: Vec<i32> = (0..board_size).into_par_iter().map(|square| {
         derive_piece_value_on_square(state, index, square, is_endgame)
