@@ -30,20 +30,15 @@ pub struct Translator {
 
 impl Translator {
     pub fn find(variant: &str, target_protocol: &str) -> Option<Self> {
-        let path = format!("{}/{}.dict", DICTS_DIR, variant);
-
-        if !Path::new(&path).is_file() {
-            return None;
-        }
-
-        Some(Translator::from_file(&path, target_protocol))
+        let filename = format!("{}.dict", variant);
+        let content = EMBEDDED_DICTS
+            .get_file(&filename)?
+            .contents_utf8()?;
+        Some(Translator::from_content(content, target_protocol))
     }
 
-    pub fn from_file(path: &str, target_protocol: &str) -> Self {
-        let file_str =
-            fs::read_to_string(path).expect("Failed to read dictionary file");
-
-        let uncommented_str = COMMENT_PATTERN.replace_all(&file_str, "");
+    pub fn from_content(content: &str, target_protocol: &str) -> Self {
+        let uncommented_str = COMMENT_PATTERN.replace_all(content, "");
         let cleaned = uncommented_str
             .lines()
             .map(|line| line.trim())

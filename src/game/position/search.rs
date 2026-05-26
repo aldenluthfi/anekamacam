@@ -25,6 +25,7 @@ pub struct SearchInfo {
     pub set_depth: usize,                                                       /* maximum search depth               */
     pub set_timed: u128,                                                        /* time limit in ns (0 = unlimited)   */
     pub set_moves: usize,                                                       /* moves to go until time control     */
+    pub thread_count: usize,                                                    /* threads active in this search      */
 
     pub nodes: u128,                                                            /* total nodes searched so far        */
 
@@ -137,6 +138,7 @@ pub fn search_position(
     qtable.over_write.store(0, Ordering::Relaxed);
 
     let result = if thread_num <= 1 {
+        info.thread_count = thread_num.max(1);
         iterative_deepening(
             state, &table, &qtable, info, bufs, 0, dict, protocol,
         )
@@ -186,6 +188,10 @@ pub fn iterative_deepening(
     let start_time = ENGINE_START.elapsed().as_nanos();
 
     clear_search(state, ttable, qtable, info, bufs);
+
+    let max_par = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1) as u64;
 
     for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
@@ -292,10 +298,17 @@ pub fn iterative_deepening(
                     .map(|m| format_move(m, state, dict))
                     .collect::<Vec<String>>()
                     .join(" ");
+                let tt_len = ttable.len() as u64;
+                let hashfull = ttable.new_write
+                    .load(Ordering::Relaxed)
+                    .min(tt_len) * 1000 / tt_len;
+                let cpuload = (info.thread_count as u64 * 1000)
+                    .min(max_par * 1000) / max_par;
                 println!(
-                    "info depth {} score {} time {} \
-                     nodes {} nps {} pv {}",
-                    depth, score_str, ms, info.nodes, nps, pv,
+                    "info depth {} score {} time {} nodes {} \
+                     nps {} hashfull {} cpuload {} pv {}",
+                    depth, score_str, ms, info.nodes,
+                    nps, hashfull, cpuload, pv,
                 );
                 stdout().flush().ok();
             }
@@ -384,16 +397,19 @@ fn quiescence_search(
 
     let ply = state.search_ply as usize;
 
-    let tt_pv_move = probe_pv_move!(state, ttable);
-    let qtt_entry = probe_qt_entry!(state, qtable, alpha, beta);
+    let qt_entry = probe_qt_entry!(state, qtable, alpha, beta);
+    let tt_entry = probe_tt_entry!(state, ttable, alpha, beta, 1);
 
-    if qtt_entry.0 {
-        return qtt_entry.1;
+    if qt_entry.0 {
+        return qt_entry.1;
     }
 
-    let pv_move = match qtt_entry.2 {
-        pm if pm != null_pseudo_move() => Some(pm),
-        _ => tt_pv_move,
+    let pv_move = if qt_entry.2 != null_pseudo_move() {
+        Some(qt_entry.2)
+    } else if tt_entry.2 != null_pseudo_move() {
+        Some(tt_entry.2)
+    } else {
+        None
     };
 
     let mut best_move = null_move();

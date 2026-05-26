@@ -43,9 +43,10 @@ impl ThreadPool {
     ) -> SearchResult {
         let tt = Arc::clone(&self.tt);
         let qtable = Arc::clone(&self.qt);
-        let mut workers = Vec::with_capacity(self.thread_count);
+        let total_threads = self.thread_count;
+        let mut workers = Vec::with_capacity(total_threads);
 
-        for i in 0..self.thread_count {
+        for i in 0..total_threads {
             let state_clone = self.main_state.clone();
             let tt_clone = Arc::clone(&tt);
             let qt_clone = Arc::clone(&qtable);
@@ -60,6 +61,7 @@ impl ThreadPool {
                     let mut info = SearchInfo {
                         set_depth,
                         set_timed,
+                        thread_count: total_threads,
                         ..Default::default()
                     };
                     let mut bufs = SearchBufs::default();
