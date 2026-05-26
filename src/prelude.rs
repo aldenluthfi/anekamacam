@@ -132,7 +132,7 @@ pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, trace, warn};
 pub use mpsc::{channel, Receiver, Sender, TryRecvError};
 pub use rand::{
-    rngs::StdRng, seq::SliceRandom, Rng, RngCore, SeedableRng,
+    rngs::StdRng, seq::SliceRandom, Rng, SeedableRng,
 };
 pub use ratatui::{
     backend::CrosstermBackend,
@@ -241,7 +241,9 @@ lazy_static! {
         result
     };
     pub static ref RNG: Mutex<StdRng> =
-        Mutex::new(StdRng::from_os_rng());
+        Mutex::new(
+            StdRng::seed_from_u64(ENGINE_START.elapsed().as_nanos() as u64)
+        );
     pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(5);
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
