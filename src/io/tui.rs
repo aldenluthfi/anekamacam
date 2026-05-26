@@ -551,17 +551,21 @@ fn draw_game_selection(
         ])
         .split(area);
 
-    let mut config_files = fs::read_dir(CONFIGS_DIR).ok()?
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().is_file())
-        .map(|entry| entry.file_name().to_string_lossy().to_string())
-        .filter(|name| !name.starts_with("example"))
-        .collect::<Vec<String>>();
+    let mut config_files: Vec<String> = EMBEDDED_CONFIGS
+        .files()
+        .filter_map(|f| {
+            let name = f.path().file_name()?.to_str()?;
+            if name.starts_with("example") {
+                return None;
+            }
+            Some(name.to_string())
+        })
+        .collect();
     config_files.sort();
 
     let previews = config_files
         .iter()
-        .map(|name| parse_config_preview(&format!("{}/{}", CONFIGS_DIR, name)))
+        .map(|name| parse_config_preview(name))
         .collect::<Vec<(String, String)>>();
 
     let mut selected = app.scroll_map.get(&PICKER_SCROLL_KEY)
@@ -603,7 +607,7 @@ fn draw_game_selection(
 
     let board_preview = previews.get(selected as usize)
         .map(|(_, preview)| preview)
-        .unwrap_or_else(|| panic!("No config files found in {}", CONFIGS_DIR));
+        .unwrap_or_else(|| panic!("No embedded config files found"));
     let preview_paragraph = Paragraph::new(board_preview.clone())
         .alignment(Alignment::Center);
 
@@ -2704,13 +2708,14 @@ fn execute_command(
             });
 
             if let Some(ref variant) = variant {
-                let perft_path = format!("{}/{}.perft", PERFT_DIR, variant);
-
-                if Path::new(&perft_path).is_file() {
+                let perft_name = format!("{}.perft", variant);
+                if let Some(content) = EMBEDDED_PERFT
+                    .get_file(&perft_name)
+                    .and_then(|f| f.contents_utf8())
+                {
                     benchmark_perft(
-                        state, &perft_path, depth, branch, usize::MAX, dict
+                        state, content, depth, branch, usize::MAX, dict
                     );
-
                     return;
                 }
             }
@@ -3010,17 +3015,18 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             app.tab = 0;
 
             thread::spawn({
-                let filename = app.input.trim();
-                let path = Path::new(CONFIGS_DIR).join(filename);
+                let filename = app.input.clone();
                 let sender = app.sender.clone();
                 let dict = app.translator.clone();
 
                 app.input.clear();
 
                 move || {
-                    if path.is_file() {
-                        let path_str = path.to_string_lossy();
-                        let state = parse_config_file(&path_str);
+                    let conf_exists = EMBEDDED_CONFIGS
+                        .get_file(&filename).is_some();
+
+                    if conf_exists {
+                        let state = parse_config_file(&filename);
 
                         let board_state = BoardState::from_state(
                             &state, dict.as_ref()
@@ -3054,10 +3060,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                             }
                         );
                     } else {
-                        log_2!(
-                            "Config file not found at path: {}",
-                            path.to_string_lossy()
-                        );
+                        log_2!("Config not found: {}", filename);
                     }
                 }
             });

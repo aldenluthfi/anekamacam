@@ -76,14 +76,40 @@ impl Default for TTable {
     }
 }
 
+impl TTable {
+    pub fn with_mb(mb: usize) -> Self {
+        let size = mb * 1024 * 1024 / size_of::<TTEntry>();
+        Self {
+            table: SyncUnsafeCell::new(
+                vec![TTEntry::default(); size]
+            ),
+            age: AtomicU64::new(0),
+            new_write: AtomicU64::new(0),
+            over_write: AtomicU64::new(0),
+            hit: AtomicU64::new(0),
+            valid: AtomicU64::new(0),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        unsafe { &*self.table.get() }.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        unsafe { &*self.table.get() }.iter().all(|entry| {
+            entry.slot[0] == 0 && entry.slot[1] == 0 && entry.slot[2] == 0
+        })
+    }
+}
+
 /*----------------------------------------------------------------------------*\
                        TRANSPOSITION TABLE PACKING HELPERS
 \*----------------------------------------------------------------------------*/
 
 #[macro_export]
 macro_rules! tt_index {
-    ($hash:expr) => {{
-        ($hash as usize) % T_TABLE_SIZE
+    ($hash:expr, $size:expr) => {{
+        ($hash as usize) % $size
     }};
 }
 
@@ -147,7 +173,7 @@ macro_rules! tt_score {
 macro_rules! probe_tt_entry {
     ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {{
         let hash = $state.position_hash;
-        let index = tt_index!(hash);
+        let index = tt_index!(hash, $table.len());
         let entry = &mut unsafe { &mut *($table.table.get()) }[index];
 
         let v1 = entry.version.load(Ordering::Acquire);
@@ -217,7 +243,7 @@ macro_rules! probe_tt_entry {
 macro_rules! probe_pv_move {
     ($state:expr, $table:expr) => {{
         let hash = $state.position_hash;
-        let index = tt_index!(hash);
+        let index = tt_index!(hash, $table.len());
         let entry = &mut unsafe { &mut *($table.table.get()) }[index];
 
         let v1 = entry.version.load(Ordering::Acquire);
@@ -269,7 +295,7 @@ macro_rules! hash_tt_entry {
         $depth:expr, $state:expr, $table:expr
     ) => {{
         let hash = $state.position_hash;
-        let index = tt_index!(hash);
+        let index = tt_index!(hash, $table.len());
         let table_vec: &mut Vec<TTEntry> = unsafe { &mut *($table.table.get()) };
         let entry = &mut table_vec[index];
 
@@ -434,40 +460,66 @@ impl Default for QTable {
     }
 }
 
+impl QTable {
+    pub fn with_mb(mb: usize) -> Self {
+        let size = mb * 1024 * 1024 / size_of::<QTEntry>();
+        Self {
+            table: SyncUnsafeCell::new(
+                vec![QTEntry::default(); size]
+            ),
+            age: AtomicU64::new(0),
+            new_write: AtomicU64::new(0),
+            over_write: AtomicU64::new(0),
+            hit: AtomicU64::new(0),
+            valid: AtomicU64::new(0),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        unsafe { &*self.table.get() }.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        unsafe { &*self.table.get() }.iter().all(|entry| {
+            entry.slot[0] == 0 && entry.slot[1] == 0 && entry.slot[2] == 0
+        })
+    }
+}
+
 /*----------------------------------------------------------------------------*\
                      QSEARCH TT PACKING / UNPACKING MACROS
 \*----------------------------------------------------------------------------*/
 
 #[macro_export]
-macro_rules! qtt_index {
-    ($hash:expr) => {{
-        ($hash as usize) % Q_TABLE_SIZE
+macro_rules! qt_index {
+    ($hash:expr, $size:expr) => {{
+        ($hash as usize) % $size
     }};
 }
 
 #[macro_export]
-macro_rules! qtt_enc_score {
+macro_rules! qt_enc_score {
     ($score:expr) => {{
         (($score as i16) as u32) & 0xFFFF
     }};
 }
 
 #[macro_export]
-macro_rules! qtt_enc_flags {
+macro_rules! qt_enc_flags {
     ($flags:expr) => {{
         ((($flags as u32) & 0x3) << 16)
     }};
 }
 
 #[macro_export]
-macro_rules! qtt_score {
+macro_rules! qt_score {
     ($encoded:expr) => {{
         (($encoded & 0xFFFF) as i32) << 16 >> 16
     }};
 }
 
 #[macro_export]
-macro_rules! qtt_flags {
+macro_rules! qt_flags {
     ($encoded:expr) => {{
         (($encoded >> 16) & 0x3) as u8
     }};
@@ -488,7 +540,7 @@ macro_rules! qtt_flags {
 macro_rules! probe_qt_entry {
     ($state:expr, $qtable:expr, $alpha:expr, $beta:expr) => {{
         let hash = $state.position_hash;
-        let index = qtt_index!(hash);
+        let index = qt_index!(hash, $qtable.len());
         let entry = &mut unsafe { &mut *($qtable.table.get()) }[index];
 
         let v1 = entry.version.load(Ordering::Acquire);
@@ -514,8 +566,8 @@ macro_rules! probe_qt_entry {
                     let sig     = (s1 >> 32) as u64;                            /* bits 32-95 = MoveSignature         */
                     let pseudo_mv: PseudoMove = (move_0, sig);
 
-                    let entry_flags   = qtt_flags!(encoded);
-                    let mut entry_score = qtt_score!(encoded);
+                    let entry_flags   = qt_flags!(encoded);
+                    let mut entry_score = qt_score!(encoded);
 
                     if entry_score > MATE_SCORE {
                         entry_score -= $state.search_ply as i32;
@@ -550,7 +602,7 @@ macro_rules! probe_qt_entry {
 macro_rules! probe_qt_move {
     ($state:expr, $qtable:expr) => {{
         let hash = $state.position_hash;
-        let index = qtt_index!(hash);
+        let index = qtt_index!(hash, $qtable.len());
         let entry = &mut unsafe { &mut *($qtable.table.get()) }[index];
 
         let v1 = entry.version.load(Ordering::Acquire);
@@ -595,7 +647,7 @@ macro_rules! probe_qt_move {
 macro_rules! hash_qt_entry {
     ($tt_move:expr, $score:expr, $flags:expr, $state:expr, $qtable:expr) => {{
         let hash = $state.position_hash;
-        let index = qtt_index!($state.position_hash);
+        let index = qt_index!(hash, $qtable.len());
         let table_vec: &mut Vec<QTEntry> =
             unsafe { &mut *($qtable.table.get()) };
         let entry = &mut table_vec[index];
@@ -607,7 +659,7 @@ macro_rules! hash_qt_entry {
             store_score -= $state.search_ply as i32;
         }
 
-        let encoded = qtt_enc_score!(store_score) | qtt_enc_flags!($flags);
+        let encoded = qt_enc_score!(store_score) | qt_enc_flags!($flags);
 
         let age = $qtable.age.load(Ordering::Relaxed);
         let sig = move_signature!($tt_move);
@@ -622,8 +674,8 @@ macro_rules! hash_qt_entry {
         let different = old_s0 ^ old_s1 ^ old_s2 != hash;
 
         let old_enc = (old_s1 & 0xFFFF_FFFF) as u32;
-        let old_score = qtt_score!(old_enc);
-        let old_flags = qtt_flags!(old_enc);
+        let old_score = qt_score!(old_enc);
+        let old_flags = qt_flags!(old_enc);
 
         let should_write = empty
             || different

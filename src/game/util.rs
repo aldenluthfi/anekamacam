@@ -317,20 +317,10 @@ pub fn verify_game_state(state: &State) {
     );
 }
 
-fn parse_perft_file(path: &str) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {/* until perft 6                      */
-    let file = fs::read_to_string(path);
-
-    if let Err(ref e) = file {
-        log_3!("Failed to read perft file at '{}': {e}", path);
-        return Vec::new();
-    } else {
-        log_3!("Successfully read perft file at '{}'", path);
-    }
-
-    let contents = file.unwrap_or_else(|e| {
-        panic!("Failed to read perft file at '{}': {e}", path)
-    });
-    let uncommented = COMMENT_PATTERN.replace_all(&contents, "");
+fn parse_perft_content(                                                         /* until perft 6                      */
+    content: &str,
+) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
+    let uncommented = COMMENT_PATTERN.replace_all(content, "");
 
     uncommented
         .lines()
@@ -452,13 +442,13 @@ pub fn benchmark_headless_perft(
 /// passed through to `perft`.
 pub fn benchmark_perft(
     state: &mut State,
-    path: &str,
+    content: &str,
     depth: u8,
     branch: i8,
     limit: usize,
     dict: Option<&Translator>,
 ) {
-    let mut perft_cases = parse_perft_file(path);
+    let mut perft_cases = parse_perft_content(content);
 
     if perft_cases.is_empty() {
         return;

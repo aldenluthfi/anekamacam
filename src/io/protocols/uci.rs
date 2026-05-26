@@ -4,9 +4,10 @@
 //!
 //! Supports uci, isready, ucinewgame, position, go (with ponder, movestogo,
 //! wtime/btime/winc/binc, movetime, depth, infinite), ponderhit, stop,
-//! setoption (UCI_Variant, Threads, Ponder), and quit. Available variants are
-//! discovered by scanning res/dicts/ for dict files that list "uci" under
-//! their = protocols = section and have a matching .conf file in configs/.
+//! setoption (UCI_Variant, Threads, Ponder, Hash), and quit. Available
+//! variants are discovered by scanning res/dicts/ for dict files that list
+//! "uci" under their = protocols = section and have a matching .conf file in
+//! configs/. Per-depth info lines include hashfull and cpuload fields.
 //!
 //! # Author
 //! Alden Luthfi
@@ -15,42 +16,33 @@
 //! 24/05/2026
 use crate::*;
 
-const TIME_OVERHEAD_MS: u128 = 50;
-const OPT_VARIANT: &str = "UCI_Variant";
-const OPT_THREADS: &str = "Threads";
-const OPT_PONDERS: &str = "Ponder";
-
 fn list_uci_variants() -> Vec<String> {
     let mut variants = Vec::new();
 
-    let Ok(entries) = fs::read_dir(DICTS_DIR) else {
-        return variants;
-    };
+    for dict_file in EMBEDDED_DICTS.files() {
+        let path = dict_file.path();
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-
-        if path.extension().and_then(|e| e.to_str()) != Some("dict")
-        || path.file_stem().and_then(|s| s.to_str()) == Some("example") {
-            continue;
-        }
-
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
-
-        let conf_path = format!("{}/{}.conf", CONFIGS_DIR, stem);
-        if !Path::new(&conf_path).is_file() {
-            continue;
-        }
-
-        let Ok(content) = fs::read_to_string(&path) else {
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
 
-        let uncommented = COMMENT_PATTERN.replace_all(&content, "");
+        if path.extension().and_then(|e| e.to_str()) != Some("dict")
+        || stem == "example" {
+            continue;
+        }
+
+        if EMBEDDED_CONFIGS
+            .get_file(format!("{}.conf", stem))
+            .is_none()
+        {
+            continue;
+        }
+
+        let Some(content) = dict_file.contents_utf8() else {
+            continue;
+        };
+
+        let uncommented = COMMENT_PATTERN.replace_all(content, "");
         let cleaned = uncommented
             .lines()
             .map(str::trim)
@@ -62,6 +54,7 @@ fn list_uci_variants() -> Vec<String> {
         let section_contents = SECTION_PATTERN
             .split(&cleaned)
             .filter(|c| !c.trim().is_empty());
+        
 
         let mut sections: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -81,7 +74,7 @@ fn list_uci_variants() -> Vec<String> {
             .unwrap_or(false);
 
         if has_uci {
-            variants.push(stem);
+            variants.push(stem.to_string());
         }
     }
 
@@ -412,8 +405,7 @@ pub fn uci() -> IoResult<()> {
         .cloned()
         .unwrap_or_else(|| "fide".to_string());
 
-    let config_path =
-        format!("{}/{}.conf", CONFIGS_DIR, default_variant);
+    let config_path = format!("{}.conf", default_variant);
     let mut state = parse_config_file(&config_path);
     let startpos = state.statics.startpos.clone();
     state.reset();
@@ -428,8 +420,8 @@ pub fn uci() -> IoResult<()> {
         .unwrap_or(1);
     let mut thread_count: usize = 1;
 
-    let ttable = Arc::new(TTable::default());
-    let qtable = Arc::new(QTable::default());
+    let mut ttable = Arc::new(TTable::with_mb(HASH_DEFAULT_MB * 2 / 3));
+    let mut qtable = Arc::new(QTable::with_mb(HASH_DEFAULT_MB / 3));
 
     let mut ponder_enabled = false;
 
@@ -471,7 +463,11 @@ pub fn uci() -> IoResult<()> {
                 );
                 println!(
                     "option name {} type check default false",
-                    OPT_PONDERS,
+                    OPT_PONDER,
+                );
+                println!(
+                    "option name {} type spin default {} min 1 max {}",
+                    OPT_HASH, HASH_DEFAULT_MB, HASH_MAX_MB,
                 );
                 println!("uciok");
                 stdout().flush().ok();
@@ -537,9 +533,7 @@ pub fn uci() -> IoResult<()> {
 
                     match name.as_str() {
                         OPT_VARIANT if variants.contains(&value) => {
-                            let conf = format!(
-                                "{}/{}.conf", CONFIGS_DIR, value
-                            );
+                            let conf = format!("{}.conf", value);
                             state = parse_config_file(&conf);
 
                             let position = state.statics.startpos.clone();
@@ -557,8 +551,19 @@ pub fn uci() -> IoResult<()> {
                                 thread_count = n.clamp(1, max_threads);
                             }
                         }
-                        OPT_PONDERS => {
+                        OPT_PONDER => {
                             ponder_enabled = value.to_lowercase() == "true";
+                        }
+                        OPT_HASH => {
+                            if let Ok(mb) = value.parse::<usize>() {
+                                let hash_mb = mb.clamp(1, HASH_MAX_MB);
+                                ttable = Arc::new(
+                                    TTable::with_mb(hash_mb * 2 / 3)
+                                );
+                                qtable = Arc::new(
+                                    QTable::with_mb(hash_mb / 3)
+                                );
+                            }
                         }
                         _ => {}
                     }
