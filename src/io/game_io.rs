@@ -185,7 +185,7 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
 
     let piece_type_pairs = collect_piece_type_pairs(state);
     let piece_type_count = piece_type_pairs.len();
-    let board_size = state.main_board.len();
+    let board_size = state.statics.board_size;
     let expected_count =
         2 + piece_type_count * 4 + piece_type_count * board_size * 2 + 15;
 
@@ -2135,7 +2135,7 @@ pub fn combine_board_strings(board1: &str, board2: &str) -> String {
 }
 
 pub fn format_game_state(state: &State) -> String {
-    let board_size = state.main_board.len();
+    let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
 
     let mut all_boards = vec![

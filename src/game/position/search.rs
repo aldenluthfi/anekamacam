@@ -105,21 +105,13 @@ pub fn clear_search(
     }
 
     let piece_count: usize = state.statics.pieces.len();
-    let board_size: usize =
-        (state.statics.files as usize) * (state.statics.ranks as usize);
 
-    state.search_hist = vec![vec![0u16; board_size]; piece_count];
+    state.search_hist =
+        vec![0u16; state.statics.board_size * piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
     ttable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     qtable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-
-    let piece_count: usize = state.statics.pieces.len();
-    let board_size: usize =
-        (state.statics.files as usize) * (state.statics.ranks as usize);
-
-    state.search_hist = vec![vec![0u16; board_size]; piece_count];
-    state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
     state.search_ply = 0;
 }
@@ -411,7 +403,9 @@ fn quiescence_search(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
 
-    bufs.score_buf[ply] = vec![usize::MAX; bufs.move_buf[ply].len()];
+    let n = bufs.move_buf[ply].len();
+    bufs.score_buf[ply].clear();
+    bufs.score_buf[ply].resize(n, usize::MAX);
 
     for i in 0..bufs.move_buf[ply].len() {
         pick_by_score!(
@@ -484,18 +478,8 @@ fn quiescence_search(
 
 
 /// Heuristic reduction for late move reduction, based on depth, move count,
-/// checks, and move type.
-///
-/// For captures, promotions, and drops:
-///
-/// reduction = 0.20 + (ln(depth) * sqrt(moves) / 3.35)
-///
-/// For quiet moves:
-///
-/// reduction = 1.35 + (ln(depth) * sqrt(moves) / 2.75)
-///
-/// In either case, if the side to move is in check or the opponent is in check,
-/// reduction is reduced by 1.25.
+/// checks, and move type. Returns a usize reduction value clamped to
+/// `[0, depth - 1]`. Uses pre-computed integer tables (no f64 at call site).
 #[macro_export]
 macro_rules! reduction {
     (
@@ -509,19 +493,22 @@ macro_rules! reduction {
         $is_drop:expr
     ) => {{
         let depth = $depth.min(MAX_DEPTH - 1);
-        let mut reduction = if $is_capture || $is_promotion || $is_drop {
-            $state.statics.capture_lmr
-                [depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
+        let idx   = depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1);
+        let check = $in_check || $opponent_in_check;
+
+        let base: usize = if $is_capture || $is_promotion || $is_drop {
+            if check {
+                $state.statics.capture_lmr_check[idx]
+            } else {
+                $state.statics.capture_lmr[idx]
+            }
+        } else if check {
+            $state.statics.quiesce_lmr_check[idx]
         } else {
-            $state.statics.quiesce_lmr
-                [depth * MAX_LMR_DEPTH + $moves.min(MAX_LMR_DEPTH - 1)]
-        };
+            $state.statics.quiesce_lmr[idx]
+        } as usize;
 
-        if $in_check || $opponent_in_check {
-            reduction -= 1.25;
-        }
-
-        reduction.clamp(0.0, $depth as f64 - 1.0) as usize
+        base.min($depth - 1)
     }};
 }
 
@@ -685,7 +672,9 @@ pub fn alpha_beta(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
 
-    bufs.score_buf[ply] = vec![usize::MAX; bufs.move_buf[ply].len()];
+    let n = bufs.move_buf[ply].len();
+    bufs.score_buf[ply].clear();
+    bufs.score_buf[ply].resize(n, usize::MAX);
 
     for i in 0..bufs.move_buf[ply].len() {
         pick_by_score!(
@@ -781,11 +770,12 @@ pub fn alpha_beta(
                 if score >= beta {
 
                     if is_quiet {
+                        let hist_idx =
+                            piece * state.statics.board_size + end as usize;
                         state.killer_hist[ply].swap(1, 0);
                         state.killer_hist[ply][0] = best_move.clone();
-                        state.search_hist[piece][end as usize] =
-                            state.search_hist[piece][end as usize]
-                            .saturating_add(bonus);
+                        state.search_hist[hist_idx] =
+                            state.search_hist[hist_idx].saturating_add(bonus);
                     }
 
                     hash_tt_entry!(
@@ -796,9 +786,10 @@ pub fn alpha_beta(
                 }
 
                 if is_quiet {
-                    state.search_hist[piece][end as usize] =
-                        state.search_hist[piece][end as usize]
-                        .saturating_add(bonus);
+                    let hist_idx =
+                        piece * state.statics.board_size + end as usize;
+                    state.search_hist[hist_idx] =
+                        state.search_hist[hist_idx].saturating_add(bonus);
                 }
 
                 alpha = score;
@@ -808,9 +799,9 @@ pub fn alpha_beta(
         if score <= alpha
         && is_quiet
         {                                                                       /* history malus                      */
-            state.search_hist[piece][end as usize] =
-                state.search_hist[piece][end as usize]
-                .saturating_sub(bonus);
+            let hist_idx = piece * state.statics.board_size + end as usize;
+            state.search_hist[hist_idx] =
+                state.search_hist[hist_idx].saturating_sub(bonus);
         }
     }
 
