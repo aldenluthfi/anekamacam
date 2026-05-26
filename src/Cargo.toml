@@ -28,6 +28,7 @@ chrono = { workspace = true }
 crossterm = { workspace = true }
 arboard = { workspace = true }
 rayon = { workspace = true }
+include_dir = { workspace = true }
 
 [features]
 hotpath = ["hotpath/hotpath"]

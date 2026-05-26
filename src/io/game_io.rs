@@ -156,7 +156,7 @@ pub fn set_piece_dynamic_parameters(
 }
 
 
-/// Parses tuned parameters from a flat space-separated file.
+/// Parses tuned parameters from a flat space-separated string.
 ///
 /// Token order:
 ///
@@ -169,12 +169,8 @@ pub fn set_piece_dynamic_parameters(
 ///
 /// Black PST rows are derived by mirroring white rows across the
 /// horizontal axis.
-pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
-    let raw = fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!("Failed to read parameter file {}: {}", path, e)
-    });
-
-    let tokens: Vec<i32> = raw
+pub fn parse_tuned_parameters(state: &mut State, content: &str) {
+    let tokens: Vec<i32> = content
         .split_whitespace()
         .map(|token| {
             token.parse::<i32>().unwrap_or_else(|_| {
@@ -318,6 +314,18 @@ pub fn parse_tuned_parameters_file(state: &mut State, path: &str) {
     refresh_eval_state(state);
 }
 
+fn param_dir(variant: &str) -> String {
+    let exe_dir = env::current_exe()
+        .ok()
+        .and_then(|p| {
+            p.parent()
+             .and_then(|d| d.to_str())
+             .map(str::to_string)
+        })
+        .unwrap_or_else(|| ".".to_string());
+    format!("{}/params/{}", exe_dir, variant)
+}
+
 fn find_last_epoch_in_dir(dir_path: &str) -> usize {
     let mut max_epoch = 0usize;
     if let Ok(entries) = fs::read_dir(dir_path) {
@@ -392,7 +400,7 @@ pub fn export_tuned_parameters_file(
         }
     }
 
-    let dir_path = format!("{}/{}", PARAM_DIR, variant);
+    let dir_path = param_dir(variant);
 
     if !Path::new(&dir_path).exists() {
         fs::create_dir_all(&dir_path).unwrap_or_else(|e| {
@@ -429,8 +437,12 @@ pub fn export_tuned_parameters_file(
 ///
 /// Returns (title, board) to be shown in the TUI
 pub fn parse_config_preview(path: &str) -> (String, String) {
-    let file_str =
-        fs::read_to_string(path).expect("Failed to read configuration file");
+    let file_str = embedded_config_str(path)
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            fs::read_to_string(path)
+                .expect("Failed to read configuration file")
+        });
 
     let uncommented_str = COMMENT_PATTERN.replace_all(&file_str, "");
     let cleaned = uncommented_str
@@ -576,6 +588,11 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
     (title, board_str)
  }
 
+fn embedded_config_str(path: &str) -> Option<&'static str> {
+    let filename = Path::new(path).file_name()?.to_str()?;
+    EMBEDDED_CONFIGS.get_file(filename)?.contents_utf8()
+}
+
 /// Parses a game configuration file and initializes a game state.
 /// See `example.conf` for the expected format of the configuration file.
 ///
@@ -594,8 +611,12 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
 /// Which are then converted into `Piece` structs and stored in the `State`
 /// struct.
 pub fn parse_config_file(path: &str) -> State {
-    let file_str =
-        fs::read_to_string(path).expect("Failed to read configuration file");
+    let file_str = embedded_config_str(path)
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            fs::read_to_string(path)
+                .expect("Failed to read configuration file")
+        });
 
     let uncommented_str = COMMENT_PATTERN.replace_all(&file_str, "");
     let cleaned = uncommented_str
@@ -1629,11 +1650,21 @@ pub fn parse_config_file(path: &str) -> State {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or_default();
-    let param_file = format!("{}/{}/latest.param", PARAM_DIR, variant);
+    let param_file = format!("{}/latest.param", param_dir(variant));
+    let embedded_param_path = format!("{}/latest.param", variant);
 
     if Path::new(&param_file).is_file() {
         log_3!("Loading parameters from file");
-        parse_tuned_parameters_file(&mut result, &param_file);
+        let raw = fs::read_to_string(&param_file).unwrap_or_else(|e| {
+            panic!("Failed to read parameter file {}: {}", param_file, e)
+        });
+        parse_tuned_parameters(&mut result, &raw);
+    } else if let Some(content) = EMBEDDED_PARAMS
+        .get_file(&embedded_param_path)
+        .and_then(|f| f.contents_utf8())
+    {
+        log_3!("Loading embedded default parameters");
+        parse_tuned_parameters(&mut result, content);
     } else {
         derive_parameters(&mut result);
         export_tuned_parameters_file(&result, variant);

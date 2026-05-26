@@ -87,7 +87,7 @@ pub use crate::io::game_io::{
     format_en_passant_square, format_fen, format_game_phase, format_game_state,
     format_hand, format_numeric_board, format_position_hash,
     format_special_rules, mirror_pst_across_horizontal_axis, parse_config_file,
-    parse_config_preview, parse_fen, parse_tuned_parameters_file,
+    parse_config_preview, parse_fen, parse_tuned_parameters,
     set_piece_dynamic_parameters,
 };
 pub use crate::io::logger::{
@@ -149,6 +149,7 @@ pub use ratatui::{
     },
     Frame, DefaultTerminal,
 };
+pub use include_dir::{include_dir, Dir};
 pub use regex::Regex;
 pub use std::{
     array, cmp, env,
@@ -282,7 +283,21 @@ pub const PROTOCOL_TUI: u8 = 0;
 pub const PROTOCOL_UCI: u8 = 1;
 
 pub const LOG_DIR: &str = "logs";
-pub const CONFIGS_DIR: &str = "configs";
-pub const DICTS_DIR: &str = "res/dicts";
-pub const PERFT_DIR: &str = "res/perft";
-pub const PARAM_DIR: &str = "res/param";
+
+pub const TIME_OVERHEAD_MS: u128 = 50;
+pub const OPT_VARIANT: &str = "Variant";
+pub const OPT_THREADS: &str = "Threads";
+pub const OPT_PONDER: &str = "Ponder";
+pub const OPT_HASH: &str = "Hash";
+
+pub const HASH_DEFAULT_MB: usize = 384;
+pub const HASH_MAX_MB: usize = 65536;
+
+pub static EMBEDDED_CONFIGS: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/../configs");
+pub static EMBEDDED_DICTS: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/../res/dicts");
+pub static EMBEDDED_PERFT: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/../res/perft");
+pub static EMBEDDED_PARAMS: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/../res/param");
