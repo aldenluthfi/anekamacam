@@ -381,6 +381,7 @@ fn handle_ponder(
                     .unwrap_or_else(|_| {
                         panic!("ponder thread panicked")
                     });
+                SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
                 print_bestmove(&result, state, dict);
                 return true;
             }
