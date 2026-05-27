@@ -39,7 +39,7 @@ pub type Board = (u8, u8, U4096);
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {
-        ($files, $ranks, U4096::ZERO)
+        ($files, $ranks, U4096::MIN)
     };
 }
 

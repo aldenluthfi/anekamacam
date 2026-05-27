@@ -628,19 +628,11 @@ impl State {
         }
     }
 
-    /// Mutable access to static configuration. Only valid before `State` is
-    /// cloned for multi-threaded search (Arc refcount == 1).
     #[inline]
     pub fn static_mut(&mut self) -> &mut StaticState {
-        Arc::get_mut(&mut self.statics)
-            .expect("static_data is shared; writes only allowed before search")
+        unsafe { Arc::get_mut(&mut self.statics).unwrap_unchecked() }
     }
 
-    /// Resets all dynamic position/search fields while keeping static config.
-    ///
-    /// This clears board occupancy, counters, caches, histories, and search
-    /// bookkeeping while preserving static variant definitions.
-    /// It prepares the state for loading or initializing a fresh position.
     pub fn reset(&mut self) {
         let piece_count = self.statics.pieces.len();
         let board_size = self.statics.board_size;

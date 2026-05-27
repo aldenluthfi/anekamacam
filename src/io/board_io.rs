@@ -131,3 +131,118 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     result
 }
 
+pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
+    let mut result = String::new();
+    let width = 4;
+
+    result.push_str(&format!(
+        "   ╔{}╗\n",
+        (0..files)
+            .map(|_| "═".repeat(width + 2))
+            .collect::<Vec<String>>()
+            .join("╤")
+    ));
+
+    for rank in (0..ranks).rev() {
+        result.push_str(&format!("{:02} ║", rank));
+        for file in 0..files {
+            let idx = rank as usize * files as usize + file as usize;
+            result.push_str(
+                &format!(" {:>width$} ", values[idx], width = width)
+            );
+            if file + 1 < files {
+                result.push('│');
+            }
+        }
+        result.push_str("║\n");
+
+        if rank > 0 {
+            result.push_str(&format!(
+                "   ╟{}╢\n",
+                (0..files)
+                    .map(|_| "─".repeat(width + 2))
+                    .collect::<Vec<String>>()
+                    .join("┼")
+            ));
+        }
+    }
+
+    result.push_str(&format!(
+        "   ╚{}╝\n",
+        (0..files)
+            .map(|_| "═".repeat(width + 2))
+            .collect::<Vec<String>>()
+            .join("╧")
+    ));
+
+    result.push_str("     ");
+    for file in 0..files {
+        if files <= 26 {
+            result.push_str(&format!(
+                " {:^width$} ",
+                (b'A' + file) as char,
+                width = width
+            ));
+        } else {
+            result.push_str(&format!(" {:^width$} ", file, width = width));
+        }
+        if file + 1 < files {
+            result.push(' ');
+        }
+    }
+
+    result.push('\n');
+    result
+}
+
+pub fn mirror_pst_across_horizontal_axis(
+    pst: &[i32],
+    files: usize,
+    ranks: usize,
+) -> Vec<i32> {
+    assert!(
+        pst.len() == files * ranks,
+        "PST length ({}) doesn't match board size ({})",
+        pst.len(),
+        files * ranks
+    );
+
+    let mut mirrored = vec![0i32; pst.len()];
+
+    for rank in 0..ranks {
+        let src_rank = ranks - 1 - rank;
+        let dst_start = rank * files;
+        let src_start = src_rank * files;
+
+        mirrored[dst_start..dst_start + files]
+            .copy_from_slice(&pst[src_start..src_start + files]);
+    }
+
+    mirrored
+}
+
+pub fn determine_board_dimensions(fen: &str) -> (u8, u8) {
+    let ranks_data: Vec<&str> = fen.split('/').collect();
+    let rank_count = ranks_data.len() as u8;
+    let mut file_count = 0u8;
+    let mut chars = ranks_data[0].chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() {
+            let mut run = c.to_digit(10).unwrap() as u16;
+            while let Some(next) = chars.peek() {
+                if next.is_ascii_digit() {
+                    run =
+                        run * 10 +
+                        chars.next().unwrap().to_digit(10).unwrap() as u16;
+                } else {
+                    break;
+                }
+            }
+            file_count += run as u8;
+        } else {
+            file_count += 1;
+        }
+    }
+    (file_count, rank_count)
+}
