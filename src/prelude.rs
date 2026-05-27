@@ -72,8 +72,8 @@ pub use crate::game::search::{
 };
 
 pub use crate::game::util::{
-    benchmark_perft, benchmark_headless_perft, benchmark_search, format_time,
-    perft, random_u128, refresh_eval_state, verify_game_state, square_distance
+    benchmark_headless_perft, benchmark_perft, benchmark_search, format_time,
+    perft, random_u128, refresh_eval_state, square_distance, verify_game_state,
 };
 
 /*----------------------------------------------------------------------------*\
@@ -107,6 +107,7 @@ pub use crate::io::protocols::{
 \*----------------------------------------------------------------------------*/
 pub use arboard::Clipboard;
 pub use bnum::types::U4096;
+pub use chrono;
 pub use core::cell::SyncUnsafeCell;
 pub use crossterm::{
     event,
@@ -125,13 +126,10 @@ pub use env_logger::{
     Builder as LoggerBuilder, Target as LoggerTarget
 };
 pub use hashbrown::{HashMap, HashSet};
-pub use rayon::iter::{
-    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
-};
 pub use hotpath;
+pub use include_dir::{include_dir, Dir};
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, trace, warn};
-pub use mpsc::{channel, Receiver, Sender};
 pub use rand::{
     rngs::StdRng, seq::SliceRandom, Rng, SeedableRng,
 };
@@ -150,7 +148,9 @@ pub use ratatui::{
     },
     Frame, DefaultTerminal,
 };
-pub use include_dir::{include_dir, Dir};
+pub use rayon::iter::{
+    IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 pub use regex::Regex;
 pub use std::{
     array, cmp, env,
@@ -163,7 +163,8 @@ pub use std::{
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc::{channel, Receiver, Sender},
+        Arc, Mutex,
     },
     thread::{self, JoinHandle},
     time::{self, Duration, Instant, SystemTime},
@@ -172,12 +173,6 @@ pub use std::{
 /*----------------------------------------------------------------------------*\
                                   CONSTANTS
 \*----------------------------------------------------------------------------*/
-pub const FORMAT_VERBOSITY_1: u8 = 1;
-pub const FORMAT_VERBOSITY_2: u8 = 2;
-pub const FORMAT_VERBOSITY_3: u8 = 3;
-pub const FORMAT_VERBOSITY_4: u8 = 4;
-pub const FORMAT_VERBOSITY_5: u8 = 5;
-
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 pub const MAX_DEPTH: usize = 128;

@@ -51,6 +51,11 @@ impl Clone for TTEntry {
     }
 }
 
+/// Shared transposition table using seqlock+parity for lock-free thread safety.
+///
+/// Entries are read with a seqlock: readers check version parity before and
+/// after the slot load and retry on mismatch. The XOR parity across slot[0..2]
+/// catches cross-entry corruption. Age is bumped each search for replacement.
 pub struct TTable {
     pub table: SyncUnsafeCell<Vec<TTEntry>>,                                    /* shared mutable access              */
     pub age: AtomicU64,                                                         /* search age; bump per search        */
@@ -449,6 +454,10 @@ impl Clone for QTEntry {
     }
 }
 
+/// Quiescence-search transposition table; same seqlock+parity scheme as TTable.
+///
+/// Uses QTEntry slots instead of TTEntry; otherwise identical thread-safety
+/// invariants and age-based replacement policy apply.
 pub struct QTable {
     pub table: SyncUnsafeCell<Vec<QTEntry>>,                                    /* shared mutable access              */
     pub age: AtomicU64,                                                         /* search age; bump per search        */
