@@ -314,18 +314,6 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     refresh_eval_state(state);
 }
 
-fn param_dir(variant: &str) -> String {
-    let exe_dir = env::current_exe()
-        .ok()
-        .and_then(|p| {
-            p.parent()
-             .and_then(|d| d.to_str())
-             .map(str::to_string)
-        })
-        .unwrap_or_else(|| ".".to_string());
-    format!("{}/params/{}", exe_dir, variant)
-}
-
 fn find_last_epoch_in_dir(dir_path: &str) -> usize {
     let mut max_epoch = 0usize;
     if let Ok(entries) = fs::read_dir(dir_path) {
@@ -400,7 +388,7 @@ pub fn export_tuned_parameters_file(
         }
     }
 
-    let dir_path = param_dir(variant);
+    let dir_path = format!("{}/{}", PARAMS_DIR, variant);
 
     if !Path::new(&dir_path).exists() {
         fs::create_dir_all(&dir_path).unwrap_or_else(|e| {
@@ -1650,17 +1638,10 @@ pub fn parse_config_file(path: &str) -> State {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or_default();
-    let param_file = format!("{}/latest.param", param_dir(variant));
-    let embedded_param_path = format!("{}/latest.param", variant);
+    let param_path = format!("{}/latest.param", variant);
 
-    if Path::new(&param_file).is_file() {
-        log_3!("Loading parameters from file");
-        let raw = fs::read_to_string(&param_file).unwrap_or_else(|e| {
-            panic!("Failed to read parameter file {}: {}", param_file, e)
-        });
-        parse_tuned_parameters(&mut result, &raw);
-    } else if let Some(content) = EMBEDDED_PARAMS
-        .get_file(&embedded_param_path)
+    if let Some(content) = EMBEDDED_PARAMS
+        .get_file(&param_path)
         .and_then(|f| f.contents_utf8())
     {
         log_3!("Loading embedded default parameters");

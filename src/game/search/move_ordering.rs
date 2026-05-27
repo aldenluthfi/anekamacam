@@ -193,7 +193,7 @@ macro_rules! see {
 macro_rules! score_move {
     ($state:expr, $mv:expr, $pv_move:expr) => {{
         if $pv_move.as_ref().is_some_and(
-            |pm| pm.0 == $mv.0 && pm.1 == move_signature!($mv)
+            |pm| m_matches!($mv, pm)
         ) {
             5_000_000                                                           /* PV move always ordered first        */
         } else if !m_capture!($mv) {

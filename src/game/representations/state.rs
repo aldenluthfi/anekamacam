@@ -439,8 +439,10 @@ pub struct State {
 
     pub position_hash_map: HashMap<PositionHash, u8>,                           /* position hash to repetition count  */
     pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
+    pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
+    pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
-    pub search_hist: Vec<u16>,                                                   /* [piece * board_size + square]      */
+    pub search_hist: Vec<u16>,                                                  /* [piece * board_size + square]      */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 }
 
@@ -485,6 +487,8 @@ impl Clone for State {
 
             position_hash_map: self.position_hash_map.clone(),
             pv_line: self.pv_line.clone(),
+            pv_table: self.pv_table.clone(),
+            pv_length: self.pv_length.clone(),
 
             search_hist: self.search_hist.clone(),
             killer_hist: self.killer_hist.clone(),
@@ -616,6 +620,8 @@ impl State {
 
             position_hash_map: HashMap::with_capacity(128),
             pv_line: array::from_fn(|_| null_move()),
+            pv_table: vec![null_move(); PV_STRIDE * PV_STRIDE],
+            pv_length: vec![0; PV_STRIDE],
 
             search_hist: vec![0u16; board_size * piece_count],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
@@ -678,6 +684,8 @@ impl State {
 
         self.position_hash_map.clear();
         self.pv_line = array::from_fn(|_| null_move());
+        self.pv_table = vec![null_move(); PV_STRIDE * PV_STRIDE];
+        self.pv_length = vec![0; PV_STRIDE];
 
         self.search_hist = vec![0u16; board_size * piece_count];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
