@@ -229,10 +229,6 @@ lazy_static! {
 
         result
     };
-
-
-    pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
-        Mutex::new(VecDeque::new());
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
         let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
 
@@ -277,12 +273,6 @@ pub const ENDGAME: u8 = 3;
 
 pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       /* 256MB                              */
 pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       /* 128MB                              */
-
-pub const TUI_NORMAL_MODE: u8 = 0;
-pub const TUI_INPUT_MODE: u8 = 1;
-
-pub const PROTOCOL_TUI: u8 = 0;
-pub const PROTOCOL_UCI: u8 = 1;
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

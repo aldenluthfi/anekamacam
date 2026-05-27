@@ -320,7 +320,7 @@ fn start_search(uci: &mut Uci, tokens: &[&str]) {
             let result = search_position(
                 &mut s, tt_clone, qt_clone,
                 &mut info, &mut bufs, tc,
-                dict_clone.as_ref(), PROTOCOL_UCI,
+                dict_clone.as_ref(),
             );
             if !is_ponder {
                 print_bestmove(&result, &s, dict_clone.as_ref());
@@ -379,7 +379,7 @@ fn handle_ponderhit(uci: &mut Uci) {
                 let result = search_position(
                     &mut s, tt_clone, qt_clone,
                     &mut info, &mut bufs, tc,
-                    dict_clone.as_ref(), PROTOCOL_UCI,
+                    dict_clone.as_ref(),
                 );
                 print_bestmove(&result, &s, dict_clone.as_ref());
                 result
