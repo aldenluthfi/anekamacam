@@ -118,6 +118,21 @@ fn handle_position(
     }
 }
 
+fn print_bestmove(
+    result: &SearchResult,
+    state: &State,
+    dict: Option<&Translator>,
+) {
+    let best = format_move(&result.best_move, state, dict);
+    if result.ponder_move != null_move() {
+        let ponder = format_move(&result.ponder_move, state, dict);
+        println!("bestmove {} ponder {}", best, ponder);
+    } else {
+        println!("bestmove {}", best);
+    }
+    stdout().flush().ok();
+}
+
 fn handle_go(
     state: &mut State,
     tokens: &[&str],
@@ -125,8 +140,11 @@ fn handle_go(
     ttable: Arc<TTable>,
     qtable: Arc<QTable>,
     thread_count: usize,
-    protocol: u8,
-) -> SearchResult {
+    ponder_enabled: bool,
+    receiver: &Receiver<String>,
+) -> bool {
+    let is_ponder = ponder_enabled && tokens.contains(&"ponder");
+
     let mut depth = 0usize;
     let mut movetime_ms = 0u128;
     let mut wtime_ms = 0u128;
@@ -196,120 +214,24 @@ fn handle_go(
         }
     }
 
-    let mut info = SearchInfo::default();
-
-    if movetime_ms > 0 {
-        let safe = movetime_ms.saturating_sub(TIME_OVERHEAD_MS);
-        info.set_timed = safe * 1_000_000;
-    } else if !infinite {
-        let (time_ms, inc_ms) = if state.playing == WHITE {
-            (wtime_ms, winc_ms)
-        } else {
-            (btime_ms, binc_ms)
-        };
-        if time_ms > 0 {
-            let divisor =
-                if movestogo > 0 { movestogo as u128 } else { 40 };
-            let raw_alloc = time_ms / divisor + inc_ms * 2 / 3;
-            let cap = time_ms.saturating_sub(TIME_OVERHEAD_MS);
-            info.set_timed = raw_alloc.min(cap) * 1_000_000;
-        }
-    }
-
-    info.set_depth = if depth > 0 { depth } else { MAX_DEPTH };
-    info.set_moves = movestogo;
-
-    SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
-
-    let mut bufs = SearchBufs::default();
-    search_position(
-        state, ttable, qtable,
-        &mut info, &mut bufs, thread_count, dict, protocol,
-    )
-}
-
-fn print_bestmove(
-    result: &SearchResult,
-    state: &State,
-    dict: Option<&Translator>,
-) {
-    let best = format_move(&result.best_move, state, dict);
-    if result.ponder_move != null_move() {
-        let ponder = format_move(&result.ponder_move, state, dict);
-        println!("bestmove {} ponder {}", best, ponder);
-    } else {
-        println!("bestmove {}", best);
-    }
-    stdout().flush().ok();
-}
-
-fn handle_ponder(
-    state: &mut State,
-    tokens: &[&str],
-    dict: Option<&Translator>,
-    ttable: Arc<TTable>,
-    qtable: Arc<QTable>,
-    thread_count: usize,
-    receiver: &Receiver<String>,
-) -> bool {
-    let mut wtime_ms = 0u128;
-    let mut btime_ms = 0u128;
-    let mut winc_ms = 0u128;
-    let mut binc_ms = 0u128;
-    let mut movestogo = 0usize;
-    let mut movetime_ms = 0u128;
-
-    let mut i = 1;
-    while i < tokens.len() {
-        match tokens[i] {
-            "wtime" => {
-                wtime_ms = tokens.get(i + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                i += 2;
-            }
-            "btime" => {
-                btime_ms = tokens.get(i + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                i += 2;
-            }
-            "winc" => {
-                winc_ms = tokens.get(i + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                i += 2;
-            }
-            "binc" => {
-                binc_ms = tokens.get(i + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                i += 2;
-            }
-            "movestogo" => {
-                movestogo = tokens.get(i + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                i += 2;
-            }
-            "movetime" => {
-                movetime_ms = tokens.get(i + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                i += 2;
-            }
-            _ => { i += 1; }
-        }
-    }
-
     let (time_ms, inc_ms) = if state.playing == WHITE {
         (wtime_ms, winc_ms)
     } else {
         (btime_ms, binc_ms)
     };
-    let divisor =
-        if movestogo > 0 { movestogo as u128 } else { 40 };
-    let ponder_time_ns = if movetime_ms > 0 {
+    let divisor = if movestogo > 0 { movestogo as u128 } else { 40 };
+
+    let timed_ns = if movetime_ms > 0 {
+        movetime_ms.saturating_sub(TIME_OVERHEAD_MS) * 1_000_000
+    } else if !infinite && !is_ponder && time_ms > 0 {
+        let raw = time_ms / divisor + inc_ms * 2 / 3;
+        let cap = time_ms.saturating_sub(TIME_OVERHEAD_MS);
+        raw.min(cap) * 1_000_000
+    } else {
+        0
+    };
+
+    let ponderhit_timed_ns = if movetime_ms > 0 {
         movetime_ms.saturating_sub(TIME_OVERHEAD_MS) * 1_000_000
     } else if time_ms > 0 {
         let raw = time_ms / divisor + inc_ms * 2 / 3;
@@ -317,6 +239,14 @@ fn handle_ponder(
         raw.min(cap) * 1_000_000
     } else {
         0
+    };
+
+    let search_depth = if depth > 0 { depth } else { MAX_DEPTH };
+
+    let (thread_depth, thread_timed) = if is_ponder {
+        (MAX_DEPTH, 0u128)
+    } else {
+        (search_depth, timed_ns)
     };
 
     let state_clone = state.clone();
@@ -327,13 +257,15 @@ fn handle_ponder(
 
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
 
-    let ponder_thread = thread::Builder::new()
-        .name("ponder".to_string())
+    let search_thread = thread::Builder::new()
+        .name("search".to_string())
         .stack_size(64 * 1024 * 1024)
         .spawn(move || {
             let mut s = state_clone;
             let mut info = SearchInfo {
-                set_depth: MAX_DEPTH,
+                set_depth: thread_depth,
+                set_timed: thread_timed,
+                set_moves: movestogo,
                 ..Default::default()
             };
             let mut bufs = SearchBufs::default();
@@ -342,55 +274,72 @@ fn handle_ponder(
                 &mut info, &mut bufs, tc,
                 dict_clone.as_ref(), PROTOCOL_UCI,
             )
-        }).expect("failed to spawn ponder thread");
+        }).expect("failed to spawn search thread");
 
     loop {
-        let ponder_line = match receiver.recv() {
-            Ok(l) => l,
-            Err(_) => {
+        if search_thread.is_finished() {
+            let result = search_thread
+                .join()
+                .unwrap_or_else(|_| panic!("search thread panicked"));
+            print_bestmove(&result, state, dict);
+            return true;
+        }
+
+        match receiver.recv_timeout(Duration::from_millis(1)) {
+            Ok(cmd) => {
+                let cmd_toks: Vec<&str> =
+                    cmd.split_whitespace().collect();
+                match cmd_toks.first().copied().unwrap_or("") {
+                    "stop" => {
+                        SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+                        let result = search_thread
+                            .join()
+                            .unwrap_or_else(|_| panic!("search thread panicked"));
+                        SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
+                        print_bestmove(&result, state, dict);
+                        return true;
+                    }
+                    "quit" => {
+                        SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+                        let result = search_thread
+                            .join()
+                            .unwrap_or_else(|_| panic!("search thread panicked"));
+                        print_bestmove(&result, state, dict);
+                        return false;
+                    }
+                    "ponderhit" if is_ponder => {
+                        SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+                        let _ = search_thread.join();
+                        SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
+                        let mut info = SearchInfo {
+                            set_depth: search_depth,
+                            set_timed: ponderhit_timed_ns,
+                            set_moves: movestogo,
+                            ..Default::default()
+                        };
+                        let mut bufs = SearchBufs::default();
+                        let result = search_position(
+                            state,
+                            Arc::clone(&ttable),
+                            Arc::clone(&qtable),
+                            &mut info, &mut bufs, thread_count,
+                            dict, PROTOCOL_UCI,
+                        );
+                        print_bestmove(&result, state, dict);
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => {
                 SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
-                let _ = ponder_thread.join();
+                let result = search_thread
+                    .join()
+                    .unwrap_or_else(|_| panic!("search thread panicked"));
+                print_bestmove(&result, state, dict);
                 return false;
             }
-        };
-        let ponder_toks: Vec<&str> =
-            ponder_line.split_whitespace().collect();
-        match ponder_toks.first().copied().unwrap_or("") {
-            "ponderhit" => {
-                SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
-                let _ = ponder_thread.join();
-                SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
-                let mut info = SearchInfo {
-                    set_depth: MAX_DEPTH,
-                    set_timed: ponder_time_ns,
-                    ..Default::default()
-                };
-                let mut bufs = SearchBufs::default();
-                let result = search_position(
-                    state,
-                    Arc::clone(&ttable),
-                    Arc::clone(&qtable),
-                    &mut info, &mut bufs, thread_count,
-                    dict, PROTOCOL_UCI,
-                );
-                print_bestmove(&result, state, dict);
-                return true;
-            }
-            "stop" => {
-                let result = ponder_thread.join()
-                    .unwrap_or_else(|_| {
-                        panic!("ponder thread panicked")
-                    });
-                SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
-                print_bestmove(&result, state, dict);
-                return true;
-            }
-            "quit" => {
-                SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
-                let _ = ponder_thread.join();
-                return false;
-            }
-            _ => {}
         }
     }
 }
@@ -431,9 +380,7 @@ pub fn uci() -> IoResult<()> {
     thread::spawn(move || {
         for line in stdin().lock().lines().map_while(Result::ok) {
             let trimmed = line.trim().to_string();
-            if trimmed.split_whitespace().next() == Some("stop") {
-                SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
-            }
+            
             if sender.send(trimmed).is_err() {
                 break;
             }
@@ -491,33 +438,18 @@ pub fn uci() -> IoResult<()> {
                 );
             }
             "go" => {
-                let is_ponder = tokens.contains(&"ponder");
-                if is_ponder && ponder_enabled {
-                    let keep_going = handle_ponder(
-                        &mut state,
-                        &tokens,
-                        translator.as_ref(),
-                        Arc::clone(&ttable),
-                        Arc::clone(&qtable),
-                        thread_count,
-                        &receiver,
-                    );
-                    if !keep_going {
-                        return Ok(());
-                    }
-                } else {
-                    let result = handle_go(
-                        &mut state,
-                        &tokens,
-                        translator.as_ref(),
-                        Arc::clone(&ttable),
-                        Arc::clone(&qtable),
-                        thread_count,
-                        PROTOCOL_UCI,
-                    );
-                    print_bestmove(
-                        &result, &state, translator.as_ref()
-                    );
+                let result = handle_go(
+                    &mut state,
+                    &tokens,
+                    translator.as_ref(),
+                    Arc::clone(&ttable),
+                    Arc::clone(&qtable),
+                    thread_count,
+                    ponder_enabled,
+                    &receiver,
+                );
+                if !result {
+                    return Ok(());
                 }
             }
             "setoption" => {
@@ -570,7 +502,11 @@ pub fn uci() -> IoResult<()> {
                     }
                 }
             }
-            "quit" => break,
+            "stop" => SYSTEM_INTERRUPT.store(true, Ordering::Relaxed),
+            "quit" => {
+                SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+                break;
+            },
             _ => {}
         }
     }

@@ -130,7 +130,7 @@ pub use rayon::iter::{
 pub use hotpath;
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, trace, warn};
-pub use mpsc::{channel, Receiver, Sender, TryRecvError};
+pub use mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
 pub use rand::{
     rngs::StdRng, seq::SliceRandom, Rng, SeedableRng,
 };
@@ -180,6 +180,7 @@ pub const FORMAT_VERBOSITY_5: u8 = 5;
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 pub const MAX_DEPTH: usize = 128;
+pub const PV_STRIDE: usize = MAX_DEPTH + 1;
 pub const MAX_LMR_DEPTH: usize = 32;
 pub const MAX_LOGS_LEN: usize = u16::MAX as usize;
 pub const MAX_HISTORY_BONUS: usize = MAX_DEPTH.pow(3);
@@ -283,6 +284,7 @@ pub const PROTOCOL_TUI: u8 = 0;
 pub const PROTOCOL_UCI: u8 = 1;
 
 pub const LOG_DIR: &str = "logs";
+pub const PARAMS_DIR: &str = "res/param";
 
 pub const TIME_OVERHEAD_MS: u128 = 50;
 pub const OPT_VARIANT: &str = "Variant";

@@ -314,7 +314,7 @@ macro_rules! hash_tt_entry {
         let mut encoded: u128 = flags_depth as u128;
         tt_enc_score!(encoded, store_score);
 
-        let sig = move_signature!($tt_move);                                    /* XOR of move.1 entries              */
+        let sig = m_signature!($tt_move);                                       /* XOR of move.1 entries              */
         let age = $table.age.load(Ordering::Relaxed);
         let a = $tt_move.0;                                                     /* move.0 128-bit                     */
         let b = ((sig as u128) << 41) | encoded;                                /* sig << 41 | score<<9 | flags_depth */
@@ -357,41 +357,44 @@ macro_rules! hash_tt_entry {
 
 #[macro_export]
 macro_rules! fill_pv_line {
-    ($state:expr, $table:expr, $depth:expr) => {{
-        let depth = ($depth).min(MAX_DEPTH);
-        let mut filled = 0;
+    ($state:expr, $table:expr, $triangular_length:expr, $depth:expr) => {{
+        for slot in 0..$triangular_length {
+            let pv_move = $state.pv_line[slot].clone();
+            make_move!($state, pv_move);
+        }
+        let mut out: Vec<Move> = Vec::with_capacity(64);
+        let mut scratch: Vec<u64> = Vec::with_capacity(16);
 
-        for i in 0..depth {
-            let Some(pv_pseudo) = probe_pv_move!($state, $table) else {
+        for slot in $triangular_length..$depth {
+            let Some(pm) = probe_pv_move!($state, $table) else {
                 break;
             };
 
-            let mut pv_buf: Vec<Move> = Vec::with_capacity(64);
-            let mut pv_scratch: Vec<u64> = Vec::with_capacity(16);
-            generate_all_moves_and_drops($state, &mut pv_buf, &mut pv_scratch);
-            let mut pv_match: Option<Move> = None;
+            generate_all_moves_and_drops(
+                $state, &mut out, &mut scratch
+            );
 
-            for mv in pv_buf {
-                let legal = make_move!($state, mv.clone());
-                if legal { undo_move!($state); }
+            let mut pv_cand = None;
 
-                if mv.0 == pv_pseudo.0
-                && move_signature!(mv) == pv_pseudo.1
-                && legal {
-                    pv_match = Some(mv);
+            for mv in out.iter() {
+
+                if !make_move!($state, mv.clone()) {
+                    continue;
+                }
+
+                if m_matches!(mv, pm) {
+                    pv_cand = Some(mv.clone());
                     break;
                 }
+
+                undo_move!($state);
             }
 
-            let Some(pv_move) = pv_match else { break; };
+            let Some(pv_move) = pv_cand else {
+                break;
+            };
 
-            make_move!($state, pv_move.clone());
-            $state.pv_line[i] = pv_move;
-            filled = i + 1;
-        }
-
-        for i in filled..depth {
-            $state.pv_line[i] = null_move();
+            $state.pv_line[slot] = pv_move;
         }
 
         while $state.search_ply > 0 {
@@ -662,7 +665,7 @@ macro_rules! hash_qt_entry {
         let encoded = qt_enc_score!(store_score) | qt_enc_flags!($flags);
 
         let age = $qtable.age.load(Ordering::Relaxed);
-        let sig = move_signature!($tt_move);
+        let sig = m_signature!($tt_move);
         let a = $tt_move.0;
         let b = ((sig as u128) << 32) | (encoded as u128);
 
