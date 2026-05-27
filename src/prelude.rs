@@ -130,7 +130,7 @@ pub use rayon::iter::{
 pub use hotpath;
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, trace, warn};
-pub use mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
+pub use mpsc::{channel, Receiver, Sender};
 pub use rand::{
     rngs::StdRng, seq::SliceRandom, Rng, SeedableRng,
 };
