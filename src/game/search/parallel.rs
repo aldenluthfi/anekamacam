@@ -13,6 +13,11 @@
 
 use crate::*;
 
+/// Runs N independent iterative-deepening threads sharing a lock-free TT/QT.
+///
+/// Each thread gets its own state clone and SearchBufs; synchronization is
+/// limited to start/stop. After all threads join, run() returns the result
+/// with the highest score.
 pub struct ThreadPool {
     pub main_state: State,
     pub tt: Arc<TTable>,
