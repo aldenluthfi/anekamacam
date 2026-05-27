@@ -153,7 +153,7 @@ fn derive_piece_value(state: &State, piece: &Piece) -> f64 {
         piece.char, mobility_value
     );
 
-    2.0 * board_size as f64 * (0.4 * reach_value + 0.6 * mobility_value)
+    1.75 * board_size as f64 * (0.4 * reach_value + 0.6 * mobility_value)
 }
 
 fn derive_piece_mobility(

@@ -47,6 +47,7 @@ pub mod game {
 
 pub mod io {
     pub mod board_io;
+    pub mod piece_io;
     pub mod game_io;
     pub mod move_io;
 
