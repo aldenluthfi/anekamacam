@@ -228,7 +228,14 @@ pub fn iterative_deepening(
 
         best_score = score;
 
-        fill_pv_line!(state, ttable, depth);
+        let triangular_pv_length = state.pv_length[0].min(MAX_DEPTH);
+        for index in 0..triangular_pv_length {
+            state.pv_line[index] = state.pv_table[index].clone();
+        }
+        for index in triangular_pv_length..MAX_DEPTH {
+            state.pv_line[index] = null_move();
+        }
+        fill_pv_line!(state, ttable, triangular_pv_length, depth);
         best_move = state.pv_line[0].clone();
 
         let elapsed = ENGINE_START
@@ -551,6 +558,7 @@ pub fn alpha_beta(
     }
 
     let ply = state.search_ply as usize;
+    state.pv_length[ply] = ply;
 
     alpha = alpha.max(-INF + ply as i32);
     beta  = beta.min(INF - ply as i32 - 1);
@@ -809,6 +817,21 @@ pub fn alpha_beta(
                 }
 
                 alpha = score;
+
+                let next_ply = ply + 1;
+                let child_len = state.pv_length[next_ply];
+
+                state.pv_length[ply] = child_len;
+
+                let (a, b) = state.pv_table
+                    .split_at_mut(next_ply * PV_STRIDE);
+
+                a[ply * PV_STRIDE + ply] = mv.clone();
+
+                for pv_index in next_ply..child_len {
+                    a[ply * PV_STRIDE + pv_index] = b[pv_index].clone();
+                }
+
             }
         }
 

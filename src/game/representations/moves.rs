@@ -103,11 +103,18 @@ impl Default for Move {
 /// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
 /// `move.1`.  The result is 0 for moves with no captures (empty list).
 #[macro_export]
-macro_rules! move_signature {
+macro_rules! m_signature {
     ($mv:expr) => {
         $mv.1.iter().fold(0u64, |acc, &x| acc ^ x) |
         ($mv.1.iter().any(|&capture| !multi_move_is_unload!(capture)) as u64)
         << 34                                                                   /* Set if its an actual capture       */
+    };
+}
+
+#[macro_export]
+macro_rules! m_matches {
+    ($mv:expr, $pseudo:expr) => {
+        $mv.0 == $pseudo.0 && m_signature!($mv) == $pseudo.1
     };
 }
 
