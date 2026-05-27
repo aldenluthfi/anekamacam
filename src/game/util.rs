@@ -552,8 +552,7 @@ pub fn benchmark_search(
     let mut bufs = SearchBufs::default();
 
     search_position(
-        state, ttable, qtable,
-        &mut info, &mut bufs, thread_num, dict, PROTOCOL_TUI,
+        state, ttable, qtable, &mut info, &mut bufs, thread_num, dict
     );
 }
 

@@ -14,19 +14,6 @@
 use crate::*;
 
 #[macro_export]
-macro_rules! push_log_message {
-    ($level:expr, $message:expr) => {
-        let formatted = format!("[{}] {}", $level, $message);
-
-        let mut queue = LOG_MESSAGES.lock().unwrap_or_else(|e| {
-            e.into_inner()
-        });
-
-        queue.push_back(formatted.clone());
-    };
-}
-
-#[macro_export]
 macro_rules! verbosity_enabled {
     ($level:expr) => {
         configured_verbosity_level() >= $level
@@ -37,8 +24,6 @@ macro_rules! verbosity_enabled {
 macro_rules! log_1 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message!(1, message);
             error!("{}", format!($($arg)*));
         }
     };
@@ -48,8 +33,6 @@ macro_rules! log_1 {
 macro_rules! log_2 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message!(2, message);
             warn!("{}", format!($($arg)*));
         }
     };
@@ -59,8 +42,6 @@ macro_rules! log_2 {
 macro_rules! log_3 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message!(3, message);
             info!("{}", format!($($arg)*));
         }
     };
@@ -70,8 +51,6 @@ macro_rules! log_3 {
 macro_rules! log_4 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message!(4, message);
             debug!("{}", format!($($arg)*));
         }
     };
@@ -81,8 +60,6 @@ macro_rules! log_4 {
 macro_rules! log_5 {
     ($($arg:tt)*) => {
         {
-            let message = format!($($arg)*);
-            push_log_message!(5, message);
             trace!("{}", format!($($arg)*));
         }
     };
@@ -95,17 +72,6 @@ fn level_to_verbosity(level: log::Level) -> u8 {
         log::Level::Info => 3,
         log::Level::Debug => 4,
         log::Level::Trace => 5,
-    }
-}
-
-fn verbosity_style(level: log::Level) -> log_style::Style {
-    match level_to_verbosity(level) {
-        1 => log_style::AnsiColor::Red.on_default(),
-        2 => log_style::AnsiColor::Yellow.on_default(),
-        3 => log_style::AnsiColor::Green.on_default(),
-        4 => log_style::AnsiColor::Blue.on_default(),
-        5 => log_style::AnsiColor::Magenta.on_default(),
-        _ => panic!("Unsupported log level: {level}"),
     }
 }
 
@@ -202,14 +168,11 @@ pub fn init_logging() {
                 .map_or("?".to_string(), |line_num| line_num.to_string());
 
             let level = level_to_verbosity(record.level());
-            let level_style = verbosity_style(record.level());
 
             writeln!(
                 buf,
-                "[{}{}{}]-[{} {}:{}] {}",
-                level_style.render(),
+                "[{}]-[{} {}:{}] {}",
                 level,
-                level_style.render_reset(),
                 timestamp,
                 file,
                 line,

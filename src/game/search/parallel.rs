@@ -35,11 +35,10 @@ impl ThreadPool {
     }
 
     pub fn run(
-        self, 
-        depth: usize, 
+        self,
+        depth: usize,
         timed: u128,
-        dict: Option<&Translator>, 
-        protocol: u8,
+        dict: Option<&Translator>,
     ) -> SearchResult {
         let tt = Arc::clone(&self.tt);
         let qtable = Arc::clone(&self.qt);
@@ -70,7 +69,7 @@ impl ThreadPool {
                         &mut state,
                         &tt_clone, &qt_clone,
                         &mut info, &mut bufs,
-                        i, dict_clone.as_ref(), protocol,
+                        i, dict_clone.as_ref(),
                     )
             })
                 .unwrap_or_else(|e| {
