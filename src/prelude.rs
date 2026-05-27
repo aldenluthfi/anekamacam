@@ -95,7 +95,6 @@ pub use crate::io::logger::{
     inc_verbosity, init_logging,
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
-pub use crate::io::tui::tui;
 pub use crate::io::protocols::{
     translation::Translator,
     uci::uci,
