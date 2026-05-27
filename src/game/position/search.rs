@@ -106,8 +106,7 @@ pub fn clear_search(
 
     let piece_count: usize = state.statics.pieces.len();
 
-    state.search_hist =
-        vec![0u16; state.statics.board_size * piece_count];
+    state.search_hist = vec![0u16; state.statics.board_size * piece_count];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
     ttable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -124,7 +123,6 @@ pub fn search_position(
     bufs: &mut SearchBufs,
     thread_num: usize,
     dict: Option<&Translator>,
-    protocol: u8,
 ) -> SearchResult {
     table.hit.store(0, Ordering::Relaxed);
     table.valid.store(0, Ordering::Relaxed);
@@ -139,13 +137,13 @@ pub fn search_position(
     let result = if thread_num <= 1 {
         info.thread_count = thread_num.max(1);
         iterative_deepening(
-            state, &table, &qtable, info, bufs, 0, dict, protocol,
+            state, &table, &qtable, info, bufs, 0, dict,
         )
     } else {
         let pool = ThreadPool::with_threads(
             state, Arc::clone(&table), Arc::clone(&qtable), thread_num
         );
-        pool.run(info.set_depth, info.set_timed, dict, protocol)
+        pool.run(info.set_depth, info.set_timed, dict)
     };
 
     log_3!(
@@ -179,7 +177,6 @@ pub fn iterative_deepening(
     bufs: &mut SearchBufs,
     thread_num: usize,
     dict: Option<&Translator>,
-    protocol: u8,
 ) -> SearchResult {
 
     let mut best_move = null_move();
@@ -192,6 +189,10 @@ pub fn iterative_deepening(
         .map(|n| n.get())
         .unwrap_or(1) as u64;
 
+    let mut total_nodes = 0;
+    let mut total_elapsed = 0;
+    let mut total_nps = 0;
+
     for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
@@ -201,18 +202,22 @@ pub fn iterative_deepening(
                 state, ttable, qtable, depth, -INF, INF, info, bufs, true
             )
         } else {
-            let mut asp_delta = 50i32;
+            let mut asp_delta = 50;
             let mut asp_alpha = best_score - asp_delta;
             let mut asp_beta  = best_score + asp_delta;
             loop {
                 let s = alpha_beta(
-                    state, ttable, qtable, depth,
-                    asp_alpha, asp_beta, info, bufs, true
+                    state,
+                    ttable, qtable,
+                    depth, asp_alpha, asp_beta, info, bufs, true
                 );
+
                 if info.interrupt || (s > asp_alpha && s < asp_beta) {
                     break s;
                 }
+
                 asp_delta = asp_delta.saturating_mul(2).min(INF);
+
                 if s <= asp_alpha {
                     asp_alpha = (asp_alpha - asp_delta).max(-INF);
                 } else {
@@ -221,32 +226,45 @@ pub fn iterative_deepening(
             }
         };
 
+        fill_pv_line!(state, ttable, depth);
+
         if info.interrupt {
             break;
         }
 
         best_score = score;
-
-        let triangular_pv_length = state.pv_length[0].min(MAX_DEPTH);
-        for index in 0..triangular_pv_length {
-            state.pv_line[index] = state.pv_table[index].clone();
-        }
-        for index in triangular_pv_length..MAX_DEPTH {
-            state.pv_line[index] = null_move();
-        }
-        fill_pv_line!(state, ttable, triangular_pv_length, depth);
         best_move = state.pv_line[0].clone();
 
-        let elapsed = ENGINE_START
+        let depth_elapsed = ENGINE_START
             .elapsed()
             .as_nanos()
             .saturating_sub(depth_start_time);
-        let nodes = info.nodes - depth_start_nodes;
-
-        let depth_nps = nodes
-            .checked_mul(1_000_000_000)
-            .and_then(|n| n.checked_div(elapsed))
+        total_elapsed = ENGINE_START
+            .elapsed()
+            .as_nanos()
+            .saturating_sub(start_time)
+            .checked_div(1_000_000)
             .unwrap_or(0);
+
+        let depth_nodes = info.nodes - depth_start_nodes;
+        total_nodes = info.nodes;
+
+        let depth_nps = depth_nodes
+            .checked_mul(1_000_000_000)
+            .and_then(|n| n.checked_div(depth_elapsed))
+            .unwrap_or(0);
+        total_nps = total_nodes
+            .checked_mul(1_000_000_000)
+            .and_then(|n| n.checked_div(total_elapsed))
+            .unwrap_or(0);
+
+        let pv_line = state.pv_line
+            .iter()
+            .take(depth)
+            .take_while(|m| m != &&null_move())
+            .map(|m| format_move(m, state, dict))
+            .collect::<Vec<String>>()
+            .join(" ");
 
         log_3!(
             concat!(
@@ -257,7 +275,7 @@ pub fn iterative_deepening(
             thread_num,
             best_score,
             format_move(&best_move, state, dict),
-            nodes,
+            depth_nodes,
             depth_nps,
         );
 
@@ -265,70 +283,53 @@ pub fn iterative_deepening(
             "(Thread {}) Depth {:>2} | Time: {:>10} | Best Line: {}",
             thread_num,
             depth,
-            format_time(elapsed),
-            state.pv_line
-                .iter()
-                .take(depth)
-                .take_while(|m| m != &&null_move())
-                .map(|m| format_move(m, state, dict))
-                .collect::<Vec<String>>()
-                .join(" ")
+            format_time(depth_elapsed),
+            pv_line
         );
 
-        match protocol {
-            PROTOCOL_UCI if thread_num == 0 => {
-                let total = ENGINE_START
-                    .elapsed()
-                    .as_nanos()
-                    .saturating_sub(start_time);
-                let ms = total / 1_000_000;
-                let nps = info.nodes
-                    .checked_mul(1_000_000_000)
-                    .and_then(|n| n.checked_div(total))
-                    .unwrap_or(0);
-                let score_str = if best_score.abs() >= MATE_SCORE {
-                    let ply = INF - best_score.abs();
-                    let moves = (ply + 1) / 2;
-                    if best_score > 0 {
-                        format!("mate {}", moves)
-                    } else {
-                        format!("mate -{}", moves)
-                    }
-                } else {
-                    format!("cp {}", best_score)
-                };
-                let pv = state.pv_line
-                    .iter()
-                    .take(depth)
-                    .take_while(|m| m != &&null_move())
-                    .map(|m| format_move(m, state, dict))
-                    .collect::<Vec<String>>()
-                    .join(" ");
-                let tt_len = ttable.len() as u64;
-                let hashfull = ttable.new_write
-                    .load(Ordering::Relaxed)
-                    .min(tt_len) * 1000 / tt_len;
-                let cpuload = (info.thread_count as u64 * 1000)
-                    .min(max_par * 1000) / max_par;
-                println!(
-                    "info depth {} score {} time {} nodes {} \
-                     nps {} hashfull {} cpuload {} pv {}",
-                    depth, score_str, ms, info.nodes,
-                    nps, hashfull, cpuload, pv,
-                );
-                stdout().flush().ok();
-            }
-            _ => {}
-        }
-    }
 
-    let total_nodes = info.nodes;
-    let total_elapsed =
-        ENGINE_START.elapsed().as_nanos().saturating_sub(start_time);
-    let nps = total_nodes
-        .checked_mul(1_000_000_000)
-        .and_then(|n| n.checked_div(total_elapsed))
-        .unwrap_or(0);
+        let score_info = if best_score.abs() >= MATE_SCORE {
+            let ply = INF - best_score.abs();
+            let moves = (ply + 1) / 2;
+            if best_score > 0 {
+                format!("mate {}", moves)
+            } else {
+                format!("mate -{}", moves)
+            }
+        } else {
+            format!("cp {}", best_score)
+        };
+
+        let tt_len = ttable.len() as u64;
+
+        let hashfull = ttable.new_write
+            .load(Ordering::Relaxed)
+            .min(tt_len) * 1000 / tt_len;
+
+        let cpuload = (info.thread_count as u64 * 1000)
+            .min(max_par * 1000) / max_par;
+
+        println!(
+            "info \
+            hashfull {} \
+            cpuload {} \
+            depth {} \
+            score {} \
+            nodes {} \
+            time {} \
+            nps {} \
+            pv {}",
+            hashfull,
+            cpuload,
+            depth,
+            score_info,
+            total_nodes,
+            total_elapsed,
+            total_nps,
+            pv_line,
+        );
+        stdout().flush().ok();
+    }
 
     log_1!(
         concat!(
@@ -341,7 +342,7 @@ pub fn iterative_deepening(
         format_move(&best_move, state, None),
         total_nodes,
         format_time(total_elapsed),
-        nps
+        total_nps,
     );
 
     let ponder_move = state.pv_line

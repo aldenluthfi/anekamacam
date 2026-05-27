@@ -357,15 +357,22 @@ macro_rules! hash_tt_entry {
 
 #[macro_export]
 macro_rules! fill_pv_line {
-    ($state:expr, $table:expr, $triangular_length:expr, $depth:expr) => {{
-        for slot in 0..$triangular_length {
+    ($state:expr, $table:expr, $depth:expr) => {{
+        let triangular_length = $state.pv_length[0].min(MAX_DEPTH);
+
+        for index in 0..triangular_length {
+            $state.pv_line[index] = $state.pv_table[index].clone();
+        }
+
+        for slot in 0..triangular_length {
             let pv_move = $state.pv_line[slot].clone();
             make_move!($state, pv_move);
         }
+
         let mut out: Vec<Move> = Vec::with_capacity(64);
         let mut scratch: Vec<u64> = Vec::with_capacity(16);
 
-        for slot in $triangular_length..$depth {
+        for slot in triangular_length..$depth {
             let Some(pm) = probe_pv_move!($state, $table) else {
                 break;
             };
@@ -395,6 +402,10 @@ macro_rules! fill_pv_line {
             };
 
             $state.pv_line[slot] = pv_move;
+        }
+
+        for index in ($state.search_ply as usize)..MAX_DEPTH {
+            $state.pv_line[index] = null_move();
         }
 
         while $state.search_ply > 0 {
