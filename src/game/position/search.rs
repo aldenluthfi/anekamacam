@@ -115,6 +115,11 @@ pub fn clear_search(
     state.search_ply = 0;
 }
 
+/// Runs a full search from the root position.
+///
+/// Resets TT/QT stats, then dispatches to a single iterative_deepening call
+/// when thread_count ≤ 1, or a ThreadPool when thread_count > 1. Logs TT and
+/// QT stat lines (new/over/hit/valid) after the search completes.
 pub fn search_position(
     state: &mut State,
     table: Arc<TTable>,
@@ -169,6 +174,12 @@ pub fn search_position(
                          ITERATIVE DEEPENING
 \*----------------------------------------------------------------------------*/
 
+/// Iterative deepening with aspiration windows over alpha_beta.
+///
+/// Runs depth 1..=set_depth. Depths below 4, or when the previous score is a
+/// mate, use a full window. Otherwise aspiration windows start at ±50 and
+/// double on each fail until the search falls within bounds. Thread 0 prints
+/// UCI info lines per depth; helper threads skip output.
 pub fn iterative_deepening(
     state: &mut State,
     ttable: &TTable,

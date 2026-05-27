@@ -1,13 +1,11 @@
 //! # uci.rs
 //!
-//! Implements the Universal Chess Interface (UCI) protocol.
+//! Implements the Universal Chess Interface (UCI) protocol loop.
 //!
-//! Supports uci, isready, ucinewgame, position, go (with ponder, movestogo,
-//! wtime/btime/winc/binc, movetime, depth, infinite), ponderhit, stop,
-//! setoption (UCI_Variant, Threads, Ponder, Hash), and quit. Available
-//! variants are discovered by scanning res/dicts/ for dict files that list
-//! "uci" under their = protocols = section and have a matching .conf file in
-//! configs/. Per-depth info lines include hashfull and cpuload fields.
+//! Handles position setup, search commands with time controls, option
+//! configuration, and variant selection. Variants are discovered at runtime
+//! from embedded resources; search runs on a configurable thread pool backed
+//! by a shared transposition table.
 //!
 //! # Author
 //! Alden Luthfi
@@ -107,14 +105,14 @@ struct SearchHandle {
 struct Uci {
     state: State,
     variants: Vec<String>,
-    current_variant: String,
+    variant: String,
     translator: Option<Translator>,
     max_threads: usize,
-    thread_count: usize,
+    threads: usize,
     hash_mb: usize,
     ttable: Arc<TTable>,
     qtable: Arc<QTable>,
-    ponder_enabled: bool,
+    ponder: bool,
     active: Option<SearchHandle>,
 }
 
@@ -143,14 +141,14 @@ impl Uci {
         Uci {
             state,
             variants,
-            current_variant: default_variant,
+            variant: default_variant,
             translator,
             max_threads,
-            thread_count: 1,
+            threads: 1,
             hash_mb: HASH_DEFAULT_MB,
             ttable: Arc::new(TTable::with_mb(HASH_DEFAULT_MB * 2 / 3)),
             qtable: Arc::new(QTable::with_mb(HASH_DEFAULT_MB / 3)),
-            ponder_enabled: false,
+            ponder: false,
             active: None,
         }
     }
@@ -192,7 +190,7 @@ fn handle_position(uci: &mut Uci, tokens: &[&str]) {
 }
 
 fn start_search(uci: &mut Uci, tokens: &[&str]) {
-    let is_ponder = uci.ponder_enabled && tokens.contains(&"ponder");
+    let is_ponder = uci.ponder && tokens.contains(&"ponder");
 
     let mut depth = 0usize;
     let mut movetime_ms = 0u128;
@@ -302,7 +300,7 @@ fn start_search(uci: &mut Uci, tokens: &[&str]) {
     let tt_clone = Arc::clone(&uci.ttable);
     let qt_clone = Arc::clone(&uci.qtable);
     let dict_clone = uci.translator.clone();
-    let tc = uci.thread_count;
+    let tc = uci.threads;
 
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
 
@@ -361,7 +359,7 @@ fn handle_ponderhit(uci: &mut Uci) {
         let tt_clone = Arc::clone(&uci.ttable);
         let qt_clone = Arc::clone(&uci.qtable);
         let dict_clone = uci.translator.clone();
-        let tc = uci.thread_count;
+        let tc = uci.threads;
         let search_depth = sh.search_depth;
         let ponderhit_timed_ns = sh.ponderhit_timed_ns;
 
@@ -417,15 +415,15 @@ fn handle_setoption(uci: &mut Uci, tokens: &[&str]) {
             refresh_eval_state(&mut uci.state);
 
             uci.translator = Translator::find(&v, "uci");
-            uci.current_variant = v;
+            uci.variant = v;
         }
         (OPT_THREADS, Some(v)) => {
             if let Ok(n) = v.parse::<usize>() {
-                uci.thread_count = n.clamp(1, uci.max_threads);
+                uci.threads = n.clamp(1, uci.max_threads);
             }
         }
         (OPT_PONDER, Some(v)) => {
-            uci.ponder_enabled = v.to_lowercase() == "true";
+            uci.ponder = v.to_lowercase() == "true";
         }
         (OPT_HASH, Some(v)) => {
             if let Ok(mb) = v.parse::<usize>() {
@@ -458,7 +456,7 @@ fn execute_command(uci: &mut Uci, line: &str) -> bool {
                 .collect();
             println!(
                 "option name {} type combo default {}{}",
-                OPT_VARIANT, uci.current_variant, vars_str,
+                OPT_VARIANT, uci.variant, vars_str,
             );
             println!(
                 "option name {} type spin default 1 min 1 max {}",

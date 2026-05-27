@@ -1,9 +1,10 @@
 //! # piece_io.rs
 //!
-//! Implements utilities for piece data collection and dynamic parameter
-//! encoding, used in piece initialization and evaluation. These functions help
-//! manage the relationship between white and black pieces, as well as the
-//! encoding of dynamic attributes.
+//! Utilities for reading and writing piece data during engine setup.
+//!
+//! Covers symmetric piece pairing from the swap map, and encoding of dynamic
+//! piece attributes (material values, classification flags) into their packed
+//! bit representations used by the evaluator.
 //!
 //! # Author
 //! Alden Luthfi
