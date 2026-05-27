@@ -24,7 +24,6 @@ pub struct SearchInfo {
 
     pub set_depth: usize,                                                       /* maximum search depth               */
     pub set_timed: u128,                                                        /* time limit in ns (0 = unlimited)   */
-    pub set_moves: usize,                                                       /* moves to go until time control     */
     pub thread_count: usize,                                                    /* threads active in this search      */
 
     pub nodes: u128,                                                            /* total nodes searched so far        */

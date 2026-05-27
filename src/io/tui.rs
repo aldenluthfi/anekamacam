@@ -21,7 +21,6 @@ const PICKER_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX);
 const HELP_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX - 1);
 
 enum TuiEvent {
-    Input(KeyEvent),
     StateUpdate(BoardState),
     StateInit(Arc<Mutex<State>>),
     PlaygroundUpdate(Box<State>),
@@ -131,54 +130,48 @@ impl Tui {
         loop {
             terminal.draw(|frame| render(frame, self))?;
 
-            if match self.receiver.try_recv() {
-                Ok(TuiEvent::Input(key_event)) => {
-                    handle_key(self, key_event)
-                }
-                Ok(TuiEvent::StateUpdate(state)) => {
-                    self.board_state = Some(state);
-                    false
-                },
-                Ok(TuiEvent::StateInit(state)) => {
-                    self.overview_state = Some(OverviewState::from_state(
-                        &state.lock().unwrap()
-                    ));
-                    let mut pg_state = State::clone(&state.lock().unwrap());
-                    init_playground(&mut pg_state, 0);
-                    self.playground_state =
-                        Some(Arc::new(Mutex::new(pg_state)));
-                    self.game_state = Some(state);
-                    false
-                },
-                Ok(TuiEvent::PlaygroundUpdate(state)) => {
-                    if let Some(arc) = &self.playground_state {
-                        *arc.lock().unwrap() = *state;
+            while let Ok(tui_event) = self.receiver.try_recv() {
+                match tui_event {
+                    TuiEvent::StateUpdate(state) => {
+                        self.board_state = Some(state);
+                    },
+                    TuiEvent::StateInit(state) => {
+                        self.overview_state = Some(
+                            OverviewState::from_state(&state.lock().unwrap())
+                        );
+                        let mut pg_state =
+                            State::clone(&state.lock().unwrap());
+                        init_playground(&mut pg_state, 0);
+                        self.playground_state =
+                            Some(Arc::new(Mutex::new(pg_state)));
+                        self.game_state = Some(state);
+                    },
+                    TuiEvent::PlaygroundUpdate(state) => {
+                        if let Some(arc) = &self.playground_state {
+                            *arc.lock().unwrap() = *state;
+                        }
+                    },
+                    TuiEvent::SwitchDict(dict) => {
+                        self.translator = dict;
+                        if let Some(arc) = self.game_state.clone() {
+                            let state = arc.lock().unwrap();
+                            self.board_state = Some(BoardState::from_state(
+                                &state,
+                                self.translator.as_ref(),
+                            ));
+                        }
                     }
-                    false
-                },
-                Ok(TuiEvent::SwitchDict(dict)) => {
-                    self.translator = dict;
-                    if let Some(arc) = self.game_state.clone() {
-                        let state = arc.lock().unwrap();
-                        self.board_state = Some(BoardState::from_state(
-                            &state,
-                            self.translator.as_ref(),
-                        ));
+                    TuiEvent::Unlock => {
+                        SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
+                        self.locked = false;
                     }
-                    false
                 }
-                Ok(TuiEvent::Unlock) => {
-                    SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
-                    self.locked = false;
-                    false
-                }
-                Err(TryRecvError::Empty) => {
-                    false
-                },
-                Err(TryRecvError::Disconnected) => {
-                    true
-                }
-            } {
+            }
+
+            if event::poll(Duration::from_millis(16))?
+                && let Event::Key(key_event) = event::read()?
+                && handle_key(self, key_event)
+            {
                 break;
             }
         }
@@ -3147,37 +3140,12 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
     }
 }
 
-fn input_listener(sender: Sender<TuiEvent>) {
-    loop {
-        let read_event = event::read().unwrap_or_else(
-            |e| {
-                panic!("Failed to read input event: {e}")
-            }
-        );
-
-        if let Event::Key(key_event) = read_event {
-            sender.send(
-                TuiEvent::Input(key_event)
-            ).unwrap_or_else(
-                |e| {
-                    panic!("Failed to send TuiEvent::Input: {e}")
-                }
-            );
-        }
-    }
-}
-
 pub fn tui() -> IoResult<()> {
     log_3!("Starting TUI...");
     let mut terminal = ratatui::init();
     execute!(terminal.backend_mut(), EnableMouseCapture)?;
 
     let (sender, receiver) = channel::<TuiEvent>();
-
-    let input_sender = sender.clone();
-    thread::spawn(move || {
-        input_listener(input_sender);
-    });
 
     let run_result = Tui::new(receiver, sender).run(&mut terminal);
     let mouse_result = execute!(terminal.backend_mut(), DisableMouseCapture);
