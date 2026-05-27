@@ -80,21 +80,23 @@ pub use crate::game::util::{
                                    IO API
 \*----------------------------------------------------------------------------*/
 pub use crate::io::board_io::{
-    format_board, format_square, parse_square,
+    determine_board_dimensions, format_board, format_numeric_board,
+    format_square, mirror_pst_across_horizontal_axis, parse_square,
 };
 pub use crate::io::game_io::{
     combine_board_strings, export_tuned_parameters_file, format_castling_rights,
     format_en_passant_square, format_fen, format_game_phase, format_game_state,
-    format_hand, format_numeric_board, format_position_hash,
-    format_special_rules, mirror_pst_across_horizontal_axis, parse_config_file,
-    parse_config_preview, parse_fen, parse_tuned_parameters,
-    set_piece_dynamic_parameters,
+    format_hand, format_position_hash, format_special_rules, parse_config_file,
+    parse_config_preview, parse_fen, parse_tuned_parameters
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, dec_verbosity,
     inc_verbosity, init_logging,
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
+pub use crate::io::piece_io::{
+    collect_piece_type_pairs, set_piece_dynamic_parameters
+};
 pub use crate::io::protocols::{
     translation::Translator,
     uci::uci,

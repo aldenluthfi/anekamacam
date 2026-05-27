@@ -26,32 +26,6 @@ lazy_static! {
     pub static ref IN_HAND_PATTERN: Regex = Regex::new(r"(\d*)(.)").unwrap();
 }
 
-fn determine_board_dimensions(fen: &str) -> (u8, u8) {
-    let ranks_data: Vec<&str> = fen.split('/').collect();
-    let rank_count = ranks_data.len() as u8;
-    let mut file_count = 0u8;
-    let mut chars = ranks_data[0].chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c.is_ascii_digit() {
-            let mut run = c.to_digit(10).unwrap() as u16;
-            while let Some(next) = chars.peek() {
-                if next.is_ascii_digit() {
-                    run =
-                        run * 10 +
-                        chars.next().unwrap().to_digit(10).unwrap() as u16;
-                } else {
-                    break;
-                }
-            }
-            file_count += run as u8;
-        } else {
-            file_count += 1;
-        }
-    }
-    (file_count, rank_count)
-}
-
 fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     let mut castling = false;
     let mut en_passant = false;
@@ -69,92 +43,6 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 
     (castling, en_passant, in_hand)
 }
-
-pub fn mirror_pst_across_horizontal_axis(
-    pst: &[i32],
-    files: usize,
-    ranks: usize,
-) -> Vec<i32> {
-    assert!(
-        pst.len() == files * ranks,
-        "PST length ({}) doesn't match board size ({})",
-        pst.len(),
-        files * ranks
-    );
-
-    let mut mirrored = vec![0i32; pst.len()];
-
-    for rank in 0..ranks {
-        let src_rank = ranks - 1 - rank;
-        let dst_start = rank * files;
-        let src_start = src_rank * files;
-
-        mirrored[dst_start..dst_start + files]
-            .copy_from_slice(&pst[src_start..src_start + files]);
-    }
-
-    mirrored
-}
-
-fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
-    let mut type_pairs = Vec::new();
-
-    for (white_idx, piece) in state.statics.pieces.iter().enumerate() {
-        if p_color!(piece) != WHITE {
-            continue;
-        }
-
-        let black_idx = state.statics.piece_swap_map[white_idx] as usize;
-
-        assert!(
-            p_color!(state.statics.pieces[black_idx]) == BLACK,
-            "Invalid black counterpart mapping for white piece index {}",
-            white_idx
-        );
-
-        type_pairs.push((white_idx, black_idx));
-    }
-
-    assert!(!type_pairs.is_empty(), "No white piece representatives found");
-
-    type_pairs
-}
-
-pub fn set_piece_dynamic_parameters(
-    piece: &mut Piece,
-    ovalue: u16,
-    evalue: u16,
-    is_big: bool,
-    is_major: bool,
-) {
-    assert!(
-        ovalue <= 0x3FFF,
-        "Opening piece value out of 14-bit range: {}",
-        ovalue
-    );
-    assert!(
-        evalue <= 0x3FFF,
-        "Endgame piece value out of 14-bit range: {}",
-        evalue
-    );
-
-    let mut dynamic_bits = 0u32;
-
-    if is_big {
-        dynamic_bits |= 1;
-    }
-
-    if is_major {
-        dynamic_bits |= 1 << 1;
-    }
-
-    dynamic_bits |= (ovalue as u32 & 0x3FFF) << 2;
-    dynamic_bits |= (evalue as u32 & 0x3FFF) << 16;
-
-    piece.encoded_dynamic =
-        (piece.encoded_dynamic & !((1u32 << 30) - 1)) | dynamic_bits;
-}
-
 
 /// Parses tuned parameters from a flat space-separated string.
 ///
@@ -331,6 +219,9 @@ fn find_last_epoch_in_dir(dir_path: &str) -> usize {
 /// Exports tuned parameters to `parameters/{variant}/latest.param`.
 /// If latest.param already has content, writes to an incremented epoch
 /// number instead.
+///
+/// Used to save parameters tuned by Texel's Tuning method and to avoid
+/// recomputing parameters from scratch when restarting the engine.
 pub fn export_tuned_parameters_file(
     state: &State,
     variant: &str,
@@ -425,7 +316,7 @@ pub fn export_tuned_parameters_file(
 ///
 /// Returns (title, board) to be shown in the TUI
 pub fn parse_config_preview(path: &str) -> (String, String) {
-    let file_str = embedded_config_str(path)
+    let file_str = embedded_config(path)
         .map(str::to_string)
         .unwrap_or_else(|| {
             fs::read_to_string(path)
@@ -576,7 +467,7 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
     (title, board_str)
  }
 
-fn embedded_config_str(path: &str) -> Option<&'static str> {
+fn embedded_config(path: &str) -> Option<&'static str> {
     let filename = Path::new(path).file_name()?.to_str()?;
     EMBEDDED_CONFIGS.get_file(filename)?.contents_utf8()
 }
@@ -599,7 +490,7 @@ fn embedded_config_str(path: &str) -> Option<&'static str> {
 /// Which are then converted into `Piece` structs and stored in the `State`
 /// struct.
 pub fn parse_config_file(path: &str) -> State {
-    let file_str = embedded_config_str(path)
+    let file_str = embedded_config(path)
         .map(str::to_string)
         .unwrap_or_else(|| {
             fs::read_to_string(path)
@@ -2334,70 +2225,6 @@ pub fn format_hand(state: &State, color: u8) -> String {
     } else {
         hand
     }
-}
-
-pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
-    let mut result = String::new();
-    let width = 4;
-
-    result.push_str(&format!(
-        "   ╔{}╗\n",
-        (0..files)
-            .map(|_| "═".repeat(width + 2))
-            .collect::<Vec<String>>()
-            .join("╤")
-    ));
-
-    for rank in (0..ranks).rev() {
-        result.push_str(&format!("{:02} ║", rank));
-        for file in 0..files {
-            let idx = rank as usize * files as usize + file as usize;
-            result.push_str(
-                &format!(" {:>width$} ", values[idx], width = width)
-            );
-            if file + 1 < files {
-                result.push('│');
-            }
-        }
-        result.push_str("║\n");
-
-        if rank > 0 {
-            result.push_str(&format!(
-                "   ╟{}╢\n",
-                (0..files)
-                    .map(|_| "─".repeat(width + 2))
-                    .collect::<Vec<String>>()
-                    .join("┼")
-            ));
-        }
-    }
-
-    result.push_str(&format!(
-        "   ╚{}╝\n",
-        (0..files)
-            .map(|_| "═".repeat(width + 2))
-            .collect::<Vec<String>>()
-            .join("╧")
-    ));
-
-    result.push_str("     ");
-    for file in 0..files {
-        if files <= 26 {
-            result.push_str(&format!(
-                " {:^width$} ",
-                (b'A' + file) as char,
-                width = width
-            ));
-        } else {
-            result.push_str(&format!(" {:^width$} ", file, width = width));
-        }
-        if file + 1 < files {
-            result.push(' ');
-        }
-    }
-
-    result.push('\n');
-    result
 }
 
 pub fn format_position_hash(state: &State) -> String {
