@@ -291,6 +291,7 @@ pub const OPT_VARIANT: &str = "Variant";
 pub const OPT_THREADS: &str = "Threads";
 pub const OPT_PONDER: &str = "Ponder";
 pub const OPT_HASH: &str = "Hash";
+pub const OPT_CLEAR_HASH: &str = "Clear Hash";
 
 pub const HASH_DEFAULT_MB: usize = 384;
 pub const HASH_MAX_MB: usize = 65536;
