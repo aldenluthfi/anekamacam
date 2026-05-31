@@ -37,7 +37,6 @@ use crate::*;
 /// Filter/constraint accessors:
 /// - `k`, `v`, `g`, `t`, `i`, `p`
 /// - `not_k`, `not_v`, `not_g`, `not_i`
-/// - `l`, `r`
 #[macro_export]
 macro_rules! leg {
     ($l:expr) => {
@@ -159,20 +158,6 @@ macro_rules! not_i {
     };
 }
 
-#[macro_export]
-macro_rules! l {
-    ($l:expr) => {
-        ($l >> 30) & 1 == 1
-    };
-}
-
-#[macro_export]
-macro_rules! r {
-    ($l:expr) => {
-        ($l >> 31) & 1 == 1
-    };
-}
-
 /// Represents one compact leg used during move generation and validation.
 ///
 /// This alias stores the fully encoded displacement and modifier flags in a
@@ -222,13 +207,12 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - miscellaneous modifier: i, p
 /// - negated capture modifiers: !k, !v, !g
 /// - negated misc modifiers: !i
-/// - castling modifiers l and r
 ///
 /// Modifier bits layout (bits 32-45):
 ///
 ///  47  46  45  44  43  42  41  40  39  38  37  36  35  34  33  32
 /// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-/// | r | l |!i |!g |!v |!k | p | i | t | g | v | k | u | d | c | m |
+/// |   |   |!i |!g |!v |!k | p | i | t | g | v | k | u | d | c | m |
 /// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
 ///
 /// Main modifiers:
@@ -318,16 +302,9 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - (true) : this leg's start square creates an en passant square.
 /// - (false): this leg's start square does not create an en passant square.
 ///
-/// Additional modifier `r` ("right") can be used to indicate that the leg
-/// is to the right side (for castling purposes)
-///
-/// Similarly, modifier `l` ("left") can be used to indicate that the leg
-/// is to the left side (for castling purposes)
-///
 /// Special modifiers (r!r, v!v, g!g, i!i):
 ///
-/// - i!i: means that at the end of this leg, the moving piece cannot end
-///   on an attacked square.
+/// - i!i: TBD
 /// - k!k: TBD
 /// - v!v: this leg can bypass forbidden zones.
 /// - g!g: TBD
@@ -382,8 +359,6 @@ impl LegVector {
                 't' => 1 << 7,
                 'i' => 1 << 8,
                 'p' => 1 << 9,
-                'l' => 1 << 14,
-                'r' => 1 << 15,
                 '!' => break,
                 _ => panic!("Invalid modifier character: {}", ch),
             };

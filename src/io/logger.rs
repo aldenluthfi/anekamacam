@@ -14,6 +14,21 @@
 use crate::*;
 
 #[macro_export]
+macro_rules! push_log_message {
+    ($level:expr, $message:expr) => {
+        if DEBUG_FLAG.load(Ordering::Relaxed) {
+            let formatted = format!("[{}] {}", $level, $message);
+
+            let mut queue = LOG_MESSAGES.lock().unwrap_or_else(|e| {
+                e.into_inner()
+            });
+
+            queue.push_back(formatted.clone());
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! verbosity_enabled {
     ($level:expr) => {
         configured_verbosity_level() >= $level
@@ -24,6 +39,8 @@ macro_rules! verbosity_enabled {
 macro_rules! log_1 {
     ($($arg:tt)*) => {
         {
+            let message = format!($($arg)*);
+            push_log_message!(1, message);
             error!("{}", format!($($arg)*));
         }
     };
@@ -33,6 +50,8 @@ macro_rules! log_1 {
 macro_rules! log_2 {
     ($($arg:tt)*) => {
         {
+            let message = format!($($arg)*);
+            push_log_message!(2, message);
             warn!("{}", format!($($arg)*));
         }
     };
@@ -42,6 +61,8 @@ macro_rules! log_2 {
 macro_rules! log_3 {
     ($($arg:tt)*) => {
         {
+            let message = format!($($arg)*);
+            push_log_message!(3, message);
             info!("{}", format!($($arg)*));
         }
     };
@@ -51,6 +72,8 @@ macro_rules! log_3 {
 macro_rules! log_4 {
     ($($arg:tt)*) => {
         {
+            let message = format!($($arg)*);
+            push_log_message!(4, message);
             debug!("{}", format!($($arg)*));
         }
     };
@@ -60,6 +83,8 @@ macro_rules! log_4 {
 macro_rules! log_5 {
     ($($arg:tt)*) => {
         {
+            let message = format!($($arg)*);
+            push_log_message!(5, message);
             trace!("{}", format!($($arg)*));
         }
     };

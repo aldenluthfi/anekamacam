@@ -75,6 +75,165 @@ macro_rules! is_in_check {
     }};
 }
 
+pub fn generate_relevant_castling(
+    start: &Vec<String>, end: &Vec<String>, state: &State
+) -> Vec<Move> {
+
+    let mut result = Vec::new();
+
+    for (s, e) in zip(start, end) {
+        let mut encoded_move = Move::default();
+
+        enc_move_type!(encoded_move, CASTLING_MOVE);
+        enc_is_unload!(encoded_move, 1);
+
+        let mut start_map = HashMap::new();
+        let mut end_map = HashMap::new();
+        let mut check_list = Vec::new();
+
+        let mut rank = state.statics.ranks - 1;
+        let mut file = 0u8;
+
+        let mut position_chars = s.chars().peekable();
+        while let Some(c) = position_chars.next() {
+            match c {
+                '/' => {
+                    rank -= 1;
+                    file = 0;
+                }
+                '0'..='9' => {
+                    let mut num_str = c.to_string();
+                    while let Some(&next_c) = position_chars.peek() {
+                        if next_c.is_ascii_digit() {
+                            num_str.push(next_c);
+                            position_chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    file += num_str.parse::<u8>().unwrap();
+                }
+                _ => {
+                    let piece = if c != '*' {
+                        let piece =
+                            *state.statics.piece_char_map
+                            .get(&c).unwrap_or_else(|| {
+                                panic!("Unknown piece character: {}", c)
+                            }) as usize;
+
+                        assert!(
+                            state.statics.castling_pieces[piece],
+                            "Piece is {} is not a castling participant piece",
+                            c
+                        );
+
+                        piece
+                    } else {
+                        NO_PIECE as usize
+                    };
+
+                    let square_index =
+                        (rank as u32) * (state.statics.files as u32) +
+                        (file as u32);
+
+                    if c == '*' || p_is_royal!(&state.statics.pieces[piece]) {
+                        let mut check_square = 0u64;
+                        enc_multi_move_unload_square!(
+                            check_square, square_index as u64
+                        );
+                        check_list.push(check_square);
+                    }
+
+                    if c != '*'{
+                        start_map.insert(piece, square_index);
+                    }
+
+                    file += 1;
+                }
+            }
+        }
+
+        let mut rank = state.statics.ranks - 1;
+        let mut file = 0u8;
+
+        let mut position_chars = e.chars().peekable();
+        while let Some(c) = position_chars.next() {
+            match c {
+                '/' => {
+                    rank -= 1;
+                    file = 0;
+                }
+                '0'..='9' => {
+                    let mut num_str = c.to_string();
+                    while let Some(&next_c) = position_chars.peek() {
+                        if next_c.is_ascii_digit() {
+                            num_str.push(next_c);
+                            position_chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    file += num_str.parse::<u8>().unwrap();
+                }
+                _ => {
+                    let piece =
+                        *state.statics.piece_char_map
+                        .get(&c).unwrap_or_else(|| {
+                            panic!("Unknown piece character: {}", c)
+                        }) as usize;
+
+                    assert!(
+                        state.statics.castling_pieces[piece],
+                        "Piece is {} is not a castling participant piece",
+                        c
+                    );
+
+                    let square_index =
+                        (rank as u32) * (state.statics.files as u32) +
+                        (file as u32);
+
+                    end_map.insert(piece, square_index);
+
+                    file += 1;
+                }
+            }
+        }
+
+        assert_eq!(
+            start_map.keys().collect::<HashSet<_>>(),
+            end_map.keys().collect::<HashSet<_>>(),
+            "start and end map are not in sync"
+        );
+
+        let zipped = start_map
+            .into_iter()
+            .filter_map(|(k, v1)| {
+                end_map.get(&k).map(|&v2| (k, v1, v2))
+            })
+            .collect::<Vec<_>>();
+
+        for (piece, start_sq, end_sq) in zipped {
+            let is_royal = p_is_royal!(&state.statics.pieces[piece]);
+
+            if is_royal {
+                enc_piece!(encoded_move, piece as u128);
+                enc_start!(encoded_move, start_sq as u128);
+                enc_end!(encoded_move, end_sq as u128);
+            } else {
+                enc_captured_piece!(encoded_move, piece as u128);
+                enc_captured_square!(encoded_move, start_sq as u128);
+                enc_unload_square!(encoded_move, end_sq as u128);
+            }
+        }
+
+        encoded_move.1 = Arc::new(mem::take(&mut check_list));
+
+        result.push(encoded_move);
+    }
+
+    result
+}
+
 pub fn generate_relevant_moves(
     piece: &Piece,
     square_index: u32,
@@ -322,10 +481,9 @@ macro_rules! validate_attack_vector {
             let not_g = not_g!(leg);
             let not_v = not_v!(leg);
             let not_i = not_i!(leg);
-            let special_i = i && not_i;
             let special_v = v && not_v;
 
-            if (i && !piece_unmoved || not_i && piece_unmoved) && !special_i {
+            if i && !piece_unmoved || not_i && piece_unmoved {
                 valid = false;
                 break;
             }
@@ -520,28 +678,9 @@ macro_rules! process_multi_leg_vector {
             let not_g = not_g!(leg);
             let not_v = not_v!(leg);
             let not_i = not_i!(leg);
-            let l = l!(leg);
-            let r = r!(leg);
-            let special_i = i && not_i;
             let special_v = v && not_v;
-            let castling_rights =
-                piece_color as usize * 2 + l as usize;
 
-            if (i && !piece_unmoved || not_i && piece_unmoved)
-                && !special_i
-                || (special_i
-                    && is_square_attacked!(
-                        accumulated_index as u32,
-                        piece_color,
-                        piece_unmoved,
-                        p_is_royal!($piece),
-                        piece_rank,
-                        $state
-                    ))
-                || ((l || r)
-                    && $state.castling_state
-                        & CASTLING[castling_rights] == 0)
-            {
+            if i && !piece_unmoved || not_i && piece_unmoved {
                 invalid = true;
                 break;
             }
@@ -893,6 +1032,80 @@ macro_rules! generate_capture_list {
     }};
 }
 
+#[macro_export]
+macro_rules! generate_castling_list {
+    (
+        $state:expr, $out:expr
+    ) => {{
+        let color = $state.playing as usize;
+        let indexs = [(WK_INDEX, WQ_INDEX), (BK_INDEX, BQ_INDEX)]
+            [color];
+        let rights = [(WK_CASTLE, WQ_CASTLE), (BK_CASTLE, BQ_CASTLE)]
+            [color];
+
+        if $state.castling_state & rights.0 != 0 {
+            let moves = &$state.statics.relevant_castling[indexs.0 as usize];
+
+            for mv in moves {
+                let piece = &$state.statics.pieces[piece!(mv) as usize];
+                let piece_rank = p_rank!(piece);
+                let captured_piece = captured_piece!(mv) as PieceIndex;
+
+                if mv.1.iter().all(
+                    |cap|
+                    {
+                        let sq = multi_move_unload_square!(cap) as usize;
+                        (
+                            $state.main_board[sq] == NO_PIECE ||
+                            $state.main_board[sq] == piece!(mv) as PieceIndex ||
+                            $state.main_board[sq] == captured_piece
+                        )
+                        &&
+                        !is_square_attacked!(
+                            sq as u32,
+                            color as u8,
+                            true,
+                            true,
+                            piece_rank,
+                            $state
+                        )
+                    }
+                ) {
+                    $out.push(mv.clone())
+                }
+            }
+        }
+
+        if $state.castling_state & rights.1 != 0 {
+            let moves = &$state.statics.relevant_castling[indexs.0 as usize];
+
+            for mv in moves {
+                let piece = &$state.statics.pieces[piece!(mv) as usize];
+                let piece_rank = p_rank!(piece);
+
+                if mv.1.iter().all(
+                    |cap|
+                    {
+                        let sq = multi_move_unload_square!(cap) as usize;
+                        $state.main_board[sq] == NO_PIECE &&
+                        !is_square_attacked!(
+                            sq as u32,
+                            color as u8,
+                            true,
+                            true,
+                            piece_rank,
+                            $state
+                        )
+                    }
+                ) {
+                    $out.push(mv.clone())
+                }
+            }
+        }
+
+    }};
+}
+
 /*---------------------------------------------------------------------------*\
                            MOVE STATE TRANSITION MACROS
 \*---------------------------------------------------------------------------*/
@@ -1083,51 +1296,41 @@ macro_rules! make_move {
                     $state.halfmove_clock += 1;
                 }
 
-                if piece_unmoved {
-                    match (
-                        p_castle_right!($state.statics.pieces[piece_index]),
-                        p_castle_left!($state.statics.pieces[piece_index])
-                    ) {
-                        (true, true) => {
-                            $state.castling_state &= !(
-                                [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
-                                [piece_color as usize]
-                            );
-                        },
-                        (true, false) => {
-                            let rights = [!WK_CASTLE, !BK_CASTLE]
-                            [piece_color as usize];
-                            $state.castling_state &= rights;
-                        },
-                        (false, true) => {
-                            let rights = [!WQ_CASTLE, !BQ_CASTLE]
-                            [piece_color as usize];
-                            $state.castling_state &= rights;
-                        },
-                        (false, false) => {
-                            let start_rank =
-                                (start_square as Square) /
-                                $state.statics.files as u16;
-                            let start_file =
-                                (start_square as Square) %
-                                $state.statics.files as u16;
-
-                            let is_queenside = start_file == 0;
-                            let rights = [
-                                WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
-                            ][piece_color as usize * 2 + is_queenside as usize];
-
-                            if  start_rank == 0
-                            && (start_file == 0
-                            || start_file == $state.statics.files as u16 - 1)
-                            || start_rank == $state.statics.ranks as u16 - 1
-                            && (start_file == 0
-                            || start_file == $state.statics.files as u16 - 1)
-                            {
-                                $state.castling_state &= !rights;
+                if piece_unmoved && $state.statics.castling_pieces[piece_index]
+                {
+                    $state.castling_state &=
+                        [
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WK_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                WK_CASTLE
+                                &
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WQ_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                WQ_CASTLE
+                            },
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BK_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                BK_CASTLE
+                                &
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BQ_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                BQ_CASTLE
                             }
-                        }
-                    }
+                        ][piece_color as usize]
                 }
 
                 hash_update_castling!(
@@ -1286,51 +1489,41 @@ macro_rules! make_move {
 
                 $state.halfmove_clock = 0;
 
-                if piece_unmoved {
-                    match (
-                        p_castle_right!($state.statics.pieces[piece_index]),
-                        p_castle_left!($state.statics.pieces[piece_index])
-                    ) {
-                        (true, true) => {
-                            $state.castling_state &= !(
-                                [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
-                                [piece_color as usize]
-                            );
-                        },
-                        (true, false) => {
-                            let rights = [!WK_CASTLE, !BK_CASTLE]
-                            [piece_color as usize];
-                            $state.castling_state &= rights;
-                        },
-                        (false, true) => {
-                            let rights = [!WQ_CASTLE, !BQ_CASTLE]
-                            [piece_color as usize];
-                            $state.castling_state &= rights;
-                        },
-                        (false, false) => {
-                            let start_rank =
-                                (start_square as Square) /
-                                $state.statics.files as u16;
-                            let start_file =
-                                (start_square as Square) %
-                                $state.statics.files as u16;
-
-                            let is_queenside = start_file == 0;
-                            let rights = [
-                                WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
-                            ][piece_color as usize * 2 + is_queenside as usize];
-
-                            if  start_rank == 0
-                            && (start_file == 0
-                            || start_file == $state.statics.files as u16 - 1)
-                            || start_rank == $state.statics.ranks as u16 - 1
-                            && (start_file == 0
-                            || start_file == $state.statics.files as u16 - 1)
-                            {
-                                $state.castling_state &= !rights;
+                if piece_unmoved && $state.statics.castling_pieces[piece_index]
+                {
+                    $state.castling_state &=
+                        [
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WK_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                WK_CASTLE
+                                &
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WQ_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                WQ_CASTLE
+                            },
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BK_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                BK_CASTLE
+                                &
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BQ_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                BQ_CASTLE
                             }
-                        }
-                    }
+                        ][piece_color as usize]
                 }
 
                 if drops!($state) || promote_to_captured!($state) {
@@ -1359,27 +1552,39 @@ macro_rules! make_move {
                     captured_piece = old_captured_piece;
                 }
 
-                let end_rank =
-                    (captured_square as Square) / $state.statics.files as u16;
-                let end_file =
-                    (captured_square as Square) % $state.statics.files as u16;
-
-                if castling!($state)
-                    && get!($state.virgin_board, captured_square)
-                    && (end_rank == 0
-                    || end_rank == $state.statics.ranks as u16 - 1)
-                    && (end_file == 0
-                    || end_file == $state.statics.files as u16 - 1)
-                {
-                    let is_queenside = end_file == 0;
-                    let rights = [WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE]
-                    [
-                        (
-                            end_rank == $state.statics.ranks as u16 - 1
-                        ) as usize * 2
-                        + is_queenside as usize
-                    ];
-                    $state.castling_state &= !rights;
+                if castling!($state) {
+                    $state.castling_state &= [
+                        !{
+                            get!(
+                                $state.statics.critical_castling
+                                [WK_INDEX as usize],
+                                captured_square
+                            ) as u8 *
+                            WK_CASTLE
+                            &
+                            get!(
+                                $state.statics.critical_castling
+                                [WQ_INDEX as usize],
+                                captured_square
+                            ) as u8 *
+                            WQ_CASTLE
+                        },
+                        !{
+                            get!(
+                                $state.statics.critical_castling
+                                [BK_INDEX as usize],
+                                captured_square
+                            ) as u8 *
+                            BK_CASTLE
+                            &
+                            get!(
+                                $state.statics.critical_castling
+                                [BQ_INDEX as usize],
+                                captured_square
+                            ) as u8 *
+                            BQ_CASTLE
+                        }
+                    ][captured_color as usize];
                 }
 
                 hash_update_castling!(
@@ -1634,51 +1839,41 @@ macro_rules! make_move {
 
                 $state.halfmove_clock = 0;
 
-                if piece_unmoved {
-                    match (
-                        p_castle_right!($state.statics.pieces[piece_index]),
-                        p_castle_left!($state.statics.pieces[piece_index])
-                    ) {
-                        (true, true) => {
-                            $state.castling_state &= !(
-                                [WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE]
-                                [piece_color as usize]
-                            );
-                        },
-                        (true, false) => {
-                            let rights = [!WK_CASTLE, !BK_CASTLE]
-                            [piece_color as usize];
-                            $state.castling_state &= rights;
-                        },
-                        (false, true) => {
-                            let rights = [!WQ_CASTLE, !BQ_CASTLE]
-                            [piece_color as usize];
-                            $state.castling_state &= rights;
-                        },
-                        (false, false) => {
-                            let start_rank =
-                                (start_square as Square) /
-                                $state.statics.files as u16;
-                            let start_file =
-                                (start_square as Square) %
-                                $state.statics.files as u16;
-
-                            let is_queenside = start_file == 0;
-                            let rights = [
-                                WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
-                            ][piece_color as usize * 2 + is_queenside as usize];
-
-                            if  start_rank == 0
-                            && (start_file == 0
-                            || start_file == $state.statics.files as u16 - 1)
-                            || start_rank == $state.statics.ranks as u16 - 1
-                            && (start_file == 0
-                            || start_file == $state.statics.files as u16 - 1)
-                            {
-                                $state.castling_state &= !rights;
+                if piece_unmoved && $state.statics.castling_pieces[piece_index]
+                {
+                    $state.castling_state &=
+                        [
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WK_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                WK_CASTLE
+                                &
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WQ_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                WQ_CASTLE
+                            },
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BK_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                BK_CASTLE
+                                &
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BQ_INDEX as usize],
+                                    start_square
+                                ) as u8 *
+                                BQ_CASTLE
                             }
-                        }
-                    }
+                        ][piece_color as usize]
                 }
 
                 for cap in $mv.1.iter() {
@@ -1719,29 +1914,39 @@ macro_rules! make_move {
                         captured_piece = old_captured_piece;
                     }
 
-                    let end_rank = (captured_square as Square) /
-                        $state.statics.files as u16;
-                    let end_file = (captured_square as Square) %
-                        $state.statics.files as u16;
-
-                    if castling!($state)
-                        && get!($state.virgin_board, captured_square)
-                        && (end_rank == 0
-                        || end_rank == $state.statics.ranks as u16 - 1)
-                        && (end_file == 0
-                        || end_file == $state.statics.files as u16 - 1)
-                    {
-                        let is_queenside = end_file == 0;
-                        let rights = [
-                            WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
-                        ]
-                        [
-                            (
-                                end_rank == $state.statics.ranks as u16 - 1
-                            ) as usize * 2
-                            + is_queenside as usize
-                        ];
-                        $state.castling_state &= !rights;
+                    if castling!($state) {
+                        $state.castling_state &= [
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WK_INDEX as usize],
+                                    captured_square
+                                ) as u8 *
+                                WK_CASTLE
+                                &
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WQ_INDEX as usize],
+                                    captured_square
+                                ) as u8 *
+                                WQ_CASTLE
+                            },
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BK_INDEX as usize],
+                                    captured_square
+                                ) as u8 *
+                                BK_CASTLE
+                                &
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BQ_INDEX as usize],
+                                    captured_square
+                                ) as u8 *
+                                BQ_CASTLE
+                            }
+                        ][captured_color as usize];
                     }
 
                     hash_update_castling!(
@@ -2050,6 +2255,119 @@ macro_rules! make_move {
 
                     $state.piece_count[captured_piece] -= 1;
                 }
+            } else if move_type == CASTLING_MOVE {
+                let piece_index = piece!($mv) as usize;
+                let start_square = start!($mv) as u32;
+                let end_square = end!($mv) as u32;
+                let captured_piece = captured_piece!($mv) as usize;
+                let captured_square = captured_square!($mv) as u32;
+                let unload_square = unload_square!($mv) as u32;
+
+                let piece_color = p_color!($state.statics.pieces[piece_index]);
+                let captured_color = p_color!(
+                    $state.statics.pieces[captured_piece]
+                );
+
+                clear!(
+                    $state.pieces_board[piece_color as usize], start_square
+                );
+                set!(
+                    $state.pieces_board[piece_color as usize], end_square
+                );
+
+                if p_is_royal!($state.statics.pieces[piece_index]) {
+                    $state.royal_list[piece_color as usize].retain(
+                        |&sq| sq as u32 != start_square
+                    );
+                    $state.royal_list[piece_color as usize]
+                        .push(end_square as Square);
+                }
+
+                clear!($state.virgin_board, start_square);
+
+                hash_in_or_out_piece!(
+                    $state, piece_index, start_square as Square
+                );
+                hash_in_or_out_piece!(
+                    $state,
+                    piece_index,
+                    end_square as Square
+                );
+
+                $state.main_board[start_square as usize] = NO_PIECE;
+                $state.main_board[end_square as usize] =
+                    piece_index as PieceIndex;
+
+                $state.opening_pst_bonus[piece_color as usize] -=
+                    $state.statics.pst_opening
+                    [piece_index][start_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] -=
+                    $state.statics.pst_endgame
+                    [piece_index][start_square as usize];
+                $state.opening_pst_bonus[piece_color as usize] +=
+                    $state.statics.pst_opening
+                    [piece_index][end_square as usize];
+                $state.endgame_pst_bonus[piece_color as usize] +=
+                    $state.statics.pst_endgame
+                    [piece_index][end_square as usize];
+
+                $state.piece_list[piece_index]
+                    .remove(&(start_square as Square));
+                $state.piece_list[piece_index].insert(end_square as Square);
+
+                $state.halfmove_clock = 0;
+
+                if captured_square != end_square {
+                    $state.main_board[captured_square as usize] =
+                        NO_PIECE;
+
+                    clear!(
+                        $state.pieces_board[captured_color as usize],
+                        captured_square
+                    );
+                }
+
+                hash_in_or_out_piece!(
+                    $state,
+                    captured_piece,
+                    captured_square as Square
+                );
+
+                clear!($state.virgin_board, captured_square);
+
+                set!(
+                    $state.pieces_board[captured_color as usize],
+                    unload_square
+                );
+
+                hash_in_or_out_piece!(
+                    $state,
+                    captured_piece,
+                    unload_square as Square
+                );
+
+                set!($state.virgin_board, unload_square);
+
+                $state.main_board[unload_square as usize] =
+                    captured_piece as PieceIndex;
+                $state.piece_list[captured_piece].remove(
+                    &(captured_square as Square)
+                );
+                $state.piece_list[captured_piece]
+                    .insert(unload_square as Square);
+
+                $state.opening_pst_bonus[captured_color as usize] -=
+                    $state.statics.pst_opening[captured_piece]
+                    [captured_square as usize];
+                $state.endgame_pst_bonus[captured_color as usize] -=
+                    $state.statics.pst_endgame[captured_piece]
+                    [captured_square as usize];
+                $state.opening_pst_bonus[captured_color as usize] +=
+                    $state.statics.pst_opening[captured_piece]
+                    [unload_square as usize];
+                $state.endgame_pst_bonus[captured_color as usize] +=
+                    $state.statics.pst_endgame[captured_piece]
+                    [unload_square as usize];
             }
 
             $state.game_phase =
@@ -2198,6 +2516,7 @@ macro_rules! undo_move {
             }
 
             if piece_unmoved {
+                clear!($state.virgin_board, end_square);
                 set!($state.virgin_board, start_square);
             }
 
@@ -2294,6 +2613,7 @@ macro_rules! undo_move {
             }
 
             if piece_unmoved {
+                clear!($state.virgin_board, end_square);
                 set!($state.virgin_board, start_square);
             }
 
@@ -2477,6 +2797,7 @@ macro_rules! undo_move {
             }
 
             if piece_unmoved {
+                clear!($state.virgin_board, end_square);
                 set!($state.virgin_board, start_square);
             }
 
@@ -2751,6 +3072,81 @@ macro_rules! undo_move {
 
                 $state.piece_count[captured_piece] += 1;
             }
+        } else if move_type == CASTLING_MOVE {
+            let piece_index = piece!(mv) as usize;
+            let start_square = start!(mv) as u32;
+            let end_square = end!(mv) as u32;
+            let captured_piece = captured_piece!(mv) as usize;
+            let captured_square = captured_square!(mv) as u32;
+            let unload_square = unload_square!(mv) as u32;
+
+            let piece_color = p_color!($state.statics.pieces[piece_index]);
+            let captured_color = p_color!(
+                $state.statics.pieces[captured_piece]
+            );
+
+            clear!($state.pieces_board[piece_color as usize], end_square);
+            set!($state.pieces_board[piece_color as usize], start_square);
+
+            if p_is_royal!($state.statics.pieces[piece_index]) {
+                $state.royal_list[piece_color as usize]
+                    .retain(|&sq| sq as u32 != end_square);
+                $state.royal_list[piece_color as usize]
+                    .push(start_square as Square);
+            }
+
+            clear!($state.virgin_board, end_square);
+            set!($state.virgin_board, start_square);
+
+            $state.main_board[end_square as usize] = NO_PIECE;
+            $state.main_board[start_square as usize] =
+                piece_index as PieceIndex;
+
+            $state.opening_pst_bonus[piece_color as usize] -=
+                $state.statics.pst_opening[piece_index][end_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] -=
+                $state.statics.pst_endgame[piece_index][end_square as usize];
+            $state.opening_pst_bonus[piece_color as usize] +=
+                $state.statics.pst_opening[piece_index][start_square as usize];
+            $state.endgame_pst_bonus[piece_color as usize] +=
+                $state.statics.pst_endgame[piece_index][start_square as usize];
+
+            $state.piece_list[piece_index].remove(&(end_square as Square));
+            $state.piece_list[piece_index].insert(start_square as Square);
+
+            clear!(
+                $state.pieces_board[captured_color as usize],
+                unload_square
+            );
+            set!(
+                $state.pieces_board[captured_color as usize],
+                captured_square
+            );
+
+            set!($state.virgin_board, captured_square);
+            clear!($state.virgin_board, unload_square);
+
+            $state.main_board[unload_square as usize] = NO_PIECE;
+            $state.main_board[captured_square as usize] =
+                captured_piece as PieceIndex;
+
+            $state.piece_list[captured_piece]
+                .remove(&(unload_square as Square));
+
+            $state.opening_pst_bonus[captured_color as usize] -=
+                $state.statics.pst_opening[captured_piece]
+                [unload_square as usize];
+            $state.endgame_pst_bonus[captured_color as usize] -=
+                $state.statics.pst_endgame[captured_piece]
+                [unload_square as usize];
+            $state.opening_pst_bonus[captured_color as usize] +=
+                $state.statics.pst_opening[captured_piece]
+                [captured_square as usize];
+            $state.endgame_pst_bonus[captured_color as usize] +=
+                $state.statics.pst_endgame[captured_piece]
+                [captured_square as usize];
+            $state.piece_list[captured_piece]
+                .insert(captured_square as Square);
         }
 
         #[cfg(debug_assertions)]
@@ -2881,6 +3277,10 @@ pub fn generate_all_moves_and_drops(
                 generate_drop_list!(piece, state, out, scratch);
             }
         }
+    }
+
+    if castling!(state) {
+        generate_castling_list!(state, out);
     }
 }
 

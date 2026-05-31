@@ -2,8 +2,9 @@
 debug = false
 opt-level = 3
 lto = "thin"
-codegen-units = 4
+codegen-units = 1
 strip = true
+panic = "abort"
 
 [profile.dev]
 debug-assertions = true
@@ -15,23 +16,52 @@ members = [
 ]
 
 [workspace.dependencies]
-bnum = "*"
-regex = "*"
-ntest = "*"
-lazy_static = "*"
-timed = "*"
-rand = ">=0.9.3"
-fs = "*"
-hotpath = "*"
-hashbrown = "*"
-log = "*"
-env_logger = "*"
+bnum = {
+    version = ">=0.14.4"
+}
+regex = {
+    version = ">=1.12.3"
+}
+lazy_static = {
+    version = ">=1.5.0"
+}
+timed = {
+    version = ">=0.2.1"
+}
+rand = {
+    version = ">=0.9.3"
+}
+fs = {
+    version = ">=0.0.5"
+}
+hotpath = {
+    version = ">=0.16.1"
+}
+hashbrown = {
+    version = ">=0.17.1"
+}
+log = {
+    version = ">=0.4.30"
+}
+env_logger = {
+    version = ">=0.11.10"
+}
 ratatui = {
-    version = "*",
+    version = ">=0.30.0",
     features = ["unstable-rendered-line-info"]
 }
-chrono = "*"
-rayon = "*"
-crossterm = "*"
-arboard = "*"
-include_dir = "*"
+chrono = {
+    version = ">=0.4.44"
+}
+rayon = {
+    version = ">=1.12.0"
+}
+crossterm = {
+    version = ">=0.29.0"
+}
+arboard = {
+    version = ">=3.6.1"
+}
+include_dir = {
+    version = ">=0.7.4"
+}

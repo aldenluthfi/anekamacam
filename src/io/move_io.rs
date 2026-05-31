@@ -60,7 +60,7 @@ pub fn format_move(
         move_str.push_str(&format!(":{}", end_str));
     }
 
-    if move_type == SINGLE_CAPTURE_MOVE {
+    if move_type == SINGLE_CAPTURE_MOVE || move_type == CASTLING_MOVE {
         let end = end!(mv);
         let capt = captured_square!(mv);
 
@@ -82,7 +82,7 @@ pub fn format_move(
         }
     }
 
-    if !mv.1.is_empty() {
+    if !mv.1.is_empty() && move_type != CASTLING_MOVE {
         let end = end!(mv);
         let end_str = format_square(end as Square, state);
 
