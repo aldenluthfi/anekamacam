@@ -190,7 +190,16 @@ pub const MAX_DEPTH: usize = 128;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
 pub const MAX_LMR_DEPTH: usize = 32;
 pub const MAX_LOGS_LEN: usize = u16::MAX as usize;
-pub const MAX_HISTORY_BONUS: usize = MAX_DEPTH.pow(3);
+pub const MAX_HIST_VALUE: i16 = 16384;
+pub const HIST_BONUS_SCALE: i32 = 32;
+pub const LMP_MAX_DEPTH: usize = 8;
+pub const LMP_THRESHOLD: [[u8; LMP_MAX_DEPTH + 1]; 2] = [
+    [0, 3, 4,  7, 13, 21, 31, 43, 57],                                          /* not improving                      */
+    [0, 5, 8, 14, 24, 38, 56, 78, 105],                                         /* improving                          */
+];
+pub const RFP_MAX_DEPTH: usize = 8;
+pub const RAZOR_MAX_DEPTH: usize = 3;
+pub const SEE_PRUNE_MAX_DEPTH: usize = 7;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;

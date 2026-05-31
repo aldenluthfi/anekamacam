@@ -105,9 +105,12 @@ pub fn clear_search(
     }
 
     let piece_count: usize = state.statics.pieces.len();
+    let board_size: usize = state.statics.board_size;
 
-    state.search_hist = vec![0u16; state.statics.board_size * piece_count];
+    state.search_hist =
+        vec![0i16; piece_count * board_size * board_size];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
+    state.eval_stack = vec![i32::MIN; MAX_DEPTH + 4];
 
     ttable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     qtable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -511,6 +514,23 @@ fn quiescence_search(
 }
 
 
+/// Gravity-style update for a single butterfly history entry.
+///
+/// Formula: `entry += bonus - entry * |bonus| / MAX_HIST_VALUE`. Naturally
+/// damps as `|entry|` approaches `MAX_HIST_VALUE`, preserving signal at
+/// deep depths without saturation. `bonus` is signed; negate for malus.
+#[macro_export]
+macro_rules! apply_history_gravity {
+    ($entry:expr, $bonus:expr) => {{
+        let bonus: i32 = $bonus;
+        let cap: i32 = MAX_HIST_VALUE as i32;
+        let current: i32 = $entry as i32;
+        let updated = current + bonus
+            - current * bonus.abs() / cap;
+        $entry = updated.clamp(-cap, cap) as i16;
+    }};
+}
+
 /// Heuristic reduction for late move reduction, based on depth, move count,
 /// checks, and move type. Returns a usize reduction value clamped to
 /// `[0, depth - 1]`. Uses pre-computed integer tables (no f64 at call site).
@@ -594,6 +614,13 @@ pub fn alpha_beta(
 
     let in_check = is_in_check!(state.playing, state);
 
+    state.eval_stack[ply] = if in_check { i32::MIN } else { static_eval };
+
+    let improving = !in_check
+        && ply >= 2
+        && state.eval_stack[ply - 2] != i32::MIN
+        && static_eval > state.eval_stack[ply - 2];
+
     if in_check {
         depth += 1;
     }
@@ -622,28 +649,29 @@ pub fn alpha_beta(
         pv_capture = m_pseudocapture!(pv_mv);
     }
 
-    if depth < 3
+    if depth <= RFP_MAX_DEPTH
     && (pv_move.is_none() || !pv_capture)
-    && !in_check                                                                /* reverse futility pruning           */
+    && !in_check
+    && beta.abs() < MATE_SCORE                                                  /* reverse futility pruning           */
     {
-        let eval_margin = 150 * depth as i32;
-        if static_eval - eval_margin >= beta {
+        let rfp_row = &state.statics.rfp_margin[improving as usize];
+        if static_eval - rfp_row[depth] >= beta {
             return beta;
         }
     }
 
-    if depth <= 4
+    if depth <= RAZOR_MAX_DEPTH
     && !in_check
     && pv_move.is_none()
     && alpha.abs() < MATE_SCORE
     && state.game_phase != ENDGAME
-    && static_eval + 200 + 150 * (depth as i32) < alpha
+    && static_eval + state.statics.razor_margin[depth] < alpha
     {                                                                           /* razoring                           */
         let shallow = alpha_beta(
             state, ttable, qtable,
             depth.saturating_sub(2),
             alpha, alpha + 1,
-            info, bufs, null
+            info, bufs, true
         );
 
         if shallow <= alpha {
@@ -721,12 +749,39 @@ pub fn alpha_beta(
         let mv = bufs.move_buf[ply][i].clone();
 
         let piece = piece!(mv) as usize;
-        let end = end!(mv);
+        let from = start!(mv) as usize;
+        let end = end!(mv) as usize;
 
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
         let is_drop = m_drop!(mv);
         let is_quiet = m_quiet!(mv);
+
+        if futile
+        && legal_moves > 0
+        && !is_capture
+        && !is_promotion
+        && !is_drop
+        {                                                                       /* futility pruning                   */
+            continue;
+        }
+
+        if depth <= SEE_PRUNE_MAX_DEPTH
+        && legal_moves > 0
+        && !in_check
+        && beta - alpha == 1
+        && alpha.abs() < MATE_SCORE
+        && is_capture
+        && mv != state.killer_hist[ply][0]
+        && mv != state.killer_hist[ply][1]
+        {
+            let see_score = see!(state, mv.clone());
+            let margin =
+                state.statics.see_capture_margin * depth as i32;
+            if see_score < -margin {                                            /* SEE prune losing capture           */
+                continue;
+            }
+        }
 
         if !make_move!(state, mv.clone()) {
             continue;
@@ -739,12 +794,17 @@ pub fn alpha_beta(
 
         let opponent_in_check = is_in_check!(state.playing, state);
 
-        if futile
+        if depth <= LMP_MAX_DEPTH
+        && !in_check
         && !opponent_in_check
         && !is_capture
         && !is_promotion
         && !is_drop
-        {                                                                       /* futility pruning                   */
+        && alpha.abs() < MATE_SCORE
+        && beta - alpha == 1
+        && legal_moves as usize
+            >= LMP_THRESHOLD[improving as usize][depth] as usize
+        {                                                                       /* late move pruning                  */
             undo_move!(state);
             continue;
         }
@@ -796,7 +856,12 @@ pub fn alpha_beta(
             return 0;
         }
 
-        let bonus = (depth * depth) as u16;
+        let board_size = state.statics.board_size;
+        let hist_idx =
+            piece * board_size * board_size + from * board_size + end;
+        let bonus = (depth as i32 * depth as i32 * HIST_BONUS_SCALE)
+            .min(MAX_HIST_VALUE as i32);
+
         if score > best_score {
             best_score = score;
             best_move = mv.clone();
@@ -805,12 +870,11 @@ pub fn alpha_beta(
                 if score >= beta {
 
                     if is_quiet {
-                        let hist_idx =
-                            piece * state.statics.board_size + end as usize;
                         state.killer_hist[ply].swap(1, 0);
                         state.killer_hist[ply][0] = best_move.clone();
-                        state.search_hist[hist_idx] =
-                            state.search_hist[hist_idx].saturating_add(bonus);
+                        apply_history_gravity!(
+                            state.search_hist[hist_idx], bonus
+                        );
                     }
 
                     hash_tt_entry!(
@@ -821,10 +885,9 @@ pub fn alpha_beta(
                 }
 
                 if is_quiet {
-                    let hist_idx =
-                        piece * state.statics.board_size + end as usize;
-                    state.search_hist[hist_idx] =
-                        state.search_hist[hist_idx].saturating_add(bonus);
+                    apply_history_gravity!(
+                        state.search_hist[hist_idx], bonus
+                    );
                 }
 
                 alpha = score;
@@ -849,9 +912,9 @@ pub fn alpha_beta(
         if score <= alpha
         && is_quiet
         {                                                                       /* history malus                      */
-            let hist_idx = piece * state.statics.board_size + end as usize;
-            state.search_hist[hist_idx] =
-                state.search_hist[hist_idx].saturating_sub(bonus);
+            apply_history_gravity!(
+                state.search_hist[hist_idx], -bonus
+            );
         }
     }
 

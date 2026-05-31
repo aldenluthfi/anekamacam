@@ -182,13 +182,18 @@ macro_rules! see {
 ///
 /// Scoring order:
 /// 1. PV move                  -> 5000000
-/// 2. Winning/Equal captures   -> 4000000 + SEE score [0, MAX_PIECE_VALUE]
-/// 3. Killer moves             -> 1000000 + MAX_DEPTH^3 + 2 - killer rank [0,1]
-/// 4. History heuristic        -> 1000000 + history score [0, ~MAX_DEPTH^3]
+/// 2. Captures (MVV-LVA only)  -> 4000000 + victim - attacker/16
+/// 3. Killer moves             -> 1000000 + 2*MAX_HIST_VALUE + [1, 2]
+/// 4. History heuristic        -> 1000000 + MAX_HIST_VALUE + history [-h, h]
 /// 5. Losing captures          -> 1000000 + SEE score [-MAX_PIECE_VALUE, -1]
 ///
-/// `$pv_move` is the TT best move for this node. A larger score means the
-/// move is searched earlier.
+/// SEE is no longer called during initial scoring — that work is deferred
+/// to `pick_by_score!`, which only runs SEE on the capture it is about to
+/// return. Captures with verified `see < 0` are demoted to bucket 5.
+///
+/// History entries are signed i16; the `MAX_HIST_VALUE` offset shifts them
+/// into a non-negative usize bucket strictly below killers. `$pv_move` is
+/// the TT best move for this node.
 #[macro_export]
 macro_rules! score_move {
     ($state:expr, $mv:expr, $pv_move:expr) => {{
@@ -200,25 +205,32 @@ macro_rules! score_move {
             let killers =
                 &$state.killer_hist[$state.search_ply as usize];
 
+            let killer_base =
+                1_000_000 + 2 * MAX_HIST_VALUE as usize;
+
             if $mv == killers[0] {
-                1_000_000 + MAX_HISTORY_BONUS + 2                               /* killer scores above history         */
+                killer_base + 2                                                 /* killer scores above history         */
             } else if $mv == killers[1] {
-                1_000_000 + MAX_HISTORY_BONUS + 1                               /* killer scores above history         */
+                killer_base + 1                                                 /* killer scores above history         */
             } else {
                 let piece = piece!($mv) as usize;
+                let from  = start!($mv) as usize;
                 let end   = end!($mv) as usize;
-                let idx   = piece * $state.statics.board_size + end;
+                let board_size = $state.statics.board_size;
+                let idx =
+                    piece * board_size * board_size
+                    + from * board_size + end;
+                let entry = $state.search_hist[idx] as i32;
 
-                1_000_000 + $state.search_hist[idx] as usize                    /* history score for quiet moves       */
+                (1_000_000
+                    + MAX_HIST_VALUE as i32
+                    + entry) as usize                                           /* signed history offset to usize     */
             }
         } else {
-            let see_score = see!($state, $mv);
+            let victim   = victim_value!($mv, $state);
+            let attacker = attack_value!($mv, $state);
 
-            if see_score >= 0 {
-                (4_000_000 + see_score) as usize                                /* winning captures ordered second     */
-            } else {
-                (1_000_000 + see_score) as usize                                /* losing captures ordered last        */
-            }
+            (4_000_000 + victim - attacker / 16) as usize                       /* MVV-LVA, SEE deferred to pick      */
         }
     }};
 }
@@ -229,6 +241,12 @@ macro_rules! score_move {
 /// Selection-sort step; avoids sorting the full list up front. Combined with
 /// alpha-beta cutoffs, only the highest-priority prefix is scored in practice.
 ///
+/// Lazy SEE: the picked move is verified with full SEE only if it is in the
+/// MVV-LVA capture bucket `[4M, 5M)`. A capture with `see < 0` is demoted to
+/// the losing-capture bucket `1M + see` and the pick is retried. This caps
+/// SEE work at one call per move actually returned, even when many losing
+/// captures are present.
+///
 /// `$pv_move` is the TT best move for this node.
 #[macro_export]
 macro_rules! pick_by_score {
@@ -237,31 +255,44 @@ macro_rules! pick_by_score {
         let scores: &mut Vec<usize> = $scores;
         let index = $index;
 
-        if scores[index] == usize::MAX {
-            scores[index] = score_move!(
-                $state, moves[index].clone(), $pv_move
-            );
-        }
-
-        let mut best_index = index;
-        let mut best_score = scores[index];
-
-        for i in (index + 1)..moves.len() {
-            if scores[i] == usize::MAX {
-                scores[i] = score_move!(
-                    $state, moves[i].clone(), $pv_move
+        loop {
+            if scores[index] == usize::MAX {
+                scores[index] = score_move!(
+                    $state, moves[index].clone(), $pv_move
                 );
             }
 
-            if scores[i] > best_score {
-                best_score = scores[i];
-                best_index = i;
-            }
-        }
+            let mut best_index = index;
+            let mut best_score = scores[index];
 
-        if best_index != index {
-            moves.swap(index, best_index);
-            scores.swap(index, best_index);
+            for i in (index + 1)..moves.len() {
+                if scores[i] == usize::MAX {
+                    scores[i] = score_move!(
+                        $state, moves[i].clone(), $pv_move
+                    );
+                }
+
+                if scores[i] > best_score {
+                    best_score = scores[i];
+                    best_index = i;
+                }
+            }
+
+            if best_score >= 4_000_000 && best_score < 5_000_000 {
+                let candidate = moves[best_index].clone();
+                let see_score = see!($state, candidate);
+                if see_score < 0 {
+                    scores[best_index] =
+                        (1_000_000 + see_score) as usize;
+                    continue;                                                   /* demoted; re-pick best              */
+                }
+            }
+
+            if best_index != index {
+                moves.swap(index, best_index);
+                scores.swap(index, best_index);
+            }
+            break;
         }
     }};
 }
