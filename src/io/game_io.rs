@@ -116,7 +116,7 @@ fn validate_castling(fen: &str, state: &State) -> bool {
                 file += num_str.parse::<u8>().unwrap();
             }
             _ => {
-                if c != '*' {
+                if c != '*' && c != '+' {
                     let piece =
                         *state.statics.piece_char_map
                         .get(&c).unwrap_or_else(|| {
@@ -1294,7 +1294,7 @@ pub fn parse_config_file(path: &str) -> State {
                                 |c|
                                 if c.is_numeric() || c == '/' {
                                     c
-                                } else if c == '*' {
+                                } else if c == '*' || c == '+' {
                                     'O'
                                 } else {
                                     'X'
