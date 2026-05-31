@@ -61,7 +61,7 @@ macro_rules! drop_from_enemy_hand {
 ///   dropped.
 /// - The next 12 bits are reserved for drop modifiers.
 pub type DropMove = u32;
-pub type Drops = (DropMove, PatternAllower, PatternStopper);
+pub type Drops = (DropMove, Pattern);
 pub type DropSet = Vec<Drops>;
 
 /*----------------------------------------------------------------------------*\

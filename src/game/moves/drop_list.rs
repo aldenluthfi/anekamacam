@@ -39,7 +39,7 @@ pub fn generate_relevant_drops(
             let file = square_index as i32 % state.statics.files as i32;
             let rank = square_index as i32 / state.statics.files as i32;
 
-            for allower in drop.1.iter() {
+            for allower in drop.1.0.iter() {
                 let x = x!(allower.0) * (-2 * piece_color as i8 + 1);
                 let y = y!(allower.0) * (-2 * piece_color as i8 + 1);
 
@@ -57,7 +57,7 @@ pub fn generate_relevant_drops(
                 new_drop_allowers.push(allower.clone());
             }
 
-            for stopper in drop.2.iter() {
+            for stopper in drop.1.1.iter() {
                 let x = x!(stopper.0) * (-2 * piece_color as i8 + 1);
                 let y = y!(stopper.0) * (-2 * piece_color as i8 + 1);
 
@@ -73,7 +73,7 @@ pub fn generate_relevant_drops(
                 }
             }
 
-            Some((new_drop_move, new_drop_allowers, new_drop_stoppers))
+            Some((new_drop_move, (new_drop_allowers, new_drop_stoppers)))
         })
         .collect()
 }
@@ -93,9 +93,8 @@ macro_rules! generate_drop_list {
         let index = p_index!($piece) as usize;
         let color = p_color!($piece) as usize;
 
-        if !(count_limits!($state)
-            && $state.piece_count[index]
-            >= $state.statics.piece_limit[index])
+        if !count_limits!($state)
+        || $state.piece_count[index] <= $state.statics.piece_limit[index]
         {
             for square in 0..board_size {
                 let drops = if $state.game_phase == SETUP {
@@ -113,16 +112,6 @@ macro_rules! generate_drop_list {
                 }
 
                 'drop_loop: for drop in drops {
-                    if drop.1.len() > 1 {
-                        let drop_square = drop.1[0].0 as usize;
-                        if square == 0
-                        && !drop.1[0].1.contains(
-                            $state.main_board[drop_square]
-                        ) {
-                            continue 'drop_loop;
-                        }
-                    }
-
                     let drop_k = drop_k!(drop);
                     let drop_f = drop_f!(drop);
                     let drop_d = drop_d!(drop);
@@ -151,8 +140,8 @@ macro_rules! generate_drop_list {
                     enc_can_checkmate!(encoded_move, !drop_k as u128);
                     enc_from_enemy_hand!(encoded_move, drop_e as u128);
 
-                    let drop_allowers = &drop.1;
-                    let drop_stoppers = &drop.2;
+                    let drop_allowers = &drop.1.0;
+                    let drop_stoppers = &drop.1.1;
 
                     let file = square % $state.statics.files as u32;
                     let rank = square / $state.statics.files as u32;

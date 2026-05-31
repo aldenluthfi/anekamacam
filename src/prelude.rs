@@ -23,6 +23,10 @@ pub use crate::game::representations::{
     board::Board,
     drop::DropSet,
     moves::{AttackMask, Move, MoveSignature, PseudoMove},
+    pattern::{
+        Pattern, PatternAllower, PatternSet, PatternStopper, PatternUnit,
+        PieceSet,
+    },
     piece::{Piece, PieceIndex},
     state::{EnPassantSquare, Snapshot, Square, State},
     vector::{
@@ -48,15 +52,16 @@ pub use crate::game::moves::drop_list::generate_relevant_drops;
 pub use crate::game::moves::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
     generate_all_captures, generate_all_moves_and_drops, generate_attack_masks,
-    generate_relevant_captures, generate_relevant_moves,
+    generate_relevant_captures, generate_relevant_castling,
+    generate_relevant_moves,
 };
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
 };
 
-pub use crate::game::moves::pattern_match::{
+pub use crate::game::moves::pattern_parse::{
     generate_relevant_stand_offs, generate_stand_off_patterns,
-    parse_pattern, PatternAllower, PatternSet, PatternStopper,
+    parse_pattern,
 };
 pub use crate::game::position::{
     hash::{hash_position, PositionHash},
@@ -101,6 +106,11 @@ pub use crate::io::protocols::{
     translation::Translator,
     uci::uci,
 };
+
+/*----------------------------------------------------------------------------*\
+                                   DEBUG API
+\*----------------------------------------------------------------------------*/
+pub use crate::debug::console::debug_console;
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
@@ -159,6 +169,7 @@ pub use std::{
     fs::{self, OpenOptions},
     hash::Hash,
     io::{stdin, stdout, BufRead, Result as IoResult, Write},
+    iter::zip,
     mem::{self, size_of},
     path::Path,
     sync::{
@@ -184,6 +195,10 @@ pub const MAX_HISTORY_BONUS: usize = MAX_DEPTH.pow(3);
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
 
+pub const WK_INDEX: u8 = 0;
+pub const WQ_INDEX: u8 = 1;
+pub const BK_INDEX: u8 = 2;
+pub const BQ_INDEX: u8 = 3;
 pub const WK_CASTLE: u8 = 0b0001;
 pub const WQ_CASTLE: u8 = 0b0010;
 pub const BK_CASTLE: u8 = 0b0100;
@@ -197,6 +212,7 @@ pub const QUIET_MOVE: u128 = 0;
 pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
+pub const CASTLING_MOVE: u128 = 4;
 
 thread_local! {
     pub static EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
@@ -224,6 +240,8 @@ lazy_static! {
 
         result
     };
+    pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
+        Mutex::new(VecDeque::new());
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
         let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
 
@@ -241,6 +259,7 @@ lazy_static! {
     pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(5);
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
+    pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(true);
 }
 
 pub fn null_move() -> Move {

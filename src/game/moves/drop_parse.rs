@@ -80,7 +80,7 @@ pub fn generate_drop_vectors(
         }).as_str();
         let (allower_result, stopper_result) = parse_pattern(pattern, state);
 
-        drop_set.push((move_result, allower_result, stopper_result));
+        drop_set.push((move_result, (allower_result, stopper_result)));
     }
 
     drop_set

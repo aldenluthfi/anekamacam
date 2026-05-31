@@ -33,7 +33,8 @@ pub type MoveSignature = u64;
 /// The first field mirrors `Move.0` verbatim; the second field is the
 /// `MoveSignature` (XOR of all `u64` elements in `Move.1`).  A `PseudoMove`
 /// can be matched against a `Move` without holding a reference to the captures
-/// list, eliminating the dangling-pointer hazard of storing a raw `Arc` pointer.
+/// list, eliminating the dangling-pointer hazard of storing a raw `Arc`
+/// pointer.
 pub type PseudoMove = (u128, MoveSignature);
 
 /// A type representing a single move in the game.
@@ -46,6 +47,9 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - `001` : Single move with capture or unload
 /// - `010` : Multi-capture move
 /// - `011` : Drop move
+/// - `100` : Castling move
+///
+/// General format for 000, 001, 010:
 ///
 /// - The next 8 bits indicates the piece index of the piece making the move.
 /// - The next 12 bits represent the starting square index (0-4095).
@@ -59,7 +63,7 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - The following 8 bits represent the promoted piece type (if applicable).
 /// - The following 32 bits represents the en passant square (if applicable).
 ///
-///   --- the following bits are set only for capture moves ---
+/// Additional encoding for 001:
 ///
 /// - Next bit indicates if this move is a unload (1) or regular capture (0).
 /// - Next 12 bits are the unload square index (if applicable).
@@ -68,16 +72,17 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - Next bit indicates if the piece captured is unmoved (1) or not (0).
 /// - The remaining bits are unused.
 ///
+/// Additional encoding for 010:
+///
 /// The second array is used to store the indices of all captured pieces.
 ///
 /// - Next bit indicates if this move is a unload (1) or regular capture (0).
 /// - Next 12 bits: Unload square index (if applicable).
 /// - Next 8 bits: bits represent the captured piece type.
 /// - Next 12 bits: represent the captured piece square index.
-///   The last bit indicates if the piece captured is unmoved (1) or not (0).
+/// - The last bit indicates if the piece captured is unmoved (1) or not (0).
 ///
-/// For the drop move, the second array is not used, and the first 128-bit
-/// integer is used as follows:
+/// General format for 011:
 ///
 /// - The first 3 bits is the move type (011 for drop).
 /// - The next 8 bits is the piece index of the piece being dropped.
@@ -87,7 +92,24 @@ pub type PseudoMove = (u128, MoveSignature);
 ///   or not (1).
 /// - The next bit represents whether this drop is taken from the enemy's hand
 ///   (0) or our own hand (1).
-#[derive(Clone, PartialEq, Eq)]
+///
+/// General format for 100:
+///
+/// - The next 8 bits indicates the piece index of the piece making the move.
+/// - The next 12 bits represent the starting square index (0-4095).
+/// - The following 12 bits represent the ending square index (0-4095).
+/// - The following 51 bits are unused
+/// - The following bit (is_unload) is set for formatting
+/// - Next 12 bits (unload square) are the ending square for the "rook" piece
+/// - Next 8 bits (captured piece) represent the "rook" piece type
+/// - Next 12 bits (captures sqaure) represent the "rook" starting square
+///
+/// Aditional encoding for 100:
+///
+/// - The second array is used to store the squares that must not be attacked
+///   when making a castling move in bits 1-12 inclusive (unload square)
+///
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Move(pub u128, pub Arc<Vec<u64>>);
 
 impl Default for Move {
@@ -102,6 +124,9 @@ impl Default for Move {
 
 /// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
 /// `move.1`.  The result is 0 for moves with no captures (empty list).
+///
+/// The 34th bit is set if there is an actual capture in the capture list (not
+/// all unloads).
 #[macro_export]
 macro_rules! m_signature {
     ($mv:expr) => {

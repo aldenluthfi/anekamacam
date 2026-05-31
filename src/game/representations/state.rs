@@ -330,12 +330,14 @@ pub struct StaticState {
     pub forbidden_zones: Vec<Board>,                                            /* piece to forbidden zone bitboard   */
     pub promotion_zones_optional: Vec<Board>,                                   /* piece to promotion zone bitboard   */
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
+    pub critical_castling: [Board; 4],                                          /* KQkq critical squares for each     */
 
     pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
     pub halfmove_limit: u8,                                                     /* halfmoves before draw              */
-    pub halfmove_pieces: Vec<bool>,                                             /* moving these pieces resets clock   */
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
 
+    pub halfmove_pieces: Vec<bool>,                                             /* moving these pieces resets clock   */
+    pub castling_pieces: Vec<bool>,                                             /* moving/capturing voids rights      */
 
     pub files: u8,
     pub ranks: u8,
@@ -347,6 +349,7 @@ pub struct StaticState {
     pub relevant_setup: Vec<DropSet>,
     pub relevant_stand_offs: Vec<PatternSet>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
+    pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: Vec<Vec<PieceIndex>>,                               /* piece index to demotion piece idx  */
@@ -357,9 +360,9 @@ pub struct StaticState {
 \*----------------------------------------------------------------------------*/
 
     pub futility_margin: [[i32; 5]; 3],                                         /* [phase 0-2][depth 0-4]             */
-    pub quiesce_lmr:       Vec<u8>,                                             /* [depth * MAX_LMR_DEPTH + moves]    */
+    pub quiesce_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
     pub quiesce_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
-    pub capture_lmr:       Vec<u8>,                                             /* [depth * MAX_LMR_DEPTH + moves]    */
+    pub capture_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
     pub capture_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
     pub opening_score: u32,                                                     /* opening threshold                  */
     pub endgame_score: u32,                                                     /* endgame threshold                  */
@@ -520,11 +523,14 @@ impl State {
             forbidden_zones: vec![board!(files, ranks); piece_count],
             promotion_zones_optional: vec![board!(files, ranks); piece_count],
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
+            critical_castling: [board!(files, ranks); 4],
 
             piece_limit: vec![u32::MAX; piece_count],
             halfmove_limit: u8::MAX,
-            halfmove_pieces: vec![false; piece_count],
             repetition_limit: u8::MAX,
+
+            halfmove_pieces: vec![false; piece_count],
+            castling_pieces: vec![false; piece_count],
 
             files,
             ranks,
@@ -541,6 +547,7 @@ impl State {
                 vec![Vec::new(); board_size],
                 vec![Vec::new(); board_size],
             ],
+            relevant_castling: array::from_fn(|_| Vec::new()),
 
             piece_swap_map: vec![0; piece_count],
             piece_demotion_map: vec![Vec::new(); piece_count],
@@ -688,15 +695,6 @@ impl State {
         parse_fen(self, fen, dict);
     }
 
-    fn populate_char_map(&mut self) {
-        let char_map: HashMap<char, u8> = self.statics.pieces
-            .iter()
-            .enumerate()
-            .map(|(index, piece)| (piece.char, index as PieceIndex))
-            .collect();
-        self.static_mut().piece_char_map = char_map;
-    }
-
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
         let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
         for expr in expr_set {
@@ -825,8 +823,6 @@ impl State {
         stand_off_expr_set: Vec<String>
     ) {
         let piece_count = self.statics.pieces.len();
-        self.populate_char_map();
-
         let piece_moves = self.generate_piece_moves(&moves_expr_set);
 
         let mut piece_drops = vec![Vec::new(); piece_count];

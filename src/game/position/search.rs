@@ -265,7 +265,7 @@ pub fn iterative_deepening(
             .and_then(|n| n.checked_div(depth_elapsed))
             .unwrap_or(0);
         total_nps = total_nodes
-            .checked_mul(1_000_000_000)
+            .checked_mul(1_000)
             .and_then(|n| n.checked_div(total_elapsed))
             .unwrap_or(0);
 

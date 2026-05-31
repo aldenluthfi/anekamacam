@@ -6,6 +6,7 @@
 //! into human-readable ASCII art displays. It provides methods for formatting
 //! individual bitboards and complete boards with Unicode
 //! box-drawing characters,
+//! 
 //! supporting various board sizes and piece symbols. The formatting includes
 //! rank and file labels for easy reference.
 //!
@@ -16,15 +17,20 @@
 //! 25/01/2026
 use crate::*;
 
+/// Formats the square index into an algebraic square format.
+///
+/// {file letter/number}{rank number}
+///
+/// If the board width is more than 26 then it switches to numeric file. Both
+/// file and rank in both formats are 1-indexed
 pub fn format_square(index: u16, state: &State) -> String {
     let file = (index % state.statics.files as u16) as u8;
     let rank = (index / state.statics.files as u16) as u8;
 
     if state.statics.files <= 26 {
-        let file_char = (b'a' + file) as char;
-        format!("{}{}", file_char, rank).trim().to_string()
+        format!("{}{}", (b'a' + file) as char, rank + 1).trim().to_string()
     } else {
-        format!("{:02}{:02}", file, rank).trim().to_string()
+        format!("{:02}{:02}", file + 1, rank + 1).trim().to_string()
     }
 }
 
@@ -37,23 +43,35 @@ pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
     }
 
     if state.statics.files <= 26 {
-        let file_char = square_str.chars().next().unwrap();
-        let file = (file_char as u8).wrapping_sub(b'a') as u16;
-        let rank_str = &square_str[1..];
-        if let Ok(rank) = rank_str.parse::<u16>()
-        && file < files
-        && rank < ranks {
+        let Some(file) = square_str[0..1].chars().next() else {
+            return None;
+        };
+
+        let Ok(mut rank) = square_str[1..].parse::<u16>() else {
+            return None;
+        };
+
+        let file = (file as u16).wrapping_sub('a' as u16);
+        rank -= 1;
+
+        if file < files && rank < ranks {
             return Some(rank * files + file);
         }
-    } else {
-        if let Ok(file) = square_str[0..2].parse::<u16>() {
-            let rank_str = &square_str[2..];
 
-            if let Ok(rank) = rank_str.parse::<u16>()
-            && file < files
-            && rank < ranks {
-                return Some(rank * files + file);
-            }
+    } else {
+        let Ok(mut file) = square_str[..2].parse::<u16>() else {
+            return None;
+        };
+
+        let Ok(mut rank) = square_str[2..].parse::<u16>() else {
+            return None;
+        };
+
+        file -= 1;
+        rank -= 1;
+
+        if file < files && rank < ranks {
+            return Some(rank * files + file);
         }
     }
 
@@ -94,8 +112,8 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
 
     for (i, line) in bitboard_str.lines().enumerate() {
         result.push_str(&format!(
-            "{:02} ║ {} ║\n",
-            ranks as usize - i - 1,
+            "{:>2} ║ {} ║\n",
+            ranks as usize - i,
             line.trim().replace("  ", " │ ")
         ));
 
@@ -115,7 +133,7 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
 
     for col in 0..files {
         let file_label = if files < 26 {
-            ((b'A' + col) as char).to_string()
+            ((b'a' + col) as char).to_string()
         } else {
             format!("{:02}", col)
         };
@@ -144,7 +162,7 @@ pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
     ));
 
     for rank in (0..ranks).rev() {
-        result.push_str(&format!("{:02} ║", rank));
+        result.push_str(&format!("{:>2} ║", rank + 1));
         for file in 0..files {
             let idx = rank as usize * files as usize + file as usize;
             result.push_str(
@@ -180,7 +198,7 @@ pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
         if files <= 26 {
             result.push_str(&format!(
                 " {:^width$} ",
-                (b'A' + file) as char,
+                (b'a' + file) as char,
                 width = width
             ));
         } else {
