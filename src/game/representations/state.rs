@@ -448,7 +448,7 @@ pub struct State {
     pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
-    pub search_hist: Vec<i16>,                                                  /* [piece*B*B + from*B + to] butterfly*/
+    pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
     pub eval_stack: Vec<i32>,                                                   /* static eval per ply; MIN in check  */
 }
