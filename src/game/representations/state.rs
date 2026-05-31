@@ -360,6 +360,9 @@ pub struct StaticState {
 \*----------------------------------------------------------------------------*/
 
     pub futility_margin: [[i32; 5]; 3],                                         /* [phase 0-2][depth 0-4]             */
+    pub rfp_margin: [[i32; 9]; 2],                                              /* [improving 0-1][depth 0-8]         */
+    pub razor_margin: [i32; 4],                                                 /* [depth 0-3]                        */
+    pub see_capture_margin: i32,                                                /* per-ply SEE prune threshold        */
     pub quiesce_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
     pub quiesce_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
     pub capture_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
@@ -445,8 +448,9 @@ pub struct State {
     pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
-    pub search_hist: Vec<u16>,                                                  /* [piece * board_size + square]      */
+    pub search_hist: Vec<i16>,                                                  /* [piece*B*B + from*B + to] butterfly*/
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
+    pub eval_stack: Vec<i32>,                                                   /* static eval per ply; MIN in check  */
 }
 
 impl Clone for State {
@@ -495,6 +499,7 @@ impl Clone for State {
 
             search_hist: self.search_hist.clone(),
             killer_hist: self.killer_hist.clone(),
+            eval_stack: self.eval_stack.clone(),
         }
     }
 }
@@ -554,6 +559,9 @@ impl State {
             piece_char_map: HashMap::new(),
 
             futility_margin: [[0; 5]; 3],
+            rfp_margin: [[0; 9]; 2],
+            razor_margin: [0; 4],
+            see_capture_margin: 0,
             quiesce_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
@@ -630,8 +638,9 @@ impl State {
             pv_table: vec![null_move(); PV_STRIDE * PV_STRIDE],
             pv_length: vec![0; PV_STRIDE],
 
-            search_hist: vec![0u16; board_size * piece_count],
+            search_hist: vec![0i16; piece_count * board_size * board_size],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
+            eval_stack: vec![i32::MIN; MAX_DEPTH + 4],
         }
     }
 
@@ -686,8 +695,10 @@ impl State {
         self.pv_table = vec![null_move(); PV_STRIDE * PV_STRIDE];
         self.pv_length = vec![0; PV_STRIDE];
 
-        self.search_hist = vec![0u16; board_size * piece_count];
+        self.search_hist =
+            vec![0i16; piece_count * board_size * board_size];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
+        self.eval_stack = vec![i32::MIN; MAX_DEPTH + 4];
     }
 
     pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
