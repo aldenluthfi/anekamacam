@@ -106,8 +106,12 @@ pub type PseudoMove = (u128, MoveSignature);
 ///
 /// Aditional encoding for 100:
 ///
-/// - The second array is used to store the squares that must not be attacked
-///   when making a castling move in bits 1-12 inclusive (unload square)
+/// The second array is used to store the squares that must be checked when
+/// performing castling
+///
+/// - the first bit denotes if the square should also be not attacked
+///   when performing castling (is unload)
+/// - the next 12 bits denotes the square that is checked (unload square)
 ///
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Move(pub u128, pub Arc<Vec<u64>>);

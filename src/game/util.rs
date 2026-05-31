@@ -566,10 +566,6 @@ pub fn perft(
 ) -> u64 {
 
     if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
-        log_3!(
-            "SIGINT | Aborting perft at depth {} with prefix '{}'",
-            depth, prefix
-        );
         return 0;
     }
 
@@ -598,7 +594,7 @@ pub fn perft(
 
     for mv in possible_moves {
         let formatted_move = format_move(&mv, state, dict);
-        let new_prefix = format!("{}{}", prefix, formatted_move);
+        let new_prefix = format!("{} {}", prefix, formatted_move);
 
         if make_move!(state, mv) {
             nodes += perft(state, depth - 1, branch - 1, &new_prefix, dict);

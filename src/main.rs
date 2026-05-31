@@ -75,11 +75,6 @@ pub mod prelude;
 fn main() {
     init_logging();
 
-    // let state = parse_config_file("fide.conf");
-    // for mv in &state.statics.relevant_castling[WK_INDEX as usize] {
-    //     println!("{}", format_move(mv, &state, None))
-    // }
-
     let args: Vec<String> = env::args().collect();
     match args.get(1).map(|s| s.as_str()) {
         Some("uci") => { let _ = uci(); }

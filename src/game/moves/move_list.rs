@@ -114,7 +114,7 @@ pub fn generate_relevant_castling(
                     file += num_str.parse::<u8>().unwrap();
                 }
                 _ => {
-                    let piece = if c != '*' {
+                    let piece = if c != '*' && c != '+' {
                         let piece =
                             *state.statics.piece_char_map
                             .get(&c).unwrap_or_else(|| {
@@ -136,15 +136,21 @@ pub fn generate_relevant_castling(
                         (rank as u32) * (state.statics.files as u32) +
                         (file as u32);
 
-                    if c == '*' || p_is_royal!(&state.statics.pieces[piece]) {
+                    if c == '*' || c == '+' {
                         let mut check_square = 0u64;
+
+                        if c == '*' {
+                            enc_multi_move_is_unload!(check_square, 1u64);
+                        }
+
                         enc_multi_move_unload_square!(
                             check_square, square_index as u64
                         );
+
                         check_list.push(check_square);
                     }
 
-                    if c != '*'{
+                    if c != '*' && c != '+' {
                         start_map.insert(piece, square_index);
                     }
 
@@ -1047,27 +1053,58 @@ macro_rules! generate_castling_list {
             let moves = &$state.statics.relevant_castling[indexs.0 as usize];
 
             for mv in moves {
+
                 let piece = &$state.statics.pieces[piece!(mv) as usize];
                 let piece_rank = p_rank!(piece);
+
+                let start = start!(mv) as usize;
+                let end = end!(mv) as usize;
+
+                let piece_index = piece!(mv) as PieceIndex;
                 let captured_piece = captured_piece!(mv) as PieceIndex;
+                let captured_square = captured_square!(mv) as usize;
+                let unload_square = unload_square!(mv) as usize;
+
+                if $state.main_board[start] != piece_index
+                || $state.main_board[end] != NO_PIECE
+                || $state.main_board[captured_square] != captured_piece
+                || $state.main_board[unload_square] != NO_PIECE
+                || is_square_attacked!(
+                    start as u32,
+                    color as u8,
+                    true,
+                    true,
+                    piece_rank,
+                    $state
+                )
+                || is_square_attacked!(
+                    end as u32,
+                    color as u8,
+                    true,
+                    true,
+                    piece_rank,
+                    $state
+                ) {
+                    continue;
+                }
 
                 if mv.1.iter().all(
                     |cap|
                     {
-                        let sq = multi_move_unload_square!(cap) as usize;
+                        let square = multi_move_unload_square!(cap) as usize;
+                        let attack = multi_move_is_unload!(cap) as bool;
+
+                        $state.main_board[square] == NO_PIECE &&
                         (
-                            $state.main_board[sq] == NO_PIECE ||
-                            $state.main_board[sq] == piece!(mv) as PieceIndex ||
-                            $state.main_board[sq] == captured_piece
-                        )
-                        &&
-                        !is_square_attacked!(
-                            sq as u32,
-                            color as u8,
-                            true,
-                            true,
-                            piece_rank,
-                            $state
+                            !attack ||
+                            !is_square_attacked!(
+                                square as u32,
+                                color as u8,
+                                true,
+                                true,
+                                piece_rank,
+                                $state
+                            )
                         )
                     }
                 ) {
@@ -1077,24 +1114,61 @@ macro_rules! generate_castling_list {
         }
 
         if $state.castling_state & rights.1 != 0 {
-            let moves = &$state.statics.relevant_castling[indexs.0 as usize];
+            let moves = &$state.statics.relevant_castling[indexs.1 as usize];
 
             for mv in moves {
+
                 let piece = &$state.statics.pieces[piece!(mv) as usize];
                 let piece_rank = p_rank!(piece);
+
+                let start = start!(mv) as usize;
+                let end = end!(mv) as usize;
+
+                let piece_index = piece!(mv) as PieceIndex;
+                let captured_piece = captured_piece!(mv) as PieceIndex;
+                let captured_square = captured_square!(mv) as usize;
+                let unload_square = unload_square!(mv) as usize;
+
+                if $state.main_board[start] != piece_index
+                || $state.main_board[end] != NO_PIECE
+                || $state.main_board[captured_square] != captured_piece
+                || $state.main_board[unload_square] != NO_PIECE
+                || is_square_attacked!(
+                    start as u32,
+                    color as u8,
+                    true,
+                    true,
+                    piece_rank,
+                    $state
+                )
+                || is_square_attacked!(
+                    end as u32,
+                    color as u8,
+                    true,
+                    true,
+                    piece_rank,
+                    $state
+                ) {
+                    continue;
+                }
 
                 if mv.1.iter().all(
                     |cap|
                     {
-                        let sq = multi_move_unload_square!(cap) as usize;
-                        $state.main_board[sq] == NO_PIECE &&
-                        !is_square_attacked!(
-                            sq as u32,
-                            color as u8,
-                            true,
-                            true,
-                            piece_rank,
-                            $state
+                        let square = multi_move_unload_square!(cap) as usize;
+                        let attack = multi_move_is_unload!(cap) as bool;
+
+                        $state.main_board[square] == NO_PIECE &&
+                        (
+                            !attack ||
+                            !is_square_attacked!(
+                                square as u32,
+                                color as u8,
+                                true,
+                                true,
+                                piece_rank,
+                                $state
+                            )
                         )
                     }
                 ) {
@@ -1307,7 +1381,7 @@ macro_rules! make_move {
                                     start_square
                                 ) as u8 *
                                 WK_CASTLE
-                                &
+                                |
                                 get!(
                                     $state.statics.critical_castling
                                     [WQ_INDEX as usize],
@@ -1322,7 +1396,7 @@ macro_rules! make_move {
                                     start_square
                                 ) as u8 *
                                 BK_CASTLE
-                                &
+                                |
                                 get!(
                                     $state.statics.critical_castling
                                     [BQ_INDEX as usize],
@@ -1500,7 +1574,7 @@ macro_rules! make_move {
                                     start_square
                                 ) as u8 *
                                 WK_CASTLE
-                                &
+                                |
                                 get!(
                                     $state.statics.critical_castling
                                     [WQ_INDEX as usize],
@@ -1515,7 +1589,7 @@ macro_rules! make_move {
                                     start_square
                                 ) as u8 *
                                 BK_CASTLE
-                                &
+                                |
                                 get!(
                                     $state.statics.critical_castling
                                     [BQ_INDEX as usize],
@@ -1561,7 +1635,7 @@ macro_rules! make_move {
                                 captured_square
                             ) as u8 *
                             WK_CASTLE
-                            &
+                            |
                             get!(
                                 $state.statics.critical_castling
                                 [WQ_INDEX as usize],
@@ -1576,7 +1650,7 @@ macro_rules! make_move {
                                 captured_square
                             ) as u8 *
                             BK_CASTLE
-                            &
+                            |
                             get!(
                                 $state.statics.critical_castling
                                 [BQ_INDEX as usize],
@@ -1850,7 +1924,7 @@ macro_rules! make_move {
                                     start_square
                                 ) as u8 *
                                 WK_CASTLE
-                                &
+                                |
                                 get!(
                                     $state.statics.critical_castling
                                     [WQ_INDEX as usize],
@@ -1865,7 +1939,7 @@ macro_rules! make_move {
                                     start_square
                                 ) as u8 *
                                 BK_CASTLE
-                                &
+                                |
                                 get!(
                                     $state.statics.critical_castling
                                     [BQ_INDEX as usize],
@@ -1923,7 +1997,7 @@ macro_rules! make_move {
                                     captured_square
                                 ) as u8 *
                                 WK_CASTLE
-                                &
+                                |
                                 get!(
                                     $state.statics.critical_castling
                                     [WQ_INDEX as usize],
@@ -1938,7 +2012,7 @@ macro_rules! make_move {
                                     captured_square
                                 ) as u8 *
                                 BK_CASTLE
-                                &
+                                |
                                 get!(
                                     $state.statics.critical_castling
                                     [BQ_INDEX as usize],
@@ -2158,29 +2232,39 @@ macro_rules! make_move {
                         $state.statics.pieces[captured_piece]
                     );
 
-                    let end_rank = (captured_square as Square) /
-                        $state.statics.files as u16;
-                    let end_file = (captured_square as Square) %
-                        $state.statics.files as u16;
-
-                    if castling!($state)
-                        && get!($state.virgin_board, captured_square)
-                        && (end_rank == 0
-                        || end_rank == $state.statics.ranks as u16 - 1)
-                        && (end_file == 0
-                        || end_file == $state.statics.files as u16 - 1)
-                    {
-                        let is_queenside = end_file == 0;
-                        let rights = [
-                            WK_CASTLE, WQ_CASTLE, BK_CASTLE, BQ_CASTLE
-                        ]
-                        [
-                            (
-                                end_rank == $state.statics.ranks as u16 - 1
-                            ) as usize * 2
-                            + is_queenside as usize
-                        ];
-                        $state.castling_state &= !rights;
+                    if castling!($state) {
+                        $state.castling_state &= [
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WK_INDEX as usize],
+                                    captured_square
+                                ) as u8 *
+                                WK_CASTLE
+                                |
+                                get!(
+                                    $state.statics.critical_castling
+                                    [WQ_INDEX as usize],
+                                    captured_square
+                                ) as u8 *
+                                WQ_CASTLE
+                            },
+                            !{
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BK_INDEX as usize],
+                                    captured_square
+                                ) as u8 *
+                                BK_CASTLE
+                                |
+                                get!(
+                                    $state.statics.critical_castling
+                                    [BQ_INDEX as usize],
+                                    captured_square
+                                ) as u8 *
+                                BQ_CASTLE
+                            }
+                        ][captured_color as usize];
                     }
 
                     hash_update_castling!(
@@ -2368,6 +2452,15 @@ macro_rules! make_move {
                 $state.endgame_pst_bonus[captured_color as usize] +=
                     $state.statics.pst_endgame[captured_piece]
                     [unload_square as usize];
+
+                $state.castling_state &= ![
+                    WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE
+                ][piece_color as usize];
+
+                hash_update_castling!(
+                    $state, last_castling_state,
+                    $state.castling_state
+                );
             }
 
             $state.game_phase =
