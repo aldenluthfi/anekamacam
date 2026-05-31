@@ -469,7 +469,7 @@ pub fn derive_parameters(state: &mut State) {
 
     let rfp_base = avg / 8;
     let mut rfp_margin = [[0i32; 9]; 2];
-    for depth in 0..=RFP_MAX_DEPTH {
+    for depth in 0..=MAX_RFP_DEPTH {
         rfp_margin[0][depth] = rfp_base * depth as i32 * 2;
         rfp_margin[1][depth] = rfp_base * depth as i32;
     }

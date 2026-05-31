@@ -323,26 +323,28 @@ pub fn iterative_deepening(
         let cpuload = (info.thread_count as u64 * 1000)
             .min(max_par * 1000) / max_par;
 
-        println!(
-            "info \
-            hashfull {} \
-            cpuload {} \
-            depth {} \
-            score {} \
-            nodes {} \
-            time {} \
-            nps {} \
-            pv {}",
-            hashfull,
-            cpuload,
-            depth,
-            score_info,
-            total_nodes,
-            total_elapsed,
-            total_nps,
-            pv_line,
-        );
-        stdout().flush().ok();
+        if !DEBUG_FLAG.load(Ordering::Relaxed) {
+            println!(
+                "info \
+                hashfull {} \
+                cpuload {} \
+                depth {} \
+                score {} \
+                nodes {} \
+                time {} \
+                nps {} \
+                pv {}",
+                hashfull,
+                cpuload,
+                depth,
+                score_info,
+                total_nodes,
+                total_elapsed,
+                total_nps,
+                pv_line,
+            );
+            stdout().flush().ok();
+        }
     }
 
     log_1!(
@@ -649,18 +651,17 @@ pub fn alpha_beta(
         pv_capture = m_pseudocapture!(pv_mv);
     }
 
-    if depth <= RFP_MAX_DEPTH
+    if depth <= MAX_RFP_DEPTH
     && (pv_move.is_none() || !pv_capture)
     && !in_check
     && beta.abs() < MATE_SCORE                                                  /* reverse futility pruning           */
+    && static_eval - state.statics.rfp_margin[improving as usize][depth]
+    >= beta
     {
-        let rfp_row = &state.statics.rfp_margin[improving as usize];
-        if static_eval - rfp_row[depth] >= beta {
-            return beta;
-        }
+        return beta;
     }
 
-    if depth <= RAZOR_MAX_DEPTH
+    if depth <= MAX_RAZOR_DEPTH
     && !in_check
     && pv_move.is_none()
     && alpha.abs() < MATE_SCORE
@@ -671,7 +672,7 @@ pub fn alpha_beta(
             state, ttable, qtable,
             depth.saturating_sub(2),
             alpha, alpha + 1,
-            info, bufs, true
+            info, bufs, null
         );
 
         if shallow <= alpha {
@@ -689,8 +690,9 @@ pub fn alpha_beta(
         let reduct = 3 + depth / 4;
         make_null_move!(state);
         let score = -alpha_beta(
-            state, ttable, qtable, depth - reduct, -beta, -beta + 1, info, bufs,
-            false
+            state,
+            ttable, qtable,
+            depth - reduct, -beta, -beta + 1, info, bufs, false
         );
         undo_null_move!(state);
 
@@ -749,7 +751,7 @@ pub fn alpha_beta(
         let mv = bufs.move_buf[ply][i].clone();
 
         let piece = piece!(mv) as usize;
-        let from = start!(mv) as usize;
+        let start = start!(mv) as usize;
         let end = end!(mv) as usize;
 
         let is_capture = m_capture!(mv);
@@ -766,19 +768,17 @@ pub fn alpha_beta(
             continue;
         }
 
-        if depth <= SEE_PRUNE_MAX_DEPTH
+        if depth <= MAX_SEE_PRUNE_DEPTH
         && legal_moves > 0
         && !in_check
         && beta - alpha == 1
         && alpha.abs() < MATE_SCORE
         && is_capture
-        && mv != state.killer_hist[ply][0]
-        && mv != state.killer_hist[ply][1]
         {
-            let see_score = see!(state, mv.clone());
+            let see = see!(state, mv.clone());
             let margin =
                 state.statics.see_capture_margin * depth as i32;
-            if see_score < -margin {                                            /* SEE prune losing capture           */
+            if see < -margin {                                                  /* SEE prune losing capture           */
                 continue;
             }
         }
@@ -794,7 +794,7 @@ pub fn alpha_beta(
 
         let opponent_in_check = is_in_check!(state.playing, state);
 
-        if depth <= LMP_MAX_DEPTH
+        if depth <= MAX_LMP_DEPTH
         && !in_check
         && !opponent_in_check
         && !is_capture
@@ -802,7 +802,7 @@ pub fn alpha_beta(
         && !is_drop
         && alpha.abs() < MATE_SCORE
         && beta - alpha == 1
-        && legal_moves as usize
+        && legal_moves
             >= LMP_THRESHOLD[improving as usize][depth] as usize
         {                                                                       /* late move pruning                  */
             undo_move!(state);
@@ -821,8 +821,9 @@ pub fn alpha_beta(
             );
 
             score = -alpha_beta(
-                state, ttable, qtable, depth - reduction, -alpha - 1, -alpha,
-                info, bufs, true
+                state,
+                ttable, qtable,
+                depth - reduction, -alpha - 1, -alpha, info, bufs, true
             );
 
             if score > alpha && beta - alpha > 1 {
@@ -833,20 +834,23 @@ pub fn alpha_beta(
             }
         } else if legal_moves > 1 {                                             /* PVS: null window for non-first     */
             score = -alpha_beta(
-                state, ttable, qtable, depth - 1,
-                -alpha - 1, -alpha, info, bufs, true
+                state,
+                ttable, qtable,
+                depth - 1, -alpha - 1, -alpha, info, bufs, true
             );
 
             if score > alpha && beta - alpha > 1 {
                 score = -alpha_beta(
-                    state, ttable, qtable, depth - 1,
-                    -beta, -alpha, info, bufs, true
+                    state,
+                    ttable, qtable,
+                    depth - 1, -beta, -alpha, info, bufs, true
                 );
             }
         } else {
             score = -alpha_beta(
-                state, ttable, qtable, depth - 1,
-                -beta, -alpha, info, bufs, true
+                state,
+                ttable, qtable,
+                depth - 1, -beta, -alpha, info, bufs, true
             );
         }
 
@@ -858,7 +862,7 @@ pub fn alpha_beta(
 
         let board_size = state.statics.board_size;
         let hist_idx =
-            piece * board_size * board_size + from * board_size + end;
+            piece * board_size * board_size + start * board_size + end;
         let bonus = (depth as i32 * depth as i32 * HIST_BONUS_SCALE)
             .min(MAX_HIST_VALUE as i32);
 
@@ -909,9 +913,7 @@ pub fn alpha_beta(
             }
         }
 
-        if score <= alpha
-        && is_quiet
-        {                                                                       /* history malus                      */
+        if score <= alpha && is_quiet {                                         /* history malus                      */
             apply_history_gravity!(
                 state.search_hist[hist_idx], -bonus
             );
