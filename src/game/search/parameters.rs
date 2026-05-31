@@ -467,11 +467,40 @@ pub fn derive_parameters(state: &mut State) {
         [0, 150, 5 * avg / 7,  8 * avg / 7, 12 * avg / 7],
     ];
 
+    let rfp_base = avg / 8;
+    let mut rfp_margin = [[0i32; 9]; 2];
+    for depth in 0..=RFP_MAX_DEPTH {
+        rfp_margin[0][depth] = rfp_base * depth as i32 * 2;
+        rfp_margin[1][depth] = rfp_base * depth as i32;
+    }
+    state.static_mut().rfp_margin = rfp_margin;
+
+    state.static_mut().razor_margin = [
+        0,
+        avg / 3 + 100,
+        avg / 2 + 200,
+        avg + 300,
+    ];
+
+    state.static_mut().see_capture_margin = (avg / 11).max(1);
+
     log_3!(
         "Derived Futility Margins: {:?} | {:?} | {:?}",
         state.statics.futility_margin[0],
         state.statics.futility_margin[1],
         state.statics.futility_margin[2],
+    );
+    log_3!(
+        "Derived RFP Margins: {:?} | {:?}",
+        state.statics.rfp_margin[0],
+        state.statics.rfp_margin[1],
+    );
+    log_3!(
+        "Derived Razor Margins: {:?}", state.statics.razor_margin,
+    );
+    log_3!(
+        "Derived SEE Capture Margin: {}",
+        state.statics.see_capture_margin,
     );
     log_3!("Dynamic evaluation parameters derived successfully.");
 
