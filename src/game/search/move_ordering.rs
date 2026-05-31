@@ -214,12 +214,12 @@ macro_rules! score_move {
                 killer_base + 1                                                 /* killer scores above history         */
             } else {
                 let piece = piece!($mv) as usize;
-                let from  = start!($mv) as usize;
+                let start = start!($mv) as usize;
                 let end   = end!($mv) as usize;
                 let board_size = $state.statics.board_size;
                 let idx =
                     piece * board_size * board_size
-                    + from * board_size + end;
+                    + start * board_size + end;
                 let entry = $state.search_hist[idx] as i32;
 
                 (1_000_000
@@ -279,11 +279,10 @@ macro_rules! pick_by_score {
             }
 
             if best_score >= 4_000_000 && best_score < 5_000_000 {
-                let candidate = moves[best_index].clone();
-                let see_score = see!($state, candidate);
-                if see_score < 0 {
-                    scores[best_index] =
-                        (1_000_000 + see_score) as usize;
+                let mv = moves[best_index].clone();
+                let see = see!($state, mv);
+                if see < 0 {
+                    scores[best_index] = (1_000_000 + see) as usize;
                     continue;                                                   /* demoted; re-pick best              */
                 }
             }

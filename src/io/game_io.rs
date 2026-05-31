@@ -153,11 +153,12 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// 2. opening values (piece-type count), endgame values (piece-type count),
 /// 3. big flags, major flags,
 /// 4. then white opening/middlegame PST rows (piece-type count × board_size),
-/// 5. then white endgame PST rows (piece-type count × board_size),
-/// 6. then futility margins (3 phases × 5 depths = 15 tokens).
+/// 5. then white endgame PST rows (piece-type count × board_size).
 ///
 /// Black PST rows are derived by mirroring white rows across the
-/// horizontal axis.
+/// horizontal axis. Search-time margins (futility, RFP, razoring, SEE)
+/// live outside the tuning surface since Texel's method only tunes
+/// quiescence-search eval terms.
 pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let tokens: Vec<i32> = content
         .split_whitespace()
@@ -280,13 +281,6 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
             );
     }
 
-    for phase in 0..3 {
-        for depth in 0..5 {
-            state.static_mut().futility_margin[phase][depth] = tokens[cursor];
-            cursor += 1;
-        }
-    }
-
     state.big_pieces = [0; 2];
     state.major_pieces = [0; 2];
     state.minor_pieces = [0; 2];
@@ -369,14 +363,6 @@ pub fn export_tuned_parameters_file(
     for (white_idx, _) in &piece_type_pairs {
         for value in &state.statics.pst_endgame[*white_idx] {
             output_tokens.push(value.to_string());
-        }
-    }
-
-    for phase in 0..3 {
-        for depth in 0..5 {
-            output_tokens.push(
-                state.statics.futility_margin[phase][depth].to_string()
-            );
         }
     }
 
