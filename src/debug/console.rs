@@ -1269,7 +1269,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
             let log_guide = Paragraph::new(vec![
                 Line::from(vec![
-                    Span::from("Logs"),
+                    Span::from("Game Log"),
                 ]),
             ])
             .block(
@@ -1459,8 +1459,13 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 Constraint::Fill(2),
             ])
             .split(top_rect);
-        board_area = top_layout[0].centered_vertically(
-            Constraint::Length(board.lines().count() as u16 + 1)
+        board_area = top_layout[0].centered(
+            Constraint::Length(
+                board
+                .lines()
+                .map(|l| l.chars().count()).max().unwrap_or(0) as u16
+            ),
+            Constraint::Length(board.lines().count() as u16)
         );
         moves_area = top_layout[1];
         let right_most_rect = Layout::default()
@@ -1481,8 +1486,13 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 Constraint::Fill(2),
             ])
             .split(top_rect);
-        board_area = top_layout[0].centered_vertically(
-            Constraint::Length(board.lines().count() as u16 + 1)
+        board_area = top_layout[0].centered(
+            Constraint::Length(
+                board
+                .lines()
+                .map(|l| l.chars().count()).max().unwrap_or(0) as u16
+            ),
+            Constraint::Length(board.lines().count() as u16)
         );
         moves_area = Rect::default();
         let right_most_rect = Layout::default()
