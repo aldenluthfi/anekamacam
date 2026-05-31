@@ -44,6 +44,107 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     (castling, en_passant, in_hand)
 }
 
+/// Validates if a starting configuration is possible based on the starting
+/// position of the game, this is for variants with randomized starting
+/// positions like Fischer Random Chess
+fn validate_castling(fen: &str, state: &State) -> bool {
+    let startpos = &state.statics.startpos
+        .split_whitespace()
+        .collect::<Vec<_>>()[0];
+
+    let mut a = vec![NO_PIECE; state.statics.board_size];
+    let mut b = vec![NO_PIECE; state.statics.board_size];
+
+    let mut rank = state.statics.ranks - 1;
+    let mut file = 0u8;
+
+    let mut position_chars = startpos.chars().peekable();
+    while let Some(c) = position_chars.next() {
+        match c {
+            '/' => {
+                rank -= 1;
+                file = 0;
+            }
+            '0'..='9' => {
+                let mut num_str = c.to_string();
+                while let Some(&next_c) = position_chars.peek() {
+                    if next_c.is_ascii_digit() {
+                        num_str.push(next_c);
+                        position_chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                file += num_str.parse::<u8>().unwrap();
+            }
+            _ => {
+                let piece =
+                    *state.statics.piece_char_map
+                    .get(&c).unwrap_or_else(|| {
+                        panic!("Unknown piece character: {}", c)
+                    });
+                let square_index = (rank as u32) * (state.statics.files as u32)
+                    + (file as u32);
+
+                a[square_index as usize] = piece;
+
+                file += 1;
+            }
+        }
+    }
+
+    let mut rank = state.statics.ranks - 1;
+    let mut file = 0u8;
+
+    let mut position_chars = fen.chars().peekable();
+    while let Some(c) = position_chars.next() {
+        match c {
+            '/' => {
+                rank -= 1;
+                file = 0;
+            }
+            '0'..='9' => {
+                let mut num_str = c.to_string();
+                while let Some(&next_c) = position_chars.peek() {
+                    if next_c.is_ascii_digit() {
+                        num_str.push(next_c);
+                        position_chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                file += num_str.parse::<u8>().unwrap();
+            }
+            _ => {
+                if c != '*' {
+                    let piece =
+                        *state.statics.piece_char_map
+                        .get(&c).unwrap_or_else(|| {
+                            panic!("Unknown piece character: {}", c)
+                        });
+                    let square_index =
+                        (rank as u32) * (state.statics.files as u32) +
+                        (file as u32);
+
+                    b[square_index as usize] = piece;
+                }
+
+                file += 1;
+            }
+        }
+    }
+
+    let mut valid = true;
+
+    for (a_e, b_e) in zip(a, b) {
+        if b_e != NO_PIECE && a_e == NO_PIECE {
+            valid = false;
+        }
+    }
+
+    valid
+}
+
 /// Parses tuned parameters from a flat space-separated string.
 ///
 /// Token order:
@@ -599,14 +700,21 @@ pub fn parse_config_file(path: &str) -> State {
         assert!(fen_in_hand, "No pieces in hand found in FEN");
     }
 
+    if castling {
+        assert!(
+            sections.contains_key("castling"),
+            "= castling = section is missing"
+        )
+    }
+
     if promotions {
         assert!(
             sections.contains_key("promotions"),
-            "[promotions] section is missing"
+            "= promotions = section is missing"
         );
         assert!(
-            sections.contains_key("mandatory promotion zones")
-                || sections.contains_key("optional promotion zones"),
+            sections.contains_key("mandatory promotion zones") ||
+            sections.contains_key("optional promotion zones"),
             "No promotion zones section found"
         );
     }
@@ -614,28 +722,28 @@ pub fn parse_config_file(path: &str) -> State {
     if piece_count_limits {
         assert!(
             sections.contains_key("piece count limits"),
-            "[piece count limits] section is missing"
+            "= piece count limits = section is missing"
         );
     }
 
     if forbidden_zones {
         assert!(
             sections.contains_key("forbidden zones"),
-            "[forbidden zones] section is missing"
+            "= forbidden zones = section is missing"
         );
     }
 
     if stand_offs {
         assert!(
             sections.contains_key("stand-off patterns"),
-            "[stand-off patterns] section is missing"
+            "= stand-off patterns = section is missing"
         )
     }
 
     if halfmove_clock {
         assert!(
             sections.contains_key("halfmove clock"),
-            "[halfmove clock] section is missing"
+            "= halfmove clock = section is missing"
         )
     }
 
@@ -694,7 +802,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                                      PARSE PIECES
+                                  PARSE PIECES
     \*-----------------------------------------------------------------------*/
 
     let mut unordered_pieces = Vec::with_capacity(sections["pieces"].len());
@@ -983,8 +1091,7 @@ pub fn parse_config_file(path: &str) -> State {
         ranks,
         pieces
             .iter()
-            .enumerate()
-            .map(|(i, p)| {
+            .map(|p| {
                 Piece::new(
                     p.0.clone(),
                     p.1,
@@ -992,8 +1099,6 @@ pub fn parse_config_file(path: &str) -> State {
                     p.3,
                     p.4,
                     p.5,
-                    pieces_moves[i].contains("o"),
-                    pieces_moves[i].contains("O"),
                     p.6,
                 )
             })
@@ -1047,30 +1152,10 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    if castling {
-        assert!(
-            result.statics
-                .pieces
-                .iter()
-                .any(|p| p_castle_left!(p) || p_castle_right!(p)),
-            "No castling rights found in piece definitions"
-        );
-    }
-
     if en_passant {
         assert!(
             pieces_moves.iter().any(|mv| mv.contains('p') || mv.contains('t')),
             "No en passant movement found in piece definitions"
-        );
-    }
-
-    if !castling {
-        assert!(
-            result.statics
-                .pieces
-                .iter()
-                .all(|p| !p_castle_left!(p) && !p_castle_right!(p)),
-            "Castling rights found in piece definitions"
         );
     }
 
@@ -1089,6 +1174,160 @@ pub fn parse_config_file(path: &str) -> State {
             "[repetition limit] section is missing"
         );
     }
+
+    result.static_mut().piece_char_map = result.statics.pieces
+        .iter()
+        .enumerate()
+        .map(|(index, piece)| (piece.char, index as PieceIndex))
+        .collect();
+
+    /*-----------------------------------------------------------------------*\
+                                   PARSE CASTLING
+    \*-----------------------------------------------------------------------*/
+
+    if castling {
+        let pieces_line = &sections["castling"][0];
+
+        assert!(
+            pieces_line.starts_with("pieces"),
+            "castling pieces part not formatted correctly"
+        );
+
+        let castling_pieces = pieces_line
+            .split(":")
+            .collect::<Vec<_>>()[1]
+            .trim();
+
+        for p_char in castling_pieces.chars() {
+            let p_index = result.statics.piece_char_map[&p_char] as usize;
+            result.static_mut().castling_pieces[p_index] = true;
+        }
+
+        let start_lines = &sections["castling"][1..5];
+        let mut startings: [Vec<String>; 4] = array::from_fn(|_| Vec::new());
+        let parsed_start_lines = start_lines
+            .iter()
+            .map(
+                |line| {
+                    let l = line.split(":").collect::<Vec<_>>();
+                    (
+                        match l[0] {
+                            "K" => WK_INDEX as usize,
+                            "Q" => WQ_INDEX as usize,
+                            "k" => BK_INDEX as usize,
+                            "q" => BQ_INDEX as usize,
+                            _ => unreachable!()
+                        },
+                        l[1]
+                        .split('|')
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>()
+                    )
+                }
+            )
+            .collect::<Vec<(usize, Vec<String>)>>();
+
+        for (index, parsed) in parsed_start_lines {
+            startings[index] = parsed.clone();
+        }
+
+        let end_lines = &sections["castling"][5..];
+        let mut endings: [Vec<String>; 4] = array::from_fn(|_| Vec::new());
+        let parsed_end_lines = end_lines
+            .iter()
+            .map(
+                |line| {
+                    let l = line.split(":").collect::<Vec<_>>();
+                    (
+                        match l[0] {
+                            "K" => WK_INDEX as usize,
+                            "Q" => WQ_INDEX as usize,
+                            "k" => BK_INDEX as usize,
+                            "q" => BQ_INDEX as usize,
+                            _ => unreachable!()
+                        },
+                        l[1]
+                        .split('|')
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>()
+                    )
+                }
+            )
+            .collect::<Vec<(usize, Vec<String>)>>();
+
+        for (index, parsed) in parsed_end_lines {
+            endings[index] = parsed.clone();
+        }
+
+        let possible_pairs: [(Vec<String>, Vec<String>); 4] =
+            zip(startings, endings)
+            .map(
+                |(start, end)|
+
+                {
+                    let mut new_pairs = (Vec::new(), Vec::new());
+
+                    for (s, e) in zip(start, end) {
+                        if validate_castling(&s, &result) {
+                            new_pairs.0.push(s);
+                            new_pairs.1.push(e);
+                        }
+                    }
+
+                    new_pairs
+                }
+            )
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("Expected exactly 4 entries");
+
+        result.static_mut().critical_castling = possible_pairs
+            .iter()
+            .map(
+                |(start, _)|
+
+                start.iter()
+                    .map(
+                        |s|
+                        parse_bit_fen(Some(&s.chars()
+                            .map(
+                                |c|
+                                if c.is_numeric() || c == '/' {
+                                    c
+                                } else if c == '*' {
+                                    'O'
+                                } else {
+                                    'X'
+                                }
+                            )
+                            .collect::<String>()),
+                            &result
+                        )
+                    )
+                    .fold(
+                        board!(files, ranks),
+                        |mut acc, n| {
+                            or!(acc, n);
+                            acc
+                        }
+                    )
+            )
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("Expected exactly 4 entries");
+
+        result.static_mut().relevant_castling = possible_pairs
+            .iter()
+            .map(|(start, end)| generate_relevant_castling(start, end, &result))
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("Expected exactly 4 entries");
+
+    }
+
+    /*-----------------------------------------------------------------------*\
+                                  PARSE PROMOTIONS
+    \*-----------------------------------------------------------------------*/
 
     if promotions {
         if sections.contains_key("mandatory promotion zones") {
@@ -1208,6 +1447,10 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    /*-----------------------------------------------------------------------*\
+                                     PARSE DROPS
+    \*-----------------------------------------------------------------------*/
+
     pieces_drops = vec![
         DEFAULT_DROP.to_string(); result.static_mut().pieces.len()
     ];
@@ -1248,6 +1491,10 @@ pub fn parse_config_file(path: &str) -> State {
             }
         }
     }
+
+    /*-----------------------------------------------------------------------*\
+                              PARSE PIECE COUNT LIMITS
+    \*-----------------------------------------------------------------------*/
 
     if piece_count_limits {
         for limit in &sections["piece count limits"] {
@@ -1312,6 +1559,10 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    /*-----------------------------------------------------------------------*\
+                              PARSE FORBIDDEN ZONES
+    \*-----------------------------------------------------------------------*/
+
     if forbidden_zones {
         for forbidden in &sections["forbidden zones"] {
             let parts: Vec<&str> =
@@ -1364,6 +1615,10 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    /*-----------------------------------------------------------------------*\
+                                  PARSE SETUP PHASE
+    \*-----------------------------------------------------------------------*/
+
     pieces_setup = vec![
         DEFAULT_DROP.to_string(); result.static_mut().pieces.len()
     ];
@@ -1409,6 +1664,10 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    /*-----------------------------------------------------------------------*\
+                                PARSE STAND-OFFS
+    \*-----------------------------------------------------------------------*/
+
     pieces_stand_off = vec![String::new(); result.static_mut().pieces.len()];
     if stand_offs {
         for pattern in &sections["stand-off patterns"] {
@@ -1451,6 +1710,10 @@ pub fn parse_config_file(path: &str) -> State {
             }
         }
     }
+
+    /*-----------------------------------------------------------------------*\
+                                PARSE HALFMOVE CLOCK
+    \*-----------------------------------------------------------------------*/
 
     if halfmove_clock {
         let mut parsed_limit: Option<u8> = None;
@@ -1506,6 +1769,10 @@ pub fn parse_config_file(path: &str) -> State {
             .expect("Halfmove clock pieces are missing");
     }
 
+    /*-----------------------------------------------------------------------*\
+                              PARSE REPETITION LIMITS
+    \*-----------------------------------------------------------------------*/
+
     if repetition_limit {
         let limit_parts: Vec<&str> =
             sections["repetition limit"][0].split(':').collect();
@@ -1516,6 +1783,10 @@ pub fn parse_config_file(path: &str) -> State {
         });
         result.static_mut().repetition_limit = limit_value;
     }
+
+    /*-----------------------------------------------------------------------*\
+                               POST-PARSING COMPUTE
+    \*-----------------------------------------------------------------------*/
 
     result.precompute(
         pieces_moves,

@@ -68,7 +68,7 @@ lazy_static! {
                 panic!("Failed to compile COLON_RANGE_TOKEN regex: {e}")
             });
     pub static ref LEG: Regex =
-        Regex::new(r"^([mcdukvgtiplr!]+)?([^@mcdukvgtiplr]+)@?([^@]+)?$")
+        Regex::new(r"^([mcdukvgtip!]+)?([^@mcdukvgtip]+)@?([^@]+)?$")
             .unwrap_or_else(|e| panic!("Failed to compile LEG regex: {e}"));
     pub static ref LEG_TOKENS: Regex = Regex::new(concat!(
         r"(?:(?:ne|nw|se|sw|n|s|e|w)?(?:\[\d+\])?K)+|",
@@ -76,7 +76,7 @@ lazy_static! {
         r"\[\d+\]|",
         r"(?:\.+)|",
         r"-(?:\.+)|",
-        r"[mcdukvgtiplr!]+|",
+        r"[mcdukvgtip!]+|",
         r":?\{\d+(?:\.\.(?:\d+|\*))?\}|",
         r"-:\{\d+(?:\.\.(?:\d+|\*))?\}|",
         r"-\{\d+(?:\.\.(?:\d+|\*))?\}|",
@@ -86,12 +86,8 @@ lazy_static! {
         panic!("Failed to compile LEG_TOKENS regex: {e}")
     });
     pub static ref MODIFIERS: Regex =
-        Regex::new(r"^[mcdukvgtiplr!]+$").unwrap_or_else(|e| {
+        Regex::new(r"^[mcdukvgtip!]+$").unwrap_or_else(|e| {
             panic!("Failed to compile MODIFIERS regex: {e}")
-        });
-    pub static ref CASTLING_TOKEN: Regex =
-        Regex::new(r"^(?:O|o)\{(\d+),(\d+)\}$").unwrap_or_else(|e| {
-            panic!("Failed to compile CASTLING_TOKEN regex: {e}")
         });
     pub static ref INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] =
         [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)];
@@ -2699,74 +2695,6 @@ fn leg_to_vector(
         .collect::<Vec<Vec<LegVector>>>()
 }
 
-/// Parses a castling move.
-///
-/// `O{range}` is for the left side (queenside in FIDE), and `o{range}` is
-/// for the right side (kingside in FIDE).
-///
-/// A piece with a castling move can only castle with an unmoved piece on either
-/// side of the board. An implicit `i` modifier for a castling move. A piece
-/// with castling movescan move `{range}` squares towards the piece at the end
-/// of the board and the target piece will always land adjacent to the
-/// castling piece on the side where the castling piece came from.
-///
-/// A queenside is by O{x}{y} and a kingside is o{x}{y} where:
-/// x -> how many squares to the edge of the board the unmoved piece is
-/// y -> how many squares to move towards the center after capturing the unmoved
-///      piece
-///
-/// Queenside castling is performed by:
-/// 1. Making a null move (to verify not in check later on)
-/// 2. Move to the edge of the board, captured the unmoved rook there
-/// 3. Move back towards the center, placing the rook adjacent
-///    to the castling piece on the kingside of the castling piece
-///
-/// Kingside castling is similar but on the other side.
-fn parse_castling(expr: &str) -> String {
-    let mut string: String = String::from("i!i#-");
-
-    let captures = CASTLING_TOKEN
-        .captures(expr)
-        .unwrap_or_else(|| panic!("Invalid castling expression: {}", expr));
-
-    let distance_to_edge = captures
-        .get(1)
-        .expect("Missing distance to edge in castling expression.")
-        .as_str()
-        .parse::<i8>()
-        .expect("Invalid distance to edge in castling expression.");
-
-    let distance_to_move_back = captures
-        .get(2)
-        .expect("Missing range in castling expression.")
-        .as_str()
-        .parse::<i8>()
-        .expect("Invalid range in castling expression.");
-
-    let distance_to_dest_file = distance_to_edge - distance_to_move_back;
-
-    if expr.contains("O") {
-        string.push_str(&format!(
-            "i!iwW-{{{}}}-vdunW{{{}}}-isW-{{{}}}-li!i#",
-            distance_to_dest_file - 1,
-            distance_to_move_back + 1,
-            distance_to_move_back
-        ));
-    } else if expr.contains("o") {
-        string.push_str(&format!(
-            "i!ieW-{{{}}}-vdunW{{{}}}-isW-{{{}}}-ri!i#",
-            distance_to_dest_file - 1,
-            distance_to_move_back + 1,
-            distance_to_move_back
-        ));
-    }
-
-
-    log_5!("parse_castling generated move expression: {}", string);
-
-    string
-}
-
 fn multi_leg_to_vector(
     expr: &str,
     rotation: &str,
@@ -2777,10 +2705,6 @@ fn multi_leg_to_vector(
         "multi_leg_to_vector leg {} with rotation {}",
         expr, rotation
     );
-
-    if expr.contains("O") || expr.contains("o") {
-        return generate_move_vectors(&parse_castling(expr), state);
-    }
 
     if !expr.contains("-") {
         return leg_to_vector(expr, rotation, state);

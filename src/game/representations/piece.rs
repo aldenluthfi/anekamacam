@@ -96,20 +96,6 @@ macro_rules! p_rank {
 }
 
 #[macro_export]
-macro_rules! p_castle_right {
-    ($piece:expr) => {
-        ($piece.encoded_static & (1 << 29)) != 0
-    };
-}
-
-#[macro_export]
-macro_rules! p_castle_left {
-    ($piece:expr) => {
-        ($piece.encoded_static & (1 << 30)) != 0
-    };
-}
-
-#[macro_export]
 macro_rules! p_is_big {
     ($piece:expr) => {
         ($piece.encoded_dynamic & 1) != 0 && !p_is_royal!($piece)
@@ -154,8 +140,6 @@ macro_rules! p_evalue {
 /// - Bit 9         : Piece can promote (1 if can promote, 0 otherwise)
 /// - Bit 10        : Royal status (1 if royal, 0 otherwise)
 /// - Bits 11-18    : Piece rank
-/// - Bit 29        : Can castle kingside (right)
-/// - Bit 30        : Can castle queenside (left)
 /// - Other bits    : Unused
 ///
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
@@ -185,8 +169,6 @@ impl Piece {
         index: u8,
         color: u8,
         is_royal: bool,
-        castle_right: bool,
-        castle_left: bool,
         rank: u8,
     ) -> Self {
         let mut encoded_static = index as u32;
@@ -198,14 +180,6 @@ impl Piece {
 
         if is_royal {
             encoded_static |= 1 << 10;
-        }
-
-        if castle_right {
-            encoded_static |= 1 << 29;
-        }
-
-        if castle_left {
-            encoded_static |= 1 << 30;
         }
 
         encoded_static |= (rank as u32) << 11;

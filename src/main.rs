@@ -14,8 +14,11 @@ use prelude::*;
 pub mod game {
     pub mod representations {
         pub mod board;
+
         pub mod drop;
         pub mod moves;
+        pub mod pattern;
+
         pub mod piece;
         pub mod state;
         pub mod vector;
@@ -24,9 +27,12 @@ pub mod game {
     pub mod moves {
         pub mod move_list;
         pub mod move_parse;
+
         pub mod drop_list;
         pub mod drop_parse;
+
         pub mod pattern_match;
+        pub mod pattern_parse;
     }
 
     pub mod search {
@@ -59,15 +65,28 @@ pub mod io {
     pub mod logger;
 }
 
+pub mod debug {
+    pub mod console;
+}
+
 pub mod prelude;
 
 #[hotpath::main]
 fn main() {
     init_logging();
 
+    // let state = parse_config_file("fide.conf");
+    // for mv in &state.statics.relevant_castling[WK_INDEX as usize] {
+    //     println!("{}", format_move(mv, &state, None))
+    // }
+
     let args: Vec<String> = env::args().collect();
     match args.get(1).map(|s| s.as_str()) {
         Some("uci") => { let _ = uci(); }
+        Some("debug") => {
+            DEBUG_FLAG.store(true, Ordering::Relaxed);
+            let _ = debug_console();
+        }
         _ => { let _ = uci(); }
     }
 }

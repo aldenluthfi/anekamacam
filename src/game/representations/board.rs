@@ -81,28 +81,28 @@ macro_rules! clear {
 #[macro_export]
 macro_rules! or {
     ($board1:expr, $board2:expr) => {
-        $board1.2 |= &$board2.2;
+        $board1.2 |= &$board2.2
     };
 }
 
 #[macro_export]
 macro_rules! and {
     ($board1:expr, $board2:expr) => {
-        $board1.2.and_assign(&$board2.2);
+        $board1.2 &= &$board2.2
     };
 }
 
 #[macro_export]
 macro_rules! xor {
     ($board1:expr, $board2:expr) => {
-        $board1.2.xor_assign(&$board2.2);
+        $board1.2 ^= &$board2.2
     };
 }
 
 #[macro_export]
 macro_rules! not {
     ($board:expr) => {
-        $board.2 = !$board.2;
+        $board.2 = !$board.2
     };
 }
 
