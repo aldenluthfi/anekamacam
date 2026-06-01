@@ -84,128 +84,100 @@ macro_rules! enc_drops {
 }
 
 #[macro_export]
-macro_rules! count_limits {
+macro_rules! forbidden_zones {
     ($state:expr) => {
         ($state.statics.special_rules >> 4 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_count_limits {
+macro_rules! enc_forbidden_zones {
     ($rules:expr) => {
         $rules |= 1 << 4;
     };
 }
 
 #[macro_export]
-macro_rules! forbidden_zones {
+macro_rules! promote_to_captured {
     ($state:expr) => {
         ($state.statics.special_rules >> 5 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_forbidden_zones {
+macro_rules! enc_promote_to_captured {
     ($rules:expr) => {
         $rules |= 1 << 5;
     };
 }
 
 #[macro_export]
-macro_rules! promote_to_captured {
+macro_rules! stalemate_loss {
     ($state:expr) => {
         ($state.statics.special_rules >> 6 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_promote_to_captured {
+macro_rules! enc_stalemate_loss {
     ($rules:expr) => {
         $rules |= 1 << 6;
     };
 }
 
 #[macro_export]
-macro_rules! demote_upon_capture {
+macro_rules! setup_phase {
     ($state:expr) => {
         ($state.statics.special_rules >> 7 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_demote_upon_capture {
+macro_rules! enc_setup_phase {
     ($rules:expr) => {
         $rules |= 1 << 7;
     };
 }
 
 #[macro_export]
-macro_rules! stalemate_loss {
+macro_rules! stand_offs {
     ($state:expr) => {
         ($state.statics.special_rules >> 8 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_stalemate_loss {
+macro_rules! enc_stand_offs {
     ($rules:expr) => {
         $rules |= 1 << 8;
     };
 }
 
 #[macro_export]
-macro_rules! setup_phase {
+macro_rules! halfmove_clock {
     ($state:expr) => {
         ($state.statics.special_rules >> 9 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_setup_phase {
+macro_rules! enc_halfmove_clock {
     ($rules:expr) => {
         $rules |= 1 << 9;
     };
 }
 
 #[macro_export]
-macro_rules! stand_offs {
+macro_rules! repetition_limit {
     ($state:expr) => {
         ($state.statics.special_rules >> 10 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_stand_offs {
-    ($rules:expr) => {
-        $rules |= 1 << 10;
-    };
-}
-
-#[macro_export]
-macro_rules! halfmove_clock {
-    ($state:expr) => {
-        ($state.statics.special_rules >> 11 & 1) == 1
-    };
-}
-
-#[macro_export]
-macro_rules! enc_halfmove_clock {
-    ($rules:expr) => {
-        $rules |= 1 << 11;
-    };
-}
-
-#[macro_export]
-macro_rules! repetition_limit {
-    ($state:expr) => {
-        ($state.statics.special_rules >> 12 & 1) == 1
-    };
-}
-
-#[macro_export]
 macro_rules! enc_repetition_limit {
     ($rules:expr) => {
-        $rules |= 1 << 12;
+        $rules |= 1 << 10;
     };
 }
 
@@ -332,7 +304,6 @@ pub struct StaticState {
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
     pub critical_castling: [Board; 4],                                          /* KQkq critical squares for each     */
 
-    pub piece_limit: Vec<u32>,                                                  /* piece index to count limit         */
     pub halfmove_limit: u8,                                                     /* halfmoves before draw              */
     pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
 
@@ -352,7 +323,7 @@ pub struct StaticState {
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
-    pub piece_demotion_map: Vec<Vec<PieceIndex>>,                               /* piece index to demotion piece idx  */
+    pub piece_demotion_map: Vec<PieceIndex>,                                    /* piece index to demotion piece idx  */
     pub piece_char_map: HashMap<char, PieceIndex>,                              /* char to piece index map            */
 
 /*----------------------------------------------------------------------------*\
@@ -383,16 +354,14 @@ pub struct StaticState {
 /// - bit 1     : en passant allowed
 /// - bit 2     : Promotions allowed
 /// - bit 3     : Drops allowed
-/// - bit 4     : Some pieces have a count limit
-/// - bit 5     : Some pieces have forbidden zones
-/// - bit 6     : Can only promote to captured friendly pieces by the enemy
-/// - bit 7     : Demote piece in hand upon capture
-/// - bit 8     : Stalemate is a loss for the stalemated player
-/// - bit 9     : Game begins with a setup phase
-/// - bit 10    : A player can make a move that creates a stand-off
-/// - bit 11    : Halfmove clock draw rule is enabled
-/// - bit 12    : There is a limit on the number of repetitions of a position
-/// - bit 13-31 : reserved for future use
+/// - bit 4     : Some pieces have forbidden zones
+/// - bit 5     : Can only promote to captured friendly pieces by the enemy
+/// - bit 6     : Stalemate is a loss for the stalemated player
+/// - bit 7     : Game begins with a setup phase
+/// - bit 8     : A player can make a move that creates a stand-off
+/// - bit 9     : Halfmove clock draw rule is enabled
+/// - bit 10    : There is a limit on the number of repetitions of a position
+/// - bit 11-31 : reserved for future use
 ///
 /// Static configuration lives in `static_data: Arc<StaticState>`, shared
 /// cheaply across threads. `State::clone()` calls `Arc::clone` for static_data
@@ -530,7 +499,6 @@ impl State {
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
             critical_castling: [board!(files, ranks); 4],
 
-            piece_limit: vec![u32::MAX; piece_count],
             halfmove_limit: u8::MAX,
             repetition_limit: u8::MAX,
 
@@ -554,8 +522,8 @@ impl State {
             ],
             relevant_castling: array::from_fn(|_| Vec::new()),
 
-            piece_swap_map: vec![0; piece_count],
-            piece_demotion_map: vec![Vec::new(); piece_count],
+            piece_swap_map: vec![NO_PIECE; piece_count],
+            piece_demotion_map: vec![NO_PIECE; piece_count],
             piece_char_map: HashMap::new(),
 
             futility_margin: [[0; 5]; 3],
