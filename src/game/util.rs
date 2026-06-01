@@ -175,7 +175,7 @@ pub fn verify_game_state(state: &State) {
 
     for side in [WHITE as usize, BLACK as usize] {
         for (index, count) in state.piece_in_hand[side].iter().enumerate() {
-            let piece = &state.statics.pieces[index as usize];
+            let piece = &state.statics.pieces[index];
             let count = *count as u32;
 
             temp_opening_material[side] += p_ovalue!(piece) as u32 * count;
