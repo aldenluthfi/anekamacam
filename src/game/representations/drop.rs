@@ -63,10 +63,3 @@ macro_rules! drop_k {
         ($drop.0 >> 20) & 1 == 1
     };
 }
-
-#[macro_export]
-macro_rules! drop_f {
-    ($drop:expr) => {
-        ($drop.0 >> 21) & 1 == 1
-    };
-}

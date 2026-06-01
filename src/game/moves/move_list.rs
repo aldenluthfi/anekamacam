@@ -2482,23 +2482,19 @@ macro_rules! undo_move {
                 $state.piece_list[promoted_piece]
                     .remove(&(end_square as Square));
 
-                if p_is_big!($state.statics.pieces[promoted_piece]) {
-                    $state.big_pieces[piece_color as usize] -= 1;
-                }
-                if p_is_major!($state.statics.pieces[promoted_piece]) {
-                    $state.major_pieces[piece_color as usize] -= 1;
-                } else if p_is_minor!($state.statics.pieces[promoted_piece]) {
-                    $state.minor_pieces[piece_color as usize] -= 1;
-                }
+                $state.big_pieces[piece_color as usize] -=
+                    p_is_big!($state.statics.pieces[promoted_piece]) as u32;
+                $state.major_pieces[piece_color as usize] -=
+                    p_is_major!($state.statics.pieces[promoted_piece]) as u32;
+                $state.minor_pieces[piece_color as usize] -=
+                    p_is_minor!($state.statics.pieces[promoted_piece]) as u32;
 
-                if p_is_big!($state.statics.pieces[piece_index]) {
-                    $state.big_pieces[piece_color as usize] += 1;
-                }
-                if p_is_major!($state.statics.pieces[piece_index]) {
-                    $state.major_pieces[piece_color as usize] += 1;
-                } else if p_is_minor!($state.statics.pieces[piece_index]) {
-                    $state.minor_pieces[piece_color as usize] += 1;
-                }
+                $state.big_pieces[piece_color as usize] +=
+                    p_is_big!($state.statics.pieces[piece_index]) as u32;
+                $state.major_pieces[piece_color as usize] +=
+                    p_is_major!($state.statics.pieces[piece_index]) as u32;
+                $state.minor_pieces[piece_color as usize] +=
+                    p_is_minor!($state.statics.pieces[piece_index]) as u32;
 
                 $state.opening_material[piece_color as usize] +=
                     p_ovalue!($state.statics.pieces[piece_index]) as u32;
@@ -2580,23 +2576,19 @@ macro_rules! undo_move {
                 $state.piece_list[promoted_piece]
                     .remove(&(end_square as Square));
 
-                if p_is_big!($state.statics.pieces[promoted_piece]) {
-                    $state.big_pieces[piece_color as usize] -= 1;
-                }
-                if p_is_major!($state.statics.pieces[promoted_piece]) {
-                    $state.major_pieces[piece_color as usize] -= 1;
-                } else if p_is_minor!($state.statics.pieces[promoted_piece]) {
-                    $state.minor_pieces[piece_color as usize] -= 1;
-                }
+                $state.big_pieces[piece_color as usize] -=
+                    p_is_big!($state.statics.pieces[promoted_piece]) as u32;
+                $state.major_pieces[piece_color as usize] -=
+                    p_is_major!($state.statics.pieces[promoted_piece]) as u32;
+                $state.minor_pieces[piece_color as usize] -=
+                    p_is_minor!($state.statics.pieces[promoted_piece]) as u32;
 
-                if p_is_big!($state.statics.pieces[piece_index]) {
-                    $state.big_pieces[piece_color as usize] += 1;
-                }
-                if p_is_major!($state.statics.pieces[piece_index]) {
-                    $state.major_pieces[piece_color as usize] += 1;
-                } else if p_is_minor!($state.statics.pieces[piece_index]) {
-                    $state.minor_pieces[piece_color as usize] += 1;
-                }
+                $state.big_pieces[piece_color as usize] +=
+                    p_is_big!($state.statics.pieces[piece_index]) as u32;
+                $state.major_pieces[piece_color as usize] +=
+                    p_is_major!($state.statics.pieces[piece_index]) as u32;
+                $state.minor_pieces[piece_color as usize] +=
+                    p_is_minor!($state.statics.pieces[piece_index]) as u32;
 
                 $state.opening_material[piece_color as usize] +=
                     p_ovalue!($state.statics.pieces[piece_index]) as u32;
@@ -2683,17 +2675,12 @@ macro_rules! undo_move {
                     $state.statics.pst_endgame[captured_piece]
                     [captured_square as usize];
 
-                if p_is_big!($state.statics.pieces[captured_piece]) {
-                    $state.big_pieces[captured_color as usize] += 1;
-                }
-
-                if p_is_major!($state.statics.pieces[captured_piece]) {
-                    $state.major_pieces[captured_color as usize] += 1;
-                } else if p_is_minor!(
-                    $state.statics.pieces[captured_piece]
-                ) {
-                    $state.minor_pieces[captured_color as usize] += 1;
-                }
+                $state.big_pieces[captured_color as usize] +=
+                    p_is_big!($state.statics.pieces[captured_piece]) as u32;
+                $state.major_pieces[captured_color as usize] +=
+                    p_is_major!($state.statics.pieces[captured_piece]) as u32;
+                $state.minor_pieces[captured_color as usize] +=
+                    p_is_minor!($state.statics.pieces[captured_piece]) as u32;
 
                 $state.opening_material[captured_color as usize] +=
                     p_ovalue!(
@@ -2769,23 +2756,19 @@ macro_rules! undo_move {
                 $state.piece_list[promoted_piece]
                     .remove(&(end_square as Square));
 
-                if p_is_big!($state.statics.pieces[promoted_piece]) {
-                    $state.big_pieces[piece_color as usize] -= 1;
-                }
-                if p_is_major!($state.statics.pieces[promoted_piece]) {
-                    $state.major_pieces[piece_color as usize] -= 1;
-                } else if p_is_minor!($state.statics.pieces[promoted_piece]) {
-                    $state.minor_pieces[piece_color as usize] -= 1;
-                }
+                $state.big_pieces[piece_color as usize] -=
+                    p_is_big!($state.statics.pieces[promoted_piece]) as u32;
+                $state.major_pieces[piece_color as usize] -=
+                    p_is_major!($state.statics.pieces[promoted_piece]) as u32;
+                $state.minor_pieces[piece_color as usize] -=
+                    p_is_minor!($state.statics.pieces[promoted_piece]) as u32;
 
-                if p_is_big!($state.statics.pieces[piece_index]) {
-                    $state.big_pieces[piece_color as usize] += 1;
-                }
-                if p_is_major!($state.statics.pieces[piece_index]) {
-                    $state.major_pieces[piece_color as usize] += 1;
-                } else if p_is_minor!($state.statics.pieces[piece_index]) {
-                    $state.minor_pieces[piece_color as usize] += 1;
-                }
+                $state.big_pieces[piece_color as usize] +=
+                    p_is_big!($state.statics.pieces[piece_index]) as u32;
+                $state.major_pieces[piece_color as usize] +=
+                    p_is_major!($state.statics.pieces[piece_index]) as u32;
+                $state.minor_pieces[piece_color as usize] +=
+                    p_is_minor!($state.statics.pieces[piece_index]) as u32;
 
                 $state.opening_material[piece_color as usize] +=
                     p_ovalue!($state.statics.pieces[piece_index]) as u32;
@@ -2880,19 +2863,18 @@ macro_rules! undo_move {
                         $state.statics.pst_endgame[captured_piece]
                         [captured_square as usize];
 
-                    if p_is_big!($state.statics.pieces[captured_piece]) {
-                        $state.big_pieces[captured_color as usize] += 1;
-                    }
-
-                    if p_is_major!(
-                        $state.statics.pieces[captured_piece]
-                    ) {
-                        $state.major_pieces[captured_color as usize] += 1;
-                    } else if p_is_minor!(
-                        $state.statics.pieces[captured_piece]
-                    ) {
-                        $state.minor_pieces[captured_color as usize] += 1;
-                    }
+                    $state.big_pieces[captured_color as usize] +=
+                        p_is_big!(
+                            $state.statics.pieces[captured_piece]
+                        ) as u32;
+                    $state.major_pieces[captured_color as usize] +=
+                        p_is_major!(
+                            $state.statics.pieces[captured_piece]
+                        ) as u32;
+                    $state.minor_pieces[captured_color as usize] +=
+                        p_is_minor!(
+                            $state.statics.pieces[captured_piece]
+                        ) as u32;
 
                     $state.opening_material[captured_color as usize] +=
                         p_ovalue!(
@@ -2946,15 +2928,12 @@ macro_rules! undo_move {
 
             $state.piece_count[piece_index] -= 1;
 
-            if p_is_big!($state.statics.pieces[piece_index]) {
-                $state.big_pieces[piece_color as usize] -= 1;
-            }
-
-            if p_is_major!($state.statics.pieces[piece_index]) {
-                $state.major_pieces[piece_color as usize] -= 1;
-            } else if p_is_minor!($state.statics.pieces[piece_index]) {
-                $state.minor_pieces[piece_color as usize] -= 1;
-            }
+            $state.big_pieces[piece_color as usize] -=
+                p_is_big!($state.statics.pieces[piece_index]) as u32;
+            $state.major_pieces[piece_color as usize] -=
+                p_is_major!($state.statics.pieces[piece_index]) as u32;
+            $state.minor_pieces[piece_color as usize] -=
+                p_is_minor!($state.statics.pieces[piece_index]) as u32;
 
             let hand = &mut $state.piece_in_hand[piece_color as usize]
                 [piece_index];

@@ -182,18 +182,13 @@ macro_rules! see {
 ///
 /// Scoring order:
 /// 1. PV move                  -> 5000000
-/// 2. Captures (MVV-LVA only)  -> 4000000 + victim - attacker/16
-/// 3. Killer moves             -> 1000000 + 2*MAX_HIST_VALUE + [1, 2]
+/// 2. Winning/Equal captures   -> 4000000 + SEE score [0, MAX_PIECE_VALUE]
+/// 3. Killer moves             -> 1000000 + 2 * MAX_HIST_VALUE + [1, 2]
 /// 4. History heuristic        -> 1000000 + MAX_HIST_VALUE + history [-h, h]
 /// 5. Losing captures          -> 1000000 + SEE score [-MAX_PIECE_VALUE, -1]
 ///
-/// SEE is no longer called during initial scoring — that work is deferred
-/// to `pick_by_score!`, which only runs SEE on the capture it is about to
-/// return. Captures with verified `see < 0` are demoted to bucket 5.
-///
-/// History entries are signed i16; the `MAX_HIST_VALUE` offset shifts them
-/// into a non-negative usize bucket strictly below killers. `$pv_move` is
-/// the TT best move for this node.
+/// `$pv_move` is the TT best move for this node. A larger score means the
+/// move is searched earlier.
 #[macro_export]
 macro_rules! score_move {
     ($state:expr, $mv:expr, $pv_move:expr) => {{
@@ -215,22 +210,22 @@ macro_rules! score_move {
             } else {
                 let piece = piece!($mv) as usize;
                 let start = start!($mv) as usize;
-                let end   = end!($mv) as usize;
+                let end = end!($mv) as usize;
                 let board_size = $state.statics.board_size;
                 let idx =
-                    piece * board_size * board_size
-                    + start * board_size + end;
+                    piece * board_size * board_size + start * board_size + end;
                 let entry = $state.search_hist[idx] as i32;
 
-                (1_000_000
-                    + MAX_HIST_VALUE as i32
-                    + entry) as usize                                           /* signed history offset to usize     */
+                (1_000_000 + MAX_HIST_VALUE as i32 + entry) as usize
             }
         } else {
-            let victim   = victim_value!($mv, $state);
-            let attacker = attack_value!($mv, $state);
+            let see_score = see!($state, $mv);
 
-            (4_000_000 + victim - attacker / 16) as usize                       /* MVV-LVA, SEE deferred to pick      */
+            if see_score >= 0 {
+                (4_000_000 + see_score) as usize                                /* winning captures ordered second     */
+            } else {
+                (1_000_000 + see_score) as usize                                /* losing captures ordered last        */
+            }
         }
     }};
 }
@@ -241,12 +236,6 @@ macro_rules! score_move {
 /// Selection-sort step; avoids sorting the full list up front. Combined with
 /// alpha-beta cutoffs, only the highest-priority prefix is scored in practice.
 ///
-/// Lazy SEE: the picked move is verified with full SEE only if it is in the
-/// MVV-LVA capture bucket `[4M, 5M)`. A capture with `see < 0` is demoted to
-/// the losing-capture bucket `1M + see` and the pick is retried. This caps
-/// SEE work at one call per move actually returned, even when many losing
-/// captures are present.
-///
 /// `$pv_move` is the TT best move for this node.
 #[macro_export]
 macro_rules! pick_by_score {
@@ -255,43 +244,31 @@ macro_rules! pick_by_score {
         let scores: &mut Vec<usize> = $scores;
         let index = $index;
 
-        loop {
-            if scores[index] == usize::MAX {
-                scores[index] = score_move!(
-                    $state, moves[index].clone(), $pv_move
+        if scores[index] == usize::MAX {
+            scores[index] = score_move!(
+                $state, moves[index].clone(), $pv_move
+            );
+        }
+
+        let mut best_index = index;
+        let mut best_score = scores[index];
+
+        for i in (index + 1)..moves.len() {
+            if scores[i] == usize::MAX {
+                scores[i] = score_move!(
+                    $state, moves[i].clone(), $pv_move
                 );
             }
 
-            let mut best_index = index;
-            let mut best_score = scores[index];
-
-            for i in (index + 1)..moves.len() {
-                if scores[i] == usize::MAX {
-                    scores[i] = score_move!(
-                        $state, moves[i].clone(), $pv_move
-                    );
-                }
-
-                if scores[i] > best_score {
-                    best_score = scores[i];
-                    best_index = i;
-                }
+            if scores[i] > best_score {
+                best_score = scores[i];
+                best_index = i;
             }
+        }
 
-            if best_score >= 4_000_000 && best_score < 5_000_000 {
-                let mv = moves[best_index].clone();
-                let see = see!($state, mv);
-                if see < 0 {
-                    scores[best_index] = (1_000_000 + see) as usize;
-                    continue;                                                   /* demoted; re-pick best              */
-                }
-            }
-
-            if best_index != index {
-                moves.swap(index, best_index);
-                scores.swap(index, best_index);
-            }
-            break;
+        if best_index != index {
+            moves.swap(index, best_index);
+            scores.swap(index, best_index);
         }
     }};
 }

@@ -26,10 +26,6 @@ pub fn generate_relevant_drops(
 
     drops
         .iter()
-        .filter(|drop| {
-            !get!(state.statics.forbidden_zones[piece_index], square_index) ||
-            drop_f!(drop)
-        })
         .filter_map(|drop| {
             let new_drop_move = drop.0 | (square_index << 8);
             let mut new_drop_stoppers = Vec::new();
