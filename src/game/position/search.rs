@@ -361,6 +361,8 @@ pub fn iterative_deepening(
         total_nps,
     );
 
+    fill_pv_line!(state, ttable, info.set_depth);
+
     let ponder_move = state.pv_line
         .get(1)
         .filter(|m| *m != &null_move())
