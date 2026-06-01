@@ -6,7 +6,7 @@
 //! into human-readable ASCII art displays. It provides methods for formatting
 //! individual bitboards and complete boards with Unicode
 //! box-drawing characters,
-//! 
+//!
 //! supporting various board sizes and piece symbols. The formatting includes
 //! rank and file labels for easy reference.
 //!
@@ -43,15 +43,11 @@ pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
     }
 
     if state.statics.files <= 26 {
-        let Some(file) = square_str[0..1].chars().next() else {
-            return None;
-        };
 
-        let Ok(mut rank) = square_str[1..].parse::<u16>() else {
-            return None;
-        };
+        let mut file = square_str[0..1].chars().next()? as u16;
+        let mut rank = square_str[1..].parse::<u16>().ok()?;
 
-        let file = (file as u16).wrapping_sub('a' as u16);
+        file = file.wrapping_sub('a' as u16);
         rank -= 1;
 
         if file < files && rank < ranks {

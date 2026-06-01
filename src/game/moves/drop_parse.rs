@@ -25,7 +25,6 @@ lazy_static! {
 ///
 /// The modifiers are as follows:
 /// - k : if set, this drop cannot deliver checkmate, otherwise, it can.
-/// - f : if set, this drop can be used to drop to forbidden squares
 pub fn generate_drop_vectors(
     piece: &Piece,
     state: &State,
@@ -33,10 +32,6 @@ pub fn generate_drop_vectors(
 ) -> DropSet {
     let piece_index = p_index!(piece) as usize;
     let drop_expr = &expr_set[piece_index];
-
-    if drop_expr == NULL_DROP {
-        return Vec::new();
-    }
 
     let parts = drop_expr.split('|').collect::<Vec<&str>>();
 
@@ -58,10 +53,6 @@ pub fn generate_drop_vectors(
 
         if modifiers.contains('k') {
             move_result |= 1 << 20;
-        }
-
-        if modifiers.contains('f') {
-            move_result |= 1 << 21;
         }
 
         let pattern = captures.get(2).unwrap_or_else(|| {

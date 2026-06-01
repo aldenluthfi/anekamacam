@@ -192,14 +192,29 @@ pub const MAX_LMR_DEPTH: usize = 32;
 pub const MAX_LOGS_LEN: usize = u16::MAX as usize;
 pub const MAX_HIST_VALUE: i16 = 16384;
 pub const HIST_BONUS_SCALE: i32 = 32;
-pub const MAX_LMP_DEPTH: usize = 8;
-pub const LMP_THRESHOLD: [[u8; MAX_LMP_DEPTH + 1]; 2] = [
+pub const HIST_BONUS_TABLE: [i32; MAX_DEPTH] = {
+    let cap = MAX_HIST_VALUE as i32;
+    let mut table = [0i32; MAX_DEPTH];
+    let mut depth = 0;
+    while depth < MAX_DEPTH {
+        let value = (depth * depth) as i32 * HIST_BONUS_SCALE;
+        table[depth] = if value < cap { value } else { cap };
+        depth += 1;
+    }
+    table
+};
+pub const MAX_FUTILITY_DEPTH: usize = 5;
+pub const MAX_LMP_DEPTH: usize = 9;
+pub const LMP_THRESHOLD: [[u8; MAX_LMP_DEPTH]; 2] = [
     [0, 3, 4,  7, 13, 21, 31, 43, 57],                                          /* not improving                      */
     [0, 5, 8, 14, 24, 38, 56, 78, 105],                                         /* improving                          */
 ];
-pub const MAX_RFP_DEPTH: usize = 8;
-pub const MAX_RAZOR_DEPTH: usize = 3;
-pub const MAX_SEE_PRUNE_DEPTH: usize = 7;
+pub const MAX_RFP_DEPTH: usize = 9;
+pub const MAX_RAZOR_DEPTH: usize = 4;
+pub const MAX_SEE_PRUNE_DEPTH: usize = 8;
+pub const MIN_IID_DEPTH: usize = 7;
+pub const MIN_IIR_DEPTH: usize = 4;
+pub const MIN_LMR_DEPTH: usize = 4;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
@@ -280,7 +295,6 @@ pub fn null_pseudo_move() -> PseudoMove {
 }
 
 pub const DEFAULT_DROP: &str = "@#~?@";
-pub const NULL_DROP: &str = "@#~?@#~?";
 
 pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
