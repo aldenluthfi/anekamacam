@@ -25,13 +25,6 @@ macro_rules! enc_can_checkmate {
     };
 }
 
-#[macro_export]
-macro_rules! enc_from_enemy_hand {
-    ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 24;
-    };
-}
-
 /*----------------------------------------------------------------------------*\
                           DROP REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
@@ -40,18 +33,10 @@ macro_rules! enc_from_enemy_hand {
 ///
 /// These macros read the same drop-flag bits written by the encoder helpers
 /// so drop legality and execution paths can branch on encoded options.
-/// They mirror `enc_can_checkmate!` and `enc_from_enemy_hand!` semantics.
 #[macro_export]
 macro_rules! drop_can_checkmate {
     ($drop:expr) => {
         ($drop.0 >> 23) & 1 == 1
-    };
-}
-
-#[macro_export]
-macro_rules! drop_from_enemy_hand {
-    ($drop:expr) => {
-        ($drop.0 >> 24) & 1 == 1
     };
 }
 
@@ -83,19 +68,5 @@ macro_rules! drop_k {
 macro_rules! drop_f {
     ($drop:expr) => {
         ($drop.0 >> 21) & 1 == 1
-    };
-}
-
-#[macro_export]
-macro_rules! drop_d {
-    ($drop:expr) => {
-        ($drop.0 >> 22) & 1 == 1
-    };
-}
-
-#[macro_export]
-macro_rules! drop_e {
-    ($drop:expr) => {
-        ($drop.0 >> 23) & 1 == 1
     };
 }

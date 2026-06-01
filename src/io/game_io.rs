@@ -173,13 +173,11 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let piece_type_count = piece_type_pairs.len();
     let board_size = state.statics.board_size;
     let expected_count =
-        2 + piece_type_count * 4 + piece_type_count * board_size * 2 + 15;
+        2 + piece_type_count * 4 + piece_type_count * board_size * 2;
 
-    assert!(
-        tokens.len() == expected_count,
-        "Parameter count mismatch: got {}, expected {}",
-        tokens.len(),
-        expected_count
+    assert_eq!(
+        tokens.len(), expected_count,
+        "Parameter count mismatch."
     );
 
     let mut cursor = 0usize;
@@ -751,20 +749,12 @@ pub fn parse_config_file(path: &str) -> State {
         enc_drops!(special_rules);
     }
 
-    if piece_count_limits {
-        enc_count_limits!(special_rules);
-    }
-
     if forbidden_zones {
         enc_forbidden_zones!(special_rules);
     }
 
     if promote_to_captured {
         enc_promote_to_captured!(special_rules);
-    }
-
-    if demote_upon_capture {
-        enc_demote_upon_capture!(special_rules);
     }
 
     if stalemate_loss {
@@ -1119,25 +1109,6 @@ pub fn parse_config_file(path: &str) -> State {
         result.static_mut().piece_swap_map[i as usize] = j;
     }
 
-    let pieces_promos: Vec<(PieceIndex, Vec<u8>)> = result.statics.pieces
-        .iter()
-        .map(|p| (p_index!(p), p.promotions.clone()))
-        .collect();
-    for (pi, promotions) in &pieces_promos {
-        for &promotion_index in promotions {
-            result.static_mut().piece_demotion_map[promotion_index as usize]
-                .push(*pi);
-        }
-    }
-
-    for piece in &result.statics.pieces.clone() {
-        let pi = p_index!(piece) as usize;
-
-        if result.statics.piece_demotion_map[pi].is_empty() {
-            result.static_mut().piece_demotion_map[pi].push(pi as PieceIndex);
-        }
-    }
-
     if en_passant {
         assert!(
             pieces_moves.iter().any(|mv| mv.contains('p') || mv.contains('t')),
@@ -1166,6 +1137,44 @@ pub fn parse_config_file(path: &str) -> State {
         .enumerate()
         .map(|(index, piece)| (piece.char, index as PieceIndex))
         .collect();
+
+    result.static_mut().piece_demotion_map = if sections.contains_key(
+        "demotions"
+    ) {
+        let mut map = vec![NO_PIECE; piece_count];
+
+        for demotion in &sections["demotions"] {
+            let parts: Vec<&str> =
+                demotion.split(':').map(str::trim).collect();
+
+            assert_eq!(parts.len(), 2, "demotions line incorrectly formatted");
+            assert_eq!(parts[1].chars().count(), 1, "must be n-to-1");
+
+            let demoted_piece = parts[1].chars().next().unwrap();
+            let demoted_index = result.statics.piece_char_map[&demoted_piece];
+
+            for c in parts[0].chars() {
+                let index = result.statics.piece_char_map[&c] as usize;
+                map[index] = demoted_index;
+            }
+        }
+
+        map
+    } else {
+        result.statics.pieces
+            .iter()
+            .map(|p| p_index!(p))
+            .collect()
+    };
+
+    for (index, entry) in result.static_mut().piece_demotion_map
+        .iter_mut()
+        .enumerate()
+    {
+        if *entry == NO_PIECE {
+            *entry = index as PieceIndex;
+        }
+    }
 
     /*-----------------------------------------------------------------------*\
                                    PARSE CASTLING
@@ -1472,73 +1481,6 @@ pub fn parse_config_file(path: &str) -> State {
                 } else {
                     panic!("Unknown piece character: {}", piece_char);
                 }
-            } else {
-                panic!("Invalid piece character(s): {}", piece_chars);
-            }
-        }
-    }
-
-    /*-----------------------------------------------------------------------*\
-                              PARSE PIECE COUNT LIMITS
-    \*-----------------------------------------------------------------------*/
-
-    if piece_count_limits {
-        for limit in &sections["piece count limits"] {
-            let parts: Vec<&str> = limit.split(':').map(str::trim).collect();
-
-            assert!(
-                parts.len() == 2,
-                "Invalid piece count limit definition: {}",
-                limit
-            );
-
-            let piece_chars = parts[0];
-
-            if piece_chars.len() == 2 {
-                let white_char = piece_chars.chars().next().unwrap();
-                let black_char = piece_chars.chars().nth(1).unwrap();
-
-                let white_index =
-                    char_to_index.get(&white_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", white_char),
-                    );
-
-                let black_index =
-                    char_to_index.get(&black_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", black_char),
-                    );
-
-                let limit_str = parts[1];
-
-                let limit_value =
-                    limit_str.parse::<u32>().unwrap_or_else(|_| {
-                        panic!(
-                            "Invalid piece count limit: {}",
-                            limit_str.trim()
-                        )
-                    });
-
-                result.static_mut().piece_limit[white_index] = limit_value;
-                result.static_mut().piece_limit[black_index] = limit_value;
-            } else if piece_chars.len() == 1 {
-                let piece_char = piece_chars.chars().next().unwrap();
-
-                let piece_index =
-                    char_to_index.get(&piece_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", piece_char),
-                    );
-
-                let limit_str = parts[1];
-
-                let limit_value =
-                    limit_str.parse::<u32>().unwrap_or_else(|_| {
-                        panic!(
-                            "Invalid piece count limit: {}",
-                            limit_str.trim()
-                        )
-                    });
-
-                result.static_mut().piece_limit[piece_index] = limit_value;
             } else {
                 panic!("Invalid piece character(s): {}", piece_chars);
             }
@@ -1923,7 +1865,7 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 ///   of the piece that can be captured en passant in hex, and z is the char
 ///   of the piece that can be captured en passant. "*" if no en passant square.
 ///
-/// **: where each w and b is formatted with the pieces in hand. e.g. P2N means
+/// **: where each w and b is formatted with the pieces in hand. e.g. PNN means
 ///   a pawn and two knights in hand. "-" if no pieces in hand for that color
 ///   so an empty hand for both is -/-.
 ///
@@ -2141,9 +2083,8 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
     }
 
     if drops!(state)
-        || promote_to_captured!(state)
-        || demote_upon_capture!(state)
-        || setup_phase!(state)
+    || promote_to_captured!(state)
+    || setup_phase!(state)
     {
         let hands = parts[part_index];
         part_index += 1;
@@ -2397,7 +2338,6 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
 
     if drops!(state)
     || promote_to_captured!(state)
-    || demote_upon_capture!(state)
     || setup_phase!(state)
     {
         fen.push(' ');
@@ -2469,12 +2409,9 @@ pub fn format_hand(state: &State, color: u8) -> String {
     let mut hand = String::new();
 
     for (i, piece) in state.statics.pieces.iter().enumerate() {
-        let count = pieces_in_hand[i];
-        if count == 1 {
-            hand.push(piece.char);
-        } else if count > 1 {
-            hand.push_str(&format!("{}{}", count, piece.char));
-        }
+        hand.push_str(
+            &piece.char.to_string().repeat(pieces_in_hand[i] as usize)
+        );
     }
 
     if hand.is_empty() {
@@ -2523,17 +2460,11 @@ pub fn format_special_rules(state: &State) -> String {
     if drops!(state) {
         rules.push("Drops");
     }
-    if count_limits!(state) {
-        rules.push("Count Limits");
-    }
     if forbidden_zones!(state) {
         rules.push("Forbidden Zones");
     }
     if promote_to_captured!(state) {
         rules.push("Promote to Captured");
-    }
-    if demote_upon_capture!(state) {
-        rules.push("Demote Upon Capture");
     }
     if stalemate_loss!(state) {
         rules.push("Stalemate Loss");

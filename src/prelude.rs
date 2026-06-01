@@ -268,7 +268,7 @@ lazy_static! {
     pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(5);
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
-    pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(true);
+    pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(false);
 }
 
 pub fn null_move() -> Move {
@@ -301,7 +301,7 @@ pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
 
 pub const TIME_OVERHEAD_MS: u128 = 50;
-pub const OPT_VARIANT: &str = "Variant";
+pub const OPT_VARIANT: &str = "UCI_Variant";
 pub const OPT_THREADS: &str = "Threads";
 pub const OPT_PONDER: &str = "Ponder";
 pub const OPT_HASH: &str = "Hash";
