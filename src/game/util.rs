@@ -148,8 +148,9 @@ pub fn verify_game_state(state: &State) {
     let mut temp_opening_pst_bonus = [0; 2];
     let mut temp_endgame_pst_bonus = [0; 2];
 
-    for (i, piece) in state.statics.pieces.iter().enumerate() {
-        let piece_indices = &state.piece_list[i];
+    for piece in state.statics.pieces.iter() {
+        let index = p_index!(piece) as usize;
+        let piece_indices = &state.piece_list[index];
 
         for square in piece_indices {
             let color = p_color!(piece) as usize;
@@ -166,9 +167,19 @@ pub fn verify_game_state(state: &State) {
             temp_opening_material[color] += p_ovalue!(piece) as u32;
             temp_endgame_material[color] += p_evalue!(piece) as u32;
             temp_opening_pst_bonus[color] +=
-                state.statics.pst_opening[i][*square as usize];
+                state.statics.pst_opening[index][*square as usize];
             temp_endgame_pst_bonus[color] +=
-                state.statics.pst_endgame[i][*square as usize];
+                state.statics.pst_endgame[index][*square as usize];
+        }
+    }
+
+    for side in [WHITE as usize, BLACK as usize] {
+        for (index, count) in state.piece_in_hand[side].iter().enumerate() {
+            let piece = &state.statics.pieces[index as usize];
+            let count = *count as u32;
+
+            temp_opening_material[side] += p_ovalue!(piece) as u32 * count;
+            temp_endgame_material[side] += p_evalue!(piece) as u32 * count;
         }
     }
 

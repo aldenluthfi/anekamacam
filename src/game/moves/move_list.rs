@@ -909,24 +909,14 @@ macro_rules! process_multi_leg_vector {
                 for promo_piece_index in &$piece.promotions {
                     let mut can_promote = true;
 
-                    if count_limits!($state) {
-                        can_promote = can_promote
-                            && $state.piece_count[
-                                *promo_piece_index as usize
-                            ] < $state.statics.piece_limit[
-                                *promo_piece_index as usize
-                            ];
-                    }
-
                     if promote_to_captured!($state) {
                         let enemy_equiv = $state.statics.piece_swap_map[
                             *promo_piece_index as usize
                         ];
 
-                        can_promote = can_promote
-                            && $state.piece_in_hand[
-                                1 - piece_color as usize
-                            ][enemy_equiv as usize] > 0;
+                        can_promote &= $state.piece_in_hand
+                            [1 - piece_color as usize]
+                            [enemy_equiv as usize] > 0;
                     }
 
                     if can_promote {
@@ -1342,18 +1332,18 @@ macro_rules! make_move {
                     if promote_to_captured!($state) {
                         let enemy_equiv = $state.statics.piece_swap_map
                             [promoted_piece];
-                        let hand =
-                            &mut $state.piece_in_hand
+
+                        let hand = &mut $state.piece_in_hand
                             [1 - piece_color as usize][enemy_equiv as usize];
-                        let old_hand = *hand;
-                        *hand -= 1;
 
                         hash_update_in_hand!(
                             $state,
                             enemy_equiv as usize,
-                            old_hand,
-                            *hand
+                            *hand,
+                            *hand - 1
                         );
+
+                        *hand -= 1;
                     }
                 }
 
@@ -1419,7 +1409,7 @@ macro_rules! make_move {
                 let creates_enp = creates_enp!($mv);
                 let promoted_piece = promoted!($mv) as usize;
                 let enp_square = created_enp!($mv) as u32;
-                let mut captured_piece = captured_piece!($mv) as usize;
+                let captured_piece = captured_piece!($mv) as usize;
                 let captured_square = captured_square!($mv) as u32;
                 let is_unload = is_unload!($mv);
                 let unload_square = unload_square!($mv) as u32;
@@ -1540,18 +1530,18 @@ macro_rules! make_move {
                     if promote_to_captured!($state) {
                         let enemy_equiv = $state.statics.piece_swap_map
                             [promoted_piece];
-                        let hand =
-                            &mut $state.piece_in_hand
+
+                        let hand = &mut $state.piece_in_hand
                             [1 - piece_color as usize][enemy_equiv as usize];
-                        let old_hand = *hand;
-                        *hand -= 1;
 
                         hash_update_in_hand!(
                             $state,
                             enemy_equiv as usize,
-                            old_hand,
-                            *hand
+                            *hand,
+                            *hand - 1
                         );
+
+                        *hand -= 1;
                     }
                 }
 
@@ -1601,29 +1591,29 @@ macro_rules! make_move {
                 }
 
                 if drops!($state) || promote_to_captured!($state) {
-                    let old_captured_piece = captured_piece;
 
-                    if demote_upon_capture!($state) {
-                        captured_piece = $state.statics.piece_demotion_map
-                            [captured_piece][0] as usize;                       /* assume 1 to 1 mapping              */
-                    }
+                    let demoted_piece = $state.statics.piece_demotion_map
+                        [captured_piece] as usize;
 
-                    let swap_index =
-                        $state.statics.piece_swap_map[captured_piece] as usize;
-                    let hand =
-                        &mut $state.piece_in_hand
-                        [piece_color as usize][swap_index];
-                    let old_hand = *hand;
-                    *hand += 1;
+                    let hand_piece = $state.statics.piece_swap_map
+                        [demoted_piece] as usize;
+
+                    let hand = &mut $state.piece_in_hand
+                        [piece_color as usize][hand_piece];
 
                     hash_update_in_hand!(
                         $state,
-                        swap_index,
-                        old_hand,
-                        *hand
+                        hand_piece,
+                        *hand,
+                        *hand + 1
                     );
 
-                    captured_piece = old_captured_piece;
+                    *hand += 1;
+
+                    $state.opening_material[piece_color as usize] +=
+                        p_ovalue!($state.statics.pieces[hand_piece]) as u32;
+                    $state.endgame_material[piece_color as usize] +=
+                        p_evalue!($state.statics.pieces[hand_piece]) as u32;
                 }
 
                 if castling!($state) {
@@ -1890,18 +1880,18 @@ macro_rules! make_move {
                     if promote_to_captured!($state) {
                         let enemy_equiv = $state.statics.piece_swap_map
                             [promoted_piece];
-                        let hand =
-                            &mut $state.piece_in_hand
+
+                        let hand = &mut $state.piece_in_hand
                             [1 - piece_color as usize][enemy_equiv as usize];
-                        let old_hand = *hand;
-                        *hand -= 1;
 
                         hash_update_in_hand!(
                             $state,
                             enemy_equiv as usize,
-                            old_hand,
-                            *hand
+                            *hand,
+                            *hand - 1
                         );
+
+                        *hand -= 1;
                     }
                 }
 
@@ -1951,7 +1941,7 @@ macro_rules! make_move {
                 }
 
                 for cap in $mv.1.iter() {
-                    let mut captured_piece =
+                    let captured_piece =
                         multi_move_captured_piece!(cap) as usize;
                     let captured_square =
                         multi_move_captured_square!(cap) as u32;
@@ -1962,30 +1952,28 @@ macro_rules! make_move {
                     );
 
                     if drops!($state) || promote_to_captured!($state) {
-                        let old_captured_piece = captured_piece;
 
-                        if demote_upon_capture!($state) {
-                            captured_piece = $state.statics.piece_demotion_map
-                                [captured_piece][0] as usize;                   /* assume 1 to 1 mapping              */
-                        }
-
-                        let swap_index =
-                            $state.statics.piece_swap_map
+                        let demoted_piece = $state.statics.piece_demotion_map
                             [captured_piece] as usize;
-                        let hand =
-                            &mut $state.piece_in_hand
-                            [piece_color as usize][swap_index];
-                        let old_hand = *hand;
-                        *hand += 1;
+                        let hand_piece = $state.statics.piece_swap_map
+                            [demoted_piece] as usize;
+
+                        let hand = &mut $state.piece_in_hand
+                            [piece_color as usize][hand_piece];
 
                         hash_update_in_hand!(
                             $state,
-                            swap_index,
-                            old_hand,
-                            *hand
+                            hand_piece,
+                            *hand,
+                            *hand + 1
                         );
 
-                        captured_piece = old_captured_piece;
+                        *hand += 1;
+
+                        $state.opening_material[piece_color as usize] +=
+                            p_ovalue!($state.statics.pieces[hand_piece]) as u32;
+                        $state.endgame_material[piece_color as usize] +=
+                            p_evalue!($state.statics.pieces[hand_piece]) as u32;
                     }
 
                     if castling!($state) {
@@ -2169,11 +2157,6 @@ macro_rules! make_move {
                 $state.minor_pieces[piece_color as usize] +=
                     p_is_minor!($state.statics.pieces[piece_index]) as u32;
 
-                $state.opening_material[piece_color as usize] +=
-                    p_ovalue!($state.statics.pieces[piece_index]) as u32;
-                $state.endgame_material[piece_color as usize] +=
-                    p_evalue!($state.statics.pieces[piece_index]) as u32;
-
                 $state.phase_score += p_ovalue!(
                     $state.statics.pieces[piece_index]
                 ) as u32 * p_is_big!(
@@ -2184,35 +2167,17 @@ macro_rules! make_move {
 
                 $state.piece_count[piece_index] += 1;
 
-                if !drop_from_enemy_hand!($mv) {
-                    let hand =
-                        &mut $state.piece_in_hand
-                        [piece_color as usize][piece_index];
-                    let old_hand = *hand;
-                    *hand -= 1;
+                let hand = &mut $state.piece_in_hand
+                    [piece_color as usize][piece_index];
 
-                    hash_update_in_hand!(
-                        $state,
-                        piece_index,
-                        old_hand,
-                        *hand
-                    );
-                } else {
-                    let enemy_equiv =
-                        $state.statics.piece_swap_map[piece_index] as usize;
-                    let hand =
-                        &mut $state.piece_in_hand
-                        [1 - piece_color as usize][enemy_equiv];
-                    let old_hand = *hand;
-                    *hand -= 1;
+                hash_update_in_hand!(
+                    $state,
+                    piece_index,
+                    *hand,
+                    *hand - 1
+                );
 
-                    hash_update_in_hand!(
-                        $state,
-                        enemy_equiv,
-                        old_hand,
-                        *hand
-                    );
-                }
+                *hand -= 1;
 
                 $state.halfmove_clock = 0;
 
@@ -2222,124 +2187,7 @@ macro_rules! make_move {
                 {
                     $state.game_phase = OPENING;
                 }
-
-                for cap in $mv.1.iter() {
-                    let captured_piece =
-                        multi_move_captured_piece!(cap) as usize;
-                    let captured_square =
-                        multi_move_captured_square!(cap) as u32;
-                    let captured_color = p_color!(
-                        $state.statics.pieces[captured_piece]
-                    );
-
-                    if castling!($state) {
-                        $state.castling_state &= [
-                            !{
-                                get!(
-                                    $state.statics.critical_castling
-                                    [WK_INDEX as usize],
-                                    captured_square
-                                ) as u8 *
-                                WK_CASTLE
-                                |
-                                get!(
-                                    $state.statics.critical_castling
-                                    [WQ_INDEX as usize],
-                                    captured_square
-                                ) as u8 *
-                                WQ_CASTLE
-                            },
-                            !{
-                                get!(
-                                    $state.statics.critical_castling
-                                    [BK_INDEX as usize],
-                                    captured_square
-                                ) as u8 *
-                                BK_CASTLE
-                                |
-                                get!(
-                                    $state.statics.critical_castling
-                                    [BQ_INDEX as usize],
-                                    captured_square
-                                ) as u8 *
-                                BQ_CASTLE
-                            }
-                        ][captured_color as usize];
-                    }
-
-                    hash_update_castling!(
-                        $state, last_castling_state,
-                        $state.castling_state
-                    );
-
-                    if captured_square != drop_square {
-                        $state.main_board[captured_square as usize] =
-                            NO_PIECE;
-                    }
-
-                    if captured_square != drop_square
-                    || captured_color != piece_color {
-                        clear!(
-                            $state.pieces_board[captured_color as usize],
-                            captured_square
-                        );
-                    }
-
-                    hash_in_or_out_piece!(
-                        $state,
-                        captured_piece,
-                        captured_square as Square
-                    );
-
-                    clear!($state.virgin_board, captured_square);
-
-                    if captured_piece != piece_index
-                    || captured_square != drop_square {
-                        $state.piece_list[captured_piece].remove(
-                            &(captured_square as Square)
-                        );
-                    }
-
-                    $state.opening_pst_bonus[captured_color as usize] -=
-                        $state.statics.pst_opening[captured_piece]
-                        [captured_square as usize];
-                    $state.endgame_pst_bonus[captured_color as usize] -=
-                        $state.statics.pst_endgame[captured_piece]
-                        [captured_square as usize];
-
-                    $state.big_pieces[captured_color as usize] -=
-                        p_is_big!(
-                            $state.statics.pieces[captured_piece]
-                        ) as u32;
-                    $state.major_pieces[captured_color as usize] -=
-                        p_is_major!(
-                            $state.statics.pieces[captured_piece]
-                        ) as u32;
-                    $state.minor_pieces[captured_color as usize] -=
-                        p_is_minor!(
-                            $state.statics.pieces[captured_piece]
-                        ) as u32;
-
-                    $state.opening_material[captured_color as usize] -=
-                        p_ovalue!(
-                            $state.statics.pieces[captured_piece]
-                        ) as u32;
-                    $state.endgame_material[captured_color as usize] -=
-                        p_evalue!(
-                            $state.statics.pieces[captured_piece]
-                        ) as u32;
-
-                    $state.phase_score -= p_ovalue!(
-                        $state.statics.pieces[captured_piece]
-                    ) as u32 * p_is_big!(
-                        $state.statics.pieces[captured_piece]
-                    ) as u32 * !p_is_royal!(
-                        $state.statics.pieces[captured_piece]
-                    ) as u32;
-
-                    $state.piece_count[captured_piece] -= 1;
-                }
-            } else if move_type == CASTLING_MOVE {
+             } else if move_type == CASTLING_MOVE {
                 let piece_index = piece!($mv) as usize;
                 let start_square = start!($mv) as u32;
                 let end_square = end!($mv) as u32;
@@ -2665,11 +2513,12 @@ macro_rules! undo_move {
                 $state.piece_count[piece_index] += 1;
 
                 if promote_to_captured!($state) {
-                    let enemy_equiv =
-                        $state.statics.piece_swap_map[promoted_piece];
+                    let enemy_equiv = $state.statics.piece_swap_map
+                        [promoted_piece];
+
                     let hand = &mut $state.piece_in_hand
-                        [1 - piece_color as usize]
-                        [enemy_equiv as usize];
+                        [1 - piece_color as usize][enemy_equiv as usize];
+
                     *hand += 1;
                 }
             } else {
@@ -2684,7 +2533,7 @@ macro_rules! undo_move {
             let piece_unmoved = is_initial!(mv) == 1;
             let is_promotion = promotion!(mv);
             let promoted_piece = promoted!(mv) as usize;
-            let mut captured_piece = captured_piece!(mv) as usize;
+            let captured_piece = captured_piece!(mv) as usize;
             let captured_square = captured_square!(mv) as u32;
             let captured_unmoved = captured_unmoved!(mv);
             let is_unload = is_unload!(mv);
@@ -2762,11 +2611,12 @@ macro_rules! undo_move {
                 $state.piece_count[piece_index] += 1;
 
                 if promote_to_captured!($state) {
-                    let enemy_equiv =
-                        $state.statics.piece_swap_map[promoted_piece];
+                    let enemy_equiv = $state.statics.piece_swap_map
+                        [promoted_piece];
+
                     let hand = &mut $state.piece_in_hand
-                        [1 - piece_color as usize]
-                        [enemy_equiv as usize];
+                        [1 - piece_color as usize][enemy_equiv as usize];
+
                     *hand += 1;
                 }
             } else {
@@ -2858,16 +2708,20 @@ macro_rules! undo_move {
             }
 
             if drops!($state) || promote_to_captured!($state) {
+                let demoted_piece = $state.statics.piece_demotion_map
+                    [captured_piece] as usize;
+                let hand_piece = $state.statics.piece_swap_map
+                    [demoted_piece] as usize;
 
-                if demote_upon_capture!($state) {
-                    captured_piece = $state.statics.piece_demotion_map
-                        [captured_piece][0] as usize;                           /* assume 1 to 1 mapping              */
-                }
+                let hand = &mut $state.piece_in_hand
+                    [piece_color as usize][hand_piece];
 
+                *hand -= 1;
 
-                $state.piece_in_hand[piece_color as usize][
-                    $state.statics.piece_swap_map[captured_piece]
-                as usize] -= 1;
+                $state.opening_material[piece_color as usize] -=
+                    p_ovalue!($state.statics.pieces[hand_piece]) as u32;
+                $state.endgame_material[piece_color as usize] -=
+                    p_evalue!($state.statics.pieces[hand_piece]) as u32;
             }
         } else if move_type == MULTI_CAPTURE_MOVE {
             let piece_index = piece!(mv) as usize;
@@ -2960,8 +2814,7 @@ macro_rules! undo_move {
             $state.piece_list[piece_index].insert(start_square as Square);
 
             for cap in mv.1.iter() {
-                let mut captured_piece =
-                    multi_move_captured_piece!(cap) as usize;
+                let captured_piece = multi_move_captured_piece!(cap) as usize;
                 let captured_square = multi_move_captured_square!(cap) as u32;
                 let captured_unmoved = multi_move_captured_unmoved!(cap);
                 let is_unload = multi_move_is_unload!(cap);
@@ -3054,15 +2907,20 @@ macro_rules! undo_move {
                 }
 
                 if drops!($state) || promote_to_captured!($state) {
+                    let demoted_piece = $state.statics.piece_demotion_map
+                        [captured_piece] as usize;
+                    let hand_piece = $state.statics.piece_swap_map
+                        [demoted_piece] as usize;
 
-                    if demote_upon_capture!($state) {
-                        captured_piece = $state.statics.piece_demotion_map
-                            [captured_piece][0] as usize;
-                    }
+                    let hand = &mut $state.piece_in_hand
+                        [piece_color as usize][hand_piece];
 
-                    $state.piece_in_hand[piece_color as usize][
-                        $state.statics.piece_swap_map[captured_piece]
-                    as usize] -= 1;
+                    *hand -= 1;
+
+                    $state.opening_material[piece_color as usize] -=
+                        p_ovalue!($state.statics.pieces[hand_piece]) as u32;
+                    $state.endgame_material[piece_color as usize] -=
+                        p_evalue!($state.statics.pieces[hand_piece]) as u32;
                 }
             }
         } else if move_type == DROP_MOVE {
@@ -3080,14 +2938,12 @@ macro_rules! undo_move {
 
             $state.main_board[drop_square as usize] = NO_PIECE;
             $state.piece_list[piece_index].remove(&(drop_square as Square));
+
             $state.opening_pst_bonus[piece_color as usize] -=
                 $state.statics.pst_opening[piece_index][drop_square as usize];
             $state.endgame_pst_bonus[piece_color as usize] -=
                 $state.statics.pst_endgame[piece_index][drop_square as usize];
-            $state.opening_material[piece_color as usize] -=
-                p_ovalue!($state.statics.pieces[piece_index]) as u32;
-            $state.endgame_material[piece_color as usize] -=
-                p_evalue!($state.statics.pieces[piece_index]) as u32;
+
             $state.piece_count[piece_index] -= 1;
 
             if p_is_big!($state.statics.pieces[piece_index]) {
@@ -3100,71 +2956,9 @@ macro_rules! undo_move {
                 $state.minor_pieces[piece_color as usize] -= 1;
             }
 
-            if !drop_from_enemy_hand!(mv) {
-                let hand = &mut $state.piece_in_hand[piece_color as usize]
-                    [piece_index];
-                *hand += 1;
-            } else {
-                let enemy_equiv =
-                    $state.statics.piece_swap_map[piece_index] as usize;
-                let hand = &mut $state.piece_in_hand[1 - piece_color as usize]
-                    [enemy_equiv];
-                *hand += 1;
-            }
-
-            for cap in mv.1.iter() {
-                let captured_piece =
-                    multi_move_captured_piece!(cap) as usize;
-                let captured_square = multi_move_captured_square!(cap) as u32;
-                let captured_unmoved = multi_move_captured_unmoved!(cap);
-                let captured_color =
-                    p_color!($state.statics.pieces[captured_piece]);
-
-                set!(
-                    $state.pieces_board[captured_color as usize],
-                    captured_square
-                );
-
-                if captured_unmoved {
-                    set!($state.virgin_board, captured_square);
-                }
-
-                $state.main_board[captured_square as usize] =
-                    captured_piece as PieceIndex;
-
-                $state.piece_list[captured_piece]
-                    .insert(captured_square as Square);
-
-                $state.opening_pst_bonus[captured_color as usize] +=
-                    $state.statics.pst_opening[captured_piece]
-                    [captured_square as usize];
-                $state.endgame_pst_bonus[captured_color as usize] +=
-                    $state.statics.pst_endgame[captured_piece]
-                    [captured_square as usize];
-
-                if p_is_big!($state.statics.pieces[captured_piece]) {
-                    $state.big_pieces[captured_color as usize] += 1;
-                }
-
-                if p_is_major!($state.statics.pieces[captured_piece]) {
-                    $state.major_pieces[captured_color as usize] += 1;
-                } else if p_is_minor!(
-                    $state.statics.pieces[captured_piece]
-                ) {
-                    $state.minor_pieces[captured_color as usize] += 1;
-                }
-
-                $state.opening_material[captured_color as usize] +=
-                    p_ovalue!(
-                        $state.statics.pieces[captured_piece]
-                    ) as u32;
-                $state.endgame_material[captured_color as usize] +=
-                    p_evalue!(
-                        $state.statics.pieces[captured_piece]
-                    ) as u32;
-
-                $state.piece_count[captured_piece] += 1;
-            }
+            let hand = &mut $state.piece_in_hand[piece_color as usize]
+                [piece_index];
+            *hand += 1;
         } else if move_type == CASTLING_MOVE {
             let piece_index = piece!(mv) as usize;
             let start_square = start!(mv) as u32;
@@ -3359,16 +3153,7 @@ pub fn generate_all_moves_and_drops(
     if drops!(state) || state.game_phase == SETUP {
         for piece_index in start_index..end_index {
             let piece = &state.statics.pieces[piece_index];
-            let enemy = state.statics.piece_swap_map[piece_index] as usize;
-
-            let drop_from_own =
-                state.piece_in_hand[state.playing as usize][piece_index] > 0;
-            let drop_from_enemy =
-                state.piece_in_hand[1 - state.playing as usize][enemy] > 0;
-
-            if drop_from_own || drop_from_enemy {
-                generate_drop_list!(piece, state, out, scratch);
-            }
+            generate_drop_list!(piece, state, out);
         }
     }
 

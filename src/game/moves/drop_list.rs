@@ -27,9 +27,8 @@ pub fn generate_relevant_drops(
     drops
         .iter()
         .filter(|drop| {
-            let drop_f = drop_f!(drop);
-            !get!(state.statics.forbidden_zones[piece_index], square_index)
-                || drop_f
+            !get!(state.statics.forbidden_zones[piece_index], square_index) ||
+            drop_f!(drop)
         })
         .filter_map(|drop| {
             let new_drop_move = drop.0 | (square_index << 8);
@@ -88,137 +87,88 @@ pub fn generate_relevant_drops(
 /// in hand, using allower/stopper squares instead of directional legs.
 #[macro_export]
 macro_rules! generate_drop_list {
-    ($piece:expr, $state:expr, $out:expr, $scratch:expr) => {{
+    ($piece:expr, $state:expr, $out:expr) => {{
         let board_size = $state.statics.board_size as u32;
         let index = p_index!($piece) as usize;
         let color = p_color!($piece) as usize;
 
-        if !count_limits!($state)
-        || $state.piece_count[index] <= $state.statics.piece_limit[index]
-        {
-            for square in 0..board_size {
-                let drops = if $state.game_phase == SETUP {
-                    &$state.statics.relevant_setup[
-                        index * board_size as usize + square as usize
-                    ]
-                } else {
-                    &$state.statics.relevant_drops[
-                        index * board_size as usize + square as usize
-                    ]
-                };
+        for square in 0..board_size {
 
-                if drops.is_empty() {
-                    continue;
-                }
+            if $state.piece_in_hand[color][index] == 0 {
+                break;
+            }
 
-                'drop_loop: for drop in drops {
-                    let drop_k = drop_k!(drop);
-                    let drop_f = drop_f!(drop);
-                    let drop_d = drop_d!(drop);
-                    let drop_e = drop_e!(drop);
+            let drops = if $state.game_phase == SETUP {
+                &$state.statics.relevant_setup[
+                    index * board_size as usize + square as usize
+                ]
+            } else {
+                &$state.statics.relevant_drops[
+                    index * board_size as usize + square as usize
+                ]
+            };
 
-                    let mut encoded_move = Move::default();
-                    $scratch.clear();
-                    enc_move_type!(encoded_move, DROP_MOVE);
-                    enc_piece!(encoded_move, index as u128);
-                    enc_start!(encoded_move, square as u128);
+            if drops.is_empty() {
+                continue;
+            }
 
-                    let enemy_idx = $state.statics.piece_swap_map
-                        [index] as usize;
+            'drop_loop: for drop in drops {
+                let mut encoded_move = Move::default();
 
-                    if get!(
-                        $state.statics.forbidden_zones[index], square
-                    ) && !drop_f
-                    || !drop_e
-                        && $state.piece_in_hand[color][index] == 0
-                    || drop_e
-                        && $state.piece_in_hand[1 - color][enemy_idx] == 0
-                    {
+                let drop_k = drop_k!(drop);
+
+                enc_move_type!(encoded_move, DROP_MOVE);
+                enc_piece!(encoded_move, index as u128);
+                enc_start!(encoded_move, square as u128);
+                enc_can_checkmate!(encoded_move, !drop_k as u128);
+
+                let drop_allowers = &drop.1.0;
+                let drop_stoppers = &drop.1.1;
+
+                let file = square % $state.statics.files as u32;
+                let rank = square / $state.statics.files as u32;
+
+                for allower in drop_allowers.iter() {
+                    let ax = x!(allower.0) as i32
+                        * (-2 * color as i32 + 1);
+                    let ay = y!(allower.0) as i32
+                        * (-2 * color as i32 + 1);
+                    let allower_pieces = &allower.1;
+
+                    let check_x = file as i32 + ax;
+                    let check_y = rank as i32 + ay;
+                    let check_index = (
+                        check_y * $state.statics.files as i32 + check_x
+                    ) as usize;
+
+                    let piece_check = $state.main_board[check_index];
+
+                    if !allower_pieces.contains(piece_check) {
                         continue 'drop_loop;
                     }
-
-                    enc_can_checkmate!(encoded_move, !drop_k as u128);
-                    enc_from_enemy_hand!(encoded_move, drop_e as u128);
-
-                    let drop_allowers = &drop.1.0;
-                    let drop_stoppers = &drop.1.1;
-
-                    let file = square % $state.statics.files as u32;
-                    let rank = square / $state.statics.files as u32;
-
-                    for allower in drop_allowers.iter() {
-                        let ax = x!(allower.0) as i32
-                            * (-2 * color as i32 + 1);
-                        let ay = y!(allower.0) as i32
-                            * (-2 * color as i32 + 1);
-                        let allower_pieces = &allower.1;
-
-                        let check_x = file as i32 + ax;
-                        let check_y = rank as i32 + ay;
-                        let check_index = (
-                            check_y * $state.statics.files as i32 + check_x
-                        ) as usize;
-
-                        let piece_check = $state.main_board[check_index];
-
-                        if !allower_pieces.contains(piece_check) {
-                            continue 'drop_loop;
-                        }
-
-                        if piece_check == NO_PIECE {
-                            continue;
-                        }
-
-                        if drop_d && p_is_royal!(
-                            $state.statics.pieces[piece_check as usize]
-                        ) {
-                            continue 'drop_loop;
-                        } else if drop_d {
-                            let mut take_piece = 0u64;
-
-                            enc_multi_move_captured_piece!(
-                                take_piece, piece_check as u64
-                            );
-                            enc_multi_move_captured_square!(
-                                take_piece, check_index as u64
-                            );
-                            enc_multi_move_captured_unmoved!(
-                                take_piece,
-                                get!(
-                                    $state.virgin_board,
-                                    check_index as u32
-                                ) as u64
-                            );
-
-                            $scratch.push(take_piece);
-                        }
-                    }
-
-                    for stopper in drop_stoppers.iter() {
-                        let sx = x!(stopper.0) as i32
-                            * (-2 * color as i32 + 1);
-                        let sy = y!(stopper.0) as i32
-                            * (-2 * color as i32 + 1);
-                        let stopper_pieces = &stopper.1;
-
-                        let check_x = file as i32 + sx;
-                        let check_y = rank as i32 + sy;
-                        let check_index = (
-                            check_y * $state.statics.files as i32 + check_x
-                        ) as usize;
-
-                        let piece_check = $state.main_board[check_index];
-
-                        if stopper_pieces.contains(piece_check) {
-                            continue 'drop_loop;
-                        }
-                    }
-
-                    if !$scratch.is_empty() {
-                        encoded_move.1 = Arc::new(mem::take($scratch));
-                    }
-                    $out.push(encoded_move);
                 }
+
+                for stopper in drop_stoppers.iter() {
+                    let sx = x!(stopper.0) as i32
+                        * (-2 * color as i32 + 1);
+                    let sy = y!(stopper.0) as i32
+                        * (-2 * color as i32 + 1);
+                    let stopper_pieces = &stopper.1;
+
+                    let check_x = file as i32 + sx;
+                    let check_y = rank as i32 + sy;
+                    let check_index = (
+                        check_y * $state.statics.files as i32 + check_x
+                    ) as usize;
+
+                    let piece_check = $state.main_board[check_index];
+
+                    if stopper_pieces.contains(piece_check) {
+                        continue 'drop_loop;
+                    }
+                }
+
+                $out.push(encoded_move);
             }
         }
     }};

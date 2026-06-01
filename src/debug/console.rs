@@ -237,46 +237,11 @@ impl OverviewState {
             ));
         }
 
-        let mut rules = Vec::new();
+        let rules = format_special_rules(state).replace(", ", "\n");
+        let rules_height = state.statics.special_rules.count_ones();
 
-        if castling!(state) {
-            rules.push("Castling");
-        }
-        if en_passant!(state) {
-            rules.push("En Passant");
-        }
-        if promotions!(state) {
-            rules.push("Promotions");
-        }
-        if drops!(state) {
-            rules.push("Drops");
-        }
-        if count_limits!(state) {
-            rules.push("Piece Limits");
-        }
-        if forbidden_zones!(state) {
-            rules.push("Forbidden Zones");
-        }
-        if promote_to_captured!(state) {
-            rules.push("Promote to Captured");
-        }
-        if demote_upon_capture!(state) {
-            rules.push("Demote upon Capture");
-        }
-        if stalemate_loss!(state) {
-            rules.push("Stalemate Loss");
-        }
-        if setup_phase!(state) {
-            rules.push("Setup Phase");
-        }
-        if stand_offs!(state) {
-            rules.push("Stand Offs");
-        }
-
-        let rules_str = rules.join("\n");
-        let rules_height = rules.len() as u16;
         configs.push((
-            "Rules".to_string(), rules_str, rules_height.max(1)
+            "Rules".to_string(), rules, rules_height.max(1) as u16
         ));
 
         let mut piece_map: HashMap<String, OverviewPiece> = HashMap::new();
