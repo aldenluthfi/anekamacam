@@ -215,6 +215,7 @@ pub const MAX_SEE_PRUNE_DEPTH: usize = 8;
 pub const MIN_IID_DEPTH: usize = 7;
 pub const MIN_IIR_DEPTH: usize = 4;
 pub const MIN_LMR_DEPTH: usize = 4;
+pub const MIN_LMP_DEPTH: usize = 3;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
