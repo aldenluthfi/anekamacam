@@ -535,28 +535,28 @@ impl State {
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).sqrt() * (moves as f64).sqrt();
 
-                (1.2 + base / 2.75).clamp(0.0, depth as f64 - 1.0) as u8
+                (1.2 + base / 3.75).clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             quiesce_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).sqrt() * (moves as f64).ln();
 
-                (1.2 + base / 2.75 - 1.25).clamp(0.0, depth as f64 - 1.0) as u8
+                (1.2 + base / 3.75 - 1.25).clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             capture_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).ln() * (moves as f64).sqrt();
 
-                (0.1 + base / 3.55).clamp(0.0, depth as f64 - 1.0) as u8
+                (base / 4.25).clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             capture_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).ln() * (moves as f64).ln();
 
-                (0.1 + base / 3.55 - 1.25).clamp(0.0, depth as f64 - 1.0) as u8
+                (base / 4.25 - 1.25).clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             opening_score: 0,
             endgame_score: 0,
