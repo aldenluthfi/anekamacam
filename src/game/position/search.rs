@@ -210,7 +210,7 @@ pub fn iterative_deepening(
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
-        let score = if true {
+        let score = if depth < 4 || best_score.abs() >= MATE_SCORE {
             alpha_beta(
                 state, ttable, qtable, depth, -INF, INF, info, bufs, true
             )
@@ -412,6 +412,8 @@ fn quiescence_search(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
+    let ply = state.search_ply as usize;
+
     /*-----------------------------------------------------------------------*\
                                        STAND PAT
     \*-----------------------------------------------------------------------*/
@@ -429,8 +431,6 @@ fn quiescence_search(
     if stand_pat > alpha {
         alpha = stand_pat;
     }
-
-    let ply = state.search_ply as usize;
 
     /*-----------------------------------------------------------------------*\
                                TRANSPOSITION TABLE PROBE
@@ -452,11 +452,11 @@ fn quiescence_search(
     };
 
     /*-----------------------------------------------------------------------*\
-                                   CAPTURE GENERATION
+                                CAPTURE GENERATION
     \*-----------------------------------------------------------------------*/
 
     let mut best_move = null_move();
-    let best_score = alpha;
+    let alpha_start = alpha;
 
     generate_all_captures(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
@@ -483,23 +483,12 @@ fn quiescence_search(
             continue;
         }
 
-        let move_type = move_type!(mv.clone());
-        let promotion = promotion!(mv.clone());
-        let captured_value = if move_type == SINGLE_CAPTURE_MOVE {
-            p_ovalue!(
-                state.statics.pieces[captured_piece!(mv.clone()) as usize]
-            )
-        } else {
-            let mut total = 0;
-            for cap in mv.1.iter() {
-                total += p_ovalue!(state.statics.pieces[*cap as usize]);
-            }
-            total
-        };
-
         /*-------------------------------------------------------------------*\
                                      DELTA PRUNING
         \*-------------------------------------------------------------------*/
+
+        let promotion = promotion!(mv.clone());
+        let captured_value = victim_value!(mv.clone(), state);
 
         if stand_pat + captured_value as i32 + 200 < alpha
         && state.game_phase != ENDGAME
@@ -512,10 +501,10 @@ fn quiescence_search(
             continue;
         }
 
-        let score =
-            -quiescence_search(
-                state, ttable, qtable, -beta, -alpha, info, bufs
-            );
+        let score = -quiescence_search(
+            state, ttable, qtable, -beta, -alpha, info, bufs
+        );
+
         undo_move!(state);
 
         if info.interrupt {
@@ -540,7 +529,7 @@ fn quiescence_search(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
-    if alpha != best_score && best_move != null_move() {
+    if alpha != alpha_start && best_move != null_move() {
         hash_qt_entry!(best_move, alpha, FEXACT, state, qtable);
     }
 
@@ -768,12 +757,15 @@ pub fn alpha_beta(
     && state.big_pieces[state.playing as usize] >= 1
     {
         let reduct = 2 + depth / 6;
+
         make_null_move!(state);
+
         let score = -alpha_beta(
             state,
             ttable, qtable,
             depth - reduct, -beta, -beta + 1, info, bufs, false
         );
+
         undo_null_move!(state);
 
         if score >= beta {
@@ -846,6 +838,7 @@ pub fn alpha_beta(
     bufs.score_buf[ply].resize(n, usize::MAX);
 
     for i in 0..bufs.move_buf[ply].len() {
+
         pick_by_score!(
             state,
             &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
@@ -928,22 +921,18 @@ pub fn alpha_beta(
         \*-------------------------------------------------------------------*/
 
         if depth >= MIN_LMR_DEPTH
-        && legal_moves > 2
+        && legal_moves > 3
         && mv != state.killer_hist[state.search_ply as usize][0]
         && mv != state.killer_hist[state.search_ply as usize][1]
         {
             reduction += reduction!(
-                state, depth, legal_moves,
-                in_check, opponent_in_check,
+                state, depth, legal_moves, in_check, opponent_in_check,
                 is_capture, is_promotion, is_drop
             );
 
             let hist_score = state.search_hist[hist_idx] as i32;
-            let hist_cutoff = MAX_HIST_VALUE as i32 / 4;
+            let hist_cutoff = MAX_HIST_VALUE as i32 / 8;
 
-            if hist_score < -hist_cutoff {
-                reduction = (reduction + 1).min(depth - 1);
-            }
             if hist_score > hist_cutoff {
                 reduction = reduction.saturating_sub(1).max(1);
             }
@@ -959,8 +948,9 @@ pub fn alpha_beta(
 
             if score > alpha && beta - alpha > 1 {
                 score = -alpha_beta(
-                    state, ttable, qtable, depth - 1,
-                    -beta, -alpha, info, bufs, true
+                    state,
+                    ttable, qtable,
+                    depth - 1, -beta, -alpha, info, bufs, true
                 );
             }
         }

@@ -18,9 +18,12 @@
 
 #[macro_export]
 macro_rules! attack_value {
-    ($mv:expr, $state:expr) => {
-        p_value!(piece!($mv), $state) as i32
-    };
+    ($mv:expr, $state:expr) => {{
+        p_value!(
+            if m_promotion!($mv) { promoted!($mv) } else { piece!($mv) },
+            $state
+        ) as i32
+    }};
 }
 
 #[macro_export]
@@ -121,8 +124,11 @@ macro_rules! see {
         let mut gain     = [0i32; 32];
         let mut gain_len = 0usize;
 
-        gain[gain_len] = initial_attackee;     gain_len += 1;
-        gain[gain_len] = initial_attacker - initial_attackee; gain_len += 1;
+        gain[gain_len] = initial_attackee;
+        gain_len += 1;
+
+        gain[gain_len] = initial_attacker - initial_attackee;
+        gain_len += 1;
 
         if !make_move!(state, mv.clone()) {
             -20000
@@ -148,12 +154,14 @@ macro_rules! see {
                     mv = move_list.pop().unwrap();
                 }
 
-                gain[gain_len] =
-                    attack_value!(mv, state) - gain[gain_len - 1];
+                gain[gain_len] = attack_value!(mv, state) - gain[gain_len - 1];
+                
                 gain_len += 1;
                 moves_to_undo += 1;
 
-                break;
+                if gain_len >= gain.len() {
+                    break;
+                }
             }
 
             gain_len -= 1;                                                      /* no recapture for last attacker     */
