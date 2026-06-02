@@ -744,14 +744,13 @@ pub fn alpha_beta(
     && state.game_phase != ENDGAME
     && static_eval + state.statics.razor_margin[depth] < alpha
     {
-        let shallow = alpha_beta(
-            state, ttable, qtable,
-            depth.saturating_sub(2),
-            alpha, alpha + 1,
-            info, bufs, null
+        let score = alpha_beta(
+            state,
+            ttable, qtable,
+            depth.saturating_sub(2), alpha, alpha + 1, info, bufs, null
         );
 
-        if shallow <= alpha {
+        if score <= alpha {
             return alpha;
         }
     }
@@ -762,12 +761,13 @@ pub fn alpha_beta(
 
     if null
     && !in_check
-    && depth >= 3
+    && depth > MIN_LMP_DEPTH
     && static_eval >= beta
     && state.search_ply > 0
     && state.game_phase != ENDGAME
+    && state.big_pieces[state.playing as usize] >= 1
     {
-        let reduct = 3 + depth / 4;
+        let reduct = 2 + depth / 6;
         make_null_move!(state);
         let score = -alpha_beta(
             state,
@@ -857,6 +857,7 @@ pub fn alpha_beta(
         let piece = piece!(mv) as usize;
         let start = start!(mv) as usize;
         let end = end!(mv) as usize;
+        let hist_idx = piece * bs_sq + start * board_size + end;
 
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
@@ -888,8 +889,7 @@ pub fn alpha_beta(
         && is_capture
         {
             let see = see!(state, mv.clone());
-            let margin = state.statics.see_capture_margin * depth as i32;
-            if see < -margin {
+            if see < -state.statics.see_margin[depth] {
                 continue;
             }
         }
@@ -937,6 +937,19 @@ pub fn alpha_beta(
                 in_check, opponent_in_check,
                 is_capture, is_promotion, is_drop
             );
+
+            let hist_score = state.search_hist[hist_idx] as i32;
+            let hist_cutoff = MAX_HIST_VALUE as i32 / 4;
+
+            if hist_score < -hist_cutoff {
+                reduction = (reduction + 1).min(depth - 1);
+            }
+            if hist_score > hist_cutoff {
+                reduction = reduction.saturating_sub(1).max(1);
+            }
+            if improving == 1 {
+                reduction = reduction.saturating_sub(1).max(1);
+            }
 
             score = -alpha_beta(
                 state,
@@ -986,8 +999,6 @@ pub fn alpha_beta(
         if info.interrupt {
             return 0;
         }
-
-        let hist_idx = piece * bs_sq + start * board_size + end;
 
         if score > best_score {
             best_score = score;
