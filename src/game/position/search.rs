@@ -756,7 +756,7 @@ pub fn alpha_beta(
     && state.game_phase != ENDGAME
     && state.big_pieces[state.playing as usize] >= 1
     {
-        let reduct = 2 + depth / 6;
+        let reduct = 3 + depth / 8;
 
         make_null_move!(state);
 
