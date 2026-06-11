@@ -155,7 +155,7 @@ macro_rules! see {
                 }
 
                 gain[gain_len] = attack_value!(mv, state) - gain[gain_len - 1];
-                
+
                 gain_len += 1;
                 moves_to_undo += 1;
 
