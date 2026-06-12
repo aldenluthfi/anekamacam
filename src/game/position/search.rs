@@ -740,12 +740,6 @@ pub fn alpha_beta(
         );
 
         if score <= alpha {
-            if depth == 1 {
-                return alpha_beta(
-                    state, ttable, qtable,
-                    0, alpha, beta, info, bufs, false
-                );
-            }
             return alpha;
         }
     }
@@ -844,7 +838,9 @@ pub fn alpha_beta(
     bufs.score_buf[ply].clear();
     bufs.score_buf[ply].resize(n, usize::MAX);
 
-    for i in 0..bufs.move_buf[ply].len() {
+    let moves_len = bufs.move_buf[ply].len();
+
+    for i in 0..moves_len {
 
         pick_by_score!(
             state,
@@ -910,7 +906,7 @@ pub fn alpha_beta(
         \*-------------------------------------------------------------------*/
 
         if depth < MAX_LMP_DEPTH
-        && legal_moves >= 4
+        && legal_moves >= (moves_len / 2).max(1)
         && !in_check
         && !opponent_in_check
         && !is_capture
@@ -929,7 +925,7 @@ pub fn alpha_beta(
         \*-------------------------------------------------------------------*/
 
         if depth >= MIN_LMR_DEPTH
-        && legal_moves > 3
+        && legal_moves > (moves_len / 5).max(1)
         && mv != state.killer_hist[state.search_ply as usize][0]
         && mv != state.killer_hist[state.search_ply as usize][1]
         {
