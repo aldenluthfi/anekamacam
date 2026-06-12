@@ -32,27 +32,51 @@ macro_rules! evaluate_position {
 
         let side_sign = -2 * $state.playing as i32 + 1;
 
+        let tempo = $state.statics.tempo_bonus;
+
+        let major_diff = $state.major_pieces[white] as i32
+            - $state.major_pieces[black] as i32;
+        let minor_diff = $state.minor_pieces[white] as i32
+            - $state.minor_pieces[black] as i32;
+        let imbalance = major_diff * $state.statics.imbalance_major
+            + minor_diff * $state.statics.imbalance_minor;
+
+        let mut pair_bonus = 0i32;
+        for &idx in $state.statics.pair_eligible_indices.iter() {
+            if $state.piece_count[idx as usize] >= 2 {
+                if p_color!(&$state.statics.pieces[idx as usize]) == WHITE {
+                    pair_bonus += $state.statics.pair_bonus[idx as usize];
+                } else {
+                    pair_bonus -= $state.statics.pair_bonus[idx as usize];
+                }
+            }
+        }
+
         match $state.game_phase {
             OPENING | SETUP => {
                 let score_opening = opening_white - opening_black
                     + $state.opening_pst_bonus[white]
-                    - $state.opening_pst_bonus[black];
-                score_opening * side_sign
+                    - $state.opening_pst_bonus[black]
+                    + imbalance + pair_bonus;
+                score_opening * side_sign + tempo
             }
             ENDGAME => {
                 let score_endgame = endgame_white - endgame_black
                     + $state.endgame_pst_bonus[white]
-                    - $state.endgame_pst_bonus[black];
-                score_endgame * side_sign
+                    - $state.endgame_pst_bonus[black]
+                    + imbalance + pair_bonus;
+                score_endgame * side_sign + tempo
             }
             MIDDLEGAME => {
                 let score_opening = (opening_white - opening_black
                     + $state.opening_pst_bonus[white]
-                    - $state.opening_pst_bonus[black]);
+                    - $state.opening_pst_bonus[black]
+                    + imbalance + pair_bonus);
 
                 let score_endgame = (endgame_white - endgame_black
                     + $state.endgame_pst_bonus[white]
-                    - $state.endgame_pst_bonus[black]);
+                    - $state.endgame_pst_bonus[black]
+                    + imbalance + pair_bonus);
 
                 let opening_score = $state.statics.opening_score as i32;
                 let endgame_score = $state.statics.endgame_score as i32;
@@ -62,7 +86,7 @@ macro_rules! evaluate_position {
                         (score_opening * (current_score - endgame_score)) +
                         (score_endgame * (opening_score - current_score))
                     ) / (opening_score - endgame_score);
-                blended_score * side_sign
+                blended_score * side_sign + tempo
             }
             _ => panic!("Invalid game phase {}", $state.game_phase),
         }

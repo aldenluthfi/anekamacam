@@ -342,6 +342,12 @@ pub struct StaticState {
     pub endgame_score: u32,                                                     /* endgame threshold                  */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
+    pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                */
+    pub tempo_bonus: i32,                                                        /* tempo advantage bonus             */
+    pub imbalance_major: i32,                                                    /* major piece imbalance weight      */
+    pub imbalance_minor: i32,                                                    /* minor piece imbalance weight      */
+    pub pair_eligible_indices: Vec<PieceIndex>,                                  /* color-bound piece indices         */
+    pub pair_bonus: Vec<i32>,                                                    /* pair bonus per piece index        */
 }
 
 /// Main state of the game.
@@ -562,6 +568,12 @@ impl State {
             endgame_score: 0,
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
+            nmp_min_material: 1,
+            tempo_bonus: 0,
+            imbalance_major: 0,
+            imbalance_minor: 0,
+            pair_eligible_indices: Vec::new(),
+            pair_bonus: Vec::new(),
         });
 
         State {

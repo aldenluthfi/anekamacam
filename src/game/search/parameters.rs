@@ -60,6 +60,55 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
     piece_roles
 }
 
+fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
+    let board_size = state.statics.board_size;
+    let piece_index = p_index!(piece) as usize;
+
+    let reach_values: Vec<i32> = (0..board_size).into_par_iter().map(|square| {
+        let mut reached_squares: HashSet<usize> = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(square);
+
+        while let Some(square) = queue.pop_front() {
+            reached_squares.insert(square);
+
+            let relevant_moves = &state.statics.relevant_moves
+                [piece_index * board_size + square];
+
+            for multi_leg_vector in relevant_moves {
+                let mut accumulated_index = square as i32;
+
+                let mut file =
+                    accumulated_index % (state.statics.files as i32);
+                let mut rank =
+                    accumulated_index / (state.statics.files as i32);
+
+                for leg in multi_leg_vector {
+                    let file_offset = x!(leg);
+                    let rank_offset = y!(leg);
+
+                    file += file_offset as i32;
+                    rank += rank_offset as i32;
+                    accumulated_index =
+                        rank * (state.statics.files as i32) + file;
+                }
+
+                if !reached_squares.contains(&(accumulated_index as usize))
+                {
+                    queue.push_back(accumulated_index as usize);
+                }
+            }
+        }
+
+        if reached_squares.len() == 1 { 0 } else { reached_squares.len() as i32 }
+    }).collect();
+
+    let mean = reach_values.iter().filter(|&&v| v > 0).sum::<i32>() as f64
+        / reach_values.iter().filter(|&&v| v > 0).count() as f64;
+
+    mean / board_size as f64
+}
+
 /// The steps of deriving a piece's value are as follows:
 ///
 /// We need to see if a piece is confined to only a few squares on the board,
@@ -462,12 +511,12 @@ pub fn derive_parameters(state: &mut State) {
     };
 
     state.static_mut().futility_margin = [
-        [0, 200, avg,         12 * avg / 7, 18 * avg / 7],
-        [0, 200, 6 * avg / 7, 10 * avg / 7, 15 * avg / 7],
-        [0, 150, 5 * avg / 7,  8 * avg / 7, 12 * avg / 7],
+        [0, 200, avg,         10 * avg / 7, 15 * avg / 7],
+        [0, 200, 5 * avg / 7,  9 * avg / 7, 13 * avg / 7],
+        [0, 150, 4 * avg / 7,  7 * avg / 7, 10 * avg / 7],
     ];
 
-    let rfp_base = avg / 12;
+    let rfp_base = avg / 15;
     let mut rfp_margin = [[0i32; 9]; 2];
     for depth in 0..MAX_RFP_DEPTH {
         rfp_margin[0][depth] = rfp_base * depth as i32 * 2;
@@ -484,7 +533,7 @@ pub fn derive_parameters(state: &mut State) {
 
     let see_base = (avg / 8).max(1);
     state.static_mut().see_margin = (0..MAX_SEE_PRUNE_DEPTH)
-        .map(|depth| see_base * (depth * depth) as i32)
+        .map(|depth| see_base * depth as i32)
         .collect();
 
     log_3!(
@@ -505,6 +554,38 @@ pub fn derive_parameters(state: &mut State) {
         "Derived SEE Capture Margins: {:?}",
         state.statics.see_margin,
     );
+
+    let nmp_min_material = ((state.major_pieces[WHITE as usize]
+        + state.major_pieces[BLACK as usize]) / 4).max(1).min(4) as u32;
+    state.static_mut().nmp_min_material = nmp_min_material;
+
+    let tempo_bonus = (avg / 20).max(5) as i32;
+    state.static_mut().tempo_bonus = tempo_bonus;
+
+    let imbalance_major = (avg / 24).max(3) as i32;
+    let imbalance_minor = (avg / 48).max(1) as i32;
+    state.static_mut().imbalance_major = imbalance_major;
+    state.static_mut().imbalance_minor = imbalance_minor;
+
+    let mut pair_eligible = Vec::new();
+    let mut pair_bonus = vec![0i32; state.statics.pieces.len()];
+
+    for (idx, piece) in state.statics.pieces.iter().enumerate() {
+        if p_color!(piece) == WHITE && !p_is_royal!(piece) && !p_is_big!(piece) {
+            let reach_value = derive_piece_reach(state, piece);
+            if (reach_value - 0.5).abs() < 0.02 {
+                pair_eligible.push(idx as PieceIndex);
+                let bonus = (avg / 8).max(10) as i32;
+                pair_bonus[idx] = bonus;
+                let black_idx = state.statics.piece_swap_map[idx] as usize;
+                pair_bonus[black_idx] = bonus;
+            }
+        }
+    }
+
+    state.static_mut().pair_eligible_indices = pair_eligible;
+    state.static_mut().pair_bonus = pair_bonus;
+
     log_3!("Dynamic evaluation parameters derived successfully.");
 
     refresh_eval_state(state);
