@@ -736,10 +736,16 @@ pub fn alpha_beta(
         let score = alpha_beta(
             state,
             ttable, qtable,
-            depth.saturating_sub(2), alpha, alpha + 1, info, bufs, null
+            depth.saturating_sub(1), alpha, alpha + 1, info, bufs, null
         );
 
         if score <= alpha {
+            if depth == 1 {
+                return alpha_beta(
+                    state, ttable, qtable,
+                    0, alpha, beta, info, bufs, false
+                );
+            }
             return alpha;
         }
     }
@@ -754,7 +760,8 @@ pub fn alpha_beta(
     && static_eval >= beta
     && state.search_ply > 0
     && state.game_phase != ENDGAME
-    && state.big_pieces[state.playing as usize] >= 1
+    && state.big_pieces[state.playing as usize]
+    >= state.statics.nmp_min_material as u32
     {
         let reduct = 3 + depth / 8;
 
@@ -903,6 +910,7 @@ pub fn alpha_beta(
         \*-------------------------------------------------------------------*/
 
         if depth < MAX_LMP_DEPTH
+        && legal_moves >= 4
         && !in_check
         && !opponent_in_check
         && !is_capture
@@ -935,6 +943,9 @@ pub fn alpha_beta(
 
             if hist_score > hist_cutoff {
                 reduction = reduction.saturating_sub(1).max(1);
+            }
+            if hist_score < -(MAX_HIST_VALUE as i32) / 4 {
+                reduction = (reduction + 1).min(depth - 1);
             }
             if improving == 1 {
                 reduction = reduction.saturating_sub(1).max(1);

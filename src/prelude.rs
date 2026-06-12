@@ -206,8 +206,8 @@ pub const HIST_BONUS_TABLE: [i32; MAX_DEPTH] = {
 pub const MAX_FUTILITY_DEPTH: usize = 5;
 pub const MAX_LMP_DEPTH: usize = 9;
 pub const LMP_THRESHOLD: [[u8; MAX_LMP_DEPTH]; 2] = [
-    [0, 5, 7, 12, 20, 32, 48, 65, 85],                                          /* not improving                      */
-    [0, 7, 12, 20, 32, 52, 68, 95, 128],                                        /* improving                          */
+    [0, 4, 5, 9,  14, 22, 34, 46, 60],                                            /* not improving                      */
+    [0, 5, 8, 14, 22, 36, 48, 66, 90],                                            /* improving                          */
 ];
 pub const MAX_RFP_DEPTH: usize = 9;
 pub const MAX_RAZOR_DEPTH: usize = 4;
