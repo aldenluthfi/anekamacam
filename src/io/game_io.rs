@@ -1728,9 +1728,13 @@ pub fn parse_config_file(path: &str) -> State {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or_default();
-    let param_path = format!("{}/latest.param", variant);
+    let param_path = format!("{}/{}/latest.param", PARAMS_DIR, variant);
 
-    if let Some(content) = EMBEDDED_PARAMS
+    if Path::new(&param_path).exists()
+    && let Ok(content) = fs::read_to_string(&param_path) {
+        log_3!("Loading parameters from disk");
+        parse_tuned_parameters(&mut result, &content);
+    } else if let Some(content) = EMBEDDED_PARAMS
         .get_file(&param_path)
         .and_then(|f| f.contents_utf8())
     {

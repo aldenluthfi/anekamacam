@@ -755,7 +755,7 @@ pub fn alpha_beta(
     && state.search_ply > 0
     && state.game_phase != ENDGAME
     && state.big_pieces[state.playing as usize]
-    >= state.statics.nmp_min_material as u32
+    >= state.statics.nmp_min_material
     {
         let reduct = 3 + depth / 8;
 
