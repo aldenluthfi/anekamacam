@@ -517,12 +517,13 @@ pub fn derive_parameters(state: &mut State) {
     ];
 
     let rfp_base = avg / 15;
-    let mut rfp_margin = [[0i32; 9]; 2];
-    for depth in 0..MAX_RFP_DEPTH {
-        rfp_margin[0][depth] = rfp_base * depth as i32 * 2;
-        rfp_margin[1][depth] = rfp_base * depth as i32;
-    }
-    state.static_mut().rfp_margin = rfp_margin;
+    state.static_mut().rfp_margin = [0, 1].map(|i| {
+        (0..MAX_RFP_DEPTH)
+            .map(|depth| rfp_base * depth as i32 * (2 - 2 * i))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap()
+    });
 
     state.static_mut().razor_margin = [
         0,
@@ -556,7 +557,7 @@ pub fn derive_parameters(state: &mut State) {
     );
 
     let nmp_min_material = ((state.major_pieces[WHITE as usize]
-        + state.major_pieces[BLACK as usize]) / 4).max(1).min(4) as u32;
+        + state.major_pieces[BLACK as usize]) / 4).clamp(1, 4);
     state.static_mut().nmp_min_material = nmp_min_material;
 
     let tempo_bonus = (avg / 20).max(5) as i32;
