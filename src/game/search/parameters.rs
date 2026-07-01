@@ -271,69 +271,88 @@ fn derive_closest_promotion(
     closest_optional.min(closest_mandatory)
 }
 
-fn derive_piece_value_on_square(
+fn derive_square_score(
     state: &State, piece_index: PieceIndex, square: usize, is_endgame: bool
-) -> i32 {
+) -> f64 {
     let occupancy = if is_endgame {
         ENDGAME_OCCUPANCY
     } else {
         OPENING_OCCUPANCY
     };
+
     let mobility =
         derive_piece_mobility(state, piece_index, square, occupancy);
     let distance_from_center = derive_distance_from_center(state, square);
 
-    let piece = &state.statics.pieces[piece_index as usize];
-
     let mobility_weight = if is_endgame { 0.25 } else { 0.5 };
     let center_weight = if is_endgame { 1.75 } else { 1.25 };
-    let promotion_weight = if is_endgame { 1.1 } else { 1.6 };
 
-    if p_can_promote!(piece) {
-        let closest_promotion =
-            derive_closest_promotion(state, piece_index, square);
-
-        let value =
-            (mobility_weight * mobility) +
-            (
-                state.statics.files as f64 / 2.0 - center_weight *
-                distance_from_center
-            ) +
-            (
-                state.statics.ranks as f64 - promotion_weight *
-                closest_promotion
-            );
-
-        if !is_endgame && p_is_royal!(piece) {
-            -value.round() as i32
-        } else {
-            value.round() as i32
-        }
-    } else {
-
-        let value =
-            (mobility_weight * mobility) +
-            (
-                state.statics.files as f64 / 2.0 - center_weight *
-                distance_from_center
-            );
-
-        if !is_endgame && p_is_royal!(piece) {
-            -value.round() as i32
-        } else {
-            value.round() as i32
-        }
-    }
+    mobility_weight * mobility - center_weight * distance_from_center
 }
 
-fn derive_pst(index: PieceIndex, state: &State, is_endgame: bool) -> Vec<i32> {
-    let board_size = state.statics.board_size;
+/// Advancement bonus for a promotable piece: a linear gradient toward the
+/// promotion zone, scaled by the value it would gain on promotion. This is
+/// where an advanced passed pawn earns most of its endgame worth.
+fn derive_promotion_bonus(
+    state: &State, piece_index: PieceIndex, square: usize,
+    is_endgame: bool, piece_value: f64, promoted_value: f64
+) -> f64 {
+    let piece = &state.statics.pieces[piece_index as usize];
 
-    let pst: Vec<i32> = (0..board_size).into_par_iter().map(|square| {
-        derive_piece_value_on_square(state, index, square, is_endgame)
+    if !p_can_promote!(piece) {
+        return 0.0;
+    }
+
+    let closest_promotion =
+        derive_closest_promotion(state, piece_index, square);
+    let advancement =
+        (1.0 - closest_promotion / state.statics.ranks as f64).max(0.0);
+
+    let fraction = if is_endgame {
+        ENDGAME_PROMOTION_FRACTION
+    } else {
+        OPENING_PROMOTION_FRACTION
+    };
+
+    fraction * (promoted_value - piece_value).max(0.0)
+        * advancement.powf(PROMOTION_CURVE)
+}
+
+fn derive_pst(
+    index: PieceIndex, state: &State, is_endgame: bool, promoted_value: f64
+) -> Vec<i32> {
+    let board_size = state.statics.board_size;
+    let piece = &state.statics.pieces[index as usize];
+
+    let piece_value = if is_endgame {
+        p_evalue!(piece) as f64
+    } else {
+        p_ovalue!(piece) as f64
+    };
+    let royal_sign =
+        if !is_endgame && p_is_royal!(piece) { -1.0 } else { 1.0 };
+
+    let scores: Vec<f64> = (0..board_size).into_par_iter().map(|square| {
+        derive_square_score(state, index, square, is_endgame)
     }).collect();
 
-    pst
+    let mean = scores.iter().sum::<f64>() / board_size as f64;
+    let max_deviation = scores
+        .iter()
+        .map(|score| (score - mean).abs())
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
+    let amplitude = PST_POSITIONAL_CP;
+
+    (0..board_size).map(|square| {
+        let positional =
+            royal_sign * (scores[square] - mean) / max_deviation * amplitude;
+        let promotion = derive_promotion_bonus(
+            state, index, square, is_endgame, piece_value, promoted_value
+        );
+
+        (positional + promotion).round() as i32
+    }).collect()
 }
 
 pub fn derive_parameters(state: &mut State) {
@@ -347,36 +366,37 @@ pub fn derive_eval_parameters(state: &mut State) {
 
     let values = state.statics.pieces
         .par_iter()
-        .filter_map(
-            |piece| {
-            let color = p_color!(piece);
-
-            if color == BLACK {
+        .filter_map(|piece| {
+            if p_color!(piece) == BLACK {
                 return None;
             }
 
             let index = p_index!(piece) as usize;
-            let value = derive_piece_value(state, piece, OPENING_OCCUPANCY);
+            let opening = derive_piece_value(state, piece, OPENING_OCCUPANCY);
+            let endgame = derive_piece_value(state, piece, ENDGAME_OCCUPANCY);
 
-            Some((index, value))
+            Some((index, opening, endgame))
         })
         .collect::<Vec<_>>();
 
     let offset = values
         .iter()
-        .map(|(_, value)| *value)
+        .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
-    for (index, value) in values.clone() {
+    for (index, opening, endgame) in values.clone() {
         let black_index = state.statics.piece_swap_map[index] as usize;
         let white_index = index;
-        let value = (value - offset).round() as u16;
+        let ovalue = (opening - offset).round() as u16;
+        let evalue = (endgame - offset).round() as u16;
 
         set_piece_dynamic_parameters(
-            &mut state.static_mut().pieces[black_index], value, 0, false, false
+            &mut state.static_mut().pieces[black_index],
+            ovalue, evalue, false, false
         );
         set_piece_dynamic_parameters(
-            &mut state.static_mut().pieces[white_index], value, 0, false, false
+            &mut state.static_mut().pieces[white_index],
+            ovalue, evalue, false, false
         );
     }
 
@@ -384,41 +404,24 @@ pub fn derive_eval_parameters(state: &mut State) {
 
     for (piece_index, is_big, is_major) in piece_roles {
         let piece = &mut state.static_mut().pieces[piece_index as usize];
-        let value = p_ovalue!(piece);
+        let ovalue = p_ovalue!(piece);
+        let evalue = p_evalue!(piece);
 
         set_piece_dynamic_parameters(
-            piece, value, 0, is_big, is_major
+            piece, ovalue, evalue, is_big, is_major
         );
-    }
-
-    for piece in state.static_mut().pieces.iter_mut() {
-        let ovalue = p_ovalue!(piece);
-        let is_big = p_is_big!(piece);
-        let is_major = p_is_major!(piece);
-
-        let multiplier = if is_major {
-            1.2
-        } else if is_big {
-            1.1
-        } else {
-            1.5
-        };
-
-        let evalue = (ovalue as f64 * multiplier).round() as u16;
-
-        set_piece_dynamic_parameters(piece, ovalue, evalue, is_big, is_major);
     }
 
     let total_values = values.len() as f64;
     let average_value = values
         .into_iter()
         .filter(
-            |(index, _)|
+            |(index, _, _)|
                 p_is_big!(&state.statics.pieces[*index]) &&
                 !p_is_royal!(&state.statics.pieces[*index]) &&
                 p_color!(&state.statics.pieces[*index]) == WHITE
         )
-        .map(|(_, value)| value)
+        .map(|(_, opening, _)| opening)
         .sum::<f64>() / total_values;
 
     log_3!(
@@ -443,6 +446,15 @@ pub fn derive_eval_parameters(state: &mut State) {
         state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
     }
 
+    let promoted_opening = state.statics.pieces.iter()
+        .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
+        .map(|p| p_ovalue!(p) as f64)
+        .fold(0.0_f64, f64::max);
+    let promoted_endgame = state.statics.pieces.iter()
+        .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
+        .map(|p| p_evalue!(p) as f64)
+        .fold(0.0_f64, f64::max);
+
     let pst_entries: Vec<(usize, Vec<i32>, Vec<i32>)> =
         state.statics.pieces.par_iter().map(|piece| {
             let mut index = p_index!(piece);
@@ -451,8 +463,10 @@ pub fn derive_eval_parameters(state: &mut State) {
                 index = state.statics.piece_swap_map[index as usize];
             }
 
-            let mut opening_pst = derive_pst(index, state, false);
-            let mut endgame_pst = derive_pst(index, state, true);
+            let mut opening_pst =
+                derive_pst(index, state, false, promoted_opening);
+            let mut endgame_pst =
+                derive_pst(index, state, true, promoted_endgame);
 
             if p_color!(piece) == BLACK {
                 opening_pst = mirror_pst_across_horizontal_axis(
@@ -555,7 +569,9 @@ pub fn derive_search_parameters(state: &mut State) {
     let mut pair_bonus = vec![0i32; state.statics.pieces.len()];
 
     for (idx, piece) in state.statics.pieces.iter().enumerate() {
-        if p_color!(piece) == WHITE && !p_is_royal!(piece) && !p_is_big!(piece) {
+        if p_color!(piece) == WHITE
+        && !p_is_royal!(piece)
+        && !p_is_big!(piece) {
             let reach_value = derive_piece_reach(state, piece);
             if (reach_value - 0.5).abs() < 0.02 {
                 pair_eligible.push(idx as PieceIndex);
