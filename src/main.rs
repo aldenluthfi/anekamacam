@@ -82,6 +82,12 @@ fn main() {
             DEBUG_FLAG.store(true, Ordering::Relaxed);
             let _ = debug_console();
         }
+        Some("derive") => {
+            let variant = args.get(2).map(|s| s.as_str()).unwrap_or("fide");
+            let mut state = parse_config_file(&format!("{}.conf", variant));
+            derive_parameters(&mut state);
+            export_tuned_parameters_file(&state, variant);
+        }
         _ => { let _ = uci(); }
     }
 }

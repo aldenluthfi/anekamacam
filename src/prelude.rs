@@ -72,7 +72,9 @@ pub use crate::game::position::{
 };
 pub use crate::game::search::{
     parallel::ThreadPool,
-    parameters::derive_parameters,
+    parameters::{
+        derive_eval_parameters, derive_parameters, derive_search_parameters,
+    },
     transposition::{QTable, QTEntry, TTEntry, TTable},
 };
 

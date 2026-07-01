@@ -1734,12 +1734,14 @@ pub fn parse_config_file(path: &str) -> State {
     && let Ok(content) = fs::read_to_string(&param_path) {
         log_3!("Loading parameters from disk");
         parse_tuned_parameters(&mut result, &content);
+        derive_search_parameters(&mut result);
     } else if let Some(content) = EMBEDDED_PARAMS
         .get_file(&param_path)
         .and_then(|f| f.contents_utf8())
     {
         log_3!("Loading embedded default parameters");
         parse_tuned_parameters(&mut result, content);
+        derive_search_parameters(&mut result);
     } else {
         derive_parameters(&mut result);
         export_tuned_parameters_file(&result, variant);
