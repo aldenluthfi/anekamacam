@@ -64,6 +64,7 @@ pub use crate::game::moves::pattern_parse::{
     parse_pattern,
 };
 pub use crate::game::position::{
+    evaluation::king_shelter,
     hash::{hash_position, PositionHash},
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
@@ -230,6 +231,7 @@ pub const PST_POSITIONAL_CP: f64 = 24.0;
 pub const PROMOTION_CURVE: f64 = 2.0;
 pub const OPENING_PROMOTION_FRACTION: f64 = 0.06;
 pub const ENDGAME_PROMOTION_FRACTION: f64 = 0.40;
+pub const KING_SHELTER_BONUS: i32 = 10;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;

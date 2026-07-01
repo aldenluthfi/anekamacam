@@ -8,6 +8,60 @@
 //! # Date
 //! 19/04/2026
 
+use crate::*;
+
+/// Per-side count of friendly non-royal pieces adjacent to each royal piece
+/// (via the royal piece's own move geometry). Exposed royalty scores low; the
+/// caller folds this into the opening/middlegame evaluation only, since the
+/// king should be active in the endgame.
+pub fn king_shelter(state: &State, color: u8) -> i32 {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let sign = -2 * color as i32 + 1;
+
+    let mut shelter = 0;
+
+    for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
+        if p_color!(piece) != color || !p_is_royal!(piece) {
+            continue;
+        }
+
+        for &king_square in &state.piece_list[piece_index] {
+            let start_file = king_square as i32 % files;
+            let start_rank = king_square as i32 / files;
+
+            let neighbours = &state.statics.relevant_moves
+                [piece_index * board_size + king_square as usize];
+
+            for vector in neighbours {
+                let mut file = start_file;
+                let mut rank = start_rank;
+
+                for leg in vector {
+                    file += x!(leg) as i32 * sign;
+                    rank += y!(leg) as i32 * sign;
+                }
+
+                if file < 0 || file >= files || rank < 0 || rank >= ranks {
+                    continue;
+                }
+
+                let occupant =
+                    state.main_board[(rank * files + file) as usize];
+
+                if occupant != NO_PIECE
+                && p_color!(&state.statics.pieces[occupant as usize]) == color
+                && !p_is_royal!(&state.statics.pieces[occupant as usize]) {
+                    shelter += 1;
+                }
+            }
+        }
+    }
+
+    shelter
+}
+
 /// Evaluates the current position from the side-to-move perspective.
 ///
 /// Evaluation model:
@@ -52,12 +106,15 @@ macro_rules! evaluate_position {
             }
         }
 
+        let king_safety = KING_SHELTER_BONUS
+            * (king_shelter($state, WHITE) - king_shelter($state, BLACK));
+
         match $state.game_phase {
             OPENING | SETUP => {
                 let score_opening = opening_white - opening_black
                     + $state.opening_pst_bonus[white]
                     - $state.opening_pst_bonus[black]
-                    + imbalance + pair_bonus;
+                    + imbalance + pair_bonus + king_safety;
                 score_opening * side_sign + tempo
             }
             ENDGAME => {
@@ -71,7 +128,7 @@ macro_rules! evaluate_position {
                 let score_opening = (opening_white - opening_black
                     + $state.opening_pst_bonus[white]
                     - $state.opening_pst_bonus[black]
-                    + imbalance + pair_bonus);
+                    + imbalance + pair_bonus + king_safety);
 
                 let score_endgame = (endgame_white - endgame_black
                     + $state.endgame_pst_bonus[white]
