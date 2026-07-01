@@ -563,7 +563,7 @@ fn quiescence_search(
 ///
 /// - [NULL MOVE PRUNING]
 ///   Skips the side to move and searches the resulting position at
-///   reduced depth `3 + depth/4` with a null-window around `beta`.
+///   reduced depth `3 + depth/8` with a null-window around `beta`.
 ///   If the opponent cannot improve their score even given a free
 ///   move, the node cuts on `beta`. Disabled in the endgame to avoid
 ///   zugzwang blind spots.
@@ -952,6 +952,14 @@ pub fn alpha_beta(
                 ttable, qtable,
                 depth - reduction, -alpha - 1, -alpha, info, bufs, true
             );
+
+            if score > alpha && reduction > 2 {
+                score = -alpha_beta(
+                    state,
+                    ttable, qtable,
+                    depth - 1, -alpha - 1, -alpha, info, bufs, true
+                );
+            }
 
             if score > alpha && beta - alpha > 1 {
                 score = -alpha_beta(
