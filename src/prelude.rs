@@ -220,6 +220,13 @@ pub const MIN_LMR_DEPTH: usize = 4;
 pub const MIN_LMP_DEPTH: usize = 3;
 pub const MAX_CHECK_EXTENSIONS: u8 = 8;
 
+pub const PIECE_VALUE_SCALE: f64 = 58.0;
+pub const MOBILITY_EMPTY_WEIGHT: f64 = 0.3;
+pub const COVERAGE_FLOOR: f64 = 0.6;
+pub const MANEUVER_FLOOR: f64 = 0.5;
+pub const OPENING_OCCUPANCY: f64 = 0.36;
+pub const ENDGAME_OCCUPANCY: f64 = 0.12;
+
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
 
