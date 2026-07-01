@@ -362,6 +362,12 @@ fn derive_pst(index: PieceIndex, state: &State, is_endgame: bool) -> Vec<i32> {
 }
 
 pub fn derive_parameters(state: &mut State) {
+    derive_eval_parameters(state);
+    derive_search_parameters(state);
+    refresh_eval_state(state);
+}
+
+pub fn derive_eval_parameters(state: &mut State) {
     log_3!("Deriving dynamic evaluation parameters...");
 
     let values = state.statics.pieces
@@ -498,7 +504,9 @@ pub fn derive_parameters(state: &mut State) {
 
     log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
+}
 
+pub fn derive_search_parameters(state: &mut State) {
     let piece_values: Vec<i32> = state.statics.pieces.iter()
         .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
         .map(|p| p_ovalue!(p) as i32)
@@ -587,7 +595,5 @@ pub fn derive_parameters(state: &mut State) {
     state.static_mut().pair_eligible_indices = pair_eligible;
     state.static_mut().pair_bonus = pair_bonus;
 
-    log_3!("Dynamic evaluation parameters derived successfully.");
-
-    refresh_eval_state(state);
+    log_3!("Dynamic search parameters derived successfully.");
 }
