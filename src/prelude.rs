@@ -226,6 +226,10 @@ pub const COVERAGE_FLOOR: f64 = 0.6;
 pub const MANEUVER_FLOOR: f64 = 0.5;
 pub const OPENING_OCCUPANCY: f64 = 0.36;
 pub const ENDGAME_OCCUPANCY: f64 = 0.12;
+pub const PST_POSITIONAL_CP: f64 = 24.0;
+pub const PROMOTION_CURVE: f64 = 2.0;
+pub const OPENING_PROMOTION_FRACTION: f64 = 0.06;
+pub const ENDGAME_PROMOTION_FRACTION: f64 = 0.40;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
