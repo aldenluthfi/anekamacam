@@ -8,29 +8,30 @@
 //! # Date
 //! 19/04/2026
 
-use crate::*;
-
 /// Per-side count of friendly pieces on squares adjacent to each royal piece,
 /// via the precomputed `adjacency_mask` AND-ed with the side's occupancy.
 /// Exposed royalty scores low; the caller folds this into the opening and
 /// middlegame evaluation only, since the king should be active in the endgame.
-pub fn king_shelter(state: &State, color: u8) -> i32 {
-    let mut shelter = 0;
+#[macro_export]
+macro_rules! king_shelter {
+    ($state:expr, $color:expr) => {{
+        let mut shelter = 0;
 
-    for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
-        if p_color!(piece) != color || !p_is_royal!(piece) {
-            continue;
+        for (piece_index, piece) in $state.statics.pieces.iter().enumerate() {
+            if p_color!(piece) != $color || !p_is_royal!(piece) {
+                continue;
+            }
+
+            for &king_square in &$state.piece_list[piece_index] {
+                let mut adjacent =
+                    $state.statics.adjacency_mask[king_square as usize];
+                and!(adjacent, $state.pieces_board[$color as usize]);
+                shelter += count_bits!(adjacent) as i32;
+            }
         }
 
-        for &king_square in &state.piece_list[piece_index] {
-            let mut adjacent =
-                state.statics.adjacency_mask[king_square as usize];
-            and!(adjacent, state.pieces_board[color as usize]);
-            shelter += count_bits!(adjacent) as i32;
-        }
-    }
-
-    shelter
+        shelter
+    }}
 }
 
 /// Evaluates the current position from the side-to-move perspective.
@@ -78,7 +79,7 @@ macro_rules! evaluate_position {
         }
 
         let king_safety = 10
-            * (king_shelter($state, WHITE) - king_shelter($state, BLACK));
+            * (king_shelter!($state, WHITE) - king_shelter!($state, BLACK));
 
         match $state.game_phase {
             OPENING | SETUP => {

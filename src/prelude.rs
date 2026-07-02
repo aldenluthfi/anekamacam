@@ -64,7 +64,6 @@ pub use crate::game::moves::pattern_parse::{
     parse_pattern,
 };
 pub use crate::game::position::{
-    evaluation::king_shelter,
     hash::{hash_position, PositionHash},
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
