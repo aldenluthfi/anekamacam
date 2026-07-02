@@ -88,6 +88,26 @@ fn main() {
             derive_parameters(&mut state);
             export_tuned_parameters_file(&state, variant);
         }
+        Some("perft") => {
+            let variant = args.get(2).map(|s| s.as_str()).unwrap_or("fide");
+            let depth = args.get(3)
+                .and_then(|s| s.parse::<u8>().ok())
+                .unwrap_or(4);
+            let limit = args.get(4)
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(usize::MAX);
+            let mut state = parse_config_file(&format!("{}.conf", variant));
+            let content = EMBEDDED_PERFT
+                .get_file(format!("{}.perft", variant))
+                .and_then(|f| f.contents_utf8())
+                .unwrap_or_else(|| {
+                    panic!("no embedded perft suite for {variant}")
+                });
+            let (passed, total) = benchmark_perft(
+                &mut state, content, depth, -1, limit, None
+            );
+            println!("perft {}: {}/{} cases passed", variant, passed, total);
+        }
         _ => { let _ = uci(); }
     }
 }

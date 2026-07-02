@@ -24,6 +24,10 @@ pub fn generate_relevant_drops(
     let piece_color = p_color!(piece) as usize;
     let drops = &piece_setup_drops[piece_index];
 
+    if !get!(state.statics.forbidden_zones[piece_index], square_index) {
+        return DropSet::new();
+    }
+
     drops
         .iter()
         .filter_map(|drop| {
@@ -75,12 +79,13 @@ pub fn generate_relevant_drops(
 
 /// Generates legal drop moves for `$piece` in the current `$state`.
 ///
-/// Enforces drop flags (`k/f/d/e`), count limits, hand ownership,
-/// and allower/stopper pattern constraints before encoding each drop move.
-/// Unlike `generate_move_list_from_vectors!`, which builds moves from
-/// precomputed movement vectors for pieces already on the board, this macro
-/// generates placement moves from precomputed drop templates for pieces held
-/// in hand, using allower/stopper squares instead of directional legs.
+/// Enforces drop flags (`k`), count limits, hand ownership, and 
+/// allower/stopper pattern constraints before encoding each drop move. Unlike 
+/// `generate_move_list_from_vectors!`, which builds moves from precomputed 
+/// movement vectors for pieces already on the board, this macro generates 
+/// placement moves from precomputed drop templates for pieces held in hand, 
+/// using allower/stopper squares instead of directional legs.
+///
 #[macro_export]
 macro_rules! generate_drop_list {
     ($piece:expr, $state:expr, $out:expr) => {{

@@ -2485,8 +2485,8 @@ fn execute_command(
             }
 
             log_2!("Legal moves:");
-            for mv in moves {
-                log_2!("- {}", format_move(&mv, state, dict));
+            for (i, mv) in moves.iter().enumerate() {
+                log_2!("{:>3} {}", i, format_move(&mv, state, dict));
             }
         }
         _ if trimmed.starts_with("see") => {

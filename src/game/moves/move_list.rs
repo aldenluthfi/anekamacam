@@ -1590,32 +1590,6 @@ macro_rules! make_move {
                         ][piece_color as usize]
                 }
 
-                if drops!($state) || promote_to_captured!($state) {
-
-                    let demoted_piece = $state.statics.piece_demotion_map
-                        [captured_piece] as usize;
-
-                    let hand_piece = $state.statics.piece_swap_map
-                        [demoted_piece] as usize;
-
-                    let hand = &mut $state.piece_in_hand
-                        [piece_color as usize][hand_piece];
-
-                    hash_update_in_hand!(
-                        $state,
-                        hand_piece,
-                        *hand,
-                        *hand + 1
-                    );
-
-                    *hand += 1;
-
-                    $state.opening_material[piece_color as usize] +=
-                        p_ovalue!($state.statics.pieces[hand_piece]) as u32;
-                    $state.endgame_material[piece_color as usize] +=
-                        p_evalue!($state.statics.pieces[hand_piece]) as u32;
-                }
-
                 if castling!($state) {
                     $state.castling_state &= [
                         !{
@@ -1649,6 +1623,32 @@ macro_rules! make_move {
                             BQ_CASTLE
                         }
                     ][captured_color as usize];
+                }
+
+                if drops!($state) || promote_to_captured!($state) {
+
+                    let demoted_piece = $state.statics.piece_demotion_map
+                        [captured_piece] as usize;
+
+                    let hand_piece = $state.statics.piece_swap_map
+                        [demoted_piece] as usize;
+
+                    let hand = &mut $state.piece_in_hand
+                        [piece_color as usize][hand_piece];
+
+                    hash_update_in_hand!(
+                        $state,
+                        hand_piece,
+                        *hand,
+                        *hand + 1
+                    );
+
+                    *hand += 1;
+
+                    $state.opening_material[piece_color as usize] +=
+                        p_ovalue!($state.statics.pieces[hand_piece]) as u32;
+                    $state.endgame_material[piece_color as usize] +=
+                        p_evalue!($state.statics.pieces[hand_piece]) as u32;
                 }
 
                 hash_update_castling!(
@@ -1951,31 +1951,6 @@ macro_rules! make_move {
                         $state.statics.pieces[captured_piece]
                     );
 
-                    if drops!($state) || promote_to_captured!($state) {
-
-                        let demoted_piece = $state.statics.piece_demotion_map
-                            [captured_piece] as usize;
-                        let hand_piece = $state.statics.piece_swap_map
-                            [demoted_piece] as usize;
-
-                        let hand = &mut $state.piece_in_hand
-                            [piece_color as usize][hand_piece];
-
-                        hash_update_in_hand!(
-                            $state,
-                            hand_piece,
-                            *hand,
-                            *hand + 1
-                        );
-
-                        *hand += 1;
-
-                        $state.opening_material[piece_color as usize] +=
-                            p_ovalue!($state.statics.pieces[hand_piece]) as u32;
-                        $state.endgame_material[piece_color as usize] +=
-                            p_evalue!($state.statics.pieces[hand_piece]) as u32;
-                    }
-
                     if castling!($state) {
                         $state.castling_state &= [
                             !{
@@ -2009,6 +1984,31 @@ macro_rules! make_move {
                                 BQ_CASTLE
                             }
                         ][captured_color as usize];
+                    }
+
+                    if drops!($state) || promote_to_captured!($state) {
+
+                        let demoted_piece = $state.statics.piece_demotion_map
+                            [captured_piece] as usize;
+                        let hand_piece = $state.statics.piece_swap_map
+                            [demoted_piece] as usize;
+
+                        let hand = &mut $state.piece_in_hand
+                            [piece_color as usize][hand_piece];
+
+                        hash_update_in_hand!(
+                            $state,
+                            hand_piece,
+                            *hand,
+                            *hand + 1
+                        );
+
+                        *hand += 1;
+
+                        $state.opening_material[piece_color as usize] +=
+                            p_ovalue!($state.statics.pieces[hand_piece]) as u32;
+                        $state.endgame_material[piece_color as usize] +=
+                            p_evalue!($state.statics.pieces[hand_piece]) as u32;
                     }
 
                     hash_update_castling!(

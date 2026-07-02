@@ -49,6 +49,16 @@ pub fn refresh_eval_state(state: &mut State) {
         }
     }
 
+    for side in [WHITE as usize, BLACK as usize] {
+        for (index, count) in state.piece_in_hand[side].iter().enumerate() {
+            let piece = &state.statics.pieces[index];
+            let count = *count as u32;
+
+            state.opening_material[side] += p_ovalue!(piece) as u32 * count;
+            state.endgame_material[side] += p_evalue!(piece) as u32 * count;
+        }
+    }
+
     state.phase_score = game_phase_score!(state);
 
     state.game_phase = if state.game_phase == SETUP {
@@ -450,7 +460,7 @@ pub fn benchmark_headless_perft(
 ///
 /// Cases are shuffled, capped by `limit`, and each position is tested from
 /// depth 1 up to `depth`. `branch` controls diagnostic line printing when
-/// passed through to `perft`.
+/// passed through to `perft`. Returns passed and total case counts.
 pub fn benchmark_perft(
     state: &mut State,
     content: &str,
@@ -458,11 +468,11 @@ pub fn benchmark_perft(
     branch: i8,
     limit: usize,
     dict: Option<&Translator>,
-) {
+) -> (usize, usize) {
     let mut perft_cases = parse_perft_content(content);
 
     if perft_cases.is_empty() {
-        return;
+        return (0, 0);
     }
 
     let limit = limit.min(perft_cases.len());
@@ -499,6 +509,8 @@ pub fn benchmark_perft(
 
         state.load_fen(&fen, None);
 
+        log_5!("Loading FEN: {}", fen);
+
         let expected_perfts =
             [perft_1, perft_2, perft_3, perft_4, perft_5, perft_6];
 
@@ -515,7 +527,7 @@ pub fn benchmark_perft(
             if result == expected {
                 successful_cases += 1;
                 total_moves += result;
-                log_5!(
+                log_4!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [PASSED]",
                     i,
@@ -527,7 +539,7 @@ pub fn benchmark_perft(
                     width = longest_fen
                 );
             } else {
-                log_5!(
+                log_4!(
                     "{:04}. FEN: {:<width$} | Depth: {} | Expected: {:>12} | \
                     Result: {:>12} | Time: {:>12} [FAILED]",
                     i,
@@ -547,6 +559,8 @@ pub fn benchmark_perft(
         successful_cases, total_cases
     );
     log_1!("Total moves generated: {}", total_moves);
+
+    (successful_cases, total_cases)
 }
 
 /// Runs a fixed-depth search benchmark from the current position.
@@ -613,7 +627,7 @@ pub fn perft(
         }
     }
 
-    log_5!("{} moves | Nodes: {}", prefix, nodes);
+    log_4!("{} moves | Nodes: {}", prefix, nodes);
 
     nodes
 }
