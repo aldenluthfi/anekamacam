@@ -495,6 +495,359 @@ pub fn derive_eval_parameters(state: &mut State) {
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
 }
 
+fn pawn_vector_offset(vector: &MoveVector) -> (i32, i32) {
+    let mut file_offset = 0;
+    let mut rank_offset = 0;
+
+    for leg in vector {
+        file_offset += x!(leg) as i32;
+        rank_offset += y!(leg) as i32;
+    }
+
+    (file_offset, rank_offset)
+}
+
+fn vector_moves_quietly(vector: &MoveVector) -> bool {
+    match vector.last() {
+        Some(leg) => m!(leg) || !(c!(leg) || d!(leg)),
+        None => false,
+    }
+}
+
+fn vector_is_initial(vector: &MoveVector) -> bool {
+    vector.iter().any(|leg| i!(leg))
+}
+
+/// A piece is pawn-like when it never steps or captures backward, always keeps
+/// a quiet single-square forward step available, and its non-initial quiet
+/// moves stay within one square. These purely geometric conditions select the
+/// pawn/soldier of any variant: the single-step rule and one-square bound
+/// exclude leapers like the shogi knight and forward sliders like the lance,
+/// while the no-retreat rule excludes gold/silver/advisor/elephant. Longer
+/// initial pushes (a two- to four-square first move) are exempt from the bound.
+fn derive_pawn_like(state: &State) -> Vec<bool> {
+    let board_size = state.statics.board_size;
+    let piece_count = state.statics.pieces.len();
+
+    let mut pawn_like = vec![false; piece_count];
+
+    for piece in state.statics.pieces.iter() {
+        if p_color!(piece) != WHITE || p_is_royal!(piece) {
+            continue;
+        }
+
+        let index = p_index!(piece) as usize;
+        let mut steps_backward = false;
+        let mut has_single_step = false;
+        let mut ranges_far = false;
+
+        for square in 0..board_size {
+            let moves =
+                &state.statics.relevant_moves[index * board_size + square];
+
+            for vector in moves {
+                let (file_offset, rank_offset) = pawn_vector_offset(vector);
+                let quiet = vector_moves_quietly(vector);
+
+                if rank_offset < 0 {
+                    steps_backward = true;
+                }
+                if quiet && rank_offset == 1 && file_offset.abs() <= 1 {
+                    has_single_step = true;
+                }
+                if quiet && !vector_is_initial(vector)
+                && (rank_offset > 1 || file_offset.abs() > 1) {
+                    ranges_far = true;
+                }
+            }
+        }
+
+        if !steps_backward && has_single_step && !ranges_far {
+            pawn_like[index] = true;
+            let swapped = state.statics.piece_swap_map[index] as usize;
+            if swapped != NO_PIECE as usize {
+                pawn_like[swapped] = true;
+            }
+        }
+    }
+
+    pawn_like
+}
+
+/// Closure of quiet-move landing squares reachable from `square`, i.e. the set
+/// of squares the pawn can traverse toward its promotion zone.
+fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
+
+    let mut path = board!(state.statics.files, state.statics.ranks);
+    let mut queue = VecDeque::new();
+    queue.push_back(square);
+
+    while let Some(current) = queue.pop_front() {
+        let current_file = current as i32 % files;
+        let current_rank = current as i32 / files;
+
+        let moves =
+            &state.statics.relevant_moves[index * board_size + current];
+
+        for vector in moves {
+            if !vector_moves_quietly(vector) {
+                continue;
+            }
+
+            let (file_offset, rank_offset) = pawn_vector_offset(vector);
+            let next_file = current_file + file_offset * sign;
+            let next_rank = current_rank + rank_offset * sign;
+
+            if next_file < 0 || next_file >= files
+            || next_rank < 0 || next_rank >= ranks {
+                continue;
+            }
+
+            let next = (next_rank * files + next_file) as usize;
+            if !get!(path, next as u32) {
+                set!(path, next as u32);
+                queue.push_back(next);
+            }
+        }
+    }
+
+    path
+}
+
+/// Enemy source squares from which a pawn-like piece could stop this pawn: any
+/// square on its path (a blocker) plus any square whose capture reaches the
+/// path or the pawn itself. A pawn is passed when none of these are occupied.
+fn derive_pawn_interference(
+    state: &State, index: usize, square: usize,
+    path: &Board, pawn_like: &[bool]
+) -> Board {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let enemy = 1 - p_color!(&state.statics.pieces[index]);
+
+    let mut mask = *path;
+
+    for enemy_index in 0..state.statics.pieces.len() {
+        if !pawn_like[enemy_index]
+        || p_color!(&state.statics.pieces[enemy_index]) != enemy {
+            continue;
+        }
+
+        let sign = -2 * enemy as i32 + 1;
+
+        for source in 0..board_size {
+            let source_file = source as i32 % files;
+            let source_rank = source as i32 / files;
+
+            let captures = &state.statics.relevant_captures
+                [enemy_index * board_size + source];
+
+            for vector in captures {
+                let (file_offset, rank_offset) = pawn_vector_offset(vector);
+                let target_file = source_file + file_offset * sign;
+                let target_rank = source_rank + rank_offset * sign;
+
+                if target_file < 0 || target_file >= files
+                || target_rank < 0 || target_rank >= ranks {
+                    continue;
+                }
+
+                let target = (target_rank * files + target_file) as usize;
+                if target == square || get!(path, target as u32) {
+                    set!(mask, source as u32);
+                }
+            }
+        }
+    }
+
+    mask
+}
+
+/// Friendly source squares that defend `square`: any pawn-like capture that
+/// lands on it, plus the two lateral neighbours (a phalanx). A pawn is
+/// connected when one of these squares holds a friendly pawn-like piece.
+fn derive_pawn_support(
+    state: &State, index: usize, square: usize, pawn_like: &[bool]
+) -> Board {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let own = p_color!(&state.statics.pieces[index]);
+
+    let mut mask = board!(state.statics.files, state.statics.ranks);
+
+    for friend_index in 0..state.statics.pieces.len() {
+        if !pawn_like[friend_index]
+        || p_color!(&state.statics.pieces[friend_index]) != own {
+            continue;
+        }
+
+        let sign = -2 * own as i32 + 1;
+
+        for source in 0..board_size {
+            let source_file = source as i32 % files;
+            let source_rank = source as i32 / files;
+
+            let captures = &state.statics.relevant_captures
+                [friend_index * board_size + source];
+
+            for vector in captures {
+                let (file_offset, rank_offset) = pawn_vector_offset(vector);
+                let target_file = source_file + file_offset * sign;
+                let target_rank = source_rank + rank_offset * sign;
+
+                if target_file < 0 || target_file >= files
+                || target_rank < 0 || target_rank >= ranks {
+                    continue;
+                }
+
+                let target = (target_rank * files + target_file) as usize;
+                if target == square {
+                    set!(mask, source as u32);
+                }
+            }
+        }
+    }
+
+    let square_file = square as i32 % files;
+    let square_rank = square as i32 / files;
+    for delta in [-1, 1] {
+        let neighbor_file = square_file + delta;
+        if neighbor_file >= 0 && neighbor_file < files {
+            let neighbor = (square_rank * files + neighbor_file) as usize;
+            set!(mask, neighbor as u32);
+        }
+    }
+
+    mask
+}
+
+/// Fixed-point advancement (`adv^2 * 256`) toward promotion, mirroring the PST
+/// promotion gradient. Pieces without a promotion zone fall back to the rank
+/// distance from the far edge in their forward direction.
+fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
+    let ranks = state.statics.ranks as f64;
+    let files = state.statics.files as i32;
+    let closest = derive_closest_promotion(state, index as PieceIndex, square);
+
+    let advancement = if closest.is_finite() {
+        (1.0 - closest / ranks).max(0.0)
+    } else {
+        let target_rank = if p_color!(&state.statics.pieces[index]) == WHITE {
+            state.statics.ranks as i32 - 1
+        } else {
+            0
+        };
+        let square_rank = square as i32 / files;
+        let span = (state.statics.ranks as i32 - 1).max(1);
+        (1.0 - (target_rank - square_rank).abs() as f64 / span as f64).max(0.0)
+    };
+
+    (advancement * advancement * 256.0) as i32
+}
+
+/// Derives pawn-like classification and the precomputed passed/connected masks
+/// and advancement gradient consumed by the pawn-structure evaluation term.
+pub fn derive_pawn_parameters(state: &mut State) {
+    let board_size = state.statics.board_size;
+    let piece_count = state.statics.pieces.len();
+
+    let pawn_like = derive_pawn_like(state);
+
+    let empty = board!(state.statics.files, state.statics.ranks);
+    let mut path_mask = vec![empty; board_size * piece_count];
+    let mut interference_mask = vec![empty; board_size * piece_count];
+    let mut support_mask = vec![empty; board_size * piece_count];
+    let mut advancement = vec![0i32; board_size * piece_count];
+
+    for index in 0..piece_count {
+        if !pawn_like[index] {
+            continue;
+        }
+
+        for square in 0..board_size {
+            let entry = index * board_size + square;
+            let path = derive_pawn_path(state, index, square);
+
+            support_mask[entry] =
+                derive_pawn_support(state, index, square, &pawn_like);
+            interference_mask[entry] =
+                derive_pawn_interference(state, index, square, &path,
+                    &pawn_like);
+            advancement[entry] =
+                derive_pawn_advancement(state, index, square);
+            path_mask[entry] = path;
+        }
+    }
+
+    let opening_values: Vec<i32> = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_ovalue!(piece) as i32)
+        .collect();
+    let avg = opening_values.iter().sum::<i32>()
+        / opening_values.len().max(1) as i32;
+    let promoted_opening = opening_values.iter().copied().max().unwrap_or(0);
+    let promoted_endgame = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_evalue!(piece) as i32)
+        .max()
+        .unwrap_or(0);
+
+    let mut passed_opening = vec![0i32; board_size * piece_count];
+    let mut passed_endgame = vec![0i32; board_size * piece_count];
+
+    for index in 0..piece_count {
+        if !pawn_like[index] {
+            continue;
+        }
+
+        let piece = &state.statics.pieces[index];
+        let gain_opening = if p_can_promote!(piece) {
+            (promoted_opening - p_ovalue!(piece) as i32).max(0)
+        } else {
+            avg
+        };
+        let gain_endgame = if p_can_promote!(piece) {
+            (promoted_endgame - p_evalue!(piece) as i32).max(0)
+        } else {
+            avg
+        };
+
+        for square in 0..board_size {
+            let entry = index * board_size + square;
+            let scale = advancement[entry] as f64 / 256.0;
+
+            passed_opening[entry] =
+                (0.10 * gain_opening as f64 * scale).round() as i32;
+            passed_endgame[entry] =
+                (0.35 * gain_endgame as f64 * scale).round() as i32;
+        }
+    }
+
+    let names: Vec<char> = state.statics.pieces.iter()
+        .filter(|piece| pawn_like[p_index!(piece) as usize]
+            && p_color!(piece) == WHITE)
+        .map(|piece| piece.char)
+        .collect();
+    log_3!("Derived pawn-like pieces: {:?}", names);
+
+    state.static_mut().pawn_like = pawn_like;
+    state.static_mut().pawn_path_mask = path_mask;
+    state.static_mut().pawn_interference_mask = interference_mask;
+    state.static_mut().pawn_support_mask = support_mask;
+    state.static_mut().pawn_advancement = advancement;
+    state.static_mut().pawn_passed_opening = passed_opening;
+    state.static_mut().pawn_passed_endgame = passed_endgame;
+    state.static_mut().pawn_connected_opening = avg / 20;
+    state.static_mut().pawn_connected_endgame = avg / 12;
+    state.static_mut().pawn_doubled_penalty = avg / 16;
+}
+
 pub fn derive_search_parameters(state: &mut State) {
     let piece_values: Vec<i32> = state.statics.pieces.iter()
         .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
@@ -582,6 +935,8 @@ pub fn derive_search_parameters(state: &mut State) {
     }
 
     state.static_mut().pair_bonus = pair_bonus;
+
+    derive_pawn_parameters(state);
 
     log_3!("Dynamic search parameters derived successfully.");
 }
