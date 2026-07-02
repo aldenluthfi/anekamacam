@@ -321,6 +321,7 @@ pub struct StaticState {
     pub relevant_stand_offs: Vec<PatternSet>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
+    pub adjacency_mask: Vec<Board>,                                             /* square to adjacent-square bitboard */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: Vec<PieceIndex>,                                    /* piece index to demotion piece idx  */
@@ -342,12 +343,11 @@ pub struct StaticState {
     pub endgame_score: u32,                                                     /* endgame threshold                  */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
-    pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                */
-    pub tempo_bonus: i32,                                                        /* tempo advantage bonus             */
-    pub imbalance_major: i32,                                                    /* major piece imbalance weight      */
-    pub imbalance_minor: i32,                                                    /* minor piece imbalance weight      */
-    pub pair_eligible_indices: Vec<PieceIndex>,                                  /* color-bound piece indices         */
-    pub pair_bonus: Vec<i32>,                                                    /* pair bonus per piece index        */
+    pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                 */
+    pub tempo_bonus: i32,                                                       /* tempo advantage bonus              */
+    pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
+    pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
+    pub pair_bonus: Vec<i32>,                                                   /* pair bonus per piece index         */
 }
 
 /// Main state of the game.
@@ -527,6 +527,7 @@ impl State {
                 vec![Vec::new(); board_size],
             ],
             relevant_castling: array::from_fn(|_| Vec::new()),
+            adjacency_mask: vec![board!(files, ranks); board_size],
 
             piece_swap_map: vec![NO_PIECE; piece_count],
             piece_demotion_map: vec![NO_PIECE; piece_count],
@@ -572,7 +573,6 @@ impl State {
             tempo_bonus: 0,
             imbalance_major: 0,
             imbalance_minor: 0,
-            pair_eligible_indices: Vec::new(),
             pair_bonus: Vec::new(),
         });
 
@@ -806,6 +806,40 @@ impl State {
         }
     }
 
+    fn populate_adjacency_mask(&mut self) {
+        let file_count = self.statics.files;
+        let rank_count = self.statics.ranks;
+        let board_size = self.statics.board_size;
+        let files = file_count as i32;
+        let ranks = rank_count as i32;
+
+        let mut results = vec![board!(file_count, rank_count); board_size];
+
+        for square in 0..board_size {
+            let start_file = square as i32 % files;
+            let start_rank = square as i32 / files;
+
+            for file_offset in -1..=1 {
+                for rank_offset in -1..=1 {
+                    if file_offset == 0 && rank_offset == 0 {
+                        continue;
+                    }
+
+                    let neighbour_file = start_file + file_offset;
+                    let neighbour_rank = start_rank + rank_offset;
+
+                    if neighbour_file >= 0 && neighbour_file < files
+                    && neighbour_rank >= 0 && neighbour_rank < ranks {
+                        let neighbour = neighbour_rank * files + neighbour_file;
+                        set!(results[square], neighbour as u32);
+                    }
+                }
+            }
+        }
+
+        self.static_mut().adjacency_mask = results;
+    }
+
     pub fn precompute(
         &mut self,
         moves_expr_set: Vec<String>,
@@ -847,5 +881,6 @@ impl State {
         }
 
         self.populate_relevant_attacks();
+        self.populate_adjacency_mask();
     }
 }

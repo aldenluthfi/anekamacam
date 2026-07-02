@@ -209,8 +209,8 @@ pub const HIST_BONUS_TABLE: [i32; MAX_DEPTH] = {
 pub const MAX_FUTILITY_DEPTH: usize = 5;
 pub const MAX_LMP_DEPTH: usize = 9;
 pub const LMP_THRESHOLD: [[u8; MAX_LMP_DEPTH]; 2] = [
-    [0, 4, 5, 9,  14, 22, 34, 46, 60],                                            /* not improving                      */
-    [0, 5, 8, 14, 22, 36, 48, 66, 90],                                            /* improving                          */
+    [0, 4, 5, 9,  14, 22, 34, 46, 60],                                          /* not improving                      */
+    [0, 5, 8, 14, 22, 36, 48, 66, 90],                                          /* improving                          */
 ];
 pub const MAX_RFP_DEPTH: usize = 9;
 pub const MAX_RAZOR_DEPTH: usize = 4;
@@ -221,17 +221,8 @@ pub const MIN_LMR_DEPTH: usize = 4;
 pub const MIN_LMP_DEPTH: usize = 3;
 pub const MAX_CHECK_EXTENSIONS: u8 = 8;
 
-pub const PIECE_VALUE_SCALE: f64 = 58.0;
-pub const MOBILITY_EMPTY_WEIGHT: f64 = 0.3;
-pub const COVERAGE_FLOOR: f64 = 0.6;
-pub const MANEUVER_FLOOR: f64 = 0.5;
 pub const OPENING_OCCUPANCY: f64 = 0.36;
 pub const ENDGAME_OCCUPANCY: f64 = 0.12;
-pub const PST_POSITIONAL_CP: f64 = 24.0;
-pub const PROMOTION_CURVE: f64 = 2.0;
-pub const OPENING_PROMOTION_FRACTION: f64 = 0.06;
-pub const ENDGAME_PROMOTION_FRACTION: f64 = 0.40;
-pub const KING_SHELTER_BONUS: i32 = 10;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
