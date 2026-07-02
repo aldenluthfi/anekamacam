@@ -10,16 +10,11 @@
 
 use crate::*;
 
-/// Per-side count of friendly non-royal pieces adjacent to each royal piece
-/// (via the royal piece's own move geometry). Exposed royalty scores low; the
-/// caller folds this into the opening/middlegame evaluation only, since the
-/// king should be active in the endgame.
+/// Per-side count of friendly pieces on squares adjacent to each royal piece,
+/// via the precomputed `adjacency_mask` AND-ed with the side's occupancy.
+/// Exposed royalty scores low; the caller folds this into the opening and
+/// middlegame evaluation only, since the king should be active in the endgame.
 pub fn king_shelter(state: &State, color: u8) -> i32 {
-    let files = state.statics.files as i32;
-    let ranks = state.statics.ranks as i32;
-    let board_size = state.statics.board_size;
-    let sign = -2 * color as i32 + 1;
-
     let mut shelter = 0;
 
     for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
@@ -28,34 +23,10 @@ pub fn king_shelter(state: &State, color: u8) -> i32 {
         }
 
         for &king_square in &state.piece_list[piece_index] {
-            let start_file = king_square as i32 % files;
-            let start_rank = king_square as i32 / files;
-
-            let neighbours = &state.statics.relevant_moves
-                [piece_index * board_size + king_square as usize];
-
-            for vector in neighbours {
-                let mut file = start_file;
-                let mut rank = start_rank;
-
-                for leg in vector {
-                    file += x!(leg) as i32 * sign;
-                    rank += y!(leg) as i32 * sign;
-                }
-
-                if file < 0 || file >= files || rank < 0 || rank >= ranks {
-                    continue;
-                }
-
-                let occupant =
-                    state.main_board[(rank * files + file) as usize];
-
-                if occupant != NO_PIECE
-                && p_color!(&state.statics.pieces[occupant as usize]) == color
-                && !p_is_royal!(&state.statics.pieces[occupant as usize]) {
-                    shelter += 1;
-                }
-            }
+            let mut adjacent =
+                state.statics.adjacency_mask[king_square as usize];
+            and!(adjacent, state.pieces_board[color as usize]);
+            shelter += count_bits!(adjacent) as i32;
         }
     }
 
@@ -96,17 +67,17 @@ macro_rules! evaluate_position {
             + minor_diff * $state.statics.imbalance_minor;
 
         let mut pair_bonus = 0i32;
-        for &idx in $state.statics.pair_eligible_indices.iter() {
-            if $state.piece_count[idx as usize] >= 2 {
-                if p_color!(&$state.statics.pieces[idx as usize]) == WHITE {
-                    pair_bonus += $state.statics.pair_bonus[idx as usize];
+        for (piece_index, piece) in $state.statics.pieces.iter().enumerate() {
+            if $state.piece_count[piece_index] >= 2 {
+                if p_color!(piece) == WHITE {
+                    pair_bonus += $state.statics.pair_bonus[piece_index];
                 } else {
-                    pair_bonus -= $state.statics.pair_bonus[idx as usize];
+                    pair_bonus -= $state.statics.pair_bonus[piece_index];
                 }
             }
         }
 
-        let king_safety = KING_SHELTER_BONUS
+        let king_safety = 10
             * (king_shelter($state, WHITE) - king_shelter($state, BLACK));
 
         match $state.game_phase {

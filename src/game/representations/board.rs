@@ -107,6 +107,13 @@ macro_rules! not {
 }
 
 #[macro_export]
+macro_rules! count_bits {
+    ($board:expr) => {
+        $board.2.count_ones()
+    }
+}
+
+#[macro_export]
 macro_rules! set_indices {
     ($board:expr) => {{
         let mut indices = Vec::new();

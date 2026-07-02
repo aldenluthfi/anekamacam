@@ -193,13 +193,13 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
         derive_piece_mobility(state, piece_index, square, occupancy)
     }).sum::<f64>() / board_size as f64;
 
-    let blended_mobility = MOBILITY_EMPTY_WEIGHT * empty_mobility
-        + (1.0 - MOBILITY_EMPTY_WEIGHT) * occupied_mobility;
+    let blended_mobility = 0.3 * empty_mobility
+        + (1.0 - 0.3) * occupied_mobility;
 
-    let coverage = COVERAGE_FLOOR + (1.0 - COVERAGE_FLOOR) * reach;
-    let maneuver = MANEUVER_FLOOR + (1.0 - MANEUVER_FLOOR) * maneuverability;
+    let coverage = 0.6 + (1.0 - 0.6) * reach;
+    let maneuver = 0.5 + (1.0 - 0.5) * maneuverability;
 
-    PIECE_VALUE_SCALE * blended_mobility * coverage * maneuver
+    58.0 * blended_mobility * coverage * maneuver
 }
 
 fn derive_piece_mobility(
@@ -309,13 +309,13 @@ fn derive_promotion_bonus(
         (1.0 - closest_promotion / state.statics.ranks as f64).max(0.0);
 
     let fraction = if is_endgame {
-        ENDGAME_PROMOTION_FRACTION
+        0.40
     } else {
-        OPENING_PROMOTION_FRACTION
+        0.06
     };
 
     fraction * (promoted_value - piece_value).max(0.0)
-        * advancement.powf(PROMOTION_CURVE)
+        * advancement.powf(2.0)
 }
 
 fn derive_pst(
@@ -342,7 +342,7 @@ fn derive_pst(
         .map(|score| (score - mean).abs())
         .fold(0.0_f64, f64::max)
         .max(1.0);
-    let amplitude = PST_POSITIONAL_CP;
+    let amplitude = 24.0;
 
     (0..board_size).map(|square| {
         let positional =
@@ -565,7 +565,6 @@ pub fn derive_search_parameters(state: &mut State) {
     state.static_mut().imbalance_major = imbalance_major;
     state.static_mut().imbalance_minor = imbalance_minor;
 
-    let mut pair_eligible = Vec::new();
     let mut pair_bonus = vec![0i32; state.statics.pieces.len()];
 
     for (idx, piece) in state.statics.pieces.iter().enumerate() {
@@ -574,7 +573,6 @@ pub fn derive_search_parameters(state: &mut State) {
         && !p_is_big!(piece) {
             let reach_value = derive_piece_reach(state, piece);
             if (reach_value - 0.5).abs() < 0.02 {
-                pair_eligible.push(idx as PieceIndex);
                 let bonus = (avg / 8).max(10) as i32;
                 pair_bonus[idx] = bonus;
                 let black_idx = state.statics.piece_swap_map[idx] as usize;
@@ -583,7 +581,6 @@ pub fn derive_search_parameters(state: &mut State) {
         }
     }
 
-    state.static_mut().pair_eligible_indices = pair_eligible;
     state.static_mut().pair_bonus = pair_bonus;
 
     log_3!("Dynamic search parameters derived successfully.");
