@@ -1220,8 +1220,15 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             frame.render_widget(piece_detail_guide, right_layout[2]);
         },
         2 => {
-            let piece_selected =
-                *app.scroll_map.get(&(2, 0)).unwrap_or(&0) > 0;
+            let selected = *app.scroll_map.get(&(2, 0)).unwrap_or(&0);
+            let piece_selected = selected > 0
+                && app.playground_state.as_ref().is_some_and(|arc| {
+                    arc.lock().is_ok_and(|st| {
+                        st.piece_list
+                            .get(selected as usize - 1)
+                            .is_some_and(|sqs| !sqs.is_empty())
+                    })
+                });
 
             let pg_log_layout = Layout::default()
                 .direction(Direction::Vertical)
@@ -1985,13 +1992,6 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             panic!("Failed to lock playground state: {e}")
         });
 
-        let mut enabled = Vec::new();
-        for (i, piece) in state.statics.pieces.iter().enumerate() {
-            if !state.piece_list[i].is_empty() {
-                enabled.push(p_index!(piece) as usize);
-            }
-        }
-
         let pieces: Vec<ListItem> = state.statics.pieces.iter()
             .map(
                 |p| ListItem::new(
@@ -2008,7 +2008,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 )
                 .style(
                     if state.piece_list[p_index!(p) as usize].is_empty() {
-                        Style::default().fg(Color::DarkGray)
+                        Style::default().fg(Color::Gray)
                     } else {
                         Style::default()
                     }
@@ -2018,17 +2018,15 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
         let mut selected = *app.scroll_map.get(&(2, 0)).unwrap_or(&0);
         if !pieces.is_empty() {
-            if selected > enabled.len() as u16 {
-                selected = enabled.len() as u16;
+            if selected > pieces.len() as u16 {
+                selected = pieces.len() as u16;
                 app.scroll_map.insert((2, 0), selected);
             }
 
             if selected == 0 {
                 piece_list_state.select(None);
             } else {
-                piece_list_state.select(
-                    Some(enabled[selected as usize - 1])
-                );
+                piece_list_state.select(Some(selected as usize - 1));
             }
         } else {
             piece_list_state.select(None);
@@ -2037,10 +2035,13 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         let selected_piece = if selected == 0 {
             None
         } else {
-            enabled.get(selected as usize - 1).copied()
+            Some(selected as usize - 1)
         };
 
-        if selected_piece.is_none() && app.focus == 1 {
+        let active_piece = selected_piece
+            .filter(|&idx| !state.piece_list[idx].is_empty());
+
+        if active_piece.is_none() && app.focus == 1 {
             app.focus = 0;
         }
 
@@ -2063,7 +2064,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                     .add_modifier(Modifier::BOLD)
             );
 
-        match selected_piece {
+        match active_piece {
             Some(piece_idx) => {
                 state.playing = p_color!(state.statics.pieces[piece_idx]);
                 state.position_hash = hash_position(&state);
