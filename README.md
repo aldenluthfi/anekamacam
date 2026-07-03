@@ -60,12 +60,23 @@ Drops and stand-offs are matched with CPMN; per-piece drop rules use CDN.
 
 A variant lives in a single configs/&lt;name&gt;.conf file. It declares, in
 labelled sections, the title, the starting CFEN, the enabled rules, and
-the pieces with their CKN move patterns. Supported rule flags include:
+the pieces with their CKN move patterns. Supported rule flags:
 
-    castling            promote to captured   setup phase
-    en passant          stalemate loss        stand-offs
-    promotions          halfmove clock        repetition limit
-    drops               forbidden zones
+┌─────────────────────┬──────────────────────────────────────────────────────────┐
+│ Rule                │ Effect                                                   │
+├─────────────────────┼──────────────────────────────────────────────────────────┤
+│ castling            │ Enables castling; rights are read from the CFEN          │
+│ en passant          │ Enables en passant; target square read from the CFEN     │
+│ promotions          │ Pieces may promote on reaching a promotion zone          │
+│ drops               │ Pieces held in hand may be dropped instead of moving     │
+│ forbidden zones     │ Marks squares no piece may enter (move/promo/drop)       │
+│ promote to captured │ A promoting piece must be one the opponent captured      │
+│ stalemate loss      │ Stalemate is a loss for the stalemated side, not a draw  │
+│ setup phase         │ Players drop pieces from hand before normal play starts  │
+│ stand-offs          │ A move may check both kings; foe must break it next turn │
+│ halfmove clock      │ Generalized 50-move rule; draw after N idle halfmoves    │
+│ repetition limit    │ Draw once a position repeats a set number of times       │
+└─────────────────────┴──────────────────────────────────────────────────────────┘
 
 Each rule, when enabled, requires its matching section (e.g. castling
 geometry, promotion zones, drop rules) and a correctly-formatted CFEN —
