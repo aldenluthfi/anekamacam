@@ -220,6 +220,8 @@ pub const MIN_LMR_DEPTH: usize = 4;
 pub const MIN_LMP_DEPTH: usize = 3;
 pub const MAX_CHECK_EXTENSIONS: u8 = 8;
 
+pub const DANGEROUS_PUSH_THRESHOLD: i32 = 92;
+
 pub const OPENING_OCCUPANCY: f64 = 0.36;
 pub const ENDGAME_OCCUPANCY: f64 = 0.12;
 

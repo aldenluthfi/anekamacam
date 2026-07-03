@@ -39,58 +39,61 @@ macro_rules! king_shelter {
 /// a pawn-like piece is passed when no enemy pawn-like piece lies on its
 /// interference mask, connected when a friendly pawn-like piece lies on its
 /// support mask, and doubled when a friendly pawn-like piece lies on its path.
+///
+/// Pawn-like occupancy is packed per side into a `u128` bitset, so each of the
+/// three tests is a single in-register mask intersection. The term is disabled
+/// on boards wider than 128 squares, where the packing cannot represent every
+/// square; no supported variant reaches that width.
 #[macro_export]
 macro_rules! pawn_structure {
     ($state:expr) => {{
-        let board_size = $state.statics.board_size;
+        if !$state.statics.pawn_eval_enabled {
+            (0i32, 0i32)
+        } else {
+            let board_size = $state.statics.board_size;
 
-        let mut pawns = [
-            board!($state.statics.files, $state.statics.ranks),
-            board!($state.statics.files, $state.statics.ranks),
-        ];
-        for (piece_index, piece) in $state.statics.pieces.iter().enumerate() {
-            if !$state.statics.pawn_like[piece_index] {
-                continue;
+            let mut occupancy = [0u128; 2];
+            for &piece_index in &$state.statics.pawn_like_indices {
+                let color =
+                    p_color!(&$state.statics.pieces[piece_index]) as usize;
+                for &square in &$state.piece_list[piece_index] {
+                    occupancy[color] |= 1u128 << square as u32;
+                }
             }
-            let color = p_color!(piece) as usize;
-            for &square in &$state.piece_list[piece_index] {
-                set!(pawns[color], square as u32);
+
+            let mut opening = 0i32;
+            let mut endgame = 0i32;
+
+            for &piece_index in &$state.statics.pawn_like_indices {
+                let color =
+                    p_color!(&$state.statics.pieces[piece_index]) as usize;
+                let sign = -2 * color as i32 + 1;
+                let own = occupancy[color];
+                let enemy = occupancy[1 - color];
+
+                for &square in &$state.piece_list[piece_index] {
+                    let entry = piece_index * board_size + square as usize;
+
+                    if $state.statics.pawn_interference_mask[entry] & enemy == 0
+                    {
+                        opening +=
+                            sign * $state.statics.pawn_passed_opening[entry];
+                        endgame +=
+                            sign * $state.statics.pawn_passed_endgame[entry];
+                    }
+                    if $state.statics.pawn_support_mask[entry] & own != 0 {
+                        opening += sign * $state.statics.pawn_connected_opening;
+                        endgame += sign * $state.statics.pawn_connected_endgame;
+                    }
+                    if $state.statics.pawn_path_mask[entry] & own != 0 {
+                        opening -= sign * $state.statics.pawn_doubled_penalty;
+                        endgame -= sign * $state.statics.pawn_doubled_penalty;
+                    }
+                }
             }
+
+            (opening, endgame)
         }
-
-        let mut opening = 0i32;
-        let mut endgame = 0i32;
-
-        for (piece_index, piece) in $state.statics.pieces.iter().enumerate() {
-            if !$state.statics.pawn_like[piece_index] {
-                continue;
-            }
-            let color = p_color!(piece) as usize;
-            let sign = -2 * color as i32 + 1;
-            let own = pawns[color];
-            let enemy = pawns[1 - color];
-
-            for &square in &$state.piece_list[piece_index] {
-                let entry = piece_index * board_size + square as usize;
-
-                if disjoint!(
-                    $state.statics.pawn_interference_mask[entry], enemy
-                ) {
-                    opening += sign * $state.statics.pawn_passed_opening[entry];
-                    endgame += sign * $state.statics.pawn_passed_endgame[entry];
-                }
-                if !disjoint!($state.statics.pawn_support_mask[entry], own) {
-                    opening += sign * $state.statics.pawn_connected_opening;
-                    endgame += sign * $state.statics.pawn_connected_endgame;
-                }
-                if !disjoint!($state.statics.pawn_path_mask[entry], own) {
-                    opening -= sign * $state.statics.pawn_doubled_penalty;
-                    endgame -= sign * $state.statics.pawn_doubled_penalty;
-                }
-            }
-        }
-
-        (opening, endgame)
     }};
 }
 

@@ -132,10 +132,3 @@ macro_rules! is_empty {
         $board.2.is_zero()
     };
 }
-
-#[macro_export]
-macro_rules! disjoint {
-    ($board1:expr, $board2:expr) => {
-        (&$board1.2 & &$board2.2).is_zero()
-    };
-}

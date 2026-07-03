@@ -179,9 +179,9 @@ pub fn search_position(
 /// Iterative deepening with aspiration windows over alpha_beta.
 ///
 /// Runs depth 1..=set_depth. Depths below 4, or when the previous score is a
-/// mate, use a full window. Otherwise aspiration windows start at ±50 and
-/// double on each fail until the search falls within bounds. Thread 0 prints
-/// UCI info lines per depth; helper threads skip output.
+/// mate, use a full window. Otherwise aspiration windows start at a value-
+/// derived half-window and double on each fail until the search falls within
+/// bounds. Thread 0 prints UCI info lines per depth; helper threads skip output.
 pub fn iterative_deepening(
     state: &mut State,
     ttable: &TTable,
@@ -215,7 +215,7 @@ pub fn iterative_deepening(
                 state, ttable, qtable, depth, -INF, INF, info, bufs, true
             )
         } else {
-            let mut asp_delta = 50;
+            let mut asp_delta = state.statics.aspiration_delta;
             let mut asp_alpha = best_score - asp_delta;
             let mut asp_beta  = best_score + asp_delta;
             loop {
@@ -379,16 +379,24 @@ pub fn iterative_deepening(
 
 /// Capture-only negamax search at leaf nodes; reduces horizon effects.
 ///
+/// - [IN-CHECK EVASIONS]
+///   When the side to move is in check the node cannot stand pat, since
+///   a legal reply is forced. All moves and drops are generated as
+///   evasions, capture-only pruning is disabled, and a node with no
+///   legal evasion returns a mate score instead of the stand-pat value.
+///
 /// - [STATIC EXCHANGE EVALUATION PRUNING]
 ///   Statically simulates the capture sequence on the target square.
 ///   Skips captures whose net material outcome is negative, avoiding
-///   obviously losing exchanges before making the move.
+///   obviously losing exchanges before making the move. Disabled while
+///   in check, where every legal evasion must be searched.
 ///
 /// - [DELTA PRUNING]
-///   Skips captures whose captured value plus a 200-cp safety margin
-///   still cannot raise the stand-pat score above `alpha`. Disabled
-///   in endgame (material swings carry more weight) and for
-///   promotions (their gain is not captured by `captured_value`).
+///   Skips captures whose captured value plus a value-derived safety
+///   margin still cannot raise the stand-pat score above `alpha`.
+///   Disabled in endgame (material swings carry more weight), for
+///   promotions (their gain is not captured by `captured_value`), and
+///   while in check.
 fn quiescence_search(
     state: &mut State,
     ttable: &TTable,
@@ -414,22 +422,26 @@ fn quiescence_search(
 
     let ply = state.search_ply as usize;
 
+    let in_check = is_in_check!(state.playing, state);
+
     /*-----------------------------------------------------------------------*\
                                        STAND PAT
     \*-----------------------------------------------------------------------*/
 
     let stand_pat = evaluate_position!(state);
 
-    if stand_pat >= beta {
-        return beta;
+    if !in_check {
+        if stand_pat >= beta {
+            return beta;
+        }
+
+        if stand_pat > alpha {
+            alpha = stand_pat;
+        }
     }
 
     if state.search_ply >= MAX_DEPTH as u32 {
-        return stand_pat
-    }
-
-    if stand_pat > alpha {
-        alpha = stand_pat;
+        return stand_pat;
     }
 
     /*-----------------------------------------------------------------------*\
@@ -457,10 +469,17 @@ fn quiescence_search(
 
     let mut best_move = null_move();
     let alpha_start = alpha;
+    let mut legal_moves = 0;
 
-    generate_all_captures(
-        state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
-    );
+    if in_check {
+        generate_all_moves_and_drops(
+            state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+        );
+    } else {
+        generate_all_captures(
+            state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+        );
+    }
 
     let n = bufs.move_buf[ply].len();
     bufs.score_buf[ply].clear();
@@ -479,7 +498,7 @@ fn quiescence_search(
                                        SEE PRUNING
         \*-------------------------------------------------------------------*/
 
-        if see!(state, mv.clone()) < 0 {
+        if !in_check && see!(state, mv.clone()) < 0 {
             continue;
         }
 
@@ -487,19 +506,24 @@ fn quiescence_search(
                                      DELTA PRUNING
         \*-------------------------------------------------------------------*/
 
-        let promotion = promotion!(mv.clone());
-        let captured_value = victim_value!(mv.clone(), state);
+        if !in_check {
+            let promotion = promotion!(mv.clone());
+            let captured_value = victim_value!(mv.clone(), state);
 
-        if stand_pat + captured_value as i32 + 200 < alpha
-        && state.game_phase != ENDGAME
-        && !promotion
-        {
-            continue;
+            if stand_pat + captured_value as i32 + state.statics.delta_margin
+                < alpha
+            && state.game_phase != ENDGAME
+            && !promotion
+            {
+                continue;
+            }
         }
 
         if !make_move!(state, mv.clone()) {
             continue;
         }
+
+        legal_moves += 1;
 
         let score = -quiescence_search(
             state, ttable, qtable, -beta, -alpha, info, bufs
@@ -520,6 +544,23 @@ fn quiescence_search(
             best_move = mv.clone();
             alpha = score;
         }
+    }
+
+    /*-----------------------------------------------------------------------*\
+                                  CHECKMATE DETECTION
+    \*-----------------------------------------------------------------------*/
+
+    if in_check && legal_moves == 0 {
+        let mate_score = -INF + state.search_ply as i32;
+
+        return if state.history.last().is_some_and(|s| {
+            move_type!(&s.move_ply) == DROP_MOVE
+            && !drop_can_checkmate!(&s.move_ply)
+        }) {
+            -mate_score
+        } else {
+            mate_score
+        };
     }
 
     /*-----------------------------------------------------------------------*\
@@ -860,6 +901,12 @@ pub fn alpha_beta(
         let is_drop = m_drop!(mv);
         let is_quiet = m_quiet!(mv);
 
+        let dangerous_push = state.statics.pawn_like[piece]
+            && !is_capture
+            && !is_drop
+            && state.statics.pawn_advancement[piece * board_size + end]
+                >= DANGEROUS_PUSH_THRESHOLD;
+
         /*-------------------------------------------------------------------*\
                                     FUTILITY PRUNING
         \*-------------------------------------------------------------------*/
@@ -869,6 +916,7 @@ pub fn alpha_beta(
         && !is_capture
         && !is_promotion
         && !is_drop
+        && !dangerous_push
         {
             continue;
         }
@@ -912,6 +960,7 @@ pub fn alpha_beta(
         && !is_capture
         && !is_promotion
         && !is_drop
+        && !dangerous_push
         && alpha.abs() < MATE_SCORE
         && beta - alpha == 1
         && legal_moves >= LMP_THRESHOLD[improving][depth] as usize
@@ -944,6 +993,9 @@ pub fn alpha_beta(
                 reduction = (reduction + 1).min(depth - 1);
             }
             if improving == 1 {
+                reduction = reduction.saturating_sub(1).max(1);
+            }
+            if dangerous_push {
                 reduction = reduction.saturating_sub(1).max(1);
             }
 

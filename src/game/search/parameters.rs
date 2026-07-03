@@ -751,6 +751,21 @@ fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
     (advancement * advancement * 256.0) as i32
 }
 
+/// Packs the occupied squares of a mask board into a `u128` bitset, one bit
+/// per square index. Boards wider than 128 squares cannot be represented; the
+/// pawn-structure term is disabled for them by `pawn_eval_enabled`.
+fn mask_board_to_bits(board: &Board) -> u128 {
+    let squares =
+        (files!(board) as usize * ranks!(board) as usize).min(128);
+    let mut bits = 0u128;
+    for square in 0..squares {
+        if get!(board, square as u32) {
+            bits |= 1u128 << square;
+        }
+    }
+    bits
+}
+
 /// Derives pawn-like classification and the precomputed passed/connected masks
 /// and advancement gradient consumed by the pawn-structure evaluation term.
 pub fn derive_pawn_parameters(state: &mut State) {
@@ -836,10 +851,22 @@ pub fn derive_pawn_parameters(state: &mut State) {
         .collect();
     log_3!("Derived pawn-like pieces: {:?}", names);
 
+    let pawn_like_indices: Vec<usize> = (0..piece_count)
+        .filter(|&index| pawn_like[index])
+        .collect();
+
+    let path_bits: Vec<u128> = path_mask.iter().map(mask_board_to_bits).collect();
+    let interference_bits: Vec<u128> =
+        interference_mask.iter().map(mask_board_to_bits).collect();
+    let support_bits: Vec<u128> =
+        support_mask.iter().map(mask_board_to_bits).collect();
+
+    state.static_mut().pawn_eval_enabled = board_size <= 128;
     state.static_mut().pawn_like = pawn_like;
-    state.static_mut().pawn_path_mask = path_mask;
-    state.static_mut().pawn_interference_mask = interference_mask;
-    state.static_mut().pawn_support_mask = support_mask;
+    state.static_mut().pawn_like_indices = pawn_like_indices;
+    state.static_mut().pawn_path_mask = path_bits;
+    state.static_mut().pawn_interference_mask = interference_bits;
+    state.static_mut().pawn_support_mask = support_bits;
     state.static_mut().pawn_advancement = advancement;
     state.static_mut().pawn_passed_opening = passed_opening;
     state.static_mut().pawn_passed_endgame = passed_endgame;
@@ -886,6 +913,9 @@ pub fn derive_search_parameters(state: &mut State) {
     state.static_mut().see_margin = (0..MAX_SEE_PRUNE_DEPTH)
         .map(|depth| see_base * depth as i32)
         .collect();
+
+    state.static_mut().delta_margin = (avg / 3).max(200);
+    state.static_mut().aspiration_delta = (avg / 12).clamp(25, 80);
 
     log_3!(
         "Derived Futility Margins: {:?} | {:?} | {:?}",

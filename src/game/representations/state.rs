@@ -334,6 +334,8 @@ pub struct StaticState {
     pub futility_margin: [[i32; MAX_FUTILITY_DEPTH]; 3],                        /* [phase 0-2][depth 0-4]             */
     pub rfp_margin: [[i32; MAX_RFP_DEPTH]; 2],                                  /* [improving 0-1][depth 0-8]         */
     pub see_margin: Vec<i32>,                                                   /* [depth 0-7] SEE prune threshold    */
+    pub delta_margin: i32,                                                      /* qsearch delta pruning safety margin*/
+    pub aspiration_delta: i32,                                                  /* initial aspiration half-window     */
     pub razor_margin: [i32; MAX_RAZOR_DEPTH],                                   /* [depth 0-3]                        */
     pub quiesce_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
     pub quiesce_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
@@ -350,9 +352,11 @@ pub struct StaticState {
     pub pair_bonus: Vec<i32>,                                                   /* pair bonus per piece index         */
 
     pub pawn_like: Vec<bool>,                                                   /* geometric pawn-like flag           */
-    pub pawn_path_mask: Vec<Board>,                                             /* idx = piece * board size + square  */
-    pub pawn_interference_mask: Vec<Board>,                                     /* enemy squares that stop a passer   */
-    pub pawn_support_mask: Vec<Board>,                                          /* friendly squares that defend it    */
+    pub pawn_like_indices: Vec<usize>,                                          /* pawn-like piece indices, both sides*/
+    pub pawn_eval_enabled: bool,                                               /* false when board exceeds 128 sq    */
+    pub pawn_path_mask: Vec<u128>,                                              /* idx = piece * board size + square  */
+    pub pawn_interference_mask: Vec<u128>,                                      /* enemy squares that stop a passer   */
+    pub pawn_support_mask: Vec<u128>,                                           /* friendly squares that defend it    */
     pub pawn_advancement: Vec<i32>,                                             /* fixed-point advancement^2 * 256    */
     pub pawn_passed_opening: Vec<i32>,                                          /* passed bonus, opening, per square  */
     pub pawn_passed_endgame: Vec<i32>,                                          /* passed bonus, endgame, per square  */
@@ -548,6 +552,8 @@ impl State {
             rfp_margin: [[0; MAX_RFP_DEPTH]; 2],
             razor_margin: [0; MAX_RAZOR_DEPTH],
             see_margin: vec![0; MAX_SEE_PRUNE_DEPTH],
+            delta_margin: 0,
+            aspiration_delta: 50,
             quiesce_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
@@ -587,11 +593,11 @@ impl State {
             pair_bonus: Vec::new(),
 
             pawn_like: vec![false; piece_count],
-            pawn_path_mask: vec![board!(files, ranks); board_size * piece_count],
-            pawn_interference_mask:
-                vec![board!(files, ranks); board_size * piece_count],
-            pawn_support_mask:
-                vec![board!(files, ranks); board_size * piece_count],
+            pawn_like_indices: Vec::new(),
+            pawn_eval_enabled: false,
+            pawn_path_mask: vec![0u128; board_size * piece_count],
+            pawn_interference_mask: vec![0u128; board_size * piece_count],
+            pawn_support_mask: vec![0u128; board_size * piece_count],
             pawn_advancement: vec![0; board_size * piece_count],
             pawn_passed_opening: vec![0; board_size * piece_count],
             pawn_passed_endgame: vec![0; board_size * piece_count],
