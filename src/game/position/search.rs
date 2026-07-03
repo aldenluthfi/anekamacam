@@ -901,7 +901,7 @@ pub fn alpha_beta(
         let is_drop = m_drop!(mv);
         let is_quiet = m_quiet!(mv);
 
-        let dangerous_push = state.statics.pawn_like[piece]
+        let dangerous_push = p_is_pawn!(&state.statics.pieces[piece])
             && !is_capture
             && !is_drop
             && state.statics.pawn_advancement[piece * board_size + end]

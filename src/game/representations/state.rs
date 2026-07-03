@@ -351,18 +351,17 @@ pub struct StaticState {
     pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
     pub pair_bonus: Vec<i32>,                                                   /* pair bonus per piece index         */
 
-    pub pawn_like: Vec<bool>,                                                   /* geometric pawn-like flag           */
-    pub pawn_like_indices: Vec<usize>,                                          /* pawn-like piece indices, both sides*/
-    pub pawn_eval_enabled: bool,                                               /* false when board exceeds 128 sq    */
-    pub pawn_path_mask: Vec<u128>,                                              /* idx = piece * board size + square  */
-    pub pawn_interference_mask: Vec<u128>,                                      /* enemy squares that stop a passer   */
-    pub pawn_support_mask: Vec<u128>,                                           /* friendly squares that defend it    */
+    pub pawn_path_mask: Vec<Board>,                                             /* idx = piece * board size + square  */
+    pub pawn_interference_mask: Vec<Board>,                                     /* enemy squares that stop a passer   */
+    pub pawn_support_mask: Vec<Board>,                                          /* friendly squares that defend it    */
     pub pawn_advancement: Vec<i32>,                                             /* fixed-point advancement^2 * 256    */
     pub pawn_passed_opening: Vec<i32>,                                          /* passed bonus, opening, per square  */
     pub pawn_passed_endgame: Vec<i32>,                                          /* passed bonus, endgame, per square  */
     pub pawn_connected_opening: i32,                                            /* phalanx/defended bonus, opening    */
     pub pawn_connected_endgame: i32,                                            /* phalanx/defended bonus, endgame    */
     pub pawn_doubled_penalty: i32,                                              /* doubled pawn penalty, both phases  */
+    pub pawn_isolated_penalty: i32,                                             /* isolated pawn penalty, both phases */
+    pub pawn_backward_penalty: i32,                                             /* backward pawn penalty, both phases */
 }
 
 /// Main state of the game.
@@ -592,18 +591,20 @@ impl State {
             imbalance_minor: 0,
             pair_bonus: Vec::new(),
 
-            pawn_like: vec![false; piece_count],
-            pawn_like_indices: Vec::new(),
-            pawn_eval_enabled: false,
-            pawn_path_mask: vec![0u128; board_size * piece_count],
-            pawn_interference_mask: vec![0u128; board_size * piece_count],
-            pawn_support_mask: vec![0u128; board_size * piece_count],
+            pawn_path_mask:
+                vec![board!(files, ranks); board_size * piece_count],
+            pawn_interference_mask:
+                vec![board!(files, ranks); board_size * piece_count],
+            pawn_support_mask:
+                vec![board!(files, ranks); board_size * piece_count],
             pawn_advancement: vec![0; board_size * piece_count],
             pawn_passed_opening: vec![0; board_size * piece_count],
             pawn_passed_endgame: vec![0; board_size * piece_count],
             pawn_connected_opening: 0,
             pawn_connected_endgame: 0,
             pawn_doubled_penalty: 0,
+            pawn_isolated_penalty: 0,
+            pawn_backward_penalty: 0,
         });
 
         State {

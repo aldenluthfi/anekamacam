@@ -55,8 +55,8 @@ macro_rules! p_value {
 /// into readable attributes used throughout move generation and evaluation.
 ///
 /// Static accessors:
-/// `p_index!`, `p_color!`, `p_can_promote!`, `p_is_royal!`, `p_rank!`,
-/// `p_castle_right!`, `p_castle_left!`
+/// `p_index!`, `p_color!`, `p_can_promote!`, `p_is_royal!`, `p_is_pawn!`,
+/// `p_rank!`, `p_castle_right!`, `p_castle_left!`
 ///
 /// Dynamic accessors:
 /// `p_is_big!`, `p_is_major!`, `p_is_minor!`, `p_ovalue!`, `p_evalue!`
@@ -85,6 +85,13 @@ macro_rules! p_can_promote {
 macro_rules! p_is_royal {
     ($piece:expr) => {
         ($piece.encoded_static & (1 << 10)) != 0
+    };
+}
+
+#[macro_export]
+macro_rules! p_is_pawn {
+    ($piece:expr) => {
+        ($piece.encoded_static & (1 << 19)) != 0
     };
 }
 
@@ -140,6 +147,7 @@ macro_rules! p_evalue {
 /// - Bit 9         : Piece can promote (1 if can promote, 0 otherwise)
 /// - Bit 10        : Royal status (1 if royal, 0 otherwise)
 /// - Bits 11-18    : Piece rank
+/// - Bit 19        : Pawn-like status (1 if pawn-like, set at derive time)
 /// - Other bits    : Unused
 ///
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:

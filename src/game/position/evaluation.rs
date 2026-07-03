@@ -35,65 +35,106 @@ macro_rules! king_shelter {
 }
 
 /// Variant-agnostic pawn-structure term, returned as an `(opening, endgame)`
-/// pair of white-minus-black centipawn deltas. Using the precomputed masks:
-/// a pawn-like piece is passed when no enemy pawn-like piece lies on its
-/// interference mask, connected when a friendly pawn-like piece lies on its
-/// support mask, and doubled when a friendly pawn-like piece lies on its path.
+/// pair of white-minus-black centipawn deltas. A pawn-like piece is passed
+/// when no enemy pawn-like piece lies on its interference mask, connected when
+/// a friendly pawn-like piece lies on its support mask, doubled when a friendly
+/// pawn-like piece lies on its path, isolated when no friendly pawn-like piece
+/// shares an adjacent file, and backward when it has file-neighbours but is
+/// unconnected and every adjacent friendly pawn stands strictly further on.
 ///
-/// Pawn-like occupancy is packed per side into a `u128` bitset, so each of the
-/// three tests is a single in-register mask intersection. The term is disabled
-/// on boards wider than 128 squares, where the packing cannot represent every
-/// square; no supported variant reaches that width.
+/// The masks are full `Board`s tested with O(1) `get!` bit reads against the
+/// per-side pawn squares, so the term is bounded by pawn count rather than
+/// board size and works on boards of any width.
 #[macro_export]
 macro_rules! pawn_structure {
     ($state:expr) => {{
-        if !$state.statics.pawn_eval_enabled {
-            (0i32, 0i32)
-        } else {
-            let board_size = $state.statics.board_size;
+        let board_size = $state.statics.board_size;
+        let files = $state.statics.files as i32;
 
-            let mut occupancy = [0u128; 2];
-            for &piece_index in &$state.statics.pawn_like_indices {
-                let color =
-                    p_color!(&$state.statics.pieces[piece_index]) as usize;
-                for &square in &$state.piece_list[piece_index] {
-                    occupancy[color] |= 1u128 << square as u32;
-                }
+        let interference = &$state.statics.pawn_interference_mask;
+        let support = &$state.statics.pawn_support_mask;
+        let path = &$state.statics.pawn_path_mask;
+        let passed_opening = &$state.statics.pawn_passed_opening;
+        let passed_endgame = &$state.statics.pawn_passed_endgame;
+        let connected_opening = $state.statics.pawn_connected_opening;
+        let connected_endgame = $state.statics.pawn_connected_endgame;
+        let doubled_penalty = $state.statics.pawn_doubled_penalty;
+        let isolated_penalty = $state.statics.pawn_isolated_penalty;
+        let backward_penalty = $state.statics.pawn_backward_penalty;
+
+        let mut pawns: [Vec<(usize, Square, i32, i32)>; 2] =
+            [Vec::new(), Vec::new()];
+        for (index, piece) in $state.statics.pieces.iter().enumerate() {
+            if !p_is_pawn!(piece) {
+                continue;
             }
-
-            let mut opening = 0i32;
-            let mut endgame = 0i32;
-
-            for &piece_index in &$state.statics.pawn_like_indices {
-                let color =
-                    p_color!(&$state.statics.pieces[piece_index]) as usize;
-                let sign = -2 * color as i32 + 1;
-                let own = occupancy[color];
-                let enemy = occupancy[1 - color];
-
-                for &square in &$state.piece_list[piece_index] {
-                    let entry = piece_index * board_size + square as usize;
-
-                    if $state.statics.pawn_interference_mask[entry] & enemy == 0
-                    {
-                        opening +=
-                            sign * $state.statics.pawn_passed_opening[entry];
-                        endgame +=
-                            sign * $state.statics.pawn_passed_endgame[entry];
-                    }
-                    if $state.statics.pawn_support_mask[entry] & own != 0 {
-                        opening += sign * $state.statics.pawn_connected_opening;
-                        endgame += sign * $state.statics.pawn_connected_endgame;
-                    }
-                    if $state.statics.pawn_path_mask[entry] & own != 0 {
-                        opening -= sign * $state.statics.pawn_doubled_penalty;
-                        endgame -= sign * $state.statics.pawn_doubled_penalty;
-                    }
-                }
+            let color = p_color!(piece) as usize;
+            for &square in &$state.piece_list[index] {
+                let entry = index * board_size + square as usize;
+                let file = square as i32 % files;
+                let advancement = $state.statics.pawn_advancement[entry];
+                pawns[color].push((index, square, file, advancement));
             }
-
-            (opening, endgame)
         }
+
+        let mut opening = 0i32;
+        let mut endgame = 0i32;
+
+        for color in [WHITE as usize, BLACK as usize] {
+            let sign = -2 * color as i32 + 1;
+            let own = &pawns[color];
+            let enemy = &pawns[1 - color];
+
+            for &(index, square, file, advancement) in own.iter() {
+                let entry = index * board_size + square as usize;
+
+                let passed = !enemy.iter().any(
+                    |other| get!(interference[entry], other.1 as u32)
+                );
+                if passed {
+                    opening += sign * passed_opening[entry];
+                    endgame += sign * passed_endgame[entry];
+                }
+
+                let connected = own.iter().any(|other|
+                    other.1 != square
+                    && get!(support[entry], other.1 as u32)
+                );
+                if connected {
+                    opening += sign * connected_opening;
+                    endgame += sign * connected_endgame;
+                }
+
+                let doubled = own.iter().any(|other|
+                    other.1 != square
+                    && get!(path[entry], other.1 as u32)
+                );
+                if doubled {
+                    opening -= sign * doubled_penalty;
+                    endgame -= sign * doubled_penalty;
+                }
+
+                let has_adjacent = own.iter().any(|other|
+                    other.1 != square && (other.2 - file).abs() == 1
+                );
+                if !has_adjacent {
+                    opening -= sign * isolated_penalty;
+                    endgame -= sign * isolated_penalty;
+                } else if !connected {
+                    let supported = own.iter().any(|other|
+                        other.1 != square
+                        && (other.2 - file).abs() == 1
+                        && other.3 <= advancement
+                    );
+                    if !supported {
+                        opening -= sign * backward_penalty;
+                        endgame -= sign * backward_penalty;
+                    }
+                }
+            }
+        }
+
+        (opening, endgame)
     }};
 }
 

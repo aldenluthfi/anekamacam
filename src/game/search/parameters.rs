@@ -519,17 +519,20 @@ fn vector_is_initial(vector: &MoveVector) -> bool {
 }
 
 /// A piece is pawn-like when it never steps or captures backward, always keeps
-/// a quiet single-square forward step available, and its non-initial quiet
-/// moves stay within one square. These purely geometric conditions select the
-/// pawn/soldier of any variant: the single-step rule and one-square bound
-/// exclude leapers like the shogi knight and forward sliders like the lance,
-/// while the no-retreat rule excludes gold/silver/advisor/elephant. Longer
-/// initial pushes (a two- to four-square first move) are exempt from the bound.
-fn derive_pawn_like(state: &State) -> Vec<bool> {
+/// a quiet single-square forward step available, its non-initial quiet moves
+/// stay within one square, and at least `PAWN_MIN_START_COUNT` copies stand on
+/// the board (or wait in hand) at the start. These purely geometric and count
+/// conditions select the pawn/soldier of any variant: the single-step rule and
+/// one-square bound exclude leapers like the shogi knight and forward sliders
+/// like the lance, the no-retreat rule excludes gold/silver/advisor/elephant,
+/// and the starting count excludes sparse forward steppers such as the lone
+/// mini-shogi pawn or the two mini-xiangqi soldiers. Longer initial pushes
+/// (a two- to four-square first move) are exempt from the one-square bound.
+/// The result is recorded as static bit 19 on each piece and its color twin.
+fn derive_pawn_like(state: &mut State) {
     let board_size = state.statics.board_size;
-    let piece_count = state.statics.pieces.len();
 
-    let mut pawn_like = vec![false; piece_count];
+    let mut marked: Vec<usize> = Vec::new();
 
     for piece in state.statics.pieces.iter() {
         if p_color!(piece) != WHITE || p_is_royal!(piece) {
@@ -537,6 +540,7 @@ fn derive_pawn_like(state: &State) -> Vec<bool> {
         }
 
         let index = p_index!(piece) as usize;
+        let color = p_color!(piece) as usize;
         let mut steps_backward = false;
         let mut has_single_step = false;
         let mut ranges_far = false;
@@ -562,16 +566,23 @@ fn derive_pawn_like(state: &State) -> Vec<bool> {
             }
         }
 
-        if !steps_backward && has_single_step && !ranges_far {
-            pawn_like[index] = true;
-            let swapped = state.statics.piece_swap_map[index] as usize;
-            if swapped != NO_PIECE as usize {
-                pawn_like[swapped] = true;
-            }
+        let start_count =
+            count_bits!(state.statics.initial_setup[index]) as usize
+            + state.piece_in_hand[color][index] as usize;
+
+        if !steps_backward && has_single_step && !ranges_far
+        && start_count >= PAWN_MIN_START_COUNT {
+            marked.push(index);
         }
     }
 
-    pawn_like
+    for index in marked {
+        let swapped = state.statics.piece_swap_map[index] as usize;
+        state.static_mut().pieces[index].encoded_static |= 1 << 19;
+        if swapped != NO_PIECE as usize {
+            state.static_mut().pieces[swapped].encoded_static |= 1 << 19;
+        }
+    }
 }
 
 /// Closure of quiet-move landing squares reachable from `square`, i.e. the set
@@ -622,8 +633,7 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
 /// square on its path (a blocker) plus any square whose capture reaches the
 /// path or the pawn itself. A pawn is passed when none of these are occupied.
 fn derive_pawn_interference(
-    state: &State, index: usize, square: usize,
-    path: &Board, pawn_like: &[bool]
+    state: &State, index: usize, square: usize, path: &Board
 ) -> Board {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
@@ -633,7 +643,7 @@ fn derive_pawn_interference(
     let mut mask = *path;
 
     for enemy_index in 0..state.statics.pieces.len() {
-        if !pawn_like[enemy_index]
+        if !p_is_pawn!(&state.statics.pieces[enemy_index])
         || p_color!(&state.statics.pieces[enemy_index]) != enemy {
             continue;
         }
@@ -672,7 +682,7 @@ fn derive_pawn_interference(
 /// lands on it, plus the two lateral neighbours (a phalanx). A pawn is
 /// connected when one of these squares holds a friendly pawn-like piece.
 fn derive_pawn_support(
-    state: &State, index: usize, square: usize, pawn_like: &[bool]
+    state: &State, index: usize, square: usize
 ) -> Board {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
@@ -682,7 +692,7 @@ fn derive_pawn_support(
     let mut mask = board!(state.statics.files, state.statics.ranks);
 
     for friend_index in 0..state.statics.pieces.len() {
-        if !pawn_like[friend_index]
+        if !p_is_pawn!(&state.statics.pieces[friend_index])
         || p_color!(&state.statics.pieces[friend_index]) != own {
             continue;
         }
@@ -751,28 +761,13 @@ fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
     (advancement * advancement * 256.0) as i32
 }
 
-/// Packs the occupied squares of a mask board into a `u128` bitset, one bit
-/// per square index. Boards wider than 128 squares cannot be represented; the
-/// pawn-structure term is disabled for them by `pawn_eval_enabled`.
-fn mask_board_to_bits(board: &Board) -> u128 {
-    let squares =
-        (files!(board) as usize * ranks!(board) as usize).min(128);
-    let mut bits = 0u128;
-    for square in 0..squares {
-        if get!(board, square as u32) {
-            bits |= 1u128 << square;
-        }
-    }
-    bits
-}
-
 /// Derives pawn-like classification and the precomputed passed/connected masks
 /// and advancement gradient consumed by the pawn-structure evaluation term.
 pub fn derive_pawn_parameters(state: &mut State) {
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
 
-    let pawn_like = derive_pawn_like(state);
+    derive_pawn_like(state);
 
     let empty = board!(state.statics.files, state.statics.ranks);
     let mut path_mask = vec![empty; board_size * piece_count];
@@ -781,7 +776,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut advancement = vec![0i32; board_size * piece_count];
 
     for index in 0..piece_count {
-        if !pawn_like[index] {
+        if !p_is_pawn!(&state.statics.pieces[index]) {
             continue;
         }
 
@@ -789,11 +784,9 @@ pub fn derive_pawn_parameters(state: &mut State) {
             let entry = index * board_size + square;
             let path = derive_pawn_path(state, index, square);
 
-            support_mask[entry] =
-                derive_pawn_support(state, index, square, &pawn_like);
+            support_mask[entry] = derive_pawn_support(state, index, square);
             interference_mask[entry] =
-                derive_pawn_interference(state, index, square, &path,
-                    &pawn_like);
+                derive_pawn_interference(state, index, square, &path);
             advancement[entry] =
                 derive_pawn_advancement(state, index, square);
             path_mask[entry] = path;
@@ -817,7 +810,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut passed_endgame = vec![0i32; board_size * piece_count];
 
     for index in 0..piece_count {
-        if !pawn_like[index] {
+        if !p_is_pawn!(&state.statics.pieces[index]) {
             continue;
         }
 
@@ -845,34 +838,22 @@ pub fn derive_pawn_parameters(state: &mut State) {
     }
 
     let names: Vec<char> = state.statics.pieces.iter()
-        .filter(|piece| pawn_like[p_index!(piece) as usize]
-            && p_color!(piece) == WHITE)
+        .filter(|piece| p_is_pawn!(piece) && p_color!(piece) == WHITE)
         .map(|piece| piece.char)
         .collect();
     log_3!("Derived pawn-like pieces: {:?}", names);
 
-    let pawn_like_indices: Vec<usize> = (0..piece_count)
-        .filter(|&index| pawn_like[index])
-        .collect();
-
-    let path_bits: Vec<u128> = path_mask.iter().map(mask_board_to_bits).collect();
-    let interference_bits: Vec<u128> =
-        interference_mask.iter().map(mask_board_to_bits).collect();
-    let support_bits: Vec<u128> =
-        support_mask.iter().map(mask_board_to_bits).collect();
-
-    state.static_mut().pawn_eval_enabled = board_size <= 128;
-    state.static_mut().pawn_like = pawn_like;
-    state.static_mut().pawn_like_indices = pawn_like_indices;
-    state.static_mut().pawn_path_mask = path_bits;
-    state.static_mut().pawn_interference_mask = interference_bits;
-    state.static_mut().pawn_support_mask = support_bits;
+    state.static_mut().pawn_path_mask = path_mask;
+    state.static_mut().pawn_interference_mask = interference_mask;
+    state.static_mut().pawn_support_mask = support_mask;
     state.static_mut().pawn_advancement = advancement;
     state.static_mut().pawn_passed_opening = passed_opening;
     state.static_mut().pawn_passed_endgame = passed_endgame;
     state.static_mut().pawn_connected_opening = avg / 20;
     state.static_mut().pawn_connected_endgame = avg / 12;
     state.static_mut().pawn_doubled_penalty = avg / 16;
+    state.static_mut().pawn_isolated_penalty = avg / 16;
+    state.static_mut().pawn_backward_penalty = avg / 24;
 }
 
 pub fn derive_search_parameters(state: &mut State) {
