@@ -23,7 +23,6 @@ lazy_static! {
     pub static ref ENP_PATTERN: Regex =
         Regex::new(r"^([0-9a-fA-F]{3})([0-9a-fA-F]{3})(.)$|^\*$").unwrap();
     pub static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
-    pub static ref IN_HAND_PATTERN: Regex = Regex::new(r"(\d*)(.)").unwrap();
 }
 
 fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
@@ -2107,30 +2106,18 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
                 continue;
             }
 
-            for m in IN_HAND_PATTERN.captures_iter(hand_part) {
-                let count_str = m.get(1).unwrap().as_str();
-                let piece_char =
-                    m.get(2).unwrap().as_str().chars().next().unwrap();
-
-                let count = if count_str.is_empty() {
-                    1
-                } else {
-                    count_str.parse::<u16>().unwrap_or_else(|_| {
-                        panic!("Invalid piece count: {}", count_str.trim())
-                    })
-                };
-
+            for char in hand_part.chars() {
                 let piece_index = *state.statics
                     .piece_char_map
-                    .get(&piece_char)
+                    .get(&char)
                     .unwrap_or_else(|| {
                         panic!(
                             "Unknown piece character in hand: {}",
-                            piece_char
+                            char
                         )
                     }) as usize;
 
-                state.piece_in_hand[color_idx][piece_index] = count;
+                state.piece_in_hand[color_idx][piece_index] += 1;
             }
         }
     }

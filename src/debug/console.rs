@@ -2487,6 +2487,11 @@ fn execute_command(
 
             log_2!("Legal moves:");
             for (i, mv) in moves.iter().enumerate() {
+                if !make_move!(state, mv.clone()) {
+                    continue;
+                }
+
+                undo_move!(state);
                 log_2!("{:>3} {}", i, format_move(&mv, state, dict));
             }
         }
