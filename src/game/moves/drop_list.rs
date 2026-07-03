@@ -24,7 +24,7 @@ pub fn generate_relevant_drops(
     let piece_color = p_color!(piece) as usize;
     let drops = &piece_setup_drops[piece_index];
 
-    if !get!(state.statics.forbidden_zones[piece_index], square_index) {
+    if get!(state.statics.forbidden_zones[piece_index], square_index) {
         return DropSet::new();
     }
 

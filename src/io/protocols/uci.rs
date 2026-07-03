@@ -503,6 +503,10 @@ fn execute_command(uci: &mut Uci, line: &str) -> bool {
         "setoption" => {
             handle_setoption(uci, &tokens);
         }
+        "d" => {
+            println!("{}", format_game_state(&uci.state));
+            verify_game_state(&uci.state);
+        }
         _ => {}
     }
 
