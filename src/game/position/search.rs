@@ -40,6 +40,9 @@ pub struct SearchBufs {
     pub move_buf: Vec<Vec<Move>>,                                               /* per-ply move lists, pre-allocated  */
     pub score_buf: Vec<Vec<usize>>,                                             /* pre-computed move ordering scores  */
     pub scratch_buf: Vec<u64>,                                                  /* reused scratch for taken_pieces    */
+    pub see_move_buf: Vec<Move>,                                                /* reused LVA candidate list for SEE  */
+    pub see_scratch_buf: Vec<u64>,                                              /* reused LVA leg scratch for SEE     */
+    pub pawn_entry_buf: [Vec<(usize, Square, i32, i32)>; 2],                    /* reused per-side pawn lists in eval */
 }
 
 pub struct SearchResult {
@@ -102,6 +105,10 @@ pub fn clear_search(
         bufs.score_buf = (0..MAX_DEPTH * 2)
             .map(|_| Vec::with_capacity(64)).collect();
         bufs.scratch_buf = Vec::with_capacity(32);
+        bufs.see_move_buf = Vec::with_capacity(32);
+        bufs.see_scratch_buf = Vec::with_capacity(32);
+        bufs.pawn_entry_buf =
+            [Vec::with_capacity(32), Vec::with_capacity(32)];
     }
 
     let piece_count: usize = state.statics.pieces.len();
@@ -397,6 +404,7 @@ pub fn iterative_deepening(
 ///   Disabled in endgame (material swings carry more weight), for
 ///   promotions (their gain is not captured by `captured_value`), and
 ///   while in check.
+#[hotpath::measure]
 fn quiescence_search(
     state: &mut State,
     ttable: &TTable,
@@ -428,7 +436,7 @@ fn quiescence_search(
                                        STAND PAT
     \*-----------------------------------------------------------------------*/
 
-    let stand_pat = evaluate_position!(state);
+    let stand_pat = evaluate_position!(state, bufs);
 
     if !in_check {
         if stand_pat >= beta {
@@ -489,16 +497,20 @@ fn quiescence_search(
         pick_by_score!(
             state,
             &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
-            i, &pv_move
+            i, &pv_move,
+            &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
         );
 
-        let mv = bufs.move_buf[ply][i].clone();
+        let mv = &bufs.move_buf[ply][i];
 
         /*-------------------------------------------------------------------*\
                                        SEE PRUNING
         \*-------------------------------------------------------------------*/
 
-        if !in_check && see!(state, mv.clone()) < 0 {
+        if !in_check
+        && see!(
+            state, mv, &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
+        ) < 0 {
             continue;
         }
 
@@ -507,8 +519,8 @@ fn quiescence_search(
         \*-------------------------------------------------------------------*/
 
         if !in_check {
-            let promotion = promotion!(mv.clone());
-            let captured_value = victim_value!(mv.clone(), state);
+            let promotion = promotion!(mv);
+            let captured_value = victim_value!(mv, state);
 
             if stand_pat + captured_value as i32 + state.statics.delta_margin
                 < alpha
@@ -537,11 +549,13 @@ fn quiescence_search(
 
         if score > alpha {
             if score >= beta {
-                hash_qt_entry!(mv, beta, FBETA, state, qtable);
+                hash_qt_entry!(
+                    bufs.move_buf[ply][i], beta, FBETA, state, qtable
+                );
                 return beta;
             }
 
-            best_move = mv.clone();
+            best_move = bufs.move_buf[ply][i].clone();
             alpha = score;
         }
     }
@@ -654,6 +668,7 @@ fn quiescence_search(
 ///   `[alpha, alpha + 1]`, which is far cheaper. On fail-high the
 ///   move is re-searched with the full window to obtain its exact
 ///   score.
+#[hotpath::measure]
 pub fn alpha_beta(
     state: &mut State,
     ttable: &TTable,
@@ -684,14 +699,8 @@ pub fn alpha_beta(
         return alpha;
     }
 
-    /*-----------------------------------------------------------------------*\
-                                  STATIC EVALUATION
-    \*-----------------------------------------------------------------------*/
-
-    let static_eval = evaluate_position!(state);
-
     if state.search_ply >= MAX_DEPTH as u32 {
-        return static_eval;
+        return evaluate_position!(state, bufs);
     }
 
     info.nodes += 1;
@@ -703,17 +712,6 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     let in_check = is_in_check!(state.playing, state);
-
-    state.static_eval[ply] = if in_check { -INF } else { static_eval };
-
-    /*-----------------------------------------------------------------------*\
-                                    IMPROVING FLAG
-    \*-----------------------------------------------------------------------*/
-
-    let improving = (!in_check
-        && ply >= 2
-        && state.static_eval[ply - 2] != -INF
-        && static_eval > state.static_eval[ply - 2]) as usize;
 
     /*-----------------------------------------------------------------------*\
                                     CHECK EXTENSION
@@ -743,6 +741,23 @@ pub fn alpha_beta(
     if tt_entry.0 {
         return tt_entry.1;
     }
+
+    /*-----------------------------------------------------------------------*\
+                                  STATIC EVALUATION
+    \*-----------------------------------------------------------------------*/
+
+    let static_eval = evaluate_position!(state, bufs);
+
+    state.static_eval[ply] = if in_check { -INF } else { static_eval };
+
+    /*-----------------------------------------------------------------------*\
+                                    IMPROVING FLAG
+    \*-----------------------------------------------------------------------*/
+
+    let improving = (!in_check
+        && ply >= 2
+        && state.static_eval[ply - 2] != -INF
+        && static_eval > state.static_eval[ply - 2]) as usize;
 
     let mut pv_capture = false;
 
@@ -886,10 +901,11 @@ pub fn alpha_beta(
         pick_by_score!(
             state,
             &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
-            i, &pv_move
+            i, &pv_move,
+            &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
         );
 
-        let mv = bufs.move_buf[ply][i].clone();
+        let mv = &bufs.move_buf[ply][i];
 
         let piece = piece!(mv) as usize;
         let start = start!(mv) as usize;
@@ -932,7 +948,9 @@ pub fn alpha_beta(
         && alpha.abs() < MATE_SCORE
         && is_capture
         {
-            let see = see!(state, mv.clone());
+            let see = see!(
+                state, mv, &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
+            );
             if see < -state.statics.see_margin[depth] {
                 continue;
             }
@@ -975,8 +993,8 @@ pub fn alpha_beta(
 
         if depth >= MIN_LMR_DEPTH
         && legal_moves > (moves_len / 5).max(1)
-        && mv != state.killer_hist[state.search_ply as usize][0]
-        && mv != state.killer_hist[state.search_ply as usize][1]
+        && *mv != state.killer_hist[state.search_ply as usize][0]
+        && *mv != state.killer_hist[state.search_ply as usize][1]
         {
             reduction += reduction!(
                 state, depth, legal_moves, in_check, opponent_in_check,
@@ -1059,7 +1077,7 @@ pub fn alpha_beta(
 
         if score > best_score {
             best_score = score;
-            best_move = mv.clone();
+            best_move = bufs.move_buf[ply][i].clone();
 
             if score > alpha {
                 if score >= beta {
@@ -1077,7 +1095,8 @@ pub fn alpha_beta(
                     }
 
                     hash_tt_entry!(
-                        mv, beta, FBETA, depth, state, ttable
+                        bufs.move_buf[ply][i], beta, FBETA, depth, state,
+                        ttable
                     );
 
                     return beta;
@@ -1103,7 +1122,7 @@ pub fn alpha_beta(
                 let (a, b) = state.pv_table
                     .split_at_mut(next_ply * PV_STRIDE);
 
-                a[ply * PV_STRIDE + ply] = mv.clone();
+                a[ply * PV_STRIDE + ply] = bufs.move_buf[ply][i].clone();
 
                 for pv_index in next_ply..child_len {
                     a[ply * PV_STRIDE + pv_index] = b[pv_index].clone();

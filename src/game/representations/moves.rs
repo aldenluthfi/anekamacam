@@ -114,17 +114,26 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - the next 12 bits denotes the square that is checked (unload square)
 ///
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Move(pub u128, pub Arc<Vec<u64>>);
+pub struct Move(pub u128, pub Option<Arc<Vec<u64>>>);
 
 impl Default for Move {
     fn default() -> Self {
-        EMPTY_CAPTURE_LIST.with(|e| Move(0u128, Arc::clone(e)))
+        Move(0u128, None)
     }
 }
 
 /*----------------------------------------------------------------------------*\
                                UTILTY MOVE MACROS
 \*----------------------------------------------------------------------------*/
+
+/// Borrows the capture/check list of a `Move` as a slice, yielding an empty
+/// slice for the common no-payload case.
+#[macro_export]
+macro_rules! m_captures {
+    ($mv:expr) => {
+        $mv.1.as_deref().map_or(&[] as &[u64], |list| list.as_slice())
+    };
+}
 
 /// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
 /// `move.1`.  The result is 0 for moves with no captures (empty list).
@@ -134,9 +143,10 @@ impl Default for Move {
 #[macro_export]
 macro_rules! m_signature {
     ($mv:expr) => {
-        $mv.1.iter().fold(0u64, |acc, &x| acc ^ x) |
-        ($mv.1.iter().any(|&capture| !multi_move_is_unload!(capture)) as u64)
-        << 34                                                                   /* Set if its an actual capture       */
+        m_captures!($mv).iter().fold(0u64, |acc, &x| acc ^ x) |
+        (m_captures!($mv).iter().any(
+            |&capture| !multi_move_is_unload!(capture)
+        ) as u64) << 34                                                         /* Set if its an actual capture       */
     };
 }
 
@@ -152,7 +162,9 @@ macro_rules! m_capture {
     ($mv:expr) => {
         move_type!($mv) == SINGLE_CAPTURE_MOVE && !is_unload!($mv) ||
         move_type!($mv) == MULTI_CAPTURE_MOVE  &&
-        $mv.1.iter().any(|&capture| !multi_move_is_unload!(capture))
+        m_captures!($mv).iter().any(
+            |&capture| !multi_move_is_unload!(capture)
+        )
     };
 }
 

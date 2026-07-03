@@ -53,7 +53,8 @@ macro_rules! is_square_attacked {
 
 #[macro_export]
 macro_rules! is_in_check {
-    ($side:expr, $state:expr) => {{
+    ($side:expr, $state:expr) => {
+        hotpath::measure_block!("state::is_in_check", {
         let monarch_indices = &$state.royal_list[$side as usize];
 
         (!monarch_indices.is_empty() && $state.game_phase != SETUP) && {
@@ -72,7 +73,8 @@ macro_rules! is_in_check {
                 )
             })
         }
-    }};
+        })
+    };
 }
 
 pub fn generate_relevant_castling(
@@ -232,7 +234,7 @@ pub fn generate_relevant_castling(
             }
         }
 
-        encoded_move.1 = Arc::new(mem::take(&mut check_list));
+        encoded_move.1 = Some(Arc::new(mem::take(&mut check_list)));
 
         result.push(encoded_move);
     }
@@ -874,7 +876,7 @@ macro_rules! process_multi_leg_vector {
                 enc_capture_part!(encoded_move, $scratch[0] as u128);
             } else {
                 enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = Arc::new(mem::take($scratch));
+                encoded_move.1 = Some(Arc::new(mem::take($scratch)));
             }
 
             let entered_mandatory = get!(
@@ -945,7 +947,7 @@ macro_rules! process_multi_leg_vector {
                 enc_capture_part!(encoded_move, $scratch[0] as u128);
             } else {
                 enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = Arc::new(mem::take($scratch));
+                encoded_move.1 = Some(Arc::new(mem::take($scratch)));
             }
 
             $out.push(encoded_move);
@@ -1078,7 +1080,7 @@ macro_rules! generate_castling_list {
                     continue;
                 }
 
-                if mv.1.iter().all(
+                if m_captures!(mv).iter().all(
                     |cap|
                     {
                         let square = multi_move_unload_square!(cap) as usize;
@@ -1142,7 +1144,7 @@ macro_rules! generate_castling_list {
                     continue;
                 }
 
-                if mv.1.iter().all(
+                if m_captures!(mv).iter().all(
                     |cap|
                     {
                         let square = multi_move_unload_square!(cap) as usize;
@@ -1186,7 +1188,8 @@ macro_rules! generate_castling_list {
 #[macro_export]
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
-        {
+        hotpath::measure_block!("state::make_move", {
+            let applied_move: Move = $mv;                                       /* bind once: $mv expands per use     */
 
             #[cfg(debug_assertions)]
             verify_game_state($state);
@@ -1202,20 +1205,20 @@ macro_rules! make_move {
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
 
-            let move_type = move_type!($mv);
-            let pass_move = is_pass!($mv);
+            let move_type = move_type!(applied_move);
+            let pass_move = is_pass!(applied_move);
 
             let stand_off_before =
                 stand_offs!($state) && is_in_stand_off!($state);
 
             if move_type == QUIET_MOVE {
-                let piece_index = piece!($mv) as usize;
-                let start_square = start!($mv) as u32;
-                let end_square = end!($mv) as u32;
-                let is_promotion = promotion!($mv);
-                let creates_enp = creates_enp!($mv);
-                let promoted_piece = promoted!($mv) as usize;
-                let enp_square = created_enp!($mv) as u32;
+                let piece_index = piece!(applied_move) as usize;
+                let start_square = start!(applied_move) as u32;
+                let end_square = end!(applied_move) as u32;
+                let is_promotion = promotion!(applied_move);
+                let creates_enp = creates_enp!(applied_move);
+                let promoted_piece = promoted!(applied_move) as usize;
+                let enp_square = created_enp!(applied_move) as u32;
 
                 let piece_color =
                     p_color!($state.statics.pieces[piece_index]);
@@ -1402,17 +1405,17 @@ macro_rules! make_move {
                 );
 
             } else if move_type == SINGLE_CAPTURE_MOVE {
-                let piece_index = piece!($mv) as usize;
-                let start_square = start!($mv) as u32;
-                let end_square = end!($mv) as u32;
-                let is_promotion = promotion!($mv);
-                let creates_enp = creates_enp!($mv);
-                let promoted_piece = promoted!($mv) as usize;
-                let enp_square = created_enp!($mv) as u32;
-                let captured_piece = captured_piece!($mv) as usize;
-                let captured_square = captured_square!($mv) as u32;
-                let is_unload = is_unload!($mv);
-                let unload_square = unload_square!($mv) as u32;
+                let piece_index = piece!(applied_move) as usize;
+                let start_square = start!(applied_move) as u32;
+                let end_square = end!(applied_move) as u32;
+                let is_promotion = promotion!(applied_move);
+                let creates_enp = creates_enp!(applied_move);
+                let promoted_piece = promoted!(applied_move) as usize;
+                let enp_square = created_enp!(applied_move) as u32;
+                let captured_piece = captured_piece!(applied_move) as usize;
+                let captured_square = captured_square!(applied_move) as u32;
+                let is_unload = is_unload!(applied_move);
+                let unload_square = unload_square!(applied_move) as u32;
 
                 let piece_color = p_color!($state.statics.pieces[piece_index]);
                 let piece_unmoved = get!(
@@ -1759,13 +1762,13 @@ macro_rules! make_move {
                     $state.piece_count[captured_piece] -= 1;
                 }
             } else if move_type == MULTI_CAPTURE_MOVE {
-                let piece_index = piece!($mv) as usize;
-                let start_square = start!($mv) as u32;
-                let end_square = end!($mv) as u32;
-                let is_promotion = promotion!($mv);
-                let creates_enp = creates_enp!($mv);
-                let promoted_piece = promoted!($mv) as usize;
-                let enp_square = created_enp!($mv) as u32;
+                let piece_index = piece!(applied_move) as usize;
+                let start_square = start!(applied_move) as u32;
+                let end_square = end!(applied_move) as u32;
+                let is_promotion = promotion!(applied_move);
+                let creates_enp = creates_enp!(applied_move);
+                let promoted_piece = promoted!(applied_move) as usize;
+                let enp_square = created_enp!(applied_move) as u32;
 
                 let piece_color = p_color!($state.statics.pieces[piece_index]);
                 let piece_unmoved = get!(
@@ -1940,7 +1943,7 @@ macro_rules! make_move {
                         ][piece_color as usize]
                 }
 
-                for cap in $mv.1.iter() {
+                for cap in m_captures!(applied_move).iter() {
                     let captured_piece =
                         multi_move_captured_piece!(cap) as usize;
                     let captured_square =
@@ -2121,8 +2124,8 @@ macro_rules! make_move {
                     }
                 }
             } else if move_type == DROP_MOVE {
-                let piece_index = piece!($mv) as usize;
-                let drop_square = start!($mv) as u32;
+                let piece_index = piece!(applied_move) as usize;
+                let drop_square = start!(applied_move) as u32;
 
                 let piece_color = p_color!($state.statics.pieces[piece_index]);
 
@@ -2188,12 +2191,12 @@ macro_rules! make_move {
                     $state.game_phase = OPENING;
                 }
              } else if move_type == CASTLING_MOVE {
-                let piece_index = piece!($mv) as usize;
-                let start_square = start!($mv) as u32;
-                let end_square = end!($mv) as u32;
-                let captured_piece = captured_piece!($mv) as usize;
-                let captured_square = captured_square!($mv) as u32;
-                let unload_square = unload_square!($mv) as u32;
+                let piece_index = piece!(applied_move) as usize;
+                let start_square = start!(applied_move) as u32;
+                let end_square = end!(applied_move) as u32;
+                let captured_piece = captured_piece!(applied_move) as usize;
+                let captured_square = captured_square!(applied_move) as u32;
+                let unload_square = unload_square!(applied_move) as u32;
 
                 let piece_color = p_color!($state.statics.pieces[piece_index]);
                 let captured_color = p_color!(
@@ -2364,7 +2367,7 @@ macro_rules! make_move {
             }
 
             let snapshot: Snapshot = Snapshot {
-                move_ply: $mv,
+                move_ply: applied_move,
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
@@ -2384,7 +2387,7 @@ macro_rules! make_move {
 
                 true
             }
-        }
+        })
     };
 }
 
@@ -2395,7 +2398,8 @@ macro_rules! make_move {
 /// position repetition map.
 #[macro_export]
 macro_rules! undo_move {
-    ($state:expr) => {{
+    ($state:expr) => {
+        hotpath::measure_block!("state::undo_move", {
 
         #[cfg(debug_assertions)]
         verify_game_state($state);
@@ -2796,7 +2800,7 @@ macro_rules! undo_move {
 
             $state.piece_list[piece_index].insert(start_square as Square);
 
-            for cap in mv.1.iter() {
+            for cap in m_captures!(mv).iter() {
                 let captured_piece = multi_move_captured_piece!(cap) as usize;
                 let captured_square = multi_move_captured_square!(cap) as u32;
                 let captured_unmoved = multi_move_captured_unmoved!(cap);
@@ -3017,7 +3021,8 @@ macro_rules! undo_move {
 
         #[cfg(debug_assertions)]
         verify_game_state(&$state);
-    }};
+        })
+    };
 }
 
 /// Applies a null move for the side to move.
@@ -3109,6 +3114,7 @@ macro_rules! undo_null_move {
 ///
 /// Normal moves are skipped during setup phase; drop generation may use
 /// either own-hand or enemy-hand inventory depending on drop flags.
+#[hotpath::measure]
 pub fn generate_all_moves_and_drops(
     state: &State,
     out: &mut Vec<Move>,
@@ -3141,6 +3147,7 @@ pub fn generate_all_moves_and_drops(
     }
 }
 
+#[hotpath::measure]
 pub fn generate_all_captures(
     state: &State,
     out: &mut Vec<Move>,

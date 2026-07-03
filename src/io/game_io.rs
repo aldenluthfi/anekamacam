@@ -2314,7 +2314,7 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
                 enp_piece!(state.en_passant_square) &&
                 end!(m) as u32 ==
                 enp_square!(state.en_passant_square) ||
-                m.1.iter().any(|&cap|
+                m_captures!(m).iter().any(|&cap|
                     multi_move_captured_square!(cap) as u32 ==
                     enp_captured!(state.en_passant_square) &&
                     multi_move_captured_piece!(cap) as u32 ==

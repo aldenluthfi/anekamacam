@@ -176,7 +176,8 @@ macro_rules! tt_score {
 /// On failure returns (false, i32::MIN, null_pseudo_move()).
 #[macro_export]
 macro_rules! probe_tt_entry {
-    ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {{
+    ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {
+        hotpath::measure_block!("tt::probe", {
         let hash = $state.position_hash;
         let index = tt_index!(hash, $table.len());
         let entry = &mut unsafe { &mut *($table.table.get()) }[index];
@@ -241,7 +242,8 @@ macro_rules! probe_tt_entry {
                 }
             }
         }
-    }};
+        })
+    };
 }
 
 #[macro_export]
@@ -298,7 +300,8 @@ macro_rules! hash_tt_entry {
     (
         $tt_move:expr, $score:expr, $flags:expr,
         $depth:expr, $state:expr, $table:expr
-    ) => {{
+    ) => {
+        hotpath::measure_block!("tt::store", {
         let hash = $state.position_hash;
         let index = tt_index!(hash, $table.len());
         let table_vec: &mut Vec<TTEntry> = unsafe { &mut *($table.table.get()) };
@@ -357,7 +360,8 @@ macro_rules! hash_tt_entry {
             entry.age = age;
             entry.version.fetch_add(1, Ordering::Release);                      /* seqlock unlock: version now even   */
         }
-    }};
+        })
+    };
 }
 
 #[macro_export]
@@ -561,7 +565,8 @@ macro_rules! qt_flags {
 ///   Step 3: sig field matches the stored MoveSignature (anti-collision)
 #[macro_export]
 macro_rules! probe_qt_entry {
-    ($state:expr, $qtable:expr, $alpha:expr, $beta:expr) => {{
+    ($state:expr, $qtable:expr, $alpha:expr, $beta:expr) => {
+        hotpath::measure_block!("qt::probe", {
         let hash = $state.position_hash;
         let index = qt_index!(hash, $qtable.len());
         let entry = &mut unsafe { &mut *($qtable.table.get()) }[index];
@@ -618,7 +623,8 @@ macro_rules! probe_qt_entry {
                 }
             }
         }
-    }};
+        })
+    };
 }
 
 #[macro_export]
@@ -668,7 +674,8 @@ macro_rules! probe_qt_move {
 /// entry is stale (age < cur_age - 1) or new entry is FEXACT.
 #[macro_export]
 macro_rules! hash_qt_entry {
-    ($tt_move:expr, $score:expr, $flags:expr, $state:expr, $qtable:expr) => {{
+    ($tt_move:expr, $score:expr, $flags:expr, $state:expr, $qtable:expr) => {
+        hotpath::measure_block!("qt::store", {
         let hash = $state.position_hash;
         let index = qt_index!(hash, $qtable.len());
         let table_vec: &mut Vec<QTEntry> =
@@ -720,5 +727,6 @@ macro_rules! hash_qt_entry {
             entry.age = age;
             entry.version.fetch_add(1, Ordering::Release);
         }
-    }};
+        })
+    };
 }

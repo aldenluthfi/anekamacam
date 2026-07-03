@@ -34,7 +34,7 @@ macro_rules! victim_value {
         if move_type == SINGLE_CAPTURE_MOVE {
             p_value!(captured_piece!($mv), $state) as i32
         } else if move_type == MULTI_CAPTURE_MOVE {
-            $mv.1.iter().fold(
+            m_captures!($mv).iter().fold(
                 0,
                 |acc, &captured|
                 {
@@ -51,16 +51,18 @@ macro_rules! victim_value {
 
 #[macro_export]
 macro_rules! lva {
-    ($state:expr, $target:expr, $color:expr) => {{
+    ($state:expr, $target:expr, $color:expr, $out:expr, $scratch:expr) => {
+        hotpath::measure_block!("order::lva", {
         let state: &State = $state;
         let target: Square = $target;
         let color: u8 = $color;
+        let out: &mut Vec<Move> = $out;
+        let scratch: &mut Vec<u64> = $scratch;
+
+        out.clear();
 
         let attacks = &state.statics.relevant_attacks
             [1 - color as usize][target as usize];
-
-        let mut out = Vec::with_capacity(attacks.len());
-        let scratch = &mut Vec::with_capacity(attacks.len());
 
         attacks.iter()
             .filter_map(|(piece, square, vector)| {
@@ -78,33 +80,25 @@ macro_rules! lva {
                 );
             });
 
-        out = out.into_iter().filter_map(|mv| {
-            if m_capture!(mv)
-            && move_type!(mv) == SINGLE_CAPTURE_MOVE
-            && captured_square!(mv) as u16 == $target
-            && !is_unload!(mv) {
-                Some(mv)
-            } else if m_capture!(mv)
-            && move_type!(mv) == MULTI_CAPTURE_MOVE
-            && mv.1.iter().any({
-                |captured| {
+        out.retain(|mv| {
+            m_capture!(mv)
+            && (
+                move_type!(mv) == SINGLE_CAPTURE_MOVE
+                && captured_square!(mv) as u16 == target
+                && !is_unload!(mv)
+                || move_type!(mv) == MULTI_CAPTURE_MOVE
+                && m_captures!(mv).iter().any(|captured| {
                     !multi_move_is_unload!(captured) &&
-                    multi_move_captured_square!(captured) as u16 == $target
-                }
-            }) {
-                Some(mv)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<Move>>();
+                    multi_move_captured_square!(captured) as u16 == target
+                })
+            )
+        });
 
-        out.sort_by_cached_key(
+        out.sort_unstable_by_key(
             |mv| -(p_value!(piece!(mv), state) as i32)
         );
-
-        out
-    }};
+        })
+    };
 }
 
 /// Evaluates a capture sequence on a target square via negamax exchange
@@ -114,12 +108,13 @@ macro_rules! lva {
 /// Non-capture moves return 0.
 #[macro_export]
 macro_rules! see {
-    ($state:expr, $mv:expr) => {{
+    ($state:expr, $mv:expr, $see_moves:expr, $see_scratch:expr) => {
+        hotpath::measure_block!("order::see", {
         let state: &mut State = $state;
-        let mv: Move = $mv.clone();
+        let seen_move: &Move = $mv;
 
-        let initial_attacker = attack_value!(mv, state);
-        let initial_attackee = victim_value!(mv, state);
+        let initial_attacker = attack_value!(seen_move, state);
+        let initial_attackee = victim_value!(seen_move, state);
 
         let mut gain     = [0i32; 32];
         let mut gain_len = 0usize;
@@ -130,31 +125,35 @@ macro_rules! see {
         gain[gain_len] = initial_attacker - initial_attackee;
         gain_len += 1;
 
-        if !make_move!(state, mv.clone()) {
+        if !make_move!(state, seen_move.clone()) {
             -20000
         } else if initial_attackee > initial_attacker {
             undo_move!(state);
             initial_attackee - initial_attacker
         } else {
+            let target = end!(seen_move) as Square;
             let mut moves_to_undo = 1;
 
             'main_loop: loop {
-                let target = end!(mv) as Square;
-                let mut move_list = lva!(state, target, state.playing);
+                lva!(
+                    state, target, state.playing, $see_moves, $see_scratch
+                );
 
-                let Some(mut mv) = move_list.pop() else {
+                let Some(mut attacker) = $see_moves.pop() else {
                     break;
                 };
+                let mut attacker_value = attack_value!(attacker, state);
 
-                while !make_move!(state, mv.clone()) {
-                    if move_list.is_empty() {
+                while !make_move!(state, attacker) {
+                    if $see_moves.is_empty() {
                         break 'main_loop;
                     }
 
-                    mv = move_list.pop().unwrap();
+                    attacker = $see_moves.pop().unwrap();
+                    attacker_value = attack_value!(attacker, state);
                 }
 
-                gain[gain_len] = attack_value!(mv, state) - gain[gain_len - 1];
+                gain[gain_len] = attacker_value - gain[gain_len - 1];
 
                 gain_len += 1;
                 moves_to_undo += 1;
@@ -179,7 +178,8 @@ macro_rules! see {
 
             gain[0]
         }
-    }};
+        })
+    };
 }
 
 /*----------------------------------------------------------------------------*\
@@ -199,26 +199,31 @@ macro_rules! see {
 /// move is searched earlier.
 #[macro_export]
 macro_rules! score_move {
-    ($state:expr, $mv:expr, $pv_move:expr) => {{
+    (
+        $state:expr, $mv:expr, $pv_move:expr,
+        $see_moves:expr, $see_scratch:expr
+    ) => {{
+        let scored_move: &Move = $mv;
+
         if $pv_move.as_ref().is_some_and(
-            |pm| m_matches!($mv, pm)
+            |pm| m_matches!(scored_move, pm)
         ) {
             5_000_000                                                           /* PV move always ordered first        */
-        } else if !m_capture!($mv) {
+        } else if !m_capture!(scored_move) {
             let killers =
                 &$state.killer_hist[$state.search_ply as usize];
 
             let killer_base =
                 1_000_000 + 2 * MAX_HIST_VALUE as usize;
 
-            if $mv == killers[0] {
+            if *scored_move == killers[0] {
                 killer_base + 2                                                 /* killer scores above history         */
-            } else if $mv == killers[1] {
+            } else if *scored_move == killers[1] {
                 killer_base + 1                                                 /* killer scores above history         */
             } else {
-                let piece = piece!($mv) as usize;
-                let start = start!($mv) as usize;
-                let end = end!($mv) as usize;
+                let piece = piece!(scored_move) as usize;
+                let start = start!(scored_move) as usize;
+                let end = end!(scored_move) as usize;
                 let board_size = $state.statics.board_size;
                 let idx =
                     piece * board_size * board_size + start * board_size + end;
@@ -227,7 +232,9 @@ macro_rules! score_move {
                 (1_000_000 + MAX_HIST_VALUE as i32 + entry) as usize
             }
         } else {
-            let see_score = see!($state, $mv);
+            let see_score = see!(
+                $state, scored_move, $see_moves, $see_scratch
+            );
 
             if see_score >= 0 {
                 (4_000_000 + see_score) as usize                                /* winning captures ordered second     */
@@ -247,14 +254,18 @@ macro_rules! score_move {
 /// `$pv_move` is the TT best move for this node.
 #[macro_export]
 macro_rules! pick_by_score {
-    ($state:expr, $moves:expr, $scores:expr, $index:expr, $pv_move:expr) => {{
+    (
+        $state:expr, $moves:expr, $scores:expr, $index:expr, $pv_move:expr,
+        $see_moves:expr, $see_scratch:expr
+    ) => {
+        hotpath::measure_block!("order::pick", {
         let moves: &mut Vec<Move> = $moves;
         let scores: &mut Vec<usize> = $scores;
         let index = $index;
 
         if scores[index] == usize::MAX {
             scores[index] = score_move!(
-                $state, moves[index].clone(), $pv_move
+                $state, &moves[index], $pv_move, $see_moves, $see_scratch
             );
         }
 
@@ -264,7 +275,7 @@ macro_rules! pick_by_score {
         for i in (index + 1)..moves.len() {
             if scores[i] == usize::MAX {
                 scores[i] = score_move!(
-                    $state, moves[i].clone(), $pv_move
+                    $state, &moves[i], $pv_move, $see_moves, $see_scratch
                 );
             }
 
@@ -278,5 +289,6 @@ macro_rules! pick_by_score {
             moves.swap(index, best_index);
             scores.swap(index, best_index);
         }
-    }};
+        })
+    };
 }

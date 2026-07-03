@@ -248,10 +248,6 @@ pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 pub const CASTLING_MOVE: u128 = 4;
 
-thread_local! {
-    pub static EMPTY_CAPTURE_LIST: Arc<Vec<u64>> = Arc::new(Vec::new());
-}
-
 lazy_static! {
     pub static ref CASTLING_HASHES: [u128; 16] =
         array::from_fn(|_| random_u128());
@@ -297,7 +293,7 @@ lazy_static! {
 }
 
 pub fn null_move() -> Move {
-    EMPTY_CAPTURE_LIST.with(|e| Move(!0u128, Arc::clone(e)))
+    Move(!0u128, None)
 }
 
 pub fn null_pseudo_move() -> PseudoMove {

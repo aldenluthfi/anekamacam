@@ -82,13 +82,13 @@ pub fn format_move(
         }
     }
 
-    if !mv.1.is_empty() && move_type != CASTLING_MOVE {
+    if !m_captures!(mv).is_empty() && move_type != CASTLING_MOVE {
         let end = end!(mv);
         let end_str = format_square(end as Square, state);
 
         move_str.push_str(&format!(":{}", end_str));
 
-        for capture in mv.1.iter() {
+        for capture in m_captures!(mv).iter() {
             let capt_sq = multi_move_captured_square!(capture);
             let capt_sq_str = format_square(capt_sq as Square, state);
 

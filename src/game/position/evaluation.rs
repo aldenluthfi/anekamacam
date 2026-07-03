@@ -14,7 +14,8 @@
 /// middlegame evaluation only, since the king should be active in the endgame.
 #[macro_export]
 macro_rules! king_shelter {
-    ($state:expr, $color:expr) => {{
+    ($state:expr, $color:expr) => {
+        hotpath::measure_block!("eval::king_shelter", {
         let mut shelter = 0;
 
         for (piece_index, piece) in $state.statics.pieces.iter().enumerate() {
@@ -31,7 +32,8 @@ macro_rules! king_shelter {
         }
 
         shelter
-    }}
+        })
+    }
 }
 
 /// Variant-agnostic pawn-structure term, returned as an `(opening, endgame)`
@@ -47,7 +49,8 @@ macro_rules! king_shelter {
 /// board size and works on boards of any width.
 #[macro_export]
 macro_rules! pawn_structure {
-    ($state:expr) => {{
+    ($state:expr, $pawns:expr) => {
+        hotpath::measure_block!("eval::pawn_structure", {
         let board_size = $state.statics.board_size;
         let files = $state.statics.files as i32;
 
@@ -62,8 +65,9 @@ macro_rules! pawn_structure {
         let isolated_penalty = $state.statics.pawn_isolated_penalty;
         let backward_penalty = $state.statics.pawn_backward_penalty;
 
-        let mut pawns: [Vec<(usize, Square, i32, i32)>; 2] =
-            [Vec::new(), Vec::new()];
+        let pawns: &mut [Vec<(usize, Square, i32, i32)>; 2] = $pawns;
+        pawns[0].clear();
+        pawns[1].clear();
         for (index, piece) in $state.statics.pieces.iter().enumerate() {
             if !p_is_pawn!(piece) {
                 continue;
@@ -135,7 +139,8 @@ macro_rules! pawn_structure {
         }
 
         (opening, endgame)
-    }};
+        })
+    };
 }
 
 /// Evaluates the current position from the side-to-move perspective.
@@ -151,7 +156,8 @@ macro_rules! pawn_structure {
 /// - Handles `opening_score == 0` safely during interpolation.
 #[macro_export]
 macro_rules! evaluate_position {
-    ($state:expr) => {{
+    ($state:expr, $bufs:expr) => {
+        hotpath::measure_block!("eval::position", {
         let white = WHITE as usize;
         let black = BLACK as usize;
 
@@ -185,7 +191,8 @@ macro_rules! evaluate_position {
         let king_safety = 10
             * (king_shelter!($state, WHITE) - king_shelter!($state, BLACK));
 
-        let (pawn_opening, pawn_endgame) = pawn_structure!($state);
+        let (pawn_opening, pawn_endgame) =
+            pawn_structure!($state, &mut $bufs.pawn_entry_buf);
 
         match $state.game_phase {
             OPENING | SETUP => {
@@ -225,5 +232,6 @@ macro_rules! evaluate_position {
             }
             _ => panic!("Invalid game phase {}", $state.game_phase),
         }
-    }};
+        })
+    };
 }

@@ -2168,7 +2168,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                             );
                             set!(quiet_board, end!(mv) as u32);
                         } else if move_type!(mv) == MULTI_CAPTURE_MOVE {
-                            mv.1.iter().for_each(|&cap| {
+                            m_captures!(mv).iter().for_each(|&cap| {
                                 set!(
                                     captr_board,
                                     multi_move_captured_square!(cap) as u32
@@ -2513,7 +2513,11 @@ fn execute_command(
                 return;
             }
 
-            let see_score = see!(state, mv.clone());
+            let mut lva_moves: Vec<Move> = Vec::new();
+            let mut lva_scratch: Vec<u64> = Vec::new();
+            let see_score = see!(
+                state, &mv, &mut lva_moves, &mut lva_scratch
+            );
 
             log_2!("SEE for {}: {}", format_move(&mv, state, dict), see_score);
         }
