@@ -983,7 +983,7 @@ impl State {
 
         let mut results = vec![board!(file_count, rank_count); board_size];
 
-        for square in 0..board_size {
+        for (square, board) in results.iter_mut().enumerate() {
             let start_file = square as i32 % files;
             let start_rank = square as i32 / files;
 
@@ -999,7 +999,7 @@ impl State {
                     if neighbour_file >= 0 && neighbour_file < files
                     && neighbour_rank >= 0 && neighbour_rank < ranks {
                         let neighbour = neighbour_rank * files + neighbour_file;
-                        set!(results[square], neighbour as u32);
+                        set!(board, neighbour as u32);
                     }
                 }
             }

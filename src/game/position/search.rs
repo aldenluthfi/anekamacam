@@ -109,8 +109,11 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// - bufs: &mut SearchBufs    -> scratch buffers, (re)allocated if needed
 ///
 pub fn clear_search(
-    state: &mut State, ttable: &TTable, qtable: &QTable,
-    info: &mut SearchInfo, bufs: &mut SearchBufs,
+    state: &mut State,
+    ttable: &TTable,
+    qtable: &QTable,
+    info: &mut SearchInfo,
+    bufs: &mut SearchBufs,
 ) {
     info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;

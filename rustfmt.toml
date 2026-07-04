@@ -1,0 +1,36 @@
+# rustfmt.toml
+#
+# Approximates the project's strict style (see example.rs):
+# - code fits in 80 columns
+# - functions with many parameters break to one parameter per line
+# - hand-written comments are never rewrapped or normalized, so the
+#   column-81 trailing /* */ comments and doc templates survive
+# - macro bodies keep their hand-crafted layout
+#
+# Requires nightly rustfmt for the comment/macro options; on stable
+# they are ignored with a warning and the rest still applies.
+
+style_edition = "2024"
+
+max_width = 80                             # code budget; trailing
+error_on_line_overflow = false             # comments may reach col 120
+
+fn_params_layout = "Tall"                  # one param per line once the
+fn_call_width = 60                         # signature no longer fits
+attr_fn_like_width = 60
+
+hard_tabs = false
+tab_spaces = 4
+newline_style = "Unix"
+
+wrap_comments = false                      # never rewrap comments
+normalize_comments = false                 # keep /* */ and /// as-is
+comment_width = 120                        # trailing comment allowance
+
+format_macro_matchers = false              # macros are hand-formatted
+format_macro_bodies = false
+
+merge_derives = true
+use_field_init_shorthand = false
+use_try_shorthand = false
+remove_nested_parens = true

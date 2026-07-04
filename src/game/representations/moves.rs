@@ -113,14 +113,8 @@ pub type PseudoMove = (u128, MoveSignature);
 ///   when performing castling (is unload)
 /// - the next 12 bits denotes the square that is checked (unload square)
 ///
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Move(pub u128, pub Option<Arc<Vec<u64>>>);
-
-impl Default for Move {
-    fn default() -> Self {
-        Move(0u128, None)
-    }
-}
 
 /*----------------------------------------------------------------------------*\
                                UTILITY MOVE MACROS

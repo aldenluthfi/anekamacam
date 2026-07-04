@@ -2471,15 +2471,14 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 /// current context are rejected with a log message.
 ///
 /// Params:
-/// - command: &str          -> the raw input line
-/// - state: &mut State      -> the live game state
-/// - playground: Option<&mut State> -> playground state when that tab
-///   issued the command
-/// - variant: Option<String> -> active variant name, for exports
-/// - dict: Option<&Translator> -> translator for printed move names
-/// - ttable / qtable        -> shared tables for search commands
-/// - threads: usize         -> worker count for search commands
-/// - sender: Sender<TuiEvent> -> channel for result snapshots
+/// - command: &str                  -> the raw input line
+/// - state: &mut State              -> the live game state
+/// - playground: Option<&mut State> -> playground state
+/// - variant: Option<String>        -> active variant name, for exports
+/// - dict: Option<&Translator>      -> translator for printed move names
+/// - ttable / qtable                -> shared tables for search commands
+/// - threads: usize                 -> worker count for search commands
+/// - sender: Sender<TuiEvent>       -> channel for result snapshots
 ///
 fn execute_command(
     command: &str,
@@ -2577,7 +2576,7 @@ fn execute_command(
                 }
 
                 undo_move!(state);
-                log_2!("{:>3} {}", i, format_move(&mv, state, dict));
+                log_2!("{:>3} {}", i, format_move(mv, state, dict));
             }
         }
         _ if trimmed.starts_with("see") => {

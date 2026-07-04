@@ -342,8 +342,12 @@ macro_rules! probe_pv_move {
 #[macro_export]
 macro_rules! hash_tt_entry {
     (
-        $tt_move:expr, $score:expr, $flags:expr,
-        $depth:expr, $state:expr, $table:expr
+        $tt_move:expr,
+        $score:expr,
+        $flags:expr,
+        $depth:expr,
+        $state:expr,
+        $table:expr
     ) => {
         hotpath::measure_block!("tt::store", {
         let hash = $state.position_hash;
