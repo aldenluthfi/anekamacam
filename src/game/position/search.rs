@@ -23,7 +23,11 @@ pub struct SearchInfo {
     pub start_time: u128,                                                       /* start time since engine launch     */
 
     pub set_depth: usize,                                                       /* maximum search depth               */
-    pub set_timed: u128,                                                        /* time limit in ns (0 = unlimited)   */
+    pub set_nodes: u128,                                                        /* node limit (0 = unlimited)         */
+    pub soft_deadline: u128,                                                    /* ns since launch after which no new */
+                                                                                /* depth starts (0 = none)            */
+    pub hard_deadline: u128,                                                    /* ns since launch at which the       */
+                                                                                /* search aborts (0 = none)           */
     pub thread_count: usize,                                                    /* threads active in this search      */
 
     pub nodes: u128,                                                            /* total nodes searched so far        */
@@ -60,8 +64,9 @@ pub struct SearchResult {
 
 /// Polls stop conditions and updates search interrupt state.
 ///
-/// A timed search is interrupted when elapsed nanoseconds from `start_time`
-/// reaches or exceeds `set_timed`.
+/// A search is interrupted by the global stop flag, by reaching its node
+/// limit, or by the wall clock passing `hard_deadline` (absolute
+/// nanoseconds since engine launch; 0 disables the deadline).
 ///
 /// Params:
 /// - info: &mut SearchInfo -> search whose interrupt flag is updated
@@ -72,12 +77,12 @@ pub fn check_interrupt(info: &mut SearchInfo) {
         return;
     }
 
-    let elapsed = ENGINE_START
-        .elapsed()
-        .as_nanos()
-        .saturating_sub(info.start_time);
-
     if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+        let elapsed = ENGINE_START
+            .elapsed()
+            .as_nanos()
+            .saturating_sub(info.start_time);
+
         log_3!(
             "SIGINT | Elapsed Time: {} | Nodes: {} | ",
             format_time(elapsed),
@@ -87,11 +92,16 @@ pub fn check_interrupt(info: &mut SearchInfo) {
         return;
     }
 
-    if info.set_timed == 0 {
+    if info.set_nodes != 0 && info.nodes >= info.set_nodes {
+        info.interrupt = true;
         return;
     }
 
-    if elapsed >= info.set_timed {
+    if info.hard_deadline == 0 {
+        return;
+    }
+
+    if ENGINE_START.elapsed().as_nanos() >= info.hard_deadline {
         info.interrupt = true;
     }
 }
@@ -147,8 +157,8 @@ pub fn clear_search(
 /// Runs a full search from the root position.
 ///
 /// Resets TT/QT stats, then dispatches to a single iterative_deepening call
-/// when thread_count ≤ 1, or a ThreadPool when thread_count > 1. Logs TT and
-/// QT stat lines (new/over/hit/valid) after the search completes.
+/// when thread_count ≤ 1, or a ThreadPool when thread_count > 1. Callers
+/// report table stats afterwards via `log_table_stats`.
 ///
 /// Params:
 /// - state: &mut State         -> root position to search
@@ -181,7 +191,7 @@ pub fn search_position(
     qtable.new_write.store(0, Ordering::Relaxed);
     qtable.over_write.store(0, Ordering::Relaxed);
 
-    let result = if thread_num <= 1 {
+    if thread_num <= 1 {
         info.thread_count = thread_num.max(1);
         iterative_deepening(
             state, &table, &qtable, info, bufs, 0, dict,
@@ -190,9 +200,20 @@ pub fn search_position(
         let pool = ThreadPool::with_threads(
             state, Arc::clone(&table), Arc::clone(&qtable), thread_num
         );
-        pool.run(info.set_depth, info.set_timed, dict)
-    };
+        pool.run(info, dict)
+    }
+}
 
+/// Logs TT and QT stat lines (new/over/hit/valid) for a finished search.
+///
+/// Kept separate from `search_position` so callers on the UCI path can
+/// emit `bestmove` before any log-file I/O happens.
+///
+/// Params:
+/// - table: &TTable  -> main table whose counters are reported
+/// - qtable: &QTable -> qsearch table whose counters are reported
+///
+pub fn log_table_stats(table: &TTable, qtable: &QTable) {
     log_3!(
         "TT | new: {:<8} | over: {:<8} | hit: {:<8} | valid: {:<8}",
         table.new_write.load(Ordering::Relaxed),
@@ -208,8 +229,6 @@ pub fn search_position(
         qtable.hit.load(Ordering::Relaxed),
         qtable.valid.load(Ordering::Relaxed),
     );
-
-    result
 }
 
 /*----------------------------------------------------------------------------*\
@@ -367,7 +386,7 @@ pub fn iterative_deepening(
             format!("cp {}", best_score)
         };
 
-        let tt_len = ttable.len() as u64;
+        let tt_len = (ttable.len() as u64).max(1);
 
         let hashfull = ttable.new_write
             .load(Ordering::Relaxed)
@@ -397,6 +416,11 @@ pub fn iterative_deepening(
                 pv_line,
             );
             stdout().flush().ok();
+        }
+
+        if info.soft_deadline != 0
+        && ENGINE_START.elapsed().as_nanos() >= info.soft_deadline {
+            break;
         }
     }
 

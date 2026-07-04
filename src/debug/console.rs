@@ -2641,6 +2641,7 @@ fn execute_command(
                 state, Arc::clone(&ttable), Arc::clone(&qtable),
                 &mut info, &mut bufs, threads, dict
             );
+            log_table_stats(&ttable, &qtable);
 
             if result.best_move == null_move() {
                 log_2!("No legal move available");
@@ -2668,6 +2669,7 @@ fn execute_command(
                 Arc::clone(&ttable), Arc::clone(&qtable),
                 &mut info, &mut bufs, threads, dict
             );
+            log_table_stats(&ttable, &qtable);
 
             if result.best_move == null_move() {
                 log_2!("No legal move available");
@@ -2714,10 +2716,10 @@ fn execute_command(
 
             let mut info = SearchInfo {
                 set_depth: depth,
-                set_timed: (time_limit * 1_000_000_000.0) as u128,
                 ..Default::default()
             };
             let mut bufs = SearchBufs::default();
+            let time_limit_ns = (time_limit * 1_000_000_000.0) as u128;
 
             while !state.game_over {
 
@@ -2725,11 +2727,18 @@ fn execute_command(
                     break;
                 }
 
+                if time_limit_ns > 0 {
+                    let now = ENGINE_START.elapsed().as_nanos();
+                    info.soft_deadline = now + time_limit_ns;
+                    info.hard_deadline = now + time_limit_ns;
+                }
+
                 let result = search_position(
                     state,
                     Arc::clone(&ttable), Arc::clone(&qtable),
                     &mut info, &mut bufs, threads, dict
                 );
+                log_table_stats(&ttable, &qtable);
 
                 if result.best_score == -INF {
                     state.game_over = true;

@@ -90,11 +90,43 @@ fn list_uci_variants() -> Vec<String> {
     variants
 }
 
+/// first_legal_move
+///
+/// Finds any legal move in the position by generating pseudo-legal moves
+/// and validating them with make/undo on a scratch clone. Used as a
+/// last-resort fallback so the engine never sends an unplayable
+/// `bestmove` when a search dies before completing depth one.
+///
+/// Params:
+/// - state: &State -> position to find a move in
+///
+/// Return:
+/// Option<Move> -> a legal move, or None in a terminal position
+///
+fn first_legal_move(state: &State) -> Option<Move> {
+    let mut probe = state.clone();
+    let mut moves = Vec::with_capacity(64);
+    let mut scratch = Vec::with_capacity(16);
+
+    generate_all_moves_and_drops(state, &mut moves, &mut scratch);
+
+    moves.into_iter().find(|mv| {
+        if make_move!(probe, mv.clone()) {
+            undo_move!(probe);
+            true
+        } else {
+            false
+        }
+    })
+}
+
 /// print_bestmove
 ///
 /// Emits the final `bestmove` line for a completed search, appending the
 /// ponder move when one was found, and flushes stdout so the GUI sees it
-/// immediately.
+/// immediately. A null best move (search interrupted before depth one or
+/// crashed) falls back to any legal move, or `(none)` in a terminal
+/// position, so the GUI never receives the unplayable "null" string.
 ///
 /// Params:
 /// - result: &SearchResult     -> finished search outcome
@@ -106,8 +138,24 @@ fn print_bestmove(
     state: &State,
     dict: Option<&Translator>,
 ) {
-    let best = format_move(&result.best_move, state, dict);
-    if result.ponder_move != null_move() {
+    let fallback = result.best_move == null_move();
+
+    let best_move = if fallback {
+        match first_legal_move(state) {
+            Some(mv) => mv,
+            None => {
+                println!("bestmove (none)");
+                stdout().flush().ok();
+                return;
+            }
+        }
+    } else {
+        result.best_move.clone()
+    };
+
+    let best = format_move(&best_move, state, dict);
+
+    if !fallback && result.ponder_move != null_move() {
         let ponder = format_move(&result.ponder_move, state, dict);
         println!("bestmove {} ponder {}", best, ponder);
     } else {
@@ -120,20 +168,39 @@ fn print_bestmove(
 ///
 /// Keeps the join handle together with the launch parameters needed to
 /// restart the search on `ponderhit`: whether it was a ponder search,
-/// its depth limit, and the time budget to apply once the hit arrives.
+/// its depth and node limits, and the soft/hard time budgets (as
+/// durations) to apply from the moment the hit arrives.
 struct SearchHandle {
     handle: JoinHandle<SearchResult>,
     is_ponder: bool,
     search_depth: usize,
-    ponderhit_timed_ns: u128,
+    search_nodes: u128,
+    ponderhit_soft_ns: u128,
+    ponderhit_hard_ns: u128,
+}
+
+/// Launch parameters for one search thread.
+///
+/// Bundles the ponder flag, depth/node limits, and absolute deadlines
+/// (ns since engine launch, 0 = none) for a spawned search, plus the
+/// budget durations to re-apply when a ponder search is converted to a
+/// timed one by `ponderhit`.
+struct SearchLimits {
+    is_ponder: bool,
+    depth: usize,
+    nodes: u128,
+    soft_deadline: u128,
+    hard_deadline: u128,
+    ponderhit_soft_ns: u128,
+    ponderhit_hard_ns: u128,
 }
 
 /// The UCI session state.
 ///
 /// Owns the engine position, the discovered variant list and active
-/// variant, the protocol translator, thread/hash option values, the
-/// shared tables (rebuilt when the Hash option changes), and the active
-/// search handle if a `go` is in flight.
+/// variant, the protocol translator, thread/hash/overhead option values,
+/// the shared tables (rebuilt when the Hash option changes), and the
+/// active search handle if a `go` is in flight.
 struct Uci {
     state: State,
     variants: Vec<String>,
@@ -142,9 +209,9 @@ struct Uci {
     max_threads: usize,
     threads: usize,
     hash_mb: usize,
+    overhead_ms: u128,
     ttable: Arc<TTable>,
     qtable: Arc<QTable>,
-    ponder: bool,
     active: Option<SearchHandle>,
 }
 
@@ -188,9 +255,13 @@ impl Uci {
             max_threads,
             threads: 1,
             hash_mb: HASH_DEFAULT_MB,
-            ttable: Arc::new(TTable::with_mb(HASH_DEFAULT_MB * 2 / 3)),
-            qtable: Arc::new(QTable::with_mb(HASH_DEFAULT_MB / 3)),
-            ponder: false,
+            overhead_ms: TIME_OVERHEAD_MS,
+            ttable: Arc::new(TTable::with_mb(
+                (HASH_DEFAULT_MB * 2 / 3).max(1)
+            )),
+            qtable: Arc::new(QTable::with_mb(
+                (HASH_DEFAULT_MB / 3).max(1)
+            )),
             active: None,
         }
     }
@@ -202,15 +273,20 @@ impl Uci {
 /// one command's side effects:
 /// - `handle_position`  : rebuilds the position from `startpos` or a
 ///   FEN, then replays any trailing `moves` list.
-/// - `start_search`     : parses `go` limits (depth, movetime, clock +
-///   increment with movestogo, infinite/ponder), computes a time budget,
-///   and spawns the search thread, recording it as active.
-/// - `stop_search`      : interrupts and joins the active search; for a
-///   ponder search the withheld `bestmove` is printed on stop.
+/// - `start_search`     : aborts any running search, parses `go` limits
+///   (depth, nodes, movetime, clock + increment with movestogo,
+///   infinite/ponder), computes soft/hard deadlines anchored at
+///   command receipt, and spawns the search thread.
+/// - `abort_search`     : interrupts and joins the active search without
+///   publishing its result; panicked search threads are logged and
+///   swallowed instead of taking down the engine.
+/// - `stop_search`      : aborts the active search; for a ponder search
+///   the withheld `bestmove` is printed on stop.
 /// - `handle_ponderhit` : joins the ponder search and relaunches it as a
-///   normal timed search using the budget saved at launch.
-/// - `handle_setoption` : applies UCI_Variant / Threads / Ponder / Hash
-///   / Clear Hash option changes, rebuilding state or tables as needed.
+///   normal search with deadlines anchored at the moment of the hit.
+/// - `handle_setoption` : applies UCI_Variant / Threads / Hash / Clear
+///   Hash / Move Overhead option changes, rebuilding state or tables as
+///   needed.
 ///
 /// Params:
 /// - uci: &mut Uci  -> the session being mutated
@@ -252,9 +328,13 @@ fn handle_position(uci: &mut Uci, tokens: &[&str]) {
 }
 
 fn start_search(uci: &mut Uci, tokens: &[&str]) {
-    let is_ponder = uci.ponder && tokens.contains(&"ponder");
+    abort_search(uci);
+
+    let go_time = ENGINE_START.elapsed().as_nanos();
+    let is_ponder = tokens.contains(&"ponder");
 
     let mut depth = 0usize;
+    let mut nodes = 0u128;
     let mut movetime_ms = 0u128;
     let mut wtime_ms = 0u128;
     let mut btime_ms = 0u128;
@@ -263,56 +343,46 @@ fn start_search(uci: &mut Uci, tokens: &[&str]) {
     let mut movestogo = 0usize;
     let mut infinite = false;
 
+    let clamped = |token: Option<&&str>| -> u128 {
+        token
+            .and_then(|s| s.parse::<i64>().ok())
+            .map(|v| v.max(0) as u128)
+            .unwrap_or(0)
+    };
+
     let mut index = 1;
     while index < tokens.len() {
         match tokens[index] {
             "depth" => {
-                depth = tokens
-                    .get(index + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
+                depth = clamped(tokens.get(index + 1)) as usize;
+                index += 2;
+            }
+            "nodes" => {
+                nodes = clamped(tokens.get(index + 1));
                 index += 2;
             }
             "movetime" => {
-                movetime_ms = tokens
-                    .get(index + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
+                movetime_ms = clamped(tokens.get(index + 1));
                 index += 2;
             }
             "wtime" => {
-                wtime_ms = tokens
-                    .get(index + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
-                index += 2;
-            }
+                wtime_ms = clamped(tokens.get(index + 1)).max(1);               /* present clock is never 0: a spent  */
+                index += 2;                                                     /* or negative clock means move now,  */
+            }                                                                   /* not search without any time limit  */
             "btime" => {
-                btime_ms = tokens
-                    .get(index + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
+                btime_ms = clamped(tokens.get(index + 1)).max(1);
                 index += 2;
             }
             "winc" => {
-                winc_ms = tokens
-                    .get(index + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
+                winc_ms = clamped(tokens.get(index + 1));
                 index += 2;
             }
             "binc" => {
-                binc_ms = tokens
-                    .get(index + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
+                binc_ms = clamped(tokens.get(index + 1));
                 index += 2;
             }
             "movestogo" => {
-                movestogo = tokens
-                    .get(index + 1)
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(0);
+                movestogo = clamped(tokens.get(index + 1)) as usize;
                 index += 2;
             }
             "infinite" => {
@@ -328,41 +398,92 @@ fn start_search(uci: &mut Uci, tokens: &[&str]) {
     } else {
         (btime_ms, binc_ms)
     };
-    let divisor = if movestogo > 0 { movestogo as u128 } else { 40 };
 
-    let timed_ns = if movetime_ms > 0 {
-        movetime_ms.saturating_sub(TIME_OVERHEAD_MS) * 1_000_000
-    } else if !infinite && !is_ponder && time_ms > 0 {
-        let raw = time_ms / divisor + inc_ms * 2 / 3;
-        let cap = time_ms.saturating_sub(TIME_OVERHEAD_MS);
-        raw.min(cap) * 1_000_000
-    } else {
-        0
-    };
+    let (soft_ns, hard_ns) = compute_budgets(
+        movetime_ms, time_ms, inc_ms, movestogo, uci.overhead_ms,
+    );
 
-    let ponderhit_timed_ns = if movetime_ms > 0 {
-        movetime_ms.saturating_sub(TIME_OVERHEAD_MS) * 1_000_000
-    } else if time_ms > 0 {
-        let raw = time_ms / divisor + inc_ms * 2 / 3;
-        let cap = time_ms.saturating_sub(TIME_OVERHEAD_MS);
-        raw.min(cap) * 1_000_000
+    let (soft_deadline, hard_deadline) = if infinite || soft_ns == 0 {
+        (0, 0)
     } else {
-        0
+        (go_time + soft_ns, go_time + hard_ns)
     };
 
     let search_depth = if depth > 0 { depth } else { MAX_DEPTH };
 
-    let (thread_depth, thread_timed) = if is_ponder {
-        (MAX_DEPTH, 0u128)
-    } else {
-        (search_depth, timed_ns)
-    };
+    spawn_search(uci, SearchLimits {
+        is_ponder,
+        depth: search_depth,
+        nodes,
+        soft_deadline,
+        hard_deadline,
+        ponderhit_soft_ns: soft_ns,
+        ponderhit_hard_ns: hard_ns,
+    });
+}
 
+/// compute_budgets
+///
+/// Derives the soft and hard time budgets for one `go` command as
+/// durations in nanoseconds. `movetime` spends its whole allotment on
+/// both budgets. Clock time allocates `time/divisor + inc*2/3` per
+/// move: no new depth starts past half of that (soft), while a started
+/// depth may run to twice it (hard), so the average spend stays near
+/// the allocation but iterations finish instead of being cut. Both are
+/// capped by the remaining clock minus the move overhead and floored
+/// at MIN_TIME_BUDGET_NS, so a timed search never receives the untimed
+/// sentinel of zero.
+///
+/// Params:
+/// - movetime_ms: u128 -> fixed time per move (0 = unset)
+/// - time_ms: u128     -> remaining clock for the side to move
+/// - inc_ms: u128      -> increment per move
+/// - movestogo: usize  -> moves to the next time control (0 = unset)
+/// - overhead_ms: u128 -> per-move lag allowance
+///
+/// Return:
+/// (u128, u128) -> (soft, hard) budgets in ns, (0, 0) when untimed
+///
+fn compute_budgets(
+    movetime_ms: u128,
+    time_ms: u128,
+    inc_ms: u128,
+    movestogo: usize,
+    overhead_ms: u128,
+) -> (u128, u128) {
+    if movetime_ms > 0 {
+        let budget = (movetime_ms.saturating_sub(overhead_ms) * 1_000_000)
+            .max(MIN_TIME_BUDGET_NS);
+        return (budget, budget);
+    }
+
+    if time_ms == 0 {
+        return (0, 0);
+    }
+
+    let divisor = if movestogo > 0 { movestogo as u128 } else { 40 };
+    let raw = (time_ms / divisor + inc_ms * 2 / 3) * 1_000_000;
+    let cap = (time_ms.saturating_sub(overhead_ms) * 1_000_000)
+        .max(MIN_TIME_BUDGET_NS);
+
+    let soft = (raw / 2).clamp(MIN_TIME_BUDGET_NS, cap);
+    let hard = (soft * HARD_BUDGET_FACTOR).clamp(MIN_TIME_BUDGET_NS, cap);
+
+    (soft, hard)
+}
+
+fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
     let state_clone = uci.state.clone();
     let tt_clone = Arc::clone(&uci.ttable);
     let qt_clone = Arc::clone(&uci.qtable);
     let dict_clone = uci.translator.clone();
     let tc = uci.threads;
+    let is_ponder = limits.is_ponder;
+
+    let thread_depth = if is_ponder { MAX_DEPTH } else { limits.depth };
+    let soft_deadline = if is_ponder { 0 } else { limits.soft_deadline };
+    let hard_deadline = if is_ponder { 0 } else { limits.hard_deadline };
+    let set_nodes = if is_ponder { 0 } else { limits.nodes };
 
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
 
@@ -373,85 +494,106 @@ fn start_search(uci: &mut Uci, tokens: &[&str]) {
             let mut s = state_clone;
             let mut info = SearchInfo {
                 set_depth: thread_depth,
-                set_timed: thread_timed,
+                set_nodes,
+                soft_deadline,
+                hard_deadline,
                 ..Default::default()
             };
             let mut bufs = SearchBufs::default();
-            let result = search_position(
-                &mut s, tt_clone, qt_clone,
-                &mut info, &mut bufs, tc,
-                dict_clone.as_ref(),
-            );
+
+            let table = Arc::clone(&tt_clone);
+            let qtable = Arc::clone(&qt_clone);
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                search_position(
+                    &mut s, table, qtable,
+                    &mut info, &mut bufs, tc,
+                    dict_clone.as_ref(),
+                )
+            }))
+            .unwrap_or_else(|_| SearchResult {
+                best_score: 0,
+                best_move: null_move(),
+                ponder_move: null_move(),
+                total_nodes: 0,
+                total_elapsed: 0,
+            });
+
             if !is_ponder {
                 print_bestmove(&result, &s, dict_clone.as_ref());
             }
+
+            log_table_stats(&tt_clone, &qt_clone);
+
             result
         }).expect("failed to spawn search thread");
 
     uci.active = Some(SearchHandle {
         handle,
         is_ponder,
-        search_depth,
-        ponderhit_timed_ns,
+        search_depth: limits.depth,
+        search_nodes: limits.nodes,
+        ponderhit_soft_ns: limits.ponderhit_soft_ns,
+        ponderhit_hard_ns: limits.ponderhit_hard_ns,
     });
 }
 
-fn stop_search(uci: &mut Uci) {
-    if let Some(sh) = uci.active.take() {
-        SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
-        let result = sh.handle
-            .join()
-            .unwrap_or_else(|_| panic!("search thread panicked"));
-        SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
-        if sh.is_ponder {
-            print_bestmove(&result, &uci.state, uci.translator.as_ref());
+fn abort_search(uci: &mut Uci) -> Option<(SearchResult, bool)> {
+    let sh = uci.active.take()?;
+
+    SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+    let joined = sh.handle.join();
+    SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
+
+    match joined {
+        Ok(result) => Some((result, sh.is_ponder)),
+        Err(_) => {
+            log_1!("search thread panicked during join");
+            None
         }
     }
 }
 
-fn handle_ponderhit(uci: &mut Uci) {
-    if let Some(sh) = uci.active.take()
-        && sh.is_ponder
+fn stop_search(uci: &mut Uci) {
+    if let Some((result, was_ponder)) = abort_search(uci)
+        && was_ponder
     {
-        SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
-        let _ = sh.handle.join();
-        SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
-
-        let state_clone = uci.state.clone();
-        let tt_clone = Arc::clone(&uci.ttable);
-        let qt_clone = Arc::clone(&uci.qtable);
-        let dict_clone = uci.translator.clone();
-        let tc = uci.threads;
-        let search_depth = sh.search_depth;
-        let ponderhit_timed_ns = sh.ponderhit_timed_ns;
-
-        let handle = thread::Builder::new()
-            .name("search".to_string())
-            .stack_size(64 * 1024 * 1024)
-            .spawn(move || {
-                let mut s = state_clone;
-                let mut info = SearchInfo {
-                    set_depth: search_depth,
-                    set_timed: ponderhit_timed_ns,
-                    ..Default::default()
-                };
-                let mut bufs = SearchBufs::default();
-                let result = search_position(
-                    &mut s, tt_clone, qt_clone,
-                    &mut info, &mut bufs, tc,
-                    dict_clone.as_ref(),
-                );
-                print_bestmove(&result, &s, dict_clone.as_ref());
-                result
-            }).expect("failed to spawn search thread");
-
-        uci.active = Some(SearchHandle {
-            handle,
-            is_ponder: false,
-            search_depth,
-            ponderhit_timed_ns: 0,
-        });
+        print_bestmove(&result, &uci.state, uci.translator.as_ref());
     }
+}
+
+fn handle_ponderhit(uci: &mut Uci) {
+    if !uci.active.as_ref().is_some_and(|sh| sh.is_ponder) {
+        return;
+    }
+
+    let hit_time = ENGINE_START.elapsed().as_nanos();
+
+    let Some(sh) = uci.active.take() else {
+        return;
+    };
+
+    SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
+    let _ = sh.handle.join();
+    SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
+
+    let (soft_deadline, hard_deadline) = if sh.ponderhit_soft_ns == 0 {
+        (0, 0)
+    } else {
+        (
+            hit_time + sh.ponderhit_soft_ns,
+            hit_time + sh.ponderhit_hard_ns,
+        )
+    };
+
+    spawn_search(uci, SearchLimits {
+        is_ponder: false,
+        depth: sh.search_depth,
+        nodes: sh.search_nodes,
+        soft_deadline,
+        hard_deadline,
+        ponderhit_soft_ns: 0,
+        ponderhit_hard_ns: 0,
+    });
 }
 
 fn handle_setoption(uci: &mut Uci, tokens: &[&str]) {
@@ -484,19 +626,29 @@ fn handle_setoption(uci: &mut Uci, tokens: &[&str]) {
                 uci.threads = n.clamp(1, uci.max_threads);
             }
         }
-        (OPT_PONDER, Some(v)) => {
-            uci.ponder = v.to_lowercase() == "true";
-        }
         (OPT_HASH, Some(v)) => {
             if let Ok(mb) = v.parse::<usize>() {
                 uci.hash_mb = mb.clamp(1, HASH_MAX_MB);
-                uci.ttable = Arc::new(TTable::with_mb(uci.hash_mb * 2 / 3));
-                uci.qtable = Arc::new(QTable::with_mb(uci.hash_mb / 3));
+                uci.ttable = Arc::new(TTable::with_mb(
+                    (uci.hash_mb * 2 / 3).max(1)
+                ));
+                uci.qtable = Arc::new(QTable::with_mb(
+                    (uci.hash_mb / 3).max(1)
+                ));
             }
         }
         (OPT_CLEAR_HASH, None) => {
-            uci.ttable = Arc::new(TTable::with_mb(uci.hash_mb * 2 / 3));
-            uci.qtable = Arc::new(QTable::with_mb(uci.hash_mb / 3));
+            uci.ttable = Arc::new(TTable::with_mb(
+                (uci.hash_mb * 2 / 3).max(1)
+            ));
+            uci.qtable = Arc::new(QTable::with_mb(
+                (uci.hash_mb / 3).max(1)
+            ));
+        }
+        (OPT_MOVE_OVERHEAD, Some(v)) => {
+            if let Ok(ms) = v.parse::<u128>() {
+                uci.overhead_ms = ms.min(MAX_OVERHEAD_MS);
+            }
         }
         _ => {}
     }
@@ -548,6 +700,10 @@ fn execute_command(uci: &mut Uci, line: &str) -> bool {
                 OPT_HASH, HASH_DEFAULT_MB, HASH_MAX_MB,
             );
             println!("option name {} type button", OPT_CLEAR_HASH);
+            println!(
+                "option name {} type spin default {} min 0 max {}",
+                OPT_MOVE_OVERHEAD, TIME_OVERHEAD_MS, MAX_OVERHEAD_MS,
+            );
             println!("uciok");
             stdout().flush().ok();
         }
@@ -556,6 +712,7 @@ fn execute_command(uci: &mut Uci, line: &str) -> bool {
             stdout().flush().ok();
         }
         "ucinewgame" => {
+            abort_search(uci);
             let sp = uci.state.statics.startpos.clone();
             uci.state.reset();
             parse_fen(&mut uci.state, &sp, None);
@@ -571,7 +728,7 @@ fn execute_command(uci: &mut Uci, line: &str) -> bool {
             stop_search(uci);
         }
         "quit" => {
-            stop_search(uci);
+            abort_search(uci);
             return true;
         }
         "ponderhit" => {
@@ -593,7 +750,9 @@ fn execute_command(uci: &mut Uci, line: &str) -> bool {
 /// uci
 ///
 /// The blocking UCI main loop: prints the engine banner, builds the
-/// session, and feeds stdin lines to `execute_command` until `quit`.
+/// session, and feeds stdin lines to `execute_command` until `quit` or
+/// end of input. Any search still running on exit is stopped and joined
+/// so the process never dies mid-search.
 ///
 /// Return:
 /// IoResult<()> -> Ok on clean shutdown
@@ -608,6 +767,8 @@ pub fn uci() -> IoResult<()> {
             break;
         }
     }
+
+    abort_search(&mut uci);
 
     Ok(())
 }

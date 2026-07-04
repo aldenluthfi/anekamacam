@@ -57,12 +57,12 @@ impl ThreadPool {
     ///
     /// Spawns one named searcher thread per worker, each running full
     /// iterative deepening on its own state clone with a large stack
-    /// (deep recursion) while sharing the lock-free tables. After all
+    /// (deep recursion) while sharing the lock-free tables. All workers
+    /// inherit the caller's depth, node, and deadline limits. After all
     /// workers join, the result with the highest score wins.
     ///
     /// Params:
-    /// - depth: usize              -> maximum depth per worker
-    /// - timed: u128               -> time limit in ns (0 = unlimited)
+    /// - info: &SearchInfo         -> limits shared by every worker
     /// - dict: Option<&Translator> -> translator for printed move names
     ///
     /// Return:
@@ -70,8 +70,7 @@ impl ThreadPool {
     ///
     pub fn run(
         self,
-        depth: usize,
-        timed: u128,
+        info: &SearchInfo,
         dict: Option<&Translator>,
     ) -> SearchResult {
         let tt = Arc::clone(&self.tt);
@@ -83,8 +82,10 @@ impl ThreadPool {
             let state_clone = self.main_state.clone();
             let tt_clone = Arc::clone(&tt);
             let qt_clone = Arc::clone(&qtable);
-            let set_depth = depth;
-            let set_timed = timed;
+            let set_depth = info.set_depth;
+            let set_nodes = info.set_nodes;
+            let soft_deadline = info.soft_deadline;
+            let hard_deadline = info.hard_deadline;
             let dict_clone = dict.cloned();
 
             let handle = thread::Builder::new()
@@ -93,7 +94,9 @@ impl ThreadPool {
                 .spawn(move || {
                     let mut info = SearchInfo {
                         set_depth,
-                        set_timed,
+                        set_nodes,
+                        soft_deadline,
+                        hard_deadline,
                         thread_count: total_threads,
                         ..Default::default()
                     };

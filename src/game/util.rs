@@ -657,8 +657,10 @@ pub fn benchmark_search(
     let mut bufs = SearchBufs::default();
 
     search_position(
-        state, ttable, qtable, &mut info, &mut bufs, thread_num, dict
+        state, Arc::clone(&ttable), Arc::clone(&qtable), &mut info,
+        &mut bufs, thread_num, dict
     );
+    log_table_stats(&ttable, &qtable);
 }
 
 /// Counts legal move tree nodes from the current state up to `depth`.

@@ -67,7 +67,8 @@ pub use crate::game::position::{
     hash::{hash_position, PositionHash},
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
-        search_position, SearchBufs, SearchInfo, SearchResult,
+        log_table_stats, search_position, SearchBufs, SearchInfo,
+        SearchResult,
     },
 };
 pub use crate::game::search::{
@@ -173,6 +174,7 @@ pub use std::{
     io::{stdin, stdout, BufRead, Result as IoResult, Write},
     iter::zip,
     mem::{self, size_of},
+    panic::{catch_unwind, AssertUnwindSafe},
     path::Path,
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
@@ -327,11 +329,15 @@ pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
 
 pub const TIME_OVERHEAD_MS: u128 = 50;
+pub const MAX_OVERHEAD_MS: u128 = 1000;
+pub const MIN_TIME_BUDGET_NS: u128 = 1_000_000;                                 /* timed searches never budget below  */
+pub const HARD_BUDGET_FACTOR: u128 = 4;                                         /* hard limit = soft budget x factor  */
 pub const OPT_VARIANT: &str = "UCI_Variant";
 pub const OPT_THREADS: &str = "Threads";
 pub const OPT_PONDER: &str = "Ponder";
 pub const OPT_HASH: &str = "Hash";
 pub const OPT_CLEAR_HASH: &str = "Clear Hash";
+pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
 
 pub const HASH_DEFAULT_MB: usize = 384;
 pub const HASH_MAX_MB: usize = 65536;
