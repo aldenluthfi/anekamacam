@@ -45,6 +45,11 @@ pub struct SearchBufs {
     pub pawn_entry_buf: [Vec<(usize, Square, i32, i32)>; 2],                    /* reused per-side pawn lists in eval */
 }
 
+/// Packaged outcome of one root search.
+///
+/// Carries the best move and its score, the ponder move extracted from
+/// the principal variation, and aggregate node/time counters for
+/// reporting. Returned by `iterative_deepening` and `search_position`.
 pub struct SearchResult {
     pub best_score: i32,
     pub best_move: Move,
@@ -57,6 +62,10 @@ pub struct SearchResult {
 ///
 /// A timed search is interrupted when elapsed nanoseconds from `start_time`
 /// reaches or exceeds `set_timed`.
+///
+/// Params:
+/// - info: &mut SearchInfo -> search whose interrupt flag is updated
+///
 #[inline(always)]
 pub fn check_interrupt(info: &mut SearchInfo) {
     if info.interrupt {
@@ -91,6 +100,14 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 ///
 /// Zeroes node counters, interrupt flag, killer and history tables, and ply.
 /// Board position is unchanged.
+///
+/// Params:
+/// - state: &mut State        -> position whose search tables are reset
+/// - ttable: &TTable          -> main table, aged one generation
+/// - qtable: &QTable          -> qsearch table, aged one generation
+/// - info: &mut SearchInfo    -> counters and flags to reset
+/// - bufs: &mut SearchBufs    -> scratch buffers, (re)allocated if needed
+///
 pub fn clear_search(
     state: &mut State, ttable: &TTable, qtable: &QTable,
     info: &mut SearchInfo, bufs: &mut SearchBufs,
@@ -129,6 +146,19 @@ pub fn clear_search(
 /// Resets TT/QT stats, then dispatches to a single iterative_deepening call
 /// when thread_count ≤ 1, or a ThreadPool when thread_count > 1. Logs TT and
 /// QT stat lines (new/over/hit/valid) after the search completes.
+///
+/// Params:
+/// - state: &mut State         -> root position to search
+/// - table: Arc<TTable>        -> shared transposition table
+/// - qtable: Arc<QTable>       -> shared quiescence table
+/// - info: &mut SearchInfo     -> limits and counters for this search
+/// - bufs: &mut SearchBufs     -> scratch buffers for thread 0
+/// - thread_num: usize         -> worker thread count
+/// - dict: Option<&Translator> -> translator for printed move names
+///
+/// Return:
+/// SearchResult -> best move, score, ponder move, and totals
+///
 pub fn search_position(
     state: &mut State,
     table: Arc<TTable>,
@@ -187,8 +217,22 @@ pub fn search_position(
 ///
 /// Runs depth 1..=set_depth. Depths below 4, or when the previous score is a
 /// mate, use a full window. Otherwise aspiration windows start at a value-
-/// derived half-window and double on each fail until the search falls within
-/// bounds. Thread 0 prints UCI info lines per depth; helper threads skip output.
+/// derived half-window and double on each fail until the search falls
+/// within bounds. Thread 0 prints UCI info lines per depth; helper
+/// threads skip output.
+///
+/// Params:
+/// - state: &mut State         -> root position to search
+/// - ttable: &TTable           -> shared transposition table
+/// - qtable: &QTable           -> shared quiescence table
+/// - info: &mut SearchInfo     -> limits and counters for this search
+/// - bufs: &mut SearchBufs     -> per-thread scratch buffers
+/// - thread_num: usize         -> this worker's index (0 reports)
+/// - dict: Option<&Translator> -> translator for printed move names
+///
+/// Return:
+/// SearchResult -> best move, score, ponder move, and totals
+///
 pub fn iterative_deepening(
     state: &mut State,
     ttable: &TTable,
@@ -404,6 +448,19 @@ pub fn iterative_deepening(
 ///   Disabled in endgame (material swings carry more weight), for
 ///   promotions (their gain is not captured by `captured_value`), and
 ///   while in check.
+///
+/// Params:
+/// - state: &mut State     -> position searched, restored on return
+/// - ttable: &TTable       -> main table (read for PV move ordering)
+/// - qtable: &QTable       -> qsearch table probed and updated
+/// - alpha: i32            -> lower search bound
+/// - beta: i32             -> upper search bound
+/// - info: &mut SearchInfo -> node counters and interrupt polling
+/// - bufs: &mut SearchBufs -> per-thread scratch buffers
+///
+/// Return:
+/// i32 -> stand-pat or best capture score within the window
+///
 #[hotpath::measure]
 fn quiescence_search(
     state: &mut State,
@@ -668,6 +725,21 @@ fn quiescence_search(
 ///   `[alpha, alpha + 1]`, which is far cheaper. On fail-high the
 ///   move is re-searched with the full window to obtain its exact
 ///   score.
+///
+/// Params:
+/// - state: &mut State     -> position searched, restored on return
+/// - ttable: &TTable       -> main table probed and updated
+/// - qtable: &QTable       -> qsearch table for the leaf search
+/// - depth: usize          -> remaining depth in plies
+/// - alpha: i32            -> lower search bound
+/// - beta: i32             -> upper search bound
+/// - info: &mut SearchInfo -> node counters and interrupt polling
+/// - bufs: &mut SearchBufs -> per-thread scratch buffers
+/// - null: bool            -> whether null-move pruning is still allowed
+///
+/// Return:
+/// i32 -> best score within the window from the side to move's view
+///
 #[hotpath::measure]
 pub fn alpha_beta(
     state: &mut State,
@@ -1184,6 +1256,11 @@ pub fn alpha_beta(
 /// Formula: `entry += bonus - entry * |bonus| / MAX_HIST_VALUE`. Naturally
 /// damps as `|entry|` approaches `MAX_HIST_VALUE`, preserving signal at
 /// deep depths without saturation. `bonus` is signed; negate for malus.
+///
+/// Params:
+/// - entry -> history table cell updated in place
+/// - bonus -> signed reward applied to the cell
+///
 #[macro_export]
 macro_rules! apply_history_gravity {
     ($entry:expr, $bonus:expr) => {{
@@ -1197,6 +1274,16 @@ macro_rules! apply_history_gravity {
 /// Heuristic reduction for late move reduction, based on depth, move count,
 /// checks, and move type. Returns a usize reduction value clamped to
 /// `[0, depth - 1]`. Uses pre-computed integer tables (no f64 at call site).
+///
+/// Params:
+/// - state -> supplies the precomputed LMR tables
+/// - depth / moves -> table indices for the current node
+/// - in_check / opponent_in_check -> selects the check-adjusted table
+/// - is_capture / is_promotion / is_drop -> selects the capture table
+///
+/// Return:
+/// usize -> plies to reduce the child search by
+///
 #[macro_export]
 macro_rules! reduction {
     (

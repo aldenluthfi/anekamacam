@@ -15,6 +15,11 @@
 //! 25/01/2026
 use crate::*;
 
+/// PositionHash
+///
+/// Full-width Zobrist key of a position. 128 bits keeps the collision
+/// probability negligible even on large boards with many piece types,
+/// where 64-bit keys would start to saturate.
 pub type PositionHash = u128;
 
 /// Computes the Zobrist hash for the given game state.
@@ -22,6 +27,13 @@ pub type PositionHash = u128;
 /// The hash includes side to move, castling state, en passant square,
 /// on-board piece placement, and in-hand piece counts.
 /// It is used for repetition tracking and transposition table indexing.
+///
+/// Params:
+/// - state: &State -> position to hash from scratch
+///
+/// Return:
+/// u128 -> the position's full Zobrist key
+///
 pub fn hash_position(state: &State) -> u128 {
     let mut hash = u128::default();
 

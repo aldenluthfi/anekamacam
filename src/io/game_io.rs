@@ -25,6 +25,18 @@ lazy_static! {
     pub static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
 }
 
+/// extract_fen_components
+///
+/// Sniffs which optional CFEN fields a FEN string carries by pattern-
+/// matching the fields after position and side, so the parser knows
+/// whether castling, en passant, and in-hand sections are present.
+///
+/// Params:
+/// - fen: &str -> the full FEN string being inspected
+///
+/// Return:
+/// (bool, bool, bool) -> (has castling, has en passant, has hands)
+///
 fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     let mut castling = false;
     let mut en_passant = false;
@@ -46,6 +58,14 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 /// Validates if a starting configuration is possible based on the starting
 /// position of the game, this is for variants with randomized starting
 /// positions like Fischer Random Chess
+///
+/// Params:
+/// - fen: &str     -> position being loaded
+/// - state: &State -> variant whose startpos is compared against
+///
+/// Return:
+/// bool -> true if castling rights can be honored from this position
+///
 fn validate_castling(fen: &str, state: &State) -> bool {
     let startpos = &state.statics.startpos
         .split_whitespace()
@@ -158,6 +178,11 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// horizontal axis. Search-time margins (futility, RFP, razoring, SEE)
 /// live outside the tuning surface since Texel's method only tunes
 /// quiescence-search eval terms.
+///
+/// Params:
+/// - state: &mut State -> variant whose parameters are overwritten
+/// - content: &str     -> flat space-separated parameter dump
+///
 pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let tokens: Vec<i32> = content
         .split_whitespace()
@@ -294,6 +319,17 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     refresh_eval_state(state);
 }
 
+/// find_last_epoch_in_dir
+///
+/// Scans a parameter directory for `epoch_N.param` files and returns
+/// the highest N found, so exports can continue the numbering.
+///
+/// Params:
+/// - dir_path: &str -> the variant's parameter directory
+///
+/// Return:
+/// usize -> the largest existing epoch number, 0 when none exist
+///
 fn find_last_epoch_in_dir(dir_path: &str) -> usize {
     let mut max_epoch = 0usize;
     if let Ok(entries) = fs::read_dir(dir_path) {
@@ -314,6 +350,10 @@ fn find_last_epoch_in_dir(dir_path: &str) -> usize {
 ///
 /// Used to save parameters tuned by Texel's Tuning method and to avoid
 /// recomputing parameters from scratch when restarting the engine.
+///
+/// Params:
+/// - state: &State -> variant whose parameters are serialized
+///
 pub fn export_tuned_parameters_file(
     state: &State,
     variant: &str,
@@ -399,6 +439,13 @@ pub fn export_tuned_parameters_file(
 /// - piece chars
 ///
 /// Returns (title, board) to be shown in the TUI
+///
+/// Params:
+/// - path: &str -> config filename inside the embedded configs
+///
+/// Return:
+/// (String, String) -> (variant title, rendered start board)
+///
 pub fn parse_config_preview(path: &str) -> (String, String) {
     let file_str = embedded_config(path)
         .map(str::to_string)
@@ -551,6 +598,17 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
     (title, board_str)
  }
 
+/// embedded_config
+///
+/// Looks a config file up in the binary's embedded resources by name,
+/// so variants ship inside the executable with no filesystem layout.
+///
+/// Params:
+/// - path: &str -> config filename, e.g. "fide.conf"
+///
+/// Return:
+/// Option<&'static str> -> the file's text, or None if not embedded
+///
 fn embedded_config(path: &str) -> Option<&'static str> {
     let filename = Path::new(path).file_name()?.to_str()?;
     EMBEDDED_CONFIGS.get_file(filename)?.contents_utf8()
@@ -573,6 +631,19 @@ fn embedded_config(path: &str) -> Option<&'static str> {
 ///
 /// Which are then converted into `Piece` structs and stored in the `State`
 /// struct.
+///
+/// After the pieces, the section-by-section walk fills in board zones
+/// (forbidden, promotion), castling layouts, special rules, and the move
+/// / drop / setup / stand-off expression sets, then runs `precompute`
+/// and parameter derivation (or imports a tuned parameter file when one
+/// exists), returning a fully playable state.
+///
+/// Params:
+/// - path: &str -> config filename inside the embedded configs
+///
+/// Return:
+/// State -> the fully initialized variant state
+///
 pub fn parse_config_file(path: &str) -> State {
     let file_str = embedded_config(path)
         .map(str::to_string)
@@ -1751,6 +1822,20 @@ pub fn parse_config_file(path: &str) -> State {
     result
 }
 
+/// parse_bit_fen
+///
+/// Parses a FEN-shaped zone description into a bitboard: any piece
+/// letter marks its square as set, digits skip squares, `/` breaks
+/// ranks. Used for forbidden zones, promotion zones, and similar
+/// per-square masks in config files.
+///
+/// Params:
+/// - fen: Option<&str> -> the zone description, None for an empty mask
+/// - state: &State     -> supplies the board dimensions
+///
+/// Return:
+/// Board -> bitboard with the described squares set
+///
 fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     if fen.is_none() {
         return board!(state.statics.files, state.statics.ranks);
@@ -1873,6 +1958,11 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// **: where each w and b is formatted with the pieces in hand. e.g. PNN means
 ///   a pawn and two knights in hand. "-" if no pieces in hand for that color
 ///   so an empty hand for both is -/-.
+///
+/// Params:
+/// - state: &mut State         -> position rebuilt from the FEN
+/// - fen: &str                 -> the CFEN string to load
+/// - dict: Option<&Translator> -> optional protocol translation first
 ///
 pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
     let mut needed_parts = 2;
@@ -2156,15 +2246,13 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
 /// - If the first board has whitespace, use the character from the second board
 /// - Otherwise, use the character from the first board
 ///
-/// # Arguments
+/// Params:
+/// - board1: &str -> the first board string
+/// - board2: &str -> the second board string
 ///
-/// - `board1`  : The first board string
-/// - `board2`  : The second board string
-///
-/// # Returns
-///
-/// A combined board string where pieces from both boards are merged together
-/// while preserving the ASCII art borders and structure.
+/// Return:
+/// String -> combined board with both boards' pieces merged together
+/// while preserving the ASCII art borders and structure
 ///
 /// # Examples
 ///
@@ -2228,6 +2316,18 @@ pub fn combine_board_strings(board1: &str, board2: &str) -> String {
     result
 }
 
+/// format_game_state
+///
+/// Renders the complete position for humans: every piece type's board
+/// overlaid into one composite diagram (via `combine_board_strings`),
+/// followed by the state lines produced by the `format_*` helpers below.
+///
+/// Params:
+/// - state: &State -> position to display
+///
+/// Return:
+/// String -> multi-line board diagram plus state summary
+///
 pub fn format_game_state(state: &State) -> String {
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
@@ -2254,6 +2354,20 @@ pub fn format_game_state(state: &State) -> String {
         .expect("Failed to format combined board string")
 }
 
+/// format_fen
+///
+/// Serializes the current position back into a CFEN string — the exact
+/// inverse of `parse_fen`, emitting only the fields the variant's rules
+/// enable and applying inverse protocol translation when a dictionary
+/// is given.
+///
+/// Params:
+/// - state: &State             -> position to serialize
+/// - dict: Option<&Translator> -> optional inverse protocol translation
+///
+/// Return:
+/// String -> the position's CFEN
+///
 pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
     let mut fen = String::new();
 
@@ -2356,6 +2470,21 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
     fen
 }
 
+/// State-field formatters.
+///
+/// Small display helpers, each rendering one aspect of the state as a
+/// short string: castling rights as KQkq letters, the en passant square
+/// in its packed CFEN form, one side's pieces in hand, the position
+/// hash in hex, the game phase by name with its score, and the enabled
+/// special rules as a comma-separated list. `format_game_state` and the
+/// debug TUI assemble their output from these.
+///
+/// Params:
+/// - state: &State -> position queried (plus color for `format_hand`)
+///
+/// Return:
+/// String -> the rendered field
+///
 pub fn format_castling_rights(state: &State) -> String {
     let mut rights = String::new();
 

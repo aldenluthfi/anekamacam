@@ -14,6 +14,17 @@ use crate::*;
 ///
 /// Relative allower/stopper offsets are validated against board bounds from
 /// `square_index` and rotated by piece color perspective.
+///
+/// Params:
+/// - piece: &Piece               -> piece type the drops belong to
+/// - square_index: u32           -> target square being precomputed
+/// - state: &State               -> board dimensions and forbidden zones
+/// - piece_setup_drops: &[DropSet] -> compiled drops, one set per piece
+///
+/// Return:
+/// DropSet -> drops playable onto this square, with square encoded and
+/// out-of-board stoppers pruned
+///
 pub fn generate_relevant_drops(
     piece: &Piece,
     square_index: u32,
@@ -82,9 +93,14 @@ pub fn generate_relevant_drops(
 /// Enforces drop flags (`k`), count limits, hand ownership, and 
 /// allower/stopper pattern constraints before encoding each drop move. Unlike 
 /// `generate_move_list_from_vectors!`, which builds moves from precomputed 
-/// movement vectors for pieces already on the board, this macro generates 
-/// placement moves from precomputed drop templates for pieces held in hand, 
+/// movement vectors for pieces already on the board, this macro generates
+/// placement moves from precomputed drop templates for pieces held in hand,
 /// using allower/stopper squares instead of directional legs.
+///
+/// Params:
+/// - piece -> piece type to drop from hand
+/// - state -> current position providing hand counts and occupancy
+/// - out   -> output list receiving the encoded drop moves
 ///
 #[macro_export]
 macro_rules! generate_drop_list {

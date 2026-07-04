@@ -13,6 +13,16 @@
 /// If a concrete piece context exists, use that piece's color for orientation;
 /// otherwise use White's orientation as the default perspective.
 /// Returns `true` only when all allowers pass and no stopper matches.
+///
+/// Params:
+/// - pattern -> compiled (allower, stopper) pattern to test
+/// - square  -> board square the pattern is anchored on
+/// - color   -> orientation color for offset mirroring
+/// - state   -> current position providing board occupancy
+///
+/// Return:
+/// bool -> true if every allower holds and no stopper does
+///
 #[macro_export]
 macro_rules! match_pattern {
     ($pattern:expr, $square:expr, $color:expr, $state:expr) => {{
@@ -69,6 +79,13 @@ macro_rules! match_pattern {
 /// Iterates every piece instance on the board, checks precomputed stand-off
 /// candidate patterns for that piece-square pair, and returns `true` as soon as
 /// one pattern matches.
+///
+/// Params:
+/// - state -> current position to scan for stand-offs
+///
+/// Return:
+/// bool -> true if any piece's stand-off pattern currently matches
+///
 #[macro_export]
 macro_rules! is_in_stand_off {
     ($state:expr) => {{

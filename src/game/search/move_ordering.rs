@@ -16,6 +16,14 @@
                           STATIC EXCHANGE EVALUATION
 \*----------------------------------------------------------------------------*/
 
+/// SEE helper macros.
+///
+/// `attack_value!` prices the moving piece (using the promoted piece's
+/// value for promotions), `victim_value!` prices everything a move
+/// captures (summing multi-capture payloads, skipping unloads), and
+/// `lva!` regenerates the current capture moves onto a target square
+/// sorted cheapest-attacker-first. Together they feed the exchange
+/// simulation in `see!`.
 #[macro_export]
 macro_rules! attack_value {
     ($mv:expr, $state:expr) => {{
@@ -106,6 +114,16 @@ macro_rules! lva {
 ///
 /// A positive result means the capture wins material; negative means it loses.
 /// Non-capture moves return 0.
+///
+/// Params:
+/// - state       -> position simulated on (restored before returning)
+/// - mv          -> the capture move to evaluate
+/// - see_moves   -> reusable buffer for attacker candidate moves
+/// - see_scratch -> reusable buffer for capture payloads
+///
+/// Return:
+/// i32 -> net material gain of the exchange for the moving side
+///
 #[macro_export]
 macro_rules! see {
     ($state:expr, $mv:expr, $see_moves:expr, $see_scratch:expr) => {
@@ -197,6 +215,16 @@ macro_rules! see {
 ///
 /// `$pv_move` is the TT best move for this node. A larger score means the
 /// move is searched earlier.
+///
+/// Params:
+/// - state   -> position providing killers, history, and piece values
+/// - mv      -> the move to score
+/// - pv_move -> TT best move for this node, if any
+/// - see_moves / see_scratch -> reusable SEE buffers
+///
+/// Return:
+/// usize -> ordering score, larger searched earlier
+///
 #[macro_export]
 macro_rules! score_move {
     (
@@ -208,7 +236,7 @@ macro_rules! score_move {
         if $pv_move.as_ref().is_some_and(
             |pm| m_matches!(scored_move, pm)
         ) {
-            5_000_000                                                           /* PV move always ordered first        */
+            5_000_000                                                           /* PV move always ordered first       */
         } else if !m_capture!(scored_move) {
             let killers =
                 &$state.killer_hist[$state.search_ply as usize];
@@ -217,9 +245,9 @@ macro_rules! score_move {
                 1_000_000 + 2 * MAX_HIST_VALUE as usize;
 
             if *scored_move == killers[0] {
-                killer_base + 2                                                 /* killer scores above history         */
+                killer_base + 2                                                 /* killer scores above history        */
             } else if *scored_move == killers[1] {
-                killer_base + 1                                                 /* killer scores above history         */
+                killer_base + 1                                                 /* killer scores above history        */
             } else {
                 let piece = piece!(scored_move) as usize;
                 let start = start!(scored_move) as usize;
@@ -237,9 +265,9 @@ macro_rules! score_move {
             );
 
             if see_score >= 0 {
-                (4_000_000 + see_score) as usize                                /* winning captures ordered second     */
+                (4_000_000 + see_score) as usize                                /* winning captures ordered second    */
             } else {
-                (1_000_000 + see_score) as usize                                /* losing captures ordered last        */
+                (1_000_000 + see_score) as usize                                /* losing captures ordered last       */
             }
         }
     }};
@@ -252,6 +280,14 @@ macro_rules! score_move {
 /// alpha-beta cutoffs, only the highest-priority prefix is scored in practice.
 ///
 /// `$pv_move` is the TT best move for this node.
+///
+/// Params:
+/// - state          -> position used for lazy scoring
+/// - moves / scores -> parallel move and score lists
+/// - index          -> slot to fill with the best remaining move
+/// - pv_move        -> TT best move for this node, if any
+/// - see_moves / see_scratch -> reusable SEE buffers
+///
 #[macro_export]
 macro_rules! pick_by_score {
     (

@@ -13,6 +13,12 @@
 
 use crate::*;
 
+/// TUI log-forwarding macros.
+///
+/// `push_log_message!` mirrors a formatted log line into the shared
+/// message queue rendered by the debug TUI (only while the TUI's debug
+/// flag is set), and `verbosity_enabled!` tests whether a numeric level
+/// is currently visible so callers can skip expensive formatting.
 #[macro_export]
 macro_rules! push_log_message {
     ($level:expr, $message:expr) => {
@@ -35,6 +41,14 @@ macro_rules! verbosity_enabled {
     };
 }
 
+/// Numeric logging macros, `log_1!` through `log_5!`.
+///
+/// Each takes `format!`-style arguments, mirrors the line into the TUI
+/// queue at its numeric level, and forwards to the matching `log` crate
+/// macro: 1 = error (critical results), 2 = warn (user-facing output),
+/// 3 = info (engine telemetry), 4 = debug (parsing/search internals),
+/// 5 = trace (deepest call traces). See `init_logging` for the full
+/// level semantics.
 #[macro_export]
 macro_rules! log_1 {
     ($($arg:tt)*) => {
@@ -90,6 +104,13 @@ macro_rules! log_5 {
     };
 }
 
+/// Verbosity plumbing helpers.
+///
+/// `level_to_verbosity` maps `log` crate levels onto the numeric 1-5
+/// scale used in log lines; `configured_log_level` translates the
+/// runtime verbosity back into a `log` filter; and the remaining three
+/// read or step the shared `RUNTIME_VERBOSITY` atomic, clamped to 1-5
+/// (used by the TUI's live verbosity keys).
 fn level_to_verbosity(level: log::Level) -> u8 {
     match level {
         log::Level::Error => 1,

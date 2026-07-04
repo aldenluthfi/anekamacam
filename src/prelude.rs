@@ -292,6 +292,12 @@ lazy_static! {
     pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(false);
 }
 
+/// Null-move sentinels.
+///
+/// `null_move` and `null_pseudo_move` build the all-ones sentinel values
+/// that mark "no move" in PV tables, killer slots, and TT entries. They
+/// are functions rather than constants because `Move` holds a non-const
+/// `Option<Arc<..>>` payload.
 pub fn null_move() -> Move {
     Move(!0u128, None)
 }

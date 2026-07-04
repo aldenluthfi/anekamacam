@@ -25,6 +25,15 @@ lazy_static! {
 ///
 /// The modifiers are as follows:
 /// - k : if set, this drop cannot deliver checkmate, otherwise, it can.
+///
+/// Params:
+/// - piece: &Piece      -> piece type whose drop expression is compiled
+/// - state: &State      -> piece dictionary and board dimensions
+/// - expr_set: &[String] -> drop expressions, one per piece
+///
+/// Return:
+/// DropSet -> one packed (drop, pattern) pair per `|` branch
+///
 pub fn generate_drop_vectors(
     piece: &Piece,
     state: &State,

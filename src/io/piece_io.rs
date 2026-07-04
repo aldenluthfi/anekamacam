@@ -13,6 +13,18 @@
 //! 26/05/2026
 use crate::*;
 
+/// collect_piece_type_pairs
+///
+/// Pairs each white piece type with its black counterpart through the
+/// swap map, asserting the mapping is color-consistent. Derivation runs
+/// on white pieces only and copies results onto these twins.
+///
+/// Params:
+/// - state: &State -> variant whose swap map is walked
+///
+/// Return:
+/// Vec<(usize, usize)> -> (white index, black index) per piece type
+///
 pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
     let mut type_pairs = Vec::new();
 
@@ -37,6 +49,20 @@ pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
     type_pairs
 }
 
+/// set_piece_dynamic_parameters
+///
+/// Packs derived evaluation attributes into a piece's dynamic word using
+/// the layout documented on [`Piece`]: role flags in bits 0-1, opening
+/// value in bits 2-15, endgame value in bits 16-29. Values must fit in
+/// 14 bits; out-of-range values panic rather than silently truncate.
+///
+/// Params:
+/// - piece: &mut Piece -> piece whose dynamic word is rewritten
+/// - ovalue: u16       -> derived opening value (14-bit)
+/// - evalue: u16       -> derived endgame value (14-bit)
+/// - is_big: bool      -> big-piece role flag
+/// - is_major: bool    -> major-piece role flag
+///
 pub fn set_piece_dynamic_parameters(
     piece: &mut Piece,
     ovalue: u16,

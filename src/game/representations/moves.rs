@@ -123,7 +123,7 @@ impl Default for Move {
 }
 
 /*----------------------------------------------------------------------------*\
-                               UTILTY MOVE MACROS
+                               UTILITY MOVE MACROS
 \*----------------------------------------------------------------------------*/
 
 /// Borrows the capture/check list of a `Move` as a slice, yielding an empty
@@ -150,6 +150,13 @@ macro_rules! m_signature {
     };
 }
 
+/// Move predicate macros.
+///
+/// `m_matches!` tests a `Move` against a stored `PseudoMove` without
+/// touching the captures list pointer; `m_capture!` and `m_pseudocapture!`
+/// detect real captures (from the captures list or from the precomputed
+/// signature bit, respectively); `m_drop!`, `m_promotion!`, and `m_quiet!`
+/// classify moves for ordering and pruning decisions during search.
 #[macro_export]
 macro_rules! m_matches {
     ($mv:expr, $pseudo:expr) => {

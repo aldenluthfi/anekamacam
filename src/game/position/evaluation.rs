@@ -2,6 +2,15 @@
 //!
 //! Position evaluation logic for alpha-beta search.
 //!
+//! The evaluator is fully variant-agnostic: it never assumes classic chess
+//! material, instead reading the derived per-piece values, piece-square
+//! tables, and pawn masks produced at startup by the parameter derivation
+//! pass. Material and PST totals are maintained incrementally by make/undo
+//! and only folded together here, keeping the hot leaf evaluation to a
+//! handful of adds: material and PST deltas, imbalance and pair terms,
+//! king shelter, and the mask-based pawn-structure terms, phase-blended
+//! during the middlegame.
+//!
 //! # Author
 //! Alden Luthfi
 //!
@@ -12,6 +21,14 @@
 /// via the precomputed `adjacency_mask` AND-ed with the side's occupancy.
 /// Exposed royalty scores low; the caller folds this into the opening and
 /// middlegame evaluation only, since the king should be active in the endgame.
+///
+/// Params:
+/// - state -> position whose royal adjacency is counted
+/// - color -> side whose shelter is measured
+///
+/// Return:
+/// i32 -> number of friendly pieces adjacent to the side's royals
+///
 #[macro_export]
 macro_rules! king_shelter {
     ($state:expr, $color:expr) => {
@@ -47,6 +64,29 @@ macro_rules! king_shelter {
 /// The masks are full `Board`s tested with O(1) `get!` bit reads against the
 /// per-side pawn squares, so the term is bounded by pawn count rather than
 /// board size and works on boards of any width.
+///
+/// For a classic chess pawn the three masks look like this (they are
+/// derived per variant from the piece's actual quiet and capture legs):
+///
+/// ```text
+/// ┌────┬────┬────┬────┐      i : interference mask (enemy pawns
+/// │ ii │ ip │ ii │    │          here stop the passer)
+/// ├────┼────┼────┼────┤      p : path mask (own file ahead,
+/// │ ii │ ip │ ii │    │          doubled-pawn test)
+/// ├────┼────┼────┼────┤      s : support mask (friendly pawns
+/// │ ss │ P  │ ss │    │          here connect the pawn)
+/// ├────┼────┼────┼────┤
+/// │ ss │    │ ss │    │
+/// └────┴────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state -> position whose pawn-like pieces are scored
+/// - pawns -> reusable per-side scratch lists of pawn entries
+///
+/// Return:
+/// (i32, i32) -> (opening, endgame) white-minus-black structure deltas
+///
 #[macro_export]
 macro_rules! pawn_structure {
     ($state:expr, $pawns:expr) => {
@@ -154,6 +194,14 @@ macro_rules! pawn_structure {
 /// - Uses cached per-side material/PST totals from `State`.
 /// - Uses a branch-light side-to-move sign (`WHITE => +1`, `BLACK => -1`).
 /// - Handles `opening_score == 0` safely during interpolation.
+///
+/// Params:
+/// - state -> position to evaluate
+/// - bufs  -> search scratch buffers (reused pawn entry lists)
+///
+/// Return:
+/// i32 -> score from the side to move's perspective
+///
 #[macro_export]
 macro_rules! evaluate_position {
     ($state:expr, $bufs:expr) => {

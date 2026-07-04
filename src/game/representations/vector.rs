@@ -164,6 +164,12 @@ macro_rules! not_i {
 /// single `u32`, matching the packed layout used by `LegVector` helpers.
 /// It is used when only whole-leg semantics are needed.
 pub type Leg = u32;
+
+/// MoveVector / MoveSet
+///
+/// A `MoveVector` is one complete movement option: the ordered legs a piece
+/// traverses to perform a single move. A `MoveSet` collects every movement
+/// option a piece has, as produced by the move expression parser.
 pub type MoveVector = Vec<Leg>;
 pub type MoveSet = Vec<MoveVector>;
 
@@ -171,6 +177,13 @@ pub type MoveSet = Vec<MoveVector>;
                             MOVE PARSE REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
+/// Multi-leg parse-tree types.
+///
+/// `MultiLegGroup` is the working stack of the multi-leg expression parser;
+/// each `MultiLegElement` on it is either an unparsed token, a bracketed
+/// subexpression (plain or slash-form), or an already-evaluated list of
+/// `MultiLegVector`s. A `MultiLegVector` is one fully resolved move option:
+/// the ordered `LegVector`s a piece traverses in a single multi-leg move.
 pub type MultiLegGroup = VecDeque<MultiLegElement>;
 
 #[derive(Clone)]
@@ -336,6 +349,18 @@ pub type MultiLegVector = Vec<LegVector>;
 pub struct LegVector(u64);
 
 impl LegVector {
+    /// LegVector::new
+    ///
+    /// Packs an atomic displacement and a modifier string into the packed
+    /// leg representation documented on [`LegVector`].
+    ///
+    /// Params:
+    /// - atomic: AtomicVector -> whole/last displacement pair
+    /// - modifiers: &str      -> modifier letters, e.g. "mc!kv"
+    ///
+    /// Return:
+    /// Self -> the packed leg vector
+    ///
     pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
         let bits = Self::parse_modifiers(modifiers);
         let atomic_bits = atomic.0 as u64;
@@ -343,6 +368,18 @@ impl LegVector {
         LegVector(atomic_bits | modifier_bits)
     }
 
+    /// LegVector::parse_modifiers
+    ///
+    /// Translates a modifier string into its bitmask: letters before the
+    /// `!` separator set positive-modifier bits, letters after it set the
+    /// corresponding negated bits.
+    ///
+    /// Params:
+    /// - mods: &str -> modifier letters with optional `!` separator
+    ///
+    /// Return:
+    /// u16 -> modifier bitmask as laid out on [`LegVector`]
+    ///
     fn parse_modifiers(mods: &str) -> u16 {
         let mut bits = 0u16;
         let chars = &mut mods.chars();
@@ -377,6 +414,14 @@ impl LegVector {
         bits
     }
 
+    /// LegVector::get_modifiers_str
+    ///
+    /// Reconstructs the human-readable modifier string ("mc!kv" style)
+    /// from the packed bits; the inverse of `parse_modifiers`.
+    ///
+    /// Return:
+    /// String -> modifier letters, negations prefixed by a single `!`
+    ///
     pub fn get_modifiers_str(&self) -> String {
         let mut s = "".to_string();
 
@@ -418,6 +463,12 @@ impl LegVector {
         s
     }
 
+    /// Packed-field accessors.
+    ///
+    /// `get_atomic` / `get_modifiers` read the two halves of the packed
+    /// word (atomic displacement low, modifier bits high), `set_atomic`
+    /// overwrites the displacement half, `as_tuple` returns both halves,
+    /// and `add_modifier` ORs extra modifier letters into the current set.
     pub fn get_atomic(&self) -> AtomicVector {
         AtomicVector((self.0 & 0xFFFF_FFFF) as u32)
     }
@@ -455,6 +506,12 @@ impl Debug for LegVector {
     }
 }
 
+/// Atomic parse-tree types.
+///
+/// Mirror of the multi-leg parse types one level down: `AtomicGroup` is the
+/// working stack of the atomic expression parser, and each `AtomicElement`
+/// on it is a token, a bracketed subexpression, or an evaluated list of
+/// `AtomicVector`s ready to be combined into legs.
 pub type AtomicGroup = VecDeque<AtomicElement>;
 
 #[derive(Clone)]
@@ -474,6 +531,11 @@ impl Debug for AtomicElement {
     }
 }
 
+/// Token
+///
+/// Lexical categories shared by the atomic and multi-leg tokenizers. Each
+/// variant wraps the raw source fragment so evaluation stages and Debug
+/// output can echo the original expression text unchanged.
 #[derive(Clone)]
 pub enum Token {
     BracketToken(String),
@@ -528,6 +590,14 @@ impl Debug for Token {
 pub struct AtomicVector(u32);
 
 impl AtomicVector {
+    /// AtomicVector constructors and accessors.
+    ///
+    /// `new` / `from_tuple` pack a (whole, last) displacement pair into the
+    /// byte layout documented on [`AtomicVector`]; `whole`, `last`, and
+    /// `as_tuple` unpack it; `set`, `set_whole`, and `set_last` overwrite
+    /// components in place. `origin(rotation)` builds the zero displacement
+    /// whose `last` field carries the cardinal unit vector of `rotation`,
+    /// seeding direction-relative expression expansion.
     pub fn new(whole: (i8, i8), last: (i8, i8)) -> Self {
         let x1 = (whole.0 as u8) as u32;
         let y1 = (whole.1 as u8) as u32;
@@ -579,6 +649,18 @@ impl AtomicVector {
         AtomicVector::new(vectors[0], vectors[1])
     }
 
+    /// AtomicVector::add
+    ///
+    /// Composes two displacements: the whole vectors are added with
+    /// saturation, and `last` becomes the other vector's whole unless that
+    /// is zero, in which case the current `last` direction is preserved.
+    ///
+    /// Params:
+    /// - other: &AtomicVector -> displacement applied after `self`
+    ///
+    /// Return:
+    /// AtomicVector -> the combined displacement
+    ///
     pub fn add(&self, other: &AtomicVector) -> AtomicVector {
         let (wx1, wy1) = self.whole();
         let (wx2, wy2) = other.whole();
@@ -593,6 +675,18 @@ impl AtomicVector {
         AtomicVector::new(new_whole, new_last)
     }
 
+    /// AtomicVector::add_last
+    ///
+    /// Extends the displacement along its own `last` direction by the
+    /// given multiple — the primitive behind range repetition such as
+    /// `{2..5}` in move expressions.
+    ///
+    /// Params:
+    /// - multiple: i8 -> how many additional `last` steps to take
+    ///
+    /// Return:
+    /// AtomicVector -> extended displacement, `last` unchanged
+    ///
     pub fn add_last(&self, multiple: i8) -> AtomicVector {
         let (wx1, wy1) = self.whole();
         let (lx2, ly2) = self.last();

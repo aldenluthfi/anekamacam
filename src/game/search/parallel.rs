@@ -27,6 +27,20 @@ pub struct ThreadPool {
 
 impl ThreadPool {
 
+    /// ThreadPool::with_threads
+    ///
+    /// Prepares a pool over a snapshot of the root position; nothing is
+    /// spawned until `run` is called.
+    ///
+    /// Params:
+    /// - root: &State    -> root position, cloned per worker
+    /// - tt: Arc<TTable> -> shared transposition table
+    /// - qt: Arc<QTable> -> shared quiescence table
+    /// - count: usize    -> requested worker count, clamped to >= 1
+    ///
+    /// Return:
+    /// Self -> the configured pool
+    ///
     pub fn with_threads(
         root: &State, tt: Arc<TTable>, qt: Arc<QTable>, count: usize
     ) -> Self {
@@ -39,6 +53,21 @@ impl ThreadPool {
         Self { main_state, tt, qt, thread_count }
     }
 
+    /// ThreadPool::run
+    ///
+    /// Spawns one named searcher thread per worker, each running full
+    /// iterative deepening on its own state clone with a large stack
+    /// (deep recursion) while sharing the lock-free tables. After all
+    /// workers join, the result with the highest score wins.
+    ///
+    /// Params:
+    /// - depth: usize              -> maximum depth per worker
+    /// - timed: u128               -> time limit in ns (0 = unlimited)
+    /// - dict: Option<&Translator> -> translator for printed move names
+    ///
+    /// Return:
+    /// SearchResult -> the best result across all workers
+    ///
     pub fn run(
         self,
         depth: usize,

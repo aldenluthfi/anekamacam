@@ -82,6 +82,12 @@ impl Default for TTable {
 }
 
 impl TTable {
+    /// TTable method cluster.
+    ///
+    /// `with_mb` sizes the table to a memory budget in megabytes (the UCI
+    /// Hash option), `len` reports the slot count, and `is_empty` scans
+    /// for any written entry; the latter two exist mainly for tests and
+    /// diagnostics.
     pub fn with_mb(mb: usize) -> Self {
         let size = mb * 1024 * 1024 / size_of::<TTEntry>();
         Self {
@@ -111,6 +117,12 @@ impl TTable {
                        TRANSPOSITION TABLE PACKING HELPERS
 \*----------------------------------------------------------------------------*/
 
+/// Main-table packing macros.
+///
+/// `tt_index!` maps a Zobrist hash onto a table slot; the `tt_enc_*`
+/// writers pack bound flags (bits 0-1), clamped depth (bits 2-8), and
+/// score (bits 9-40) into the encoded word stored in `slot[1]`; the
+/// `tt_flags!` / `tt_depth!` / `tt_score!` readers extract them again.
 #[macro_export]
 macro_rules! tt_index {
     ($hash:expr, $size:expr) => {{
@@ -174,6 +186,16 @@ macro_rules! tt_score {
 ///   Step 3: version unchanged during read (seqlock: no torn write)
 ///
 /// On failure returns (false, i32::MIN, null_pseudo_move()).
+///
+/// Params:
+/// - state -> position whose hash is probed
+/// - table -> the shared transposition table
+/// - alpha / beta -> current window, used to validate bound cutoffs
+/// - depth -> minimum stored depth for the score to be usable
+///
+/// Return:
+/// (bool, i32, PseudoMove) -> (cutoff valid, score, stored best move)
+///
 #[macro_export]
 macro_rules! probe_tt_entry {
     ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {
@@ -246,6 +268,19 @@ macro_rules! probe_tt_entry {
     };
 }
 
+/// probe_pv_move!
+///
+/// Reduced probe used when extending the printed principal variation:
+/// runs the same parity and seqlock validation as `probe_tt_entry!` but
+/// ignores depth and bounds, returning only the stored best move.
+///
+/// Params:
+/// - state -> position whose hash is probed
+/// - table -> the shared transposition table
+///
+/// Return:
+/// Option<PseudoMove> -> the stored move, or None on any miss
+///
 #[macro_export]
 macro_rules! probe_pv_move {
     ($state:expr, $table:expr) => {{
@@ -295,6 +330,15 @@ macro_rules! probe_pv_move {
 ///
 /// Parity (slot[2]) is written last so a reader seeing fresh parity sees fresh
 /// data too.
+///
+/// Params:
+/// - tt_move -> best move found at this node
+/// - score   -> score to store (mate scores are ply-adjusted)
+/// - flags   -> bound type: FEXACT, FALPHA, or FBETA
+/// - depth   -> search depth the score is valid for
+/// - state   -> position whose hash keys the entry
+/// - table   -> the shared transposition table
+///
 #[macro_export]
 macro_rules! hash_tt_entry {
     (
@@ -304,7 +348,8 @@ macro_rules! hash_tt_entry {
         hotpath::measure_block!("tt::store", {
         let hash = $state.position_hash;
         let index = tt_index!(hash, $table.len());
-        let table_vec: &mut Vec<TTEntry> = unsafe { &mut *($table.table.get()) };
+        let table_vec: &mut Vec<TTEntry> =
+            unsafe { &mut *($table.table.get()) };
         let entry = &mut table_vec[index];
 
         let mut flags_depth = 0u32;
@@ -364,6 +409,19 @@ macro_rules! hash_tt_entry {
     };
 }
 
+/// fill_pv_line!
+///
+/// Reconstructs the full principal variation for reporting: copies the
+/// triangular PV table into `pv_line`, then walks the line on the board
+/// and extends it move by move from TT probes until the table runs dry,
+/// a probed move proves illegal, or the target depth is reached. All
+/// moves are undone before returning, leaving the position unchanged.
+///
+/// Params:
+/// - state -> position walked and restored
+/// - table -> the shared transposition table
+/// - depth -> maximum PV length to reconstruct
+///
 #[macro_export]
 macro_rules! fill_pv_line {
     ($state:expr, $table:expr, $depth:expr) => {{
@@ -488,6 +546,11 @@ impl Default for QTable {
 }
 
 impl QTable {
+    /// QTable method cluster.
+    ///
+    /// Mirror of the `TTable` methods: `with_mb` sizes the table to a
+    /// megabyte budget, `len` reports slot count, and `is_empty` scans
+    /// for any written entry.
     pub fn with_mb(mb: usize) -> Self {
         let size = mb * 1024 * 1024 / size_of::<QTEntry>();
         Self {
@@ -517,6 +580,12 @@ impl QTable {
                      QSEARCH TT PACKING / UNPACKING MACROS
 \*----------------------------------------------------------------------------*/
 
+/// Qsearch-table packing macros.
+///
+/// Counterparts of the `tt_*` packing family for the smaller qsearch
+/// entry: `qt_index!` maps a hash onto a slot, `qt_enc_score!` packs a
+/// sign-extended 16-bit score, `qt_enc_flags!` packs the bound type into
+/// bits 16-17, and `qt_score!` / `qt_flags!` read them back.
 #[macro_export]
 macro_rules! qt_index {
     ($hash:expr, $size:expr) => {{
@@ -563,6 +632,15 @@ macro_rules! qt_flags {
 ///   Step 1: version is even (no write in progress)
 ///   Step 2: version unchanged after both reads (no torn write)
 ///   Step 3: sig field matches the stored MoveSignature (anti-collision)
+///
+/// Params:
+/// - state  -> position whose hash is probed
+/// - qtable -> the shared qsearch table
+/// - alpha / beta -> current window, used to validate bound cutoffs
+///
+/// Return:
+/// (bool, i32, PseudoMove) -> (cutoff valid, score, stored best move)
+///
 #[macro_export]
 macro_rules! probe_qt_entry {
     ($state:expr, $qtable:expr, $alpha:expr, $beta:expr) => {
@@ -573,7 +651,7 @@ macro_rules! probe_qt_entry {
 
         let v1 = entry.version.load(Ordering::Acquire);
         if v1 & 1 != 0 {
-            (false, i32::MIN, null_pseudo_move())                               /* write in progress                   */
+            (false, i32::MIN, null_pseudo_move())                               /* write in progress                  */
         } else {
             let s0 = entry.slot[0];
             let s1 = entry.slot[1];
@@ -627,51 +705,19 @@ macro_rules! probe_qt_entry {
     };
 }
 
-#[macro_export]
-macro_rules! probe_qt_move {
-    ($state:expr, $qtable:expr) => {{
-        let hash = $state.position_hash;
-        let index = qtt_index!(hash, $qtable.len());
-        let entry = &mut unsafe { &mut *($qtable.table.get()) }[index];
-
-        let v1 = entry.version.load(Ordering::Acquire);
-        if v1 & 1 != 0 {
-            None                                                                /* write in progress                  */
-        } else {
-            let s0 = entry.slot[0];
-            let s1 = entry.slot[1];
-            let s2 = entry.slot[2];
-
-            if s0 ^ s1 ^ s2 != hash {                                           /* parity check: all slots covered    */
-                None
-            } else {
-                $qtable.hit.fetch_add(1, Ordering::Relaxed);                    /* parity matched                     */
-                let v2 = entry.version.load(Ordering::Acquire);
-
-                if v1 != v2 {                                                   /* seqlock: torn read detected        */
-                    None
-                } else {
-                    $qtable.valid.fetch_add(1, Ordering::Relaxed);
-                    let move_0 = s0;
-                    let sig = (s1 >> 32) as u64;
-                    let pseudo_mv: PseudoMove = (move_0, sig);
-
-                    if pseudo_mv == null_pseudo_move() {
-                        None
-                    } else {
-                        Some(pseudo_mv)
-                    }
-                }
-            }
-        }
-    }};
-}
-
 /// Stores a qsearch result in the dedicated TT.
 ///
 /// Only capture/check/promotion moves are written; quiet moves are skipped.
 /// Replacement policy: empty slot → always write; occupied → write if
 /// entry is stale (age < cur_age - 1) or new entry is FEXACT.
+///
+/// Params:
+/// - tt_move -> best move found at this qsearch node
+/// - score   -> score to store (mate scores are ply-adjusted)
+/// - flags   -> bound type: FEXACT or FBETA
+/// - state   -> position whose hash keys the entry
+/// - qtable  -> the shared qsearch table
+///
 #[macro_export]
 macro_rules! hash_qt_entry {
     ($tt_move:expr, $score:expr, $flags:expr, $state:expr, $qtable:expr) => {

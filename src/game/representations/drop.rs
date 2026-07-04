@@ -2,6 +2,14 @@
 //!
 //! Defines drop move encoding and helper macros for drop-related flags.
 //!
+//! Variants in the shogi family let captured pieces re-enter the board from
+//! a player's hand. Those placements need their own compact representation:
+//! unlike ordinary moves they have no origin square, but they do carry
+//! placement constraints (such as checkmate-delivery bans) that must be
+//! honored at generation time. This file defines the packed `DropMove`
+//! word, the pattern-carrying `Drops` pairing used by the precomputed drop
+//! tables, and the flag accessors shared by generation and execution.
+//!
 //! # Author
 //! Alden Luthfi
 //!
@@ -26,7 +34,7 @@ macro_rules! enc_can_checkmate {
 }
 
 /*----------------------------------------------------------------------------*\
-                          DROP REPRESENTATION ENCODING
+                          DROP REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
 
 /// Decoding helpers for drop-specific flags in packed moves.
@@ -40,11 +48,17 @@ macro_rules! drop_can_checkmate {
     };
 }
 
+/// DropMove / Drops / DropSet
+///
 /// A `DropMove` consists of the following bits:
 /// - The first 8 bits represent the piece index of the piece being dropped.
 /// - The next 12 bits represent the square index where the piece is being
 ///   dropped.
 /// - The next 12 bits are reserved for drop modifiers.
+///
+/// `Drops` pairs a packed drop with the CPMN pattern that must match
+/// around the target square for the drop to be legal, and `DropSet`
+/// collects every such pairing for one (piece, square) table slot.
 pub type DropMove = u32;
 pub type Drops = (DropMove, Pattern);
 pub type DropSet = Vec<Drops>;

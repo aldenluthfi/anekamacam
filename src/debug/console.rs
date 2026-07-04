@@ -23,6 +23,12 @@ const TAB_FOCUSABLES: [u8; 3] = [3, 2, 3];
 const PICKER_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX);
 const HELP_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX - 1);
 
+/// Messages sent from worker threads back to the TUI event loop.
+///
+/// Commands run off-thread so the interface stays responsive; when they
+/// finish they push one of these to update the rendered board, install a
+/// freshly loaded game or playground state, swap the active protocol
+/// translator, or unlock the input line after a long operation.
 enum TuiEvent {
     StateUpdate(BoardState),
     StateInit(Arc<Mutex<State>>),
@@ -31,6 +37,13 @@ enum TuiEvent {
     Unlock,
 }
 
+/// The full interface state of the debug console.
+///
+/// Tracks which tab and pane have focus (with per-pane scroll offsets in
+/// `scroll_map`), the command input line and its mode, help/lock flags,
+/// the loaded variant with its translator, the shared game and
+/// playground states plus their rendered snapshots, and the channel the
+/// worker threads report back on.
 struct Tui {
     mode: u8,
     threads: usize,
@@ -57,6 +70,12 @@ struct Tui {
 }
 
 impl Tui {
+    /// Tui construction and teardown.
+    ///
+    /// `new` builds the interface on the game-selection screen with all
+    /// scroll offsets zeroed; `reset` returns to that screen from a
+    /// running game, dropping the loaded states and interrupting any
+    /// worker still computing.
     fn new(
         receiver: Receiver<TuiEvent>, sender: Sender<TuiEvent>
     ) -> Self {
@@ -129,6 +148,19 @@ impl Tui {
         SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
     }
 
+    /// Tui::run
+    ///
+    /// The interface main loop: draw a frame, drain pending `TuiEvent`s
+    /// from worker threads, then poll the keyboard with a 16ms budget
+    /// (~60fps) and dispatch through `handle_key` until it requests
+    /// exit.
+    ///
+    /// Params:
+    /// - terminal: &mut DefaultTerminal -> the ratatui terminal handle
+    ///
+    /// Return:
+    /// IoResult<()> -> Ok on clean exit, Err on terminal I/O failure
+    ///
     fn run (&mut self, terminal: &mut DefaultTerminal) -> IoResult<()> {
         loop {
             terminal.draw(|frame| render(frame, self))?;
@@ -183,6 +215,14 @@ impl Tui {
     }
 }
 
+/// Overview-tab snapshot types.
+///
+/// The Overview tab shows the loaded variant's configuration rather
+/// than the live game, so everything is pre-rendered once per load:
+/// `OverviewPieceInfo` holds one piece type's formatted attributes
+/// (promotions, roles, values, PSTs, zones), `OverviewPiece` pairs it
+/// with the piece name, and `OverviewState` collects the config rows
+/// and all pieces. `from_state` builds the whole snapshot.
 struct OverviewPieceInfo {
     char_str: String,
     promotions: String,
@@ -377,6 +417,12 @@ impl OverviewState {
     }
 }
 
+/// Pre-rendered snapshot of the live game for the Game tab.
+///
+/// Holds the composite board diagram, numbered move history, detail
+/// rows (phase, turn, hash, and whichever rule-gated fields the variant
+/// enables), and the current FEN. `from_state` renders it once per
+/// state change so drawing stays cheap.
 struct BoardState {
     board: String,
     move_history: String,
@@ -460,6 +506,13 @@ impl BoardState {
     }
 }
 
+/// Playground state helpers.
+///
+/// The Playground tab visualizes one piece's moves on an otherwise
+/// empty board: `init_playground` loads an empty FEN matching the
+/// variant's rule set for the piece's color, and `set_playground_piece`
+/// places the piece on a square and reloads so its precomputed moves
+/// can be highlighted from there.
 fn init_playground(state: &mut State, index: PieceIndex) {
     let piece = &state.statics.pieces[index as usize];
     let color = p_color!(piece);
@@ -500,6 +553,17 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
     state.game_phase = OPENING;
 }
 
+/// TUI drawing functions, `draw_*` and `render`.
+///
+/// Each draws one region of a frame from the current `Tui` state and
+/// they share the same shape (frame, area, app): the variant picker
+/// (`draw_game_selection`), the tab bar, the command input line, the
+/// help bar and its scrollable help popup, and the three tab bodies —
+/// Game (board, history, details), Overview (variant configuration and
+/// per-piece derived data), and Playground (single-piece move
+/// visualization). `render` at the end lays out the frame and calls the
+/// right ones for the active screen. None of them mutate engine state;
+/// they only read snapshots and update scroll offsets.
 fn draw_game_selection(
     frame: &mut Frame<'_>, area: Rect, app: &mut Tui
 ) -> Option<Arc<Mutex<State>>> {
@@ -2396,6 +2460,27 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     }
 }
 
+/// execute_command
+///
+/// Interprets one line from the TUI input in game or playground
+/// context: move/undo/reset handling, FEN load and print, perft and
+/// search benchmarks, parameter derivation and export, protocol
+/// switching, and playground piece placement (`add`/`del`). Long
+/// operations run on this worker thread and report back through
+/// `sender`, so the interface never blocks; commands not valid for the
+/// current context are rejected with a log message.
+///
+/// Params:
+/// - command: &str          -> the raw input line
+/// - state: &mut State      -> the live game state
+/// - playground: Option<&mut State> -> playground state when that tab
+///   issued the command
+/// - variant: Option<String> -> active variant name, for exports
+/// - dict: Option<&Translator> -> translator for printed move names
+/// - ttable / qtable        -> shared tables for search commands
+/// - threads: usize         -> worker count for search commands
+/// - sender: Sender<TuiEvent> -> channel for result snapshots
+///
 fn execute_command(
     command: &str,
     state: &mut State,
@@ -2824,6 +2909,20 @@ fn execute_command(
     }
 }
 
+/// handle_key
+///
+/// Routes one key event by interface mode: navigation keys move tab /
+/// focus / scroll and drive the variant picker, insert mode edits the
+/// input line and submits commands to a spawned worker thread, and
+/// global keys toggle help, adjust verbosity, or request exit.
+///
+/// Params:
+/// - app: &mut Tui    -> the interface state to mutate
+/// - event: KeyEvent  -> the key event to route
+///
+/// Return:
+/// bool -> true when the application should exit
+///
 fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
     if event.kind != KeyEventKind::Press {
@@ -3128,6 +3227,15 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
     }
 }
 
+/// debug_console
+///
+/// Entry point for the debug interface: initializes the ratatui
+/// terminal with mouse capture, runs the `Tui` loop, and restores the
+/// terminal even when the loop errors.
+///
+/// Return:
+/// IoResult<()> -> Ok on clean exit, Err on terminal I/O failure
+///
 pub fn debug_console() -> IoResult<()> {
     log_3!("Starting TUI...");
     let mut terminal = ratatui::init();

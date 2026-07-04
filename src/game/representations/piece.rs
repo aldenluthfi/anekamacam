@@ -2,9 +2,13 @@
 //!
 //! Defines piece representation and properties.
 //!
-//! This file contains the implementation of the `Piece` struct,
-//! which represents
-//! a chess piece type with static and dynamic encoded attributes.
+//! Every variant describes its army as a list of piece types, and the rest
+//! of the engine refers to pieces only by index into that list. This file
+//! defines the `Piece` record behind those indices: a bit-packed bundle of
+//! the static attributes fixed by the config (identity, color, royalty,
+//! rank) and the dynamic attributes derived at startup (material values,
+//! role classes). Packing both into single words keeps the hot evaluation
+//! and generation paths on cheap mask-and-shift reads.
 //!
 //! # Author
 //! Alden Luthfi
@@ -12,12 +16,31 @@
 //! # Date
 //! 25/01/2026
 
+/// PieceIndex
+///
+/// Index of a piece type in the variant's piece list, the engine's sole
+/// runtime identity for a piece. The value 255 (`NO_PIECE`) is reserved
+/// for "no piece" in mailbox boards and mapping tables.
 pub type PieceIndex = u8;
 
 /*----------------------------------------------------------------------------*\
-                               UTILTY PIECE MACROS
+                               UTILITY PIECE MACROS
 \*----------------------------------------------------------------------------*/
 
+/// p_value!
+///
+/// Returns the phase-interpolated material value of a piece type: the
+/// opening value during the opening/setup phases, the endgame value in the
+/// endgame, and a linear blend of the two weighted by the current phase
+/// score while in the middlegame.
+///
+/// Params:
+/// - piece: PieceIndex -> piece type whose value is queried
+/// - state: State      -> position providing phase and phase thresholds
+///
+/// Return:
+/// u32 -> interpolated material value
+///
 #[macro_export]
 macro_rules! p_value {
     ($piece:expr, $state:expr) => {{
@@ -170,6 +193,25 @@ pub struct Piece {
 }
 
 impl Piece {
+    /// Piece::new
+    ///
+    /// Builds a piece type from its config-file attributes, packing them
+    /// into `encoded_static` in the layout documented on [`Piece`]. The
+    /// dynamic word starts zeroed and is filled in later, once parameter
+    /// derivation has computed material values and role classes.
+    ///
+    /// Params:
+    /// - name: String                -> display name of the piece
+    /// - char: char                  -> FEN/board letter for the piece
+    /// - promotions: Vec<PieceIndex> -> piece types this can promote to
+    /// - index: u8                   -> index in the variant's piece list
+    /// - color: u8                   -> owning side (WHITE or BLACK)
+    /// - is_royal: bool              -> whether this piece must be mated
+    /// - rank: u8                    -> variant-defined capture rank
+    ///
+    /// Return:
+    /// Self -> the piece with static attributes encoded
+    ///
     pub fn new(
         name: String,
         char: char,

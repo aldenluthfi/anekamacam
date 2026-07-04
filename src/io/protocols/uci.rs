@@ -14,6 +14,16 @@
 //! 24/05/2026
 use crate::*;
 
+/// list_uci_variants
+///
+/// Discovers which variants can be served over UCI: a variant qualifies
+/// when an embedded dictionary and config both exist for it and the
+/// dictionary's `protocols` section lists `uci`. The result feeds the
+/// UCI_Variant combo option.
+///
+/// Return:
+/// Vec<String> -> sorted names of UCI-capable variants
+///
 fn list_uci_variants() -> Vec<String> {
     let mut variants = Vec::new();
 
@@ -80,6 +90,17 @@ fn list_uci_variants() -> Vec<String> {
     variants
 }
 
+/// print_bestmove
+///
+/// Emits the final `bestmove` line for a completed search, appending the
+/// ponder move when one was found, and flushes stdout so the GUI sees it
+/// immediately.
+///
+/// Params:
+/// - result: &SearchResult     -> finished search outcome
+/// - state: &State             -> position for move formatting
+/// - dict: Option<&Translator> -> translator for printed move names
+///
 fn print_bestmove(
     result: &SearchResult,
     state: &State,
@@ -95,6 +116,11 @@ fn print_bestmove(
     stdout().flush().ok();
 }
 
+/// A running (possibly pondering) search thread.
+///
+/// Keeps the join handle together with the launch parameters needed to
+/// restart the search on `ponderhit`: whether it was a ponder search,
+/// its depth limit, and the time budget to apply once the hit arrives.
 struct SearchHandle {
     handle: JoinHandle<SearchResult>,
     is_ponder: bool,
@@ -102,6 +128,12 @@ struct SearchHandle {
     ponderhit_timed_ns: u128,
 }
 
+/// The UCI session state.
+///
+/// Owns the engine position, the discovered variant list and active
+/// variant, the protocol translator, thread/hash option values, the
+/// shared tables (rebuilt when the Hash option changes), and the active
+/// search handle if a `go` is in flight.
 struct Uci {
     state: State,
     variants: Vec<String>,
@@ -117,6 +149,16 @@ struct Uci {
 }
 
 impl Uci {
+    /// Uci::new
+    ///
+    /// Boots a session on the default variant (fide when available,
+    /// otherwise the first discovered one): loads its config, sets up
+    /// the start position, finds its translator, and allocates the
+    /// shared tables at the default hash budget (2/3 main, 1/3 qsearch).
+    ///
+    /// Return:
+    /// Self -> a session ready to accept UCI commands
+    ///
     fn new() -> Self {
         let variants = list_uci_variants();
         let default_variant = variants
@@ -154,6 +196,26 @@ impl Uci {
     }
 }
 
+/// UCI command handlers.
+///
+/// Each takes the session plus the tokenized command line and applies
+/// one command's side effects:
+/// - `handle_position`  : rebuilds the position from `startpos` or a
+///   FEN, then replays any trailing `moves` list.
+/// - `start_search`     : parses `go` limits (depth, movetime, clock +
+///   increment with movestogo, infinite/ponder), computes a time budget,
+///   and spawns the search thread, recording it as active.
+/// - `stop_search`      : interrupts and joins the active search; for a
+///   ponder search the withheld `bestmove` is printed on stop.
+/// - `handle_ponderhit` : joins the ponder search and relaunches it as a
+///   normal timed search using the budget saved at launch.
+/// - `handle_setoption` : applies UCI_Variant / Threads / Ponder / Hash
+///   / Clear Hash option changes, rebuilding state or tables as needed.
+///
+/// Params:
+/// - uci: &mut Uci  -> the session being mutated
+/// - tokens: &[&str] -> whitespace-split command line (where taken)
+///
 fn handle_position(uci: &mut Uci, tokens: &[&str]) {
     let startpos = uci.state.statics.startpos.clone();
     uci.state.reset();
@@ -440,6 +502,21 @@ fn handle_setoption(uci: &mut Uci, tokens: &[&str]) {
     }
 }
 
+/// execute_command
+///
+/// Dispatches one line of UCI input: identification and option listing
+/// for `uci`, readiness, new-game reset, and delegation to the handlers
+/// above for position/go/stop/ponderhit/setoption. The nonstandard `d`
+/// command prints and verifies the current position for debugging.
+/// Unknown commands are ignored, as the protocol requires.
+///
+/// Params:
+/// - uci: &mut Uci -> the session being driven
+/// - line: &str    -> one trimmed line of input
+///
+/// Return:
+/// bool -> true when the session should terminate (`quit`)
+///
 fn execute_command(uci: &mut Uci, line: &str) -> bool {
     let tokens: Vec<&str> = line.split_whitespace().collect();
     let command = tokens.first().copied().unwrap_or("");
@@ -513,6 +590,14 @@ fn execute_command(uci: &mut Uci, line: &str) -> bool {
     false
 }
 
+/// uci
+///
+/// The blocking UCI main loop: prints the engine banner, builds the
+/// session, and feeds stdin lines to `execute_command` until `quit`.
+///
+/// Return:
+/// IoResult<()> -> Ok on clean shutdown
+///
 pub fn uci() -> IoResult<()> {
     println!("AnekaMacam {} by Alden Luthfi", env!("CARGO_PKG_VERSION"));
 

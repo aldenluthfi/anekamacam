@@ -135,6 +135,18 @@ pub fn parse_move(
         .find(|mv| format_move(mv, state, dict).trim() == move_str.trim())
 }
 
+/// format_move_history
+///
+/// Renders the game's move history as numbered move pairs ("1. e4 e5"),
+/// one full move per line, using `format_move` for each entry.
+///
+/// Params:
+/// - state: &State             -> position whose history is printed
+/// - dict: Option<&Translator> -> translator for printed move names
+///
+/// Return:
+/// String -> the numbered, newline-separated history
+///
 pub fn format_move_history(
     state: &State, dict: Option<&Translator>
 ) -> String {

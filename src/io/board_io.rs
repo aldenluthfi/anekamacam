@@ -3,12 +3,12 @@
 //! Implements board formatting and visualization functions.
 //!
 //! This file contains functionality for converting bitboard representations
-//! into human-readable ASCII art displays. It provides methods for formatting
-//! individual bitboards and complete boards with Unicode
-//! box-drawing characters,
-//!
-//! supporting various board sizes and piece symbols. The formatting includes
-//! rank and file labels for easy reference.
+//! into human-readable ASCII art displays. It provides methods for
+//! formatting individual bitboards and complete boards with Unicode
+//! box-drawing characters, supporting various board sizes and piece
+//! symbols. The formatting includes rank and file labels for easy
+//! reference, and the square parsing/formatting pair keeps algebraic and
+//! numeric coordinates consistent across every board width.
 //!
 //! # Author
 //! Alden Luthfi
@@ -23,6 +23,14 @@ use crate::*;
 ///
 /// If the board width is more than 26 then it switches to numeric file. Both
 /// file and rank in both formats are 1-indexed
+///
+/// Params:
+/// - index: u16    -> flat square index to format
+/// - state: &State -> supplies the board width
+///
+/// Return:
+/// String -> algebraic ("e4") or numeric ("0504") square name
+///
 pub fn format_square(index: u16, state: &State) -> String {
     let file = (index % state.statics.files as u16) as u8;
     let rank = (index / state.statics.files as u16) as u8;
@@ -34,6 +42,19 @@ pub fn format_square(index: u16, state: &State) -> String {
     }
 }
 
+/// parse_square
+///
+/// Inverse of `format_square`: reads an algebraic or numeric square name
+/// (chosen by board width, matching the formatter) back into a flat
+/// index, rejecting coordinates that fall off the board.
+///
+/// Params:
+/// - square_str: &str -> square name, e.g. "e4" or "0504"
+/// - state: &State    -> supplies the board dimensions
+///
+/// Return:
+/// Option<u16> -> the flat square index, or None if invalid
+///
 pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
     let files = state.statics.files as u16;
     let ranks = state.statics.ranks as u16;
@@ -74,6 +95,19 @@ pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
     None
 }
 
+/// format_bitboard
+///
+/// Renders the raw bits of a bitboard as a plain 0/1 grid, top rank
+/// first — the unstyled core that `format_board` decorates.
+///
+/// Params:
+/// - board: &U4096 -> raw bit storage to render
+/// - files: u8     -> board width
+/// - ranks: u8     -> board height
+///
+/// Return:
+/// String -> newline-separated 0/1 grid
+///
 fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
     let mut result = String::new();
 
@@ -91,6 +125,19 @@ fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
     result
 }
 
+/// format_board
+///
+/// Pretty-prints one bitboard as a box-drawn grid with rank numbers and
+/// file letters. Set bits render as `1`, or as `piece_char` when given;
+/// clear bits render as blanks.
+///
+/// Params:
+/// - board: &Board            -> bitboard to display
+/// - piece_char: Option<char> -> optional glyph for set bits
+///
+/// Return:
+/// String -> the framed, labelled board diagram
+///
 pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     let ranks = ranks!(board);
     let files = files!(board);
@@ -145,6 +192,19 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     result
 }
 
+/// format_numeric_board
+///
+/// Pretty-prints one integer per square as a box-drawn grid — used to
+/// inspect piece-square tables and other derived per-square values.
+///
+/// Params:
+/// - values: &[i32] -> per-square values in board order
+/// - files: u8      -> board width
+/// - ranks: u8      -> board height
+///
+/// Return:
+/// String -> the framed, labelled value grid
+///
 pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
     let mut result = String::new();
     let width = 4;
@@ -209,6 +269,19 @@ pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
     result
 }
 
+/// mirror_pst_across_horizontal_axis
+///
+/// Flips a piece-square table rank-wise so a table derived for one color
+/// can serve its twin: rank 0 swaps with the top rank, files unchanged.
+///
+/// Params:
+/// - pst: &[i32]  -> source table in board order
+/// - files: usize -> board width
+/// - ranks: usize -> board height
+///
+/// Return:
+/// Vec<i32> -> the mirrored table
+///
 pub fn mirror_pst_across_horizontal_axis(
     pst: &[i32],
     files: usize,
@@ -235,6 +308,18 @@ pub fn mirror_pst_across_horizontal_axis(
     mirrored
 }
 
+/// determine_board_dimensions
+///
+/// Infers a board's size from a FEN placement field alone: the rank
+/// count is the number of `/`-separated segments and the file count is
+/// summed from the first segment's letters and digit runs.
+///
+/// Params:
+/// - fen: &str -> the piece placement portion of a FEN
+///
+/// Return:
+/// (u8, u8) -> (files, ranks)
+///
 pub fn determine_board_dimensions(fen: &str) -> (u8, u8) {
     let ranks_data: Vec<&str> = fen.split('/').collect();
     let rank_count = ranks_data.len() as u8;

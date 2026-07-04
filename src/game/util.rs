@@ -1,13 +1,12 @@
 //! # util.rs
 //!
-//! Provides utility functions and patterns for move expression processing.
+//! Cross-cutting engine utilities that belong to no single subsystem.
 //!
-//! This file contains shared utilities used across the move parsing and
-//! matching modules, including regex patterns for normalization, range
-//! expansion, and cardinal direction parsing. It also provides the core
-//! expression evaluation logic using a stack-based algorithm for handling
-//! operators (^ for concatenation, | for alternation), Betza atom mappings,
-//! and parallel processing helpers for splitting and processing expressions.
+//! The file groups three concerns: randomness for Zobrist seeding, state
+//! integrity helpers (recomputing cached evaluation terms and asserting
+//! that incrementally maintained caches still match a from-scratch
+//! recount), and the perft/benchmark harness used to validate move
+//! generation against known node counts and to profile search speed.
 //!
 //! # Author
 //! Alden Luthfi
@@ -17,6 +16,15 @@
 
 use crate::*;
 
+/// random_u128
+///
+/// Draws a full-width random number from the engine's shared seeded RNG
+/// by concatenating two 64-bit draws. Used to seed the Zobrist hash
+/// tables at startup.
+///
+/// Return:
+/// u128 -> uniformly random 128-bit value
+///
 pub fn random_u128() -> u128 {
     let mut rng = RNG.lock().unwrap_or_else(|e| {
         panic!("Failed to lock RNG mutex for random_u128: {e}")
@@ -29,6 +37,10 @@ pub fn random_u128() -> u128 {
 /// Used after position-level changes (load, tune import, make/undo move) to
 /// keep material, PST bonus, and phase classification in sync with `piece_list`
 /// and PST tables.
+///
+/// Params:
+/// - state: &mut State -> position whose eval caches are rebuilt
+///
 pub fn refresh_eval_state(state: &mut State) {
     state.opening_material = [0; 2];
     state.endgame_material = [0; 2];
@@ -72,7 +84,19 @@ pub fn refresh_eval_state(state: &mut State) {
     };
 }
 
-/// Calculates the distance between two squares on the board.
+/// square_distance
+///
+/// Calculates the euclidean distance between two squares on the board,
+/// treating file and rank deltas as cartesian coordinates.
+///
+/// Params:
+/// - state: &State -> supplies the board width for index decomposition
+/// - sq1: Square   -> first square
+/// - sq2: Square   -> second square
+///
+/// Return:
+/// f64 -> euclidean distance in square units
+///
 pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
     let file1 = sq1 % state.statics.files as Square;
     let rank1 = sq1 / state.statics.files as Square;
@@ -90,6 +114,10 @@ pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
 /// Debug integrity check for boards, piece lists, material counts, royal
 /// lists, and the incremental Zobrist hash. On mismatch it also attempts to
 /// pinpoint the source before panicking.
+///
+/// Params:
+/// - state: &State -> position whose incremental caches are validated
+///
 pub fn verify_game_state(state: &State) {
 
     assert_eq!(
@@ -338,6 +366,19 @@ pub fn verify_game_state(state: &State) {
     );
 }
 
+/// parse_perft_content
+///
+/// Parses a perft suite file into test cases: each non-comment line holds
+/// a FEN followed by the expected node counts for depths one through six,
+/// comma-separated.
+///
+/// Params:
+/// - content: &str -> raw text of the .perft suite file
+///
+/// Return:
+/// Vec<(String, u64, ...)> -> FEN plus expected node counts for depths
+/// 1-6, one tuple per suite line
+///
 fn parse_perft_content(                                                         /* until perft 6                      */
     content: &str,
 ) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
@@ -398,6 +439,17 @@ fn parse_perft_content(                                                         
         .collect()
 }
 
+/// format_time
+///
+/// Renders a nanosecond duration using the largest unit that keeps the
+/// value readable, from raw nanoseconds up to seconds.
+///
+/// Params:
+/// - nanos: u128 -> duration in nanoseconds
+///
+/// Return:
+/// String -> human-readable duration such as "1.234 ms"
+///
 pub fn format_time(nanos: u128) -> String {
     if nanos < 1_000 {
         format!("{} ns", nanos)
@@ -413,6 +465,13 @@ pub fn format_time(nanos: u128) -> String {
 /// Runs a perft test without a truth suite, reporting total nodes and elapsed
 /// time for a given depth. For quick sanity checks and performance profiling
 /// without needing a full suite of expected results.
+///
+/// Params:
+/// - state: &mut State         -> starting position, mutated during walk
+/// - depth: u8                 -> maximum perft depth to run
+/// - branch: i8                -> diagnostic branch-printing depth
+/// - dict: Option<&Translator> -> translator for printed move names
+///
 pub fn benchmark_headless_perft(
     state: &mut State, depth: u8, branch: i8, dict: Option<&Translator>
 ) {
@@ -460,7 +519,19 @@ pub fn benchmark_headless_perft(
 ///
 /// Cases are shuffled, capped by `limit`, and each position is tested from
 /// depth 1 up to `depth`. `branch` controls diagnostic line printing when
-/// passed through to `perft`. Returns passed and total case counts.
+/// passed through to `perft`.
+///
+/// Params:
+/// - state: &mut State         -> reused for every loaded FEN
+/// - content: &str             -> raw perft suite text
+/// - depth: u8                 -> maximum depth tested per position
+/// - branch: i8                -> diagnostic branch-printing depth
+/// - limit: usize              -> maximum number of positions to test
+/// - dict: Option<&Translator> -> translator for printed move names
+///
+/// Return:
+/// (usize, usize) -> (passed cases, total cases)
+///
 pub fn benchmark_perft(
     state: &mut State,
     content: &str,
@@ -567,6 +638,15 @@ pub fn benchmark_perft(
 ///
 /// Reports the current position, executes search, and logs total nodes, elapsed
 /// wall time, and aggregate nodes-per-second.
+///
+/// Params:
+/// - state: &mut State         -> position searched
+/// - ttable: Arc<TTable>       -> shared transposition table
+/// - qtable: Arc<QTable>       -> shared quiescence table
+/// - depth: usize              -> fixed search depth
+/// - thread_num: usize         -> number of worker threads
+/// - dict: Option<&Translator> -> translator for printed move names
+///
 pub fn benchmark_search(
     state: &mut State, ttable: Arc<TTable>, qtable: Arc<QTable>, depth: usize,
     thread_num: usize, dict: Option<&Translator>,
@@ -585,6 +665,17 @@ pub fn benchmark_search(
 ///
 /// When `branch >= 0`, prints the explored move prefixes for the first levels
 /// to help inspect branching behavior.
+///
+/// Params:
+/// - state: &mut State         -> position explored, restored on return
+/// - depth: u8                 -> remaining depth to expand
+/// - branch: i8                -> levels of move-prefix printing left
+/// - prefix: &str              -> accumulated move prefix for diagnostics
+/// - dict: Option<&Translator> -> translator for printed move names
+///
+/// Return:
+/// u64 -> number of leaf nodes at the requested depth
+///
 pub fn perft(
     state: &mut State, depth: u8, branch: i8, prefix: &str,
     dict: Option<&Translator>,

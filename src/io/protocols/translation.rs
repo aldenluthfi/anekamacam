@@ -20,6 +20,13 @@ pub struct TranslatorGroup {
     pub list: Vec<Translator>,
 }
 
+/// One protocol's translation rules for a variant.
+///
+/// Holds ordered regex/replacement rule lists parsed from a `.dict`
+/// file: `fen` rewrites internal FENs into the protocol's dialect,
+/// `inverse_fen` rewrites them back, and `moves` rewrites move text.
+/// External GUIs often expect different piece letters or coordinate
+/// styles than the engine's internal notation; these rules bridge that.
 #[derive(Clone)]
 pub struct Translator {
     pub protocol: String,
@@ -29,6 +36,18 @@ pub struct Translator {
 }
 
 impl Translator {
+    /// Translator::find
+    ///
+    /// Looks up the embedded dictionary for a variant and builds the
+    /// translator for one protocol from it.
+    ///
+    /// Params:
+    /// - variant: &str         -> variant name, matches `<name>.dict`
+    /// - target_protocol: &str -> protocol section to load, e.g. "uci"
+    ///
+    /// Return:
+    /// Option<Self> -> the translator, or None if no dictionary exists
+    ///
     pub fn find(variant: &str, target_protocol: &str) -> Option<Self> {
         let filename = format!("{}.dict", variant);
         let content = EMBEDDED_DICTS
@@ -37,6 +56,22 @@ impl Translator {
         Some(Translator::from_content(content, target_protocol))
     }
 
+    /// Translator::from_content
+    ///
+    /// Parses dictionary text into a translator: comments are stripped,
+    /// the file is split into `[section]` bodies, the protocol's fen and
+    /// moves sections are compiled into ordered regex/replacement rule
+    /// lists, and inverse FEN rules are derived by swapping each rule's
+    /// sides. Panics on missing mandatory sections or malformed rules,
+    /// since dictionaries ship embedded and must be valid.
+    ///
+    /// Params:
+    /// - content: &str         -> raw `.dict` file text
+    /// - target_protocol: &str -> protocol section to compile
+    ///
+    /// Return:
+    /// Self -> the compiled translator
+    ///
     pub fn from_content(content: &str, target_protocol: &str) -> Self {
         let uncommented_str = COMMENT_PATTERN.replace_all(content, "");
         let cleaned = uncommented_str

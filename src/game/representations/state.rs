@@ -14,6 +14,11 @@
 
 use crate::*;
 
+/// Square
+///
+/// A single board square addressed by its flat index, computed as
+/// `rank * files + file`. Sixteen bits cover every supported board size,
+/// up to the 4096 squares a `U4096` bitboard can address.
 pub type Square = u16;
 
 /*----------------------------------------------------------------------------*\
@@ -185,6 +190,11 @@ macro_rules! enc_repetition_limit {
                             EN PASSANT REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
+/// EnPassantSquare
+///
+/// Packed en passant descriptor holding the capture target square, the
+/// square of the capturable piece, and that piece's index. The sentinel
+/// `NO_EN_PASSANT` marks the absence of an en passant opportunity.
 pub type EnPassantSquare = u32;
 
 /// En passant packed-field accessor macros.
@@ -256,6 +266,13 @@ impl Default for Snapshot {
 ///
 /// This is used in repetition / stand-off flow where pass detection is needed
 /// while reading from undo history rather than the active move stream.
+///
+/// Params:
+/// - snapshot: Snapshot -> the history entry whose move is inspected
+///
+/// Return:
+/// bool -> true if the snapshotted move is a pass
+///
 #[macro_export]
 macro_rules! pass_snapshot {
     ($snapshot:expr) => {
@@ -263,6 +280,19 @@ macro_rules! pass_snapshot {
     };
 }
 
+/// game_phase_score!
+///
+/// Recomputes the phase score of a position from scratch by summing the
+/// opening values of every non-royal "big" piece still on the board. The
+/// result is compared against the variant's opening/endgame thresholds to
+/// decide which game phase the position belongs to.
+///
+/// Params:
+/// - state: State -> position whose remaining material is tallied
+///
+/// Return:
+/// u32 -> summed opening value of all non-royal big pieces
+///
 #[macro_export]
 macro_rules! game_phase_score {
     ($state:expr) => {{
@@ -494,6 +524,29 @@ impl Clone for State {
 }
 
 impl State {
+    /// State::new
+    ///
+    /// Builds a blank engine state for a variant: every static table is
+    /// allocated at its final size but zeroed, and all dynamic fields are
+    /// set to their empty-board defaults. The result is unusable for play
+    /// until the config loader fills the static tables and `precompute`
+    /// derives the relevant-move caches.
+    ///
+    /// Params:
+    /// - title: String      -> display name of the variant
+    /// - startpos: String   -> FEN of the variant's starting position
+    /// - files: u8          -> number of board files
+    /// - ranks: u8          -> number of board ranks
+    /// - pieces: Vec<Piece> -> piece definitions, indexed by PieceIndex
+    /// - special_rules: u32 -> special-rules bitmask (see [`State`])
+    ///
+    /// Return:
+    /// Self -> a fresh state with empty boards and zeroed search tables
+    ///
+    /// Notes:
+    /// The LMR reduction tables are the only values computed here, since
+    /// they depend on nothing but depth and move-count indices.
+    ///
     pub fn new(
         title: String,
         startpos: String,
@@ -655,11 +708,30 @@ impl State {
         }
     }
 
+    /// State::static_mut
+    ///
+    /// Grants mutable access to the shared static configuration during the
+    /// single-threaded setup phase (config parsing and precomputation).
+    ///
+    /// Return:
+    /// &mut StaticState -> exclusive reference into the statics Arc
+    ///
+    /// Notes:
+    /// Uses `unwrap_unchecked`: callers must guarantee no other Arc clone
+    /// exists yet, which holds because search threads are only spawned
+    /// after setup completes.
+    ///
     #[inline]
     pub fn static_mut(&mut self) -> &mut StaticState {
         unsafe { Arc::get_mut(&mut self.statics).unwrap_unchecked() }
     }
 
+    /// State::reset
+    ///
+    /// Returns every dynamic field to its empty-board default while leaving
+    /// the shared static configuration untouched, so a new game or FEN can
+    /// be loaded without re-deriving the precomputed tables.
+    ///
     pub fn reset(&mut self) {
         let piece_count = self.statics.pieces.len();
         let board_size = self.statics.board_size;
@@ -712,11 +784,36 @@ impl State {
         self.static_eval = vec![-INF; MAX_DEPTH];
     }
 
+    /// State::load_fen
+    ///
+    /// Resets the dynamic state and repopulates it from a FEN string,
+    /// optionally translating piece letters through a variant dictionary.
+    ///
+    /// Params:
+    /// - fen: &str                 -> FEN string to load
+    /// - dict: Option<&Translator> -> optional piece-letter translator
+    ///
     pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
         self.reset();
         parse_fen(self, fen, dict);
     }
 
+    /// State::generate_piece_moves / _drops / _stand_off
+    ///
+    /// Expression-compilation helpers used once at precompute time. Each
+    /// takes the raw expression strings from the config and compiles them
+    /// into per-piece runtime structures: move expressions become packed
+    /// `Leg` lists, drop expressions become `DropSet`s, and stand-off
+    /// expressions become `PatternSet`s. Board-aware expansion (ranges,
+    /// directions, rotation) happens inside the `generate_*` calls in the
+    /// moves module; this trio only drives them piece by piece.
+    ///
+    /// Params:
+    /// - expr_set -> one expression string per piece, in config order
+    ///
+    /// Return:
+    /// one compiled set per piece, indexed by PieceIndex
+    ///
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
         let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
         for expr in expr_set {
@@ -749,6 +846,21 @@ impl State {
         ).collect::<Vec<PatternSet>>()
     }
 
+    /// State::populate_relevant_* family
+    ///
+    /// Precomputation drivers that fill the flattened `relevant_*` lookup
+    /// tables in [`StaticState`]. Each iterates every (piece, square)
+    /// pair, asks the moves module which precompiled moves / captures /
+    /// drops / setup drops / stand-offs remain on the board from that
+    /// square, and stores the result at `piece * board_size + square`.
+    /// The five siblings (`moves`, `captures`, `drops`, `setup`,
+    /// `stand_offs`) differ only in the generator called and the static
+    /// table written, so this comment covers them all.
+    ///
+    /// Params:
+    /// - piece_moves / piece_setup_drops / piece_stand_off -> compiled
+    ///   per-piece sets produced by the `generate_piece_*` helpers
+    ///
     fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
         let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
@@ -831,12 +943,37 @@ impl State {
         self.static_mut().relevant_stand_offs = results;
     }
 
+    /// State::populate_relevant_attacks
+    ///
+    /// Fills the reverse attack tables: for every square, records which
+    /// (piece, origin, vector) triples could attack it, split by color.
+    /// Check detection uses these to scan only plausible attackers rather
+    /// than every enemy piece on the board.
+    ///
     fn populate_relevant_attacks(&mut self) {
         for square in 0..self.statics.board_size {
             generate_attack_masks(square as Square, self);
         }
     }
 
+    /// State::populate_adjacency_mask
+    ///
+    /// Builds, for every square, a bitboard of its up-to-eight neighbours,
+    /// clipped at the board edges:
+    ///
+    /// ```text
+    /// ┌────┬────┬────┐
+    /// │ ██ │ ██ │ ██ │
+    /// ├────┼────┼────┤
+    /// │ ██ │ sq │ ██ │
+    /// ├────┼────┼────┤
+    /// │ ██ │ ██ │ ██ │
+    /// └────┴────┴────┘
+    /// ```
+    ///
+    /// The masks accelerate king-safety and pawn-connectivity tests during
+    /// evaluation, replacing per-use neighbour arithmetic with one lookup.
+    ///
     fn populate_adjacency_mask(&mut self) {
         let file_count = self.statics.files;
         let rank_count = self.statics.ranks;
@@ -871,6 +1008,21 @@ impl State {
         self.static_mut().adjacency_mask = results;
     }
 
+    /// State::precompute
+    ///
+    /// One-off derivation pass that turns the variant's raw expression
+    /// strings into every runtime lookup table: relevant moves, captures,
+    /// drops, setup drops, stand-offs, reverse attack masks, and adjacency
+    /// masks. Runs once after config parsing and before any search thread
+    /// is spawned; optional tables are skipped when their special rule is
+    /// disabled.
+    ///
+    /// Params:
+    /// - moves_expr_set: Vec<String>     -> per-piece move expressions
+    /// - drops_expr_set: Vec<String>     -> per-piece drop expressions
+    /// - setup_expr_set: Vec<String>     -> per-piece setup expressions
+    /// - stand_off_expr_set: Vec<String> -> per-piece stand-off expressions
+    ///
     pub fn precompute(
         &mut self,
         moves_expr_set: Vec<String>,
