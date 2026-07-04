@@ -392,6 +392,10 @@ pub struct StaticState {
     pub pawn_doubled_penalty: i32,                                              /* doubled pawn penalty, both phases  */
     pub pawn_isolated_penalty: i32,                                             /* isolated pawn penalty, both phases */
     pub pawn_backward_penalty: i32,                                             /* backward pawn penalty, both phases */
+    pub pawn_backward_mask: Vec<Board>,                                         /* enemy squares contesting the stop  */
+    pub pawn_support_offsets: Vec<Vec<i32>>,                                    /* friendly support file offsets      */
+    pub pawn_passed_support_opening: Vec<i32>,                                  /* passer support bonus, opening      */
+    pub pawn_passed_support_endgame: Vec<i32>,                                  /* passer support bonus, endgame      */
 }
 
 /// Main state of the game.
@@ -658,6 +662,11 @@ impl State {
             pawn_doubled_penalty: 0,
             pawn_isolated_penalty: 0,
             pawn_backward_penalty: 0,
+            pawn_backward_mask:
+                vec![board!(files, ranks); board_size * piece_count],
+            pawn_support_offsets: vec![Vec::new(); piece_count],
+            pawn_passed_support_opening: vec![0; board_size * piece_count],
+            pawn_passed_support_endgame: vec![0; board_size * piece_count],
         });
 
         State {

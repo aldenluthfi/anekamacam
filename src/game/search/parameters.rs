@@ -385,9 +385,9 @@ fn derive_square_score(
 ///
 /// Params:
 /// - state / piece_index / square -> the placement being scored
-/// - is_endgame: bool     -> selects the phase's bonus fraction
-/// - piece_value: f64     -> the piece's current phase value
-/// - promoted_value: f64  -> best value reachable by promotion
+/// - is_endgame: bool             -> selects the phase's bonus fraction
+/// - piece_value: f64             -> the piece's current phase value
+/// - promoted_value: f64          -> best value reachable by promotion
 ///
 /// Return:
 /// f64 -> bonus added on top of the positional square score
@@ -746,7 +746,25 @@ fn derive_pawn_like(state: &mut State) {
 }
 
 /// Closure of quiet-move landing squares reachable from `square`, i.e. the set
-/// of squares the pawn can traverse toward its promotion zone.
+/// of squares the pawn can traverse toward its promotion zone. A friendly pawn
+/// standing on any of these squares is doubled, since it blocks this pawn's
+/// advance -- this is the `doubled` term's mask.
+///
+/// A straight mover (FIDE) traces its own file ahead; a diagonal mover
+/// (Berolina) fans out across files, so `##` follows the move geometry rather
+/// than assuming the same file.
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │    │ ## │    │    │   ## = a square on the forward path
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ ## │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ ## │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ PP │    │    │   PP = the pawn (FIDE, straight pushes)
+/// └────┴────┴────┴────┴────┘
+/// ```
 ///
 /// Params:
 /// - state: &State -> precomputed relevant-move tables
@@ -800,7 +818,24 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
 
 /// Enemy source squares from which a pawn-like piece could stop this pawn: any
 /// square on its path (a blocker) plus any square whose capture reaches the
-/// path or the pawn itself. A pawn is passed when none of these are occupied.
+/// path or the pawn itself. A pawn is passed when none of these are occupied --
+/// this is the `passed` term's mask.
+///
+/// For a FIDE white pawn: `##` are the path blockers on its own file, and `xx`
+/// the adjacent-file squares ahead from where an enemy pawn could capture into
+/// the path.
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │ xx │ ## │ xx │    │   ## = a blocker on the path
+/// ├────┼────┼────┼────┼────┤
+/// │    │ xx │ ## │ xx │    │   xx = an enemy capturing into the path
+/// ├────┼────┼────┼────┼────┤
+/// │    │ xx │ ## │ xx │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ PP │    │    │   PP = the pawn
+/// └────┴────┴────┴────┴────┘
+/// ```
 ///
 /// Params:
 /// - state: &State -> precomputed relevant-capture tables
@@ -857,42 +892,55 @@ fn derive_pawn_interference(
     mask
 }
 
-/// Friendly source squares that defend `square`: any pawn-like capture that
-/// lands on it, plus the two lateral neighbours (a phalanx). A pawn is
-/// connected when one of these squares holds a friendly pawn-like piece.
+/// Source squares from which a pawn-like piece of `color` captures onto any
+/// square set in `targets`. Capture legs are stored in the white frame, so each
+/// net offset is mirrored through the colour sign before it is applied. Shared
+/// by the support, backward, and passer geometry below.
+///
+/// `SS` are the returned sources, `TT` a target; a `color` pawn on `SS` can
+/// capture onto `TT`. The `connected` term passes `TT` = pawn square + stops
+/// (own colour); the `backward` term passes the enemy colour with `TT` = the
+/// pawn's stop square. Diagonal capture is shown; a straight capturer sits
+/// directly below `TT` instead.
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │    │ TT │    │    │   TT = a requested target
+/// ├────┼────┼────┼────┼────┤
+/// │    │ SS │    │ SS │    │   SS = a returned capturing source
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │
+/// └────┴────┴────┴────┴────┘
+/// ```
 ///
 /// Params:
-/// - state: &State -> precomputed relevant-capture tables
-/// - index: usize  -> pawn-like piece index
-/// - square: usize -> square the pawn stands on
+/// - state: &State   -> precomputed relevant-capture tables
+/// - color: u8       -> colour whose pawn-like captures are gathered
+/// - targets: &Board -> squares a capture must land on
 ///
 /// Return:
-/// Board -> bitboard of friendly squares that connect the pawn
+/// Board -> bitboard of capturing source squares
 ///
-fn derive_pawn_support(
-    state: &State, index: usize, square: usize
-) -> Board {
+fn pawn_capture_sources(state: &State, color: u8, targets: &Board) -> Board {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
     let board_size = state.statics.board_size;
-    let own = p_color!(&state.statics.pieces[index]);
+    let sign = -2 * color as i32 + 1;
 
     let mut mask = board!(state.statics.files, state.statics.ranks);
 
-    for friend_index in 0..state.statics.pieces.len() {
-        if !p_is_pawn!(&state.statics.pieces[friend_index])
-        || p_color!(&state.statics.pieces[friend_index]) != own {
+    for index in 0..state.statics.pieces.len() {
+        if !p_is_pawn!(&state.statics.pieces[index])
+        || p_color!(&state.statics.pieces[index]) != color {
             continue;
         }
-
-        let sign = -2 * own as i32 + 1;
 
         for source in 0..board_size {
             let source_file = source as i32 % files;
             let source_rank = source as i32 / files;
 
             let captures = &state.statics.relevant_captures
-                [friend_index * board_size + source];
+                [index * board_size + source];
 
             for vector in captures {
                 let (file_offset, rank_offset) = pawn_vector_offset(vector);
@@ -905,24 +953,231 @@ fn derive_pawn_support(
                 }
 
                 let target = (target_rank * files + target_file) as usize;
-                if target == square {
+                if get!(targets, target as u32) {
                     set!(mask, source as u32);
                 }
             }
         }
     }
 
-    let square_file = square as i32 % files;
-    let square_rank = square as i32 / files;
-    for delta in [-1, 1] {
-        let neighbor_file = square_file + delta;
-        if neighbor_file >= 0 && neighbor_file < files {
-            let neighbor = (square_rank * files + neighbor_file) as usize;
-            set!(mask, neighbor as u32);
+    mask
+}
+
+/// Friendly source squares that defend this pawn: any friendly pawn-like
+/// capture landing on the pawn itself or on the square it advances to. A pawn
+/// is connected when one of these squares holds a friendly pawn-like piece; the
+/// stop-square reach generalises the phalanx without assuming diagonal capture.
+///
+/// The pawn advances up the page: `PP` the pawn, `**` a square it pushes to,
+/// `SS` a bit in the mask (a friendly pawn on `SS` connects `PP`). This is the
+/// `connected` term's mask; the `backward` term fires only when it is empty.
+///
+/// FIDE keeps the diagonal defenders below plus the phalanx beside `PP`:
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │    │ ** │    │    │   ** = the stop square
+/// ├────┼────┼────┼────┼────┤
+/// │    │ SS │ PP │ SS │    │   SS beside PP guard the stop (phalanx)
+/// ├────┼────┼────┼────┼────┤
+/// │    │ SS │    │ SS │    │   SS below guard PP directly
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// Berolina captures straight, so supporters share `PP`'s file or a
+/// neighbour -- never the same rank:
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │ ** │    │ ** │    │   two diagonal stops
+/// ├────┼────┼────┼────┼────┤
+/// │    │ SS │ PP │ SS │    │   SS guard the stops from straight below
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ SS │    │    │   SS guards PP from straight below
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// Shogi moves and captures straight, so the only supporter is directly
+/// behind and adjacent files never defend:
+///
+/// ```text
+/// ┌────┬────┬────┐
+/// │    │ ** │    │   the stop, guarded only by PP itself
+/// ├────┼────┼────┤
+/// │    │ PP │    │
+/// ├────┼────┼────┤
+/// │    │ SS │    │   the sole supporter, directly behind
+/// └────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state: &State -> precomputed relevant-capture tables
+/// - index: usize  -> pawn-like piece index
+/// - square: usize -> square the pawn stands on
+/// - stop: &Board  -> the pawn's immediate forward stop squares
+///
+/// Return:
+/// Board -> bitboard of friendly squares that connect the pawn
+///
+fn derive_pawn_support(
+    state: &State, index: usize, square: usize, stop: &Board
+) -> Board {
+    let own = p_color!(&state.statics.pieces[index]);
+
+    let mut targets = *stop;
+    set!(targets, square as u32);
+
+    pawn_capture_sources(state, own, &targets)
+}
+
+/// Immediate quiet, non-initial, strictly-forward landing square(s) of a pawn:
+/// the squares it reaches in a single step. Initial multi-square pushes are
+/// excluded so second-rank support matches the one-square frame, and sideways
+/// steps are dropped so only genuine advances count.
+///
+/// `PP` the pawn, `**` a stop. A straight mover has one stop; a diagonal mover
+/// (Berolina) has two. These stops feed the `connected` and `backward` masks.
+///
+/// Straight mover (FIDE), one stop:
+///
+/// ```text
+/// ┌────┬────┬────┐
+/// │    │ ** │    │
+/// ├────┼────┼────┤
+/// │    │ PP │    │
+/// └────┴────┴────┘
+/// ```
+///
+/// Diagonal mover (Berolina), two stops:
+///
+/// ```text
+/// ┌────┬────┬────┐
+/// │ ** │    │ ** │
+/// ├────┼────┼────┤
+/// │    │ PP │    │
+/// └────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state: &State -> precomputed relevant-move tables
+/// - index: usize  -> pawn-like piece index
+/// - square: usize -> square the pawn stands on
+///
+/// Return:
+/// Board -> bitboard of the pawn's immediate forward stop squares
+///
+fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
+
+    let mut stop = board!(state.statics.files, state.statics.ranks);
+
+    let source_file = square as i32 % files;
+    let source_rank = square as i32 / files;
+
+    let moves = &state.statics.relevant_moves[index * board_size + square];
+
+    for vector in moves {
+        if !vector_moves_quietly(vector) || vector_is_initial(vector) {
+            continue;
+        }
+
+        let (file_offset, rank_offset) = pawn_vector_offset(vector);
+        if rank_offset < 1 {
+            continue;
+        }
+
+        let target_file = source_file + file_offset * sign;
+        let target_rank = source_rank + rank_offset * sign;
+
+        if target_file < 0 || target_file >= files
+        || target_rank < 0 || target_rank >= ranks {
+            continue;
+        }
+
+        let target = (target_rank * files + target_file) as usize;
+        set!(stop, target as u32);
+    }
+
+    stop
+}
+
+/// File offsets at which a friendly pawn-like piece can defend this pawn or the
+/// square it advances to. A pawn with no friendly pawn on any of these relative
+/// files is isolated. Each capture leg yields its direct-defence offset and,
+/// combined with each forward move leg, a phalanx offset.
+///
+/// Which files (relative to the pawn `PP`) may ever host a supporter, marked
+/// `oo`. This drives the `isolated` term: a pawn with no friendly pawn on any
+/// of these files (at any rank) is isolated. FIDE -> {-1,+1}, Berolina ->
+/// {-1,0,+1}, Shogi -> {0}.
+///
+/// ```text
+///    FIDE {-1,+1}         Berolina {-1,0,+1}    Shogi {0}
+/// ┌────┬────┬────┐     ┌────┬────┬────┐     ┌────┬────┬────┐
+/// │ oo │    │ oo │     │ oo │ oo │ oo │     │    │ oo │    │
+/// ├────┼────┼────┤     ├────┼────┼────┤     ├────┼────┼────┤
+/// │    │ PP │    │     │    │ PP │    │     │    │ PP │    │
+/// └────┴────┴────┘     └────┴────┴────┘     └────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state: &State -> precomputed relevant move and capture tables
+/// - index: usize  -> pawn-like piece index
+///
+/// Return:
+/// Vec<i32> -> sorted, de-duplicated supporting file offsets
+///
+fn derive_pawn_support_offsets(state: &State, index: usize) -> Vec<i32> {
+    let board_size = state.statics.board_size;
+    let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
+
+    let mut capture_files: Vec<i32> = Vec::new();
+    let mut move_files: Vec<i32> = Vec::new();
+
+    for square in 0..board_size {
+        let captures =
+            &state.statics.relevant_captures[index * board_size + square];
+        for vector in captures {
+            let capture_file = pawn_vector_offset(vector).0;
+            if !capture_files.contains(&capture_file) {
+                capture_files.push(capture_file);
+            }
+        }
+
+        let moves = &state.statics.relevant_moves[index * board_size + square];
+        for vector in moves {
+            if !vector_moves_quietly(vector) || vector_is_initial(vector) {
+                continue;
+            }
+            let (move_file, rank_offset) = pawn_vector_offset(vector);
+            if rank_offset < 1 {
+                continue;
+            }
+            if !move_files.contains(&move_file) {
+                move_files.push(move_file);
+            }
         }
     }
 
-    mask
+    let mut offsets: Vec<i32> = Vec::new();
+    for &capture_file in &capture_files {
+        let direct = -capture_file * sign;
+        if !offsets.contains(&direct) {
+            offsets.push(direct);
+        }
+        for &move_file in &move_files {
+            let phalanx = (move_file - capture_file) * sign;
+            if !offsets.contains(&phalanx) {
+                offsets.push(phalanx);
+            }
+        }
+    }
+
+    offsets.sort();
+    offsets
 }
 
 /// Fixed-point advancement (`adv^2 * 256`) toward promotion, mirroring the PST
@@ -975,17 +1230,26 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut interference_mask = vec![empty; board_size * piece_count];
     let mut support_mask = vec![empty; board_size * piece_count];
     let mut advancement = vec![0i32; board_size * piece_count];
+    let mut backward_mask = vec![empty; board_size * piece_count];
+    let mut support_offsets: Vec<Vec<i32>> = vec![Vec::new(); piece_count];
 
     for index in 0..piece_count {
         if !p_is_pawn!(&state.statics.pieces[index]) {
             continue;
         }
 
+        support_offsets[index] = derive_pawn_support_offsets(state, index);
+        let enemy = 1 - p_color!(&state.statics.pieces[index]);
+
         for square in 0..board_size {
             let entry = index * board_size + square;
             let path = derive_pawn_path(state, index, square);
+            let stop = derive_pawn_stop(state, index, square);
 
-            support_mask[entry] = derive_pawn_support(state, index, square);
+            support_mask[entry] =
+                derive_pawn_support(state, index, square, &stop);
+            backward_mask[entry] =
+                pawn_capture_sources(state, enemy, &stop);
             interference_mask[entry] =
                 derive_pawn_interference(state, index, square, &path);
             advancement[entry] =
@@ -1009,6 +1273,8 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
     let mut passed_opening = vec![0i32; board_size * piece_count];
     let mut passed_endgame = vec![0i32; board_size * piece_count];
+    let mut passed_support_opening = vec![0i32; board_size * piece_count];
+    let mut passed_support_endgame = vec![0i32; board_size * piece_count];
 
     for index in 0..piece_count {
         if !p_is_pawn!(&state.statics.pieces[index]) {
@@ -1035,6 +1301,8 @@ pub fn derive_pawn_parameters(state: &mut State) {
                 (0.10 * gain_opening as f64 * scale).round() as i32;
             passed_endgame[entry] =
                 (0.35 * gain_endgame as f64 * scale).round() as i32;
+            passed_support_opening[entry] = passed_opening[entry] / 2;
+            passed_support_endgame[entry] = passed_endgame[entry] / 2;
         }
     }
 
@@ -1048,8 +1316,12 @@ pub fn derive_pawn_parameters(state: &mut State) {
     state.static_mut().pawn_interference_mask = interference_mask;
     state.static_mut().pawn_support_mask = support_mask;
     state.static_mut().pawn_advancement = advancement;
+    state.static_mut().pawn_backward_mask = backward_mask;
+    state.static_mut().pawn_support_offsets = support_offsets;
     state.static_mut().pawn_passed_opening = passed_opening;
     state.static_mut().pawn_passed_endgame = passed_endgame;
+    state.static_mut().pawn_passed_support_opening = passed_support_opening;
+    state.static_mut().pawn_passed_support_endgame = passed_support_endgame;
     state.static_mut().pawn_connected_opening = avg / 20;
     state.static_mut().pawn_connected_endgame = avg / 12;
     state.static_mut().pawn_doubled_penalty = avg / 16;

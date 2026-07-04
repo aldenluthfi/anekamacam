@@ -103,16 +103,15 @@ fn list_uci_variants() -> Vec<String> {
 /// Return:
 /// Option<Move> -> a legal move, or None in a terminal position
 ///
-fn first_legal_move(state: &State) -> Option<Move> {
-    let mut probe = state.clone();
+fn first_legal_move(state: &mut State) -> Option<Move> {
     let mut moves = Vec::with_capacity(64);
     let mut scratch = Vec::with_capacity(16);
 
     generate_all_moves_and_drops(state, &mut moves, &mut scratch);
 
     moves.into_iter().find(|mv| {
-        if make_move!(probe, mv.clone()) {
-            undo_move!(probe);
+        if make_move!(state, mv.clone()) {
+            undo_move!(state);
             true
         } else {
             false
@@ -135,7 +134,7 @@ fn first_legal_move(state: &State) -> Option<Move> {
 ///
 fn print_bestmove(
     result: &SearchResult,
-    state: &State,
+    state: &mut State,
     dict: Option<&Translator>,
 ) {
     let fallback = result.best_move == null_move();
@@ -519,7 +518,7 @@ fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
             });
 
             if !is_ponder {
-                print_bestmove(&result, &s, dict_clone.as_ref());
+                print_bestmove(&result, &mut s, dict_clone.as_ref());
             }
 
             log_table_stats(&tt_clone, &qt_clone);
@@ -557,7 +556,7 @@ fn stop_search(uci: &mut Uci) {
     if let Some((result, was_ponder)) = abort_search(uci)
         && was_ponder
     {
-        print_bestmove(&result, &uci.state, uci.translator.as_ref());
+        print_bestmove(&result, &mut uci.state, uci.translator.as_ref());
     }
 }
 

@@ -24,10 +24,10 @@ pub struct SearchInfo {
 
     pub set_depth: usize,                                                       /* maximum search depth               */
     pub set_nodes: u128,                                                        /* node limit (0 = unlimited)         */
-    pub soft_deadline: u128,                                                    /* ns since launch after which no new */
-                                                                                /* depth starts (0 = none)            */
-    pub hard_deadline: u128,                                                    /* ns since launch at which the       */
-                                                                                /* search aborts (0 = none)           */
+
+    pub soft_deadline: u128,                                                    /* ns since launch (no depth starts)  */
+    pub hard_deadline: u128,                                                    /* ns since launch (search aborts)    */
+
     pub thread_count: usize,                                                    /* threads active in this search      */
 
     pub nodes: u128,                                                            /* total nodes searched so far        */
@@ -46,7 +46,7 @@ pub struct SearchBufs {
     pub scratch_buf: Vec<u64>,                                                  /* reused scratch for taken_pieces    */
     pub see_move_buf: Vec<Move>,                                                /* reused LVA candidate list for SEE  */
     pub see_scratch_buf: Vec<u64>,                                              /* reused LVA leg scratch for SEE     */
-    pub pawn_entry_buf: [Vec<(usize, Square, i32, i32)>; 2],                    /* reused per-side pawn lists in eval */
+    pub pawn_entry_buf: [Vec<(usize, Square, i32)>; 2],                         /* reused per-side pawn lists in eval */
 }
 
 /// Packaged outcome of one root search.
