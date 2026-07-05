@@ -109,6 +109,38 @@ macro_rules! is_in_check {
     };
 }
 
+/// legal_moves!
+///
+/// Collects every fully legal move in the position: it generates the
+/// pseudo-legal moves and drops, then keeps only those that survive a
+/// make/undo legality probe, so no move that leaves its own royal exposed
+/// ever reaches the caller. The position is restored before the vector is
+/// yielded, so callers can enumerate legality without disturbing state.
+///
+/// Params:
+/// - state -> position to enumerate; unchanged after expansion
+///
+/// Return:
+/// Vec<Move> -> the legal moves, empty in a terminal position
+///
+#[macro_export]
+macro_rules! legal_moves {
+    ($state:expr) => {{
+        let mut moves = Vec::with_capacity(64);
+        let mut scratch = Vec::with_capacity(16);
+        generate_all_moves_and_drops($state, &mut moves, &mut scratch);
+
+        moves.into_iter().filter(|mv| {
+            if make_move!($state, mv.clone()) {
+                undo_move!($state);
+                true
+            } else {
+                false
+            }
+        }).collect::<Vec<Move>>()
+    }};
+}
+
 /// generate_relevant_castling
 ///
 /// Compiles the config's castling descriptions into precomputed castling

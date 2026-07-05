@@ -90,35 +90,6 @@ fn list_uci_variants() -> Vec<String> {
     variants
 }
 
-/// first_legal_move
-///
-/// Finds any legal move in the position by generating pseudo-legal moves
-/// and validating them with make/undo on a scratch clone. Used as a
-/// last-resort fallback so the engine never sends an unplayable
-/// `bestmove` when a search dies before completing depth one.
-///
-/// Params:
-/// - state: &State -> position to find a move in
-///
-/// Return:
-/// Option<Move> -> a legal move, or None in a terminal position
-///
-fn first_legal_move(state: &mut State) -> Option<Move> {
-    let mut moves = Vec::with_capacity(64);
-    let mut scratch = Vec::with_capacity(16);
-
-    generate_all_moves_and_drops(state, &mut moves, &mut scratch);
-
-    moves.into_iter().find(|mv| {
-        if make_move!(state, mv.clone()) {
-            undo_move!(state);
-            true
-        } else {
-            false
-        }
-    })
-}
-
 /// print_bestmove
 ///
 /// Emits the final `bestmove` line for a completed search, appending the
@@ -140,14 +111,9 @@ fn print_bestmove(
     let fallback = result.best_move == null_move();
 
     let best_move = if fallback {
-        match first_legal_move(state) {
-            Some(mv) => mv,
-            None => {
-                println!("bestmove (none)");
-                stdout().flush().ok();
-                return;
-            }
-        }
+        legal_moves!(state).first().unwrap_or_else(
+            || panic!("No legal moves available")
+        ).clone()
     } else {
         result.best_move.clone()
     };

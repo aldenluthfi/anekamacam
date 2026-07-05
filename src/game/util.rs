@@ -2,11 +2,12 @@
 //!
 //! Cross-cutting engine utilities that belong to no single subsystem.
 //!
-//! The file groups three concerns: randomness for Zobrist seeding, state
+//! The file groups four concerns: randomness for Zobrist seeding, state
 //! integrity helpers (recomputing cached evaluation terms and asserting
 //! that incrementally maintained caches still match a from-scratch
-//! recount), and the perft/benchmark harness used to validate move
-//! generation against known node counts and to profile search speed.
+//! recount), the perft/benchmark harness used to validate move generation
+//! against known node counts and to profile search speed, and rolling a
+//! `latest.*` output file to a numbered backup.
 //!
 //! # Author
 //! Alden Luthfi
@@ -30,6 +31,46 @@ pub fn random_u128() -> u128 {
         panic!("Failed to lock RNG mutex for random_u128: {e}")
     });
     u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
+}
+
+/// roll_latest
+///
+/// Rolls a directory's `latest.{extension}` file to the next free
+/// numbered backup, so a fresh export or dataset run never overwrites or
+/// appends to the previous one. Scans the directory for existing
+/// `{N}.{extension}` files, renames `latest.{extension}` to
+/// `{N + 1}.{extension}`, and does nothing when there is no current file
+/// to roll. Shared by the parameter export and the datagen dataset.
+///
+/// Params:
+/// - dir: &str       -> directory holding the `latest` file and backups
+/// - extension: &str -> file extension without the dot (e.g. "param")
+///
+pub fn roll_latest(dir: &str, extension: &str) {
+    let suffix = format!(".{}", extension);
+    let latest = format!("latest{}", suffix);
+    let path = format!("{}/{}", dir, latest);
+
+    if !Path::new(&path).exists() {
+        return;
+    }
+
+    let mut last_epoch = 0usize;
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Ok(name) = entry.file_name().into_string()
+            && name.ends_with(&suffix) && name != latest
+            && let Ok(num) = name[..name.len() - suffix.len()].parse::<usize>()
+            {
+                last_epoch = last_epoch.max(num);
+            }
+        }
+    }
+
+    let archive = format!("{}/{}{}", dir, last_epoch + 1, suffix);
+    fs::rename(&path, &archive).unwrap_or_else(|e| {
+        panic!("Failed to roll file {}: {}", archive, e)
+    });
 }
 
 /// refresh_eval_state

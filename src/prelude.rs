@@ -81,7 +81,8 @@ pub use crate::game::search::{
 
 pub use crate::game::util::{
     benchmark_headless_perft, benchmark_perft, benchmark_search, format_time,
-    perft, random_u128, refresh_eval_state, square_distance, verify_game_state,
+    perft, random_u128, refresh_eval_state, roll_latest, square_distance,
+    verify_game_state,
 };
 
 /*----------------------------------------------------------------------------*\
@@ -114,6 +115,10 @@ pub use crate::io::protocols::{
                                    DEBUG API
 \*----------------------------------------------------------------------------*/
 pub use crate::debug::console::debug_console;
+pub use crate::debug::console::{BoardState, TuiEvent};
+pub use crate::debug::datagen::run_datagen;
+pub use crate::debug::sprt::run_sprt;
+pub use crate::debug::tuning::run_tuning;
 
 /*----------------------------------------------------------------------------*\
                              EXTERNAL DEPENDENCIES
@@ -144,7 +149,7 @@ pub use include_dir::{include_dir, Dir};
 pub use lazy_static::lazy_static;
 pub use log::{debug, error, info, trace, warn};
 pub use rand::{
-    rngs::StdRng, seq::SliceRandom, Rng, SeedableRng,
+    rngs::StdRng, seq::IndexedRandom, seq::SliceRandom, Rng, SeedableRng,
 };
 pub use ratatui::{
     backend::CrosstermBackend,
@@ -171,11 +176,12 @@ pub use std::{
     fmt::{Debug, Formatter as FmtFormatter, Result as FmtResult},
     fs::{self, OpenOptions},
     hash::Hash,
-    io::{stdin, stdout, BufRead, Result as IoResult, Write},
+    io::{stdin, stdout, BufRead, BufReader, Result as IoResult, Write},
     iter::zip,
     mem::{self, size_of},
     panic::{catch_unwind, AssertUnwindSafe},
     path::Path,
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         mpsc::{channel, Receiver, Sender},
@@ -347,6 +353,8 @@ pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
+pub const DATA_DIR: &str = "res/data";
+pub const SPRT_DIR: &str = "res/sprt";
 
 pub const TIME_OVERHEAD_MS: u128 = 50;
 pub const MAX_OVERHEAD_MS: u128 = 1000;
@@ -361,6 +369,34 @@ pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
 
 pub const HASH_DEFAULT_MB: usize = 384;
 pub const HASH_MAX_MB: usize = 65536;
+
+/// SPRT and Texel-tuning tool constants.
+///
+/// Fixed knobs for the debug self-play tools shared across `datagen`,
+/// `tuning`, and `sprt`:
+///
+/// - `OPENING_RANDOM_PLIES` -> random-opening depth
+///
+/// - `ADAM_BETA_ONE` / `ADAM_BETA_TWO` / `ADAM_EPSILON` -> the Adam
+///   optimiser moment decay rates and denominator floor for tuning.
+///
+/// - `TEXEL_K_MIN` / `TEXEL_K_MAX` / `TEXEL_K_ITERATIONS` -> the search
+///   bounds and step count for fitting the sigmoid scaling constant `K`.
+///
+/// - `SPRT_ALPHA` / `SPRT_BETA` -> the SPRT type-one and type-two error
+///   rates that set the log-likelihood acceptance bounds.
+///
+pub const OPENING_RANDOM_PLIES: usize = 8;
+pub const ADAM_BETA_ONE: f64 = 0.9;
+pub const ADAM_BETA_TWO: f64 = 0.999;
+pub const ADAM_EPSILON: f64 = 1e-8;
+
+pub const TEXEL_K_MIN: f64 = 0.01;
+pub const TEXEL_K_MAX: f64 = 3.0;
+pub const TEXEL_K_ITERATIONS: usize = 32;
+
+pub const SPRT_ALPHA: f64 = 0.05;
+pub const SPRT_BETA: f64 = 0.05;
 
 pub static EMBEDDED_CONFIGS: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../configs");

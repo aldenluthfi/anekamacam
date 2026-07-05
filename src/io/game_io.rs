@@ -329,36 +329,11 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     refresh_eval_state(state);
 }
 
-/// find_last_epoch_in_dir
-///
-/// Scans a parameter directory for `epoch_N.param` files and returns
-/// the highest N found, so exports can continue the numbering.
-///
-/// Params:
-/// - dir_path: &str -> the variant's parameter directory
-///
-/// Return:
-/// usize -> the largest existing epoch number, 0 when none exist
-///
-fn find_last_epoch_in_dir(dir_path: &str) -> usize {
-    let mut max_epoch = 0usize;
-    if let Ok(entries) = fs::read_dir(dir_path) {
-        for entry in entries.flatten() {
-            if let Ok(file_name) = entry.file_name().into_string()
-            && file_name.ends_with(".param") && file_name != "latest.param"
-            && let Ok(num) = file_name[..file_name.len() - 6].parse::<usize>() {
-                max_epoch = max_epoch.max(num);
-            }
-        }
-    }
-    max_epoch
-}
-
 /// export_tuned_parameters_file
 ///
-/// Exports tuned parameters to `parameters/{variant}/latest.param`.
-/// If latest.param already has content, writes to an incremented epoch
-/// number instead.
+/// Exports tuned parameters to `parameters/{variant}/latest.param`,
+/// first rolling any existing `latest.param` to a numbered backup via
+/// `roll_latest`.
 ///
 /// Used to save parameters tuned by Texel's Tuning method and to avoid
 /// recomputing parameters from scratch when restarting the engine.
@@ -425,22 +400,11 @@ pub fn export_tuned_parameters_file(
 
     let file_path = format!("{}/latest.param", dir_path);
 
-    if Path::new(&file_path).exists() {
-        let last_epoch = find_last_epoch_in_dir(&dir_path);
-        let new_path = format!("{}/{}.param", dir_path, last_epoch + 1);
+    roll_latest(&dir_path, "param");
 
-        fs::rename(&file_path, &new_path).unwrap_or_else(|e| {
-            panic!("Failed to rename parameter file {}: {}", new_path, e)
-        });
-
-        fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
-            panic!("Failed to write parameter file {}: {}", file_path, e)
-        });
-    } else {
-        fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
-            panic!("Failed to write parameter file {}: {}", file_path, e)
-        });
-    }
+    fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
+        panic!("Failed to write parameter file {}: {}", file_path, e)
+    });
 }
 
 /// parse_config_preview

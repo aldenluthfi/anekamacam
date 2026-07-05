@@ -33,7 +33,7 @@ const HELP_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX - 1);
 /// finish they push one of these to update the rendered board, install a
 /// freshly loaded game or playground state, swap the active protocol
 /// translator, or unlock the input line after a long operation.
-enum TuiEvent {
+pub enum TuiEvent {
     StateUpdate(BoardState),                                                    /* new rendered board snapshot        */
     StateInit(Arc<Mutex<State>>),                                               /* install a freshly loaded game      */
     PlaygroundUpdate(Box<State>),                                               /* new playground position            */
@@ -441,7 +441,7 @@ impl OverviewState {
 /// rows (phase, turn, hash, and whichever rule-gated fields the variant
 /// enables), and the current FEN. `from_state` renders it once per
 /// state change so drawing stays cheap.
-struct BoardState {
+pub struct BoardState {
     board: String,                                                              /* composite board diagram            */
     move_history: String,                                                       /* numbered move history              */
     details: Vec<[String; 2]>,                                                  /* label/value detail rows            */
@@ -461,7 +461,7 @@ impl BoardState {
     /// Return:
     /// Self -> the pre-rendered board state
     ///
-    fn from_state(state: &State, dict: Option<&Translator>) -> Self {
+    pub fn from_state(state: &State, dict: Option<&Translator>) -> Self {
         let board = format_game_state(state);
         let move_history = format_move_history(state, dict);
         let fen = format_fen(state, dict);
@@ -957,6 +957,18 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             "move <move>",
             "Play a valid move using Cheesy Move Notation (CMN)"
         ),
+        (
+            "datagen <games> <time>",
+            "Self-play games to build a Texel tuning dataset for the variant"
+        ),
+        (
+            "tune <epochs> [rate]",
+            "Texel-tune the evaluation from the dataset by gradient descent"
+        ),
+        (
+            "sprt <binA> <binB> <time>",
+            "Run an SPRT match between two engine binaries to test a patch"
+        ),
     ] };
 
     let mut lines = vec![];
@@ -973,7 +985,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let popup_area = area
         .centered(
             Constraint::Length(70),
-            Constraint::Length(40)
+            Constraint::Length(42)
         );
 
     let block = Block::default()
@@ -2569,10 +2581,12 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 /// Interprets one line from the TUI input in game or playground
 /// context: move/undo/reset handling, FEN load and print, perft and
 /// search benchmarks, parameter derivation and export, protocol
-/// switching, and playground piece placement (`add`/`del`). Long
-/// operations run on this worker thread and report back through
-/// `sender`, so the interface never blocks; commands not valid for the
-/// current context are rejected with a log message.
+/// switching, playground piece placement (`add`/`del`), and the
+/// self-play tooling — `datagen` (build a tuning dataset), `tune`
+/// (Texel-tune the evaluation), and `sprt` (run an SPRT match between
+/// two engine binaries). Long operations run on this worker thread and
+/// report back through `sender`, so the interface never blocks; commands
+/// not valid for the current context are rejected with a log message.
 ///
 /// Params:
 /// - command: &str                  -> the raw input line
@@ -2867,6 +2881,107 @@ fn execute_command(
                     }
                 );
             }
+        }
+        _ if trimmed.starts_with("datagen") => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() != 3 {
+                log_2!("Usage: datagen [games] [movetime (ms)]");
+                return;
+            }
+
+            let games = match parts[1].parse::<usize>() {
+                Ok(value) => value,
+                Err(_) => {
+                    log_2!("Invalid games: {}", parts[1]);
+                    return;
+                }
+            };
+
+            let movetime = match parts[2].parse::<u128>() {
+                Ok(value) => value,
+                Err(_) => {
+                    log_2!("Invalid movetime: {}", parts[2]);
+                    return;
+                }
+            };
+
+            let Some(ref variant_name) = variant else {
+                log_2!("No variant loaded for datagen");
+                return;
+            };
+
+            run_datagen(
+                state, variant_name, dict,
+                Arc::clone(&ttable), Arc::clone(&qtable),
+                threads, games, movetime, &sender,
+            );
+        }
+        _ if trimmed.starts_with("tune") => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() < 2 {
+                log_2!("Usage: tune [epochs] [learning rate]");
+                return;
+            }
+
+            let epochs = match parts[1].parse::<usize>() {
+                Ok(value) => value,
+                Err(_) => {
+                    log_2!("Invalid epochs: {}", parts[1]);
+                    return;
+                }
+            };
+
+            let learning_rate = parts.get(2)
+                .and_then(|value| value.parse::<f64>().ok())
+                .unwrap_or(1.0);
+
+            let Some(ref variant_name) = variant else {
+                log_2!("No variant loaded for tune");
+                return;
+            };
+
+            run_tuning(state, variant_name, epochs, learning_rate);
+        }
+        _ if trimmed.starts_with("sprt") => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() < 4 {
+                log_2!(
+                    "Usage: sprt [binA] [binB] [movetime (ms)] \
+                     [games] [elo0] [elo1]"
+                );
+                return;
+            }
+
+            let movetime = match parts[3].parse::<u128>() {
+                Ok(value) => value,
+                Err(_) => {
+                    log_2!("Invalid movetime: {}", parts[3]);
+                    return;
+                }
+            };
+
+            let max_games = parts.get(4)
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(2000);
+            let elo_zero = parts.get(5)
+                .and_then(|value| value.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let elo_one = parts.get(6)
+                .and_then(|value| value.parse::<f64>().ok())
+                .unwrap_or(5.0);
+
+            let Some(ref variant_name) = variant else {
+                log_2!("No variant loaded for sprt");
+                return;
+            };
+
+            run_sprt(
+                state, variant_name, parts[1], parts[2],
+                movetime, max_games, elo_zero, elo_one, &sender,
+            );
         }
         _ if trimmed.starts_with("perft") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();

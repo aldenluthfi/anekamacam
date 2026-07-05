@@ -675,6 +675,31 @@ impl State {
             pawn_passed_support_endgame: vec![0; board_size * piece_count],
         });
 
+        Self::from_statics(statics)
+    }
+
+    /// State::from_statics
+    ///
+    /// Builds the dynamic half of a state around an already-precomputed
+    /// static configuration, sharing it through the `Arc` instead of
+    /// rebuilding it. Every board, piece list, and search table is
+    /// allocated at its final size in the empty-board default, ready for a
+    /// position to be loaded. This is the cheap path `fork` takes to branch
+    /// a fresh game from a loaded variant without copying the template's
+    /// history or search tables.
+    ///
+    /// Params:
+    /// - statics: Arc<StaticState> -> precomputed configuration to share
+    ///
+    /// Return:
+    /// State -> an empty-board state over the shared configuration
+    ///
+    fn from_statics(statics: Arc<StaticState>) -> State {
+        let piece_count = statics.pieces.len();
+        let board_size = statics.board_size;
+        let files = statics.files;
+        let ranks = statics.ranks;
+
         State {
             statics,
 
@@ -811,6 +836,59 @@ impl State {
     pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
         self.reset();
         parse_fen(self, fen, dict);
+    }
+
+    /// State::fork
+    ///
+    /// Branches a fresh game from a loaded variant: a new state over the
+    /// same shared `statics`, wound to the variant's start position with
+    /// its evaluation caches refreshed. Cheaper than a `clone` followed by
+    /// `reset`, since the template's move history and search tables are
+    /// never copied.
+    ///
+    /// Return:
+    /// State -> a fresh, ready-to-play state at the start position
+    ///
+    /// Notes:
+    /// The start FEN is parsed with no translator: it is the engine's own
+    /// internal notation, and a protocol dictionary can corrupt an internal
+    /// FEN round-trip.
+    ///
+    pub fn fork(&self) -> State {
+        let mut state = State::from_statics(Arc::clone(&self.statics));
+        state.load_fen(&self.statics.startpos, None);
+        refresh_eval_state(&mut state);
+        state
+    }
+
+    /// State::play_random_opening
+    ///
+    /// Advances the position by up to `plies` uniformly random legal moves,
+    /// stopping early if a position has no legal move. Each choice is drawn
+    /// from the shared seeded RNG so self-play and match openings vary
+    /// between runs; the moves are recorded in the history like any other.
+    ///
+    /// Params:
+    /// - plies: usize -> number of random plies to apply
+    ///
+    pub fn play_random_opening(&mut self, plies: usize) {
+        for _ in 0..plies {
+            let legal = legal_moves!(self);
+            if legal.is_empty() {
+                break;
+            }
+
+            let choice = {
+                let mut rng = RNG.lock().unwrap_or_else(|e| {
+                    panic!("Failed to lock RNG for random opening: {e}")
+                });
+                legal.choose(&mut *rng).unwrap_or_else(|| {
+                    panic!("Empty legal moves after non-empty check")
+                }).clone()
+            };
+
+            make_move!(self, choice);
+        }
     }
 
     /// State::generate_piece_moves / _drops / _stand_off
