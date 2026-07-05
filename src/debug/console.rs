@@ -23,13 +23,26 @@ const TUI_NORMAL_MODE: u8 = 1;
 const TAB_TITLES: [&str; 3] = ["Game", "Overview", "Playground"];
 const TAB_FOCUSABLES: [u8; 3] = [3, 2, 3];
 
-const PICKER_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX);
-const HELP_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX - 1);
+const SENTINEL_TAB: usize = 100usize;
+
+const PICKER_SCROLL_KEY: (usize, usize) = (SENTINEL_TAB, 100usize);
+const HELP_SCROLL_KEY: (usize, usize) = (SENTINEL_TAB, 50usize);
 
 macro_rules! help_open {
     ($tab:expr) => {                                                            /* tab encodes help state; picker     */
-        $tab >= TAB_TITLES.len() && $tab != usize::MAX                          /* (usize::MAX) must be excluded      */
+        $tab >= TAB_TITLES.len() && $tab != SENTINEL_TAB                        /* (SENTINEL_TAB) must be excluded    */
     };
+}
+
+fn peel_help(mut tab: usize) -> (usize, usize) {                                /* returns (underlying_tab, layers)   */
+    let mut layers = 0;
+
+    while help_open!(tab) {
+        tab -= TAB_TITLES.len();
+        layers += 1;
+    }
+
+    (tab, layers.max(1) - 1)
 }
 
 /// TuiEvent
@@ -787,7 +800,7 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let tabs = Tabs::new(tab_titles)
         .block(Block::default().borders(Borders::ALL))
-        .select(app.tab % TAB_TITLES.len())
+        .select(peel_help(app.tab).0)
         .style(Style::default().fg(Color::Gray))
         .highlight_style(
             Style::default()
@@ -889,10 +902,9 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     frame.render_widget(help_line, area);
 }
 
-fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
+fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
-    let main_tab = app.tab % TAB_TITLES.len();
-    let help_tab = app.tab / TAB_TITLES.len() - 1;
+    let (main_tab, help_tab) = peel_help(app.tab);
     let scroll   = *app.scroll_map.get(&HELP_SCROLL_KEY).unwrap_or(&0);
 
     let normal_mode_rows = [
@@ -905,7 +917,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         ("<g/G>", "Scroll to top/bottom"),
         ("<n>", "Change variant"),
         ("<{/}>", "Increase/decrease log verbosity"),
-        ("<]/[>", "Inctrease/decrease thread count"),
+        ("<]/[>", "Increase/decrease thread count"),
     ];
 
     let input_mode_rows = [
@@ -915,6 +927,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let both_rows: &[(&str, &str)] = &[
         ("reset", "Reset the board to its initial state"),
+        ("protocol [protocol]", "Change engine protocol (notation)")
     ];
 
     let playground_rows: &[(&str, &str)] = &[
@@ -993,7 +1006,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let popup_area = area
         .centered(
             Constraint::Length(70),
-            Constraint::Length(40)
+            Constraint::Length(41)
         );
 
     let block = Block::default()
@@ -1030,6 +1043,18 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         })
         .split(layout[1]);
 
+    let content_height = content_layout[0].height as usize;
+    let total_lines = if help_tab == 0 {
+        1 + normal_mode_rows.len() + 1 + 1 + input_mode_rows.len() + 2
+    } else {
+        1 + both_rows.len() * 3 +
+        1 + playground_rows.len() * 3 +
+        1 + game_rows.len() * 3 + 2
+    };
+    let max_scroll = (total_lines.saturating_sub(content_height)) as u16;
+    let scroll = scroll.min(max_scroll);
+    app.scroll_map.insert(HELP_SCROLL_KEY, scroll);
+
     if help_tab == 0 {
         let mut keybind_rows = Vec::new();
 
@@ -1037,6 +1062,11 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             Cell::from("Normal mode").style(
                 Style::default().add_modifier(Modifier::BOLD)
             ),
+            Cell::from(""),
+        ]));
+
+        keybind_rows.push(Row::new(vec![
+            Cell::from("-----------"),
             Cell::from(""),
         ]));
 
@@ -1060,6 +1090,11 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             Cell::from("Input mode").style(
                 Style::default().add_modifier(Modifier::BOLD)
             ),
+            Cell::from(""),
+        ]));
+
+        keybind_rows.push(Row::new(vec![
+            Cell::from("----------"),
             Cell::from(""),
         ]));
 
@@ -1104,6 +1139,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             lines.push(Line::from(
                 Span::from(label).style(section_style)
             ));
+            lines.push(Line::from(Span::from("-".repeat(label.len()))));
             for &(cmd, desc) in rows {
                 lines.push(Line::from(
                     Span::from(format!("  {cmd} ")).style(cmd_style)
@@ -1115,9 +1151,9 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             }
         };
 
-        push_section(&mut lines, "Both",       both_rows);
-        push_section(&mut lines, "Playground", playground_rows);
-        push_section(&mut lines, "Game",       game_rows);
+        push_section(&mut lines, "General commands",       both_rows);
+        push_section(&mut lines, "Playground commands", playground_rows);
+        push_section(&mut lines, "Game commands",       game_rows);
 
         let content = Paragraph::new(lines)
             .wrap(Wrap { trim: true })
@@ -1129,8 +1165,12 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         Line::default(),
         Line::from(
             Span::from(
-                "Press <Tab> to switch tabs, <j/k> to scroll, <?> to close"
-            ).style(Style::default().fg(Color::Gray))
+                    if help_tab == 1 {
+                        "Press <j/k> to scroll, <?> to close"
+                    } else {
+                        "Press <?> to close"
+                    }
+                ).style(Style::default().fg(Color::Gray))
         ),
     ];
     let footer_paragraph = Paragraph::new(footer).alignment(Alignment::Center);
@@ -1158,7 +1198,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let view_layout = Layout::default()
         .direction(Direction::Vertical)
         .spacing(Spacing::Overlap(1))
-        .constraints(if main_tab == usize::MAX {
+        .constraints(if main_tab == SENTINEL_TAB {
             [
                 Constraint::Max(0),
                 Constraint::Fill(1),
@@ -1204,7 +1244,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             .merge_borders(MergeStrategy::Exact)
     );
 
-    if main_tab != usize::MAX {
+    if main_tab != SENTINEL_TAB {
         frame.render_widget(tab_guide, tab_guide_layout[0]);
         frame.render_widget(log_guide, tab_guide_layout[1]);
     }
@@ -1525,7 +1565,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
                 );
             }
         },
-        usize::MAX => {
+        SENTINEL_TAB => {
             let selection_layout = Layout::default()
                 .direction(Direction::Horizontal)
                 .spacing(Spacing::Overlap(1))
@@ -1594,13 +1634,15 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             .merge_borders(MergeStrategy::Exact)
     );
 
-    if main_tab != usize::MAX {
+    if main_tab != SENTINEL_TAB {
         frame.render_widget(command_guide, input_guide_layout[0]);
         frame.render_widget(threads_guide, input_guide_layout[1]);
     }
 }
 
 fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
+
+    let (main_tab, _) = peel_help(app.tab);
 
     const TAB_FOCUS_MOVES: usize = 0;
     const TAB_FOCUS_FEN: usize = 1;
@@ -1837,35 +1879,35 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let max_logs_scroll = (logs_paragraph.line_count(logs_area.width) as u16)
         .saturating_sub(logs_area.height);
 
-    let current_moves_scroll = app.scroll_map.get(&(app.tab, TAB_FOCUS_MOVES))
+    let current_moves_scroll = app.scroll_map.get(&(main_tab, TAB_FOCUS_MOVES))
         .copied()
         .unwrap_or_else(
         || {
             panic!(
                 "Scroll value missing for tab {}, focus {}",
-                app.tab, TAB_FOCUS_MOVES
+                main_tab, TAB_FOCUS_MOVES
             )
         }
     );
 
-    let current_fen_scroll = app.scroll_map.get(&(app.tab, TAB_FOCUS_FEN))
+    let current_fen_scroll = app.scroll_map.get(&(main_tab, TAB_FOCUS_FEN))
         .copied()
         .unwrap_or_else(
         || {
             panic!(
                 "Scroll value missing for tab {}, focus {}",
-                app.tab, TAB_FOCUS_FEN
+                main_tab, TAB_FOCUS_FEN
             )
         }
     );
 
-    let current_logs_scroll = app.scroll_map.get(&(app.tab, TAB_FOCUS_LOGS))
+    let current_logs_scroll = app.scroll_map.get(&(main_tab, TAB_FOCUS_LOGS))
         .copied()
         .unwrap_or_else(
         || {
             panic!(
                 "Scroll value missing for tab {}, focus {}",
-                app.tab, TAB_FOCUS_LOGS
+                main_tab, TAB_FOCUS_LOGS
             )
         }
     );
@@ -1886,18 +1928,18 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             current
         }
     };
-    let tab = app.tab;
+
     let final_moves_scroll = clamp_scroll(
         current_moves_scroll, max_moves_scroll,
-        &mut app.scroll_map, (tab, TAB_FOCUS_MOVES)
+        &mut app.scroll_map, (main_tab, TAB_FOCUS_MOVES)
     );
     let final_fen_scroll = clamp_scroll(
         current_fen_scroll, max_fen_scroll,
-        &mut app.scroll_map, (tab, TAB_FOCUS_FEN)
+        &mut app.scroll_map, (main_tab, TAB_FOCUS_FEN)
     );
     let final_logs_scroll = clamp_scroll(
         current_logs_scroll, max_logs_scroll,
-        &mut app.scroll_map, (tab, TAB_FOCUS_LOGS)
+        &mut app.scroll_map, (main_tab, TAB_FOCUS_LOGS)
     );
 
     moves_paragraph = moves_paragraph.scroll((final_moves_scroll, 0));
@@ -2166,6 +2208,8 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 }
 
 fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
+
+    let (main_tab, _) = peel_help(app.tab);
 
     const TAB_FOCUS_LOGS: usize = 2;
 
@@ -2550,7 +2594,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         (logs_paragraph.line_count(logs_area.width) as u16)
             .saturating_sub(logs_area.height);
     let current_logs_scroll = app.scroll_map
-        .get(&(0, TAB_FOCUS_LOGS))
+        .get(&(main_tab, TAB_FOCUS_LOGS))
         .copied()
         .unwrap_or_else(|| {
             panic!(
@@ -2560,7 +2604,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         });
     let final_logs_scroll = clamp_scroll(
         current_logs_scroll, max_logs_scroll,
-        &mut app.scroll_map, (0, TAB_FOCUS_LOGS)
+        &mut app.scroll_map, (main_tab, TAB_FOCUS_LOGS)
     );
     logs_paragraph = logs_paragraph.scroll((final_logs_scroll, 0));
     frame.render_widget(logs_paragraph, logs_area);
@@ -2591,7 +2635,8 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
             .split(root);
 
         draw_tabs(frame, chunks[0], app);
-        match app.tab {
+
+        match peel_help(app.tab).0 {
             0 => draw_game_tab(frame, chunks[1], app),
             1 => draw_overview_tab(frame, chunks[1], app),
             2 => draw_playground_tab(frame, chunks[1], app),
@@ -2609,15 +2654,14 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 
 /// execute_command
 ///
-/// Interprets one line from the TUI input in game or playground
-/// context: move/undo/reset handling, FEN load and print, perft and
-/// search benchmarks, parameter derivation and export, protocol
-/// switching, playground piece placement (`add`/`del`), and the
-/// self-play tooling — `datagen` (build a tuning dataset), `tune`
-/// (Texel-tune the evaluation), and `sprt` (run an SPRT match between
-/// two engine binaries). Long operations run on this worker thread and
-/// report back through `sender`, so the interface never blocks; commands
-/// not valid for the current context are rejected with a log message.
+/// Interprets one line from the TUI input in game or playground context:
+/// move/undo/reset handling, FEN load and print, perft and search benchmarks,
+/// parameter derivation and export, protocol switching, playground piece
+/// placement (`add`/`del`), and the self-play tooling — `datagen` (build a
+/// tuning dataset), `tune` (Texel-tune the evaluation), and `sprt` (run an
+/// SPRT match between two engine binaries). Long operations run on this worker
+/// thread and report back through `sender`, so the interface never blocks;
+/// commands not valid for the current context are rejected with a log message.
 ///
 /// Params:
 /// - command: &str                  -> the raw input line
@@ -2733,7 +2777,7 @@ fn execute_command(
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 2 {
-                log_2!("Usage: see [move]");
+                log_2!("Usage: see <move>");
                 return;
             }
 
@@ -2774,14 +2818,14 @@ fn execute_command(
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 2 {
-                log_2!("Usage: search [depth]");
+                log_2!("Usage: search <depth>");
                 return;
             }
 
-            let depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
+            let Ok(depth) = parts[1].parse::<usize>() else {
                 log_2!("Invalid depth: {}", parts[1]);
-                0
-            });
+                return;
+            };
 
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
@@ -2801,14 +2845,14 @@ fn execute_command(
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 2 {
-                log_2!("Usage: go [depth]");
+                log_2!("Usage: go <depth>");
                 return;
             }
 
-            let depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
+            let Ok(depth) = parts[1].parse::<usize>() else {
                 log_2!("Invalid depth: {}", parts[1]);
-                0
-            });
+                return;
+            };
 
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
@@ -2850,19 +2894,19 @@ fn execute_command(
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 3 {
-                log_2!("Usage: play [depth] [time (s)]");
+                log_2!("Usage: play <depth> <time (s)>");
                 return;
             }
 
-            let depth = parts[1].parse::<usize>().unwrap_or_else(|_| {
+            let Ok(depth) = parts[1].parse::<usize>() else {
                 log_2!("Invalid depth: {}", parts[1]);
-                0
-            });
+                return;
+            };
 
-            let time_limit = parts[2].parse::<f64>().unwrap_or_else(|_| {
+            let Ok(time_limit) = parts[2].parse::<f64>() else {
                 log_2!("Invalid time limit: {}", parts[2]);
-                0.0
-            });
+                return;
+            };
 
             let mut info = SearchInfo {
                 set_depth: depth,
@@ -2921,20 +2965,14 @@ fn execute_command(
                 return;
             }
 
-            let games = match parts[1].parse::<usize>() {
-                Ok(value) => value,
-                Err(_) => {
-                    log_2!("Invalid games: {}", parts[1]);
-                    return;
-                }
+            let Ok(games) = parts[1].parse::<usize>() else {
+                log_2!("Invalid games: {}", parts[1]);
+                return;
             };
 
-            let movetime = match parts[2].parse::<u128>() {
-                Ok(value) => value,
-                Err(_) => {
-                    log_2!("Invalid movetime: {}", parts[2]);
-                    return;
-                }
+            let Ok(movetime) = parts[2].parse::<u128>() else {
+                log_2!("Invalid movetime: {}", parts[2]);
+                return;
             };
 
             let Some(ref variant_name) = variant else {
@@ -2951,17 +2989,14 @@ fn execute_command(
         _ if trimmed.starts_with("tune") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
-            if parts.len() < 2 {
-                log_2!("Usage: tune [epochs] [learning rate]");
+            if parts.len() != 3 {
+                log_2!("Usage: tune <epochs> [learning rate = 1.0]");
                 return;
             }
 
-            let epochs = match parts[1].parse::<usize>() {
-                Ok(value) => value,
-                Err(_) => {
-                    log_2!("Invalid epochs: {}", parts[1]);
-                    return;
-                }
+            let Ok(epochs) = parts[1].parse::<usize>() else {
+                log_2!("Invalid epochs: {}", parts[1]);
+                return;
             };
 
             let learning_rate = parts.get(2)
@@ -2980,18 +3015,15 @@ fn execute_command(
 
             if parts.len() < 4 {
                 log_2!(
-                    "Usage: sprt [binA] [binB] [movetime (ms)] \
-                     [games] [elo0] [elo1]"
+                    "Usage: sprt <binA> <binB> <movetime (ms)> \
+                    [games = 2000] [elo0 = 0.0] [elo1 = 5.0]"
                 );
                 return;
             }
 
-            let movetime = match parts[3].parse::<u128>() {
-                Ok(value) => value,
-                Err(_) => {
-                    log_2!("Invalid movetime: {}", parts[3]);
-                    return;
-                }
+            let Ok(movetime) = parts[3].parse::<u128>() else {
+                log_2!("Invalid movetime: {}", parts[3]);
+                return;
             };
 
             let max_games = parts.get(4)
@@ -3018,19 +3050,19 @@ fn execute_command(
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 3 {
-                log_2!("Usage: perft [depth] [branch]");
+                log_2!("Usage: perft <depth> <branch>");
                 return;
             }
 
-            let depth = parts[1].parse::<u8>().unwrap_or_else(|_| {
+            let Ok(depth) = parts[1].parse::<u8>() else {
                 log_2!("Invalid depth: {}", parts[1]);
-                0
-            });
+                return;
+            };
 
-            let branch = parts[2].parse::<i8>().unwrap_or_else(|_| {
+            let Ok(branch) = parts[2].parse::<i8>() else {
                 log_2!("Invalid branch: {}", parts[2]);
-                -1
-            });
+                return;
+            };
 
             if let Some(ref variant) = variant {
                 let perft_name = format!("{}.perft", variant);
@@ -3069,7 +3101,7 @@ fn execute_command(
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 3 {
-                log_2!("Usage: add [piece] [square]");
+                log_2!("Usage: add <piece> <square>");
                 return;
             }
 
@@ -3088,7 +3120,7 @@ fn execute_command(
                 (Some(index), Some(square)) =>
                     set_playground_piece(playground_state, index, square),
                 _ => {
-                    log_2!("Usage: add [piece] [square]");
+                    log_2!("Usage: add <piece> <square>");
                     return;
                 }
             }
@@ -3105,7 +3137,7 @@ fn execute_command(
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 2 {
-                log_2!("Usage: del [square]");
+                log_2!("Usage: del <square>");
                 return;
             }
 
@@ -3114,7 +3146,7 @@ fn execute_command(
             let target_square = parse_square(parts[1], playground_state);
 
             if target_square.is_none() {
-                log_2!("Usage: del [square]");
+                log_2!("Usage: del <square>");
                 return;
             }
 
@@ -3133,14 +3165,9 @@ fn execute_command(
         _ if trimmed.starts_with("protocol") => {
             let parts: Vec<_> = trimmed.split_whitespace().collect();
 
-            if parts.len() != 2 {
-                log_2!("Usage: protocol [protocol]");
-                return;
-            }
+            let protocol_name = parts.get(1);
 
-            let protocol_name = parts[1];
-
-            let new_dict = if protocol_name == "cheesy" {
+            let new_dict = if protocol_name.is_none() {
                 None
             } else {
                 let Some(ref v) = variant else {
@@ -3148,13 +3175,14 @@ fn execute_command(
                     return;
                 };
 
-                match Translator::find(v, protocol_name) {
-                    Some(translator) => Some(translator),
-                    None => {
-                        log_2!("Unknown protocol: {}", protocol_name);
-                        return;
-                    }
-                }
+                let name = *protocol_name.unwrap();
+
+                let Some(translator) = Translator::find(v, name) else {
+                    log_2!("Unknown protocol: {}", name);
+                    return;
+                };
+
+                Some(translator)
             };
 
             sender.send(TuiEvent::SwitchDict(new_dict))
@@ -3193,6 +3221,8 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
     match (app.mode, code) {
         (TUI_INPUT_MODE, KeyCode::Enter) => {
 
+            let (main_tab, _) = peel_help(app.tab);
+
             if app.input == "abort" {
                 SYSTEM_INTERRUPT.store(true, Ordering::Relaxed);
 
@@ -3229,7 +3259,6 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
                 let sender = app.sender.clone();
                 let threads = app.threads;
-                let tab = app.tab;
 
                 move || {
                     let table = TTable::default();
@@ -3258,7 +3287,11 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                     execute_command(
                         &command,
                         &mut state,
-                        if tab == 2 { Some(&mut playground) } else { None },
+                        if main_tab == 2 {
+                            Some(&mut playground)
+                        } else {
+                            None
+                        },
                         variant,
                         dict.as_ref(),
                         Arc::new(table),
@@ -3341,7 +3374,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             }
             false
         },
-        (TUI_NORMAL_MODE, KeyCode::Enter) if app.tab == PICKER_SCROLL_KEY.0 => {
+        (TUI_NORMAL_MODE, KeyCode::Enter) if app.tab == SENTINEL_TAB => {
             let input_trimmed = app.input.trim();
             app.variant = Some(
                 input_trimmed.strip_suffix(".conf")
@@ -3409,27 +3442,28 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
         (TUI_NORMAL_MODE, KeyCode::Char('q')) => true,
         (TUI_NORMAL_MODE, KeyCode::Char('?')) => {
             if help_open!(app.tab) {
-                app.tab %= TAB_TITLES.len();
+                app.tab = peel_help(app.tab).0;
+                app.scroll_map.insert(HELP_SCROLL_KEY, 0);
             } else {
                 app.tab += TAB_TITLES.len();
+                app.scroll_map.insert(HELP_SCROLL_KEY, 0);
             }
-            app.scroll_map.insert(HELP_SCROLL_KEY, 0);
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Tab) if help_open!(app.tab) => {
-            let n = TAB_TITLES.len();
-            if app.tab >= n * 2 {
-                app.tab -= n;
+            let (_, help_tab) = peel_help(app.tab);
+
+            if help_tab == 1 {
+                app.tab -= TAB_TITLES.len();
             } else {
-                app.tab += n;
+                app.tab += TAB_TITLES.len();
             }
+
             app.scroll_map.insert(HELP_SCROLL_KEY, 0);
             false
         },
-        (TUI_NORMAL_MODE, _) if help_open!(app.tab) => false,                    /* all other keys blocked in help     */
-        (TUI_NORMAL_MODE, _) if app.tab == usize::MAX => {                      /* everything else in is off          */
-            false
-        },
+        (TUI_NORMAL_MODE, _) if help_open!(app.tab) => false,                   /* all other keys blocked in help     */
+        (TUI_NORMAL_MODE, _) if app.tab == SENTINEL_TAB => false,               /* everything else in is off          */
         (TUI_NORMAL_MODE, KeyCode::Left) => {
             if app.focus == 0 {
                 app.focus = (TAB_FOCUSABLES[app.tab] as usize)
@@ -3488,12 +3522,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Tab) => {
-            let next = (app.tab.saturating_add(1)) % TAB_TITLES.len();
-            app.tab = if next == 2 && app.locked {
-                (next + 1) % TAB_TITLES.len()
-            } else {
-                next
-            };
+            app.tab = (app.tab + 1) % TAB_TITLES.len();
             app.focus = 0;
             false
         },

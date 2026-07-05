@@ -1055,6 +1055,7 @@ pub fn alpha_beta(
             let see = see!(
                 state, mv, &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
             );
+
             if see < -state.statics.see_margin[depth] {
                 continue;
             }
