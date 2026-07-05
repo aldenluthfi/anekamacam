@@ -26,6 +26,12 @@ const TAB_FOCUSABLES: [u8; 3] = [3, 2, 3];
 const PICKER_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX);
 const HELP_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX - 1);
 
+macro_rules! help_open {
+    ($tab:expr) => {                                                            /* tab encodes help state; picker     */
+        $tab >= TAB_TITLES.len() && $tab != usize::MAX                          /* (usize::MAX) must be excluded      */
+    };
+}
+
 /// TuiEvent
 ///
 /// Messages sent from worker threads back to the TUI event loop.
@@ -55,13 +61,10 @@ struct Tui {
 
     tab: usize,                                                                 /* active top-level tab               */
     focus: usize,                                                               /* focused pane within the tab        */
-    scroll_map: HashMap<(usize, usize), u16>,                                   /* per-pane scroll offsets            */
-
     input: String,                                                              /* current command input line         */
-
-    help: bool,                                                                 /* whether the help popup is open     */
     locked: bool,                                                               /* input locked during long ops       */
 
+    scroll_map: HashMap<(usize, usize), u16>,                                   /* per-pane scroll offsets            */
     translator: Option<Translator>,                                             /* active protocol translator         */
 
     variant: Option<String>,                                                    /* loaded variant name                */
@@ -96,13 +99,12 @@ impl Tui {
         }
 
         scroll_map.insert(PICKER_SCROLL_KEY, 0);                                /* Selection screen scroll            */
-        scroll_map.insert(HELP_SCROLL_KEY, 0);                                  /* Help popup tab scroll              */
+        scroll_map.insert(HELP_SCROLL_KEY, 0);                                  /* Help popup content scroll          */
 
         let mode = TUI_NORMAL_MODE;
         let tab = PICKER_SCROLL_KEY.0;
         let focus = PICKER_SCROLL_KEY.1;
         let input = String::new();
-        let help = false;
         let locked = false;
         let variant = None;
         let game_state = None;
@@ -122,7 +124,6 @@ impl Tui {
 
             input,
 
-            help,
             locked,
 
             translator,
@@ -608,7 +609,7 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
 /// │          │                                   │
 /// │          │                                   │
 /// └──────────┴───────────────────────────────────┘
-/// 
+///
 /// Game tab (draw_game_tab)
 /// ┌────────────────────────────────┬─────────────┐
 /// │ Tab Bar                        │ Verbosity   │
@@ -786,7 +787,7 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let tabs = Tabs::new(tab_titles)
         .block(Block::default().borders(Borders::ALL))
-        .select(app.tab)
+        .select(app.tab % TAB_TITLES.len())
         .style(Style::default().fg(Color::Gray))
         .highlight_style(
             Style::default()
@@ -890,9 +891,9 @@ fn draw_help_bar(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
 fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
-    let help_tab = *app.scroll_map
-        .get(&HELP_SCROLL_KEY)
-        .unwrap_or(&0) as usize;
+    let main_tab = app.tab % TAB_TITLES.len();
+    let help_tab = app.tab / TAB_TITLES.len() - 1;
+    let scroll   = *app.scroll_map.get(&HELP_SCROLL_KEY).unwrap_or(&0);
 
     let normal_mode_rows = [
         ("<i>", "Enter input mode"),
@@ -912,7 +913,11 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
         ("<Esc>", "Enter normal mode"),
     ];
 
-    let command_rows: &[(&str, &str)] = if app.tab == 2 { &[
+    let both_rows: &[(&str, &str)] = &[
+        ("reset", "Reset the board to its initial state"),
+    ];
+
+    let playground_rows: &[(&str, &str)] = &[
         (
             "add <piece> <square>",
             "Add a piece to the playground board at the given square"
@@ -921,13 +926,16 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             "del <square>",
             "Remove any piece from the playground board at the given square"
         ),
-        ("reset", "Reset the playground board to its initial state"),
-    ] } else { &[
-        ("abort", "Interrupt any running search immediately"),
-        ("undo", "Undo the last move played on the board"),
+    ];
+
+    let game_rows: &[(&str, &str)] = &[
         (
-            "reset",
-            "Rewind the game all the way to the starting position"
+            "abort",
+            "Interrupt any running search immediately"
+        ),
+        (
+            "undo",
+            "Undo the last move played on the board"
         ),
         (
             "ls",
@@ -969,7 +977,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             "sprt <binA> <binB> <time>",
             "Run an SPRT match between two engine binaries to test a patch"
         ),
-    ] };
+    ];
 
     let mut lines = vec![];
 
@@ -985,7 +993,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let popup_area = area
         .centered(
             Constraint::Length(70),
-            Constraint::Length(42)
+            Constraint::Length(40)
         );
 
     let block = Block::default()
@@ -1066,8 +1074,13 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             ]));
         }
 
+        let visible_rows: Vec<Row> = keybind_rows
+            .into_iter()
+            .skip(scroll as usize)
+            .collect();
+
         let keybind_table = Table::new(
-            keybind_rows,
+            visible_rows,
             [
                 Constraint::Percentage(100),
                 Constraint::Percentage(100)
@@ -1078,29 +1091,47 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
         frame.render_widget(keybind_table, content_layout[0]);
     } else {
-        for &(cmd, desc) in command_rows {
-            lines.push(Line::from(vec![
-                Span::from(format!("{} ", cmd))
-                    .style(
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    )
-            ]));
-            lines.push(Line::from(vec![
-                Span::from(desc)
-            ]));
-            lines.push(Line::default());
-        }
+        let section_style = Style::default().add_modifier(Modifier::BOLD);
+        let cmd_style     = Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD);
 
-        let content = Paragraph::new(lines).wrap(Wrap { trim: true });
+        let push_section = |
+            lines: &mut Vec<Line>,
+            label: &'static str,
+            rows: &[(&str, &str)]
+        | {
+            lines.push(Line::from(
+                Span::from(label).style(section_style)
+            ));
+            for &(cmd, desc) in rows {
+                lines.push(Line::from(
+                    Span::from(format!("  {cmd} ")).style(cmd_style)
+                ));
+                lines.push(Line::from(
+                    Span::from(format!("  {desc}"))
+                ));
+                lines.push(Line::default());
+            }
+        };
+
+        push_section(&mut lines, "Both",       both_rows);
+        push_section(&mut lines, "Playground", playground_rows);
+        push_section(&mut lines, "Game",       game_rows);
+
+        let content = Paragraph::new(lines)
+            .wrap(Wrap { trim: true })
+            .scroll((scroll, 0));
         frame.render_widget(content, content_layout[0]);
     }
 
     let footer = vec![
         Line::default(),
-        Line::from(Span::from("Press <j/k> to switch tabs, <?> to close")
-            .style(Style::default().fg(Color::Gray))),
+        Line::from(
+            Span::from(
+                "Press <Tab> to switch tabs, <j/k> to scroll, <?> to close"
+            ).style(Style::default().fg(Color::Gray))
+        ),
     ];
     let footer_paragraph = Paragraph::new(footer).alignment(Alignment::Center);
 
@@ -1127,7 +1158,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let view_layout = Layout::default()
         .direction(Direction::Vertical)
         .spacing(Spacing::Overlap(1))
-        .constraints(if app.tab == usize::MAX {
+        .constraints(if main_tab == usize::MAX {
             [
                 Constraint::Max(0),
                 Constraint::Fill(1),
@@ -1173,12 +1204,12 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             .merge_borders(MergeStrategy::Exact)
     );
 
-    if app.tab != usize::MAX {
+    if main_tab != usize::MAX {
         frame.render_widget(tab_guide, tab_guide_layout[0]);
         frame.render_widget(log_guide, tab_guide_layout[1]);
     }
 
-    match app.tab {
+    match main_tab {
         0 => {
             let has_moves = app.board_state.as_ref()
                 .map(|s| !s.move_history.trim().is_empty())
@@ -1563,7 +1594,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
             .merge_borders(MergeStrategy::Exact)
     );
 
-    if app.tab != usize::MAX {
+    if main_tab != usize::MAX {
         frame.render_widget(command_guide, input_guide_layout[0]);
         frame.render_widget(threads_guide, input_guide_layout[1]);
     }
@@ -2571,7 +2602,7 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
         draw_help_bar(frame, chunks[3], app);
     }
 
-    if app.help {
+    if help_open!(app.tab) {
         draw_help_popup(frame, root, app);
     }
 }
@@ -3263,13 +3294,13 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('j')) => {
-            if app.help {
-                let tab = app.scroll_map
+            if help_open!(app.tab) {
+                let s = app.scroll_map
                     .get(&HELP_SCROLL_KEY)
                     .copied()
                     .unwrap_or(0)
-                    .saturating_sub(1);
-                app.scroll_map.insert(HELP_SCROLL_KEY, tab);
+                    .saturating_add(1);
+                app.scroll_map.insert(HELP_SCROLL_KEY, s);
             } else {
                 let scroll = app.scroll_map.get(&(app.tab, app.focus))
                     .copied()
@@ -3287,14 +3318,13 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
             false
         },
         (TUI_NORMAL_MODE, KeyCode::Char('k')) => {
-            if app.help {
-                let tab = app.scroll_map
+            if help_open!(app.tab) {
+                let s = app.scroll_map
                     .get(&HELP_SCROLL_KEY)
                     .copied()
                     .unwrap_or(0)
-                    .saturating_add(1)
-                    .min(1);
-                app.scroll_map.insert(HELP_SCROLL_KEY, tab);
+                    .saturating_sub(1);
+                app.scroll_map.insert(HELP_SCROLL_KEY, s);
             } else {
                 let scroll = app.scroll_map.get(&(app.tab, app.focus))
                     .copied()
@@ -3378,9 +3408,25 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
         },
         (TUI_NORMAL_MODE, KeyCode::Char('q')) => true,
         (TUI_NORMAL_MODE, KeyCode::Char('?')) => {
-            app.help = !app.help;
+            if help_open!(app.tab) {
+                app.tab %= TAB_TITLES.len();
+            } else {
+                app.tab += TAB_TITLES.len();
+            }
+            app.scroll_map.insert(HELP_SCROLL_KEY, 0);
             false
         },
+        (TUI_NORMAL_MODE, KeyCode::Tab) if help_open!(app.tab) => {
+            let n = TAB_TITLES.len();
+            if app.tab >= n * 2 {
+                app.tab -= n;
+            } else {
+                app.tab += n;
+            }
+            app.scroll_map.insert(HELP_SCROLL_KEY, 0);
+            false
+        },
+        (TUI_NORMAL_MODE, _) if help_open!(app.tab) => false,                    /* all other keys blocked in help     */
         (TUI_NORMAL_MODE, _) if app.tab == usize::MAX => {                      /* everything else in is off          */
             false
         },

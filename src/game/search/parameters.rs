@@ -1377,7 +1377,7 @@ pub fn derive_search_parameters(state: &mut State) {
     let rfp_base = avg / 15;
     state.static_mut().rfp_margin = [0, 1].map(|i| {
         (0..MAX_RFP_DEPTH)
-            .map(|depth| rfp_base * depth as i32 * (2 - 2 * i))
+            .map(|depth| rfp_base * depth as i32 * (-i + 2))
             .collect::<Vec<_>>()
             .try_into()
             .unwrap()
