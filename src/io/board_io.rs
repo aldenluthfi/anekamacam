@@ -2,13 +2,11 @@
 //!
 //! Implements board formatting and visualization functions.
 //!
-//! This file contains functionality for converting bitboard representations
-//! into human-readable ASCII art displays. It provides methods for
-//! formatting individual bitboards and complete boards with Unicode
-//! box-drawing characters, supporting various board sizes and piece
-//! symbols. The formatting includes rank and file labels for easy
-//! reference, and the square parsing/formatting pair keeps algebraic and
-//! numeric coordinates consistent across every board width.
+//! Boards and per-square tables are far easier to reason about when a human
+//! can see them, and coordinates must round-trip the same way at every board
+//! width. This file is the engine's visual and coordinate layer: it renders
+//! boards and value grids as labelled diagrams, and keeps algebraic and
+//! numeric square names in agreement with their flat indices.
 //!
 //! # Author
 //! Alden Luthfi
@@ -17,12 +15,12 @@
 //! 25/01/2026
 use crate::*;
 
-/// Formats the square index into an algebraic square format.
+/// format_square
 ///
-/// {file letter/number}{rank number}
-///
-/// If the board width is more than 26 then it switches to numeric file. Both
-/// file and rank in both formats are 1-indexed
+/// Formats the square index into an algebraic square name of the form
+/// {file letter/number}{rank number}. If the board width is more than 26
+/// it switches to a numeric file. Both file and rank in both formats are
+/// 1-indexed.
 ///
 /// Params:
 /// - index: u16    -> flat square index to format

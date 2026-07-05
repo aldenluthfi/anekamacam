@@ -2,8 +2,11 @@
 //!
 //! Logging initialization, numeric verbosity wrappers, and formatting.
 //!
-//! This file centralizes logger configuration so startup code in `main.rs`
-//! stays focused on engine bootstrapping.
+//! Search, parsing, and the protocol layers all emit diagnostics, at wildly
+//! different urgencies and volumes. This file is the single place that decides
+//! what actually reaches the log: it configures the backend once and exposes
+//! numbered verbosity wrappers so callers say only how important a line is,
+//! never how or whether it is printed.
 //!
 //! # Author
 //! Alden Luthfi
@@ -147,23 +150,25 @@ pub fn dec_verbosity() {
     RUNTIME_VERBOSITY.fetch_max(1, Ordering::Release);
 }
 
-/// # Verbosity Levels
+/// init_logging
 ///
-/// This module uses 5 numeric verbosity levels. The semantics are:
+/// Initializes file logging: archives any previous `latest.log` by its
+/// creation timestamp, opens a fresh truncated `latest.log`, and installs a
+/// formatter that stamps each line with its numeric verbosity level,
+/// timestamp, and source location. Called once at startup from `main`.
 ///
-/// - `log_1`: Critical. Benchmark/suite final results, game-over states,
+/// Notes:
+/// The engine uses 5 numeric verbosity levels, stamped on every line:
+/// - log_1: critical — benchmark/suite results, game-over states,
 ///   state-change failures that abort an operation.
-/// - `log_2`: User-facing results and confirmations. Command results,
-///   per-case perft output, user-initiated interrupts (e.g. SIGINT),
-///   invalid command feedback, TUI state messages.
-/// - `log_3`: Engine telemetry. TT/QT stats, thread lifecycle, perft/suite
-///   summary stats, parameter derivation progress, per-depth search output,
-///   SIGINT diagnostics, perft file I/O.
-/// - `log_4`: Debug. Parsing internals, token captures, filter results,
-///   search diagnostics, mid-level diagnostic output, perft test case
-///   pass/fail results, piece value derivation details.
-/// - `log_5`: Trace. Deepest call-stack traces — atomic/coordinate evaluation
-///   entry points and final-result logging, perft depth-0 node output.
+/// - log_2: user-facing results — command results, per-case perft output,
+///   interrupts (SIGINT), invalid-command feedback, TUI state messages.
+/// - log_3: engine telemetry — TT/QT stats, thread lifecycle, perft/suite
+///   summaries, parameter-derivation progress, per-depth search output.
+/// - log_4: debug — parsing internals, token captures, filter results,
+///   search diagnostics, perft case pass/fail, piece-value derivation.
+/// - log_5: trace — deepest call traces, atomic/coordinate evaluation
+///   entry points, perft depth-0 node output.
 pub fn init_logging() {
 
     if !Path::new(LOG_DIR).exists() {

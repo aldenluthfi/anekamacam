@@ -2,13 +2,11 @@
 //!
 //! Implements game state parsing and formatting functions.
 //!
-//! This file contains functionality for reading game configuration files,
-//! parsing FEN (Forsyth-Edwards Notation) strings, and formatting game state
-//! for display. It handles piece definitions, board setup, and state
-//! information such as castling rights, en passant squares, and configurable
-//! halfmove-clock/repetition counters.
-//! The module provides both compact and verbose output formats for game
-//! visualization.
+//! This is the boundary between the engine's in-memory position and its
+//! on-disk and on-wire text forms. It builds a playable state from a
+//! variant's config, loads and writes positions as FEN, and renders the
+//! current state back to human-readable text, so the rest of the engine can
+//! stay in terms of `State` and never parse or format notation itself.
 //!
 //! # Author
 //! Alden Luthfi
@@ -18,6 +16,14 @@
 use crate::*;
 
 lazy_static! {
+    /// CFEN field regexes.
+    ///
+    /// Shared patterns used to detect and validate the optional CFEN
+    /// fields:
+    ///
+    /// - CASTLING_PATTERN : KQkq rights, or `-`
+    /// - ENP_PATTERN      : packed en passant square, or `*`
+    /// - HAND_PATTERN     : the `white/black` in-hand split
     pub static ref CASTLING_PATTERN: Regex =
         Regex::new(r"^([KQkq]+)$|^-$").unwrap();
     pub static ref ENP_PATTERN: Regex =
@@ -55,6 +61,8 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     (castling, en_passant, in_hand)
 }
 
+/// validate_castling
+///
 /// Validates if a starting configuration is possible based on the starting
 /// position of the game, this is for variants with randomized starting
 /// positions like Fischer Random Chess
@@ -164,6 +172,8 @@ fn validate_castling(fen: &str, state: &State) -> bool {
     valid
 }
 
+/// parse_tuned_parameters
+///
 /// Parses tuned parameters from a flat space-separated string.
 ///
 /// Token order:
@@ -344,6 +354,8 @@ fn find_last_epoch_in_dir(dir_path: &str) -> usize {
     max_epoch
 }
 
+/// export_tuned_parameters_file
+///
 /// Exports tuned parameters to `parameters/{variant}/latest.param`.
 /// If latest.param already has content, writes to an incremented epoch
 /// number instead.
@@ -431,6 +443,8 @@ pub fn export_tuned_parameters_file(
     }
 }
 
+/// parse_config_preview
+///
 /// Parses a game configuration file for previewing purposes, without fully
 /// populating the `State` struct. Only parsing the:
 ///
@@ -614,6 +628,8 @@ fn embedded_config(path: &str) -> Option<&'static str> {
     EMBEDDED_CONFIGS.get_file(filename)?.contents_utf8()
 }
 
+/// parse_config_file
+///
 /// Parses a game configuration file and initializes a game state.
 /// See `example.conf` for the expected format of the configuration file.
 ///
@@ -1927,6 +1943,8 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     result
 }
 
+/// parse_fen
+///
 /// Parses a FEN string and updates the game state accordingly. Applies
 /// protocol translation if needed.
 ///
@@ -2236,6 +2254,8 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
     state.position_hash = hash_position(state);
 }
 
+/// combine_board_strings
+///
 /// Combines two board string representations by overlaying
 /// non-whitespace characters from the first board onto the second board.
 ///
@@ -2470,17 +2490,22 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
     fen
 }
 
-/// State-field formatters.
+/// State field formatters
 ///
-/// Small display helpers, each rendering one aspect of the state as a
-/// short string: castling rights as KQkq letters, the en passant square
-/// in its packed CFEN form, one side's pieces in hand, the position
-/// hash in hex, the game phase by name with its score, and the enabled
-/// special rules as a comma-separated list. `format_game_state` and the
-/// debug TUI assemble their output from these.
+/// Small display helpers, each rendering one field of the state as a string
+/// for FEN output and the debug console. All take `&State` (and `format_hand`
+/// also a colour) and return the rendered field:
+///
+/// - `format_castling_rights`: castling rights as KQkq letters, `-` if none
+/// - `format_en_passant_square`: en passant square in packed CFEN, `*` if none
+/// - `format_hand`: one side's pieces in hand as piece letters, `-` if empty
+/// - `format_position_hash`: the Zobrist hash in hexadecimal
+/// - `format_game_phase`: the game phase by name (or `Game Over`)
+/// - `format_special_rules`: enabled special rules as a comma-separated list
 ///
 /// Params:
-/// - state: &State -> position queried (plus color for `format_hand`)
+/// - state: &State -> position whose field is rendered
+/// - color: u8     -> side whose hand is rendered (`format_hand` only)
 ///
 /// Return:
 /// String -> the rendered field

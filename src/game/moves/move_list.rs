@@ -22,14 +22,24 @@ use crate::*;
                         ATTACK QUERY REPRESENTATIONS
 \*---------------------------------------------------------------------------*/
 
-/// Attack-query macros used by legality and check detection.
+/// is_square_attacked!
 ///
-/// `is_square_attacked!` validates whether at least one precomputed attack mask
-/// can currently realize an attack on a target square, including directional,
-/// occupancy, and modifier constraints delegated to `validate_attack_vector!`.
+/// Reports whether at least one precomputed attack mask can currently
+/// realize an attack on `$square` against the given side, applying the
+/// directional, occupancy, and modifier constraints via
+/// `validate_attack_vector!`.
 ///
-/// `is_in_check!` evaluates all royal-piece squares for a side and reports
-/// whether the current side position is under attack (outside setup phase).
+/// Params:
+/// - square           -> target square being tested
+/// - attacked_side    -> side whose piece stands on the square
+/// - attacked_unmoved -> whether that piece is still unmoved (virgin)
+/// - attacked_royal   -> whether the target counts as royal
+/// - attacked_rank    -> capture rank of the target piece
+/// - state            -> current position providing attack tables
+///
+/// Return:
+/// bool -> true if any legal attack reaches the square
+///
 #[macro_export]
 macro_rules! is_square_attacked {
     (
@@ -59,6 +69,20 @@ macro_rules! is_square_attacked {
     }};
 }
 
+/// is_in_check!
+///
+/// Reports whether `$side`'s position is in check: each royal piece's
+/// square is tested with `is_square_attacked!`, so a side with multiple
+/// royals is in check only when all of them are attacked. Always false
+/// during the setup phase or when the side has no royal piece.
+///
+/// Params:
+/// - side  -> side whose royals are tested
+/// - state -> current position providing royal list and attack tables
+///
+/// Return:
+/// bool -> true if the side is in check
+///
 #[macro_export]
 macro_rules! is_in_check {
     ($side:expr, $state:expr) => {
@@ -357,9 +381,10 @@ pub fn generate_relevant_moves(
     result
 }
 
+/// generate_relevant_captures
+///
 /// Precomputes vector candidates that can produce at least one capture/destroy
 /// action for a given piece and origin square.
-///
 /// This mirrors `generate_relevant_moves` in structure (same bounds and
 /// forbidden-zone checks), but keeps only multi-leg vectors containing a leg
 /// with effective capture semantics:
@@ -441,8 +466,9 @@ pub fn generate_relevant_captures(
     result
 }
 
-/// Populates `relevant_attacks` entries originating from one start square.
+/// generate_attack_masks
 ///
+/// Populates `relevant_attacks` entries originating from one start square.
 /// For each prefiltered move vector, this records whether each traversed
 /// target is attacked as enemy capture (`c`) and/or friendly destroy (`d`).
 ///
@@ -513,8 +539,9 @@ pub fn generate_attack_masks(square_index: u16, state: &mut State) {
     }
 }
 
-/// Validates whether an attack vector can legally reach a target square.
+/// validate_attack_vector!
 ///
+/// Validates whether an attack vector can legally reach a target square.
 /// This macro executes the full per-leg simulation with movement/capture/
 /// destroy/unload semantics, occupancy checks, rank/royalty/virgin filters,
 /// and special modifier combinations. It is used as the runtime validator for
@@ -735,6 +762,32 @@ macro_rules! validate_attack_vector {
 /// rights effects, and promotion branching (one move per legal target).
 /// Illegal combinations (blocked legs, violated capture modifiers,
 /// initial-move constraints) abort without emitting.
+///
+/// Each leg starts where the last ended; `S` is the origin, `1`/`2` the
+/// intermediate leg endpoints, and `T` the final target a move is emitted
+/// for (occupancy and modifiers are checked at every endpoint):
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │ T  │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │ 1  │    │    │ 2  │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │ S  │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
+/// ```
 ///
 /// Params:
 /// - square_index -> origin square of the moving piece
@@ -1067,8 +1120,9 @@ macro_rules! process_multi_leg_vector {
     }};
 }
 
-/// Generates all pseudo-legal encoded moves for `$piece` from `$square_index`.
+/// generate_move_list_from_vectors!
 ///
+/// Generates all pseudo-legal encoded moves for `$piece` from `$square_index`.
 /// Resolves multi-leg constraints, captures/unloads, en-passant flags, castling
 /// side conditions, and promotion branching for all vectors in `$vector_set`.
 /// Shared move constructor used by `generate_move_list!` and
@@ -1094,10 +1148,20 @@ macro_rules! generate_move_list_from_vectors {
     }};
 }
 
-/// Generates all pseudo-legal encoded moves for `$piece` from `$square_index`.
+/// generate_move_list!
 ///
-/// Resolves multi-leg constraints, captures/unloads, en-passant flags, castling
-/// conditions, and promotion branching using `relevant_moves`.
+/// Generates all pseudo-legal encoded moves for `$piece` from
+/// `$square_index`, appending them to `$out`. Resolves multi-leg
+/// constraints, captures/unloads, en-passant flags, castling conditions,
+/// and promotion branching from the piece's `relevant_moves` vectors.
+///
+/// Params:
+/// - square_index -> origin square the piece moves from
+/// - piece        -> piece type being moved
+/// - state        -> current position providing occupancy and tables
+/// - out          -> output list receiving the encoded moves
+/// - scratch      -> reusable buffer for multi-capture payloads
+///
 #[macro_export]
 macro_rules! generate_move_list {
     (
@@ -1115,10 +1179,20 @@ macro_rules! generate_move_list {
     }};
 }
 
-/// Generates only pseudo-legal capture moves for `$piece` from `$square_index`.
+/// generate_capture_list!
 ///
-/// Uses precomputed `relevant_captures` so generation follows the same flow as
-/// normal move generation without generating quiet moves first.
+/// Generates only the pseudo-legal capture moves for `$piece` from
+/// `$square_index`. Uses precomputed `relevant_captures` so generation
+/// follows the same pipeline as normal move generation, then drops any
+/// non-capturing moves it produced.
+///
+/// Params:
+/// - square_index -> origin square the piece moves from
+/// - piece        -> piece type being moved
+/// - state        -> current position providing occupancy and tables
+/// - out          -> output list receiving the capture moves
+/// - scratch      -> reusable buffer for multi-capture payloads
+///
 #[macro_export]
 macro_rules! generate_capture_list {
     (
@@ -1301,8 +1375,9 @@ macro_rules! generate_castling_list {
                            MOVE STATE TRANSITION MACROS
 \*---------------------------------------------------------------------------*/
 
-/// Applies a move to the game state with full incremental bookkeeping.
+/// make_move!
 ///
+/// Applies a move to the game state with full incremental bookkeeping.
 /// This macro performs a complete state transition:
 /// - advances ply counters
 /// - updates board occupancy, piece lists, virgin flags, castling/en-passant
@@ -2525,8 +2600,9 @@ macro_rules! make_move {
     };
 }
 
-/// Reverts the last applied move using the most recent [`Snapshot`].
+/// undo_move!
 ///
+/// Reverts the last applied move using the most recent [`Snapshot`].
 /// This macro restores all dynamic state fields and reverses side effects made
 /// by `make_move!`, including board occupancy, piece lists, counters, and the
 /// position repetition map.
@@ -3163,8 +3239,9 @@ macro_rules! undo_move {
     };
 }
 
-/// Applies a null move for the side to move.
+/// make_null_move!
 ///
+/// Applies a null move for the side to move.
 /// A null move:
 /// - Advances `search_ply` and `ply_counter`.
 /// - Flips `playing` and updates side-to-move hash.
@@ -3218,12 +3295,13 @@ macro_rules! make_null_move {
     };
 }
 
-/// Reverts the most recent null move.
+/// undo_null_move!
 ///
+/// Reverts the most recent null move.
 /// This restores the `Snapshot` saved by `make_null_move!`, including turn,
 /// clocks, castling/en-passant data, phase flags, and position hash.
 ///
-/// # Panics
+/// Notes:
 /// Panics if no history snapshot exists to undo.
 ///
 /// Params:
@@ -3256,8 +3334,9 @@ macro_rules! undo_null_move {
     }};
 }
 
-/// Generates all pseudo-legal moves for the side to move, including drops.
+/// generate_all_moves_and_drops
 ///
+/// Generates all pseudo-legal moves for the side to move, including drops.
 /// Normal moves are skipped during setup phase; drop generation may use
 /// either own-hand or enemy-hand inventory depending on drop flags.
 ///

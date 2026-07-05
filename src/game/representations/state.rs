@@ -2,9 +2,11 @@
 //!
 //! Defines game state representation and management.
 //!
-//! This file contains the implementation of game state tracking, including
-//! the current position, turn information, move history, and any other
-//! state-related data needed for game progression and rule enforcement.
+//! Everything the engine does reads or mutates one position, so the shape of
+//! that value decides how cheap search, evaluation, and make/undo can be.
+//! This file defines that centre of gravity: the immutable per-variant
+//! configuration shared across threads, and the mutable per-position state
+//! that search clones, advances a ply, and rolls back.
 //!
 //! # Author
 //! Alden Luthfi
@@ -228,23 +230,24 @@ macro_rules! enp_piece {
                               SNAPSHOT REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// Captures reversible state needed to undo a move.
+/// Snapshot
 ///
+/// Captures reversible state needed to undo a move.
 /// Each snapshot stores move payload and dynamic counters/flags so `undo_move!`
 /// can restore the exact pre-move position, including hash-dependent state.
 /// It is appended to `State::history` during move execution.
 #[derive(Clone)]
 pub struct Snapshot {
-    pub move_ply: Move,
+    pub move_ply: Move,                                                         /* the move that was played           */
 
-    pub castling_state: u8,
-    pub halfmove_clock: u8,
-    pub en_passant_square: EnPassantSquare,
-    pub game_over: bool,
-    pub game_phase: u8,
-    pub phase_score: u32,
+    pub castling_state: u8,                                                     /* castling rights before move        */
+    pub halfmove_clock: u8,                                                     /* halfmove clock before move         */
+    pub en_passant_square: EnPassantSquare,                                     /* en passant sq before move          */
+    pub game_over: bool,                                                        /* game-over flag before move         */
+    pub game_phase: u8,                                                         /* game phase before move             */
+    pub phase_score: u32,                                                       /* phase score before move            */
 
-    pub position_hash: u128,
+    pub position_hash: u128,                                                    /* Zobrist hash before move           */
 }
 
 impl Default for Snapshot {
@@ -262,8 +265,9 @@ impl Default for Snapshot {
     }
 }
 
-/// Returns whether a snapshot corresponds to a pass move.
+/// pass_snapshot!
 ///
+/// Returns whether a snapshot corresponds to a pass move.
 /// This is used in repetition / stand-off flow where pass detection is needed
 /// while reading from undo history rather than the active move stream.
 ///
@@ -316,8 +320,9 @@ macro_rules! game_phase_score {
                             GAME STATE REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// Immutable variant configuration, shared across threads via Arc.
+/// StaticState
 ///
+/// Immutable variant configuration, shared across threads via Arc.
 /// All 27 static fields that are fixed after `precompute()` live here.
 /// `State::clone()` shares this via `Arc::clone` instead of deep-copying.
 pub struct StaticState {
@@ -398,8 +403,9 @@ pub struct StaticState {
     pub pawn_passed_support_endgame: Vec<i32>,                                  /* passer support bonus, endgame      */
 }
 
-/// Main state of the game.
+/// State
 ///
+/// Main state of the game.
 /// The special rules field is a bitmask representing enabled special rules.
 /// (read configs/example.conf for more information)
 ///
@@ -428,22 +434,22 @@ pub struct State {
                                  DYNAMIC FIELDS
 \*----------------------------------------------------------------------------*/
 
-    pub game_over: bool,
+    pub game_over: bool,                                                        /* true once the game has ended       */
     pub game_phase: u8,                                                         /* SETUP/OPENING/MIDDLEGAME/ENDGAME   */
     pub phase_score: u32,                                                       /* game phase score for transition    */
 
-    pub playing: u8,
+    pub playing: u8,                                                            /* side to move (WHITE / BLACK)       */
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
 
-    pub pieces_board: [Board; 2],
-    pub virgin_board: Board,
+    pub pieces_board: [Board; 2],                                               /* per-color occupancy bitboards      */
+    pub virgin_board: Board,                                                    /* squares whose piece is unmoved     */
 
     pub castling_state: u8,                                                     /* 4 bits for representing KQkq       */
-    pub halfmove_clock: u8,
-    pub en_passant_square: EnPassantSquare,
+    pub halfmove_clock: u8,                                                     /* plies since pawn move/capture      */
+    pub en_passant_square: EnPassantSquare,                                     /* active en passant square           */
 
-    pub position_hash: u128,
-    pub history: Vec<Snapshot>,
+    pub position_hash: u128,                                                    /* incremental Zobrist key            */
+    pub history: Vec<Snapshot>,                                                 /* undo stack of snapshots            */
 
     pub search_ply: u32,                                                        /* the number of plies in the search  */
     pub ply_counter: u32,                                                       /* the number of plies in the game    */
@@ -452,10 +458,10 @@ pub struct State {
     pub endgame_material: [u32; 2],                                             /* color to endgame material          */
     pub opening_pst_bonus: [i32; 2],                                            /* color to opening pst bonus         */
     pub endgame_pst_bonus: [i32; 2],                                            /* color to endgame pst bonus         */
-    pub big_pieces: [u32; 2],
-    pub major_pieces: [u32; 2],
-    pub minor_pieces: [u32; 2],
-    pub royal_pieces: [u32; 2],
+    pub big_pieces: [u32; 2],                                                   /* per-color big-piece counts         */
+    pub major_pieces: [u32; 2],                                                 /* per-color major-piece counts       */
+    pub minor_pieces: [u32; 2],                                                 /* per-color minor-piece counts       */
+    pub royal_pieces: [u32; 2],                                                 /* per-color royal-piece counts       */
     pub royal_list: [Vec<Square>; 2],                                           /* color to royal piece square list   */
 
     pub piece_count: Vec<u32>,                                                  /* piece index to count               */
@@ -809,13 +815,19 @@ impl State {
 
     /// State::generate_piece_moves / _drops / _stand_off
     ///
-    /// Expression-compilation helpers used once at precompute time. Each
-    /// takes the raw expression strings from the config and compiles them
-    /// into per-piece runtime structures: move expressions become packed
-    /// `Leg` lists, drop expressions become `DropSet`s, and stand-off
-    /// expressions become `PatternSet`s. Board-aware expansion (ranges,
-    /// directions, rotation) happens inside the `generate_*` calls in the
-    /// moves module; this trio only drives them piece by piece.
+    /// Expression-compilation helpers run once at precompute time. Each takes
+    /// one raw expression string per piece (in config order) and compiles it
+    /// into that piece's runtime structure, leaving board-aware expansion to
+    /// the moves module:
+    ///
+    /// - `generate_piece_moves`:
+    ///   packed `Leg` lists (`MoveSet`), via `generate_move_vectors`
+    ///
+    /// - `generate_piece_drops`:
+    ///   `DropSet`s, via `generate_drop_vectors`
+    ///
+    /// - `generate_piece_stand_off`:
+    ///   `PatternSet`s, via `generate_stand_off_patterns`
     ///
     /// Params:
     /// - expr_set -> one expression string per piece, in config order
@@ -855,20 +867,32 @@ impl State {
         ).collect::<Vec<PatternSet>>()
     }
 
-    /// State::populate_relevant_* family
+    /// State::populate_relevant_moves / _captures / _drops / _setup /
+    /// _stand_offs
     ///
-    /// Precomputation drivers that fill the flattened `relevant_*` lookup
-    /// tables in [`StaticState`]. Each iterates every (piece, square)
-    /// pair, asks the moves module which precompiled moves / captures /
-    /// drops / setup drops / stand-offs remain on the board from that
-    /// square, and stores the result at `piece * board_size + square`.
-    /// The five siblings (`moves`, `captures`, `drops`, `setup`,
-    /// `stand_offs`) differ only in the generator called and the static
-    /// table written, so this comment covers them all.
+    /// Precompute-time table fillers. Each walks every (piece, square) pair
+    /// and stores, at `piece * board_size + square`, the compiled entries that
+    /// stay on the board when played from that square -- turning the per-piece
+    /// sets from the `generate_piece_*` helpers into flat, square-indexed
+    /// lookup tables the generator reads at runtime:
+    ///
+    /// - `populate_relevant_moves`:
+    ///   fills `relevant_moves` from move sets
+    ///
+    /// - `populate_relevant_captures`:
+    ///   fills `relevant_captures` from move sets
+    ///
+    /// - `populate_relevant_drops`:
+    ///   fills `relevant_drops` from drop sets
+    ///
+    /// - `populate_relevant_setup`:
+    ///   fills `relevant_setup` from setup drops
+    ///
+    /// - `populate_relevant_stand_offs`:
+    ///   fills `relevant_stand_offs` from patterns
     ///
     /// Params:
-    /// - piece_moves / piece_setup_drops / piece_stand_off -> compiled
-    ///   per-piece sets produced by the `generate_piece_*` helpers
+    /// - compiled -> the matching per-piece compiled set list
     ///
     fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
         let board_size = self.statics.board_size;
@@ -972,11 +996,11 @@ impl State {
     ///
     /// ```text
     /// ┌────┬────┬────┐
-    /// │ ██ │ ██ │ ██ │
+    /// │ ## │ ## │ ## │
     /// ├────┼────┼────┤
-    /// │ ██ │ sq │ ██ │
+    /// │ ## │ sq │ ## │
     /// ├────┼────┼────┤
-    /// │ ██ │ ██ │ ██ │
+    /// │ ## │ ## │ ## │
     /// └────┴────┴────┘
     /// ```
     ///

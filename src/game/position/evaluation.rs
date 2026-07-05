@@ -17,6 +17,8 @@
 //! # Date
 //! 19/04/2026
 
+/// king_shelter!
+///
 /// Per-side count of friendly pieces on squares adjacent to each royal piece,
 /// via the precomputed `adjacency_mask` AND-ed with the side's occupancy.
 /// Exposed royalty scores low; the caller folds this into the opening and
@@ -53,41 +55,170 @@ macro_rules! king_shelter {
     }
 }
 
+/// pawn_structure!
+///
 /// Variant-agnostic pawn-structure term, returned as an `(opening, endgame)`
-/// pair of white-minus-black centipawn deltas. Each term is read from masks
-/// derived per variant from that pawn's own quiet and capture legs (each
-/// `derive_pawn_*` builder diagrams its mask), so none assume FIDE geometry:
+/// pair of white-minus-black centipawn deltas. It never assumes FIDE
+/// geometry: every mask is built per-piece from that pawn's own quiet and
+/// capture legs by the `derive_pawn_*` builders (each of which diagrams its
+/// mask for FIDE, Berolina, and Shogi), and scoring here is only a handful
+/// of O(1) `get!` bit tests against those masks.
 ///
-/// - passed    : no enemy pawn lies on its interference mask
-/// - connected : a friendly pawn lies on its support mask
-/// - doubled   : a friendly pawn lies on its path mask
-/// - isolated  : no friendly pawn sits on a supporting file offset
-/// - backward  : unconnected, and an enemy pawn attacks its stop square
-///               (its backward mask) so it cannot safely advance
+/// Two sweeps over the per-side pawn lists:
 ///
-/// Passed pawns are refined: an also-connected passer earns a protected-passer
-/// bonus, and one whose supporter is itself passed earns a further connected-
-/// passer bonus. Scoring runs in two sweeps: a pre-pass fills the passed
-/// bitboard for both sides, then each pawn is scored against the masks below.
+/// 1. a pre-pass sets a bit in `passed_board[color]` for every pawn no enemy
+///    pawn can reach -- none sit on its interference mask
+/// 2. a scoring pass tests each pawn against the masks below and adds the
+///    phase deltas
 ///
-/// For a classic chess pawn the three stored masks overlay like this (`PP` the
-/// pawn; `backward` keys off the stop, one rank up, as `derive_pawn_stop` and
-/// `pawn_capture_sources` show):
+/// Per pawn, every term is one bit test against a derived mask:
+///
+/// - passed    : no enemy pawn on its interference mask (set in sweep 1)
+/// - connected : a friendly pawn on its support mask
+/// - doubled   : a friendly pawn on its path mask (blocks the advance)
+/// - isolated  : no friendly pawn on any supporting file offset
+/// - backward  : not connected, and an enemy pawn captures its stop square
+///
+/// Passers are refined: an also-connected passer adds a protected-passer
+/// bonus, and one whose supporter is itself passed adds a further
+/// connected-passer bonus.
+///
+/// The masks take a different shape for each pawn geometry. In the overlays
+/// below:
+///
+/// - PP : the pawn being scored
+/// - pp : path: a friendly pawn here is doubled, blocking the advance
+/// - ii : interference: an enemy pawn here stops the passer
+/// - ss : support: a friendly pawn here connects the pawn
+///
+/// Support is read off one mask but has two kinds:
+///
+/// - behind : a friend that can capture onto the pawn itself
+/// - beside : a friend that can capture onto the pawn's stop square
+///
+/// The beside/phalanx square only exists when a pawn captures in a different
+/// direction than it moves, so a lateral neighbour's capture can reach the
+/// stop. FIDE (diagonal capture, straight move) and Berolina (straight
+/// capture, diagonal move) therefore gain side support, while a Shogi soldier
+/// (captures and moves straight, the same way) is supported only from
+/// directly behind.
+///
+/// A FIDE pawn captures diagonally: its path runs up its own file and its
+/// supporters sit diagonally behind and beside it.
 ///
 /// ```text
 /// ┌────┬────┬────┬────┬────┐
-/// │    │ ii │ pp │ ii │    │   pp : path -- own file ahead (doubled)
-/// ├────┼────┼────┼────┼────┤   ii : interference -- these plus pp stop
-/// │    │ ii │ pp │ ii │    │        the passer
-/// ├────┼────┼────┼────┼────┤   ss : support -- a friendly pawn here
-/// │    │ ss │ PP │ ss │    │        connects the pawn
-/// ├────┼────┼────┼────┼────┤   PP : the pawn
+/// │    │ ii │ pp │ ii │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ ii │ pp │ ii │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ ss │ PP │ ss │    │
+/// ├────┼────┼────┼────┼────┤
 /// │    │ ss │    │ ss │    │
 /// └────┴────┴────┴────┴────┘
 /// ```
 ///
-/// All masks are full `Board`s tested with O(1) `get!` bit reads, so the term
-/// is bounded by pawn count, not board size, and works on any board width.
+/// A Shogi soldier moves and captures straight ahead: every mask collapses
+/// onto its own file, and only the pawn directly behind can support it.
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │    │ pp │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ pp │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ PP │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ ss │    │    │
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// A Berolina pawn moves diagonally but captures straight: its path fans out
+/// along both diagonals, while its supporters sit straight behind and beside.
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │ pp │ ii │ pp │ ii │ pp │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ pp │ ii │ pp │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ ss │ PP │ ss │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ ss │    │    │
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// Worked examples, each on a 6x6 board with the scored pawn `P`, a friendly
+/// pawn `p`, and an enemy pawn `x` (white advances up the page). The engine
+/// runs identical code for all three; only the derived masks differ.
+///
+/// FIDE: `P` on c2, friendly `p` on b1, enemies far off on the a- and
+/// f-files. No `x` touches `P`'s interference, so it is passed; `p` guards it
+/// along the diagonal, so it is also connected -- a protected passer. It is
+/// not doubled (nothing on its file ahead) and not isolated (the `b`-file
+/// friend sits on a support file):
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┬────┐
+/// │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │ x  │    │    │    │    │ x  │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │ P  │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │ p  │    │    │    │    │
+/// └────┴────┴────┴────┴────┴────┘
+/// ```
+///
+/// Shogi: the soldier `P` on c2 has a friendly `p` directly behind on c1 --
+/// the only square that can defend a straight-capturing pawn -- so it is
+/// connected. An enemy `x` sits ahead on its own file, on the interference
+/// mask, so it is not passed. A diagonal friend would not connect it here:
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┬────┐
+/// │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │ x  │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │ P  │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │ p  │    │    │    │
+/// └────┴────┴────┴────┴────┴────┘
+/// ```
+///
+/// Berolina: `P` on c2 captures straight, so the friendly `p` on c1 directly
+/// behind connects it. Its path runs diagonally, so the other friendly `p`
+/// on b3 -- forward along a diagonal -- is doubled. The enemy `x` reaches its
+/// interference, so it is not passed:
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┬────┐
+/// │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │ x  │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │ p  │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │ P  │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┤
+/// │    │    │ p  │    │    │    │
+/// └────┴────┴────┴────┴────┴────┘
+/// ```
+///
+/// Every mask is a full `Board`, so the whole term is bounded by pawn count,
+/// not board area, and works at any board width. The `derive_pawn_*` builders
+/// diagram how each mask is built from the piece's own legs.
 ///
 /// Params:
 /// - state -> position whose pawn-like pieces are scored
@@ -223,12 +354,14 @@ macro_rules! pawn_structure {
     };
 }
 
+/// evaluate_position!
+///
 /// Evaluates the current position from the side-to-move perspective.
 ///
 /// Evaluation model:
-/// - `OPENING` | `SETUP`   : opening material delta + opening PST delta.
-/// - `ENDGAME`             : endgame material delta + endgame PST delta.
-/// - `MIDDLEGAME`          : linear interpolation between opening and endgame.
+/// - `OPENING` | `SETUP`: opening material delta + opening PST delta.
+/// - `ENDGAME`: endgame material delta + endgame PST delta.
+/// - `MIDDLEGAME`: linear interpolation between opening and endgame.
 ///
 /// Hot-path notes:
 /// - Uses cached per-side material/PST totals from `State`.

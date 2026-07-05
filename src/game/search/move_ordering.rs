@@ -109,9 +109,10 @@ macro_rules! lva {
     };
 }
 
+/// see!
+///
 /// Evaluates a capture sequence on a target square via negamax exchange
 /// simulation, returning a signed material-gain score.
-///
 /// A positive result means the capture wins material; negative means it loses.
 /// Non-capture moves return 0.
 ///
@@ -204,23 +205,24 @@ macro_rules! see {
                            MOVE SCORING AND ORDERING
 \*----------------------------------------------------------------------------*/
 
+/// score_move!
+///
 /// Returns a static ordering score for one move in the current position.
+/// `pv_move` is the TT best move for this node, and a larger score means the
+/// move is searched earlier. Scoring bands, highest priority first:
 ///
-/// Scoring order:
-/// 1. PV move                  -> 5000000
-/// 2. Winning/Equal captures   -> 4000000 + SEE score [0, MAX_PIECE_VALUE]
-/// 3. Killer moves             -> 1000000 + 2 * MAX_HIST_VALUE + [1, 2]
-/// 4. History heuristic        -> 1000000 + MAX_HIST_VALUE + history [-h, h]
-/// 5. Losing captures          -> 1000000 + SEE score [-MAX_PIECE_VALUE, -1]
-///
-/// `$pv_move` is the TT best move for this node. A larger score means the
-/// move is searched earlier.
+/// - pv move          : 5000000
+/// - winning capture  : 4000000 + SEE score, in [0, MAX_PIECE_VALUE]
+/// - killer move      : 1000000 + 2 * MAX_HIST_VALUE + [1, 2]
+/// - history          : 1000000 + MAX_HIST_VALUE + history, in [-h, h]
+/// - losing capture   : 1000000 + SEE score, in [-MAX_PIECE_VALUE, -1]
 ///
 /// Params:
-/// - state   -> position providing killers, history, and piece values
-/// - mv      -> the move to score
-/// - pv_move -> TT best move for this node, if any
-/// - see_moves / see_scratch -> reusable SEE buffers
+/// - state       -> position providing killers, history, and piece values
+/// - mv          -> the move to score
+/// - pv_move     -> TT best move for this node, if any
+/// - see_moves   -> reusable buffer for attacker candidate moves
+/// - see_scratch -> reusable buffer for capture payloads
 ///
 /// Return:
 /// usize -> ordering score, larger searched earlier
@@ -273,20 +275,24 @@ macro_rules! score_move {
     }};
 }
 
-/// Selects the best-scoring move in `moves[$index..]` and swaps it into
-/// `$index`.
+/// pick_by_score!
 ///
-/// Selection-sort step; avoids sorting the full list up front. Combined with
-/// alpha-beta cutoffs, only the highest-priority prefix is scored in practice.
-///
-/// `$pv_move` is the TT best move for this node.
+/// Selects the best-scoring move in `moves[index..]` and swaps it into
+/// `index`. A selection-sort step that avoids sorting the whole list up
+/// front; combined with alpha-beta cutoffs, only the highest-priority prefix
+/// is scored in practice. `pv_move` is the TT best move for this node.
 ///
 /// Params:
-/// - state          -> position used for lazy scoring
-/// - moves / scores -> parallel move and score lists
-/// - index          -> slot to fill with the best remaining move
-/// - pv_move        -> TT best move for this node, if any
-/// - see_moves / see_scratch -> reusable SEE buffers
+/// - state       -> position used for lazy scoring
+/// - moves       -> move list, reordered in place
+/// - scores      -> parallel score cache, filled lazily
+/// - index       -> slot to fill with the best remaining move
+/// - pv_move     -> TT best move for this node, if any
+/// - see_moves   -> reusable buffer for attacker candidate moves
+/// - see_scratch -> reusable buffer for capture payloads
+///
+/// Notes:
+/// Modifies `moves` and `scores` in place; returns nothing.
 ///
 #[macro_export]
 macro_rules! pick_by_score {

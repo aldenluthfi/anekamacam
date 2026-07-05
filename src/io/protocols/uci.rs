@@ -163,55 +163,58 @@ fn print_bestmove(
     stdout().flush().ok();
 }
 
-/// A running (possibly pondering) search thread.
+/// SearchHandle
 ///
+/// A running (possibly pondering) search thread.
 /// Keeps the join handle together with the launch parameters needed to
 /// restart the search on `ponderhit`: whether it was a ponder search,
 /// its depth and node limits, and the soft/hard time budgets (as
 /// durations) to apply from the moment the hit arrives.
 struct SearchHandle {
-    handle: JoinHandle<SearchResult>,
-    is_ponder: bool,
-    search_depth: usize,
-    search_nodes: u128,
-    ponderhit_soft_ns: u128,
-    ponderhit_hard_ns: u128,
+    handle: JoinHandle<SearchResult>,                                           /* the running search thread          */
+    is_ponder: bool,                                                            /* true if launched as a ponder       */
+    search_depth: usize,                                                        /* depth limit for restart            */
+    search_nodes: u128,                                                         /* node limit for restart             */
+    ponderhit_soft_ns: u128,                                                    /* soft budget on ponderhit           */
+    ponderhit_hard_ns: u128,                                                    /* hard budget on ponderhit           */
 }
 
-/// Launch parameters for one search thread.
+/// SearchLimits
 ///
+/// Launch parameters for one search thread.
 /// Bundles the ponder flag, depth/node limits, and absolute deadlines
 /// (ns since engine launch, 0 = none) for a spawned search, plus the
 /// budget durations to re-apply when a ponder search is converted to a
 /// timed one by `ponderhit`.
 struct SearchLimits {
-    is_ponder: bool,
-    depth: usize,
-    nodes: u128,
-    soft_deadline: u128,
-    hard_deadline: u128,
-    ponderhit_soft_ns: u128,
-    ponderhit_hard_ns: u128,
+    is_ponder: bool,                                                            /* launch as a ponder search          */
+    depth: usize,                                                               /* search depth limit                 */
+    nodes: u128,                                                                /* search node limit                  */
+    soft_deadline: u128,                                                        /* soft deadline, ns since launch     */
+    hard_deadline: u128,                                                        /* hard deadline, ns since launch     */
+    ponderhit_soft_ns: u128,                                                    /* soft budget for ponderhit          */
+    ponderhit_hard_ns: u128,                                                    /* hard budget for ponderhit          */
 }
 
-/// The UCI session state.
+/// Uci
 ///
+/// The UCI session state.
 /// Owns the engine position, the discovered variant list and active
 /// variant, the protocol translator, thread/hash/overhead option values,
 /// the shared tables (rebuilt when the Hash option changes), and the
 /// active search handle if a `go` is in flight.
 struct Uci {
-    state: State,
-    variants: Vec<String>,
-    variant: String,
-    translator: Option<Translator>,
-    max_threads: usize,
-    threads: usize,
-    hash_mb: usize,
-    overhead_ms: u128,
-    ttable: Arc<TTable>,
-    qtable: Arc<QTable>,
-    active: Option<SearchHandle>,
+    state: State,                                                               /* the engine's working position      */
+    variants: Vec<String>,                                                      /* discovered UCI-capable variants    */
+    variant: String,                                                            /* the active variant name            */
+    translator: Option<Translator>,                                             /* protocol notation translator       */
+    max_threads: usize,                                                         /* hardware thread ceiling            */
+    threads: usize,                                                             /* configured worker threads          */
+    hash_mb: usize,                                                             /* hash budget in megabytes           */
+    overhead_ms: u128,                                                          /* move overhead in milliseconds      */
+    ttable: Arc<TTable>,                                                        /* shared main transposition table    */
+    qtable: Arc<QTable>,                                                        /* shared quiescence table            */
+    active: Option<SearchHandle>,                                               /* in-flight search, if any           */
 }
 
 impl Uci {
@@ -266,30 +269,21 @@ impl Uci {
     }
 }
 
-/// UCI command handlers.
+/// UCI command handlers
 ///
-/// Each takes the session plus the tokenized command line and applies
-/// one command's side effects:
-/// - `handle_position`  : rebuilds the position from `startpos` or a
-///   FEN, then replays any trailing `moves` list.
-/// - `start_search`     : aborts any running search, parses `go` limits
-///   (depth, nodes, movetime, clock + increment with movestogo,
-///   infinite/ponder), computes soft/hard deadlines anchored at
-///   command receipt, and spawns the search thread.
-/// - `abort_search`     : interrupts and joins the active search without
-///   publishing its result; panicked search threads are logged and
-///   swallowed instead of taking down the engine.
-/// - `stop_search`      : aborts the active search; for a ponder search
-///   the withheld `bestmove` is printed on stop.
-/// - `handle_ponderhit` : joins the ponder search and relaunches it as a
-///   normal search with deadlines anchored at the moment of the hit.
-/// - `handle_setoption` : applies UCI_Variant / Threads / Hash / Clear
-///   Hash / Move Overhead option changes, rebuilding state or tables as
-///   needed.
+/// Each applies one command's side effects to the session. Every handler
+/// takes `uci: &mut Uci`; the parsers additionally take `tokens: &[&str]`,
+/// the whitespace-split command line. Highest level first:
 ///
-/// Params:
-/// - uci: &mut Uci  -> the session being mutated
-/// - tokens: &[&str] -> whitespace-split command line (where taken)
+/// - `handle_position`  -> rebuild from `startpos`/FEN, replay `moves`
+/// - `start_search`     -> parse `go` limits, anchor deadlines, spawn thread
+/// - `abort_search`     -> interrupt + join, drop the result; panic is safe
+/// - `stop_search`      -> abort; a ponder prints its withheld `bestmove`
+/// - `handle_ponderhit` -> join the ponder, relaunch it as a timed search
+/// - `handle_setoption` -> apply Variant / Threads / Hash / Overhead changes
+///
+/// `compute_budgets` and `spawn_search` interleave below as internal
+/// helpers and keep their own docs.
 ///
 fn handle_position(uci: &mut Uci, tokens: &[&str]) {
     let startpos = uci.state.statics.startpos.clone();
@@ -471,6 +465,16 @@ fn compute_budgets(
     (soft, hard)
 }
 
+/// spawn_search
+///
+/// Launches the search thread for the given limits and records it as the
+/// session's active handle, wiring in the shared tables and the stop and
+/// interrupt plumbing.
+///
+/// Params:
+/// - uci: &mut Uci        -> the session being mutated
+/// - limits: SearchLimits -> launch parameters for the thread
+///
 fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
     let state_clone = uci.state.clone();
     let tt_clone = Arc::clone(&uci.ttable);

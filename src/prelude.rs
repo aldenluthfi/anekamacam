@@ -188,6 +188,14 @@ pub use std::{
 /*----------------------------------------------------------------------------*\
                                   CONSTANTS
 \*----------------------------------------------------------------------------*/
+
+/// Engine-wide constants.
+///
+/// Board and search bounds (`MAX_*`, `*_DEPTH`), search-tuning thresholds
+/// and tables (LMP/RFP/razor/IID/LMR limits, `HIST_BONUS_TABLE`), phase
+/// occupancies, colour and castling codes, piece/en-passant sentinels, and
+/// the move-type tags. Values are fixed at compile time and shared through
+/// the prelude.
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 pub const MAX_DEPTH: usize = 128;
@@ -251,6 +259,18 @@ pub const DROP_MOVE: u128 = 3;
 pub const CASTLING_MOVE: u128 = 4;
 
 lazy_static! {
+    /// Process-wide lazy statics.
+    ///
+    /// The Zobrist tables (`*_HASHES`, `SIDE_HASHES`) are filled once from
+    /// the seeded RNG then stay read-only.
+    ///
+    /// The rest are shared runtime state:
+    ///
+    /// - `ENGINE_START` fixes the time origin
+    /// - `RNG` seeds all randomness
+    /// - `RUNTIME_VERBOSITY` / `DEBUG_FLAG` drive logging
+    /// - `SYSTEM_INTERRUPT` / `LOG_MESSAGES` bridge the signal handler and TUI
+    /// - `COMMENT_PATTERN` / `SECTION_PATTERN` are shared config-parse regexes
     pub static ref CASTLING_HASHES: [u128; 16] =
         array::from_fn(|_| random_u128());
     pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")

@@ -2,12 +2,12 @@
 //!
 //! Implements compact move encoding for chess-like games.
 //!
-//! This file contains structures for efficiently representing moves using
-//! bit-packed encoding. It supports multiple move types including single moves
-//! (with or without capture), multi-capture sequences, and hopper captures.
-//! The encoding uses a 128-bit integer to store move information including
-//! source/destination squares, promotion data, and capture details. Additional
-//! captured pieces in multi-capture moves are stored separately in MultiMove.
+//! Search generates and unmakes millions of moves, so a move must be small,
+//! copyable, and self-describing without touching the board. This file gives
+//! the engine that representation: a bit-packed word carrying everything
+//! make/undo needs — origin, target, and the capture, promotion, drop, and
+//! castling payloads — so the hot paths pass moves by value and decode them
+//! with cheap shifts.
 //!
 //! # Author
 //! Alden Luthfi
@@ -17,19 +17,24 @@
 
 use crate::*;
 
-/// Represents an attacking piece together with its target and attack path.
+/// AttackMask
 ///
+/// Represents an attacking piece together with its target and attack path.
 /// The tuple stores the attacking piece index, the attacked square, and the
 /// move vector that realizes the attack.
 /// It is used during move generation and legality validation.
 pub type AttackMask = (PieceIndex, Square, MoveVector);
 
-/// XOR of every `u64` entry in `Move.1`. Used as a safe, pointer-free
-/// move identity token for transposition table storage.
+/// MoveSignature
+///
+/// XOR of every `u64` entry in `Move.1`, folding a move's capture list into
+/// one integer. Used as a safe, pointer-free move identity token for
+/// transposition table storage, where holding a raw list pointer would dangle.
 pub type MoveSignature = u64;
 
-/// A compact move descriptor stored in and returned by the transposition table.
+/// PseudoMove
 ///
+/// A compact move descriptor stored in and returned by the transposition table.
 /// The first field mirrors `Move.0` verbatim; the second field is the
 /// `MoveSignature` (XOR of all `u64` elements in `Move.1`).  A `PseudoMove`
 /// can be matched against a `Move` without holding a reference to the captures
@@ -37,8 +42,9 @@ pub type MoveSignature = u64;
 /// pointer.
 pub type PseudoMove = (u128, MoveSignature);
 
-/// A type representing a single move in the game.
+/// Move
 ///
+/// A type representing a single move in the game.
 /// This structure is used for moves without multiple captures (SingleNoCapture,
 /// SingleCapture, and HopperCapture).
 ///

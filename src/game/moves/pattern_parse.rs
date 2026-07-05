@@ -2,6 +2,12 @@
 //!
 //! Parses CPMN pattern expressions into allower and stopper pattern lists.
 //!
+//! CPMN encodes a neighbourhood rule as two multi-leg halves — allowers that
+//! must be satisfied and stoppers that must not — each paired with the piece
+//! set it applies to. This file compiles that text into the offset/piece-set
+//! lists the matcher scans, expanding wildcards so later stages only ever see
+//! concrete piece letters.
+//!
 //! # Author
 //! Alden Luthfi
 //!
@@ -11,6 +17,12 @@
 use crate::*;
 
 lazy_static! {
+    /// PATTERN_PATTERN
+    ///
+    /// Regex splitting a CPMN expression into its allower and stopper
+    /// halves: `(.+)~(.+)` captures each half's multi-leg offsets and its
+    /// piece list, and the `@`-delimited optional group captures the
+    /// stopper half when present.
     pub static ref PATTERN_PATTERN: Regex =
         Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap_or_else(|e| {
             panic!("Failed to compile PATTERN_PATTERN regex: {e}")
@@ -38,6 +50,8 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
     expr.replace("-*", &format!("-{}", all_pieces))
 }
 
+/// parse_pattern
+///
 /// The Cheesy Pattern Match Notation (CPMN) is as follows.
 ///
 /// [allower multi leg]~[pieces]@[stoppers multi leg]~[pieces]
@@ -177,8 +191,9 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     (allower_result, stopper_result)
 }
 
-/// Parses a `|`-separated stand-off expression into executable patterns.
+/// generate_stand_off_patterns
 ///
+/// Parses a `|`-separated stand-off expression into executable patterns.
 /// Each branch is parsed independently via `parse_pattern` and collected into a
 /// single vector.
 /// Empty expressions produce no patterns.
@@ -202,8 +217,9 @@ pub fn generate_stand_off_patterns(
     parts.into_iter().map(|part| parse_pattern(part, state)).collect()
 }
 
-/// Filters stand-off patterns to those that stay in bounds from `square`.
+/// generate_relevant_stand_offs
 ///
+/// Filters stand-off patterns to those that stay in bounds from `square`.
 /// Offsets are checked with color-relative orientation so runtime matching
 /// only evaluates geometrically possible patterns.
 ///

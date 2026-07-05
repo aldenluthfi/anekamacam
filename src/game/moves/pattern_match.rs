@@ -2,14 +2,21 @@
 //!
 //! Macros for evaluating CPMN patterns against board positions.
 //!
+//! CPMN patterns express variant rules that read a square's neighbourhood
+//! rather than a piece's movement: drop restrictions and stand-off rules
+//! both accept or veto a square by which pieces occupy relative offsets
+//! around it. These macros run a compiled pattern against a live board,
+//! mirroring offsets by color and short-circuiting on the first failure.
+//!
 //! # Author
 //! Alden Luthfi
 //!
 //! # Date
 //! 24/02/2026
 
-/// Matches a parsed pattern against a square using the given color viewpoint.
+/// match_pattern!
 ///
+/// Matches a parsed pattern against a square using the given color viewpoint.
 /// If a concrete piece context exists, use that piece's color for orientation;
 /// otherwise use White's orientation as the default perspective.
 /// Returns `true` only when all allowers pass and no stopper matches.
@@ -73,10 +80,10 @@ macro_rules! match_pattern {
     }};
 }
 
-/// Evaluates whether the current position contains any active
-/// stand-off pattern.
+/// is_in_stand_off!
 ///
-/// Iterates every piece instance on the board, checks precomputed stand-off
+/// Evaluates whether the current position contains any active stand-off
+/// pattern. Iterates every piece instance on the board, checks precomputed
 /// candidate patterns for that piece-square pair, and returns `true` as soon as
 /// one pattern matches.
 ///

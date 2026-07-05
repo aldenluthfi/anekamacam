@@ -2,10 +2,11 @@
 //!
 //! Defines a board structure and operations for bitboard manipulation.
 //!
-//! This file contains the implementation of a `Board`, which represents a board
-//! using a bitboard. The bitboard type is  U4096 for larger boards. It provides
-//! macros for setting, clearing, and querying bits, as well as utility
-//! functions for bitboard manipulation.
+//! The engine must track occupancy on boards far larger than the 64 squares a
+//! `u64` can hold, since variants range up to very large grids. This file
+//! gives the rest of the engine one compact board value backed by a wide
+//! bitset, plus a vocabulary of cheap bit operations over it, so move
+//! generation, masks, and state updates never touch raw bit arithmetic.
 //!
 //! # Author
 //! Alden Luthfi
@@ -15,27 +16,52 @@
 
 use crate::*;
 
-/// Represents a board as a compact `(files, ranks, bits)` triple.
+/// Board
 ///
-/// The first element stores the file count and the second stores the rank
-/// count.
-/// The third element stores occupancy bits in a `U4096` bitboard.
+/// Compact board representation as a `(files, ranks, bits)` triple: the
+/// file count, the rank count, and a `U4096` bitboard whose bit at index
+/// `rank * files + file` marks occupancy of that square.
 pub type Board = (u8, u8, U4096);
 
 /*----------------------------------------------------------------------------*\
                         BITBOARD HELPER REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-/// Bitboard helper macros used across move generation and state updates.
+/// Bitboard helper macros over the compact [`Board`] tuple.
 ///
-/// These macros operate on the compact [`Board`] tuple representation:
-/// `(files, ranks, bits)`, where `bits` is a `U4096` bitset.
+/// All operate on the `(files, ranks, bits)` representation, where `bits`
+/// is a `U4096` bitset indexed by `rank * files + file`. They keep move
+/// generation and state updates free of raw bit twiddling.
 ///
-/// Access helpers:
-/// - `board!`, `files!`, `ranks!`, `get!`
+/// The index is file-fastest, `rank * files + file`; on a 4x3 board:
 ///
-/// Mutation helpers:
-/// - `set!`, `clear!`, `or!`, `and!`, `xor!`, `not!`
+/// ```text
+/// ┌────┬────┬────┬────┐
+/// │ 8  │ 9  │ 10 │ 11 │   rank 2
+/// ├────┼────┼────┼────┤
+/// │ 4  │ 5  │ 6  │ 7  │   rank 1
+/// ├────┼────┼────┼────┤
+/// │ 0  │ 1  │ 2  │ 3  │   rank 0
+/// └────┴────┴────┴────┘
+///   f0   f1   f2   f3
+/// ```
+///
+/// Construction and queries:
+/// - board!       : builds an empty board of the given file and rank counts
+/// - files!       : reads the file count
+/// - ranks!       : reads the rank count
+/// - get!         : tests whether the bit at an index is set
+/// - count_bits!  : counts the set bits (piece/occupancy popcount)
+/// - set_indices! : collects the indices of every set bit
+/// - is_empty!    : tests whether no bit is set
+///
+/// Mutation:
+/// - set!   : sets the bit at an index
+/// - clear! : clears the bit at an index
+/// - or!    : unions another board's bits into this one
+/// - and!   : intersects this board with another board's bits
+/// - xor!   : toggles this board's bits by another board's
+/// - not!   : inverts every bit in place
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {

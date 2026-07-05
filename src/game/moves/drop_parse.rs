@@ -2,6 +2,12 @@
 //!
 //! Parses drop expressions into internal drop vectors and modifiers.
 //!
+//! A drop expression pairs optional flags with the CPMN neighbourhood
+//! pattern that governs where a held piece may re-enter. This file compiles
+//! those expressions into the packed drop templates the generator consumes,
+//! splitting `|` branches and folding each flag into the drop word so the
+//! hot path never re-parses text.
+//!
 //! # Author
 //! Alden Luthfi
 //!
@@ -11,20 +17,29 @@
 use crate::*;
 
 lazy_static! {
+    /// DROP_PATTERN
+    ///
+    /// Regex splitting a drop expression into its flag prefix and CPMN
+    /// body: `[kf]*` captures the optional flags, and the `@`-delimited
+    /// remainder captures the neighbourhood pattern compiled by
+    /// `parse_pattern`.
     pub static ref DROP_PATTERN: Regex =
         Regex::new(r"^([kf]*)@(.*@.*)$").unwrap_or_else(|e| {
             panic!("Failed to compile DROP_PATTERN regex: {e}")
         });
 }
 
-/// Parses drop expressions into internal drop vectors and modifiers.
+/// generate_drop_vectors
 ///
-/// For drops, there are modifiers.
+/// Parses a piece's drop expressions into packed drop templates. Each
+/// expression has the form:
 ///
-/// [modifiers]@[CPMN]
+///     [modifiers]@[CPMN]
 ///
-/// The modifiers are as follows:
-/// - k : if set, this drop cannot deliver checkmate, otherwise, it can.
+/// where the CPMN body is the neighbourhood pattern and the modifiers tune
+/// drop legality:
+///
+/// - k: if set, this drop cannot deliver checkmate; otherwise it can.
 ///
 /// Params:
 /// - piece: &Piece      -> piece type whose drop expression is compiled

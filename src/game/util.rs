@@ -32,8 +32,9 @@ pub fn random_u128() -> u128 {
     u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
 }
 
-/// Recomputes opening/endgame eval caches and current game phase.
+/// refresh_eval_state
 ///
+/// Recomputes opening/endgame eval caches and current game phase.
 /// Used after position-level changes (load, tune import, make/undo move) to
 /// keep material, PST bonus, and phase classification in sync with `piece_list`
 /// and PST tables.
@@ -109,8 +110,9 @@ pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
     (df.powi(2) + dr.powi(2)).sqrt()
 }
 
-/// Recomputes derived state and asserts it matches the stored caches.
+/// verify_game_state
 ///
+/// Recomputes derived state and asserts it matches the stored caches.
 /// Debug integrity check for boards, piece lists, material counts, royal
 /// lists, and the incremental Zobrist hash. On mismatch it also attempts to
 /// pinpoint the source before panicking.
@@ -462,6 +464,8 @@ pub fn format_time(nanos: u128) -> String {
     }
 }
 
+/// benchmark_headless_perft
+///
 /// Runs a perft test without a truth suite, reporting total nodes and elapsed
 /// time for a given depth. For quick sanity checks and performance profiling
 /// without needing a full suite of expected results.
@@ -515,8 +519,9 @@ pub fn benchmark_headless_perft(
     );
 }
 
-/// Runs a perft suite loaded from `path` and reports pass/fail per depth.
+/// benchmark_perft
 ///
+/// Runs a perft suite loaded from `content` and reports pass/fail per depth.
 /// Cases are shuffled, capped by `limit`, and each position is tested from
 /// depth 1 up to `depth`. `branch` controls diagnostic line printing when
 /// passed through to `perft`.
@@ -634,8 +639,9 @@ pub fn benchmark_perft(
     (successful_cases, total_cases)
 }
 
-/// Runs a fixed-depth search benchmark from the current position.
+/// benchmark_search
 ///
+/// Runs a fixed-depth search benchmark from the current position.
 /// Reports the current position, executes search, and logs total nodes, elapsed
 /// wall time, and aggregate nodes-per-second.
 ///
@@ -663,8 +669,9 @@ pub fn benchmark_search(
     log_table_stats(&ttable, &qtable);
 }
 
-/// Counts legal move tree nodes from the current state up to `depth`.
+/// perft
 ///
+/// Counts legal move tree nodes from the current state up to `depth`.
 /// When `branch >= 0`, prints the explored move prefixes for the first levels
 /// to help inspect branching behavior.
 ///

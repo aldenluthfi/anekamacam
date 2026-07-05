@@ -2,8 +2,11 @@
 //!
 //! Parallel search with lock-free shared transposition table.
 //!
-//! Each worker thread runs fully independent iterative deepening,
-//! sharing the XOR-encoded TT but synchronizing only on start/stop.
+//! More cores should mean a stronger search, but a single game tree does not
+//! split cleanly across threads. This file takes the lazy-SMP route instead:
+//! every worker runs its own full iterative deepening over the same position
+//! and they cooperate only through the shared, XOR-encoded transposition
+//! table, synchronizing on nothing but start and stop.
 //!
 //! # Author
 //! Alden Luthfi
@@ -13,16 +16,17 @@
 
 use crate::*;
 
-/// Runs N independent iterative-deepening threads sharing a lock-free TT/QT.
+/// ThreadPool
 ///
+/// Runs N independent iterative-deepening threads sharing a lock-free TT/QT.
 /// Each thread gets its own state clone and SearchBufs; synchronization is
 /// limited to start/stop. After all threads join, run() returns the result
 /// with the highest score.
 pub struct ThreadPool {
-    pub main_state: State,
-    pub tt: Arc<TTable>,
-    pub qt: Arc<QTable>,
-    thread_count: usize,
+    pub main_state: State,                                                      /* root position, cloned per worker   */
+    pub tt: Arc<TTable>,                                                        /* shared main transposition table    */
+    pub qt: Arc<QTable>,                                                        /* shared quiescence table            */
+    thread_count: usize,                                                        /* number of worker threads           */
 }
 
 impl ThreadPool {

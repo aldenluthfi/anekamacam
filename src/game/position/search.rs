@@ -3,8 +3,12 @@
 //! Alpha-beta search with iterative deepening, aspiration windows, and
 //! quiescence.
 //!
-//! SearchInfo and SearchBufs carry search-time limits, counters, and scratch
-//! allocations; SearchResult packages the output.
+//! This is the engine's search core: it walks the game tree with a negamax
+//! alpha-beta driver, deepens iteratively under aspiration windows, and
+//! resolves tactically unstable leaves with a capture-only quiescence
+//! search, all guided by the transposition tables and move-ordering
+//! heuristics. SearchInfo and SearchBufs carry search-time limits, counters,
+//! and scratch allocations; SearchResult packages the output.
 //!
 //! # Author
 //! Alden Luthfi
@@ -14,8 +18,9 @@
 
 use crate::*;
 
-/// Search limits, counters, and stop flags for an active search.
+/// SearchInfo
 ///
+/// Search limits, counters, and stop flags for an active search.
 /// Carries time controls, depth/move constraints, node count, and interrupt
 /// flag. Scratch and move buffers live in SearchBufs.
 #[derive(Default)]
@@ -35,8 +40,9 @@ pub struct SearchInfo {
     pub interrupt: bool,                                                        /* flag set by external stop events   */
 }
 
-/// Per-thread scratch allocations reused across the full search tree.
+/// SearchBufs
 ///
+/// Per-thread scratch allocations reused across the full search tree.
 /// move_buf holds pre-allocated per-ply move lists; scratch_buf is reused
 /// for taken_pieces computations.
 #[derive(Default)]
@@ -49,21 +55,23 @@ pub struct SearchBufs {
     pub pawn_entry_buf: [Vec<(usize, Square, i32)>; 2],                         /* reused per-side pawn lists in eval */
 }
 
-/// Packaged outcome of one root search.
+/// SearchResult
 ///
+/// Packaged outcome of one root search.
 /// Carries the best move and its score, the ponder move extracted from
 /// the principal variation, and aggregate node/time counters for
 /// reporting. Returned by `iterative_deepening` and `search_position`.
 pub struct SearchResult {
-    pub best_score: i32,
-    pub best_move: Move,
-    pub ponder_move: Move,
-    pub total_nodes: u128,
-    pub total_elapsed: u128,
+    pub best_score: i32,                                                        /* best score at the root             */
+    pub best_move: Move,                                                        /* best root move found               */
+    pub ponder_move: Move,                                                      /* expected reply to best move        */
+    pub total_nodes: u128,                                                      /* nodes searched, all threads        */
+    pub total_elapsed: u128,                                                    /* wall time in nanoseconds           */
 }
 
-/// Polls stop conditions and updates search interrupt state.
+/// check_interrupt
 ///
+/// Polls stop conditions and updates search interrupt state.
 /// A search is interrupted by the global stop flag, by reaching its node
 /// limit, or by the wall clock passing `hard_deadline` (absolute
 /// nanoseconds since engine launch; 0 disables the deadline).
@@ -106,8 +114,9 @@ pub fn check_interrupt(info: &mut SearchInfo) {
     }
 }
 
-/// Resets search state before a fresh root search.
+/// clear_search
 ///
+/// Resets search state before a fresh root search.
 /// Zeroes node counters, interrupt flag, killer and history tables, and ply.
 /// Board position is unchanged.
 ///
@@ -154,8 +163,9 @@ pub fn clear_search(
     state.search_ply = 0;
 }
 
-/// Runs a full search from the root position.
+/// search_position
 ///
+/// Runs a full search from the root position.
 /// Resets TT/QT stats, then dispatches to a single iterative_deepening call
 /// when thread_count ≤ 1, or a ThreadPool when thread_count > 1. Callers
 /// report table stats afterwards via `log_table_stats`.
@@ -204,8 +214,9 @@ pub fn search_position(
     }
 }
 
-/// Logs TT and QT stat lines (new/over/hit/valid) for a finished search.
+/// log_table_stats
 ///
+/// Logs TT and QT stat lines (new/over/hit/valid) for a finished search.
 /// Kept separate from `search_position` so callers on the UCI path can
 /// emit `bestmove` before any log-file I/O happens.
 ///
@@ -235,8 +246,9 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
                          ITERATIVE DEEPENING
 \*----------------------------------------------------------------------------*/
 
-/// Iterative deepening with aspiration windows over alpha_beta.
+/// iterative_deepening
 ///
+/// Iterative deepening with aspiration windows over alpha_beta.
 /// Runs depth 1..=set_depth. Depths below 4, or when the previous score is a
 /// mate, use a full window. Otherwise aspiration windows start at a value-
 /// derived half-window and double on each fail until the search falls
@@ -455,26 +467,26 @@ pub fn iterative_deepening(
     }
 }
 
-/// Capture-only negamax search at leaf nodes; reduces horizon effects.
+/// quiescence_search
 ///
-/// - [IN-CHECK EVASIONS]
-///   When the side to move is in check the node cannot stand pat, since
-///   a legal reply is forced. All moves and drops are generated as
-///   evasions, capture-only pruning is disabled, and a node with no
-///   legal evasion returns a mate score instead of the stand-pat value.
+/// Capture-only negamax search at leaf nodes; reduces horizon effects
+/// through the following steps:
 ///
-/// - [STATIC EXCHANGE EVALUATION PRUNING]
-///   Statically simulates the capture sequence on the target square.
-///   Skips captures whose net material outcome is negative, avoiding
-///   obviously losing exchanges before making the move. Disabled while
-///   in check, where every legal evasion must be searched.
+/// - in-check evasions:
+///   when the side to move is in check the node cannot stand pat, since a
+///   legal reply is forced. All moves and drops are generated as evasions,
+///   capture-only pruning is disabled, and a node with no legal evasion
+///   returns a mate score instead of stand-pat.
 ///
-/// - [DELTA PRUNING]
-///   Skips captures whose captured value plus a value-derived safety
-///   margin still cannot raise the stand-pat score above `alpha`.
-///   Disabled in endgame (material swings carry more weight), for
-///   promotions (their gain is not captured by `captured_value`), and
-///   while in check.
+/// - static exchange evaluation pruning:
+///   statically simulates the capture sequence on the target square and skips
+///   captures whose net material outcome is negative. Disabled while in check,
+///   where every legal evasion must be searched.
+///
+/// - delta pruning:
+///   skips captures whose captured value plus a value-derived safety margin
+///   still cannot raise the stand-pat score above `alpha`. Disabled in the
+///   endgame, for promotions, and while in check.
 ///
 /// Params:
 /// - state: &mut State     -> position searched, restored on return
@@ -675,83 +687,76 @@ fn quiescence_search(
     alpha
 }
 
-/// Negamax alpha-beta with transposition table and PVS.
+/// alpha_beta
 ///
-/// - [CHECK EXTENSION]
-///   Increments `depth` by one when the side to move is in check.
-///   Forced replies are usually narrow, and the extra ply prevents
-///   the search from terminating on a tactically unstable position.
+/// Negamax alpha-beta with transposition table and PVS. Applies the search
+/// techniques below, gated by the node conditions each names:
 ///
-/// - [MATE DISTANCE PRUNING]
-///   Tightens `alpha` and `beta` to the best mate score still
-///   reachable from the current ply. Once the window collapses, no
-///   line below this node can improve on an already-known mate, so
-///   the node returns immediately.
+/// - check extension:
+///   increments `depth` by one when the side to move is in check. Forced
+///   replies are usually narrow, and the extra ply prevents the search from
+///   terminating on a tactically unstable position.
 ///
-/// - [REVERSE FUTILITY PRUNING]
-///   At shallow, non-PV, non-check nodes, if the static evaluation
-///   exceeds `beta` by a depth-scaled margin, the position is so
-///   good that even a passive reply is unlikely to drag the score
-///   below `beta`, and the node cuts on `beta` without searching.
+/// - mate distance pruning:
+///   tightens `alpha` and `beta` to the best mate score still reachable from
+///   the current ply. Once the window collapses, no line below this node can
+///   improve on an already-known mate, so the node returns immediately.
 ///
-/// - [RAZORING]
-///   At shallow non-check nodes with no PV move, if the static
-///   evaluation falls far enough below `alpha`, a zero-window search
-///   at reduced depth verifies the position cannot recover. On
-///   fail-low the node returns `alpha` without a full search.
+/// - reverse futility pruning:
+///   at shallow, non-PV, non-check nodes, if the static evaluation exceeds
+///   `beta` by a depth-scaled margin, the node cuts on `beta` without
+///   searching, since even a passive reply is unlikely to drag the score below
+///   `beta`.
 ///
-/// - [NULL MOVE PRUNING]
-///   Skips the side to move and searches the resulting position at
-///   reduced depth `3 + depth/8` with a null-window around `beta`.
-///   If the opponent cannot improve their score even given a free
-///   move, the node cuts on `beta`. Disabled in the endgame to avoid
+/// - razoring:
+///   at shallow non-check nodes with no PV move, if the static evaluation
+///   falls far enough below `alpha`, a zero-window search at reduced depth
+///   verifies the position cannot recover. On fail-low the node returns
+///   `alpha` without a full search.
+///
+/// - null move pruning:
+///   skips the side to move and searches at reduced depth `3 + depth/8` with a
+///   null-window around `beta`. If the opponent cannot improve even given a
+///   free move, the node cuts on `beta`. Disabled in the endgame to avoid
 ///   zugzwang blind spots.
 ///
-/// - [FUTILITY PRUNING]
-///   At shallow non-check non-PV nodes, marks the node futile when
-///   `static_eval + margin <= alpha`. Inside the move loop, any
-///   quiet, non-promotion, non-drop move after the first legal one
-///   is skipped, since it cannot plausibly raise the score above
-///   `alpha`.
+/// - futility pruning:
+///   at shallow non-check non-PV nodes, marks the node futile when
+///   `static_eval + margin <= alpha`. Inside the move loop, any quiet,
+///   non-promotion, non-drop move after the first legal one is skipped,
+///   since it cannot plausibly raise the score above `alpha`.
 ///
-/// - [INTERNAL ITERATIVE DEEPENING]
-///   When no PV move is cached and depth is high enough, runs a
-///   shallower full search first to populate the transposition
-///   table with a PV move, then re-enters the main search using
-///   that move for ordering.
+/// - internal iterative deepening:
+///   when no PV move is cached and depth is high enough, runs a shallower
+///   full search first to populate the TT with a PV move, then re-enters the
+///   main search using it for ordering.
 ///
-/// - [INTERNAL ITERATIVE REDUCTION]
-///   When no PV move is cached and depth is high enough, drops
-///   `depth` by one before searching. Move ordering will be poor
-///   without a PV move, so searching one ply shallower spends less
-///   effort on a likely-mis-ordered node.
+/// - internal iterative reduction:
+///   when no PV move is cached and depth is high enough, drops `depth` by one
+///   before searching, since ordering is poor without a PV move and a
+///   shallower search wastes less effort.
 ///
-/// - [STATIC EXCHANGE EVALUATION PRUNING]
-///   At shallow non-PV non-check nodes, skips captures whose static
-///   exchange evaluation is more negative than a depth-scaled
-///   margin. Filters out captures that lose material on the
-///   resulting exchange sequence.
+/// - static exchange evaluation pruning:
+///   at shallow non-PV non-check nodes, skips captures whose static exchange
+///   evaluation is more negative than a depth-scaled margin, filtering out
+///   captures that lose material.
 ///
-/// - [LATE MOVE PRUNING]
-///   At shallow non-check nodes, once enough legal quiet moves have
-///   been tried (per `LMP_THRESHOLD[improving][depth]`), remaining
-///   quiet moves are skipped outright. The order is already informed
-///   by killer and history heuristics, so the tail is unlikely to
-///   contain the best move.
+/// - late move pruning:
+///   at shallow non-check nodes, once enough legal quiet moves have been tried
+///   (per `LMP_THRESHOLD[improving][depth]`), the remaining quiet moves are
+///   skipped; killer/history ordering makes the tail unlikely to hold the best
+///   move.
 ///
-/// - [LATE MOVE REDUCTION]
-///   For non-killer moves past the third legal move, reduces the
-///   child search depth using the `reduction!` table indexed by
-///   depth, move count, check state, and move type. If the reduced
-///   search returns above `alpha`, a full-depth re-search confirms
-///   or rejects the result.
+/// - late move reduction:
+///   for non-killer moves past the third legal move, reduces the child depth
+///   via the `reduction!` table (indexed by depth, move count, check state,
+///   and move type). A reduced search returning above `alpha` triggers a
+///   full-depth re-search.
 ///
-/// - [PRINCIPAL VARIATION SEARCH]
-///   The first legal move is searched with the full `[alpha, beta]`
-///   window. Later moves are searched with a zero-width window
-///   `[alpha, alpha + 1]`, which is far cheaper. On fail-high the
-///   move is re-searched with the full window to obtain its exact
-///   score.
+/// - principal variation search:
+///   the first legal move uses the full `[alpha, beta]` window; later moves
+///   use a zero-width `[alpha, alpha+1]` window, far cheaper, and re-search
+///   with the full window on fail-high.
 ///
 /// Params:
 /// - state: &mut State     -> position searched, restored on return
@@ -1278,8 +1283,9 @@ pub fn alpha_beta(
     alpha
 }
 
-/// Gravity-style update for a single butterfly history entry.
+/// apply_history_gravity!
 ///
+/// Gravity-style update for a single butterfly history entry.
 /// Formula: `entry += bonus - entry * |bonus| / MAX_HIST_VALUE`. Naturally
 /// damps as `|entry|` approaches `MAX_HIST_VALUE`, preserving signal at
 /// deep depths without saturation. `bonus` is signed; negate for malus.
@@ -1298,15 +1304,21 @@ macro_rules! apply_history_gravity {
     }};
 }
 
+/// reduction!
+///
 /// Heuristic reduction for late move reduction, based on depth, move count,
 /// checks, and move type. Returns a usize reduction value clamped to
 /// `[0, depth - 1]`. Uses pre-computed integer tables (no f64 at call site).
 ///
 /// Params:
-/// - state -> supplies the precomputed LMR tables
-/// - depth / moves -> table indices for the current node
-/// - in_check / opponent_in_check -> selects the check-adjusted table
-/// - is_capture / is_promotion / is_drop -> selects the capture table
+/// - state             -> supplies the precomputed LMR tables
+/// - depth             -> remaining depth, one table index
+/// - moves             -> legal moves tried so far, the other table index
+/// - in_check          -> whether the side to move is in check
+/// - opponent_in_check -> whether the move gives check
+/// - is_capture        -> whether the move captures
+/// - is_promotion      -> whether the move promotes
+/// - is_drop           -> whether the move is a drop
 ///
 /// Return:
 /// usize -> plies to reduce the child search by

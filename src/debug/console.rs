@@ -2,9 +2,12 @@
 //!
 //! Ratatui-based interactive debug interface for the engine.
 //!
-//! This module replaces plain CLI printing with an interactive, tabbed view.
-//! It keeps command-driven gameplay while rendering board/logs/move history
-//! and a detailed game-state tab.
+//! Debugging a variant engine means watching several things at once -- the
+//! board, the move history, and the derived per-piece data that a variant's
+//! config produces -- which scrolling CLI output cannot show side by side.
+//! This file is that live view: a tabbed terminal interface wrapped around
+//! the ordinary command loop, so gameplay stays command-driven while every
+//! surface stays visible and up to date.
 //!
 //! # Author
 //! Alden Luthfi
@@ -23,59 +26,62 @@ const TAB_FOCUSABLES: [u8; 3] = [3, 2, 3];
 const PICKER_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX);
 const HELP_SCROLL_KEY: (usize, usize) = (usize::MAX, usize::MAX - 1);
 
-/// Messages sent from worker threads back to the TUI event loop.
+/// TuiEvent
 ///
+/// Messages sent from worker threads back to the TUI event loop.
 /// Commands run off-thread so the interface stays responsive; when they
 /// finish they push one of these to update the rendered board, install a
 /// freshly loaded game or playground state, swap the active protocol
 /// translator, or unlock the input line after a long operation.
 enum TuiEvent {
-    StateUpdate(BoardState),
-    StateInit(Arc<Mutex<State>>),
-    PlaygroundUpdate(Box<State>),
-    SwitchDict(Option<Translator>),
-    Unlock,
+    StateUpdate(BoardState),                                                    /* new rendered board snapshot        */
+    StateInit(Arc<Mutex<State>>),                                               /* install a freshly loaded game      */
+    PlaygroundUpdate(Box<State>),                                               /* new playground position            */
+    SwitchDict(Option<Translator>),                                             /* swap the active translator         */
+    Unlock,                                                                     /* release the input lock             */
 }
 
-/// The full interface state of the debug console.
+/// Tui
 ///
+/// The full interface state of the debug console.
 /// Tracks which tab and pane have focus (with per-pane scroll offsets in
 /// `scroll_map`), the command input line and its mode, help/lock flags,
 /// the loaded variant with its translator, the shared game and
 /// playground states plus their rendered snapshots, and the channel the
 /// worker threads report back on.
 struct Tui {
-    mode: u8,
-    threads: usize,
+    mode: u8,                                                                   /* input mode (normal / command)      */
+    threads: usize,                                                             /* worker threads for searches        */
 
-    tab: usize,
-    focus: usize,
-    scroll_map: HashMap<(usize, usize), u16>,
+    tab: usize,                                                                 /* active top-level tab               */
+    focus: usize,                                                               /* focused pane within the tab        */
+    scroll_map: HashMap<(usize, usize), u16>,                                   /* per-pane scroll offsets            */
 
-    input: String,
+    input: String,                                                              /* current command input line         */
 
-    help: bool,
-    locked: bool,
+    help: bool,                                                                 /* whether the help popup is open     */
+    locked: bool,                                                               /* input locked during long ops       */
 
-    translator: Option<Translator>,
+    translator: Option<Translator>,                                             /* active protocol translator         */
 
-    variant: Option<String>,
-    game_state: Option<Arc<Mutex<State>>>,
-    board_state: Option<BoardState>,
-    overview_state: Option<OverviewState>,
-    playground_state: Option<Arc<Mutex<State>>>,
+    variant: Option<String>,                                                    /* loaded variant name                */
+    game_state: Option<Arc<Mutex<State>>>,                                      /* shared game position               */
+    board_state: Option<BoardState>,                                            /* rendered game snapshot             */
+    overview_state: Option<OverviewState>,                                      /* rendered piece overview            */
+    playground_state: Option<Arc<Mutex<State>>>,                                /* shared playground position         */
 
-    receiver: Receiver<TuiEvent>,
-    sender: Sender<TuiEvent>,
+    receiver: Receiver<TuiEvent>,                                               /* worker-to-TUI event channel        */
+    sender: Sender<TuiEvent>,                                                   /* clonable sender for workers        */
 }
 
 impl Tui {
-    /// Tui construction and teardown.
+    /// Tui construction and teardown
     ///
     /// `new` builds the interface on the game-selection screen with all
-    /// scroll offsets zeroed; `reset` returns to that screen from a
-    /// running game, dropping the loaded states and interrupting any
-    /// worker still computing.
+    /// scroll offsets zeroed; `reset` returns to that screen from a running
+    /// game, dropping the loaded states and interrupting any worker still
+    /// computing.
+    ///
     fn new(
         receiver: Receiver<TuiEvent>, sender: Sender<TuiEvent>
     ) -> Self {
@@ -224,29 +230,40 @@ impl Tui {
 /// with the piece name, and `OverviewState` collects the config rows
 /// and all pieces. `from_state` builds the whole snapshot.
 struct OverviewPieceInfo {
-    char_str: String,
-    promotions: String,
-    roles: String,
-    op_val: u16,
-    eg_val: u16,
-    op_pst: String,
-    eg_pst: String,
-    forbidden_zones: Option<String>,
-    mandatory_promotions: Option<String>,
-    optional_promotions: Option<String>,
+    char_str: String,                                                           /* board letter for the piece         */
+    promotions: String,                                                         /* promotion targets, formatted       */
+    roles: String,                                                              /* big/major/minor role labels        */
+    op_val: u16,                                                                /* opening material value             */
+    eg_val: u16,                                                                /* endgame material value             */
+    op_pst: String,                                                             /* opening PST, formatted grid        */
+    eg_pst: String,                                                             /* endgame PST, formatted grid        */
+    forbidden_zones: Option<String>,                                            /* forbidden-zone grid, if any        */
+    mandatory_promotions: Option<String>,                                       /* mandatory promo zone, if any       */
+    optional_promotions: Option<String>,                                        /* optional promo zone, if any        */
 }
 
 struct OverviewPiece {
-    name: String,
-    info: Option<OverviewPieceInfo>,
+    name: String,                                                               /* piece display name                 */
+    info: Option<OverviewPieceInfo>,                                            /* rendered attributes, if a piece    */
 }
 
 struct OverviewState {
-    configs: Vec<(String, String, u16)>,
-    pieces: Vec<OverviewPiece>,
+    configs: Vec<(String, String, u16)>,                                        /* variant config rows                */
+    pieces: Vec<OverviewPiece>,                                                 /* one entry per piece type           */
 }
 
 impl OverviewState {
+    /// OverviewState::from_state
+    ///
+    /// Renders the full Overview snapshot once from a loaded state: the
+    /// config rows and every piece type's formatted attributes.
+    ///
+    /// Params:
+    /// - state: &State -> variant state to snapshot
+    ///
+    /// Return:
+    /// Self -> the pre-rendered overview
+    ///
     fn from_state(state: &State) -> Self {
         let mut configs = Vec::new();
         configs.push(("Title".to_string(), state.statics.title.clone(), 1));
@@ -417,20 +434,33 @@ impl OverviewState {
     }
 }
 
-/// Pre-rendered snapshot of the live game for the Game tab.
+/// BoardState
 ///
+/// Pre-rendered snapshot of the live game for the Game tab.
 /// Holds the composite board diagram, numbered move history, detail
 /// rows (phase, turn, hash, and whichever rule-gated fields the variant
 /// enables), and the current FEN. `from_state` renders it once per
 /// state change so drawing stays cheap.
 struct BoardState {
-    board: String,
-    move_history: String,
-    details: Vec<[String; 2]>,
-    fen: String,
+    board: String,                                                              /* composite board diagram            */
+    move_history: String,                                                       /* numbered move history              */
+    details: Vec<[String; 2]>,                                                  /* label/value detail rows            */
+    fen: String,                                                                /* current position FEN               */
 }
 
 impl BoardState {
+    /// BoardState::from_state
+    ///
+    /// Renders the Game-tab snapshot once from the live state: board
+    /// diagram, move history, detail rows, and FEN.
+    ///
+    /// Params:
+    /// - state: &State             -> position to snapshot
+    /// - dict: Option<&Translator> -> translator for move names
+    ///
+    /// Return:
+    /// Self -> the pre-rendered board state
+    ///
     fn from_state(state: &State, dict: Option<&Translator>) -> Self {
         let board = format_game_state(state);
         let move_history = format_move_history(state, dict);
@@ -506,13 +536,14 @@ impl BoardState {
     }
 }
 
-/// Playground state helpers.
+/// Playground state helpers
 ///
-/// The Playground tab visualizes one piece's moves on an otherwise
-/// empty board: `init_playground` loads an empty FEN matching the
-/// variant's rule set for the piece's color, and `set_playground_piece`
-/// places the piece on a square and reloads so its precomputed moves
-/// can be highlighted from there.
+/// The Playground tab visualizes one piece's moves on an otherwise empty
+/// board:
+///
+/// - `init_playground`      : load an empty FEN for the piece's colour
+/// - `set_playground_piece` : place the piece on a square, reload its moves
+///
 fn init_playground(state: &mut State, index: PieceIndex) {
     let piece = &state.statics.pieces[index as usize];
     let color = p_color!(piece);
@@ -553,17 +584,90 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
     state.game_phase = OPENING;
 }
 
-/// TUI drawing functions, `draw_*` and `render`.
+/// TUI drawing functions, `draw_*` and `render`
 ///
-/// Each draws one region of a frame from the current `Tui` state and
-/// they share the same shape (frame, area, app): the variant picker
-/// (`draw_game_selection`), the tab bar, the command input line, the
-/// help bar and its scrollable help popup, and the three tab bodies —
-/// Game (board, history, details), Overview (variant configuration and
-/// per-piece derived data), and Playground (single-piece move
-/// visualization). `render` at the end lays out the frame and calls the
-/// right ones for the active screen. None of them mutate engine state;
-/// they only read snapshots and update scroll offsets.
+/// Each paints one region of the frame from the current `Tui` state; they
+/// share the shape (frame, area, app), never mutate engine state, and only
+/// read snapshots and update scroll offsets. `render` lays out the frame and
+/// dispatches to the right ones for the active screen. Every screen shares
+/// `draw_tabs` on top and `draw_input` at the bottom (`draw_help_bar` hints,
+/// `draw_help_popup` overlays on `?`).
+///
+/// ```text
+/// Selection screen (draw_game_selection)
+/// ┌──────────┬───────────────────────────────────┐
+/// │ Variants │                                   │
+/// │          │                                   │
+/// │          │                                   │
+/// │          │                                   │
+/// │          │                                   │
+/// │          │           Board Preview           │
+/// │          │                                   │
+/// │          │                                   │
+/// │          │                                   │
+/// │          │                                   │
+/// │          │                                   │
+/// └──────────┴───────────────────────────────────┘
+/// 
+/// Game tab (draw_game_tab)
+/// ┌────────────────────────────────┬─────────────┐
+/// │ Tab Bar                        │ Verbosity   │
+/// ├────────────────────────┬───────┴─────────────┤
+/// │                        │ Details             │
+/// │                        │                     │
+/// │       Board View       ├─────────────────────┤
+/// │                        │ FEN                 │
+/// │                        │                     │
+/// ├────────────────────────┴─────────────────────┤
+/// │ Game Log                                     │
+/// ├────────────────────────────────┬─────────────┤
+/// │ Input Bar                      │ Threads     │
+/// └────────────────────────────────┴─────────────┘
+///
+/// Overview tab (draw_overview_tab)
+/// ┌────────────────────────────────┬─────────────┐
+/// │ Tab Bar                        │ Verbosity   │
+/// ├────────────────┬───────────────┴─────────────┤
+/// │ Configs        │ Tables                      │
+/// │                ├─────────────────────────────┤
+/// │                │                             │
+/// ├────────────────┤         Board View          │
+/// │ Pieces         │                             │
+/// │                ├─────────────────────────────┤
+/// │                │ Piece Details               │
+/// ├────────────────┴───────────────┬─────────────┤
+/// │ Input Bar                      │ Threads     │
+/// └────────────────────────────────┴─────────────┘
+///
+/// Playground tab (draw_playground_tab)
+/// ┌────────────────────────────────┬─────────────┐
+/// │ Tab Bar                        │ Verbosity   │
+/// ├─────────────────────────────┬──┴─────────────┤
+/// │                             │ Pieces         │
+/// │                             │                │
+/// │         Board View          │                │
+/// │                             │                │
+/// │                             │                │
+/// ├─────────────────────────────┴────────────────┤
+/// │ Game Log                                     │
+/// ├────────────────────────────────┬─────────────┤
+/// │ Input Bar                      │ Threads     │
+/// └────────────────────────────────┴─────────────┘
+/// ```
+///
+/// - `draw_tabs`           : the top tab bar, active tab highlighted
+/// - `draw_input`          : the command input line and its mode
+/// - `draw_help_bar`       : the one-line context key hints
+/// - `draw_help_popup`     : the scrollable full help overlay
+/// - `draw_game_tab`       : board, move history, and detail rows
+/// - `draw_overview_tab`   : variant config and per-piece derived data
+/// - `draw_playground_tab` : one piece's reachable squares on empty board
+/// - `render`              : lays out the frame, calls the right ones
+///
+/// Notes:
+/// `draw_game_selection` returns the chosen `Arc<Mutex<State>>` once a
+/// variant is picked; the others return `()`.
+///
 fn draw_game_selection(
     frame: &mut Frame<'_>, area: Rect, app: &mut Tui
 ) -> Option<Arc<Mutex<State>>> {
@@ -2476,7 +2580,8 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 /// - playground: Option<&mut State> -> playground state
 /// - variant: Option<String>        -> active variant name, for exports
 /// - dict: Option<&Translator>      -> translator for printed move names
-/// - ttable / qtable                -> shared tables for search commands
+/// - ttable: Arc<TTable>            -> shared main table for searches
+/// - qtable: Arc<QTable>            -> shared qsearch table for searches
 /// - threads: usize                 -> worker count for search commands
 /// - sender: Sender<TuiEvent>       -> channel for result snapshots
 ///

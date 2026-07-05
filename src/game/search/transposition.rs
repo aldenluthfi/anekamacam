@@ -20,6 +20,8 @@ use crate::*;
                      TRANSPOSITION TABLE ENTRY REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
+/// TTEntry
+///
 /// TT entry with a 3×u128 XOR-parity slot and a seqlock version counter.
 ///
 /// Layout:
@@ -51,8 +53,9 @@ impl Clone for TTEntry {
     }
 }
 
-/// Shared transposition table using seqlock+parity for lock-free thread safety.
+/// TTable
 ///
+/// Shared transposition table using seqlock+parity for lock-free thread safety.
 /// Entries are read with a seqlock: readers check version parity before and
 /// after the slot load and retry on mismatch. The XOR parity across slot[0..2]
 /// catches cross-entry corruption. Age is bumped each search for replacement.
@@ -177,8 +180,10 @@ macro_rules! tt_score {
                         TRANSPOSITION TABLE STORE / PROBE
 \*----------------------------------------------------------------------------*/
 
-/// Probes the TT with parity + seqlock integrity check; returns (valid, score,
-/// pseudo_move).
+/// probe_tt_entry!
+///
+/// Probes the TT with parity + seqlock integrity check; returns (valid,
+/// score, pseudo_move).
 ///
 /// Validation:
 ///   Step 1: version is even (no write in progress)
@@ -190,7 +195,8 @@ macro_rules! tt_score {
 /// Params:
 /// - state -> position whose hash is probed
 /// - table -> the shared transposition table
-/// - alpha / beta -> current window, used to validate bound cutoffs
+/// - alpha -> lower search bound at this node
+/// - beta  -> upper search bound at this node
 /// - depth -> minimum stored depth for the score to be usable
 ///
 /// Return:
@@ -322,6 +328,8 @@ macro_rules! probe_pv_move {
     }};
 }
 
+/// hash_tt_entry!
+///
 /// Stores a search result in the TT with seqlock write protection and parity.
 ///
 /// Write order:
@@ -489,6 +497,8 @@ macro_rules! fill_pv_line {
               QSEARCH TT ENTRY REPRESENTATION & CONSTANTS
 \*----------------------------------------------------------------------------*/
 
+/// QTEntry
+///
 /// QSearch TT entry — 3×u128 XOR-parity slot with seqlock.
 ///
 /// Layout:
@@ -520,9 +530,11 @@ impl Clone for QTEntry {
     }
 }
 
-/// Quiescence-search transposition table; same seqlock+parity scheme as TTable.
+/// QTable
 ///
-/// Uses QTEntry slots instead of TTEntry; otherwise identical thread-safety
+/// Quiescence-search transposition table; same seqlock+parity scheme as
+/// TTable. Uses QTEntry slots instead of TTEntry; otherwise identical
+/// thread-safety
 /// invariants and age-based replacement policy apply.
 pub struct QTable {
     pub table: SyncUnsafeCell<Vec<QTEntry>>,                                    /* shared mutable access              */
@@ -629,6 +641,8 @@ macro_rules! qt_flags {
                      QSEARCH TT PROBE & STORE MACROS
 \*----------------------------------------------------------------------------*/
 
+/// probe_qt_entry!
+///
 /// Probes the qsearch TT with seqlock validation; returns (valid, score,
 /// pseudo_move).
 ///
@@ -640,7 +654,8 @@ macro_rules! qt_flags {
 /// Params:
 /// - state  -> position whose hash is probed
 /// - qtable -> the shared qsearch table
-/// - alpha / beta -> current window, used to validate bound cutoffs
+/// - alpha  -> lower search bound at this node
+/// - beta   -> upper search bound at this node
 ///
 /// Return:
 /// (bool, i32, PseudoMove) -> (cutoff valid, score, stored best move)
@@ -709,8 +724,9 @@ macro_rules! probe_qt_entry {
     };
 }
 
-/// Stores a qsearch result in the dedicated TT.
+/// hash_qt_entry!
 ///
+/// Stores a qsearch result in the dedicated TT.
 /// Only capture/check/promotion moves are written; quiet moves are skipped.
 /// Replacement policy: empty slot → always write; occupied → write if
 /// entry is stale (age < cur_age - 1) or new entry is FEXACT.

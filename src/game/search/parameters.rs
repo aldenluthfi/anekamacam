@@ -2,12 +2,12 @@
 //!
 //! Automatic derivation of dynamic evaluation parameters for pieces.
 //!
-//! This module implements heuristics to automatically score pieces based on
-//! their movement capabilities and constraints. It calculates raw piece values
-//! by analyzing board reach and mobility, derives piece roles (major, minor,
-//! big) based on relative value thresholds, and generates nuanced Piece-Square
-//! Tables (PSTs) for both opening and endgame phases, uniquely tailored to the
-//! specific variant's board size and piece definitions.
+//! A variant-agnostic engine cannot ship hand-tuned material values or
+//! piece-square tables: it meets each army for the first time at load. This
+//! file closes that gap, turning a piece's movement geometry into the numbers
+//! evaluation needs -- a value from its board reach and mobility, a role from
+//! where that value ranks in the army, and opening/endgame PSTs shaped to the
+//! variant's board -- so every variant is scored on its own terms.
 //!
 //! # Author
 //! Alden Luthfi
@@ -23,12 +23,15 @@ use crate::*;
 /// and is-major classification flags.
 type PieceRoles = (PieceIndex, bool, bool);
 
-/// The piece roles are determined as follows:
+/// derive_piece_roles
 ///
-/// 1. Sort all the values of pieces except for the royal pieces
-/// 2. the bottom ceil(10%) of pieces are the non-big pieces,
-/// 3. the top ceil(30%) of pieces are the major pieces,
-/// 4. the rest are minor pieces.
+/// Classifies every non-royal piece as big/major/minor by ranking derived
+/// values. The roles are determined as follows:
+///
+/// 1. sort all the piece values, excluding the royal pieces
+/// 2. the bottom ceil(10%) are the non-big pieces
+/// 3. the top ceil(30%) are the major pieces
+/// 4. the rest are the minor pieces
 ///
 /// Params:
 /// - state: &mut State -> variant whose derived values are ranked
@@ -72,12 +75,12 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 
 /// derive_piece_reach
 ///
-/// Measures how much of the board a piece can eventually cover: from
-/// every origin square, flood-fills through the symmetric closure of the
-/// piece's move offsets (each offset is also applied reversed, so
-/// one-directional movers are not punished twice) and averages the
-/// reached fraction. Color-bound pieces like bishops or confined pieces
-/// like the xiangqi elephant score well below 1.0.
+/// Measures how much of the board a piece can eventually cover: from every
+/// origin square, flood-fills through the symmetric closure of the piece's
+/// move offsets (each offset is also applied reversed, so one-directional
+/// movers are not punished twice) and averages the reached fraction.
+/// Color-bound pieces like bishops or confined pieces like the xiangqi
+/// elephant score well below 1.0.
 ///
 /// Params:
 /// - state: &State -> precomputed relevant-move tables
@@ -198,22 +201,31 @@ fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
 
 /// Derives a piece's phase value from its movement geometry:
 ///
-/// - `reach`: fraction of the board covered by the symmetric closure of the
-///   piece's moves, capturing colour-boundedness and confinement.
-/// - `maneuverability`: fraction of move offsets whose reverse is also a move,
-///   penalising one-directional pieces (pawns) that cannot retreat.
-/// - mobility: mean per-square move count under a board occupancy model.
-///   `empty_mobility` assumes an empty board (rewarding long-range sliders);
-///   `occupied_mobility` weights each slide by `(1 - occupancy)^(legs - 1)`,
-///   the odds its path is clear, distinguishing sliders from leapers.
+/// - reach:
+///   fraction of the board covered by the symmetric closure of the piece's
+///   moves, capturing colour-boundedness and confinement.
+///
+/// - maneuverability:
+///   fraction of move offsets whose reverse is also a move, penalising
+///   one-directional pieces (pawns) that cannot retreat.
+///
+/// - mobility:
+///   mean per-square move count under a board occupancy model.
+///
+/// - empty_mobility:
+///   assumes an empty board, rewarding long-range sliders.
+///
+/// - occupied_mobility:
+///   weights each slide by `(1 - occupancy)^(legs - 1)`, the odds its path is
+///   clear, distinguishing sliders from leapers.
 ///
 /// The value blends the two mobilities, then scales by coverage and
 /// maneuverability. A larger `occupancy` (sparse board) yields endgame values,
 /// letting sliders gain relative to leapers.
 ///
 /// Params:
-/// - state: &State -> precomputed relevant-move tables
-/// - piece: &Piece -> piece to value
+/// - state: &State  -> precomputed relevant-move tables
+/// - piece: &Piece  -> piece to value
 /// - occupancy: f64 -> assumed board fill ratio for the phase
 ///
 /// Return:
@@ -279,19 +291,17 @@ fn derive_piece_mobility(
     mobility_sum
 }
 
-/// PST geometry helpers.
+/// derive_distance_from_center
 ///
-/// `derive_distance_from_center` measures the euclidean distance from a
-/// square to the nearest of the (up to four) central squares, handling
-/// even and odd board dimensions. `derive_closest_promotion` measures
-/// the distance to the nearest square of the piece's promotion zones,
-/// mandatory or optional, returning infinity when the piece has none.
+/// Measures the euclidean distance from a square to the nearest of the (up
+/// to four) central squares, handling even and odd board dimensions.
 ///
 /// Params:
-/// - state / piece_index / square -> the geometry being queried
+/// - state: &State -> board dimensions for locating the center
+/// - square: usize -> square whose distance is measured
 ///
 /// Return:
-/// f64 -> distance in square units (infinity when no zone exists)
+/// f64 -> distance in square units
 ///
 fn derive_distance_from_center(state: &State, square: usize) -> f64 {
     let center_file = if state.statics.files % 2 == 1 {
@@ -322,6 +332,20 @@ fn derive_distance_from_center(state: &State, square: usize) -> f64 {
         )
 }
 
+/// derive_closest_promotion
+///
+/// Measures the distance to the nearest square of the piece's promotion
+/// zones, mandatory or optional, returning infinity when the piece has
+/// none.
+///
+/// Params:
+/// - state: &State           -> board dimensions and promotion zones
+/// - piece_index: PieceIndex -> piece whose promotion zones are queried
+/// - square: usize           -> square whose distance is measured
+///
+/// Return:
+/// f64 -> distance in square units, infinity when no zone exists
+///
 fn derive_closest_promotion(
     state: &State, piece_index: PieceIndex, square: usize
 ) -> f64 {
@@ -379,15 +403,19 @@ fn derive_square_score(
     mobility_weight * mobility - center_weight * distance_from_center
 }
 
+/// derive_promotion_bonus
+///
 /// Advancement bonus for a promotable piece: a linear gradient toward the
 /// promotion zone, scaled by the value it would gain on promotion. This is
 /// where an advanced passed pawn earns most of its endgame worth.
 ///
 /// Params:
-/// - state / piece_index / square -> the placement being scored
-/// - is_endgame: bool             -> selects the phase's bonus fraction
-/// - piece_value: f64             -> the piece's current phase value
-/// - promoted_value: f64          -> best value reachable by promotion
+/// - state: &State           -> board dimensions and promotion zones
+/// - piece_index: PieceIndex -> piece being placed
+/// - square: usize           -> square being scored
+/// - is_endgame: bool        -> selects the phase's bonus fraction
+/// - piece_value: f64        -> the piece's current phase value
+/// - promoted_value: f64     -> best value reachable by promotion
 ///
 /// Return:
 /// f64 -> bonus added on top of the positional square score
@@ -644,47 +672,29 @@ pub fn derive_eval_parameters(state: &mut State) {
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
 }
 
-/// Pawn-derivation vector helpers.
+/// derive_pawn_like
 ///
-/// Small predicates shared by the pawn-mask builders below:
-/// `pawn_vector_offset` sums a vector's legs into one net (file, rank)
-/// displacement, `vector_moves_quietly` tests whether its final leg can
-/// be played as a quiet move, and `vector_is_initial` tests whether any
-/// leg is restricted to the piece's first move.
-fn pawn_vector_offset(vector: &MoveVector) -> (i32, i32) {
-    let mut file_offset = 0;
-    let mut rank_offset = 0;
-
-    for leg in vector {
-        file_offset += x!(leg) as i32;
-        rank_offset += y!(leg) as i32;
-    }
-
-    (file_offset, rank_offset)
-}
-
-fn vector_moves_quietly(vector: &MoveVector) -> bool {
-    match vector.last() {
-        Some(leg) => m!(leg) || !(c!(leg) || d!(leg)),
-        None => false,
-    }
-}
-
-fn vector_is_initial(vector: &MoveVector) -> bool {
-    vector.iter().any(|leg| i!(leg))
-}
-
-/// A piece is pawn-like when it never steps or captures backward, always keeps
-/// a quiet single-square forward step available, its non-initial quiet moves
-/// stay within one square, and at least `PAWN_MIN_START_COUNT` copies stand on
-/// the board (or wait in hand) at the start. These purely geometric and count
-/// conditions select the pawn/soldier of any variant: the single-step rule and
-/// one-square bound exclude leapers like the shogi knight and forward sliders
-/// like the lance, the no-retreat rule excludes gold/silver/advisor/elephant,
-/// and the starting count excludes sparse forward steppers such as the lone
-/// mini-shogi pawn or the two mini-xiangqi soldiers. Longer initial pushes
-/// (a two- to four-square first move) are exempt from the one-square bound.
-/// The result is recorded as static bit 19 on each piece and its color twin.
+/// Classifies which pieces are pawn-like, so the pawn-structure evaluation
+/// knows which pieces to score. A piece is pawn-like when all of these hold:
+///
+/// - it never steps or captures backward
+/// - it always keeps a quiet single-square forward step available
+/// - its non-initial quiet moves stay within one square
+/// - at least `PAWN_MIN_START_COUNT` copies stand on the board (or wait in
+///   hand) at the start
+///
+/// These purely geometric and count conditions select the pawn/soldier of
+/// any variant:
+///
+/// - the single-step rule and one-square bound exclude leapers like the
+///   shogi knight and forward sliders like the lance
+/// - the no-retreat rule excludes gold / silver / advisor / elephant
+/// - the starting count excludes sparse forward steppers such as the lone
+///   mini-shogi pawn or the two mini-xiangqi soldiers
+///
+/// Longer initial pushes (a two- to four-square first move) are exempt from
+/// the one-square bound. The result is recorded as static bit 19 on each
+/// piece and its colour twin, which is what `p_is_pawn!` reads.
 ///
 /// Params:
 /// - state: &mut State -> variant whose pieces are classified
@@ -710,8 +720,8 @@ fn derive_pawn_like(state: &mut State) {
                 &state.statics.relevant_moves[index * board_size + square];
 
             for vector in moves {
-                let (file_offset, rank_offset) = pawn_vector_offset(vector);
-                let quiet = vector_moves_quietly(vector);
+                let (file_offset, rank_offset) = vector_offset!(vector);
+                let quiet = vector_moves_quietly!(vector);
 
                 if rank_offset < 0 {
                     steps_backward = true;
@@ -719,7 +729,7 @@ fn derive_pawn_like(state: &mut State) {
                 if quiet && rank_offset == 1 && file_offset.abs() <= 1 {
                     has_single_step = true;
                 }
-                if quiet && !vector_is_initial(vector)
+                if quiet && !vector_is_initial!(vector)
                 && (rank_offset > 1 || file_offset.abs() > 1) {
                     ranges_far = true;
                 }
@@ -792,11 +802,11 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
             &state.statics.relevant_moves[index * board_size + current];
 
         for vector in moves {
-            if !vector_moves_quietly(vector) {
+            if !vector_moves_quietly!(vector) {
                 continue;
             }
 
-            let (file_offset, rank_offset) = pawn_vector_offset(vector);
+            let (file_offset, rank_offset) = vector_offset!(vector);
             let next_file = current_file + file_offset * sign;
             let next_rank = current_rank + rank_offset * sign;
 
@@ -872,7 +882,7 @@ fn derive_pawn_interference(
                 [enemy_index * board_size + source];
 
             for vector in captures {
-                let (file_offset, rank_offset) = pawn_vector_offset(vector);
+                let (file_offset, rank_offset) = vector_offset!(vector);
                 let target_file = source_file + file_offset * sign;
                 let target_rank = source_rank + rank_offset * sign;
 
@@ -943,7 +953,7 @@ fn pawn_capture_sources(state: &State, color: u8, targets: &Board) -> Board {
                 [index * board_size + source];
 
             for vector in captures {
-                let (file_offset, rank_offset) = pawn_vector_offset(vector);
+                let (file_offset, rank_offset) = vector_offset!(vector);
                 let target_file = source_file + file_offset * sign;
                 let target_rank = source_rank + rank_offset * sign;
 
@@ -985,7 +995,7 @@ fn pawn_capture_sources(state: &State, color: u8, targets: &Board) -> Board {
 /// ```
 ///
 /// Berolina captures straight, so supporters share `PP`'s file or a
-/// neighbour -- never the same rank:
+/// neighbour, never the same rank:
 ///
 /// ```text
 /// ┌────┬────┬────┬────┬────┐
@@ -1080,11 +1090,11 @@ fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
     let moves = &state.statics.relevant_moves[index * board_size + square];
 
     for vector in moves {
-        if !vector_moves_quietly(vector) || vector_is_initial(vector) {
+        if !vector_moves_quietly!(vector) || vector_is_initial!(vector) {
             continue;
         }
 
-        let (file_offset, rank_offset) = pawn_vector_offset(vector);
+        let (file_offset, rank_offset) = vector_offset!(vector);
         if rank_offset < 1 {
             continue;
         }
@@ -1111,11 +1121,14 @@ fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
 ///
 /// Which files (relative to the pawn `PP`) may ever host a supporter, marked
 /// `oo`. This drives the `isolated` term: a pawn with no friendly pawn on any
-/// of these files (at any rank) is isolated. FIDE -> {-1,+1}, Berolina ->
-/// {-1,0,+1}, Shogi -> {0}.
+/// of these files (at any rank) is isolated.
+///
+/// - FIDE      : {-1,+1},
+/// - Berolina  : {-1,0,+1}
+/// - Shogi     : {0}
 ///
 /// ```text
-///    FIDE {-1,+1}         Berolina {-1,0,+1}    Shogi {0}
+///       FIDE               Berolina               Shogi
 /// ┌────┬────┬────┐     ┌────┬────┬────┐     ┌────┬────┬────┐
 /// │ oo │    │ oo │     │ oo │ oo │ oo │     │    │ oo │    │
 /// ├────┼────┼────┤     ├────┼────┼────┤     ├────┼────┼────┤
@@ -1141,7 +1154,7 @@ fn derive_pawn_support_offsets(state: &State, index: usize) -> Vec<i32> {
         let captures =
             &state.statics.relevant_captures[index * board_size + square];
         for vector in captures {
-            let capture_file = pawn_vector_offset(vector).0;
+            let capture_file = vector_offset!(vector).0;
             if !capture_files.contains(&capture_file) {
                 capture_files.push(capture_file);
             }
@@ -1149,10 +1162,10 @@ fn derive_pawn_support_offsets(state: &State, index: usize) -> Vec<i32> {
 
         let moves = &state.statics.relevant_moves[index * board_size + square];
         for vector in moves {
-            if !vector_moves_quietly(vector) || vector_is_initial(vector) {
+            if !vector_moves_quietly!(vector) || vector_is_initial!(vector) {
                 continue;
             }
-            let (move_file, rank_offset) = pawn_vector_offset(vector);
+            let (move_file, rank_offset) = vector_offset!(vector);
             if rank_offset < 1 {
                 continue;
             }
@@ -1213,6 +1226,8 @@ fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
     (advancement * advancement * 256.0) as i32
 }
 
+/// derive_pawn_parameters
+///
 /// Derives pawn-like classification and the precomputed passed/connected masks
 /// and advancement gradient consumed by the pawn-structure evaluation term.
 ///
@@ -1233,12 +1248,12 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut backward_mask = vec![empty; board_size * piece_count];
     let mut support_offsets: Vec<Vec<i32>> = vec![Vec::new(); piece_count];
 
-    for index in 0..piece_count {
+    for (index, piece) in support_offsets.iter_mut().enumerate() {
         if !p_is_pawn!(&state.statics.pieces[index]) {
             continue;
         }
 
-        support_offsets[index] = derive_pawn_support_offsets(state, index);
+        *piece = derive_pawn_support_offsets(state, index);
         let enemy = 1 - p_color!(&state.statics.pieces[index]);
 
         for square in 0..board_size {

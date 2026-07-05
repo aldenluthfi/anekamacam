@@ -2,6 +2,12 @@
 //!
 //! Implements move formatting, move parsing, and interactive move debugging.
 //!
+//! Moves live in the engine as opaque bit-packed words, but users and
+//! protocols speak text. This file is that translation point for a single
+//! move: it renders a move to the engine's canonical notation (optionally
+//! through a protocol dictionary) and resolves typed move text back to the
+//! one legal move it names.
+//!
 //! # Author
 //! Alden Luthfi
 //!
@@ -14,22 +20,31 @@ use crate::*;
                           MOVE STRING REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// Formats a move into the engine's canonical text representation. Applies
-/// protocol translation if needed.
+/// format_move
+///
+/// Formats a move into the engine's canonical text representation, applying
+/// protocol translation when a dictionary is supplied. The resulting string
+/// is used for user-facing display and as the matching key for `parse_move`.
 ///
 /// Cheesy Move Notation (CMN):
-/// - `[drop_piece]@` (optional drop prefix)
-/// - `[start]` (always present)
-/// - `:[end]` for quiet and multi-capture moves
-/// - `*[capture_square]` for capture segments (single or repeated)
-/// - `@[unload_square]` for unloads (optional, can appear after captures)
-/// - `=[promotion_piece]` for promotions
+/// - `[drop_piece]@`      : optional drop prefix
+/// - `[start]`            : always present
+/// - `:[end]`             : for quiet and multi-capture moves
+/// - `*[capture_square]`  : for capture segments (single or repeated)
+/// - `@[unload_square]`   : for unloads (optional, after captures)
+/// - `=[promotion_piece]` : for promotions
 ///
 /// Effective shape:
 /// `[drop]@[start]:[end]*[capt_1]@[unload_1]...*[capt_n]=[promotion]`
 ///
-/// The resulting string is used for user-facing display and as the matching
-/// key for `parse_move` when validating textual input.
+/// Params:
+/// - mv: &Move                 -> move to render
+/// - state: &State             -> board geometry for square names
+/// - dict: Option<&Translator> -> protocol translator, or None for raw CMN
+///
+/// Return:
+/// String -> the move's CMN (or translated) text, "null" for a null move
+///
 pub fn format_move(
     mv: &Move, state: &State, dict: Option<&Translator>
 ) -> String {
@@ -119,10 +134,20 @@ pub fn format_move(
     move_str
 }
 
-/// Parses a textual move by matching against generated legal moves.
+/// parse_move
 ///
-/// The input is compared to `format_move` output for each candidate and
-/// returns the first exact match after trimming whitespace.
+/// Parses a textual move by matching against generated legal moves. The
+/// input is compared to `format_move` output for each candidate and the
+/// first exact match (after trimming whitespace) is returned.
+///
+/// Params:
+/// - move_str: &str            -> user move text to resolve
+/// - state: &State             -> position whose legal moves are generated
+/// - dict: Option<&Translator> -> translator applied to each candidate
+///
+/// Return:
+/// Option<Move> -> the matching legal move, or None if none matches
+///
 pub fn parse_move(
     move_str: &str, state: &State, dict: Option<&Translator>
 ) -> Option<Move> {

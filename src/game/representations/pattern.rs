@@ -22,8 +22,9 @@ use crate::*;
                         PATTERN MATCHING REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-/// Represents a compressed set of allowed or stopper pieces.
+/// PieceSet
 ///
+/// Represents a compressed set of allowed or stopper pieces.
 /// This structure provides O(1) membership checks to eliminate dynamic
 /// mapping overhead during pattern matching. Memory overhead is strictly
 /// bounded to 256 booleans, naturally fitting the maximum piece limit.
@@ -67,8 +68,9 @@ impl Debug for PieceSet {
     }
 }
 
-/// Represents one relative pattern offset with its allowed piece set.
+/// PatternUnit
 ///
+/// Represents one relative pattern offset with its allowed piece set.
 /// The `u16` packs `(x, y)` displacement, and the `PieceSet` stores piece
 /// indices accepted at that offset during drop/stand-off matching.
 /// This compact unit is shared by allower and stopper pattern lists.

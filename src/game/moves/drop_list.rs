@@ -2,6 +2,12 @@
 //!
 //! Generates legal drop moves and relevant drop templates.
 //!
+//! Shogi-family variants let a captured piece re-enter from hand. This file
+//! turns the compiled drop templates into concrete, legal placements: it
+//! prunes templates against board bounds and forbidden zones per square, and
+//! at generation time enforces the drop flags, hand counts, and the
+//! allower/stopper neighbourhood patterns each placement requires.
+//!
 //! # Author
 //! Alden Luthfi
 //!
@@ -10,8 +16,9 @@
 
 use crate::*;
 
-/// Filters and relocates precomputed drop patterns for a target square.
+/// generate_relevant_drops
 ///
+/// Filters and relocates precomputed drop patterns for a target square.
 /// Relative allower/stopper offsets are validated against board bounds from
 /// `square_index` and rotated by piece color perspective.
 ///
@@ -88,11 +95,12 @@ pub fn generate_relevant_drops(
         .collect()
 }
 
-/// Generates legal drop moves for `$piece` in the current `$state`.
+/// generate_drop_list!
 ///
-/// Enforces drop flags (`k`), count limits, hand ownership, and 
-/// allower/stopper pattern constraints before encoding each drop move. Unlike 
-/// `generate_move_list_from_vectors!`, which builds moves from precomputed 
+/// Generates legal drop moves for `$piece` in the current `$state`.
+/// Enforces drop flags (`k`), count limits, hand ownership, and
+/// allower/stopper pattern constraints before encoding each drop move. Unlike
+/// `generate_move_list_from_vectors!`, which builds moves from precomputed
 /// movement vectors for pieces already on the board, this macro generates
 /// placement moves from precomputed drop templates for pieces held in hand,
 /// using allower/stopper squares instead of directional legs.

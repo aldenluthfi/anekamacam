@@ -2,11 +2,11 @@
 //!
 //! Implements Zobrist hashing for game positions.
 //!
-//! This file contains functionality for generating and managing hash values
-//! for chess positions using Zobrist hashing. It provides random hash values
-//! for pieces on squares, castling rights, en passant squares, and side to
-//! move. These hashes enable efficient position comparison and transposition
-//! table lookups in game tree search algorithms.
+//! Search must recognise repeated and transposed positions in O(1), so every
+//! position has to collapse to a single integer key that updates incrementally
+//! as moves are made. This file owns that key: it seeds the random component
+//! tables and folds them together, giving repetition detection and the
+//! transposition tables a stable position identity.
 //!
 //! # Author
 //! Alden Luthfi
@@ -22,8 +22,9 @@ use crate::*;
 /// where 64-bit keys would start to saturate.
 pub type PositionHash = u128;
 
-/// Computes the Zobrist hash for the given game state.
+/// hash_position
 ///
+/// Computes the Zobrist hash for the given game state.
 /// The hash includes side to move, castling state, en passant square,
 /// on-board piece placement, and in-hand piece counts.
 /// It is used for repetition tracking and transposition table indexing.
@@ -64,6 +65,10 @@ pub fn hash_position(state: &State) -> u128 {
 
     hash
 }
+
+/*----------------------------------------------------------------------------*\
+                         INCREMENTAL HASH UPDATE HELPERS
+\*----------------------------------------------------------------------------*/
 
 /// Incremental Zobrist hash update helpers.
 ///

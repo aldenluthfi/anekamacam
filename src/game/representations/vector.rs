@@ -2,12 +2,12 @@
 //!
 //! Implements move vector and leg representations for chess-like games.
 //!
-//! This file defines macros and types for representing move vectors, legs, and
-//! multi-leg move sequences, supporting complex movement rules and modifiers.
-//! It provides bitfield-based encoding for move modifiers (such as capture,
-//! unload, destroy, and various constraints), as well as structures for
-//! multi-leg and atomic move parsing. These abstractions enable flexible and
-//! efficient move generation for a wide variety of chess variants.
+//! A piece's movement is more than a set of destinations: each step can move,
+//! capture, or be constrained in ways that vary by variant. This file defines
+//! the vocabulary those rules compile down to — the packed leg and atomic
+//! displacement words with their modifier bits, and the parse-tree types the
+//! movement-notation compiler builds on the way there — so generation reasons
+//! about movement uniformly across variants.
 //!
 //! # Author
 //! Alden Luthfi
@@ -24,19 +24,29 @@ use crate::*;
 /// Leg encoding/decoding helper macros used by move generation.
 ///
 /// A `Leg` is a packed `u32` where:
-/// - bits 0-7      : encode `x` delta
-/// - bits 8-15     : encode `y` delta
+/// - bits 0-7      : encode the `x` delta
+/// - bits 8-15     : encode the `y` delta
 /// - bits 16-31    : encode movement and capture modifiers
 ///
-/// `leg!` performs packing from a parsed `LegVector` into the compact `Leg`.
-/// The remaining macros read individual fields from that packed representation.
+/// `leg!` packs a parsed `LegVector` into the compact `Leg`; the rest read
+/// one field each (see [`LegVector`] for full modifier meanings):
 ///
-/// Main modifier accessors:
-/// - `m`, `c`, `d`, `u`
-///
-/// Filter/constraint accessors:
-/// - `k`, `v`, `g`, `t`, `i`, `p`
-/// - `not_k`, `not_v`, `not_g`, `not_i`
+/// - x!        : signed `x` delta
+/// - y!        : signed `y` delta
+/// - m!        : may move on this leg
+/// - c!        : may capture on this leg
+/// - d!        : may destroy (capture a friendly piece) on this leg
+/// - u!        : may unload on this leg
+/// - k!        : capture must be royal
+/// - v!        : capture must be virgin (unmoved)
+/// - g!        : capture must be of greater rank
+/// - t!        : may capture en passant
+/// - i!        : must be an initial move
+/// - p!        : start square creates an en passant square
+/// - not_k!    : capture must not be royal
+/// - not_v!    : capture must not be virgin
+/// - not_g!    : capture must not be of greater rank
+/// - not_i!    : must not be an initial move
 #[macro_export]
 macro_rules! leg {
     ($l:expr) => {
@@ -158,8 +168,9 @@ macro_rules! not_i {
     };
 }
 
-/// Represents one compact leg used during move generation and validation.
+/// Leg
 ///
+/// Represents one compact leg used during move generation and validation.
 /// This alias stores the fully encoded displacement and modifier flags in a
 /// single `u32`, matching the packed layout used by `LegVector` helpers.
 /// It is used when only whole-leg semantics are needed.
@@ -172,6 +183,45 @@ pub type Leg = u32;
 /// option a piece has, as produced by the move expression parser.
 pub type MoveVector = Vec<Leg>;
 pub type MoveSet = Vec<MoveVector>;
+
+/// MoveVector queries
+///
+/// Whole-vector predicates over a `MoveVector`, reading its ordered `Leg`s
+/// through the leg accessors above:
+///
+/// - vector_offset!        : net (file, rank) displacement, summing every leg
+/// - vector_moves_quietly! : whether the final leg plays as a quiet move
+/// - vector_is_initial!    : whether any leg is restricted to the first move
+///
+#[macro_export]
+macro_rules! vector_offset {
+    ($vector:expr) => {{
+        let mut file_offset = 0i32;
+        let mut rank_offset = 0i32;
+        for leg in $vector {
+            file_offset += x!(leg) as i32;
+            rank_offset += y!(leg) as i32;
+        }
+        (file_offset, rank_offset)
+    }};
+}
+
+#[macro_export]
+macro_rules! vector_moves_quietly {
+    ($vector:expr) => {
+        (match $vector.last() {
+            Some(leg) => m!(leg) || !(c!(leg) || d!(leg)),
+            None => false,
+        })
+    };
+}
+
+#[macro_export]
+macro_rules! vector_is_initial {
+    ($vector:expr) => {
+        ($vector.iter().any(|leg| i!(leg)))
+    };
+}
 
 /*----------------------------------------------------------------------------*\
                             MOVE PARSE REPRESENTATIONS
@@ -211,22 +261,24 @@ impl Debug for MultiLegElement {
 
 pub type MultiLegVector = Vec<LegVector>;
 
+/// LegVector
+///
 /// A 64-bit vector representation for leg move vectors.
 /// The first 32 bits represent the whole `AtomicVector`.
 ///
 /// The next 16 bits are move modifiers:
-/// - main: m, c, d, u,
-/// - capture/destroy modifier: k, v, g, t
-/// - miscellaneous modifier: i, p
-/// - negated capture modifiers: !k, !v, !g
-/// - negated misc modifiers: !i
+/// - main                      : m, c, d, u,
+/// - capture/destroy modifier  : k, v, g, t
+/// - miscellaneous modifier    : i, p
+/// - negated capture modifiers : !k, !v, !g
+/// - negated misc modifiers    : !i
 ///
 /// Modifier bits layout (bits 32-45):
 ///
 ///  47  46  45  44  43  42  41  40  39  38  37  36  35  34  33  32
-/// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
-/// |   |   |!i |!g |!v |!k | p | i | t | g | v | k | u | d | c | m |
-/// +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+/// ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
+/// │   │   │!i │!g │!v │!k │ p │ i │ t │ g │ v │ k │ u │ d │ c │ m │
+/// └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
 ///
 /// Main modifiers:
 /// - (m)ove:
@@ -247,10 +299,10 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       indicates the capture must not be royal.
 ///
 /// Usage of (k, !k):
-/// - (false, false): this capture can be royal or not royal (regular capture).
-/// - (false, true) : this capture must not be royal.
-/// - (true, false) : this capture must be royal.
-/// - (true, true)  : special modifier k!k (explained below).
+/// - (false, false) : this capture can be royal or not royal, regular capture.
+/// - (false, true)  : this capture must not be royal.
+/// - (true, false)  : this capture must be royal.
+/// - (true, true)   : special modifier k!k (explained below).
 ///
 /// - (v)irgin:
 ///     - v:
@@ -259,10 +311,10 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       indicates the capture must not be virgin (has moved).
 ///
 /// Usage of (v, !v):
-/// - (false, false): this capture can be virgin or not (regular capture).
-/// - (false, true) : this capture must not be virgin.
-/// - (true, false) : this capture must be virgin.
-/// - (true, true)  : special modifier v!v (explained below).
+/// - (false, false) : this capture can be virgin or not (regular capture).
+/// - (false, true)  : this capture must not be virgin.
+/// - (true, false)  : this capture must be virgin.
+/// - (true, true)   : special modifier v!v (explained below).
 ///
 /// - (g)reater:
 ///     - g:
@@ -281,17 +333,17 @@ pub type MultiLegVector = Vec<LegVector>;
 /// is not defined then all pieces will have the rank of 0
 ///
 /// Usage of (g, !g):
-/// - (false, false): this capture can be of any rank (regular capture).
-/// - (false, true) : this capture must not be of greater rank.
-/// - (true, false) : this capture must be of greater rank.
-/// - (true, true)  : special modifier g!g (explained below).
+/// - (false, false) : this capture can be of any rank (regular capture).
+/// - (false, true)  : this capture must not be of greater rank.
+/// - (true, false)  : this capture must be of greater rank.
+/// - (true, true)   : special modifier g!g (explained below).
 ///
 /// - en-passan(t):
-///    - t: means this leg can capture en passant.
+///    - t : means this leg can capture en passant.
 ///
 /// Usage of (t):
-/// - (true) : this leg can capture en passant.
-/// - (false): this leg cannot capture en passant.
+/// - (true)  : this leg can capture en passant.
+/// - (false) : this leg cannot capture en passant.
 ///
 /// Miscellaneous modifiers:
 ///
@@ -302,49 +354,48 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       indicates this leg must not be used as an initial move of the piece.
 ///
 /// Usage of (i, !i):
-/// - (false, false): this leg can be used as initial or not (regular leg).
-/// - (false, true) : this leg must not be used as initial.
-/// - (true, false) : this leg must be used as initial.
-/// - (true, true)  : special modifier i!i (explained below).
+/// - (false, false) : this leg can be used as initial or not (regular leg).
+/// - (false, true)  : this leg must not be used as initial.
+/// - (true, false)  : this leg must be used as initial.
+/// - (true, true)   : special modifier i!i (explained below).
 ///
 /// - (p)assant:
 ///     - p:
 ///       indicates this leg's start square creates an en passant square.
 ///
 /// Usage of (p):
-/// - (true) : this leg's start square creates an en passant square.
-/// - (false): this leg's start square does not create an en passant square.
+/// - (true)  : this leg's start square creates an en passant square.
+/// - (false) : this leg's start square does not create an en passant square.
 ///
 /// Special modifiers (r!r, v!v, g!g, i!i):
 ///
-/// - i!i: TBD
-/// - k!k: TBD
-/// - v!v: this leg can bypass forbidden zones.
-/// - g!g: TBD
+/// - i!i : TBD
+/// - k!k : TBD
+/// - v!v : this leg can bypass forbidden zones.
+/// - g!g : TBD
 ///
 /// Defaults:
+///
 /// - by default each leg has m (can move) set, except for the last leg,
-///   which will have mc (can move and capture) set by default.
+///   which has mc (can move and capture) set by default.
 ///
 /// Final notes:
+///
 /// - capture/destroy modifiers must be used if the leg has c or d set
-/// - you can combine negation like `mc!kvg` means a move/capture leg that must
-///   not be royal, must be moved, and must be of lesser or equal rank and
-///   cannot capture en passant.
-/// - because capturing a royal piece is not legal, the moves with the k flag
-///   will be skipped during move list generation but used when checking if a
+/// - combined negation like `mc!kvg` is a move/capture leg that must not be
+///   royal, must be moved, must be of lesser or equal rank, and cannot
+///   capture en passant
+/// - because capturing a royal piece is not legal, legs with the k flag are
+///   skipped during move-list generation but used when checking whether a
 ///   square is attacked
 ///
-/// How to use (examples):
+/// Examples:
 ///
-/// Xianqi "Cannon" move leg: cdR-u#-nR
-/// 1. First, capture/destroy as a rook, then unload it back to that square
-///    (hopping)
-/// 2. Continuing the same direction, move as a rook (non-hopping)
-///
-/// Xiangqi "King": W|kcnR
-/// 1. Move as a wazir OR capture/destroy a royal piece as a rook
-///    (the flying generals rule)
+/// - Xiangqi "Cannon" (`cdR-u#-nR`): capture/destroy as a rook then unload
+///   it back to that square (hopping), then continue in the same direction
+///   moving as a rook (non-hopping)
+/// - Xiangqi "King" (`W|kcnR`): move as a wazir, or capture/destroy a royal
+///   piece as a rook (the flying-generals rule)
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
 
@@ -575,8 +626,9 @@ impl Debug for Token {
     }
 }
 
-/// A 32 bit vector representation for atomic move vectors.
+/// AtomicVector
 ///
+/// A 32 bit vector representation for atomic move vectors.
 /// - each vector is represented as [(x1, y1), (x2, y2)]
 /// - (x1, y1) is the whole vector
 /// - (x2, y2) is the last vector applied

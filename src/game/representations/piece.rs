@@ -74,15 +74,23 @@ macro_rules! p_value {
 
 /// Piece bitfield accessor macros.
 ///
-/// These macros decode `Piece::encoded_static` and `Piece::encoded_dynamic`
-/// into readable attributes used throughout move generation and evaluation.
+/// These decode `Piece::encoded_static` and `Piece::encoded_dynamic` into
+/// readable attributes used throughout move generation and evaluation.
 ///
-/// Static accessors:
-/// `p_index!`, `p_color!`, `p_can_promote!`, `p_is_royal!`, `p_is_pawn!`,
-/// `p_rank!`, `p_castle_right!`, `p_castle_left!`
+/// Static accessors (encoded_static):
+/// - p_index!: piece type index (bits 0-7)
+/// - p_color!: owning side, 0 white / 1 black (bit 8)
+/// - p_can_promote!: whether the piece can promote (bit 9)
+/// - p_is_royal!: whether the piece must be mated (bit 10)
+/// - p_rank!: variant-defined capture rank (bits 11-18)
+/// - p_is_pawn!: pawn-like flag, set at derive time (bit 19)
 ///
-/// Dynamic accessors:
-/// `p_is_big!`, `p_is_major!`, `p_is_minor!`, `p_ovalue!`, `p_evalue!`
+/// Dynamic accessors (encoded_dynamic):
+/// - p_is_big!: big-piece role, royals excluded (bit 0)
+/// - p_is_major!: major-piece role, royals excluded (bit 1)
+/// - p_is_minor!: minor-piece role, royals excluded (bit 1 clear)
+/// - p_ovalue!: opening material value (bits 2-15)
+/// - p_evalue!: endgame material value (bits 16-29)
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
@@ -160,8 +168,9 @@ macro_rules! p_evalue {
     };
 }
 
-/// A structure representing a game piece with its properties.
+/// Piece
 ///
+/// A structure representing a game piece with its properties.
 /// A piece can have id from 0 - 254, with 255 reserved for "no piece".
 ///
 /// Static data (`encoded_static`) is encoded in 32 bits:
@@ -184,12 +193,12 @@ macro_rules! p_evalue {
 /// promote to.
 #[derive(Clone)]
 pub struct Piece {
-    pub name: String,
-    pub char: char,
+    pub name: String,                                                           /* display name of the piece          */
+    pub char: char,                                                             /* FEN / board letter                 */
 
-    pub promotions: Vec<PieceIndex>,
-    pub encoded_static: u32,
-    pub encoded_dynamic: u32,
+    pub promotions: Vec<PieceIndex>,                                            /* piece types it can promote to      */
+    pub encoded_static: u32,                                                    /* packed config attributes           */
+    pub encoded_dynamic: u32,                                                   /* packed derived eval values         */
 }
 
 impl Piece {

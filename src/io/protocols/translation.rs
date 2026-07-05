@@ -1,11 +1,13 @@
 //! # translation.rs
 //!
-//! Handles translation between internal representations and external protocols,
-//! such as UCI or custom formats.
+//! Handles translation between internal representations and external
+//! protocols, such as UCI or custom formats.
 //!
-//! There are two main translation points, FEN and moves. FEN is used for
-//! representing board states, while move translation is necessary for
-//! interpreting commands from protocols like UCI.
+//! The engine names squares, pieces, and moves in its own internal terms, but
+//! every protocol it speaks to uses a different dialect. This file is the seam
+//! between the two, so the quirks of any one protocol never leak inward: it
+//! maps the two things that actually cross the boundary -- board states as
+//! FEN, and moves as protocol notation -- in both directions.
 //!
 //! # Author
 //! Alden Luthfi
@@ -14,14 +16,18 @@
 //! 23/05/2026
 use crate::*;
 
+/// TranslatorGroup
+///
 /// A group of translators for different protocols, loaded from a single
-/// dictionary file.
+/// dictionary file. Each entry is one protocol's compiled rule set, so a
+/// variant's whole dictionary is held as one addressable collection.
 pub struct TranslatorGroup {
-    pub list: Vec<Translator>,
+    pub list: Vec<Translator>,                                                  /* one translator per protocol        */
 }
 
-/// One protocol's translation rules for a variant.
+/// Translator
 ///
+/// One protocol's translation rules for a variant.
 /// Holds ordered regex/replacement rule lists parsed from a `.dict`
 /// file: `fen` rewrites internal FENs into the protocol's dialect,
 /// `inverse_fen` rewrites them back, and `moves` rewrites move text.
@@ -29,10 +35,10 @@ pub struct TranslatorGroup {
 /// styles than the engine's internal notation; these rules bridge that.
 #[derive(Clone)]
 pub struct Translator {
-    pub protocol: String,
-    pub fen: Vec<(Regex, String)>,
-    pub inverse_fen: Vec<(Regex, String)>,
-    pub moves: Vec<(Regex, String)>,
+    pub protocol: String,                                                       /* protocol name, e.g. uci            */
+    pub fen: Vec<(Regex, String)>,                                              /* internal FEN to protocol rules     */
+    pub inverse_fen: Vec<(Regex, String)>,                                      /* protocol FEN back to internal      */
+    pub moves: Vec<(Regex, String)>,                                            /* move-text rewrite rules            */
 }
 
 impl Translator {
