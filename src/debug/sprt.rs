@@ -257,7 +257,7 @@ impl GameManager {
     }
 
     fn reset_to(&mut self, template: &State, opening: &[Move]) {
-        self.state = template.fork();
+            self.state = template.fork();
         let state = &mut self.state;
 
         for played in opening {
@@ -405,12 +405,12 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 /// so completed tests leave a durable record.
 ///
 /// Params:
-/// - variant: &str    -> variant name, selects the output directory
-/// - binary_a: &str   -> path of the first engine
-/// - binary_b: &str   -> path of the second engine
+/// - variant: &str     -> variant name, selects the output directory
+/// - binary_a: &str    -> path of the first engine
+/// - binary_b: &str    -> path of the second engine
 /// - movetime_ms: u128 -> per-move time control used
-/// - elo_zero: f64    -> null-hypothesis Elo bound
-/// - elo_one: f64     -> alternative-hypothesis Elo bound
+/// - h0: f64           -> null-hypothesis Elo bound
+/// - h1: f64           -> alternative-hypothesis Elo bound
 /// - wins/draws/losses: u32 -> final tally from engine A's perspective
 /// - llr: f64         -> the final log-likelihood ratio
 /// - verdict: &str    -> the test outcome text
@@ -420,8 +420,8 @@ fn write_result_file(
     binary_a: &str,
     binary_b: &str,
     movetime_ms: u128,
-    elo_zero: f64,
-    elo_one: f64,
+    h0: f64,
+    h1: f64,
     wins: u32,
     draws: u32,
     losses: u32,
@@ -441,7 +441,7 @@ fn write_result_file(
          elo bounds: [{}, {}]  alpha: {}  beta: {}\n\
          result (A): {}W {}L {}D\nLLR: {:.3}\nverdict: {}\n",
         binary_a, binary_b, variant, movetime_ms,
-        elo_zero, elo_one, SPRT_ALPHA, SPRT_BETA,
+        h0, h1, SPRT_ALPHA, SPRT_BETA,
         wins, losses, draws, llr, verdict,
     );
 
@@ -471,8 +471,8 @@ fn write_result_file(
 /// - binary_b: &str    -> path to the second engine binary
 /// - movetime_ms: u128 -> fixed wall-clock budget per move
 /// - max_games: usize  -> maximum games before declaring inconclusive
-/// - elo_zero: f64     -> null-hypothesis Elo bound
-/// - elo_one: f64      -> alternative-hypothesis Elo bound
+/// - h0: f64     -> null-hypothesis Elo bound
+/// - h1: f64      -> alternative-hypothesis Elo bound
 ///
 pub fn run_sprt(
     template: &State,
@@ -481,8 +481,8 @@ pub fn run_sprt(
     binary_b: &str,
     movetime_ms: u128,
     max_games: usize,
-    elo_zero: f64,
-    elo_one: f64,
+    h0: f64,
+    h1: f64,
     sender: &Sender<TuiEvent>,
 ) {
     let translator = Translator::find(variant, "uci");
@@ -497,8 +497,8 @@ pub fn run_sprt(
     let startpos = template.statics.startpos.clone();
     let mut manager = GameManager::new(template, binary_a, binary_b, variant);
 
-    let mu_zero = expected_score(elo_zero);
-    let mu_one = expected_score(elo_one);
+    let mu_0 = expected_score(h0);
+    let mu_1 = expected_score(h1);
     let upper = ((1.0 - SPRT_BETA) / SPRT_ALPHA).ln();
     let lower = (SPRT_BETA / (1.0 - SPRT_ALPHA)).ln();
 
@@ -540,7 +540,7 @@ pub fn run_sprt(
 
         let mean = sum / pairs;
         let variance = sum_squares / pairs - mean * mean;
-        llr = log_likelihood_ratio(pairs, mean, variance, mu_zero, mu_one);
+        llr = log_likelihood_ratio(pairs, mean, variance, mu_0, mu_1);
 
         if (pair_index + 1) % 5 == 0 {
             log_1!(
@@ -566,7 +566,7 @@ pub fn run_sprt(
     );
 
     write_result_file(
-        variant, binary_a, binary_b, movetime_ms, elo_zero, elo_one,
+        variant, binary_a, binary_b, movetime_ms, h0, h1,
         wins, draws, losses, llr, verdict,
     );
 }

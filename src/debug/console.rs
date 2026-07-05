@@ -944,7 +944,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let game_rows: &[(&str, &str)] = &[
         (
             "abort",
-            "Interrupt any running search immediately"
+            "Interrupt any running operation immediately"
         ),
         (
             "undo",
@@ -959,19 +959,15 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             "Load a specific game state from a given FEN string"
         ),
         (
-            "search <depth>",
+            "search [depth]",
             "Search the current position up to the specified depth"
-        ),
-        (
-            "go <depth>",
-            "Calculate and play the best move up to the specified depth"
         ),
         (
             "play <depth> <time>",
             "Automatically play the game with specified depth and time limit"
         ),
         (
-            "perft <depth> <branch>",
+            "perft <depth> [branch]",
             "Run a perft benchmark to verify move generation accuracy"
         ),
         (
@@ -979,7 +975,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             "Play a valid move using Cheesy Move Notation (CMN)"
         ),
         (
-            "datagen <games> <time>",
+            "datagen <games> <movetime>",
             "Self-play games to build a Texel tuning dataset for the variant"
         ),
         (
@@ -987,7 +983,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             "Texel-tune the evaluation from the dataset by gradient descent"
         ),
         (
-            "sprt <binA> <binB> <time>",
+            "sprt <binA> <binB> <movetime> [games] [h0] [h1]",
             "Run an SPRT match between two engine binaries to test a patch"
         ),
     ];
@@ -2817,15 +2813,9 @@ fn execute_command(
         _ if trimmed.starts_with("search") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
-            if parts.len() != 2 {
-                log_2!("Usage: search <depth>");
-                return;
-            }
-
-            let Ok(depth) = parts[1].parse::<usize>() else {
-                log_2!("Invalid depth: {}", parts[1]);
-                return;
-            };
+            let depth = parts.get(1)
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(MAX_DEPTH);
 
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
@@ -2840,55 +2830,6 @@ fn execute_command(
             if result.best_move == null_move() {
                 log_2!("No legal move available");
             }
-        }
-        _ if trimmed.starts_with("go") => {
-            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
-
-            if parts.len() != 2 {
-                log_2!("Usage: go <depth>");
-                return;
-            }
-
-            let Ok(depth) = parts[1].parse::<usize>() else {
-                log_2!("Invalid depth: {}", parts[1]);
-                return;
-            };
-
-            let mut info = SearchInfo {
-                set_depth: depth, ..Default::default()
-            };
-            let mut bufs = SearchBufs::default();
-            let result = search_position(
-                state,
-                Arc::clone(&ttable), Arc::clone(&qtable),
-                &mut info, &mut bufs, threads, dict
-            );
-            log_table_stats(&ttable, &qtable);
-
-            if result.best_move == null_move() {
-                log_2!("No legal move available");
-                return;
-            }
-
-            log_1!(
-                "Best Move: {} | Score: {} | Nodes: {} | Time: {}",
-                format_move(&result.best_move, state, dict),
-                result.best_score,
-                result.total_nodes,
-                format_time(result.total_elapsed)
-            );
-
-            make_move!(state, result.best_move);
-
-            let board_state = BoardState::from_state(state, dict);
-
-            sender.send(
-                TuiEvent::StateUpdate(board_state)
-            ).unwrap_or_else(
-                |e| {
-                    panic!("Failed to send TuiEvent::StateUpdate: {e}")
-                }
-            );
         }
         _ if trimmed.starts_with("play") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
@@ -2961,7 +2902,7 @@ fn execute_command(
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
             if parts.len() != 3 {
-                log_2!("Usage: datagen [games] [movetime (ms)]");
+                log_2!("Usage: datagen <games> <movetime (ms)>");
                 return;
             }
 
@@ -2989,7 +2930,7 @@ fn execute_command(
         _ if trimmed.starts_with("tune") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
-            if parts.len() != 3 {
+            if parts.len() < 2 {
                 log_2!("Usage: tune <epochs> [learning rate = 1.0]");
                 return;
             }
@@ -3016,7 +2957,7 @@ fn execute_command(
             if parts.len() < 4 {
                 log_2!(
                     "Usage: sprt <binA> <binB> <movetime (ms)> \
-                    [games = 2000] [elo0 = 0.0] [elo1 = 5.0]"
+                    [games = 2000] [h0 = 0.0] [h1 = 5.0]"
                 );
                 return;
             }
@@ -3029,10 +2970,10 @@ fn execute_command(
             let max_games = parts.get(4)
                 .and_then(|value| value.parse::<usize>().ok())
                 .unwrap_or(2000);
-            let elo_zero = parts.get(5)
+            let h0 = parts.get(5)
                 .and_then(|value| value.parse::<f64>().ok())
                 .unwrap_or(0.0);
-            let elo_one = parts.get(6)
+            let h1 = parts.get(6)
                 .and_then(|value| value.parse::<f64>().ok())
                 .unwrap_or(5.0);
 
@@ -3043,14 +2984,14 @@ fn execute_command(
 
             run_sprt(
                 state, variant_name, parts[1], parts[2],
-                movetime, max_games, elo_zero, elo_one, &sender,
+                movetime, max_games, h0, h1, &sender,
             );
         }
         _ if trimmed.starts_with("perft") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
-            if parts.len() != 3 {
-                log_2!("Usage: perft <depth> <branch>");
+            if parts.len() < 2 {
+                log_2!("Usage: perft <depth> [branch]");
                 return;
             }
 
@@ -3059,10 +3000,9 @@ fn execute_command(
                 return;
             };
 
-            let Ok(branch) = parts[2].parse::<i8>() else {
-                log_2!("Invalid branch: {}", parts[2]);
-                return;
-            };
+            let branch = parts.get(2)
+                .and_then(|value| value.parse::<i8>().ok())
+                .unwrap_or(-1);
 
             if let Some(ref variant) = variant {
                 let perft_name = format!("{}.perft", variant);
