@@ -198,7 +198,7 @@ pub use std::{
 /// Engine-wide constants.
 ///
 /// Board and search bounds (`MAX_*`, `*_DEPTH`), search-tuning thresholds
-/// and tables (LMP/RFP/razor/IID/LMR limits, `HIST_BONUS_TABLE`), phase
+/// and tables (LMP/RFP/razor/IIR/LMR limits, `HIST_BONUS_TABLE`), phase
 /// occupancies, colour and castling codes, piece/en-passant sentinels, and
 /// the move-type tags. Values are fixed at compile time and shared through
 /// the prelude.
@@ -230,7 +230,6 @@ pub const LMP_THRESHOLD: [[u8; MAX_LMP_DEPTH]; 2] = [
 pub const MAX_RFP_DEPTH: usize = 9;
 pub const MAX_RZR_DEPTH: usize = 4;
 pub const MAX_SEE_DEPTH: usize = 8;
-pub const MIN_IID_DEPTH: usize = 7;
 pub const MIN_IIR_DEPTH: usize = 4;
 pub const MIN_LMR_DEPTH: usize = 4;
 pub const MIN_LMP_DEPTH: usize = 3;

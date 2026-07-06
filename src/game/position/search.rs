@@ -749,11 +749,6 @@ fn quiescence_search(
 ///   non-promotion, non-drop move after the first legal one is skipped,
 ///   since it cannot plausibly raise the score above `alpha`.
 ///
-/// - internal iterative deepening:
-///   when no PV move is cached and depth is high enough, runs a shallower
-///   full search first to populate the TT with a PV move, then re-enters the
-///   main search using it for ordering.
-///
 /// - internal iterative reduction:
 ///   when no PV move is cached and depth is high enough, drops `depth` by one
 ///   before searching, since ordering is poor without a PV move and a
@@ -972,21 +967,6 @@ pub fn alpha_beta(
     && static_eval + margin[depth] <= alpha
     {
         futile = true;
-    }
-
-    /*-----------------------------------------------------------------------*\
-                             INTERNAL ITERATIVE DEEPENING
-    \*-----------------------------------------------------------------------*/
-
-    if pv_move.is_none() && depth >= MIN_IID_DEPTH {
-        alpha_beta(
-            state, ttable, qtable, ptable,
-            depth - 2, alpha, beta, info, bufs, true
-        );
-
-        if !info.interrupt {
-            pv_move = probe_pv_move!(state, ttable);
-        }
     }
 
     /*-----------------------------------------------------------------------*\
