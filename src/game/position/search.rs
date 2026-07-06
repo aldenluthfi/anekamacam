@@ -1122,9 +1122,7 @@ pub fn alpha_beta(
         \*-------------------------------------------------------------------*/
 
         if depth >= MIN_LMR_DEPTH
-        && legal_moves > (moves_len / 5).max(1)
-        && *mv != state.killer_hist[state.search_ply as usize][0]
-        && *mv != state.killer_hist[state.search_ply as usize][1]
+        && legal_moves > 2 + 2 * (beta - alpha > 1) as usize
         {
             let opponent_in_check = is_in_check!(state.playing, state);         /* lazy: only LMR needs gives-check   */
 
@@ -1164,7 +1162,7 @@ pub fn alpha_beta(
                 depth - reduction, -alpha - 1, -alpha, info, bufs, true
             );
 
-            if score > alpha && reduction > 2 {
+            if score > alpha && reduction > 1 {
                 score = -alpha_beta(
                     state,
                     ttable, qtable, ptable,
