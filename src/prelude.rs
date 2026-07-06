@@ -228,8 +228,8 @@ pub const LMP_THRESHOLD: [[u8; MAX_LMP_DEPTH]; 2] = [
     [0, 5, 8, 14, 22, 36, 48, 66, 90],                                          /* improving                          */
 ];
 pub const MAX_RFP_DEPTH: usize = 9;
-pub const MAX_RAZOR_DEPTH: usize = 4;
-pub const MAX_SEE_PRUNE_DEPTH: usize = 8;
+pub const MAX_RZR_DEPTH: usize = 4;
+pub const MAX_SEE_DEPTH: usize = 8;
 pub const MIN_IID_DEPTH: usize = 7;
 pub const MIN_IIR_DEPTH: usize = 4;
 pub const MIN_LMR_DEPTH: usize = 4;

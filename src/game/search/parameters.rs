@@ -1391,7 +1391,7 @@ pub fn derive_search_parameters(state: &mut State) {
     ];
 
     let see_base = (avg / 8).max(1);
-    state.static_mut().see_margin = (0..MAX_SEE_PRUNE_DEPTH)
+    state.static_mut().see_margin = (0..MAX_SEE_DEPTH)
         .map(|depth| see_base * depth as i32)
         .collect();
 

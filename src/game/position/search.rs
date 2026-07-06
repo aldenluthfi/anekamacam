@@ -889,21 +889,15 @@ pub fn alpha_beta(
         && state.static_eval[ply - 2] != -INF
         && static_eval > state.static_eval[ply - 2];
 
-    let mut pv_capture = false;
-
-    if let Some(pv_mv) = &pv_move {
-        pv_capture = m_pseudocapture!(pv_mv);
-    }
-
     /*-----------------------------------------------------------------------*\
                                 REVERSE FUTILITY PRUNING
     \*-----------------------------------------------------------------------*/
 
     if depth < MAX_RFP_DEPTH
-    && (pv_move.is_none() || !pv_capture)
+    && beta - alpha == 1
     && !in_check
     && beta.abs() < MATE_SCORE
-    && static_eval - state.statics.rfp_margin[improving as usize][depth] 
+    && static_eval - state.statics.rfp_margin[improving as usize][depth]
     >= beta
     {
         return beta;
@@ -913,17 +907,15 @@ pub fn alpha_beta(
                                        RAZORING
     \*-----------------------------------------------------------------------*/
 
-    if depth < MAX_RAZOR_DEPTH
+    if depth < MAX_RZR_DEPTH
     && !in_check
-    && pv_move.is_none()
+    && beta - alpha == 1
     && alpha.abs() < MATE_SCORE
     && state.game_phase != ENDGAME
     && static_eval + state.statics.razor_margin[depth] < alpha
     {
-        let score = alpha_beta(
-            state,
-            ttable, qtable, ptable,
-            depth.saturating_sub(1), alpha, alpha + 1, info, bufs, null
+        let score = quiescence_search(
+            state, ttable, qtable, ptable, alpha, alpha + 1, info, bufs
         );
 
         if score <= alpha {
@@ -975,7 +967,7 @@ pub fn alpha_beta(
 
     if depth < MAX_FUTILITY_DEPTH
     && !in_check
-    && pv_move.is_none()
+    && beta - alpha == 1
     && alpha.abs() < MATE_SCORE
     && static_eval + margin[depth] <= alpha
     {
@@ -1073,7 +1065,7 @@ pub fn alpha_beta(
                                        SEE PRUNING
         \*-------------------------------------------------------------------*/
 
-        if depth < MAX_SEE_PRUNE_DEPTH
+        if depth < MAX_SEE_DEPTH
         && legal_moves > 0
         && !in_check
         && beta - alpha == 1
@@ -1086,25 +1078,12 @@ pub fn alpha_beta(
             }
         }
 
-        if !make_move!(state, mv.clone()) {
-            continue;
-        }
-
-        legal_moves += 1;
-
-        let mut reduction = 1;
-        let mut score;
-
-        let opponent_in_check = is_in_check!(state.playing, state);
-
         /*-------------------------------------------------------------------*\
                                     LATE MOVE PRUNING
         \*-------------------------------------------------------------------*/
 
         if depth < MAX_LMP_DEPTH
-        && legal_moves >= (moves_len / 2).max(1)
         && !in_check
-        && !opponent_in_check
         && !is_capture
         && !is_promotion
         && !is_drop
@@ -1113,9 +1092,17 @@ pub fn alpha_beta(
         && beta - alpha == 1
         && legal_moves >= LMP_THRESHOLD[improving as usize][depth] as usize
         {
-            undo_move!(state);
             continue;
         }
+
+        if !make_move!(state, mv.clone()) {
+            continue;
+        }
+
+        legal_moves += 1;
+
+        let mut reduction = 1;
+        let mut score;
 
         /*-------------------------------------------------------------------*\
                                    LATE MOVE REDUCTION
@@ -1126,19 +1113,23 @@ pub fn alpha_beta(
         && *mv != state.killer_hist[state.search_ply as usize][0]
         && *mv != state.killer_hist[state.search_ply as usize][1]
         {
+            let opponent_in_check = is_in_check!(state.playing, state);         /* lazy: only LMR needs gives-check   */
+
             reduction += reduction!(
                 state, depth, legal_moves, in_check, opponent_in_check,
                 is_capture, is_promotion, is_drop
             );
 
             let hist_score = state.search_hist[hist_idx] as i32;
-            let hist_cutoff = MAX_HIST_VALUE as i32 / 8;
+            let hist_cutoff = MAX_HIST_VALUE as i32 / 4;
 
             if hist_score > hist_cutoff {
+                reduction = reduction.saturating_sub(2).max(1);
+            } else if hist_score > 0 {
                 reduction = reduction.saturating_sub(1).max(1);
             }
             if hist_score < -(MAX_HIST_VALUE as i32) / 4 {
-                reduction = (reduction + 1).min(depth - 1);
+                reduction = (reduction + 2).min(depth - 1);
             }
             if improving as usize == 1 {
                 reduction = reduction.saturating_sub(1).max(1);

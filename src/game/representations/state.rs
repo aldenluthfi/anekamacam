@@ -398,7 +398,7 @@ pub struct StaticState {
     pub see_margin: Vec<i32>,                                                   /* [depth 0-7] SEE prune threshold    */
     pub delta_margin: i32,                                                      /* qsearch delta pruning safety margin*/
     pub aspiration_delta: i32,                                                  /* initial aspiration half-window     */
-    pub razor_margin: [i32; MAX_RAZOR_DEPTH],                                   /* [depth 0-3]                        */
+    pub razor_margin: [i32; MAX_RZR_DEPTH],                                     /* [depth 0-3]                        */
     pub quiesce_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
     pub quiesce_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
     pub capture_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
@@ -641,8 +641,8 @@ impl State {
 
             futility_margin: [[0; MAX_FUTILITY_DEPTH]; 3],
             rfp_margin: [[0; MAX_RFP_DEPTH]; 2],
-            razor_margin: [0; MAX_RAZOR_DEPTH],
-            see_margin: vec![0; MAX_SEE_PRUNE_DEPTH],
+            razor_margin: [0; MAX_RZR_DEPTH],
+            see_margin: vec![0; MAX_SEE_DEPTH],
             delta_margin: 0,
             aspiration_delta: 50,
             quiesce_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
@@ -650,28 +650,28 @@ impl State {
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).sqrt() * (moves as f64).sqrt();
 
-                (1.0 + base / 5.0).clamp(0.0, depth as f64 - 1.0) as u8
+                (1.5 + base / 3.5).clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             quiesce_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).sqrt() * (moves as f64).ln();
 
-                (1.0 + base / 5.0 - 1.0).clamp(0.0, depth as f64 - 1.0) as u8
+                (1.0 + base / 4.0).clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             capture_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).ln() * (moves as f64).sqrt();
 
-                (base / 5.5).clamp(0.0, depth as f64 - 1.0) as u8
+                (1.0 + base / 4.0).clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             capture_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).ln() * (moves as f64).ln();
 
-                (base / 5.5 - 1.0).clamp(0.0, depth as f64 - 1.0) as u8
+                (base / 4.5).clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             opening_score: 0,
             endgame_score: 0,
