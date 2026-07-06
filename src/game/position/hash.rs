@@ -66,6 +66,34 @@ pub fn hash_position(state: &State) -> u128 {
     hash
 }
 
+/// hash_pawns
+///
+/// Computes the pawn-only Zobrist key for the given game state from
+/// scratch. The key folds in only the on-board placement of pawn-flagged
+/// pieces, so it stays stable across non-pawn moves and lets evaluation
+/// cache pawn structure scores between positions.
+///
+/// Params:
+/// - state: &State -> position whose pawns are hashed
+///
+/// Return:
+/// u128 -> the position's pawn-only Zobrist key
+///
+pub fn hash_pawns(state: &State) -> u128 {
+    let mut hash = u128::default();
+
+    for (index, piece_positions) in state.piece_list.iter().enumerate() {
+        if !p_is_pawn!(state.statics.pieces[index]) {
+            continue;
+        }
+        for &square in piece_positions {
+            hash ^= &PIECE_HASHES[index][square as usize];
+        }
+    }
+
+    hash
+}
+
 /*----------------------------------------------------------------------------*\
                          INCREMENTAL HASH UPDATE HELPERS
 \*----------------------------------------------------------------------------*/
@@ -85,6 +113,10 @@ pub fn hash_position(state: &State) -> u128 {
 macro_rules! hash_in_or_out_piece {
     ($state:expr, $piece_index:expr, $square_index:expr) => {
         $state.position_hash ^=
+            &PIECE_HASHES[$piece_index][$square_index as usize];
+
+        $state.pawn_hash ^=
+            p_is_pawn!($state.statics.pieces[$piece_index]) as u128 *
             &PIECE_HASHES[$piece_index][$square_index as usize];
     };
 }

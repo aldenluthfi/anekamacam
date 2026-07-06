@@ -174,8 +174,8 @@ pub fn verify_game_state(state: &State) {
     let mut temp_black_board = board!(
         state.statics.files, state.statics.ranks
     );
-    let mut temp_piece_list =
-        vec![HashSet::new(); state.statics.pieces.len()];
+    let mut temp_piece_list: Vec<Vec<Square>> =
+        vec![Vec::new(); state.statics.pieces.len()];
 
     for (square, piece_idx) in state.main_board.iter().enumerate() {
         if *piece_idx != NO_PIECE {
@@ -187,12 +187,21 @@ pub fn verify_game_state(state: &State) {
                 set!(temp_black_board, square as u32);
             }
 
-            temp_piece_list[p_index!(piece) as usize].insert(square as Square);
+            temp_piece_list[p_index!(piece) as usize].push(square as Square);
         }
     }
 
+    let mut sorted_piece_list = state.piece_list.clone();
+
+    for squares in temp_piece_list.iter_mut() {
+        squares.sort_unstable();
+    }
+    for squares in sorted_piece_list.iter_mut() {
+        squares.sort_unstable();
+    }
+
     assert_eq!(
-        &temp_piece_list, &state.piece_list,
+        &temp_piece_list, &sorted_piece_list,
         "Computed piece list doesn't match state piece list",
     );
 
@@ -690,13 +699,15 @@ pub fn benchmark_perft(
 /// - state: &mut State         -> position searched
 /// - ttable: Arc<TTable>       -> shared transposition table
 /// - qtable: Arc<QTable>       -> shared quiescence table
+/// - ptable: Arc<PTable>       -> shared pawn structure table
 /// - depth: usize              -> fixed search depth
 /// - thread_num: usize         -> number of worker threads
 /// - dict: Option<&Translator> -> translator for printed move names
 ///
 pub fn benchmark_search(
-    state: &mut State, ttable: Arc<TTable>, qtable: Arc<QTable>, depth: usize,
-    thread_num: usize, dict: Option<&Translator>,
+    state: &mut State, ttable: Arc<TTable>, qtable: Arc<QTable>,
+    ptable: Arc<PTable>, depth: usize, thread_num: usize,
+    dict: Option<&Translator>,
 ) {
     log_3!("Search benchmark started with depth {}...", depth);
 
@@ -704,10 +715,10 @@ pub fn benchmark_search(
     let mut bufs = SearchBufs::default();
 
     search_position(
-        state, Arc::clone(&ttable), Arc::clone(&qtable), &mut info,
-        &mut bufs, thread_num, dict
+        state, Arc::clone(&ttable), Arc::clone(&qtable),
+        Arc::clone(&ptable), &mut info, &mut bufs, thread_num, dict
     );
-    log_table_stats(&ttable, &qtable);
+    log_table_stats(&ttable, &qtable, &ptable);
 }
 
 /// perft

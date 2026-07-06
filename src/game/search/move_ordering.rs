@@ -145,8 +145,8 @@ macro_rules! see {
         gain_len += 1;
 
         if !make_move!(state, seen_move.clone()) {
-            -20000
-        } else if initial_attackee > initial_attacker {
+            -INF
+        } else if initial_attacker <= initial_attackee {
             undo_move!(state);
             initial_attackee - initial_attacker
         } else {
@@ -212,10 +212,14 @@ macro_rules! see {
 /// move is searched earlier. Scoring bands, highest priority first:
 ///
 /// - pv move          : 5000000
-/// - winning capture  : 4000000 + SEE score, in [0, MAX_PIECE_VALUE]
+/// - winning capture  : 4000000 + gain, in [0, MAX_PIECE_VALUE]
 /// - killer move      : 1000000 + 2 * MAX_HIST_VALUE + [1, 2]
 /// - history          : 1000000 + MAX_HIST_VALUE + history, in [-h, h]
 /// - losing capture   : 1000000 + SEE score, in [-MAX_PIECE_VALUE, -1]
+///
+/// Captures whose victim value is at least the attacker's are provably
+/// non-negative exchanges, so they skip SEE simulation and use the
+/// victim-minus-attacker gain directly; the rest pay full SEE.
 ///
 /// Params:
 /// - state       -> position providing killers, history, and piece values
@@ -267,9 +271,9 @@ macro_rules! score_move {
             );
 
             if see_score >= 0 {
-                (4_000_000 + see_score) as usize                                /* winning captures ordered second    */
+                (WINNING_CAPTURE_SCORE + see_score) as usize                    /* winning captures ordered second    */
             } else {
-                (1_000_000 + see_score) as usize                                /* losing captures ordered last       */
+                (LOSING_CAPTURE_SCORE + see_score) as usize                     /* losing captures ordered last       */
             }
         }
     }};

@@ -369,15 +369,16 @@ macro_rules! pawn_structure {
 /// - Handles `opening_score == 0` safely during interpolation.
 ///
 /// Params:
-/// - state -> position to evaluate
-/// - bufs  -> search scratch buffers (reused pawn entry lists)
+/// - state  -> position to evaluate
+/// - bufs   -> search scratch buffers (reused pawn entry lists)
+/// - ptable -> shared pawn structure table
 ///
 /// Return:
 /// i32 -> score from the side to move's perspective
 ///
 #[macro_export]
 macro_rules! evaluate_position {
-    ($state:expr, $bufs:expr) => {
+    ($state:expr, $bufs:expr, $ptable:expr) => {
         hotpath::measure_block!("eval::position", {
         let white = WHITE as usize;
         let black = BLACK as usize;
@@ -412,8 +413,15 @@ macro_rules! evaluate_position {
         let king_safety = 10
             * (king_shelter!($state, WHITE) - king_shelter!($state, BLACK));
 
-        let (pawn_opening, pawn_endgame) =
-            pawn_structure!($state, &mut $bufs.pawn_entry_buf);
+        let (pawn_hit, mut pawn_opening, mut pawn_endgame) =
+            probe_pt_entry!($state, $ptable);
+
+        if !pawn_hit {
+            let scores = pawn_structure!($state, &mut $bufs.pawn_entry_buf);
+            pawn_opening = scores.0;
+            pawn_endgame = scores.1;
+            hash_pt_entry!(pawn_opening, pawn_endgame, $state, $ptable);
+        }
 
         match $state.game_phase {
             OPENING | SETUP => {

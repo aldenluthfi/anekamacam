@@ -92,10 +92,14 @@ impl TTable {
     /// for any written entry; the latter two exist mainly for tests and
     /// diagnostics.
     pub fn with_mb(mb: usize) -> Self {
-        let size = mb * 1024 * 1024 / size_of::<TTEntry>();
+        let size = (mb * 1024 * 1024 / size_of::<TTEntry>()).max(1);
+        Self::with_entries(size)
+    }
+
+    pub fn with_entries(entries: usize) -> Self {
         Self {
             table: SyncUnsafeCell::new(
-                vec![TTEntry::default(); size]
+                vec![TTEntry::default(); entries]
             ),
             age: AtomicU64::new(0),
             new_write: AtomicU64::new(0),
@@ -568,10 +572,14 @@ impl QTable {
     /// megabyte budget, `len` reports slot count, and `is_empty` scans
     /// for any written entry.
     pub fn with_mb(mb: usize) -> Self {
-        let size = mb * 1024 * 1024 / size_of::<QTEntry>();
+        let size = (mb * 1024 * 1024 / size_of::<QTEntry>()).max(1);
+        Self::with_entries(size)
+    }
+
+    pub fn with_entries(entries: usize) -> Self {
         Self {
             table: SyncUnsafeCell::new(
-                vec![QTEntry::default(); size]
+                vec![QTEntry::default(); entries]
             ),
             age: AtomicU64::new(0),
             new_write: AtomicU64::new(0),
@@ -793,6 +801,177 @@ macro_rules! hash_qt_entry {
             entry.age = age;
             entry.version.fetch_add(1, Ordering::Release);
         }
+        })
+    };
+}
+
+/*----------------------------------------------------------------------------*\
+                PAWN STRUCTURE TABLE ENTRY REPRESENTATION
+\*----------------------------------------------------------------------------*/
+
+/// PTEntry
+///
+/// Pawn structure table entry — 2×u128 XOR-parity slot with seqlock.
+/// Keyed by the pawn-only Zobrist hash; the payload is the pawn structure
+/// evaluation, a pure function of the key, so entries never go stale and
+/// no age field is needed.
+///
+/// Layout:
+/// - slot[0] = endgame << 32 | opening (u32 bit patterns, 128-bit raw)
+/// - slot[1] = slot[0] ^ pawn_hash (parity, written last)
+/// - version = seqlock counter (odd = write in progress, even = readable)
+///
+/// Write order: version++ → slot[0] → slot[1] → version++
+///
+/// Validation:
+///   (1) slot[0] ^ slot[1] == pawn_hash  →  parity intact
+///   (2) version unchanged across read   →  no torn write
+#[derive(Default)]
+pub struct PTEntry {
+    pub slot:   [u128; 2],                                                      /* [payload, parity]                  */
+    pub version: AtomicU64,                                                     /* seqlock: odd = writing, even = ok  */
+}
+
+impl Clone for PTEntry {
+    fn clone(&self) -> Self {
+        PTEntry {
+            slot: self.slot,
+            version: AtomicU64::new(self.version.load(Ordering::Relaxed)),
+        }
+    }
+}
+
+/// PTable
+///
+/// Shared pawn structure table; same seqlock+parity scheme as TTable and
+/// QTable. Because stored scores derive purely from the pawn hash, the
+/// replacement policy is write-always and the table needs no aging; it is
+/// fixed-size and persists across searches.
+pub struct PTable {
+    pub table: SyncUnsafeCell<Vec<PTEntry>>,                                    /* shared mutable access              */
+    pub new_write: AtomicU64,                                                   /* writes to empty slots              */
+    pub over_write: AtomicU64,                                                  /* writes replacing existing entries  */
+    pub hit: AtomicU64,                                                         /* probes where parity matched        */
+    pub valid: AtomicU64,                                                       /* probes where read was consistent   */
+}
+
+unsafe impl Sync for PTable {}
+unsafe impl Send for PTable {}
+
+impl Default for PTable {
+    fn default() -> Self {
+        Self::with_entries(P_TABLE_SIZE)
+    }
+}
+
+impl PTable {
+    /// PTable method cluster.
+    ///
+    /// Reduced mirror of the `QTable` methods: `with_mb` sizes the table
+    /// from a megabyte budget, `len` reports slot count, and `is_empty`
+    /// scans for any written entry.
+    pub fn with_mb(mb: usize) -> Self {
+        let size = (mb * 1024 * 1024 / size_of::<PTEntry>()).max(1);
+        Self::with_entries(size)
+    }
+
+    pub fn with_entries(entries: usize) -> Self {
+        Self {
+            table: SyncUnsafeCell::new(vec![PTEntry::default(); entries]),
+            new_write: AtomicU64::new(0),
+            over_write: AtomicU64::new(0),
+            hit: AtomicU64::new(0),
+            valid: AtomicU64::new(0),
+        }
+    }
+    pub fn len(&self) -> usize {
+        unsafe { &*self.table.get() }.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        unsafe { &*self.table.get() }.iter().all(|entry| {
+            entry.slot[0] == 0 && entry.slot[1] == 0
+        })
+    }
+}
+
+/*----------------------------------------------------------------------------*\
+                  PAWN STRUCTURE TABLE PROBE & STORE MACROS
+\*----------------------------------------------------------------------------*/
+
+/// Pawn-table access macros.
+///
+/// `pt_index!` maps a pawn hash onto a slot; `probe_pt_entry!` reads an
+/// entry with seqlock validation and returns
+/// `(hit, opening, endgame)`; `hash_pt_entry!` writes one
+/// unconditionally. The two score halves travel as u32 bit patterns in
+/// the low 64 bits of slot[0].
+#[macro_export]
+macro_rules! pt_index {
+    ($hash:expr, $size:expr) => {{
+        ($hash as usize) % $size
+    }};
+}
+
+#[macro_export]
+macro_rules! probe_pt_entry {
+    ($state:expr, $ptable:expr) => {
+        hotpath::measure_block!("pt::probe", {
+        let hash = $state.pawn_hash;
+        let index = pt_index!(hash, $ptable.len());
+        let entry = &mut unsafe { &mut *($ptable.table.get()) }[index];
+
+        let v1 = entry.version.load(Ordering::Acquire);
+        if v1 & 1 != 0 {
+            (false, 0i32, 0i32)                                                 /* write in progress                  */
+        } else {
+            let s0 = entry.slot[0];
+            let s1 = entry.slot[1];
+
+            if s0 ^ s1 != hash {                                                /* parity check: both slots covered   */
+                (false, 0i32, 0i32)
+            } else {
+                $ptable.hit.fetch_add(1, Ordering::Relaxed);                    /* parity matched                     */
+                let v2 = entry.version.load(Ordering::Acquire);
+
+                if v1 != v2 {                                                   /* seqlock: torn read detected        */
+                    (false, 0i32, 0i32)
+                } else {
+                    $ptable.valid.fetch_add(1, Ordering::Relaxed);
+                    let opening = (s0 as u32) as i32;
+                    let endgame = ((s0 >> 32) as u32) as i32;
+
+                    (true, opening, endgame)
+                }
+            }
+        }
+        })
+    };
+}
+
+#[macro_export]
+macro_rules! hash_pt_entry {
+    ($opening:expr, $endgame:expr, $state:expr, $ptable:expr) => {
+        hotpath::measure_block!("pt::store", {
+        let hash = $state.pawn_hash;
+        let index = pt_index!(hash, $ptable.len());
+        let table_vec: &mut Vec<PTEntry> =
+            unsafe { &mut *($ptable.table.get()) };
+        let entry = &mut table_vec[index];
+
+        let a = (($endgame as u32) as u128) << 32
+            | (($opening as u32) as u128);
+
+        if entry.slot[0] == 0 && entry.slot[1] == 0 {
+            $ptable.new_write.fetch_add(1, Ordering::Relaxed);
+        } else {
+            $ptable.over_write.fetch_add(1, Ordering::Relaxed);
+        }
+
+        entry.version.fetch_add(1, Ordering::Release);
+        entry.slot[0] = a;
+        entry.slot[1] = a ^ hash;
+        entry.version.fetch_add(1, Ordering::Release);
         })
     };
 }

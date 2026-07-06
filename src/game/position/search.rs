@@ -174,6 +174,7 @@ pub fn clear_search(
 /// - state: &mut State         -> root position to search
 /// - table: Arc<TTable>        -> shared transposition table
 /// - qtable: Arc<QTable>       -> shared quiescence table
+/// - ptable: Arc<PTable>       -> shared pawn structure table
 /// - info: &mut SearchInfo     -> limits and counters for this search
 /// - bufs: &mut SearchBufs     -> scratch buffers for thread 0
 /// - thread_num: usize         -> worker thread count
@@ -186,6 +187,7 @@ pub fn search_position(
     state: &mut State,
     table: Arc<TTable>,
     qtable: Arc<QTable>,
+    ptable: Arc<PTable>,
     info: &mut SearchInfo,
     bufs: &mut SearchBufs,
     thread_num: usize,
@@ -201,14 +203,20 @@ pub fn search_position(
     qtable.new_write.store(0, Ordering::Relaxed);
     qtable.over_write.store(0, Ordering::Relaxed);
 
+    ptable.hit.store(0, Ordering::Relaxed);
+    ptable.valid.store(0, Ordering::Relaxed);
+    ptable.new_write.store(0, Ordering::Relaxed);
+    ptable.over_write.store(0, Ordering::Relaxed);
+
     if thread_num <= 1 {
         info.thread_count = thread_num.max(1);
         iterative_deepening(
-            state, &table, &qtable, info, bufs, 0, dict,
+            state, &table, &qtable, &ptable, info, bufs, 0, dict,
         )
     } else {
         let pool = ThreadPool::with_threads(
-            state, Arc::clone(&table), Arc::clone(&qtable), thread_num
+            state, Arc::clone(&table), Arc::clone(&qtable),
+            Arc::clone(&ptable), thread_num
         );
         pool.run(info, dict)
     }
@@ -216,15 +224,19 @@ pub fn search_position(
 
 /// log_table_stats
 ///
-/// Logs TT and QT stat lines (new/over/hit/valid) for a finished search.
+/// Logs TT, QT, and PT stat lines (new/over/hit/valid) for a finished
+/// search.
 /// Kept separate from `search_position` so callers on the UCI path can
 /// emit `bestmove` before any log-file I/O happens.
 ///
 /// Params:
 /// - table: &TTable  -> main table whose counters are reported
 /// - qtable: &QTable -> qsearch table whose counters are reported
+/// - ptable: &PTable -> pawn table whose counters are reported
 ///
-pub fn log_table_stats(table: &TTable, qtable: &QTable) {
+pub fn log_table_stats(
+    table: &TTable, qtable: &QTable, ptable: &PTable,
+) {
     log_3!(
         "TT | new: {:<8} | over: {:<8} | hit: {:<8} | valid: {:<8}",
         table.new_write.load(Ordering::Relaxed),
@@ -239,6 +251,14 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
         qtable.over_write.load(Ordering::Relaxed),
         qtable.hit.load(Ordering::Relaxed),
         qtable.valid.load(Ordering::Relaxed),
+    );
+
+    log_3!(
+        "PT | new: {:<8} | over: {:<8} | hit: {:<8} | valid: {:<8}",
+        ptable.new_write.load(Ordering::Relaxed),
+        ptable.over_write.load(Ordering::Relaxed),
+        ptable.hit.load(Ordering::Relaxed),
+        ptable.valid.load(Ordering::Relaxed),
     );
 }
 
@@ -259,6 +279,7 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
 /// - state: &mut State         -> root position to search
 /// - ttable: &TTable           -> shared transposition table
 /// - qtable: &QTable           -> shared quiescence table
+/// - ptable: &PTable           -> shared pawn structure table
 /// - info: &mut SearchInfo     -> limits and counters for this search
 /// - bufs: &mut SearchBufs     -> per-thread scratch buffers
 /// - thread_num: usize         -> this worker's index (0 reports)
@@ -271,6 +292,7 @@ pub fn iterative_deepening(
     state: &mut State,
     ttable: &TTable,
     qtable: &QTable,
+    ptable: &PTable,
     info: &mut SearchInfo,
     bufs: &mut SearchBufs,
     thread_num: usize,
@@ -297,7 +319,8 @@ pub fn iterative_deepening(
 
         let score = if depth < 4 || best_score.abs() >= MATE_SCORE {
             alpha_beta(
-                state, ttable, qtable, depth, -INF, INF, info, bufs, true
+                state, ttable, qtable, ptable,
+                depth, -INF, INF, info, bufs, true
             )
         } else {
             let mut asp_delta = state.statics.aspiration_delta;
@@ -306,7 +329,7 @@ pub fn iterative_deepening(
             loop {
                 let s = alpha_beta(
                     state,
-                    ttable, qtable,
+                    ttable, qtable, ptable,
                     depth, asp_alpha, asp_beta, info, bufs, true
                 );
 
@@ -492,6 +515,7 @@ pub fn iterative_deepening(
 /// - state: &mut State     -> position searched, restored on return
 /// - ttable: &TTable       -> main table (read for PV move ordering)
 /// - qtable: &QTable       -> qsearch table probed and updated
+/// - ptable: &PTable       -> shared pawn structure table
 /// - alpha: i32            -> lower search bound
 /// - beta: i32             -> upper search bound
 /// - info: &mut SearchInfo -> node counters and interrupt polling
@@ -505,6 +529,7 @@ fn quiescence_search(
     state: &mut State,
     ttable: &TTable,
     qtable: &QTable,
+    ptable: &PTable,
     alpha: i32,
     beta: i32,
     info: &mut SearchInfo,
@@ -532,7 +557,7 @@ fn quiescence_search(
                                        STAND PAT
     \*-----------------------------------------------------------------------*/
 
-    let stand_pat = evaluate_position!(state, bufs);
+    let stand_pat = evaluate_position!(state, bufs, ptable);
 
     if !in_check {
         if stand_pat >= beta {
@@ -604,9 +629,7 @@ fn quiescence_search(
         \*-------------------------------------------------------------------*/
 
         if !in_check
-        && see!(
-            state, mv, &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
-        ) < 0 {
+        && bufs.score_buf[ply][i] < WINNING_CAPTURE_SCORE as usize {            /* score band encodes the SEE sign    */
             continue;
         }
 
@@ -634,7 +657,7 @@ fn quiescence_search(
         legal_moves += 1;
 
         let score = -quiescence_search(
-            state, ttable, qtable, -beta, -alpha, info, bufs
+            state, ttable, qtable, ptable, -beta, -alpha, info, bufs
         );
 
         undo_move!(state);
@@ -762,6 +785,7 @@ fn quiescence_search(
 /// - state: &mut State     -> position searched, restored on return
 /// - ttable: &TTable       -> main table probed and updated
 /// - qtable: &QTable       -> qsearch table for the leaf search
+/// - ptable: &PTable       -> shared pawn structure table
 /// - depth: usize          -> remaining depth in plies
 /// - alpha: i32            -> lower search bound
 /// - beta: i32             -> upper search bound
@@ -777,6 +801,7 @@ pub fn alpha_beta(
     state: &mut State,
     ttable: &TTable,
     qtable: &QTable,
+    ptable: &PTable,
     mut depth: usize,
     mut alpha: i32,
     mut beta: i32,
@@ -804,7 +829,7 @@ pub fn alpha_beta(
     }
 
     if state.search_ply >= MAX_DEPTH as u32 {
-        return evaluate_position!(state, bufs);
+        return evaluate_position!(state, bufs, ptable);
     }
 
     info.nodes += 1;
@@ -827,7 +852,7 @@ pub fn alpha_beta(
 
     if depth == 0 {
         return quiescence_search(
-            state, ttable, qtable, alpha, beta, info, bufs
+            state, ttable, qtable, ptable, alpha, beta, info, bufs
         );
     }
 
@@ -850,18 +875,19 @@ pub fn alpha_beta(
                                   STATIC EVALUATION
     \*-----------------------------------------------------------------------*/
 
-    let static_eval = evaluate_position!(state, bufs);
+    let static_eval =
+        if in_check { -INF } else { evaluate_position!(state, bufs, ptable) };
 
-    state.static_eval[ply] = if in_check { -INF } else { static_eval };
+    state.static_eval[ply] = static_eval;
 
     /*-----------------------------------------------------------------------*\
                                     IMPROVING FLAG
     \*-----------------------------------------------------------------------*/
 
-    let improving = (!in_check
+    let improving = !in_check
         && ply >= 2
         && state.static_eval[ply - 2] != -INF
-        && static_eval > state.static_eval[ply - 2]) as usize;
+        && static_eval > state.static_eval[ply - 2];
 
     let mut pv_capture = false;
 
@@ -877,7 +903,8 @@ pub fn alpha_beta(
     && (pv_move.is_none() || !pv_capture)
     && !in_check
     && beta.abs() < MATE_SCORE
-    && static_eval - state.statics.rfp_margin[improving][depth] >= beta
+    && static_eval - state.statics.rfp_margin[improving as usize][depth] 
+    >= beta
     {
         return beta;
     }
@@ -895,7 +922,7 @@ pub fn alpha_beta(
     {
         let score = alpha_beta(
             state,
-            ttable, qtable,
+            ttable, qtable, ptable,
             depth.saturating_sub(1), alpha, alpha + 1, info, bufs, null
         );
 
@@ -923,7 +950,7 @@ pub fn alpha_beta(
 
         let score = -alpha_beta(
             state,
-            ttable, qtable,
+            ttable, qtable, ptable,
             depth - reduct, -beta, -beta + 1, info, bufs, false
         );
 
@@ -961,7 +988,8 @@ pub fn alpha_beta(
 
     if pv_move.is_none() && depth >= MIN_IID_DEPTH {
         alpha_beta(
-            state, ttable, qtable, depth - 2, alpha, beta, info, bufs, true
+            state, ttable, qtable, ptable,
+            depth - 2, alpha, beta, info, bufs, true
         );
 
         if !info.interrupt {
@@ -1052,10 +1080,7 @@ pub fn alpha_beta(
         && alpha.abs() < MATE_SCORE
         && is_capture
         {
-            let see = see!(
-                state, mv, &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
-            );
-
+            let see = bufs.score_buf[ply][i] as i32 - LOSING_CAPTURE_SCORE;     /* losing band stores 1000000 + SEE   */
             if see < -state.statics.see_margin[depth] {
                 continue;
             }
@@ -1086,7 +1111,7 @@ pub fn alpha_beta(
         && !dangerous_push
         && alpha.abs() < MATE_SCORE
         && beta - alpha == 1
-        && legal_moves >= LMP_THRESHOLD[improving][depth] as usize
+        && legal_moves >= LMP_THRESHOLD[improving as usize][depth] as usize
         {
             undo_move!(state);
             continue;
@@ -1115,7 +1140,7 @@ pub fn alpha_beta(
             if hist_score < -(MAX_HIST_VALUE as i32) / 4 {
                 reduction = (reduction + 1).min(depth - 1);
             }
-            if improving == 1 {
+            if improving as usize == 1 {
                 reduction = reduction.saturating_sub(1).max(1);
             }
             if dangerous_push {
@@ -1124,14 +1149,14 @@ pub fn alpha_beta(
 
             score = -alpha_beta(
                 state,
-                ttable, qtable,
+                ttable, qtable, ptable,
                 depth - reduction, -alpha - 1, -alpha, info, bufs, true
             );
 
             if score > alpha && reduction > 2 {
                 score = -alpha_beta(
                     state,
-                    ttable, qtable,
+                    ttable, qtable, ptable,
                     depth - 1, -alpha - 1, -alpha, info, bufs, true
                 );
             }
@@ -1139,7 +1164,7 @@ pub fn alpha_beta(
             if score > alpha && beta - alpha > 1 {
                 score = -alpha_beta(
                     state,
-                    ttable, qtable,
+                    ttable, qtable, ptable,
                     depth - 1, -beta, -alpha, info, bufs, true
                 );
             }
@@ -1152,14 +1177,14 @@ pub fn alpha_beta(
         else if legal_moves > 1 {
             score = -alpha_beta(
                 state,
-                ttable, qtable,
+                ttable, qtable, ptable,
                 depth - 1, -alpha - 1, -alpha, info, bufs, true
             );
 
             if score > alpha && beta - alpha > 1 {
                 score = -alpha_beta(
                     state,
-                    ttable, qtable,
+                    ttable, qtable, ptable,
                     depth - 1, -beta, -alpha, info, bufs, true
                 );
             }
@@ -1169,7 +1194,7 @@ pub fn alpha_beta(
         else {
             score = -alpha_beta(
                 state,
-                ttable, qtable,
+                ttable, qtable, ptable,
                 depth - 1, -beta, -alpha, info, bufs, true
             );
         }

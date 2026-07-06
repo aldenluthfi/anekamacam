@@ -2319,6 +2319,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             Some(piece_idx) => {
                 state.playing = p_color!(state.statics.pieces[piece_idx]);
                 state.position_hash = hash_position(&state);
+                state.pawn_hash = hash_pawns(&state);
 
                 let mut out = Vec::with_capacity(64);
                 let mut scratch = Vec::with_capacity(16);
@@ -2667,6 +2668,7 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 /// - dict: Option<&Translator>      -> translator for printed move names
 /// - ttable: Arc<TTable>            -> shared main table for searches
 /// - qtable: Arc<QTable>            -> shared qsearch table for searches
+/// - ptable: Arc<PTable>            -> shared pawn table for searches
 /// - threads: usize                 -> worker count for search commands
 /// - sender: Sender<TuiEvent>       -> channel for result snapshots
 ///
@@ -2678,6 +2680,7 @@ fn execute_command(
     dict: Option<&Translator>,
     ttable: Arc<TTable>,
     qtable: Arc<QTable>,
+    ptable: Arc<PTable>,
     threads: usize,
     sender: Sender<TuiEvent>
 ) {
@@ -2823,9 +2826,9 @@ fn execute_command(
             let mut bufs = SearchBufs::default();
             let result = search_position(
                 state, Arc::clone(&ttable), Arc::clone(&qtable),
-                &mut info, &mut bufs, threads, dict
+                Arc::clone(&ptable), &mut info, &mut bufs, threads, dict
             );
-            log_table_stats(&ttable, &qtable);
+            log_table_stats(&ttable, &qtable, &ptable);
 
             if result.best_move == null_move() {
                 log_2!("No legal move available");
@@ -2871,9 +2874,10 @@ fn execute_command(
                 let result = search_position(
                     state,
                     Arc::clone(&ttable), Arc::clone(&qtable),
+                    Arc::clone(&ptable),
                     &mut info, &mut bufs, threads, dict
                 );
-                log_table_stats(&ttable, &qtable);
+                log_table_stats(&ttable, &qtable, &ptable);
 
                 if result.best_score == -INF {
                     state.game_over = true;
@@ -2924,7 +2928,7 @@ fn execute_command(
             run_datagen(
                 state, variant_name, dict,
                 Arc::clone(&ttable), Arc::clone(&qtable),
-                threads, games, movetime, &sender,
+                Arc::clone(&ptable), threads, games, movetime, &sender,
             );
         }
         _ if trimmed.starts_with("tune") => {
@@ -3203,6 +3207,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 move || {
                     let table = TTable::default();
                     let qtable = QTable::default();
+                    let ptable = PTable::default();
 
                     let mut state = arc_state.lock()
                         .unwrap_or_else(|_| {
@@ -3236,6 +3241,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                         dict.as_ref(),
                         Arc::new(table),
                         Arc::new(qtable),
+                        Arc::new(ptable),
                         threads,
                         sender.clone()
                     );

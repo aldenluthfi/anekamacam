@@ -1442,6 +1442,7 @@ macro_rules! make_move {
             let last_halfmove_clock = $state.halfmove_clock;
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
+            let last_pawn_hash = $state.pawn_hash;
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
@@ -1591,11 +1592,10 @@ macro_rules! make_move {
                     }
                 }
 
-                $state.piece_list[piece_index]
-                    .remove(&(start_square as Square));
+                piece_list_remove!($state, piece_index, start_square as Square);
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].insert(end_square as Square);
+                ].push(end_square as Square);
 
                 if halfmove_clock!($state)
                 && $state.statics.halfmove_pieces[piece_index] {
@@ -1789,11 +1789,10 @@ macro_rules! make_move {
                     }
                 }
 
-                $state.piece_list[piece_index]
-                    .remove(&(start_square as Square));
+                piece_list_remove!($state, piece_index, start_square as Square);
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].insert(end_square as Square);
+                ].push(end_square as Square);
 
                 $state.halfmove_clock = 0;
 
@@ -1938,11 +1937,11 @@ macro_rules! make_move {
                 if is_unload {
                     $state.main_board[unload_square as usize] =
                         captured_piece as PieceIndex;
-                    $state.piece_list[captured_piece].remove(
-                        &(captured_square as Square)
+                    piece_list_remove!(
+                        $state, captured_piece, captured_square as Square
                     );
                     $state.piece_list[captured_piece]
-                        .insert(unload_square as Square);
+                        .push(unload_square as Square);
 
                     $state.opening_pst_bonus[captured_color as usize] -=
                         $state.statics.pst_opening[captured_piece]
@@ -1957,8 +1956,8 @@ macro_rules! make_move {
                         $state.statics.pst_endgame[captured_piece]
                         [unload_square as usize];
                 } else {
-                    $state.piece_list[captured_piece].remove(
-                        &(captured_square as Square)
+                    piece_list_remove!(
+                        $state, captured_piece, captured_square as Square
                     );
                 }
 
@@ -2139,11 +2138,10 @@ macro_rules! make_move {
                     }
                 }
 
-                $state.piece_list[piece_index]
-                    .remove(&(start_square as Square));
+                piece_list_remove!($state, piece_index, start_square as Square);
                 $state.piece_list[
                     if is_promotion { promoted_piece } else { piece_index }
-                ].insert(end_square as Square);
+                ].push(end_square as Square);
 
                 $state.halfmove_clock = 0;
 
@@ -2299,11 +2297,11 @@ macro_rules! make_move {
                     if is_unload {
                         $state.main_board[unload_square as usize] =
                             captured_piece as PieceIndex;
-                        $state.piece_list[captured_piece].remove(
-                            &(captured_square as Square)
+                        piece_list_remove!(
+                            $state, captured_piece, captured_square as Square
                         );
                         $state.piece_list[captured_piece]
-                            .insert(unload_square as Square);
+                            .push(unload_square as Square);
 
                         $state.opening_pst_bonus[captured_color as usize] -=
                             $state.statics.pst_opening[captured_piece]
@@ -2318,8 +2316,8 @@ macro_rules! make_move {
                             $state.statics.pst_endgame[captured_piece]
                             [unload_square as usize];
                     } else {
-                        $state.piece_list[captured_piece].remove(
-                            &(captured_square as Square)
+                        piece_list_remove!(
+                            $state, captured_piece, captured_square as Square
                         );
                     }
 
@@ -2385,7 +2383,7 @@ macro_rules! make_move {
 
                 $state.main_board[drop_square as usize] =
                     piece_index as PieceIndex;
-                $state.piece_list[piece_index].insert(drop_square as Square);
+                $state.piece_list[piece_index].push(drop_square as Square);
 
                 $state.opening_pst_bonus[piece_color as usize] +=
                     $state.statics.pst_opening
@@ -2487,9 +2485,8 @@ macro_rules! make_move {
                     $state.statics.pst_endgame
                     [piece_index][end_square as usize];
 
-                $state.piece_list[piece_index]
-                    .remove(&(start_square as Square));
-                $state.piece_list[piece_index].insert(end_square as Square);
+                piece_list_remove!($state, piece_index, start_square as Square);
+                $state.piece_list[piece_index].push(end_square as Square);
 
                 $state.halfmove_clock = 0;
 
@@ -2526,11 +2523,11 @@ macro_rules! make_move {
 
                 $state.main_board[unload_square as usize] =
                     captured_piece as PieceIndex;
-                $state.piece_list[captured_piece].remove(
-                    &(captured_square as Square)
+                piece_list_remove!(
+                    $state, captured_piece, captured_square as Square
                 );
                 $state.piece_list[captured_piece]
-                    .insert(unload_square as Square);
+                    .push(unload_square as Square);
 
                 $state.opening_pst_bonus[captured_color as usize] -=
                     $state.statics.pst_opening[captured_piece]
@@ -2615,7 +2612,8 @@ macro_rules! make_move {
                 game_over: last_game_over,
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
-                position_hash: last_position_hash
+                position_hash: last_position_hash,
+                pawn_hash: last_pawn_hash
             };
 
             $state.history.push(snapshot);
@@ -2679,6 +2677,7 @@ macro_rules! undo_move {
         $state.halfmove_clock = snapshot.halfmove_clock;
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
+        $state.pawn_hash = snapshot.pawn_hash;
         $state.game_over = snapshot.game_over;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
@@ -2729,8 +2728,9 @@ macro_rules! undo_move {
                 $state.statics.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece]
-                    .remove(&(end_square as Square));
+                piece_list_remove!(
+                    $state, promoted_piece, end_square as Square
+                );
 
                 $state.big_pieces[piece_color as usize] -=
                     p_is_big!($state.statics.pieces[promoted_piece]) as u32;
@@ -2768,10 +2768,10 @@ macro_rules! undo_move {
                     *hand += 1;
                 }
             } else {
-                $state.piece_list[piece_index].remove(&(end_square as Square));
+                piece_list_remove!($state, piece_index, end_square as Square);
             }
 
-            $state.piece_list[piece_index].insert(start_square as Square);
+            $state.piece_list[piece_index].push(start_square as Square);
         } else if move_type == SINGLE_CAPTURE_MOVE {
             let piece_index = piece!(mv) as usize;
             let start_square = start!(mv) as u32;
@@ -2823,8 +2823,9 @@ macro_rules! undo_move {
                 $state.statics.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece]
-                    .remove(&(end_square as Square));
+                piece_list_remove!(
+                    $state, promoted_piece, end_square as Square
+                );
 
                 $state.big_pieces[piece_color as usize] -=
                     p_is_big!($state.statics.pieces[promoted_piece]) as u32;
@@ -2862,10 +2863,10 @@ macro_rules! undo_move {
                     *hand += 1;
                 }
             } else {
-                $state.piece_list[piece_index].remove(&(end_square as Square));
+                piece_list_remove!($state, piece_index, end_square as Square);
             }
 
-            $state.piece_list[piece_index].insert(start_square as Square);
+            $state.piece_list[piece_index].push(start_square as Square);
 
             if is_unload {
                 clear!(
@@ -2898,8 +2899,9 @@ macro_rules! undo_move {
                 captured_piece as PieceIndex;
 
             if is_unload {
-                $state.piece_list[captured_piece]
-                    .remove(&(unload_square as Square));
+                piece_list_remove!(
+                    $state, captured_piece, unload_square as Square
+                );
 
                 $state.opening_pst_bonus[captured_color as usize] -=
                     $state.statics.pst_opening[captured_piece]
@@ -2915,7 +2917,7 @@ macro_rules! undo_move {
                     [captured_square as usize];
             }
             $state.piece_list[captured_piece]
-                .insert(captured_square as Square);
+                .push(captured_square as Square);
 
             if !is_unload {
                 $state.opening_pst_bonus[captured_color as usize] +=
@@ -3003,8 +3005,9 @@ macro_rules! undo_move {
                 $state.statics.pst_endgame[piece_index][start_square as usize];
 
             if is_promotion {
-                $state.piece_list[promoted_piece]
-                    .remove(&(end_square as Square));
+                piece_list_remove!(
+                    $state, promoted_piece, end_square as Square
+                );
 
                 $state.big_pieces[piece_color as usize] -=
                     p_is_big!($state.statics.pieces[promoted_piece]) as u32;
@@ -3041,10 +3044,10 @@ macro_rules! undo_move {
                     *hand += 1;
                 }
             } else {
-                $state.piece_list[piece_index].remove(&(end_square as Square));
+                piece_list_remove!($state, piece_index, end_square as Square);
             }
 
-            $state.piece_list[piece_index].insert(start_square as Square);
+            $state.piece_list[piece_index].push(start_square as Square);
 
             for cap in m_captures!(mv).iter() {
                 let captured_piece = multi_move_captured_piece!(cap) as usize;
@@ -3086,8 +3089,9 @@ macro_rules! undo_move {
                     captured_piece as PieceIndex;
 
                 if is_unload {
-                    $state.piece_list[captured_piece]
-                        .remove(&(unload_square as Square));
+                    piece_list_remove!(
+                        $state, captured_piece, unload_square as Square
+                    );
 
                     $state.opening_pst_bonus[captured_color as usize] -=
                         $state.statics.pst_opening[captured_piece]
@@ -3103,7 +3107,7 @@ macro_rules! undo_move {
                         [captured_square as usize];
                 }
                 $state.piece_list[captured_piece]
-                    .insert(captured_square as Square);
+                    .push(captured_square as Square);
 
                 if !is_unload {
                     $state.opening_pst_bonus[captured_color as usize] +=
@@ -3169,7 +3173,7 @@ macro_rules! undo_move {
             }
 
             $state.main_board[drop_square as usize] = NO_PIECE;
-            $state.piece_list[piece_index].remove(&(drop_square as Square));
+            piece_list_remove!($state, piece_index, drop_square as Square);
 
             $state.opening_pst_bonus[piece_color as usize] -=
                 $state.statics.pst_opening[piece_index][drop_square as usize];
@@ -3227,8 +3231,8 @@ macro_rules! undo_move {
             $state.endgame_pst_bonus[piece_color as usize] +=
                 $state.statics.pst_endgame[piece_index][start_square as usize];
 
-            $state.piece_list[piece_index].remove(&(end_square as Square));
-            $state.piece_list[piece_index].insert(start_square as Square);
+            piece_list_remove!($state, piece_index, end_square as Square);
+            $state.piece_list[piece_index].push(start_square as Square);
 
             clear!(
                 $state.pieces_board[captured_color as usize],
@@ -3246,8 +3250,7 @@ macro_rules! undo_move {
             $state.main_board[captured_square as usize] =
                 captured_piece as PieceIndex;
 
-            $state.piece_list[captured_piece]
-                .remove(&(unload_square as Square));
+            piece_list_remove!($state, captured_piece, unload_square as Square);
 
             $state.opening_pst_bonus[captured_color as usize] -=
                 $state.statics.pst_opening[captured_piece]
@@ -3262,7 +3265,7 @@ macro_rules! undo_move {
                 $state.statics.pst_endgame[captured_piece]
                 [captured_square as usize];
             $state.piece_list[captured_piece]
-                .insert(captured_square as Square);
+                .push(captured_square as Square);
         }
 
         #[cfg(debug_assertions)]
@@ -3300,6 +3303,7 @@ macro_rules! make_null_move {
             let last_halfmove_clock = $state.halfmove_clock;
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
+            let last_pawn_hash = $state.pawn_hash;
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
@@ -3316,7 +3320,8 @@ macro_rules! make_null_move {
                 game_over: last_game_over,
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
-                position_hash: last_position_hash
+                position_hash: last_position_hash,
+                pawn_hash: last_pawn_hash
             };
 
             $state.history.push(snapshot);
@@ -3357,6 +3362,7 @@ macro_rules! undo_null_move {
         $state.halfmove_clock = snapshot.halfmove_clock;
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
+        $state.pawn_hash = snapshot.pawn_hash;
         $state.game_over = snapshot.game_over;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;

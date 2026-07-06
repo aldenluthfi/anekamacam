@@ -64,7 +64,7 @@ pub use crate::game::moves::pattern_parse::{
     parse_pattern,
 };
 pub use crate::game::position::{
-    hash::{hash_position, PositionHash},
+    hash::{hash_pawns, hash_position, PositionHash},
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
         log_table_stats, search_position, SearchBufs, SearchInfo,
@@ -76,7 +76,7 @@ pub use crate::game::search::{
     parameters::{
         derive_eval_parameters, derive_parameters, derive_search_parameters,
     },
-    transposition::{QTable, QTEntry, TTEntry, TTable},
+    transposition::{PTable, PTEntry, QTable, QTEntry, TTEntry, TTable},
 };
 
 pub use crate::game::util::{
@@ -348,8 +348,24 @@ pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
-pub const T_TABLE_SIZE: usize = (0x1000000 * 256) / size_of::<TTEntry>();       /* 256MB                              */
-pub const Q_TABLE_SIZE: usize = (0x1000000 * 128) / size_of::<QTEntry>();       /* 128MB                              */
+pub const HASH_T_PARTS: usize = 16;
+pub const HASH_Q_PARTS: usize = 8;
+pub const HASH_P_PARTS: usize = 1;
+pub const HASH_PARTS: usize =
+    HASH_T_PARTS + HASH_Q_PARTS + HASH_P_PARTS;
+
+pub const T_TABLE_SIZE: usize =
+    (HASH_DEFAULT_MB * HASH_T_PARTS / HASH_PARTS * 0x100000)
+    / size_of::<TTEntry>();
+pub const Q_TABLE_SIZE: usize =
+    (HASH_DEFAULT_MB * HASH_Q_PARTS / HASH_PARTS * 0x100000)
+    / size_of::<QTEntry>();
+pub const P_TABLE_SIZE: usize =
+    (HASH_DEFAULT_MB * HASH_P_PARTS / HASH_PARTS * 0x100000)
+    / size_of::<PTEntry>();
+
+pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000;                               /* ordering band for SEE >= 0 moves   */
+pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000;                                /* ordering band for SEE < 0          */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
@@ -360,6 +376,7 @@ pub const TIME_OVERHEAD_MS: u128 = 50;
 pub const MAX_OVERHEAD_MS: u128 = 1000;
 pub const MIN_TIME_BUDGET_NS: u128 = 1_000_000;                                 /* timed searches never budget below  */
 pub const HARD_BUDGET_FACTOR: u128 = 4;                                         /* hard limit = soft budget x factor  */
+
 pub const OPT_VARIANT: &str = "UCI_Variant";
 pub const OPT_THREADS: &str = "Threads";
 pub const OPT_PONDER: &str = "Ponder";
@@ -367,7 +384,7 @@ pub const OPT_HASH: &str = "Hash";
 pub const OPT_CLEAR_HASH: &str = "Clear Hash";
 pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
 
-pub const HASH_DEFAULT_MB: usize = 384;
+pub const HASH_DEFAULT_MB: usize = 256;
 pub const HASH_MAX_MB: usize = 65536;
 
 /// SPRT and Texel-tuning tool constants.

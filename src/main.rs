@@ -96,6 +96,25 @@ fn main() {
             DEBUG_FLAG.store(true, Ordering::Relaxed);
             let _ = debug_console();
         }
+        Some("perft") => {
+            let variant = args.get(2)
+                .cloned()
+                .unwrap_or_else(|| "fide".to_string());
+            let depth = args.get(3)
+                .and_then(|value| value.parse::<u8>().ok())
+                .unwrap_or(4);
+            let limit = args.get(4)
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(200);
+            let mut state = parse_config_file(&format!("{}.conf", variant));
+
+            if let Some(content) = EMBEDDED_PERFT
+                .get_file(format!("{}.perft", variant))
+                .and_then(|f| f.contents_utf8())
+            {
+                benchmark_perft(&mut state, content, depth, -1, limit, None);
+            }
+        }
         _ => { let _ = uci(); }
     }
 }

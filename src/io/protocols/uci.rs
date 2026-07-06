@@ -180,6 +180,7 @@ struct Uci {
     overhead_ms: u128,                                                          /* move overhead in milliseconds      */
     ttable: Arc<TTable>,                                                        /* shared main transposition table    */
     qtable: Arc<QTable>,                                                        /* shared quiescence table            */
+    ptable: Arc<PTable>,                                                        /* shared pawn structure table        */
     active: Option<SearchHandle>,                                               /* in-flight search, if any           */
 }
 
@@ -215,6 +216,8 @@ impl Uci {
             .map(|n| n.get())
             .unwrap_or(1);
 
+        let (ttable, qtable, ptable) = spawn_hash_tables(HASH_DEFAULT_MB);
+
         Uci {
             state,
             variants,
@@ -224,15 +227,41 @@ impl Uci {
             threads: 1,
             hash_mb: HASH_DEFAULT_MB,
             overhead_ms: TIME_OVERHEAD_MS,
-            ttable: Arc::new(TTable::with_mb(
-                (HASH_DEFAULT_MB * 2 / 3).max(1)
-            )),
-            qtable: Arc::new(QTable::with_mb(
-                (HASH_DEFAULT_MB / 3).max(1)
-            )),
+            ttable,
+            qtable,
+            ptable,
             active: None,
         }
     }
+}
+
+/// spawn_hash_tables
+///
+/// Allocates the three shared hash tables from one megabyte budget, split
+/// between them by the fixed `HASH_*_PARTS` ratio so a `Hash` change scales
+/// all three consistently. Used at session startup and whenever `Hash` or
+/// `Clear Hash` rebuilds the tables.
+///
+/// Params:
+/// - hash_mb: usize -> total table budget in megabytes
+///
+/// Return:
+/// (Arc<TTable>, Arc<QTable>, Arc<PTable>) -> the freshly sized tables
+///
+fn spawn_hash_tables(
+    hash_mb: usize,
+) -> (Arc<TTable>, Arc<QTable>, Arc<PTable>) {
+    (
+        Arc::new(TTable::with_mb(
+            (hash_mb * HASH_T_PARTS / HASH_PARTS).max(1)
+        )),
+        Arc::new(QTable::with_mb(
+            (hash_mb * HASH_Q_PARTS / HASH_PARTS).max(1)
+        )),
+        Arc::new(PTable::with_mb(
+            (hash_mb * HASH_P_PARTS / HASH_PARTS).max(1)
+        )),
+    )
 }
 
 /// UCI command handlers
@@ -445,6 +474,7 @@ fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
     let state_clone = uci.state.clone();
     let tt_clone = Arc::clone(&uci.ttable);
     let qt_clone = Arc::clone(&uci.qtable);
+    let pt_clone = Arc::clone(&uci.ptable);
     let dict_clone = uci.translator.clone();
     let tc = uci.threads;
     let is_ponder = limits.is_ponder;
@@ -472,9 +502,10 @@ fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
 
             let table = Arc::clone(&tt_clone);
             let qtable = Arc::clone(&qt_clone);
+            let ptable = Arc::clone(&pt_clone);
             let result = catch_unwind(AssertUnwindSafe(|| {
                 search_position(
-                    &mut s, table, qtable,
+                    &mut s, table, qtable, ptable,
                     &mut info, &mut bufs, tc,
                     dict_clone.as_ref(),
                 )
@@ -491,7 +522,7 @@ fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
                 print_bestmove(&result, &mut s, dict_clone.as_ref());
             }
 
-            log_table_stats(&tt_clone, &qt_clone);
+            log_table_stats(&tt_clone, &qt_clone, &pt_clone);
 
             result
         }).expect("failed to spawn search thread");
@@ -587,6 +618,8 @@ fn handle_setoption(uci: &mut Uci, tokens: &[&str]) {
 
             refresh_eval_state(&mut uci.state);
 
+            uci.ptable = Arc::new(PTable::default());
+
             uci.translator = Translator::find(&v, "uci");
             uci.variant = v;
         }
@@ -598,21 +631,13 @@ fn handle_setoption(uci: &mut Uci, tokens: &[&str]) {
         (OPT_HASH, Some(v)) => {
             if let Ok(mb) = v.parse::<usize>() {
                 uci.hash_mb = mb.clamp(1, HASH_MAX_MB);
-                uci.ttable = Arc::new(TTable::with_mb(
-                    (uci.hash_mb * 2 / 3).max(1)
-                ));
-                uci.qtable = Arc::new(QTable::with_mb(
-                    (uci.hash_mb / 3).max(1)
-                ));
+                (uci.ttable, uci.qtable, uci.ptable) =
+                    spawn_hash_tables(uci.hash_mb);
             }
         }
         (OPT_CLEAR_HASH, None) => {
-            uci.ttable = Arc::new(TTable::with_mb(
-                (uci.hash_mb * 2 / 3).max(1)
-            ));
-            uci.qtable = Arc::new(QTable::with_mb(
-                (uci.hash_mb / 3).max(1)
-            ));
+            (uci.ttable, uci.qtable, uci.ptable) =
+                spawn_hash_tables(uci.hash_mb);
         }
         (OPT_MOVE_OVERHEAD, Some(v)) => {
             if let Ok(ms) = v.parse::<u128>() {

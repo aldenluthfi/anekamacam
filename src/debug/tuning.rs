@@ -195,6 +195,7 @@ fn mirror_square(square: Square, files: usize, ranks: usize) -> usize {
 /// - shape: &TuneShape       -> vector geometry to index into
 /// - theta: &[f64]           -> current parameters, for the base residual
 /// - bufs: &mut SearchBufs   -> scratch for the evaluation macro
+/// - ptable: &PTable         -> shared pawn structure table
 /// - label: f64              -> White-view game result for this position
 ///
 /// Return:
@@ -205,6 +206,7 @@ fn extract_sample(
     shape: &TuneShape,
     theta: &[f64],
     bufs: &mut SearchBufs,
+    ptable: &PTable,
     label: f64,
 ) -> Sample {
     let (opening_weight, endgame_weight) = phase_weights(state);
@@ -268,7 +270,7 @@ fn extract_sample(
         }
     }
 
-    let stm_eval = evaluate_position!(state, bufs) as f64;
+    let stm_eval = evaluate_position!(state, bufs, ptable) as f64;
     let white_eval =
         if state.playing == WHITE { stm_eval } else { -stm_eval };
     let base = white_eval - dot(&features, theta);
@@ -482,6 +484,7 @@ fn load_dataset(
 
     let mut scratch = template.clone();
     let mut bufs = SearchBufs::default();
+    let ptable = PTable::default();
     let mut samples = Vec::new();
 
     for line in content.lines() {
@@ -503,7 +506,7 @@ fn load_dataset(
         refresh_eval_state(&mut scratch);
 
         samples.push(
-            extract_sample(&scratch, shape, theta, &mut bufs, label)
+            extract_sample(&scratch, shape, theta, &mut bufs, &ptable, label)
         );
     }
 

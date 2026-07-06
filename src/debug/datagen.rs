@@ -30,6 +30,7 @@ use crate::*;
 /// - dict: Option<&Translator> -> translator for search move-name logs
 /// - ttable: Arc<TTable>       -> shared main table for the searches
 /// - qtable: Arc<QTable>       -> shared quiescence table
+/// - ptable: Arc<PTable>       -> shared pawn structure table
 /// - threads: usize            -> worker count per search
 /// - movetime_ms: u128         -> fixed wall-clock budget per move
 /// - sender: &Sender<TuiEvent> -> channel for live board updates
@@ -42,6 +43,7 @@ fn play_one_game(
     dict: Option<&Translator>,
     ttable: Arc<TTable>,
     qtable: Arc<QTable>,
+    ptable: Arc<PTable>,
     threads: usize,
     movetime_ms: u128,
     sender: &Sender<TuiEvent>,
@@ -79,7 +81,7 @@ fn play_one_game(
 
         let outcome = search_position(
             state, Arc::clone(&ttable), Arc::clone(&qtable),
-            &mut info, &mut bufs, threads, dict,
+            Arc::clone(&ptable), &mut info, &mut bufs, threads, dict,
         );
 
         if outcome.best_move == null_move() || outcome.best_score == -INF {
@@ -124,6 +126,7 @@ fn play_one_game(
 /// - dict: Option<&Translator> -> translator for search move-name logs
 /// - ttable: Arc<TTable>       -> shared main table for the searches
 /// - qtable: Arc<QTable>       -> shared quiescence table
+/// - ptable: Arc<PTable>       -> shared pawn structure table
 /// - threads: usize            -> worker count per search
 /// - games: usize              -> number of self-play games to play
 /// - movetime_ms: u128         -> fixed wall-clock budget per move
@@ -135,6 +138,7 @@ pub fn run_datagen(
     dict: Option<&Translator>,
     ttable: Arc<TTable>,
     qtable: Arc<QTable>,
+    ptable: Arc<PTable>,
     threads: usize,
     games: usize,
     movetime_ms: u128,
@@ -167,7 +171,7 @@ pub fn run_datagen(
 
         let (fens, result) = play_one_game(
             template, dict, Arc::clone(&ttable), Arc::clone(&qtable),
-            threads, movetime_ms, sender,
+            Arc::clone(&ptable), threads, movetime_ms, sender,
         );
 
         for fen in &fens {

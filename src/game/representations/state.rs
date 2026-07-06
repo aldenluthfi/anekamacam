@@ -248,6 +248,7 @@ pub struct Snapshot {
     pub phase_score: u32,                                                       /* phase score before move            */
 
     pub position_hash: u128,                                                    /* Zobrist hash before move           */
+    pub pawn_hash: u128,                                                        /* pawn-only Zobrist key before move  */
 }
 
 impl Default for Snapshot {
@@ -261,8 +262,34 @@ impl Default for Snapshot {
             game_phase: OPENING,
             phase_score: 0,
             position_hash: u128::default(),
+            pawn_hash: u128::default(),
         }
     }
+}
+
+/// piece_list_remove!
+///
+/// Removes one square from a piece's square list via swap-remove.
+/// The list is unordered, so the swap keeps removal O(list length) with
+/// no shifting; a missing square is ignored, matching set semantics.
+///
+/// Params:
+/// - state: &mut State  -> position whose piece list is edited
+/// - piece_index: usize -> piece whose square list is edited
+/// - square: Square     -> square to remove from the list
+///
+#[macro_export]
+macro_rules! piece_list_remove {
+    ($state:expr, $piece_index:expr, $square:expr) => {
+        let removed_square = $square;
+        let squares = &mut $state.piece_list[$piece_index];
+
+        if let Some(found) =
+            squares.iter().position(|&square| square == removed_square)
+        {
+            squares.swap_remove(found);
+        }
+    };
 }
 
 /// pass_snapshot!
@@ -449,6 +476,7 @@ pub struct State {
     pub en_passant_square: EnPassantSquare,                                     /* active en passant square           */
 
     pub position_hash: u128,                                                    /* incremental Zobrist key            */
+    pub pawn_hash: u128,                                                        /* incremental pawn-only Zobrist key  */
     pub history: Vec<Snapshot>,                                                 /* undo stack of snapshots            */
 
     pub search_ply: u32,                                                        /* the number of plies in the search  */
@@ -465,7 +493,7 @@ pub struct State {
     pub royal_list: [Vec<Square>; 2],                                           /* color to royal piece square list   */
 
     pub piece_count: Vec<u32>,                                                  /* piece index to count               */
-    pub piece_list: Vec<HashSet<Square>>,                                       /* piece index to square set          */
+    pub piece_list: Vec<Vec<Square>>,                                           /* piece index to square list         */
     pub piece_in_hand: [Vec<u16>; 2],                                           /* color to pieces in hand list       */
 
 /*----------------------------------------------------------------------------*\
@@ -502,6 +530,7 @@ impl Clone for State {
             en_passant_square: self.en_passant_square,
 
             position_hash: self.position_hash,
+            pawn_hash: self.pawn_hash,
             history: self.history.clone(),
 
             search_ply: self.search_ply,
@@ -718,6 +747,7 @@ impl State {
             en_passant_square: NO_EN_PASSANT,
 
             position_hash: u128::default(),
+            pawn_hash: u128::default(),
             history: Vec::with_capacity(8192),
 
             search_ply: 0,
@@ -734,7 +764,7 @@ impl State {
             royal_list: [Vec::new(), Vec::new()],
 
             piece_count: vec![0u32; piece_count],
-            piece_list: vec![HashSet::new(); piece_count],
+            piece_list: vec![Vec::new(); piece_count],
             piece_in_hand: [vec![0; piece_count], vec![0; piece_count]],
 
             position_hash_map: HashMap::with_capacity(128),
@@ -791,6 +821,7 @@ impl State {
         self.en_passant_square = NO_EN_PASSANT;
 
         self.position_hash = u128::default();
+        self.pawn_hash = u128::default();
         self.history = Vec::with_capacity(8192);
 
         self.search_ply = 0;
@@ -810,7 +841,7 @@ impl State {
         self.royal_list = [Vec::new(), Vec::new()];
 
         self.piece_count = vec![0u32; piece_count];
-        self.piece_list = vec![HashSet::new(); piece_count];
+        self.piece_list = vec![Vec::new(); piece_count];
         self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
 
         self.position_hash_map.clear();
