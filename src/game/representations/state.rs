@@ -375,6 +375,7 @@ pub struct StaticState {
     pub files: u8,
     pub ranks: u8,
     pub board_size: usize,
+    pub cont_dim: usize,
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
@@ -505,6 +506,7 @@ pub struct State {
     pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
+    pub cont_hist: Vec<i16>,
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
     pub static_eval: Vec<i32>,                                                  /* static eval per ply; -INF in check */
@@ -555,6 +557,7 @@ impl Clone for State {
             pv_table: self.pv_table.clone(),
             pv_length: self.pv_length.clone(),
 
+            cont_hist: self.cont_hist.clone(),
             search_hist: self.search_hist.clone(),
             killer_hist: self.killer_hist.clone(),
             static_eval: self.static_eval.clone(),
@@ -620,6 +623,10 @@ impl State {
             files,
             ranks,
             board_size,
+            cont_dim: (piece_count * board_size)
+                .next_power_of_two()
+                .min(CONT_HIST_MAX_DIM)
+                .max(1),
 
             relevant_moves: vec![MoveSet::new(); board_size * piece_count],
             relevant_captures: vec![MoveSet::new(); board_size * piece_count],
@@ -726,6 +733,7 @@ impl State {
     fn from_statics(statics: Arc<StaticState>) -> State {
         let piece_count = statics.pieces.len();
         let board_size = statics.board_size;
+        let cont_dim = statics.cont_dim;
         let files = statics.files;
         let ranks = statics.ranks;
 
@@ -772,6 +780,7 @@ impl State {
             pv_table: vec![null_move(); PV_STRIDE * PV_STRIDE],
             pv_length: vec![0; PV_STRIDE],
 
+            cont_hist: vec![0i16; 2 * cont_dim * cont_dim],
             search_hist: vec![0i16; piece_count * board_size * board_size],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
             static_eval: vec![i32::MIN; MAX_DEPTH],
@@ -805,6 +814,7 @@ impl State {
     pub fn reset(&mut self) {
         let piece_count = self.statics.pieces.len();
         let board_size = self.statics.board_size;
+        let cont_dim = self.statics.cont_dim;
 
         self.playing = WHITE;
         self.main_board = vec![NO_PIECE; board_size];
@@ -849,6 +859,7 @@ impl State {
         self.pv_table = vec![null_move(); PV_STRIDE * PV_STRIDE];
         self.pv_length = vec![0; PV_STRIDE];
 
+        self.cont_hist = vec![0i16; 2 * cont_dim * cont_dim];
         self.search_hist =
             vec![0i16; piece_count * board_size * board_size];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];

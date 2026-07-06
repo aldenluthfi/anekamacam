@@ -210,8 +210,8 @@ macro_rules! see {
 ///
 /// - pv move         : 5000000
 /// - winning capture : 4000000 + gain, in [0, MAX_PIECE_VALUE]
-/// - killer move     : 1000000 + 2 * MAX_HIST_VALUE + [1, 2]
-/// - history         : 1000000 + MAX_HIST_VALUE + history, in [-h, h]
+/// - killer move     : 1000000 + 7 * MAX_HIST_VALUE + [1, 2]
+/// - history         : 1000000 + 3 * MAX_HIST_VALUE + combined, [-3h, 3h]
 /// - losing capture  : 1000000 + SEE score, in [-MAX_PIECE_VALUE, -1]
 ///
 /// Params:
@@ -220,6 +220,9 @@ macro_rules! see {
 /// - pv_move     -> TT best move for this node, if any
 /// - see_moves   -> reusable buffer for attacker candidate moves
 /// - see_scratch -> reusable buffer for capture payloads
+/// - cont1_base  -> 1-ply continuation base offset, or usize::MAX if none
+/// - cont2_base  -> 2-ply continuation base offset, or usize::MAX if none
+/// - cont_dim    -> continuation-history fold dimension (power of two)
 ///
 /// Return:
 /// usize -> ordering score, larger searched earlier
@@ -228,7 +231,8 @@ macro_rules! see {
 macro_rules! score_move {
     (
         $state:expr, $mv:expr, $pv_move:expr,
-        $see_moves:expr, $see_scratch:expr
+        $see_moves:expr, $see_scratch:expr,
+        $cont1_base:expr, $cont2_base:expr, $cont_dim:expr
     ) => {{
         let scored_move: &Move = $mv;
 
@@ -241,7 +245,7 @@ macro_rules! score_move {
                 &$state.killer_hist[$state.search_ply as usize];
 
             let killer_base =
-                1_000_000 + 2 * MAX_HIST_VALUE as usize;
+                1_000_000 + 7 * MAX_HIST_VALUE as usize;
 
             if *scored_move == killers[0] {
                 killer_base + 2                                                 /* killer scores above history        */
@@ -254,9 +258,20 @@ macro_rules! score_move {
                 let board_size = $state.statics.board_size;
                 let idx =
                     piece * board_size * board_size + start * board_size + end;
-                let entry = $state.search_hist[idx] as i32;
+                let cont_dim = $cont_dim;
+                let cont_key = piece * board_size + end;
+                let cont_kf = (cont_key ^ (cont_key >> CONT_HIST_SHIFT))
+                    & (cont_dim - 1);
+                let cont1 = if $cont1_base != usize::MAX {
+                    $state.cont_hist[$cont1_base + cont_kf] as i32
+                } else { 0 };
+                let cont2 = if $cont2_base != usize::MAX {
+                    $state.cont_hist[$cont2_base + cont_kf] as i32
+                } else { 0 };
+                let entry =
+                    $state.search_hist[idx] as i32 + cont1 + cont2;
 
-                (1_000_000 + MAX_HIST_VALUE as i32 + entry) as usize
+                (1_000_000 + 3 * MAX_HIST_VALUE as i32 + entry) as usize
             }
         } else {
             let see_score = see!(
@@ -287,6 +302,9 @@ macro_rules! score_move {
 /// - pv_move     -> TT best move for this node, if any
 /// - see_moves   -> reusable buffer for attacker candidate moves
 /// - see_scratch -> reusable buffer for capture payloads
+/// - cont1_base  -> 1-ply continuation base offset, or usize::MAX if none
+/// - cont2_base  -> 2-ply continuation base offset, or usize::MAX if none
+/// - cont_dim    -> continuation-history fold dimension (power of two)
 ///
 /// Notes:
 /// Modifies `moves` and `scores` in place; returns nothing.
@@ -295,7 +313,8 @@ macro_rules! score_move {
 macro_rules! pick_by_score {
     (
         $state:expr, $moves:expr, $scores:expr, $index:expr, $pv_move:expr,
-        $see_moves:expr, $see_scratch:expr
+        $see_moves:expr, $see_scratch:expr,
+        $cont1_base:expr, $cont2_base:expr, $cont_dim:expr
     ) => {
         hotpath::measure_block!("order::pick", {
         let moves: &mut Vec<Move> = $moves;
@@ -304,7 +323,8 @@ macro_rules! pick_by_score {
 
         if scores[index] == usize::MAX {
             scores[index] = score_move!(
-                $state, &moves[index], $pv_move, $see_moves, $see_scratch
+                $state, &moves[index], $pv_move, $see_moves, $see_scratch,
+                $cont1_base, $cont2_base, $cont_dim
             );
         }
 
@@ -314,7 +334,8 @@ macro_rules! pick_by_score {
         for i in (index + 1)..moves.len() {
             if scores[i] == usize::MAX {
                 scores[i] = score_move!(
-                    $state, &moves[i], $pv_move, $see_moves, $see_scratch
+                    $state, &moves[i], $pv_move, $see_moves, $see_scratch,
+                    $cont1_base, $cont2_base, $cont_dim
                 );
             }
 

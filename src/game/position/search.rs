@@ -152,7 +152,9 @@ pub fn clear_search(
 
     let piece_count: usize = state.statics.pieces.len();
     let board_size: usize = state.statics.board_size;
+    let cont_dim: usize = state.statics.cont_dim;
 
+    state.cont_hist = vec![0i16; 2 * cont_dim * cont_dim];
     state.search_hist = vec![0i16; piece_count * board_size * board_size];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     state.static_eval = vec![-INF; MAX_DEPTH];
@@ -619,7 +621,8 @@ fn quiescence_search(
             state,
             &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
             i, &pv_move,
-            &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
+            &mut bufs.see_move_buf, &mut bufs.see_scratch_buf,
+            usize::MAX, usize::MAX, state.statics.cont_dim
         );
 
         let mv = &bufs.move_buf[ply][i];
@@ -990,6 +993,32 @@ pub fn alpha_beta(
     let bs_sq = board_size * board_size;
     let bonus = HIST_BONUS_TABLE[depth.min(MAX_DEPTH - 1)];
 
+    let cont_dim = state.statics.cont_dim;
+    let history_len = state.history.len();
+
+    let cont1_base = if history_len >= 1
+        && state.history[history_len - 1].move_ply.0 != u128::MAX
+    {
+        let previous = &state.history[history_len - 1].move_ply;
+        let key = piece!(previous) as usize * board_size
+            + end!(previous) as usize;
+        ((key ^ (key >> CONT_HIST_SHIFT)) & (cont_dim - 1)) * cont_dim
+    } else {
+        usize::MAX
+    };
+
+    let cont2_base = if history_len >= 2
+        && state.history[history_len - 2].move_ply.0 != u128::MAX
+    {
+        let previous = &state.history[history_len - 2].move_ply;
+        let key = piece!(previous) as usize * board_size
+            + end!(previous) as usize;
+        cont_dim * cont_dim
+            + ((key ^ (key >> CONT_HIST_SHIFT)) & (cont_dim - 1)) * cont_dim
+    } else {
+        usize::MAX
+    };
+
     generate_all_moves_and_drops(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
     );
@@ -1006,7 +1035,8 @@ pub fn alpha_beta(
             state,
             &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
             i, &pv_move,
-            &mut bufs.see_move_buf, &mut bufs.see_scratch_buf
+            &mut bufs.see_move_buf, &mut bufs.see_scratch_buf,
+            cont1_base, cont2_base, cont_dim
         );
 
         let mv = &bufs.move_buf[ply][i];
@@ -1015,6 +1045,9 @@ pub fn alpha_beta(
         let start = start!(mv) as usize;
         let end = end!(mv) as usize;
         let hist_idx = piece * bs_sq + start * board_size + end;
+        let cont_key = piece * board_size + end;
+        let cont_kf = (cont_key ^ (cont_key >> CONT_HIST_SHIFT))
+            & (cont_dim - 1);
 
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
@@ -1100,15 +1133,22 @@ pub fn alpha_beta(
                 is_capture, is_promotion, is_drop
             );
 
-            let hist_score = state.search_hist[hist_idx] as i32;
-            let hist_cutoff = MAX_HIST_VALUE as i32 / 4;
+            let cont1 = if cont1_base != usize::MAX {
+                state.cont_hist[cont1_base + cont_kf] as i32
+            } else { 0 };
+            let cont2 = if cont2_base != usize::MAX {
+                state.cont_hist[cont2_base + cont_kf] as i32
+            } else { 0 };
+            let hist_score =
+                state.search_hist[hist_idx] as i32 + cont1 + cont2;
+            let hist_cutoff = 3 * MAX_HIST_VALUE as i32 / 4;
 
             if hist_score > hist_cutoff {
                 reduction = reduction.saturating_sub(2).max(1);
             } else if hist_score > 0 {
                 reduction = reduction.saturating_sub(1).max(1);
             }
-            if hist_score < -(MAX_HIST_VALUE as i32) / 4 {
+            if hist_score < -(3 * MAX_HIST_VALUE as i32) / 4 {
                 reduction = (reduction + 2).min(depth - 1);
             }
             if improving as usize == 1 {
@@ -1193,6 +1233,16 @@ pub fn alpha_beta(
                         apply_history_gravity!(
                             state.search_hist[hist_idx], bonus
                         );
+                        if cont1_base != usize::MAX {
+                            apply_history_gravity!(
+                                state.cont_hist[cont1_base + cont_kf], bonus
+                            );
+                        }
+                        if cont2_base != usize::MAX {
+                            apply_history_gravity!(
+                                state.cont_hist[cont2_base + cont_kf], bonus
+                            );
+                        }
                     }
 
                     hash_tt_entry!(
@@ -1211,6 +1261,16 @@ pub fn alpha_beta(
                     apply_history_gravity!(
                         state.search_hist[hist_idx], bonus
                     );
+                    if cont1_base != usize::MAX {
+                        apply_history_gravity!(
+                            state.cont_hist[cont1_base + cont_kf], bonus
+                        );
+                    }
+                    if cont2_base != usize::MAX {
+                        apply_history_gravity!(
+                            state.cont_hist[cont2_base + cont_kf], bonus
+                        );
+                    }
                 }
 
                 alpha = score;
@@ -1240,6 +1300,16 @@ pub fn alpha_beta(
             apply_history_gravity!(
                 state.search_hist[hist_idx], -bonus
             );
+            if cont1_base != usize::MAX {
+                apply_history_gravity!(
+                    state.cont_hist[cont1_base + cont_kf], -bonus
+                );
+            }
+            if cont2_base != usize::MAX {
+                apply_history_gravity!(
+                    state.cont_hist[cont2_base + cont_kf], -bonus
+                );
+            }
         }
     }
 
