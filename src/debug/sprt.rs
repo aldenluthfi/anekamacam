@@ -29,6 +29,7 @@ struct SPRTChild {
     process: Child,                                                             /* the running engine subprocess      */
     input: ChildStdin,                                                          /* pipe carrying commands to it       */
     output: BufReader<ChildStdout>,                                             /* buffered pipe of its replies       */
+    errors: ChildStderr,                                                        /* pipe of its stderr diagnostics     */
 }
 
 /// UciEngine protocol driver.
@@ -36,12 +37,13 @@ struct SPRTChild {
 /// A tight family of methods that own one subprocess engine's UCI
 /// conversation:
 ///
-/// - spawn      -> launch the binary in UCI mode and complete handshake
-/// - send       -> write one command line and flush it
-/// - read_line  -> read one reply line, None at end of stream
-/// - wait_for   -> consume replies until one starts with a token
-/// - new_game   -> reset the engine between games
-/// - bestmove   -> set the position, search at movetime, return the move
+/// - spawn        -> launch the binary in UCI mode and complete handshake
+/// - send         -> write one command line and flush it
+/// - read_line    -> read one reply line, None at end of stream
+/// - wait_for     -> consume replies until one starts with a token
+/// - new_game     -> reset the engine between games
+/// - bestmove     -> set the position, search at movetime, return the move
+/// - drain_errors -> collect the child's stderr for crash diagnostics
 ///
 /// `spawn` configures the engine for the variant with a small hash and a
 /// single thread for fair, reproducible games; `bestmove` returns `None`
@@ -69,7 +71,7 @@ impl SPRTChild {
             .arg("uci")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .unwrap_or_else(|e| {
                 panic!("Failed to spawn engine {}: {}", binary, e)
@@ -81,8 +83,11 @@ impl SPRTChild {
         let output = BufReader::new(process.stdout.take().unwrap_or_else(|| {
             panic!("Engine {} exposed no stdout", binary)
         }));
+        let errors = process.stderr.take().unwrap_or_else(|| {
+            panic!("Engine {} exposed no stderr", binary)
+        });
 
-        let mut engine = SPRTChild { process, input, output };
+        let mut engine = SPRTChild { process, input, output, errors };
 
         engine.send("uci");
         engine.wait_for("uciok");
@@ -97,18 +102,35 @@ impl SPRTChild {
     }
 
     fn send(&mut self, command: &str) {
-        writeln!(self.input, "{}", command).unwrap_or_else(|e| {
-            panic!("Failed to send '{}' to engine: {}", command, e)
-        });
-        self.input.flush().unwrap_or_else(|e| {
-            panic!("Failed to flush '{}' to engine: {}", command, e)
-        });
+        let written = writeln!(self.input, "{}", command);
+        let flushed = self.input.flush();
+        if let Err(e) = written.and(flushed) {
+            panic!(
+                "Failed to send '{}' to engine: {:?}\nstderr:\n{}",
+                command, e.into_inner(), self.drain_errors()
+            )
+        }
+    }
+
+    fn drain_errors(&mut self) -> String {
+        let mut errors = String::new();
+        self.errors.read_to_string(&mut errors).ok();
+        if errors.trim().is_empty() {
+            "<engine emitted no stderr output>".to_string()
+        } else {
+            errors
+        }
     }
 
     fn read_line(&mut self) -> Option<String> {
         let mut line = String::new();
-        let bytes = self.output.read_line(&mut line).unwrap_or_else(|e| {
-            panic!("Failed to read from engine: {}", e)
+        let read = self.output.read_line(&mut line);
+        let bytes = read.unwrap_or_else(|e| {
+            panic!(
+                "Failed to read from engine: {}\n\
+                stderr:\n{}",
+                e, self.drain_errors()
+            )
         });
 
         if bytes == 0 { None } else { Some(line) }
@@ -116,9 +138,14 @@ impl SPRTChild {
 
     fn wait_for(&mut self, token: &str) {
         loop {
-            let line = self.read_line().unwrap_or_else(|| {
-                panic!("Engine closed its stream while awaiting '{}'", token)
-            });
+            let line = match self.read_line() {
+                Some(line) => line,
+                None => panic!(
+                    "Engine closed its stream while awaiting '{}'\n\
+                     stderr:\n{}",
+                    token, self.drain_errors()
+                ),
+            };
             if line.split_whitespace().next() == Some(token) {
                 return;
             }
@@ -257,7 +284,7 @@ impl GameManager {
     }
 
     fn reset_to(&mut self, template: &State, opening: &[Move]) {
-            self.state = template.fork();
+        self.state = template.fork();
         let state = &mut self.state;
 
         for played in opening {
@@ -279,10 +306,11 @@ impl GameManager {
 
         loop {
             if SYSTEM_INTERRUPT.load(Ordering::Relaxed)
-                || state.game_over
+            || state.game_over
+            || legal_moves!(state).is_empty()
             {
                 if is_in_check!(state.playing, state)
-                    || stalemate_loss!(state)
+                || stalemate_loss!(state)
                 {
                     return state.playing as f64;
                 }
@@ -519,8 +547,10 @@ pub fn run_sprt(
         let first = manager.play(dict, &startpos, movetime_ms, sender);
 
         manager.swap_colors();
+
         manager.reset_to(template, &opening);
         let second = manager.play(dict, &startpos, movetime_ms, sender);
+
         manager.swap_colors();
 
         let score_first = first;

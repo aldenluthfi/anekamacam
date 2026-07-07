@@ -99,7 +99,7 @@ impl ThreadPool {
             let dict_clone = dict.cloned();
 
             let handle = thread::Builder::new()
-                .name(format!("searcher-{}", i))
+                .name(format!("searcher:{}:{}", exe_tag(), i))
                 .stack_size(64 * 1024 * 1024)
                 .spawn(move || {
                     let mut info = SearchInfo {

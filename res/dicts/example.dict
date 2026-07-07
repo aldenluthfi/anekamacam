@@ -17,7 +17,7 @@ uci
 // will be applied to the CFEN from top to bottom
 //
 // to convert from protocol FEN to CFEN, rules from the inverse dictionary will
-// be applied to the CFEN from top to bottom
+// be applied to the CFEN from bottom to top
 = uci fen =
 * <- [^wb] -
 010018P <-> a3

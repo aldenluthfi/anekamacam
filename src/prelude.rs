@@ -80,9 +80,9 @@ pub use crate::game::search::{
 };
 
 pub use crate::game::util::{
-    benchmark_headless_perft, benchmark_perft, benchmark_search, format_time,
-    perft, random_u128, refresh_eval_state, roll_latest, square_distance,
-    verify_game_state,
+    benchmark_headless_perft, benchmark_perft, benchmark_search, exe_tag,
+    format_time, perft, random_u128, refresh_eval_state, roll_latest,
+    square_distance, verify_game_state,
 };
 
 /*----------------------------------------------------------------------------*\
@@ -176,12 +176,12 @@ pub use std::{
     fmt::{Debug, Formatter as FmtFormatter, Result as FmtResult},
     fs::{self, OpenOptions},
     hash::Hash,
-    io::{stdin, stdout, BufRead, BufReader, Result as IoResult, Write},
+    io::{stdin, stdout, BufRead, BufReader, Read, Result as IoResult, Write},
     iter::zip,
     mem::{self, size_of},
     panic::{catch_unwind, AssertUnwindSafe},
     path::Path,
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         mpsc::{channel, Receiver, Sender},

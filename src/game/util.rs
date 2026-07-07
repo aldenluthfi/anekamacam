@@ -17,6 +17,26 @@
 
 use crate::*;
 
+/// exe_tag
+///
+/// Short identity of the running binary, taken from the invoking path
+/// (argv[0]) reduced to its file name. Used to label search threads so a
+/// panic that names a thread also names which engine binary raised it —
+/// essential when the SPRT runner drives two different builds through one
+/// terminal and both would otherwise spawn a thread called `search`.
+///
+/// Return:
+/// String -> the executable's file name, or "?" if it cannot be read
+///
+pub fn exe_tag() -> String {
+    env::args()
+        .next()
+        .as_deref()
+        .and_then(|arg| Path::new(arg).file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "?".to_string())
+}
+
 /// random_u128
 ///
 /// Draws a full-width random number from the engine's shared seeded RNG

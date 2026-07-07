@@ -51,7 +51,7 @@ pub fn format_move(
     let mut move_str = String::new();
 
     if mv == &null_move() {
-        return "null".to_string();
+        return "(none)".to_string();
     }
 
     let move_type = move_type!(mv);

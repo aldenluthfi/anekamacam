@@ -111,9 +111,7 @@ fn print_bestmove(
     let fallback = result.best_move == null_move();
 
     let best_move = if fallback {
-        legal_moves!(state).first().unwrap_or_else(
-            || panic!("No legal moves available")
-        ).clone()
+        legal_moves!(state).first().unwrap_or(&null_move()).clone()
     } else {
         result.best_move.clone()
     };
@@ -487,7 +485,7 @@ fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
 
     let handle = thread::Builder::new()
-        .name("search".to_string())
+        .name(format!("search:{}", exe_tag()))
         .stack_size(64 * 1024 * 1024)
         .spawn(move || {
             let mut s = state_clone;
