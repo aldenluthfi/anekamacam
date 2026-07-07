@@ -26,7 +26,7 @@ use crate::*;
 ///
 /// Layout:
 /// - slot[0] = move.0 (128-bit, raw)
-/// - slot[1] = sig << 41 | score << 9 | flags_depth (128-bit, raw)
+/// - slot[1] = eval << 105 | sig << 41 | score << 9 | flags_depth (raw)
 /// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
 /// - age     = plain u64, excluded from parity
 /// - version = seqlock counter (odd = write in progress, even = readable)
@@ -90,7 +90,8 @@ impl TTable {
     /// `with_mb` sizes the table to a memory budget in megabytes (the UCI
     /// Hash option), `len` reports the slot count, and `is_empty` scans
     /// for any written entry; the latter two exist mainly for tests and
-    /// diagnostics.
+    /// diagnostics. Slot counts are floored to a power of two so index
+    /// macros can mask instead of taking a modulo.
     pub fn with_mb(mb: usize) -> Self {
         let size = (mb * 1024 * 1024 / size_of::<TTEntry>()).max(1);
         Self::with_entries(size)
@@ -99,7 +100,7 @@ impl TTable {
     pub fn with_entries(entries: usize) -> Self {
         Self {
             table: SyncUnsafeCell::new(
-                vec![TTEntry::default(); entries]
+                vec![TTEntry::default(); 1 << entries.max(1).ilog2()]
             ),
             age: AtomicU64::new(0),
             new_write: AtomicU64::new(0),
@@ -126,14 +127,15 @@ impl TTable {
 
 /// Main-table packing macros.
 ///
-/// `tt_index!` maps a Zobrist hash onto a table slot; the `tt_enc_*`
-/// writers pack bound flags (bits 0-1), clamped depth (bits 2-8), and
-/// score (bits 9-40) into the encoded word stored in `slot[1]`; the
-/// `tt_flags!` / `tt_depth!` / `tt_score!` readers extract them again.
+/// `tt_index!` masks a Zobrist hash onto a power-of-two table slot; the
+/// `tt_enc_*` writers pack bound flags (bits 0-1), clamped depth (bits
+/// 2-8), score (bits 9-40), and static eval (bits 105-127, 23-bit signed)
+/// into the words stored in `slot[1]`; the `tt_flags!` / `tt_depth!` /
+/// `tt_score!` / `tt_eval!` readers extract them again.
 #[macro_export]
 macro_rules! tt_index {
     ($hash:expr, $size:expr) => {{
-        ($hash as usize) % $size
+        ($hash as usize) & ($size - 1)
     }};
 }
 
@@ -180,6 +182,20 @@ macro_rules! tt_score {
     };
 }
 
+#[macro_export]
+macro_rules! tt_enc_eval {
+    ($encoded:expr, $val:expr) => {{
+        $encoded |= (($val as u32 as u128) & 0x7F_FFFF) << 105;
+    }};
+}
+
+#[macro_export]
+macro_rules! tt_eval {
+    ($b_prime:expr) => {
+        (((($b_prime >> 105) as u32) << 9) as i32) >> 9
+    };
+}
+
 /*----------------------------------------------------------------------------*\
                         TRANSPOSITION TABLE STORE / PROBE
 \*----------------------------------------------------------------------------*/
@@ -187,14 +203,20 @@ macro_rules! tt_score {
 /// probe_tt_entry!
 ///
 /// Probes the TT with parity + seqlock integrity check; returns (valid,
-/// score, pseudo_move).
+/// score, pseudo_move, eval, pruning_eval).
 ///
 /// Validation:
 ///   Step 1: version is even (no write in progress)
 ///   Step 2: (slot[0] ^ slot[1] ^ slot[2]) == position_hash
 ///   Step 3: version unchanged during read (seqlock: no torn write)
 ///
-/// On failure returns (false, i32::MIN, null_pseudo_move()).
+/// The stored static eval is returned regardless of depth (`-INF` on any
+/// miss or when the entry was written in check). `pruning_eval` refines
+/// it with the stored score whenever the bound brackets it: an exact
+/// entry replaces the eval, a lower bound raises it, an upper bound
+/// lowers it; mate-range scores are left out of the refinement.
+///
+/// On failure returns (false, i32::MIN, null_pseudo_move(), -INF, -INF).
 ///
 /// Params:
 /// - state -> position whose hash is probed
@@ -204,7 +226,8 @@ macro_rules! tt_score {
 /// - depth -> minimum stored depth for the score to be usable
 ///
 /// Return:
-/// (bool, i32, PseudoMove) -> (cutoff valid, score, stored best move)
+/// (bool, i32, PseudoMove, i32, i32) -> (cutoff valid, score, stored
+/// best move, stored static eval, bound-refined pruning eval)
 ///
 #[macro_export]
 macro_rules! probe_tt_entry {
@@ -216,20 +239,20 @@ macro_rules! probe_tt_entry {
 
         let v1 = entry.version.load(Ordering::Acquire);
         if v1 & 1 != 0 {                                                        /* write in progress: skip            */
-            (false, i32::MIN, null_pseudo_move())
+            (false, i32::MIN, null_pseudo_move(), -INF, -INF)
         } else {
             let s0 = entry.slot[0];
             let s1 = entry.slot[1];
             let s2 = entry.slot[2];
 
             if s0 ^ s1 ^ s2 != hash {                                           /* parity check: all slots covered    */
-                (false, i32::MIN, null_pseudo_move())
+                (false, i32::MIN, null_pseudo_move(), -INF, -INF)
             } else {
                 $table.hit.fetch_add(1, Ordering::Relaxed);                     /* parity matched                     */
                 let v2 = entry.version.load(Ordering::Acquire);
 
                 if v1 != v2 {                                                   /* seqlock: torn read detected        */
-                    (false, i32::MIN, null_pseudo_move())
+                    (false, i32::MIN, null_pseudo_move(), -INF, -INF)
                 } else {
                     $table.valid.fetch_add(1, Ordering::Relaxed);               /* consistent read confirmed          */
                     let a_prime = s0;                                           /* a = slot[0] (direct)               */
@@ -237,19 +260,35 @@ macro_rules! probe_tt_entry {
                     let encoded = (b_prime & 0x1FF) as u32;                     /* bits  0-8  = flags/depth           */
                     let sig     = (b_prime >> 41) as u64;                       /* bits 41-104 = MoveSignature        */
                     let pseudo_mv: PseudoMove = (a_prime, sig);
+                    let tt_eval = tt_eval!(b_prime);                            /* bits 105-127 = static eval         */
+
+                    let mut entry_score = tt_score!(b_prime);
+
+                    if entry_score > MATE_SCORE {
+                        entry_score -= $state.search_ply as i32;
+                    } else if entry_score < -MATE_SCORE {
+                        entry_score += $state.search_ply as i32;
+                    }
+
+                    let entry_flags = tt_flags!(encoded);
+                    let mut pruning_eval = tt_eval;
+
+                    if tt_eval != -INF && entry_score.abs() < MATE_SCORE {
+                        match entry_flags {
+                            FEXACT => pruning_eval = entry_score,
+                            FBETA  => {
+                                pruning_eval = pruning_eval.max(entry_score);
+                            }
+                            FALPHA => {
+                                pruning_eval = pruning_eval.min(entry_score);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
 
                     if tt_depth!(encoded) < $depth {
-                        (false, i32::MIN, pseudo_mv)
+                        (false, i32::MIN, pseudo_mv, tt_eval, pruning_eval)
                     } else {
-                        let mut entry_score = tt_score!(b_prime);
-
-                        if entry_score > MATE_SCORE {
-                            entry_score -= $state.search_ply as i32;
-                        } else if entry_score < -MATE_SCORE {
-                            entry_score += $state.search_ply as i32;
-                        }
-
-                        let entry_flags = tt_flags!(encoded);
                         let mut valid_cutoff = false;
 
                         match entry_flags {
@@ -269,7 +308,10 @@ macro_rules! probe_tt_entry {
                             _ => unreachable!(),
                         }
 
-                        (valid_cutoff, entry_score, pseudo_mv)
+                        (
+                            valid_cutoff, entry_score, pseudo_mv,
+                            tt_eval, pruning_eval
+                        )
                     }
                 }
             }
@@ -348,6 +390,7 @@ macro_rules! probe_pv_move {
 /// - score   -> score to store (mate scores are ply-adjusted)
 /// - flags   -> bound type: FEXACT, FALPHA, or FBETA
 /// - depth   -> search depth the score is valid for
+/// - eval    -> static eval at this node (`-INF` when in check)
 /// - state   -> position whose hash keys the entry
 /// - table   -> the shared transposition table
 ///
@@ -358,6 +401,7 @@ macro_rules! hash_tt_entry {
         $score:expr,
         $flags:expr,
         $depth:expr,
+        $eval:expr,
         $state:expr,
         $table:expr
     ) => {
@@ -382,11 +426,12 @@ macro_rules! hash_tt_entry {
 
         let mut encoded: u128 = flags_depth as u128;
         tt_enc_score!(encoded, store_score);
+        tt_enc_eval!(encoded, $eval);
 
         let sig = m_signature!($tt_move);                                       /* XOR of move.1 entries              */
         let age = $table.age.load(Ordering::Relaxed);
         let a = $tt_move.0;                                                     /* move.0 128-bit                     */
-        let b = ((sig as u128) << 41) | encoded;                                /* sig << 41 | score<<9 | flags_depth */
+        let b = ((sig as u128) << 41) | encoded;                                /* eval<<105 | sig<<41 | score/flags  */
 
         let old_s0 = entry.slot[0];
         let old_s1 = entry.slot[1];
@@ -416,7 +461,7 @@ macro_rules! hash_tt_entry {
 
             entry.version.fetch_add(1, Ordering::Release);                      /* seqlock lock: version now odd      */
             entry.slot[0] = a;                                                  /* a = move.0 (raw)                   */
-            entry.slot[1] = b;                                                  /* b = sig<<32|encoded (raw)          */
+            entry.slot[1] = b;                                                  /* b = eval|sig|encoded (raw)         */
             entry.slot[2] = a ^ b ^ hash;                                       /* parity = a ^ b ^ c (written last)  */
             entry.age = age;
             entry.version.fetch_add(1, Ordering::Release);                      /* seqlock unlock: version now even   */
@@ -589,7 +634,8 @@ impl QTable {
     ///
     /// Mirror of the `TTable` methods: `with_mb` sizes the table to a
     /// megabyte budget, `len` reports slot count, and `is_empty` scans
-    /// for any written entry.
+    /// for any written entry. Slot counts are floored to a power of two
+    /// for mask indexing.
     pub fn with_mb(mb: usize) -> Self {
         let size = (mb * 1024 * 1024 / size_of::<QTEntry>()).max(1);
         Self::with_entries(size)
@@ -598,7 +644,7 @@ impl QTable {
     pub fn with_entries(entries: usize) -> Self {
         Self {
             table: SyncUnsafeCell::new(
-                vec![QTEntry::default(); entries]
+                vec![QTEntry::default(); 1 << entries.max(1).ilog2()]
             ),
             age: AtomicU64::new(0),
             new_write: AtomicU64::new(0),
@@ -626,13 +672,14 @@ impl QTable {
 /// Qsearch-table packing macros.
 ///
 /// Counterparts of the `tt_*` packing family for the smaller qsearch
-/// entry: `qt_index!` maps a hash onto a slot, `qt_enc_score!` packs a
-/// sign-extended 16-bit score, `qt_enc_flags!` packs the bound type into
-/// bits 16-17, and `qt_score!` / `qt_flags!` read them back.
+/// entry: `qt_index!` masks a hash onto a power-of-two slot,
+/// `qt_enc_score!` packs a sign-extended 16-bit score, `qt_enc_flags!`
+/// packs the bound type into bits 16-17, and `qt_score!` / `qt_flags!`
+/// read them back.
 #[macro_export]
 macro_rules! qt_index {
     ($hash:expr, $size:expr) => {{
-        ($hash as usize) % $size
+        ($hash as usize) & ($size - 1)
     }};
 }
 
@@ -888,7 +935,8 @@ impl PTable {
     ///
     /// Reduced mirror of the `QTable` methods: `with_mb` sizes the table
     /// from a megabyte budget, `len` reports slot count, and `is_empty`
-    /// scans for any written entry.
+    /// scans for any written entry. Slot counts are floored to a power
+    /// of two for mask indexing.
     pub fn with_mb(mb: usize) -> Self {
         let size = (mb * 1024 * 1024 / size_of::<PTEntry>()).max(1);
         Self::with_entries(size)
@@ -896,7 +944,9 @@ impl PTable {
 
     pub fn with_entries(entries: usize) -> Self {
         Self {
-            table: SyncUnsafeCell::new(vec![PTEntry::default(); entries]),
+            table: SyncUnsafeCell::new(
+                vec![PTEntry::default(); 1 << entries.max(1).ilog2()]
+            ),
             new_write: AtomicU64::new(0),
             over_write: AtomicU64::new(0),
             hit: AtomicU64::new(0),
@@ -920,15 +970,15 @@ impl PTable {
 
 /// Pawn-table access macros.
 ///
-/// `pt_index!` maps a pawn hash onto a slot; `probe_pt_entry!` reads an
-/// entry with seqlock validation and returns
+/// `pt_index!` masks a pawn hash onto a power-of-two slot;
+/// `probe_pt_entry!` reads an entry with seqlock validation and returns
 /// `(hit, opening, endgame)`; `hash_pt_entry!` writes one
 /// unconditionally. The two score halves travel as u32 bit patterns in
 /// the low 64 bits of slot[0].
 #[macro_export]
 macro_rules! pt_index {
     ($hash:expr, $size:expr) => {{
-        ($hash as usize) % $size
+        ($hash as usize) & ($size - 1)
     }};
 }
 

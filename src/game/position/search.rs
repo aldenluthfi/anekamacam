@@ -730,6 +730,13 @@ fn quiescence_search(
 ///   the current ply. Once the window collapses, no line below this node can
 ///   improve on an already-known mate, so the node returns immediately.
 ///
+/// - transposition eval reuse:
+///   entries cache the static evaluation beside the score; a hit replaces
+///   the fresh evaluation call, and the stored score sharpens it into a
+///   pruning eval whenever its bound brackets the eval. The pruning stages
+///   below (reverse futility, razoring, null move, futility) read the
+///   sharpened value; the improving flag keeps the raw evaluation.
+///
 /// - reverse futility pruning:
 ///   at shallow, non-PV, non-check nodes, if the static evaluation exceeds
 ///   `beta` by a depth-scaled margin, the node cuts on `beta` without
@@ -752,7 +759,7 @@ fn quiescence_search(
 ///
 /// - futility pruning:
 ///   at shallow non-check non-PV nodes, marks the node futile when
-///   `static_eval + margin <= alpha`. Inside the move loop, any quiet,
+///   `pruning_eval + margin <= alpha`. Inside the move loop, any quiet,
 ///   non-promotion, non-drop move after the first legal one is skipped,
 ///   since it cannot plausibly raise the score above `alpha`.
 ///
@@ -877,10 +884,18 @@ pub fn alpha_beta(
                                   STATIC EVALUATION
     \*-----------------------------------------------------------------------*/
 
-    let static_eval =
-        if in_check { -INF } else { evaluate_position!(state, bufs, ptable) };
+    let static_eval = if in_check {
+        -INF
+    } else if tt_entry.3 != -INF {
+        tt_entry.3
+    } else {
+        evaluate_position!(state, bufs, ptable)
+    };
 
     state.static_eval[ply] = static_eval;
+
+    let pruning_eval =
+        if tt_entry.4 != -INF { tt_entry.4 } else { static_eval };
 
     /*-----------------------------------------------------------------------*\
                                     IMPROVING FLAG
@@ -899,7 +914,7 @@ pub fn alpha_beta(
     && beta - alpha == 1
     && !in_check
     && beta.abs() < MATE_SCORE
-    && static_eval - state.statics.rfp_margin[improving as usize][depth]
+    && pruning_eval - state.statics.rfp_margin[improving as usize][depth]
     >= beta
     {
         return beta;
@@ -914,7 +929,7 @@ pub fn alpha_beta(
     && beta - alpha == 1
     && alpha.abs() < MATE_SCORE
     && state.game_phase != ENDGAME
-    && static_eval + state.statics.razor_margin[depth] < alpha
+    && pruning_eval + state.statics.razor_margin[depth] < alpha
     {
         let score = quiescence_search(
             state, ttable, qtable, ptable, alpha, alpha + 1, info, bufs
@@ -932,13 +947,13 @@ pub fn alpha_beta(
     if null
     && !in_check
     && depth > MIN_NMP_DEPTH
-    && static_eval >= beta
+    && pruning_eval >= beta
     && state.search_ply > 0
     && (state.game_phase != ENDGAME || depth >= MIN_NMP_ENDGAME_DEPTH)
     && state.big_pieces[state.playing as usize]
     >= state.statics.nmp_min_material
     {
-        let reduct = (4 + depth / 4 + ((static_eval - beta)
+        let reduct = (4 + depth / 4 + ((pruning_eval - beta)
             / state.statics.nmp_eval_div).clamp(0, 3) as usize).min(depth);
 
         make_null_move!(state);
@@ -984,7 +999,7 @@ pub fn alpha_beta(
     && !in_check
     && beta - alpha == 1
     && alpha.abs() < MATE_SCORE
-    && static_eval + margin[depth] <= alpha
+    && pruning_eval + margin[depth] <= alpha
     {
         futile = true;
     }
@@ -1261,8 +1276,8 @@ pub fn alpha_beta(
                     }
 
                     hash_tt_entry!(
-                        bufs.move_buf[ply][i], beta, FBETA, depth, state,
-                        ttable
+                        bufs.move_buf[ply][i], beta, FBETA, depth,
+                        static_eval, state, ttable
                     );
 
                     return beta;
@@ -1357,9 +1372,13 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     if alpha != alpha_start {
-        hash_tt_entry!(best_move, best_score, FEXACT, depth, state, ttable);
+        hash_tt_entry!(
+            best_move, best_score, FEXACT, depth, static_eval, state, ttable
+        );
     } else {
-        hash_tt_entry!(best_move, alpha, FALPHA, depth, state, ttable);
+        hash_tt_entry!(
+            best_move, alpha, FALPHA, depth, static_eval, state, ttable
+        );
     }
 
     alpha

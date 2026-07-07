@@ -357,15 +357,15 @@ pub const HASH_P_PARTS: usize = 1;
 pub const HASH_PARTS: usize =
     HASH_T_PARTS + HASH_Q_PARTS + HASH_P_PARTS;
 
-pub const T_TABLE_SIZE: usize =
-    (HASH_DEFAULT_MB * HASH_T_PARTS / HASH_PARTS * 0x100000)
-    / size_of::<TTEntry>();
-pub const Q_TABLE_SIZE: usize =
-    (HASH_DEFAULT_MB * HASH_Q_PARTS / HASH_PARTS * 0x100000)
-    / size_of::<QTEntry>();
-pub const P_TABLE_SIZE: usize =
-    (HASH_DEFAULT_MB * HASH_P_PARTS / HASH_PARTS * 0x100000)
-    / size_of::<PTEntry>();
+pub const T_TABLE_SIZE: usize = 1 <<
+    ((HASH_DEFAULT_MB * HASH_T_PARTS / HASH_PARTS * 0x100000)
+    / size_of::<TTEntry>()).ilog2();
+pub const Q_TABLE_SIZE: usize = 1 <<
+    ((HASH_DEFAULT_MB * HASH_Q_PARTS / HASH_PARTS * 0x100000)
+    / size_of::<QTEntry>()).ilog2();
+pub const P_TABLE_SIZE: usize = 1 <<
+    ((HASH_DEFAULT_MB * HASH_P_PARTS / HASH_PARTS * 0x100000)
+    / size_of::<PTEntry>()).ilog2();
 
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000;                               /* ordering band for SEE >= 0 moves   */
 pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000;                                /* ordering band for SEE < 0          */
