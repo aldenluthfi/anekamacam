@@ -273,9 +273,9 @@ pub fn log_table_stats(
 /// Iterative deepening with aspiration windows over alpha_beta.
 /// Runs depth 1..=set_depth. Depths below 4, or when the previous score is a
 /// mate, use a full window. Otherwise aspiration windows start at a value-
-/// derived half-window and double on each fail until the search falls
-/// within bounds. Thread 0 prints UCI info lines per depth; helper
-/// threads skip output.
+/// derived half-window and widen the failing bound by half of the
+/// current delta on each fail until the search falls within bounds.
+/// Thread 0 prints UCI info lines per depth; helper threads skip output.
 ///
 /// Params:
 /// - state: &mut State         -> root position to search
@@ -339,7 +339,9 @@ pub fn iterative_deepening(
                     break s;
                 }
 
-                asp_delta = asp_delta.saturating_mul(2).min(INF);
+                asp_delta = asp_delta
+                    .saturating_add(asp_delta / 2)
+                    .min(INF);
 
                 if s <= asp_alpha {
                     asp_alpha = (asp_alpha - asp_delta).max(-INF);
