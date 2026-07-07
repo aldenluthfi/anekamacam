@@ -375,7 +375,7 @@ pub struct StaticState {
     pub files: u8,
     pub ranks: u8,
     pub board_size: usize,
-    pub cont_dim: usize,
+    pub cont_dim: usize,                                                        /* folded cont_hist dim (power of two)*/
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
@@ -451,6 +451,14 @@ pub struct StaticState {
 /// - bit 10    : There is a limit on the number of repetitions of a position
 /// - bit 11-31 : reserved for future use
 ///
+/// `cont_hist` stacks two square continuation-history tables, 1-ply then
+/// 2-ply, each `cont_dim x cont_dim`: the row is the folded (piece, end)
+/// key of the move played 1 or 2 plies ago, the column is the same key
+/// of the quiet reply being scored. Keys fold via
+/// `(key ^ (key >> CONT_HIST_SHIFT)) & (cont_dim - 1)`; collisions are
+/// accepted as ordering noise. Per-thread on purpose: lazy-SMP workers
+/// keep divergent histories.
+///
 /// Static configuration lives in `static_data: Arc<StaticState>`, shared
 /// cheaply across threads. `State::clone()` calls `Arc::clone` for static_data
 /// and deep-copies only the 29 dynamic fields.
@@ -506,7 +514,7 @@ pub struct State {
     pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
-    pub cont_hist: Vec<i16>,
+    pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] cont_dim^2 halves  */
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
     pub static_eval: Vec<i32>,                                                  /* static eval per ply; -INF in check */
