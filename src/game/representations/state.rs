@@ -409,6 +409,7 @@ pub struct StaticState {
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
     pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                 */
+    pub nmp_eval_div: i32,                                                      /* NMP eval-surplus reduction divisor */
     pub tempo_bonus: i32,                                                       /* tempo advantage bonus              */
     pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
     pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
@@ -693,6 +694,7 @@ impl State {
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
             nmp_min_material: 1,
+            nmp_eval_div: 1,
             tempo_bonus: 0,
             imbalance_major: 0,
             imbalance_minor: 0,

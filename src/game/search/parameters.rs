@@ -1421,6 +1421,9 @@ pub fn derive_search_parameters(state: &mut State) {
         + state.major_pieces[BLACK as usize]) / 4).clamp(1, 4);
     state.static_mut().nmp_min_material = nmp_min_material;
 
+    let nmp_eval_div = (avg / 2).max(1);
+    state.static_mut().nmp_eval_div = nmp_eval_div;
+
     let tempo_bonus = (avg / 20).max(5) as i32;
     state.static_mut().tempo_bonus = tempo_bonus;
 

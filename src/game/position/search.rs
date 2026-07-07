@@ -743,10 +743,12 @@ fn quiescence_search(
 ///   `alpha` without a full search.
 ///
 /// - null move pruning:
-///   skips the side to move and searches at reduced depth `3 + depth/8` with a
-///   null-window around `beta`. If the opponent cannot improve even given a
-///   free move, the node cuts on `beta`. Disabled in the endgame to avoid
-///   zugzwang blind spots.
+///   skips the side to move and searches with a null-window around `beta` at
+///   depth reduced by `4 + depth/4` plus a term scaled by how far the static
+///   evaluation sits above `beta`. If the opponent cannot improve even given
+///   a free move, the node cuts on `beta`. Endgame nodes only try it at high
+///   depth and must confirm the cut with a reduced verification search
+///   without the null move, guarding zugzwang blind spots.
 ///
 /// - futility pruning:
 ///   at shallow non-check non-PV nodes, marks the node futile when
@@ -929,14 +931,15 @@ pub fn alpha_beta(
 
     if null
     && !in_check
-    && depth > MIN_LMP_DEPTH
+    && depth > MIN_NMP_DEPTH
     && static_eval >= beta
     && state.search_ply > 0
-    && state.game_phase != ENDGAME
+    && (state.game_phase != ENDGAME || depth >= MIN_NMP_ENDGAME_DEPTH)
     && state.big_pieces[state.playing as usize]
     >= state.statics.nmp_min_material
     {
-        let reduct = 3 + depth / 8;
+        let reduct = (4 + depth / 4 + ((static_eval - beta)
+            / state.statics.nmp_eval_div).clamp(0, 3) as usize).min(depth);
 
         make_null_move!(state);
 
@@ -949,7 +952,19 @@ pub fn alpha_beta(
         undo_null_move!(state);
 
         if score >= beta {
-            return beta;
+            if state.game_phase != ENDGAME {
+                return beta;
+            }
+
+            let verify = alpha_beta(
+                state,
+                ttable, qtable, ptable,
+                depth - reduct, beta - 1, beta, info, bufs, false
+            );
+
+            if verify >= beta {
+                return beta;
+            }
         }
     }
 
