@@ -433,6 +433,11 @@ macro_rules! hash_tt_entry {
 /// a probed move proves illegal, or the target depth is reached. All
 /// moves are undone before returning, leaving the position unchanged.
 ///
+/// Every walked move — triangular or probed — is validated against the
+/// freshly generated move list before it is applied, so a stale
+/// triangular row or a collided TT move truncates the reported line
+/// instead of corrupting the position.
+///
 /// Params:
 /// - state -> position walked and restored
 /// - table -> the shared transposition table
@@ -447,15 +452,29 @@ macro_rules! fill_pv_line {
             $state.pv_line[index] = $state.pv_table[index].clone();
         }
 
-        for slot in 0..triangular_length {
-            let pv_move = $state.pv_line[slot].clone();
-            make_move!($state, pv_move);
-        }
-
         let mut out: Vec<Move> = Vec::with_capacity(64);
         let mut scratch: Vec<u64> = Vec::with_capacity(16);
+        let mut walk_complete = true;
+
+        for slot in 0..triangular_length {
+            let pv_move = $state.pv_line[slot].clone();
+
+            generate_all_moves_and_drops(
+                $state, &mut out, &mut scratch
+            );
+
+            if !out.iter().any(|mv| *mv == pv_move)
+            || !make_move!($state, pv_move) {
+                walk_complete = false;
+                break;
+            }
+        }
 
         for slot in triangular_length..$depth {
+            if !walk_complete {
+                break;
+            }
+
             let Some(pm) = probe_pv_move!($state, $table) else {
                 break;
             };

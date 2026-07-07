@@ -1961,6 +1961,17 @@ macro_rules! make_move {
                     );
                 }
 
+                if p_is_royal!($state.statics.pieces[captured_piece]) {
+                    $state.royal_list[captured_color as usize].retain(
+                        |&sq| sq as u32 != captured_square
+                    );
+
+                    if is_unload {
+                        $state.royal_list[captured_color as usize]
+                            .push(unload_square as Square);
+                    }
+                }
+
                 if !is_unload {
                     $state.opening_pst_bonus[captured_color as usize] -=
                         $state.statics.pst_opening[captured_piece]
@@ -2319,6 +2330,17 @@ macro_rules! make_move {
                         piece_list_remove!(
                             $state, captured_piece, captured_square as Square
                         );
+                    }
+
+                    if p_is_royal!($state.statics.pieces[captured_piece]) {
+                        $state.royal_list[captured_color as usize].retain(
+                            |&sq| sq as u32 != captured_square
+                        );
+
+                        if is_unload {
+                            $state.royal_list[captured_color as usize]
+                                .push(unload_square as Square);
+                        }
                     }
 
                     if !is_unload {
@@ -2919,6 +2941,17 @@ macro_rules! undo_move {
             $state.piece_list[captured_piece]
                 .push(captured_square as Square);
 
+            if p_is_royal!($state.statics.pieces[captured_piece]) {
+                if is_unload {
+                    $state.royal_list[captured_color as usize].retain(
+                        |&sq| sq as u32 != unload_square
+                    );
+                }
+
+                $state.royal_list[captured_color as usize]
+                    .push(captured_square as Square);
+            }
+
             if !is_unload {
                 $state.opening_pst_bonus[captured_color as usize] +=
                     $state.statics.pst_opening[captured_piece]
@@ -3108,6 +3141,17 @@ macro_rules! undo_move {
                 }
                 $state.piece_list[captured_piece]
                     .push(captured_square as Square);
+
+                if p_is_royal!($state.statics.pieces[captured_piece]) {
+                    if is_unload {
+                        $state.royal_list[captured_color as usize].retain(
+                            |&sq| sq as u32 != unload_square
+                        );
+                    }
+
+                    $state.royal_list[captured_color as usize]
+                        .push(captured_square as Square);
+                }
 
                 if !is_unload {
                     $state.opening_pst_bonus[captured_color as usize] +=
