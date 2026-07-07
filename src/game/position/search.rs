@@ -156,6 +156,8 @@ pub fn clear_search(
 
     state.cont_hist = vec![0i16; 2 * cont_dim * cont_dim];
     state.search_hist = vec![0i16; piece_count * board_size * board_size];
+    state.capt_hist =
+        vec![0i16; piece_count * board_size * CAPT_HIST_BUCKETS];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     state.static_eval = vec![-INF; MAX_DEPTH];
 
@@ -1086,6 +1088,9 @@ pub fn alpha_beta(
         let is_drop = m_drop!(mv);
         let is_quiet = m_quiet!(mv);
 
+        let capt_idx =
+            if is_capture { capt_hist_index!(mv, state) } else { 0 };
+
         let dangerous_push = p_is_pawn!(&state.statics.pieces[piece])
             && !is_capture
             && !is_drop
@@ -1117,7 +1122,8 @@ pub fn alpha_beta(
         && alpha.abs() < MATE_SCORE
         && is_capture
         {
-            let see = bufs.score_buf[ply][i] as i32 - LOSING_CAPTURE_SCORE;     /* losing band stores 1000000 + SEE   */
+            let see = bufs.score_buf[ply][i] as i32                             /* losing band: 1M - h + SEE + capt   */
+                - (LOSING_CAPTURE_SCORE - MAX_HIST_VALUE as i32);
             if see < -state.statics.see_margin[depth] {
                 continue;
             }
@@ -1273,6 +1279,10 @@ pub fn alpha_beta(
                                 state.cont_hist[cont2_base + cont_kf], bonus
                             );
                         }
+                    } else if is_capture {
+                        apply_history_gravity!(
+                            state.capt_hist[capt_idx], bonus
+                        );
                     }
 
                     hash_tt_entry!(
@@ -1301,6 +1311,10 @@ pub fn alpha_beta(
                             state.cont_hist[cont2_base + cont_kf], bonus
                         );
                     }
+                } else if is_capture {
+                    apply_history_gravity!(
+                        state.capt_hist[capt_idx], bonus
+                    );
                 }
 
                 alpha = score;
@@ -1340,6 +1354,12 @@ pub fn alpha_beta(
                     state.cont_hist[cont2_base + cont_kf], -bonus
                 );
             }
+        }
+
+        else if is_capture {
+            apply_history_gravity!(
+                state.capt_hist[capt_idx], -bonus
+            );
         }
     }
 

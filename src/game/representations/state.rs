@@ -410,6 +410,7 @@ pub struct StaticState {
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
     pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                 */
     pub nmp_eval_div: i32,                                                      /* NMP eval-surplus reduction divisor */
+    pub capt_hist_div: i32,                                                     /* capture-history victim bucket div  */
     pub tempo_bonus: i32,                                                       /* tempo advantage bonus              */
     pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
     pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
@@ -517,6 +518,7 @@ pub struct State {
 
     pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] cont_dim^2 halves  */
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
+    pub capt_hist: Vec<i16>,                                                    /* [piece*B*8 + end*8 + victim_bkt]   */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
     pub static_eval: Vec<i32>,                                                  /* static eval per ply; -INF in check */
 }
@@ -568,6 +570,7 @@ impl Clone for State {
 
             cont_hist: self.cont_hist.clone(),
             search_hist: self.search_hist.clone(),
+            capt_hist: self.capt_hist.clone(),
             killer_hist: self.killer_hist.clone(),
             static_eval: self.static_eval.clone(),
         }
@@ -695,6 +698,7 @@ impl State {
             pst_endgame: vec![vec![0; board_size]; piece_count],
             nmp_min_material: 1,
             nmp_eval_div: 1,
+            capt_hist_div: 1,
             tempo_bonus: 0,
             imbalance_major: 0,
             imbalance_minor: 0,
@@ -792,6 +796,9 @@ impl State {
 
             cont_hist: vec![0i16; 2 * cont_dim * cont_dim],
             search_hist: vec![0i16; piece_count * board_size * board_size],
+            capt_hist: vec![
+                0i16; piece_count * board_size * CAPT_HIST_BUCKETS
+            ],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
             static_eval: vec![i32::MIN; MAX_DEPTH],
         }
@@ -872,6 +879,8 @@ impl State {
         self.cont_hist = vec![0i16; 2 * cont_dim * cont_dim];
         self.search_hist =
             vec![0i16; piece_count * board_size * board_size];
+        self.capt_hist =
+            vec![0i16; piece_count * board_size * CAPT_HIST_BUCKETS];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
         self.static_eval = vec![-INF; MAX_DEPTH];
     }
