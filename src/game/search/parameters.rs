@@ -616,7 +616,7 @@ pub fn derive_eval_parameters(state: &mut State) {
 
     for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
         let color = p_color!(piece) as usize;
-        let count = state.piece_list[piece_idx].len() as u32;
+        let count = state.piece_count[piece_idx];
 
         state.big_pieces[color] += count * (p_is_big!(piece) as u32);
         state.major_pieces[color] += count * (p_is_major!(piece) as u32);

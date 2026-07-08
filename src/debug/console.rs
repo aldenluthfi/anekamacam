@@ -1471,9 +1471,9 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             let piece_selected = selected > 0
                 && app.playground_state.as_ref().is_some_and(|arc| {
                     arc.lock().is_ok_and(|st| {
-                        st.piece_list
+                        st.piece_count
                             .get(selected as usize - 1)
-                            .is_some_and(|sqs| !sqs.is_empty())
+                            .is_some_and(|&count| count > 0)
                     })
                 });
 
@@ -2258,7 +2258,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                     )
                 )
                 .style(
-                    if state.piece_list[p_index!(p) as usize].is_empty() {
+                    if state.piece_count[p_index!(p) as usize] == 0 {
                         Style::default().fg(Color::Gray)
                     } else {
                         Style::default()
@@ -2290,7 +2290,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         };
 
         let active_piece = selected_piece
-            .filter(|&idx| !state.piece_list[idx].is_empty());
+            .filter(|&idx| state.piece_count[idx] > 0);
 
         if active_piece.is_none() && app.focus == 1 {
             app.focus = 0;

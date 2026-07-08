@@ -112,14 +112,14 @@ pub fn refresh_eval_state(state: &mut State) {
     for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
         let color = p_color!(piece) as usize;
 
-        for square in &state.piece_list[piece_idx] {
+        for &square in piece_squares!(state, piece_idx) {
             state.opening_material[color] += p_ovalue!(piece) as u32;
             state.endgame_material[color] += p_evalue!(piece) as u32;
 
             state.opening_pst_bonus[color] +=
-                state.statics.pst_opening[piece_idx][*square as usize];
+                state.statics.pst_opening[piece_idx][square as usize];
             state.endgame_pst_bonus[color] +=
-                state.statics.pst_endgame[piece_idx][*square as usize];
+                state.statics.pst_endgame[piece_idx][square as usize];
         }
     }
 
@@ -211,7 +211,10 @@ pub fn verify_game_state(state: &State) {
         }
     }
 
-    let mut sorted_piece_list = state.piece_list.clone();
+    let mut sorted_piece_list: Vec<Vec<Square>> =
+        (0..state.statics.pieces.len())
+            .map(|index| piece_squares!(state, index).copied().collect())
+            .collect();
 
     for squares in temp_piece_list.iter_mut() {
         squares.sort_unstable();
@@ -260,9 +263,8 @@ pub fn verify_game_state(state: &State) {
 
     for piece in state.statics.pieces.iter() {
         let index = p_index!(piece) as usize;
-        let piece_indices = &state.piece_list[index];
 
-        for square in piece_indices {
+        for &square in piece_squares!(state, index) {
             let color = p_color!(piece) as usize;
             if p_is_big!(piece) {
                 temp_big_pieces[color] += 1;
@@ -277,9 +279,9 @@ pub fn verify_game_state(state: &State) {
             temp_opening_material[color] += p_ovalue!(piece) as u32;
             temp_endgame_material[color] += p_evalue!(piece) as u32;
             temp_opening_pst_bonus[color] +=
-                state.statics.pst_opening[index][*square as usize];
+                state.statics.pst_opening[index][square as usize];
             temp_endgame_pst_bonus[color] +=
-                state.statics.pst_endgame[index][*square as usize];
+                state.statics.pst_endgame[index][square as usize];
         }
     }
 
@@ -374,10 +376,8 @@ pub fn verify_game_state(state: &State) {
     for piece in &state.statics.pieces {
         let i = p_index!(piece) as usize;
 
-        let piece_indices = &state.piece_list[i];
-
-        for index in piece_indices {
-            temp_hash ^= PIECE_HASHES[i][*index as usize];
+        for &index in piece_squares!(state, i) {
+            temp_hash ^= PIECE_HASHES[i][index as usize];
         }
     }
 

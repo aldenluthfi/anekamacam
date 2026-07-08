@@ -267,27 +267,63 @@ impl Default for Snapshot {
     }
 }
 
-/// piece_list_remove!
+/// Flat piece-list accessors.
 ///
-/// Removes one square from a piece's square list via swap-remove.
-/// The list is unordered, so the swap keeps removal O(list length) with
-/// no shifting; a missing square is ignored, matching set semantics.
+/// `piece_list` is one flat `Vec<Square>` holding `board_size` slots per
+/// piece index; each row keeps its occupied squares packed at the front,
+/// `piece_count` gives the occupied length, and the tail stays filled
+/// with `NO_SQUARE`. The push and remove macros own the `piece_count`
+/// update, so call sites never touch the count themselves.
+///
+/// - `piece_squares!` -> iterator over a piece's occupied squares
+/// - `piece_list_push!` -> appends after the last occupied slot
+/// - `piece_list_remove!` -> swap-removes a square within its row; a
+///   missing square is ignored, matching set semantics
 ///
 /// Params:
-/// - state: &mut State  -> position whose piece list is edited
-/// - piece_index: usize -> piece whose square list is edited
-/// - square: Square     -> square to remove from the list
+/// - state: &State / &mut State -> position whose piece list is used
+/// - piece_index: usize         -> piece whose row is accessed
+/// - square: Square             -> square to insert or remove
 ///
+#[macro_export]
+macro_rules! piece_squares {
+    ($state:expr, $piece_index:expr) => {{
+        let row_start = $piece_index * $state.statics.board_size;
+        let count = $state.piece_count[$piece_index] as usize;
+
+        $state.piece_list[row_start..row_start + count].iter()
+    }};
+}
+
+#[macro_export]
+macro_rules! piece_list_push {
+    ($state:expr, $piece_index:expr, $square:expr) => {
+        let pushed_square = $square;
+        let pushed_piece = $piece_index;
+        let count = $state.piece_count[pushed_piece] as usize;
+
+        $state.piece_list[
+            pushed_piece * $state.statics.board_size + count
+        ] = pushed_square;
+        $state.piece_count[pushed_piece] += 1;
+    };
+}
+
 #[macro_export]
 macro_rules! piece_list_remove {
     ($state:expr, $piece_index:expr, $square:expr) => {
         let removed_square = $square;
-        let squares = &mut $state.piece_list[$piece_index];
+        let removed_piece = $piece_index;
+        let row_start = removed_piece * $state.statics.board_size;
+        let count = $state.piece_count[removed_piece] as usize;
+        let row = &mut $state.piece_list[row_start..row_start + count];
 
         if let Some(found) =
-            squares.iter().position(|&square| square == removed_square)
+            row.iter().position(|&square| square == removed_square)
         {
-            squares.swap_remove(found);
+            row[found] = row[count - 1];
+            row[count - 1] = NO_SQUARE;
+            $state.piece_count[removed_piece] -= 1;
         }
     };
 }
@@ -332,10 +368,7 @@ macro_rules! game_phase_score {
         for (piece_idx, piece) in $state.statics.pieces.iter().enumerate() {
             if p_is_big!(piece) && !p_is_royal!(piece) {
                 phase_score +=
-                    (
-                        p_ovalue!(piece) as u32) *
-                        ($state.piece_list[piece_idx].len() as u32
-                    );
+                    p_ovalue!(piece) as u32 * $state.piece_count[piece_idx];
             }
         }
 
@@ -507,7 +540,7 @@ pub struct State {
     pub royal_list: [Vec<Square>; 2],                                           /* color to royal piece square list   */
 
     pub piece_count: Vec<u32>,                                                  /* piece index to count               */
-    pub piece_list: Vec<Vec<Square>>,                                           /* piece index to square list         */
+    pub piece_list: Vec<Square>,                                                /* board_size slots per piece, packed */
     pub piece_in_hand: [Vec<u16>; 2],                                           /* color to pieces in hand list       */
 
 /*----------------------------------------------------------------------------*\
@@ -790,7 +823,7 @@ impl State {
             royal_list: [Vec::new(), Vec::new()],
 
             piece_count: vec![0u32; piece_count],
-            piece_list: vec![Vec::new(); piece_count],
+            piece_list: vec![NO_SQUARE; piece_count * board_size],
             piece_in_hand: [vec![0; piece_count], vec![0; piece_count]],
 
             position_hash_map: HashMap::with_capacity(128),
@@ -874,7 +907,7 @@ impl State {
         self.royal_list = [Vec::new(), Vec::new()];
 
         self.piece_count = vec![0u32; piece_count];
-        self.piece_list = vec![Vec::new(); piece_count];
+        self.piece_list = vec![NO_SQUARE; piece_count * board_size];
         self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
 
         self.position_hash_map.clear();

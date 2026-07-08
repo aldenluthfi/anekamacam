@@ -2068,9 +2068,9 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
 
                 state.main_board[square_index as usize] = piece_index;
 
-                state.piece_list[piece_index as usize]
-                    .push(square_index as Square);
-                state.piece_count[piece_index as usize] += 1;
+                piece_list_push!(
+                    state, piece_index as usize, square_index as Square
+                );
 
                 set!(state.pieces_board[piece_color as usize], square_index);
 

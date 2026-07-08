@@ -99,8 +99,8 @@ macro_rules! is_in_stand_off {
         let mut found = false;
         let board_size = $state.statics.board_size;
 
-        'main: for (index, position) in $state.piece_list.iter().enumerate() {
-            for &square in position {
+        'main: for index in 0..$state.statics.pieces.len() {
+            for &square in piece_squares!($state, index) {
                 for pattern in
                     &$state.statics.relevant_stand_offs
                         [index * board_size + square as usize]

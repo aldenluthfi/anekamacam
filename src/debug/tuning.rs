@@ -239,7 +239,7 @@ fn extract_sample(
             }
         }
 
-        for &square in &state.piece_list[*white_index] {
+        for &square in piece_squares!(state, *white_index) {
             let offset = type_index * board_size + square as usize;
             if opening_weight != 0.0 {
                 features.push((
@@ -253,7 +253,7 @@ fn extract_sample(
             }
         }
 
-        for &square in &state.piece_list[*black_index] {
+        for &square in piece_squares!(state, *black_index) {
             let mirror =
                 mirror_square(square, shape.files, shape.ranks);
             let offset = type_index * board_size + mirror;

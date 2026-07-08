@@ -49,8 +49,8 @@ pub fn hash_position(state: &State) -> u128 {
             &EN_PASSANT_HASHES[enp_square!(state.en_passant_square) as usize];
     }
 
-    for (index, piece_positions) in state.piece_list.iter().enumerate() {
-        for &square in piece_positions {
+    for index in 0..state.statics.pieces.len() {
+        for &square in piece_squares!(state, index) {
             hash ^= &PIECE_HASHES[index][square as usize];
         }
     }
@@ -82,11 +82,11 @@ pub fn hash_position(state: &State) -> u128 {
 pub fn hash_pawns(state: &State) -> u128 {
     let mut hash = u128::default();
 
-    for (index, piece_positions) in state.piece_list.iter().enumerate() {
+    for index in 0..state.statics.pieces.len() {
         if !p_is_pawn!(state.statics.pieces[index]) {
             continue;
         }
-        for &square in piece_positions {
+        for &square in piece_squares!(state, index) {
             hash ^= &PIECE_HASHES[index][square as usize];
         }
     }

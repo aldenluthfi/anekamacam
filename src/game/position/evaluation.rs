@@ -42,7 +42,7 @@ macro_rules! king_shelter {
                 continue;
             }
 
-            for &king_square in &$state.piece_list[piece_index] {
+            for &king_square in piece_squares!($state, piece_index) {
                 let mut adjacent =
                     $state.statics.adjacency_mask[king_square as usize];
                 and!(adjacent, $state.pieces_board[$color as usize]);
@@ -259,7 +259,7 @@ macro_rules! pawn_structure {
                 continue;
             }
             let color = p_color!(piece) as usize;
-            for &square in &$state.piece_list[index] {
+            for &square in piece_squares!($state, index) {
                 let file = square as i32 % files;
                 pawns[color].push((index, square, file));
             }
