@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds all 8 stage binaries into bin/. Run from anywhere inside the repo.
+# Builds all stage binaries into bin/. Run from anywhere inside the repo.
 # stageA/stageB predate the pv-walk fix (ac510c0) and get it cherry-picked,
 # otherwise they crash under SPRT.
 
@@ -16,6 +16,8 @@ STAGES=(
   "stageF d8c333f -"
   "stageG 4d6e0e4 -"
   "stageH c86dd76 -"
+  "stageI 5bd2ace -"
+  "stageJ 0af3dd6 -"
 )
 
 ROOT=$(git rev-parse --show-toplevel)
