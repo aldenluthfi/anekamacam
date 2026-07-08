@@ -203,7 +203,7 @@ macro_rules! tt_eval {
 /// probe_tt_entry!
 ///
 /// Probes the TT with parity + seqlock integrity check; returns (valid,
-/// score, pseudo_move, eval, pruning_eval).
+/// score, pseudo_move, eval, pruning_eval, depth, flags, entry_score).
 ///
 /// Validation:
 ///   Step 1: version is even (no write in progress)
@@ -214,9 +214,13 @@ macro_rules! tt_eval {
 /// miss or when the entry was written in check). `pruning_eval` refines
 /// it with the stored score whenever the bound brackets it: an exact
 /// entry replaces the eval, a lower bound raises it, an upper bound
-/// lowers it; mate-range scores are left out of the refinement.
+/// lowers it; mate-range scores are left out of the refinement. The raw
+/// entry fields (depth, bound flags, ply-adjusted score) are returned for
+/// singular-extension triggering; on a miss they read as depth 0, FALPHA,
+/// and i32::MIN.
 ///
-/// On failure returns (false, i32::MIN, null_pseudo_move(), -INF, -INF).
+/// On failure returns
+/// (false, i32::MIN, null_pseudo_move(), -INF, -INF, 0, FALPHA, i32::MIN).
 ///
 /// Params:
 /// - state -> position whose hash is probed
@@ -226,8 +230,9 @@ macro_rules! tt_eval {
 /// - depth -> minimum stored depth for the score to be usable
 ///
 /// Return:
-/// (bool, i32, PseudoMove, i32, i32) -> (cutoff valid, score, stored
-/// best move, stored static eval, bound-refined pruning eval)
+/// (bool, i32, PseudoMove, i32, i32, usize, u8, i32) -> (cutoff valid,
+/// score, stored best move, stored static eval, bound-refined pruning
+/// eval, stored depth, stored bound flags, ply-adjusted stored score)
 ///
 #[macro_export]
 macro_rules! probe_tt_entry {
@@ -239,20 +244,23 @@ macro_rules! probe_tt_entry {
 
         let v1 = entry.version.load(Ordering::Acquire);
         if v1 & 1 != 0 {                                                        /* write in progress: skip            */
-            (false, i32::MIN, null_pseudo_move(), -INF, -INF)
+            (false, i32::MIN, null_pseudo_move(), -INF, -INF, 0, FALPHA,
+                i32::MIN)
         } else {
             let s0 = entry.slot[0];
             let s1 = entry.slot[1];
             let s2 = entry.slot[2];
 
             if s0 ^ s1 ^ s2 != hash {                                           /* parity check: all slots covered    */
-                (false, i32::MIN, null_pseudo_move(), -INF, -INF)
+                (false, i32::MIN, null_pseudo_move(), -INF, -INF, 0, FALPHA,
+                    i32::MIN)
             } else {
                 $table.hit.fetch_add(1, Ordering::Relaxed);                     /* parity matched                     */
                 let v2 = entry.version.load(Ordering::Acquire);
 
                 if v1 != v2 {                                                   /* seqlock: torn read detected        */
-                    (false, i32::MIN, null_pseudo_move(), -INF, -INF)
+                    (false, i32::MIN, null_pseudo_move(), -INF, -INF, 0,
+                        FALPHA, i32::MIN)
                 } else {
                     $table.valid.fetch_add(1, Ordering::Relaxed);               /* consistent read confirmed          */
                     let a_prime = s0;                                           /* a = slot[0] (direct)               */
@@ -261,6 +269,7 @@ macro_rules! probe_tt_entry {
                     let sig     = (b_prime >> 41) as u64;                       /* bits 41-104 = MoveSignature        */
                     let pseudo_mv: PseudoMove = (a_prime, sig);
                     let tt_eval = tt_eval!(b_prime);                            /* bits 105-127 = static eval         */
+                    let entry_depth = tt_depth!(encoded);
 
                     let mut entry_score = tt_score!(b_prime);
 
@@ -286,21 +295,23 @@ macro_rules! probe_tt_entry {
                         }
                     }
 
-                    if tt_depth!(encoded) < $depth {
-                        (false, i32::MIN, pseudo_mv, tt_eval, pruning_eval)
+                    if entry_depth < $depth {
+                        (false, i32::MIN, pseudo_mv, tt_eval, pruning_eval,
+                            entry_depth, entry_flags, entry_score)
                     } else {
                         let mut valid_cutoff = false;
+                        let mut cutoff_score = entry_score;
 
                         match entry_flags {
                             FALPHA => {
-                                if entry_score <= $alpha {
-                                    entry_score = $alpha;
+                                if cutoff_score <= $alpha {
+                                    cutoff_score = $alpha;
                                     valid_cutoff = true;
                                 }
                             }
                             FBETA => {
-                                if entry_score >= $beta {
-                                    entry_score = $beta;
+                                if cutoff_score >= $beta {
+                                    cutoff_score = $beta;
                                     valid_cutoff = true;
                                 }
                             }
@@ -309,8 +320,9 @@ macro_rules! probe_tt_entry {
                         }
 
                         (
-                            valid_cutoff, entry_score, pseudo_mv,
-                            tt_eval, pruning_eval
+                            valid_cutoff, cutoff_score, pseudo_mv,
+                            tt_eval, pruning_eval,
+                            entry_depth, entry_flags, entry_score
                         )
                     }
                 }

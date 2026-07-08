@@ -411,6 +411,7 @@ pub struct StaticState {
     pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                 */
     pub nmp_eval_div: i32,                                                      /* NMP eval-surplus reduction divisor */
     pub capt_hist_div: i32,                                                     /* capture-history victim bucket div  */
+    pub singular_margin: i32,                                                   /* singular beta margin per depth     */
     pub tempo_bonus: i32,                                                       /* tempo advantage bonus              */
     pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
     pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
@@ -521,6 +522,7 @@ pub struct State {
     pub capt_hist: Vec<i16>,                                                    /* [piece*B*8 + end*8 + victim_bkt]   */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
     pub static_eval: Vec<i32>,                                                  /* static eval per ply; -INF in check */
+    pub excluded: Vec<PseudoMove>,                                              /* singular-search exclusion per ply  */
 }
 
 impl Clone for State {
@@ -573,6 +575,7 @@ impl Clone for State {
             capt_hist: self.capt_hist.clone(),
             killer_hist: self.killer_hist.clone(),
             static_eval: self.static_eval.clone(),
+            excluded: self.excluded.clone(),
         }
     }
 }
@@ -699,6 +702,7 @@ impl State {
             nmp_min_material: 1,
             nmp_eval_div: 1,
             capt_hist_div: 1,
+            singular_margin: 1,
             tempo_bonus: 0,
             imbalance_major: 0,
             imbalance_minor: 0,
@@ -801,6 +805,7 @@ impl State {
             ],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
             static_eval: vec![i32::MIN; MAX_DEPTH],
+            excluded: vec![null_pseudo_move(); MAX_DEPTH],
         }
     }
 
@@ -883,6 +888,7 @@ impl State {
             vec![0i16; piece_count * board_size * CAPT_HIST_BUCKETS];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
         self.static_eval = vec![-INF; MAX_DEPTH];
+        self.excluded = vec![null_pseudo_move(); MAX_DEPTH];
     }
 
     /// State::load_fen

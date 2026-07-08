@@ -1427,6 +1427,9 @@ pub fn derive_search_parameters(state: &mut State) {
     let capt_hist_div = (avg / 4).max(1);
     state.static_mut().capt_hist_div = capt_hist_div;
 
+    let singular_margin = (avg / 128).max(1);
+    state.static_mut().singular_margin = singular_margin;
+
     let tempo_bonus = (avg / 20).max(5) as i32;
     state.static_mut().tempo_bonus = tempo_bonus;
 
