@@ -375,7 +375,6 @@ pub struct StaticState {
     pub files: u8,
     pub ranks: u8,
     pub board_size: usize,
-    pub cont_dim: usize,                                                        /* folded cont_hist dim (power of two)*/
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
@@ -455,12 +454,10 @@ pub struct StaticState {
 /// - bit 11-31 : reserved for future use
 ///
 /// `cont_hist` stacks two square continuation-history tables, 1-ply then
-/// 2-ply, each `cont_dim x cont_dim`: the row is the folded (piece, end)
-/// key of the move played 1 or 2 plies ago, the column is the same key
-/// of the quiet reply being scored. Keys fold via
-/// `(key ^ (key >> CONT_HIST_SHIFT)) & (cont_dim - 1)`; collisions are
-/// accepted as ordering noise. Per-thread on purpose: lazy-SMP workers
-/// keep divergent histories.
+/// 2-ply, each `dim x dim` with `dim = piece_count * board_size`: the row
+/// is the (piece, end) key of the move played 1 or 2 plies ago, the
+/// column is the same key of the quiet reply being scored. Per-thread on
+/// purpose: lazy-SMP workers keep divergent histories.
 ///
 /// `corr_hist` holds one evaluation-correction entry per side and pawn-hash
 /// slot: a depth-weighted moving average of the gap between search scores
@@ -522,7 +519,7 @@ pub struct State {
     pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
-    pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] cont_dim^2 halves  */
+    pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] (piece*B+end)^2    */
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub capt_hist: Vec<i16>,                                                    /* [piece*B*8 + end*8 + victim_bkt]   */
     pub corr_hist: Vec<i16>,                                                    /* per-side pawn-hash eval correction */
@@ -645,10 +642,6 @@ impl State {
             files,
             ranks,
             board_size,
-            cont_dim: (piece_count * board_size)
-                .next_power_of_two()
-                .min(CONT_HIST_MAX_DIM)
-                .max(1),
 
             relevant_moves: vec![MoveSet::new(); board_size * piece_count],
             relevant_captures: vec![MoveSet::new(); board_size * piece_count],
@@ -758,7 +751,7 @@ impl State {
     fn from_statics(statics: Arc<StaticState>) -> State {
         let piece_count = statics.pieces.len();
         let board_size = statics.board_size;
-        let cont_dim = statics.cont_dim;
+        let cont_dim = piece_count * board_size;
         let files = statics.files;
         let ranks = statics.ranks;
 
@@ -844,7 +837,7 @@ impl State {
     pub fn reset(&mut self) {
         let piece_count = self.statics.pieces.len();
         let board_size = self.statics.board_size;
-        let cont_dim = self.statics.cont_dim;
+        let cont_dim = piece_count * board_size;
 
         self.playing = WHITE;
         self.main_board = vec![NO_PIECE; board_size];

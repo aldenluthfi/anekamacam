@@ -228,7 +228,6 @@ macro_rules! see {
 /// - see_scratch -> reusable buffer for capture payloads
 /// - cont1_base  -> 1-ply continuation base offset, or usize::MAX if none
 /// - cont2_base  -> 2-ply continuation base offset, or usize::MAX if none
-/// - cont_dim    -> continuation-history fold dimension (power of two)
 ///
 /// Return:
 /// usize -> ordering score, larger searched earlier
@@ -238,7 +237,7 @@ macro_rules! score_move {
     (
         $state:expr, $mv:expr, $pv_move:expr,
         $see_moves:expr, $see_scratch:expr,
-        $cont1_base:expr, $cont2_base:expr, $cont_dim:expr
+        $cont1_base:expr, $cont2_base:expr
     ) => {{
         let scored_move: &Move = $mv;
 
@@ -264,15 +263,12 @@ macro_rules! score_move {
                 let board_size = $state.statics.board_size;
                 let idx =
                     piece * board_size * board_size + start * board_size + end;
-                let cont_dim = $cont_dim;
                 let cont_key = piece * board_size + end;
-                let cont_kf = (cont_key ^ (cont_key >> CONT_HIST_SHIFT))
-                    & (cont_dim - 1);
                 let cont1 = if $cont1_base != usize::MAX {
-                    $state.cont_hist[$cont1_base + cont_kf] as i32
+                    $state.cont_hist[$cont1_base + cont_key] as i32
                 } else { 0 };
                 let cont2 = if $cont2_base != usize::MAX {
-                    $state.cont_hist[$cont2_base + cont_kf] as i32
+                    $state.cont_hist[$cont2_base + cont_key] as i32
                 } else { 0 };
                 let entry =
                     $state.search_hist[idx] as i32 + cont1 + cont2;
@@ -345,7 +341,6 @@ macro_rules! capt_hist_index {
 /// - see_scratch -> reusable buffer for capture payloads
 /// - cont1_base  -> 1-ply continuation base offset, or usize::MAX if none
 /// - cont2_base  -> 2-ply continuation base offset, or usize::MAX if none
-/// - cont_dim    -> continuation-history fold dimension (power of two)
 ///
 /// Notes:
 /// Modifies `moves` and `scores` in place; returns nothing.
@@ -355,7 +350,7 @@ macro_rules! pick_by_score {
     (
         $state:expr, $moves:expr, $scores:expr, $index:expr, $pv_move:expr,
         $see_moves:expr, $see_scratch:expr,
-        $cont1_base:expr, $cont2_base:expr, $cont_dim:expr
+        $cont1_base:expr, $cont2_base:expr
     ) => {
         hotpath::measure_block!("order::pick", {
         let moves: &mut Vec<Move> = $moves;
@@ -365,7 +360,7 @@ macro_rules! pick_by_score {
         if scores[index] == usize::MAX {
             scores[index] = score_move!(
                 $state, &moves[index], $pv_move, $see_moves, $see_scratch,
-                $cont1_base, $cont2_base, $cont_dim
+                $cont1_base, $cont2_base
             );
         }
 
@@ -376,7 +371,7 @@ macro_rules! pick_by_score {
             if scores[i] == usize::MAX {
                 scores[i] = score_move!(
                     $state, &moves[i], $pv_move, $see_moves, $see_scratch,
-                    $cont1_base, $cont2_base, $cont_dim
+                    $cont1_base, $cont2_base
                 );
             }
 
