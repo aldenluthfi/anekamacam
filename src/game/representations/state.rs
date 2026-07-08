@@ -462,9 +462,14 @@ pub struct StaticState {
 /// accepted as ordering noise. Per-thread on purpose: lazy-SMP workers
 /// keep divergent histories.
 ///
+/// `corr_hist` holds one evaluation-correction entry per side and pawn-hash
+/// slot: a depth-weighted moving average of the gap between search scores
+/// and raw static evaluations, added (via `CORR_HIST_GRAIN`) to the
+/// evaluation used for pruning. Per-thread like the other histories.
+///
 /// Static configuration lives in `static_data: Arc<StaticState>`, shared
 /// cheaply across threads. `State::clone()` calls `Arc::clone` for static_data
-/// and deep-copies only the 29 dynamic fields.
+/// and deep-copies only the 30 dynamic fields.
 pub struct State {
 
     pub statics: Arc<StaticState>,
@@ -520,6 +525,7 @@ pub struct State {
     pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] cont_dim^2 halves  */
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub capt_hist: Vec<i16>,                                                    /* [piece*B*8 + end*8 + victim_bkt]   */
+    pub corr_hist: Vec<i16>,                                                    /* per-side pawn-hash eval correction */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
     pub static_eval: Vec<i32>,                                                  /* static eval per ply; -INF in check */
     pub excluded: Vec<PseudoMove>,                                              /* singular-search exclusion per ply  */
@@ -573,6 +579,7 @@ impl Clone for State {
             cont_hist: self.cont_hist.clone(),
             search_hist: self.search_hist.clone(),
             capt_hist: self.capt_hist.clone(),
+            corr_hist: self.corr_hist.clone(),
             killer_hist: self.killer_hist.clone(),
             static_eval: self.static_eval.clone(),
             excluded: self.excluded.clone(),
@@ -803,6 +810,7 @@ impl State {
             capt_hist: vec![
                 0i16; piece_count * board_size * CAPT_HIST_BUCKETS
             ],
+            corr_hist: vec![0i16; 2 * CORR_HIST_SIZE],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
             static_eval: vec![i32::MIN; MAX_DEPTH],
             excluded: vec![null_pseudo_move(); MAX_DEPTH],
@@ -886,6 +894,7 @@ impl State {
             vec![0i16; piece_count * board_size * board_size];
         self.capt_hist =
             vec![0i16; piece_count * board_size * CAPT_HIST_BUCKETS];
+        self.corr_hist = vec![0i16; 2 * CORR_HIST_SIZE];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
         self.static_eval = vec![-INF; MAX_DEPTH];
         self.excluded = vec![null_pseudo_move(); MAX_DEPTH];

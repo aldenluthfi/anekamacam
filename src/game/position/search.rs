@@ -744,6 +744,13 @@ fn quiescence_search(
 ///   below (reverse futility, razoring, null move, futility) read the
 ///   sharpened value; the improving flag keeps the raw evaluation.
 ///
+/// - correction history:
+///   `corr_hist` tracks, per side and pawn structure, how far raw static
+///   evaluations have trailed search scores (`update_corr_hist!` at every
+///   node whose bound can tighten the evaluation). The scaled correction
+///   is added to the pruning eval, steering the pruning stages without
+///   touching the evaluation stored in the transposition table.
+///
 /// - reverse futility pruning:
 ///   at shallow, non-PV, non-check nodes, if the static evaluation exceeds
 ///   `beta` by a depth-scaled margin, the node cuts on `beta` without
@@ -913,8 +920,14 @@ pub fn alpha_beta(
 
     state.static_eval[ply] = static_eval;
 
-    let pruning_eval =
-        if tt_entry.4 != -INF { tt_entry.4 } else { static_eval };
+    let corr = if in_check {
+        0
+    } else {
+        state.corr_hist[corr_hist_index!(state)] as i32 / CORR_HIST_GRAIN
+    };
+
+    let pruning_eval = corr
+        + if tt_entry.4 != -INF { tt_entry.4 } else { static_eval };
 
     /*-----------------------------------------------------------------------*\
                                     IMPROVING FLAG
@@ -1353,6 +1366,10 @@ pub fn alpha_beta(
                     }
 
                     if !excluded_here {
+                        update_corr_hist!(
+                            state, static_eval, beta, depth, FBETA,
+                            is_capture
+                        );
                         hash_tt_entry!(
                             bufs.move_buf[ply][i], beta, FBETA, depth,
                             static_eval, state, ttable
@@ -1465,10 +1482,18 @@ pub fn alpha_beta(
     }
 
     if alpha != alpha_start {
+        update_corr_hist!(
+            state, static_eval, best_score, depth, FEXACT,
+            m_capture!(&best_move)
+        );
         hash_tt_entry!(
             best_move, best_score, FEXACT, depth, static_eval, state, ttable
         );
     } else {
+        update_corr_hist!(
+            state, static_eval, alpha, depth, FALPHA,
+            m_capture!(&best_move)
+        );
         hash_tt_entry!(
             best_move, alpha, FALPHA, depth, static_eval, state, ttable
         );
@@ -1495,6 +1520,75 @@ macro_rules! apply_history_gravity {
         let entry = ($entry as i32 * (bound - $bonus.abs()) / bound) + $bonus;
 
         $entry = entry.clamp(-bound, bound) as i16;
+    }};
+}
+
+/// corr_hist_index!
+///
+/// Maps the current position onto its correction-history slot: the side to
+/// move selects the table half and the pawn hash, masked to
+/// `CORR_HIST_SIZE`, selects the entry within it. Positions sharing a pawn
+/// structure share a correction; collisions are accepted as noise.
+///
+/// Params:
+/// - state -> position providing the side to move and the pawn hash
+///
+/// Return:
+/// usize -> index into `state.corr_hist`
+///
+#[macro_export]
+macro_rules! corr_hist_index {
+    ($state:expr) => {{
+        $state.playing as usize * CORR_HIST_SIZE
+            + ($state.pawn_hash as usize & (CORR_HIST_SIZE - 1))
+    }};
+}
+
+/// update_corr_hist!
+///
+/// Blends the gap between a node's search score and its raw static
+/// evaluation into the correction-history entry as a depth-weighted moving
+/// average: `entry = (entry * (SCALE - w) + gap * GRAIN * w) / SCALE` with
+/// `w = min(depth + 1, CORR_HIST_MAX_WEIGHT)`, clamped to
+/// `CORR_HIST_LIMIT`. Nodes whose best move captures blend at the minimum
+/// weight instead: their gap is mostly tactical, not a structural
+/// evaluation error. Skips nodes searched in check (`eval == -INF`),
+/// mate-bound scores, and scores whose bound cannot tighten the evaluation
+/// (a fail-high below the evaluation or a fail-low above it).
+///
+/// Params:
+/// - state   -> position providing the correction table and its index
+/// - eval    -> raw static evaluation recorded at the node
+/// - score   -> score the node's search returned
+/// - depth   -> remaining depth, weights the blend
+/// - flag    -> TT bound flag of the score (FEXACT/FBETA/FALPHA)
+/// - capture -> whether the move that set the score captures
+///
+#[macro_export]
+macro_rules! update_corr_hist {
+    ($state:expr, $eval:expr, $score:expr, $depth:expr, $flag:expr,
+     $capture:expr) => {{
+        if $eval != -INF
+        && $score.abs() < MATE_SCORE
+        && match $flag {
+            FBETA  => $score > $eval,
+            FALPHA => $score < $eval,
+            _      => true,
+        } {
+            let index = corr_hist_index!($state);
+            let entry = $state.corr_hist[index] as i32;
+            let gap = ($score - $eval) * CORR_HIST_GRAIN;
+            let weight = if $capture {
+                1
+            } else {
+                ($depth as i32 + 1).min(CORR_HIST_MAX_WEIGHT)
+            };
+            let mixed = (entry * (CORR_HIST_SCALE - weight)
+                + gap * weight) / CORR_HIST_SCALE;
+
+            $state.corr_hist[index] =
+                mixed.clamp(-CORR_HIST_LIMIT, CORR_HIST_LIMIT) as i16;
+        }
     }};
 }
 
