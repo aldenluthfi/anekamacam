@@ -18,6 +18,7 @@ STAGES=(
   "stageH c86dd76 -"
   "stageI 5bd2ace -"
   "stageJ 0af3dd6 -"
+  "stageK 9c7177d -"
 )
 
 ROOT=$(git rev-parse --show-toplevel)
@@ -43,3 +44,9 @@ done
 
 echo "done:"
 ls -l bin/stage?
+
+if cksum bin/stage? | awk '{print $1}' | sort | uniq -d | grep -q .; then
+  echo "ERROR: duplicate stage binaries detected" >&2
+  cksum bin/stage?
+  exit 1
+fi
