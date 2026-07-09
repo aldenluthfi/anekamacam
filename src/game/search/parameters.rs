@@ -37,7 +37,7 @@ type PieceRoles = (PieceIndex, bool, bool);
 /// - state: &mut State -> variant whose derived values are ranked
 ///
 /// Return:
-/// Vec<PieceRoles> -> (index, is_big, is_major) per piece
+/// Vec<PieceRoles>     -> (index, is_big, is_major) per piece
 ///
 fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
     let mut values = HashSet::new();
@@ -87,7 +87,7 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 /// - piece: &Piece -> piece whose coverage is measured
 ///
 /// Return:
-/// f64 -> mean reachable fraction of the board, in (0, 1]
+/// f64             -> mean reachable fraction of the board, in (0, 1]
 ///
 fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
     let board_size = state.statics.board_size;
@@ -148,6 +148,8 @@ fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
     mean / board_size as f64
 }
 
+/// derive_piece_maneuverability
+///
 /// Fraction of a piece's distinct move offsets whose reverse offset is also a
 /// move offset. Symmetric movers (knight, rook, bishop, queen) score 1.0;
 /// one-directional movers (pawn, shogi lance) score near 0.0, capturing the
@@ -158,7 +160,7 @@ fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
 /// - piece: &Piece -> piece whose offsets are examined
 ///
 /// Return:
-/// f64 -> reversible-offset fraction, in [0, 1]
+/// f64             -> reversible-offset fraction, in [0, 1]
 ///
 fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
     let board_size = state.statics.board_size;
@@ -199,6 +201,8 @@ fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
     reversible as f64 / offsets.len() as f64
 }
 
+/// derive_piece_value
+///
 /// Derives a piece's phase value from its movement geometry:
 ///
 /// - reach:
@@ -224,12 +228,13 @@ fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
 /// letting sliders gain relative to leapers.
 ///
 /// Params:
-/// - state: &State  -> precomputed relevant-move tables
-/// - piece: &Piece  -> piece to value
-/// - occupancy: f64 -> assumed board fill ratio for the phase
+/// - state    : &State -> precomputed relevant-move tables
+/// - piece    : &Piece -> piece to value
+/// - occupancy: f64    -> assumed board fill ratio for the phase
 ///
 /// Return:
-/// f64 -> raw phase value, later offset-normalized across the army
+/// f64                 -> raw phase value, later offset-normalized across the
+///                        army
 ///
 fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
     log_4!("Deriving base value for piece '{}'", piece.char);
@@ -265,13 +270,14 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
 /// unaffected by occupancy; long slides decay geometrically.
 ///
 /// Params:
-/// - state: &State         -> precomputed relevant-move tables
+/// - state      : &State     -> precomputed relevant-move tables
 /// - piece_index: PieceIndex -> piece whose vectors are counted
-/// - square: usize         -> origin square
-/// - occupancy: f64        -> assumed board fill ratio
+/// - square     : usize      -> origin square
+/// - occupancy  : f64        -> assumed board fill ratio
 ///
 /// Return:
-/// f64 -> expected number of playable vectors from the square
+/// f64                       -> expected number of playable vectors from the
+///                              square
 ///
 fn derive_piece_mobility(
     state: &State, piece_index: PieceIndex, square: usize, occupancy: f64
@@ -297,11 +303,11 @@ fn derive_piece_mobility(
 /// to four) central squares, handling even and odd board dimensions.
 ///
 /// Params:
-/// - state: &State -> board dimensions for locating the center
-/// - square: usize -> square whose distance is measured
+/// - state : &State -> board dimensions for locating the center
+/// - square: usize  -> square whose distance is measured
 ///
 /// Return:
-/// f64 -> distance in square units
+/// f64              -> distance in square units
 ///
 fn derive_distance_from_center(state: &State, square: usize) -> f64 {
     let center_file = if state.statics.files % 2 == 1 {
@@ -339,12 +345,13 @@ fn derive_distance_from_center(state: &State, square: usize) -> f64 {
 /// none.
 ///
 /// Params:
-/// - state: &State           -> board dimensions and promotion zones
+/// - state      : &State     -> board dimensions and promotion zones
 /// - piece_index: PieceIndex -> piece whose promotion zones are queried
-/// - square: usize           -> square whose distance is measured
+/// - square     : usize      -> square whose distance is measured
 ///
 /// Return:
-/// f64 -> distance in square units, infinity when no zone exists
+/// f64                       -> distance in square units, infinity when no zone
+///                              exists
 ///
 fn derive_closest_promotion(
     state: &State, piece_index: PieceIndex, square: usize
@@ -376,13 +383,14 @@ fn derive_closest_promotion(
 /// more in the endgame).
 ///
 /// Params:
-/// - state: &State           -> precomputed relevant-move tables
+/// - state      : &State     -> precomputed relevant-move tables
 /// - piece_index: PieceIndex -> piece being placed
-/// - square: usize           -> square being scored
-/// - is_endgame: bool        -> selects phase occupancy and weights
+/// - square     : usize      -> square being scored
+/// - is_endgame : bool       -> selects phase occupancy and weights
 ///
 /// Return:
-/// f64 -> unnormalized square score, later scaled into the PST
+/// f64                       -> unnormalized square score, later scaled into
+///                              the PST
 ///
 fn derive_square_score(
     state: &State, piece_index: PieceIndex, square: usize, is_endgame: bool
@@ -410,15 +418,16 @@ fn derive_square_score(
 /// where an advanced passed pawn earns most of its endgame worth.
 ///
 /// Params:
-/// - state: &State           -> board dimensions and promotion zones
-/// - piece_index: PieceIndex -> piece being placed
-/// - square: usize           -> square being scored
-/// - is_endgame: bool        -> selects the phase's bonus fraction
-/// - piece_value: f64        -> the piece's current phase value
-/// - promoted_value: f64     -> best value reachable by promotion
+/// - state         : &State     -> board dimensions and promotion zones
+/// - piece_index   : PieceIndex -> piece being placed
+/// - square        : usize      -> square being scored
+/// - is_endgame    : bool       -> selects the phase's bonus fraction
+/// - piece_value   : f64        -> the piece's current phase value
+/// - promoted_value: f64        -> best value reachable by promotion
 ///
 /// Return:
-/// f64 -> bonus added on top of the positional square score
+/// f64                          -> bonus added on top of the positional square
+///                                 score
 ///
 fn derive_promotion_bonus(
     state: &State, piece_index: PieceIndex, square: usize,
@@ -466,13 +475,13 @@ fn derive_promotion_bonus(
 /// hide, not centralize) but keep it in the endgame.
 ///
 /// Params:
-/// - index: PieceIndex   -> piece the table is built for
-/// - state: &State       -> precomputed relevant-move tables
-/// - is_endgame: bool    -> selects phase weights and values
-/// - promoted_value: f64 -> best value reachable by promotion
+/// - index         : PieceIndex -> piece the table is built for
+/// - state         : &State     -> precomputed relevant-move tables
+/// - is_endgame    : bool       -> selects phase weights and values
+/// - promoted_value: f64        -> best value reachable by promotion
 ///
 /// Return:
-/// Vec<i32> -> per-square bonus table in board order
+/// Vec<i32>                     -> per-square bonus table in board order
 ///
 fn derive_pst(
     index: PieceIndex, state: &State, is_endgame: bool, promoted_value: f64
@@ -755,10 +764,12 @@ fn derive_pawn_like(state: &mut State) {
     }
 }
 
+/// derive_pawn_path
+///
 /// Closure of quiet-move landing squares reachable from `square`, i.e. the set
 /// of squares the pawn can traverse toward its promotion zone. A friendly pawn
 /// standing on any of these squares is doubled, since it blocks this pawn's
-/// advance -- this is the `doubled` term's mask.
+/// advance, this is the `doubled` term's mask.
 ///
 /// A straight mover (FIDE) traces its own file ahead; a diagonal mover
 /// (Berolina) fans out across files, so `##` follows the move geometry rather
@@ -777,12 +788,12 @@ fn derive_pawn_like(state: &mut State) {
 /// ```
 ///
 /// Params:
-/// - state: &State -> precomputed relevant-move tables
-/// - index: usize  -> pawn-like piece index
-/// - square: usize -> square the pawn stands on
+/// - state : &State -> precomputed relevant-move tables
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
 ///
 /// Return:
-/// Board -> bitboard of squares on the pawn's forward path
+/// Board            -> bitboard of squares on the pawn's forward path
 ///
 fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
     let files = state.statics.files as i32;
@@ -826,9 +837,11 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
     path
 }
 
+/// derive_pawn_interference
+///
 /// Enemy source squares from which a pawn-like piece could stop this pawn: any
 /// square on its path (a blocker) plus any square whose capture reaches the
-/// path or the pawn itself. A pawn is passed when none of these are occupied --
+/// path or the pawn itself. A pawn is passed when none of these are occupied,
 /// this is the `passed` term's mask.
 ///
 /// For a FIDE white pawn: `##` are the path blockers on its own file, and `xx`
@@ -848,13 +861,13 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
 /// ```
 ///
 /// Params:
-/// - state: &State -> precomputed relevant-capture tables
-/// - index: usize  -> pawn-like piece index
-/// - square: usize -> square the pawn stands on
-/// - path: &Board  -> the pawn's forward path mask
+/// - state : &State -> precomputed relevant-capture tables
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
+/// - path  : &Board -> the pawn's forward path mask
 ///
 /// Return:
-/// Board -> bitboard of enemy squares that stop the passer
+/// Board            -> bitboard of enemy squares that stop the passer
 ///
 fn derive_pawn_interference(
     state: &State, index: usize, square: usize, path: &Board
@@ -902,6 +915,8 @@ fn derive_pawn_interference(
     mask
 }
 
+/// pawn_capture_sources
+///
 /// Source squares from which a pawn-like piece of `color` captures onto any
 /// square set in `targets`. Capture legs are stored in the white frame, so each
 /// net offset is mirrored through the colour sign before it is applied. Shared
@@ -924,12 +939,12 @@ fn derive_pawn_interference(
 /// ```
 ///
 /// Params:
-/// - state: &State   -> precomputed relevant-capture tables
-/// - color: u8       -> colour whose pawn-like captures are gathered
+/// - state  : &State -> precomputed relevant-capture tables
+/// - color  : u8     -> colour whose pawn-like captures are gathered
 /// - targets: &Board -> squares a capture must land on
 ///
 /// Return:
-/// Board -> bitboard of capturing source squares
+/// Board             -> bitboard of capturing source squares
 ///
 fn pawn_capture_sources(state: &State, color: u8, targets: &Board) -> Board {
     let files = state.statics.files as i32;
@@ -973,6 +988,8 @@ fn pawn_capture_sources(state: &State, color: u8, targets: &Board) -> Board {
     mask
 }
 
+/// derive_pawn_support
+///
 /// Friendly source squares that defend this pawn: any friendly pawn-like
 /// capture landing on the pawn itself or on the square it advances to. A pawn
 /// is connected when one of these squares holds a friendly pawn-like piece; the
@@ -1021,13 +1038,13 @@ fn pawn_capture_sources(state: &State, color: u8, targets: &Board) -> Board {
 /// ```
 ///
 /// Params:
-/// - state: &State -> precomputed relevant-capture tables
-/// - index: usize  -> pawn-like piece index
-/// - square: usize -> square the pawn stands on
-/// - stop: &Board  -> the pawn's immediate forward stop squares
+/// - state : &State -> precomputed relevant-capture tables
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
+/// - stop  : &Board -> the pawn's immediate forward stop squares
 ///
 /// Return:
-/// Board -> bitboard of friendly squares that connect the pawn
+/// Board            -> bitboard of friendly squares that connect the pawn
 ///
 fn derive_pawn_support(
     state: &State, index: usize, square: usize, stop: &Board
@@ -1040,6 +1057,8 @@ fn derive_pawn_support(
     pawn_capture_sources(state, own, &targets)
 }
 
+/// derive_pawn_stop
+///
 /// Immediate quiet, non-initial, strictly-forward landing square(s) of a pawn:
 /// the squares it reaches in a single step. Initial multi-square pushes are
 /// excluded so second-rank support matches the one-square frame, and sideways
@@ -1069,12 +1088,12 @@ fn derive_pawn_support(
 /// ```
 ///
 /// Params:
-/// - state: &State -> precomputed relevant-move tables
-/// - index: usize  -> pawn-like piece index
-/// - square: usize -> square the pawn stands on
+/// - state : &State -> precomputed relevant-move tables
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
 ///
 /// Return:
-/// Board -> bitboard of the pawn's immediate forward stop squares
+/// Board            -> bitboard of the pawn's immediate forward stop squares
 ///
 fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
     let files = state.statics.files as i32;
@@ -1114,6 +1133,8 @@ fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
     stop
 }
 
+/// derive_pawn_support_offsets
+///
 /// File offsets at which a friendly pawn-like piece can defend this pawn or the
 /// square it advances to. A pawn with no friendly pawn on any of these relative
 /// files is isolated. Each capture leg yields its direct-defence offset and,
@@ -1141,7 +1162,7 @@ fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
 /// - index: usize  -> pawn-like piece index
 ///
 /// Return:
-/// Vec<i32> -> sorted, de-duplicated supporting file offsets
+/// Vec<i32>        -> sorted, de-duplicated supporting file offsets
 ///
 fn derive_pawn_support_offsets(state: &State, index: usize) -> Vec<i32> {
     let board_size = state.statics.board_size;
@@ -1193,17 +1214,19 @@ fn derive_pawn_support_offsets(state: &State, index: usize) -> Vec<i32> {
     offsets
 }
 
+/// derive_pawn_advancement
+///
 /// Fixed-point advancement (`adv^2 * 256`) toward promotion, mirroring the PST
 /// promotion gradient. Pieces without a promotion zone fall back to the rank
 /// distance from the far edge in their forward direction.
 ///
 /// Params:
-/// - state: &State -> board geometry and promotion zones
-/// - index: usize  -> pawn-like piece index
-/// - square: usize -> square the pawn stands on
+/// - state : &State -> board geometry and promotion zones
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
 ///
 /// Return:
-/// i32 -> fixed-point advancement, 0..=256
+/// i32              -> fixed-point advancement, 0..=256
 ///
 fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
     let ranks = state.statics.ranks as f64;

@@ -36,11 +36,11 @@ lazy_static! {
 /// ever sees concrete piece letters.
 ///
 /// Params:
-/// - expr: &str    -> raw CPMN pattern expression
+/// - expr : &str   -> raw CPMN pattern expression
 /// - state: &State -> supplies the variant's piece characters
 ///
 /// Return:
-/// String -> the expression with wildcards spelled out
+/// String          -> the expression with wildcards spelled out
 ///
 fn expand_wildcard(expr: &str, state: &State) -> String {
     let all_pieces = state.statics.pieces.iter()
@@ -65,11 +65,11 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
 /// stoppers. * means all pieces excluding no piece. ? means no piece.
 ///
 /// Params:
-/// - expr: &str    -> one CPMN pattern expression
+/// - expr : &str   -> one CPMN pattern expression
 /// - state: &State -> piece dictionary and board dimensions
 ///
 /// Return:
-/// Pattern -> compiled (allower, stopper) offset lists with piece sets
+/// Pattern         -> compiled (allower, stopper) offset lists with piece sets
 ///
 pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     let expr = &expand_wildcard(expr, state);
@@ -199,11 +199,11 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
 /// Empty expressions produce no patterns.
 ///
 /// Params:
-/// - expr: &str    -> `|`-separated stand-off expression from the config
+/// - expr : &str   -> `|`-separated stand-off expression from the config
 /// - state: &State -> piece dictionary and board dimensions
 ///
 /// Return:
-/// Vec<Pattern> -> one compiled pattern per branch
+/// Vec<Pattern>    -> one compiled pattern per branch
 ///
 pub fn generate_stand_off_patterns(
     expr: &str,
@@ -224,13 +224,14 @@ pub fn generate_stand_off_patterns(
 /// only evaluates geometrically possible patterns.
 ///
 /// Params:
-/// - piece: &Piece                  -> piece the patterns belong to
-/// - square: u32                    -> origin square being precomputed
-/// - state: &State                  -> board dimensions
+/// - piece          : &Piece        -> piece the patterns belong to
+/// - square         : u32           -> origin square being precomputed
+/// - state          : &State        -> board dimensions
 /// - piece_stand_off: &[PatternSet] -> compiled patterns, one per piece
 ///
 /// Return:
-/// PatternSet -> patterns whose offsets all fit on the board from here
+/// PatternSet                       -> patterns whose offsets all fit on the
+///                                     board from here
 ///
 pub fn generate_relevant_stand_offs(
     piece: &Piece,

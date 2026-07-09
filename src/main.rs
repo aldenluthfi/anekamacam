@@ -1,6 +1,9 @@
 //! # main.rs
 //!
-//! Entry point and top-level module declarations for the anekamacam engine.
+//! Entry point for the anekamacam engine and the root of its module tree.
+//! Reads the first CLI argument to pick a run mode -- the UCI protocol loop
+//! (also the default), the interactive debug console, or the derive / bench /
+//! perft utilities -- initializing logging before handing off to that mode.
 //!
 //! # Author
 //! Alden Luthfi

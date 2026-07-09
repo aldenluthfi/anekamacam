@@ -99,9 +99,9 @@ fn list_uci_variants() -> Vec<String> {
 /// position, so the GUI never receives the unplayable "null" string.
 ///
 /// Params:
-/// - result: &SearchResult     -> finished search outcome
-/// - state: &State             -> position for move formatting
-/// - dict: Option<&Translator> -> translator for printed move names
+/// - result: &SearchResult       -> finished search outcome
+/// - state : &State              -> position for move formatting
+/// - dict  : Option<&Translator> -> translator for printed move names
 ///
 fn print_bestmove(
     result: &SearchResult,
@@ -421,14 +421,14 @@ fn start_search(uci: &mut Uci, tokens: &[&str]) {
 /// sentinel of zero.
 ///
 /// Params:
-/// - movetime_ms: u128 -> fixed time per move (0 = unset)
-/// - time_ms: u128     -> remaining clock for the side to move
-/// - inc_ms: u128      -> increment per move
-/// - movestogo: usize  -> moves to the next time control (0 = unset)
-/// - overhead_ms: u128 -> per-move lag allowance
+/// - movetime_ms: u128  -> fixed time per move (0 = unset)
+/// - time_ms    : u128  -> remaining clock for the side to move
+/// - inc_ms     : u128  -> increment per move
+/// - movestogo  : usize -> moves to the next time control (0 = unset)
+/// - overhead_ms: u128  -> per-move lag allowance
 ///
 /// Return:
-/// (u128, u128) -> (soft, hard) budgets in ns, (0, 0) when untimed
+/// (u128, u128)         -> (soft, hard) budgets in ns, (0, 0) when untimed
 ///
 fn compute_budgets(
     movetime_ms: u128,
@@ -465,7 +465,7 @@ fn compute_budgets(
 /// interrupt plumbing.
 ///
 /// Params:
-/// - uci: &mut Uci        -> the session being mutated
+/// - uci   : &mut Uci     -> the session being mutated
 /// - limits: SearchLimits -> launch parameters for the thread
 ///
 fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
@@ -655,11 +655,11 @@ fn handle_setoption(uci: &mut Uci, tokens: &[&str]) {
 /// Unknown commands are ignored, as the protocol requires.
 ///
 /// Params:
-/// - uci: &mut Uci -> the session being driven
-/// - line: &str    -> one trimmed line of input
+/// - uci : &mut Uci -> the session being driven
+/// - line: &str     -> one trimmed line of input
 ///
 /// Return:
-/// bool -> true when the session should terminate (`quit`)
+/// bool             -> true when the session should terminate (`quit`)
 ///
 fn execute_command(uci: &mut Uci, line: &str) -> bool {
     let tokens: Vec<&str> = line.split_whitespace().collect();

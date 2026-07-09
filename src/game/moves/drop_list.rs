@@ -23,14 +23,15 @@ use crate::*;
 /// `square_index` and rotated by piece color perspective.
 ///
 /// Params:
-/// - piece: &Piece               -> piece type the drops belong to
-/// - square_index: u32           -> target square being precomputed
-/// - state: &State               -> board dimensions and forbidden zones
+/// - piece            : &Piece     -> piece type the drops belong to
+/// - square_index     : u32        -> target square being precomputed
+/// - state            : &State     -> board dimensions and forbidden zones
 /// - piece_setup_drops: &[DropSet] -> compiled drops, one set per piece
 ///
 /// Return:
-/// DropSet -> drops playable onto this square, with square encoded and
-/// out-of-board stoppers pruned
+/// DropSet                         -> drops playable onto this square, with
+///                                    square encoded and out-of-board stoppers
+///                                    pruned
 ///
 pub fn generate_relevant_drops(
     piece: &Piece,

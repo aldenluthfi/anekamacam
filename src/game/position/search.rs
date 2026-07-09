@@ -123,11 +123,11 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// Board position is unchanged.
 ///
 /// Params:
-/// - state: &mut State        -> position whose search tables are reset
-/// - ttable: &TTable          -> main table, aged one generation
-/// - qtable: &QTable          -> qsearch table, aged one generation
-/// - info: &mut SearchInfo    -> counters and flags to reset
-/// - bufs: &mut SearchBufs    -> scratch buffers, (re)allocated if needed
+/// - state : &mut State      -> position whose search tables are reset
+/// - ttable: &TTable         -> main table, aged one generation
+/// - qtable: &QTable         -> qsearch table, aged one generation
+/// - info  : &mut SearchInfo -> counters and flags to reset
+/// - bufs  : &mut SearchBufs -> scratch buffers, (re)allocated if needed
 ///
 pub fn clear_search(
     state: &mut State,
@@ -178,17 +178,17 @@ pub fn clear_search(
 /// report table stats afterwards via `log_table_stats`.
 ///
 /// Params:
-/// - state: &mut State         -> root position to search
-/// - table: Arc<TTable>        -> shared transposition table
-/// - qtable: Arc<QTable>       -> shared quiescence table
-/// - ptable: Arc<PTable>       -> shared pawn structure table
-/// - info: &mut SearchInfo     -> limits and counters for this search
-/// - bufs: &mut SearchBufs     -> scratch buffers for thread 0
-/// - thread_num: usize         -> worker thread count
-/// - dict: Option<&Translator> -> translator for printed move names
+/// - state     : &mut State          -> root position to search
+/// - table     : Arc<TTable>         -> shared transposition table
+/// - qtable    : Arc<QTable>         -> shared quiescence table
+/// - ptable    : Arc<PTable>         -> shared pawn structure table
+/// - info      : &mut SearchInfo     -> limits and counters for this search
+/// - bufs      : &mut SearchBufs     -> scratch buffers for thread 0
+/// - thread_num: usize               -> worker thread count
+/// - dict      : Option<&Translator> -> translator for printed move names
 ///
 /// Return:
-/// SearchResult -> best move, score, ponder move, and totals
+/// SearchResult                      -> best move, score, ponder, and totals
 ///
 pub fn search_position(
     state: &mut State,
@@ -237,7 +237,7 @@ pub fn search_position(
 /// emit `bestmove` before any log-file I/O happens.
 ///
 /// Params:
-/// - table: &TTable  -> main table whose counters are reported
+/// - table : &TTable -> main table whose counters are reported
 /// - qtable: &QTable -> qsearch table whose counters are reported
 /// - ptable: &PTable -> pawn table whose counters are reported
 ///
@@ -283,17 +283,17 @@ pub fn log_table_stats(
 /// Thread 0 prints UCI info lines per depth; helper threads skip output.
 ///
 /// Params:
-/// - state: &mut State         -> root position to search
-/// - ttable: &TTable           -> shared transposition table
-/// - qtable: &QTable           -> shared quiescence table
-/// - ptable: &PTable           -> shared pawn structure table
-/// - info: &mut SearchInfo     -> limits and counters for this search
-/// - bufs: &mut SearchBufs     -> per-thread scratch buffers
-/// - thread_num: usize         -> this worker's index (0 reports)
-/// - dict: Option<&Translator> -> translator for printed move names
+/// - state     : &mut State          -> root position to search
+/// - ttable    : &TTable             -> shared transposition table
+/// - qtable    : &QTable             -> shared quiescence table
+/// - ptable    : &PTable             -> shared pawn structure table
+/// - info      : &mut SearchInfo     -> limits and counters for this search
+/// - bufs      : &mut SearchBufs     -> per-thread scratch buffers
+/// - thread_num: usize               -> this worker's index (0 reports)
+/// - dict      : Option<&Translator> -> translator for printed move names
 ///
 /// Return:
-/// SearchResult -> best move, score, ponder move, and totals
+/// SearchResult                      -> best move, score, ponder, and totals
 ///
 pub fn iterative_deepening(
     state: &mut State,
@@ -523,17 +523,18 @@ pub fn iterative_deepening(
 ///   endgame, for promotions, and while in check.
 ///
 /// Params:
-/// - state: &mut State     -> position searched, restored on return
-/// - ttable: &TTable       -> main table (read for PV move ordering)
-/// - qtable: &QTable       -> qsearch table probed and updated
-/// - ptable: &PTable       -> shared pawn structure table
-/// - alpha: i32            -> lower search bound
-/// - beta: i32             -> upper search bound
-/// - info: &mut SearchInfo -> node counters and interrupt polling
-/// - bufs: &mut SearchBufs -> per-thread scratch buffers
+/// - state : &mut State      -> position searched, restored on return
+/// - ttable: &TTable         -> main table (read for PV move ordering)
+/// - qtable: &QTable         -> qsearch table probed and updated
+/// - ptable: &PTable         -> shared pawn structure table
+/// - alpha : i32             -> lower search bound
+/// - beta  : i32             -> upper search bound
+/// - info  : &mut SearchInfo -> node counters and interrupt polling
+/// - bufs  : &mut SearchBufs -> per-thread scratch buffers
 ///
 /// Return:
-/// i32 -> stand-pat or best capture score within the window
+/// i32                       -> stand-pat or best capture score within the
+///                              window
 ///
 #[hotpath::measure]
 fn quiescence_search(
@@ -815,19 +816,20 @@ fn quiescence_search(
 ///   with the full window on fail-high.
 ///
 /// Params:
-/// - state: &mut State     -> position searched, restored on return
-/// - ttable: &TTable       -> main table probed and updated
-/// - qtable: &QTable       -> qsearch table for the leaf search
-/// - ptable: &PTable       -> shared pawn structure table
-/// - depth: usize          -> remaining depth in plies
-/// - alpha: i32            -> lower search bound
-/// - beta: i32             -> upper search bound
-/// - info: &mut SearchInfo -> node counters and interrupt polling
-/// - bufs: &mut SearchBufs -> per-thread scratch buffers
-/// - null: bool            -> whether null-move pruning is still allowed
+/// - state : &mut State      -> position searched, restored on return
+/// - ttable: &TTable         -> main table probed and updated
+/// - qtable: &QTable         -> qsearch table for the leaf search
+/// - ptable: &PTable         -> shared pawn structure table
+/// - depth : usize           -> remaining depth in plies
+/// - alpha : i32             -> lower search bound
+/// - beta  : i32             -> upper search bound
+/// - info  : &mut SearchInfo -> node counters and interrupt polling
+/// - bufs  : &mut SearchBufs -> per-thread scratch buffers
+/// - null  : bool            -> whether null-move pruning is still allowed
 ///
 /// Return:
-/// i32 -> best score within the window from the side to move's view
+/// i32                       -> best score within the window from the side to
+///                              move's view
 ///
 #[hotpath::measure]
 pub fn alpha_beta(
@@ -1606,7 +1608,7 @@ macro_rules! update_corr_hist {
 /// - is_drop           -> whether the move is a drop
 ///
 /// Return:
-/// usize -> plies to reduce the child search by
+/// usize               -> plies to reduce the child search by
 ///
 #[macro_export]
 macro_rules! reduction {

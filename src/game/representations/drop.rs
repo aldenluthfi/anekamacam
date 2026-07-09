@@ -50,11 +50,15 @@ macro_rules! drop_can_checkmate {
 
 /// DropMove / Drops / DropSet
 ///
-/// A `DropMove` consists of the following bits:
-/// - The first 8 bits represent the piece index of the piece being dropped.
-/// - The next 12 bits represent the square index where the piece is being
-///   dropped.
-/// - The next 12 bits are reserved for drop modifiers.
+/// A `DropMove` is a packed `u32` (bit 0 = LSB):
+///
+/// ┌───────┬────────┬───────────┐
+/// │ 0..7  │ 8..19  │ 20..31    │
+/// │ piece │ square │ modifiers │
+/// └───────┴────────┴───────────┘
+///
+/// `piece` is the dropped piece index, `square` the target square index,
+/// and `modifiers` the reserved drop-flag bits read by `drop_k!`.
 ///
 /// `Drops` pairs a packed drop with the CPMN pattern that must match
 /// around the target square for the drop to be legal, and `DropSet`

@@ -263,10 +263,15 @@ pub type MultiLegVector = Vec<LegVector>;
 
 /// LegVector
 ///
-/// A 64-bit vector representation for leg move vectors.
-/// The first 32 bits represent the whole `AtomicVector`.
+/// A 64-bit vector representation for leg move vectors, split as follows
+/// (bit 0 = LSB):
 ///
-/// The next 16 bits are move modifiers:
+/// ┌──────────────┬───────────┬────────┐
+/// │ 0..31        │ 32..47    │ 48..63 │
+/// │ AtomicVector │ modifiers │ unused │
+/// └──────────────┴───────────┴────────┘
+///
+/// Bits 0..31 hold the whole `AtomicVector`. The 16 modifier bits are:
 /// - main                      : m, c, d, u,
 /// - capture/destroy modifier  : k, v, g, t
 /// - miscellaneous modifier    : i, p
@@ -406,11 +411,11 @@ impl LegVector {
     /// leg representation documented on [`LegVector`].
     ///
     /// Params:
-    /// - atomic: AtomicVector -> whole/last displacement pair
-    /// - modifiers: &str      -> modifier letters, e.g. "mc!kv"
+    /// - atomic   : AtomicVector -> whole/last displacement pair
+    /// - modifiers: &str         -> modifier letters, e.g. "mc!kv"
     ///
     /// Return:
-    /// Self -> the packed leg vector
+    /// Self                      -> the packed leg vector
     ///
     pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
         let bits = Self::parse_modifiers(modifiers);
@@ -429,7 +434,7 @@ impl LegVector {
     /// - mods: &str -> modifier letters with optional `!` separator
     ///
     /// Return:
-    /// u16 -> modifier bitmask as laid out on [`LegVector`]
+    /// u16          -> modifier bitmask as laid out on [`LegVector`]
     ///
     fn parse_modifiers(mods: &str) -> u16 {
         let mut bits = 0u16;
@@ -633,11 +638,13 @@ impl Debug for Token {
 /// - (x1, y1) is the whole vector
 /// - (x2, y2) is the last vector applied
 ///
-/// Each byte in the `u32` represents a component of the vector:
-/// - bits 0-7: x1
-/// - bits 8-15: y1
-/// - bits 16-23: x2
-/// - bits 24-31: y2
+/// Each byte in the `u32` carries one signed component (bit 0 = LSB):
+///
+/// ┌─────────┬─────────┬────────┬────────┐
+/// │ 0..7    │ 8..15   │ 16..23 │ 24..31 │
+/// │ x1      │ y1      │ x2     │ y2     │
+/// │ whole.x │ whole.y │ last.x │ last.y │
+/// └─────────┴─────────┴────────┴────────┘
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtomicVector(u32);
 
@@ -711,7 +718,7 @@ impl AtomicVector {
     /// - other: &AtomicVector -> displacement applied after `self`
     ///
     /// Return:
-    /// AtomicVector -> the combined displacement
+    /// AtomicVector           -> the combined displacement
     ///
     pub fn add(&self, other: &AtomicVector) -> AtomicVector {
         let (wx1, wy1) = self.whole();
@@ -737,7 +744,7 @@ impl AtomicVector {
     /// - multiple: i8 -> how many additional `last` steps to take
     ///
     /// Return:
-    /// AtomicVector -> extended displacement, `last` unchanged
+    /// AtomicVector   -> extended displacement, `last` unchanged
     ///
     pub fn add_last(&self, multiple: i8) -> AtomicVector {
         let (wx1, wy1) = self.whole();

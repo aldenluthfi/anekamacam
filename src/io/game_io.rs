@@ -68,11 +68,11 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 /// positions like Fischer Random Chess
 ///
 /// Params:
-/// - fen: &str     -> position being loaded
+/// - fen  : &str   -> position being loaded
 /// - state: &State -> variant whose startpos is compared against
 ///
 /// Return:
-/// bool -> true if castling rights can be honored from this position
+/// bool            -> true if castling rights can be honored from this position
 ///
 fn validate_castling(fen: &str, state: &State) -> bool {
     let startpos = &state.statics.startpos
@@ -190,8 +190,8 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// quiescence-search eval terms.
 ///
 /// Params:
-/// - state: &mut State -> variant whose parameters are overwritten
-/// - content: &str     -> flat space-separated parameter dump
+/// - state  : &mut State -> variant whose parameters are overwritten
+/// - content: &str       -> flat space-separated parameter dump
 ///
 pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let tokens: Vec<i32> = content
@@ -622,7 +622,7 @@ fn embedded_config(path: &str) -> Option<&'static str> {
 /// - path: &str -> config filename inside the embedded configs
 ///
 /// Return:
-/// State -> the fully initialized variant state
+/// State        -> the fully initialized variant state
 ///
 pub fn parse_config_file(path: &str) -> State {
     let file_str = embedded_config(path)
@@ -1810,11 +1810,11 @@ pub fn parse_config_file(path: &str) -> State {
 /// per-square masks in config files.
 ///
 /// Params:
-/// - fen: Option<&str> -> the zone description, None for an empty mask
-/// - state: &State     -> supplies the board dimensions
+/// - fen  : Option<&str> -> the zone description, None for an empty mask
+/// - state: &State       -> supplies the board dimensions
 ///
 /// Return:
-/// Board -> bitboard with the described squares set
+/// Board                 -> bitboard with the described squares set
 ///
 fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     if fen.is_none() {
@@ -1942,9 +1942,9 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 ///   so an empty hand for both is -/-.
 ///
 /// Params:
-/// - state: &mut State         -> position rebuilt from the FEN
-/// - fen: &str                 -> the CFEN string to load
-/// - dict: Option<&Translator> -> optional protocol translation first
+/// - state: &mut State          -> position rebuilt from the FEN
+/// - fen  : &str                -> the CFEN string to load
+/// - dict : Option<&Translator> -> optional protocol translation first
 ///
 pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
     let mut needed_parts = 2;
@@ -2236,8 +2236,8 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
 /// - board2: &str -> the second board string
 ///
 /// Return:
-/// String -> combined board with both boards' pieces merged together
-/// while preserving the ASCII art borders and structure
+/// String         -> combined board with both boards' pieces merged together
+///                   while preserving the ASCII art borders and structure
 ///
 /// # Examples
 ///
@@ -2311,7 +2311,7 @@ pub fn combine_board_strings(board1: &str, board2: &str) -> String {
 /// - state: &State -> position to display
 ///
 /// Return:
-/// String -> multi-line board diagram plus state summary
+/// String          -> multi-line board diagram plus state summary
 ///
 pub fn format_game_state(state: &State) -> String {
     let board_size = state.statics.board_size;
@@ -2347,11 +2347,11 @@ pub fn format_game_state(state: &State) -> String {
 /// is given.
 ///
 /// Params:
-/// - state: &State             -> position to serialize
-/// - dict: Option<&Translator> -> optional inverse protocol translation
+/// - state: &State              -> position to serialize
+/// - dict : Option<&Translator> -> optional inverse protocol translation
 ///
 /// Return:
-/// String -> the position's CFEN
+/// String                       -> the position's CFEN
 ///
 pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
     let mut fen = String::new();
@@ -2473,7 +2473,7 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
 /// - color: u8     -> side whose hand is rendered (`format_hand` only)
 ///
 /// Return:
-/// String -> the rendered field
+/// String          -> the rendered field
 ///
 pub fn format_castling_rights(state: &State) -> String {
     let mut rights = String::new();

@@ -57,11 +57,11 @@ pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
 /// 14 bits; out-of-range values panic rather than silently truncate.
 ///
 /// Params:
-/// - piece: &mut Piece -> piece whose dynamic word is rewritten
-/// - ovalue: u16       -> derived opening value (14-bit)
-/// - evalue: u16       -> derived endgame value (14-bit)
-/// - is_big: bool      -> big-piece role flag
-/// - is_major: bool    -> major-piece role flag
+/// - piece   : &mut Piece -> piece whose dynamic word is rewritten
+/// - ovalue  : u16        -> derived opening value (14-bit)
+/// - evalue  : u16        -> derived endgame value (14-bit)
+/// - is_big  : bool       -> big-piece role flag
+/// - is_major: bool       -> major-piece role flag
 ///
 pub fn set_piece_dynamic_parameters(
     piece: &mut Piece,

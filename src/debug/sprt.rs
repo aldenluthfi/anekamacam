@@ -51,19 +51,19 @@ struct SPRTChild {
 /// as a loss; handshake failures panic since they are setup errors.
 ///
 /// Params (spawn):
-/// - binary: &str  -> path to the engine executable
+/// - binary : &str -> path to the engine executable
 /// - variant: &str -> UCI variant name to select
 ///
 /// Params (send):
 /// - command: &str -> the command line to write
 ///
 /// Params (wait_for):
-/// - token: &str   -> leading token that ends the wait
+/// - token: &str -> leading token that ends the wait
 ///
 /// Params (bestmove):
-/// - startpos: &str      -> the variant start-position FEN
-/// - moves: &[String]    -> moves played so far, in UCI notation
-/// - movetime_ms: u128   -> fixed wall-clock budget for the search
+/// - startpos   : &str      -> the variant start-position FEN
+/// - moves      : &[String] -> moves played so far, in UCI notation
+/// - movetime_ms: u128      -> fixed wall-clock budget for the search
 ///
 impl SPRTChild {
     fn spawn(binary: &str, variant: &str) -> SPRTChild {
@@ -203,10 +203,10 @@ impl Drop for SPRTChild {
 ///
 /// Params:
 /// - template: &State -> loaded variant to open from
-/// - plies: usize     -> number of random plies to play
+/// - plies   : usize  -> number of random plies to play
 ///
 /// Return:
-/// Vec<Move> -> the shared opening line, in play order
+/// Vec<Move>          -> the shared opening line, in play order
 ///
 fn opening_line(template: &State, plies: usize) -> Vec<Move> {
     let mut state = template.fork();
@@ -247,20 +247,20 @@ struct GameManager {
 /// while mate and the draw rules are adjudicated by the referee.
 ///
 /// Params (new):
-/// - template: &State  -> loaded variant, forked as the referee
-/// - binary_a: &str    -> path to the child that starts as White
-/// - binary_b: &str    -> path to the child that starts as Black
-/// - variant: &str     -> UCI variant name for both children
+/// - template: &State -> loaded variant, forked as the referee
+/// - binary_a: &str   -> path to the child that starts as White
+/// - binary_b: &str   -> path to the child that starts as Black
+/// - variant : &str   -> UCI variant name for both children
 ///
 /// Params (reset_to):
 /// - template: &State  -> loaded variant to fork the referee from
-/// - opening: &[Move]  -> shared opening line to replay
+/// - opening : &[Move] -> shared opening line to replay
 ///
 /// Params (play):
-/// - dict: Option<&Translator> -> UCI translator for move I/O
-/// - startpos: &str            -> the variant start-position FEN
-/// - movetime_ms: u128         -> fixed wall-clock budget per move
-/// - sender: &Sender<TuiEvent> -> channel for live board updates
+/// - dict       : Option<&Translator> -> UCI translator for move I/O
+/// - startpos   : &str                -> the variant start-position FEN
+/// - movetime_ms: u128                -> fixed wall-clock budget per move
+/// - sender     : &Sender<TuiEvent>   -> channel for live board updates
 ///
 /// Return (play):
 /// f64 -> the White-perspective game score
@@ -367,17 +367,17 @@ impl GameManager {
 /// games; it returns zero until the sample shows any variance.
 ///
 /// Params (expected_score):
-/// - elo: f64        -> the Elo advantage to convert
+/// - elo: f64 -> the Elo advantage to convert
 ///
 /// Params (elo_from_score):
-/// - score: f64      -> the observed per-game score
+/// - score: f64 -> the observed per-game score
 ///
 /// Params (log_likelihood_ratio):
-/// - pairs: f64      -> number of game pairs played
-/// - mean: f64       -> mean normalised pair score
-/// - variance: f64   -> population variance of pair scores
-/// - mu_zero: f64    -> expected score under the null hypothesis
-/// - mu_one: f64     -> expected score under the alternative hypothesis
+/// - pairs   : f64 -> number of game pairs played
+/// - mean    : f64 -> mean normalised pair score
+/// - variance: f64 -> population variance of pair scores
+/// - mu_zero : f64 -> expected score under the null hypothesis
+/// - mu_one  : f64 -> expected score under the alternative hypothesis
 ///
 fn expected_score(elo: f64) -> f64 {
     1.0 / (1.0 + 10f64.powf(-elo / 400.0))
@@ -433,15 +433,15 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 /// so completed tests leave a durable record.
 ///
 /// Params:
-/// - variant: &str     -> variant name, selects the output directory
-/// - binary_a: &str    -> path of the first engine
-/// - binary_b: &str    -> path of the second engine
-/// - movetime_ms: u128 -> per-move time control used
-/// - h0: f64           -> null-hypothesis Elo bound
-/// - h1: f64           -> alternative-hypothesis Elo bound
-/// - wins/draws/losses: u32 -> final tally from engine A's perspective
-/// - llr: f64         -> the final log-likelihood ratio
-/// - verdict: &str    -> the test outcome text
+/// - variant          : &str -> variant name, selects the output directory
+/// - binary_a         : &str -> path of the first engine
+/// - binary_b         : &str -> path of the second engine
+/// - movetime_ms      : u128 -> per-move time control used
+/// - h0               : f64  -> null-hypothesis Elo bound
+/// - h1               : f64  -> alternative-hypothesis Elo bound
+/// - wins/draws/losses: u32  -> final tally from engine A's perspective
+/// - llr              : f64  -> the final log-likelihood ratio
+/// - verdict          : &str -> the test outcome text
 ///
 fn write_result_file(
     variant: &str,
@@ -493,14 +493,14 @@ fn write_result_file(
 /// always agree.
 ///
 /// Params:
-/// - template: &State  -> loaded variant, refereed and named
-/// - variant: &str     -> variant name, for UCI setup and output
-/// - binary_a: &str    -> path to the first engine binary
-/// - binary_b: &str    -> path to the second engine binary
-/// - movetime_ms: u128 -> fixed wall-clock budget per move
-/// - max_games: usize  -> maximum games before declaring inconclusive
-/// - h0: f64     -> null-hypothesis Elo bound
-/// - h1: f64      -> alternative-hypothesis Elo bound
+/// - template   : &State -> loaded variant, refereed and named
+/// - variant    : &str   -> variant name, for UCI setup and output
+/// - binary_a   : &str   -> path to the first engine binary
+/// - binary_b   : &str   -> path to the second engine binary
+/// - movetime_ms: u128   -> fixed wall-clock budget per move
+/// - max_games  : usize  -> maximum games before declaring inconclusive
+/// - h0         : f64    -> null-hypothesis Elo bound
+/// - h1         : f64    -> alternative-hypothesis Elo bound
 ///
 pub fn run_sprt(
     template: &State,

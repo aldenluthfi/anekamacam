@@ -281,9 +281,9 @@ impl Default for Snapshot {
 ///   missing square is ignored, matching set semantics
 ///
 /// Params:
-/// - state: &State / &mut State -> position whose piece list is used
-/// - piece_index: usize         -> piece whose row is accessed
-/// - square: Square             -> square to insert or remove
+/// - state      : &State / &mut State -> position whose piece list is used
+/// - piece_index: usize               -> piece whose row is accessed
+/// - square     : Square              -> square to insert or remove
 ///
 #[macro_export]
 macro_rules! piece_squares {
@@ -338,7 +338,7 @@ macro_rules! piece_list_remove {
 /// - snapshot: Snapshot -> the history entry whose move is inspected
 ///
 /// Return:
-/// bool -> true if the snapshotted move is a pass
+/// bool                 -> true if the snapshotted move is a pass
 ///
 #[macro_export]
 macro_rules! pass_snapshot {
@@ -358,7 +358,7 @@ macro_rules! pass_snapshot {
 /// - state: State -> position whose remaining material is tallied
 ///
 /// Return:
-/// u32 -> summed opening value of all non-royal big pieces
+/// u32            -> summed opening value of all non-royal big pieces
 ///
 #[macro_export]
 macro_rules! game_phase_score {
@@ -627,15 +627,16 @@ impl State {
     /// derives the relevant-move caches.
     ///
     /// Params:
-    /// - title: String      -> display name of the variant
-    /// - startpos: String   -> FEN of the variant's starting position
-    /// - files: u8          -> number of board files
-    /// - ranks: u8          -> number of board ranks
-    /// - pieces: Vec<Piece> -> piece definitions, indexed by PieceIndex
-    /// - special_rules: u32 -> special-rules bitmask (see [`State`])
+    /// - title        : String     -> display name of the variant
+    /// - startpos     : String     -> FEN of the variant's starting position
+    /// - files        : u8         -> number of board files
+    /// - ranks        : u8         -> number of board ranks
+    /// - pieces       : Vec<Piece> -> piece definitions, indexed by PieceIndex
+    /// - special_rules: u32        -> special-rules bitmask (see [`State`])
     ///
     /// Return:
-    /// Self -> a fresh state with empty boards and zeroed search tables
+    /// Self                        -> a fresh state with empty boards and
+    ///                                zeroed search tables
     ///
     /// Notes:
     /// The LMR reduction tables are the only values computed here, since
@@ -779,7 +780,8 @@ impl State {
     /// - statics: Arc<StaticState> -> precomputed configuration to share
     ///
     /// Return:
-    /// State -> an empty-board state over the shared configuration
+    /// State                       -> an empty-board state over the shared
+    ///                                configuration
     ///
     fn from_statics(statics: Arc<StaticState>) -> State {
         let piece_count = statics.pieces.len();
@@ -932,7 +934,7 @@ impl State {
     /// optionally translating piece letters through a variant dictionary.
     ///
     /// Params:
-    /// - fen: &str                 -> FEN string to load
+    /// - fen : &str                -> FEN string to load
     /// - dict: Option<&Translator> -> optional piece-letter translator
     ///
     pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
@@ -1052,7 +1054,7 @@ impl State {
     ///
     /// Precompute-time table fillers. Each walks every (piece, square) pair
     /// and stores, at `piece * board_size + square`, the compiled entries that
-    /// stay on the board when played from that square -- turning the per-piece
+    /// stay on the board when played from that square, turning the per-piece
     /// sets from the `generate_piece_*` helpers into flat, square-indexed
     /// lookup tables the generator reads at runtime:
     ///
@@ -1231,9 +1233,9 @@ impl State {
     /// disabled.
     ///
     /// Params:
-    /// - moves_expr_set: Vec<String>     -> per-piece move expressions
-    /// - drops_expr_set: Vec<String>     -> per-piece drop expressions
-    /// - setup_expr_set: Vec<String>     -> per-piece setup expressions
+    /// - moves_expr_set    : Vec<String> -> per-piece move expressions
+    /// - drops_expr_set    : Vec<String> -> per-piece drop expressions
+    /// - setup_expr_set    : Vec<String> -> per-piece setup expressions
     /// - stand_off_expr_set: Vec<String> -> per-piece stand-off expressions
     ///
     pub fn precompute(

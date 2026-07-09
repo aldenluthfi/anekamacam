@@ -26,17 +26,18 @@ use crate::*;
 /// returned from White's perspective (1.0 win, 0.5 draw, 0.0 loss).
 ///
 /// Params:
-/// - template: &State          -> loaded variant to start games from
-/// - dict: Option<&Translator> -> translator for search move-name logs
-/// - ttable: Arc<TTable>       -> shared main table for the searches
-/// - qtable: Arc<QTable>       -> shared quiescence table
-/// - ptable: Arc<PTable>       -> shared pawn structure table
-/// - threads: usize            -> worker count per search
-/// - movetime_ms: u128         -> fixed wall-clock budget per move
-/// - sender: &Sender<TuiEvent> -> channel for live board updates
+/// - template   : &State              -> loaded variant to start games from
+/// - dict       : Option<&Translator> -> translator for search move-name logs
+/// - ttable     : Arc<TTable>         -> shared main table for the searches
+/// - qtable     : Arc<QTable>         -> shared quiescence table
+/// - ptable     : Arc<PTable>         -> shared pawn structure table
+/// - threads    : usize               -> worker count per search
+/// - movetime_ms: u128                -> fixed wall-clock budget per move
+/// - sender     : &Sender<TuiEvent>   -> channel for live board updates
 ///
 /// Return:
-/// (Vec<String>, f64) -> quiet-position FENs and the White-view result
+/// (Vec<String>, f64)                 -> quiet-position FENs and the White-view
+///                                       result
 ///
 fn play_one_game(
     template: &State,
@@ -121,16 +122,16 @@ fn play_one_game(
 /// stops early on interrupt so a long run is never lost.
 ///
 /// Params:
-/// - template: &State          -> loaded variant to generate games from
-/// - variant: &str             -> variant name, selects the dataset dir
-/// - dict: Option<&Translator> -> translator for search move-name logs
-/// - ttable: Arc<TTable>       -> shared main table for the searches
-/// - qtable: Arc<QTable>       -> shared quiescence table
-/// - ptable: Arc<PTable>       -> shared pawn structure table
-/// - threads: usize            -> worker count per search
-/// - games: usize              -> number of self-play games to play
-/// - movetime_ms: u128         -> fixed wall-clock budget per move
-/// - sender: &Sender<TuiEvent> -> channel for live board updates
+/// - template   : &State              -> loaded variant to generate games from
+/// - variant    : &str                -> variant name, selects the dataset dir
+/// - dict       : Option<&Translator> -> translator for search move-name logs
+/// - ttable     : Arc<TTable>         -> shared main table for the searches
+/// - qtable     : Arc<QTable>         -> shared quiescence table
+/// - ptable     : Arc<PTable>         -> shared pawn structure table
+/// - threads    : usize               -> worker count per search
+/// - games      : usize               -> number of self-play games to play
+/// - movetime_ms: u128                -> fixed wall-clock budget per move
+/// - sender     : &Sender<TuiEvent>   -> channel for live board updates
 ///
 pub fn run_datagen(
     template: &State,

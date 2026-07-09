@@ -162,11 +162,11 @@ macro_rules! legal_moves {
 ///
 /// Params:
 /// - start: &Vec<String> -> start layouts, one per castling option
-/// - end: &Vec<String>   -> matching destination layouts
+/// - end  : &Vec<String> -> matching destination layouts
 /// - state: &State       -> piece dictionary and board dimensions
 ///
 /// Return:
-/// Vec<Move> -> one precomputed castling move per layout pair
+/// Vec<Move>             -> one precomputed castling move per layout pair
 ///
 pub fn generate_relevant_castling(
     start: &Vec<String>, end: &Vec<String>, state: &State
@@ -356,13 +356,14 @@ pub fn generate_relevant_castling(
 /// are sorted longest-first so deeper lines are probed before short ones.
 ///
 /// Params:
-/// - piece: &Piece          -> piece type whose vectors are filtered
-/// - square_index: u32      -> origin square being precomputed
-/// - state: &State          -> board dimensions and forbidden zones
-/// - piece_moves: &[MoveSet] -> compiled vector sets, one per piece
+/// - piece       : &Piece     -> piece type whose vectors are filtered
+/// - square_index: u32        -> origin square being precomputed
+/// - state       : &State     -> board dimensions and forbidden zones
+/// - piece_moves : &[MoveSet] -> compiled vector sets, one per piece
 ///
 /// Return:
-/// MoveSet -> vectors playable from this square, longest first
+/// MoveSet                    -> vectors playable from this square, longest
+///                               first
 ///
 pub fn generate_relevant_moves(
     piece: &Piece,
@@ -428,13 +429,14 @@ pub fn generate_relevant_moves(
 /// pipeline while starting from a narrower prefiltered vector set.
 ///
 /// Params:
-/// - piece: &Piece          -> piece type whose vectors are filtered
-/// - square_index: u32      -> origin square being precomputed
-/// - state: &State          -> board dimensions and forbidden zones
-/// - piece_moves: &[MoveSet] -> compiled vector sets, one per piece
+/// - piece       : &Piece     -> piece type whose vectors are filtered
+/// - square_index: u32        -> origin square being precomputed
+/// - state       : &State     -> board dimensions and forbidden zones
+/// - piece_moves : &[MoveSet] -> compiled vector sets, one per piece
 ///
 /// Return:
-/// MoveSet -> capture-capable vectors playable from this square
+/// MoveSet                    -> capture-capable vectors playable from this
+///                               square
 ///
 pub fn generate_relevant_captures(
     piece: &Piece,
@@ -508,8 +510,9 @@ pub fn generate_relevant_captures(
 /// apply via Arc::get_mut after all borrows expire.
 ///
 /// Params:
-/// - square_index: u16 -> origin square whose outgoing attacks are added
-/// - state: &mut State -> engine state receiving the reverse attack table
+/// - square_index: u16        -> origin square whose outgoing attacks are added
+/// - state       : &mut State -> engine state receiving the reverse attack
+///                               table
 ///
 pub fn generate_attack_masks(square_index: u16, state: &mut State) {
     let board_size = state.statics.board_size;
@@ -3414,8 +3417,8 @@ macro_rules! undo_null_move {
 /// either own-hand or enemy-hand inventory depending on drop flags.
 ///
 /// Params:
-/// - state: &State           -> position to generate for
-/// - out: &mut Vec<Move>     -> cleared, then filled with the moves
+/// - state  : &State         -> position to generate for
+/// - out    : &mut Vec<Move> -> cleared, then filled with the moves
 /// - scratch: &mut Vec<u64>  -> reusable multi-capture payload buffer
 ///
 #[hotpath::measure]
@@ -3459,8 +3462,8 @@ pub fn generate_all_moves_and_drops(
 /// castling are never generated.
 ///
 /// Params:
-/// - state: &State           -> position to generate for
-/// - out: &mut Vec<Move>     -> cleared, then filled with the captures
+/// - state  : &State         -> position to generate for
+/// - out    : &mut Vec<Move> -> cleared, then filled with the captures
 /// - scratch: &mut Vec<u64>  -> reusable multi-capture payload buffer
 ///
 #[hotpath::measure]

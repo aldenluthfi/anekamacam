@@ -179,7 +179,8 @@ impl Tui {
     /// - terminal: &mut DefaultTerminal -> the ratatui terminal handle
     ///
     /// Return:
-    /// IoResult<()> -> Ok on clean exit, Err on terminal I/O failure
+    /// IoResult<()>                     -> Ok on clean exit, Err on terminal
+    ///                                     I/O failure
     ///
     fn run (&mut self, terminal: &mut DefaultTerminal) -> IoResult<()> {
         loop {
@@ -276,7 +277,7 @@ impl OverviewState {
     /// - state: &State -> variant state to snapshot
     ///
     /// Return:
-    /// Self -> the pre-rendered overview
+    /// Self            -> the pre-rendered overview
     ///
     fn from_state(state: &State) -> Self {
         let mut configs = Vec::new();
@@ -469,11 +470,11 @@ impl BoardState {
     /// diagram, move history, detail rows, and FEN.
     ///
     /// Params:
-    /// - state: &State             -> position to snapshot
-    /// - dict: Option<&Translator> -> translator for move names
+    /// - state: &State              -> position to snapshot
+    /// - dict : Option<&Translator> -> translator for move names
     ///
     /// Return:
-    /// Self -> the pre-rendered board state
+    /// Self                         -> the pre-rendered board state
     ///
     pub fn from_state(state: &State, dict: Option<&Translator>) -> Self {
         let board = format_game_state(state);
@@ -2661,16 +2662,16 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 /// commands not valid for the current context are rejected with a log message.
 ///
 /// Params:
-/// - command: &str                  -> the raw input line
-/// - state: &mut State              -> the live game state
-/// - playground: Option<&mut State> -> playground state
-/// - variant: Option<String>        -> active variant name, for exports
-/// - dict: Option<&Translator>      -> translator for printed move names
-/// - ttable: Arc<TTable>            -> shared main table for searches
-/// - qtable: Arc<QTable>            -> shared qsearch table for searches
-/// - ptable: Arc<PTable>            -> shared pawn table for searches
-/// - threads: usize                 -> worker count for search commands
-/// - sender: Sender<TuiEvent>       -> channel for result snapshots
+/// - command   : &str                -> the raw input line
+/// - state     : &mut State          -> the live game state
+/// - playground: Option<&mut State>  -> playground state
+/// - variant   : Option<String>      -> active variant name, for exports
+/// - dict      : Option<&Translator> -> translator for printed move names
+/// - ttable    : Arc<TTable>         -> shared main table for searches
+/// - qtable    : Arc<QTable>         -> shared qsearch table for searches
+/// - ptable    : Arc<PTable>         -> shared pawn table for searches
+/// - threads   : usize               -> worker count for search commands
+/// - sender    : Sender<TuiEvent>    -> channel for result snapshots
 ///
 fn execute_command(
     command: &str,
@@ -3148,11 +3149,11 @@ fn execute_command(
 /// global keys toggle help, adjust verbosity, or request exit.
 ///
 /// Params:
-/// - app: &mut Tui    -> the interface state to mutate
-/// - event: KeyEvent  -> the key event to route
+/// - app  : &mut Tui -> the interface state to mutate
+/// - event: KeyEvent -> the key event to route
 ///
 /// Return:
-/// bool -> true when the application should exit
+/// bool              -> true when the application should exit
 ///
 fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 

@@ -48,11 +48,12 @@ impl Translator {
     /// translator for one protocol from it.
     ///
     /// Params:
-    /// - variant: &str         -> variant name, matches `<name>.dict`
+    /// - variant        : &str -> variant name, matches `<name>.dict`
     /// - target_protocol: &str -> protocol section to load, e.g. "uci"
     ///
     /// Return:
-    /// Option<Self> -> the translator, or None if no dictionary exists
+    /// Option<Self>            -> the translator, or None if no dictionary
+    ///                            exists
     ///
     pub fn find(variant: &str, target_protocol: &str) -> Option<Self> {
         let filename = format!("{}.dict", variant);
@@ -72,11 +73,11 @@ impl Translator {
     /// since dictionaries ship embedded and must be valid.
     ///
     /// Params:
-    /// - content: &str         -> raw `.dict` file text
+    /// - content        : &str -> raw `.dict` file text
     /// - target_protocol: &str -> protocol section to compile
     ///
     /// Return:
-    /// Self -> the compiled translator
+    /// Self                    -> the compiled translator
     ///
     pub fn from_content(content: &str, target_protocol: &str) -> Self {
         let uncommented_str = COMMENT_PATTERN.replace_all(content, "");

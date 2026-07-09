@@ -27,7 +27,7 @@ use crate::*;
 /// - state: &State -> supplies the board width
 ///
 /// Return:
-/// String -> algebraic ("e4") or numeric ("0504") square name
+/// String          -> algebraic ("e4") or numeric ("0504") square name
 ///
 pub fn format_square(index: u16, state: &State) -> String {
     let file = (index % state.statics.files as u16) as u8;
@@ -47,11 +47,11 @@ pub fn format_square(index: u16, state: &State) -> String {
 /// index, rejecting coordinates that fall off the board.
 ///
 /// Params:
-/// - square_str: &str -> square name, e.g. "e4" or "0504"
-/// - state: &State    -> supplies the board dimensions
+/// - square_str: &str   -> square name, e.g. "e4" or "0504"
+/// - state     : &State -> supplies the board dimensions
 ///
 /// Return:
-/// Option<u16> -> the flat square index, or None if invalid
+/// Option<u16>          -> the flat square index, or None if invalid
 ///
 pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
     let files = state.statics.files as u16;
@@ -104,7 +104,7 @@ pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
 /// - ranks: u8     -> board height
 ///
 /// Return:
-/// String -> newline-separated 0/1 grid
+/// String          -> newline-separated 0/1 grid
 ///
 fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
     let mut result = String::new();
@@ -130,11 +130,11 @@ fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
 /// clear bits render as blanks.
 ///
 /// Params:
-/// - board: &Board            -> bitboard to display
+/// - board     : &Board       -> bitboard to display
 /// - piece_char: Option<char> -> optional glyph for set bits
 ///
 /// Return:
-/// String -> the framed, labelled board diagram
+/// String                     -> the framed, labelled board diagram
 ///
 pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     let ranks = ranks!(board);
@@ -197,11 +197,11 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
 ///
 /// Params:
 /// - values: &[i32] -> per-square values in board order
-/// - files: u8      -> board width
-/// - ranks: u8      -> board height
+/// - files : u8     -> board width
+/// - ranks : u8     -> board height
 ///
 /// Return:
-/// String -> the framed, labelled value grid
+/// String           -> the framed, labelled value grid
 ///
 pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
     let mut result = String::new();
@@ -273,12 +273,12 @@ pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
 /// can serve its twin: rank 0 swaps with the top rank, files unchanged.
 ///
 /// Params:
-/// - pst: &[i32]  -> source table in board order
-/// - files: usize -> board width
-/// - ranks: usize -> board height
+/// - pst  : &[i32] -> source table in board order
+/// - files: usize  -> board width
+/// - ranks: usize  -> board height
 ///
 /// Return:
-/// Vec<i32> -> the mirrored table
+/// Vec<i32>        -> the mirrored table
 ///
 pub fn mirror_pst_across_horizontal_axis(
     pst: &[i32],
@@ -316,7 +316,7 @@ pub fn mirror_pst_across_horizontal_axis(
 /// - fen: &str -> the piece placement portion of a FEN
 ///
 /// Return:
-/// (u8, u8) -> (files, ranks)
+/// (u8, u8)    -> (files, ranks)
 ///
 pub fn determine_board_dimensions(fen: &str) -> (u8, u8) {
     let ranks_data: Vec<&str> = fen.split('/').collect();

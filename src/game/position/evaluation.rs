@@ -67,7 +67,7 @@ macro_rules! king_shelter {
 /// Two sweeps over the per-side pawn lists:
 ///
 /// 1. a pre-pass sets a bit in `passed_board[color]` for every pawn no enemy
-///    pawn can reach -- none sit on its interference mask
+///    pawn can reach, none sit on its interference mask
 /// 2. a scoring pass tests each pawn against the masks below and adds the
 ///    phase deltas
 ///
@@ -154,7 +154,7 @@ macro_rules! king_shelter {
 ///
 /// FIDE: `P` on c2, friendly `p` on b1, enemies far off on the a- and
 /// f-files. No `x` touches `P`'s interference, so it is passed; `p` guards it
-/// along the diagonal, so it is also connected -- a protected passer. It is
+/// along the diagonal, so it is also connected, a protected passer. It is
 /// not doubled (nothing on its file ahead) and not isolated (the `b`-file
 /// friend sits on a support file):
 ///
@@ -174,8 +174,8 @@ macro_rules! king_shelter {
 /// └────┴────┴────┴────┴────┴────┘
 /// ```
 ///
-/// Shogi: the soldier `P` on c2 has a friendly `p` directly behind on c1 --
-/// the only square that can defend a straight-capturing pawn -- so it is
+/// Shogi: the soldier `P` on c2 has a friendly `p` directly behind on c1,
+/// the only square that can defend a straight-capturing pawn, so it is
 /// connected. An enemy `x` sits ahead on its own file, on the interference
 /// mask, so it is not passed. A diagonal friend would not connect it here:
 ///
@@ -197,7 +197,7 @@ macro_rules! king_shelter {
 ///
 /// Berolina: `P` on c2 captures straight, so the friendly `p` on c1 directly
 /// behind connects it. Its path runs diagonally, so the other friendly `p`
-/// on b3 -- forward along a diagonal -- is doubled. The enemy `x` reaches its
+/// on b3, forward along a diagonal, is doubled. The enemy `x` reaches its
 /// interference, so it is not passed:
 ///
 /// ```text

@@ -48,76 +48,60 @@ pub type PseudoMove = (u128, MoveSignature);
 /// This structure is used for moves without multiple captures (SingleNoCapture,
 /// SingleCapture, and HopperCapture).
 ///
-/// The first three bits is used to represent the type of format used:
-/// - `000` : Single move without capture
-/// - `001` : Single move with capture or unload
-/// - `010` : Multi-capture move
-/// - `011` : Drop move
-/// - `100` : Castling move
+/// The low three bits select the packed format; the rest depend on it:
 ///
-/// General format for 000, 001, 010:
+/// - `000` : quiet move, no capture
+/// - `001` : single capture or unload
+/// - `010` : multi-capture (extra captures spill into `Move.1`)
+/// - `011` : drop
+/// - `100` : castling
 ///
-/// - The next 8 bits indicates the piece index of the piece making the move.
-/// - The next 12 bits represent the starting square index (0-4095).
-/// - The following 12 bits represent the ending square index (0-4095).
-/// - The following bit represents if the move must be an initial move (1) or
-///   not (0)
-/// - The following bit represents if the move is a promotion (1) or not (0).
-/// - The following bit represents if the move creates an en passant square (1)
-///   or not (0).
-/// - the following 8 bits represent the promoting piece type (if applicable).
-/// - The following 8 bits represent the promoted piece type (if applicable).
-/// - The following 32 bits represents the en passant square (if applicable).
+/// Formats `000`/`001`/`010` share this base word in `Move.0` (bit 0 = LSB):
 ///
-/// Additional encoding for 001:
+/// ┌──────┬───────┬────────┬────────┬────┬────┬────┬──────────┬───────────────┐
+/// │ 0..2 │ 3..10 │ 11..22 │ 23..34 │ 35 │ 36 │ 37 │ 38..45   │ 46..77        │
+/// │ type │ piece │ start  │ end    │ in │ pr │ ep │ promoted │ created ep sq │
+/// └──────┴───────┴────────┴────────┴────┴────┴────┴──────────┴───────────────┘
 ///
-/// - Next bit indicates if this move is a unload (1) or regular capture (0).
-/// - Next 12 bits are the unload square index (if applicable).
-/// - Next 8 bits represent the captured piece type.
-/// - Next 12 bits represent the captured piece square index.
-/// - Next bit indicates if the piece captured is unmoved (1) or not (0).
-/// - The remaining bits are unused.
+/// - in       : the move must be an initial move of the piece
+/// - pr       : the move is a promotion
+/// - ep       : the move creates an en passant square
+/// - promoted : the piece type promoted to (only when `pr` is set)
 ///
-/// Additional encoding for 010:
+/// A capture (`001`, and the first capture of a `010` move) adds a payload
+/// higher in the same word:
 ///
-/// The second array is used to store the indices of all captured pieces.
+/// ┌────┬───────────┬────────────┬─────────┬─────┐
+/// │ 78 │ 79..90    │ 91..98     │ 99..110 │ 111 │
+/// │ ul │ unload sq │ capt piece │ capt sq │ um  │
+/// └────┴───────────┴────────────┴─────────┴─────┘
 ///
-/// - Next bit indicates if this move is a unload (1) or regular capture (0).
-/// - Next 12 bits: Unload square index (if applicable).
-/// - Next 8 bits: bits represent the captured piece type.
-/// - Next 12 bits: represent the captured piece square index.
-/// - The last bit indicates if the piece captured is unmoved (1) or not (0).
+/// - ul : this is an unload (place the last capture back) not a real capture
+/// - um : the captured piece was still unmoved
 ///
-/// General format for 011:
+/// A multi-capture (`010`) keeps its first capture in the base word above and
+/// each further capture as one 34-bit record in `Move.1`:
 ///
-/// - The first 3 bits is the move type (011 for drop).
-/// - The next 8 bits is the piece index of the piece being dropped.
-/// - The next 12 bits represent the square index where the piece is being
-///   dropped.
-/// - The next bit represents whether this drop can deliver checkmate (0)
-///   or not (1).
-/// - The next bit represents whether this drop is taken from the enemy's hand
-///   (0) or our own hand (1).
+/// ┌────┬───────────┬────────────┬─────────┬────┐
+/// │ 0  │ 1..12     │ 13..20     │ 21..32  │ 33 │
+/// │ ul │ unload sq │ capt piece │ capt sq │ um │
+/// └────┴───────────┴────────────┴─────────┴────┘
 ///
-/// General format for 100:
+/// A drop (`011`) needs no origin square:
 ///
-/// - The next 8 bits indicates the piece index of the piece making the move.
-/// - The next 12 bits represent the starting square index (0-4095).
-/// - The following 12 bits represent the ending square index (0-4095).
-/// - The following 51 bits are unused
-/// - The following bit (is_unload) is set for formatting
-/// - Next 12 bits (unload square) are the ending square for the "rook" piece
-/// - Next 8 bits (captured piece) represent the "rook" piece type
-/// - Next 12 bits (captures sqaure) represent the "rook" starting square
+/// ┌──────┬───────┬─────────┬────┐
+/// │ 0..2 │ 3..10 │ 11..22  │ 23 │
+/// │ type │ piece │ drop sq │ cm │
+/// └──────┴───────┴─────────┴────┘
 ///
-/// Aditional encoding for 100:
+/// - cm : whether the drop may deliver checkmate
 ///
-/// The second array is used to store the squares that must be checked when
-/// performing castling
-///
-/// - the first bit denotes if the square should also be not attacked
-///   when performing castling (is unload)
-/// - the next 12 bits denotes the square that is checked (unload square)
+/// Castling (`100`) keeps the king step in the base word's `start`/`end`
+/// squares and packs the rook's move into the capture-payload region above:
+/// its from-square in `capt sq`, its to-square in `unload sq`, and its piece
+/// type in `capt piece`. `Move.1` then lists the squares the king passes,
+/// one 13-bit entry each (a must-be-unattacked flag in bit 0, the square
+/// index in bits 1..12) reusing the `ul` / `unload sq` positions.
 ///
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Move(pub u128, pub Option<Arc<Vec<u64>>>);
@@ -126,6 +110,8 @@ pub struct Move(pub u128, pub Option<Arc<Vec<u64>>>);
                                UTILITY MOVE MACROS
 \*----------------------------------------------------------------------------*/
 
+/// m_captures!
+///
 /// Borrows the capture/check list of a `Move` as a slice, yielding an empty
 /// slice for the common no-payload case.
 #[macro_export]
@@ -135,6 +121,8 @@ macro_rules! m_captures {
     };
 }
 
+/// m_signature!
+///
 /// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
 /// `move.1`.  The result is 0 for moves with no captures (empty list).
 ///

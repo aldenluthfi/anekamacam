@@ -39,7 +39,7 @@ pub type PieceIndex = u8;
 /// - state: State      -> position providing phase and phase thresholds
 ///
 /// Return:
-/// u32 -> interpolated material value
+/// u32                 -> interpolated material value
 ///
 #[macro_export]
 macro_rules! p_value {
@@ -210,16 +210,17 @@ impl Piece {
     /// derivation has computed material values and role classes.
     ///
     /// Params:
-    /// - name: String                -> display name of the piece
-    /// - char: char                  -> FEN/board letter for the piece
+    /// - name      : String          -> display name of the piece
+    /// - char      : char            -> FEN/board letter for the piece
     /// - promotions: Vec<PieceIndex> -> piece types this can promote to
-    /// - index: u8                   -> index in the variant's piece list
-    /// - color: u8                   -> owning side (WHITE or BLACK)
-    /// - is_royal: bool              -> whether this piece must be mated
-    /// - rank: u8                    -> variant-defined capture rank
+    /// - index     : u8              -> index in the variant's piece list
+    /// - color     : u8              -> owning side (WHITE or BLACK)
+    /// - is_royal  : bool            -> whether this piece must be mated
+    /// - rank      : u8              -> variant-defined capture rank
     ///
     /// Return:
-    /// Self -> the piece with static attributes encoded
+    /// Self                          -> the piece with static attributes
+    ///                                  encoded
     ///
     pub fn new(
         name: String,

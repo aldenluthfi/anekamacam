@@ -38,12 +38,13 @@ use crate::*;
 /// `[drop]@[start]:[end]*[capt_1]@[unload_1]...*[capt_n]=[promotion]`
 ///
 /// Params:
-/// - mv: &Move                 -> move to render
-/// - state: &State             -> board geometry for square names
-/// - dict: Option<&Translator> -> protocol translator, or None for raw CMN
+/// - mv   : &Move               -> move to render
+/// - state: &State              -> board geometry for square names
+/// - dict : Option<&Translator> -> protocol translator, or None for raw CMN
 ///
 /// Return:
-/// String -> the move's CMN (or translated) text, "null" for a null move
+/// String                       -> the move's CMN (or translated) text, "null"
+///                                 for a null move
 ///
 pub fn format_move(
     mv: &Move, state: &State, dict: Option<&Translator>
@@ -141,12 +142,13 @@ pub fn format_move(
 /// first exact match (after trimming whitespace) is returned.
 ///
 /// Params:
-/// - move_str: &str            -> user move text to resolve
-/// - state: &State             -> position whose legal moves are generated
-/// - dict: Option<&Translator> -> translator applied to each candidate
+/// - move_str: &str                -> user move text to resolve
+/// - state   : &State              -> position whose legal moves are generated
+/// - dict    : Option<&Translator> -> translator applied to each candidate
 ///
 /// Return:
-/// Option<Move> -> the matching legal move, or None if none matches
+/// Option<Move>                    -> the matching legal move, or None if none
+///                                    matches
 ///
 pub fn parse_move(
     move_str: &str, state: &State, dict: Option<&Translator>
@@ -166,11 +168,11 @@ pub fn parse_move(
 /// one full move per line, using `format_move` for each entry.
 ///
 /// Params:
-/// - state: &State             -> position whose history is printed
-/// - dict: Option<&Translator> -> translator for printed move names
+/// - state: &State              -> position whose history is printed
+/// - dict : Option<&Translator> -> translator for printed move names
 ///
 /// Return:
-/// String -> the numbered, newline-separated history
+/// String                       -> the numbered, newline-separated history
 ///
 pub fn format_move_history(
     state: &State, dict: Option<&Translator>

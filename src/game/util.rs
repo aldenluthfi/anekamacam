@@ -63,7 +63,7 @@ pub fn random_u128() -> u128 {
 /// to roll. Shared by the parameter export and the datagen dataset.
 ///
 /// Params:
-/// - dir: &str       -> directory holding the `latest` file and backups
+/// - dir      : &str -> directory holding the `latest` file and backups
 /// - extension: &str -> file extension without the dot (e.g. "param")
 ///
 pub fn roll_latest(dir: &str, extension: &str) {
@@ -153,11 +153,11 @@ pub fn refresh_eval_state(state: &mut State) {
 ///
 /// Params:
 /// - state: &State -> supplies the board width for index decomposition
-/// - sq1: Square   -> first square
-/// - sq2: Square   -> second square
+/// - sq1  : Square -> first square
+/// - sq2  : Square -> second square
 ///
 /// Return:
-/// f64 -> euclidean distance in square units
+/// f64             -> euclidean distance in square units
 ///
 pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
     let file1 = sq1 % state.statics.files as Square;
@@ -448,8 +448,8 @@ pub fn verify_game_state(state: &State) {
 /// - content: &str -> raw text of the .perft suite file
 ///
 /// Return:
-/// Vec<(String, u64, ...)> -> FEN plus expected node counts for depths
-/// 1-6, one tuple per suite line
+/// Vec<(String, u64, ...)> -> FEN plus expected node counts for depths 1-6, one
+///                    tuple per suite line
 ///
 fn parse_perft_content(                                                         /* until perft 6                      */
     content: &str,
@@ -520,7 +520,7 @@ fn parse_perft_content(                                                         
 /// - nanos: u128 -> duration in nanoseconds
 ///
 /// Return:
-/// String -> human-readable duration such as "1.234 ms"
+/// String        -> human-readable duration such as "1.234 ms"
 ///
 pub fn format_time(nanos: u128) -> String {
     if nanos < 1_000 {
@@ -541,10 +541,10 @@ pub fn format_time(nanos: u128) -> String {
 /// without needing a full suite of expected results.
 ///
 /// Params:
-/// - state: &mut State         -> starting position, mutated during walk
-/// - depth: u8                 -> maximum perft depth to run
-/// - branch: i8                -> diagnostic branch-printing depth
-/// - dict: Option<&Translator> -> translator for printed move names
+/// - state : &mut State          -> starting position, mutated during walk
+/// - depth : u8                  -> maximum perft depth to run
+/// - branch: i8                  -> diagnostic branch-printing depth
+/// - dict  : Option<&Translator> -> translator for printed move names
 ///
 pub fn benchmark_headless_perft(
     state: &mut State, depth: u8, branch: i8, dict: Option<&Translator>
@@ -597,15 +597,15 @@ pub fn benchmark_headless_perft(
 /// passed through to `perft`.
 ///
 /// Params:
-/// - state: &mut State         -> reused for every loaded FEN
-/// - content: &str             -> raw perft suite text
-/// - depth: u8                 -> maximum depth tested per position
-/// - branch: i8                -> diagnostic branch-printing depth
-/// - limit: usize              -> maximum number of positions to test
-/// - dict: Option<&Translator> -> translator for printed move names
+/// - state  : &mut State          -> reused for every loaded FEN
+/// - content: &str                -> raw perft suite text
+/// - depth  : u8                  -> maximum depth tested per position
+/// - branch : i8                  -> diagnostic branch-printing depth
+/// - limit  : usize               -> maximum number of positions to test
+/// - dict   : Option<&Translator> -> translator for printed move names
 ///
 /// Return:
-/// (usize, usize) -> (passed cases, total cases)
+/// (usize, usize)                 -> (passed cases, total cases)
 ///
 pub fn benchmark_perft(
     state: &mut State,
@@ -716,13 +716,13 @@ pub fn benchmark_perft(
 /// wall time, and aggregate nodes-per-second.
 ///
 /// Params:
-/// - state: &mut State         -> position searched
-/// - ttable: Arc<TTable>       -> shared transposition table
-/// - qtable: Arc<QTable>       -> shared quiescence table
-/// - ptable: Arc<PTable>       -> shared pawn structure table
-/// - depth: usize              -> fixed search depth
-/// - thread_num: usize         -> number of worker threads
-/// - dict: Option<&Translator> -> translator for printed move names
+/// - state     : &mut State          -> position searched
+/// - ttable    : Arc<TTable>         -> shared transposition table
+/// - qtable    : Arc<QTable>         -> shared quiescence table
+/// - ptable    : Arc<PTable>         -> shared pawn structure table
+/// - depth     : usize               -> fixed search depth
+/// - thread_num: usize               -> number of worker threads
+/// - dict      : Option<&Translator> -> translator for printed move names
 ///
 pub fn benchmark_search(
     state: &mut State, ttable: Arc<TTable>, qtable: Arc<QTable>,
@@ -748,14 +748,14 @@ pub fn benchmark_search(
 /// to help inspect branching behavior.
 ///
 /// Params:
-/// - state: &mut State         -> position explored, restored on return
-/// - depth: u8                 -> remaining depth to expand
-/// - branch: i8                -> levels of move-prefix printing left
-/// - prefix: &str              -> accumulated move prefix for diagnostics
-/// - dict: Option<&Translator> -> translator for printed move names
+/// - state : &mut State          -> position explored, restored on return
+/// - depth : u8                  -> remaining depth to expand
+/// - branch: i8                  -> levels of move-prefix printing left
+/// - prefix: &str                -> accumulated move prefix for diagnostics
+/// - dict  : Option<&Translator> -> translator for printed move names
 ///
 /// Return:
-/// u64 -> number of leaf nodes at the requested depth
+/// u64                           -> number of leaf nodes at the requested depth
 ///
 pub fn perft(
     state: &mut State, depth: u8, branch: i8, prefix: &str,

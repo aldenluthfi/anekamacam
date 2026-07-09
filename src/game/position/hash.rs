@@ -33,7 +33,7 @@ pub type PositionHash = u128;
 /// - state: &State -> position to hash from scratch
 ///
 /// Return:
-/// u128 -> the position's full Zobrist key
+/// u128            -> the position's full Zobrist key
 ///
 pub fn hash_position(state: &State) -> u128 {
     let mut hash = u128::default();
@@ -77,7 +77,7 @@ pub fn hash_position(state: &State) -> u128 {
 /// - state: &State -> position whose pawns are hashed
 ///
 /// Return:
-/// u128 -> the position's pawn-only Zobrist key
+/// u128            -> the position's pawn-only Zobrist key
 ///
 pub fn hash_pawns(state: &State) -> u128 {
     let mut hash = u128::default();

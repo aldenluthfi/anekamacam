@@ -39,14 +39,14 @@ impl ThreadPool {
     /// spawned until `run` is called.
     ///
     /// Params:
-    /// - root: &State    -> root position, cloned per worker
-    /// - tt: Arc<TTable> -> shared transposition table
-    /// - qt: Arc<QTable> -> shared quiescence table
-    /// - pt: Arc<PTable> -> shared pawn structure table
-    /// - count: usize    -> requested worker count, clamped to >= 1
+    /// - root : &State      -> root position, cloned per worker
+    /// - tt   : Arc<TTable> -> shared transposition table
+    /// - qt   : Arc<QTable> -> shared quiescence table
+    /// - pt   : Arc<PTable> -> shared pawn structure table
+    /// - count: usize       -> requested worker count, clamped to >= 1
     ///
     /// Return:
-    /// Self -> the configured pool
+    /// Self                 -> the configured pool
     ///
     pub fn with_threads(
         root: &State, tt: Arc<TTable>, qt: Arc<QTable>, pt: Arc<PTable>,
@@ -74,7 +74,7 @@ impl ThreadPool {
     /// - dict: Option<&Translator> -> translator for printed move names
     ///
     /// Return:
-    /// SearchResult -> the best result across all workers
+    /// SearchResult                -> the best result across all workers
     ///
     pub fn run(
         self,

@@ -62,7 +62,7 @@ struct Sample {
 /// - state: &State -> loaded variant whose geometry is measured
 ///
 /// Return:
-/// TuneShape -> block offsets, dimensions, and the piece-type pairs
+/// TuneShape       -> block offsets, dimensions, and the piece-type pairs
 ///
 fn build_shape(state: &State) -> TuneShape {
     let pairs = collect_piece_type_pairs(state);
@@ -96,11 +96,11 @@ fn build_shape(state: &State) -> TuneShape {
 /// is presently using.
 ///
 /// Params:
-/// - state: &State       -> loaded variant supplying current parameters
-/// - shape: &TuneShape   -> vector geometry to fill
+/// - state: &State     -> loaded variant supplying current parameters
+/// - shape: &TuneShape -> vector geometry to fill
 ///
 /// Return:
-/// Vec<f64> -> the starting parameter vector θ₀
+/// Vec<f64>            -> the starting parameter vector θ₀
 ///
 fn initial_theta(state: &State, shape: &TuneShape) -> Vec<f64> {
     let mut theta = vec![0.0f64; shape.dimension];
@@ -137,7 +137,7 @@ fn initial_theta(state: &State, shape: &TuneShape) -> Vec<f64> {
 /// - state: &State -> position whose phase determines the weights
 ///
 /// Return:
-/// (f64, f64) -> (opening weight, endgame weight), summing to one
+/// (f64, f64)      -> (opening weight, endgame weight), summing to one
 ///
 fn phase_weights(state: &State) -> (f64, f64) {
     match state.game_phase {
@@ -167,11 +167,11 @@ fn phase_weights(state: &State) -> (f64, f64) {
 ///
 /// Params:
 /// - square: Square -> the square to mirror
-/// - files: usize   -> board width
-/// - ranks: usize   -> board height
+/// - files : usize  -> board width
+/// - ranks : usize  -> board height
 ///
 /// Return:
-/// usize -> the mirrored square index
+/// usize            -> the mirrored square index
 ///
 fn mirror_square(square: Square, files: usize, ranks: usize) -> usize {
     let index = square as usize;
@@ -191,15 +191,15 @@ fn mirror_square(square: Square, files: usize, ranks: usize) -> usize {
 /// non-tuned derived terms.
 ///
 /// Params:
-/// - state: &State           -> quiet position to reduce
-/// - shape: &TuneShape       -> vector geometry to index into
-/// - theta: &[f64]           -> current parameters, for the base residual
-/// - bufs: &mut SearchBufs   -> scratch for the evaluation macro
+/// - state : &State          -> quiet position to reduce
+/// - shape : &TuneShape      -> vector geometry to index into
+/// - theta : &[f64]          -> current parameters, for the base residual
+/// - bufs  : &mut SearchBufs -> scratch for the evaluation macro
 /// - ptable: &PTable         -> shared pawn structure table
-/// - label: f64              -> White-view game result for this position
+/// - label : f64             -> White-view game result for this position
 ///
 /// Return:
-/// Sample -> sparse features, frozen base, and label
+/// Sample                    -> sparse features, frozen base, and label
 ///
 fn extract_sample(
     state: &State,
@@ -291,19 +291,19 @@ fn extract_sample(
 ///
 /// Params (dot):
 /// - features: &[(usize, f64)] -> sparse coefficients
-/// - theta: &[f64]             -> parameter vector
+/// - theta   : &[f64]          -> parameter vector
 ///
 /// Params (sigmoid):
-/// - value: f64                -> logit input
+/// - value: f64 -> logit input
 ///
 /// Params (model_score):
-/// - sample: &Sample           -> position to score
-/// - theta: &[f64]             -> parameter vector
+/// - sample: &Sample -> position to score
+/// - theta : &[f64]  -> parameter vector
 ///
 /// Params (mean_squared_error):
-/// - samples: &[Sample]        -> dataset
-/// - theta: &[f64]             -> parameter vector
-/// - scaling: f64              -> the sigmoid scaling constant K
+/// - samples: &[Sample] -> dataset
+/// - theta  : &[f64]    -> parameter vector
+/// - scaling: f64       -> the sigmoid scaling constant K
 ///
 fn dot(features: &[(usize, f64)], theta: &[f64]) -> f64 {
     features.iter().map(|(index, coeff)| theta[*index] * coeff).sum()
@@ -340,10 +340,10 @@ fn mean_squared_error(samples: &[Sample], theta: &[f64], scaling: f64) -> f64 {
 ///
 /// Params:
 /// - samples: &[Sample] -> dataset
-/// - theta: &[f64]      -> parameter vector to evaluate against
+/// - theta  : &[f64]    -> parameter vector to evaluate against
 ///
 /// Return:
-/// f64 -> the fitted scaling constant K
+/// f64                  -> the fitted scaling constant K
 ///
 fn fit_scaling(samples: &[Sample], theta: &[f64]) -> f64 {
     let ratio = (5f64.sqrt() - 1.0) / 2.0;
@@ -383,11 +383,11 @@ fn fit_scaling(samples: &[Sample], theta: &[f64]) -> f64 {
 ///
 /// Params:
 /// - samples: &[Sample] -> dataset
-/// - theta: &[f64]      -> current parameters
+/// - theta  : &[f64]    -> current parameters
 /// - scaling: f64       -> the sigmoid scaling constant K
 ///
 /// Return:
-/// Vec<f64> -> the averaged gradient, one entry per parameter
+/// Vec<f64>             -> the averaged gradient, one entry per parameter
 ///
 fn compute_gradient(
     samples: &[Sample],
@@ -458,13 +458,13 @@ fn clamp_material(theta: &mut [f64], shape: &TuneShape) {
 /// the caller can abort gracefully.
 ///
 /// Params:
-/// - template: &State          -> loaded variant to clone scratch states
-/// - variant: &str             -> variant name, selects the dataset file
-/// - shape: &TuneShape         -> vector geometry for feature extraction
-/// - theta: &[f64]             -> starting parameters for the base term
+/// - template: &State     -> loaded variant to clone scratch states
+/// - variant : &str       -> variant name, selects the dataset file
+/// - shape   : &TuneShape -> vector geometry for feature extraction
+/// - theta   : &[f64]     -> starting parameters for the base term
 ///
 /// Return:
-/// Vec<Sample> -> the reduced dataset, empty when unavailable
+/// Vec<Sample>            -> the reduced dataset, empty when unavailable
 ///
 fn load_dataset(
     template: &State,
@@ -523,10 +523,10 @@ fn load_dataset(
 /// the previous `latest.param` to an epoch backup.
 ///
 /// Params:
-/// - state: &mut State -> loaded variant, updated with the tuned vector
-/// - variant: &str     -> variant name, selects the output directory
-/// - shape: &TuneShape -> vector geometry to serialise from
-/// - theta: &[f64]     -> the tuned parameter vector
+/// - state  : &mut State -> loaded variant, updated with the tuned vector
+/// - variant: &str       -> variant name, selects the output directory
+/// - shape  : &TuneShape -> vector geometry to serialise from
+/// - theta  : &[f64]     -> the tuned parameter vector
 ///
 fn export_theta(
     state: &mut State,
@@ -585,9 +585,9 @@ fn export_theta(
 /// previous parameters.
 ///
 /// Params:
-/// - state: &mut State         -> loaded variant, tuned and exported
-/// - variant: &str             -> variant name, selects dataset/output
-/// - epochs: usize             -> number of Adam passes to run
+/// - state        : &mut State -> loaded variant, tuned and exported
+/// - variant      : &str       -> variant name, selects dataset/output
+/// - epochs       : usize      -> number of Adam passes to run
 /// - learning_rate: f64        -> Adam step size
 ///
 pub fn run_tuning(
