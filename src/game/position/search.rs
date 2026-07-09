@@ -749,8 +749,10 @@ fn quiescence_search(
 ///   `corr_hist` tracks, per side and pawn structure, how far raw static
 ///   evaluations have trailed search scores (`update_corr_hist!` at every
 ///   node whose bound can tighten the evaluation). The scaled correction
-///   is added to the pruning eval, steering the pruning stages without
-///   touching the evaluation stored in the transposition table.
+///   is added to the pruning eval read by the fail-high stages (reverse
+///   futility, null move) only; razoring and futility keep the plain
+///   eval — corrected evals feeding fail-low pruning explode drop-game
+///   trees. The evaluation stored in the transposition table stays raw.
 ///
 /// - reverse futility pruning:
 ///   at shallow, non-PV, non-check nodes, if the static evaluation exceeds
@@ -774,7 +776,7 @@ fn quiescence_search(
 ///
 /// - futility pruning:
 ///   at shallow non-check non-PV nodes, marks the node futile when
-///   `pruning_eval + margin <= alpha`. Inside the move loop, any quiet,
+///   `plain_eval + margin <= alpha`. Inside the move loop, any quiet,
 ///   non-promotion, non-drop move after the first legal one is skipped,
 ///   since it cannot plausibly raise the score above `alpha`.
 ///
@@ -928,8 +930,10 @@ pub fn alpha_beta(
         state.corr_hist[corr_hist_index!(state)] as i32 / CORR_HIST_GRAIN
     };
 
-    let pruning_eval = corr
-        + if tt_entry.4 != -INF { tt_entry.4 } else { static_eval };
+    let plain_eval =
+        if tt_entry.4 != -INF { tt_entry.4 } else { static_eval };
+
+    let pruning_eval = plain_eval + corr;
 
     /*-----------------------------------------------------------------------*\
                                     IMPROVING FLAG
@@ -963,7 +967,7 @@ pub fn alpha_beta(
     && beta - alpha == 1
     && alpha.abs() < MATE_SCORE
     && state.game_phase != ENDGAME
-    && pruning_eval + state.statics.razor_margin[depth] < alpha
+    && plain_eval + state.statics.razor_margin[depth] < alpha
     {
         let score = quiescence_search(
             state, ttable, qtable, ptable, alpha, alpha + 1, info, bufs
@@ -1033,7 +1037,7 @@ pub fn alpha_beta(
     && !in_check
     && beta - alpha == 1
     && alpha.abs() < MATE_SCORE
-    && pruning_eval + margin[depth] <= alpha
+    && plain_eval + margin[depth] <= alpha
     {
         futile = true;
     }
