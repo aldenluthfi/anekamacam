@@ -263,7 +263,7 @@ pub const BK_CASTLE: u8 = 0b0100;
 pub const BQ_CASTLE: u8 = 0b1000;
 pub const CASTLING: [u8; 4] = [WK_CASTLE, WQ_CASTLE, BQ_CASTLE, BK_CASTLE];
 
-pub const NO_PIECE: u8 = u8::MAX;
+pub const NO_PIECE: PieceIndex = PieceIndex::MAX;
 pub const NO_SQUARE: Square = Square::MAX;
 pub const NO_EN_PASSANT: u32 = u32::MAX;
 

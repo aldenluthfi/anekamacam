@@ -924,16 +924,12 @@ pub fn alpha_beta(
 
     state.static_eval[ply] = static_eval;
 
-    let corr = if in_check {
-        0
-    } else {
-        state.corr_hist[corr_hist_index!(state)] as i32 / CORR_HIST_GRAIN
-    };
+    let corr =
+        !in_check as i32 *
+        state.corr_hist[corr_hist_index!(state)] as i32 / CORR_HIST_GRAIN;
 
-    let plain_eval =
-        if tt_entry.4 != -INF { tt_entry.4 } else { static_eval };
-
-    let pruning_eval = plain_eval + corr;
+    let plain_eval = if tt_entry.4 != -INF { tt_entry.4 } else { static_eval };
+    let prune_eval = plain_eval + corr;
 
     /*-----------------------------------------------------------------------*\
                                     IMPROVING FLAG
@@ -952,7 +948,7 @@ pub fn alpha_beta(
     && beta - alpha == 1
     && !in_check
     && beta.abs() < MATE_SCORE
-    && pruning_eval - state.statics.rfp_margin[improving as usize][depth]
+    && prune_eval - state.statics.rfp_margin[improving as usize][depth]
     >= beta
     {
         return beta;
@@ -985,14 +981,18 @@ pub fn alpha_beta(
     if null
     && !in_check
     && depth > MIN_NMP_DEPTH
-    && pruning_eval >= beta
+    && prune_eval >= beta
     && state.search_ply > 0
     && (state.game_phase != ENDGAME || depth >= MIN_NMP_ENDGAME_DEPTH)
     && state.big_pieces[state.playing as usize]
     >= state.statics.nmp_min_material
     {
-        let reduct = (4 + depth / 4 + ((pruning_eval - beta)
-            / state.statics.nmp_eval_div).clamp(0, 3) as usize).min(depth);
+        let reduct = (
+            4 + depth / 4 +
+            (
+                (prune_eval - beta) / state.statics.nmp_eval_div
+            ).clamp(0, 3) as usize
+        ).min(depth);
 
         make_null_move!(state);
 
@@ -1065,8 +1065,8 @@ pub fn alpha_beta(
     && tt_entry.6 != FALPHA
     && tt_entry.7.abs() < MATE_SCORE
     {
-        let singular_beta = tt_entry.7
-            - depth as i32 * state.statics.singular_margin;
+        let singular_beta =
+            tt_entry.7 - depth as i32 * state.statics.singular_margin;
 
         state.excluded[ply] = tt_entry.2;
 
@@ -1241,8 +1241,14 @@ pub fn alpha_beta(
             let opponent_in_check = is_in_check!(state.playing, state);         /* lazy: only LMR needs gives-check   */
 
             reduction += reduction!(
-                state, depth, legal_moves, in_check, opponent_in_check,
-                is_capture, is_promotion, is_drop
+                state,
+                depth,
+                legal_moves,
+                in_check,
+                opponent_in_check,
+                is_capture,
+                is_promotion,
+                is_drop
             );
 
             let cont_sum: i32 = cont_bases.iter()
@@ -1366,9 +1372,9 @@ pub fn alpha_beta(
 
                     if !excluded_here {
                         update_corr_hist!(
-                            state, static_eval, beta, depth, FBETA,
-                            is_capture
+                            state, static_eval, beta, depth, FBETA, is_capture
                         );
+
                         hash_tt_entry!(
                             bufs.move_buf[ply][i], beta, FBETA, depth,
                             static_eval, state, ttable
@@ -1478,17 +1484,17 @@ pub fn alpha_beta(
 
     if alpha != alpha_start {
         update_corr_hist!(
-            state, static_eval, best_score, depth, FEXACT,
-            m_capture!(&best_move)
+            state, static_eval, best_score, depth, FEXACT, m_capture!(&best_move)
         );
+
         hash_tt_entry!(
             best_move, best_score, FEXACT, depth, static_eval, state, ttable
         );
     } else {
         update_corr_hist!(
-            state, static_eval, alpha, depth, FALPHA,
-            m_capture!(&best_move)
+            state, static_eval, alpha, depth, FALPHA, m_capture!(&best_move)
         );
+
         hash_tt_entry!(
             best_move, alpha, FALPHA, depth, static_eval, state, ttable
         );
@@ -1534,8 +1540,9 @@ macro_rules! apply_history_gravity {
 #[macro_export]
 macro_rules! corr_hist_index {
     ($state:expr) => {{
-        $state.playing as usize * CORR_HIST_SIZE
-            + ($state.pawn_hash as usize & (CORR_HIST_SIZE - 1))
+        $state.playing as usize * CORR_HIST_SIZE + (
+            $state.pawn_hash as usize & (CORR_HIST_SIZE - 1)
+        )
     }};
 }
 
@@ -1561,8 +1568,14 @@ macro_rules! corr_hist_index {
 ///
 #[macro_export]
 macro_rules! update_corr_hist {
-    ($state:expr, $eval:expr, $score:expr, $depth:expr, $flag:expr,
-     $capture:expr) => {{
+    (
+        $state:expr,
+        $eval:expr,
+        $score:expr,
+        $depth:expr,
+        $flag:expr,
+        $capture:expr
+    ) => {{
         if $eval != -INF
         && $score.abs() < MATE_SCORE
         && match $flag {
@@ -1573,13 +1586,13 @@ macro_rules! update_corr_hist {
             let index = corr_hist_index!($state);
             let entry = $state.corr_hist[index] as i32;
             let gap = ($score - $eval) * CORR_HIST_GRAIN;
-            let weight = if $capture {
-                1
-            } else {
-                ($depth as i32 + 1).min(CORR_HIST_MAX_WEIGHT)
-            };
-            let mixed = (entry * (CORR_HIST_SCALE - weight)
-                + gap * weight) / CORR_HIST_SCALE;
+
+            let weight = (1 * $capture as i32 + $depth as i32)
+                .min(CORR_HIST_MAX_WEIGHT);
+
+            let mixed = (
+                entry * (CORR_HIST_SCALE - weight) + gap * weight
+            ) / CORR_HIST_SCALE;
 
             $state.corr_hist[index] =
                 mixed.clamp(-CORR_HIST_LIMIT, CORR_HIST_LIMIT) as i16;
