@@ -153,9 +153,8 @@
   noise; only i1's 1.79x full-weight explosion was real). Stage I czh
   0.832 is real. trueJ vs trueI ≈ neutral (shogi 1.02, czh 1.04,
   fide 1.05) — Stage J's published numbers were also noise.
-  `bin/stageI`/`bin/stageJ` rebuilt and committed; **Stage I's shogi
-  regression is unresolved** — candidate fix: full capture skip (the
-  real i2 experiment, never actually run) or revert `5bd2ace`.
+  `bin/stageI`/`bin/stageJ` rebuilt and committed; Stage I's shogi
+  regression stayed unresolved until Stage L (`dce81bd`).
 - Earlier Stage K attempt (exact table sizes + multiply-shift/modulo
   indexing, reverted uncommitted): its "non-mask index explodes shogi"
   conclusion is **invalid** — every candidate carried the Stage I
@@ -179,7 +178,24 @@
   vs trueH (trueJ 1.640) — the Stage I shogi explosion is NOT capture
   pollution; root cause open (next lead: read-side `pruning_eval` shift
   misfiring RFP/razor/NMP margins — l3 read-disabled binary built but
-  never measured). Stage I shogi regression remains in HEAD.
+  never measured). Stage I shogi regression remained in HEAD until
+  Stage L.
+- Stage L committed `dce81bd`: fix the Stage I shogi regression by
+  gating the correction-history read to fail-high pruning. Measuring
+  the leftover `l3` binary (corr read disabled) pinned the whole 1.67×
+  shogi explosion on the read side (l3 0.599 vs stageK, trueH 0.594,
+  10-run). Consumer split attributed it to the fail-low stages: corr
+  enabled only in RFP+NMP (`lg`) read shogi 0.543 — better than trueH
+  — while corr only in razoring+futility (`ll`) read 0.906 and kept
+  the explosion. The TT-sharpening double-count (corr stacked on a
+  bracketing stored score) contributed partially (`lt`, corr without
+  sharpening: 0.883). Final form: `plain_eval` (TT-sharpened or raw)
+  feeds razoring and futility; `pruning_eval = plain_eval + corr`
+  feeds RFP and NMP (gate + reduction scale). Full suite vs stageK
+  (6-run): shogi 0.653, czh 0.958, xiangqi 0.979, fide 1.064 → 1.017
+  on 10-run recheck (batch noise), geomean 0.899. Vs trueH: shogi
+  0.991 (10-run, regression gone), czh 0.851 (Stage I gain kept).
+  `bin/stageL` saved; `build-stages.sh` gained the stageL entry.
 - Deferred within C: LMP threshold retune, PV/cut-node
   reduction adjustments. Deferred within D: fail-high re-search depth
   reduction. Deferred within F: Part B clusters. Deferred within H: +1
@@ -311,8 +327,8 @@ status entry for measurements.
 
 ```
 [A ✓] → [B ✓] → [C ✓] → [D ✓] → [E ✓] → [F ✓] → [G ✓] →
-[H ✓, round robin pending] → [I ✓, shogi regression open] →
-[J ✓] → [K ✓, round robin pending]
+[H ✓, round robin pending] → [I ✓, shogi regression fixed in L] →
+[J ✓] → [K ✓] → [L ✓, round robin pending]
 ```
 
 Combined regression checkpoints after C (done) and after F: full 4-variant
