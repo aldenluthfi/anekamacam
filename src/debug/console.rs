@@ -3112,15 +3112,11 @@ fn execute_command(
 
             let protocol_name = parts.get(1);
 
-            let new_dict = if protocol_name.is_none() {
-                None
-            } else {
+            let new_dict = if let Some(name) = protocol_name {
                 let Some(ref v) = variant else {
                     log_2!("No variant loaded");
                     return;
                 };
-
-                let name = *protocol_name.unwrap();
 
                 let Some(translator) = Translator::find(v, name) else {
                     log_2!("Unknown protocol: {}", name);
@@ -3128,6 +3124,8 @@ fn execute_command(
                 };
 
                 Some(translator)
+            } else {
+                None
             };
 
             sender.send(TuiEvent::SwitchDict(new_dict))

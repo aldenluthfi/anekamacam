@@ -546,17 +546,21 @@ fn export_theta(
     for type_index in 0..shape.piece_types {
         tokens.push(material(theta[shape.opening_material_base + type_index]));
     }
+
     for type_index in 0..shape.piece_types {
         tokens.push(material(theta[shape.endgame_material_base + type_index]));
     }
-    for (_, (white_index, _)) in shape.pairs.iter().enumerate() {
+
+    for (white_index, _) in shape.pairs.iter() {
         let flag = p_is_big!(&state.statics.pieces[*white_index]) as u8;
         tokens.push(flag.to_string());
     }
-    for (_, (white_index, _)) in shape.pairs.iter().enumerate() {
+
+    for (white_index, _) in shape.pairs.iter() {
         let flag = p_is_major!(&state.statics.pieces[*white_index]) as u8;
         tokens.push(flag.to_string());
     }
+
     for type_index in 0..shape.piece_types {
         for square in 0..board_size {
             let offset = type_index * board_size + square;

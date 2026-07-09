@@ -35,7 +35,7 @@ use crate::*;
 ///
 /// Validation:
 ///   (1) slot[0] ^ slot[1] ^ slot[2] == position_hash  →  parity intact
-///   (2) version unchanged across read                  →  no torn write
+///   (2) version unchanged across read                 →  no torn write
 #[derive(Default)]
 pub struct TTEntry {
     pub slot: [u128; 3],                                                        /* [key, data1, data2]                */

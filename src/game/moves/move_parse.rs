@@ -1701,7 +1701,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// previous atomic.
 ///
 /// Example:
-/// - N > FnF > [2468]Kn[2468]K, starting from the `S` square
+/// - N → FnF → [2468]Kn[2468]K, starting from the `S` square
 ///
 /// 1. Start with a Ferz (F -> [2468]K) move which produces the vectors:
 ///     - (1, 1)

@@ -510,9 +510,8 @@ pub fn generate_relevant_captures(
 /// apply via Arc::get_mut after all borrows expire.
 ///
 /// Params:
-/// - square_index: u16        -> origin square whose outgoing attacks are added
-/// - state       : &mut State -> engine state receiving the reverse attack
-///                               table
+/// - square_index: u16        -> origin square of the outgoing attacks
+/// - state       : &mut State -> engine state receiving the rev attack table
 ///
 pub fn generate_attack_masks(square_index: u16, state: &mut State) {
     let board_size = state.statics.board_size;

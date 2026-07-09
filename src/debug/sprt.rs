@@ -236,10 +236,8 @@ struct GameManager {
 ///
 /// - new         -> spawn both children and fork a referee at startpos
 /// - swap_colors -> exchange which child plays which colour
-/// - reset_to    -> fork a fresh referee, replay a shared opening, and
-///                  tell both engines a new game is starting
-/// - play        -> run one game to the referee's verdict, streaming the
-///                  live position to the TUI, and return White's score
+/// - reset_to    -> fork state, replay a shared opening, and tell both engines
+/// - play        -> run one game, streaming the live position to the TUI
 ///
 /// `play` rebuilds each engine's move list from the referee's own history
 /// every ply (with `format_move`), so no parallel move-string list is

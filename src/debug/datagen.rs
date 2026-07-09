@@ -96,13 +96,13 @@ fn play_one_game(
         );
 
         if !is_capture && !is_in_check!(state.playing, state) {
-            fens.push(format_fen(&state, None));
+            fens.push(format_fen(state, None));
         }
 
         make_move!(state, outcome.best_move);
 
         sender.send(TuiEvent::StateUpdate(
-            BoardState::from_state(&state, dict)
+            BoardState::from_state(state, dict)
         )).unwrap_or_else(|e| {
             panic!("Failed to send TuiEvent::StateUpdate: {e}")
         });
