@@ -486,17 +486,6 @@ pub struct StaticState {
 /// - bit 10    : There is a limit on the number of repetitions of a position
 /// - bit 11-31 : reserved for future use
 ///
-/// `cont_hist` stacks two square continuation-history tables, 1-ply then
-/// 2-ply, each `dim x dim` with `dim = piece_count * board_size`: the row
-/// is the (piece, end) key of the move played 1 or 2 plies ago, the
-/// column is the same key of the quiet reply being scored. Per-thread on
-/// purpose: lazy-SMP workers keep divergent histories.
-///
-/// `corr_hist` holds one evaluation-correction entry per side and pawn-hash
-/// slot: a depth-weighted moving average of the gap between search scores
-/// and raw static evaluations, added (via `CORR_HIST_GRAIN`) to the
-/// evaluation used for pruning. Per-thread like the other histories.
-///
 /// Static configuration lives in `static_data: Arc<StaticState>`, shared
 /// cheaply across threads. `State::clone()` calls `Arc::clone` for static_data
 /// and deep-copies only the 30 dynamic fields.
@@ -553,11 +542,13 @@ pub struct State {
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
     pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] (piece*B+end)^2    */
-    pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub capt_hist: Vec<i16>,                                                    /* [piece*B*8 + end*8 + victim_bkt]   */
     pub corr_hist: Vec<i16>,                                                    /* per-side pawn-hash eval correction */
+
+    pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
     pub static_eval: Vec<i32>,                                                  /* static eval per ply; -INF in check */
+
     pub excluded: Vec<PseudoMove>,                                              /* singular-search exclusion per ply  */
 }
 
@@ -607,11 +598,13 @@ impl Clone for State {
             pv_length: self.pv_length.clone(),
 
             cont_hist: self.cont_hist.clone(),
-            search_hist: self.search_hist.clone(),
             capt_hist: self.capt_hist.clone(),
             corr_hist: self.corr_hist.clone(),
+
+            search_hist: self.search_hist.clone(),
             killer_hist: self.killer_hist.clone(),
             static_eval: self.static_eval.clone(),
+
             excluded: self.excluded.clone(),
         }
     }
@@ -840,7 +833,7 @@ impl State {
             ],
             corr_hist: vec![0i16; 2 * CORR_HIST_SIZE],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
-            static_eval: vec![i32::MIN; MAX_DEPTH],
+            static_eval: vec![-INF; MAX_DEPTH],
             excluded: vec![null_pseudo_move(); MAX_DEPTH],
         }
     }

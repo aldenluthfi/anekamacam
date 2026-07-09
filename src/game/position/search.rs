@@ -632,7 +632,7 @@ fn quiescence_search(
             &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
             i, &pv_move,
             &mut bufs.see_move_buf, &mut bufs.see_scratch_buf,
-            usize::MAX, usize::MAX
+            [usize::MAX; 2]
         );
 
         let mv = &bufs.move_buf[ply][i];
@@ -1054,7 +1054,7 @@ pub fn alpha_beta(
                           SINGULAR EXTENSION AND MULTICUT
     \*-----------------------------------------------------------------------*/
 
-    let mut singular_ext = 0i32;
+    let mut negative_extension = false;
 
     if depth >= MIN_SINGULAR_DEPTH
     && state.search_ply > 0
@@ -1082,7 +1082,7 @@ pub fn alpha_beta(
             if singular_beta >= beta {
                 return singular_beta;
             } else if tt_entry.7 >= beta {
-                singular_ext = -1;
+                negative_extension = true;
             }
         }
     }
@@ -1103,27 +1103,26 @@ pub fn alpha_beta(
     let cont_dim = state.statics.pieces.len() * board_size;
     let history_len = state.history.len();
 
-    let cont1_base = if history_len >= 1
-        && state.history[history_len - 1].move_ply.0 != u128::MAX
-    {
-        let previous = &state.history[history_len - 1].move_ply;
-        let key = piece!(previous) as usize * board_size
-            + end!(previous) as usize;
-        key * cont_dim
-    } else {
-        usize::MAX
-    };
+    let mut cont_bases = [usize::MAX; 2];
 
-    let cont2_base = if history_len >= 2
-        && state.history[history_len - 2].move_ply.0 != u128::MAX
-    {
-        let previous = &state.history[history_len - 2].move_ply;
+    for plies_back in 0..2 {
+        if history_len <= plies_back {
+            break;
+        }
+
+        let previous =
+            &state.history[history_len - 1 - plies_back].move_ply;
+
+        if previous.0 == u128::MAX {
+            continue;
+        }
+
         let key = piece!(previous) as usize * board_size
             + end!(previous) as usize;
-        cont_dim * cont_dim + key * cont_dim
-    } else {
-        usize::MAX
-    };
+
+        cont_bases[plies_back] =
+            plies_back * cont_dim * cont_dim + key * cont_dim;
+    }
 
     generate_all_moves_and_drops(
         state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
@@ -1142,7 +1141,7 @@ pub fn alpha_beta(
             &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
             i, &pv_move,
             &mut bufs.see_move_buf, &mut bufs.see_scratch_buf,
-            cont1_base, cont2_base
+            cont_bases
         );
 
         let mv = &bufs.move_buf[ply][i];
@@ -1151,7 +1150,7 @@ pub fn alpha_beta(
             continue;
         }
 
-        let is_tt_move = singular_ext != 0
+        let is_tt_move = negative_extension
             && pv_move.as_ref().is_some_and(|pm| m_matches!(mv, pm));
 
         let piece = piece!(mv) as usize;
@@ -1246,14 +1245,13 @@ pub fn alpha_beta(
                 is_capture, is_promotion, is_drop
             );
 
-            let cont1 = if cont1_base != usize::MAX {
-                state.cont_hist[cont1_base + cont_key] as i32
-            } else { 0 };
-            let cont2 = if cont2_base != usize::MAX {
-                state.cont_hist[cont2_base + cont_key] as i32
-            } else { 0 };
+            let cont_sum: i32 = cont_bases.iter()
+                .filter(|&&base| base != usize::MAX)
+                .map(|&base| state.cont_hist[base + cont_key] as i32)
+                .sum();
+
             let hist_score =
-                state.search_hist[hist_idx] as i32 + cont1 + cont2;
+                state.search_hist[hist_idx] as i32 + cont_sum;
             let hist_cutoff = 3 * MAX_HIST_VALUE as i32 / 4;
 
             if hist_score > hist_cutoff {
@@ -1317,7 +1315,7 @@ pub fn alpha_beta(
 
         else {
             let ext_depth = if is_tt_move {
-                (depth as i32 - 1 + singular_ext) as usize
+                depth - 2
             } else {
                 depth - 1
             };
@@ -1352,15 +1350,13 @@ pub fn alpha_beta(
                         apply_history_gravity!(
                             state.search_hist[hist_idx], bonus
                         );
-                        if cont1_base != usize::MAX {
-                            apply_history_gravity!(
-                                state.cont_hist[cont1_base + cont_key], bonus
-                            );
-                        }
-                        if cont2_base != usize::MAX {
-                            apply_history_gravity!(
-                                state.cont_hist[cont2_base + cont_key], bonus
-                            );
+
+                        for &base in &cont_bases {
+                            if base != usize::MAX {
+                                apply_history_gravity!(
+                                    state.cont_hist[base + cont_key], bonus
+                                );
+                            }
                         }
                     } else if is_capture {
                         apply_history_gravity!(
@@ -1390,15 +1386,13 @@ pub fn alpha_beta(
                     apply_history_gravity!(
                         state.search_hist[hist_idx], bonus
                     );
-                    if cont1_base != usize::MAX {
-                        apply_history_gravity!(
-                            state.cont_hist[cont1_base + cont_key], bonus
-                        );
-                    }
-                    if cont2_base != usize::MAX {
-                        apply_history_gravity!(
-                            state.cont_hist[cont2_base + cont_key], bonus
-                        );
+
+                    for &base in &cont_bases {
+                        if base != usize::MAX {
+                            apply_history_gravity!(
+                                state.cont_hist[base + cont_key], bonus
+                            );
+                        }
                     }
                 } else if is_capture {
                     apply_history_gravity!(
@@ -1433,15 +1427,13 @@ pub fn alpha_beta(
             apply_history_gravity!(
                 state.search_hist[hist_idx], -bonus
             );
-            if cont1_base != usize::MAX {
-                apply_history_gravity!(
-                    state.cont_hist[cont1_base + cont_key], -bonus
-                );
-            }
-            if cont2_base != usize::MAX {
-                apply_history_gravity!(
-                    state.cont_hist[cont2_base + cont_key], -bonus
-                );
+
+            for &base in &cont_bases {
+                if base != usize::MAX {
+                    apply_history_gravity!(
+                        state.cont_hist[base + cont_key], -bonus
+                    );
+                }
             }
         }
 
