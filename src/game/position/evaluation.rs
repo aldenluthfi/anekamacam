@@ -155,6 +155,92 @@ macro_rules! castling_bonus {
     }};
 }
 
+/// king_danger!
+///
+/// Quadratic king-attack pressure against one side's royals: sums the
+/// precomputed `zone_attack` fixed-point units of every enemy non-royal,
+/// non-pawn piece against each royal square, then squares the total and
+/// scales it by the derived `king_danger_scale`. One well-placed attacker
+/// barely registers while several compound superlinearly, matching the
+/// standard king-attack shape. The caller subtracts this from the side
+/// under attack, opening and middlegame only.
+///
+/// Params:
+/// - state -> position whose zone pressure is measured
+/// - color -> side whose royals are under attack
+///
+/// Return:
+/// i32 -> danger penalty against the side, in centipawns
+///
+#[macro_export]
+macro_rules! king_danger {
+    ($state:expr, $color:expr) => {{
+        let board_size = $state.statics.board_size;
+        let piece_count = $state.statics.pieces.len();
+        let half = piece_count / 2;
+        let enemy_start = (1 - $color as usize) * half;
+        let mut units = 0i32;
+
+        for &royal_square in $state.royal_list[$color as usize].iter() {
+            let zone = &$state.statics.zone_attack[
+                royal_square as usize * piece_count * board_size
+                ..(royal_square as usize + 1) * piece_count * board_size
+            ];
+
+            for piece_index in enemy_start..enemy_start + half {
+                let piece = &$state.statics.pieces[piece_index];
+
+                if p_is_royal!(piece) || p_is_pawn!(piece) {
+                    continue;
+                }
+
+                for &square in piece_squares!($state, piece_index) {
+                    units += zone[
+                        piece_index * board_size + square as usize
+                    ] as i32;
+                }
+            }
+        }
+
+        units * units * $state.statics.king_danger_scale / 65536
+    }};
+}
+
+/// open_shield!
+///
+/// Open-file penalty for one side's royals: charges the derived
+/// `open_shield_penalty` for every royal with no friendly pawn anywhere
+/// on its `royal_front_mask` (own and adjacent files, strictly ahead in
+/// the side's forward direction). The caller subtracts this from the
+/// side, opening and middlegame only.
+///
+/// Params:
+/// - state -> position whose royal cover is checked
+/// - color -> side whose open files are penalized
+///
+/// Return:
+/// i32 -> open-shield penalty against the side, in centipawns
+///
+#[macro_export]
+macro_rules! open_shield {
+    ($state:expr, $color:expr) => {{
+        let board_size = $state.statics.board_size;
+        let mut penalty = 0;
+
+        for &royal_square in $state.royal_list[$color as usize].iter() {
+            let mut front = $state.statics.royal_front_mask
+                [$color as usize * board_size + royal_square as usize];
+            and!(front, $state.pawn_board[$color as usize]);
+
+            if is_empty!(front) {
+                penalty += $state.statics.open_shield_penalty;
+            }
+        }
+
+        penalty
+    }};
+}
+
 /// pawn_structure!
 ///
 /// Variant-agnostic pawn-structure term, returned as an `(opening, endgame)`
@@ -510,10 +596,16 @@ macro_rules! evaluate_position {
             }
         }
 
-        let king_safety = $state.statics.king_shelter_bonus
+        let king_safety = if $state.game_phase == ENDGAME {
+            0
+        } else {
+            $state.statics.king_shelter_bonus
             * (king_shelter!($state, WHITE) - king_shelter!($state, BLACK))
             + pawn_shield!($state, WHITE) - pawn_shield!($state, BLACK)
-            + castling_bonus!($state, WHITE) - castling_bonus!($state, BLACK);
+            + castling_bonus!($state, WHITE) - castling_bonus!($state, BLACK)
+            + king_danger!($state, BLACK) - king_danger!($state, WHITE)
+            + open_shield!($state, BLACK) - open_shield!($state, WHITE)
+        };
 
         let (pawn_hit, mut pawn_opening, mut pawn_endgame) =
             probe_pt_entry!($state, $ptable);

@@ -418,6 +418,8 @@ pub struct StaticState {
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
     pub adjacency_mask: Vec<Board>,                                             /* square to adjacent-square bitboard */
     pub royal_shield_mask: Vec<Board>,                                          /* color * board size + royal square  */
+    pub royal_front_mask: Vec<Board>,                                           /* color * board size + royal square  */
+    pub zone_attack: Vec<u8>,                                                   /* (royal * P + piece) * B + from     */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: Vec<PieceIndex>,                                    /* piece index to demotion piece idx  */
@@ -451,6 +453,8 @@ pub struct StaticState {
     pub king_shelter_bonus: i32,                                                /* per-adjacent-piece shelter bonus   */
     pub castled_bonus: i32,                                                     /* bonus once a side has castled      */
     pub castling_rights_bonus: i32,                                             /* bonus for still holding rights     */
+    pub king_danger_scale: i32,                                                 /* quadratic zone-attack danger scale */
+    pub open_shield_penalty: i32,                                               /* no-pawn-ahead-of-royal penalty     */
     pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
     pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
     pub pair_bonus: Vec<i32>,                                                   /* pair bonus per piece index         */
@@ -694,6 +698,8 @@ impl State {
             relevant_castling: array::from_fn(|_| Vec::new()),
             adjacency_mask: vec![board!(files, ranks); board_size],
             royal_shield_mask: vec![board!(files, ranks); 2 * board_size],
+            royal_front_mask: vec![board!(files, ranks); 2 * board_size],
+            zone_attack: Vec::new(),
 
             piece_swap_map: vec![NO_PIECE; piece_count],
             piece_demotion_map: vec![NO_PIECE; piece_count],
@@ -747,6 +753,8 @@ impl State {
             king_shelter_bonus: 0,
             castled_bonus: 0,
             castling_rights_bonus: 0,
+            king_danger_scale: 0,
+            open_shield_penalty: 0,
             imbalance_major: 0,
             imbalance_minor: 0,
             pair_bonus: Vec::new(),

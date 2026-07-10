@@ -291,42 +291,66 @@ fn derive_piece_mobility(
     let relevant_moves = &state.statics.relevant_moves
         [piece_index as usize * board_size + square];
 
-    let mut mobility_sum = 0.0;
+    relevant_moves
+        .iter()
+        .filter_map(|vector| derive_vector_chance(vector, occupancy))
+        .map(|(chance, ..)| chance)
+        .sum()
+}
 
-    for multi_leg_vector in relevant_moves {
-        let Some((final_leg, intermediate_legs)) =
-            multi_leg_vector.split_last()
-        else {
+/// derive_vector_chance
+///
+/// Walks one multi-leg vector under the random-fill occupancy model and
+/// returns the odds every per-leg stop requirement is met together with
+/// the vector's total displacement. Pass legs (may move) need an empty
+/// stop and weigh `1 - occupancy`, screen legs (capture-only
+/// intermediates, the hopper jump) need an occupied stop and weigh
+/// `occupancy`, and a hopping vector whose final leg is capture-only
+/// also needs a target there, weighing `occupancy` once more.
+/// Zero-displacement marker legs contribute no weight.
+///
+/// Params:
+/// - multi_leg_vector: &[Leg] -> the vector's legs, final leg last
+/// - occupancy       : f64    -> assumed board fill ratio
+///
+/// Return:
+/// Option<(f64, i32, i32)>    -> (chance, file delta, rank delta), or
+///                               None for an empty vector
+///
+fn derive_vector_chance(
+    multi_leg_vector: &[Leg], occupancy: f64
+) -> Option<(f64, i32, i32)> {
+    let (final_leg, intermediate_legs) = multi_leg_vector.split_last()?;
+
+    let mut chance = 1.0;
+    let mut hopper = false;
+    let mut file_delta = x!(final_leg) as i32;
+    let mut rank_delta = y!(final_leg) as i32;
+
+    for leg in intermediate_legs {
+        file_delta += x!(leg) as i32;
+        rank_delta += y!(leg) as i32;
+
+        if x!(leg) == 0 && y!(leg) == 0 {
             continue;
+        }
+
+        let needs_piece = (c!(leg) || d!(leg)) && !m!(leg);
+
+        chance *= if needs_piece {
+            occupancy
+        } else {
+            1.0 - occupancy
         };
 
-        let mut chance = 1.0;
-        let mut hopper = false;
-
-        for leg in intermediate_legs {
-            if x!(leg) == 0 && y!(leg) == 0 {
-                continue;
-            }
-
-            let needs_piece = (c!(leg) || d!(leg)) && !m!(leg);
-
-            chance *= if needs_piece {
-                occupancy
-            } else {
-                1.0 - occupancy
-            };
-
-            hopper |= needs_piece;
-        }
-
-        if hopper && c!(final_leg) && !m!(final_leg) {
-            chance *= occupancy;
-        }
-
-        mobility_sum += chance;
+        hopper |= needs_piece;
     }
 
-    mobility_sum
+    if hopper && c!(final_leg) && !m!(final_leg) {
+        chance *= occupancy;
+    }
+
+    Some((chance, file_delta, rank_delta))
 }
 
 /// derive_distance_from_center
@@ -1509,6 +1533,12 @@ pub fn derive_search_parameters(state: &mut State) {
     let castling_rights_bonus = (avg / 24).max(8);
     state.static_mut().castling_rights_bonus = castling_rights_bonus;
 
+    let king_danger_scale = 2 * avg;
+    state.static_mut().king_danger_scale = king_danger_scale;
+
+    let open_shield_penalty = (avg / 10).max(12);
+    state.static_mut().open_shield_penalty = open_shield_penalty;
+
     let imbalance_major = (avg / 24).max(3) as i32;
     let imbalance_minor = (avg / 48).max(1) as i32;
     state.static_mut().imbalance_major = imbalance_major;
@@ -1534,8 +1564,139 @@ pub fn derive_search_parameters(state: &mut State) {
 
     derive_pawn_parameters(state);
     derive_royal_shield_mask(state);
+    derive_royal_front_mask(state);
+    derive_zone_attack(state);
 
     log_3!("Dynamic search parameters derived successfully.");
+}
+
+/// derive_royal_front_mask
+///
+/// Builds the per-color open-file masks consumed by `open_shield!`: for
+/// every square a royal piece could stand on, the mask holds every square
+/// strictly ahead of it in that color's forward direction on its own file
+/// and both adjacent files. A side whose royal has no friendly pawn
+/// anywhere on this mask stands behind fully open files.
+///
+/// ```text
+/// ┌────┬────┬────┬────┐
+/// │    │ ff │ ff │ ff │
+/// ├────┼────┼────┼────┤
+/// │    │ ff │ ff │ ff │
+/// ├────┼────┼────┼────┤
+/// │    │    │ KK │    │
+/// └────┴────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state: &mut State -> variant whose front masks are filled
+///
+fn derive_royal_front_mask(state: &mut State) {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+
+    let empty = board!(state.statics.files, state.statics.ranks);
+    let mut masks = vec![empty; 2 * board_size];
+
+    for color in [WHITE, BLACK] {
+        let forward = if color == WHITE { 1 } else { -1 };
+
+        for square in 0..board_size as i32 {
+            let file = square % files;
+            let entry = color as usize * board_size + square as usize;
+
+            let mut front_rank = square / files + forward;
+
+            while front_rank >= 0 && front_rank < ranks {
+                for front_file in file - 1..=file + 1 {
+                    if front_file < 0 || front_file >= files {
+                        continue;
+                    }
+
+                    set!(
+                        masks[entry],
+                        (front_rank * files + front_file) as u32
+                    );
+                }
+
+                front_rank += forward;
+            }
+        }
+    }
+
+    state.static_mut().royal_front_mask = masks;
+}
+
+/// derive_zone_attack
+///
+/// Precomputes the king-zone attack table consumed by `king_danger!`:
+/// for every (piece, origin square, royal square) triple, the expected
+/// number of that piece's vectors landing on the royal square or one of
+/// its neighbours, under the opening-occupancy per-leg chance model of
+/// `derive_vector_chance`. Entries are stored as saturating fixed-point
+/// `round(chance_sum * 16)` bytes, so a plain slider attacking the zone
+/// through open lines scores 16 per landing square and screened or long
+/// vectors score proportionally less. The table is laid out royal-square
+/// major — `(royal * pieces + piece) * board_size + from` — so one royal's
+/// whole slice stays cache-resident during eval. Eval sums these bytes per
+/// attacker and squares the total, giving the standard superlinear
+/// king-attack shape without walking any vector at search time.
+///
+/// Params:
+/// - state: &mut State -> variant whose zone-attack table is filled
+///
+fn derive_zone_attack(state: &mut State) {
+    let board_size = state.statics.board_size;
+    let piece_count = state.statics.pieces.len();
+
+    let mut table = vec![0u8; piece_count * board_size * board_size];
+
+    for piece_index in 0..piece_count {
+        for from in 0..board_size {
+            let mut zone_chance = vec![0.0f64; board_size];
+
+            let vectors = &state.statics.relevant_moves
+                [piece_index * board_size + from];
+
+            for vector in vectors {
+                let Some((chance, file_delta, rank_delta)) =
+                    derive_vector_chance(vector, OPENING_OCCUPANCY)
+                else {
+                    continue;
+                };
+
+                let file = from as i32
+                    % state.statics.files as i32 + file_delta;
+                let rank = from as i32
+                    / state.statics.files as i32 + rank_delta;
+
+                if file < 0 || file >= state.statics.files as i32
+                || rank < 0 || rank >= state.statics.ranks as i32 {
+                    continue;
+                }
+
+                let dest =
+                    (rank * state.statics.files as i32 + file) as usize;
+
+                zone_chance[dest] += chance;
+                for neighbour in
+                    set_indices!(state.statics.adjacency_mask[dest])
+                {
+                    zone_chance[neighbour] += chance;
+                }
+            }
+
+            for (royal_square, chance) in zone_chance.iter().enumerate() {
+                table[
+                    (royal_square * piece_count + piece_index)
+                        * board_size + from
+                ] = (chance * 16.0).round().min(255.0) as u8;
+            }
+        }
+    }
+
+    state.static_mut().zone_attack = table;
 }
 
 /// derive_royal_shield_mask
