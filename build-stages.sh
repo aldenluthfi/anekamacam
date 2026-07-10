@@ -21,6 +21,10 @@ STAGES=(
   "stageK 9c7177d -"
   "stageL dce81bd -"
   "stageM 8ec807f -"
+  "stageN f20be48 -"
+  "stageO 960cd9b -"
+  "stageP da65b17 -"
+  "stageQ 2372ed7 -"
 )
 
 ROOT=$(git rev-parse --show-toplevel)

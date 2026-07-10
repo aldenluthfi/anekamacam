@@ -21,6 +21,50 @@ Continues phase 1's stage letters at **M**. Target: ~1850 FIDE /
   xiangqi +19% (10-run confirmed) — semantic cost of scoring shuffle
   lines, accepted. SPRT fide 100ms elo0=0 elo1=5: 302W 193L 325D,
   LLR 2.967, **pass**. `bin/stageM` saved.
+- Stage N committed `f20be48`: per-leg hopper mobility walk
+  (`derive_piece_mobility` rewritten; xiangqi cannon 1675/2551 →
+  776/918, fide + shogi params byte-identical). Acceptance ratios landed
+  outside the plan's targets (C=R floor structural at f=0; C/H 2.34)
+  — shipped at implicit f=1.0 with no ladder const, round robin
+  arbitrates. Also: fixed the embedded-param lookup (path prefix made
+  every lookup miss), flipped precedence to embedded-first so stage
+  binaries are self-contained, and gave SPRT children per-binary temp
+  sandboxes with canonicalized paths. Suite bench at parity
+  (fide/czh), shogi/xiangqi deltas within known noise.
+- Stage O committed `960cd9b`: royal opening PSTs → back-rank gradient
+  (fide king +24 rank 0 → −24 rank 7, monotone); `pawn_board`
+  maintained through `hash_in_or_out_piece!` on make and
+  `pawn_board_in_or_out!` reversals on undo, checked by a new
+  release-mode `verify_game_state` assert (UCI `d`); pawn-shield term
+  over derived `royal_shield_mask` (`(avg/16).max(8)` per pawn, cap 3);
+  shelter literal 10 → derived `(avg/32).max(5)`; castling incentive
+  (`has_castled` flag, castled `(avg/12).max(15)` / rights-held
+  `(avg/24).max(8)`, gated on the castling rule flag). Verified by
+  self-play + `d` walks (fide/shogi/xiangqi, every search tree's
+  make/undo balanced) and a 120-FEN sweep per variant (crash set
+  identical to stageN). fide self-play castles 6/4 games. Bench at
+  parity. Params regenerated (fide/shogi/xiangqi; king opening PST is
+  the only block changed); other variant params deleted pending next
+  console load. `bin/stageO` saved.
+- Stage P committed `da65b17`: precomputed `zone_attack` table
+  (royal-square-major layout, `derive_vector_chance` shared with
+  piece-value derivation, params byte-identical), quadratic
+  `king_danger` (`2*avg`, enemy non-royal non-pawn), `open_shield`
+  penalty (`(avg/10).max(12)` via `royal_front_mask`); king-safety
+  cluster now skipped in the endgame phase. First cut cost 13–16% nps
+  on fide/shogi; enemy-half piece scan + cache transpose + endgame gate
+  restored fide/xiangqi/czh parity; shogi +10% nodes / ~10% nps within
+  its noise band — round robin arbitrates. `bin/stageP` saved.
+- Stage Q committed `2372ed7`: stability-scaled soft deadline
+  (`TM_STABILITY_PCT = [160,130,110,100,85,75]`, score-drop ×130%,
+  capped at hard deadline; fixed-depth paths untouched, bench parity)
+  plus `sprt` clock mode (`tc=base+inc` → wtime/btime/winc/binc,
+  referee-banked clocks, flag = loss). Clock smoke test: startpos
+  reached depth 13 in 146 ms on a 3000+100 bank. `bin/stageQ` saved.
+- **Round robin pending (user)**: stageL/M/N/O/P/Q. No per-stage SPRT
+  this round by user direction; results decide reverts. janggi and
+  mini-xiangqi (and the other non-UCI variants) still need one console
+  load each to rederive+export `latest.param` with the new walk/PSTs.
 
 ## Context
 
