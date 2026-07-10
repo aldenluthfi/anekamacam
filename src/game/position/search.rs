@@ -550,7 +550,7 @@ fn quiescence_search(
     let mut alpha = alpha;
 
     if state.game_over {
-        return 0;
+        return draw_score!(state);
     }
 
     info.nodes += 1;
@@ -848,15 +848,28 @@ pub fn alpha_beta(
 ) -> i32 {
 
     if state.game_over {
-        return 0;
+        return draw_score!(state);
+    }
+
+    let ply = state.search_ply as usize;
+    state.pv_length[ply] = ply;
+
+    /*-----------------------------------------------------------------------*\
+                                  REPETITION SCORING
+    \*-----------------------------------------------------------------------*/
+
+    if repetition_limit!(state)
+    && ply > 0
+    && state.position_hash_map
+        .get(&state.position_hash)
+        .copied()
+        .unwrap_or(0) >= 2 {
+        return draw_score!(state);
     }
 
     /*-----------------------------------------------------------------------*\
                                  MATE DISTANCE PRUNING
     \*-----------------------------------------------------------------------*/
-
-    let ply = state.search_ply as usize;
-    state.pv_length[ply] = ply;
 
     alpha = alpha.max(-INF + ply as i32);
     beta  = beta.min(INF - ply as i32 - 1);
@@ -1468,7 +1481,7 @@ pub fn alpha_beta(
             };
         }
 
-        return 0;
+        return draw_score!(state);
     }
 
     /*-----------------------------------------------------------------------*\

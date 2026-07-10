@@ -1456,6 +1456,9 @@ pub fn derive_search_parameters(state: &mut State) {
     let tempo_bonus = (avg / 20).max(5) as i32;
     state.static_mut().tempo_bonus = tempo_bonus;
 
+    let draw_bias = (avg / 8).max(10);
+    state.static_mut().draw_bias = draw_bias;
+
     let imbalance_major = (avg / 24).max(3) as i32;
     let imbalance_minor = (avg / 48).max(1) as i32;
     state.static_mut().imbalance_major = imbalance_major;

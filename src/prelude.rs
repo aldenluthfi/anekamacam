@@ -245,6 +245,8 @@ pub const SINGULAR_TT_DEPTH_SLACK: usize = 3;
 
 pub const DANGEROUS_PUSH_THRESHOLD: i32 = 92;
 
+pub const DRAW_BIAS_DIV: i32 = 16;
+
 pub const PAWN_MIN_START_COUNT: usize = 5;
 
 pub const OPENING_OCCUPANCY: f64 = 0.36;

@@ -17,6 +17,41 @@
 //! # Date
 //! 19/04/2026
 
+/// draw_score!
+///
+/// Draw value from the side to move's perspective, replacing the plain zero
+/// so a winning side avoids draws and a losing side seeks them. The material
+/// delta (endgame material in the endgame, opening material otherwise) is
+/// scaled down by `DRAW_BIAS_DIV` and clamped to the derived `draw_bias`, then
+/// negated: being ahead makes a draw look bad. Symmetric and variant-agnostic;
+/// zero when material is level.
+///
+/// Params:
+/// - state -> position whose draw value is computed
+///
+/// Return:
+/// i32 -> draw score from the side to move's perspective
+///
+#[macro_export]
+macro_rules! draw_score {
+    ($state:expr) => {{
+        let stm = $state.playing as usize;
+        let opp = ($state.playing ^ 1) as usize;
+
+        let delta = if $state.game_phase == ENDGAME {
+            $state.endgame_material[stm] as i32
+                - $state.endgame_material[opp] as i32
+        } else {
+            $state.opening_material[stm] as i32
+                - $state.opening_material[opp] as i32
+        };
+
+        let max = $state.statics.draw_bias;
+
+        -(delta / DRAW_BIAS_DIV).clamp(-max, max)
+    }};
+}
+
 /// king_shelter!
 ///
 /// Per-side count of friendly pieces on squares adjacent to each royal piece,

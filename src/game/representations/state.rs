@@ -445,6 +445,7 @@ pub struct StaticState {
     pub capt_hist_div: i32,                                                     /* capture-history victim bucket div  */
     pub singular_margin: i32,                                                   /* singular beta margin per depth     */
     pub tempo_bonus: i32,                                                       /* tempo advantage bonus              */
+    pub draw_bias: i32,                                                 /* draw contempt clamp                */
     pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
     pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
     pub pair_bonus: Vec<i32>,                                                   /* pair bonus per piece index         */
@@ -731,6 +732,7 @@ impl State {
             capt_hist_div: 1,
             singular_margin: 1,
             tempo_bonus: 0,
+            draw_bias: 0,
             imbalance_major: 0,
             imbalance_minor: 0,
             pair_bonus: Vec::new(),
