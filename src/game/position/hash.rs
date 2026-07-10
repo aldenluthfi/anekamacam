@@ -109,6 +109,11 @@ pub fn hash_pawns(state: &State) -> u128 {
 /// - castling rights transitions (`hash_update_castling!`)
 /// - en passant transitions (`hash_update_en_passant!`)
 /// - in-hand count transitions (`hash_update_in_hand!`)
+///
+/// `hash_in_or_out_piece!` also keeps the per-color `pawn_board` bitboards
+/// in sync: every pawn placement or removal flows through this macro during
+/// move execution, so toggling the square bit alongside the pawn hash keeps
+/// the board exact under the same pairing that keeps the hash exact.
 #[macro_export]
 macro_rules! hash_in_or_out_piece {
     ($state:expr, $piece_index:expr, $square_index:expr) => {
@@ -118,6 +123,38 @@ macro_rules! hash_in_or_out_piece {
         $state.pawn_hash ^=
             p_is_pawn!($state.statics.pieces[$piece_index]) as u128 *
             &PIECE_HASHES[$piece_index][$square_index as usize];
+
+        if p_is_pawn!($state.statics.pieces[$piece_index]) {
+            let pawn_color =
+                p_color!($state.statics.pieces[$piece_index]) as usize;
+
+            toggle!($state.pawn_board[pawn_color], $square_index as u32);
+        }
+    };
+}
+
+/// pawn_board_in_or_out!
+///
+/// Toggles one square of the per-color `pawn_board` for a pawn-flagged
+/// piece, and is a no-op for every other piece. `undo_move!` restores the
+/// hashes wholesale from the snapshot instead of re-toggling them, so it
+/// calls this at each board-placement reversal to give `pawn_board` the
+/// exact inverse of the toggles `hash_in_or_out_piece!` applied on make.
+///
+/// Params:
+/// - state        -> position whose pawn board is updated
+/// - piece_index  -> piece being placed or removed
+/// - square_index -> square whose pawn bit is toggled
+///
+#[macro_export]
+macro_rules! pawn_board_in_or_out {
+    ($state:expr, $piece_index:expr, $square_index:expr) => {
+        if p_is_pawn!($state.statics.pieces[$piece_index]) {
+            let pawn_color =
+                p_color!($state.statics.pieces[$piece_index]) as usize;
+
+            toggle!($state.pawn_board[pawn_color], $square_index as u32);
+        }
     };
 }
 

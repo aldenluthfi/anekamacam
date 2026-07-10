@@ -503,8 +503,11 @@ fn derive_promotion_bonus(
 /// └────┴────┴────┴────┘
 /// ```
 ///
-/// Royal pieces get the sign flipped in the opening (the king should
-/// hide, not centralize) but keep it in the endgame.
+/// Royal pieces get a back-rank gradient in the opening instead of the
+/// mobility-and-centrality score (the king should hide behind its own
+/// lines, not march): every square scores the negated rank index in the
+/// white frame, so rank 0 is best and each step forward is monotonically
+/// worse. The endgame royal table keeps the centralizing score.
 ///
 /// Params:
 /// - index         : PieceIndex -> piece the table is built for
@@ -519,6 +522,7 @@ fn derive_pst(
     index: PieceIndex, state: &State, is_endgame: bool, promoted_value: f64
 ) -> Vec<i32> {
     let board_size = state.statics.board_size;
+    let files = state.statics.files as usize;
     let piece = &state.statics.pieces[index as usize];
 
     let piece_value = if is_endgame {
@@ -526,12 +530,14 @@ fn derive_pst(
     } else {
         p_ovalue!(piece) as f64
     };
-    let royal_sign =
-        if !is_endgame && p_is_royal!(piece) { -1.0 } else { 1.0 };
 
-    let scores: Vec<f64> = (0..board_size).into_par_iter().map(|square| {
-        derive_square_score(state, index, square, is_endgame)
-    }).collect();
+    let scores: Vec<f64> = if !is_endgame && p_is_royal!(piece) {
+        (0..board_size).map(|square| -((square / files) as f64)).collect()
+    } else {
+        (0..board_size).into_par_iter().map(|square| {
+            derive_square_score(state, index, square, is_endgame)
+        }).collect()
+    };
 
     let mean = scores.iter().sum::<f64>() / board_size as f64;
     let max_deviation = scores
@@ -543,7 +549,7 @@ fn derive_pst(
 
     (0..board_size).map(|square| {
         let positional =
-            royal_sign * (scores[square] - mean) / max_deviation * amplitude;
+            (scores[square] - mean) / max_deviation * amplitude;
         let promotion = derive_promotion_bonus(
             state, index, square, is_endgame, piece_value, promoted_value
         );
@@ -1403,10 +1409,10 @@ pub fn derive_pawn_parameters(state: &mut State) {
 ///
 /// Scales every search margin to the variant's material: futility,
 /// reverse-futility, razoring, SEE-pruning, and delta margins, the null-
-/// move zugzwang guard, tempo bonus, imbalance weights, and pair bonuses
-/// are all expressed as fractions of the average derived piece value, so
-/// pruning aggressiveness stays comparable across variants whose value
-/// scales differ wildly.
+/// move zugzwang guard, tempo bonus, imbalance weights, king-safety
+/// bonuses, and pair bonuses are all expressed as fractions of the average
+/// derived piece value, so pruning aggressiveness stays comparable across
+/// variants whose value scales differ wildly.
 ///
 /// Params:
 /// - state: &mut State -> variant whose search margins are filled
@@ -1491,6 +1497,18 @@ pub fn derive_search_parameters(state: &mut State) {
     let draw_bias = (avg / 8).max(10);
     state.static_mut().draw_bias = draw_bias;
 
+    let pawn_shield_bonus = (avg / 16).max(8);
+    state.static_mut().pawn_shield_bonus = pawn_shield_bonus;
+
+    let king_shelter_bonus = (avg / 32).max(5);
+    state.static_mut().king_shelter_bonus = king_shelter_bonus;
+
+    let castled_bonus = (avg / 12).max(15);
+    state.static_mut().castled_bonus = castled_bonus;
+
+    let castling_rights_bonus = (avg / 24).max(8);
+    state.static_mut().castling_rights_bonus = castling_rights_bonus;
+
     let imbalance_major = (avg / 24).max(3) as i32;
     let imbalance_minor = (avg / 48).max(1) as i32;
     state.static_mut().imbalance_major = imbalance_major;
@@ -1515,6 +1533,64 @@ pub fn derive_search_parameters(state: &mut State) {
     state.static_mut().pair_bonus = pair_bonus;
 
     derive_pawn_parameters(state);
+    derive_royal_shield_mask(state);
 
     log_3!("Dynamic search parameters derived successfully.");
+}
+
+/// derive_royal_shield_mask
+///
+/// Builds the per-color pawn-shield masks consumed by `pawn_shield!`: for
+/// every square a royal piece could stand on, the mask holds the up-to-three
+/// squares one rank ahead in that color's forward direction (own file and
+/// both adjacent files). White advances toward higher ranks and black toward
+/// lower ranks, matching the pawn-advancement convention, so squares on the
+/// last rank ahead of a side get an empty mask.
+///
+/// ```text
+/// ┌────┬────┬────┬────┐
+/// │    │ ss │ ss │ ss │
+/// ├────┼────┼────┼────┤
+/// │    │    │ KK │    │
+/// └────┴────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state: &mut State -> variant whose shield masks are filled
+///
+fn derive_royal_shield_mask(state: &mut State) {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+
+    let empty = board!(state.statics.files, state.statics.ranks);
+    let mut masks = vec![empty; 2 * board_size];
+
+    for color in [WHITE, BLACK] {
+        let forward = if color == WHITE { 1 } else { -1 };
+
+        for square in 0..board_size as i32 {
+            let file = square % files;
+            let shield_rank = square / files + forward;
+
+            if shield_rank < 0 || shield_rank >= ranks {
+                continue;
+            }
+
+            let entry = color as usize * board_size + square as usize;
+
+            for shield_file in file - 1..=file + 1 {
+                if shield_file < 0 || shield_file >= files {
+                    continue;
+                }
+
+                set!(
+                    masks[entry],
+                    (shield_rank * files + shield_file) as u32
+                );
+            }
+        }
+    }
+
+    state.static_mut().royal_shield_mask = masks;
 }

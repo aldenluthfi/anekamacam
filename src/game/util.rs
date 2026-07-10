@@ -97,8 +97,8 @@ pub fn roll_latest(dir: &str, extension: &str) {
 ///
 /// Recomputes opening/endgame eval caches and current game phase.
 /// Used after position-level changes (load, tune import, make/undo move) to
-/// keep material, PST bonus, and phase classification in sync with `piece_list`
-/// and PST tables.
+/// keep material, PST bonus, pawn occupancy, and phase classification in
+/// sync with `piece_list` and PST tables.
 ///
 /// Params:
 /// - state: &mut State -> position whose eval caches are rebuilt
@@ -108,6 +108,7 @@ pub fn refresh_eval_state(state: &mut State) {
     state.endgame_material = [0; 2];
     state.opening_pst_bonus = [0; 2];
     state.endgame_pst_bonus = [0; 2];
+    state.pawn_board = [board!(state.statics.files, state.statics.ranks); 2];
 
     for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
         let color = p_color!(piece) as usize;
@@ -120,6 +121,18 @@ pub fn refresh_eval_state(state: &mut State) {
                 state.statics.pst_opening[piece_idx][square as usize];
             state.endgame_pst_bonus[color] +=
                 state.statics.pst_endgame[piece_idx][square as usize];
+        }
+    }
+
+    for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
+        if !p_is_pawn!(piece) {
+            continue;
+        }
+
+        let color = p_color!(piece) as usize;
+
+        for &square in piece_squares!(state, piece_idx) {
+            set!(state.pawn_board[color], square as u32);
         }
     }
 
@@ -194,6 +207,9 @@ pub fn verify_game_state(state: &State) {
     let mut temp_black_board = board!(
         state.statics.files, state.statics.ranks
     );
+    let mut temp_pawn_board = [board!(
+        state.statics.files, state.statics.ranks
+    ); 2];
     let mut temp_piece_list: Vec<Vec<Square>> =
         vec![Vec::new(); state.statics.pieces.len()];
 
@@ -205,6 +221,13 @@ pub fn verify_game_state(state: &State) {
                 set!(temp_white_board, square as u32);
             } else {
                 set!(temp_black_board, square as u32);
+            }
+
+            if p_is_pawn!(piece) {
+                set!(
+                    temp_pawn_board[p_color!(piece) as usize],
+                    square as u32
+                );
             }
 
             temp_piece_list[p_index!(piece) as usize].push(square as Square);
@@ -245,6 +268,17 @@ pub fn verify_game_state(state: &State) {
         format_board(&state.pieces_board[BLACK as usize], None),
         format_game_state(state)
     );
+
+    for color in [WHITE as usize, BLACK as usize] {
+        assert_eq!(
+            &temp_pawn_board[color],
+            &state.pawn_board[color],
+            "Computed pawn board doesn't match state pawn board\n{}\n{}\n{}",
+            format_board(&temp_pawn_board[color], None),
+            format_board(&state.pawn_board[color], None),
+            format_game_state(state)
+        );
+    }
 
     let mut temp_pieces_board = board!(
         state.statics.files, state.statics.ranks

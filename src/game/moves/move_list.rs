@@ -2567,6 +2567,8 @@ macro_rules! make_move {
                     WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE
                 ][piece_color as usize];
 
+                $state.has_castled[piece_color as usize] = true;
+
                 hash_update_castling!(
                     $state, last_castling_state,
                     $state.castling_state
@@ -2719,6 +2721,13 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
+            pawn_board_in_or_out!(
+                $state,
+                if is_promotion { promoted_piece } else { piece_index },
+                end_square
+            );
+            pawn_board_in_or_out!($state, piece_index, start_square);
+
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);
@@ -2812,6 +2821,13 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
+            pawn_board_in_or_out!(
+                $state,
+                if is_promotion { promoted_piece } else { piece_index },
+                end_square
+            );
+            pawn_board_in_or_out!($state, piece_index, start_square);
+
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);
@@ -2899,6 +2915,12 @@ macro_rules! undo_move {
                     $state.pieces_board[captured_color as usize],
                     captured_square
                 );
+            }
+
+            pawn_board_in_or_out!($state, captured_piece, captured_square);
+
+            if is_unload {
+                pawn_board_in_or_out!($state, captured_piece, unload_square);
             }
 
             if captured_unmoved {
@@ -3003,6 +3025,13 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
+            pawn_board_in_or_out!(
+                $state,
+                if is_promotion { promoted_piece } else { piece_index },
+                end_square
+            );
+            pawn_board_in_or_out!($state, piece_index, start_square);
+
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);
@@ -3097,6 +3126,16 @@ macro_rules! undo_move {
                     set!(
                         $state.pieces_board[captured_color as usize],
                         captured_square
+                    );
+                }
+
+                pawn_board_in_or_out!(
+                    $state, captured_piece, captured_square
+                );
+
+                if is_unload {
+                    pawn_board_in_or_out!(
+                        $state, captured_piece, unload_square
                     );
                 }
 
@@ -3204,6 +3243,8 @@ macro_rules! undo_move {
 
             clear!($state.pieces_board[piece_color as usize], drop_square);
 
+            pawn_board_in_or_out!($state, piece_index, drop_square);
+
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != drop_square);
@@ -3241,8 +3282,13 @@ macro_rules! undo_move {
                 $state.statics.pieces[captured_piece]
             );
 
+            $state.has_castled[piece_color as usize] = false;
+
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
+
+            pawn_board_in_or_out!($state, piece_index, end_square);
+            pawn_board_in_or_out!($state, piece_index, start_square);
 
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
@@ -3278,6 +3324,9 @@ macro_rules! undo_move {
                 $state.pieces_board[captured_color as usize],
                 captured_square
             );
+
+            pawn_board_in_or_out!($state, captured_piece, unload_square);
+            pawn_board_in_or_out!($state, captured_piece, captured_square);
 
             set!($state.virgin_board, captured_square);
             clear!($state.virgin_board, unload_square);

@@ -417,6 +417,7 @@ pub struct StaticState {
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
     pub adjacency_mask: Vec<Board>,                                             /* square to adjacent-square bitboard */
+    pub royal_shield_mask: Vec<Board>,                                          /* color * board size + royal square  */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: Vec<PieceIndex>,                                    /* piece index to demotion piece idx  */
@@ -445,7 +446,11 @@ pub struct StaticState {
     pub capt_hist_div: i32,                                                     /* capture-history victim bucket div  */
     pub singular_margin: i32,                                                   /* singular beta margin per depth     */
     pub tempo_bonus: i32,                                                       /* tempo advantage bonus              */
-    pub draw_bias: i32,                                                 /* draw contempt clamp                */
+    pub draw_bias: i32,                                                         /* draw contempt clamp                */
+    pub pawn_shield_bonus: i32,                                                 /* per-shield-pawn royal cover bonus  */
+    pub king_shelter_bonus: i32,                                                /* per-adjacent-piece shelter bonus   */
+    pub castled_bonus: i32,                                                     /* bonus once a side has castled      */
+    pub castling_rights_bonus: i32,                                             /* bonus for still holding rights     */
     pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
     pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
     pub pair_bonus: Vec<i32>,                                                   /* pair bonus per piece index         */
@@ -506,9 +511,11 @@ pub struct State {
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
 
     pub pieces_board: [Board; 2],                                               /* per-color occupancy bitboards      */
+    pub pawn_board: [Board; 2],                                                 /* per-color pawn-only bitboards      */
     pub virgin_board: Board,                                                    /* squares whose piece is unmoved     */
 
     pub castling_state: u8,                                                     /* 4 bits for representing KQkq       */
+    pub has_castled: [bool; 2],                                                 /* per-color castled-this-game flag   */
     pub halfmove_clock: u8,                                                     /* plies since pawn move/capture      */
     pub en_passant_square: EnPassantSquare,                                     /* active en passant square           */
 
@@ -566,9 +573,11 @@ impl Clone for State {
             main_board: self.main_board.clone(),
 
             pieces_board: self.pieces_board,
+            pawn_board: self.pawn_board,
             virgin_board: self.virgin_board,
 
             castling_state: self.castling_state,
+            has_castled: self.has_castled,
             halfmove_clock: self.halfmove_clock,
             en_passant_square: self.en_passant_square,
 
@@ -684,6 +693,7 @@ impl State {
             ],
             relevant_castling: array::from_fn(|_| Vec::new()),
             adjacency_mask: vec![board!(files, ranks); board_size],
+            royal_shield_mask: vec![board!(files, ranks); 2 * board_size],
 
             piece_swap_map: vec![NO_PIECE; piece_count],
             piece_demotion_map: vec![NO_PIECE; piece_count],
@@ -733,6 +743,10 @@ impl State {
             singular_margin: 1,
             tempo_bonus: 0,
             draw_bias: 0,
+            pawn_shield_bonus: 0,
+            king_shelter_bonus: 0,
+            castled_bonus: 0,
+            castling_rights_bonus: 0,
             imbalance_major: 0,
             imbalance_minor: 0,
             pair_bonus: Vec::new(),
@@ -796,9 +810,11 @@ impl State {
             main_board: vec![NO_PIECE; board_size],
 
             pieces_board: [board!(files, ranks); 2],
+            pawn_board: [board!(files, ranks); 2],
             virgin_board: board!(files, ranks),
 
             castling_state: 0,
+            has_castled: [false; 2],
             halfmove_clock: 0,
             en_passant_square: NO_EN_PASSANT,
 
@@ -875,11 +891,15 @@ impl State {
         self.pieces_board = [board!(
             self.statics.files, self.statics.ranks
         ); 2];
+        self.pawn_board = [board!(
+            self.statics.files, self.statics.ranks
+        ); 2];
         self.virgin_board = board!(
             self.statics.files, self.statics.ranks
         );
 
         self.castling_state = 0;
+        self.has_castled = [false; 2];
         self.halfmove_clock = 0;
         self.en_passant_square = NO_EN_PASSANT;
 

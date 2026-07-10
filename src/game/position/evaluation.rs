@@ -8,8 +8,8 @@
 //! pass. Material and PST totals are maintained incrementally by make/undo
 //! and only folded together here, keeping the hot leaf evaluation to a
 //! handful of adds: material and PST deltas, imbalance and pair terms,
-//! king shelter, and the mask-based pawn-structure terms, phase-blended
-//! during the middlegame.
+//! king shelter, pawn shield and castling incentives, and the mask-based
+//! pawn-structure terms, phase-blended during the middlegame.
 //!
 //! # Author
 //! Alden Luthfi
@@ -88,6 +88,71 @@ macro_rules! king_shelter {
         shelter
         })
     }
+}
+
+/// pawn_shield!
+///
+/// Per-side pawn-shield bonus: counts friendly pawns standing on the derived
+/// `royal_shield_mask` (the up-to-three squares one rank ahead of each royal
+/// piece in the side's forward direction), capped at three per royal, and
+/// scales the count by the derived `pawn_shield_bonus`. The caller folds this
+/// into the opening and middlegame evaluation only.
+///
+/// Params:
+/// - state -> position whose royal pawn cover is counted
+/// - color -> side whose shield is measured
+///
+/// Return:
+/// i32 -> pawn-shield bonus for the side, in centipawns
+///
+#[macro_export]
+macro_rules! pawn_shield {
+    ($state:expr, $color:expr) => {{
+        let board_size = $state.statics.board_size;
+        let mut shield = 0;
+
+        for &royal_square in $state.royal_list[$color as usize].iter() {
+            let mut cover = $state.statics.royal_shield_mask
+                [$color as usize * board_size + royal_square as usize];
+            and!(cover, $state.pawn_board[$color as usize]);
+            shield += (count_bits!(cover) as i32).min(3);
+        }
+
+        shield * $state.statics.pawn_shield_bonus
+    }};
+}
+
+/// castling_bonus!
+///
+/// Per-side castling incentive, active only in variants whose rules enable
+/// castling: a side that has castled keeps the full derived `castled_bonus`;
+/// one that still holds at least one castling right earns the smaller
+/// `castling_rights_bonus`; one that burned its rights without castling gets
+/// nothing. The caller folds this into the opening and middlegame evaluation
+/// only.
+///
+/// Params:
+/// - state -> position whose castling status is scored
+/// - color -> side whose incentive is measured
+///
+/// Return:
+/// i32 -> castling incentive for the side, in centipawns
+///
+#[macro_export]
+macro_rules! castling_bonus {
+    ($state:expr, $color:expr) => {{
+        if !castling!($state) {
+            0
+        } else if $state.has_castled[$color as usize] {
+            $state.statics.castled_bonus
+        } else if $state.castling_state & [
+            WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE
+        ][$color as usize] != 0 {
+            $state.statics.castling_rights_bonus
+        } else {
+            0
+        }
+    }};
 }
 
 /// pawn_structure!
@@ -445,8 +510,10 @@ macro_rules! evaluate_position {
             }
         }
 
-        let king_safety = 10
-            * (king_shelter!($state, WHITE) - king_shelter!($state, BLACK));
+        let king_safety = $state.statics.king_shelter_bonus
+            * (king_shelter!($state, WHITE) - king_shelter!($state, BLACK))
+            + pawn_shield!($state, WHITE) - pawn_shield!($state, BLACK)
+            + castling_bonus!($state, WHITE) - castling_bonus!($state, BLACK);
 
         let (pawn_hit, mut pawn_opening, mut pawn_endgame) =
             probe_pt_entry!($state, $ptable);

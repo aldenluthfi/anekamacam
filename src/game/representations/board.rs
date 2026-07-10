@@ -58,6 +58,7 @@ pub type Board = (u8, u8, U4096);
 /// Mutation:
 /// - set!   : sets the bit at an index
 /// - clear! : clears the bit at an index
+/// - toggle!: flips the bit at an index
 /// - or!    : unions another board's bits into this one
 /// - and!   : intersects this board with another board's bits
 /// - xor!   : toggles this board's bits by another board's
@@ -101,6 +102,13 @@ macro_rules! set {
 macro_rules! clear {
     ($board:expr, $index:expr) => {
         $board.2.set_bit($index, false);
+    };
+}
+
+#[macro_export]
+macro_rules! toggle {
+    ($board:expr, $index:expr) => {
+        $board.2.set_bit($index, !$board.2.bit($index));
     };
 }
 
