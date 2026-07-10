@@ -42,6 +42,33 @@ fn engine_sandbox(binary: &str) -> PathBuf {
     env::temp_dir().join("anekamacam-sprt").join(name)
 }
 
+/// SPRTTimeControl
+///
+/// Per-move time budget for SPRT games: `MoveTime` searches every move
+/// at a fixed wall-clock budget, while `Clock` gives each side a base
+/// bank plus a per-move increment driven through `wtime`/`btime`/
+/// `winc`/`binc`, so the engines' own time management decides how to
+/// spend it. The referee tracks the clocks and scores an overstep as a
+/// loss for the side that flagged.
+#[derive(Clone, Copy)]
+pub enum SPRTTimeControl {
+    MoveTime(u128),                                                             /* fixed milliseconds per move        */
+    Clock { base_ms: u128, inc_ms: u128 },                                      /* bank + increment, in milliseconds  */
+}
+
+impl Display for SPRTTimeControl {
+    fn fmt(&self, formatter: &mut FmtFormatter<'_>) -> FmtResult {
+        match self {
+            SPRTTimeControl::MoveTime(movetime_ms) => {
+                write!(formatter, "movetime {}ms", movetime_ms)
+            }
+            SPRTTimeControl::Clock { base_ms, inc_ms } => {
+                write!(formatter, "clock {}+{}ms", base_ms, inc_ms)
+            }
+        }
+    }
+}
+
 /// SPRTChild
 ///
 /// A running engine subprocess spoken to over UCI.
@@ -66,7 +93,7 @@ struct SPRTChild {
 /// - read_line    -> read one reply line, None at end of stream
 /// - wait_for     -> consume replies until one starts with a token
 /// - new_game     -> reset the engine between games
-/// - bestmove     -> set the position, search at movetime, return the move
+/// - bestmove     -> set the position, run one `go`, return the move
 /// - drain_errors -> collect the child's stderr for crash diagnostics
 ///
 /// `spawn` configures the engine for the variant with a small hash and a
@@ -87,9 +114,9 @@ struct SPRTChild {
 /// - token: &str -> leading token that ends the wait
 ///
 /// Params (bestmove):
-/// - startpos   : &str      -> the variant start-position FEN
-/// - moves      : &[String] -> moves played so far, in UCI notation
-/// - movetime_ms: u128      -> fixed wall-clock budget for the search
+/// - startpos  : &str      -> the variant start-position FEN
+/// - moves     : &[String] -> moves played so far, in UCI notation
+/// - go_command: &str      -> the `go` line carrying the time control
 ///
 impl SPRTChild {
     fn spawn(binary: &str, variant: &str) -> SPRTChild {
@@ -201,7 +228,7 @@ impl SPRTChild {
         &mut self,
         startpos: &str,
         moves: &[String],
-        movetime_ms: u128,
+        go_command: &str,
     ) -> Option<String> {
         let mut command = format!("position fen {}", startpos);
         if !moves.is_empty() {
@@ -213,7 +240,7 @@ impl SPRTChild {
         }
 
         self.send(&command);
-        self.send(&format!("go movetime {}", movetime_ms));
+        self.send(go_command);
 
         loop {
             let line = self.read_line()?;
@@ -294,13 +321,14 @@ struct GameManager {
 /// - opening : &[Move] -> shared opening line to replay
 ///
 /// Params (play):
-/// - dict       : Option<&Translator> -> UCI translator for move I/O
-/// - startpos   : &str                -> the variant start-position FEN
-/// - movetime_ms: u128                -> fixed wall-clock budget per move
-/// - sender     : &Sender<TuiEvent>   -> channel for live board updates
+/// - dict        : Option<&Translator> -> UCI translator for move I/O
+/// - startpos    : &str                -> the variant start-position FEN
+/// - time_control: SPRTTimeControl     -> per-move budget or clock bank
+/// - sender      : &Sender<TuiEvent>   -> channel for live board updates
 ///
 /// Return (play):
-/// f64 -> the White-perspective game score
+/// f64 -> the White-perspective game score; under a clock control a side
+///        that oversteps its remaining bank loses on time
 ///
 impl GameManager {
     fn new(
@@ -336,10 +364,15 @@ impl GameManager {
         &mut self,
         dict: Option<&Translator>,
         startpos: &str,
-        movetime_ms: u128,
+        time_control: SPRTTimeControl,
         sender: &Sender<TuiEvent>,
     ) -> f64 {
         let state = &mut self.state;
+
+        let mut clocks = match time_control {
+            SPRTTimeControl::Clock { base_ms, .. } => [base_ms, base_ms],
+            SPRTTimeControl::MoveTime(..) => [0, 0],
+        };
 
         loop {
             if SYSTEM_INTERRUPT.load(Ordering::Relaxed)
@@ -366,12 +399,38 @@ impl GameManager {
                 &mut self.black
             };
 
+            let go_command = match time_control {
+                SPRTTimeControl::MoveTime(movetime_ms) => {
+                    format!("go movetime {}", movetime_ms)
+                }
+                SPRTTimeControl::Clock { inc_ms, .. } => {
+                    format!(
+                        "go wtime {} btime {} winc {} binc {}",
+                        clocks[WHITE as usize], clocks[BLACK as usize],
+                        inc_ms, inc_ms,
+                    )
+                }
+            };
+
+            let move_start = Instant::now();
+
             let move_string = match engine.bestmove(
-                startpos, &moves, movetime_ms
+                startpos, &moves, &go_command
             ) {
                 Some(text) if text != "(none)" => text,
                 _ => return side as f64,
             };
+
+            if let SPRTTimeControl::Clock { inc_ms, .. } = time_control {
+                let spent = move_start.elapsed().as_millis();
+                let clock = &mut clocks[side as usize];
+
+                if spent > *clock {
+                    return side as f64;
+                }
+
+                *clock = *clock - spent + inc_ms;
+            }
 
             let parsed = match parse_move(&move_string, state, dict) {
                 Some(mv) => mv,
@@ -470,21 +529,21 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 /// so completed tests leave a durable record.
 ///
 /// Params:
-/// - variant          : &str -> variant name, selects the output directory
-/// - binary_a         : &str -> path of the first engine
-/// - binary_b         : &str -> path of the second engine
-/// - movetime_ms      : u128 -> per-move time control used
-/// - h0               : f64  -> null-hypothesis Elo bound
-/// - h1               : f64  -> alternative-hypothesis Elo bound
-/// - wins/draws/losses: u32  -> final tally from engine A's perspective
-/// - llr              : f64  -> the final log-likelihood ratio
-/// - verdict          : &str -> the test outcome text
+/// - variant          : &str            -> variant, selects the output dir
+/// - binary_a         : &str            -> path of the first engine
+/// - binary_b         : &str            -> path of the second engine
+/// - time_control     : SPRTTimeControl -> per-move time control used
+/// - h0               : f64             -> null-hypothesis Elo bound
+/// - h1               : f64             -> alternative-hypothesis Elo bound
+/// - wins/draws/losses: u32             -> tally from engine A's view
+/// - llr              : f64             -> the final log-likelihood ratio
+/// - verdict          : &str            -> the test outcome text
 ///
 fn write_result_file(
     variant: &str,
     binary_a: &str,
     binary_b: &str,
-    movetime_ms: u128,
+    time_control: SPRTTimeControl,
     h0: f64,
     h1: f64,
     wins: u32,
@@ -502,10 +561,10 @@ fn write_result_file(
     let path = format!("{}/{}.log", dir, stamp);
 
     let body = format!(
-        "engine A: {}\nengine B: {}\nvariant: {}\nmovetime_ms: {}\n\
+        "engine A: {}\nengine B: {}\nvariant: {}\ntime control: {}\n\
          elo bounds: [{}, {}]  alpha: {}  beta: {}\n\
          result (A): {}W {}L {}D\nLLR: {:.3}\nverdict: {}\n",
-        binary_a, binary_b, variant, movetime_ms,
+        binary_a, binary_b, variant, time_control,
         h0, h1, SPRT_ALPHA, SPRT_BETA,
         wins, losses, draws, llr, verdict,
     );
@@ -531,21 +590,21 @@ fn write_result_file(
 /// internal notation otherwise — so both ends always agree.
 ///
 /// Params:
-/// - template   : &State -> loaded variant, refereed and named
-/// - variant    : &str   -> variant name, for UCI setup and output
-/// - binary_a   : &str   -> path to the first engine binary
-/// - binary_b   : &str   -> path to the second engine binary
-/// - movetime_ms: u128   -> fixed wall-clock budget per move
-/// - max_games  : usize  -> maximum games before declaring inconclusive
-/// - h0         : f64    -> null-hypothesis Elo bound
-/// - h1         : f64    -> alternative-hypothesis Elo bound
+/// - template    : &State          -> loaded variant, refereed and named
+/// - variant     : &str            -> variant name, for UCI setup and output
+/// - binary_a    : &str            -> path to the first engine binary
+/// - binary_b    : &str            -> path to the second engine binary
+/// - time_control: SPRTTimeControl -> fixed movetime or clock per move
+/// - max_games   : usize           -> maximum games before inconclusive
+/// - h0          : f64             -> null-hypothesis Elo bound
+/// - h1          : f64             -> alternative-hypothesis Elo bound
 ///
 pub fn run_sprt(
     template: &State,
     variant: &str,
     binary_a: &str,
     binary_b: &str,
-    movetime_ms: u128,
+    time_control: SPRTTimeControl,
     max_games: usize,
     h0: f64,
     h1: f64,
@@ -586,12 +645,12 @@ pub fn run_sprt(
         let opening = opening_line(template, OPENING_RANDOM_PLIES);
 
         manager.reset_to(template, &opening);
-        let first = manager.play(dict, &startpos, movetime_ms, sender);
+        let first = manager.play(dict, &startpos, time_control, sender);
 
         manager.swap_colors();
 
         manager.reset_to(template, &opening);
-        let second = manager.play(dict, &startpos, movetime_ms, sender);
+        let second = manager.play(dict, &startpos, time_control, sender);
 
         manager.swap_colors();
 
@@ -638,7 +697,7 @@ pub fn run_sprt(
     );
 
     write_result_file(
-        variant, binary_a, binary_b, movetime_ms, h0, h1,
+        variant, binary_a, binary_b, time_control, h0, h1,
         wins, draws, losses, llr, verdict,
     );
 }

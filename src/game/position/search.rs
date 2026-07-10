@@ -310,6 +310,10 @@ pub fn iterative_deepening(
     let mut best_score: i32 = 0;
     let start_time = ENGINE_START.elapsed().as_nanos();
 
+    let mut stability: usize = 0;
+    let mut previous_best = null_move();
+    let mut previous_score: i32 = 0;
+
     clear_search(state, ttable, qtable, info, bufs);
 
     let max_par = thread::available_parallelism()
@@ -366,6 +370,18 @@ pub fn iterative_deepening(
 
         best_score = score;
         best_move = state.pv_line[0].clone();
+
+        if depth > 1 && best_move == previous_best {
+            stability += 1;
+        } else {
+            stability = 0;
+        }
+
+        let score_dropped = depth > 1
+            && best_score < previous_score - state.statics.draw_bias;
+
+        previous_best = best_move.clone();
+        previous_score = best_score;
 
         let depth_elapsed = ENGINE_START
             .elapsed()
@@ -464,9 +480,23 @@ pub fn iterative_deepening(
             stdout().flush().ok();
         }
 
-        if info.soft_deadline != 0
-        && ENGINE_START.elapsed().as_nanos() >= info.soft_deadline {
-            break;
+        if info.soft_deadline != 0 {
+            let budget = info.soft_deadline.saturating_sub(start_time);
+
+            let mut scaled = budget
+                * TM_STABILITY_PCT[stability.min(TM_STABILITY_PCT.len() - 1)]
+                / 100;
+
+            if score_dropped {
+                scaled = scaled * TM_SCORE_DROP_PCT / 100;
+            }
+
+            let effective =
+                (start_time + scaled).min(info.hard_deadline);
+
+            if ENGINE_START.elapsed().as_nanos() >= effective {
+                break;
+            }
         }
     }
 

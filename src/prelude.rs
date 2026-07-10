@@ -117,7 +117,7 @@ pub use crate::io::protocols::{
 pub use crate::debug::console::debug_console;
 pub use crate::debug::console::{BoardState, TuiEvent};
 pub use crate::debug::datagen::run_datagen;
-pub use crate::debug::sprt::run_sprt;
+pub use crate::debug::sprt::{run_sprt, SPRTTimeControl};
 pub use crate::debug::tuning::run_tuning;
 
 /*----------------------------------------------------------------------------*\
@@ -173,7 +173,7 @@ pub use regex::Regex;
 pub use std::{
     array, cmp, env,
     collections::VecDeque,
-    fmt::{Debug, Formatter as FmtFormatter, Result as FmtResult},
+    fmt::{Debug, Display, Formatter as FmtFormatter, Result as FmtResult},
     fs::{self, OpenOptions},
     hash::Hash,
     io::{stdin, stdout, BufRead, BufReader, Read, Result as IoResult, Write},
@@ -388,6 +388,8 @@ pub const TIME_OVERHEAD_MS: u128 = 50;
 pub const MAX_OVERHEAD_MS: u128 = 1000;
 pub const MIN_TIME_BUDGET_NS: u128 = 1_000_000;                                 /* timed searches never budget below  */
 pub const HARD_BUDGET_FACTOR: u128 = 4;                                         /* hard limit = soft budget x factor  */
+pub const TM_STABILITY_PCT: [u128; 6] = [160, 130, 110, 100, 85, 75];           /* soft budget scale by best stability*/
+pub const TM_SCORE_DROP_PCT: u128 = 130;                                        /* budget scale on a falling score    */
 
 pub const OPT_VARIANT: &str = "UCI_Variant";
 pub const OPT_THREADS: &str = "Threads";

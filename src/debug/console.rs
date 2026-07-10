@@ -984,7 +984,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             "Texel-tune the evaluation from the dataset by gradient descent"
         ),
         (
-            "sprt <binA> <binB> <movetime> [games] [h0] [h1]",
+            "sprt <binA> <binB> <movetime | tc=base+inc> [games] [h0] [h1]",
             "Run an SPRT match between two engine binaries to test a patch"
         ),
     ];
@@ -2961,14 +2961,30 @@ fn execute_command(
 
             if parts.len() < 4 {
                 log_2!(
-                    "Usage: sprt <binA> <binB> <movetime (ms)> \
+                    "Usage: sprt <binA> <binB> <movetime (ms) | tc=base+inc> \
                     [games = 2000] [h0 = 0.0] [h1 = 5.0]"
                 );
                 return;
             }
 
-            let Ok(movetime) = parts[3].parse::<u128>() else {
-                log_2!("Invalid movetime: {}", parts[3]);
+            let time_control = if let Some(spec) =
+                parts[3].strip_prefix("tc=")
+            {
+                let (base, inc) = spec.split_once('+').unwrap_or((spec, "0"));
+
+                match (base.parse::<u128>(), inc.parse::<u128>()) {
+                    (Ok(base_ms), Ok(inc_ms)) => {
+                        SPRTTimeControl::Clock { base_ms, inc_ms }
+                    }
+                    _ => {
+                        log_2!("Invalid time control: {}", parts[3]);
+                        return;
+                    }
+                }
+            } else if let Ok(movetime) = parts[3].parse::<u128>() {
+                SPRTTimeControl::MoveTime(movetime)
+            } else {
+                log_2!("Invalid time control: {}", parts[3]);
                 return;
             };
 
@@ -2989,7 +3005,7 @@ fn execute_command(
 
             run_sprt(
                 state, variant_name, parts[1], parts[2],
-                movetime, max_games, h0, h1, &sender,
+                time_control, max_games, h0, h1, &sender,
             );
         }
         _ if trimmed.starts_with("perft") => {
