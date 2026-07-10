@@ -1,4 +1,9 @@
-# Time-to-Depth Optimization — Master Plan (v2)
+# Master Plan — Phase 1: Time-to-Depth (Stages A–L)
+
+> Part 2 of 3 — [01-search-roadmap.md](01-search-roadmap.md)
+> (design background, v1 stage mapping) ·
+> [03-strength.md](03-strength.md) (phase 2, stages M–U, continues the
+> stage letters).
 
 ## Status (2026-07-07)
 
@@ -332,5 +337,7 @@ status entry for measurements.
 ```
 
 Combined regression checkpoints after C (done) and after F: full 4-variant
-matrix + fsf startpos comparison. Also still pending: rewrite the stale
-status section of `plans/time-to-depth-optimization.md`.
+matrix + fsf startpos comparison. The v1 roadmap's stale status was resolved
+in the plans reorg: renamed to `01-search-roadmap.md` and annotated
+with a v1→v2 stage mapping. Phase 2 (strength, stages M–U) continues in
+`03-strength.md`.

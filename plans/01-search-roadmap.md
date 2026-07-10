@@ -1,4 +1,36 @@
-# Time-to-Depth Optimization Plan — AnekaMacam
+# Search Optimization Roadmap (v1) — Design Notes (historical)
+
+> Part 1 of 3 — [02-time-to-depth.md](02-time-to-depth.md) (execution,
+> stages A–L) · [03-strength.md](03-strength.md) (phase 2, stages M–U).
+>
+> Original design document for the whole search-optimization effort: shrink
+> the tree (time-to-depth), then add strength-focused search features
+> (singular extensions, correction history, ProbCut). The master plan
+> executed it under stage letters; the numbered stages and inline "Status:"
+> lines below are frozen pre-letter history (Stage 0 `b91caf8` and Stage 1
+> `fe0aa5b` landed before the letter scheme began). Results and verdicts
+> live in `02-time-to-depth.md`.
+
+## Stage mapping (v1 roadmap → executed stages, approximate)
+
+| v1 stage | executed as | outcome |
+|----------|-------------|---------|
+| 0 bench harness | pre-letters (`b91caf8`) | done |
+| 1 pruning-gate fixes + IID | pre-letters (`fe0aa5b`) | done |
+| 2 history malus scheme | rejected | all-node malus kept (fail-high-only regressed +19-47%) |
+| 3 continuation history | Stage B | done |
+| 4 LMR retune | Stage C | done |
+| 5 NMP strengthening | Stage E | done |
+| 6 TT eval caching | Stage F | Part A done; Part B clusters deferred |
+| 7 capture history | Stage G | done |
+| 8 singular + multicut | Stage H | done; +1 extension dropped |
+| 9.1 correction history | Stages I + L | done; shogi regression fixed in L |
+| 9.2 aspiration tweak | Stage D | done |
+| 9.3 ProbCut | phase 2, Stage S | pending experiment |
+
+Also: qsearch quiet checks, dropped below for lacking a cheap
+variant-agnostic gives-check predicate, resurface as phase 2 Stage T
+(make/undo-filtered).
 
 ## Context
 
