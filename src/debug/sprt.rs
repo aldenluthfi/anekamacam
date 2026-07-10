@@ -18,6 +18,30 @@
 
 use crate::*;
 
+/// engine_sandbox
+///
+/// Maps an engine binary to its private working directory under the
+/// system temp dir. Children run there so each binary resolves
+/// `res/param` against its own exports or embedded defaults instead of
+/// sharing the repository's parameter files, keeping param-changing
+/// patches measurable.
+///
+/// Params:
+/// - binary: &str -> path to the engine executable
+///
+/// Return:
+/// PathBuf        -> per-binary sandbox directory path
+///
+fn engine_sandbox(binary: &str) -> PathBuf {
+    let executable = fs::canonicalize(binary).unwrap_or_else(|e| {
+        panic!("Failed to resolve engine {}: {}", binary, e)
+    });
+
+    let name = executable.to_string_lossy().replace(['/', '\\'], "_");
+
+    env::temp_dir().join("anekamacam-sprt").join(name)
+}
+
 /// SPRTChild
 ///
 /// A running engine subprocess spoken to over UCI.
@@ -46,9 +70,11 @@ struct SPRTChild {
 /// - drain_errors -> collect the child's stderr for crash diagnostics
 ///
 /// `spawn` configures the engine for the variant with a small hash and a
-/// single thread for fair, reproducible games; `bestmove` returns `None`
-/// when the engine ends its stream (a crash), which the referee scores
-/// as a loss; handshake failures panic since they are setup errors.
+/// single thread for fair, reproducible games, and runs it inside its
+/// `engine_sandbox` so each binary sees only its own parameter files;
+/// `bestmove` returns `None` when the engine ends its stream (a crash),
+/// which the referee scores as a loss; handshake failures panic since
+/// they are setup errors.
 ///
 /// Params (spawn):
 /// - binary : &str -> path to the engine executable
@@ -67,8 +93,21 @@ struct SPRTChild {
 ///
 impl SPRTChild {
     fn spawn(binary: &str, variant: &str) -> SPRTChild {
-        let mut process = Command::new(binary)
+        let executable = fs::canonicalize(binary).unwrap_or_else(|e| {
+            panic!("Failed to resolve engine {}: {}", binary, e)
+        });
+
+        let sandbox = engine_sandbox(binary);
+
+        fs::create_dir_all(&sandbox).unwrap_or_else(|e| {
+            panic!(
+                "Failed to create sandbox {}: {}", sandbox.display(), e
+            )
+        });
+
+        let mut process = Command::new(executable)
             .arg("uci")
+            .current_dir(&sandbox)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -481,14 +520,15 @@ fn write_result_file(
 /// run_sprt
 ///
 /// Console entry point for the `sprt` command. Spawns both engine
-/// binaries on the loaded variant, plays paired random openings (each
-/// engine gets White once), folds every pair into the normalised
-/// pentanomial LLR, and stops as soon as the LLR crosses an acceptance
-/// bound or the game budget is spent. Progress is logged and the outcome
-/// is saved. Works for every variant: the referee formats moves with the
-/// same translator the subprocess uses — the UCI dictionary when one
-/// exists, the engine's internal notation otherwise — so both ends
-/// always agree.
+/// binaries on the loaded variant — each in a freshly cleared
+/// `engine_sandbox` so their parameter files stay isolated — plays
+/// paired random openings (each engine gets White once), folds every
+/// pair into the normalised pentanomial LLR, and stops as soon as the
+/// LLR crosses an acceptance bound or the game budget is spent.
+/// Progress is logged and the outcome is saved. Works for every
+/// variant: the referee formats moves with the same translator the
+/// subprocess uses — the UCI dictionary when one exists, the engine's
+/// internal notation otherwise — so both ends always agree.
 ///
 /// Params:
 /// - template   : &State -> loaded variant, refereed and named
@@ -521,6 +561,10 @@ pub fn run_sprt(
     let dict = translator.as_ref();
 
     let startpos = template.statics.startpos.clone();
+
+    let _ = fs::remove_dir_all(engine_sandbox(binary_a));
+    let _ = fs::remove_dir_all(engine_sandbox(binary_b));
+
     let mut manager = GameManager::new(template, binary_a, binary_b, variant);
 
     let mu_0 = expected_score(h0);

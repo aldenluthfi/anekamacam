@@ -615,8 +615,10 @@ fn embedded_config(path: &str) -> Option<&'static str> {
 /// After the pieces, the section-by-section walk fills in board zones
 /// (forbidden, promotion), castling layouts, special rules, and the move
 /// / drop / setup / stand-off expression sets, then runs `precompute`
-/// and parameter derivation (or imports a tuned parameter file when one
-/// exists), returning a fully playable state.
+/// and loads parameters — the embedded `latest.param` first so binaries
+/// are self-contained, a `res/param` file on disk next, and full
+/// derivation (plus export) when neither exists — returning a fully
+/// playable state.
 ///
 /// Params:
 /// - path: &str -> config filename inside the embedded configs
@@ -1780,17 +1782,17 @@ pub fn parse_config_file(path: &str) -> State {
         .unwrap_or_default();
     let param_path = format!("{}/{}/latest.param", PARAMS_DIR, variant);
 
-    if Path::new(&param_path).exists()
-    && let Ok(content) = fs::read_to_string(&param_path) {
-        log_3!("Loading parameters from disk");
-        parse_tuned_parameters(&mut result, &content);
-        derive_search_parameters(&mut result);
-    } else if let Some(content) = EMBEDDED_PARAMS
-        .get_file(&param_path)
+    if let Some(content) = EMBEDDED_PARAMS
+        .get_file(format!("{}/latest.param", variant))
         .and_then(|f| f.contents_utf8())
     {
         log_3!("Loading embedded default parameters");
         parse_tuned_parameters(&mut result, content);
+        derive_search_parameters(&mut result);
+    } else if Path::new(&param_path).exists()
+    && let Ok(content) = fs::read_to_string(&param_path) {
+        log_3!("Loading parameters from disk");
+        parse_tuned_parameters(&mut result, &content);
         derive_search_parameters(&mut result);
     } else {
         derive_parameters(&mut result);

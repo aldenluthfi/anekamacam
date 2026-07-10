@@ -180,7 +180,7 @@ pub use std::{
     iter::zip,
     mem::{self, size_of},
     panic::{catch_unwind, AssertUnwindSafe},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},

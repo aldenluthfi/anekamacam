@@ -30,7 +30,7 @@ type PieceRoles = (PieceIndex, bool, bool);
 ///
 /// 1. sort all the piece values, excluding the royal pieces
 /// 2. the bottom ceil(10%) are the non-big pieces
-/// 3. the top ceil(30%) are the major pieces
+/// 3. the top ceil(20%) are the major pieces
 /// 4. the rest are the minor pieces
 ///
 /// Params:
@@ -220,8 +220,8 @@ fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
 ///   assumes an empty board, rewarding long-range sliders.
 ///
 /// - occupied_mobility:
-///   weights each slide by `(1 - occupancy)^(legs - 1)`, the odds its path is
-///   clear, distinguishing sliders from leapers.
+///   weights each vector by the odds every per-leg stop requirement is met,
+///   distinguishing sliders and hoppers from leapers.
 ///
 /// The value blends the two mobilities, then scales by coverage and
 /// maneuverability. A larger `occupancy` (sparse board) yields endgame values,
@@ -265,9 +265,13 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
 /// derive_piece_mobility
 ///
 /// Expected move count from one square under a random-fill occupancy
-/// model: each vector contributes `(1 - occupancy)^(legs - 1)`, the
-/// probability that all its intermediate stops are empty. Leapers are
-/// unaffected by occupancy; long slides decay geometrically.
+/// model, walking each vector leg by leg to mirror generator semantics:
+/// pass legs (may move) need an empty stop and weigh `1 - occupancy`,
+/// screen legs (capture-only intermediates, the hopper jump) need an
+/// occupied stop and weigh `occupancy`. A hopping vector whose final leg
+/// is capture-only also needs a target there, weighing `occupancy` once
+/// more. Leapers are unaffected; long slides decay geometrically; hopper
+/// captures contribute nothing on an empty board.
 ///
 /// Params:
 /// - state      : &State     -> precomputed relevant-move tables
@@ -290,8 +294,36 @@ fn derive_piece_mobility(
     let mut mobility_sum = 0.0;
 
     for multi_leg_vector in relevant_moves {
-        let intermediate = multi_leg_vector.len() as i32 - 1;
-        mobility_sum += (1.0 - occupancy).powi(intermediate);
+        let Some((final_leg, intermediate_legs)) =
+            multi_leg_vector.split_last()
+        else {
+            continue;
+        };
+
+        let mut chance = 1.0;
+        let mut hopper = false;
+
+        for leg in intermediate_legs {
+            if x!(leg) == 0 && y!(leg) == 0 {
+                continue;
+            }
+
+            let needs_piece = (c!(leg) || d!(leg)) && !m!(leg);
+
+            chance *= if needs_piece {
+                occupancy
+            } else {
+                1.0 - occupancy
+            };
+
+            hopper |= needs_piece;
+        }
+
+        if hopper && c!(final_leg) && !m!(final_leg) {
+            chance *= occupancy;
+        }
+
+        mobility_sum += chance;
     }
 
     mobility_sum
