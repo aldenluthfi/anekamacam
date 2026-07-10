@@ -4,9 +4,23 @@
 > (v1 design notes) · [02-time-to-depth.md](02-time-to-depth.md) (phase 1,
 > stages A–L, complete).
 
-Status: 2026-07-10 — planned, not started. Continues phase 1's stage
-letters at **M**. Target: ~1850 FIDE / ~1600 shogi → ~2300, keeping fsf
-time-to-depth parity.
+Continues phase 1's stage letters at **M**. Target: ~1850 FIDE /
+~1600 shogi → ~2300, keeping fsf time-to-depth parity.
+
+## Status (2026-07-10)
+
+- Stage M committed `8ec807f`: repetition scoring + material-scaled draw
+  bias. `draw_score!` replaces all three `return 0` draw sites (qsearch
+  game_over, alpha_beta game_over, stalemate — third site found during
+  implementation, not in the original design). In-search two-fold return
+  gated on the conf `repetition limit` rule; twelve confs gained the rule
+  (limit 4 shogi/mini-shogi sennichite, limit 3 elsewhere), so
+  repetition-as-draw semantics stay in conf data. Derived
+  `draw_bias = (avg / 8).max(10)`, `DRAW_BIAS_DIV = 16`. Suite bench vs
+  pre-M HEAD (6-run MEDSUM nodes): fide +2.2%, czh +2.8%, shogi +12%,
+  xiangqi +19% (10-run confirmed) — semantic cost of scoring shuffle
+  lines, accepted. SPRT fide 100ms elo0=0 elo1=5: 302W 193L 325D,
+  LLR 2.967, **pass**. `bin/stageM` saved.
 
 ## Context
 
@@ -77,15 +91,15 @@ Fixes problem 2. Decision: material-scaled draw score (no fixed contempt).
 
 **Where:** `search.rs:552`, `:850` (both `game_over` returns) + new
 early-return in `alpha_beta`; new `draw_score!` macro in `evaluation.rs`;
-derived `draw_contempt_max` in `derive_search_parameters`
-(`parameters.rs:1382+`); const `DRAW_CONTEMPT_DIV = 16` in `prelude.rs`;
+derived `draw_bias` in `derive_search_parameters`
+(`parameters.rs:1382+`); const `DRAW_BIAS_DIV = 16` in `prelude.rs`;
 new `StaticState` field.
 
 **What:**
 1. `draw_score!(state)` — draw value from side-to-move perspective:
    `delta = material[stm] - material[opp]` (endgame_material in ENDGAME,
-   else opening); return `-(delta / DRAW_CONTEMPT_DIV).clamp(-max, max)` with
-   derived `draw_contempt_max = (avg / 8).max(10)` (FIDE ≈ 44cp). Winning
+   else opening); return `-(delta / DRAW_BIAS_DIV).clamp(-max, max)` with
+   derived `draw_bias = (avg / 8).max(10)` (FIDE ≈ 44cp). Winning
    side avoids draws, losing side seeks them, zero when level. Symmetric,
    variant-agnostic, no engine-identity contempt.
 2. Replace both `return 0` sites with `return draw_score!(state)`.
