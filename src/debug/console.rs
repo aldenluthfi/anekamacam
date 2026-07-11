@@ -984,7 +984,7 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             "Texel-tune the evaluation from the dataset by gradient descent"
         ),
         (
-            "sprt <binA> <binB> <movetime | tc=base+inc> [games] [h0] [h1]",
+            "sprt <binA> <binB> <movetime | base+inc> [games] [h0] [h1]",
             "Run an SPRT match between two engine binaries to test a patch"
         ),
     ];
@@ -2961,17 +2961,15 @@ fn execute_command(
 
             if parts.len() < 4 {
                 log_2!(
-                    "Usage: sprt <binA> <binB> <movetime (ms) | tc=base+inc> \
+                    "Usage: sprt <binA> <binB> <movetime (ms) | base+inc> \
                     [games = 2000] [h0 = 0.0] [h1 = 5.0]"
                 );
                 return;
             }
 
-            let time_control = if let Some(spec) =
-                parts[3].strip_prefix("tc=")
+            let time_control = if let Some((base, inc)) =
+                parts[3].split_once('+')
             {
-                let (base, inc) = spec.split_once('+').unwrap_or((spec, "0"));
-
                 match (base.parse::<u128>(), inc.parse::<u128>()) {
                     (Ok(base_ms), Ok(inc_ms)) => {
                         SPRTTimeControl::Clock { base_ms, inc_ms }

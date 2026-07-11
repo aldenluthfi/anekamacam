@@ -83,10 +83,6 @@ pub mod prelude;
 /// Dispatches on the first CLI argument to one of the engine's modes:
 /// - `uci`    : the UCI protocol loop (also the no-argument default)
 /// - `debug`  : the interactive ratatui debug console
-/// - `derive` : derive and export parameters for a variant
-/// - `bench`  : fixed-depth search benchmark on a variant's startpos
-/// - `perft`  : run a variant's embedded perft suite with an optional
-///   depth and position limit
 ///
 #[hotpath::main]
 fn main() {
