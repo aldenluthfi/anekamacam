@@ -516,11 +516,15 @@ pub fn iterative_deepening(
 
     fill_pv_line!(state, ttable, info.set_depth);
 
-    let ponder_move = state.pv_line
-        .get(1)
-        .filter(|m| *m != &null_move())
-        .cloned()
-        .unwrap_or_else(null_move);
+    let ponder_move = if state.pv_line.first() == Some(&best_move) {
+        state.pv_line
+            .get(1)
+            .filter(|m| *m != &null_move())
+            .cloned()
+            .unwrap_or_else(null_move)
+    } else {
+        null_move()
+    };
 
     SearchResult {
         best_score,
