@@ -1,4 +1,4 @@
-//! # board.rs
+//! board.rs
 //!
 //! Defines a board structure and operations for bitboard manipulation.
 //!
@@ -8,11 +8,8 @@
 //! bitset, plus a vocabulary of cheap bit operations over it, so move
 //! generation, masks, and state updates never touch raw bit arithmetic.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 18/02/2024
+//! Created: 18/02/2024
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -47,22 +44,88 @@ pub type Board = (u8, u8, U4096);
 /// ```
 ///
 /// Construction and queries:
-/// - board!       : builds an empty board of the given file and rank counts
-/// - files!       : reads the file count
-/// - ranks!       : reads the rank count
-/// - get!         : tests whether the bit at an index is set
-/// - count_bits!  : counts the set bits (piece/occupancy popcount)
-/// - set_indices! : collects the indices of every set bit
-/// - is_empty!    : tests whether no bit is set
 ///
-/// Mutation:
-/// - set!   : sets the bit at an index
-/// - clear! : clears the bit at an index
-/// - toggle!: flips the bit at an index
-/// - or!    : unions another board's bits into this one
-/// - and!   : intersects this board with another board's bits
-/// - xor!   : toggles this board's bits by another board's
-/// - not!   : inverts every bit in place
+/// board!
+///   Params:
+///   - files : u8         -> file count of the new board
+///   - ranks : u8         -> rank count of the new board
+///   Return:
+///   Board                -> empty board of the given size
+///
+/// files!
+///   Params:
+///   - board : &Board     -> board to read
+///   Return:
+///   u8                   -> file count
+///
+/// ranks!
+///   Params:
+///   - board : &Board     -> board to read
+///   Return:
+///   u8                   -> rank count
+///
+/// get!
+///   Params:
+///   - board : &Board     -> board to read
+///   - index : u32        -> square index tested
+///   Return:
+///   bool                 -> whether the bit at the index is set
+///
+/// count_bits!
+///   Params:
+///   - board : &Board     -> board to read
+///   Return:
+///   u32                  -> number of set bits (piece/occupancy popcount)
+///
+/// set_indices!
+///   Params:
+///   - board : &Board     -> board to read
+///   Return:
+///   Vec<usize>           -> indices of every set bit, ascending
+///
+/// is_empty!
+///   Params:
+///   - board : &Board     -> board to read
+///   Return:
+///   bool                 -> whether no bit is set
+///
+/// Mutation (in place, no return value):
+///
+/// set!
+///   Params:
+///   - board : &mut Board -> board mutated
+///   - index : u32        -> square index whose bit is set
+///
+/// clear!
+///   Params:
+///   - board : &mut Board -> board mutated
+///   - index : u32        -> square index whose bit is cleared
+///
+/// toggle!
+///   Params:
+///   - board : &mut Board -> board mutated
+///   - index : u32        -> square index whose bit is flipped
+///
+/// or!
+///   Params:
+///   - board1: &mut Board -> destination, unioned in place
+///   - board2: &Board     -> source supplying the bits
+///
+/// and!
+///   Params:
+///   - board1: &mut Board -> destination, intersected in place
+///   - board2: &Board     -> source supplying the bits
+///
+/// xor!
+///   Params:
+///   - board1: &mut Board -> destination, toggled in place
+///   - board2: &Board     -> source supplying the bits
+///
+/// not!
+///   Params:
+///   - board : &mut Board -> board whose every bit is inverted
+///   Return:
+///   ()                 -> mutates the supplied board in place
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {

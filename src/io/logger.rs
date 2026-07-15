@@ -1,4 +1,4 @@
-//! # logger.rs
+//! logger.rs
 //!
 //! Logging initialization, numeric verbosity wrappers, and formatting.
 //!
@@ -8,11 +8,8 @@
 //! numbered verbosity wrappers so callers say only how important a line is,
 //! never how or whether it is printed.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 19/04/2026
+//! Created: 19/04/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -22,6 +19,17 @@ use crate::*;
 /// message queue rendered by the debug TUI (only while the TUI's debug
 /// flag is set), and `verbosity_enabled!` tests whether a numeric level
 /// is currently visible so callers can skip expensive formatting.
+///
+/// push_log_message!
+///   Params:
+///   - level  : u8     -> numeric verbosity level stamped on the line
+///   - message: String -> already-formatted log line to mirror
+///
+/// verbosity_enabled!
+///   Params:
+///   - level  : u8     -> numeric level to test
+///   Return:
+///   bool              -> whether lines at that level are currently visible
 #[macro_export]
 macro_rules! push_log_message {
     ($level:expr, $message:expr) => {
@@ -52,6 +60,12 @@ macro_rules! verbosity_enabled {
 /// 3 = info (engine telemetry), 4 = debug (parsing/search internals),
 /// 5 = trace (deepest call traces). See `init_logging` for the full
 /// level semantics.
+///
+/// log_1! .. log_5!
+///   Params:
+///
+///   - args: format! arguments
+///     format string plus its interpolated values; no return value
 #[macro_export]
 macro_rules! log_1 {
     ($($arg:tt)*) => {
@@ -114,6 +128,24 @@ macro_rules! log_5 {
 /// runtime verbosity back into a `log` filter; and the remaining three
 /// read or step the shared `RUNTIME_VERBOSITY` atomic, clamped to 1-5
 /// (used by the TUI's live verbosity keys).
+///
+/// level_to_verbosity
+///   Params:
+///   - level: log::Level -> `log` crate level to translate
+///   Return:
+///   u8                  -> numeric verbosity 1-5
+///
+/// configured_log_level
+///   Return:
+///   log::LevelFilter    -> filter matching the runtime verbosity
+///
+/// configured_verbosity_level
+///   Return:
+///   u8                  -> current runtime verbosity 1-5
+///
+/// inc_verbosity / dec_verbosity
+///   step the runtime verbosity up or down one level, clamped to 1-5;
+///   no parameters, no return value
 fn level_to_verbosity(level: log::Level) -> u8 {
     match level {
         log::Level::Error => 1,

@@ -1,4 +1,4 @@
-//! # drop_list.rs
+//! drop_list.rs
 //!
 //! Generates legal drop moves and relevant drop templates.
 //!
@@ -8,19 +8,17 @@
 //! at generation time enforces the drop flags, hand counts, and the
 //! allower/stopper neighbourhood patterns each placement requires.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 18/02/2026
+//! Created: 18/02/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
 /// generate_relevant_drops
 ///
-/// Filters and relocates precomputed drop patterns for a target square.
-/// Relative allower/stopper offsets are validated against board bounds from
-/// `square_index` and rotated by piece color perspective.
+/// Relocates the compiled drop patterns for one target square.
+///
+/// It rejects forbidden or out-of-bounds placements and mirrors offsets for
+/// the dropped piece's color.
 ///
 /// Params:
 /// - piece            : &Piece     -> piece type the drops belong to
@@ -29,10 +27,10 @@ use crate::*;
 /// - piece_setup_drops: &[DropSet] -> compiled drops, one set per piece
 ///
 /// Return:
-/// DropSet                         -> drops playable onto this square, with
-///                                    square encoded and out-of-board stoppers
-///                                    pruned
 ///
+/// DropSet
+/// drops playable onto this square, with square encoded and out-of-board
+/// stoppers pruned
 pub fn generate_relevant_drops(
     piece: &Piece,
     square_index: u32,
@@ -98,19 +96,22 @@ pub fn generate_relevant_drops(
 
 /// generate_drop_list!
 ///
-/// Generates legal drop moves for `$piece` in the current `$state`.
-/// Enforces drop flags (`k`), count limits, hand ownership, and
-/// allower/stopper pattern constraints before encoding each drop move. Unlike
-/// `generate_move_list_from_vectors!`, which builds moves from precomputed
-/// movement vectors for pieces already on the board, this macro generates
-/// placement moves from precomputed drop templates for pieces held in hand,
-/// using allower/stopper squares instead of directional legs.
+/// Generates every legal drop move for one held piece.
+///
+/// It enforces hand ownership, count limits, drop flags, and CPMN constraints.
+/// Unlike movement-vector generation, it starts from a precomputed placement
+/// template rather than an on-board piece and directional legs.
 ///
 /// Params:
-/// - piece -> piece type to drop from hand
-/// - state -> current position providing hand counts and occupancy
-/// - out   -> output list receiving the encoded drop moves
 ///
+/// - piece: &Piece
+///   piece type to drop from hand
+///
+/// - state: &State
+///   current position providing hand counts and occupancy
+///
+/// - out: &mut Vec<Move>
+///   output list receiving the drop moves
 #[macro_export]
 macro_rules! generate_drop_list {
     ($piece:expr, $state:expr, $out:expr) => {{

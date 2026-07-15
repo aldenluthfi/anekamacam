@@ -1,4 +1,4 @@
-//! # uci.rs
+//! uci.rs
 //!
 //! Implements the Universal Chess Interface (UCI) protocol loop.
 //!
@@ -7,11 +7,8 @@
 //! from embedded resources; search runs on a configurable thread pool backed
 //! by a shared transposition table.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 24/05/2026
+//! Created: 24/05/2026
+//! Author : Alden Luthfi
 use crate::*;
 
 /// list_uci_variants
@@ -23,7 +20,6 @@ use crate::*;
 ///
 /// Return:
 /// Vec<String> -> sorted names of UCI-capable variants
-///
 fn list_uci_variants() -> Vec<String> {
     let mut variants = Vec::new();
 
@@ -102,7 +98,6 @@ fn list_uci_variants() -> Vec<String> {
 /// - result: &SearchResult       -> finished search outcome
 /// - state : &State              -> position for move formatting
 /// - dict  : Option<&Translator> -> translator for printed move names
-///
 fn print_bestmove(
     result: &SearchResult,
     state: &mut State,
@@ -192,7 +187,6 @@ impl Uci {
     ///
     /// Return:
     /// Self -> a session ready to accept UCI commands
-    ///
     fn new() -> Self {
         let variants = list_uci_variants();
         let default_variant = variants
@@ -241,11 +235,10 @@ impl Uci {
 /// `Clear Hash` rebuilds the tables.
 ///
 /// Params:
-/// - hash_mb: usize -> total table budget in megabytes
+/// - hash_mb: usize                        -> total table budget in megabytes
 ///
 /// Return:
 /// (Arc<TTable>, Arc<QTable>, Arc<PTable>) -> the freshly sized tables
-///
 fn spawn_hash_tables(
     hash_mb: usize,
 ) -> (Arc<TTable>, Arc<QTable>, Arc<PTable>) {
@@ -264,20 +257,64 @@ fn spawn_hash_tables(
 
 /// UCI command handlers
 ///
-/// Each applies one command's side effects to the session. Every handler
-/// takes `uci: &mut Uci`; the parsers additionally take `tokens: &[&str]`,
-/// the whitespace-split command line. Highest level first:
-///
-/// - `handle_position`  -> rebuild from `startpos`/FEN, replay `moves`
-/// - `start_search`     -> parse `go` limits, anchor deadlines, spawn thread
-/// - `abort_search`     -> interrupt + join, drop the result; panic is safe
-/// - `stop_search`      -> abort; a ponder prints its withheld `bestmove`
-/// - `handle_ponderhit` -> join the ponder, relaunch it as a timed search
-/// - `handle_setoption` -> apply Variant / Threads / Hash / Overhead changes
-///
+/// Each applies one command's side effects to the session.
 /// `compute_budgets` and `spawn_search` interleave below as internal
 /// helpers and keep their own docs.
 ///
+/// handle_position
+///   Params:
+///
+///   - uci: &mut Uci
+///     session rebuilt from `startpos`/FEN
+///
+///   - tokens: &[&str]
+///     whitespace-split command line; a trailing `moves` list is replayed onto
+///     the position
+///
+/// start_search
+///   Params:
+///
+///   - uci: &mut Uci
+///     session the `go` runs in; deadlines anchored, search thread spawned
+///
+///   - tokens: &[&str]
+///     whitespace-split `go` limits (depth, nodes, movetime, clocks, ponder,
+///     infinite)
+///
+/// abort_search
+///   Params:
+///
+///   - uci: &mut Uci
+///     session whose active search is interrupted and joined; a worker panic is
+///     absorbed
+///
+///   Return:
+///
+///   Option<(SearchResult, bool)>
+///   the joined result and its ponder flag, None when no search ran
+///
+/// stop_search
+///   Params:
+///
+///   - uci: &mut Uci
+///     session whose search is aborted; a ponder search prints its withheld
+///     `bestmove`
+///
+/// handle_ponderhit
+///   Params:
+///
+///   - uci: &mut Uci
+///     session whose ponder search is joined and relaunched as a timed search
+///
+/// handle_setoption
+///   Params:
+///
+///   - uci: &mut Uci
+///     session receiving the option change
+///
+///   - tokens: &[&str]
+///     whitespace-split `setoption` line; applies Variant / Threads / Hash /
+///     Overhead changes
 fn handle_position(uci: &mut Uci, tokens: &[&str]) {
     let startpos = uci.state.statics.startpos.clone();
     uci.state.reset();
@@ -429,7 +466,6 @@ fn start_search(uci: &mut Uci, tokens: &[&str]) {
 ///
 /// Return:
 /// (u128, u128)         -> (soft, hard) budgets in ns, (0, 0) when untimed
-///
 fn compute_budgets(
     movetime_ms: u128,
     time_ms: u128,
@@ -467,7 +503,6 @@ fn compute_budgets(
 /// Params:
 /// - uci   : &mut Uci     -> the session being mutated
 /// - limits: SearchLimits -> launch parameters for the thread
-///
 fn spawn_search(uci: &mut Uci, limits: SearchLimits) {
     let state_clone = uci.state.clone();
     let tt_clone = Arc::clone(&uci.ttable);
@@ -660,7 +695,6 @@ fn handle_setoption(uci: &mut Uci, tokens: &[&str]) {
 ///
 /// Return:
 /// bool             -> true when the session should terminate (`quit`)
-///
 fn execute_command(uci: &mut Uci, line: &str) -> bool {
     let tokens: Vec<&str> = line.split_whitespace().collect();
     let command = tokens.first().copied().unwrap_or("");
@@ -748,7 +782,6 @@ fn execute_command(uci: &mut Uci, line: &str) -> bool {
 ///
 /// Return:
 /// IoResult<()> -> Ok on clean shutdown
-///
 pub fn uci() -> IoResult<()> {
     println!("AnekaMacam {} by Alden Luthfi", env!("CARGO_PKG_VERSION"));
 

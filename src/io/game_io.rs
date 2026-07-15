@@ -1,4 +1,4 @@
-//! # game_io.rs
+//! game_io.rs
 //!
 //! Implements game state parsing and formatting functions.
 //!
@@ -8,11 +8,8 @@
 //! current state back to human-readable text, so the rest of the engine can
 //! stay in terms of `State` and never parse or format notation itself.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 25/01/2026
+//! Created: 25/01/2026
+//! Author : Alden Luthfi
 use crate::*;
 
 lazy_static! {
@@ -38,11 +35,10 @@ lazy_static! {
 /// whether castling, en passant, and in-hand sections are present.
 ///
 /// Params:
-/// - fen: &str -> the full FEN string being inspected
+/// - fen: &str        -> the full FEN string being inspected
 ///
 /// Return:
 /// (bool, bool, bool) -> (has castling, has en passant, has hands)
-///
 fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
     let mut castling = false;
     let mut en_passant = false;
@@ -63,9 +59,11 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 
 /// validate_castling
 ///
-/// Validates if a starting configuration is possible based on the starting
-/// position of the game, this is for variants with randomized starting
-/// positions like Fischer Random Chess
+/// Tests whether a loaded position preserves the configured starting pieces
+/// required for castling rights to remain meaningful in this variant.
+///
+/// A castling right is valid only when every occupied loaded-start square also
+/// contains a piece on the configured starting board.
 ///
 /// Params:
 /// - fen  : &str   -> position being loaded
@@ -73,7 +71,6 @@ fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
 ///
 /// Return:
 /// bool            -> true if castling rights can be honored from this position
-///
 fn validate_castling(fen: &str, state: &State) -> bool {
     let startpos = &state.statics.startpos
         .split_whitespace()
@@ -192,7 +189,6 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// Params:
 /// - state  : &mut State -> variant whose parameters are overwritten
 /// - content: &str       -> flat space-separated parameter dump
-///
 pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let tokens: Vec<i32> = content
         .split_whitespace()
@@ -340,7 +336,6 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
 ///
 /// Params:
 /// - state: &State -> variant whose parameters are serialized
-///
 pub fn export_tuned_parameters_file(
     state: &State,
     variant: &str,
@@ -419,11 +414,10 @@ pub fn export_tuned_parameters_file(
 /// Returns (title, board) to be shown in the TUI
 ///
 /// Params:
-/// - path: &str -> config filename inside the embedded configs
+/// - path: &str     -> config filename inside the embedded configs
 ///
 /// Return:
 /// (String, String) -> (variant title, rendered start board)
-///
 pub fn parse_config_preview(path: &str) -> (String, String) {
     let file_str = embedded_config(path)
         .map(str::to_string)
@@ -582,11 +576,10 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
 /// so variants ship inside the executable with no filesystem layout.
 ///
 /// Params:
-/// - path: &str -> config filename, e.g. "fide.conf"
+/// - path: &str         -> config filename, e.g. "fide.conf"
 ///
 /// Return:
 /// Option<&'static str> -> the file's text, or None if not embedded
-///
 fn embedded_config(path: &str) -> Option<&'static str> {
     let filename = Path::new(path).file_name()?.to_str()?;
     EMBEDDED_CONFIGS.get_file(filename)?.contents_utf8()
@@ -625,7 +618,6 @@ fn embedded_config(path: &str) -> Option<&'static str> {
 ///
 /// Return:
 /// State        -> the fully initialized variant state
-///
 pub fn parse_config_file(path: &str) -> State {
     let file_str = embedded_config(path)
         .map(str::to_string)
@@ -1817,7 +1809,6 @@ pub fn parse_config_file(path: &str) -> State {
 ///
 /// Return:
 /// Board                 -> bitboard with the described squares set
-///
 fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     if fen.is_none() {
         return board!(state.statics.files, state.statics.ranks);
@@ -1947,7 +1938,6 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// - state: &mut State          -> position rebuilt from the FEN
 /// - fen  : &str                -> the CFEN string to load
 /// - dict : Option<&Translator> -> optional protocol translation first
-///
 pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
     let mut needed_parts = 2;
 
@@ -2238,8 +2228,10 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
 /// - board2: &str -> the second board string
 ///
 /// Return:
-/// String         -> combined board with both boards' pieces merged together
-///                   while preserving the ASCII art borders and structure
+///
+/// String
+/// combined board with both boards' pieces merged together while preserving the
+/// ASCII art borders and structure
 ///
 /// # Examples
 ///
@@ -2314,7 +2306,6 @@ pub fn combine_board_strings(board1: &str, board2: &str) -> String {
 ///
 /// Return:
 /// String          -> multi-line board diagram plus state summary
-///
 pub fn format_game_state(state: &State) -> String {
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
@@ -2354,7 +2345,6 @@ pub fn format_game_state(state: &State) -> String {
 ///
 /// Return:
 /// String                       -> the position's CFEN
-///
 pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
     let mut fen = String::new();
 
@@ -2460,23 +2450,35 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
 /// State field formatters
 ///
 /// Small display helpers, each rendering one field of the state as a string
-/// for FEN output and the debug console. All take `&State` (and `format_hand`
-/// also a colour) and return the rendered field:
-///
-/// - `format_castling_rights`: castling rights as KQkq letters, `-` if none
-/// - `format_en_passant_square`: en passant square in packed CFEN, `*` if none
-/// - `format_hand`: one side's pieces in hand as piece letters, `-` if empty
-/// - `format_position_hash`: the Zobrist hash in hexadecimal
-/// - `format_game_phase`: the game phase by name (or `Game Over`)
-/// - `format_special_rules`: enabled special rules as a comma-separated list
-///
-/// Params:
+/// for FEN output and the debug console. Every member takes the same first
+/// parameter and returns the rendered field as a `String`:
 /// - state: &State -> position whose field is rendered
-/// - color: u8     -> side whose hand is rendered (`format_hand` only)
 ///
-/// Return:
-/// String          -> the rendered field
+/// format_castling_rights
+///   Return:
+///   String -> castling rights as KQkq letters, `-` if none
 ///
+/// format_en_passant_square
+///   Return:
+///   String -> en passant square in packed CFEN, `*` if none
+///
+/// format_hand
+///   Params:
+///   - color: u8 -> side whose hand is rendered
+///   Return:
+///   String -> that side's pieces in hand as piece letters, `-` if empty
+///
+/// format_position_hash
+///   Return:
+///   String -> the Zobrist hash in hexadecimal
+///
+/// format_game_phase
+///   Return:
+///   String -> the game phase by name (or `Game Over`)
+///
+/// format_special_rules
+///   Return:
+///   String -> enabled special rules as a comma-separated list
 pub fn format_castling_rights(state: &State) -> String {
     let mut rights = String::new();
 

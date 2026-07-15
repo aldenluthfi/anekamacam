@@ -1,4 +1,4 @@
-//! # pattern.rs
+//! pattern.rs
 //!
 //! Defines pattern representation types for CPMN pattern matching.
 //!
@@ -10,11 +10,8 @@
 //! and stopper pattern lists compiled once at precompute time so matching
 //! is a linear scan with O(1) membership tests.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 24/02/2026
+//! Created: 24/02/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -43,6 +40,20 @@ impl PieceSet {
     /// `new` builds an empty set, `insert` marks a piece index as member,
     /// and `contains` tests membership — all direct array operations with
     /// no hashing, keeping the pattern-matching inner loop branch-cheap.
+    ///
+    /// new
+    ///   Return:
+    ///   Self        -> empty set, every index absent
+    ///
+    /// insert
+    ///   Params:
+    ///   - piece: u8 -> piece index marked as member
+    ///
+    /// contains
+    ///   Params:
+    ///   - piece: u8 -> piece index tested
+    ///   Return:
+    ///   bool        -> whether the index is a member
     pub fn new() -> Self {
         Self::default()
     }

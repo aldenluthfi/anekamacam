@@ -1,4 +1,4 @@
-//! # pattern_match.rs
+//! pattern_match.rs
 //!
 //! Macros for evaluating CPMN patterns against board positions.
 //!
@@ -8,28 +8,24 @@
 //! around it. These macros run a compiled pattern against a live board,
 //! mirroring offsets by color and short-circuiting on the first failure.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 24/02/2026
+//! Created: 24/02/2026
+//! Author : Alden Luthfi
 
 /// match_pattern!
 ///
-/// Matches a parsed pattern against a square using the given color viewpoint.
-/// If a concrete piece context exists, use that piece's color for orientation;
-/// otherwise use White's orientation as the default perspective.
-/// Returns `true` only when all allowers pass and no stopper matches.
+/// Tests a parsed pattern at one square from one color's orientation.
+///
+/// Relative offsets mirror for the supplied color. The result is true only if
+/// every allower matches and every stopper fails to match.
 ///
 /// Params:
-/// - pattern -> compiled (allower, stopper) pattern to test
-/// - square  -> board square the pattern is anchored on
-/// - color   -> orientation color for offset mirroring
-/// - state   -> current position providing board occupancy
+/// - pattern: &Pattern -> compiled (allower, stopper) pattern to test
+/// - square : u32      -> board square the pattern is anchored on
+/// - color  : u8       -> orientation color for offset mirroring
+/// - state  : &State   -> current position providing board occupancy
 ///
 /// Return:
-/// bool -> true if every allower holds and no stopper does
-///
+/// bool                -> every allower holds and no stopper matches
 #[macro_export]
 macro_rules! match_pattern {
     ($pattern:expr, $square:expr, $color:expr, $state:expr) => {{
@@ -82,17 +78,16 @@ macro_rules! match_pattern {
 
 /// is_in_stand_off!
 ///
-/// Evaluates whether the current position contains any active stand-off
-/// pattern. Iterates every piece instance on the board, checks precomputed
-/// candidate patterns for that piece-square pair, and returns `true` as soon as
-/// one pattern matches.
+/// Tests whether any active stand-off pattern matches in the current position.
+///
+/// The scan visits each piece instance and its precomputed candidate patterns,
+/// stopping as soon as one pattern matches.
 ///
 /// Params:
-/// - state -> current position to scan for stand-offs
+/// - state: &State -> current position to scan for stand-offs
 ///
 /// Return:
-/// bool -> true if any piece's stand-off pattern currently matches
-///
+/// bool            -> true if any piece's stand-off pattern currently matches
 #[macro_export]
 macro_rules! is_in_stand_off {
     ($state:expr) => {{

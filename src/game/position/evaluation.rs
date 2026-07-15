@@ -1,4 +1,4 @@
-//! # evaluation.rs
+//! evaluation.rs
 //!
 //! Position evaluation logic for alpha-beta search.
 //!
@@ -11,11 +11,8 @@
 //! king shelter, pawn shield and castling incentives, and the mask-based
 //! pawn-structure terms, phase-blended during the middlegame.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 19/04/2026
+//! Created: 19/04/2026
+//! Author : Alden Luthfi
 
 /// draw_score!
 ///
@@ -27,11 +24,10 @@
 /// zero when material is level.
 ///
 /// Params:
-/// - state -> position whose draw value is computed
+/// - state: &State -> position whose draw value is computed
 ///
 /// Return:
-/// i32 -> draw score from the side to move's perspective
-///
+/// i32             -> draw score from the side to move's perspective
 #[macro_export]
 macro_rules! draw_score {
     ($state:expr) => {{
@@ -54,18 +50,17 @@ macro_rules! draw_score {
 
 /// king_shelter!
 ///
-/// Per-side count of friendly pieces on squares adjacent to each royal piece,
-/// via the precomputed `adjacency_mask` AND-ed with the side's occupancy.
-/// Exposed royalty scores low; the caller folds this into the opening and
-/// middlegame evaluation only, since the king should be active in the endgame.
+/// Counts friendly pieces adjacent to each royal piece for one side.
+///
+/// It intersects each royal's precomputed adjacency mask with friendly
+/// occupancy. The caller uses this opening/middlegame term only.
 ///
 /// Params:
-/// - state -> position whose royal adjacency is counted
-/// - color -> side whose shelter is measured
+/// - state: &State -> position whose royal adjacency is counted
+/// - color: u8     -> side whose shelter is measured
 ///
 /// Return:
-/// i32 -> number of friendly pieces adjacent to the side's royals
-///
+/// i32             -> number of friendly pieces adjacent to the side's royals
 #[macro_export]
 macro_rules! king_shelter {
     ($state:expr, $color:expr) => {
@@ -92,19 +87,17 @@ macro_rules! king_shelter {
 
 /// pawn_shield!
 ///
-/// Per-side pawn-shield bonus: counts friendly pawns standing on the derived
-/// `royal_shield_mask` (the up-to-three squares one rank ahead of each royal
-/// piece in the side's forward direction), capped at three per royal, and
-/// scales the count by the derived `pawn_shield_bonus`. The caller folds this
-/// into the opening and middlegame evaluation only.
+/// Computes one side's pawn-shield bonus around its royal pieces.
+///
+/// It counts pawn-like pieces in each derived `royal_shield_mask`, caps the
+/// count at three per royal, and applies the derived `pawn_shield_bonus`.
 ///
 /// Params:
-/// - state -> position whose royal pawn cover is counted
-/// - color -> side whose shield is measured
+/// - state: &State -> position whose royal pawn cover is counted
+/// - color: u8     -> side whose shield is measured
 ///
 /// Return:
-/// i32 -> pawn-shield bonus for the side, in centipawns
-///
+/// i32             -> pawn-shield bonus for the side, in centipawns
 #[macro_export]
 macro_rules! pawn_shield {
     ($state:expr, $color:expr) => {{
@@ -132,12 +125,11 @@ macro_rules! pawn_shield {
 /// only.
 ///
 /// Params:
-/// - state -> position whose castling status is scored
-/// - color -> side whose incentive is measured
+/// - state: &State -> position whose castling status is scored
+/// - color: u8     -> side whose incentive is measured
 ///
 /// Return:
-/// i32 -> castling incentive for the side, in centipawns
-///
+/// i32             -> castling incentive for the side, in centipawns
 #[macro_export]
 macro_rules! castling_bonus {
     ($state:expr, $color:expr) => {{
@@ -166,12 +158,11 @@ macro_rules! castling_bonus {
 /// under attack, opening and middlegame only.
 ///
 /// Params:
-/// - state -> position whose zone pressure is measured
-/// - color -> side whose royals are under attack
+/// - state: &State -> position whose zone pressure is measured
+/// - color: u8     -> side whose royals are under attack
 ///
 /// Return:
-/// i32 -> danger penalty against the side, in centipawns
-///
+/// i32             -> danger penalty against the side, in centipawns
 #[macro_export]
 macro_rules! king_danger {
     ($state:expr, $color:expr) => {{
@@ -215,12 +206,11 @@ macro_rules! king_danger {
 /// side, opening and middlegame only.
 ///
 /// Params:
-/// - state -> position whose royal cover is checked
-/// - color -> side whose open files are penalized
+/// - state: &State -> position whose royal cover is checked
+/// - color: u8     -> side whose open files are penalized
 ///
 /// Return:
-/// i32 -> open-shield penalty against the side, in centipawns
-///
+/// i32             -> open-shield penalty against the side, in centipawns
 #[macro_export]
 macro_rules! open_shield {
     ($state:expr, $color:expr) => {{
@@ -407,12 +397,15 @@ macro_rules! open_shield {
 /// diagram how each mask is built from the piece's own legs.
 ///
 /// Params:
-/// - state -> position whose pawn-like pieces are scored
-/// - pawns -> reusable per-side scratch lists of pawn entries
+///
+/// - state: &State
+///   position whose pawn-like pieces are scored
+///
+/// - pawns: &mut [Vec<(usize, Square, i32)>; 2]
+///   reusable per-side scratch lists of (piece, square, value) pawn entries
 ///
 /// Return:
 /// (i32, i32) -> (opening, endgame) white-minus-black structure deltas
-///
 #[macro_export]
 macro_rules! pawn_structure {
     ($state:expr, $pawns:expr) => {
@@ -555,13 +548,18 @@ macro_rules! pawn_structure {
 /// - Handles `opening_score == 0` safely during interpolation.
 ///
 /// Params:
-/// - state  -> position to evaluate
-/// - bufs   -> search scratch buffers (reused pawn entry lists)
-/// - ptable -> shared pawn structure table
+///
+/// - state: &State
+///   position to evaluate
+///
+/// - bufs: &mut SearchBufs
+///   search scratch buffers (reused pawn entry lists)
+///
+/// - ptable: &PTable
+///   shared pawn structure table
 ///
 /// Return:
 /// i32 -> score from the side to move's perspective
-///
 #[macro_export]
 macro_rules! evaluate_position {
     ($state:expr, $bufs:expr, $ptable:expr) => {

@@ -1,4 +1,4 @@
-//! # hash.rs
+//! hash.rs
 //!
 //! Implements Zobrist hashing for game positions.
 //!
@@ -8,11 +8,8 @@
 //! tables and folds them together, giving repetition detection and the
 //! transposition tables a stable position identity.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 25/01/2026
+//! Created: 25/01/2026
+//! Author : Alden Luthfi
 use crate::*;
 
 /// PositionHash
@@ -24,17 +21,28 @@ pub type PositionHash = u128;
 
 /// hash_position
 ///
-/// Computes the Zobrist hash for the given game state.
-/// The hash includes side to move, castling state, en passant square,
-/// on-board piece placement, and in-hand piece counts.
-/// It is used for repetition tracking and transposition table indexing.
+/// Computes the full Zobrist hash for one state from scratch.
+///
+/// The key includes side to move, special-state fields, on-board placement,
+/// and every in-hand piece count. Repetition and transposition tables use it.
+///
+/// The key is one XOR fold of independent random components:
+///
+/// ```text
+/// hash = PIECE_HASHES[piece][sq]      (every occupied square)
+///      ^ SIDE_HASHES                  (when white is to move)
+///      ^ CASTLING_HASHES[rights]      (current KQkq bits)
+///      ^ EN_PASSANT_HASHES[sq]        (when a capture is available)
+///      ^ IN_HAND_HASHES[piece][count] (every in-hand pool, both sides)
+/// ```
+///
+/// XOR is self-inverse, so applying the same component twice removes it.
 ///
 /// Params:
 /// - state: &State -> position to hash from scratch
 ///
 /// Return:
 /// u128            -> the position's full Zobrist key
-///
 pub fn hash_position(state: &State) -> u128 {
     let mut hash = u128::default();
 
@@ -68,17 +76,16 @@ pub fn hash_position(state: &State) -> u128 {
 
 /// hash_pawns
 ///
-/// Computes the pawn-only Zobrist key for the given game state from
-/// scratch. The key folds in only the on-board placement of pawn-flagged
-/// pieces, so it stays stable across non-pawn moves and lets evaluation
-/// cache pawn structure scores between positions.
+/// Computes the pawn-like-piece Zobrist key for one state from scratch.
+///
+/// The key ignores all non-pawn-like pieces, allowing evaluation to cache
+/// pawn-structure scores across positions with unchanged pawn placement.
 ///
 /// Params:
 /// - state: &State -> position whose pawns are hashed
 ///
 /// Return:
 /// u128            -> the position's pawn-only Zobrist key
-///
 pub fn hash_pawns(state: &State) -> u128 {
     let mut hash = u128::default();
 
@@ -101,19 +108,42 @@ pub fn hash_pawns(state: &State) -> u128 {
 /// Incremental Zobrist hash update helpers.
 ///
 /// These macros keep `state.position_hash` in sync with mutable state updates
-/// during make/undo flow without recomputing from scratch.
-///
-/// Supported updates:
-/// - piece toggles (`hash_in_or_out_piece!`)
-/// - side-to-move toggle (`hash_toggle_side!`)
-/// - castling rights transitions (`hash_update_castling!`)
-/// - en passant transitions (`hash_update_en_passant!`)
-/// - in-hand count transitions (`hash_update_in_hand!`)
+/// during make/undo flow without recomputing from scratch. None return a
+/// value; each XORs its component in or out of the running key.
 ///
 /// `hash_in_or_out_piece!` also keeps the per-color `pawn_board` bitboards
 /// in sync: every pawn placement or removal flows through this macro during
 /// move execution, so toggling the square bit alongside the pawn hash keeps
 /// the board exact under the same pairing that keeps the hash exact.
+///
+/// hash_in_or_out_piece!
+///   Params:
+///   - state       : &mut State -> position whose keys are updated
+///   - piece_index : usize      -> piece being placed or removed
+///   - square_index: Square     -> square the piece enters or leaves
+///
+/// hash_toggle_side!
+///   Params:
+///   - state: &mut State -> position whose side-to-move key flips
+///
+/// hash_update_castling!
+///   Params:
+///   - state             : &mut State -> position whose key is updated
+///   - old_castling_state: u8         -> rights bits before the move
+///   - new_castling_state: u8         -> rights bits after the move
+///
+/// hash_update_en_passant!
+///   Params:
+///   - state        : &mut State      -> position whose key is updated
+///   - old_ep_square: EnPassantSquare -> descriptor before the move
+///   - new_ep_square: EnPassantSquare -> descriptor after the move
+///
+/// hash_update_in_hand!
+///   Params:
+///   - state      : &mut State -> position whose key is updated
+///   - piece_index: usize      -> piece whose pool count changed
+///   - old_count  : u16        -> in-hand count before the change
+///   - new_count  : u16        -> in-hand count after the change
 #[macro_export]
 macro_rules! hash_in_or_out_piece {
     ($state:expr, $piece_index:expr, $square_index:expr) => {
@@ -142,10 +172,9 @@ macro_rules! hash_in_or_out_piece {
 /// exact inverse of the toggles `hash_in_or_out_piece!` applied on make.
 ///
 /// Params:
-/// - state        -> position whose pawn board is updated
-/// - piece_index  -> piece being placed or removed
-/// - square_index -> square whose pawn bit is toggled
-///
+/// - state       : &mut State -> position whose pawn board is updated
+/// - piece_index : usize      -> piece being placed or removed
+/// - square_index: Square     -> square whose pawn bit is toggled
 #[macro_export]
 macro_rules! pawn_board_in_or_out {
     ($state:expr, $piece_index:expr, $square_index:expr) => {

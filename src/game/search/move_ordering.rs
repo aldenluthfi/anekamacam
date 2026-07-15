@@ -1,4 +1,4 @@
-//! # move_ordering.rs
+//! move_ordering.rs
 //!
 //! Static exchange evaluation and move scoring for search-time ordering.
 //!
@@ -8,11 +8,8 @@
 //! incrementally with a selection-sort step, deferring scoring to avoid
 //! work at early cutoffs.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 19/04/2026
+//! Created: 19/04/2026
+//! Author : Alden Luthfi
 
 /*----------------------------------------------------------------------------*\
                           STATIC EXCHANGE EVALUATION
@@ -20,12 +17,42 @@
 
 /// SEE helper macros.
 ///
-/// `attack_value!` prices the moving piece (using the promoted piece's
-/// value for promotions), `victim_value!` prices everything a move
-/// captures (summing multi-capture payloads, skipping unloads), and
-/// `lva!` regenerates the current capture moves onto a target square
-/// sorted cheapest-attacker-first. Together they feed the exchange
-/// simulation in `see!`.
+/// `attack_value!` prices the moving piece, `victim_value!` prices real
+/// captures, and `lva!` regenerates captures onto one target square in
+/// least-valuable-attacker order. Together they feed `see!`.
+///
+/// attack_value!
+///   Params:
+///   - mv   : &Move  -> move whose attacker is priced
+///   - state: &State -> position providing piece values
+///   Return:
+///   i32             -> attacker value, promoted value for promotions
+///
+/// victim_value!
+///   Params:
+///   - mv   : &Move  -> capture move whose victims are priced
+///   - state: &State -> position providing piece values
+///   Return:
+///   i32             -> summed value of everything captured, unloads skipped
+///
+/// lva!
+///   Params:
+///
+///   - state: &State
+///     position providing attacks and board
+///
+///   - target: Square
+///     square the exchange happens on
+///
+///   - color: u8
+///     side owning the target piece
+///
+///   - out: &mut Vec<Move>
+///     cleared, then filled with capture moves onto the target, sorted
+///     cheapest-attacker-last for `pop`
+///
+///   - scratch: &mut Vec<u64>
+///     reusable multi-capture payload buffer
 #[macro_export]
 macro_rules! attack_value {
     ($mv:expr, $state:expr) => {{
@@ -119,14 +146,21 @@ macro_rules! lva {
 /// Non-capture moves return 0.
 ///
 /// Params:
-/// - state       -> position simulated on (restored before returning)
-/// - mv          -> the capture move to evaluate
-/// - see_moves   -> reusable buffer for attacker candidate moves
-/// - see_scratch -> reusable buffer for capture payloads
+///
+/// - state: &mut State
+///   position simulated on (restored before returning)
+///
+/// - mv: &Move
+///   the capture move to evaluate
+///
+/// - see_moves: &mut Vec<Move>
+///   reusable buffer for attacker candidate moves
+///
+/// - see_scratch: &mut Vec<u64>
+///   reusable buffer for capture payloads
 ///
 /// Return:
 /// i32 -> net material gain of the exchange for the moving side
-///
 #[macro_export]
 macro_rules! see {
     ($state:expr, $mv:expr, $see_moves:expr, $see_scratch:expr) => {
@@ -221,16 +255,27 @@ macro_rules! see {
 /// losing stays below 1000000.
 ///
 /// Params:
-/// - state       -> position providing killers, history, and piece values
-/// - mv          -> the move to score
-/// - pv_move     -> TT best move for this node, if any
-/// - see_moves   -> reusable buffer for attacker candidate moves
-/// - see_scratch -> reusable buffer for capture payloads
-/// - cont_bases  -> 1-ply and 2-ply continuation base offsets, usize::MAX none
+///
+/// - state: &mut State
+///   position providing killers, history, and piece values
+///
+/// - mv: &Move
+///   the move to score
+///
+/// - pv_move: &Option<PseudoMove>
+///   TT best move for this node
+///
+/// - see_moves: &mut Vec<Move>
+///   reusable buffer for attacker candidate moves
+///
+/// - see_scratch: &mut Vec<u64>
+///   reusable buffer for capture payloads
+///
+/// - cont_bases: &[usize; 2]
+///   1-ply and 2-ply continuation base offsets, usize::MAX none
 ///
 /// Return:
 /// usize -> ordering score, larger searched earlier
-///
 #[macro_export]
 macro_rules! score_move {
     (
@@ -306,12 +351,15 @@ macro_rules! score_move {
 /// started.
 ///
 /// Params:
-/// - mv    -> the capture move to index
-/// - state -> position providing piece values and the bucket divisor
+///
+/// - mv: &Move
+///   the capture move to index
+///
+/// - state: &State
+///   position providing piece values and the bucket divisor
 ///
 /// Return:
 /// usize -> index into `state.capt_hist`
-///
 #[macro_export]
 macro_rules! capt_hist_index {
     ($mv:expr, $state:expr) => {{
@@ -334,18 +382,33 @@ macro_rules! capt_hist_index {
 /// is scored in practice. `pv_move` is the TT best move for this node.
 ///
 /// Params:
-/// - state       -> position used for lazy scoring
-/// - moves       -> move list, reordered in place
-/// - scores      -> parallel score cache, filled lazily
-/// - index       -> slot to fill with the best remaining move
-/// - pv_move     -> TT best move for this node, if any
-/// - see_moves   -> reusable buffer for attacker candidate moves
-/// - see_scratch -> reusable buffer for capture payloads
-/// - cont_bases  -> 1-ply and 2-ply continuation base offsets, usize::MAX none
+///
+/// - state: &mut State
+///   position used for lazy scoring
+///
+/// - moves: &mut Vec<Move>
+///   move list, reordered in place
+///
+/// - scores: &mut Vec<usize>
+///   parallel score cache, filled lazily
+///
+/// - index: usize
+///   slot to fill with the best remaining move
+///
+/// - pv_move: &Option<PseudoMove>
+///   TT best move for this node
+///
+/// - see_moves: &mut Vec<Move>
+///   reusable buffer for attacker candidate moves
+///
+/// - see_scratch: &mut Vec<u64>
+///   reusable buffer for capture payloads
+///
+/// - cont_bases: &[usize; 2]
+///   1-ply and 2-ply continuation base offsets, usize::MAX none
 ///
 /// Notes:
 /// Modifies `moves` and `scores` in place; returns nothing.
-///
 #[macro_export]
 macro_rules! pick_by_score {
     (

@@ -1,4 +1,4 @@
-//! # move_parse.rs
+//! move_parse.rs
 //!
 //! Compiles a piece's movement notation into concrete move vectors.
 //!
@@ -9,15 +9,55 @@
 //! vectors the generator walks, done once at load time so the hot path never
 //! re-parses text.
 //!
-//! # Author
-//! Alden Luthfi
+//! Every expression passes through one fixed text pipeline before vector
+//! conversion, each stage rewriting the `|`-separated options in place:
 //!
-//! # Date
-//! 18/02/2024
+//! ```text
+//!  raw expression     "nW{1..3}|cK"
+//!        ↓
+//!  normalize          strip redundant parens, canonical spacing
+//!        ↓
+//!  atomize            rewrite Betza atoms (W, F, N, ...) as `K` forms
+//!        ↓
+//!  expand_directions  unroll `[a..b$s]` direction spans into copies
+//!        ↓
+//!  expand_ranges      unroll `{n..m}` / `*` repetition ranges
+//!        ↓
+//!  expand_cardinals   resolve `n+e`-style cardinal sums to offsets
+//!        ↓
+//!  atomic / chained / compound / leg conversion into vectors
+//! ```
+//!
+//! Created: 18/02/2024
+//! Author : Alden Luthfi
 
 use crate::*;
 
 lazy_static! {
+    /// Movement-notation lexer tables.
+    ///
+    /// The shared regexes and cardinal lookup tables every stage of the parse
+    /// pipeline reads. All are compiled or built once at first use:
+    ///
+    /// - NORMALIZE_PATTERN      : parens needing explicit chain operators
+    /// - RANGE_PATTERN          : `{n..m}` / `*` repetition spans + sign
+    /// - DIRECTION_PATTERN      : `[a..b$s]` spans and `[a$s]` steps
+    /// - CARDINAL_PATTERN       : `n+e`-style cardinal sum chains
+    /// - ATOMIC                 : one `K`-form atom with direction/filter
+    /// - ATOMIC_TOKENS          : token alphabet of atomic expressions
+    /// - DOTS_TOKEN             : `...` chaining token, optional `-`
+    /// - DIRECTION_FILTER_TOKEN : `[n]` direction filter token
+    /// - RANGE_TOKEN            : `{n..m}` range token, optional `-`
+    /// - COLON_RANGE_TOKEN      : `:{n..m}` colon-range token
+    /// - LEG                    : one leg: modifiers, body, `@` tail
+    /// - LEG_TOKENS             : token alphabet of multi-leg expressions
+    /// - MODIFIERS              : bare modifier-letter run
+    ///
+    /// - INDEX_TO_CARDINAL_VECTORS: cardinal index 0-7 to unit vector
+    /// - CARDINAL_VECTORS_TO_INDEX: unit (x, y) vector back to index 0-7
+    /// - DIRECTION_VECTOR_SETS    : direction letter to unit vector set
+    /// - CARDINAL_STR_TO_INDEX    : cardinal name ("n".."nw") to index
+    /// - CARDINAL_INDEX_TO_STR    : index 0-7 back to cardinal name
     pub static ref NORMALIZE_PATTERN: Regex =
         Regex::new(r"[^(^|]\(|\)[^()^|]").unwrap_or_else(|e| {
             panic!("Failed to compile NORMALIZE_PATTERN regex: {e}")
@@ -154,7 +194,6 @@ lazy_static! {
 ///
 /// Return:
 /// String     -> the combined expression with branches distributed
-///
 fn apply_operator(op: char, a: &str, b: &str) -> String {
     match op {
         '^' => {
@@ -192,7 +231,6 @@ fn apply_operator(op: char, a: &str, b: &str) -> String {
 ///
 /// Return:
 /// usize      -> binding strength, higher binds tighter
-///
 fn precedence(op: char) -> usize {
     match op {
         '^' => 2,
@@ -213,7 +251,6 @@ fn precedence(op: char) -> usize {
 ///
 /// Return:
 /// String        -> the CKN expansion, or the symbol itself if unknown
-///
 fn betza_atoms(piece: char) -> String {
     match piece {
         'W' => "<[1357]K>".to_string(),
@@ -245,7 +282,6 @@ fn betza_atoms(piece: char) -> String {
 ///
 /// Return:
 /// String       -> flat `|`-separated form with parentheses eliminated
-///
 fn evaluate(expr: &str) -> String {
     let mut operands: Vec<String> = Vec::new();
     let mut operators: Vec<char> = Vec::new();
@@ -347,11 +383,10 @@ fn evaluate(expr: &str) -> String {
 /// between implicit concatenations.
 ///
 /// Params:
-/// - expr: &str -> raw move expression from the config
+/// - expr: &str   -> raw move expression from the config
 ///
 /// Return:
 /// Option<String> -> canonical `|`-separated expression
-///
 fn normalize(expr: &str) -> Option<String> {
     let indices: Vec<usize> = NORMALIZE_PATTERN
         .find_iter(expr)
@@ -380,11 +415,10 @@ fn normalize(expr: &str) -> Option<String> {
 /// expansion via `betza_atoms`, leaving all other characters untouched.
 ///
 /// Params:
-/// - expr: &str -> single sanitized branch (no `|` alternation)
+/// - expr: &str   -> single sanitized branch (no `|` alternation)
 ///
 /// Return:
 /// Option<String> -> the branch with all atoms expanded
-///
 fn atomize(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -410,11 +444,10 @@ fn atomize(expr: &str) -> Option<String> {
 /// - `[1235678$2]` : an explicit set minus exclusions [135678]
 ///
 /// Params:
-/// - expr: &str -> single sanitized branch (no `|` alternation)
+/// - expr: &str   -> single sanitized branch (no `|` alternation)
 ///
 /// Return:
 /// Option<String> -> branch with every direction filter fully listed
-///
 fn expand_directions(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -478,11 +511,10 @@ fn expand_directions(expr: &str) -> Option<String> {
 /// - `*`     : shorthand for `{..}`
 ///
 /// Params:
-/// - expr: &str -> single sanitized branch (no `|` alternation)
+/// - expr: &str   -> single sanitized branch (no `|` alternation)
 ///
 /// Return:
 /// Option<String> -> branch with every range written in explicit form
-///
 fn expand_ranges(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -527,11 +559,10 @@ fn expand_ranges(expr: &str) -> Option<String> {
 /// - `n+e+s`   : `n|e|s`
 ///
 /// Params:
-/// - expr: &str -> single sanitized branch (no `|` alternation)
+/// - expr: &str   -> single sanitized branch (no `|` alternation)
 ///
 /// Return:
 /// Option<String> -> `|`-joined branches, one per cardinal combination
-///
 fn expand_cardinals(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -592,7 +623,6 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 ///
 /// Return:
 /// Vec<Option<T>>        -> one result per branch, in input order
-///
 fn split_and_process<T>(
     expr: &str,
     f: impl Fn(&str) -> Option<T> + Sync,
@@ -619,7 +649,6 @@ where
 ///
 /// Return:
 /// String       -> fully normalized and expanded `|`-separated expression
-///
 fn parse_move_string(expr: &str) -> String {
 
     log_4!("Starting parse_move_string with expression: {}", expr);
@@ -685,7 +714,6 @@ fn parse_move_string(expr: &str) -> String {
 ///
 /// Return:
 /// &str                -> dominant cardinal direction name ("n", "ne", ...)
-///
 fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
     let abs_x = vector.0.saturating_abs();
     let abs_y = vector.1.saturating_abs();
@@ -743,9 +771,9 @@ fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
 /// - vectors: Vec<AtomicVector> -> the eight cardinal outcomes to sort
 ///
 /// Return:
-/// Vec<AtomicVector>            -> the eight vectors in canonical clockwise
-///                                 order
 ///
+/// Vec<AtomicVector>
+/// the eight vectors in canonical clockwise order
 fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
     assert_eq!(
         vectors.len(),
@@ -816,7 +844,6 @@ fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
 /// impl Fn(i8, i8)   -> (bool, bool, bool, bool) -> per-point classifier
 ///                      yielding (is north, is east, is south, is west) in that
 ///                      frame
-///
 fn quadrant_function(
     direction: &str,
 ) -> impl Fn(i8, i8) -> (bool, bool, bool, bool) {
@@ -848,7 +875,6 @@ fn quadrant_function(
 ///
 /// Return:
 /// Vec<AtomicVector>            -> the selected vectors, in index order
-///
 fn filter_atomic_by_index(
     mut vectors: Vec<AtomicVector>,
     index: Vec<usize>,
@@ -888,7 +914,6 @@ fn filter_atomic_by_index(
 ///
 /// Return:
 /// Vec<AtomicVector>              -> vectors passing the directional test
-///
 fn filter_atomic_by_cardinal_direction(
     mut vectors: Vec<AtomicVector>,
     direction: &str,
@@ -929,7 +954,6 @@ fn filter_atomic_by_cardinal_direction(
 /// Params:
 /// - vector: &mut Vec<AtomicVector> -> working set, pruned in place
 /// - state : &State                 -> board dimensions for the bound
-///
 fn filter_atomic_out_of_bounds(
     vector: &mut Vec<AtomicVector>,
     state: &State,
@@ -948,7 +972,6 @@ fn filter_atomic_out_of_bounds(
 ///
 /// Params:
 /// - vectors: &mut Vec<Element> -> collection deduplicated in place
-///
 fn remove_duplicates_in_place<Element>(vectors: &mut Vec<Element>)
 where
     Element: Clone + Eq + Hash,
@@ -969,7 +992,6 @@ where
 ///
 /// Return:
 /// Vec<AtomicVector>               -> the extended, clipped working set
-///
 fn process_atomic_dots_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -1004,7 +1026,6 @@ fn process_atomic_dots_token(
 ///
 /// Return:
 /// Vec<AtomicVector>               -> the branched, clipped working set
-///
 fn process_atomic_range_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -1091,9 +1112,9 @@ fn process_atomic_range_token(
 /// - state     : &State                          -> board dimensions
 ///
 /// Return:
-/// Vec<AtomicVector>                             -> the repeated, clipped
-///                                                  working set
 ///
+/// Vec<AtomicVector>
+/// the repeated, clipped working set
 fn process_atomic_colon_range_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -1210,7 +1231,6 @@ fn process_atomic_colon_range_token(
 ///
 /// Return:
 /// Vec<AtomicVector>                             -> the filtered working set
-///
 fn process_atomic_modifiers(
     mut vector_set: Vec<AtomicVector>,
     modifiers: &(Option<Token>, Option<Token>),
@@ -1260,7 +1280,6 @@ fn process_atomic_modifiers(
 ///
 /// Return:
 /// Vec<AtomicVector>                            -> the extended working set
-///
 fn evaluate_atomic_term(
     result: Vec<AtomicVector>,
     term: Token,
@@ -1308,7 +1327,6 @@ fn evaluate_atomic_term(
 ///
 /// Return:
 /// Vec<AtomicVector>                            -> the extended working set
-///
 fn evaluate_atomic_subexpression(
     result: Vec<AtomicVector>,
     subexpr: AtomicGroup,
@@ -1361,7 +1379,6 @@ fn evaluate_atomic_subexpression(
 ///
 /// Return:
 /// AtomicElement           -> an `AtomicEval` wrapping the evaluated branches
-///
 fn evaluate_atomic_expression(
     expr: AtomicGroup,
     rotation: &str,
@@ -1477,7 +1494,6 @@ fn evaluate_atomic_expression(
 /// - stack      : &mut VecDeque<Term> -> parser stack holding pending terms
 /// - is_bracket : IsBracket           -> predicate matching the opening bracket
 /// - wrap_result: WrapResult          -> constructor wrapping the popped group
-///
 fn process_closing_bracket<Term, IsBracket, WrapResult>(
     stack: &mut VecDeque<Term>,
     is_bracket: IsBracket,
@@ -1529,7 +1545,7 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 /// │    │    │    │    │    │    │    │    │    │
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
-/// ```text
+///
 /// Mapping:
 /// - 1: n  (north)      - vector (0, 1)
 /// - 2: ne (northeast)  - vector (1, 1)
@@ -1539,7 +1555,7 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 /// - 6: sw (southwest)  - vector (-1, -1)
 /// - 7: w  (west)       - vector (-1, 0)
 /// - 8: nw (northwest)  - vector (-1, 1)
-/// ```
+///
 ///
 /// Examples:
 ///
@@ -1627,7 +1643,6 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 ///
 /// Return:
 /// Vec<(i8, i8)>    -> unit displacement vectors selected by the atomic
-///
 fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 
     log_4!(
@@ -1914,9 +1929,9 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// - rotation: &str -> cardinal direction the chain is rotated toward
 ///
 /// Return:
-/// Vec<AtomicVector> -> every (whole, last) displacement the chain produces,
-///                     one per branch
 ///
+/// Vec<AtomicVector>
+/// every (whole, last) displacement the chain produces, one per branch
 fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 
     log_4!(
@@ -2096,9 +2111,9 @@ fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 /// - state   : &State -> board dimensions for bounds clipping
 ///
 /// Return:
-/// Vec<AtomicVector>  -> every (whole, last) displacement the compound
-///                       produces, one per branch
 ///
+/// Vec<AtomicVector>
+/// every (whole, last) displacement the compound produces, one per branch
 fn compound_atomic_to_vector(
     expr: &str,
     rotation: &str,
@@ -2172,7 +2187,6 @@ fn compound_atomic_to_vector(
 ///
 /// Return:
 /// (i8, i8)                   -> net (x, y) displacement of the branch
-///
 fn sum_multi_leg_vectors(vectors: &MultiLegVector) -> (i8, i8) {
     let mut sum: (i8, i8) = (0, 0);
 
@@ -2197,9 +2211,9 @@ fn sum_multi_leg_vectors(vectors: &MultiLegVector) -> (i8, i8) {
 /// - vectors: Vec<MultiLegVector> -> the eight cardinal outcomes to sort
 ///
 /// Return:
-/// Vec<MultiLegVector>            -> branches ordered clockwise starting from
-///                                   north
 ///
+/// Vec<MultiLegVector>
+/// branches ordered clockwise starting from north
 fn sort_multi_leg_clockwise(
     mut vectors: Vec<MultiLegVector>,
 ) -> Vec<MultiLegVector> {
@@ -2233,7 +2247,6 @@ fn sort_multi_leg_clockwise(
 ///
 /// Return:
 /// Vec<MultiLegVector>            -> the selected branches, in index order
-///
 fn filter_multi_leg_by_index(
     mut vectors: Vec<MultiLegVector>,
     index: Vec<usize>,
@@ -2270,7 +2283,6 @@ fn filter_multi_leg_by_index(
 ///
 /// Return:
 /// Vec<MultiLegVector>              -> branches passing the directional test
-///
 fn filter_multi_leg_by_cardinal_direction(
     mut vectors: Vec<MultiLegVector>,
     direction: &str,
@@ -2311,7 +2323,6 @@ fn filter_multi_leg_by_cardinal_direction(
 /// Params:
 /// - vectors: &mut Vec<MultiLegVector> -> working set, pruned in place
 /// - state  : &State                   -> board dimensions for the bound
-///
 fn filter_multi_leg_out_of_bounds(
     vectors: &mut Vec<MultiLegVector>,
     state: &State,
@@ -2336,7 +2347,6 @@ fn filter_multi_leg_out_of_bounds(
 ///
 /// Return:
 /// Vec<MultiLegVector>               -> the extended, clipped working set
-///
 fn process_multi_leg_dots_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2376,7 +2386,6 @@ fn process_multi_leg_dots_token(
 ///
 /// Return:
 /// Vec<MultiLegVector>               -> the branched, clipped working set
-///
 fn process_multi_leg_range_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2475,7 +2484,6 @@ fn process_multi_leg_range_token(
 ///
 /// Return:
 /// Vec<MultiLegVector>                   -> the repeated, clipped working set
-///
 fn process_multi_leg_colon_range_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2636,7 +2644,6 @@ fn process_multi_leg_colon_range_token(
 ///
 /// Return:
 /// Vec<MultiLegVector>               -> the filtered working set
-///
 fn process_multi_leg_modifiers(
     mut vector_set: Vec<MultiLegVector>,
     modifiers: &[Option<Token>; 3],
@@ -2689,7 +2696,6 @@ fn process_multi_leg_modifiers(
 ///
 /// Return:
 /// Vec<MultiLegVector>              -> the extended working set
-///
 fn evaluate_multi_leg_term_leg(
     result: Vec<MultiLegVector>,
     term: Token,
@@ -2785,7 +2791,6 @@ fn evaluate_multi_leg_term_leg(
 ///
 /// Return:
 /// Vec<MultiLegVector>              -> the extended working set
-///
 fn evaluate_multi_leg_subexpression(
     result: Vec<MultiLegVector>,
     expr: MultiLegElement,
@@ -2901,9 +2906,9 @@ fn evaluate_multi_leg_subexpression(
 /// - state   : &State        -> board dimensions for bounds clipping
 ///
 /// Return:
-/// MultiLegElement           -> a `MultiLegEval` wrapping the evaluated
-///                              branches
 ///
+/// MultiLegElement
+/// a `MultiLegEval` wrapping the evaluated branches
 fn evaluate_multi_leg_expression(
     expr: MultiLegGroup,
     rotation: &str,
@@ -3061,7 +3066,6 @@ fn evaluate_multi_leg_expression(
 ///
 /// Return:
 /// Vec<String>  -> tokens ready for the multi-leg stack parser
-///
 fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
     let token_matches: Vec<_> = LEG_TOKENS.find_iter(expr).collect();
     assert!(
@@ -3178,13 +3182,12 @@ fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
 /// The result keeps exactly one `LegVector` per produced branch.
 ///
 /// Params:
-/// - expr    : &str   -> one leg expression, e.g. "mc[26]K@nK"
-/// - rotation: &str   -> cardinal direction the leg is rotated toward
-/// - state   : &State -> board dimensions for bounds clipping
+/// - expr    : &str    -> one leg expression, e.g. "mc[26]K@nK"
+/// - rotation: &str    -> cardinal direction the leg is rotated toward
+/// - state   : &State  -> board dimensions for bounds clipping
 ///
 /// Return:
 /// Vec<MultiLegVector> -> single-leg branches, one per displacement
-///
 fn leg_to_vector(
     expr: &str,
     rotation: &str,
@@ -3250,13 +3253,12 @@ fn leg_to_vector(
 /// `evaluate_multi_leg_expression`.
 ///
 /// Params:
-/// - expr    : &str   -> one sanitized multi-leg branch
-/// - rotation: &str   -> direction the whole expression is rotated toward
-/// - state   : &State -> board dimensions for bounds clipping
+/// - expr    : &str    -> one sanitized multi-leg branch
+/// - rotation: &str    -> direction the whole expression is rotated toward
+/// - state   : &State  -> board dimensions for bounds clipping
 ///
 /// Return:
 /// Vec<MultiLegVector> -> every concrete branch of the expression
-///
 fn multi_leg_to_vector(
     expr: &str,
     rotation: &str,
@@ -3356,12 +3358,11 @@ fn multi_leg_to_vector(
 /// Duplicate outcomes are removed before returning the final vector set.
 ///
 /// Params:
-/// - expr : &str   -> raw move expression from the config
-/// - state: &State -> board dimensions for bounds clipping
+/// - expr : &str       -> raw move expression from the config
+/// - state: &State     -> board dimensions for bounds clipping
 ///
 /// Return:
 /// Vec<MultiLegVector> -> deduplicated branches for the whole expression
-///
 pub fn generate_move_vectors(
     expr: &str,
     state: &State,

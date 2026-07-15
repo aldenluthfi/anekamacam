@@ -1,4 +1,4 @@
-//! # sprt.rs
+//! sprt.rs
 //!
 //! Built-in engine-versus-engine match runner with a Sequential
 //! Probability Ratio Test.
@@ -10,11 +10,8 @@
 //! is a real strength gain. It replaces the manual GUI-and-Fairy-Stockfish
 //! loop with a self-contained console command.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 05/07/2026
+//! Created: 05/07/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -31,7 +28,6 @@ use crate::*;
 ///
 /// Return:
 /// PathBuf        -> per-binary sandbox directory path
-///
 fn engine_sandbox(binary: &str) -> PathBuf {
     let executable = fs::canonicalize(binary).unwrap_or_else(|e| {
         panic!("Failed to resolve engine {}: {}", binary, e)
@@ -86,15 +82,7 @@ struct SPRTChild {
 /// UciEngine protocol driver.
 ///
 /// A tight family of methods that own one subprocess engine's UCI
-/// conversation:
-///
-/// - spawn        -> launch the binary in UCI mode and complete handshake
-/// - send         -> write one command line and flush it
-/// - read_line    -> read one reply line, None at end of stream
-/// - wait_for     -> consume replies until one starts with a token
-/// - new_game     -> reset the engine between games
-/// - bestmove     -> set the position, run one `go`, return the move
-/// - drain_errors -> collect the child's stderr for crash diagnostics
+/// conversation.
 ///
 /// `spawn` configures the engine for the variant with a small hash and a
 /// single thread for fair, reproducible games, and runs it inside its
@@ -103,21 +91,39 @@ struct SPRTChild {
 /// which the referee scores as a loss; handshake failures panic since
 /// they are setup errors.
 ///
-/// Params (spawn):
-/// - binary : &str -> path to the engine executable
-/// - variant: &str -> UCI variant name to select
+/// spawn
+///   Params:
+///   - binary : &str -> path to the engine executable
+///   - variant: &str -> UCI variant name to select
+///   Return:
+///   SPRTChild -> the handshaken engine subprocess
 ///
-/// Params (send):
-/// - command: &str -> the command line to write
+/// send
+///   Params:
+///   - command: &str -> the command line to write and flush
 ///
-/// Params (wait_for):
-/// - token: &str -> leading token that ends the wait
+/// read_line
+///   Return:
+///   Option<String> -> one reply line, None at end of stream
 ///
-/// Params (bestmove):
-/// - startpos  : &str      -> the variant start-position FEN
-/// - moves     : &[String] -> moves played so far, in UCI notation
-/// - go_command: &str      -> the `go` line carrying the time control
+/// wait_for
+///   Params:
+///   - token: &str -> leading token that ends the wait
 ///
+/// new_game
+///   resets the engine between games; no parameters, no return value
+///
+/// bestmove
+///   Params:
+///   - startpos  : &str      -> the variant start-position FEN
+///   - moves     : &[String] -> moves played so far, in UCI notation
+///   - go_command: &str      -> the `go` line carrying the time control
+///   Return:
+///   Option<String> -> the engine's move, None when its stream ended
+///
+/// drain_errors
+///   Return:
+///   String -> the child's collected stderr, for crash diagnostics
 impl SPRTChild {
     fn spawn(binary: &str, variant: &str) -> SPRTChild {
         let executable = fs::canonicalize(binary).unwrap_or_else(|e| {
@@ -273,7 +279,6 @@ impl Drop for SPRTChild {
 ///
 /// Return:
 /// Vec<Move>          -> the shared opening line, in play order
-///
 fn opening_line(template: &State, plies: usize) -> Vec<Move> {
     let mut state = template.fork();
     state.play_random_opening(plies);
@@ -298,38 +303,51 @@ struct GameManager {
 
 /// GameManager driver.
 ///
-/// A tight family that runs one refereed match slot:
-///
-/// - new         -> spawn both children and fork a referee at startpos
-/// - swap_colors -> exchange which child plays which colour
-/// - reset_to    -> fork state, replay a shared opening, and tell both engines
-/// - play        -> run one game, streaming the live position to the TUI
+/// A tight family that runs one refereed match slot.
 ///
 /// `play` rebuilds each engine's move list from the referee's own history
 /// every ply (with `format_move`), so no parallel move-string list is
 /// kept; a missing, unparsable, or illegal reply loses for that side,
 /// while mate and the draw rules are adjudicated by the referee.
 ///
-/// Params (new):
-/// - template: &State -> loaded variant, forked as the referee
-/// - binary_a: &str   -> path to the child that starts as White
-/// - binary_b: &str   -> path to the child that starts as Black
-/// - variant : &str   -> UCI variant name for both children
+/// new
+///   Params:
+///   - template: &State  -> loaded variant, forked as the referee
+///   - binary_a: &str    -> path to the child that starts as White
+///   - binary_b: &str    -> path to the child that starts as Black
+///   - variant : &str    -> UCI variant name for both children
+///   Return:
+///   GameManager         -> both children spawned, referee at startpos
 ///
-/// Params (reset_to):
-/// - template: &State  -> loaded variant to fork the referee from
-/// - opening : &[Move] -> shared opening line to replay
+/// swap_colors
+///   exchanges which child plays which colour; no parameters, no
+///   return value
 ///
-/// Params (play):
-/// - dict        : Option<&Translator> -> UCI translator for move I/O
-/// - startpos    : &str                -> the variant start-position FEN
-/// - time_control: SPRTTimeControl     -> per-move budget or clock bank
-/// - sender      : &Sender<TuiEvent>   -> channel for live board updates
+/// reset_to
+///   Params:
+///   - template: &State  -> loaded variant to fork the referee from
+///   - opening : &[Move] -> shared opening line to replay
 ///
-/// Return (play):
-/// f64 -> the White-perspective game score; under a clock control a side
-///        that oversteps its remaining bank loses on time
+/// play
+///   Params:
 ///
+///   - dict: Option<&Translator>
+///     UCI translator for move I/O
+///
+///   - startpos: &str
+///     the variant start FEN
+///
+///   - time_control: SPRTTimeControl
+///     per-move budget or clock bank
+///
+///   - sender: &Sender<TuiEvent>
+///     channel for live board updates
+///
+///   Return:
+///
+///   f64
+///   the White-perspective game score; under a clock control a side that
+///   oversteps its remaining bank loses on time
 impl GameManager {
     fn new(
         template: &State,
@@ -452,29 +470,32 @@ impl GameManager {
 
 /// SPRT statistics.
 ///
-/// A tight family of pure functions for the normalised pentanomial test:
-///
-/// - expected_score  -> the logistic expected score for an Elo gap
-/// - elo_from_score  -> the Elo estimate implied by a score
-/// - log_likelihood_ratio -> the GSPRT LLR from pair mean and variance
-///
+/// A tight family of pure functions for the normalised pentanomial test.
 /// The LLR uses the pair sample mean and population variance, so a pair's
 /// variance reduction sharpens the test relative to counting single
 /// games; it returns zero until the sample shows any variance.
 ///
-/// Params (expected_score):
-/// - elo: f64 -> the Elo advantage to convert
+/// expected_score
+///   Params:
+///   - elo     : f64 -> the Elo advantage to convert
+///   Return:
+///   f64             -> the logistic expected score for that Elo gap
 ///
-/// Params (elo_from_score):
-/// - score: f64 -> the observed per-game score
+/// elo_from_score
+///   Params:
+///   - score   : f64 -> the observed per-game score
+///   Return:
+///   f64             -> the Elo estimate implied by the score
 ///
-/// Params (log_likelihood_ratio):
-/// - pairs   : f64 -> number of game pairs played
-/// - mean    : f64 -> mean normalised pair score
-/// - variance: f64 -> population variance of pair scores
-/// - mu_zero : f64 -> expected score under the null hypothesis
-/// - mu_one  : f64 -> expected score under the alternative hypothesis
-///
+/// log_likelihood_ratio
+///   Params:
+///   - pairs   : f64 -> number of game pairs played
+///   - mean    : f64 -> mean normalised pair score
+///   - variance: f64 -> population variance of pair scores
+///   - mu_zero : f64 -> expected score under the null hypothesis
+///   - mu_one  : f64 -> expected score under the alternative hypothesis
+///   Return:
+///   f64             -> the GSPRT log-likelihood ratio
 fn expected_score(elo: f64) -> f64 {
     1.0 / (1.0 + 10f64.powf(-elo / 400.0))
 }
@@ -506,11 +527,10 @@ fn log_likelihood_ratio(
 /// {0, 0.5, 1} outcomes.
 ///
 /// Params:
-/// - score: f64 -> a single game's score for the counted engine
+/// - score: f64    -> a single game's score for the counted engine
 ///
 /// Return:
 /// (u32, u32, u32) -> a (win, draw, loss) increment to add
-///
 fn game_score_bucket(score: f64) -> (u32, u32, u32) {
     if score > 0.75 {
         (1, 0, 0)
@@ -538,7 +558,6 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 /// - wins/draws/losses: u32             -> tally from engine A's view
 /// - llr              : f64             -> the final log-likelihood ratio
 /// - verdict          : &str            -> the test outcome text
-///
 fn write_result_file(
     variant: &str,
     binary_a: &str,
@@ -598,7 +617,6 @@ fn write_result_file(
 /// - max_games   : usize           -> maximum games before inconclusive
 /// - h0          : f64             -> null-hypothesis Elo bound
 /// - h1          : f64             -> alternative-hypothesis Elo bound
-///
 pub fn run_sprt(
     template: &State,
     variant: &str,

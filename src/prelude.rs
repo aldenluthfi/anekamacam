@@ -1,20 +1,14 @@
-//! # prelude.rs
+//! prelude.rs
 //!
 //! Project-wide prelude for the anekamacam engine.
 //!
 //! This file re-exports the most commonly used types, macros, and functions
 //! from the project for convenient use in all modules. Import this prelude
 //! to avoid repetitive imports and enable ergonomic access to core engine
-//! functionality.
+//! functionality. To use it, add `use crate::*;` at the top of the module.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 25/02/2026
-//!
-//! # Usage
-//! Add `use crate::*;` at the top of the module.
+//! Created: 25/02/2026
+//! Author : Alden Luthfi
 
 /*----------------------------------------------------------------------------*\
                               CORE REPRESENTATIONS
@@ -337,6 +331,14 @@ lazy_static! {
 /// that mark "no move" in PV tables, killer slots, and TT entries. They
 /// are functions rather than constants because `Move` holds a non-const
 /// `Option<Arc<..>>` payload.
+///
+/// null_move
+///   Return:
+///   Move       -> all-ones sentinel move with no capture payload
+///
+/// null_pseudo_move
+///   Return:
+///   PseudoMove -> all-ones packed move with a zero signature
 pub fn null_move() -> Move {
     Move(!0u128, None)
 }
@@ -416,7 +418,6 @@ pub const HASH_MAX_MB: usize = 65536;
 ///
 /// - `SPRT_ALPHA` / `SPRT_BETA` -> the SPRT type-one and type-two error
 ///   rates that set the log-likelihood acceptance bounds.
-///
 pub const OPENING_RANDOM_PLIES: usize = 8;
 pub const ADAM_BETA_ONE: f64 = 0.9;
 pub const ADAM_BETA_TWO: f64 = 0.999;

@@ -1,4 +1,4 @@
-//! # piece_io.rs
+//! piece_io.rs
 //!
 //! Utilities for reading and writing piece data during engine setup.
 //!
@@ -6,11 +6,8 @@
 //! piece attributes (material values, classification flags) into their packed
 //! bit representations used by the evaluator.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 26/05/2026
+//! Created: 26/05/2026
+//! Author : Alden Luthfi
 use crate::*;
 
 /// collect_piece_type_pairs
@@ -20,11 +17,10 @@ use crate::*;
 /// on white pieces only and copies results onto these twins.
 ///
 /// Params:
-/// - state: &State -> variant whose swap map is walked
+/// - state: &State     -> variant whose swap map is walked
 ///
 /// Return:
 /// Vec<(usize, usize)> -> (white index, black index) per piece type
-///
 pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
     let mut type_pairs = Vec::new();
 
@@ -62,7 +58,6 @@ pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
 /// - evalue  : u16        -> derived endgame value (14-bit)
 /// - is_big  : bool       -> big-piece role flag
 /// - is_major: bool       -> major-piece role flag
-///
 pub fn set_piece_dynamic_parameters(
     piece: &mut Piece,
     ovalue: u16,

@@ -1,4 +1,4 @@
-//! # parallel.rs
+//! parallel.rs
 //!
 //! Parallel search with lock-free shared transposition table.
 //!
@@ -8,21 +8,17 @@
 //! and they cooperate only through the shared, XOR-encoded transposition
 //! table, synchronizing on nothing but start and stop.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 11/05/2026
+//! Created: 11/05/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
 /// ThreadPool
 ///
-/// Runs N independent iterative-deepening threads sharing lock-free
-/// TT/QT/PT tables.
-/// Each thread gets its own state clone and SearchBufs; synchronization is
-/// limited to start/stop. After all threads join, run() returns the result
-/// with the highest score.
+/// Runs independent iterative-deepening workers with shared lock-free tables.
+///
+/// Every worker owns a state clone and search buffers. The pool synchronizes
+/// only launch and join, then returns the highest-scoring completed result.
 pub struct ThreadPool {
     pub main_state: State,                                                      /* root position, cloned per worker   */
     pub tt: Arc<TTable>,                                                        /* shared main transposition table    */
@@ -47,7 +43,6 @@ impl ThreadPool {
     ///
     /// Return:
     /// Self                 -> the configured pool
-    ///
     pub fn with_threads(
         root: &State, tt: Arc<TTable>, qt: Arc<QTable>, pt: Arc<PTable>,
         count: usize,
@@ -75,7 +70,6 @@ impl ThreadPool {
     ///
     /// Return:
     /// SearchResult                -> the best result across all workers
-    ///
     pub fn run(
         self,
         info: &SearchInfo,

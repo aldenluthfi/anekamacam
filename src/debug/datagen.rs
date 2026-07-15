@@ -1,4 +1,4 @@
-//! # datagen.rs
+//! datagen.rs
 //!
 //! Self-play training-data generation for Texel tuning.
 //!
@@ -8,11 +8,8 @@
 //! result from White's perspective — into a reusable on-disk dataset
 //! that `tuning.rs` later optimises the evaluation against.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 05/07/2026
+//! Created: 05/07/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -36,9 +33,7 @@ use crate::*;
 /// - sender     : &Sender<TuiEvent>   -> channel for live board updates
 ///
 /// Return:
-/// (Vec<String>, f64)                 -> quiet-position FENs and the White-view
-///                                       result
-///
+/// (Vec<String>, f64) -> quiet-position FENs and the White-view result
 fn play_one_game(
     template: &State,
     dict: Option<&Translator>,
@@ -132,7 +127,6 @@ fn play_one_game(
 /// - games      : usize               -> number of self-play games to play
 /// - movetime_ms: u128                -> fixed wall-clock budget per move
 /// - sender     : &Sender<TuiEvent>   -> channel for live board updates
-///
 pub fn run_datagen(
     template: &State,
     variant: &str,

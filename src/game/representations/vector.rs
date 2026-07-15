@@ -1,4 +1,4 @@
-//! # vector.rs
+//! vector.rs
 //!
 //! Implements move vector and leg representations for chess-like games.
 //!
@@ -9,11 +9,8 @@
 //! movement-notation compiler builds on the way there — so generation reasons
 //! about movement uniformly across variants.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 12/02/2026
+//! Created: 12/02/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -24,29 +21,86 @@ use crate::*;
 /// Leg encoding/decoding helper macros used by move generation.
 ///
 /// A `Leg` is a packed `u32` where:
-/// - bits 0-7      : encode the `x` delta
-/// - bits 8-15     : encode the `y` delta
-/// - bits 16-31    : encode movement and capture modifiers
+///
+/// - Bits 0..7     : signed file displacement
+/// - Bits 8..15    : signed rank displacement
+/// - Bits 16..31   : movement and capture modifiers
 ///
 /// `leg!` packs a parsed `LegVector` into the compact `Leg`; the rest read
-/// one field each (see [`LegVector`] for full modifier meanings):
+/// one field each; [`LegVector`] documents all modifier meanings.
 ///
-/// - x!        : signed `x` delta
-/// - y!        : signed `y` delta
-/// - m!        : may move on this leg
-/// - c!        : may capture on this leg
-/// - d!        : may destroy (capture a friendly piece) on this leg
-/// - u!        : may unload on this leg
-/// - k!        : capture must be royal
-/// - v!        : capture must be virgin (unmoved)
-/// - g!        : capture must be of greater rank
-/// - t!        : may capture en passant
-/// - i!        : must be an initial move
-/// - p!        : start square creates an en passant square
-/// - not_k!    : capture must not be royal
-/// - not_v!    : capture must not be virgin
-/// - not_g!    : capture must not be of greater rank
-/// - not_i!    : must not be an initial move
+/// leg!
+///   Params:
+///   - leg_vector: &LegVector -> parsed leg to pack
+///   Return:
+///   Leg -> packed `u32` leg word
+///
+/// Reader params (every reader):
+/// - leg_word: Leg -> packed leg word read
+///
+/// x!
+///   Return:
+///   i8 -> signed `x` delta (bits 0-7)
+///
+/// y!
+///   Return:
+///   i8 -> signed `y` delta (bits 8-15)
+///
+/// m!
+///   Return:
+///   bool -> may move on this leg (bit 16)
+///
+/// c!
+///   Return:
+///   bool -> may capture on this leg (bit 17)
+///
+/// d!
+///   Return:
+///   bool -> may destroy (capture a friendly piece) on this leg (bit 18)
+///
+/// u!
+///   Return:
+///   bool -> may unload on this leg (bit 19)
+///
+/// k!
+///   Return:
+///   bool -> capture must be royal (bit 20)
+///
+/// v!
+///   Return:
+///   bool -> capture must be virgin (unmoved) (bit 21)
+///
+/// g!
+///   Return:
+///   bool -> capture must be of greater rank (bit 22)
+///
+/// t!
+///   Return:
+///   bool -> may capture en passant (bit 23)
+///
+/// i!
+///   Return:
+///   bool -> must be an initial move (bit 24)
+///
+/// p!
+///   Return:
+///   bool -> start square creates an en passant square (bit 25)
+///
+/// not_k!
+///   Return:
+///   bool -> capture must not be royal (bit 26)
+///
+/// not_v!
+///   Return:
+///   bool -> capture must not be virgin (bit 27)
+///
+/// not_g!
+///   Return:
+///   bool -> capture must not be of greater rank (bit 28)
+///
+/// not_i!
+///   Return:
+///   bool -> must not be an initial move (bit 29)
 #[macro_export]
 macro_rules! leg {
     ($l:expr) => {
@@ -170,29 +224,38 @@ macro_rules! not_i {
 
 /// Leg
 ///
-/// Represents one compact leg used during move generation and validation.
-/// This alias stores the fully encoded displacement and modifier flags in a
-/// single `u32`, matching the packed layout used by `LegVector` helpers.
-/// It is used when only whole-leg semantics are needed.
+/// One packed movement leg used during generation and validation.
+///
+/// The word stores a signed displacement and modifier flags, matching the
+/// layout read by the leg accessors and written from [`LegVector`].
 pub type Leg = u32;
 
 /// MoveVector / MoveSet
 ///
-/// A `MoveVector` is one complete movement option: the ordered legs a piece
-/// traverses to perform a single move. A `MoveSet` collects every movement
-/// option a piece has, as produced by the move expression parser.
+/// A `MoveVector` is one complete movement option: its ordered legs are
+/// visited from origin to destination. A `MoveSet` collects every option the
+/// movement-expression parser produced for one piece type.
 pub type MoveVector = Vec<Leg>;
 pub type MoveSet = Vec<MoveVector>;
 
 /// MoveVector queries
 ///
 /// Whole-vector predicates over a `MoveVector`, reading its ordered `Leg`s
-/// through the leg accessors above:
+/// through the leg accessors above. Every member takes the same single
+/// parameter:
+/// - vector: &MoveVector -> ordered legs of one movement option
 ///
-/// - vector_offset!        : net (file, rank) displacement, summing every leg
-/// - vector_moves_quietly! : whether the final leg plays as a quiet move
-/// - vector_is_initial!    : whether any leg is restricted to the first move
+/// vector_offset!
+///   Return:
+///   (i32, i32)          -> net (file, rank) displacement, summing every leg
 ///
+/// vector_moves_quietly!
+///   Return:
+///   bool                -> whether the final leg plays as a quiet move
+///
+/// vector_is_initial!
+///   Return:
+///   bool                -> whether any leg is restricted to the first move
 #[macro_export]
 macro_rules! vector_offset {
     ($vector:expr) => {{
@@ -416,7 +479,6 @@ impl LegVector {
     ///
     /// Return:
     /// Self                      -> the packed leg vector
-    ///
     pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
         let bits = Self::parse_modifiers(modifiers);
         let atomic_bits = atomic.0 as u64;
@@ -435,7 +497,6 @@ impl LegVector {
     ///
     /// Return:
     /// u16          -> modifier bitmask as laid out on [`LegVector`]
-    ///
     fn parse_modifiers(mods: &str) -> u16 {
         let mut bits = 0u16;
         let chars = &mut mods.chars();
@@ -477,7 +538,6 @@ impl LegVector {
     ///
     /// Return:
     /// String -> modifier letters, negations prefixed by a single `!`
-    ///
     pub fn get_modifiers_str(&self) -> String {
         let mut s = "".to_string();
 
@@ -525,6 +585,26 @@ impl LegVector {
     /// word (atomic displacement low, modifier bits high), `set_atomic`
     /// overwrites the displacement half, `as_tuple` returns both halves,
     /// and `add_modifier` ORs extra modifier letters into the current set.
+    ///
+    /// get_atomic
+    ///   Return:
+    ///   AtomicVector             -> displacement half (bits 0..31)
+    ///
+    /// get_modifiers
+    ///   Return:
+    ///   u16                      -> modifier bits (bits 32..47)
+    ///
+    /// set_atomic
+    ///   Params:
+    ///   - atomic  : AtomicVector -> displacement written into bits 0..31
+    ///
+    /// as_tuple
+    ///   Return:
+    ///   (AtomicVector, u16)      -> both halves, displacement first
+    ///
+    /// add_modifier
+    ///   Params:
+    ///   - modifier: &str         -> modifier letters ORed into the current set
     pub fn get_atomic(&self) -> AtomicVector {
         AtomicVector((self.0 & 0xFFFF_FFFF) as u32)
     }
@@ -657,6 +737,49 @@ impl AtomicVector {
     /// components in place. `origin(rotation)` builds the zero displacement
     /// whose `last` field carries the cardinal unit vector of `rotation`,
     /// seeding direction-relative expression expansion.
+    ///
+    /// new
+    ///   Params:
+    ///   - whole: (i8, i8) -> full displacement, packed into bytes 0-1
+    ///   - last : (i8, i8) -> final-step displacement, bytes 2-3
+    ///   Return:
+    ///   Self -> the packed displacement pair
+    ///
+    /// origin
+    ///   Params:
+    ///   - rotation: i8 -> cardinal index selecting the unit vector
+    ///   Return:
+    ///   Self -> zero displacement whose `last` is that unit vector
+    ///
+    /// whole
+    ///   Return:
+    ///   (i8, i8) -> full displacement (bytes 0-1)
+    ///
+    /// last
+    ///   Return:
+    ///   (i8, i8) -> final-step displacement (bytes 2-3)
+    ///
+    /// set
+    ///   Params:
+    ///   - other: &AtomicVector -> displacement copied wholesale
+    ///
+    /// set_last
+    ///   Params:
+    ///   - last: (i8, i8) -> final-step displacement written to bytes 2-3
+    ///
+    /// set_whole
+    ///   Params:
+    ///   - whole: (i8, i8) -> full displacement written to bytes 0-1
+    ///
+    /// as_tuple
+    ///   Return:
+    ///   [(i8, i8); 2] -> [whole, last] displacement pair
+    ///
+    /// from_tuple
+    ///   Params:
+    ///   - vectors: [(i8, i8); 2] -> [whole, last] pair to pack
+    ///   Return:
+    ///   Self -> the packed displacement pair
     pub fn new(whole: (i8, i8), last: (i8, i8)) -> Self {
         let x1 = (whole.0 as u8) as u32;
         let y1 = (whole.1 as u8) as u32;
@@ -719,7 +842,6 @@ impl AtomicVector {
     ///
     /// Return:
     /// AtomicVector           -> the combined displacement
-    ///
     pub fn add(&self, other: &AtomicVector) -> AtomicVector {
         let (wx1, wy1) = self.whole();
         let (wx2, wy2) = other.whole();
@@ -745,7 +867,6 @@ impl AtomicVector {
     ///
     /// Return:
     /// AtomicVector   -> extended displacement, `last` unchanged
-    ///
     pub fn add_last(&self, multiple: i8) -> AtomicVector {
         let (wx1, wy1) = self.whole();
         let (lx2, ly2) = self.last();

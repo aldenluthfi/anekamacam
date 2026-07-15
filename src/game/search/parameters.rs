@@ -1,4 +1,4 @@
-//! # parameters.rs
+//! parameters.rs
 //!
 //! Automatic derivation of dynamic evaluation parameters for pieces.
 //!
@@ -9,11 +9,8 @@
 //! where that value ranks in the army, and opening/endgame PSTs shaped to the
 //! variant's board -- so every variant is scored on its own terms.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 08/05/2026
+//! Created: 08/05/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -38,7 +35,6 @@ type PieceRoles = (PieceIndex, bool, bool);
 ///
 /// Return:
 /// Vec<PieceRoles>     -> (index, is_big, is_major) per piece
-///
 fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
     let mut values = HashSet::new();
 
@@ -88,7 +84,6 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 ///
 /// Return:
 /// f64             -> mean reachable fraction of the board, in (0, 1]
-///
 fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
     let board_size = state.statics.board_size;
     let files = state.statics.files as i32;
@@ -161,7 +156,6 @@ fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
 ///
 /// Return:
 /// f64             -> reversible-offset fraction, in [0, 1]
-///
 fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
     let board_size = state.statics.board_size;
     let piece_index = p_index!(piece) as usize;
@@ -233,9 +227,9 @@ fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
 /// - occupancy: f64    -> assumed board fill ratio for the phase
 ///
 /// Return:
-/// f64                 -> raw phase value, later offset-normalized across the
-///                        army
 ///
+/// f64
+/// raw phase value, later offset-normalized across the army
 fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
     log_4!("Deriving base value for piece '{}'", piece.char);
 
@@ -280,9 +274,9 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
 /// - occupancy  : f64        -> assumed board fill ratio
 ///
 /// Return:
-/// f64                       -> expected number of playable vectors from the
-///                              square
 ///
+/// f64
+/// expected number of playable vectors from the square
 fn derive_piece_mobility(
     state: &State, piece_index: PieceIndex, square: usize, occupancy: f64
 ) -> f64 {
@@ -314,9 +308,9 @@ fn derive_piece_mobility(
 /// - occupancy       : f64    -> assumed board fill ratio
 ///
 /// Return:
-/// Option<(f64, i32, i32)>    -> (chance, file delta, rank delta), or
-///                               None for an empty vector
 ///
+/// Option<(f64, i32, i32)>
+/// (chance, file delta, rank delta), or None for an empty vector
 fn derive_vector_chance(
     multi_leg_vector: &[Leg], occupancy: f64
 ) -> Option<(f64, i32, i32)> {
@@ -364,7 +358,6 @@ fn derive_vector_chance(
 ///
 /// Return:
 /// f64              -> distance in square units
-///
 fn derive_distance_from_center(state: &State, square: usize) -> f64 {
     let center_file = if state.statics.files % 2 == 1 {
         vec![(state.statics.files as f64 / 2.0).floor() as u8]
@@ -406,9 +399,9 @@ fn derive_distance_from_center(state: &State, square: usize) -> f64 {
 /// - square     : usize      -> square whose distance is measured
 ///
 /// Return:
-/// f64                       -> distance in square units, infinity when no zone
-///                              exists
 ///
+/// f64
+/// distance in square units, infinity when no zone exists
 fn derive_closest_promotion(
     state: &State, piece_index: PieceIndex, square: usize
 ) -> f64 {
@@ -445,9 +438,9 @@ fn derive_closest_promotion(
 /// - is_endgame : bool       -> selects phase occupancy and weights
 ///
 /// Return:
-/// f64                       -> unnormalized square score, later scaled into
-///                              the PST
 ///
+/// f64
+/// unnormalized square score, later scaled into the PST
 fn derive_square_score(
     state: &State, piece_index: PieceIndex, square: usize, is_endgame: bool
 ) -> f64 {
@@ -482,9 +475,9 @@ fn derive_square_score(
 /// - promoted_value: f64        -> best value reachable by promotion
 ///
 /// Return:
-/// f64                          -> bonus added on top of the positional square
-///                                 score
 ///
+/// f64
+/// bonus added on top of the positional square score
 fn derive_promotion_bonus(
     state: &State, piece_index: PieceIndex, square: usize,
     is_endgame: bool, piece_value: f64, promoted_value: f64
@@ -541,7 +534,6 @@ fn derive_promotion_bonus(
 ///
 /// Return:
 /// Vec<i32>                     -> per-square bonus table in board order
-///
 fn derive_pst(
     index: PieceIndex, state: &State, is_endgame: bool, promoted_value: f64
 ) -> Vec<i32> {
@@ -590,7 +582,6 @@ fn derive_pst(
 ///
 /// Params:
 /// - state: &mut State -> freshly precomputed variant state
-///
 pub fn derive_parameters(state: &mut State) {
     derive_eval_parameters(state);
     derive_search_parameters(state);
@@ -608,7 +599,6 @@ pub fn derive_parameters(state: &mut State) {
 ///
 /// Params:
 /// - state: &mut State -> variant whose dynamic parameters are filled
-///
 pub fn derive_eval_parameters(state: &mut State) {
     log_3!("Deriving dynamic evaluation parameters...");
 
@@ -769,7 +759,6 @@ pub fn derive_eval_parameters(state: &mut State) {
 ///
 /// Params:
 /// - state: &mut State -> variant whose pieces are classified
-///
 fn derive_pawn_like(state: &mut State) {
     let board_size = state.statics.board_size;
 
@@ -856,7 +845,6 @@ fn derive_pawn_like(state: &mut State) {
 ///
 /// Return:
 /// Board            -> bitboard of squares on the pawn's forward path
-///
 fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
@@ -930,7 +918,6 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
 ///
 /// Return:
 /// Board            -> bitboard of enemy squares that stop the passer
-///
 fn derive_pawn_interference(
     state: &State, index: usize, square: usize, path: &Board
 ) -> Board {
@@ -1007,7 +994,6 @@ fn derive_pawn_interference(
 ///
 /// Return:
 /// Board             -> bitboard of capturing source squares
-///
 fn pawn_capture_sources(state: &State, color: u8, targets: &Board) -> Board {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
@@ -1107,7 +1093,6 @@ fn pawn_capture_sources(state: &State, color: u8, targets: &Board) -> Board {
 ///
 /// Return:
 /// Board            -> bitboard of friendly squares that connect the pawn
-///
 fn derive_pawn_support(
     state: &State, index: usize, square: usize, stop: &Board
 ) -> Board {
@@ -1156,7 +1141,6 @@ fn derive_pawn_support(
 ///
 /// Return:
 /// Board            -> bitboard of the pawn's immediate forward stop squares
-///
 fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
@@ -1225,7 +1209,6 @@ fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
 ///
 /// Return:
 /// Vec<i32>        -> sorted, de-duplicated supporting file offsets
-///
 fn derive_pawn_support_offsets(state: &State, index: usize) -> Vec<i32> {
     let board_size = state.statics.board_size;
     let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
@@ -1289,7 +1272,6 @@ fn derive_pawn_support_offsets(state: &State, index: usize) -> Vec<i32> {
 ///
 /// Return:
 /// i32              -> fixed-point advancement, 0..=256
-///
 fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
     let ranks = state.statics.ranks as f64;
     let files = state.statics.files as i32;
@@ -1318,7 +1300,6 @@ fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
 ///
 /// Params:
 /// - state: &mut State -> variant whose pawn tables are filled
-///
 pub fn derive_pawn_parameters(state: &mut State) {
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
@@ -1440,7 +1421,6 @@ pub fn derive_pawn_parameters(state: &mut State) {
 ///
 /// Params:
 /// - state: &mut State -> variant whose search margins are filled
-///
 pub fn derive_search_parameters(state: &mut State) {
     let piece_values: Vec<i32> = state.statics.pieces.iter()
         .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
@@ -1590,7 +1570,6 @@ pub fn derive_search_parameters(state: &mut State) {
 ///
 /// Params:
 /// - state: &mut State -> variant whose front masks are filled
-///
 fn derive_royal_front_mask(state: &mut State) {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
@@ -1645,7 +1624,6 @@ fn derive_royal_front_mask(state: &mut State) {
 ///
 /// Params:
 /// - state: &mut State -> variant whose zone-attack table is filled
-///
 fn derive_zone_attack(state: &mut State) {
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
@@ -1718,7 +1696,6 @@ fn derive_zone_attack(state: &mut State) {
 ///
 /// Params:
 /// - state: &mut State -> variant whose shield masks are filled
-///
 fn derive_royal_shield_mask(state: &mut State) {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;

@@ -1,4 +1,4 @@
-//! # translation.rs
+//! translation.rs
 //!
 //! Handles translation between internal representations and external
 //! protocols, such as UCI or custom formats.
@@ -9,11 +9,8 @@
 //! maps the two things that actually cross the boundary -- board states as
 //! FEN, and moves as protocol notation -- in both directions.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 23/05/2026
+//! Created: 23/05/2026
+//! Author : Alden Luthfi
 use crate::*;
 
 /// TranslatorGroup
@@ -52,9 +49,9 @@ impl Translator {
     /// - target_protocol: &str -> protocol section to load, e.g. "uci"
     ///
     /// Return:
-    /// Option<Self>            -> the translator, or None if no dictionary
-    ///                            exists
     ///
+    /// Option<Self>
+    /// the translator, or None if no dictionary exists
     pub fn find(variant: &str, target_protocol: &str) -> Option<Self> {
         let filename = format!("{}.dict", variant);
         let content = EMBEDDED_DICTS
@@ -78,7 +75,6 @@ impl Translator {
     ///
     /// Return:
     /// Self                    -> the compiled translator
-    ///
     pub fn from_content(content: &str, target_protocol: &str) -> Self {
         let uncommented_str = COMMENT_PATTERN.replace_all(content, "");
         let cleaned = uncommented_str

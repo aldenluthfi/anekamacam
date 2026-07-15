@@ -1,15 +1,12 @@
-//! # main.rs
+//! main.rs
 //!
 //! Entry point for the anekamacam engine and the root of its module tree.
 //! Reads the first CLI argument to pick a run mode -- the UCI protocol loop
 //! (also the default), the interactive debug console, or the derive / bench /
 //! perft utilities -- initializing logging before handing off to that mode.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 01/02/2026
+//! Created: 01/02/2026
+//! Author : Alden Luthfi
 
 #![feature(sync_unsafe_cell)]
 use prelude::*;
@@ -83,7 +80,6 @@ pub mod prelude;
 /// Dispatches on the first CLI argument to one of the engine's modes:
 /// - `uci`    : the UCI protocol loop (also the no-argument default)
 /// - `debug`  : the interactive ratatui debug console
-///
 #[hotpath::main]
 fn main() {
     init_logging();

@@ -1,4 +1,4 @@
-//! # search.rs
+//! search.rs
 //!
 //! Alpha-beta search with iterative deepening, aspiration windows, and
 //! quiescence.
@@ -10,11 +10,8 @@
 //! heuristics. SearchInfo and SearchBufs carry search-time limits, counters,
 //! and scratch allocations; SearchResult packages the output.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 22/03/2026
+//! Created: 22/03/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -80,7 +77,6 @@ pub struct SearchResult {
 ///
 /// Params:
 /// - info: &mut SearchInfo -> search whose interrupt flag is updated
-///
 #[inline(always)]
 pub fn check_interrupt(info: &mut SearchInfo) {
     if info.interrupt {
@@ -128,7 +124,6 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// - qtable: &QTable         -> qsearch table, aged one generation
 /// - info  : &mut SearchInfo -> counters and flags to reset
 /// - bufs  : &mut SearchBufs -> scratch buffers, (re)allocated if needed
-///
 pub fn clear_search(
     state: &mut State,
     ttable: &TTable,
@@ -189,7 +184,6 @@ pub fn clear_search(
 ///
 /// Return:
 /// SearchResult                      -> best move, score, ponder, and totals
-///
 pub fn search_position(
     state: &mut State,
     table: Arc<TTable>,
@@ -240,7 +234,6 @@ pub fn search_position(
 /// - table : &TTable -> main table whose counters are reported
 /// - qtable: &QTable -> qsearch table whose counters are reported
 /// - ptable: &PTable -> pawn table whose counters are reported
-///
 pub fn log_table_stats(
     table: &TTable, qtable: &QTable, ptable: &PTable,
 ) {
@@ -294,7 +287,6 @@ pub fn log_table_stats(
 ///
 /// Return:
 /// SearchResult                      -> best move, score, ponder, and totals
-///
 pub fn iterative_deepening(
     state: &mut State,
     ttable: &TTable,
@@ -567,9 +559,9 @@ pub fn iterative_deepening(
 /// - bufs  : &mut SearchBufs -> per-thread scratch buffers
 ///
 /// Return:
-/// i32                       -> stand-pat or best capture score within the
-///                              window
 ///
+/// i32
+/// stand-pat or best capture score within the window
 #[hotpath::measure]
 fn quiescence_search(
     state: &mut State,
@@ -864,9 +856,9 @@ fn quiescence_search(
 /// - null  : bool            -> whether null-move pruning is still allowed
 ///
 /// Return:
-/// i32                       -> best score within the window from the side to
-///                              move's view
 ///
+/// i32
+/// best score within the window from the side to move's view
 #[hotpath::measure]
 pub fn alpha_beta(
     state: &mut State,
@@ -1531,7 +1523,8 @@ pub fn alpha_beta(
 
     if alpha != alpha_start {
         update_corr_hist!(
-            state, static_eval, best_score, depth, FEXACT, m_capture!(&best_move)
+            state, static_eval, best_score, depth, FEXACT,
+            m_capture!(&best_move)
         );
 
         hash_tt_entry!(
@@ -1558,9 +1551,8 @@ pub fn alpha_beta(
 /// deep depths without saturation. `bonus` is signed; negate for malus.
 ///
 /// Params:
-/// - entry -> history table cell updated in place
-/// - bonus -> signed reward applied to the cell
-///
+/// - entry: &mut i16 -> history table cell updated in place
+/// - bonus: i32      -> signed reward applied to the cell
 #[macro_export]
 macro_rules! apply_history_gravity {
     ($entry:expr, $bonus:expr) => {{
@@ -1579,11 +1571,10 @@ macro_rules! apply_history_gravity {
 /// structure share a correction; collisions are accepted as noise.
 ///
 /// Params:
-/// - state -> position providing the side to move and the pawn hash
+/// - state: &State -> position providing the side to move and pawn hash
 ///
 /// Return:
-/// usize -> index into `state.corr_hist`
-///
+/// usize           -> index into `state.corr_hist`
 #[macro_export]
 macro_rules! corr_hist_index {
     ($state:expr) => {{
@@ -1606,13 +1597,24 @@ macro_rules! corr_hist_index {
 /// (a fail-high below the evaluation or a fail-low above it).
 ///
 /// Params:
-/// - state   -> position providing the correction table and its index
-/// - eval    -> raw static evaluation recorded at the node
-/// - score   -> score the node's search returned
-/// - depth   -> remaining depth, weights the blend
-/// - flag    -> TT bound flag of the score (FEXACT/FBETA/FALPHA)
-/// - capture -> whether the move that set the score captures
 ///
+/// - state: &mut State
+///   position providing the correction table and its index
+///
+/// - eval: i32
+///   raw static evaluation recorded at the node
+///
+/// - score: i32
+///   score the node's search returned
+///
+/// - depth: usize
+///   remaining depth, weights the blend
+///
+/// - flag: u8
+///   TT bound flag (FEXACT/FBETA/FALPHA)
+///
+/// - capture: bool
+///   whether the move that set the score captures
 #[macro_export]
 macro_rules! update_corr_hist {
     (
@@ -1654,18 +1656,33 @@ macro_rules! update_corr_hist {
 /// `[0, depth - 1]`. Uses pre-computed integer tables (no f64 at call site).
 ///
 /// Params:
-/// - state             -> supplies the precomputed LMR tables
-/// - depth             -> remaining depth, one table index
-/// - moves             -> legal moves tried so far, the other table index
-/// - in_check          -> whether the side to move is in check
-/// - opponent_in_check -> whether the move gives check
-/// - is_capture        -> whether the move captures
-/// - is_promotion      -> whether the move promotes
-/// - is_drop           -> whether the move is a drop
+///
+/// - state: &State
+///   supplies the precomputed LMR tables
+///
+/// - depth: usize
+///   remaining depth, one table index
+///
+/// - moves: usize
+///   legal moves tried so far, the other table index
+///
+/// - in_check: bool
+///   whether the side to move is in check
+///
+/// - opponent_in_check: bool
+///   whether the move gives check
+///
+/// - is_capture: bool
+///   whether the move captures
+///
+/// - is_promotion: bool
+///   whether the move promotes
+///
+/// - is_drop: bool
+///   whether the move is a drop
 ///
 /// Return:
-/// usize               -> plies to reduce the child search by
-///
+/// usize -> plies to reduce the child search by
 #[macro_export]
 macro_rules! reduction {
     (

@@ -1,4 +1,4 @@
-//! # util.rs
+//! util.rs
 //!
 //! Cross-cutting engine utilities that belong to no single subsystem.
 //!
@@ -9,11 +9,8 @@
 //! against known node counts and to profile search speed, and rolling a
 //! `latest.*` output file to a numbered backup.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 25/01/2025
+//! Created: 25/01/2025
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -27,7 +24,6 @@ use crate::*;
 ///
 /// Return:
 /// String -> the executable's file name, or "?" if it cannot be read
-///
 pub fn exe_tag() -> String {
     env::args()
         .next()
@@ -45,7 +41,6 @@ pub fn exe_tag() -> String {
 ///
 /// Return:
 /// u128 -> uniformly random 128-bit value
-///
 pub fn random_u128() -> u128 {
     let mut rng = RNG.lock().unwrap_or_else(|e| {
         panic!("Failed to lock RNG mutex for random_u128: {e}")
@@ -65,7 +60,6 @@ pub fn random_u128() -> u128 {
 /// Params:
 /// - dir      : &str -> directory holding the `latest` file and backups
 /// - extension: &str -> file extension without the dot (e.g. "param")
-///
 pub fn roll_latest(dir: &str, extension: &str) {
     let suffix = format!(".{}", extension);
     let latest = format!("latest{}", suffix);
@@ -102,7 +96,6 @@ pub fn roll_latest(dir: &str, extension: &str) {
 ///
 /// Params:
 /// - state: &mut State -> position whose eval caches are rebuilt
-///
 pub fn refresh_eval_state(state: &mut State) {
     state.opening_material = [0; 2];
     state.endgame_material = [0; 2];
@@ -171,7 +164,6 @@ pub fn refresh_eval_state(state: &mut State) {
 ///
 /// Return:
 /// f64             -> euclidean distance in square units
-///
 pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
     let file1 = sq1 % state.statics.files as Square;
     let rank1 = sq1 / state.statics.files as Square;
@@ -193,7 +185,6 @@ pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
 ///
 /// Params:
 /// - state: &State -> position whose incremental caches are validated
-///
 pub fn verify_game_state(state: &State) {
 
     assert_eq!(
@@ -482,9 +473,9 @@ pub fn verify_game_state(state: &State) {
 /// - content: &str -> raw text of the .perft suite file
 ///
 /// Return:
-/// Vec<(String, u64, ...)> -> FEN plus expected node counts for depths 1-6, one
-///                    tuple per suite line
 ///
+/// Vec<(String, u64, ...)>
+/// FEN plus expected node counts for depths 1-6, one tuple per suite line
 fn parse_perft_content(                                                         /* until perft 6                      */
     content: &str,
 ) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
@@ -555,7 +546,6 @@ fn parse_perft_content(                                                         
 ///
 /// Return:
 /// String        -> human-readable duration such as "1.234 ms"
-///
 pub fn format_time(nanos: u128) -> String {
     if nanos < 1_000 {
         format!("{} ns", nanos)
@@ -579,7 +569,6 @@ pub fn format_time(nanos: u128) -> String {
 /// - depth : u8                  -> maximum perft depth to run
 /// - branch: i8                  -> diagnostic branch-printing depth
 /// - dict  : Option<&Translator> -> translator for printed move names
-///
 pub fn benchmark_headless_perft(
     state: &mut State, depth: u8, branch: i8, dict: Option<&Translator>
 ) {
@@ -640,7 +629,6 @@ pub fn benchmark_headless_perft(
 ///
 /// Return:
 /// (usize, usize)                 -> (passed cases, total cases)
-///
 pub fn benchmark_perft(
     state: &mut State,
     content: &str,
@@ -757,7 +745,6 @@ pub fn benchmark_perft(
 /// - depth     : usize               -> fixed search depth
 /// - thread_num: usize               -> number of worker threads
 /// - dict      : Option<&Translator> -> translator for printed move names
-///
 pub fn benchmark_search(
     state: &mut State, ttable: Arc<TTable>, qtable: Arc<QTable>,
     ptable: Arc<PTable>, depth: usize, thread_num: usize,
@@ -790,7 +777,6 @@ pub fn benchmark_search(
 ///
 /// Return:
 /// u64                           -> number of leaf nodes at the requested depth
-///
 pub fn perft(
     state: &mut State, depth: u8, branch: i8, prefix: &str,
     dict: Option<&Translator>,

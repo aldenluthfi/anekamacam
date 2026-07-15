@@ -1,4 +1,4 @@
-//! # move_io.rs
+//! move_io.rs
 //!
 //! Implements move formatting, move parsing, and interactive move debugging.
 //!
@@ -8,11 +8,8 @@
 //! through a protocol dictionary) and resolves typed move text back to the
 //! one legal move it names.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 04/02/2026
+//! Created: 04/02/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -43,9 +40,9 @@ use crate::*;
 /// - dict : Option<&Translator> -> protocol translator, or None for raw CMN
 ///
 /// Return:
-/// String                       -> the move's CMN (or translated) text, "null"
-///                                 for a null move
 ///
+/// String
+/// the move's CMN (or translated) text, "null" for a null move
 pub fn format_move(
     mv: &Move, state: &State, dict: Option<&Translator>
 ) -> String {
@@ -147,9 +144,9 @@ pub fn format_move(
 /// - dict    : Option<&Translator> -> translator applied to each candidate
 ///
 /// Return:
-/// Option<Move>                    -> the matching legal move, or None if none
-///                                    matches
 ///
+/// Option<Move>
+/// the matching legal move, or None if none matches
 pub fn parse_move(
     move_str: &str, state: &State, dict: Option<&Translator>
 ) -> Option<Move> {
@@ -173,7 +170,6 @@ pub fn parse_move(
 ///
 /// Return:
 /// String                       -> the numbered, newline-separated history
-///
 pub fn format_move_history(
     state: &State, dict: Option<&Translator>
 ) -> String {

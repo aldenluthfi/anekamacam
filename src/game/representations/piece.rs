@@ -1,4 +1,4 @@
-//! # piece.rs
+//! piece.rs
 //!
 //! Defines piece representation and properties.
 //!
@@ -10,11 +10,8 @@
 //! role classes). Packing both into single words keeps the hot evaluation
 //! and generation paths on cheap mask-and-shift reads.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 25/01/2026
+//! Created: 25/01/2026
+//! Author : Alden Luthfi
 
 /// PieceIndex
 ///
@@ -29,18 +26,16 @@ pub type PieceIndex = u8;
 
 /// p_value!
 ///
-/// Returns the phase-interpolated material value of a piece type: the
-/// opening value during the opening/setup phases, the endgame value in the
-/// endgame, and a linear blend of the two weighted by the current phase
-/// score while in the middlegame.
+/// Returns the phase-interpolated material value of one piece type. Setup and
+/// opening use the opening value, endgame uses the endgame value, and
+/// middlegame linearly blends both values from the position phase score.
 ///
 /// Params:
-/// - piece: PieceIndex -> piece type whose value is queried
-/// - state: State      -> position providing phase and phase thresholds
+/// - piece_index: PieceIndex -> piece type whose value is queried
+/// - state      : &State     -> position providing phase thresholds
 ///
 /// Return:
-/// u32                 -> interpolated material value
-///
+/// u32                       -> interpolated material value
 #[macro_export]
 macro_rules! p_value {
     ($piece:expr, $state:expr) => {{
@@ -77,20 +72,78 @@ macro_rules! p_value {
 /// These decode `Piece::encoded_static` and `Piece::encoded_dynamic` into
 /// readable attributes used throughout move generation and evaluation.
 ///
+/// All take the same single parameter and read one field documented in
+/// the bit layouts on [`Piece`].
+///
 /// Static accessors (encoded_static):
-/// - p_index!: piece type index (bits 0-7)
-/// - p_color!: owning side, 0 white / 1 black (bit 8)
-/// - p_can_promote!: whether the piece can promote (bit 9)
-/// - p_is_royal!: whether the piece must be mated (bit 10)
-/// - p_rank!: variant-defined capture rank (bits 11-18)
-/// - p_is_pawn!: pawn-like flag, set at derive time (bit 19)
+///
+/// p_index!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   PieceIndex      -> piece type index (bits 0-7)
+///
+/// p_color!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   u8              -> owning side, 0 white / 1 black (bit 8)
+///
+/// p_can_promote!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   bool            -> whether the piece can promote (bit 9)
+///
+/// p_is_royal!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   bool            -> whether the piece must be mated (bit 10)
+///
+/// p_rank!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   u8              -> variant-defined capture rank (bits 11-18)
+///
+/// p_is_pawn!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   bool            -> pawn-like flag, set at derive time (bit 19)
 ///
 /// Dynamic accessors (encoded_dynamic):
-/// - p_is_big!: big-piece role, royals excluded (bit 0)
-/// - p_is_major!: major-piece role, royals excluded (bit 1)
-/// - p_is_minor!: minor-piece role, royals excluded (bit 1 clear)
-/// - p_ovalue!: opening material value (bits 2-15)
-/// - p_evalue!: endgame material value (bits 16-29)
+///
+/// p_is_big!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   bool            -> big-piece role, royals excluded (bit 0)
+///
+/// p_is_major!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   bool            -> major-piece role, royals excluded (bit 1)
+///
+/// p_is_minor!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   bool            -> minor-piece role, royals excluded (bit 1 clear)
+///
+/// p_ovalue!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   u16             -> opening material value (bits 2-15)
+///
+/// p_evalue!
+///   Params:
+///   - piece: &Piece -> piece record read
+///   Return:
+///   u16             -> endgame material value (bits 16-29)
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
@@ -170,24 +223,25 @@ macro_rules! p_evalue {
 
 /// Piece
 ///
-/// A structure representing a game piece with its properties.
-/// A piece can have id from 0 - 254, with 255 reserved for "no piece".
+/// One configured piece type and its derived evaluation attributes.
+///
+/// Piece indices range from 0 through 254; 255 is reserved as `NO_PIECE`.
 ///
 /// Static data (`encoded_static`) is encoded in 32 bits:
-/// - Bits 0-7      : Piece index
-/// - Bit 8         : Color (0 for white, 1 for black)
-/// - Bit 9         : Piece can promote (1 if can promote, 0 otherwise)
-/// - Bit 10        : Royal status (1 if royal, 0 otherwise)
-/// - Bits 11-18    : Piece rank
-/// - Bit 19        : Pawn-like status (1 if pawn-like, set at derive time)
-/// - Other bits    : Unused
+/// - Bits 0..7     : piece index
+/// - Bit 8         : color, 0 = White and 1 = Black
+/// - Bit 9         : promotion capability
+/// - Bit 10        : royal status
+/// - Bits 11..18   : variant-defined rank
+/// - Bit 19        : derived pawn-like status
+/// - Bits 20..31   : unused
 ///
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
-/// - Bit 0         : Big piece status
-/// - Bit 1         : Major piece status (1 if major, 0 if minor)
-/// - Bits 2-15     : Opening piece value (14-bit)
-/// - Bits 16-29    : Endgame piece value (14-bit)
-/// - Other bits    : Unused
+/// - Bit 0         : big-piece role
+/// - Bit 1         : major-piece role; clear means minor when non-royal
+/// - Bits 2..15    : 14-bit opening material value
+/// - Bits 16..29   : 14-bit endgame material value
+/// - Bits 30..31   : unused
 ///
 /// The `promotions` field is a `Vec<u8>` that encodes the pieces this piece can
 /// promote to.
@@ -219,9 +273,9 @@ impl Piece {
     /// - rank      : u8              -> variant-defined capture rank
     ///
     /// Return:
-    /// Self                          -> the piece with static attributes
-    ///                                  encoded
     ///
+    /// Self
+    /// the piece with static attributes encoded
     pub fn new(
         name: String,
         char: char,
@@ -255,4 +309,3 @@ impl Piece {
         }
     }
 }
-

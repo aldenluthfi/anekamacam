@@ -1,4 +1,4 @@
-//! # board_io.rs
+//! board_io.rs
 //!
 //! Implements board formatting and visualization functions.
 //!
@@ -8,19 +8,16 @@
 //! boards and value grids as labelled diagrams, and keeps algebraic and
 //! numeric square names in agreement with their flat indices.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 25/01/2026
+//! Created: 25/01/2026
+//! Author : Alden Luthfi
 use crate::*;
 
 /// format_square
 ///
-/// Formats the square index into an algebraic square name of the form
-/// {file letter/number}{rank number}. If the board width is more than 26
-/// it switches to a numeric file. Both file and rank in both formats are
-/// 1-indexed.
+/// Formats a flat square index as a board coordinate.
+///
+/// Boards up to 26 files use an alphabetic file; wider boards use a numeric
+/// file. Both displayed coordinate components are one-indexed.
 ///
 /// Params:
 /// - index: u16    -> flat square index to format
@@ -28,7 +25,6 @@ use crate::*;
 ///
 /// Return:
 /// String          -> algebraic ("e4") or numeric ("0504") square name
-///
 pub fn format_square(index: u16, state: &State) -> String {
     let file = (index % state.statics.files as u16) as u8;
     let rank = (index / state.statics.files as u16) as u8;
@@ -52,7 +48,6 @@ pub fn format_square(index: u16, state: &State) -> String {
 ///
 /// Return:
 /// Option<u16>          -> the flat square index, or None if invalid
-///
 pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
     let files = state.statics.files as u16;
     let ranks = state.statics.ranks as u16;
@@ -105,7 +100,6 @@ pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
 ///
 /// Return:
 /// String          -> newline-separated 0/1 grid
-///
 fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
     let mut result = String::new();
 
@@ -135,7 +129,6 @@ fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
 ///
 /// Return:
 /// String                     -> the framed, labelled board diagram
-///
 pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     let ranks = ranks!(board);
     let files = files!(board);
@@ -202,7 +195,6 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
 ///
 /// Return:
 /// String           -> the framed, labelled value grid
-///
 pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
     let mut result = String::new();
     let width = 4;
@@ -279,7 +271,6 @@ pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
 ///
 /// Return:
 /// Vec<i32>        -> the mirrored table
-///
 pub fn mirror_pst_across_horizontal_axis(
     pst: &[i32],
     files: usize,
@@ -317,7 +308,6 @@ pub fn mirror_pst_across_horizontal_axis(
 ///
 /// Return:
 /// (u8, u8)    -> (files, ranks)
-///
 pub fn determine_board_dimensions(fen: &str) -> (u8, u8) {
     let ranks_data: Vec<&str> = fen.split('/').collect();
     let rank_count = ranks_data.len() as u8;

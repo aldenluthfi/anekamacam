@@ -1,4 +1,4 @@
-//! # tuning.rs
+//! tuning.rs
 //!
 //! Texel tuning of the evaluation parameters by gradient descent.
 //!
@@ -9,22 +9,17 @@
 //! with the Adam optimiser. The tuned vector is written back through the
 //! same parameter pipeline the engine loads at startup.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 05/07/2026
+//! Created: 05/07/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
 /// TuneShape
 ///
 /// The fixed geometry of one variant's tunable parameter vector.
-/// The vector concatenates, in this order, the per-type opening material
-/// values, the endgame material values, the White opening PST rows, and
-/// the White endgame PST rows — matching the tunable slice of the
-/// on-disk parameter layout. The four `*_base` fields are the starting
-/// offsets of those blocks so features and exports index consistently.
+///
+/// The vector is ordered as opening material, endgame material, opening PST,
+/// then endgame PST. The four `*_base` fields are the offsets for those blocks.
 struct TuneShape {
     pairs: Vec<(usize, usize)>,                                                 /* (white index, black index) per type*/
     piece_types: usize,                                                         /* number of White piece types (T)    */
@@ -41,11 +36,9 @@ struct TuneShape {
 /// Sample
 ///
 /// One dataset position reduced to a linear tuning target.
-/// `features` are the sparse (index, coefficient) partial derivatives of
-/// the White-view score with respect to each tunable parameter; `base`
-/// is the frozen residual (derived eval terms plus the tempo bonus) so
-/// the modelled score is `base + features·θ`; `label` is the game result
-/// from White's perspective (1.0 win, 0.5 draw, 0.0 loss).
+///
+/// `features` stores sparse White-view score derivatives, `base` stores the
+/// frozen non-tuned residual, and `label` is the White-view game result.
 struct Sample {
     features: Vec<(usize, f64)>,                                                /* sparse ∂score/∂θ coefficients      */
     base: f64,                                                                  /* frozen non-tuned score residual    */
@@ -63,7 +56,6 @@ struct Sample {
 ///
 /// Return:
 /// TuneShape       -> block offsets, dimensions, and the piece-type pairs
-///
 fn build_shape(state: &State) -> TuneShape {
     let pairs = collect_piece_type_pairs(state);
     let piece_types = pairs.len();
@@ -101,7 +93,6 @@ fn build_shape(state: &State) -> TuneShape {
 ///
 /// Return:
 /// Vec<f64>            -> the starting parameter vector θ₀
-///
 fn initial_theta(state: &State, shape: &TuneShape) -> Vec<f64> {
     let mut theta = vec![0.0f64; shape.dimension];
     let board_size = shape.board_size;
@@ -138,7 +129,6 @@ fn initial_theta(state: &State, shape: &TuneShape) -> Vec<f64> {
 ///
 /// Return:
 /// (f64, f64)      -> (opening weight, endgame weight), summing to one
-///
 fn phase_weights(state: &State) -> (f64, f64) {
     match state.game_phase {
         ENDGAME => (0.0, 1.0),
@@ -172,7 +162,6 @@ fn phase_weights(state: &State) -> (f64, f64) {
 ///
 /// Return:
 /// usize            -> the mirrored square index
-///
 fn mirror_square(square: Square, files: usize, ranks: usize) -> usize {
     let index = square as usize;
     let file = index % files;
@@ -200,7 +189,6 @@ fn mirror_square(square: Square, files: usize, ranks: usize) -> usize {
 ///
 /// Return:
 /// Sample                    -> sparse features, frozen base, and label
-///
 fn extract_sample(
     state: &State,
     shape: &TuneShape,
@@ -280,31 +268,36 @@ fn extract_sample(
 
 /// Tuning math primitives.
 ///
-/// A tight family of pure numeric helpers over the linear model:
-///
-/// - dot         -> sparse features · θ
-/// - sigmoid     -> the base-ten logistic `1/(1+10⁻ˣ)`
-/// - model_score -> a sample's modelled centipawn score `base + f·θ`
-/// - mean_squared_error -> average `(label − sigmoid(K·score/400))²`
-///
+/// A tight family of pure numeric helpers over the linear model.
 /// `mean_squared_error` parallelises across the dataset with rayon.
 ///
-/// Params (dot):
-/// - features: &[(usize, f64)] -> sparse coefficients
-/// - theta   : &[f64]          -> parameter vector
+/// dot
+///   Params:
+///   - features: &[(usize, f64)] -> sparse coefficients
+///   - theta   : &[f64]          -> parameter vector
+///   Return:
+///   f64 -> sparse features · θ
 ///
-/// Params (sigmoid):
-/// - value: f64 -> logit input
+/// sigmoid
+///   Params:
+///   - value: f64 -> logit input
+///   Return:
+///   f64 -> the base-ten logistic `1/(1+10⁻ˣ)`
 ///
-/// Params (model_score):
-/// - sample: &Sample -> position to score
-/// - theta : &[f64]  -> parameter vector
+/// model_score
+///   Params:
+///   - sample: &Sample -> position to score
+///   - theta : &[f64]  -> parameter vector
+///   Return:
+///   f64 -> the sample's modelled centipawn score `base + f·θ`
 ///
-/// Params (mean_squared_error):
-/// - samples: &[Sample] -> dataset
-/// - theta  : &[f64]    -> parameter vector
-/// - scaling: f64       -> the sigmoid scaling constant K
-///
+/// mean_squared_error
+///   Params:
+///   - samples: &[Sample] -> dataset
+///   - theta  : &[f64]    -> parameter vector
+///   - scaling: f64       -> the sigmoid scaling constant K
+///   Return:
+///   f64 -> average `(label − sigmoid(K·score/400))²`
 fn dot(features: &[(usize, f64)], theta: &[f64]) -> f64 {
     features.iter().map(|(index, coeff)| theta[*index] * coeff).sum()
 }
@@ -344,7 +337,6 @@ fn mean_squared_error(samples: &[Sample], theta: &[f64], scaling: f64) -> f64 {
 ///
 /// Return:
 /// f64                  -> the fitted scaling constant K
-///
 fn fit_scaling(samples: &[Sample], theta: &[f64]) -> f64 {
     let ratio = (5f64.sqrt() - 1.0) / 2.0;
     let mut low = TEXEL_K_MIN;
@@ -388,7 +380,6 @@ fn fit_scaling(samples: &[Sample], theta: &[f64]) -> f64 {
 ///
 /// Return:
 /// Vec<f64>             -> the averaged gradient, one entry per parameter
-///
 fn compute_gradient(
     samples: &[Sample],
     theta: &[f64],
@@ -440,7 +431,6 @@ fn compute_gradient(
 /// Params:
 /// - theta: &mut [f64] -> parameter vector to constrain in place
 /// - shape: &TuneShape -> block offsets identifying material entries
-///
 fn clamp_material(theta: &mut [f64], shape: &TuneShape) {
     for type_index in 0..shape.piece_types {
         let opening = shape.opening_material_base + type_index;
@@ -465,7 +455,6 @@ fn clamp_material(theta: &mut [f64], shape: &TuneShape) {
 ///
 /// Return:
 /// Vec<Sample>            -> the reduced dataset, empty when unavailable
-///
 fn load_dataset(
     template: &State,
     variant: &str,
@@ -527,7 +516,6 @@ fn load_dataset(
 /// - variant: &str       -> variant name, selects the output directory
 /// - shape  : &TuneShape -> vector geometry to serialise from
 /// - theta  : &[f64]     -> the tuned parameter vector
-///
 fn export_theta(
     state: &mut State,
     variant: &str,
@@ -593,7 +581,6 @@ fn export_theta(
 /// - variant      : &str       -> variant name, selects dataset/output
 /// - epochs       : usize      -> number of Adam passes to run
 /// - learning_rate: f64        -> Adam step size
-///
 pub fn run_tuning(
     state: &mut State,
     variant: &str,

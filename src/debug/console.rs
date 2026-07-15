@@ -1,4 +1,4 @@
-//! # console.rs
+//! console.rs
 //!
 //! Ratatui-based interactive debug interface for the engine.
 //!
@@ -9,14 +9,18 @@
 //! the ordinary command loop, so gameplay stays command-driven while every
 //! surface stays visible and up to date.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 23/04/2026
+//! Created: 23/04/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
+/// TUI layout constants.
+///
+/// - `TUI_INPUT_MODE` / `TUI_NORMAL_MODE` tag the two input modes of the cmd.
+/// - `TAB_TITLES` names the top-level tabs.
+/// - `TAB_FOCUSABLES` gives each tab's focusable pane count.
+/// - `SENTINEL_TAB` marks the game-selection screen.
+/// - `PICKER_SCROLL_KEY` / `HELP_SCROLL_KEY` are its reserved scroll slots.
 const TUI_INPUT_MODE: u8 = 0;
 const TUI_NORMAL_MODE: u8 = 1;
 
@@ -28,13 +32,34 @@ const SENTINEL_TAB: usize = 100usize;
 const PICKER_SCROLL_KEY: (usize, usize) = (SENTINEL_TAB, 100usize);
 const HELP_SCROLL_KEY: (usize, usize) = (SENTINEL_TAB, 50usize);
 
+/// help_open!
+///
+/// Tests whether a tab value encodes at least one open help layer: any
+/// value at or past the real tab count is help-offset, except the
+/// game-selection sentinel, which must be excluded.
+///
+/// Params:
+/// - tab: usize -> the encoded tab value to test
+///
+/// Return:
+/// bool         -> whether a help overlay is open on that tab
 macro_rules! help_open {
-    ($tab:expr) => {                                                            /* tab encodes help state; picker     */
-        $tab >= TAB_TITLES.len() && $tab != SENTINEL_TAB                        /* (SENTINEL_TAB) must be excluded    */
+    ($tab:expr) => {
+        $tab >= TAB_TITLES.len() && $tab != SENTINEL_TAB
     };
 }
 
-fn peel_help(mut tab: usize) -> (usize, usize) {                                /* returns (underlying_tab, layers)   */
+/// peel_help
+///
+/// Strips the help-layer offsets from an encoded tab value, recovering
+/// the underlying tab index and how many help layers were open on it.
+///
+/// Params:
+/// - tab: usize   -> the encoded tab value to decode
+///
+/// Return:
+/// (usize, usize) -> (underlying tab index, open help layers)
+fn peel_help(mut tab: usize) -> (usize, usize) {
     let mut layers = 0;
 
     while help_open!(tab) {
@@ -98,6 +123,16 @@ impl Tui {
     /// game, dropping the loaded states and interrupting any worker still
     /// computing.
     ///
+    /// new
+    ///   Params:
+    ///   - receiver: Receiver<TuiEvent> -> worker-to-TUI event channel
+    ///   - sender  : Sender<TuiEvent>   -> clonable sender for workers
+    ///   Return:
+    ///   Self -> the interface on the game-selection screen
+    ///
+    /// reset
+    ///   returns to the selection screen, dropping loaded states and
+    ///   interrupting running workers; no parameters, no return value
     fn new(
         receiver: Receiver<TuiEvent>, sender: Sender<TuiEvent>
     ) -> Self {
@@ -179,9 +214,9 @@ impl Tui {
     /// - terminal: &mut DefaultTerminal -> the ratatui terminal handle
     ///
     /// Return:
-    /// IoResult<()>                     -> Ok on clean exit, Err on terminal
-    ///                                     I/O failure
     ///
+    /// IoResult<()>
+    /// Ok on clean exit, Err on terminal I/O failure
     fn run (&mut self, terminal: &mut DefaultTerminal) -> IoResult<()> {
         loop {
             terminal.draw(|frame| render(frame, self))?;
@@ -278,7 +313,6 @@ impl OverviewState {
     ///
     /// Return:
     /// Self            -> the pre-rendered overview
-    ///
     fn from_state(state: &State) -> Self {
         let mut configs = Vec::new();
         configs.push(("Title".to_string(), state.statics.title.clone(), 1));
@@ -475,7 +509,6 @@ impl BoardState {
     ///
     /// Return:
     /// Self                         -> the pre-rendered board state
-    ///
     pub fn from_state(state: &State, dict: Option<&Translator>) -> Self {
         let board = format_game_state(state);
         let move_history = format_move_history(state, dict);
@@ -554,11 +587,22 @@ impl BoardState {
 /// Playground state helpers
 ///
 /// The Playground tab visualizes one piece's moves on an otherwise empty
-/// board:
+/// board. Neither helper returns a value.
 ///
-/// - `init_playground`      : load an empty FEN for the piece's colour
-/// - `set_playground_piece` : place the piece on a square, reload its moves
+/// init_playground
+///   Params:
 ///
+///   - state: &mut State
+///     playground position; loads an empty FEN oriented for the piece's colour
+///
+///   - index: PieceIndex
+///     piece the empty board is prepared for
+///
+/// set_playground_piece
+///   Params:
+///   - state : &mut State -> playground position the piece is placed on
+///   - index : PieceIndex -> piece type placed
+///   - square: Square     -> square it is placed on; its moves reload
 fn init_playground(state: &mut State, index: PieceIndex) {
     let piece = &state.statics.pieces[index as usize];
     let color = p_color!(piece);
@@ -670,19 +714,46 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
 /// └────────────────────────────────┴─────────────┘
 /// ```
 ///
-/// - `draw_tabs`           : the top tab bar, active tab highlighted
-/// - `draw_input`          : the command input line and its mode
-/// - `draw_help_bar`       : the one-line context key hints
-/// - `draw_help_popup`     : the scrollable full help overlay
-/// - `draw_game_tab`       : board, move history, and detail rows
-/// - `draw_overview_tab`   : variant config and per-piece derived data
-/// - `draw_playground_tab` : one piece's reachable squares on empty board
-/// - `render`              : lays out the frame, calls the right ones
+/// Every member takes the same parameters (except `render`, which takes
+/// only `frame` and `app` and computes its own areas):
+/// - frame: &mut Frame<'_> -> ratatui frame drawn into
+/// - area : Rect           -> region of the frame allotted
+/// - app  : &Tui / &mut Tui -> interface state read (mutable only where
+///                             scroll offsets or picks are updated)
+///
+/// draw_game_selection
+///   Return:
+///
+///   Option<Arc<Mutex<State>>>
+///   the chosen game once a variant is picked, None until then
+///
+/// draw_tabs
+///   the top tab bar, active tab highlighted
+///
+/// draw_input
+///   the command input line and its mode
+///
+/// draw_help_bar
+///   the one-line context key hints
+///
+/// draw_help_popup
+///   the scrollable full help overlay
+///
+/// draw_game_tab
+///   board, move history, and detail rows
+///
+/// draw_overview_tab
+///   variant config and per-piece derived data
+///
+/// draw_playground_tab
+///   one piece's reachable squares on an empty board
+///
+/// render
+///   lays out the frame and dispatches to the right members for the
+///   active screen
 ///
 /// Notes:
-/// `draw_game_selection` returns the chosen `Arc<Mutex<State>>` once a
-/// variant is picked; the others return `()`.
-///
+/// All members except `draw_game_selection` return `()`.
 fn draw_game_selection(
     frame: &mut Frame<'_>, area: Rect, app: &mut Tui
 ) -> Option<Arc<Mutex<State>>> {
@@ -2672,7 +2743,6 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 /// - ptable    : Arc<PTable>         -> shared pawn table for searches
 /// - threads   : usize               -> worker count for search commands
 /// - sender    : Sender<TuiEvent>    -> channel for result snapshots
-///
 fn execute_command(
     command: &str,
     state: &mut State,
@@ -3166,7 +3236,6 @@ fn execute_command(
 ///
 /// Return:
 /// bool              -> true when the application should exit
-///
 fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
     if event.kind != KeyEventKind::Press {
@@ -3497,7 +3566,6 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 ///
 /// Return:
 /// IoResult<()> -> Ok on clean exit, Err on terminal I/O failure
-///
 pub fn debug_console() -> IoResult<()> {
     log_3!("Starting TUI...");
     let mut terminal = ratatui::init();

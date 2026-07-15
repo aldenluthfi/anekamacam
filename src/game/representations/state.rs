@@ -1,4 +1,4 @@
-//! # state.rs
+//! state.rs
 //!
 //! Defines game state representation and management.
 //!
@@ -8,19 +8,17 @@
 //! configuration shared across threads, and the mutable per-position state
 //! that search clones, advances a ply, and rolls back.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 25/01/2025
+//! Created: 25/01/2025
+//! Author : Alden Luthfi
 
 use crate::*;
 
 /// Square
 ///
-/// A single board square addressed by its flat index, computed as
-/// `rank * files + file`. Sixteen bits cover every supported board size,
-/// up to the 4096 squares a `U4096` bitboard can address.
+/// A board square addressed by the flat index `rank * files + file`.
+///
+/// Sixteen bits cover every supported board size, including every square a
+/// `U4096` bitboard can address.
 pub type Square = u16;
 
 /*----------------------------------------------------------------------------*\
@@ -30,10 +28,63 @@ pub type Square = u16;
 /// Special-rules bitmask accessor/encoder macros.
 ///
 /// The `special_rules` field in [`State`] uses one bit per optional rule.
-/// For each rule there is a pair of macros:
-/// - reader    : `rule_name!(state)`
-/// - writer    : `enc_rule_name!(rules)`
+/// Each pair contains a reader, `rule_name!(state)`, and a writer,
+/// `enc_rule_name!(rules)`, for the same bit.
 ///
+/// Reader params (every reader):
+/// - state: &State -> position whose rule flags are read
+///
+/// castling!
+///   Return:
+///   bool          -> castling enabled (bit 0)
+///
+/// en_passant!
+///   Return:
+///   bool          -> en passant enabled (bit 1)
+///
+/// promotions!
+///   Return:
+///   bool          -> promotions enabled (bit 2)
+///
+/// drops!
+///   Return:
+///   bool          -> drops enabled (bit 3)
+///
+/// forbidden_zones!
+///   Return:
+///   bool          -> forbidden zones enabled (bit 4)
+///
+/// promote_to_captured!
+///   Return:
+///   bool          -> captures promote the capturer's pool piece (bit 5)
+///
+/// stalemate_loss!
+///   Return:
+///   bool          -> stalemate counts as a loss (bit 6)
+///
+/// setup_phase!
+///   Return:
+///   bool          -> game starts with a setup phase (bit 7)
+///
+/// stand_offs!
+///   Return:
+///   bool          -> stand-off patterns enabled (bit 8)
+///
+/// halfmove_clock!
+///   Return:
+///   bool          -> halfmove-clock draw rule enabled (bit 9)
+///
+/// repetition_limit!
+///   Return:
+///   bool          -> repetition limit enabled (bit 10)
+///
+/// enc_castling! .. enc_repetition_limit!
+///   Params:
+///
+///   - rules: &mut u32
+///     rules word being built; each writer sets the bit its reader tests
+///   Return:
+///   ()              -> mutates the supplied rules word in place
 #[macro_export]
 macro_rules! castling {
     ($state:expr) => {
@@ -194,17 +245,27 @@ macro_rules! enc_repetition_limit {
 
 /// EnPassantSquare
 ///
-/// Packed en passant descriptor holding the capture target square, the
-/// square of the capturable piece, and that piece's index. The sentinel
-/// `NO_EN_PASSANT` marks the absence of an en passant opportunity.
+/// Packed en-passant descriptor for a target square, captured square, and
+/// captured piece index. `NO_EN_PASSANT` represents the absence of a legal
+/// en-passant opportunity.
 pub type EnPassantSquare = u32;
 
 /// En passant packed-field accessor macros.
 ///
-/// [`EnPassantSquare`] stores:
-/// - bits 0-11   : target square
-/// - bits 12-23  : captured square
-/// - bits 24-31  : captured piece index
+/// Every accessor takes the same single parameter:
+/// - en_passant: EnPassantSquare -> packed descriptor read
+///
+/// enp_square!
+///   Return:
+///   u32                         -> capture target square (bits 0-11)
+///
+/// enp_captured!
+///   Return:
+///   u32                         -> square of the capturable piece (bits 12-23)
+///
+/// enp_piece!
+///   Return:
+///   u32                         -> captured piece index (bits 24-31)
 #[macro_export]
 macro_rules! enp_square {
     ($en_passant:expr) => {
@@ -275,16 +336,31 @@ impl Default for Snapshot {
 /// with `NO_SQUARE`. The push and remove macros own the `piece_count`
 /// update, so call sites never touch the count themselves.
 ///
-/// - `piece_squares!` -> iterator over a piece's occupied squares
-/// - `piece_list_push!` -> appends after the last occupied slot
-/// - `piece_list_remove!` -> swap-removes a square within its row; a
-///   missing square is ignored, matching set semantics
+/// piece_squares!
+///   Params:
+///   - state      : &State     -> position whose piece list is read
+///   - piece_index: usize      -> piece whose row is walked
+///   Return:
+///   Iterator<Item = &Square>  -> the piece's occupied squares
 ///
-/// Params:
-/// - state      : &State / &mut State -> position whose piece list is used
-/// - piece_index: usize               -> piece whose row is accessed
-/// - square     : Square              -> square to insert or remove
+/// piece_list_push!
+///   Params:
+///   - state      : &mut State -> position whose piece list is grown
+///   - piece_index: usize      -> piece whose row gains the square
+///   - square     : Square     -> square appended after the last slot
 ///
+/// piece_list_remove!
+///   Params:
+///
+///   - state: &mut State
+///     position whose piece list shrinks
+///
+///   - piece_index: usize
+///     piece whose row loses the square
+///
+///   - square: Square
+///     square swap-removed within its row; a missing square is ignored (set
+///     semantics)
 #[macro_export]
 macro_rules! piece_squares {
     ($state:expr, $piece_index:expr) => {{
@@ -335,11 +411,10 @@ macro_rules! piece_list_remove {
 /// while reading from undo history rather than the active move stream.
 ///
 /// Params:
-/// - snapshot: Snapshot -> the history entry whose move is inspected
+/// - snapshot: &Snapshot -> the history entry whose move is inspected
 ///
 /// Return:
-/// bool                 -> true if the snapshotted move is a pass
-///
+/// bool                  -> true if the snapshotted move is a pass
 #[macro_export]
 macro_rules! pass_snapshot {
     ($snapshot:expr) => {
@@ -355,11 +430,10 @@ macro_rules! pass_snapshot {
 /// decide which game phase the position belongs to.
 ///
 /// Params:
-/// - state: State -> position whose remaining material is tallied
+/// - state: &State -> position whose remaining material is tallied
 ///
 /// Return:
-/// u32            -> summed opening value of all non-royal big pieces
-///
+/// u32             -> summed opening value of all non-royal big pieces
 #[macro_export]
 macro_rules! game_phase_score {
     ($state:expr) => {{
@@ -496,9 +570,9 @@ pub struct StaticState {
 /// - bit 10    : There is a limit on the number of repetitions of a position
 /// - bit 11-31 : reserved for future use
 ///
-/// Static configuration lives in `static_data: Arc<StaticState>`, shared
-/// cheaply across threads. `State::clone()` calls `Arc::clone` for static_data
-/// and deep-copies only the 30 dynamic fields.
+/// Static configuration lives in `statics: Arc<StaticState>`, shared
+/// cheaply across threads. `State::clone()` calls `Arc::clone` for the
+/// statics and deep-copies only the dynamic fields.
 pub struct State {
 
     pub statics: Arc<StaticState>,
@@ -642,13 +716,13 @@ impl State {
     /// - special_rules: u32        -> special-rules bitmask (see [`State`])
     ///
     /// Return:
-    /// Self                        -> a fresh state with empty boards and
-    ///                                zeroed search tables
+    ///
+    /// Self
+    /// a fresh state with empty boards and zeroed search tables
     ///
     /// Notes:
     /// The LMR reduction tables are the only values computed here, since
     /// they depend on nothing but depth and move-count indices.
-    ///
     pub fn new(
         title: String,
         startpos: String,
@@ -797,9 +871,9 @@ impl State {
     /// - statics: Arc<StaticState> -> precomputed configuration to share
     ///
     /// Return:
-    /// State                       -> an empty-board state over the shared
-    ///                                configuration
     ///
+    /// State
+    /// an empty-board state over the shared configuration
     fn from_statics(statics: Arc<StaticState>) -> State {
         let piece_count = statics.pieces.len();
         let board_size = statics.board_size;
@@ -876,7 +950,6 @@ impl State {
     /// Uses `unwrap_unchecked`: callers must guarantee no other Arc clone
     /// exists yet, which holds because search threads are only spawned
     /// after setup completes.
-    ///
     #[inline]
     pub fn static_mut(&mut self) -> &mut StaticState {
         unsafe { Arc::get_mut(&mut self.statics).unwrap_unchecked() }
@@ -887,7 +960,6 @@ impl State {
     /// Returns every dynamic field to its empty-board default while leaving
     /// the shared static configuration untouched, so a new game or FEN can
     /// be loaded without re-deriving the precomputed tables.
-    ///
     pub fn reset(&mut self) {
         let piece_count = self.statics.pieces.len();
         let board_size = self.statics.board_size;
@@ -959,7 +1031,6 @@ impl State {
     /// Params:
     /// - fen : &str                -> FEN string to load
     /// - dict: Option<&Translator> -> optional piece-letter translator
-    ///
     pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
         self.reset();
         parse_fen(self, fen, dict);
@@ -980,7 +1051,6 @@ impl State {
     /// The start FEN is parsed with no translator: it is the engine's own
     /// internal notation, and a protocol dictionary can corrupt an internal
     /// FEN round-trip.
-    ///
     pub fn fork(&self) -> State {
         let mut state = State::from_statics(Arc::clone(&self.statics));
         state.load_fen(&self.statics.startpos, None);
@@ -997,7 +1067,6 @@ impl State {
     ///
     /// Params:
     /// - plies: usize -> number of random plies to apply
-    ///
     pub fn play_random_opening(&mut self, plies: usize) {
         for _ in 0..plies {
             let legal = legal_moves!(self);
@@ -1023,23 +1092,26 @@ impl State {
     /// Expression-compilation helpers run once at precompute time. Each takes
     /// one raw expression string per piece (in config order) and compiles it
     /// into that piece's runtime structure, leaving board-aware expansion to
-    /// the moves module:
+    /// the moves module. Each returns one compiled set per piece, indexed
+    /// by `PieceIndex`.
     ///
-    /// - `generate_piece_moves`:
-    ///   packed `Leg` lists (`MoveSet`), via `generate_move_vectors`
+    /// generate_piece_moves
+    ///   Params:
+    ///   - expr_set: &Vec<String> -> one move expression per piece
+    ///   Return:
+    ///   Vec<MoveSet> -> packed `Leg` lists, via `generate_move_vectors`
     ///
-    /// - `generate_piece_drops`:
-    ///   `DropSet`s, via `generate_drop_vectors`
+    /// generate_piece_drops
+    ///   Params:
+    ///   - expr_set: &[String] -> one drop expression per piece
+    ///   Return:
+    ///   Vec<DropSet> -> drop sets, via `generate_drop_vectors`
     ///
-    /// - `generate_piece_stand_off`:
-    ///   `PatternSet`s, via `generate_stand_off_patterns`
-    ///
-    /// Params:
-    /// - expr_set -> one expression string per piece, in config order
-    ///
-    /// Return:
-    /// one compiled set per piece, indexed by PieceIndex
-    ///
+    /// generate_piece_stand_off
+    ///   Params:
+    ///   - expr_set: Vec<String> -> one stand-off expression per piece
+    ///   Return:
+    ///   Vec<PatternSet> -> patterns, via `generate_stand_off_patterns`
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
         let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
         for expr in expr_set {
@@ -1079,26 +1151,38 @@ impl State {
     /// and stores, at `piece * board_size + square`, the compiled entries that
     /// stay on the board when played from that square, turning the per-piece
     /// sets from the `generate_piece_*` helpers into flat, square-indexed
-    /// lookup tables the generator reads at runtime:
+    /// lookup tables the generator reads at runtime. None return a value;
+    /// each writes its static table through `static_mut`.
     ///
-    /// - `populate_relevant_moves`:
-    ///   fills `relevant_moves` from move sets
+    /// populate_relevant_moves
+    ///   Params:
     ///
-    /// - `populate_relevant_captures`:
-    ///   fills `relevant_captures` from move sets
+    ///   - piece_moves: &[MoveSet]
+    ///     compiled move sets, one per piece; fills `relevant_moves`
     ///
-    /// - `populate_relevant_drops`:
-    ///   fills `relevant_drops` from drop sets
+    /// populate_relevant_captures
+    ///   Params:
     ///
-    /// - `populate_relevant_setup`:
-    ///   fills `relevant_setup` from setup drops
+    ///   - piece_moves: &[MoveSet]
+    ///     compiled move sets, one per piece; fills `relevant_captures`
     ///
-    /// - `populate_relevant_stand_offs`:
-    ///   fills `relevant_stand_offs` from patterns
+    /// populate_relevant_drops
+    ///   Params:
     ///
-    /// Params:
-    /// - compiled -> the matching per-piece compiled set list
+    ///   - piece_setup_drops: &[DropSet]
+    ///     compiled drop sets, one per piece; fills `relevant_drops`
     ///
+    /// populate_relevant_setup
+    ///   Params:
+    ///
+    ///   - piece_setup_drops: &[DropSet]
+    ///     compiled setup drops, one per piece; fills `relevant_setup`
+    ///
+    /// populate_relevant_stand_offs
+    ///   Params:
+    ///
+    ///   - piece_stand_off: &[PatternSet]
+    ///     compiled patterns, one per piece; fills `relevant_stand_offs`
     fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
         let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
@@ -1187,7 +1271,6 @@ impl State {
     /// (piece, origin, vector) triples could attack it, split by color.
     /// Check detection uses these to scan only plausible attackers rather
     /// than every enemy piece on the board.
-    ///
     fn populate_relevant_attacks(&mut self) {
         for square in 0..self.statics.board_size {
             generate_attack_masks(square as Square, self);
@@ -1211,7 +1294,6 @@ impl State {
     ///
     /// The masks accelerate king-safety and pawn-connectivity tests during
     /// evaluation, replacing per-use neighbour arithmetic with one lookup.
-    ///
     fn populate_adjacency_mask(&mut self) {
         let file_count = self.statics.files;
         let rank_count = self.statics.ranks;
@@ -1260,7 +1342,6 @@ impl State {
     /// - drops_expr_set    : Vec<String> -> per-piece drop expressions
     /// - setup_expr_set    : Vec<String> -> per-piece setup expressions
     /// - stand_off_expr_set: Vec<String> -> per-piece stand-off expressions
-    ///
     pub fn precompute(
         &mut self,
         moves_expr_set: Vec<String>,

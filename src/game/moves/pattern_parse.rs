@@ -1,4 +1,4 @@
-//! # pattern_parse.rs
+//! pattern_parse.rs
 //!
 //! Parses CPMN pattern expressions into allower and stopper pattern lists.
 //!
@@ -8,11 +8,8 @@
 //! lists the matcher scans, expanding wildcards so later stages only ever see
 //! concrete piece letters.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 24/02/2026
+//! Created: 24/02/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -31,9 +28,9 @@ lazy_static! {
 
 /// expand_wildcard
 ///
-/// Replaces the `*` piece wildcard in a pattern's piece lists with the
-/// full alphabet of the variant's piece characters, so later parsing only
-/// ever sees concrete piece letters.
+/// Replaces each `*` piece wildcard with this variant's piece alphabet.
+///
+/// Later parsing therefore works only with concrete piece characters.
 ///
 /// Params:
 /// - expr : &str   -> raw CPMN pattern expression
@@ -41,7 +38,6 @@ lazy_static! {
 ///
 /// Return:
 /// String          -> the expression with wildcards spelled out
-///
 fn expand_wildcard(expr: &str, state: &State) -> String {
     let all_pieces = state.statics.pieces.iter()
         .map(|p| p.char).collect::<String>();
@@ -52,17 +48,18 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
 
 /// parse_pattern
 ///
-/// The Cheesy Pattern Match Notation (CPMN) is as follows.
+/// Compiles one Cheesy Pattern Match Notation (CPMN) expression.
+///
+/// CPMN has this shape:
 ///
 /// [allower multi leg]~[pieces]@[stoppers multi leg]~[pieces]
 ///
-/// The multi-leg part is not processed as a whole; each leg is processed
-/// separately. So `#-W~P-P` matches a pawn on the drop square and a pawn on
-/// each `W` square. A drop is legal if all allowers are met and no stopper
-/// is met.
+/// Each multi-leg segment becomes an independent offset. For example,
+/// `#-W~P-P` requires a pawn at the anchor and at every `W` offset. A pattern
+/// matches when all allowers hold and no stopper holds.
 ///
-/// Pieces are the chars of the pieces that are relevant to the allowers and
-/// stoppers. * means all pieces excluding no piece. ? means no piece.
+/// Piece lists name the pieces relevant to allowers and stoppers. `*` means
+/// every real piece; `?` means the empty-square sentinel.
 ///
 /// Params:
 /// - expr : &str   -> one CPMN pattern expression
@@ -70,7 +67,6 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
 ///
 /// Return:
 /// Pattern         -> compiled (allower, stopper) offset lists with piece sets
-///
 pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     let expr = &expand_wildcard(expr, state);
     let captures = PATTERN_PATTERN
@@ -204,7 +200,6 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
 ///
 /// Return:
 /// Vec<Pattern>    -> one compiled pattern per branch
-///
 pub fn generate_stand_off_patterns(
     expr: &str,
     state: &State,
@@ -230,9 +225,9 @@ pub fn generate_stand_off_patterns(
 /// - piece_stand_off: &[PatternSet] -> compiled patterns, one per piece
 ///
 /// Return:
-/// PatternSet                       -> patterns whose offsets all fit on the
-///                                     board from here
 ///
+/// PatternSet
+/// patterns whose offsets all fit on the board from here
 pub fn generate_relevant_stand_offs(
     piece: &Piece,
     square: u32,

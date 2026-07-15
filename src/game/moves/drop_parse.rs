@@ -1,4 +1,4 @@
-//! # drop_parse.rs
+//! drop_parse.rs
 //!
 //! Parses drop expressions into internal drop vectors and modifiers.
 //!
@@ -8,11 +8,8 @@
 //! splitting `|` branches and folding each flag into the drop word so the
 //! hot path never re-parses text.
 //!
-//! # Author
-//! Alden Luthfi
-//!
-//! # Date
-//! 29/01/2026
+//! Created: 29/01/2026
+//! Author : Alden Luthfi
 
 use crate::*;
 
@@ -31,13 +28,12 @@ lazy_static! {
 
 /// generate_drop_vectors
 ///
-/// Parses a piece's drop expressions into packed drop templates. Each
+/// Compiles a piece's drop expressions into packed drop templates. Each
 /// expression has the form:
 ///
 ///     [modifiers]@[CPMN]
 ///
-/// where the CPMN body is the neighbourhood pattern and the modifiers tune
-/// drop legality:
+/// The CPMN body is the neighborhood pattern; modifiers tune drop legality:
 ///
 /// - k: if set, this drop cannot deliver checkmate; otherwise it can.
 ///
@@ -48,7 +44,6 @@ lazy_static! {
 ///
 /// Return:
 /// DropSet               -> one packed (drop, pattern) pair per `|` branch
-///
 pub fn generate_drop_vectors(
     piece: &Piece,
     state: &State,
