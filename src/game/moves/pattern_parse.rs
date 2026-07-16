@@ -52,11 +52,13 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
 ///
 /// CPMN has this shape:
 ///
+/// ```text
 /// [allower multi leg]~[pieces]@[stoppers multi leg]~[pieces]
+/// ```
 ///
 /// Each multi-leg segment becomes an independent offset. For example,
-/// `#-W~P-P` requires a pawn at the anchor and at every `W` offset. A pattern
-/// matches when all allowers hold and no stopper holds.
+/// `#-W~P-P` requires the `P` piece at the anchor and every `W` offset. A
+/// pattern matches when all allowers hold and no stopper holds.
 ///
 /// Piece lists name the pieces relevant to allowers and stoppers. `*` means
 /// every real piece; `?` means the empty-square sentinel.

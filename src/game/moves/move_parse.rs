@@ -437,11 +437,11 @@ fn atomize(expr: &str) -> Option<String> {
 /// Expands a direction filter into the explicit list of directions it
 /// denotes. The accepted forms are:
 ///
-/// - `[1..8]`      : the full range [12345678]
-/// - `[..5]`       : an open low end [12345]
-/// - `[5..]`       : an open high end [5678]
-/// - `[1..7$25]`   : a range minus exclusions [13467]
-/// - `[1235678$2]` : an explicit set minus exclusions [135678]
+/// - `[1..8]`      : full range `[12345678]`
+/// - `[..5]`       : open low end `[12345]`
+/// - `[5..]`       : open high end `[5678]`
+/// - `[1..7$25]`   : range minus exclusions `[13467]`
+/// - `[1235678$2]` : explicit set minus exclusions `[135678]`
 ///
 /// Params:
 /// - expr: &str   -> single sanitized branch (no `|` alternation)
@@ -1638,7 +1638,7 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 /// here.
 ///
 /// Params:
-/// - expr    : &str -> single atomic expression, e.g. "n[26]K"
+/// - expr    : &str -> single atomic expression, e.g. `n[26]K`
 /// - rotation: &str -> cardinal direction the atomic is rotated toward
 ///
 /// Return:
@@ -1716,9 +1716,9 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// previous atomic.
 ///
 /// Example:
-/// - N → FnF → [2468]Kn[2468]K, starting from the `S` square
+/// - `N → FnF → [2468]Kn[2468]K`, starting from the `S` square
 ///
-/// 1. Start with a Ferz (F -> [2468]K) move which produces the vectors:
+/// 1. Start with a Ferz (`F -> [2468]K`) move which produces these vectors:
 ///     - (1, 1)
 ///     - (1, -1)
 ///     - (-1, -1)
@@ -1746,9 +1746,9 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
 ///
-/// 2. For each of the vector, apply nF -> n[2468]K with respect to the last
-///    vector:
-///    - for (1, 1): direction is ne so n[2468]K rotated by ne produces (0, 1)
+/// 2. For each vector, apply `nF -> n[2468]K` relative to its last vector:
+///    - for (1, 1), direction is ne, so `n[2468]K` rotated by ne produces
+///      (0, 1)
 ///      and (1, 0)
 ///
 /// ```text
@@ -1925,7 +1925,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 ///   by the last F move.
 ///
 /// Params:
-/// - expr    : &str -> chained atomic expression, e.g. "[2468]Kn[2468]K"
+/// - expr    : &str -> chained atomic expression, e.g. `[2468]Kn[2468]K`
 /// - rotation: &str -> cardinal direction the chain is rotated toward
 ///
 /// Return:
@@ -3183,7 +3183,7 @@ fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
 /// The result keeps exactly one `LegVector` per produced branch.
 ///
 /// Params:
-/// - expr    : &str    -> one leg expression, e.g. "mc[26]K@nK"
+/// - expr    : &str    -> one leg expression, e.g. `mc[26]K@nK`
 /// - rotation: &str    -> cardinal direction the leg is rotated toward
 /// - state   : &State  -> board dimensions for bounds clipping
 ///
