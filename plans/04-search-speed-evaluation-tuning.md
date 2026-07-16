@@ -340,6 +340,10 @@ Report result and phase distributions, train and validation MSE, and best epoch.
 Export best validation epoch rather than final epoch; stop or warn on sustained
 validation regression.
 
+Status 2026-07-18: implemented. Isolated smoke loaded one training and one
+validation game, reported result/phase distributions, ran two epochs, and
+exported epoch 0 because validation did not improve. Release build passes.
+
 ### R11 Replace parameter schema with scalar-capable payload
 
 Critical files:

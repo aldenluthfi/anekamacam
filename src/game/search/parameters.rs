@@ -36,44 +36,34 @@ type PieceRoles = (PieceIndex, bool, bool);
 /// Return:
 /// Vec<PieceRoles>     -> (index, is_big, is_major) per piece
 fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
-    let mut ranked = collect_piece_type_pairs(state)
-        .into_iter()
-        .filter(|(white_index, _)| {
-            !p_is_royal!(&state.statics.pieces[*white_index])
-        })
-        .map(|(white_index, black_index)| {
-            (
-                p_ovalue!(&state.statics.pieces[white_index]),
-                white_index,
-                black_index,
-            )
-        })
-        .collect::<Vec<_>>();
-    ranked.sort_unstable_by_key(
-        |(value, white_index, _)| (*value, *white_index)
-    );
+    let mut values = HashSet::new();
 
-    let non_big_count = (ranked.len() as f32 * 0.1).ceil() as usize;
-    let major_count = (ranked.len() as f32 * 0.2).ceil() as usize;
+    for piece in state.statics.pieces.iter() {
+        let value = p_ovalue!(piece);
+        values.insert(value);
+    }
+
+    let mut values = values.iter().collect::<Vec<_>>();
+
+    values.sort_unstable();
+
+    let non_big_threshold = (values.len() as f32 * 0.1).ceil() as usize;
+    let major_threshold = (values.len() as f32 * 0.8).ceil() as usize;
 
     log_4!(
-        "Role counts - Non-big: {}, Major: {}",
-        non_big_count, major_count
+        "Role thresholds - Non-big: {}, Major: {}",
+        non_big_threshold, major_threshold
     );
 
-    let mut piece_roles = Vec::with_capacity(2 * ranked.len());
+    let mut piece_roles = Vec::new();
 
-    for (rank, (value, white_index, black_index)) in ranked.iter().enumerate() {
-        let is_big = rank >= non_big_count;
-        let is_major = is_big && rank >= ranked.len() - major_count;
+    for piece in state.statics.pieces.iter() {
+        let value = p_ovalue!(piece);
 
-        log_4!(
-            "Role rank {} value {} -> big {}, major {}",
-            rank, value, is_big, is_major
-        );
+        let is_big = value > *values[non_big_threshold - 1];
+        let is_major = value >= *values[major_threshold - 1];
 
-        piece_roles.push((*white_index as PieceIndex, is_big, is_major));
-        piece_roles.push((*black_index as PieceIndex, is_big, is_major));
+        piece_roles.push((p_index!(piece), is_big, is_major));
     }
 
     piece_roles

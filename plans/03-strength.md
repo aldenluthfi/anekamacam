@@ -61,15 +61,10 @@ Continues phase 1's stage letters at **M**. Target: ~1850 FIDE /
   plus `sprt` clock mode (`tc=base+inc` → wtime/btime/winc/binc,
   referee-banked clocks, flag = loss). Clock smoke test: startpos
   reached depth 13 in 146 ms on a 3000+100 bank. `bin/stageQ` saved.
-- FIDE round robin completed 2026-07-18: Q `86 +/- 6`, P `82 +/- 6`,
-  O `61 +/- 6`, M `36 +/- 6`, N `34 +/- 6`; stages A-L ranged from
-  `1 +/- 5` to `-19 +/- 5`. Q remains baseline. Its four-Elo lead over
-  P overlaps uncertainty, but no result supports reverting Q. Shogi
-  round robin remains pending as cross-variant arbitration.
-- Further work continues directly at Stage R in
-  `plans/04-search-speed-evaluation-tuning.md`. That plan keeps R tuning,
-  S ProbCut, T qsearch checks, and U mobility, adds selected prerequisites,
-  and leaves Stage V deferred.
+- **Round robin pending (user)**: stageL/M/N/O/P/Q. No per-stage SPRT
+  this round by user direction; results decide reverts. janggi and
+  mini-xiangqi (and the other non-UCI variants) still need one console
+  load each to rederive+export `latest.param` with the new walk/PSTs.
 
 ## Context
 

@@ -67,11 +67,17 @@ macro_rules! king_shelter {
         hotpath::measure_block!("eval::king_shelter", {
         let mut shelter = 0;
 
-        for &king_square in $state.royal_list[$color as usize].iter() {
-            let mut adjacent =
-                $state.statics.adjacency_mask[king_square as usize];
-            and!(adjacent, $state.pieces_board[$color as usize]);
-            shelter += count_bits!(adjacent) as i32;
+        for (piece_index, piece) in $state.statics.pieces.iter().enumerate() {
+            if p_color!(piece) != $color || !p_is_royal!(piece) {
+                continue;
+            }
+
+            for &king_square in piece_squares!($state, piece_index) {
+                let mut adjacent =
+                    $state.statics.adjacency_mask[king_square as usize];
+                and!(adjacent, $state.pieces_board[$color as usize]);
+                shelter += count_bits!(adjacent) as i32;
+            }
         }
 
         shelter
@@ -577,7 +583,16 @@ macro_rules! evaluate_position {
         let imbalance = major_diff * $state.statics.imbalance_major
             + minor_diff * $state.statics.imbalance_minor;
 
-        let pair_bonus = $state.pair_score;
+        let mut pair_bonus = 0i32;
+        for (piece_index, piece) in $state.statics.pieces.iter().enumerate() {
+            if $state.piece_count[piece_index] >= 2 {
+                if p_color!(piece) == WHITE {
+                    pair_bonus += $state.statics.pair_bonus[piece_index];
+                } else {
+                    pair_bonus -= $state.statics.pair_bonus[piece_index];
+                }
+            }
+        }
 
         let king_safety = if $state.game_phase == ENDGAME {
             0

@@ -410,12 +410,6 @@ macro_rules! piece_list_push {
         let pushed_piece = $piece_index;
         let count = $state.piece_count[pushed_piece] as usize;
 
-        if count == 1 {
-            let bonus = $state.statics.pair_bonus[pushed_piece];
-            let color = p_color!($state.statics.pieces[pushed_piece]);
-            $state.pair_score += bonus * (1 - 2 * color as i32);
-        }
-
         $state.piece_list[
             pushed_piece * $state.statics.board_size + count
         ] = pushed_square;
@@ -435,12 +429,6 @@ macro_rules! piece_list_remove {
         if let Some(found) =
             row.iter().position(|&square| square == removed_square)
         {
-            if count == 2 {
-                let bonus = $state.statics.pair_bonus[removed_piece];
-                let color = p_color!($state.statics.pieces[removed_piece]);
-                $state.pair_score -= bonus * (1 - 2 * color as i32);
-            }
-
             row[found] = row[count - 1];
             row[count - 1] = NO_SQUARE;
             $state.piece_count[removed_piece] -= 1;
@@ -661,7 +649,6 @@ pub struct State {
     pub endgame_material: [u32; 2],                                             /* color to endgame material          */
     pub opening_pst_bonus: [i32; 2],                                            /* color to opening pst bonus         */
     pub endgame_pst_bonus: [i32; 2],                                            /* color to endgame pst bonus         */
-    pub pair_score: i32,                                                        /* incremental white-black pair bonus*/
     pub big_pieces: [u32; 2],                                                   /* per-color big-piece counts         */
     pub major_pieces: [u32; 2],                                                 /* per-color major-piece counts       */
     pub minor_pieces: [u32; 2],                                                 /* per-color minor-piece counts       */
@@ -724,7 +711,6 @@ impl Clone for State {
             endgame_material: self.endgame_material,
             opening_pst_bonus: self.opening_pst_bonus,
             endgame_pst_bonus: self.endgame_pst_bonus,
-            pair_score: self.pair_score,
             big_pieces: self.big_pieces,
             major_pieces: self.major_pieces,
             minor_pieces: self.minor_pieces,
@@ -886,7 +872,7 @@ impl State {
             open_shield_penalty: 0,
             imbalance_major: 0,
             imbalance_minor: 0,
-            pair_bonus: vec![0; piece_count],
+            pair_bonus: Vec::new(),
 
             pawn_path_mask:
                 vec![board!(files, ranks); board_size * piece_count],
@@ -966,7 +952,6 @@ impl State {
             endgame_material: [0; 2],
             opening_pst_bonus: [0; 2],
             endgame_pst_bonus: [0; 2],
-            pair_score: 0,
             big_pieces: [0; 2],
             major_pieces: [0; 2],
             minor_pieces: [0; 2],
@@ -1053,7 +1038,6 @@ impl State {
         self.endgame_material = [0; 2];
         self.opening_pst_bonus = [0; 2];
         self.endgame_pst_bonus = [0; 2];
-        self.pair_score = 0;
         self.big_pieces = [0; 2];
         self.major_pieces = [0; 2];
         self.minor_pieces = [0; 2];

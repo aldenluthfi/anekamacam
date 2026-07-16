@@ -27,14 +27,15 @@ use crate::*;
 /// - binary: &str -> path to the engine executable
 ///
 /// Return:
-/// Result<PathBuf, String> -> sandbox path or path-resolution error
-fn engine_sandbox(binary: &str) -> Result<PathBuf, String> {
-    let executable = fs::canonicalize(binary).map_err(|error| {
-        format!("Failed to resolve engine {}: {}", binary, error)
-    })?;
+/// PathBuf        -> per-binary sandbox directory path
+fn engine_sandbox(binary: &str) -> PathBuf {
+    let executable = fs::canonicalize(binary).unwrap_or_else(|e| {
+        panic!("Failed to resolve engine {}: {}", binary, e)
+    });
+
     let name = executable.to_string_lossy().replace(['/', '\\'], "_");
 
-    Ok(env::temp_dir().join("anekamacam-sprt").join(name))
+    env::temp_dir().join("anekamacam-sprt").join(name)
 }
 
 /// SPRTTimeControl
@@ -64,28 +65,6 @@ impl Display for SPRTTimeControl {
     }
 }
 
-/// SPRTChildError
-///
-/// Structured subprocess failure with enough context to identify the engine,
-/// failed operation, process state, and emitted diagnostics.
-struct SPRTChildError {
-    binary: String,
-    action: String,
-    detail: String,
-    status: String,
-    stderr: String,
-}
-
-impl Display for SPRTChildError {
-    fn fmt(&self, formatter: &mut FmtFormatter<'_>) -> FmtResult {
-        write!(
-            formatter,
-            "engine {} failed during {}: {} (status: {})\nstderr:\n{}",
-            self.binary, self.action, self.detail, self.status, self.stderr,
-        )
-    }
-}
-
 /// SPRTChild
 ///
 /// A running engine subprocess spoken to over UCI.
@@ -94,10 +73,9 @@ impl Display for SPRTChildError {
 /// per-move exchange in one place, and the `Drop` impl sends `quit` and
 /// reaps the process so no child is left behind.
 struct SPRTChild {
-    binary: String,                                                             /* executable path for diagnostics    */
     process: Child,                                                             /* the running engine subprocess      */
     input: ChildStdin,                                                          /* pipe carrying commands to it       */
-    output: Receiver<Result<Option<String>, String>>,                           /* timed subprocess reply stream      */
+    output: BufReader<ChildStdout>,                                             /* buffered pipe of its replies       */
     errors: ChildStderr,                                                        /* pipe of its stderr diagnostics     */
 }
 
@@ -106,10 +84,12 @@ struct SPRTChild {
 /// A tight family of methods that own one subprocess engine's UCI
 /// conversation.
 ///
-/// `spawn` configures the engine for the variant with a single thread and
-/// runs it inside its `engine_sandbox` so each binary sees only its own
-/// parameter files. Protocol and process failures return structured errors;
-/// the referee scores an in-game child failure as a loss and stops cleanly.
+/// `spawn` configures the engine for the variant with a small hash and a
+/// single thread for fair, reproducible games, and runs it inside its
+/// `engine_sandbox` so each binary sees only its own parameter files;
+/// `bestmove` returns `None` when the engine ends its stream (a crash),
+/// which the referee scores as a loss; handshake failures panic since
+/// they are setup errors.
 ///
 /// spawn
 ///
@@ -118,35 +98,25 @@ struct SPRTChild {
 ///   - variant: &str -> UCI variant name to select
 ///
 ///   Return:
-///   Result<SPRTChild, SPRTChildError> -> handshaken child or setup failure
+///   SPRTChild       -> the handshaken engine subprocess
 ///
 /// send
 ///
 ///   Params:
 ///   - command: &str -> the command line to write and flush
 ///
-///   Return:
-///   Result<(), SPRTChildError> -> success or command-write failure
-///
 /// read_line
 ///
-///   Params:
-///   - timeout: Duration -> maximum wait for one response line
-///
 ///   Return:
-///   Result<Option<String>, SPRTChildError> -> reply, EOF, or read failure
+///   Option<String> -> one reply line, None at end of stream
 ///
 /// wait_for
 ///
 ///   Params:
-///   - token  : &str     -> leading token that ends the wait
-///   - timeout: Duration -> absolute protocol deadline
-///
-///   Return:
-///   Result<(), SPRTChildError> -> success or protocol failure
+///   - token: &str -> leading token that ends the wait
 ///
 /// new_game
-///   resets the engine between games and returns any protocol failure
+///   resets the engine between games; no parameters, no return value
 ///
 /// bestmove
 ///
@@ -154,71 +124,27 @@ struct SPRTChild {
 ///   - startpos  : &str      -> the variant start-position FEN
 ///   - moves     : &[String] -> moves played so far, in UCI notation
 ///   - go_command: &str      -> the `go` line carrying the time control
-///   - timeout   : Duration  -> absolute response deadline
 ///
 ///   Return:
-///   Result<Option<String>, SPRTChildError> -> move, missing move, or failure
+///   Option<String>          -> the engine's move, None when its stream ended
 ///
 /// drain_errors
 ///
 ///   Return:
 ///   String -> the child's collected stderr, for crash diagnostics
 impl SPRTChild {
-    fn setup_error(
-        binary: &str,
-        action: &str,
-        detail: String,
-    ) -> SPRTChildError {
-        SPRTChildError {
-            binary: binary.to_string(),
-            action: action.to_string(),
-            detail,
-            status: "not running".to_string(),
-            stderr: "<engine was not started>".to_string(),
-        }
-    }
-
-    fn output_reader(
-        output: ChildStdout,
-    ) -> Receiver<Result<Option<String>, String>> {
-        let (sender, receiver) = channel();
-
-        thread::spawn(move || {
-            let mut output = BufReader::new(output);
-
-            loop {
-                let mut line = String::new();
-                let message = match output.read_line(&mut line) {
-                    Ok(0) => Ok(None),
-                    Ok(_) => Ok(Some(line)),
-                    Err(error) => Err(error.to_string()),
-                };
-                let done = !matches!(message, Ok(Some(_)));
-
-                if sender.send(message).is_err() || done {
-                    break;
-                }
-            }
+    fn spawn(binary: &str, variant: &str) -> SPRTChild {
+        let executable = fs::canonicalize(binary).unwrap_or_else(|e| {
+            panic!("Failed to resolve engine {}: {}", binary, e)
         });
 
-        receiver
-    }
+        let sandbox = engine_sandbox(binary);
 
-    fn spawn(binary: &str, variant: &str) -> Result<SPRTChild, SPRTChildError> {
-        let executable = fs::canonicalize(binary).map_err(|error| {
-            Self::setup_error(binary, "path resolution", error.to_string())
-        })?;
-        let sandbox = engine_sandbox(binary).map_err(|detail| {
-            Self::setup_error(binary, "sandbox resolution", detail)
-        })?;
-
-        fs::create_dir_all(&sandbox).map_err(|error| {
-            Self::setup_error(
-                binary,
-                "sandbox creation",
-                format!("{}: {}", sandbox.display(), error),
+        fs::create_dir_all(&sandbox).unwrap_or_else(|e| {
+            panic!(
+                "Failed to create sandbox {}: {}", sandbox.display(), e
             )
-        })?;
+        });
 
         let mut process = Command::new(executable)
             .arg("uci")
@@ -227,108 +153,48 @@ impl SPRTChild {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|error| {
-                Self::setup_error(binary, "process spawn", error.to_string())
-            })?;
+            .unwrap_or_else(|e| {
+                panic!("Failed to spawn engine {}: {}", binary, e)
+            });
 
-        let Some(input) = process.stdin.take() else {
-            let _ = process.kill();
-            let _ = process.wait();
-            return Err(Self::setup_error(
-                binary, "process setup", "missing stdin pipe".to_string()
-            ));
-        };
-        let Some(output) = process.stdout.take() else {
-            let _ = process.kill();
-            let _ = process.wait();
-            return Err(Self::setup_error(
-                binary, "process setup", "missing stdout pipe".to_string()
-            ));
-        };
-        let Some(errors) = process.stderr.take() else {
-            let _ = process.kill();
-            let _ = process.wait();
-            return Err(Self::setup_error(
-                binary, "process setup", "missing stderr pipe".to_string()
-            ));
-        };
+        let input = process.stdin.take().unwrap_or_else(|| {
+            panic!("Engine {} exposed no stdin", binary)
+        });
+        let output = BufReader::new(process.stdout.take().unwrap_or_else(|| {
+            panic!("Engine {} exposed no stdout", binary)
+        }));
+        let errors = process.stderr.take().unwrap_or_else(|| {
+            panic!("Engine {} exposed no stderr", binary)
+        });
 
-        let mut engine = SPRTChild {
-            binary: binary.to_string(),
-            process,
-            input,
-            output: Self::output_reader(output),
-            errors,
-        };
+        let mut engine = SPRTChild { process, input, output, errors };
 
-        engine.send("uci")?;
-        engine.wait_for(
-            "uciok",
-            Duration::from_millis(SPRT_HANDSHAKE_TIMEOUT_MS),
-        )?;
+        engine.send("uci");
+        engine.wait_for("uciok");
         engine.send(&format!(
             "setoption name {} value {}", OPT_VARIANT, variant
-        ))?;
-        engine.send(&format!("setoption name {} value 1", OPT_THREADS))?;
-        engine.send("isready")?;
-        engine.wait_for(
-            "readyok",
-            Duration::from_millis(SPRT_HANDSHAKE_TIMEOUT_MS),
-        )?;
+        ));
+        engine.send(&format!("setoption name {} value 1", OPT_THREADS));
+        engine.send("isready");
+        engine.wait_for("readyok");
 
-        Ok(engine)
+        engine
     }
 
-    fn failure(&mut self, action: &str, detail: String) -> SPRTChildError {
-        let (status, exited) = match self.process.try_wait() {
-            Ok(Some(status)) => (status.to_string(), true),
-            Ok(None) => ("running".to_string(), false),
-            Err(error) => (format!("status unavailable: {}", error), false),
-        };
-        let stderr = if exited {
-            self.drain_errors()
-        } else {
-            "<engine still running; stderr not drained>".to_string()
-        };
-
-        SPRTChildError {
-            binary: self.binary.clone(),
-            action: action.to_string(),
-            detail,
-            status,
-            stderr,
+    fn send(&mut self, command: &str) {
+        let written = writeln!(self.input, "{}", command);
+        let flushed = self.input.flush();
+        if let Err(e) = written.and(flushed) {
+            panic!(
+                "Failed to send '{}' to engine: {:?}\nstderr:\n{}",
+                command, e.into_inner(), self.drain_errors()
+            )
         }
-    }
-
-    fn exited_error(&mut self, action: &str) -> Option<SPRTChildError> {
-        match self.process.try_wait() {
-            Ok(Some(status)) => Some(SPRTChildError {
-                binary: self.binary.clone(),
-                action: action.to_string(),
-                detail: "process exited unexpectedly".to_string(),
-                status: status.to_string(),
-                stderr: self.drain_errors(),
-            }),
-            Ok(None) => None,
-            Err(error) => Some(self.failure(action, error.to_string())),
-        }
-    }
-
-    fn send(&mut self, command: &str) -> Result<(), SPRTChildError> {
-        writeln!(self.input, "{}", command)
-            .and_then(|_| self.input.flush())
-            .map_err(|error| {
-                self.failure(
-                    "command write",
-                    format!("{}: {}", command, error),
-                )
-            })
     }
 
     fn drain_errors(&mut self) -> String {
         let mut errors = String::new();
-        let _ = self.errors.read_to_string(&mut errors);
-
+        self.errors.read_to_string(&mut errors).ok();
         if errors.trim().is_empty() {
             "<engine emitted no stderr output>".to_string()
         } else {
@@ -336,63 +202,40 @@ impl SPRTChild {
         }
     }
 
-    fn read_line(
-        &mut self,
-        timeout: Duration,
-    ) -> Result<Option<String>, SPRTChildError> {
-        match self.output.recv_timeout(timeout) {
-            Ok(Ok(line)) => Ok(line),
-            Ok(Err(error)) => Err(self.failure("response read", error)),
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                Err(self.failure(
-                    "response timeout",
-                    format!("no protocol response for {:?}", timeout),
-                ))
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                Err(self.failure(
-                    "response read",
-                    "output reader disconnected".to_string(),
-                ))
-            }
-        }
+    fn read_line(&mut self) -> Option<String> {
+        let mut line = String::new();
+        let read = self.output.read_line(&mut line);
+        let bytes = read.unwrap_or_else(|e| {
+            panic!(
+                "Failed to read from engine: {}\n\
+                stderr:\n{}",
+                e, self.drain_errors()
+            )
+        });
+
+        if bytes == 0 { None } else { Some(line) }
     }
 
-    fn wait_for(
-        &mut self,
-        token: &str,
-        timeout: Duration,
-    ) -> Result<(), SPRTChildError> {
-        let deadline = Instant::now() + timeout;
-
+    fn wait_for(&mut self, token: &str) {
         loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(self.failure(
-                    "protocol wait",
-                    format!("timed out awaiting {}", token),
-                ));
-            }
-            let Some(line) = self.read_line(remaining)? else {
-                return Err(self.failure(
-                    "protocol wait",
-                    format!("stream closed while awaiting {}", token),
-                ));
+            let line = match self.read_line() {
+                Some(line) => line,
+                None => panic!(
+                    "Engine closed its stream while awaiting '{}'\n\
+                     stderr:\n{}",
+                    token, self.drain_errors()
+                ),
             };
-
             if line.split_whitespace().next() == Some(token) {
-                return Ok(());
+                return;
             }
         }
     }
 
-    fn new_game(&mut self) -> Result<(), SPRTChildError> {
-        self.send("ucinewgame")?;
-        self.send("isready")?;
-        self.wait_for(
-            "readyok",
-            Duration::from_millis(SPRT_HANDSHAKE_TIMEOUT_MS),
-        )
+    fn new_game(&mut self) {
+        self.send("ucinewgame");
+        self.send("isready");
+        self.wait_for("readyok");
     }
 
     fn bestmove(
@@ -400,8 +243,7 @@ impl SPRTChild {
         startpos: &str,
         moves: &[String],
         go_command: &str,
-        timeout: Duration,
-    ) -> Result<Option<String>, SPRTChildError> {
+    ) -> Option<String> {
         let mut command = format!("position fen {}", startpos);
         if !moves.is_empty() {
             command.push_str(" moves");
@@ -411,28 +253,14 @@ impl SPRTChild {
             }
         }
 
-        self.send(&command)?;
-        self.send(go_command)?;
-
-        let deadline = Instant::now() + timeout;
+        self.send(&command);
+        self.send(go_command);
 
         loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return Err(self.failure(
-                    "bestmove wait",
-                    "timed out before bestmove".to_string(),
-                ));
-            }
-            let Some(line) = self.read_line(remaining)? else {
-                return Err(self.failure(
-                    "bestmove wait",
-                    "stream closed before bestmove".to_string(),
-                ));
-            };
+            let line = self.read_line()?;
             let mut tokens = line.split_whitespace();
             if tokens.next() == Some("bestmove") {
-                return Ok(tokens.next().map(str::to_string));
+                return tokens.next().map(str::to_string);
             }
         }
     }
@@ -442,23 +270,7 @@ impl Drop for SPRTChild {
     fn drop(&mut self) {
         let _ = writeln!(self.input, "quit");
         let _ = self.input.flush();
-
-        let deadline = Instant::now()
-            + Duration::from_millis(SPRT_SHUTDOWN_TIMEOUT_MS);
-
-        loop {
-            match self.process.try_wait() {
-                Ok(Some(_)) => break,
-                Ok(None) if Instant::now() < deadline => {
-                    thread::sleep(Duration::from_millis(10));
-                }
-                _ => {
-                    let _ = self.process.kill();
-                    let _ = self.process.wait();
-                    break;
-                }
-            }
-        }
+        let _ = self.process.wait();
     }
 }
 
@@ -479,21 +291,6 @@ fn opening_line(template: &State, plies: usize) -> Vec<Move> {
     let mut state = template.fork();
     state.play_random_opening(plies);
     state.history.iter().map(|snap| snap.move_ply.clone()).collect()
-}
-
-/// SPRTGameOutcome
-///
-/// Referee result for one game. Normal results carry only score; a single
-/// subprocess failure carries scored loss and diagnostics; failure of both
-/// children aborts without inventing a winner.
-enum SPRTGameOutcome {
-    Score(f64),
-    EngineLoss {
-        score: f64,
-        side: u8,
-        error: SPRTChildError,
-    },
-    Aborted(String),
 }
 
 /// GameManager
@@ -530,7 +327,7 @@ struct GameManager {
 ///   - variant : &str   -> UCI variant name for both children
 ///
 ///   Return:
-///   Result<GameManager, SPRTChildError> -> manager or setup failure
+///   GameManager        -> both children spawned, referee at startpos
 ///
 /// swap_colors
 ///   exchanges which child plays which colour; no parameters, no
@@ -541,9 +338,6 @@ struct GameManager {
 ///   Params:
 ///   - template: &State  -> loaded variant to fork the referee from
 ///   - opening : &[Move] -> shared opening line to replay
-///
-///   Return:
-///   Result<(), String> -> success or one/both child reset failures
 ///
 /// play
 ///
@@ -563,55 +357,28 @@ struct GameManager {
 ///
 ///   Return:
 ///
-///   SPRTGameOutcome
-///   White-perspective score, scored child loss, or unscored match abort
+///   f64
+///   the White-perspective game score; under a clock control a side that
+///   oversteps its remaining bank loses on time
 impl GameManager {
     fn new(
         template: &State,
         binary_a: &str,
         binary_b: &str,
         variant: &str,
-    ) -> Result<GameManager, SPRTChildError> {
-        let white = SPRTChild::spawn(binary_a, variant)?;
-        let black = SPRTChild::spawn(binary_b, variant)?;
-
-        Ok(GameManager {
+    ) -> GameManager {
+        GameManager {
             state: template.fork(),
-            white,
-            black,
-        })
+            white: SPRTChild::spawn(binary_a, variant),
+            black: SPRTChild::spawn(binary_b, variant),
+        }
     }
 
     fn swap_colors(&mut self) {
         std::mem::swap(&mut self.white, &mut self.black);
     }
 
-    fn restart(
-        &mut self,
-        side: u8,
-        variant: &str,
-    ) -> Result<(), SPRTChildError> {
-        let binary = if side == WHITE {
-            self.white.binary.clone()
-        } else {
-            self.black.binary.clone()
-        };
-        let child = SPRTChild::spawn(&binary, variant)?;
-
-        if side == WHITE {
-            self.white = child;
-        } else {
-            self.black = child;
-        }
-
-        Ok(())
-    }
-
-    fn reset_to(
-        &mut self,
-        template: &State,
-        opening: &[Move],
-    ) -> Result<(), String> {
+    fn reset_to(&mut self, template: &State, opening: &[Move]) {
         self.state = template.fork();
         let state = &mut self.state;
 
@@ -619,19 +386,8 @@ impl GameManager {
             make_move!(state, played.clone());
         }
 
-        let white = self.white.new_game();
-        let black = self.black.new_game();
-
-        match (white, black) {
-            (Ok(()), Ok(())) => Ok(()),
-            (Err(error), Ok(())) | (Ok(()), Err(error)) => {
-                Err(error.to_string())
-            }
-            (Err(white_error), Err(black_error)) => Err(format!(
-                "both engines failed during game reset:\n{}\n{}",
-                white_error, black_error,
-            )),
-        }
+        self.white.new_game();
+        self.black.new_game();
     }
 
     fn play(
@@ -640,7 +396,7 @@ impl GameManager {
         startpos: &str,
         time_control: SPRTTimeControl,
         sender: &Sender<TuiEvent>,
-    ) -> SPRTGameOutcome {
+    ) -> f64 {
         let state = &mut self.state;
 
         let mut clocks = match time_control {
@@ -656,62 +412,43 @@ impl GameManager {
                 if is_in_check!(state.playing, state)
                 || stalemate_loss!(state)
                 {
-                    return SPRTGameOutcome::Score(state.playing as f64);
+                    return state.playing as f64;
                 }
 
-                return SPRTGameOutcome::Score(0.5);
+                return 0.5;
             }
 
             let moves: Vec<String> = state.history.iter()
                 .map(|snap| format_move(&snap.move_ply, state, dict))
                 .collect();
+
             let side = state.playing;
-            let (go_command, response_ms) = match time_control {
-                SPRTTimeControl::MoveTime(movetime_ms) => (
-                    format!("go movetime {}", movetime_ms),
-                    movetime_ms + SPRT_RESPONSE_GRACE_MS,
-                ),
-                SPRTTimeControl::Clock { inc_ms, .. } => (
+            let engine = if side == WHITE {
+                &mut self.white
+            } else {
+                &mut self.black
+            };
+
+            let go_command = match time_control {
+                SPRTTimeControl::MoveTime(movetime_ms) => {
+                    format!("go movetime {}", movetime_ms)
+                }
+                SPRTTimeControl::Clock { inc_ms, .. } => {
                     format!(
                         "go wtime {} btime {} winc {} binc {}",
                         clocks[WHITE as usize], clocks[BLACK as usize],
                         inc_ms, inc_ms,
-                    ),
-                    clocks[side as usize] + inc_ms + SPRT_RESPONSE_GRACE_MS,
-                ),
-            };
-            let response_ms = response_ms.min(u64::MAX as u128) as u64;
-            let timeout = Duration::from_millis(response_ms);
-            let move_start = Instant::now();
-            let result = if side == WHITE {
-                self.white.bestmove(startpos, &moves, &go_command, timeout)
-            } else {
-                self.black.bestmove(startpos, &moves, &go_command, timeout)
-            };
-
-            let move_string = match result {
-                Ok(Some(text)) if text != "(none)" => text,
-                Ok(_) => return SPRTGameOutcome::Score(side as f64),
-                Err(error) => {
-                    let other = if side == WHITE {
-                        self.black.exited_error("opponent status check")
-                    } else {
-                        self.white.exited_error("opponent status check")
-                    };
-
-                    if let Some(other_error) = other {
-                        return SPRTGameOutcome::Aborted(format!(
-                            "both engines failed:\n{}\n{}",
-                            error, other_error,
-                        ));
-                    }
-
-                    return SPRTGameOutcome::EngineLoss {
-                        score: side as f64,
-                        side,
-                        error,
-                    };
+                    )
                 }
+            };
+
+            let move_start = Instant::now();
+
+            let move_string = match engine.bestmove(
+                startpos, &moves, &go_command
+            ) {
+                Some(text) if text != "(none)" => text,
+                _ => return side as f64,
             };
 
             if let SPRTTimeControl::Clock { inc_ms, .. } = time_control {
@@ -719,7 +456,7 @@ impl GameManager {
                 let clock = &mut clocks[side as usize];
 
                 if spent > *clock {
-                    return SPRTGameOutcome::Score(side as f64);
+                    return side as f64;
                 }
 
                 *clock = *clock - spent + inc_ms;
@@ -727,20 +464,18 @@ impl GameManager {
 
             let parsed = match parse_move(&move_string, state, dict) {
                 Some(mv) => mv,
-                None => return SPRTGameOutcome::Score(state.playing as f64),
+                None => return state.playing as f64,
             };
 
             if !make_move!(state, parsed) {
-                return SPRTGameOutcome::Score(state.playing as f64);
+                return state.playing as f64;
             }
 
-            if let Err(error) = sender.send(TuiEvent::StateUpdate(
+            sender.send(TuiEvent::StateUpdate(
                 BoardState::from_state(state, dict)
-            )) {
-                return SPRTGameOutcome::Aborted(format!(
-                    "failed to send TuiEvent::StateUpdate: {}", error,
-                ));
-            }
+            )).unwrap_or_else(|e| {
+                panic!("Failed to send TuiEvent::StateUpdate: {e}")
+            });
         }
     }
 }
@@ -860,8 +595,7 @@ fn write_result_file(
     });
 
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let process_id = std::process::id();
-    let path = format!("{}/{}-{}.log", dir, stamp, process_id);
+    let path = format!("{}/{}.log", dir, stamp);
 
     let body = format!(
         "engine A: {}\nengine B: {}\nvariant: {}\ntime control: {}\n\
@@ -920,38 +654,13 @@ pub fn run_sprt(
     }
 
     let dict = translator.as_ref();
+
     let startpos = template.statics.startpos.clone();
 
-    for binary in [binary_a, binary_b] {
-        let sandbox = match engine_sandbox(binary) {
-            Ok(path) => path,
-            Err(error) => {
-                let verdict = format!("aborted during setup: {}", error);
-                log_1!("SPRT {}", verdict);
-                write_result_file(
-                    variant, binary_a, binary_b, time_control, h0, h1,
-                    0, 0, 0, 0.0, &verdict,
-                );
-                return;
-            }
-        };
-        let _ = fs::remove_dir_all(sandbox);
-    }
+    let _ = fs::remove_dir_all(engine_sandbox(binary_a));
+    let _ = fs::remove_dir_all(engine_sandbox(binary_b));
 
-    let mut manager = match GameManager::new(
-        template, binary_a, binary_b, variant
-    ) {
-        Ok(manager) => manager,
-        Err(error) => {
-            let verdict = format!("aborted during setup: {}", error);
-            log_1!("SPRT {}", verdict);
-            write_result_file(
-                variant, binary_a, binary_b, time_control, h0, h1,
-                0, 0, 0, 0.0, &verdict,
-            );
-            return;
-        }
-    };
+    let mut manager = GameManager::new(template, binary_a, binary_b, variant);
 
     let mu_0 = expected_score(h0);
     let mu_1 = expected_score(h1);
@@ -961,81 +670,35 @@ pub fn run_sprt(
     let (mut wins, mut draws, mut losses) = (0u32, 0u32, 0u32);
     let (mut pairs, mut sum, mut sum_squares) = (0.0f64, 0.0f64, 0.0f64);
     let mut llr = 0.0f64;
-    let mut verdict = "inconclusive (game budget reached)".to_string();
+    let mut verdict = "inconclusive (game budget reached)";
 
-    'pairs: for pair_index in 0..(max_games / 2) {
+    for pair_index in 0..(max_games / 2) {
         if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
-            verdict = "cancelled".to_string();
+            verdict = "cancelled";
             break;
         }
 
         let opening = opening_line(template, OPENING_RANDOM_PLIES);
 
-        if let Err(error) = manager.reset_to(template, &opening) {
-            verdict = format!("aborted during game setup: {}", error);
-            break;
-        }
-
+        manager.reset_to(template, &opening);
         let first = manager.play(dict, &startpos, time_control, sender);
-        let score_first = match first {
-            SPRTGameOutcome::Score(score) => score,
-            SPRTGameOutcome::EngineLoss { score, side, error } => {
-                log_1!("SPRT scored engine loss: {}", error);
-                if let Err(restart_error) = manager.restart(side, variant) {
-                    let (win, draw, loss) = game_score_bucket(score);
-                    wins += win;
-                    draws += draw;
-                    losses += loss;
-                    verdict = format!(
-                        "aborted after engine loss; restart failed: {}",
-                        restart_error,
-                    );
-                    break 'pairs;
-                }
-                score
-            }
-            SPRTGameOutcome::Aborted(error) => {
-                verdict = format!("aborted during game: {}", error);
-                break 'pairs;
-            }
-        };
-        let (win, draw, loss) = game_score_bucket(score_first);
-        wins += win;
-        draws += draw;
-        losses += loss;
 
         manager.swap_colors();
 
-        if let Err(error) = manager.reset_to(template, &opening) {
-            verdict = format!("aborted during game setup: {}", error);
-            break;
-        }
-
-        let mut abort_after_pair = None;
+        manager.reset_to(template, &opening);
         let second = manager.play(dict, &startpos, time_control, sender);
-        let score_second = match second {
-            SPRTGameOutcome::Score(score) => 1.0 - score,
-            SPRTGameOutcome::EngineLoss { score, side, error } => {
-                log_1!("SPRT scored engine loss: {}", error);
-                if let Err(restart_error) = manager.restart(side, variant) {
-                    abort_after_pair = Some(format!(
-                        "aborted after engine loss; restart failed: {}",
-                        restart_error,
-                    ));
-                }
-                1.0 - score
-            }
-            SPRTGameOutcome::Aborted(error) => {
-                verdict = format!("aborted during game: {}", error);
-                break 'pairs;
-            }
-        };
-        let (win, draw, loss) = game_score_bucket(score_second);
-        wins += win;
-        draws += draw;
-        losses += loss;
 
         manager.swap_colors();
+
+        let score_first = first;
+        let score_second = 1.0 - second;
+
+        for score in [score_first, score_second] {
+            let (win, draw, loss) = game_score_bucket(score);
+            wins += win;
+            draws += draw;
+            losses += loss;
+        }
 
         let pair_score = (score_first + score_second) / 2.0;
         pairs += 1.0;
@@ -1054,17 +717,12 @@ pub fn run_sprt(
             );
         }
 
-        if let Some(error) = abort_after_pair {
-            verdict = error;
-            break;
-        }
-
         if llr >= upper {
-            verdict = "H1 accepted (patch is stronger)".to_string();
+            verdict = "H1 accepted (patch is stronger)";
             break;
         }
         if llr <= lower {
-            verdict = "H0 accepted (no improvement)".to_string();
+            verdict = "H0 accepted (no improvement)";
             break;
         }
     }
@@ -1076,6 +734,6 @@ pub fn run_sprt(
 
     write_result_file(
         variant, binary_a, binary_b, time_control, h0, h1,
-        wins, draws, losses, llr, &verdict,
+        wins, draws, losses, llr, verdict,
     );
 }
