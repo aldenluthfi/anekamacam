@@ -1,6 +1,6 @@
 //! moves.rs
 //!
-//! Implements compact move encoding for chess-like games.
+//! Implements compact move encoding for square-board variants.
 //!
 //! Search generates and unmakes millions of moves, so a move must be small,
 //! copyable, and self-describing without touching the board. This file gives
@@ -209,11 +209,11 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - bit 23      (`c`)    : whether the drop may deliver checkmate
 /// - bits 24..127         : unused
 ///
-/// Castling (`100`) keeps the king step in the base word's
-/// `start`/`end` squares. It packs the rook from-square in
-/// `captured square`, its to-square in `unload square`, and its
-/// piece type in `captured piece`. `Move.1` lists the king's path
-/// as `u64` entries:
+/// Castling (`100`) keeps the primary castling piece's step in the base
+/// word's `start`/`end` squares. It packs the secondary castling piece's
+/// from-square in `captured square`, its to-square in `unload square`, and
+/// its piece type in `captured piece`. `Move.1` lists the primary piece's
+/// path as `u64` entries:
 ///
 /// Bits 0..31:
 ///

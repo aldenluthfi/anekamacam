@@ -1,6 +1,6 @@
 //! vector.rs
 //!
-//! Implements move vector and leg representations for chess-like games.
+//! Implements move vector and leg representations for square-board variants.
 //!
 //! A piece's movement is more than a set of destinations: each step can move,
 //! capture, or be constrained in ways that vary by variant. This file defines
@@ -414,11 +414,11 @@ pub type MultiLegVector = Vec<LegVector>;
 ///   back on the board to the start square of this leg.
 ///
 /// Capture/destroy modifiers:
-/// - (k)ing:
+/// - (k) royal target:
 ///     - k:
-///       indicates the capture must be royal.
+///       requires the captured piece to be royal.
 ///     - !k:
-///       indicates the capture must not be royal.
+///       requires the captured piece to be non-royal.
 ///
 /// Usage of (k, !k):
 /// - (false, false) : this capture can be royal or not royal, regular capture.
@@ -447,12 +447,12 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       piece (captured <= capturing).
 ///
 /// Design note:
-/// I chose (> and <=) instead of (>= and <) because in many chess
-/// variants, capturing an equal-rank piece is often allowed, while there
-/// are variants where it's not allowed to capture a greater-rank piece.
+/// The pair uses (> and <=) instead of (>= and <). This keeps equal-rank
+/// captures enabled by default while allowing a variant to forbid captures
+/// of higher-rank pieces.
 ///
-/// A rank is an arbitrary game rule defined when setting up a variant, if it
-/// is not defined then all pieces will have the rank of 0
+/// Rank is an arbitrary variant rule. Without a rank definition, every piece
+/// has rank 0.
 ///
 /// Usage of (g, !g):
 /// - (false, false) : this capture can be of any rank (regular capture).
@@ -489,12 +489,11 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - (true)  : this leg's start square creates an en passant square.
 /// - (false) : this leg's start square does not create an en passant square.
 ///
-/// Special modifiers (r!r, v!v, g!g, i!i):
+/// Combined positive and negative modifiers:
 ///
-/// - i!i : TBD
-/// - k!k : TBD
-/// - v!v : this leg can bypass forbidden zones.
-/// - g!g : TBD
+/// - v!v : this leg bypasses forbidden zones.
+/// - i!i, k!k, and g!g : no special behavior is defined. Do not use these
+///   combinations in variant movement definitions.
 ///
 /// Defaults:
 ///
@@ -533,6 +532,10 @@ impl LegVector {
     ///
     /// Return:
     /// Self                      -> the packed leg vector
+    ///
+    /// Notes:
+    /// Invalid modifier characters panic in `parse_modifiers`; callers must
+    /// validate notation before constructing a leg.
     pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
         let bits = Self::parse_modifiers(modifiers);
         let atomic_bits = atomic.0 as u64;
@@ -921,6 +924,10 @@ impl AtomicVector {
     ///
     /// Return:
     /// AtomicVector           -> the combined displacement
+    ///
+    /// Notes:
+    /// A zero `other.whole()` is a direction marker, not a displacement.
+    /// Retaining `self.last()` keeps range expansion oriented correctly.
     pub fn add(&self, other: &AtomicVector) -> AtomicVector {
         let (wx1, wy1) = self.whole();
         let (wx2, wy2) = other.whole();
