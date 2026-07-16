@@ -35,56 +35,69 @@ pub type Square = u16;
 /// - state: &State -> position whose rule flags are read
 ///
 /// castling!
+///
 ///   Return:
-///   bool          -> castling enabled (bit 0)
+///   bool -> castling enabled (bit 0)
 ///
 /// en_passant!
+///
 ///   Return:
-///   bool          -> en passant enabled (bit 1)
+///   bool -> en passant enabled (bit 1)
 ///
 /// promotions!
+///
 ///   Return:
-///   bool          -> promotions enabled (bit 2)
+///   bool -> promotions enabled (bit 2)
 ///
 /// drops!
+///
 ///   Return:
-///   bool          -> drops enabled (bit 3)
+///   bool -> drops enabled (bit 3)
 ///
 /// forbidden_zones!
+///
 ///   Return:
-///   bool          -> forbidden zones enabled (bit 4)
+///   bool -> forbidden zones enabled (bit 4)
 ///
 /// promote_to_captured!
+///
 ///   Return:
-///   bool          -> captures promote the capturer's pool piece (bit 5)
+///   bool -> captures promote the capturer's pool piece (bit 5)
 ///
 /// stalemate_loss!
+///
 ///   Return:
-///   bool          -> stalemate counts as a loss (bit 6)
+///   bool -> stalemate counts as a loss (bit 6)
 ///
 /// setup_phase!
+///
 ///   Return:
-///   bool          -> game starts with a setup phase (bit 7)
+///   bool -> game starts with a setup phase (bit 7)
 ///
 /// stand_offs!
+///
 ///   Return:
-///   bool          -> stand-off patterns enabled (bit 8)
+///   bool -> stand-off patterns enabled (bit 8)
 ///
 /// halfmove_clock!
+///
 ///   Return:
-///   bool          -> halfmove-clock draw rule enabled (bit 9)
+///   bool -> halfmove-clock draw rule enabled (bit 9)
 ///
 /// repetition_limit!
+///
 ///   Return:
-///   bool          -> repetition limit enabled (bit 10)
+///   bool -> repetition limit enabled (bit 10)
 ///
 /// enc_castling! .. enc_repetition_limit!
+///
 ///   Params:
 ///
 ///   - rules: &mut u32
 ///     rules word being built; each writer sets the bit its reader tests
+///
 ///   Return:
-///   ()              -> mutates the supplied rules word in place
+///   () -> mutates the supplied rules word in place
 #[macro_export]
 macro_rules! castling {
     ($state:expr) => {
@@ -248,6 +261,18 @@ macro_rules! enc_repetition_limit {
 /// Packed en-passant descriptor for a target square, captured square, and
 /// captured piece index. `NO_EN_PASSANT` represents the absence of a legal
 /// en-passant opportunity.
+///
+/// ```text
+///   0                       12                      24              31
+///   ┌───────────────────────┬───────────────────────┬────────────────┐
+///   │     target square     │    captured square    │     piece      │
+///   └───────────────────────┴───────────────────────┴────────────────┘
+/// ```
+///
+///
+/// - Bits 0..11  : capture target square
+/// - Bits 12..23 : square of the capturable piece
+/// - Bits 24..31 : captured piece index
 pub type EnPassantSquare = u32;
 
 /// En passant packed-field accessor macros.
@@ -256,16 +281,19 @@ pub type EnPassantSquare = u32;
 /// - en_passant: EnPassantSquare -> packed descriptor read
 ///
 /// enp_square!
+///
 ///   Return:
-///   u32                         -> capture target square (bits 0-11)
+///   u32 -> capture target square (bits 0-11)
 ///
 /// enp_captured!
+///
 ///   Return:
-///   u32                         -> square of the capturable piece (bits 12-23)
+///   u32 -> square of the capturable piece (bits 12-23)
 ///
 /// enp_piece!
+///
 ///   Return:
-///   u32                         -> captured piece index (bits 24-31)
+///   u32 -> captured piece index (bits 24-31)
 #[macro_export]
 macro_rules! enp_square {
     ($en_passant:expr) => {
@@ -337,19 +365,23 @@ impl Default for Snapshot {
 /// update, so call sites never touch the count themselves.
 ///
 /// piece_squares!
+///
 ///   Params:
-///   - state      : &State     -> position whose piece list is read
-///   - piece_index: usize      -> piece whose row is walked
+///   - state      : &State    -> position whose piece list is read
+///   - piece_index: usize     -> piece whose row is walked
+///
 ///   Return:
-///   Iterator<Item = &Square>  -> the piece's occupied squares
+///   Iterator<Item = &Square> -> the piece's occupied squares
 ///
 /// piece_list_push!
+///
 ///   Params:
 ///   - state      : &mut State -> position whose piece list is grown
 ///   - piece_index: usize      -> piece whose row gains the square
 ///   - square     : Square     -> square appended after the last slot
 ///
 /// piece_list_remove!
+///
 ///   Params:
 ///
 ///   - state: &mut State
@@ -555,6 +587,15 @@ pub struct StaticState {
 /// Main state of the game.
 /// The special rules field is a bitmask representing enabled special rules.
 /// (read configs/example.conf for more information)
+///
+/// ```text
+///   0 1 2 3 4 5 6 7 8 9 10                                          31
+///                         11
+///   ┌─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬──────────────────────────────────────────┐
+///   │c│e│p│d│f│t│l│s│o│h│r│                  unused                  │
+///   └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴──────────────────────────────────────────┘
+/// ```
+///
 ///
 /// The bits are defined as follows:
 /// - bit 0     : castling allowed
@@ -1096,22 +1137,28 @@ impl State {
     /// by `PieceIndex`.
     ///
     /// generate_piece_moves
+    ///
     ///   Params:
     ///   - expr_set: &Vec<String> -> one move expression per piece
+    ///
     ///   Return:
-    ///   Vec<MoveSet> -> packed `Leg` lists, via `generate_move_vectors`
+    ///   Vec<MoveSet>             -> packed `Leg` lists, via `generate_move_vectors`
     ///
     /// generate_piece_drops
+    ///
     ///   Params:
     ///   - expr_set: &[String] -> one drop expression per piece
+    ///
     ///   Return:
-    ///   Vec<DropSet> -> drop sets, via `generate_drop_vectors`
+    ///   Vec<DropSet>          -> drop sets, via `generate_drop_vectors`
     ///
     /// generate_piece_stand_off
+    ///
     ///   Params:
     ///   - expr_set: Vec<String> -> one stand-off expression per piece
+    ///
     ///   Return:
-    ///   Vec<PatternSet> -> patterns, via `generate_stand_off_patterns`
+    ///   Vec<PatternSet>         -> patterns, via `generate_stand_off_patterns`
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
         let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
         for expr in expr_set {
@@ -1155,30 +1202,35 @@ impl State {
     /// each writes its static table through `static_mut`.
     ///
     /// populate_relevant_moves
+    ///
     ///   Params:
     ///
     ///   - piece_moves: &[MoveSet]
     ///     compiled move sets, one per piece; fills `relevant_moves`
     ///
     /// populate_relevant_captures
+    ///
     ///   Params:
     ///
     ///   - piece_moves: &[MoveSet]
     ///     compiled move sets, one per piece; fills `relevant_captures`
     ///
     /// populate_relevant_drops
+    ///
     ///   Params:
     ///
     ///   - piece_setup_drops: &[DropSet]
     ///     compiled drop sets, one per piece; fills `relevant_drops`
     ///
     /// populate_relevant_setup
+    ///
     ///   Params:
     ///
     ///   - piece_setup_drops: &[DropSet]
     ///     compiled setup drops, one per piece; fills `relevant_setup`
     ///
     /// populate_relevant_stand_offs
+    ///
     ///   Params:
     ///
     ///   - piece_stand_off: &[PatternSet]

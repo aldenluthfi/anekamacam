@@ -1489,8 +1489,10 @@ macro_rules! generate_castling_list {
 /// - mv   : Move       -> the encoded `Move` to play
 ///
 /// Return:
-/// bool -> true if the move was legal; false means it exposed the mover
-/// to check and has already been undone
+///
+/// bool
+/// true if the move was legal; false means it exposed the mover to check and
+/// has already been undone
 #[macro_export]
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {

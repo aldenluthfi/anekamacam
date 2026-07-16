@@ -272,32 +272,40 @@ fn extract_sample(
 /// `mean_squared_error` parallelises across the dataset with rayon.
 ///
 /// dot
+///
 ///   Params:
 ///   - features: &[(usize, f64)] -> sparse coefficients
 ///   - theta   : &[f64]          -> parameter vector
+///
 ///   Return:
-///   f64 -> sparse features · θ
+///   f64                         -> sparse features · θ
 ///
 /// sigmoid
+///
 ///   Params:
 ///   - value: f64 -> logit input
+///
 ///   Return:
-///   f64 -> the base-ten logistic `1/(1+10⁻ˣ)`
+///   f64          -> the base-ten logistic `1/(1+10⁻ˣ)`
 ///
 /// model_score
+///
 ///   Params:
 ///   - sample: &Sample -> position to score
 ///   - theta : &[f64]  -> parameter vector
+///
 ///   Return:
-///   f64 -> the sample's modelled centipawn score `base + f·θ`
+///   f64               -> the sample's modelled centipawn score `base + f·θ`
 ///
 /// mean_squared_error
+///
 ///   Params:
 ///   - samples: &[Sample] -> dataset
 ///   - theta  : &[f64]    -> parameter vector
 ///   - scaling: f64       -> the sigmoid scaling constant K
+///
 ///   Return:
-///   f64 -> average `(label − sigmoid(K·score/400))²`
+///   f64                  -> average `(label − sigmoid(K·score/400))²`
 fn dot(features: &[(usize, f64)], theta: &[f64]) -> f64 {
     features.iter().map(|(index, coeff)| theta[*index] * coeff).sum()
 }

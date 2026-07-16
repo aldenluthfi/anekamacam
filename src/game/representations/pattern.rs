@@ -42,16 +42,20 @@ impl PieceSet {
     /// no hashing, keeping the pattern-matching inner loop branch-cheap.
     ///
     /// new
+    ///
     ///   Return:
-    ///   Self        -> empty set, every index absent
+    ///   Self -> empty set, every index absent
     ///
     /// insert
+    ///
     ///   Params:
     ///   - piece: u8 -> piece index marked as member
     ///
     /// contains
+    ///
     ///   Params:
     ///   - piece: u8 -> piece index tested
+    ///
     ///   Return:
     ///   bool        -> whether the index is a member
     pub fn new() -> Self {

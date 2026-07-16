@@ -618,11 +618,11 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 /// It is written to support parallel-friendly processing semantics.
 ///
 /// Params:
-/// - expr: &str          -> full expression whose `|` branches are processed
+/// - expr: &str                       -> full expression whose `|` branches are processed
 /// - f   : impl Fn(&str) -> Option<T> -> stage applied to each branch
 ///
 /// Return:
-/// Vec<Option<T>>        -> one result per branch, in input order
+/// Vec<Option<T>>                     -> one result per branch, in input order
 fn split_and_process<T>(
     expr: &str,
     f: impl Fn(&str) -> Option<T> + Sync,
@@ -841,9 +841,9 @@ fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
 /// - direction: &str -> cardinal name of the rotated reference frame
 ///
 /// Return:
-/// impl Fn(i8, i8)   -> (bool, bool, bool, bool) -> per-point classifier
-///                      yielding (is north, is east, is south, is west) in that
-///                      frame
+///
+/// impl Fn(i8, i8)   -> (bool, bool, bool, bool)
+/// per-point classifier yielding (is north, is east, is south, is west) in that frame
 fn quadrant_function(
     direction: &str,
 ) -> impl Fn(i8, i8) -> (bool, bool, bool, bool) {
@@ -2105,6 +2105,7 @@ fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 /// │    │    │    │    │    │    │    │    │    │
 /// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
+///
 /// Params:
 /// - expr    : &str   -> compound atomic expression, may contain `<...>`
 /// - rotation: &str   -> cardinal direction the compound is rotated toward

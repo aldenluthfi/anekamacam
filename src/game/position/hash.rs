@@ -117,28 +117,33 @@ pub fn hash_pawns(state: &State) -> u128 {
 /// the board exact under the same pairing that keeps the hash exact.
 ///
 /// hash_in_or_out_piece!
+///
 ///   Params:
 ///   - state       : &mut State -> position whose keys are updated
 ///   - piece_index : usize      -> piece being placed or removed
 ///   - square_index: Square     -> square the piece enters or leaves
 ///
 /// hash_toggle_side!
+///
 ///   Params:
 ///   - state: &mut State -> position whose side-to-move key flips
 ///
 /// hash_update_castling!
+///
 ///   Params:
 ///   - state             : &mut State -> position whose key is updated
 ///   - old_castling_state: u8         -> rights bits before the move
 ///   - new_castling_state: u8         -> rights bits after the move
 ///
 /// hash_update_en_passant!
+///
 ///   Params:
 ///   - state        : &mut State      -> position whose key is updated
 ///   - old_ep_square: EnPassantSquare -> descriptor before the move
 ///   - new_ep_square: EnPassantSquare -> descriptor after the move
 ///
 /// hash_update_in_hand!
+///
 ///   Params:
 ///   - state      : &mut State -> position whose key is updated
 ///   - piece_index: usize      -> piece whose pool count changed

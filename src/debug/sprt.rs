@@ -92,21 +92,26 @@ struct SPRTChild {
 /// they are setup errors.
 ///
 /// spawn
+///
 ///   Params:
 ///   - binary : &str -> path to the engine executable
 ///   - variant: &str -> UCI variant name to select
+///
 ///   Return:
-///   SPRTChild -> the handshaken engine subprocess
+///   SPRTChild       -> the handshaken engine subprocess
 ///
 /// send
+///
 ///   Params:
 ///   - command: &str -> the command line to write and flush
 ///
 /// read_line
+///
 ///   Return:
 ///   Option<String> -> one reply line, None at end of stream
 ///
 /// wait_for
+///
 ///   Params:
 ///   - token: &str -> leading token that ends the wait
 ///
@@ -114,14 +119,17 @@ struct SPRTChild {
 ///   resets the engine between games; no parameters, no return value
 ///
 /// bestmove
+///
 ///   Params:
 ///   - startpos  : &str      -> the variant start-position FEN
 ///   - moves     : &[String] -> moves played so far, in UCI notation
 ///   - go_command: &str      -> the `go` line carrying the time control
+///
 ///   Return:
-///   Option<String> -> the engine's move, None when its stream ended
+///   Option<String>          -> the engine's move, None when its stream ended
 ///
 /// drain_errors
+///
 ///   Return:
 ///   String -> the child's collected stderr, for crash diagnostics
 impl SPRTChild {
@@ -311,24 +319,28 @@ struct GameManager {
 /// while mate and the draw rules are adjudicated by the referee.
 ///
 /// new
+///
 ///   Params:
-///   - template: &State  -> loaded variant, forked as the referee
-///   - binary_a: &str    -> path to the child that starts as White
-///   - binary_b: &str    -> path to the child that starts as Black
-///   - variant : &str    -> UCI variant name for both children
+///   - template: &State -> loaded variant, forked as the referee
+///   - binary_a: &str   -> path to the child that starts as White
+///   - binary_b: &str   -> path to the child that starts as Black
+///   - variant : &str   -> UCI variant name for both children
+///
 ///   Return:
-///   GameManager         -> both children spawned, referee at startpos
+///   GameManager        -> both children spawned, referee at startpos
 ///
 /// swap_colors
 ///   exchanges which child plays which colour; no parameters, no
 ///   return value
 ///
 /// reset_to
+///
 ///   Params:
 ///   - template: &State  -> loaded variant to fork the referee from
 ///   - opening : &[Move] -> shared opening line to replay
 ///
 /// play
+///
 ///   Params:
 ///
 ///   - dict: Option<&Translator>
@@ -476,24 +488,30 @@ impl GameManager {
 /// games; it returns zero until the sample shows any variance.
 ///
 /// expected_score
+///
 ///   Params:
 ///   - elo     : f64 -> the Elo advantage to convert
+///
 ///   Return:
 ///   f64             -> the logistic expected score for that Elo gap
 ///
 /// elo_from_score
+///
 ///   Params:
 ///   - score   : f64 -> the observed per-game score
+///
 ///   Return:
 ///   f64             -> the Elo estimate implied by the score
 ///
 /// log_likelihood_ratio
+///
 ///   Params:
 ///   - pairs   : f64 -> number of game pairs played
 ///   - mean    : f64 -> mean normalised pair score
 ///   - variance: f64 -> population variance of pair scores
 ///   - mu_zero : f64 -> expected score under the null hypothesis
 ///   - mu_one  : f64 -> expected score under the alternative hypothesis
+///
 ///   Return:
 ///   f64             -> the GSPRT log-likelihood ratio
 fn expected_score(elo: f64) -> f64 {

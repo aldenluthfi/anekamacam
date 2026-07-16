@@ -46,86 +46,108 @@ pub type Board = (u8, u8, U4096);
 /// Construction and queries:
 ///
 /// board!
+///
 ///   Params:
-///   - files : u8         -> file count of the new board
-///   - ranks : u8         -> rank count of the new board
+///   - files : u8 -> file count of the new board
+///   - ranks : u8 -> rank count of the new board
+///
 ///   Return:
-///   Board                -> empty board of the given size
+///   Board        -> empty board of the given size
 ///
 /// files!
+///
 ///   Params:
-///   - board : &Board     -> board to read
+///   - board : &Board -> board to read
+///
 ///   Return:
-///   u8                   -> file count
+///   u8               -> file count
 ///
 /// ranks!
+///
 ///   Params:
-///   - board : &Board     -> board to read
+///   - board : &Board -> board to read
+///
 ///   Return:
-///   u8                   -> rank count
+///   u8               -> rank count
 ///
 /// get!
+///
 ///   Params:
-///   - board : &Board     -> board to read
-///   - index : u32        -> square index tested
+///   - board : &Board -> board to read
+///   - index : u32    -> square index tested
+///
 ///   Return:
-///   bool                 -> whether the bit at the index is set
+///   bool             -> whether the bit at the index is set
 ///
 /// count_bits!
+///
 ///   Params:
-///   - board : &Board     -> board to read
+///   - board : &Board -> board to read
+///
 ///   Return:
-///   u32                  -> number of set bits (piece/occupancy popcount)
+///   u32              -> number of set bits (piece/occupancy popcount)
 ///
 /// set_indices!
+///
 ///   Params:
-///   - board : &Board     -> board to read
+///   - board : &Board -> board to read
+///
 ///   Return:
-///   Vec<usize>           -> indices of every set bit, ascending
+///   Vec<usize>       -> indices of every set bit, ascending
 ///
 /// is_empty!
+///
 ///   Params:
-///   - board : &Board     -> board to read
+///   - board : &Board -> board to read
+///
 ///   Return:
-///   bool                 -> whether no bit is set
+///   bool             -> whether no bit is set
 ///
 /// Mutation (in place, no return value):
 ///
 /// set!
+///
 ///   Params:
 ///   - board : &mut Board -> board mutated
 ///   - index : u32        -> square index whose bit is set
 ///
 /// clear!
+///
 ///   Params:
 ///   - board : &mut Board -> board mutated
 ///   - index : u32        -> square index whose bit is cleared
 ///
 /// toggle!
+///
 ///   Params:
 ///   - board : &mut Board -> board mutated
 ///   - index : u32        -> square index whose bit is flipped
 ///
 /// or!
+///
 ///   Params:
 ///   - board1: &mut Board -> destination, unioned in place
 ///   - board2: &Board     -> source supplying the bits
 ///
 /// and!
+///
 ///   Params:
 ///   - board1: &mut Board -> destination, intersected in place
 ///   - board2: &Board     -> source supplying the bits
 ///
 /// xor!
+///
 ///   Params:
 ///   - board1: &mut Board -> destination, toggled in place
 ///   - board2: &Board     -> source supplying the bits
 ///
 /// not!
+///
 ///   Params:
 ///   - board : &mut Board -> board whose every bit is inverted
+///
 ///   Return:
-///   ()                 -> mutates the supplied board in place
+///   ()                   -> mutates the supplied board in place
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {

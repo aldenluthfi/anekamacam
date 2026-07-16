@@ -25,6 +25,7 @@ use crate::*;
 /// execution paths.
 ///
 /// enc_can_checkmate!
+///
 ///   Params:
 ///   - move_word : &mut Move -> drop-format move whose word is written
 ///   - flag_value: u128      -> may-checkmate flag, masked into bit 23
@@ -45,8 +46,10 @@ macro_rules! enc_can_checkmate {
 /// so drop legality and execution paths can branch on encoded options.
 ///
 /// drop_can_checkmate!
+///
 ///   Params:
 ///   - mv: &Move -> drop-format move whose word is read
+///
 ///   Return:
 ///   bool        -> may-checkmate flag (bit 23)
 #[macro_export]
@@ -60,10 +63,17 @@ macro_rules! drop_can_checkmate {
 ///
 /// A `DropMove` is a packed `u32` (bit 0 = LSB):
 ///
-/// ┌───────┬────────┬───────────┐
-/// │ 0..7  │ 8..19  │ 20..31    │
-/// │ piece │ square │ modifiers │
-/// └───────┴────────┴───────────┘
+/// ```text
+///   0               8                       20                      31
+///   ┌───────────────┬───────────────────────┬────────────────────────┐
+///   │     piece     │        square         │       modifiers        │
+///   └───────────────┴───────────────────────┴────────────────────────┘
+/// ```
+///
+///
+/// - Bits 0..7   : dropped piece index
+/// - Bits 8..19  : target square index
+/// - Bits 20..31 : drop modifiers
 ///
 /// `piece` is the dropped piece index, `square` is the target square index,
 /// and `modifiers` are the drop-flag bits read by `drop_k!`.
@@ -85,8 +95,10 @@ pub type DropSet = Vec<Drops>;
 /// concrete drop moves.
 ///
 /// drop_k!
+///
 ///   Params:
 ///   - drop: &Drops -> pairing whose packed `DropMove` word is read
+///
 ///   Return:
 ///   bool           -> checkmate-delivery ban flag (bit 20)
 #[macro_export]

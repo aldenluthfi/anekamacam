@@ -22,20 +22,25 @@
 /// least-valuable-attacker order. Together they feed `see!`.
 ///
 /// attack_value!
+///
 ///   Params:
 ///   - mv   : &Move  -> move whose attacker is priced
 ///   - state: &State -> position providing piece values
+///
 ///   Return:
 ///   i32             -> attacker value, promoted value for promotions
 ///
 /// victim_value!
+///
 ///   Params:
 ///   - mv   : &Move  -> capture move whose victims are priced
 ///   - state: &State -> position providing piece values
+///
 ///   Return:
 ///   i32             -> summed value of everything captured, unloads skipped
 ///
 /// lva!
+///
 ///   Params:
 ///
 ///   - state: &State

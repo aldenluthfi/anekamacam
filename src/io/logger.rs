@@ -21,15 +21,18 @@ use crate::*;
 /// is currently visible so callers can skip expensive formatting.
 ///
 /// push_log_message!
+///
 ///   Params:
 ///   - level  : u8     -> numeric verbosity level stamped on the line
 ///   - message: String -> already-formatted log line to mirror
 ///
 /// verbosity_enabled!
+///
 ///   Params:
-///   - level  : u8     -> numeric level to test
+///   - level  : u8 -> numeric level to test
+///
 ///   Return:
-///   bool              -> whether lines at that level are currently visible
+///   bool          -> whether lines at that level are currently visible
 #[macro_export]
 macro_rules! push_log_message {
     ($level:expr, $message:expr) => {
@@ -62,6 +65,7 @@ macro_rules! verbosity_enabled {
 /// level semantics.
 ///
 /// log_1! .. log_5!
+///
 ///   Params:
 ///
 ///   - args: format! arguments
@@ -130,18 +134,22 @@ macro_rules! log_5 {
 /// (used by the TUI's live verbosity keys).
 ///
 /// level_to_verbosity
+///
 ///   Params:
 ///   - level: log::Level -> `log` crate level to translate
+///
 ///   Return:
 ///   u8                  -> numeric verbosity 1-5
 ///
 /// configured_log_level
+///
 ///   Return:
-///   log::LevelFilter    -> filter matching the runtime verbosity
+///   log::LevelFilter -> filter matching the runtime verbosity
 ///
 /// configured_verbosity_level
+///
 ///   Return:
-///   u8                  -> current runtime verbosity 1-5
+///   u8 -> current runtime verbosity 1-5
 ///
 /// inc_verbosity / dec_verbosity
 ///   step the runtime verbosity up or down one level, clamped to 1-5;

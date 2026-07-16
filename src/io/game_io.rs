@@ -2455,28 +2455,35 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
 /// - state: &State -> position whose field is rendered
 ///
 /// format_castling_rights
+///
 ///   Return:
 ///   String -> castling rights as KQkq letters, `-` if none
 ///
 /// format_en_passant_square
+///
 ///   Return:
 ///   String -> en passant square in packed CFEN, `*` if none
 ///
 /// format_hand
+///
 ///   Params:
 ///   - color: u8 -> side whose hand is rendered
+///
 ///   Return:
-///   String -> that side's pieces in hand as piece letters, `-` if empty
+///   String      -> that side's pieces in hand as piece letters, `-` if empty
 ///
 /// format_position_hash
+///
 ///   Return:
 ///   String -> the Zobrist hash in hexadecimal
 ///
 /// format_game_phase
+///
 ///   Return:
 ///   String -> the game phase by name (or `Game Over`)
 ///
 /// format_special_rules
+///
 ///   Return:
 ///   String -> enabled special rules as a comma-separated list
 pub fn format_castling_rights(state: &State) -> String {

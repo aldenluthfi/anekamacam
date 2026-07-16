@@ -33,7 +33,7 @@ use crate::*;
 /// - sender     : &Sender<TuiEvent>   -> channel for live board updates
 ///
 /// Return:
-/// (Vec<String>, f64) -> quiet-position FENs and the White-view result
+/// (Vec<String>, f64)                 -> quiet-position FENs and the White-view result
 fn play_one_game(
     template: &State,
     dict: Option<&Translator>,

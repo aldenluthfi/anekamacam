@@ -78,70 +78,92 @@ macro_rules! p_value {
 /// Static accessors (encoded_static):
 ///
 /// p_index!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   PieceIndex      -> piece type index (bits 0-7)
 ///
 /// p_color!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   u8              -> owning side, 0 white / 1 black (bit 8)
 ///
 /// p_can_promote!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   bool            -> whether the piece can promote (bit 9)
 ///
 /// p_is_royal!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   bool            -> whether the piece must be mated (bit 10)
 ///
 /// p_rank!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   u8              -> variant-defined capture rank (bits 11-18)
 ///
 /// p_is_pawn!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   bool            -> pawn-like flag, set at derive time (bit 19)
 ///
 /// Dynamic accessors (encoded_dynamic):
 ///
 /// p_is_big!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   bool            -> big-piece role, royals excluded (bit 0)
 ///
 /// p_is_major!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   bool            -> major-piece role, royals excluded (bit 1)
 ///
 /// p_is_minor!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   bool            -> minor-piece role, royals excluded (bit 1 clear)
 ///
 /// p_ovalue!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   u16             -> opening material value (bits 2-15)
 ///
 /// p_evalue!
+///
 ///   Params:
 ///   - piece: &Piece -> piece record read
+///
 ///   Return:
 ///   u16             -> endgame material value (bits 16-29)
 #[macro_export]
@@ -228,6 +250,15 @@ macro_rules! p_evalue {
 /// Piece indices range from 0 through 254; 255 is reserved as `NO_PIECE`.
 ///
 /// Static data (`encoded_static`) is encoded in 32 bits:
+///
+/// ```text
+///   0               8 9 10                19                        31
+///                         11                20
+///   ┌───────────────┬─┬─┬─┬───────────────┬─┬────────────────────────┐
+///   │     index     │c│p│r│     rank      │w│         unused         │
+///   └───────────────┴─┴─┴─┴───────────────┴─┴────────────────────────┘
+/// ```
+///
 /// - Bits 0..7     : piece index
 /// - Bit 8         : color, 0 = White and 1 = Black
 /// - Bit 9         : promotion capability
@@ -237,6 +268,15 @@ macro_rules! p_evalue {
 /// - Bits 20..31   : unused
 ///
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
+///
+///   0 1 2                           16                          30  31
+/// ```text
+///   ┌─┬─┬───────────────────────────┬───────────────────────────┬────┐
+///   │b│m│          opening          │          endgame          │ -- │
+///   └─┴─┴───────────────────────────┴───────────────────────────┴────┘
+/// ```
+///
+///
 /// - Bit 0         : big-piece role
 /// - Bit 1         : major-piece role; clear means minor when non-royal
 /// - Bits 2..15    : 14-bit opening material value

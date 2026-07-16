@@ -25,16 +25,44 @@ use crate::*;
 /// - slot[0] = move.0 (128-bit, raw)
 /// - slot[1] = packed search payload (bit 0 = LSB):
 ///
-///   ┌──────┬──────┬───────┬─────────┬──────────┐
-///   │ 0..1 │ 2..8 │ 9..40 │ 41..104 │ 105..127 │
-///   │ flag │ dpth │ score │ sig     │ eval     │
-///   └──────┴──────┴───────┴─────────┴──────────┘
+///   Field widths are proportional; every row represents 32 bits.
 ///
-///   - flag  : bound type (FEXACT / FALPHA / FBETA)
-///   - dpth  : clamped search depth
-///   - score : ply-adjusted node score (32-bit)
-///   - sig   : MoveSignature of the stored best move
-///   - eval  : static eval, 23-bit signed
+///   Bits 0..31:
+///
+/// ```text
+///   0   2             9                                             31
+///   ┌───┬─────────────┬──────────────────────────────────────────────┐
+///   │flg│    depth    │                   score →                    │
+///   └───┴─────────────┴──────────────────────────────────────────────┘
+///
+///   Bits 32..63:
+///
+///   32                41                                            63
+///   ┌─────────────────┬──────────────────────────────────────────────┐
+///   │     ← score     │                 signature →                  │
+///   └─────────────────┴──────────────────────────────────────────────┘
+///
+///   Bits 64..95:
+///
+///   64                                                              95
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                         ← signature →                          │
+///   └────────────────────────────────────────────────────────────────┘
+///
+///   Bits 96..127:
+///
+///   96                105                                          127
+///   ┌─────────────────┬──────────────────────────────────────────────┐
+///   │   ← signature   │                     eval                     │
+///   └─────────────────┴──────────────────────────────────────────────┘
+/// ```
+///
+///
+///   - flag       : bound type (FEXACT / FALPHA / FBETA)
+///   - depth      : clamped search depth
+///   - score      : ply-adjusted node score (32-bit)
+///   - signature  : MoveSignature of the stored best move
+///   - eval       : static eval, 23-bit signed
 ///
 /// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
 /// - age     = plain u64, excluded from parity
@@ -103,27 +131,32 @@ impl TTable {
     /// macros can mask instead of taking a modulo.
     ///
     /// with_mb
+    ///
     ///   Params:
     ///   - mb: usize -> memory budget in megabytes
+    ///
     ///   Return:
     ///   Self        -> zeroed table sized to the budget
     ///
     /// with_entries
+    ///
     ///   Params:
     ///
     ///   - entries: usize
     ///     requested slot count, floored to a power of two
     ///
     ///   Return:
-    ///   Self        -> zeroed table with that many slots
+    ///   Self -> zeroed table with that many slots
     ///
     /// len
+    ///
     ///   Return:
-    ///   usize       -> slot count
+    ///   usize -> slot count
     ///
     /// is_empty
+    ///
     ///   Return:
-    ///   bool        -> whether no slot has ever been written
+    ///   bool -> whether no slot has ever been written
     pub fn with_mb(mb: usize) -> Self {
         let size = (mb * 1024 * 1024 / size_of::<TTEntry>()).max(1);
         Self::with_entries(size)
@@ -166,59 +199,73 @@ impl TTable {
 /// `tt_score!` / `tt_eval!` readers extract them again.
 ///
 /// tt_index!
+///
 ///   Params:
 ///   - hash   : PositionHash -> Zobrist key of the probed position
 ///   - size   : usize        -> table slot count (power of two)
+///
 ///   Return:
 ///   usize                   -> slot index, `hash & (size - 1)`
 ///
 /// The writers OR into place and return nothing:
 ///
 /// tt_enc_flags!
+///
 ///   Params:
-///   - encoded: &mut u32     -> flags/depth word being built
-///   - val    : u8           -> bound flag, masked into bits 0-1
+///   - encoded: &mut u32 -> flags/depth word being built
+///   - val    : u8       -> bound flag, masked into bits 0-1
 ///
 /// tt_enc_depth!
+///
 ///   Params:
-///   - encoded: &mut u32     -> flags/depth word being built
-///   - val    : usize        -> depth, clamped and masked into bits 2-8
+///   - encoded: &mut u32 -> flags/depth word being built
+///   - val    : usize    -> depth, clamped and masked into bits 2-8
 ///
 /// tt_enc_score!
+///
 ///   Params:
-///   - encoded: &mut u128    -> slot[1] word being built
-///   - val    : i32          -> score, masked into bits 9-40
+///   - encoded: &mut u128 -> slot[1] word being built
+///   - val    : i32       -> score, masked into bits 9-40
 ///
 /// tt_enc_eval!
+///
 ///   Params:
-///   - encoded: &mut u128    -> slot[1] word being built
-///   - val    : i32          -> static eval, 23 bits into 105-127
+///   - encoded: &mut u128 -> slot[1] word being built
+///   - val    : i32       -> static eval, 23 bits into 105-127
 ///
 /// The readers take the packed word and return the field:
 ///
 /// tt_flags!
+///
 ///   Params:
-///   - encoded: u32          -> flags/depth word (slot[1] low bits)
+///   - encoded: u32 -> flags/depth word (slot[1] low bits)
+///
 ///   Return:
-///   u8                      -> bound flag (bits 0-1)
+///   u8             -> bound flag (bits 0-1)
 ///
 /// tt_depth!
+///
 ///   Params:
-///   - encoded: u32          -> flags/depth word (slot[1] low bits)
+///   - encoded: u32 -> flags/depth word (slot[1] low bits)
+///
 ///   Return:
-///   usize                   -> stored depth (bits 2-8)
+///   usize          -> stored depth (bits 2-8)
 ///
 /// tt_score!
+///
 ///   Params:
-///   - b_prime: u128         -> raw slot[1] word
+///   - b_prime: u128 -> raw slot[1] word
+///
 ///   Return:
-///   i32                     -> stored score (bits 9-40)
+///   i32             -> stored score (bits 9-40)
 ///
 /// tt_eval!
+///
 ///   Params:
-///   - b_prime: u128         -> raw slot[1] word
+///   - b_prime: u128 -> raw slot[1] word
+///
 ///   Return:
-///   i32                     -> sign-extended static eval (bits 105-127)
+///   i32             -> sign-extended static eval (bits 105-127)
 #[macro_export]
 macro_rules! tt_index {
     ($hash:expr, $size:expr) => {{
@@ -317,9 +364,10 @@ macro_rules! tt_eval {
 /// - depth: usize   -> minimum stored depth for the score to be usable
 ///
 /// Return:
-/// (bool, i32, PseudoMove, i32, i32, usize, u8, i32) -> (cutoff valid,
-/// score, stored best move, stored static eval, bound-refined pruning
-/// eval, stored depth, stored bound flags, ply-adjusted stored score)
+///
+/// (bool, i32, PseudoMove, i32, i32, usize, u8, i32)
+/// (cutoff valid, score, stored best move, stored static eval, bound-refined pruning eval, stored
+/// depth, stored bound flags, ply-adjusted stored score)
 #[macro_export]
 macro_rules! probe_tt_entry {
     ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {
@@ -687,6 +735,51 @@ macro_rules! fill_pv_line {
 /// Layout:
 /// - slot[0] = move.0 (128-bit, raw)
 /// - slot[1] = sig << 32 | encoded (128-bit, raw)
+///
+///   Field widths are proportional; every row represents 32 bits.
+///
+///   Bits 0..31:
+///
+///   0                               16  18                          31
+/// ```text
+///   ┌───────────────────────────────┬───┬────────────────────────────┐
+///   │             score             │flg│           unused           │
+///   └───────────────────────────────┴───┴────────────────────────────┘
+/// ```
+///
+///   Bits 32..63:
+///
+///   32                                                              63
+/// ```text
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                          signature →                           │
+///   └────────────────────────────────────────────────────────────────┘
+/// ```
+///
+///   Bits 64..95:
+///
+///   64                                                              95
+/// ```text
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                          ← signature                           │
+///   └────────────────────────────────────────────────────────────────┘
+/// ```
+///
+///   Bits 96..127:
+///
+///   96                                                             127
+/// ```text
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                             unused                             │
+///   └────────────────────────────────────────────────────────────────┘
+/// ```
+///
+///   - bits 0..15  : sign-extended score
+///   - bits 16..17 : bound flags
+///   - bits 18..31 : unused
+///   - bits 32..95 : `MoveSignature`
+///   - bits 96..127: unused
+///
 /// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
 /// - age     = plain u64 (excluded from parity)
 /// - version = seqlock counter (odd = writing, even = readable)
@@ -752,27 +845,32 @@ impl QTable {
     /// for mask indexing.
     ///
     /// with_mb
+    ///
     ///   Params:
     ///   - mb: usize -> memory budget in megabytes
+    ///
     ///   Return:
     ///   Self        -> zeroed table sized to the budget
     ///
     /// with_entries
+    ///
     ///   Params:
     ///
     ///   - entries: usize
     ///     requested slot count, floored to a power of two
     ///
     ///   Return:
-    ///   Self        -> zeroed table with that many slots
+    ///   Self -> zeroed table with that many slots
     ///
     /// len
+    ///
     ///   Return:
-    ///   usize       -> slot count
+    ///   usize -> slot count
     ///
     /// is_empty
+    ///
     ///   Return:
-    ///   bool        -> whether no slot has ever been written
+    ///   bool -> whether no slot has ever been written
     pub fn with_mb(mb: usize) -> Self {
         let size = (mb * 1024 * 1024 / size_of::<QTEntry>()).max(1);
         Self::with_entries(size)
@@ -816,35 +914,45 @@ impl QTable {
 /// their packed value instead of mutating in place.
 ///
 /// qt_index!
+///
 ///   Params:
 ///   - hash   : PositionHash -> Zobrist key of the probed position
 ///   - size   : usize        -> table slot count (power of two)
+///
 ///   Return:
 ///   usize                   -> slot index, `hash & (size - 1)`
 ///
 /// qt_enc_score!
+///
 ///   Params:
-///   - score  : i32          -> node score, truncated to i16
+///   - score  : i32 -> node score, truncated to i16
+///
 ///   Return:
-///   u32                     -> score bit pattern in bits 0-15
+///   u32            -> score bit pattern in bits 0-15
 ///
 /// qt_enc_flags!
+///
 ///   Params:
-///   - flags  : u8           -> bound type (FEXACT / FBETA)
+///   - flags  : u8 -> bound type (FEXACT / FBETA)
+///
 ///   Return:
-///   u32                     -> flag bits shifted into bits 16-17
+///   u32           -> flag bits shifted into bits 16-17
 ///
 /// qt_score!
+///
 ///   Params:
-///   - encoded: u32          -> packed score/flags word
+///   - encoded: u32 -> packed score/flags word
+///
 ///   Return:
-///   i32                     -> sign-extended stored score (bits 0-15)
+///   i32            -> sign-extended stored score (bits 0-15)
 ///
 /// qt_flags!
+///
 ///   Params:
-///   - encoded: u32          -> packed score/flags word
+///   - encoded: u32 -> packed score/flags word
+///
 ///   Return:
-///   u8                      -> bound flag (bits 16-17)
+///   u8             -> bound flag (bits 16-17)
 #[macro_export]
 macro_rules! qt_index {
     ($hash:expr, $size:expr) => {{
@@ -1051,6 +1159,49 @@ macro_rules! hash_qt_entry {
 ///
 /// Layout:
 /// - slot[0] = endgame << 32 | opening (u32 bit patterns, 128-bit raw)
+///
+///   Field widths are proportional; every row represents 32 bits.
+///
+///   Bits 0..31:
+///
+///   0                                                               31
+/// ```text
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                            opening                             │
+///   └────────────────────────────────────────────────────────────────┘
+/// ```
+///
+///   Bits 32..63:
+///
+///   32                                                              63
+/// ```text
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                            endgame                             │
+///   └────────────────────────────────────────────────────────────────┘
+/// ```
+///
+///   Bits 64..95:
+///
+///   64                                                              95
+/// ```text
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                            unused →                            │
+///   └────────────────────────────────────────────────────────────────┘
+/// ```
+///
+///   Bits 96..127:
+///
+///   96                                                             127
+/// ```text
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                            ← unused                            │
+///   └────────────────────────────────────────────────────────────────┘
+/// ```
+///
+///   - bits 0..31  : opening score
+///   - bits 32..63 : endgame score
+///   - bits 64..127: unused
+///
 /// - slot[1] = slot[0] ^ pawn_hash (parity, written last)
 /// - version = seqlock counter (odd = write in progress, even = readable)
 ///
@@ -1106,27 +1257,32 @@ impl PTable {
     /// of two for mask indexing.
     ///
     /// with_mb
+    ///
     ///   Params:
     ///   - mb: usize -> memory budget in megabytes
+    ///
     ///   Return:
     ///   Self        -> zeroed table sized to the budget
     ///
     /// with_entries
+    ///
     ///   Params:
     ///
     ///   - entries: usize
     ///     requested slot count, floored to a power of two
     ///
     ///   Return:
-    ///   Self        -> zeroed table with that many slots
+    ///   Self -> zeroed table with that many slots
     ///
     /// len
+    ///
     ///   Return:
-    ///   usize       -> slot count
+    ///   usize -> slot count
     ///
     /// is_empty
+    ///
     ///   Return:
-    ///   bool        -> whether no slot has ever been written
+    ///   bool -> whether no slot has ever been written
     pub fn with_mb(mb: usize) -> Self {
         let size = (mb * 1024 * 1024 / size_of::<PTEntry>()).max(1);
         Self::with_entries(size)
@@ -1168,27 +1324,32 @@ impl PTable {
 /// the low 64 bits of slot[0].
 ///
 /// pt_index!
+///
 ///   Params:
 ///   - hash   : PositionHash -> pawn-only Zobrist key
 ///   - size   : usize        -> table slot count (power of two)
+///
 ///   Return:
 ///   usize                   -> slot index, `hash & (size - 1)`
 ///
 /// probe_pt_entry!
+///
 ///   Params:
-///   - state  : &State       -> position whose pawn hash is probed
-///   - ptable : &PTable      -> the shared pawn structure table
+///   - state  : &State  -> position whose pawn hash is probed
+///   - ptable : &PTable -> the shared pawn structure table
+///
 ///   Return:
 ///
 ///   (bool, i32, i32)
-///   (hit, opening score, endgame score); zeros on any miss
+///   hit, opening score, and endgame score. hit = 0 on any miss
 ///
 /// hash_pt_entry!
+///
 ///   Params:
-///   - opening: i32          -> opening-phase pawn structure score
-///   - endgame: i32          -> endgame-phase pawn structure score
-///   - state  : &State       -> position whose pawn hash keys the entry
-///   - ptable : &PTable      -> the shared pawn structure table
+///   - opening: i32     -> opening-phase pawn structure score
+///   - endgame: i32     -> endgame-phase pawn structure score
+///   - state  : &State  -> position whose pawn hash keys the entry
+///   - ptable : &PTable -> the shared pawn structure table
 #[macro_export]
 macro_rules! pt_index {
     ($hash:expr, $size:expr) => {{

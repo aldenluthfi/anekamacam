@@ -262,6 +262,7 @@ fn spawn_hash_tables(
 /// helpers and keep their own docs.
 ///
 /// handle_position
+///
 ///   Params:
 ///
 ///   - uci: &mut Uci
@@ -272,6 +273,7 @@ fn spawn_hash_tables(
 ///     the position
 ///
 /// start_search
+///
 ///   Params:
 ///
 ///   - uci: &mut Uci
@@ -282,6 +284,7 @@ fn spawn_hash_tables(
 ///     infinite)
 ///
 /// abort_search
+///
 ///   Params:
 ///
 ///   - uci: &mut Uci
@@ -294,6 +297,7 @@ fn spawn_hash_tables(
 ///   the joined result and its ponder flag, None when no search ran
 ///
 /// stop_search
+///
 ///   Params:
 ///
 ///   - uci: &mut Uci
@@ -301,12 +305,14 @@ fn spawn_hash_tables(
 ///     `bestmove`
 ///
 /// handle_ponderhit
+///
 ///   Params:
 ///
 ///   - uci: &mut Uci
 ///     session whose ponder search is joined and relaunched as a timed search
 ///
 /// handle_setoption
+///
 ///   Params:
 ///
 ///   - uci: &mut Uci

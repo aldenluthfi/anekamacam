@@ -22,6 +22,16 @@ use crate::*;
 ///
 /// A `Leg` is a packed `u32` where:
 ///
+/// Bits 0..31:
+///
+/// ```text
+///   0               8               16                              31
+///   ┌───────────────┬───────────────┬────────────────────────────────┐
+///   │       x       │       y       │           modifiers            │
+///   └───────────────┴───────────────┴────────────────────────────────┘
+/// ```
+///
+///
 /// - Bits 0..7     : signed file displacement
 /// - Bits 8..15    : signed rank displacement
 /// - Bits 16..31   : movement and capture modifiers
@@ -30,75 +40,94 @@ use crate::*;
 /// one field each; [`LegVector`] documents all modifier meanings.
 ///
 /// leg!
+///
 ///   Params:
 ///   - leg_vector: &LegVector -> parsed leg to pack
-///   Return:
-///   Leg -> packed `u32` leg word
 ///
+///   Return:
+///   Leg                      -> packed `u32` leg word
+///
+
 /// Reader params (every reader):
 /// - leg_word: Leg -> packed leg word read
 ///
 /// x!
+///
 ///   Return:
 ///   i8 -> signed `x` delta (bits 0-7)
 ///
 /// y!
+///
 ///   Return:
 ///   i8 -> signed `y` delta (bits 8-15)
 ///
 /// m!
+///
 ///   Return:
 ///   bool -> may move on this leg (bit 16)
 ///
 /// c!
+///
 ///   Return:
 ///   bool -> may capture on this leg (bit 17)
 ///
 /// d!
+///
 ///   Return:
 ///   bool -> may destroy (capture a friendly piece) on this leg (bit 18)
 ///
 /// u!
+///
 ///   Return:
 ///   bool -> may unload on this leg (bit 19)
 ///
 /// k!
+///
 ///   Return:
 ///   bool -> capture must be royal (bit 20)
 ///
 /// v!
+///
 ///   Return:
 ///   bool -> capture must be virgin (unmoved) (bit 21)
 ///
 /// g!
+///
 ///   Return:
 ///   bool -> capture must be of greater rank (bit 22)
 ///
 /// t!
+///
 ///   Return:
 ///   bool -> may capture en passant (bit 23)
 ///
 /// i!
+///
 ///   Return:
 ///   bool -> must be an initial move (bit 24)
 ///
 /// p!
+///
 ///   Return:
 ///   bool -> start square creates an en passant square (bit 25)
 ///
 /// not_k!
+///
 ///   Return:
 ///   bool -> capture must not be royal (bit 26)
 ///
 /// not_v!
+///
 ///   Return:
 ///   bool -> capture must not be virgin (bit 27)
 ///
 /// not_g!
+///
 ///   Return:
 ///   bool -> capture must not be of greater rank (bit 28)
 ///
 /// not_i!
+///
 ///   Return:
 ///   bool -> must not be an initial move (bit 29)
 #[macro_export]
@@ -246,16 +275,19 @@ pub type MoveSet = Vec<MoveVector>;
 /// - vector: &MoveVector -> ordered legs of one movement option
 ///
 /// vector_offset!
+///
 ///   Return:
-///   (i32, i32)          -> net (file, rank) displacement, summing every leg
+///   (i32, i32) -> net (file, rank) displacement, summing every leg
 ///
 /// vector_moves_quietly!
+///
 ///   Return:
-///   bool                -> whether the final leg plays as a quiet move
+///   bool -> whether the final leg plays as a quiet move
 ///
 /// vector_is_initial!
+///
 ///   Return:
-///   bool                -> whether any leg is restricted to the first move
+///   bool -> whether any leg is restricted to the first move
 #[macro_export]
 macro_rules! vector_offset {
     ($vector:expr) => {{
@@ -326,27 +358,49 @@ pub type MultiLegVector = Vec<LegVector>;
 
 /// LegVector
 ///
-/// A 64-bit vector representation for leg move vectors, split as follows
-/// (bit 0 = LSB):
+/// A 64-bit vector representation for leg move vectors.
 ///
-/// ┌──────────────┬───────────┬────────┐
-/// │ 0..31        │ 32..47    │ 48..63 │
-/// │ AtomicVector │ modifiers │ unused │
-/// └──────────────┴───────────┴────────┘
+/// Bits 0..31:
 ///
-/// Bits 0..31 hold the whole `AtomicVector`. The 16 modifier bits are:
-/// - main                      : m, c, d, u,
-/// - capture/destroy modifier  : k, v, g, t
-/// - miscellaneous modifier    : i, p
+/// ```text
+///   0                                                               31
+///   ┌────────────────────────────────────────────────────────────────┐
+///   │                          AtomicVector                          │
+///   └────────────────────────────────────────────────────────────────┘
+/// ```
+/// Bits 32..63:
+///
+/// ```text
+///   32  34  36  38  40  42  44  46                                  63
+///     33  35  37  39  41  43  45
+///   ┌─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬────────────────────────────────────┐
+///   │m│c│d│u│k│v│g│t│i│p│K│V│G│I│               unused               │
+///   └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴────────────────────────────────────┘
+/// ```
+///
+/// - Bits 0..31 : whole `AtomicVector`
+/// - Bit 32     : `m`, may move
+/// - Bit 33     : `c`, may capture
+/// - Bit 34     : `d`, may destroy a friendly piece
+/// - Bit 35     : `u`, may unload
+/// - Bit 36     : `k`, capture must be royal
+/// - Bit 37     : `v`, capture must be virgin
+/// - Bit 38     : `g`, capture must have greater rank
+/// - Bit 39     : `t`, may capture en passant
+/// - Bit 40     : `i`, must be an initial move
+/// - Bit 41     : `p`, creates an en-passant square
+/// - Bit 42     : `K`, meaning `!k`
+/// - Bit 43     : `V`, meaning `!v`
+/// - Bit 44     : `G`, meaning `!g`
+/// - Bit 45     : `I`, meaning `!i`
+/// - Bits 46..63: unused
+///
+/// The 14 active modifier bits are grouped as follows:
+/// - main                      : m, c, d, u
+/// - capture/destroy modifiers : k, v, g, t
+/// - miscellaneous modifiers   : i, p
 /// - negated capture modifiers : !k, !v, !g
 /// - negated misc modifiers    : !i
-///
-/// Modifier bits layout (bits 32-45):
-///
-///  47  46  45  44  43  42  41  40  39  38  37  36  35  34  33  32
-/// ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
-/// │   │   │!i │!g │!v │!k │ p │ i │ t │ g │ v │ k │ u │ d │ c │ m │
-/// └───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┘
 ///
 /// Main modifiers:
 /// - (m)ove:
@@ -587,24 +641,29 @@ impl LegVector {
     /// and `add_modifier` ORs extra modifier letters into the current set.
     ///
     /// get_atomic
+    ///
     ///   Return:
-    ///   AtomicVector             -> displacement half (bits 0..31)
+    ///   AtomicVector -> displacement half (bits 0..31)
     ///
     /// get_modifiers
+    ///
     ///   Return:
-    ///   u16                      -> modifier bits (bits 32..47)
+    ///   u16 -> modifier bits (bits 32..47)
     ///
     /// set_atomic
+    ///
     ///   Params:
     ///   - atomic  : AtomicVector -> displacement written into bits 0..31
     ///
     /// as_tuple
+    ///
     ///   Return:
-    ///   (AtomicVector, u16)      -> both halves, displacement first
+    ///   (AtomicVector, u16) -> both halves, displacement first
     ///
     /// add_modifier
+    ///
     ///   Params:
-    ///   - modifier: &str         -> modifier letters ORed into the current set
+    ///   - modifier: &str -> modifier letters ORed into the current set
     pub fn get_atomic(&self) -> AtomicVector {
         AtomicVector((self.0 & 0xFFFF_FFFF) as u32)
     }
@@ -718,13 +777,21 @@ impl Debug for Token {
 /// - (x1, y1) is the whole vector
 /// - (x2, y2) is the last vector applied
 ///
-/// Each byte in the `u32` carries one signed component (bit 0 = LSB):
+/// Each byte in the `u32` carries one signed component.
 ///
-/// ┌─────────┬─────────┬────────┬────────┐
-/// │ 0..7    │ 8..15   │ 16..23 │ 24..31 │
-/// │ x1      │ y1      │ x2     │ y2     │
-/// │ whole.x │ whole.y │ last.x │ last.y │
-/// └─────────┴─────────┴────────┴────────┘
+/// Bits 0..31:
+///
+/// ```text
+///   0               8               16              24              31
+///   ┌───────────────┬───────────────┬───────────────┬────────────────┐
+///   │    whole.x    │    whole.y    │    last.x     │     last.y     │
+///   └───────────────┴───────────────┴───────────────┴────────────────┘
+/// ```
+///
+/// - Bits 0..7   : `whole.x`
+/// - Bits 8..15  : `whole.y`
+/// - Bits 16..23 : `last.x`
+/// - Bits 24..31 : `last.y`
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtomicVector(u32);
 
@@ -739,47 +806,59 @@ impl AtomicVector {
     /// seeding direction-relative expression expansion.
     ///
     /// new
+    ///
     ///   Params:
     ///   - whole: (i8, i8) -> full displacement, packed into bytes 0-1
     ///   - last : (i8, i8) -> final-step displacement, bytes 2-3
+    ///
     ///   Return:
-    ///   Self -> the packed displacement pair
+    ///   Self              -> the packed displacement pair
     ///
     /// origin
+    ///
     ///   Params:
     ///   - rotation: i8 -> cardinal index selecting the unit vector
+    ///
     ///   Return:
-    ///   Self -> zero displacement whose `last` is that unit vector
+    ///   Self           -> zero displacement whose `last` is that unit vector
     ///
     /// whole
+    ///
     ///   Return:
     ///   (i8, i8) -> full displacement (bytes 0-1)
     ///
     /// last
+    ///
     ///   Return:
     ///   (i8, i8) -> final-step displacement (bytes 2-3)
     ///
     /// set
+    ///
     ///   Params:
     ///   - other: &AtomicVector -> displacement copied wholesale
     ///
     /// set_last
+    ///
     ///   Params:
     ///   - last: (i8, i8) -> final-step displacement written to bytes 2-3
     ///
     /// set_whole
+    ///
     ///   Params:
     ///   - whole: (i8, i8) -> full displacement written to bytes 0-1
     ///
     /// as_tuple
+    ///
     ///   Return:
     ///   [(i8, i8); 2] -> [whole, last] displacement pair
     ///
     /// from_tuple
+    ///
     ///   Params:
     ///   - vectors: [(i8, i8); 2] -> [whole, last] pair to pack
+    ///
     ///   Return:
-    ///   Self -> the packed displacement pair
+    ///   Self                     -> the packed displacement pair
     pub fn new(whole: (i8, i8), last: (i8, i8)) -> Self {
         let x1 = (whole.0 as u8) as u32;
         let y1 = (whole.1 as u8) as u32;

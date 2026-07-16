@@ -124,11 +124,13 @@ impl Tui {
     /// computing.
     ///
     /// new
+    ///
     ///   Params:
     ///   - receiver: Receiver<TuiEvent> -> worker-to-TUI event channel
     ///   - sender  : Sender<TuiEvent>   -> clonable sender for workers
+    ///
     ///   Return:
-    ///   Self -> the interface on the game-selection screen
+    ///   Self                           -> the interface on the game-selection screen
     ///
     /// reset
     ///   returns to the selection screen, dropping loaded states and
@@ -590,6 +592,7 @@ impl BoardState {
 /// board. Neither helper returns a value.
 ///
 /// init_playground
+///
 ///   Params:
 ///
 ///   - state: &mut State
@@ -599,6 +602,7 @@ impl BoardState {
 ///     piece the empty board is prepared for
 ///
 /// set_playground_piece
+///
 ///   Params:
 ///   - state : &mut State -> playground position the piece is placed on
 ///   - index : PieceIndex -> piece type placed
@@ -722,6 +726,7 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
 ///                             scroll offsets or picks are updated)
 ///
 /// draw_game_selection
+///
 ///   Return:
 ///
 ///   Option<Arc<Mutex<State>>>

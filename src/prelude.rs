@@ -333,10 +333,12 @@ lazy_static! {
 /// `Option<Arc<..>>` payload.
 ///
 /// null_move
+///
 ///   Return:
-///   Move       -> all-ones sentinel move with no capture payload
+///   Move -> all-ones sentinel move with no capture payload
 ///
 /// null_pseudo_move
+///
 ///   Return:
 ///   PseudoMove -> all-ones packed move with a zero signature
 pub fn null_move() -> Move {
