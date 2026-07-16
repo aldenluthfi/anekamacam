@@ -73,12 +73,8 @@ macro_rules! is_square_attacked {
 /// during the setup phase or when the side has no royal piece.
 ///
 /// Params:
-///
-/// - side: u8
-///   side whose royals are tested
-///
-/// - state: &State
-///   current position providing royal list and attack tables
+/// - side : u8     -> side whose royal pieces are tested
+/// - state: &State -> current position providing royal list and attack tables
 ///
 /// Return:
 /// bool -> true if the side is in check
@@ -578,33 +574,22 @@ pub fn generate_attack_masks(square_index: u16, state: &mut State) {
 /// precomputed attack candidates gathered in `relevant_attacks`.
 ///
 /// Params:
-///
-/// - multi_leg_vector: &MoveVector
-///   candidate attack vector to simulate
-///
-/// - square_index: Square
-///   square the attacker stands on
-///
-/// - attacking_piece: &Piece
-///   the piece attempting the attack
-///
-/// - attacked_unmoved: bool
-///   target is unmoved, checked against the vector's virgin modifiers
-///
-/// - attacked_royal: bool
-///   target is royal, checked against the vector's royal modifiers
-///
-/// - attacked_rank: u8
-///   target's capture rank, checked against the rank modifiers
-///
-/// - attacked_square: Square
-///   square that must be reached with a capture leg
-///
-/// - state: &State
-///   current position for occupancy checks
+/// - multi_leg_vector: &MoveVector -> candidate attack vector to simulate
+/// - square_index    : Square      -> origin square of the attacking piece
+/// - attacking_piece : &Piece      -> piece attempting the attack
+/// - attacked_unmoved: bool        -> target virgin status
+/// - attacked_royal  : bool        -> target royal status
+/// - attacked_rank   : u8          -> target capture rank
+/// - attacked_square : Square      -> square reached by a capture leg
+/// - state           : &State      -> current position for occupancy checks
 ///
 /// Return:
 /// bool -> true if the vector currently realizes the attack
+///
+/// Notes:
+/// Direction offsets scale by the attacking piece's color, reversing both
+/// axes for the opposite side. One precomputed vector can therefore validate
+/// attacks for either orientation without duplicate tables.
 #[macro_export]
 macro_rules! validate_attack_vector {
     (
@@ -836,24 +821,17 @@ macro_rules! validate_attack_vector {
 /// ```
 ///
 /// Params:
+/// - square_index: Square         -> origin square of the moving piece
+/// - piece       : &Piece         -> moving piece type
+/// - vector      : &MoveVector    -> compiled multi-leg vector to simulate
+/// - state       : &State         -> current position for rule checks
+/// - out         : &mut Vec<Move> -> output list receiving encoded moves
+/// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
 ///
-/// - square_index: Square
-///   origin square of the moving piece
-///
-/// - piece: &Piece
-///   the moving piece type
-///
-/// - vector: &MoveVector
-///   one compiled multi-leg vector to simulate
-///
-/// - state: &State
-///   current position for occupancy and rule checks
-///
-/// - out: &mut Vec<Move>
-///   output list receiving the moves
-///
-/// - scratch: &mut Vec<u64>
-///   reusable buffer for multi-capture payloads
+/// Notes:
+/// Direction offsets scale by piece color, reversing both axes for the
+/// opposite side. `scratch` is cleared before simulation and transferred into
+/// an emitted multi-capture move only when its extra capture records remain.
 #[macro_export]
 macro_rules! process_multi_leg_vector {
     (
@@ -1192,24 +1170,12 @@ macro_rules! process_multi_leg_vector {
 /// for all vectors in the set.
 ///
 /// Params:
-///
-/// - square_index: Square
-///   origin square the piece moves from
-///
-/// - piece: &Piece
-///   piece type being moved
-///
-/// - vector_set: &MoveSet
-///   compiled vectors to expand
-///
-/// - state: &State
-///   current position providing occupancy and tables
-///
-/// - out: &mut Vec<Move>
-///   output list receiving the moves
-///
-/// - scratch: &mut Vec<u64>
-///   reusable buffer for multi-capture payloads
+/// - square_index: Square         -> origin square of the moving piece
+/// - piece       : &Piece         -> moving piece type
+/// - vector_set  : &MoveSet       -> compiled vectors to expand
+/// - state       : &State         -> current position providing occupancy
+/// - out         : &mut Vec<Move> -> output list receiving encoded moves
+/// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
 #[macro_export]
 macro_rules! generate_move_list_from_vectors {
     (
@@ -1233,21 +1199,11 @@ macro_rules! generate_move_list_from_vectors {
 /// and promotion branching from the piece's `relevant_moves` vectors.
 ///
 /// Params:
-///
-/// - square_index: Square
-///   origin square the piece moves from
-///
-/// - piece: &Piece
-///   piece type being moved
-///
-/// - state: &State
-///   current position providing occupancy and tables
-///
-/// - out: &mut Vec<Move>
-///   output list receiving the moves
-///
-/// - scratch: &mut Vec<u64>
-///   reusable buffer for multi-capture payloads
+/// - square_index: Square         -> origin square of the moving piece
+/// - piece       : &Piece         -> moving piece type
+/// - state       : &State         -> current position providing occupancy
+/// - out         : &mut Vec<Move> -> output list receiving encoded moves
+/// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
 #[macro_export]
 macro_rules! generate_move_list {
     (
@@ -1273,21 +1229,11 @@ macro_rules! generate_move_list {
 /// non-capturing moves it produced.
 ///
 /// Params:
-///
-/// - square_index: Square
-///   origin square the piece moves from
-///
-/// - piece: &Piece
-///   piece type being moved
-///
-/// - state: &State
-///   current position providing occupancy and tables
-///
-/// - out: &mut Vec<Move>
-///   output list receiving the captures
-///
-/// - scratch: &mut Vec<u64>
-///   reusable buffer for multi-capture payloads
+/// - square_index: Square         -> origin square of the moving piece
+/// - piece       : &Piece         -> moving piece type
+/// - state       : &State         -> current position providing occupancy
+/// - out         : &mut Vec<Move> -> output list receiving encoded captures
+/// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
 #[macro_export]
 macro_rules! generate_capture_list {
     (
@@ -1321,12 +1267,8 @@ macro_rules! generate_capture_list {
 /// gate the whole check per side and wing.
 ///
 /// Params:
-///
-/// - state: &State
-///   current position providing rights and occupancy
-///
-/// - out: &mut Vec<Move>
-///   output list receiving the castling moves
+/// - state: &State         -> current position providing rights and occupancy
+/// - out  : &mut Vec<Move> -> output list receiving castling moves
 #[macro_export]
 macro_rules! generate_castling_list {
     (
@@ -1484,15 +1426,22 @@ macro_rules! generate_castling_list {
 /// - updates Zobrist hash and repetition map
 /// - pushes a reversible [`Snapshot`] and rejects illegal self-check outcomes
 ///
+/// ```text
+/// save before-state -> apply -> push Snapshot -> legal?
+///                                        | yes: committed
+///                                        \ no: undo_move! -> restored
+/// ```
+///
 /// Params:
 /// - state: &mut State -> position the move is applied to
-/// - mv   : Move       -> the encoded `Move` to play
+/// - mv   : Move       -> encoded move to play
 ///
 /// Return:
+/// bool -> true when legal; false when self-check caused automatic rollback
 ///
-/// bool
-/// true if the move was legal; false means it exposed the mover to check and
-/// has already been undone
+/// Notes:
+/// Call `undo_move!` only after a true return. A false return has already
+/// restored the position and removed its temporary snapshot.
 #[macro_export]
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
@@ -2727,6 +2676,10 @@ macro_rules! make_move {
 ///
 /// Params:
 /// - state: &mut State -> position whose most recent move is reverted
+///
+/// Notes:
+/// Call only after a successful `make_move!`. Rejected moves remove their
+/// temporary snapshot before returning false.
 #[macro_export]
 macro_rules! undo_move {
     ($state:expr) => {
@@ -3491,9 +3444,7 @@ macro_rules! make_null_move {
 /// Panics if no history snapshot exists to undo.
 ///
 /// Params:
-///
-/// - state: &mut State
-///   position whose most recent null move is reverted
+/// - state: &mut State -> position whose most recent null move is reverted
 #[macro_export]
 macro_rules! undo_null_move {
     ($state:expr) => {{

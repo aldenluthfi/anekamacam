@@ -103,15 +103,9 @@ pub fn generate_relevant_drops(
 /// template rather than an on-board piece and directional legs.
 ///
 /// Params:
-///
-/// - piece: &Piece
-///   piece type to drop from hand
-///
-/// - state: &State
-///   current position providing hand counts and occupancy
-///
-/// - out: &mut Vec<Move>
-///   output list receiving the drop moves
+/// - piece: &Piece         -> piece type to drop from hand
+/// - state: &State         -> current position providing hand and occupancy
+/// - out  : &mut Vec<Move> -> output list receiving encoded drop moves
 #[macro_export]
 macro_rules! generate_drop_list {
     ($piece:expr, $state:expr, $out:expr) => {{
