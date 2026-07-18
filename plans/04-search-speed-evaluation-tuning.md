@@ -167,9 +167,6 @@ Verification: deliberate child termination during setup and during a game must
 neither hang nor panic whole runner; normal fixed-movetime and clock runs must
 retain score orientation and time-control behavior.
 
-Status 2026-07-18: implemented. Release build and concurrent PID-log smoke pass.
-User chose to skip subprocess crash integration smoke.
-
 Use existing `hotpath`/`hotpath-alloc` support only. Add no telemetry framework.
 Before each optimization, profile repeated four-variant searches. Keep stage only
 when aggregate geometric-mean NPS or short-search latency improves at least 2%
@@ -190,10 +187,6 @@ Verification: repeated multi-position timing, legal PV checks, bounded perft,
 release `d`, and self-play. Revert if chosen moves or score behavior expose an
 ordering change beyond expected search nondeterminism.
 
-Status 2026-07-18: accepted when retested jointly with R3-R4 against clean R7.
-Ten-run suite measured aggregate NPS `+2.33%`: FIDE `+0.24%`, crazyhouse
-`+2.19%`, Shogi `+4.24%`, and Xiangqi `+2.71%`. No variant regressed.
-
 ### R3 Royal-list shelter loop
 
 Critical file: `src/game/position/evaluation.rs`.
@@ -201,8 +194,6 @@ Critical file: `src/game/position/evaluation.rs`.
 Replace full piece-type scan in `king_shelter!` with direct iteration over
 `state.royal_list[color]`. Keep multi-royal support and adjacency semantics.
 This is selected `gpt-codex` work and should be ported narrowly.
-
-Status 2026-07-18: accepted as part of combined R2-R4. See R2 benchmark.
 
 ### R4 Incremental pair-score cache
 
@@ -221,10 +212,6 @@ checks. Replace evaluation's piece-type loop with cached value.
 Because make/undo changes, run finite perft across every available suite plus
 self-play and FEN-sweep state verification.
 
-Status 2026-07-18: accepted as part of combined R2-R4. State verification
-passed 456 self-play plies; FEN sweep matched known FIDE crash indices
-`[5, 42, 52]` and had no Shogi/Xiangqi failures. See R2 benchmark.
-
 ### R5 Reuse root allocations
 
 Critical file: `src/game/position/search.rs::clear_search`.
@@ -232,10 +219,6 @@ Critical file: `src/game/position/search.rs::clear_search`.
 Use resize-once plus `fill` for continuation, butterfly, capture, killer,
 static-eval, and exclusion arrays. Preserve full reset behavior; do not age or
 retain histories. Measure repeated short searches separately from deep searches.
-
-Status 2026-07-18: rejected and reverted. Ten-run short-search suite measured
-aggregate NPS `-0.23%`, including Shogi `-5.29%`; allocation reuse did not
-produce reliable latency benefit.
 
 ### R6 Profile-gated SEE repetition bypass
 
@@ -255,11 +238,6 @@ whether repetition was tracked so undo remains balanced.
 Revert unless aggregate gain exceeds 2%. Run SEE corpus, all-suite finite perft,
 release `d`, self-play walks, and FEN sweep.
 
-Status 2026-07-18: rejected and reverted. Existing hotpath profile put SEE at
-`8.08%`, so experiment was justified, but ten-run suite measured aggregate NPS
-`-0.47%` with Shogi `-2.13%`. State verification passed 240 self-play plies and
-matched the known FIDE FEN crash set.
-
 Each derivation sub-stage regenerates affected `res/param/*/latest.param` files
 through existing embedded-first flow. No new derive command. Delete current
 files, build, load variants through existing console path, export, rebuild, and
@@ -278,12 +256,6 @@ values instead of collapsing them through `HashSet`. Bottom ceil(10%) becomes
 non-big; top ceil(20%) becomes major. Apply roles to both colors. Force royals
 outside big/major classification. Log ranked values and assignments.
 
-Status 2026-07-18: implemented. All 16 parameter files regenerated; eight
-changed. Diffs are confined to phase thresholds and role flags; material values
-and PST blocks remain unchanged. Release build, 240 self-play verification
-plies, and FEN sweep passed apart from known FIDE indices `[5, 42, 52]`.
-Strength SPRT remains pending.
-
 ### R8 Derive phase from actual army
 
 Critical files:
@@ -299,12 +271,6 @@ denominator. Start with 90% opening and 35% endgame values from `gpt-codex`, the
 validate phase traces before strength testing. Do not import unrelated
 `royal_front_mask` changes.
 
-Status 2026-07-18: rejected and reverted. Parameters changed only two phase
-threshold tokens per variant, and active-hand phase bookkeeping passed 560
-self-play verification plies plus FEN sweep. Search cost failed gate: FIDE
-`+3.37%` time, Shogi `+90.60%`, and Xiangqi `+12.98%`. Keeping reusable hand
-material active held Shogi in expensive phases too long.
-
 ### R9 Derive occupancy from setup
 
 Critical files:
@@ -318,10 +284,6 @@ Opening occupancy equals occupied starting squares divided by board size.
 Endgame occupancy starts at one third of opening and stays in `[0.05, 0.25]`.
 Pass values explicitly through piece value, square score, PST, and zone-attack
 derivation. Keep formulas generic for sparse, dense, drop, and hopper variants.
-
-Status 2026-07-18: rejected and reverted. State checks passed, but ten-run suite
-measured FIDE `-5.87%` time, Shogi `+22.88%`, and Xiangqi `+7.87%`. Dynamic
-occupancy changed values and king-zone behavior too broadly for current gates.
 
 After R9, run FIDE and Shogi SPRT plus targeted Xiangqi validation, then a
 Q/R round-robin checkpoint before scalar tuning.
@@ -339,10 +301,6 @@ accepts only new schema. Split train/validation by game ID, never position.
 Report result and phase distributions, train and validation MSE, and best epoch.
 Export best validation epoch rather than final epoch; stop or warn on sustained
 validation regression.
-
-Status 2026-07-18: implemented. Isolated smoke loaded one training and one
-validation game, reported result/phase distributions, ran two epochs, and
-exported epoch 0 because validation did not improve. Release build passes.
 
 ### R11 Replace parameter schema with scalar-capable payload
 
