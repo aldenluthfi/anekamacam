@@ -192,9 +192,9 @@ pub fn dec_verbosity() {
 
 /// init_logging
 ///
-/// Initializes file logging: archives any previous `latest.log` by its
-/// creation timestamp, opens a fresh truncated `latest.log`, and installs a
-/// formatter that stamps each line with its numeric verbosity level,
+/// Initializes file logging: archives any previous process-specific latest
+/// log by its creation timestamp, opens a fresh PID-qualified log, and installs
+/// a formatter that stamps each line with its numeric verbosity level,
 /// timestamp, and source location. Called once at startup from `main`.
 ///
 /// Notes:
@@ -215,7 +215,8 @@ pub fn init_logging() {
         fs::create_dir_all(LOG_DIR).expect("Failed to create log directory");
     }
 
-    let log_path = format!("{}/latest.log", LOG_DIR);
+    let process_id = std::process::id();
+    let log_path = format!("{}/latest-{}.log", LOG_DIR, process_id);
     let latest = Path::new(&log_path);
 
     if latest.exists()
@@ -224,8 +225,8 @@ pub fn init_logging() {
         let datetime: chrono::DateTime<chrono::Local> =
             modified.into();
         let archive = format!(
-            "logs/engine_{}.log",
-            datetime.format("%Y-%m-%d_%H-%M-%S")
+            "logs/engine_{}-{}.log",
+            datetime.format("%Y-%m-%d_%H-%M-%S"), process_id,
         );
         let _ = fs::rename(latest, &archive);
     }
