@@ -2,12 +2,10 @@
 //!
 //! Texel tuning of the evaluation parameters by gradient descent.
 //!
-//! Reads a self-play dataset of quiet positions labelled with game
-//! results, models each position's tapered material-and-PST score as a
-//! linear function of the tunable parameters, and drives that score's
-//! sigmoid toward the observed results by minimising mean-squared error
-//! with the Adam optimiser. The tuned vector is written back through the
-//! same parameter pipeline the engine loads at startup.
+//! Reads completed self-play games, splits them into game-disjoint training
+//! and validation sets, and models each quiet position's tapered score as a
+//! linear function of tunable parameters. Adam minimizes training error while
+//! validation selects the exported epoch.
 //!
 //! Created: 05/07/2026
 //! Author : Alden Luthfi
@@ -43,6 +41,14 @@ struct Sample {
     features: Vec<(usize, f64)>,                                                /* sparse ∂score/∂θ coefficients      */
     base: f64,                                                                  /* frozen non-tuned score residual    */
     label: f64,                                                                 /* White-view game result             */
+}
+
+/// TuneDataset
+///
+/// Game-disjoint training and validation samples loaded from one dataset.
+struct TuneDataset {
+    training: Vec<Sample>,
+    validation: Vec<Sample>,
 }
 
 /// build_shape
@@ -450,10 +456,10 @@ fn clamp_material(theta: &mut [f64], shape: &TuneShape) {
 
 /// load_dataset
 ///
-/// Reads `res/data/{variant}/latest.data`, reconstructs each `FEN;result`
-/// row into a scratch position, and reduces it to a tuning `Sample`.
-/// Returns an empty vector (after logging) when the dataset is missing so
-/// the caller can abort gracefully.
+/// Reads `res/data/{variant}/latest.data`, requiring `game;FEN;result` rows.
+/// Every game is assigned wholly to training or validation by game ID, then
+/// each position is reduced to a tuning sample. Reports game-result and phase
+/// distributions so skew is visible before optimization.
 ///
 /// Params:
 /// - template: &State     -> loaded variant to clone scratch states
@@ -462,52 +468,129 @@ fn clamp_material(theta: &mut [f64], shape: &TuneShape) {
 /// - theta   : &[f64]     -> starting parameters for the base term
 ///
 /// Return:
-/// Vec<Sample>            -> the reduced dataset, empty when unavailable
+/// TuneDataset            -> game-disjoint training and validation samples
 fn load_dataset(
     template: &State,
     variant: &str,
     shape: &TuneShape,
     theta: &[f64],
-) -> Vec<Sample> {
+) -> TuneDataset {
     let path = format!("{}/{}/latest.data", DATA_DIR, variant);
 
     let content = match fs::read_to_string(&path) {
         Ok(content) => content,
         Err(error) => {
             log_2!("Cannot read dataset {}: {}", path, error);
-            return Vec::new();
+            return TuneDataset {
+                training: Vec::new(),
+                validation: Vec::new(),
+            };
         }
     };
 
     let mut scratch = template.clone();
     let mut bufs = SearchBufs::default();
     let ptable = PTable::default();
-    let mut samples = Vec::new();
+    let mut training = Vec::new();
+    let mut validation = Vec::new();
+    let mut game_results = HashMap::new();
+    let mut phases = [0usize; 4];
 
-    for line in content.lines() {
+    for (line_index, line) in content.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
 
-        let Some((fen, result)) = trimmed.rsplit_once(';') else {
-            continue;
-        };
+        let mut fields = trimmed.splitn(3, ';');
+        let game_text = fields.next().unwrap_or_default();
+        let fen = fields.next().unwrap_or_default();
+        let result_text = fields.next().unwrap_or_default();
+        assert!(
+            !game_text.is_empty() && !fen.is_empty() && !result_text.is_empty(),
+            "Invalid dataset row {}: expected game;FEN;result",
+            line_index + 1,
+        );
 
-        let Ok(label) = result.trim().parse::<f64>() else {
-            continue;
-        };
+        let game_id = game_text.parse::<u64>().unwrap_or_else(|_| {
+            panic!("Invalid game ID on dataset row {}", line_index + 1)
+        });
+        let label = result_text.parse::<f64>().unwrap_or_else(|_| {
+            panic!("Invalid result on dataset row {}", line_index + 1)
+        });
+        assert!(
+            label == 0.0 || label == 0.5 || label == 1.0,
+            "Invalid result on dataset row {}: {}",
+            line_index + 1, label,
+        );
+
+        if let Some(previous) = game_results.insert(game_id, label) {
+            assert_eq!(
+                previous, label,
+                "Conflicting results for dataset game {}", game_id,
+            );
+        }
 
         scratch.reset();
         parse_fen(&mut scratch, fen, None);
         refresh_eval_state(&mut scratch);
 
-        samples.push(
-            extract_sample(&scratch, shape, theta, &mut bufs, &ptable, label)
+        let phase_index = match scratch.game_phase {
+            SETUP => 0,
+            OPENING => 1,
+            MIDDLEGAME => 2,
+            ENDGAME => 3,
+            _ => unreachable!(),
+        };
+        phases[phase_index] += 1;
+
+        let sample = extract_sample(
+            &scratch, shape, theta, &mut bufs, &ptable, label
         );
+        if game_id % TUNING_VALIDATION_MODULUS == 0 {
+            validation.push(sample);
+        } else {
+            training.push(sample);
+        }
     }
 
-    samples
+    let mut results = [0usize; 3];
+    let mut training_games = 0usize;
+    let mut validation_games = 0usize;
+
+    for (game_id, label) in game_results {
+        if game_id % TUNING_VALIDATION_MODULUS == 0 {
+            validation_games += 1;
+        } else {
+            training_games += 1;
+        }
+
+        if label == 0.0 {
+            results[0] += 1;
+        } else if label == 0.5 {
+            results[1] += 1;
+        } else {
+            results[2] += 1;
+        }
+    }
+
+    log_1!(
+        concat!(
+            "Tune split: {} train games/{} positions, ",
+            "{} validation games/{} positions"
+        ),
+        training_games, training.len(), validation_games, validation.len(),
+    );
+    log_1!(
+        "Tune results: {} losses, {} draws, {} wins",
+        results[0], results[1], results[2],
+    );
+    log_1!(
+        "Tune phases: {} setup, {} opening, {} middlegame, {} endgame",
+        phases[0], phases[1], phases[2], phases[3],
+    );
+
+    TuneDataset { training, validation }
 }
 
 /// export_theta
@@ -578,11 +661,10 @@ fn export_theta(
 /// run_tuning
 ///
 /// Console entry point for the `tune` command. Loads the loaded
-/// variant's dataset, fits the sigmoid scaling constant, then runs Adam
-/// for `epochs` passes to minimise the mean-squared error, logging the
-/// error each epoch and stopping early on interrupt. The tuned vector is
-/// exported through the startup parameter pipeline, auto-backing-up the
-/// previous parameters.
+/// variant's game-disjoint dataset, fits scaling on training samples, then
+/// runs Adam while tracking validation error. Training stops after sustained
+/// validation stagnation, and the best validation epoch is exported through
+/// the startup parameter pipeline.
 ///
 /// Params:
 /// - state        : &mut State -> loaded variant, tuned and exported
@@ -598,21 +680,30 @@ pub fn run_tuning(
     let shape = build_shape(state);
     let mut theta = initial_theta(state, &shape);
 
-    let samples = load_dataset(state, variant, &shape, &theta);
-    if samples.is_empty() {
-        log_2!("No training samples loaded; aborting tune");
+    let dataset = load_dataset(state, variant, &shape, &theta);
+    if dataset.training.is_empty() || dataset.validation.is_empty() {
+        log_2!("Training and validation samples are both required");
         return;
     }
 
-    let scaling = fit_scaling(&samples, &theta);
-    let start_error = mean_squared_error(&samples, &theta, scaling);
+    let scaling = fit_scaling(&dataset.training, &theta);
+    let start_training = mean_squared_error(
+        &dataset.training, &theta, scaling
+    );
+    let start_validation = mean_squared_error(
+        &dataset.validation, &theta, scaling
+    );
     log_1!(
-        "Tune: {} samples, K {:.4}, start MSE {:.6}",
-        samples.len(), scaling, start_error,
+        "Tune: K {:.4}, train MSE {:.6}, validation MSE {:.6}",
+        scaling, start_training, start_validation,
     );
 
     let mut first_moment = vec![0.0f64; shape.dimension];
     let mut second_moment = vec![0.0f64; shape.dimension];
+    let mut best_theta = theta.clone();
+    let mut best_validation = start_validation;
+    let mut best_epoch = 0usize;
+    let mut stale_epochs = 0usize;
 
     for epoch in 1..=epochs {
         if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
@@ -620,7 +711,7 @@ pub fn run_tuning(
             break;
         }
 
-        let gradient = compute_gradient(&samples, &theta, scaling);
+        let gradient = compute_gradient(&dataset.training, &theta, scaling);
 
         let bias_one = 1.0 - ADAM_BETA_ONE.powi(epoch as i32);
         let bias_two = 1.0 - ADAM_BETA_TWO.powi(epoch as i32);
@@ -640,10 +731,37 @@ pub fn run_tuning(
 
         clamp_material(&mut theta, &shape);
 
-        let error = mean_squared_error(&samples, &theta, scaling);
-        log_1!("Tune epoch {}/{}: MSE {:.6}", epoch, epochs, error);
+        let training_error = mean_squared_error(
+            &dataset.training, &theta, scaling
+        );
+        let validation_error = mean_squared_error(
+            &dataset.validation, &theta, scaling
+        );
+        log_1!(
+            "Tune epoch {}/{}: train {:.6}, validation {:.6}",
+            epoch, epochs, training_error, validation_error,
+        );
+
+        if validation_error < best_validation {
+            best_theta.clone_from(&theta);
+            best_validation = validation_error;
+            best_epoch = epoch;
+            stale_epochs = 0;
+        } else {
+            stale_epochs += 1;
+            if stale_epochs >= TUNING_VALIDATION_PATIENCE {
+                log_2!(
+                    "Tune stopped after {} stale validation epochs",
+                    stale_epochs,
+                );
+                break;
+            }
+        }
     }
 
-    export_theta(state, variant, &shape, &theta);
-    log_1!("Tune complete: exported parameters for {}", variant);
+    export_theta(state, variant, &shape, &best_theta);
+    log_1!(
+        "Tune complete: exported epoch {} for {} at validation MSE {:.6}",
+        best_epoch, variant, best_validation,
+    );
 }

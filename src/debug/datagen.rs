@@ -4,14 +4,22 @@
 //!
 //! Plays the engine against itself under a fixed per-move wall-clock
 //! budget, opening each game with a short random line for variety, and
-//! records the quiet positions it visits — labelled with the final game
-//! result from White's perspective — into a reusable on-disk dataset
-//! that `tuning.rs` later optimises the evaluation against.
+//! records quiet positions from completed games with game IDs and final
+//! White-view results. `tuning.rs` uses those IDs for game-disjoint training
+//! and validation sets.
 //!
 //! Created: 05/07/2026
 //! Author : Alden Luthfi
 
 use crate::*;
+
+/// GeneratedGame
+///
+/// One completed self-play result and every quiet position collected from it.
+struct GeneratedGame {
+    positions: Vec<String>,
+    result: f64,
+}
 
 /// play_one_game
 ///
@@ -19,8 +27,8 @@ use crate::*;
 /// every quiet position it passed through. A position is quiet when the
 /// side to move is not in check and the move the engine chose there is
 /// not a capture, keeping the static evaluation a faithful label target.
-/// The game ends on mate, a draw rule, or the ply cap; the result is
-/// returned from White's perspective (1.0 win, 0.5 draw, 0.0 loss).
+/// Completed mate and draw-rule results use White's perspective (1.0 win,
+/// 0.5 draw, 0.0 loss); interrupted or invalid games return None.
 ///
 /// Params:
 /// - template   : &State              -> loaded variant to start games from
@@ -33,7 +41,7 @@ use crate::*;
 /// - sender     : &Sender<TuiEvent>   -> channel for live board updates
 ///
 /// Return:
-/// (Vec<String>, f64)                 -> quiet-position FENs and the White-view result
+/// Option<GeneratedGame> -> completed labelled game, or None when interrupted
 fn play_one_game(
     template: &State,
     dict: Option<&Translator>,
@@ -43,7 +51,7 @@ fn play_one_game(
     threads: usize,
     movetime_ms: u128,
     sender: &Sender<TuiEvent>,
-) -> (Vec<String>, f64) {
+) -> Option<GeneratedGame> {
     let state = &mut template.fork();
     state.play_random_opening(OPENING_RANDOM_PLIES);
 
@@ -55,12 +63,13 @@ fn play_one_game(
     let mut bufs = SearchBufs::default();
     let movetime_ns = movetime_ms * 1_000_000;
 
-    let result;
-
     loop {
-        if SYSTEM_INTERRUPT.load(Ordering::Relaxed) || state.game_over {
+        if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+            return None;
+        }
 
-            result = if is_in_check!(state.playing, state)
+        if state.game_over {
+            let result = if is_in_check!(state.playing, state)
             || stalemate_loss!(&state)
             {
                 state.playing as f64
@@ -68,7 +77,7 @@ fn play_one_game(
                 0.5
             };
 
-            break;
+            return Some(GeneratedGame { positions: fens, result });
         }
 
         let now = ENGINE_START.elapsed().as_nanos();
@@ -80,9 +89,15 @@ fn play_one_game(
             Arc::clone(&ptable), &mut info, &mut bufs, threads, dict,
         );
 
+        if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+            return None;
+        }
+
         if outcome.best_move == null_move() || outcome.best_score == -INF {
-            result = state.playing as f64;
-            break;
+            return Some(GeneratedGame {
+                positions: fens,
+                result: state.playing as f64,
+            });
         }
 
         let is_capture = matches!(
@@ -94,7 +109,9 @@ fn play_one_game(
             fens.push(format_fen(state, None));
         }
 
-        make_move!(state, outcome.best_move);
+        if !make_move!(state, outcome.best_move) {
+            return None;
+        }
 
         sender.send(TuiEvent::StateUpdate(
             BoardState::from_state(state, dict)
@@ -102,8 +119,6 @@ fn play_one_game(
             panic!("Failed to send TuiEvent::StateUpdate: {e}")
         });
     }
-
-    (fens, result)
 }
 
 /// run_datagen
@@ -113,8 +128,8 @@ fn play_one_game(
 /// positions, labelled with its White-view result, to a fresh
 /// `res/data/{variant}/latest.data` — any dataset from a previous run is
 /// first rolled to a numbered backup, mirroring the parameter export.
-/// Rows are flushed and progress is logged periodically, and the loop
-/// stops early on interrupt so a long run is never lost.
+/// Completed games write `game;FEN;result` rows atomically from their buffered
+/// positions; interrupted or invalid games write nothing.
 ///
 /// Params:
 /// - template   : &State              -> loaded variant to generate games from
@@ -157,6 +172,7 @@ pub fn run_datagen(
 
     let mut total_rows = 0usize;
     let mut played = 0usize;
+    let mut discarded = 0usize;
 
     for game_index in 0..games {
         if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
@@ -164,18 +180,27 @@ pub fn run_datagen(
             break;
         }
 
-        let (fens, result) = play_one_game(
+        let Some(game) = play_one_game(
             template, dict, Arc::clone(&ttable), Arc::clone(&qtable),
             Arc::clone(&ptable), threads, movetime_ms, sender,
-        );
+        ) else {
+            discarded += 1;
+            if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+                break;
+            }
+            continue;
+        };
 
-        for fen in &fens {
-            writeln!(file, "{};{}", fen, result).unwrap_or_else(|e| {
-                panic!("Failed to write dataset row to {}: {}", path, e)
-            });
+        for fen in &game.positions {
+            writeln!(file, "{};{};{}", game_index, fen, game.result)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "Failed to write dataset row to {}: {}", path, error
+                    )
+                });
         }
 
-        total_rows += fens.len();
+        total_rows += game.positions.len();
         played += 1;
 
         if (game_index + 1) % 10 == 0 {
@@ -194,7 +219,7 @@ pub fn run_datagen(
     });
 
     log_1!(
-        "Datagen complete: {} games, {} positions -> {}",
-        played, total_rows, path,
+        "Datagen complete: {} games, {} discarded, {} positions -> {}",
+        played, discarded, total_rows, path,
     );
 }

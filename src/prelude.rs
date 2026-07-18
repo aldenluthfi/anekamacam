@@ -418,6 +418,9 @@ pub const HASH_MAX_MB: usize = 65536;
 /// - `TEXEL_K_MIN` / `TEXEL_K_MAX` / `TEXEL_K_ITERATIONS` -> the search
 ///   bounds and step count for fitting the sigmoid scaling constant `K`.
 ///
+/// - `TUNING_VALIDATION_MODULUS` / `TUNING_VALIDATION_PATIENCE` ->
+///   game-level validation split and early-stop patience.
+///
 /// - `SPRT_ALPHA` / `SPRT_BETA` -> the SPRT type-one and type-two error
 ///   rates that set the log-likelihood acceptance bounds.
 ///
@@ -431,6 +434,8 @@ pub const ADAM_EPSILON: f64 = 1e-8;
 pub const TEXEL_K_MIN: f64 = 0.01;
 pub const TEXEL_K_MAX: f64 = 3.0;
 pub const TEXEL_K_ITERATIONS: usize = 32;
+pub const TUNING_VALIDATION_MODULUS: u64 = 5;
+pub const TUNING_VALIDATION_PATIENCE: usize = 10;
 
 pub const SPRT_ALPHA: f64 = 0.05;
 pub const SPRT_BETA: f64 = 0.05;
