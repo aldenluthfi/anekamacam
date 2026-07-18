@@ -190,6 +190,10 @@ Verification: repeated multi-position timing, legal PV checks, bounded perft,
 release `d`, and self-play. Revert if chosen moves or score behavior expose an
 ordering change beyond expected search nondeterminism.
 
+Status 2026-07-18: rejected and reverted. Ten-run shallow suite measured
+aggregate NPS `-0.09%` with FIDE `-7.30%`; one deeper run was mixed and did not
+establish the required greater-than-2% cross-variant gain.
+
 ### R3 Royal-list shelter loop
 
 Critical file: `src/game/position/evaluation.rs`.
@@ -197,6 +201,9 @@ Critical file: `src/game/position/evaluation.rs`.
 Replace full piece-type scan in `king_shelter!` with direct iteration over
 `state.royal_list[color]`. Keep multi-royal support and adjacency semantics.
 This is selected `gpt-codex` work and should be ported narrowly.
+
+Status 2026-07-18: rejected with R4 and reverted. Combined cache benchmark did
+not reach the Stage R speed threshold.
 
 ### R4 Incremental pair-score cache
 
@@ -215,6 +222,12 @@ checks. Replace evaluation's piece-type loop with cached value.
 Because make/undo changes, run finite perft across every available suite plus
 self-play and FEN-sweep state verification.
 
+Status 2026-07-18: rejected with R3 and reverted. Ten-run deeper suite measured
+aggregate NPS `+1.30%` (FIDE `+5.19%`, crazyhouse `+0.34%`, Shogi `-1.77%`,
+Xiangqi `+1.56%`), below the required `+2%`. State verification passed 240
+self-play plies; FEN sweep matched the known FIDE crash set `[5, 42, 52]` and
+had no Shogi/Xiangqi failures.
+
 ### R5 Reuse root allocations
 
 Critical file: `src/game/position/search.rs::clear_search`.
@@ -222,6 +235,10 @@ Critical file: `src/game/position/search.rs::clear_search`.
 Use resize-once plus `fill` for continuation, butterfly, capture, killer,
 static-eval, and exclusion arrays. Preserve full reset behavior; do not age or
 retain histories. Measure repeated short searches separately from deep searches.
+
+Status 2026-07-18: rejected and reverted. Ten-run short-search suite measured
+aggregate NPS `-0.23%`, including Shogi `-5.29%`; allocation reuse did not
+produce reliable latency benefit.
 
 ### R6 Profile-gated SEE repetition bypass
 
@@ -241,6 +258,11 @@ whether repetition was tracked so undo remains balanced.
 Revert unless aggregate gain exceeds 2%. Run SEE corpus, all-suite finite perft,
 release `d`, self-play walks, and FEN sweep.
 
+Status 2026-07-18: rejected and reverted. Existing hotpath profile put SEE at
+`8.08%`, so experiment was justified, but ten-run suite measured aggregate NPS
+`-0.47%` with Shogi `-2.13%`. State verification passed 240 self-play plies and
+matched the known FIDE FEN crash set.
+
 Each derivation sub-stage regenerates affected `res/param/*/latest.param` files
 through existing embedded-first flow. No new derive command. Delete current
 files, build, load variants through existing console path, export, rebuild, and
@@ -258,6 +280,12 @@ Rank one representative per color-paired non-royal piece type. Retain equal
 values instead of collapsing them through `HashSet`. Bottom ceil(10%) becomes
 non-big; top ceil(20%) becomes major. Apply roles to both colors. Force royals
 outside big/major classification. Log ranked values and assignments.
+
+Status 2026-07-18: implemented. All 16 parameter files regenerated; eight
+changed. Diffs are confined to phase thresholds and role flags; material values
+and PST blocks remain unchanged. Release build, 240 self-play verification
+plies, and FEN sweep passed apart from known FIDE indices `[5, 42, 52]`.
+Strength SPRT remains pending.
 
 ### R8 Derive phase from actual army
 
