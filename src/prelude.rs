@@ -420,6 +420,9 @@ pub const HASH_MAX_MB: usize = 65536;
 ///
 /// - `SPRT_ALPHA` / `SPRT_BETA` -> the SPRT type-one and type-two error
 ///   rates that set the log-likelihood acceptance bounds.
+///
+/// - `SPRT_HANDSHAKE_TIMEOUT_MS` / `SPRT_RESPONSE_GRACE_MS` /
+///   `SPRT_SHUTDOWN_TIMEOUT_MS` -> subprocess protocol and cleanup limits.
 pub const OPENING_RANDOM_PLIES: usize = 8;
 pub const ADAM_BETA_ONE: f64 = 0.9;
 pub const ADAM_BETA_TWO: f64 = 0.999;
@@ -431,6 +434,9 @@ pub const TEXEL_K_ITERATIONS: usize = 32;
 
 pub const SPRT_ALPHA: f64 = 0.05;
 pub const SPRT_BETA: f64 = 0.05;
+pub const SPRT_HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
+pub const SPRT_RESPONSE_GRACE_MS: u128 = 5_000;
+pub const SPRT_SHUTDOWN_TIMEOUT_MS: u64 = 1_000;
 
 pub static EMBEDDED_CONFIGS: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../configs");

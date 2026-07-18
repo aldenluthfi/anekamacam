@@ -167,6 +167,9 @@ Verification: deliberate child termination during setup and during a game must
 neither hang nor panic whole runner; normal fixed-movetime and clock runs must
 retain score orientation and time-control behavior.
 
+Status 2026-07-18: implemented. Release build and concurrent PID-log smoke pass.
+User chose to skip subprocess crash integration smoke.
+
 Use existing `hotpath`/`hotpath-alloc` support only. Add no telemetry framework.
 Before each optimization, profile repeated four-variant searches. Keep stage only
 when aggregate geometric-mean NPS or short-search latency improves at least 2%
