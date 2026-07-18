@@ -1602,6 +1602,21 @@ macro_rules! make_move {
                         );
 
                         *hand -= 1;
+
+                        if drops!($state) {
+                            let opponent = 1 - piece_color as usize;
+
+                            $state.opening_material[opponent] -=
+                                p_ovalue!(
+                                    $state.statics.pieces
+                                        [enemy_equiv as usize]
+                                ) as u32;
+                            $state.endgame_material[opponent] -=
+                                p_evalue!(
+                                    $state.statics.pieces
+                                        [enemy_equiv as usize]
+                                ) as u32;
+                        }
                     }
                 }
 
@@ -1798,6 +1813,21 @@ macro_rules! make_move {
                         );
 
                         *hand -= 1;
+
+                        if drops!($state) {
+                            let opponent = 1 - piece_color as usize;
+
+                            $state.opening_material[opponent] -=
+                                p_ovalue!(
+                                    $state.statics.pieces
+                                        [enemy_equiv as usize]
+                                ) as u32;
+                            $state.endgame_material[opponent] -=
+                                p_evalue!(
+                                    $state.statics.pieces
+                                        [enemy_equiv as usize]
+                                ) as u32;
+                        }
                     }
                 }
 
@@ -1902,10 +1932,16 @@ macro_rules! make_move {
 
                     *hand += 1;
 
-                    $state.opening_material[piece_color as usize] +=
-                        p_ovalue!($state.statics.pieces[hand_piece]) as u32;
-                    $state.endgame_material[piece_color as usize] +=
-                        p_evalue!($state.statics.pieces[hand_piece]) as u32;
+                    if drops!($state) {
+                        $state.opening_material[piece_color as usize] +=
+                            p_ovalue!(
+                                $state.statics.pieces[hand_piece]
+                            ) as u32;
+                        $state.endgame_material[piece_color as usize] +=
+                            p_evalue!(
+                                $state.statics.pieces[hand_piece]
+                            ) as u32;
+                    }
                 }
 
                 hash_update_castling!(
@@ -2157,6 +2193,21 @@ macro_rules! make_move {
                         );
 
                         *hand -= 1;
+
+                        if drops!($state) {
+                            let opponent = 1 - piece_color as usize;
+
+                            $state.opening_material[opponent] -=
+                                p_ovalue!(
+                                    $state.statics.pieces
+                                        [enemy_equiv as usize]
+                                ) as u32;
+                            $state.endgame_material[opponent] -=
+                                p_evalue!(
+                                    $state.statics.pieces
+                                        [enemy_equiv as usize]
+                                ) as u32;
+                        }
                     }
                 }
 
@@ -2271,10 +2322,16 @@ macro_rules! make_move {
 
                         *hand += 1;
 
-                        $state.opening_material[piece_color as usize] +=
-                            p_ovalue!($state.statics.pieces[hand_piece]) as u32;
-                        $state.endgame_material[piece_color as usize] +=
-                            p_evalue!($state.statics.pieces[hand_piece]) as u32;
+                        if drops!($state) {
+                            $state.opening_material[piece_color as usize] +=
+                                p_ovalue!(
+                                    $state.statics.pieces[hand_piece]
+                                ) as u32;
+                            $state.endgame_material[piece_color as usize] +=
+                                p_evalue!(
+                                    $state.statics.pieces[hand_piece]
+                                ) as u32;
+                        }
                     }
 
                     hash_update_castling!(
@@ -2811,6 +2868,19 @@ macro_rules! undo_move {
                         [1 - piece_color as usize][enemy_equiv as usize];
 
                     *hand += 1;
+
+                    if drops!($state) {
+                        let opponent = 1 - piece_color as usize;
+
+                        $state.opening_material[opponent] +=
+                            p_ovalue!(
+                                $state.statics.pieces[enemy_equiv as usize]
+                            ) as u32;
+                        $state.endgame_material[opponent] +=
+                            p_evalue!(
+                                $state.statics.pieces[enemy_equiv as usize]
+                            ) as u32;
+                    }
                 }
             } else {
                 piece_list_remove!($state, piece_index, end_square as Square);
@@ -2911,6 +2981,19 @@ macro_rules! undo_move {
                         [1 - piece_color as usize][enemy_equiv as usize];
 
                     *hand += 1;
+
+                    if drops!($state) {
+                        let opponent = 1 - piece_color as usize;
+
+                        $state.opening_material[opponent] +=
+                            p_ovalue!(
+                                $state.statics.pieces[enemy_equiv as usize]
+                            ) as u32;
+                        $state.endgame_material[opponent] +=
+                            p_evalue!(
+                                $state.statics.pieces[enemy_equiv as usize]
+                            ) as u32;
+                    }
                 }
             } else {
                 piece_list_remove!($state, piece_index, end_square as Square);
@@ -3024,10 +3107,16 @@ macro_rules! undo_move {
 
                 *hand -= 1;
 
-                $state.opening_material[piece_color as usize] -=
-                    p_ovalue!($state.statics.pieces[hand_piece]) as u32;
-                $state.endgame_material[piece_color as usize] -=
-                    p_evalue!($state.statics.pieces[hand_piece]) as u32;
+                if drops!($state) {
+                    $state.opening_material[piece_color as usize] -=
+                        p_ovalue!(
+                            $state.statics.pieces[hand_piece]
+                        ) as u32;
+                    $state.endgame_material[piece_color as usize] -=
+                        p_evalue!(
+                            $state.statics.pieces[hand_piece]
+                        ) as u32;
+                }
             }
         } else if move_type == MULTI_CAPTURE_MOVE {
             let piece_index = piece!(mv) as usize;
@@ -3114,6 +3203,19 @@ macro_rules! undo_move {
                         [1 - piece_color as usize]
                         [enemy_equiv as usize];
                     *hand += 1;
+
+                    if drops!($state) {
+                        let opponent = 1 - piece_color as usize;
+
+                        $state.opening_material[opponent] +=
+                            p_ovalue!(
+                                $state.statics.pieces[enemy_equiv as usize]
+                            ) as u32;
+                        $state.endgame_material[opponent] +=
+                            p_evalue!(
+                                $state.statics.pieces[enemy_equiv as usize]
+                            ) as u32;
+                    }
                 }
             } else {
                 piece_list_remove!($state, piece_index, end_square as Square);
@@ -3246,10 +3348,16 @@ macro_rules! undo_move {
 
                     *hand -= 1;
 
-                    $state.opening_material[piece_color as usize] -=
-                        p_ovalue!($state.statics.pieces[hand_piece]) as u32;
-                    $state.endgame_material[piece_color as usize] -=
-                        p_evalue!($state.statics.pieces[hand_piece]) as u32;
+                    if drops!($state) {
+                        $state.opening_material[piece_color as usize] -=
+                            p_ovalue!(
+                                $state.statics.pieces[hand_piece]
+                            ) as u32;
+                        $state.endgame_material[piece_color as usize] -=
+                            p_evalue!(
+                                $state.statics.pieces[hand_piece]
+                            ) as u32;
+                    }
                 }
             }
         } else if move_type == DROP_MOVE {

@@ -137,13 +137,19 @@ pub fn refresh_eval_state(state: &mut State) {
         }
     }
 
-    for side in [WHITE as usize, BLACK as usize] {
-        for (index, count) in state.piece_in_hand[side].iter().enumerate() {
-            let piece = &state.statics.pieces[index];
-            let count = *count as u32;
+    if drops!(state) || state.game_phase == SETUP {
+        for side in [WHITE as usize, BLACK as usize] {
+            for (index, count) in
+                state.piece_in_hand[side].iter().enumerate()
+            {
+                let piece = &state.statics.pieces[index];
+                let count = *count as u32;
 
-            state.opening_material[side] += p_ovalue!(piece) as u32 * count;
-            state.endgame_material[side] += p_evalue!(piece) as u32 * count;
+                state.opening_material[side] +=
+                    p_ovalue!(piece) as u32 * count;
+                state.endgame_material[side] +=
+                    p_evalue!(piece) as u32 * count;
+            }
         }
     }
 
@@ -331,13 +337,19 @@ pub fn verify_game_state(state: &State) {
         }
     }
 
-    for side in [WHITE as usize, BLACK as usize] {
-        for (index, count) in state.piece_in_hand[side].iter().enumerate() {
-            let piece = &state.statics.pieces[index];
-            let count = *count as u32;
+    if drops!(state) || state.game_phase == SETUP {
+        for side in [WHITE as usize, BLACK as usize] {
+            for (index, count) in
+                state.piece_in_hand[side].iter().enumerate()
+            {
+                let piece = &state.statics.pieces[index];
+                let count = *count as u32;
 
-            temp_opening_material[side] += p_ovalue!(piece) as u32 * count;
-            temp_endgame_material[side] += p_evalue!(piece) as u32 * count;
+                temp_opening_material[side] +=
+                    p_ovalue!(piece) as u32 * count;
+                temp_endgame_material[side] +=
+                    p_evalue!(piece) as u32 * count;
+            }
         }
     }
 
