@@ -101,6 +101,7 @@ pub fn refresh_eval_state(state: &mut State) {
     state.endgame_material = [0; 2];
     state.opening_pst_bonus = [0; 2];
     state.endgame_pst_bonus = [0; 2];
+    state.pair_score = 0;
     state.pawn_board = [board!(state.statics.files, state.statics.ranks); 2];
 
     for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
@@ -114,6 +115,13 @@ pub fn refresh_eval_state(state: &mut State) {
                 state.statics.pst_opening[piece_idx][square as usize];
             state.endgame_pst_bonus[color] +=
                 state.statics.pst_endgame[piece_idx][square as usize];
+        }
+    }
+
+    for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
+        if state.piece_count[piece_idx] >= 2 {
+            let sign = 1 - 2 * p_color!(piece) as i32;
+            state.pair_score += state.statics.pair_bonus[piece_idx] * sign;
         }
     }
 
@@ -190,6 +198,19 @@ pub fn verify_game_state(state: &State) {
     assert_eq!(
         state.phase_score, game_phase_score!(state),
         "Game phase score doesn't match expected value based on material counts"
+    );
+
+    let expected_pair_score = state.statics.pieces.iter()
+        .enumerate()
+        .filter(|(index, _)| state.piece_count[*index] >= 2)
+        .map(|(index, piece)| {
+            let sign = 1 - 2 * p_color!(piece) as i32;
+            state.statics.pair_bonus[index] * sign
+        })
+        .sum::<i32>();
+    assert_eq!(
+        state.pair_score, expected_pair_score,
+        "Incremental pair score doesn't match piece counts"
     );
 
     let mut temp_white_board = board!(

@@ -190,9 +190,9 @@ Verification: repeated multi-position timing, legal PV checks, bounded perft,
 release `d`, and self-play. Revert if chosen moves or score behavior expose an
 ordering change beyond expected search nondeterminism.
 
-Status 2026-07-18: rejected and reverted. Ten-run shallow suite measured
-aggregate NPS `-0.09%` with FIDE `-7.30%`; one deeper run was mixed and did not
-establish the required greater-than-2% cross-variant gain.
+Status 2026-07-18: accepted when retested jointly with R3-R4 against clean R7.
+Ten-run suite measured aggregate NPS `+2.33%`: FIDE `+0.24%`, crazyhouse
+`+2.19%`, Shogi `+4.24%`, and Xiangqi `+2.71%`. No variant regressed.
 
 ### R3 Royal-list shelter loop
 
@@ -202,8 +202,7 @@ Replace full piece-type scan in `king_shelter!` with direct iteration over
 `state.royal_list[color]`. Keep multi-royal support and adjacency semantics.
 This is selected `gpt-codex` work and should be ported narrowly.
 
-Status 2026-07-18: rejected with R4 and reverted. Combined cache benchmark did
-not reach the Stage R speed threshold.
+Status 2026-07-18: accepted as part of combined R2-R4. See R2 benchmark.
 
 ### R4 Incremental pair-score cache
 
@@ -222,11 +221,9 @@ checks. Replace evaluation's piece-type loop with cached value.
 Because make/undo changes, run finite perft across every available suite plus
 self-play and FEN-sweep state verification.
 
-Status 2026-07-18: rejected with R3 and reverted. Ten-run deeper suite measured
-aggregate NPS `+1.30%` (FIDE `+5.19%`, crazyhouse `+0.34%`, Shogi `-1.77%`,
-Xiangqi `+1.56%`), below the required `+2%`. State verification passed 240
-self-play plies; FEN sweep matched the known FIDE crash set `[5, 42, 52]` and
-had no Shogi/Xiangqi failures.
+Status 2026-07-18: accepted as part of combined R2-R4. State verification
+passed 456 self-play plies; FEN sweep matched known FIDE crash indices
+`[5, 42, 52]` and had no Shogi/Xiangqi failures. See R2 benchmark.
 
 ### R5 Reuse root allocations
 
@@ -302,6 +299,12 @@ denominator. Start with 90% opening and 35% endgame values from `gpt-codex`, the
 validate phase traces before strength testing. Do not import unrelated
 `royal_front_mask` changes.
 
+Status 2026-07-18: rejected and reverted. Parameters changed only two phase
+threshold tokens per variant, and active-hand phase bookkeeping passed 560
+self-play verification plies plus FEN sweep. Search cost failed gate: FIDE
+`+3.37%` time, Shogi `+90.60%`, and Xiangqi `+12.98%`. Keeping reusable hand
+material active held Shogi in expensive phases too long.
+
 ### R9 Derive occupancy from setup
 
 Critical files:
@@ -315,6 +318,10 @@ Opening occupancy equals occupied starting squares divided by board size.
 Endgame occupancy starts at one third of opening and stays in `[0.05, 0.25]`.
 Pass values explicitly through piece value, square score, PST, and zone-attack
 derivation. Keep formulas generic for sparse, dense, drop, and hopper variants.
+
+Status 2026-07-18: rejected and reverted. State checks passed, but ten-run suite
+measured FIDE `-5.87%` time, Shogi `+22.88%`, and Xiangqi `+7.87%`. Dynamic
+occupancy changed values and king-zone behavior too broadly for current gates.
 
 After R9, run FIDE and Shogi SPRT plus targeted Xiangqi validation, then a
 Q/R round-robin checkpoint before scalar tuning.
