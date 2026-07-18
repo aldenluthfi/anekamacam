@@ -382,9 +382,9 @@ macro_rules! capt_hist_index {
 /// pick_by_score!
 ///
 /// Selects the best-scoring move in `moves[index..]` and swaps it into
-/// `index`. A selection-sort step that avoids sorting the whole list up
-/// front; combined with alpha-beta cutoffs, only the highest-priority prefix
-/// is scored in practice. `pv_move` is the TT best move for this node.
+/// `index`. On the first pick it scans cheaply for the TT/PV move and returns
+/// it without scoring the tail. Later picks use selection-sort steps, so only
+/// the prefix reached before an alpha-beta cutoff is ordered.
 ///
 /// Params:
 ///
@@ -431,6 +431,18 @@ macro_rules! pick_by_score {
         let scores: &mut Vec<usize> = $scores;
         let index = $index;
 
+        if index == 0 {
+            if let Some(pv) = $pv_move.as_ref() {
+                if let Some(pv_index) = moves.iter()
+                    .position(|mv| m_matches!(mv, pv))
+                {
+                    moves.swap(0, pv_index);
+                    scores.swap(0, pv_index);
+                    scores[0] = 5_000_000;
+                }
+            }
+        }
+
         if scores[index] == usize::MAX {
             scores[index] = score_move!(
                 $state, &moves[index], $pv_move, $see_moves, $see_scratch,
@@ -441,17 +453,19 @@ macro_rules! pick_by_score {
         let mut best_index = index;
         let mut best_score = scores[index];
 
-        for i in (index + 1)..moves.len() {
-            if scores[i] == usize::MAX {
-                scores[i] = score_move!(
-                    $state, &moves[i], $pv_move, $see_moves, $see_scratch,
-                    $cont_bases
-                );
-            }
+        if best_score != 5_000_000 {
+            for i in (index + 1)..moves.len() {
+                if scores[i] == usize::MAX {
+                    scores[i] = score_move!(
+                        $state, &moves[i], $pv_move, $see_moves, $see_scratch,
+                        $cont_bases
+                    );
+                }
 
-            if scores[i] > best_score {
-                best_score = scores[i];
-                best_index = i;
+                if scores[i] > best_score {
+                    best_score = scores[i];
+                    best_index = i;
+                }
             }
         }
 
