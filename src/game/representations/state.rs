@@ -842,30 +842,34 @@ impl State {
             quiesce_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
-                let base = (depth as f64).sqrt() * (moves as f64).sqrt();
+                let base = (depth as f64).ln() * (moves.max(1) as f64).ln();
 
-                (1.5 + base / 3.5).clamp(0.0, depth as f64 - 1.0) as u8
+                (LMR_QUIET_BASE + base / LMR_QUIET_DIV)
+                    .clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             quiesce_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).sqrt() * (moves as f64).ln();
 
-                (1.0 + base / 4.0).clamp(0.0, depth as f64 - 1.0) as u8
+                (LMR_QUIET_CHECK_BASE + base / LMR_QUIET_CHECK_DIV)
+                    .clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             capture_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).ln() * (moves as f64).sqrt();
 
-                (1.0 + base / 4.0).clamp(0.0, depth as f64 - 1.0) as u8
+                (LMR_CAPTURE_BASE + base / LMR_CAPTURE_DIV)
+                    .clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             capture_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
                 let base = (depth as f64).ln() * (moves as f64).ln();
 
-                (base / 4.5).clamp(0.0, depth as f64 - 1.0) as u8
+                (LMR_CAPTURE_CHECK_BASE + base / LMR_CAPTURE_CHECK_DIV)
+                    .clamp(0.0, depth as f64 - 1.0) as u8
             }).collect(),
             opening_score: 0,
             endgame_score: 0,
