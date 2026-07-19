@@ -249,6 +249,8 @@ pub const DRAW_BIAS_DIV: i32 = 16;
 
 pub const PAWN_MIN_START_COUNT: usize = 5;
 
+pub const PARAM_SCALAR_TAIL: usize = 19;
+
 pub const OPENING_OCCUPANCY: f64 = 0.36;
 pub const ENDGAME_OCCUPANCY: f64 = 0.12;
 

@@ -179,12 +179,16 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// 2. opening values (piece-type count), endgame values (piece-type count),
 /// 3. big flags, major flags,
 /// 4. then white opening/middlegame PST rows (piece-type count × board_size),
-/// 5. then white endgame PST rows (piece-type count × board_size).
+/// 5. then white endgame PST rows (piece-type count × board_size),
+/// 6. then the `PARAM_SCALAR_TAIL` linear scalars: tempo, pawn shield,
+///    king shelter, castled, castling rights, king danger scale, open
+///    shield, major/minor imbalance, pair bonus, connected opening/
+///    endgame, doubled, isolated, backward, passed opening/endgame
+///    percent, and mobility opening/endgame scales.
 ///
 /// Black PST rows are derived by mirroring white rows across the
 /// horizontal axis. Search-time margins (futility, RFP, razoring, SEE)
-/// live outside the tuning surface since Texel's method only tunes
-/// quiescence-search eval terms.
+/// remain derived-only, as does `draw_bias`.
 ///
 /// Params:
 /// - state  : &mut State -> variant whose parameters are overwritten
@@ -202,8 +206,10 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let piece_type_pairs = collect_piece_type_pairs(state);
     let piece_type_count = piece_type_pairs.len();
     let board_size = state.statics.board_size;
-    let expected_count =
-        2 + piece_type_count * 4 + piece_type_count * board_size * 2;
+    let expected_count = 2
+        + piece_type_count * 4
+        + piece_type_count * board_size * 2
+        + PARAM_SCALAR_TAIL;
 
     assert_eq!(
         tokens.len(), expected_count,
@@ -309,6 +315,26 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
             );
     }
 
+    state.static_mut().tempo_bonus = tokens[cursor];
+    state.static_mut().pawn_shield_bonus = tokens[cursor + 1];
+    state.static_mut().king_shelter_bonus = tokens[cursor + 2];
+    state.static_mut().castled_bonus = tokens[cursor + 3];
+    state.static_mut().castling_rights_bonus = tokens[cursor + 4];
+    state.static_mut().king_danger_scale = tokens[cursor + 5];
+    state.static_mut().open_shield_penalty = tokens[cursor + 6];
+    state.static_mut().imbalance_major = tokens[cursor + 7];
+    state.static_mut().imbalance_minor = tokens[cursor + 8];
+    state.static_mut().pair_bonus_value = tokens[cursor + 9];
+    state.static_mut().pawn_connected_opening = tokens[cursor + 10];
+    state.static_mut().pawn_connected_endgame = tokens[cursor + 11];
+    state.static_mut().pawn_doubled_penalty = tokens[cursor + 12];
+    state.static_mut().pawn_isolated_penalty = tokens[cursor + 13];
+    state.static_mut().pawn_backward_penalty = tokens[cursor + 14];
+    state.static_mut().passed_scale_opening = tokens[cursor + 15];
+    state.static_mut().passed_scale_endgame = tokens[cursor + 16];
+    state.static_mut().mobility_opening = tokens[cursor + 17];
+    state.static_mut().mobility_endgame = tokens[cursor + 18];
+
     state.big_pieces = [0; 2];
     state.major_pieces = [0; 2];
     state.minor_pieces = [0; 2];
@@ -377,12 +403,41 @@ pub fn export_tuned_parameters_file(
         for value in &state.statics.pst_opening[*white_idx] {
             output_tokens.push(value.to_string());
         }
-    }
 
-    for (white_idx, _) in &piece_type_pairs {
         for value in &state.statics.pst_endgame[*white_idx] {
             output_tokens.push(value.to_string());
         }
+    }
+
+    let scalar_tail = [
+        state.statics.tempo_bonus,
+        state.statics.pawn_shield_bonus,
+        state.statics.king_shelter_bonus,
+        state.statics.castled_bonus,
+        state.statics.castling_rights_bonus,
+        state.statics.king_danger_scale,
+        state.statics.open_shield_penalty,
+        state.statics.imbalance_major,
+        state.statics.imbalance_minor,
+        state.statics.pair_bonus_value,
+        state.statics.pawn_connected_opening,
+        state.statics.pawn_connected_endgame,
+        state.statics.pawn_doubled_penalty,
+        state.statics.pawn_isolated_penalty,
+        state.statics.pawn_backward_penalty,
+        state.statics.passed_scale_opening,
+        state.statics.passed_scale_endgame,
+        state.statics.mobility_opening,
+        state.statics.mobility_endgame,
+    ];
+
+    assert_eq!(
+        scalar_tail.len(), PARAM_SCALAR_TAIL,
+        "Scalar tail length mismatch."
+    );
+
+    for value in scalar_tail {
+        output_tokens.push(value.to_string());
     }
 
     let dir_path = format!("{}/{}", PARAMS_DIR, variant);
