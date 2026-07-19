@@ -570,6 +570,9 @@ pub struct StaticState {
     pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
     pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
     pub pair_bonus: Vec<i32>,                                                   /* pair bonus per piece index         */
+    pub pair_bonus_value: i32,                                                  /* bonus granted to qualifying pairs  */
+    pub mobility_opening: i32,                                                  /* mobility scale, opening phase      */
+    pub mobility_endgame: i32,                                                  /* mobility scale, endgame phase      */
 
     pub pawn_path_mask: Vec<Board>,                                             /* idx = piece * board size + square  */
     pub pawn_interference_mask: Vec<Board>,                                     /* enemy squares that stop a passer   */
@@ -582,6 +585,8 @@ pub struct StaticState {
     pub pawn_doubled_penalty: i32,                                              /* doubled pawn penalty, both phases  */
     pub pawn_isolated_penalty: i32,                                             /* isolated pawn penalty, both phases */
     pub pawn_backward_penalty: i32,                                             /* backward pawn penalty, both phases */
+    pub passed_scale_opening: i32,                                              /* passer gain percent, opening       */
+    pub passed_scale_endgame: i32,                                              /* passer gain percent, endgame       */
     pub pawn_backward_mask: Vec<Board>,                                         /* enemy squares contesting the stop  */
     pub pawn_support_offsets: Vec<Vec<i32>>,                                    /* friendly support file offsets      */
     pub pawn_passed_support_opening: Vec<i32>,                                  /* passer support bonus, opening      */
@@ -881,6 +886,9 @@ impl State {
             imbalance_major: 0,
             imbalance_minor: 0,
             pair_bonus: vec![0; piece_count],
+            pair_bonus_value: 0,
+            mobility_opening: 0,
+            mobility_endgame: 0,
 
             pawn_path_mask:
                 vec![board!(files, ranks); board_size * piece_count],
@@ -896,6 +904,8 @@ impl State {
             pawn_doubled_penalty: 0,
             pawn_isolated_penalty: 0,
             pawn_backward_penalty: 0,
+            passed_scale_opening: 0,
+            passed_scale_endgame: 0,
             pawn_backward_mask:
                 vec![board!(files, ranks); board_size * piece_count],
             pawn_support_offsets: vec![Vec::new(); piece_count],

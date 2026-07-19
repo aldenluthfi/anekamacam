@@ -594,8 +594,55 @@ fn derive_pst(
 /// - state: &mut State -> freshly precomputed variant state
 pub fn derive_parameters(state: &mut State) {
     derive_eval_parameters(state);
+    derive_eval_scalars(state);
     derive_search_parameters(state);
     refresh_eval_state(state);
+}
+
+/// derive_eval_scalars
+///
+/// Derives the tunable linear evaluation scalars from the average derived
+/// piece value: tempo, king-safety bonuses, imbalance weights, the pair
+/// bonus, pawn-structure terms, passed-pawn gain percentages, and the
+/// mobility scales. These scalars form the parameter file's tail; the
+/// derivation here only runs on the fresh-derive path, while parsed
+/// parameter files carry tuned values instead.
+///
+/// Params:
+/// - state: &mut State -> variant whose evaluation scalars are filled
+pub fn derive_eval_scalars(state: &mut State) {
+    let piece_values: Vec<i32> = state.statics.pieces.iter()
+        .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
+        .map(|p| p_ovalue!(p) as i32)
+        .collect();
+
+    let avg = if piece_values.is_empty() {
+        panic!("No pieces found to derive evaluation scalars from")
+    } else {
+        piece_values.iter().sum::<i32>() / piece_values.len() as i32
+    };
+
+    state.static_mut().tempo_bonus = (avg / 20).max(5);
+    state.static_mut().pawn_shield_bonus = (avg / 16).max(8);
+    state.static_mut().king_shelter_bonus = (avg / 32).max(5);
+    state.static_mut().castled_bonus = (avg / 12).max(15);
+    state.static_mut().castling_rights_bonus = (avg / 24).max(8);
+    state.static_mut().king_danger_scale = 2 * avg;
+    state.static_mut().open_shield_penalty = (avg / 10).max(12);
+    state.static_mut().imbalance_major = (avg / 24).max(3);
+    state.static_mut().imbalance_minor = (avg / 48).max(1);
+    state.static_mut().pair_bonus_value = (avg / 8).max(10);
+    state.static_mut().pawn_connected_opening = avg / 20;
+    state.static_mut().pawn_connected_endgame = avg / 12;
+    state.static_mut().pawn_doubled_penalty = avg / 16;
+    state.static_mut().pawn_isolated_penalty = avg / 16;
+    state.static_mut().pawn_backward_penalty = avg / 24;
+    state.static_mut().passed_scale_opening = 10;
+    state.static_mut().passed_scale_endgame = 35;
+    state.static_mut().mobility_opening = 0;
+    state.static_mut().mobility_endgame = 0;
+
+    log_3!("Derived evaluation scalars successfully.");
 }
 
 /// derive_eval_parameters
@@ -1384,14 +1431,17 @@ pub fn derive_pawn_parameters(state: &mut State) {
             avg
         };
 
+        let scale_opening = state.statics.passed_scale_opening as f64 / 100.0;
+        let scale_endgame = state.statics.passed_scale_endgame as f64 / 100.0;
+
         for square in 0..board_size {
             let entry = index * board_size + square;
             let scale = advancement[entry] as f64 / 256.0;
 
             passed_opening[entry] =
-                (0.10 * gain_opening as f64 * scale).round() as i32;
+                (scale_opening * gain_opening as f64 * scale).round() as i32;
             passed_endgame[entry] =
-                (0.35 * gain_endgame as f64 * scale).round() as i32;
+                (scale_endgame * gain_endgame as f64 * scale).round() as i32;
             passed_support_opening[entry] = passed_opening[entry] / 2;
             passed_support_endgame[entry] = passed_endgame[entry] / 2;
         }
@@ -1413,11 +1463,6 @@ pub fn derive_pawn_parameters(state: &mut State) {
     state.static_mut().pawn_passed_endgame = passed_endgame;
     state.static_mut().pawn_passed_support_opening = passed_support_opening;
     state.static_mut().pawn_passed_support_endgame = passed_support_endgame;
-    state.static_mut().pawn_connected_opening = avg / 20;
-    state.static_mut().pawn_connected_endgame = avg / 12;
-    state.static_mut().pawn_doubled_penalty = avg / 16;
-    state.static_mut().pawn_isolated_penalty = avg / 16;
-    state.static_mut().pawn_backward_penalty = avg / 24;
 }
 
 /// derive_search_parameters
@@ -1505,34 +1550,8 @@ pub fn derive_search_parameters(state: &mut State) {
     let singular_margin = (avg / 128).max(1);
     state.static_mut().singular_margin = singular_margin;
 
-    let tempo_bonus = (avg / 20).max(5) as i32;
-    state.static_mut().tempo_bonus = tempo_bonus;
-
     let draw_bias = (avg / 8).max(10);
     state.static_mut().draw_bias = draw_bias;
-
-    let pawn_shield_bonus = (avg / 16).max(8);
-    state.static_mut().pawn_shield_bonus = pawn_shield_bonus;
-
-    let king_shelter_bonus = (avg / 32).max(5);
-    state.static_mut().king_shelter_bonus = king_shelter_bonus;
-
-    let castled_bonus = (avg / 12).max(15);
-    state.static_mut().castled_bonus = castled_bonus;
-
-    let castling_rights_bonus = (avg / 24).max(8);
-    state.static_mut().castling_rights_bonus = castling_rights_bonus;
-
-    let king_danger_scale = 2 * avg;
-    state.static_mut().king_danger_scale = king_danger_scale;
-
-    let open_shield_penalty = (avg / 10).max(12);
-    state.static_mut().open_shield_penalty = open_shield_penalty;
-
-    let imbalance_major = (avg / 24).max(3) as i32;
-    let imbalance_minor = (avg / 48).max(1) as i32;
-    state.static_mut().imbalance_major = imbalance_major;
-    state.static_mut().imbalance_minor = imbalance_minor;
 
     let mut pair_bonus = vec![0i32; state.statics.pieces.len()];
 
@@ -1542,7 +1561,7 @@ pub fn derive_search_parameters(state: &mut State) {
         && !p_is_big!(piece) {
             let reach_value = derive_piece_reach(state, piece);
             if (reach_value - 0.5).abs() < 0.02 {
-                let bonus = (avg / 8).max(10) as i32;
+                let bonus = state.statics.pair_bonus_value;
                 pair_bonus[idx] = bonus;
                 let black_idx = state.statics.piece_swap_map[idx] as usize;
                 pair_bonus[black_idx] = bonus;

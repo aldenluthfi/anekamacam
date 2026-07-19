@@ -435,6 +435,13 @@ Start with maximum two extra plies. Keep positive singular extension disabled.
 Run legal-PV/FEN checks, four-variant time-to-depth, FIDE SPRT, and Shogi
 non-regression SPRT.
 
+Status 2026-07-19: implemented and committed `41bd580`. Extension now gated on
+`ply + depth < root_depth + MAX_CHECK_EXTENSION` with `MAX_CHECK_EXTENSION = 2`
+in `src/prelude.rs`. Sixty self-play plies with release `d` after every search
+passed. Interleaved multi-position benches (FIDE depth 10 x10, Shogi depth 7
+x6, Xiangqi depth 10 x8) show no stable NPS or node regression. Strength
+arbitration deferred to next round robin per user workflow.
+
 ### S1 Retune LMR then LMP
 
 Critical files:

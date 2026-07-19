@@ -653,6 +653,32 @@ fn export_theta(
         }
     }
 
+    let scalar_tail = [
+        state.statics.tempo_bonus,
+        state.statics.pawn_shield_bonus,
+        state.statics.king_shelter_bonus,
+        state.statics.castled_bonus,
+        state.statics.castling_rights_bonus,
+        state.statics.king_danger_scale,
+        state.statics.open_shield_penalty,
+        state.statics.imbalance_major,
+        state.statics.imbalance_minor,
+        state.statics.pair_bonus_value,
+        state.statics.pawn_connected_opening,
+        state.statics.pawn_connected_endgame,
+        state.statics.pawn_doubled_penalty,
+        state.statics.pawn_isolated_penalty,
+        state.statics.pawn_backward_penalty,
+        state.statics.passed_scale_opening,
+        state.statics.passed_scale_endgame,
+        state.statics.mobility_opening,
+        state.statics.mobility_endgame,
+    ];
+
+    for value in scalar_tail {
+        tokens.push(value.to_string());
+    }
+
     parse_tuned_parameters(state, &tokens.join(" "));
     derive_search_parameters(state);
     export_tuned_parameters_file(state, variant);
