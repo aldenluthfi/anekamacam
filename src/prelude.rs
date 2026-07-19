@@ -241,6 +241,7 @@ pub const MIN_NMP_DEPTH: usize = 2;
 pub const MIN_NMP_ENDGAME_DEPTH: usize = 8;
 pub const MIN_SINGULAR_DEPTH: usize = 8;
 pub const SINGULAR_TT_DEPTH_SLACK: usize = 3;
+pub const MAX_CHECK_EXTENSION: usize = 2;
 
 pub const DANGEROUS_PUSH_THRESHOLD: i32 = 92;
 

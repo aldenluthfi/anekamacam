@@ -922,7 +922,8 @@ pub fn alpha_beta(
                                     CHECK EXTENSION
     \*-----------------------------------------------------------------------*/
 
-    if in_check {
+    if in_check
+    && ply + depth < info.root_depth + MAX_CHECK_EXTENSION {
         depth += 1;
     }
 
