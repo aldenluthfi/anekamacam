@@ -129,11 +129,14 @@ Old identifiers in parentheses for cross-reference:
 1. Stage S `ext-cap`    (was S0)  -- check extension cap, `41bd580`
 2. Stage T `param-tail` (was R11) -- scalar-tail schema + PST layout fix,
    `bdd2d5c`
-3. Stage U `lmr-lmp`    (was S1)  -- quiet LMR retune, `ba65b18`; LMP grid
+3. Stage U `probcut`    (was S2)  -- ProbCut, `037f1a3`
+4. Stage V `lmr-lmp`    (was S1)  -- quiet LMR retune, `ba65b18`; LMP grid
    kept current thresholds
-4. Stage V `probcut`    (was S2)  -- ProbCut, `037f1a3`
 5. Stage W `datagen`    (was D1)  -- datagen pilot and datasets
 6. Stage X `texel`      (was R12) -- per-variant Texel tuning
+
+Stage letters follow commit order so each round-robin binary is the
+cumulative lineage up to its commit.
 
 Rejected without a letter: real mobility evaluation (was U; ~55% FIDE
 time-to-depth cost) and first-ply qsearch checks (was T; Shogi +16%).
@@ -472,7 +475,7 @@ multi-position runs. Choose LMR first, then LMP. Preserve dangerous-push,
 improving, check, promotion, drop, and history adjustments plus all-node malus.
 Only final accepted constants enter commit.
 
-Status 2026-07-19: done (Stage U `lmr-lmp` in the final naming). Constants
+Status 2026-07-19: done (Stage V `lmr-lmp` in the final naming). Constants
 named in `19e5f16`; winner committed `ba65b18`. Worktree grid over five
 quiet-LMR shapes, sixteen interleaved reps per config on fide/shogi/xiangqi
 fixed-depth suites: `sqrt(depth) * sqrt(moves)` with base 1.5, divisor 3.0
@@ -496,7 +499,7 @@ captures: qsearch zero-window first, then reduced alpha-beta verification. Respe
 TT evidence and singular-multicut overlap. Revert immediately without measured
 node/time headroom or positive FIDE SPRT; require Shogi non-regression.
 
-Status 2026-07-19: implemented and committed `037f1a3` (Stage V `probcut`
+Status 2026-07-19: implemented and committed `037f1a3` (Stage U `probcut`
 in the final naming). Gated at `depth >= MIN_PROBCUT_DEPTH = 5`, `prune_eval >= beta`,
 margin `(avg / 4).max(100)`, reduction 4, max three SEE-winning captures,
 TT-refutation skip. Interleaved benches (FIDE depth 11 x8, Shogi depth 9 x6,

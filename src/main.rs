@@ -84,8 +84,10 @@ pub mod prelude;
 /// - `uci`    : the UCI protocol loop (also the no-argument default)
 /// - `usi`    : the USI protocol loop (shogi family)
 /// - `ucci`   : the UCCI protocol loop (xiangqi family)
-/// - `debug`  : the interactive ratatui debug console
-/// - `derive` : headless parameter derivation for every embedded config
+/// - `debug`   : the interactive ratatui debug console
+/// - `derive`  : headless parameter derivation for every embedded config
+/// - `datagen` : headless self-play dataset generation for one variant
+/// - `tune`    : headless Texel tuning of one variant from its dataset
 #[hotpath::main]
 fn main() {
     init_logging();
@@ -99,29 +101,9 @@ fn main() {
             DEBUG_FLAG.store(true, Ordering::Relaxed);
             let _ = debug_console();
         }
-        Some("derive") => derive_all_variants(),
+        Some("derive") => run_derive_headless(),
+        Some("datagen") => run_datagen_headless(&args),
+        Some("tune") => run_tune_headless(&args),
         _ => { let _ = uci(); }
-    }
-}
-
-/// derive_all_variants
-///
-/// Loads every embedded variant config in turn through the same
-/// embedded-first parameter path the engine uses at startup. Variants
-/// without a parameter payload derive one and export it to
-/// `res/param/{variant}/latest.param`, so a delete-then-derive cycle
-/// regenerates every shipped file without the interactive console.
-fn derive_all_variants() {
-    for config in EMBEDDED_CONFIGS.files() {
-        let Some(filename) = config.path().to_str() else {
-            continue;
-        };
-
-        if !filename.ends_with(".conf") || filename == "example.conf" {
-            continue;
-        }
-
-        println!("deriving {}", filename);
-        let _ = parse_config_file(filename);
     }
 }
