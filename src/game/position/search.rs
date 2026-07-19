@@ -1062,6 +1062,83 @@ pub fn alpha_beta(
     }
 
     /*-----------------------------------------------------------------------*\
+                                       PROBCUT
+    \*-----------------------------------------------------------------------*/
+
+    let probcut_beta = beta.saturating_add(state.statics.probcut_margin);
+
+    if depth >= MIN_PROBCUT_DEPTH
+    && !in_check
+    && !excluded_here
+    && beta - alpha == 1
+    && beta.abs() < MATE_SCORE
+    && prune_eval >= beta
+    && !(tt_entry.5 + PROBCUT_DEPTH_REDUCTION > depth                           /* TT already refutes this cut        */
+        && tt_entry.7 < probcut_beta
+        && tt_entry.7 != -INF)
+    {
+        generate_all_captures(
+            state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+        );
+
+        let capture_count = bufs.move_buf[ply].len();
+        bufs.score_buf[ply].clear();
+        bufs.score_buf[ply].resize(capture_count, usize::MAX);
+
+        let mut tried = 0usize;
+
+        for i in 0..capture_count {
+            if tried >= PROBCUT_MAX_CAPTURES {
+                break;
+            }
+
+            pick_by_score!(
+                state,
+                &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
+                i, &pv_move,
+                &mut bufs.see_move_buf, &mut bufs.see_scratch_buf,
+                [usize::MAX; 2]
+            );
+
+            if bufs.score_buf[ply][i] < WINNING_CAPTURE_SCORE as usize {        /* score band encodes the SEE sign    */
+                break;
+            }
+
+            let mv = bufs.move_buf[ply][i].clone();
+
+            if !make_move!(state, mv) {
+                continue;
+            }
+
+            tried += 1;
+
+            let mut score = -quiescence_search(
+                state, ttable, qtable, ptable,
+                -probcut_beta, -probcut_beta + 1, info, bufs
+            );
+
+            if score >= probcut_beta {
+                score = -alpha_beta(
+                    state,
+                    ttable, qtable, ptable,
+                    depth - PROBCUT_DEPTH_REDUCTION,
+                    -probcut_beta, -probcut_beta + 1, info, bufs, true
+                );
+            }
+
+            undo_move!(state);
+
+            if info.interrupt {
+                return alpha;
+            }
+
+            if score >= probcut_beta {
+                return probcut_beta;
+            }
+        }
+    }
+
+    /*-----------------------------------------------------------------------*\
                                    FUTILITY PRUNING
     \*-----------------------------------------------------------------------*/
 

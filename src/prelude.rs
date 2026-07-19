@@ -243,6 +243,9 @@ pub const MIN_NMP_ENDGAME_DEPTH: usize = 8;
 pub const MIN_SINGULAR_DEPTH: usize = 8;
 pub const SINGULAR_TT_DEPTH_SLACK: usize = 3;
 pub const MAX_CHECK_EXTENSION: usize = 2;
+pub const MIN_PROBCUT_DEPTH: usize = 5;
+pub const PROBCUT_DEPTH_REDUCTION: usize = 4;
+pub const PROBCUT_MAX_CAPTURES: usize = 3;
 
 pub const LMR_QUIET_BASE: f64 = 0.75;
 pub const LMR_QUIET_DIV: f64 = 2.25;
