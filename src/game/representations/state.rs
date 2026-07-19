@@ -844,7 +844,7 @@ impl State {
             quiesce_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;
                 let moves = i % MAX_LMR_DEPTH;
-                let base = (depth as f64).ln() * (moves.max(1) as f64).ln();
+                let base = (depth as f64).sqrt() * (moves as f64).sqrt();
 
                 (LMR_QUIET_BASE + base / LMR_QUIET_DIV)
                     .clamp(0.0, depth as f64 - 1.0) as u8
