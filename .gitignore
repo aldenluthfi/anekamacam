@@ -4,3 +4,5 @@
 /util
 flamegraph*
 notes
+/res/data
+/shard_*

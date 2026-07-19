@@ -857,3 +857,113 @@ pub fn perft(
     nodes
 }
 
+/// run_derive_headless
+///
+/// Loads every embedded variant config in turn through the same
+/// embedded-first parameter path the engine uses at startup. Variants
+/// without a parameter payload derive one and export it to
+/// `res/param/{variant}/latest.param`, so a delete-then-derive cycle
+/// regenerates every shipped file without the interactive console.
+pub fn run_derive_headless() {
+    for config in EMBEDDED_CONFIGS.files() {
+        let Some(filename) = config.path().to_str() else {
+            continue;
+        };
+
+        if !filename.ends_with(".conf") || filename == "example.conf" {
+            continue;
+        }
+
+        println!("deriving {}", filename);
+        let _ = parse_config_file(filename);
+    }
+}
+
+/// drain_events
+///
+/// Builds a `TuiEvent` channel whose receiver is drained by a detached
+/// thread, so self-play tooling written for the interactive console can
+/// run headless: the workers still `send` board snapshots but nothing
+/// blocks on a TUI consuming them.
+///
+/// Return:
+/// Sender<TuiEvent> -> a sender whose events are silently discarded
+fn drain_events() -> Sender<TuiEvent> {
+    let (sender, receiver) = channel::<TuiEvent>();
+    thread::spawn(move || while receiver.recv().is_ok() {});
+    sender
+}
+
+/// run_datagen_headless
+///
+/// Headless entry point for the `datagen` subcommand. Loads the named
+/// variant through the embedded-first config path, drains the event
+/// channel the interactive console would own, and generates a self-play
+/// dataset into `res/data/{variant}/latest.data`. Games run sequentially
+/// per process, so dataset volume comes from launching many single-thread
+/// processes rather than one many-thread process.
+///
+/// Params:
+/// - args: &[String] -> full argv, expects
+///                      `datagen <variant> <games> <movetime_ms> [threads=1]`
+pub fn run_datagen_headless(args: &[String]) {
+    let Some(variant) = args.get(2) else {
+        log_2!("Usage: datagen <variant> <games> <movetime (ms)> [threads = 1]");
+        return;
+    };
+
+    let Some(Ok(games)) = args.get(3).map(|value| value.parse::<usize>()) else {
+        log_2!("Usage: datagen <variant> <games> <movetime (ms)> [threads = 1]");
+        return;
+    };
+
+    let Some(Ok(movetime)) = args.get(4).map(|value| value.parse::<u128>())
+    else {
+        log_2!("Usage: datagen <variant> <games> <movetime (ms)> [threads = 1]");
+        return;
+    };
+
+    let threads = args.get(5)
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(1)
+        .max(1);
+
+    let state = parse_config_file(&format!("{}.conf", variant));
+    let sender = drain_events();
+
+    run_datagen(
+        &state, variant, None,
+        Arc::new(TTable::default()), Arc::new(QTable::default()),
+        Arc::new(PTable::default()), threads, games, movetime, &sender,
+    );
+}
+
+/// run_tune_headless
+///
+/// Headless entry point for the `tune` subcommand. Loads the named variant
+/// and Texel-tunes its evaluation from `res/data/{variant}/latest.data`,
+/// exporting the best validation epoch to `res/param/{variant}/latest.param`
+/// through the same startup parameter pipeline the console uses.
+///
+/// Params:
+/// - args: &[String] -> full argv, expects `tune <variant> <epochs> [rate=1.0]`
+pub fn run_tune_headless(args: &[String]) {
+    let Some(variant) = args.get(2) else {
+        log_2!("Usage: tune <variant> <epochs> [learning rate = 1.0]");
+        return;
+    };
+
+    let Some(Ok(epochs)) = args.get(3).map(|value| value.parse::<usize>())
+    else {
+        log_2!("Usage: tune <variant> <epochs> [learning rate = 1.0]");
+        return;
+    };
+
+    let learning_rate = args.get(4)
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(1.0);
+
+    let mut state = parse_config_file(&format!("{}.conf", variant));
+    run_tuning(&mut state, variant, epochs, learning_rate);
+}
+
