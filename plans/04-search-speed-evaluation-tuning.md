@@ -122,9 +122,25 @@ NPS micro-optimization is exhausted: R5, R6, R8, and R9 were each measured
 and rejected and remain permanently closed.
 
 Execution order, per user direction: all code stages first, then extensive
-data-driven tuning last. S0 check-extension cap, R11 scalar-tail schema,
-U mobility, S1 LMR/LMP retune, S2 ProbCut, T qsearch checks, then datagen
-and R12 per-variant tuning at the end.
+data-driven tuning last. Stage letters name accepted stages only; rejected
+experiments consume no letter so round-robin binaries stay contiguous.
+Old identifiers in parentheses for cross-reference:
+
+1. Stage S `ext-cap`    (was S0)  -- check extension cap, `41bd580`
+2. Stage T `param-tail` (was R11) -- scalar-tail schema + PST layout fix,
+   `bdd2d5c`
+3. Stage U `lmr-lmp`    (was S1)  -- quiet LMR retune, `ba65b18`; LMP grid
+   kept current thresholds
+4. Stage V `probcut`    (was S2)  -- ProbCut, `037f1a3`
+5. Stage W `datagen`    (was D1)  -- datagen pilot and datasets
+6. Stage X `texel`      (was R12) -- per-variant Texel tuning
+
+Rejected without a letter: real mobility evaluation (was U; ~55% FIDE
+time-to-depth cost) and first-ply qsearch checks (was T; Shogi +16%).
+Both have status entries in their original sections below.
+
+Round-robin binaries: `bin/stageS` through `bin/stageV` from the commits
+above, one binary per accepted stage.
 
 Goal: improve time-to-depth, NPS, evaluation quality, and strength while keeping
 engine variant-agnostic. No FIDE geometry, dialect tokens, single-royal
@@ -456,6 +472,16 @@ multi-position runs. Choose LMR first, then LMP. Preserve dangerous-push,
 improving, check, promotion, drop, and history adjustments plus all-node malus.
 Only final accepted constants enter commit.
 
+Status 2026-07-19: done (Stage U `lmr-lmp` in the final naming). Constants
+named in `19e5f16`; winner committed `ba65b18`. Worktree grid over five
+quiet-LMR shapes, sixteen interleaved reps per config on fide/shogi/xiangqi
+fixed-depth suites: `sqrt(depth) * sqrt(moves)` with base 1.5, divisor 3.0
+won at geometric-mean time-to-depth ratio 0.75 vs the prior curve, faster
+on every variant, confirmed in a second ten-rep run. LMP grid on top kept
+current thresholds (20% tighter cost Xiangqi +31%; 25% looser slowed all
+variants). Check/capture LMR variants untouched. Caveat recorded: deeper
+reduction means faster depth but unproven Elo; round robin arbitrates.
+
 ### S2 ProbCut experiment
 
 Critical files:
@@ -470,6 +496,15 @@ captures: qsearch zero-window first, then reduced alpha-beta verification. Respe
 TT evidence and singular-multicut overlap. Revert immediately without measured
 node/time headroom or positive FIDE SPRT; require Shogi non-regression.
 
+Status 2026-07-19: implemented and committed `037f1a3` (Stage V `probcut`
+in the final naming). Gated at `depth >= MIN_PROBCUT_DEPTH = 5`, `prune_eval >= beta`,
+margin `(avg / 4).max(100)`, reduction 4, max three SEE-winning captures,
+TT-refutation skip. Interleaved benches (FIDE depth 11 x8, Shogi depth 9 x6,
+Xiangqi depth 11 x6) measure time-neutral with noisy node deltas — no clear
+headroom, no regression. Release `d` verification on fide/shogi/xiangqi and
+forty self-play plies pass. Strength verdict deferred to user round robin;
+revert candidate if it measures negative there.
+
 ## Stage T: First-ply qsearch checks
 
 Critical file: `src/game/position/search.rs::quiescence_search`.
@@ -479,6 +514,15 @@ captures plus legal quiet moves that give check after make. Recursive qsearch
 returns to capture-only generation. No FIDE-specific gives-check shortcut.
 Accept only with positive FIDE SPRT, Shogi non-regression, and less than 5%
 four-variant time-to-depth cost.
+
+Status 2026-07-19: rejected and reverted; consumes no stage letter. Three
+gate variants measured with interleaved fixed-depth suites: ungated quiet
+checks cost 12% FIDE time; delta-margin gating brought FIDE to 4% but cost
+Xiangqi 15-25%; stand-pat gating (`stand_pat >= alpha`) measured FIDE -4%
+and Xiangqi -6% but Shogi +16% stable. Wide-board drop variants pay full
+all-moves-and-drops generation at every first q-ply, and checking-quiet
+density in Shogi keeps the extra subtrees. Any retry needs cheap gives-check
+prefiltering before generation, which the movement model does not provide.
 
 ## Stage U: Real mobility
 
@@ -499,6 +543,16 @@ Persist and tune opening/endgame mobility scales through Stage R schema.
 Reject whole stage if time-to-depth cost remains above 5%, validation MSE does
 not improve, FIDE SPRT fails, or Shogi/Xiangqi regress. Re-run scalar tuning if U
 lands.
+
+Status 2026-07-19: rejected and reverted per user decision. Implementation
+walked `relevant_moves` per big piece via an `is_vector_playable!` twin of
+`process_multi_leg_vector!` against a derived expected-mobility baseline.
+Interleaved FIDE depth-10 bench measured roughly 55% time-to-depth cost
+(base ~0.070s vs candidate ~0.113s per suite) — an order of magnitude over
+the 5% gate. Walking compiled vectors per eval call is too expensive; any
+future mobility term needs an incremental or bitboard-parallel formulation,
+not a per-leaf walk. The scalar-tail slots `mobility_opening` and
+`mobility_endgame` remain reserved at zero.
 
 ## Stage V
 
