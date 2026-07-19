@@ -2,29 +2,35 @@
 set -euo pipefail
 
 # Builds all stage binaries into bin/. Run from anywhere inside the repo.
-# stageA/stageB predate the pv-walk fix (ac510c0) and get it cherry-picked,
-# otherwise they crash under SPRT.
+# The fix column is a comma-separated list of commits cherry-picked (in order)
+# onto the stage before building. stageA/stageB predate the pv-walk fix
+# (ac510c0) and get it cherry-picked, otherwise they crash under SPRT. Every
+# stage before the ponder fix (992bc95, "emit ponder only when pv head matches
+# best move") also gets it, so ponder replies stay correct in the round robin.
+# stageR already contains 992bc95, so it needs no fix.
 
 FIX=ac510c0
+PONDER=992bc95
 
 STAGES=(
-  "stageA 5b8357d $FIX"
-  "stageB 6a5ab5e $FIX"
-  "stageC ac510c0 -"
-  "stageD 21999d9 -"
-  "stageE 96d4360 -"
-  "stageF d8c333f -"
-  "stageG 4d6e0e4 -"
-  "stageH c86dd76 -"
-  "stageI 5bd2ace -"
-  "stageJ 0af3dd6 -"
-  "stageK 9c7177d -"
-  "stageL dce81bd -"
-  "stageM 8ec807f -"
-  "stageN f20be48 -"
-  "stageO 960cd9b -"
-  "stageP da65b17 -"
-  "stageQ 2372ed7 -"
+  "stageA 5b8357d $FIX,$PONDER"
+  "stageB 6a5ab5e $FIX,$PONDER"
+  "stageC ac510c0 $PONDER"
+  "stageD 21999d9 $PONDER"
+  "stageE 96d4360 $PONDER"
+  "stageF d8c333f $PONDER"
+  "stageG 4d6e0e4 $PONDER"
+  "stageH c86dd76 $PONDER"
+  "stageI 5bd2ace $PONDER"
+  "stageJ 0af3dd6 $PONDER"
+  "stageK 9c7177d $PONDER"
+  "stageL dce81bd $PONDER"
+  "stageM 8ec807f $PONDER"
+  "stageN f20be48 $PONDER"
+  "stageO 960cd9b $PONDER"
+  "stageP da65b17 $PONDER"
+  "stageQ 2372ed7 $PONDER"
+  "stageR 6fa29fc -"
 )
 
 ROOT=$(git rev-parse --show-toplevel)
@@ -42,7 +48,10 @@ for entry in "${STAGES[@]}"; do
   git worktree remove --force "$WT" 2>/dev/null || true
   git worktree add --detach "$WT" "$commit" >/dev/null
   if [ "$pick" != "-" ]; then
-    git -C "$WT" cherry-pick -n "$pick"
+    IFS=',' read -ra picks <<< "$pick"
+    for p in "${picks[@]}"; do
+      git -C "$WT" cherry-pick -n "$p"
+    done
   fi
   (cd "$WT" && cargo build --release)
   cp "$CARGO_TARGET_DIR/release/anekamacam" "bin/$name"

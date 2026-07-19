@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Round robin over all stage binaries (stageA..stageQ) plus two
+# Round robin over all stage binaries (stageA..stageR) plus two
 # fairy-stockfish anchors, run for fide and shogi. Engines vary games on
 # their own (per-process Zobrist seeding), so no opening book is used.
 # No draw/resign adjudication: the engine's eval units are not
@@ -15,7 +15,7 @@ RR=/tmp/rr
 ROUNDS=${ROUNDS:-256}
 CONCURRENCY=${CONCURRENCY:-4}
 
-STAGES=(A B C D E F G H I J K L M N O P Q)
+STAGES=(A B C D E F G H I J K L M N O P Q R)
 PRE_N=(A B C D E F G H I J K L M)
 
 for s in "${STAGES[@]}"; do

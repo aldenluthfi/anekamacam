@@ -102,7 +102,12 @@ pub use crate::io::piece_io::{
 };
 pub use crate::io::protocols::{
     translation::Translator,
+    protocol::{
+        Protocol, Session, run, start_search, new_game, print_handshake,
+    },
     uci::uci,
+    usi::usi,
+    ucci::ucci,
 };
 
 /*----------------------------------------------------------------------------*\
@@ -395,7 +400,6 @@ pub const HARD_BUDGET_FACTOR: u128 = 4;                                         
 pub const TM_STABILITY_PCT: [u128; 6] = [160, 130, 110, 100, 85, 75];           /* soft budget scale by best stability*/
 pub const TM_SCORE_DROP_PCT: u128 = 130;                                        /* budget scale on a falling score    */
 
-pub const OPT_VARIANT: &str = "UCI_Variant";
 pub const OPT_THREADS: &str = "Threads";
 pub const OPT_PONDER: &str = "Ponder";
 pub const OPT_HASH: &str = "Hash";
@@ -437,6 +441,7 @@ pub const TEXEL_K_ITERATIONS: usize = 32;
 pub const TUNING_VALIDATION_MODULUS: u64 = 5;
 pub const TUNING_VALIDATION_PATIENCE: usize = 10;
 
+pub const SPRT_PROTOCOL: &str = "uci";                                           /* dialect the sprt harness speaks    */
 pub const SPRT_ALPHA: f64 = 0.05;
 pub const SPRT_BETA: f64 = 0.05;
 pub const SPRT_HANDSHAKE_TIMEOUT_MS: u64 = 10_000;

@@ -221,7 +221,7 @@ impl SPRTChild {
         })?;
 
         let mut process = Command::new(executable)
-            .arg("uci")
+            .arg(SPRT_PROTOCOL)
             .current_dir(&sandbox)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -261,13 +261,14 @@ impl SPRTChild {
             errors,
         };
 
-        engine.send("uci")?;
+        engine.send(SPRT_PROTOCOL)?;
         engine.wait_for(
-            "uciok",
+            &format!("{}ok", SPRT_PROTOCOL),
             Duration::from_millis(SPRT_HANDSHAKE_TIMEOUT_MS),
         )?;
         engine.send(&format!(
-            "setoption name {} value {}", OPT_VARIANT, variant
+            "setoption name {}_Variant value {}",
+            SPRT_PROTOCOL.to_uppercase(), variant,
         ))?;
         engine.send(&format!("setoption name {} value 1", OPT_THREADS))?;
         engine.send("isready")?;
@@ -387,7 +388,7 @@ impl SPRTChild {
     }
 
     fn new_game(&mut self) -> Result<(), SPRTChildError> {
-        self.send("ucinewgame")?;
+        self.send(&format!("{}newgame", SPRT_PROTOCOL))?;
         self.send("isready")?;
         self.wait_for(
             "readyok",
@@ -912,10 +913,10 @@ pub fn run_sprt(
     h1: f64,
     sender: &Sender<TuiEvent>,
 ) {
-    let translator = Translator::find(variant, "uci");
+    let translator = Translator::find(variant, SPRT_PROTOCOL);
 
     if translator.is_none() {
-        log_4!("Variant {variant} doesn't support UCI for SPRT yet!");
+        log_4!("Variant {variant} doesn't support {SPRT_PROTOCOL} for SPRT yet!");
         return;
     }
 

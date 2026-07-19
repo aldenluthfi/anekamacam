@@ -384,15 +384,9 @@ impl Default for Snapshot {
 ///
 ///   Params:
 ///
-///   - state: &mut State
-///     position whose piece list shrinks
-///
-///   - piece_index: usize
-///     piece whose row loses the square
-///
-///   - square: Square
-///     square swap-removed within its row; a missing square is ignored (set
-///     semantics)
+///   - state      : &mut State -> position whose piece list shrinks
+///   - piece_index: usize      -> piece whose row loses the square
+///   - square     : Square     -> square swap-removed
 #[macro_export]
 macro_rules! piece_squares {
     ($state:expr, $piece_index:expr) => {{

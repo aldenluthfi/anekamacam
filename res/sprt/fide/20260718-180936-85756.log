@@ -1,0 +1,8 @@
+engine A: bin/stageR
+engine B: bin/stageQ
+variant: fide
+time control: clock 10+1ms
+elo bounds: [-5, 20]  alpha: 0.05  beta: 0.05
+result (A): 196W 152L 26D
+LLR: 2.949
+verdict: H1 accepted (patch is stronger)
