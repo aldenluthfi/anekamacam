@@ -76,6 +76,7 @@ pub use crate::game::search::{
 pub use crate::game::util::{
     benchmark_headless_perft, benchmark_perft, benchmark_search, exe_tag,
     format_time, perft, random_u128, refresh_eval_state, roll_latest,
+    run_datagen_headless, run_derive_headless, run_tune_headless,
     square_distance, verify_game_state,
 };
 
@@ -242,6 +243,15 @@ pub const MIN_NMP_ENDGAME_DEPTH: usize = 8;
 pub const MIN_SINGULAR_DEPTH: usize = 8;
 pub const SINGULAR_TT_DEPTH_SLACK: usize = 3;
 pub const MAX_CHECK_EXTENSION: usize = 2;
+
+pub const LMR_QUIET_BASE: f64 = 0.75;
+pub const LMR_QUIET_DIV: f64 = 2.25;
+pub const LMR_QUIET_CHECK_BASE: f64 = 1.0;
+pub const LMR_QUIET_CHECK_DIV: f64 = 4.0;
+pub const LMR_CAPTURE_BASE: f64 = 1.0;
+pub const LMR_CAPTURE_DIV: f64 = 4.0;
+pub const LMR_CAPTURE_CHECK_BASE: f64 = 0.0;
+pub const LMR_CAPTURE_CHECK_DIV: f64 = 4.5;
 
 pub const DANGEROUS_PUSH_THRESHOLD: i32 = 92;
 
