@@ -545,6 +545,7 @@ pub struct StaticState {
     pub rfp_margin: [[i32; MAX_RFP_DEPTH]; 2],                                  /* [improving 0-1][depth 0-8]         */
     pub see_margin: Vec<i32>,                                                   /* [depth 0-7] SEE prune threshold    */
     pub delta_margin: i32,                                                      /* qsearch delta pruning safety margin*/
+    pub probcut_margin: i32,                                                    /* ProbCut beta surplus requirement   */
     pub aspiration_delta: i32,                                                  /* initial aspiration half-window     */
     pub razor_margin: [i32; MAX_RZR_DEPTH],                                     /* [depth 0-3]                        */
     pub quiesce_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
@@ -838,6 +839,7 @@ impl State {
             razor_margin: [0; MAX_RZR_DEPTH],
             see_margin: vec![0; MAX_SEE_DEPTH],
             delta_margin: 0,
+            probcut_margin: 0,
             aspiration_delta: 50,
             quiesce_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
                 let depth = i / MAX_LMR_DEPTH + 1;

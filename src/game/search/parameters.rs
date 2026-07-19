@@ -1516,6 +1516,7 @@ pub fn derive_search_parameters(state: &mut State) {
         .collect();
 
     state.static_mut().delta_margin = (avg / 3).max(200);
+    state.static_mut().probcut_margin = (avg / 4).max(100);
     state.static_mut().aspiration_delta = (avg / 12).clamp(25, 80);
 
     log_3!(
