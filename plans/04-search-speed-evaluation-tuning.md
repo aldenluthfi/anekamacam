@@ -70,6 +70,62 @@ for reverting time management. O/P/Q gains are large. M remains proven. N stays
 because its purpose is hopper correctness; FIDE does not distinguish it from M.
 Current `main` contains Stage Q lineage plus later documentation fixes.
 
+The Stage R round robin against fairy-stockfish anchors absolute strength:
+
+```text
+Rank Name        Elo  +/-  Games  Score  Draw
+1    fsf-1900    133    8   7423  68.3%   3.6%
+2    stageQ       42    8   7423  56.0%  10.1%
+3    stageR       34    8   7423  54.9%  10.1%
+4    fsf-1800    -38    8   7421  44.6%   3.9%
+5    fsf-1700   -179    9   7424  26.3%   3.2%
+```
+
+Stage R (Q plus R1 SPRT hardening, R2-R4 speed, R7 role fix, R10 dataset
+infrastructure) measures statistically identical to Q. The R lineage stays for
+its correctness and infrastructure value; it claims no strength. Stage Q sits
+about eighty Elo above fsf-1800, near 1880 FIDE, roughly 420 Elo below target.
+
+## Stage verdict analysis
+
+Consecutive Elo deltas from the FIDE round robin; each delta carries about
+seven to eight Elo of error, so single deltas under ten are weak evidence,
+while the aggregate pattern is not.
+
+| Stage | Content | Elo | Delta | Verdict |
+|---|---|---|---|---|
+| A | drop IID sub-search | -13 | — | pool baseline |
+| B | continuation history | +1 | +14 | best A-L delta; keep |
+| C | LMR retune | -9 | -10 | likely slight loss; revisit in S1 |
+| D | aspiration widening | -9 | 0 | neutral |
+| E | NMP strengthening | -12 | -3 | neutral |
+| F | TT eval caching | -3 | +9 | mild positive |
+| G | capture history | -14 | -11 | suspicious; revisit ordering later |
+| H | singular + multicut | -19 | -5 | worst rank; cap extensions in S0 |
+| I | correction history | -10 | +9 | mild positive |
+| J | cont-hist fold removal | -9 | +1 | neutral simplification |
+| K | flatten tables | -14 | -5 | neutral speed change |
+| L | shogi corr-hist fix | -12 | +2 | correctness; keep |
+| M | repetition scoring + contempt | +36 | +48 | largest gain |
+| N | hopper piece-value fix | +34 | -2 | correctness, FIDE-invisible |
+| O | king safety I | +61 | +27 | large gain |
+| P | king safety II | +82 | +21 | large gain |
+| Q | stability-scaled soft deadline | +86 | +4 | small gain, kept |
+| R | R1/R2-R4/R7/R10 | 34 vs 42 | ~0 | infrastructure, no strength |
+
+Twelve search micro-stages A-L cluster inside `[-19, +1]`: pruning, history,
+and TT work at this evaluation level nets approximately zero. Evaluation and
+time stages M-Q carry the entire hundred-Elo gain, with king safety and
+contempt providing ninety-six of it. Remaining Elo therefore lives in
+evaluation quality and game-outcome tuning, not NPS or generic pruning.
+NPS micro-optimization is exhausted: R5, R6, R8, and R9 were each measured
+and rejected and remain permanently closed.
+
+Execution order, per user direction: all code stages first, then extensive
+data-driven tuning last. S0 check-extension cap, R11 scalar-tail schema,
+U mobility, S1 LMR/LMP retune, S2 ProbCut, T qsearch checks, then datagen
+and R12 per-variant tuning at the end.
+
 Goal: improve time-to-depth, NPS, evaluation quality, and strength while keeping
 engine variant-agnostic. No FIDE geometry, dialect tokens, single-royal
 assumptions, or special cases for named variants.
