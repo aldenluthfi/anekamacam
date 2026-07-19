@@ -247,8 +247,8 @@ pub const MIN_PROBCUT_DEPTH: usize = 5;
 pub const PROBCUT_DEPTH_REDUCTION: usize = 4;
 pub const PROBCUT_MAX_CAPTURES: usize = 3;
 
-pub const LMR_QUIET_BASE: f64 = 0.75;
-pub const LMR_QUIET_DIV: f64 = 2.25;
+pub const LMR_QUIET_BASE: f64 = 1.5;
+pub const LMR_QUIET_DIV: f64 = 3.0;
 pub const LMR_QUIET_CHECK_BASE: f64 = 1.0;
 pub const LMR_QUIET_CHECK_DIV: f64 = 4.0;
 pub const LMR_CAPTURE_BASE: f64 = 1.0;
