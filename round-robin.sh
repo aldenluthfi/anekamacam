@@ -149,3 +149,28 @@ run_rr shogi
 run_rr minishogi
 run_rr xiangqi
 run_rr minixiangqi
+
+# fairy ∩ cutechess variants shipped as configs (see configs/). Two
+# caveats before trusting their scores:
+#   1. Only stages built from a commit that embeds these configs (current
+#      HEAD or later) can play them; historical stageA..V forfeit.
+#   2. The referee adjudicates with fairy's rules, so a config whose rules
+#      do not yet match fairy exactly (the `// TODO verify` moves and the
+#      non-8x8 castling geometry) forfeits on the first divergent move.
+# Smoke-test with ROUNDS=1 first and trim this list to what checks out.
+run_rr amazon
+run_rr almost
+run_rr newzealand
+run_rr hoppelpoppel
+run_rr pocketknight
+run_rr knightmate
+run_rr chigorin
+run_rr chancellor
+run_rr modern
+run_rr janus
+run_rr embassy
+run_rr gothic
+run_rr asean
+run_rr ai-wok
+run_rr judkins
+run_rr euroshogi
