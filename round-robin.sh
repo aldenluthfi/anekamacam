@@ -45,8 +45,26 @@ if [[ "${1:-}" == "--status" ]]; then
 	else
 		echo "status: not running"
 	fi
-	awk '/^Rank +Name/ {buf=""} {buf=buf $0 "\n"} END {printf "%s", buf}' \
-		"$LOG"
+	# Each run_rr prints a "=== variant <ak> (<cc>) ===" marker, and
+	# cutechess reprints a "Rank Name ..." table every -ratinginterval
+	# games. Keep the latest table seen under each variant marker and
+	# print them all, so finished variants stay visible instead of being
+	# overwritten by whichever variant is running now.
+	awk '
+		/^=== variant / {
+			cur = $3
+			if (!(cur in seen)) { seen[cur] = 1; order[++n] = cur }
+			next
+		}
+		/^Rank +Name/ { inblk = 1; blk[cur] = $0 "\n"; next }
+		inblk && /^[[:space:]]*$/ { inblk = 0; next }
+		inblk { blk[cur] = blk[cur] $0 "\n" }
+		END {
+			for (i = 1; i <= n; i++)
+				if (order[i] in blk)
+					printf "--- %s ---\n%s\n", order[i], blk[order[i]]
+		}
+	' "$LOG"
 	exit 0
 fi
 
@@ -101,6 +119,9 @@ run_rr() {
 	local ak=$1 cc=$2
 	shift 2
 	local engines=()
+
+	# Marker the --status parser keys on to label each variant's table.
+	echo "=== variant $ak ($cc) ==="
 
 	for s in "${STAGES[@]}"; do
 		engines+=(-engine "name=stage$s" "cmd=$REPO/bin/stage$s"
