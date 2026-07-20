@@ -20,12 +20,12 @@ set -euo pipefail
 #   round-robin.sh --status             # dump the latest rank table
 #   round-robin.sh --stop               # kill a running detached run
 #
-# Env: ROUNDS (256), CONCURRENCY (4), RR (/tmp/rr) output dir.
+# Env: ROUNDS (256), CONCURRENCY (nproc), RR (/tmp/rr) output dir.
 
 REPO=$(cd "$(dirname "$0")" && pwd)
 RR=${RR:-/tmp/rr}
 ROUNDS=${ROUNDS:-256}
-CONCURRENCY=${CONCURRENCY:-4}
+CONCURRENCY=${CONCURRENCY:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}
 
 LOG="$RR/round-robin.log"
 PIDFILE="$RR/round-robin.pid"

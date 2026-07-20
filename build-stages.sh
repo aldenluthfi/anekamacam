@@ -8,8 +8,13 @@ set -euo pipefail
 # stage before the ponder fix (c3e5e37, "emit ponder only when pv head matches
 # best move") also gets it, so ponder replies stay correct in the round robin.
 # stageR already contains c3e5e37, so it needs no fix.
-# We copy updated dicts from res/dicts/ into each stage worktree before build,
-# so we do not cherry-pick the fcabab9 commit (which has protocol code conflicts).
+# We copy the current configs/, res/dicts/, and res/perft/ into each stage
+# worktree before build, so every stage binary embeds the current variant set
+# (the renamed standard/minishogi/minixiangqi plus the new variants) regardless
+# of its code vintage. The copy is additive: a stage's own fide.conf/.dict stay
+# in place so its hardcoded "fide" default still resolves at startup, while
+# "standard" (and the rest) become selectable. This also avoids cherry-picking
+# the fcabab9 dict commit (which has protocol code conflicts).
 
 SPRT=e9dc4f0
 PONDER=c3e5e37
@@ -70,8 +75,10 @@ for entry in "${STAGES[@]}"; do
 			fi
 		done
 	fi
-	mkdir -p "$WT/res/dicts"
+	mkdir -p "$WT/res/dicts" "$WT/res/perft" "$WT/configs"
 	cp res/dicts/* "$WT/res/dicts/"
+	cp res/perft/* "$WT/res/perft/"
+	cp configs/* "$WT/configs/"
 	(cd "$WT" && cargo build --release)
 	cp "$CARGO_TARGET_DIR/release/anekamacam" "bin/$name"
 done
