@@ -1,0 +1,16 @@
+= protocols =
+uci
+
+// ASEAN has no castling, en passant, or drops, so the internal CFEN is
+// just "board stm". UCI expects the full six-field FEN, so the empty
+// castling/ep fields and the move counters are appended here.
+// TODO verify the move-counter round trip against fairy-stockfish.
+= uci fen =
+^([^ ]+) ([wb])$ -> $1 $2 - - 0 1
+${1} ${2} <- ^([^ ]+) ([wb]) [^ ]+ [^ ]+ [0-9]+ [0-9]+$
+
+= uci moves =
+8=Q -> 8q
+= ->
+\* ->
+: ->
