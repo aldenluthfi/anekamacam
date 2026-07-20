@@ -99,7 +99,7 @@ if [[ "${RR_DETACHED:-}" != "1" ]]; then
 	echo "  live:     tail -f $LOG"
 	echo "  standings: $0 --status"
 	echo "  stop:     $0 --stop"
-	echo "  pgn:      $RR/rr-fide.pgn, $RR/rr-shogi.pgn"
+	echo "  pgn:      $RR/rr-<variant>.pgn (one per variant)"
 	exit 0
 fi
 
