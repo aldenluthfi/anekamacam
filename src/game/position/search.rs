@@ -427,19 +427,6 @@ pub fn iterative_deepening(
             pv_line
         );
 
-
-        let score_info = if best_score.abs() >= MATE_SCORE {
-            let ply = INF - best_score.abs();
-            let moves = (ply + 1) / 2;
-            if best_score > 0 {
-                format!("mate {}", moves)
-            } else {
-                format!("mate -{}", moves)
-            }
-        } else {
-            format!("cp {}", best_score)
-        };
-
         let tt_len = (ttable.len() as u64).max(1);
 
         let hashfull = ttable.new_write
@@ -449,27 +436,24 @@ pub fn iterative_deepening(
         let cpuload = (info.thread_count as u64 * 1000)
             .min(max_par * 1000) / max_par;
 
-        if !DEBUG_FLAG.load(Ordering::Relaxed) {
-            println!(
-                "info \
-                hashfull {} \
-                cpuload {} \
-                depth {} \
-                score {} \
-                nodes {} \
-                time {} \
-                nps {} \
-                pv {}",
+        if thread_num == 0 {
+            let score = if best_score.abs() >= MATE_SCORE {
+                let moves = (INF - best_score.abs() + 1) / 2;
+                EngineScore::Mate(if best_score > 0 { moves } else { -moves })
+            } else {
+                EngineScore::CP(best_score)
+            };
+
+            emit(EngineEvent::Info {
                 hashfull,
                 cpuload,
                 depth,
-                score_info,
-                total_nodes,
-                total_elapsed,
-                total_nps,
-                pv_line,
-            );
-            stdout().flush().ok();
+                score,
+                nodes: total_nodes,
+                time_ms: total_elapsed,
+                nps: total_nps,
+                pv: pv_line,
+            });
         }
 
         if info.soft_deadline != 0 {

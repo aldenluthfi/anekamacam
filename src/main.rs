@@ -81,9 +81,9 @@ pub mod prelude;
 /// main
 ///
 /// Dispatches on the first CLI argument to one of the engine's modes:
-/// - `uci`    : the UCI protocol loop (also the no-argument default)
-/// - `usi`    : the USI protocol loop (shogi family)
-/// - `ucci`   : the UCCI protocol loop (xiangqi family)
+/// - (default) : the text-protocol loop; the dialect (uci / usi / ucci) is
+///               chosen at runtime by the handshake word or the `Protocol`
+///               option, not by a launch flag
 /// - `debug`   : the interactive ratatui debug console
 /// - `derive`  : headless parameter derivation for every embedded config
 /// - `datagen` : headless self-play dataset generation for one variant
@@ -94,16 +94,13 @@ fn main() {
 
     let args: Vec<String> = env::args().collect();
     match args.get(1).map(|s| s.as_str()) {
-        Some("uci") => { let _ = uci(); }
-        Some("usi") => { let _ = usi(); }
-        Some("ucci") => { let _ = ucci(); }
         Some("debug") => {
             DEBUG_FLAG.store(true, Ordering::Relaxed);
             let _ = debug_console();
         }
-        Some("derive") => run_derive_headless(),
+        Some("derive") => with_stdout_sink(run_derive_headless),
         Some("datagen") => run_datagen_headless(&args),
         Some("tune") => run_tune_headless(&args),
-        _ => { let _ = uci(); }
+        _ => { let _ = run(); }
     }
 }

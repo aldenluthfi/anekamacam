@@ -55,6 +55,30 @@ pub trait Protocol {
     ) -> bool;
 }
 
+/// PROTOCOLS
+///
+/// Every dialect the engine speaks, in handshake-listing order. The active
+/// one is chosen at runtime — by the handshake word a GUI sends or by the
+/// `Protocol` option — not by a launch flag, so one running process serves
+/// any GUI. The markers are zero-sized, so this is a table of `'static`
+/// trait objects with no allocation.
+pub const PROTOCOLS: [&dyn Protocol; 3] = [&Uci, &Usi, &Ucci];
+
+/// find_protocol
+///
+/// Resolves a name to its dialect. A protocol's handshake word and its
+/// `Protocol` option value are both its own `name()`, so the lookup derives
+/// from the trait rather than a second table of tokens.
+///
+/// Params:
+/// - name: &str                  -> a protocol name, e.g. "usi"
+///
+/// Return:
+/// Option<&'static dyn Protocol> -> the dialect, or None if unknown
+pub fn find_protocol(name: &str) -> Option<&'static dyn Protocol> {
+    PROTOCOLS.into_iter().find(|protocol| protocol.name() == name)
+}
+
 /// list_variants
 ///
 /// Discovers which variants can be served over one protocol: a variant
@@ -161,13 +185,13 @@ fn print_bestmove(
 
     let best = format_move(&best_move, state, dict);
 
-    if !fallback && result.ponder_move != null_move() {
-        let ponder = format_move(&result.ponder_move, state, dict);
-        println!("bestmove {} ponder {}", best, ponder);
+    let ponder = if !fallback && result.ponder_move != null_move() {
+        Some(format_move(&result.ponder_move, state, dict))
     } else {
-        println!("bestmove {}", best);
-    }
-    stdout().flush().ok();
+        None
+    };
+
+    emit(EngineEvent::BestMove { best, ponder });
 }
 
 /// SearchHandle
@@ -291,6 +315,42 @@ impl Session {
     /// String -> the `<NAME>_Variant` option name
     fn variant_option(&self) -> String {
         format!("{}_Variant", self.protocol.to_uppercase())
+    }
+
+    /// Session::set_protocol
+    ///
+    /// Switches the session to another dialect at runtime, the way the
+    /// handshake word or the `Protocol` option asks. Re-discovers the
+    /// variants that dialect serves and its notation translator; when the
+    /// current variant is not among them it reseats onto the dialect's
+    /// default variant (fide when served, otherwise the first) exactly as
+    /// startup does, reloading the position and pawn table so nothing from
+    /// the old variant leaks through.
+    ///
+    /// Params:
+    /// - protocol: &str -> the dialect name to switch to
+    fn set_protocol(&mut self, protocol: &str) {
+        self.protocol = protocol.to_string();
+        self.variants = list_variants(protocol);
+
+        if !self.variants.contains(&self.variant) {
+            self.variant = self.variants
+                .iter()
+                .find(|variant| variant.as_str() == "fide")
+                .or_else(|| self.variants.first())
+                .cloned()
+                .unwrap_or_else(|| "fide".to_string());
+
+            let config_path = format!("{}.conf", self.variant);
+            self.state = parse_config_file(&config_path);
+            let startpos = self.state.statics.startpos.clone();
+            self.state.reset();
+            parse_fen(&mut self.state, &startpos, None);
+            refresh_eval_state(&mut self.state);
+            self.ptable = Arc::new(PTable::default());
+        }
+
+        self.translator = Translator::find(&self.variant, protocol);
     }
 }
 
@@ -728,6 +788,10 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
     let variant_option = session.variant_option();
 
     match (name.as_str(), value) {
+        (OPT_PROTOCOL, Some(v)) if find_protocol(&v).is_some() => {
+            abort_search(session);
+            session.set_protocol(&v);
+        }
         (n, Some(v)) if n == variant_option && session.variants.contains(&v) => {
             let conf = format!("{}.conf", v);
             session.state = parse_config_file(&conf);
@@ -781,32 +845,36 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
 /// Params:
 /// - session: &Session -> the session whose variants are listed
 pub fn print_handshake(session: &Session) {
-    println!("id name anekamacam");
-    println!("id author Alden Luthfi");
     let vars_str: String = session.variants
         .iter()
         .map(|v| format!(" var {}", v))
         .collect();
-    println!(
-        "option name {} type combo default {}{}",
+
+    let protocols_str: String = PROTOCOLS
+        .iter()
+        .map(|protocol| format!(" var {}", protocol.name()))
+        .collect();
+
+    emit(EngineEvent::Print(format!(
+        "id name anekamacam\n\
+         id author Alden Luthfi\n\
+         option name {} type combo default {}{}\n\
+         option name {} type combo default {}{}\n\
+         option name {} type spin default 1 min 1 max {}\n\
+         option name {} type check default false\n\
+         option name {} type spin default {} min 1 max {}\n\
+         option name {} type button\n\
+         option name {} type spin default {} min 0 max {}\n\
+         {}ok\n",
+        OPT_PROTOCOL, session.protocol, protocols_str,
         session.variant_option(), session.variant, vars_str,
-    );
-    println!(
-        "option name {} type spin default 1 min 1 max {}",
         OPT_THREADS, session.max_threads,
-    );
-    println!("option name {} type check default false", OPT_PONDER);
-    println!(
-        "option name {} type spin default {} min 1 max {}",
+        OPT_PONDER,
         OPT_HASH, HASH_DEFAULT_MB, HASH_MAX_MB,
-    );
-    println!("option name {} type button", OPT_CLEAR_HASH);
-    println!(
-        "option name {} type spin default {} min 0 max {}",
+        OPT_CLEAR_HASH,
         OPT_MOVE_OVERHEAD, TIME_OVERHEAD_MS, MAX_OVERHEAD_MS,
-    );
-    println!("{}ok", session.protocol);
-    stdout().flush().ok();
+        session.protocol,
+    )));
 }
 
 /// new_game
@@ -846,8 +914,7 @@ pub fn execute_common(
 ) -> Option<bool> {
     match tokens.first().copied().unwrap_or("") {
         "isready" => {
-            println!("readyok");
-            stdout().flush().ok();
+            emit(EngineEvent::Print("readyok\n".to_string()));
             Some(false)
         }
         "position" => {
@@ -867,7 +934,9 @@ pub fn execute_common(
             Some(false)
         }
         "d" => {
-            println!("{}", format_game_state(&session.state));
+            emit(EngineEvent::Print(format!(
+                "{}\n", format_game_state(&session.state),
+            )));
             verify_game_state(&session.state);
             Some(false)
         }
@@ -881,30 +950,45 @@ pub fn execute_common(
 
 /// run
 ///
-/// The blocking protocol main loop: prints the engine banner, builds the
-/// session for the given protocol, and feeds stdin lines first to the
-/// universal `execute_common` and then, when it defers, to the protocol's
-/// own `execute`, until `quit` or end of input. Any search still running on
-/// exit is stopped and joined so the process never dies mid-search.
-///
-/// Params:
-/// - proto: &dyn Protocol -> the protocol to speak
+/// The blocking protocol main loop, one process for every dialect. Starts on
+/// the default protocol and, for each stdin line: a handshake word (any
+/// protocol's `name()`) switches the active dialect and greets; otherwise
+/// the line goes first to the universal `execute_common` and then, when it
+/// defers, to the current dialect's `execute`, until `quit` or end of input.
+/// The `Protocol` option switches the dialect the same way from `setoption`.
+/// Any search still running on exit is stopped and joined so the process
+/// never dies mid-search.
 ///
 /// Return:
-/// IoResult<()>           -> Ok on clean shutdown
-pub fn run(proto: &dyn Protocol) -> IoResult<()> {
-    println!("AnekaMacam {} by Alden Luthfi", env!("CARGO_PKG_VERSION"));
+/// IoResult<()> -> Ok on clean shutdown
+pub fn run() -> IoResult<()> {
+    let (sender, receiver) = channel::<EngineEvent>();
+    set_sink(sender);
+    let printer = spawn_printer(receiver);
 
-    let mut session = Session::new(proto.name());
+    emit(EngineEvent::Print(format!(
+        "AnekaMacam {} by Alden Luthfi\n", env!("CARGO_PKG_VERSION"),
+    )));
+
+    let mut session = Session::new(DEFAULT_PROTOCOL);
 
     for line in stdin().lock().lines().map_while(Result::ok) {
         let trimmed = line.trim();
         let tokens: Vec<&str> = trimmed.split_whitespace().collect();
 
-        log_3!("{} Command: {}", proto.name(), trimmed);
+        log_3!("{} Command: {}", session.protocol, trimmed);
 
+        if let Some(protocol) =
+            find_protocol(tokens.first().copied().unwrap_or(""))
+        {
+            session.set_protocol(protocol.name());
+            print_handshake(&session);
+            continue;
+        }
+
+        let protocol = find_protocol(&session.protocol).unwrap_or(&Uci);
         let quit = execute_common(&mut session, &tokens)
-            .unwrap_or_else(|| proto.execute(&mut session, &tokens));
+            .unwrap_or_else(|| protocol.execute(&mut session, &tokens));
 
         if quit {
             break;
@@ -912,6 +996,9 @@ pub fn run(proto: &dyn Protocol) -> IoResult<()> {
     }
 
     abort_search(&mut session);
+
+    clear_sink();
+    let _ = printer.join();
 
     Ok(())
 }

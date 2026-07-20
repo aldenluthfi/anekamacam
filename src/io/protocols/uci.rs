@@ -28,8 +28,8 @@ impl Protocol for Uci {
 
     /// Uci::execute
     ///
-    /// Handles the lines `execute_common` defers: the `uci` handshake,
-    /// `ucinewgame`, and the standard `go`.
+    /// Handles the lines the universal loop defers after the handshake step:
+    /// `ucinewgame` and the standard `go`.
     ///
     /// Params:
     /// - session: &mut Session -> the session the line acts on
@@ -43,21 +43,10 @@ impl Protocol for Uci {
         tokens: &[&str],
     ) -> bool {
         match tokens.first().copied().unwrap_or("") {
-            "uci" => print_handshake(session),
             "ucinewgame" => new_game(session),
             "go" => start_search(session, tokens),
             _ => {}
         }
         false
     }
-}
-
-/// uci
-///
-/// Entry point for the UCI protocol loop.
-///
-/// Return:
-/// IoResult<()> -> Ok on clean shutdown
-pub fn uci() -> IoResult<()> {
-    run(&Uci)
 }

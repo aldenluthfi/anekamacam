@@ -30,7 +30,7 @@ impl Protocol for Ucci {
 
     /// Ucci::execute
     ///
-    /// Handles the lines `execute_common` defers: the `ucci` handshake and
+    /// Handles the lines the universal loop defers after the handshake step:
     /// `go` (UCCI has no new-game command). The `go` rewrites UCCI's
     /// side-relative clock into the engine's standard tokens: `time t`
     /// becomes `wtime t btime t` and `increment i` becomes `winc i binc i`,
@@ -50,10 +50,6 @@ impl Protocol for Ucci {
         tokens: &[&str],
     ) -> bool {
         match tokens.first().copied().unwrap_or("") {
-            "ucci" => {
-                print_handshake(session);
-                return false;
-            }
             "go" => {}
             _ => return false,
         }
@@ -105,14 +101,4 @@ impl Protocol for Ucci {
         start_search(session, &refs);
         false
     }
-}
-
-/// ucci
-///
-/// Entry point for the UCCI protocol loop.
-///
-/// Return:
-/// IoResult<()> -> Ok on clean shutdown
-pub fn ucci() -> IoResult<()> {
-    run(&Ucci)
 }

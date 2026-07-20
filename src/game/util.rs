@@ -874,24 +874,9 @@ pub fn run_derive_headless() {
             continue;
         }
 
-        println!("deriving {}", filename);
+        emit(EngineEvent::Print(format!("deriving {}\n", filename)));
         let _ = parse_config_file(filename);
     }
-}
-
-/// drain_events
-///
-/// Builds a `TuiEvent` channel whose receiver is drained by a detached
-/// thread, so self-play tooling written for the interactive console can
-/// run headless: the workers still `send` board snapshots but nothing
-/// blocks on a TUI consuming them.
-///
-/// Return:
-/// Sender<TuiEvent> -> a sender whose events are silently discarded
-fn drain_events() -> Sender<TuiEvent> {
-    let (sender, receiver) = channel::<TuiEvent>();
-    thread::spawn(move || while receiver.recv().is_ok() {});
-    sender
 }
 
 /// run_datagen_headless
@@ -929,12 +914,11 @@ pub fn run_datagen_headless(args: &[String]) {
         .max(1);
 
     let state = parse_config_file(&format!("{}.conf", variant));
-    let sender = drain_events();
 
     run_datagen(
         &state, variant, None,
         Arc::new(TTable::default()), Arc::new(QTable::default()),
-        Arc::new(PTable::default()), threads, games, movetime, &sender,
+        Arc::new(PTable::default()), threads, games, movetime,
     );
 }
 

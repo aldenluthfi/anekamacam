@@ -559,9 +559,6 @@ struct GameManager {
 ///   - time_control: SPRTTimeControl
 ///     per-move budget or clock bank
 ///
-///   - sender: &Sender<TuiEvent>
-///     channel for live board updates
-///
 ///   Return:
 ///
 ///   SPRTGameOutcome
@@ -640,7 +637,6 @@ impl GameManager {
         dict: Option<&Translator>,
         startpos: &str,
         time_control: SPRTTimeControl,
-        sender: &Sender<TuiEvent>,
     ) -> SPRTGameOutcome {
         let state = &mut self.state;
 
@@ -735,13 +731,7 @@ impl GameManager {
                 return SPRTGameOutcome::Score(state.playing as f64);
             }
 
-            if let Err(error) = sender.send(TuiEvent::StateUpdate(
-                BoardState::from_state(state, dict)
-            )) {
-                return SPRTGameOutcome::Aborted(format!(
-                    "failed to send TuiEvent::StateUpdate: {}", error,
-                ));
-            }
+            emit(EngineEvent::Board(BoardState::from_state(state, dict)));
         }
     }
 }
@@ -911,7 +901,6 @@ pub fn run_sprt(
     max_games: usize,
     h0: f64,
     h1: f64,
-    sender: &Sender<TuiEvent>,
 ) {
     let translator = Translator::find(variant, SPRT_PROTOCOL);
 
@@ -977,7 +966,7 @@ pub fn run_sprt(
             break;
         }
 
-        let first = manager.play(dict, &startpos, time_control, sender);
+        let first = manager.play(dict, &startpos, time_control);
         let score_first = match first {
             SPRTGameOutcome::Score(score) => score,
             SPRTGameOutcome::EngineLoss { score, side, error } => {
@@ -1013,7 +1002,7 @@ pub fn run_sprt(
         }
 
         let mut abort_after_pair = None;
-        let second = manager.play(dict, &startpos, time_control, sender);
+        let second = manager.play(dict, &startpos, time_control);
         let score_second = match second {
             SPRTGameOutcome::Score(score) => 1.0 - score,
             SPRTGameOutcome::EngineLoss { score, side, error } => {

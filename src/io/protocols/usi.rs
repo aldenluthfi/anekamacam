@@ -30,9 +30,9 @@ impl Protocol for Usi {
 
     /// Usi::execute
     ///
-    /// Handles the lines `execute_common` defers: the `usi` handshake,
-    /// `usinewgame`, and `go`. The `go` renames USI's `byoyomi` clause to
-    /// the engine's standard `movetime`, so the per-move Japanese overtime
+    /// Handles the lines the universal loop defers after the handshake step:
+    /// `usinewgame` and `go`. The `go` renames USI's `byoyomi` clause to the
+    /// engine's standard `movetime`, so the per-move Japanese overtime
     /// becomes a fixed budget the shared parser understands.
     ///
     /// Params:
@@ -47,7 +47,6 @@ impl Protocol for Usi {
         tokens: &[&str],
     ) -> bool {
         match tokens.first().copied().unwrap_or("") {
-            "usi" => print_handshake(session),
             "usinewgame" => new_game(session),
             "go" => {
                 let normalized: Vec<&str> = tokens
@@ -60,14 +59,4 @@ impl Protocol for Usi {
         }
         false
     }
-}
-
-/// usi
-///
-/// Entry point for the USI protocol loop.
-///
-/// Return:
-/// IoResult<()> -> Ok on clean shutdown
-pub fn usi() -> IoResult<()> {
-    run(&Usi)
 }

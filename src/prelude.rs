@@ -104,18 +104,19 @@ pub use crate::io::piece_io::{
 pub use crate::io::protocols::{
     translation::Translator,
     protocol::{
-        Protocol, Session, run, start_search, new_game, print_handshake,
+        find_protocol, Protocol, Session, run, start_search, new_game,
+        print_handshake, PROTOCOLS,
     },
-    uci::uci,
-    usi::usi,
-    ucci::ucci,
+    uci::Uci,
+    usi::Usi,
+    ucci::Ucci,
 };
 
 /*----------------------------------------------------------------------------*\
                                    DEBUG API
 \*----------------------------------------------------------------------------*/
 pub use crate::debug::console::debug_console;
-pub use crate::debug::console::{BoardState, TuiEvent};
+pub use crate::debug::console::BoardState;
 pub use crate::debug::datagen::run_datagen;
 pub use crate::debug::sprt::{run_sprt, SPRTTimeControl};
 pub use crate::debug::tuning::run_tuning;
@@ -344,6 +345,150 @@ lazy_static! {
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
     pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(false);
+    pub static ref ENGINE_SINK: Mutex<Option<Sender<EngineEvent>>> =
+        Mutex::new(None);
+}
+
+/*----------------------------------------------------------------------------*\
+                             OBSERVER ARCHITECTURE
+\*----------------------------------------------------------------------------*/
+
+/// EngineScore
+///
+/// A search score as data, not a formatted string, so each consumer prints
+/// the `cp` / `mate` wording (and sign) in its own dialect.
+pub enum EngineScore {
+    CP(i32),                                                                    /* centipawn evaluation               */
+    Mate(i32),                                                                  /* signed distance to mate, in moves  */
+}
+
+/// EngineEvent
+///
+/// The one protocol- and render-agnostic message the whole engine
+/// broadcasts. Producers (search, sprt, datagen, derive, the protocol
+/// command loop) `emit` these; the single active frontend — a protocol
+/// printer thread, the debug TUI, or a headless printer — drains them and
+/// renders each variant however it wishes. Every field is owned so the event
+/// is `Send` across the worker-thread boundary.
+pub enum EngineEvent {
+    Info {                                                                      /* one iterative-deepening report     */
+        hashfull: u64,
+        cpuload: u64,
+        depth: usize,
+        score: EngineScore,
+        nodes: u128,
+        time_ms: u128,
+        nps: u128,
+        pv: String,
+    },
+    BestMove {                                                                  /* search result for the GUI          */
+        best: String,
+        ponder: Option<String>,
+    },
+    Print(String),                                                              /* verbatim stdout line(s), flushed   */
+    Board(BoardState),                                                          /* live position snapshot for the TUI */
+    StateInit(Arc<Mutex<State>>),                                               /* install a freshly loaded game      */
+    PlaygroundUpdate(Box<State>),                                               /* new playground position            */
+    SwitchDict(Option<Translator>),                                             /* swap the active translator         */
+    Unlock,                                                                     /* release the TUI input lock         */
+}
+
+/// set_sink / clear_sink / emit
+///
+/// The producer side of the broadcast. `set_sink` installs the channel the
+/// active frontend drains; `clear_sink` removes it on shutdown so a late emit
+/// after the receiver is gone is a silent no-op; `emit` sends one event to
+/// the installed sink if any. `emit` never blocks (the channel is unbounded)
+/// and never fails outward, so a producer deep in the search need not know or
+/// care whether anyone is listening.
+///
+/// set_sink
+///   Params:
+///   - sender: Sender<EngineEvent> -> the frontend's receiving channel
+///
+/// clear_sink
+///   no parameters, no return value
+///
+/// emit
+///   Params:
+///   - event : EngineEvent         -> the state to broadcast
+pub fn set_sink(sender: Sender<EngineEvent>) {
+    *ENGINE_SINK.lock().unwrap() = Some(sender);
+}
+
+pub fn clear_sink() {
+    *ENGINE_SINK.lock().unwrap() = None;
+}
+
+pub fn emit(event: EngineEvent) {
+    if let Some(sender) = ENGINE_SINK.lock().unwrap().as_ref() {
+        let _ = sender.send(event);
+    }
+}
+
+/// spawn_printer
+///
+/// The single stdout writer for a text-protocol or headless run. Owns the
+/// receiving end of the event channel and, for every event, formats the
+/// engine's data into the protocol's line and flushes it, so search threads
+/// and the command loop share one ordered, race-free output path. `Board` and
+/// TUI-control events are ignored — those matter only to the debug console,
+/// which installs its own receiver instead.
+///
+/// Params:
+/// - receiver: Receiver<EngineEvent> -> events from every producer
+///
+/// Return:
+/// JoinHandle<()>                    -> join to flush the tail on shutdown
+pub fn spawn_printer(receiver: Receiver<EngineEvent>) -> JoinHandle<()> {
+    thread::spawn(move || {
+        for event in receiver {
+            match event {
+                EngineEvent::Info {
+                    hashfull, cpuload, depth, score,
+                    nodes, time_ms, nps, pv,
+                } => {
+                    let score = match score {
+                        EngineScore::CP(value) => format!("cp {}", value),
+                        EngineScore::Mate(value) => format!("mate {}", value),
+                    };
+                    println!(
+                        "info hashfull {} cpuload {} depth {} score {} \
+                        nodes {} time {} nps {} pv {}",
+                        hashfull, cpuload, depth, score,
+                        nodes, time_ms, nps, pv,
+                    );
+                }
+                EngineEvent::BestMove { best, ponder } => match ponder {
+                    Some(ponder) => {
+                        println!("bestmove {} ponder {}", best, ponder)
+                    }
+                    None => println!("bestmove {}", best),
+                },
+                EngineEvent::Print(text) => print!("{}", text),
+                _ => {}
+            }
+            stdout().flush().ok();
+        }
+    })
+}
+
+/// with_stdout_sink
+///
+/// Runs a headless body with a temporary stdout printer installed as the
+/// active sink, so `derive` / `tune` style tools that only `emit` still
+/// produce output. Installs the sink, runs `body`, then clears the sink and
+/// joins the printer so the final line flushes before returning.
+///
+/// Params:
+/// - body: F -> the headless routine to run while the printer is live
+pub fn with_stdout_sink<F: FnOnce()>(body: F) {
+    let (sender, receiver) = channel::<EngineEvent>();
+    set_sink(sender);
+    let printer = spawn_printer(receiver);
+    body();
+    clear_sink();
+    let _ = printer.join();
 }
 
 /// Null-move sentinels.
@@ -416,11 +561,14 @@ pub const HARD_BUDGET_FACTOR: u128 = 4;                                         
 pub const TM_STABILITY_PCT: [u128; 6] = [160, 130, 110, 100, 85, 75];           /* soft budget scale by best stability*/
 pub const TM_SCORE_DROP_PCT: u128 = 130;                                        /* budget scale on a falling score    */
 
+pub const OPT_PROTOCOL: &str = "Protocol";
 pub const OPT_THREADS: &str = "Threads";
 pub const OPT_PONDER: &str = "Ponder";
 pub const OPT_HASH: &str = "Hash";
 pub const OPT_CLEAR_HASH: &str = "Clear Hash";
 pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
+
+pub const DEFAULT_PROTOCOL: &str = "uci";
 
 pub const HASH_DEFAULT_MB: usize = 256;
 pub const HASH_MAX_MB: usize = 65536;
