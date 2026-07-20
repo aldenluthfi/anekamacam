@@ -977,7 +977,7 @@ pub fn run_sprt(
                     draws += draw;
                     losses += loss;
                     verdict = format!(
-                        "aborted after engine loss; restart failed: {}",
+                       "aborted after engine loss; restart failed: {}",
                         restart_error,
                     );
                     break 'pairs;
