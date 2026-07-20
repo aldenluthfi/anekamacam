@@ -128,7 +128,7 @@ run_rr() {
 
 	cutechess-cli \
 		"${engines[@]}" \
-		-each proto=uci option.Threads=1 option.Hash=64 tc=10+0.1 timemargin=200 \
+		-each proto=uci option.Threads=1 option.Hash=64 tc=30+0.3 timemargin=200 \
 		-tournament round-robin -rounds "$ROUNDS" -games 2 \
 		-recover \
 		-concurrency "$CONCURRENCY" -ratinginterval 50 \
