@@ -127,7 +127,7 @@ run_rr() {
 			"dir=$RR/stage$s" arg=uci)
 	done
 
-	for elo in 1700 1800; do
+	for elo in 1700 1800 1900; do
 		engines+=(-engine "name=fsf-$elo" cmd=fairy-stockfish
 			option.UCI_LimitStrength=true "option.UCI_Elo=$elo")
 	done
