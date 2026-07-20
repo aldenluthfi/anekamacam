@@ -808,7 +808,7 @@ pub fn derive_eval_parameters(state: &mut State) {
 ///   shogi knight and forward sliders like the lance
 /// - the no-retreat rule excludes gold / silver / advisor / elephant
 /// - the starting count excludes sparse forward steppers such as the lone
-///   mini-shogi pawn or the two mini-xiangqi soldiers
+///   minishogi pawn or the two minixiangqi soldiers
 ///
 /// Longer initial pushes (a two- to four-square first move) are exempt from
 /// the one-square bound. The result is recorded as static bit 19 on each
