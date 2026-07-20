@@ -116,22 +116,19 @@ done
 # fsf anchors get the fairy name <cc>. The trailing args carry cutechess's
 # own -variant flag (omitted for standard chess, where the default fits).
 run_rr() {
-	local ak=$1 cc=$2
-	shift 2
 	local engines=()
 
 	# Marker the --status parser keys on to label each variant's table.
-	echo "=== variant $ak ($cc) ==="
+	echo "=== variant $2 ==="
 
 	for s in "${STAGES[@]}"; do
 		engines+=(-engine "name=stage$s" "cmd=$REPO/bin/stage$s"
-			"dir=$RR/stage$s" arg=uci "option.UCI_Variant=$ak")
+			"dir=$RR/stage$s" arg=uci)
 	done
 
 	for elo in 1700 1800; do
 		engines+=(-engine "name=fsf-$elo" cmd=fairy-stockfish
-			"option.UCI_Variant=$cc" option.UCI_LimitStrength=true
-			"option.UCI_Elo=$elo")
+			option.UCI_LimitStrength=true "option.UCI_Elo=$elo")
 	done
 
 	cutechess-cli \
@@ -140,16 +137,16 @@ run_rr() {
 		-tournament round-robin -rounds "$ROUNDS" -games 2 \
 		-recover \
 		-concurrency "$CONCURRENCY" -ratinginterval 50 \
-		-pgnout "$RR/rr-$ak.pgn" \
+		-pgnout "$RR/rr-$2.pgn" \
 		"$@"
 }
 
 # Every variant both engines share, as "<anekamacam name>|<fairy name>".
 # berolina is anekamacam-only (fairy has no berolina), so it is dropped:
 # cutechess refs through the fairy variant set and could not adjudicate it.
-run_rr fide         chess
-run_rr grand        grand       -variant grand
-run_rr shogi        shogi       -variant shogi
-run_rr mini-shogi   minishogi   -variant minishogi
-run_rr xiangqi      xiangqi     -variant xiangqi
-run_rr mini-xiangqi minixiangqi -variant minixiangqi
+run_rr
+run_rr -variant grand
+run_rr -variant shogi
+run_rr -variant minishogi
+run_rr -variant xiangqi
+run_rr -variant minixiangqi
