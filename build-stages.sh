@@ -63,7 +63,11 @@ for entry in "${STAGES[@]}"; do
 	if [ "$pick" != "-" ]; then
 		IFS=',' read -ra picks <<<"$pick"
 		for p in "${picks[@]}"; do
-			git -C "$WT" cherry-pick -n "$p"
+			if [ "$p" = "$UTIL" ]; then
+				git -C "$WT" checkout "$p" -- src/game/util.rs src/main.rs
+			else
+				git -C "$WT" cherry-pick -n "$p"
+			fi
 		done
 	fi
 	mkdir -p "$WT/res/dicts"

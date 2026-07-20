@@ -38,7 +38,6 @@ struct GeneratedGame {
 /// - ptable     : Arc<PTable>         -> shared pawn structure table
 /// - threads    : usize               -> worker count per search
 /// - movetime_ms: u128                -> fixed wall-clock budget per move
-/// - sender     : &Sender<TuiEvent>   -> channel for live board updates
 ///
 /// Return:
 /// Option<GeneratedGame> -> completed labelled game, or None when interrupted
@@ -50,7 +49,6 @@ fn play_one_game(
     ptable: Arc<PTable>,
     threads: usize,
     movetime_ms: u128,
-    sender: &Sender<TuiEvent>,
 ) -> Option<GeneratedGame> {
     let state = &mut template.fork();
     state.play_random_opening(OPENING_RANDOM_PLIES);
@@ -113,11 +111,7 @@ fn play_one_game(
             return None;
         }
 
-        sender.send(TuiEvent::StateUpdate(
-            BoardState::from_state(state, dict)
-        )).unwrap_or_else(|e| {
-            panic!("Failed to send TuiEvent::StateUpdate: {e}")
-        });
+        emit(EngineEvent::Board(BoardState::from_state(state, dict)));
     }
 }
 
@@ -141,7 +135,6 @@ fn play_one_game(
 /// - threads    : usize               -> worker count per search
 /// - games      : usize               -> number of self-play games to play
 /// - movetime_ms: u128                -> fixed wall-clock budget per move
-/// - sender     : &Sender<TuiEvent>   -> channel for live board updates
 pub fn run_datagen(
     template: &State,
     variant: &str,
@@ -152,7 +145,6 @@ pub fn run_datagen(
     threads: usize,
     games: usize,
     movetime_ms: u128,
-    sender: &Sender<TuiEvent>,
 ) {
     let dir = format!("{}/{}", DATA_DIR, variant);
     fs::create_dir_all(&dir).unwrap_or_else(|e| {
@@ -182,7 +174,7 @@ pub fn run_datagen(
 
         let Some(game) = play_one_game(
             template, dict, Arc::clone(&ttable), Arc::clone(&qtable),
-            Arc::clone(&ptable), threads, movetime_ms, sender,
+            Arc::clone(&ptable), threads, movetime_ms,
         ) else {
             discarded += 1;
             if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {

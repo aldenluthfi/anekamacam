@@ -70,21 +70,6 @@ fn peel_help(mut tab: usize) -> (usize, usize) {
     (tab, layers.max(1) - 1)
 }
 
-/// TuiEvent
-///
-/// Messages sent from worker threads back to the TUI event loop.
-/// Commands run off-thread so the interface stays responsive; when they
-/// finish they push one of these to update the rendered board, install a
-/// freshly loaded game or playground state, swap the active protocol
-/// translator, or unlock the input line after a long operation.
-pub enum TuiEvent {
-    StateUpdate(BoardState),                                                    /* new rendered board snapshot        */
-    StateInit(Arc<Mutex<State>>),                                               /* install a freshly loaded game      */
-    PlaygroundUpdate(Box<State>),                                               /* new playground position            */
-    SwitchDict(Option<Translator>),                                             /* swap the active translator         */
-    Unlock,                                                                     /* release the input lock             */
-}
-
 /// Tui
 ///
 /// The full interface state of the debug console.
@@ -111,8 +96,7 @@ struct Tui {
     overview_state: Option<OverviewState>,                                      /* rendered piece overview            */
     playground_state: Option<Arc<Mutex<State>>>,                                /* shared playground position         */
 
-    receiver: Receiver<TuiEvent>,                                               /* worker-to-TUI event channel        */
-    sender: Sender<TuiEvent>,                                                   /* clonable sender for workers        */
+    receiver: Receiver<EngineEvent>,                                            /* engine-to-TUI event channel        */
 }
 
 impl Tui {
@@ -126,17 +110,16 @@ impl Tui {
     /// new
     ///
     ///   Params:
-    ///   - receiver: Receiver<TuiEvent> -> worker-to-TUI event channel
-    ///   - sender  : Sender<TuiEvent>   -> clonable sender for workers
+    ///   - receiver: Receiver<EngineEvent> -> engine-to-TUI event channel
     ///
     ///   Return:
-    ///   Self                           -> the interface on the game-selection screen
+    ///   Self                              -> the interface on the game-selection screen
     ///
     /// reset
     ///   returns to the selection screen, dropping loaded states and
     ///   interrupting running workers; no parameters, no return value
     fn new(
-        receiver: Receiver<TuiEvent>, sender: Sender<TuiEvent>
+        receiver: Receiver<EngineEvent>
     ) -> Self {
         let mut scroll_map = HashMap::new();
 
@@ -185,7 +168,6 @@ impl Tui {
             playground_state,
 
             receiver,
-            sender,
         }
     }
 
@@ -207,8 +189,8 @@ impl Tui {
 
     /// Tui::run
     ///
-    /// The interface main loop: draw a frame, drain pending `TuiEvent`s
-    /// from worker threads, then poll the keyboard with a 16ms budget
+    /// The interface main loop: draw a frame, drain pending `EngineEvent`s
+    /// from the broadcast channel, then poll the keyboard with a 16ms budget
     /// (~60fps) and dispatch through `handle_key` until it requests
     /// exit.
     ///
@@ -223,12 +205,12 @@ impl Tui {
         loop {
             terminal.draw(|frame| render(frame, self))?;
 
-            while let Ok(tui_event) = self.receiver.try_recv() {
-                match tui_event {
-                    TuiEvent::StateUpdate(state) => {
+            while let Ok(engine_event) = self.receiver.try_recv() {
+                match engine_event {
+                    EngineEvent::Board(state) => {
                         self.board_state = Some(state);
                     },
-                    TuiEvent::StateInit(state) => {
+                    EngineEvent::StateInit(state) => {
                         self.overview_state = Some(
                             OverviewState::from_state(&state.lock().unwrap())
                         );
@@ -239,12 +221,12 @@ impl Tui {
                             Some(Arc::new(Mutex::new(pg_state)));
                         self.game_state = Some(state);
                     },
-                    TuiEvent::PlaygroundUpdate(state) => {
+                    EngineEvent::PlaygroundUpdate(state) => {
                         if let Some(arc) = &self.playground_state {
                             *arc.lock().unwrap() = *state;
                         }
                     },
-                    TuiEvent::SwitchDict(dict) => {
+                    EngineEvent::SwitchDict(dict) => {
                         self.translator = dict;
                         if let Some(arc) = self.game_state.clone() {
                             let state = arc.lock().unwrap();
@@ -254,10 +236,11 @@ impl Tui {
                             ));
                         }
                     }
-                    TuiEvent::Unlock => {
+                    EngineEvent::Unlock => {
                         SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
                         self.locked = false;
                     }
+                    _ => {}
                 }
             }
 
@@ -2747,7 +2730,6 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 /// - qtable    : Arc<QTable>         -> shared qsearch table for searches
 /// - ptable    : Arc<PTable>         -> shared pawn table for searches
 /// - threads   : usize               -> worker count for search commands
-/// - sender    : Sender<TuiEvent>    -> channel for result snapshots
 fn execute_command(
     command: &str,
     state: &mut State,
@@ -2758,7 +2740,6 @@ fn execute_command(
     qtable: Arc<QTable>,
     ptable: Arc<PTable>,
     threads: usize,
-    sender: Sender<TuiEvent>
 ) {
     let trimmed = command.trim();
 
@@ -2794,37 +2775,23 @@ fn execute_command(
 
             let board_state = BoardState::from_state(state, dict);
 
-            sender.send(
-                TuiEvent::StateUpdate(board_state)
-            ).unwrap_or_else(
-                |e| {
-                    panic!("Failed to send TuiEvent::StateUpdate: {e}")
-                }
-            );
+            emit(EngineEvent::Board(board_state));
         }
         "reset" => {
             if let Some(pg) = playground {
                 *pg = state.clone();
                 init_playground(pg, 0);
 
-                sender.send(
-                    TuiEvent::PlaygroundUpdate(Box::new((*pg).clone()))
-                ).unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to send TuiEvent::PlaygroundUpdate: {e}"
-                    )
-                });
+                emit(EngineEvent::PlaygroundUpdate(
+                    Box::new((*pg).clone()),
+                ));
             } else {
                 while state.ply_counter > 0 {
                     undo_move!(state);
 
                     let board_state = BoardState::from_state(state, dict);
 
-                    sender.send(
-                        TuiEvent::StateUpdate(board_state)
-                    ).unwrap_or_else(|e| {
-                        panic!("Failed to send TuiEvent::StateUpdate: {e}")
-                    });
+                    emit(EngineEvent::Board(board_state));
                 }
             }
         }
@@ -2881,13 +2848,7 @@ fn execute_command(
 
             let board_state = BoardState::from_state(state, dict);
 
-            sender.send(
-                TuiEvent::StateUpdate(board_state)
-            ).unwrap_or_else(
-                |e| {
-                    panic!("Failed to send TuiEvent::StateUpdate: {e}")
-                }
-            );
+            emit(EngineEvent::Board(board_state));
         }
         _ if trimmed.starts_with("search") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
@@ -2969,13 +2930,7 @@ fn execute_command(
 
                 let board_state = BoardState::from_state(state, dict);
 
-                sender.send(
-                    TuiEvent::StateUpdate(board_state)
-                ).unwrap_or_else(
-                    |e| {
-                        panic!("Failed to send TuiEvent::StateUpdate: {e}")
-                    }
-                );
+                emit(EngineEvent::Board(board_state));
             }
         }
         _ if trimmed.starts_with("datagen") => {
@@ -3004,7 +2959,7 @@ fn execute_command(
             run_datagen(
                 state, variant_name, dict,
                 Arc::clone(&ttable), Arc::clone(&qtable),
-                Arc::clone(&ptable), threads, games, movetime, &sender,
+                Arc::clone(&ptable), threads, games, movetime,
             );
         }
         _ if trimmed.starts_with("tune") => {
@@ -3078,7 +3033,7 @@ fn execute_command(
 
             run_sprt(
                 state, variant_name, parts[1], parts[2],
-                time_control, max_games, h0, h1, &sender,
+                time_control, max_games, h0, h1,
             );
         }
         _ if trimmed.starts_with("perft") => {
@@ -3120,13 +3075,7 @@ fn execute_command(
 
                 let board_state = BoardState::from_state(state, dict);
 
-                sender.send(
-                    TuiEvent::StateUpdate(board_state)
-                ).unwrap_or_else(
-                    |e| {
-                        panic!("Failed to send TuiEvent::StateUpdate: {e}")
-                    }
-                );
+                emit(EngineEvent::Board(board_state));
             } else {
                 log_2!("Invalid move: {}", mv_str);
             }
@@ -3159,13 +3108,9 @@ fn execute_command(
                 }
             }
 
-            sender.send(
-                TuiEvent::PlaygroundUpdate(Box::new(playground_state.clone()))
-            ).unwrap_or_else(|e| {
-                panic!(
-                    "Failed to send TuiEvent::PlaygroundUpdate: {e}"
-                )
-            });
+            emit(EngineEvent::PlaygroundUpdate(
+                Box::new(playground_state.clone()),
+            ));
         }
         _ if trimmed.starts_with("del") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
@@ -3188,13 +3133,9 @@ fn execute_command(
 
             set_playground_piece(playground_state, NO_PIECE, square);
 
-            sender.send(
-                TuiEvent::PlaygroundUpdate(Box::new(playground_state.clone()))
-            ).unwrap_or_else(|e| {
-                panic!(
-                    "Failed to send TuiEvent::PlaygroundUpdate: {e}"
-                )
-            });
+            emit(EngineEvent::PlaygroundUpdate(
+                Box::new(playground_state.clone()),
+            ));
         }
         _ if trimmed.starts_with("protocol") => {
             let parts: Vec<_> = trimmed.split_whitespace().collect();
@@ -3217,10 +3158,7 @@ fn execute_command(
                 None
             };
 
-            sender.send(TuiEvent::SwitchDict(new_dict))
-                .unwrap_or_else(|e| {
-                    panic!("Failed to send TuiEvent::SwitchDict: {e}")
-                });
+            emit(EngineEvent::SwitchDict(new_dict));
         }
         _ => {
             log_2!("Invalid command: {}", trimmed);
@@ -3288,7 +3226,6 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                     }
                 ).clone();
 
-                let sender = app.sender.clone();
                 let threads = app.threads;
 
                 move || {
@@ -3330,16 +3267,9 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                         Arc::new(qtable),
                         Arc::new(ptable),
                         threads,
-                        sender.clone()
                     );
 
-                    sender.send(
-                        TuiEvent::Unlock
-                    ).unwrap_or_else(
-                        |e| {
-                            panic!("Failed to send TuiEvent::Unlock: {e}")
-                        }
-                    );
+                    emit(EngineEvent::Unlock);
                 }
             });
 
@@ -3420,7 +3350,6 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
             thread::spawn({
                 let filename = app.input.clone();
-                let sender = app.sender.clone();
                 let dict = app.translator.clone();
 
                 app.input.clear();
@@ -3436,33 +3365,13 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                             &state, dict.as_ref()
                         );
 
-                        sender.send(
-                            TuiEvent::StateInit(Arc::new(Mutex::new(state)))
-                        ).unwrap_or_else(
-                            |e| {
-                                panic!(
-                                    "Failed to send TuiEvent::StateInit: {e}"
-                                )
-                            }
-                        );
+                        emit(EngineEvent::StateInit(
+                            Arc::new(Mutex::new(state)),
+                        ));
 
-                        sender.send(
-                            TuiEvent::StateUpdate(board_state)
-                        ).unwrap_or_else(
-                            |e| {
-                                panic!(
-                                    "Failed to send TuiEvent::StateUpdate: {e}"
-                                )
-                            }
-                        );
+                        emit(EngineEvent::Board(board_state));
 
-                        sender.send(
-                            TuiEvent::Unlock
-                        ).unwrap_or_else(
-                            |e| {
-                                panic!("Failed to send TuiEvent::Unlock: {e}")
-                            }
-                        );
+                        emit(EngineEvent::Unlock);
                     } else {
                         log_2!("Config not found: {}", filename);
                     }
@@ -3576,9 +3485,11 @@ pub fn debug_console() -> IoResult<()> {
     let mut terminal = ratatui::init();
     execute!(terminal.backend_mut(), EnableMouseCapture)?;
 
-    let (sender, receiver) = channel::<TuiEvent>();
+    let (sender, receiver) = channel::<EngineEvent>();
+    set_sink(sender);
 
-    let run_result = Tui::new(receiver, sender).run(&mut terminal);
+    let run_result = Tui::new(receiver).run(&mut terminal);
+    clear_sink();
     let mouse_result = execute!(terminal.backend_mut(), DisableMouseCapture);
 
     ratatui::restore();
