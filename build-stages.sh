@@ -4,36 +4,36 @@ set -euo pipefail
 # Builds all stage binaries into bin/. Run from anywhere inside the repo.
 # The fix column is a comma-separated list of commits cherry-picked (in order)
 # onto the stage before building. stageA/stageB predate the pv-walk fix
-# (ac510c0) and get it cherry-picked, otherwise they crash under SPRT. Every
-# stage before the ponder fix (992bc95, "emit ponder only when pv head matches
+# (e9dc4f0) and get it cherry-picked, otherwise they crash under SPRT. Every
+# stage before the ponder fix (c3e5e37, "emit ponder only when pv head matches
 # best move") also gets it, so ponder replies stay correct in the round robin.
-# stageR already contains 992bc95, so it needs no fix.
+# stageR already contains c3e5e37, so it needs no fix.
 # We copy updated dicts from res/dicts/ into each stage worktree before build,
 # so we do not cherry-pick the fcabab9 commit (which has protocol code conflicts).
 
-SPRT=ac510c0
-PONDER=992bc95
+SPRT=e9dc4f0
+PONDER=c3e5e37
 UTIL=1f30a48
 
 STAGES=(
-	"stageA 5b8357d $SPRT,$PONDER"
-	"stageB 6a5ab5e $SPRT,$PONDER"
-	"stageC ac510c0 $PONDER"
-	"stageD 21999d9 $PONDER"
-	"stageE 96d4360 $PONDER"
-	"stageF d8c333f $PONDER"
-	"stageG 4d6e0e4 $PONDER"
-	"stageH c86dd76 $PONDER"
-	"stageI 5bd2ace $PONDER"
-	"stageJ 0af3dd6 $PONDER"
-	"stageK 9c7177d $PONDER"
-	"stageL dce81bd $PONDER"
-	"stageM 8ec807f $PONDER"
-	"stageN f20be48 $PONDER"
-	"stageO 960cd9b $PONDER"
-	"stageP da65b17 $PONDER"
-	"stageQ 2372ed7 $PONDER"
-	"stageR 6fa29fc -"
+	"stageA a67c0b0 $SPRT,$PONDER"
+	"stageB 7692035 $SPRT,$PONDER"
+	"stageC e9dc4f0 $PONDER"
+	"stageD 5e0683e $PONDER"
+	"stageE ad81ddf $PONDER"
+	"stageF e91bdd9 $PONDER"
+	"stageG 98e917c $PONDER"
+	"stageH 0c2808c $PONDER"
+	"stageI 4f12942 $PONDER"
+	"stageJ 119af96 $PONDER"
+	"stageK 44ab827 $PONDER"
+	"stageL c485ee3 $PONDER"
+	"stageM ed36592 $PONDER"
+	"stageN ffe8a53 $PONDER"
+	"stageO 96a4913 $PONDER"
+	"stageP 9cf2175 $PONDER"
+	"stageQ 8758909 $PONDER"
+	"stageR f984db9 -"
 	"stageS 41bd580 -"
 	"stageT bdd2d5c -"
 	"stageU 037f1a3 $UTIL"
