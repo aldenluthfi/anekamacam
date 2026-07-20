@@ -116,10 +116,11 @@ done
 # fsf anchors get the fairy name <cc>. The trailing args carry cutechess's
 # own -variant flag (omitted for standard chess, where the default fits).
 run_rr() {
+	local variant=$1
 	local engines=()
 
 	# Marker the --status parser keys on to label each variant's table.
-	echo "=== variant $2 ==="
+	echo "=== variant $variant ==="
 
 	for s in "${STAGES[@]}"; do
 		engines+=(-engine "name=stage$s" "cmd=$REPO/bin/stage$s"
@@ -137,16 +138,16 @@ run_rr() {
 		-tournament round-robin -rounds "$ROUNDS" -games 2 \
 		-recover \
 		-concurrency "$CONCURRENCY" -ratinginterval 50 \
-		-pgnout "$RR/rr-$2.pgn" \
-		"$@"
+		-pgnout "$RR/rr-$variant.pgn" \
+		-variant "$variant"
 }
 
 # Every variant both engines share, as "<anekamacam name>|<fairy name>".
 # berolina is anekamacam-only (fairy has no berolina), so it is dropped:
 # cutechess refs through the fairy variant set and could not adjudicate it.
-run_rr
-run_rr -variant grand
-run_rr -variant shogi
-run_rr -variant minishogi
-run_rr -variant xiangqi
-run_rr -variant minixiangqi
+run_rr standard
+run_rr grand
+run_rr shogi
+run_rr minishogi
+run_rr xiangqi
+run_rr minixiangqi
