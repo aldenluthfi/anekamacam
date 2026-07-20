@@ -93,7 +93,7 @@ Variants bundled in configs/ (the names double as their config files):
 ┌───────────────┬───────────────────────────────────┐
 │ Config        │ Variant                           │
 ├───────────────┼───────────────────────────────────┤
-│ fide          │ Standard (FIDE) Chess             │
+│ standard      │ Standard (FIDE) Chess             │
 │ capablanca    │ Capablanca Chess (10×8)           │
 │ grand         │ Grand Chess (10×10)               │
 │ los-alamos    │ Los Alamos Chess (6×6)            │
@@ -101,10 +101,10 @@ Variants bundled in configs/ (the names double as their config files):
 │ crazyhouse    │ Crazyhouse (captured pieces drop) │
 │ shatranj      │ Shatranj (medieval Persian chess) │
 │ xiangqi       │ Xiangqi (Chinese chess)           │
-│ mini-xiangqi  │ Mini Xiangqi (7×7)                │
+│ minixiangqi   │ Mini Xiangqi (7×7)                │
 │ janggi        │ Janggi (Korean chess)             │
 │ shogi         │ Shogi (Japanese chess)            │
-│ mini-shogi    │ Mini Shogi (5×5)                  │
+│ minishogi     │ Mini Shogi (5×5)                  │
 │ makruk        │ Makruk (Thai chess)               │
 │ sittuyin      │ Sittuyin (Burmese chess)          │
 │ ouk-chaktrang │ Ouk Chaktrang (Cambodian chess)   │

@@ -254,8 +254,8 @@ pub struct Session {
 impl Session {
     /// Session::new
     ///
-    /// Boots a session for one protocol on its default variant (fide when
-    /// the protocol serves it, otherwise the first discovered one): loads
+    /// Boots a session for one protocol on its default variant (standard
+    /// when the protocol serves it, otherwise the first discovered one): loads
     /// its config, sets up the start position, finds its translator, and
     /// allocates the shared tables at the default hash budget (2/3 main,
     /// 1/3 qsearch).
@@ -269,10 +269,10 @@ impl Session {
         let variants = list_variants(protocol);
         let default_variant = variants
             .iter()
-            .find(|v| v.as_str() == "fide")
+            .find(|v| v.as_str() == "standard")
             .or_else(|| variants.first())
             .cloned()
-            .unwrap_or_else(|| "fide".to_string());
+            .unwrap_or_else(|| "standard".to_string());
 
         let config_path = format!("{}.conf", default_variant);
         let mut state = parse_config_file(&config_path);
@@ -323,8 +323,8 @@ impl Session {
     /// handshake word or the `Protocol` option asks. Re-discovers the
     /// variants that dialect serves and its notation translator; when the
     /// current variant is not among them it reseats onto the dialect's
-    /// default variant (fide when served, otherwise the first) exactly as
-    /// startup does, reloading the position and pawn table so nothing from
+    /// default variant (standard when served, otherwise the first) exactly
+    /// as startup does, reloading the position and pawn table so nothing from
     /// the old variant leaks through.
     ///
     /// Params:
@@ -336,10 +336,10 @@ impl Session {
         if !self.variants.contains(&self.variant) {
             self.variant = self.variants
                 .iter()
-                .find(|variant| variant.as_str() == "fide")
+                .find(|variant| variant.as_str() == "standard")
                 .or_else(|| self.variants.first())
                 .cloned()
-                .unwrap_or_else(|| "fide".to_string());
+                .unwrap_or_else(|| "standard".to_string());
 
             let config_path = format!("{}.conf", self.variant);
             self.state = parse_config_file(&config_path);

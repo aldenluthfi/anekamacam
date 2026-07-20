@@ -631,7 +631,7 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
 /// so variants ship inside the executable with no filesystem layout.
 ///
 /// Params:
-/// - path: &str         -> config filename, e.g. "fide.conf"
+/// - path: &str         -> config filename, e.g. "standard.conf"
 ///
 /// Return:
 /// Option<&'static str> -> the file's text, or None if not embedded

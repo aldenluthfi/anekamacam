@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Round robin over all stage binaries (stageA..stageV) plus two
-# fairy-stockfish anchors, run for fide and shogi. Engines vary games on
+# Round robin over all stage binaries (stageA..stageV) plus three
+# fairy-stockfish anchors, run once per variant. Engines vary games on
 # their own (per-process Zobrist seeding), so no opening book is used.
 # No draw/resign adjudication: the engine's eval units are not
 # centipawns, so score thresholds would misfire. Stages before N load
@@ -107,14 +107,12 @@ for s in "${STAGES[@]}"; do
 	mkdir -p "$RR/stage$s"
 done
 
-# run_rr <ak> <cc> [extra cutechess args...]
+# run_rr <variant>
 #
-# anekamacam and fairy-stockfish spell some variants differently (fide vs
-# chess, mini-shogi vs minishogi). cutechess picks one referee variant,
-# but a per-engine option.UCI_Variant overrides the spelling sent to that
-# engine, so the stage binaries get the anekamacam name <ak> while the
-# fsf anchors get the fairy name <cc>. The trailing args carry cutechess's
-# own -variant flag (omitted for standard chess, where the default fits).
+# The engine's config stems now match the fairy-stockfish/cutechess
+# spelling (standard, minishogi, minixiangqi), so one variant name serves
+# everyone: cutechess as the referee (-variant) and the stage binaries
+# plus the fsf anchors via UCI_Variant.
 run_rr() {
 	local variant=$1
 	local engines=()
@@ -134,7 +132,7 @@ run_rr() {
 
 	cutechess-cli \
 		"${engines[@]}" \
-		-each proto=uci option.Threads=1 tc=10+0.1 timemargin=200 \
+		-each proto=uci option.Threads=1 option.Hash=64 tc=10+0.1 timemargin=200 \
 		-tournament round-robin -rounds "$ROUNDS" -games 2 \
 		-recover \
 		-concurrency "$CONCURRENCY" -ratinginterval 50 \
@@ -142,9 +140,9 @@ run_rr() {
 		-variant "$variant"
 }
 
-# Every variant both engines share, as "<anekamacam name>|<fairy name>".
-# berolina is anekamacam-only (fairy has no berolina), so it is dropped:
-# cutechess refs through the fairy variant set and could not adjudicate it.
+# Every variant both engines share. berolina is anekamacam-only (fairy
+# has no berolina), so it is dropped: cutechess refs through the fairy
+# variant set and could not adjudicate it.
 run_rr standard
 run_rr grand
 run_rr shogi

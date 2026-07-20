@@ -1,8 +1,0 @@
-engine A: bin/stageB
-engine B: bin/stageC
-variant: fide
-movetime_ms: 100
-elo bounds: [0, 5]  alpha: 0.05  beta: 0.05
-result (A): 538W 532L 930D
-LLR: -0.263
-verdict: inconclusive (game budget reached)
