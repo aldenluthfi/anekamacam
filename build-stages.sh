@@ -75,9 +75,8 @@ for entry in "${STAGES[@]}"; do
 			fi
 		done
 	fi
-	mkdir -p "$WT/res/dicts" "$WT/res/perft" "$WT/configs"
+	mkdir -p "$WT/res/dicts" "$WT/configs"
 	cp res/dicts/* "$WT/res/dicts/"
-	cp res/perft/* "$WT/res/perft/"
 	cp configs/* "$WT/configs/"
 	(cd "$WT" && cargo build --release)
 	cp "$CARGO_TARGET_DIR/release/anekamacam" "bin/$name"

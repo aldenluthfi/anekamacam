@@ -25,7 +25,7 @@ set -euo pipefail
 REPO=$(cd "$(dirname "$0")" && pwd)
 RR=${RR:-/tmp/rr}
 ROUNDS=${ROUNDS:-256}
-CONCURRENCY=${CONCURRENCY:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}
+CONCURRENCY=${CONCURRENCY:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null)}
 
 LOG="$RR/round-robin.log"
 PIDFILE="$RR/round-robin.pid"
@@ -45,11 +45,7 @@ if [[ "${1:-}" == "--status" ]]; then
 	else
 		echo "status: not running"
 	fi
-	# Each run_rr prints a "=== variant <ak> (<cc>) ===" marker, and
-	# cutechess reprints a "Rank Name ..." table every -ratinginterval
-	# games. Keep the latest table seen under each variant marker and
-	# print them all, so finished variants stay visible instead of being
-	# overwritten by whichever variant is running now.
+
 	awk '
 		/^=== variant / {
 			cur = $3
@@ -140,24 +136,12 @@ run_rr() {
 		-variant "$variant"
 }
 
-# Every variant both engines share. berolina is anekamacam-only (fairy
-# has no berolina), so it is dropped: cutechess refs through the fairy
-# variant set and could not adjudicate it.
 run_rr standard
 run_rr grand
 run_rr shogi
 run_rr minishogi
 run_rr xiangqi
 run_rr minixiangqi
-
-# fairy ∩ cutechess variants shipped as configs (see configs/). Two
-# caveats before trusting their scores:
-#   1. Only stages built from a commit that embeds these configs (current
-#      HEAD or later) can play them; historical stageA..V forfeit.
-#   2. The referee adjudicates with fairy's rules, so a config whose rules
-#      do not yet match fairy exactly (the `// TODO verify` moves and the
-#      non-8x8 castling geometry) forfeits on the first divergent move.
-# Smoke-test with ROUNDS=1 first and trim this list to what checks out.
 run_rr amazon
 run_rr almost
 run_rr newzealand
