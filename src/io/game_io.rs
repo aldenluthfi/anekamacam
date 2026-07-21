@@ -354,7 +354,7 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
 /// export_tuned_parameters_file
 ///
 /// Exports tuned parameters to `parameters/{variant}/latest.param`,
-/// first rolling any existing `latest.param` to a numbered backup via
+/// first rolling any existing `latest.param` to a timestamped backup via
 /// `roll_latest`.
 ///
 /// Used to save parameters tuned by Texel's Tuning method and to avoid
@@ -450,7 +450,7 @@ pub fn export_tuned_parameters_file(
 
     let file_path = format!("{}/latest.param", dir_path);
 
-    roll_latest(&dir_path, "param");
+    roll_latest(&dir_path, "", "param");
 
     fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
         panic!("Failed to write parameter file {}: {}", file_path, e)

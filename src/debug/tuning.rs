@@ -600,7 +600,7 @@ fn load_dataset(
 /// then loads it into the variant and writes it out — reusing the exact
 /// parse-and-derive path the engine runs at startup so the reloaded
 /// parameters behave identically. `export_tuned_parameters_file` rolls
-/// the previous `latest.param` to an epoch backup.
+/// the previous `latest.param` to a timestamped backup.
 ///
 /// Params:
 /// - state  : &mut State -> loaded variant, updated with the tuned vector
