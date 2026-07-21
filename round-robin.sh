@@ -103,6 +103,24 @@ for s in "${STAGES[@]}"; do
 	mkdir -p "$RR/stage$s"
 done
 
+# Each engine writes logs/latest-<pid>.log into its cwd at trace level;
+# unattended these fill the RR tmpfs and stall PGN writes with ENOSPC.
+# Truncate them in place every 30s. This reclaims tmpfs blocks even while
+# the engine holds the file open: it keeps appending at its old offset, so
+# the file goes sparse and tmpfs only ever stores the tail written since
+# the last sweep. The reaper shares this session's process group, so
+# --stop signals it too; the EXIT trap covers a clean finish.
+reap_engine_logs() {
+	while :; do
+		find "$RR"/stage*/logs -name '*.log' -type f \
+			-exec truncate -s 0 {} + 2>/dev/null || true
+		sleep 30
+	done
+}
+reap_engine_logs &
+REAPER_PID=$!
+trap 'kill "$REAPER_PID" 2>/dev/null || true' EXIT
+
 # run_rr <variant>
 #
 # The engine's config stems now match the fairy-stockfish/cutechess
