@@ -192,9 +192,10 @@ pub fn dec_verbosity() {
 
 /// init_logging
 ///
-/// Initializes file logging: archives any previous process-specific latest
-/// log by its creation timestamp, opens a fresh PID-qualified log, and installs
-/// a formatter that stamps each line with its numeric verbosity level,
+/// Initializes file logging: rolls any previous `logs/latest.log` to a
+/// timestamped backup via `roll_latest`, prunes old backups to
+/// `LOG_HISTORY_KEEP`, opens a fresh `logs/latest.log`, and installs a
+/// formatter that stamps each line with its numeric verbosity level,
 /// timestamp, and source location. Called once at startup from `main`.
 ///
 /// Notes:
@@ -215,27 +216,15 @@ pub fn init_logging() {
         fs::create_dir_all(LOG_DIR).expect("Failed to create log directory");
     }
 
-    let process_id = std::process::id();
-    let log_path = format!("{}/latest-{}.log", LOG_DIR, process_id);
-    let latest = Path::new(&log_path);
-
-    if latest.exists()
-    && let Ok(meta) = fs::metadata(latest)
-    && let Ok(modified) = meta.created() {
-        let datetime: chrono::DateTime<chrono::Local> =
-            modified.into();
-        let archive = format!(
-            "logs/engine_{}-{}.log",
-            datetime.format("%Y-%m-%d_%H-%M-%S"), process_id,
-        );
-        let _ = fs::rename(latest, &archive);
-    }
+    let log_path = format!("{}/latest.log", LOG_DIR);
+    roll_latest(LOG_DIR, "", "log");
+    prune_backups(LOG_DIR, "", "log", LOG_HISTORY_KEEP);
 
     let file = OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(true)
-        .open(latest)
+        .open(&log_path)
         .expect("Failed to open log file");
 
     let target = Box::new(file);

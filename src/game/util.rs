@@ -7,7 +7,7 @@
 //! that incrementally maintained caches still match a from-scratch
 //! recount), the perft/benchmark harness used to validate move generation
 //! against known node counts and to profile search speed, and rolling a
-//! `latest.*` output file to a numbered backup.
+//! `latest.*` output file to a timestamped backup.
 //!
 //! Created: 25/01/2025
 //! Author : Alden Luthfi
@@ -48,43 +48,106 @@ pub fn random_u128() -> u128 {
     u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
 }
 
-/// roll_latest
+/// archive_stamp
 ///
-/// Rolls a directory's `latest.{extension}` file to the next free
-/// numbered backup, so a fresh export or dataset run never overwrites or
-/// appends to the previous one. Scans the directory for existing
-/// `{N}.{extension}` files, renames `latest.{extension}` to
-/// `{N + 1}.{extension}`, and does nothing when there is no current file
-/// to roll. Shared by the parameter export and the datagen dataset.
+/// Formats the archival timestamp for a file being rolled: its creation
+/// time when available, otherwise its modification time, otherwise the
+/// current local time. Rendered with `ARCHIVE_STAMP_FMT` so the resulting
+/// backup name sorts chronologically under a plain lexicographic ordering.
 ///
 /// Params:
-/// - dir      : &str -> directory holding the `latest` file and backups
-/// - extension: &str -> file extension without the dot (e.g. "param")
-pub fn roll_latest(dir: &str, extension: &str) {
-    let suffix = format!(".{}", extension);
-    let latest = format!("latest{}", suffix);
-    let path = format!("{}/{}", dir, latest);
+/// - path: &Path -> the file whose timestamp names its backup
+///
+/// Return:
+/// String -> the formatted `%Y-%m-%d_%H-%M-%S` stamp
+fn archive_stamp(path: &Path) -> String {
+    let moment: chrono::DateTime<chrono::Local> = fs::metadata(path)
+        .and_then(|meta| meta.created().or_else(|_| meta.modified()))
+        .map(Into::into)
+        .unwrap_or_else(|_| chrono::Local::now());
 
-    if !Path::new(&path).exists() {
+    moment.format(ARCHIVE_STAMP_FMT).to_string()
+}
+
+/// roll_latest
+///
+/// Rolls a directory's `{prefix}latest.{extension}` file to a timestamped
+/// backup, so a fresh export, log, or result never overwrites or appends to
+/// the previous one. Reads the current file's timestamp (see
+/// `archive_stamp`), renames it to `{prefix}{stamp}.{extension}`, and does
+/// nothing when there is no current file to roll. On a same-second name
+/// collision a `-2`, `-3`, ... discriminator is appended so no history is
+/// lost. `prefix` is empty for the log/param/data/result files and set to an
+/// engine label (e.g. `engine-a_`) when the SPRT parent harvests a child
+/// engine's log into the result directory. Shared by every rolling-file
+/// system in the engine.
+///
+/// Params:
+/// - dir      : &str -> directory holding the current file and backups
+/// - prefix   : &str -> name prefix before `latest`/the timestamp
+/// - extension: &str -> file extension without the dot (e.g. "param")
+pub fn roll_latest(dir: &str, prefix: &str, extension: &str) {
+    let current = format!("{}/{}latest.{}", dir, prefix, extension);
+
+    if !Path::new(&current).exists() {
         return;
     }
 
-    let mut last_epoch = 0usize;
+    let stamp = archive_stamp(Path::new(&current));
+
+    let mut archive = format!("{}/{}{}.{}", dir, prefix, stamp, extension);
+    let mut discriminator = 2usize;
+    while Path::new(&archive).exists() {
+        archive = format!(
+            "{}/{}{}-{}.{}", dir, prefix, stamp, discriminator, extension,
+        );
+        discriminator += 1;
+    }
+
+    fs::rename(&current, &archive).unwrap_or_else(|error| {
+        panic!("Failed to roll file {}: {}", archive, error)
+    });
+}
+
+/// prune_backups
+///
+/// Caps a rolling-file directory's history by keeping only the newest `keep`
+/// timestamped backups of a given `{prefix}`/`{extension}` family and
+/// deleting the rest. The active `{prefix}latest.{extension}` is never a
+/// candidate. Names are compared lexicographically, which matches
+/// chronological order because `ARCHIVE_STAMP_FMT` is zero-padded and
+/// big-endian. A `keep` of zero clears all history.
+///
+/// Params:
+/// - dir      : &str  -> directory whose backups are pruned
+/// - prefix   : &str  -> name prefix identifying the backup family
+/// - extension: &str  -> file extension without the dot
+/// - keep     : usize -> number of newest backups to retain
+pub fn prune_backups(dir: &str, prefix: &str, extension: &str, keep: usize) {
+    let latest = format!("{}latest.{}", prefix, extension);
+    let suffix = format!(".{}", extension);
+
+    let mut backups = Vec::new();
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             if let Ok(name) = entry.file_name().into_string()
-            && name.ends_with(&suffix) && name != latest
-            && let Ok(num) = name[..name.len() - suffix.len()].parse::<usize>()
+            && name.starts_with(prefix) && name.ends_with(&suffix)
+            && name != latest
             {
-                last_epoch = last_epoch.max(num);
+                backups.push(name);
             }
         }
     }
 
-    let archive = format!("{}/{}{}", dir, last_epoch + 1, suffix);
-    fs::rename(&path, &archive).unwrap_or_else(|e| {
-        panic!("Failed to roll file {}: {}", archive, e)
-    });
+    if backups.len() <= keep {
+        return;
+    }
+
+    backups.sort();
+    let remove_count = backups.len() - keep;
+    for name in backups.into_iter().take(remove_count) {
+        let _ = fs::remove_file(format!("{}/{}", dir, name));
+    }
 }
 
 /// refresh_eval_state

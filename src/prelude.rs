@@ -75,8 +75,8 @@ pub use crate::game::search::{
 
 pub use crate::game::util::{
     benchmark_headless_perft, benchmark_perft, benchmark_search, exe_tag,
-    format_time, perft, random_u128, refresh_eval_state, roll_latest,
-    run_datagen_headless, run_derive_headless, run_tune_headless,
+    format_time, perft, prune_backups, random_u128, refresh_eval_state,
+    roll_latest, run_datagen_headless, run_derive_headless, run_tune_headless,
     square_distance, verify_game_state,
 };
 
@@ -553,6 +553,9 @@ pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
 pub const DATA_DIR: &str = "res/data";
 pub const SPRT_DIR: &str = "res/sprt";
+pub const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";                        /* rolled-file backup name stamp      */
+pub const LOG_HISTORY_KEEP: usize = 32;                                         /* rolled logs kept before pruning    */
+pub const SPRT_HISTORY_KEEP: usize = 64;                                        /* rolled sprt files kept per family  */
 
 pub const TIME_OVERHEAD_MS: u128 = 50;
 pub const MAX_OVERHEAD_MS: u128 = 1000;
@@ -605,7 +608,7 @@ pub const TEXEL_K_ITERATIONS: usize = 32;
 pub const TUNING_VALIDATION_MODULUS: u64 = 5;
 pub const TUNING_VALIDATION_PATIENCE: usize = 10;
 
-pub const SPRT_PROTOCOL: &str = "uci";                                           /* dialect the sprt harness speaks    */
+pub const SPRT_PROTOCOL: &str = "uci";                                          /* dialect the sprt harness speaks    */
 pub const SPRT_ALPHA: f64 = 0.05;
 pub const SPRT_BETA: f64 = 0.05;
 pub const SPRT_HANDSHAKE_TIMEOUT_MS: u64 = 10_000;

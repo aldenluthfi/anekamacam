@@ -121,7 +121,7 @@ fn play_one_game(
 /// self-play games on the loaded variant and writes each game's quiet
 /// positions, labelled with its White-view result, to a fresh
 /// `res/data/{variant}/latest.data` — any dataset from a previous run is
-/// first rolled to a numbered backup, mirroring the parameter export.
+/// first rolled to a timestamped backup, mirroring the parameter export.
 /// Completed games write `game;FEN;result` rows atomically from their buffered
 /// positions; interrupted or invalid games write nothing.
 ///
@@ -152,7 +152,7 @@ pub fn run_datagen(
     });
 
     let path = format!("{}/latest.data", dir);
-    roll_latest(&dir, "data");
+    roll_latest(&dir, "", "data");
 
     let mut file = OpenOptions::new()
         .create(true)

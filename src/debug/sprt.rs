@@ -817,10 +817,11 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 
 /// write_result_file
 ///
-/// Appends a one-run summary to `res/sprt/{variant}/{timestamp}.log`,
-/// recording the two binaries, the time control and Elo bounds, the
-/// final win/draw/loss tally, the log-likelihood ratio, and the verdict,
-/// so completed tests leave a durable record.
+/// Writes the latest one-run summary to `res/sprt/{variant}/latest.sprt`,
+/// first rolling any previous result to a timestamped backup and pruning
+/// old results to `SPRT_HISTORY_KEEP`. Records the two binaries, the time
+/// control and Elo bounds, the final win/draw/loss tally, the log-likelihood
+/// ratio, and the verdict, so completed tests leave a durable record.
 ///
 /// Params:
 /// - variant          : &str            -> variant, selects the output dir
@@ -850,9 +851,7 @@ fn write_result_file(
         panic!("Failed to create SPRT directory {}: {}", dir, e)
     });
 
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-    let process_id = std::process::id();
-    let path = format!("{}/{}-{}.log", dir, stamp, process_id);
+    let path = format!("{}/latest.sprt", dir);
 
     let body = format!(
         "engine A: {}\nengine B: {}\nvariant: {}\ntime control: {}\n\
@@ -863,11 +862,53 @@ fn write_result_file(
         wins, losses, draws, llr, verdict,
     );
 
+    roll_latest(&dir, "", "sprt");
     fs::write(&path, body).unwrap_or_else(|e| {
         panic!("Failed to write SPRT result {}: {}", path, e)
     });
+    prune_backups(&dir, "", "sprt", SPRT_HISTORY_KEEP);
 
     log_1!("SPRT result written to {}", path);
+}
+
+/// harvest_child_logs
+///
+/// Copies each SPRT child engine's own `logs/latest.log` out of its temp
+/// sandbox into the variant's result directory, keyed by engine label, so a
+/// match's per-engine telemetry survives the next run's sandbox wipe. Reuses
+/// the shared rolling scheme: the previous `{label}_latest.log` is first
+/// rolled to a timestamped backup, then pruned to `SPRT_HISTORY_KEEP`. A
+/// binary whose sandbox log is missing — never started, or `A == B` sharing
+/// one sandbox — is skipped. Runs after the children stop so their logs are
+/// fully flushed; the engine logging core stays generic (children always
+/// write plain `logs/latest.log`, unaware of the harness label).
+///
+/// Params:
+/// - variant : &str -> variant name, selects the result directory
+/// - binary_a: &str -> first engine binary (labelled `engine-a`)
+/// - binary_b: &str -> second engine binary (labelled `engine-b`)
+fn harvest_child_logs(variant: &str, binary_a: &str, binary_b: &str) {
+    let dir = format!("{}/{}", SPRT_DIR, variant);
+
+    for (label, binary) in [("engine-a", binary_a), ("engine-b", binary_b)] {
+        let Ok(sandbox) = engine_sandbox(binary) else {
+            continue;
+        };
+        let source = sandbox.join("logs").join("latest.log");
+        if !source.exists() {
+            continue;
+        }
+
+        let prefix = format!("{}_", label);
+        let destination = format!("{}/{}latest.log", dir, prefix);
+
+        roll_latest(&dir, &prefix, "log");
+        if let Err(error) = fs::copy(&source, &destination) {
+            log_2!("Failed to harvest {} log: {}", label, error);
+            continue;
+        }
+        prune_backups(&dir, &prefix, "log", SPRT_HISTORY_KEEP);
+    }
 }
 
 /// run_sprt
@@ -1068,4 +1109,7 @@ pub fn run_sprt(
         variant, binary_a, binary_b, time_control, h0, h1,
         wins, draws, losses, llr, &verdict,
     );
+
+    drop(manager);
+    harvest_child_logs(variant, binary_a, binary_b);
 }
