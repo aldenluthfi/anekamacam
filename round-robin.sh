@@ -1,40 +1,47 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Round robin over all stage binaries (stageA..stageV) plus three
-# fairy-stockfish anchors, run once per variant. Engines vary games on
-# their own (per-process Zobrist seeding), so no opening book is used.
-# No draw/resign adjudication: the engine's eval units are not
-# centipawns, so score thresholds would misfire. Stages before N load
-# params from disk, so each engine gets an isolated dir pre-seeded with
-# the params its own code derives; stageN+ use params embedded at build
-# time. Games per pair = 2 * ROUNDS.
+# Strength Iteration 2 round robin over selected phase binaries plus
+# configurable Fairy-Stockfish anchors. Defaults to Standard, Shogi, and Grand.
+# Engines vary games through per-process Zobrist seeding, so no opening book is
+# used.
 #
-# Detaches from the shell so it survives SSH logout: the first invocation
-# re-execs itself under `setsid nohup`, streams all output to a log, and
-# returns immediately with the pid. cutechess-cli reprints a full rank
-# table every -ratinginterval games, so the log is the live scoreboard.
+# No draw/resign adjudication: AnekaMacam evaluation units are not centipawns,
+# so score thresholds would misfire. Every engine receives an isolated working
+# directory. Use a fresh RR directory for every experiment campaign.
+#
+# Detaches from the shell so it survives SSH logout. The first invocation
+# re-execs itself under setsid/nohup, streams output to a log, and returns its
+# pid. cutechess-cli reprints a full rank table every rating interval.
 #
 # Usage:
-#   round-robin.sh <stage> [stage...]   # launch detached, print log path
-#   round-robin.sh --status             # dump the latest rank table
-#   round-robin.sh --stop               # kill a running detached run
+#   round-robin.sh phaseA-2 phaseJ-2
+#   round-robin.sh A-2 J-2
+#   round-robin.sh --status
+#   round-robin.sh --stop
 #
-# Env: ROUNDS (256), CONCURRENCY (nproc), RR (/tmp/rr) output dir.
+# Env:
+#   RR             output directory (default: ~/rr)
+#   ROUNDS         round-robin rounds (default: 1024)
+#   CONCURRENCY    concurrent games (default: CPU count)
+#   VARIANTS       space-separated variants
+#   FSF_ELOS       space-separated Fairy-Stockfish anchors
+#   ALLOW_EXISTING_RR=1 permits launch into an existing result directory
 
 REPO=$(cd "$(dirname "$0")" && pwd)
-RR=${RR:-/tmp/rr}
-ROUNDS=${ROUNDS:-256}
-CONCURRENCY=${CONCURRENCY:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null)}
+RR=${RR:-~/rr}
+ROUNDS=${ROUNDS:-1024}
+CONCURRENCY=${CONCURRENCY:-$(
+	nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null
+)}
+VARIANTS=${VARIANTS:-"standard shogi grand"}
+FSF_ELOS=${FSF_ELOS:-"1700 1800 1900"}
 
 LOG="$RR/round-robin.log"
 PIDFILE="$RR/round-robin.pid"
 
 mkdir -p "$RR"
 
-# --status: print the most recent complete rank table from the log. Each
-# table starts with a "Rank Name ..." header; awk keeps only the last
-# block so a scrolling log collapses to the current standings.
 if [[ "${1:-}" == "--status" ]]; then
 	if [[ ! -f "$LOG" ]]; then
 		echo "no log at $LOG"
@@ -64,10 +71,10 @@ if [[ "${1:-}" == "--status" ]]; then
 	exit 0
 fi
 
-# --stop: kill the detached process group started below.
 if [[ "${1:-}" == "--stop" ]]; then
 	if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-		kill -- "-$(cat "$PIDFILE")" 2>/dev/null || kill "$(cat "$PIDFILE")"
+		kill -- "-$(cat "$PIDFILE")" 2>/dev/null ||
+			kill "$(cat "$PIDFILE")"
 		echo "stopped pid $(cat "$PIDFILE")"
 		rm -f "$PIDFILE"
 	else
@@ -76,43 +83,59 @@ if [[ "${1:-}" == "--stop" ]]; then
 	exit 0
 fi
 
-STAGES=("$@")
-
-if [[ ${#STAGES[@]} -eq 0 ]]; then
-	echo "usage: round-robin.sh <stage> [stage...] | --status | --stop" >&2
+if [[ $# -eq 0 ]]; then
+	echo "usage: round-robin.sh <iteration-2-phase> [...]" >&2
 	exit 1
 fi
 
-# First entry: re-exec detached. setsid puts the run in its own session
-# (new process group == pid), so --stop can signal the whole tree, and
-# nohup + redirected stdin/stdout survive the shell closing.
+CANDIDATES=()
+for requested in "$@"; do
+	case "$requested" in
+	phase*-2) candidate=$requested ;;
+	*-2) candidate="phase$requested" ;;
+	*)
+		echo "ERROR: invalid iteration-2 phase: $requested" >&2
+		exit 1
+		;;
+	esac
+
+	if [[ ! -x "$REPO/bin/$candidate" ]]; then
+		echo "ERROR: missing executable bin/$candidate" >&2
+		exit 1
+	fi
+	CANDIDATES+=("$candidate")
+done
+
 if [[ "${RR_DETACHED:-}" != "1" ]]; then
-	RR_DETACHED=1 setsid nohup "$0" "$@" >"$LOG" 2>&1 </dev/null &
+	if [[ "${ALLOW_EXISTING_RR:-0}" != "1" ]]; then
+		if [[ -f "$LOG" ]] ||
+			compgen -G "$RR/rr-*.pgn" >/dev/null; then
+			echo "ERROR: RR directory already contains results: $RR" >&2
+			echo "use a fresh RR path or set ALLOW_EXISTING_RR=1" >&2
+			exit 1
+		fi
+	fi
+
+	RR_DETACHED=1 setsid nohup "$0" "${CANDIDATES[@]}" \
+		>"$LOG" 2>&1 </dev/null &
 	pid=$!
 	echo "$pid" >"$PIDFILE"
 	echo "round-robin detached (pid $pid)"
-	echo "  log:      $LOG"
-	echo "  live:     tail -f $LOG"
+	echo "  log:       $LOG"
+	echo "  live:      tail -f $LOG"
 	echo "  standings: $0 --status"
-	echo "  stop:     $0 --stop"
-	echo "  pgn:      $RR/rr-<variant>.pgn (one per variant)"
+	echo "  stop:      $0 --stop"
+	echo "  pgn:       $RR/rr-<variant>.pgn"
 	exit 0
 fi
 
-for s in "${STAGES[@]}"; do
-	mkdir -p "$RR/stage$s"
+for candidate in "${CANDIDATES[@]}"; do
+	mkdir -p "$RR/$candidate"
 done
 
-# Each engine writes logs/latest-<pid>.log into its cwd at trace level;
-# unattended these fill the RR tmpfs and stall PGN writes with ENOSPC.
-# Truncate them in place every 30s. This reclaims tmpfs blocks even while
-# the engine holds the file open: it keeps appending at its old offset, so
-# the file goes sparse and tmpfs only ever stores the tail written since
-# the last sweep. The reaper shares this session's process group, so
-# --stop signals it too; the EXIT trap covers a clean finish.
 reap_engine_logs() {
 	while :; do
-		find "$RR"/stage*/logs -name '*.log' -type f \
+		find "$RR"/*/logs -name '*.log' -type f \
 			-exec truncate -s 0 {} + 2>/dev/null || true
 		sleep 30
 	done
@@ -121,32 +144,34 @@ reap_engine_logs &
 REAPER_PID=$!
 trap 'kill "$REAPER_PID" 2>/dev/null || true' EXIT
 
-# run_rr <variant>
-#
-# The engine's config stems now match the fairy-stockfish/cutechess
-# spelling (standard, minishogi, minixiangqi), so one variant name serves
-# everyone: cutechess as the referee (-variant) and the stage binaries
-# plus the fsf anchors via UCI_Variant.
+read -ra ANCHORS <<<"$FSF_ELOS"
+
 run_rr() {
 	local variant=$1
 	local engines=()
+	local candidate
+	local elo
 
-	# Marker the --status parser keys on to label each variant's table.
 	echo "=== variant $variant ==="
 
-	for s in "${STAGES[@]}"; do
-		engines+=(-engine "name=stage$s" "cmd=$REPO/bin/stage$s"
-			"dir=$RR/stage$s" arg=uci)
+	for candidate in "${CANDIDATES[@]}"; do
+		engines+=(
+			-engine "name=$candidate" "cmd=$REPO/bin/$candidate"
+			"dir=$RR/$candidate" arg=uci
+		)
 	done
 
-	for elo in 1700 1800 1900; do
-		engines+=(-engine "name=fsf-$elo" cmd=fairy-stockfish
-			option.UCI_LimitStrength=true "option.UCI_Elo=$elo")
+	for elo in "${ANCHORS[@]}"; do
+		engines+=(
+			-engine "name=fsf-$elo" cmd=fairy-stockfish
+			option.UCI_LimitStrength=true "option.UCI_Elo=$elo"
+		)
 	done
 
 	cutechess-cli \
 		"${engines[@]}" \
-		-each proto=uci option.Threads=1 option.Hash=64 tc=30+0.3 timemargin=200 \
+		-each proto=uci option.Threads=1 option.Hash=64 \
+		tc=30+0.3 timemargin=200 \
 		-tournament round-robin -rounds "$ROUNDS" -games 2 \
 		-recover \
 		-concurrency "$CONCURRENCY" -ratinginterval 50 \
@@ -154,25 +179,7 @@ run_rr() {
 		-variant "$variant"
 }
 
-run_rr standard
-run_rr grand
-run_rr shogi
-run_rr minishogi
-run_rr xiangqi
-run_rr minixiangqi
-run_rr amazon
-run_rr almost
-run_rr newzealand
-run_rr hoppelpoppel
-run_rr pocketknight
-run_rr knightmate
-run_rr chigorin
-run_rr chancellor
-run_rr modern
-run_rr janus
-run_rr embassy
-run_rr gothic
-run_rr asean
-run_rr ai-wok
-run_rr judkins
-run_rr euroshogi
+read -ra TARGET_VARIANTS <<<"$VARIANTS"
+for variant in "${TARGET_VARIANTS[@]}"; do
+	run_rr "$variant"
+done
