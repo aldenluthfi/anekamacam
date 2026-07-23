@@ -37,6 +37,8 @@ uci
 // vice versa. Each move is parsed by matching the movestring that is
 // translated by the protocol.
 = uci moves =
+\*[a-z][0-9]+@[a-z][0-9]+ ->
+(:[a-z][0-9]+)\*[a-z][0-9]+ -> $1
 7 -> 8
 6 -> 7
 5 -> 6
@@ -49,7 +51,6 @@ uci
 8=R -> 8r
 8=B -> 8b
 8=N -> 8n
-\*.{2}@.{2} ->
 = ->
 \* ->
 : ->
