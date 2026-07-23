@@ -682,7 +682,6 @@ pub struct State {
 
     pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] (piece*B+end)^2    */
     pub capt_hist: Vec<i16>,                                                    /* [piece*B*8 + end*8 + victim_bkt]   */
-    pub corr_hist: Vec<i16>,                                                    /* per-side pawn-hash eval correction */
 
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
@@ -739,7 +738,6 @@ impl Clone for State {
 
             cont_hist: self.cont_hist.clone(),
             capt_hist: self.capt_hist.clone(),
-            corr_hist: self.corr_hist.clone(),
 
             search_hist: self.search_hist.clone(),
             killer_hist: self.killer_hist.clone(),
@@ -991,7 +989,6 @@ impl State {
             capt_hist: vec![
                 0i16; piece_count * board_size * CAPT_HIST_BUCKETS
             ],
-            corr_hist: vec![0i16; 2 * CORR_HIST_SIZE],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
             static_eval: vec![-INF; MAX_DEPTH],
         }
@@ -1077,7 +1074,6 @@ impl State {
             vec![0i16; piece_count * board_size * board_size];
         self.capt_hist =
             vec![0i16; piece_count * board_size * CAPT_HIST_BUCKETS];
-        self.corr_hist = vec![0i16; 2 * CORR_HIST_SIZE];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
         self.static_eval = vec![-INF; MAX_DEPTH];
     }
