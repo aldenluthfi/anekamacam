@@ -134,19 +134,25 @@ pub fn format_move(
 
 /// parse_move
 ///
-/// Parses a textual move by matching against generated legal moves. The
-/// input is compared to `format_move` output for each candidate and the
-/// first exact match (after trimming whitespace) is returned.
+/// Parses a textual move by matching against pseudo-legal move candidates
+/// generated for the position. The input is compared to `format_move`
+/// output for each candidate and the first exact match (after trimming
+/// whitespace) is returned.
+///
+/// Notes:
+/// Candidates are pseudo-legal: the returned `Move` may leave the moving
+/// side's royal pieces in check. Callers must validate with `make_move!`
+/// and treat a false return as an illegal move.
 ///
 /// Params:
 /// - move_str: &str                -> user move text to resolve
-/// - state   : &State              -> position whose legal moves are generated
+/// - state   : &State              -> position whose candidates are generated
 /// - dict    : Option<&Translator> -> translator applied to each candidate
 ///
 /// Return:
 ///
 /// Option<Move>
-/// the matching legal move, or None if none matches
+/// the matching pseudo-legal move, or None if none matches
 pub fn parse_move(
     move_str: &str, state: &State, dict: Option<&Translator>
 ) -> Option<Move> {
