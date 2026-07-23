@@ -405,18 +405,45 @@ Suggested new-session prompt:
 ### Current state
 
 - Phase A-2 baseline: built from source snapshot `773d04e` and verified.
-- Current `bin/phaseA-2` MD5: `50c270e588604adc8ac620a7a94c285e`.
+- Current `bin/phaseA-2` MD5: `50c270e588604adc8ac620a7a94c285e` (reproduced
+  after the `build-stages.sh` lineage change; anchor holds).
 - Phase A-2 replay gate: 26/26 fixtures passed.
 - Iteration 1 stage naming is closed at Stage AC.
-- Phase B-2: not started.
-- Phase C-2: not started.
-- Phase D-2: not started.
-- Phase E-2: not started.
-- Phase F-2: not started.
+- Phase B-2: DONE. Branch `phaseB-2` from `773d04e`; three ordered commits
+  (`4ddcff0` capture history, `e551feb` singular family, `1774e67` correction
+  history). MD5 `94d4ed454a6c98b97cfe7693d4e7b345`; 26/26 fixtures; warning-free.
+- Phase C-2: DONE (restore capture history). MD5
+  `abb94b2ba326b66e8e8d4c35d09bfb2a`; 26/26 fixtures.
+- Phase D-2: DONE (restore singular family). MD5
+  `80c0d01789a78de9de259bd42ba4333f`; 26/26 fixtures.
+- Phase E-2: DONE (restore correction history; branch = `e551feb`). MD5
+  `88070cbe2ee3d262cf0639a6fe18757a`; 26/26 fixtures.
+- Phase F-2: not started (PAUSED here for F-2 synthesis decision).
 - Phase G-2: not started.
 - Phase H-2: not started.
 - Phase I-2: not started.
 - Phase J-2: not started.
+
+### B-2..E-2 measurements (standard speed suite, depth 13, 5 runs/pos)
+
+Baseline `phaseA-2`. Ratios are candidate/baseline. Node counts at fixed depth
+are noisy (Zobrist reseeds per process; A-2 self-swung ~8% across invocations),
+so treat >1.15 as signal and ~1.0-1.05 as noise. NOT strength; strength deferred
+to the J-2 round robin. Standard-only per this iteration's per-phase gate; full
+five-variant suite runs at J-2.
+
+| Phase | Mechanism kept | nodes@d13 | nps |
+|---|---|---|---|
+| B-2 | none (all removed) | x1.259 | x1.019 |
+| C-2 | capture history | x1.269 | x0.997 |
+| D-2 | singular family | x1.159 | x1.013 |
+| E-2 | correction history | x1.012 | x1.047 |
+
+Reading: correction history (E-2) recovers nearly all of A-2's tree size on its
+own; singular (D-2) recovers part; capture history (C-2) shows no node-count
+benefit over B-2 at this depth on standard. Throughput (nps) moves within +-5%
+for every phase, so none of the three costs measurable standard throughput.
+Harness: `tools/speed_suite.py` (new, standard-only reusable gate).
 
 ### Setup completed in this session
 
@@ -432,6 +459,13 @@ Suggested new-session prompt:
 
 ### Next action
 
-Start a new session with Phase B-2. Do not launch final strength round robin
-before Phase J-2 exists. A small Phase A-2 legality soak may run in parallel,
-but its games are not final Iteration 2 strength evidence.
+PAUSED after E-2 (F-2 depends on the C/D/E matrix). Decide the F-2 mechanism
+set from the measurements above, then rebuild F-2 fresh from Phase A-2 (cherry-
+pick the kept-removal subset) and resume G-2 -> J-2. Round robin runs on the
+remote layout (cutechess-cli is not installed locally); build and verify J-2
+here, then hand off the `round-robin.sh` command.
+
+Branches present: `phaseB-2`, `phaseC-2`, `phaseD-2`, `phaseE-2`. Editing
+worktrees under `/tmp/aneka-edit-phase{B,C,D}-2`. Binaries under `bin/`.
+`build-stages.sh` now carries phase parentage and auto-creates a phase branch
+from its parent (H-2 parent overridable via `PHASE_H_PARENT`).
