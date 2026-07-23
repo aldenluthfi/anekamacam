@@ -700,11 +700,11 @@ results must not be merged with future fixed-engine games.
 
 ### Remaining execution plan
 
-Strength Iteration 2 is defined in `plans/07-strength-iteration-2.md`. Plan 07
-labels Stage AC `773d04e` as Phase A-2 and decomposes the proposed Stage AD
-lean-search work into phases B-2 through J-2.
+Iteration 1 closes at Stage AC. Strength Iteration 2 is independently defined
+in `plans/07-strength-iteration-2.md`; it imports commit `773d04e` as Phase A-2
+and uses only phases B-2 through J-2 afterward.
 
-1. Use Stage AC `773d04e` as the fixed legality baseline.
+1. Import commit `773d04e` as the Iteration 2 legality baseline.
 2. Run Phase 3 lean-search bundle ablations in isolated experiment branches:
    remove G+H+I+L first, then test pre-C LMR and B+J continuation history.
 3. Recheck D, E, S, and U only after the winning lean bundle is known.
