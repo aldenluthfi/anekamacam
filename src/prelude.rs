@@ -547,7 +547,6 @@ pub const P_TABLE_SIZE: usize = 1 <<
 
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000;                               /* ordering band for SEE >= 0 moves   */
 pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000;                                /* ordering band for SEE < 0          */
-pub const CAPT_HIST_BUCKETS: usize = 8;                                         /* capture-history victim buckets     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
