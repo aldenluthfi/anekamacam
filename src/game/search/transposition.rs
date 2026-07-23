@@ -350,7 +350,7 @@ macro_rules! tt_eval {
 /// entry replaces the eval, a lower bound raises it, an upper bound
 /// lowers it; mate-range scores are left out of the refinement. The raw
 /// entry fields (depth, bound flags, ply-adjusted score) are returned for
-/// singular-extension triggering; on a miss they read as depth 0, FALPHA,
+/// probcut refutation checks; on a miss they read as depth 0, FALPHA,
 /// and i32::MIN.
 ///
 /// On failure returns

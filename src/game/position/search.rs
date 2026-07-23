@@ -159,7 +159,6 @@ pub fn clear_search(
         vec![0i16; piece_count * board_size * CAPT_HIST_BUCKETS];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     state.static_eval = vec![-INF; MAX_DEPTH];
-    state.excluded = vec![null_pseudo_move(); MAX_DEPTH];
 
     state.pv_line.fill(null_move());
     state.pv_table.fill(null_move());
@@ -822,16 +821,6 @@ fn quiescence_search(
 ///   before searching, since ordering is poor without a PV move and a
 ///   shallower search wastes less effort.
 ///
-/// - singular extension, multicut, and negative extension:
-///   at high depth with a lower-bound TT entry near the current depth, a
-///   reduced zero-window search around `tt_score - depth * margin` runs
-///   with the TT move excluded (`state.excluded` per ply disables the TT
-///   cutoff, TT stores, and the move itself at that node). If everything
-///   else fails low the TT move is singular and its search deepens by
-///   one; if the exclusion search still clears `beta` the node multicuts
-///   to `singular_beta`; if only the TT entry clears `beta` the TT move
-///   searches one ply shallower.
-///
 /// - static exchange evaluation pruning:
 ///   at shallow non-PV non-check nodes, skips captures whose static exchange
 ///   evaluation is more negative than a depth-scaled margin, filtering out
@@ -948,8 +937,6 @@ pub fn alpha_beta(
                                TRANSPOSITION TABLE PROBE
     \*-----------------------------------------------------------------------*/
 
-    let excluded_here = state.excluded[ply] != null_pseudo_move();
-
     let mut pv_move: Option<PseudoMove> = None;
     let tt_entry = probe_tt_entry!(state, ttable, alpha, beta, depth);
 
@@ -957,7 +944,7 @@ pub fn alpha_beta(
         pv_move = Some(tt_entry.2);
     }
 
-    if tt_entry.0 && !excluded_here {
+    if tt_entry.0 {
         return tt_entry.1;
     }
 
@@ -1080,7 +1067,6 @@ pub fn alpha_beta(
 
     if depth >= MIN_PROBCUT_DEPTH
     && !in_check
-    && !excluded_here
     && beta - alpha == 1
     && beta.abs() < MATE_SCORE
     && prune_eval >= beta
@@ -1179,43 +1165,6 @@ pub fn alpha_beta(
     }
 
     /*-----------------------------------------------------------------------*\
-                          SINGULAR EXTENSION AND MULTICUT
-    \*-----------------------------------------------------------------------*/
-
-    let mut negative_extension = false;
-
-    if depth >= MIN_SINGULAR_DEPTH
-    && state.search_ply > 0
-    && (state.search_ply as usize) < 2 * info.root_depth
-    && !excluded_here
-    && tt_entry.2 != null_pseudo_move()
-    && tt_entry.5 >= depth - SINGULAR_TT_DEPTH_SLACK
-    && tt_entry.6 != FALPHA
-    && tt_entry.7.abs() < MATE_SCORE
-    {
-        let singular_beta =
-            tt_entry.7 - depth as i32 * state.statics.singular_margin;
-
-        state.excluded[ply] = tt_entry.2;
-
-        let singular_score = alpha_beta(
-            state,
-            ttable, qtable, ptable,
-            depth / 2, singular_beta - 1, singular_beta, info, bufs, false
-        );
-
-        state.excluded[ply] = null_pseudo_move();
-
-        if singular_score >= singular_beta {
-            if singular_beta >= beta {
-                return singular_beta;
-            } else if tt_entry.7 >= beta {
-                negative_extension = true;
-            }
-        }
-    }
-
-    /*-----------------------------------------------------------------------*\
                                     MOVE GENERATION
     \*-----------------------------------------------------------------------*/
 
@@ -1273,13 +1222,6 @@ pub fn alpha_beta(
         );
 
         let mv = &bufs.move_buf[ply][i];
-
-        if excluded_here && m_matches!(mv, state.excluded[ply]) {
-            continue;
-        }
-
-        let is_tt_move = negative_extension
-            && pv_move.as_ref().is_some_and(|pm| m_matches!(mv, pm));
 
         let piece = piece!(mv) as usize;
         let start = start!(mv) as usize;
@@ -1448,11 +1390,7 @@ pub fn alpha_beta(
 
 
         else {
-            let ext_depth = if is_tt_move {
-                depth - 2
-            } else {
-                depth - 1
-            };
+            let ext_depth = depth - 1;
 
             score = -alpha_beta(
                 state,
@@ -1498,16 +1436,14 @@ pub fn alpha_beta(
                         );
                     }
 
-                    if !excluded_here {
-                        update_corr_hist!(
-                            state, static_eval, beta, depth, FBETA, is_capture
-                        );
+                    update_corr_hist!(
+                        state, static_eval, beta, depth, FBETA, is_capture
+                    );
 
-                        hash_tt_entry!(
-                            bufs.move_buf[ply][i], beta, FBETA, depth,
-                            static_eval, state, ttable
-                        );
-                    }
+                    hash_tt_entry!(
+                        bufs.move_buf[ply][i], beta, FBETA, depth,
+                        static_eval, state, ttable
+                    );
 
                     return beta;
                 }
@@ -1605,10 +1541,6 @@ pub fn alpha_beta(
 
     #[cfg(debug_assertions)]
     verify_game_state(state);
-
-    if excluded_here {
-        return alpha;
-    }
 
     if alpha != alpha_start {
         update_corr_hist!(
