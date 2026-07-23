@@ -1545,9 +1545,6 @@ pub fn derive_search_parameters(state: &mut State) {
     let nmp_eval_div = (avg / 2).max(1);
     state.static_mut().nmp_eval_div = nmp_eval_div;
 
-    let singular_margin = (avg / 128).max(1);
-    state.static_mut().singular_margin = singular_margin;
-
     let draw_bias = (avg / 8).max(10);
     state.static_mut().draw_bias = draw_bias;
 
