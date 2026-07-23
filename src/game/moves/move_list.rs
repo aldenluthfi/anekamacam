@@ -111,6 +111,8 @@ macro_rules! is_in_check {
 /// make/undo legality probe, so no move that leaves its own royal exposed
 /// ever reaches the caller. The position is restored before the vector is
 /// yielded, so callers can enumerate legality without disturbing state.
+/// Always empty when state.game_over is true, because
+/// generate_all_moves_and_drops returns immediately in that case.
 ///
 /// Params:
 /// - state: &mut State -> position to enumerate; unchanged after expansion
@@ -3557,6 +3559,8 @@ macro_rules! undo_null_move {
 /// Generates all pseudo-legal moves for the side to move, including drops.
 /// Normal moves are skipped during setup phase; drop generation may use
 /// either own-hand or enemy-hand inventory depending on drop flags.
+/// Returns immediately with an empty list when state.game_over is true,
+/// so legal_moves! is always empty at terminal positions.
 ///
 /// Params:
 /// - state  : &State         -> position to generate for
@@ -3569,6 +3573,10 @@ pub fn generate_all_moves_and_drops(
     scratch: &mut Vec<u64>,
 ) {
     out.clear();
+
+    if state.game_over {
+        return;
+    }
 
     let piece_count = state.statics.pieces.len() / 2;
     let start_index = piece_count * state.playing as usize;

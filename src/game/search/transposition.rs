@@ -645,7 +645,11 @@ macro_rules! hash_tt_entry {
 /// Every walked move — triangular or probed — is validated against the
 /// freshly generated move list before it is applied, so a stale
 /// triangular row or a collided TT move truncates the reported line
-/// instead of corrupting the position.
+/// instead of corrupting the position. A move that causes game_over is
+/// included (it is the terminal move) but the PV is never extended past
+/// it: generate_all_moves_and_drops returns empty when game_over, so
+/// the next iteration finds no match and stops. TT probes are also
+/// skipped once game_over to avoid extending past terminal state.
 ///
 /// Params:
 /// - state: &mut State -> position walked and restored
@@ -676,10 +680,19 @@ macro_rules! fill_pv_line {
                 walk_complete = false;
                 break;
             }
+
+            if $state.game_over {
+                walk_complete = false;
+                break;
+            }
         }
 
         for slot in triangular_length..$depth {
             if !walk_complete {
+                break;
+            }
+
+            if $state.game_over {
                 break;
             }
 
@@ -712,6 +725,10 @@ macro_rules! fill_pv_line {
             };
 
             $state.pv_line[slot] = pv_move;
+
+            if $state.game_over {
+                break;
+            }
         }
 
         for index in ($state.search_ply as usize)..MAX_DEPTH {
