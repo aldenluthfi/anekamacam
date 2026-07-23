@@ -1100,7 +1100,8 @@ impl State {
     /// - dict: Option<&Translator> -> optional piece-letter translator
     pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
         self.reset();
-        parse_fen(self, fen, dict);
+        parse_fen(self, fen, dict)
+            .unwrap_or_else(|error| panic!("{}", error));
     }
 
     /// State::fork

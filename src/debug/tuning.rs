@@ -532,7 +532,13 @@ fn load_dataset(
         }
 
         scratch.reset();
-        parse_fen(&mut scratch, fen, None);
+        parse_fen(&mut scratch, fen, None).unwrap_or_else(|error| {
+            panic!(
+                "Invalid FEN on dataset row {}: {}",
+                line_index + 1,
+                error,
+            )
+        });
         refresh_eval_state(&mut scratch);
 
         let phase_index = match scratch.game_phase {

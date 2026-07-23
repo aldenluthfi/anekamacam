@@ -294,7 +294,8 @@ impl Session {
         let mut state = parse_config_file(&config_path);
         let startpos = state.statics.startpos.clone();
         state.reset();
-        parse_fen(&mut state, &startpos, None);
+        parse_fen(&mut state, &startpos, None)
+            .unwrap_or_else(|error| panic!("{}", error));
         refresh_eval_state(&mut state);
 
         let translator = Translator::find(&default_variant, protocol);
@@ -363,7 +364,8 @@ impl Session {
             self.state = parse_config_file(&config_path);
             let startpos = self.state.statics.startpos.clone();
             self.state.reset();
-            parse_fen(&mut self.state, &startpos, None);
+            parse_fen(&mut self.state, &startpos, None)
+                .unwrap_or_else(|error| panic!("{}", error));
             refresh_eval_state(&mut self.state);
             self.ptable = Arc::new(PTable::default());
             self.position_valid = true;
@@ -529,7 +531,13 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
         }
 
         scratch.reset();
-        parse_fen(&mut scratch, &fen, dict.as_ref());
+        if let Err(error) = parse_fen(
+            &mut scratch, &fen, dict.as_ref()
+        ) {
+            log_2!("position: invalid FEN: {}", error);
+            session.position_valid = false;
+            return;
+        }
         refresh_eval_state(&mut scratch);
         index = fen_end;
     } else {
@@ -883,7 +891,8 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
             let position = session.state.statics.startpos.clone();
 
             session.state.reset();
-            parse_fen(&mut session.state, &position, None);
+            parse_fen(&mut session.state, &position, None)
+                .unwrap_or_else(|error| panic!("{}", error));
 
             refresh_eval_state(&mut session.state);
 
@@ -974,7 +983,8 @@ pub fn new_game(session: &mut Session) {
     abort_search(session);
     let start = session.state.statics.startpos.clone();
     session.state.reset();
-    parse_fen(&mut session.state, &start, None);
+    parse_fen(&mut session.state, &start, None)
+        .unwrap_or_else(|error| panic!("{}", error));
     refresh_eval_state(&mut session.state);
     session.position_valid = true;
 }
