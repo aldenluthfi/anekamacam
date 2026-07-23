@@ -1958,14 +1958,15 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// parse_fen
 ///
 /// Parses a FEN string and updates the game state accordingly. Applies
-/// protocol translation if needed.
+/// protocol translation if needed and reports malformed external input
+/// without panicking.
 ///
 /// Cheesy Forsyth-Edwards Notation (CFEN)
 ///
 /// The dimensions of the board are determined by the number of ranks and files
 /// in this section.
 ///
-/// The format is similar to FEN depending on the ruleset there is 3-5 parts,
+/// The format is similar to FEN depending on the ruleset there is 2-5 parts,
 /// the order is as follows:
 ///
 /// (position) (side) (castling rights) (en passant square) (in hand pieces)
@@ -1993,7 +1994,12 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 /// - state: &mut State          -> position rebuilt from the FEN
 /// - fen  : &str                -> the CFEN string to load
 /// - dict : Option<&Translator> -> optional protocol translation first
-pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
+///
+/// Return:
+/// Result<(), String>           -> success or first malformed-field diagnostic
+pub fn parse_fen(
+    state: &mut State, fen: &str, dict: Option<&Translator>
+) -> Result<(), String> {
     let mut needed_parts = 2;
 
     if castling!(state) {
@@ -2004,99 +2010,142 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
         needed_parts += 1;
     }
 
-    if drops!(state) || promote_to_captured!(state) {
+    if drops!(state)
+    || promote_to_captured!(state)
+    || setup_phase!(state)
+    {
         needed_parts += 1;
     }
 
     let mut translated = fen.to_string();
     if let Some(translator) = dict {
-        for (k, v) in &translator.inverse_fen {
-            translated = k.replace_all(&translated, v).into_owned();
+        for (pattern, replacement) in &translator.inverse_fen {
+            translated = pattern
+                .replace_all(&translated, replacement)
+                .into_owned();
         }
     }
     let fen = &translated;
 
     let parts: Vec<&str> = fen.split_whitespace().collect();
-    assert!(
-        parts.len() >= needed_parts,
-        "FEN must have at least {needed_parts} parts"
-    );
+    if parts.len() < needed_parts {
+        return Err(format!(
+            "FEN must have at least {} parts", needed_parts
+        ));
+    }
+    if parts.len() > needed_parts + 2 {
+        return Err(format!(
+            "FEN has {} parts but expected at most {}",
+            parts.len(),
+            needed_parts + 2,
+        ));
+    }
     let mut part_index = 0;
 
     let position = parts[part_index];
     part_index += 1;
 
     let ranks_data: Vec<&str> = position.split('/').collect();
-    assert!(
-        ranks_data.len() == state.statics.ranks as usize,
-        "FEN rank count ({}) doesn't match board ranks ({})",
-        ranks_data.len(),
-        state.statics.ranks
-    );                                                                          /* assert number of ranks in the FEN  */
+    if ranks_data.len() != state.statics.ranks as usize {
+        return Err(format!(
+            "FEN rank count ({}) doesn't match board ranks ({})",
+            ranks_data.len(),
+            state.statics.ranks,
+        ));
+    }
 
-    for (rank_idx, rank_data) in ranks_data.iter().enumerate() {                /* assert number of files in each rank*/
-        let mut file_count = 0u8;
+    for (rank_index, rank_data) in ranks_data.iter().enumerate() {
+        let mut file_count = 0u32;
         let mut chars = rank_data.chars().peekable();
-        while let Some(c) = chars.next() {
-            if c.is_ascii_digit() {
-                let mut num_str = c.to_string();
-                while let Some(&next_c) = chars.peek() {
-                    if next_c.is_ascii_digit() {
-                        num_str.push(next_c);
+        while let Some(character) = chars.next() {
+            let width = if character.is_ascii_digit() {
+                let mut number = character.to_string();
+                while let Some(&next_character) = chars.peek() {
+                    if next_character.is_ascii_digit() {
+                        number.push(next_character);
                         chars.next();
                     } else {
                         break;
                     }
                 }
-                file_count += num_str.parse::<u8>().unwrap();
+                let width = number.parse::<u32>().map_err(|_| {
+                    format!("Invalid empty-square count: {}", number)
+                })?;
+                if width == 0 {
+                    return Err(
+                        "FEN empty-square count must be positive".to_string()
+                    );
+                }
+                width
             } else {
-                file_count += 1;
-            }
+                1
+            };
+            file_count = file_count.checked_add(width).ok_or_else(|| {
+                format!("FEN rank {} file count overflow", rank_index)
+            })?;
         }
-        assert!(
-            file_count == state.statics.files,
-            "FEN rank {} has {} files but expected {}",
-            rank_idx,
-            file_count,
-            state.statics.files
-        );
+        if file_count != state.statics.files as u32 {
+            return Err(format!(
+                "FEN rank {} has {} files but expected {}",
+                rank_index,
+                file_count,
+                state.statics.files,
+            ));
+        }
     }
 
-    let mut rank = state.statics.ranks - 1;
-    let mut file = 0u8;
+    let mut rank = u32::from(state.statics.ranks)
+        .checked_sub(1)
+        .ok_or_else(|| "FEN board has no ranks".to_string())?;
+    let mut file = 0u32;
+    let board_files = u32::from(state.statics.files);
 
     let mut position_chars = position.chars().peekable();
-    while let Some(c) = position_chars.next() {
-        match c {
+    while let Some(character) = position_chars.next() {
+        match character {
             '/' => {
-                rank -= 1;
+                rank = rank.checked_sub(1)
+                    .ok_or_else(|| "FEN has too many ranks".to_string())?;
                 file = 0;
             }
             '0'..='9' => {
-                let mut num_str = c.to_string();
-                while let Some(&next_c) = position_chars.peek() {
-                    if next_c.is_ascii_digit() {
-                        num_str.push(next_c);
+                let mut number = character.to_string();
+                while let Some(&next_character) = position_chars.peek() {
+                    if next_character.is_ascii_digit() {
+                        number.push(next_character);
                         position_chars.next();
                     } else {
                         break;
                     }
                 }
-                file += num_str.parse::<u8>().unwrap();
+                let width = number.parse::<u32>().map_err(|_| {
+                    format!("Invalid empty-square count: {}", number)
+                })?;
+                file = file.checked_add(width).ok_or_else(|| {
+                    "FEN file index overflow".to_string()
+                })?;
             }
             _ => {
-                let piece_idx =
-                    *state.statics.piece_char_map
-                    .get(&c).unwrap_or_else(|| {
-                        panic!("Unknown piece character: {}", c)
-                    }) as usize;
+                let piece_index = state.statics.piece_char_map
+                    .get(&character)
+                    .copied()
+                    .ok_or_else(|| {
+                        format!("Unknown piece character: {}", character)
+                    })? as usize;
 
-                let mut piece = &state.statics.pieces[piece_idx];
+                let mut piece = &state.statics.pieces[piece_index];
                 let mut piece_index = p_index!(piece);
                 let mut piece_color = p_color!(piece);
-                let square_index =
-                    (rank as u32) * (state.statics.files as u32)
-                + (file as u32);
+                let square_index = rank
+                    .checked_mul(board_files)
+                    .and_then(|base| base.checked_add(file))
+                    .ok_or_else(|| "FEN square index overflow".to_string())?;
+                if square_index >= state.main_board.len() as u32 {
+                    return Err(format!(
+                        "FEN square index {} is outside the board",
+                        square_index,
+                    ));
+                }
 
                 if promotions!(state)
                     && piece.promotions.len() == 1
@@ -2121,8 +2170,6 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
 
                 set!(state.pieces_board[piece_color as usize], square_index);
 
-
-
                 if p_is_royal!(piece) {
                     state.royal_list[piece_color as usize]
                         .push(square_index as Square);
@@ -2144,12 +2191,12 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
                 if get!(
                     state.statics.initial_setup[piece_index as usize],
                     square_index
-                )
-                {
+                ) {
                     set!(state.virgin_board, square_index);
                 }
 
-                file += 1;
+                file = file.checked_add(1)
+                    .ok_or_else(|| "FEN file index overflow".to_string())?;
             }
         }
     }
@@ -2157,13 +2204,16 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
     state.playing = match parts[part_index] {
         "w" => WHITE,
         "b" => BLACK,
-        _ => panic!("Invalid active color: {}", parts[1]),
+        active => return Err(format!("Invalid active color: {}", active)),
     };
     part_index += 1;
 
     if castling!(state) {
         let castling = parts[part_index];
         part_index += 1;
+        if !CASTLING_PATTERN.is_match(castling) {
+            return Err(format!("Invalid castling rights: {}", castling));
+        }
         state.castling_state = 0;
         if castling.contains('K') {
             state.castling_state |= WK_CASTLE;
@@ -2185,24 +2235,65 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
         state.en_passant_square = if en_passant == "*" {
             NO_EN_PASSANT
         } else {
-            let s = &en_passant[0..3];
-            let e = &en_passant[3..6];
-            let z = &en_passant[6..7];
+            let captures = ENP_PATTERN.captures(en_passant)
+                .ok_or_else(|| {
+                    format!("Invalid en passant field: {}", en_passant)
+                })?;
+            let square_text = captures.get(1)
+                .ok_or_else(|| {
+                    format!("Invalid en passant square: {}", en_passant)
+                })?
+                .as_str();
+            let captured_text = captures.get(2)
+                .ok_or_else(|| {
+                    format!(
+                        "Invalid en passant captured square: {}",
+                        en_passant,
+                    )
+                })?
+                .as_str();
+            let piece_text = captures.get(3)
+                .ok_or_else(|| {
+                    format!("Invalid en passant piece: {}", en_passant)
+                })?
+                .as_str();
 
-            let square_index = u32::from_str_radix(s, 16)
-                .unwrap_or_else(|_| panic!("Invalid en passant square: {}", s));
-            let piece_square_index =
-                u32::from_str_radix(e, 16).unwrap_or_else(|_| {
-                    panic!("Invalid en passant captured square: {}", e)
-                });
-            let piece_char = z.chars().next().unwrap();
-            let piece_index = *state.statics
-                .piece_char_map
-                .get(&piece_char)
-                .unwrap_or_else(|| panic!("Unknown piece character: {}", z))
-                as u32;
+            let square_index = u32::from_str_radix(square_text, 16)
+                .map_err(|_| {
+                    format!("Invalid en passant square: {}", square_text)
+                })?;
+            let captured_index = u32::from_str_radix(captured_text, 16)
+                .map_err(|_| {
+                    format!(
+                        "Invalid en passant captured square: {}",
+                        captured_text,
+                    )
+                })?;
+            let board_size = state.main_board.len() as u32;
+            if square_index >= board_size {
+                return Err(format!(
+                    "En passant square {} is outside the board",
+                    square_text,
+                ));
+            }
+            if captured_index >= board_size {
+                return Err(format!(
+                    "En passant captured square {} is outside the board",
+                    captured_text,
+                ));
+            }
+            let piece_character = piece_text.chars().next()
+                .ok_or_else(|| {
+                    format!("Invalid en passant piece: {}", piece_text)
+                })?;
+            let piece_index = state.statics.piece_char_map
+                .get(&piece_character)
+                .copied()
+                .ok_or_else(|| {
+                    format!("Unknown piece character: {}", piece_text)
+                })? as u32;
 
-            square_index | (piece_square_index << 12) | piece_index << 24
+            square_index | (captured_index << 12) | piece_index << 24
         };
     }
 
@@ -2214,29 +2305,32 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
         part_index += 1;
 
         let hand_parts: Vec<&str> = hands.split('/').collect();
-        assert!(
-            hand_parts.len() == 2,
-            "Invalid pieces in hand format: {}",
-            hands
-        );
+        if hand_parts.len() != 2 {
+            return Err(format!("Invalid pieces in hand format: {}", hands));
+        }
 
-        for (color_idx, hand_part) in hand_parts.iter().enumerate() {
+        for (color_index, hand_part) in hand_parts.iter().enumerate() {
             if hand_part == &"-" {
                 continue;
             }
 
-            for char in hand_part.chars() {
-                let piece_index = *state.statics
-                    .piece_char_map
-                    .get(&char)
-                    .unwrap_or_else(|| {
-                        panic!(
+            for character in hand_part.chars() {
+                let piece_index = state.statics.piece_char_map
+                    .get(&character)
+                    .copied()
+                    .ok_or_else(|| {
+                        format!(
                             "Unknown piece character in hand: {}",
-                            char
+                            character,
                         )
-                    }) as usize;
-
-                state.piece_in_hand[color_idx][piece_index] += 1;
+                    })? as usize;
+                let count = &mut state.piece_in_hand[color_index][piece_index];
+                *count = count.checked_add(1).ok_or_else(|| {
+                    format!(
+                        "Too many {} pieces in hand",
+                        character,
+                    )
+                })?;
             }
         }
     }
@@ -2247,23 +2341,36 @@ pub fn parse_fen(state: &mut State, fen: &str, dict: Option<&Translator>) {
     }
 
     if parts.len() > part_index {
-        state.halfmove_clock = parts[part_index].parse().unwrap_or_else(|_| {
-            panic!("Invalid halfmove clock: {}", parts[part_index].trim())
-        });
+        state.halfmove_clock = parts[part_index].parse().map_err(|_| {
+            format!("Invalid halfmove clock: {}", parts[part_index].trim())
+        })?;
         part_index += 1;
     }
 
     if parts.len() > part_index {
-        state.ply_counter = match parts[part_index].trim().parse::<u32>() {
-            Ok(ply_num) => (ply_num - 1) * 2 + (state.playing as u32),
-            Err(_) => panic!("Invalid ply count: {}", parts[part_index].trim()),
-        };
+        let fullmove = parts[part_index].trim().parse::<u32>()
+            .map_err(|_| {
+                format!("Invalid fullmove number: {}", parts[part_index])
+            })?;
+        state.ply_counter = fullmove.checked_sub(1)
+            .and_then(|number| number.checked_mul(2))
+            .and_then(|number| number.checked_add(state.playing as u32))
+            .ok_or_else(|| {
+                format!("Invalid fullmove number: {}", fullmove)
+            })?;
+        part_index += 1;
+    }
+
+    if parts.len() > part_index {
+        return Err(format!("Unexpected FEN field: {}", parts[part_index]));
     }
 
     refresh_eval_state(state);
 
     state.position_hash = hash_position(state);
     state.pawn_hash = hash_pawns(state);
+
+    Ok(())
 }
 
 /// combine_board_strings

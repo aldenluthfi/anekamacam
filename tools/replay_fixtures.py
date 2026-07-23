@@ -144,6 +144,7 @@ class ProtocolEngine:
             self.process.wait(timeout=5)
 
 
+STANDARD_BOARD = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
 STANDARD_PREFIX = (
     "d2d4 g8f6 c1f4 c7c5 d4c5 e7e5 f4e5 b8c6 "
     "e5d6 f8e7 b1c3 d8a5 d1d2 b7b5 e1c1 e8g8"
@@ -175,6 +176,40 @@ def fixtures():
             True,
         ),
         Fixture(
+            "standard-reject-short-fen",
+            "uci",
+            "standard",
+            "position fen 8/8 w",
+            True,
+        ),
+        Fixture(
+            "standard-reject-unknown-piece",
+            "uci",
+            "standard",
+            "position fen 7x/8/8/8/8/8/8/4K3 w - - 0 1",
+            True,
+        ),
+        Fixture(
+            "standard-reject-invalid-en-passant",
+            "uci",
+            "standard",
+            f"position fen {STANDARD_BOARD} w KQkq z9 0 1",
+            True,
+        ),
+        Fixture(
+            "standard-reject-zero-fullmove",
+            "uci",
+            "standard",
+            f"position fen {STANDARD_BOARD} w KQkq - 0 0",
+            True,
+        ),
+        Fixture(
+            "standard-recover-after-invalid-fen",
+            "uci",
+            "standard",
+            "position startpos",
+        ),
+        Fixture(
             "crazyhouse-captures-and-drops",
             "uci",
             "crazyhouse",
@@ -201,6 +236,13 @@ def fixtures():
             "crazyhouse",
             "position fen 4k3/8/8/3pP3/8/8/8/4K3[] w - d6 0 1 "
             "moves e5d6",
+        ),
+        Fixture(
+            "crazyhouse-reject-unknown-hand-piece",
+            "uci",
+            "crazyhouse",
+            "position fen 4k3/8/8/8/8/8/8/4K3[Z] w - - 0 1",
+            True,
         ),
         Fixture(
             "crazyhouse-castling",
@@ -236,7 +278,30 @@ def fixtures():
             "4k4/9/9/9/r8/4P4/P8/9/C8/4K4 w - - 0 1 "
             "moves a1a5",
         ),
+        Fixture(
+            "xiangqi-reject-short-fen",
+            "ucci",
+            "xiangqi",
+            "position fen 4k4/9 w - - 0 1",
+            True,
+        ),
+        Fixture(
+            "xiangqi-recover-after-invalid-fen",
+            "ucci",
+            "xiangqi",
+            "position startpos",
+        ),
     ]
+
+    cases.append(
+        Fixture(
+            "shogi-reject-invalid-hand",
+            "usi",
+            "shogi",
+            "position sfen 4k4/9/9/9/9/9/9/9/4K4 b Z 1",
+            True,
+        )
+    )
 
     shogi_positions = [
         (
