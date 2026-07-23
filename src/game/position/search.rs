@@ -115,7 +115,9 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// clear_search
 ///
 /// Resets search state before a fresh root search.
-/// Zeroes node counters, interrupt flag, killer and history tables, and ply.
+/// Zeroes node counters, interrupt flag, killer and history tables, ply,
+/// pv_line, pv_table, and pv_length so a stale PV from the previous
+/// search never leaks through when the caller returns early.
 /// Board position is unchanged.
 ///
 /// Params:
@@ -158,6 +160,10 @@ pub fn clear_search(
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     state.static_eval = vec![-INF; MAX_DEPTH];
     state.excluded = vec![null_pseudo_move(); MAX_DEPTH];
+
+    state.pv_line.fill(null_move());
+    state.pv_table.fill(null_move());
+    state.pv_length.fill(0);
 
     ttable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     qtable.age.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -208,6 +214,27 @@ pub fn search_position(
     ptable.valid.store(0, Ordering::Relaxed);
     ptable.new_write.store(0, Ordering::Relaxed);
     ptable.over_write.store(0, Ordering::Relaxed);
+
+    /*-----------------------------------------------------------------------*\
+                             TERMINAL ROOT EARLY RETURN
+    \*-----------------------------------------------------------------------*/
+
+    if state.game_over {
+        info.nodes = 0;
+        info.interrupt = false;
+        state.search_ply = 0;
+        state.pv_line.fill(null_move());
+        state.pv_table.fill(null_move());
+        state.pv_length.fill(0);
+
+        return SearchResult {
+            best_score: draw_score!(state),
+            best_move: null_move(),
+            ponder_move: null_move(),
+            total_nodes: 0,
+            total_elapsed: 0,
+        };
+    }
 
     if thread_num <= 1 {
         info.thread_count = thread_num.max(1);

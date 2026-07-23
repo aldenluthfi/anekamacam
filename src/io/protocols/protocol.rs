@@ -161,20 +161,29 @@ fn list_variants(protocol: &str) -> Vec<String> {
 ///
 /// Emits the final `bestmove` line for a completed search, appending the
 /// ponder move when one was found, and flushes stdout so the GUI sees it
-/// immediately. A null best move (search interrupted before depth one or
-/// crashed) falls back to any legal move, or `(none)` in a terminal
-/// position, so the GUI never receives the unplayable "null" string. The
-/// line is identical across every protocol the engine speaks.
+/// immediately. Terminal positions always emit `(none)` with no ponder,
+/// regardless of the SearchResult (which may be stale). A null best move
+/// at a non-terminal position (search interrupted before depth one or
+/// crashed) falls back to any legal move, or `(none)` if none exist.
+/// The line is identical across every protocol the engine speaks.
 ///
 /// Params:
 /// - result: &SearchResult       -> finished search outcome
-/// - state : &State              -> position for move formatting
+/// - state : &mut State          -> position for move formatting
 /// - dict  : Option<&Translator> -> translator for printed move names
 fn print_bestmove(
     result: &SearchResult,
     state: &mut State,
     dict: Option<&Translator>,
 ) {
+    if state.game_over {
+        emit(EngineEvent::BestMove {
+            best: "(none)".to_string(),
+            ponder: None,
+        });
+        return;
+    }
+
     let fallback = result.best_move == null_move();
 
     let best_move = if fallback {
