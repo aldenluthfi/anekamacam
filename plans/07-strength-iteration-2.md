@@ -2,34 +2,33 @@
 
 ## Purpose
 
-Start a new strength iteration from the legality-correct Stage AC baseline and
-turn the broad proposed Stage AD lean-search change into measured experiment
-phases. This iteration decides whether capture history, singular search,
-correction history, aggressive quiet LMR, and continuation history earn their
-search cost.
+Iteration 1 ends at Stage AC. Iteration 2 imports that source snapshot as its
+own Phase A-2 baseline, then uses only `-2` phase labels. No stage lettering
+continues across the boundary.
 
-No phase receives a permanent stage letter by existing alone. Temporary phase
-branches and commits are experiment artifacts. Only the final accepted
-cumulative result becomes Stage AD on `stage-w-onward`. If the baseline wins,
-Stage AD is not created.
+This iteration decides whether capture history, singular search, correction
+history, aggressive quiet LMR, and continuation history earn their search cost.
+Temporary phase branches and commits are reproducible experiment artifacts.
+Final results remain Iteration 2 phases. Iteration 1's stage alphabet is closed
+at Stage AC.
 
 ## Handoff from Plan 06
 
 Original recovery plan and execution status:
 `plans/06-search-evaluation-legality-recovery.md`.
 
-Fixed baseline:
+Iteration 2 baseline:
 
 - phase label: **Phase A-2**;
-- repository stage: **Stage AC**;
+- source snapshot: Iteration 1 Stage AC;
 - commit: `773d04e`;
 - clean release MD5: `b8bec5b0450d38fd5e6f2b9f7ccb20dd`;
 - replay gate: 26 fixtures passing;
 - external legality gate: 2,024 Fairy-Stockfish walk plies passing;
 - target variants: Standard, Crazyhouse, Shogi, Xiangqi, Grand.
 
-Phase A-2 is a label for the existing Stage AC commit, not a new code commit.
-All experiment phases branch from A-2 or from another explicitly named phase.
+Phase A-2 is the first Iteration 2 checkpoint. All later experiment phases
+branch from A-2 or another explicitly named `-2` phase.
 
 Preserve current user work in `src/main.rs` and `tools/datagen_local.sh`. Do not
 include either file in experiment commits unless the user explicitly changes
@@ -37,22 +36,21 @@ scope.
 
 ## Naming and commit rules
 
-- `phaseA-2`: exact Stage AC baseline, commit `773d04e`.
-- `phaseB-2` through `phaseJ-2`: temporary experiment refs.
+- `phaseA-2`: Iteration 2 baseline at commit `773d04e`.
+- `phaseB-2` through `phaseJ-2`: Iteration 2 experiment refs.
 - Temporary phase commits may exist on isolated branches so binaries can be
-  reproduced. They are not stages and never enter `stage-w-onward` directly.
-- Rejected phases consume no stage letter.
-- Final winning diff is reconstructed or squashed onto Phase A-2 as one logical
-  Stage AD commit.
-- First later accepted cumulative change becomes Stage AE, then AF, and so on.
-- Never call a temporary phase `stageAD`; reserve that name for the accepted
-  final result.
+  reproduced.
+- Rejected candidates remain documented under their phase labels; no stage
+  letter is assigned.
+- Final winning source is reconstructed on Phase A-2 and recorded as Phase J-2.
+- Later Iteration 2 work continues with Phase K-2, L-2, and so on.
+- Iteration 1 stage names are never reused for Iteration 2 work.
 
-## Stage AD phase map
+## Iteration 2 phase map
 
 | Phase | Parent | Candidate | Purpose |
 |---|---|---|---|
-| A-2 | Stage AC | Fixed baseline | Trusted legality and measurement base. |
+| A-2 | Iteration 1 snapshot | Fixed baseline | Trusted legality and measurement base. |
 | B-2 | A-2 | Remove three search groups | Test full lean-search bundle first. |
 | C-2 | B-2 | Restore capture history | Decide whether capture history earns keep. |
 | D-2 | B-2 | Restore singular family | Isolate singular/multicut contribution. |
@@ -61,7 +59,7 @@ scope.
 | G-2 | F-2 | Restore older quiet LMR | Test whether aggressive LMR still helps. |
 | H-2 | best F/G | Remove continuation history | Test its full removal. |
 | I-2 | A-2 | Rebuild best lean subset | Remove branch-history accidents. |
-| J-2 | I-2 | Freeze final candidate | Candidate for Stage AD arbitration. |
+| J-2 | I-2 | Freeze final candidate | Final Iteration 2 arbitration candidate. |
 
 Iteration-2 labels always include the `-2` suffix. Legacy mechanisms are named
 in prose as `Iteration 1 Stage G`, `Iteration 1 Stage H`, `Iteration 1 Stages
@@ -74,7 +72,7 @@ Before editing search code:
 1. Verify branch and commit:
 
    ```bash
-   git checkout stage-w-onward
+   git checkout main
    git rev-parse HEAD
    ```
 
@@ -133,7 +131,8 @@ Delete:
 - negative extension from the same mechanism;
 - singular margins and dead helper state.
 
-Do not remove the cumulative check-extension cap from Stage S in this phase.
+Do not remove the cumulative check-extension cap from Iteration 1 Stage S in
+this phase.
 
 ### Remove Iteration 1 Stages I/L: correction history
 
@@ -200,16 +199,16 @@ Requirements:
 - exact release binary provenance recorded;
 - replay and five-variant speed gates repeated from scratch.
 
-F-2 is the Lean-1 finalist, not yet Stage AD.
+F-2 is the Lean-1 finalist, not the final Iteration 2 candidate.
 
 ## Phase G-2: quiet-LMR rollback
 
-Branch from F-2. Restore pre-original-Stage-C quiet LMR behavior while retaining
-F-2's chosen mechanism set.
+Branch from F-2. Restore quiet LMR behavior from before Iteration 1 Stage C
+while retaining F-2's chosen mechanism set.
 
-This is distinct from Stage W. Stage W reverted Stage V's later sqrt/sqrt
-retune to Stage U behavior; G-2 asks whether Iteration 1 Stage C's older
-aggressiveness should also be removed.
+This is distinct from Iteration 1 Stage W, which reverted Iteration 1 Stage V's
+later sqrt/sqrt retune to Iteration 1 Stage U behavior. G-2 asks whether
+Iteration 1 Stage C's older aggressiveness should also be removed.
 
 Compare F-2 and G-2 over the full multi-position suite. Search is
 nondeterministic, so single start-position results do not decide this phase.
@@ -243,7 +242,7 @@ Required comparisons depend on the winning path, for example:
 - continuation removal with current versus pre-C LMR;
 - final subset with and without each retained add-back when evidence overlaps.
 
-## Phase J-2: final Stage AD candidate
+## Phase J-2: final Iteration 2 candidate
 
 Freeze one candidate from Phase I-2. Run complete local gates again with fresh
 binaries and no reused benchmark output.
@@ -329,9 +328,9 @@ VARIANTS="standard crazyhouse shogi xiangqi grand" \
 Use FSF 1700, 1800, and 1900 initially. Add 2000, 2100, 2200, and 2300 only
 after the finalist beats FSF-1900.
 
-## Stage AD acceptance rule
+## Phase J-2 acceptance rule
 
-Create Stage AD only when final arbitration supports one candidate.
+Adopt Phase J-2 only when final arbitration supports its cumulative candidate.
 
 Acceptance requires:
 
@@ -342,11 +341,12 @@ Acceptance requires:
 - no Shogi or Grand result contaminated by old games;
 - final diff reconstructed cleanly from Phase A-2.
 
-Commit one logical Stage AD change. Do not include Plan 07 updates, generated
-results, user `src/main.rs`, or `tools/datagen_local.sh` in that stage commit.
+Commit one logical Iteration 2 result identified as Phase J-2. Do not include
+Plan 07 updates, generated results, user `src/main.rs`, or
+`tools/datagen_local.sh` in that code commit.
 
-If Phase A-2 wins, close iteration with no Stage AD commit and record that the
-removed search mechanisms earned keep as a group.
+If Phase A-2 wins, close Iteration 2 with no search-code commit and record that
+the removed mechanisms earned keep as a group.
 
 ## Build script contract
 
@@ -380,8 +380,9 @@ reused for iteration 2.
 ## New-session start checklist
 
 1. Read Plan 06 and this Plan 07.
-2. Confirm `stage-w-onward` points to `773d04e`.
-3. Confirm only preserved user changes and plan files are uncommitted.
+2. Confirm commit `773d04e` exists as the Phase A-2 source snapshot.
+3. Confirm only preserved user changes and generated phase binaries are
+   uncommitted.
 4. Build and verify `phaseA-2`.
 5. Create isolated `phaseB-2` experiment branch/worktree from `773d04e`.
 6. Remove capture history, singular search, and correction history without
@@ -394,8 +395,8 @@ reused for iteration 2.
 Suggested new-session prompt:
 
 > Continue `plans/07-strength-iteration-2.md`. Start Phase B-2 from Phase A-2
-> commit `773d04e`, preserve `src/main.rs` and `tools/datagen_local.sh`, and do
-> not assign Stage AD until final five-variant arbitration.
+> commit `773d04e`, preserve `src/main.rs` and `tools/datagen_local.sh`, and use
+> only Iteration 2 phase labels.
 
 ---
 
@@ -403,9 +404,10 @@ Suggested new-session prompt:
 
 ### Current state
 
-- Phase A-2 baseline: built and verified at Stage AC `773d04e`.
+- Phase A-2 baseline: built from source snapshot `773d04e` and verified.
 - Current `bin/phaseA-2` MD5: `50c270e588604adc8ac620a7a94c285e`.
 - Phase A-2 replay gate: 26/26 fixtures passed.
+- Iteration 1 stage naming is closed at Stage AC.
 - Phase B-2: not started.
 - Phase C-2: not started.
 - Phase D-2: not started.
@@ -415,22 +417,21 @@ Suggested new-session prompt:
 - Phase H-2: not started.
 - Phase I-2: not started.
 - Phase J-2: not started.
-- Stage AD: not assigned.
 
 ### Setup completed in this session
 
 - original Plan 06 and its execution status consolidated into one file;
 - Plan 07 iteration labels and phase decomposition defined;
-- Stage AC marked as Phase A-2;
-- `build-stages.sh` reduced to iteration-2 phases A-2 through J-2;
+- Iteration 1 Stage AC snapshot imported as independent Phase A-2;
+- `build-stages.sh` reduced to Iteration 2 phases A-2 through J-2;
 - `round-robin.sh` reduced to iteration-2 phase binaries and phase resolution
   verified without launching games;
 - Phase A-2 built successfully and passed all replay fixtures;
-- perft removed from this iteration's phase gate because Stage AD changes only
-  search machinery, not move generation.
+- perft removed from this iteration's phase gate because phases B-2 through J-2
+  change only search machinery, not move generation.
 
 ### Next action
 
 Start a new session with Phase B-2. Do not launch final strength round robin
 before Phase J-2 exists. A small Phase A-2 legality soak may run in parallel,
-but its games are not Stage AD strength evidence.
+but its games are not final Iteration 2 strength evidence.
