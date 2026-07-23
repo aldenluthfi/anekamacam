@@ -558,7 +558,6 @@ pub struct StaticState {
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
     pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                 */
     pub nmp_eval_div: i32,                                                      /* NMP eval-surplus reduction divisor */
-    pub capt_hist_div: i32,                                                     /* capture-history victim bucket div  */
     pub singular_margin: i32,                                                   /* singular beta margin per depth     */
     pub tempo_bonus: i32,                                                       /* tempo advantage bonus              */
     pub draw_bias: i32,                                                         /* draw contempt clamp                */
@@ -682,7 +681,6 @@ pub struct State {
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
     pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] (piece*B+end)^2    */
-    pub capt_hist: Vec<i16>,                                                    /* [piece*B*8 + end*8 + victim_bkt]   */
     pub corr_hist: Vec<i16>,                                                    /* per-side pawn-hash eval correction */
 
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
@@ -741,7 +739,6 @@ impl Clone for State {
             pv_length: self.pv_length.clone(),
 
             cont_hist: self.cont_hist.clone(),
-            capt_hist: self.capt_hist.clone(),
             corr_hist: self.corr_hist.clone(),
 
             search_hist: self.search_hist.clone(),
@@ -879,7 +876,6 @@ impl State {
             pst_endgame: vec![vec![0; board_size]; piece_count],
             nmp_min_material: 1,
             nmp_eval_div: 1,
-            capt_hist_div: 1,
             singular_margin: 1,
             tempo_bonus: 0,
             draw_bias: 0,
@@ -994,9 +990,6 @@ impl State {
 
             cont_hist: vec![0i16; 2 * cont_dim * cont_dim],
             search_hist: vec![0i16; piece_count * board_size * board_size],
-            capt_hist: vec![
-                0i16; piece_count * board_size * CAPT_HIST_BUCKETS
-            ],
             corr_hist: vec![0i16; 2 * CORR_HIST_SIZE],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
             static_eval: vec![-INF; MAX_DEPTH],
@@ -1082,8 +1075,6 @@ impl State {
         self.cont_hist = vec![0i16; 2 * cont_dim * cont_dim];
         self.search_hist =
             vec![0i16; piece_count * board_size * board_size];
-        self.capt_hist =
-            vec![0i16; piece_count * board_size * CAPT_HIST_BUCKETS];
         self.corr_hist = vec![0i16; 2 * CORR_HIST_SIZE];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
         self.static_eval = vec![-INF; MAX_DEPTH];

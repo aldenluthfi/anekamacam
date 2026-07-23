@@ -250,14 +250,14 @@ macro_rules! see {
 /// move is searched earlier. Scoring bands, highest priority first:
 ///
 /// - pv move         : 5000000
-/// - winning capture : 4000000 + h + gain + capt_hist, gain >= 0
+/// - winning capture : 4000000 + h + gain, gain >= 0
 /// - killer move     : 1000000 + 7h + [1, 2]
 /// - history         : 1000000 + 3h + combined, in [-3h, 3h]
-/// - losing capture  : 1000000 - h + SEE + capt_hist, SEE < 0
+/// - losing capture  : 1000000 - h + SEE, SEE < 0
 ///
-/// where `h = MAX_HIST_VALUE`. The capture-history shifts keep each
-/// capture band inside its lane: winning stays at or above 4000000,
-/// losing stays below 1000000.
+/// where `h = MAX_HIST_VALUE`. The signed SEE term keeps each capture band
+/// inside its lane: winning stays at or above 4000000, losing stays below
+/// 1000000.
 ///
 /// Params:
 ///
@@ -332,50 +332,14 @@ macro_rules! score_move {
                 $state, scored_move, $see_moves, $see_scratch
             );
 
-            let capt = $state.capt_hist[
-                capt_hist_index!(scored_move, $state)
-            ] as i32;
-
             if see_score >= 0 {
                 (WINNING_CAPTURE_SCORE + MAX_HIST_VALUE as i32                  /* winning captures ordered second    */
-                    + see_score + capt) as usize
+                    + see_score) as usize
             } else {
                 (LOSING_CAPTURE_SCORE - MAX_HIST_VALUE as i32                   /* losing captures ordered last       */
-                    + see_score + capt) as usize
+                    + see_score) as usize
             }
         }
-    }};
-}
-
-/// capt_hist_index!
-///
-/// Maps a capture move onto its capture-history slot. The index folds the
-/// moving piece, the destination square, and the victim's value bucket
-/// (`victim_value / capt_hist_div`, saturated to the last bucket), so
-/// exchanges are tracked by what was captured rather than where the move
-/// started.
-///
-/// Params:
-///
-/// - mv: &Move
-///   the capture move to index
-///
-/// - state: &State
-///   position providing piece values and the bucket divisor
-///
-/// Return:
-/// usize -> index into `state.capt_hist`
-#[macro_export]
-macro_rules! capt_hist_index {
-    ($mv:expr, $state:expr) => {{
-        let bucket = (victim_value!($mv, $state)
-            / $state.statics.capt_hist_div)
-            .min(CAPT_HIST_BUCKETS as i32 - 1) as usize;
-
-        piece!($mv) as usize * $state.statics.board_size
-            * CAPT_HIST_BUCKETS
-            + end!($mv) as usize * CAPT_HIST_BUCKETS
-            + bucket
     }};
 }
 

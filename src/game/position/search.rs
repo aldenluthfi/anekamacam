@@ -155,8 +155,6 @@ pub fn clear_search(
 
     state.cont_hist = vec![0i16; 2 * cont_dim * cont_dim];
     state.search_hist = vec![0i16; piece_count * board_size * board_size];
-    state.capt_hist =
-        vec![0i16; piece_count * board_size * CAPT_HIST_BUCKETS];
     state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     state.static_eval = vec![-INF; MAX_DEPTH];
     state.excluded = vec![null_pseudo_move(); MAX_DEPTH];
@@ -1292,9 +1290,6 @@ pub fn alpha_beta(
         let is_drop = m_drop!(mv);
         let is_quiet = m_quiet!(mv);
 
-        let capt_idx =
-            if is_capture { capt_hist_index!(mv, state) } else { 0 };
-
         let dangerous_push = p_is_pawn!(&state.statics.pieces[piece])
             && !is_capture
             && !is_drop
@@ -1492,10 +1487,6 @@ pub fn alpha_beta(
                                 );
                             }
                         }
-                    } else if is_capture {
-                        apply_history_gravity!(
-                            state.capt_hist[capt_idx], bonus
-                        );
                     }
 
                     if !excluded_here {
@@ -1528,10 +1519,6 @@ pub fn alpha_beta(
                             );
                         }
                     }
-                } else if is_capture {
-                    apply_history_gravity!(
-                        state.capt_hist[capt_idx], bonus
-                    );
                 }
 
                 alpha = score;
@@ -1569,12 +1556,6 @@ pub fn alpha_beta(
                     );
                 }
             }
-        }
-
-        else if is_capture {
-            apply_history_gravity!(
-                state.capt_hist[capt_idx], -bonus
-            );
         }
     }
 
