@@ -244,6 +244,12 @@ struct SearchLimits {
 /// thread/hash/overhead option values, the shared tables (rebuilt when the
 /// Hash option changes), and the active search handle if a `go` is in
 /// flight.
+///
+/// `position_valid` tracks whether the current `state` is the result of a
+/// fully successful `position` replay (or `ucinewgame` / variant reload).
+/// It is set true at startup and after every clean position load; set false
+/// when `handle_position` fails mid-replay. A false value causes `go` to
+/// emit an immediate `bestmove (none)` and return without spawning.
 pub struct Session {
     protocol: String,                                                           /* the protocol being spoken          */
     state: State,                                                               /* the engine's working position      */
@@ -258,6 +264,7 @@ pub struct Session {
     qtable: Arc<QTable>,                                                        /* shared quiescence table            */
     ptable: Arc<PTable>,                                                        /* shared pawn structure table        */
     active: Option<SearchHandle>,                                               /* in-flight search, if any           */
+    position_valid: bool,                                                       /* false after a failed position cmd  */
 }
 
 impl Session {
@@ -311,6 +318,7 @@ impl Session {
             qtable,
             ptable,
             active: None,
+            position_valid: true,
         }
     }
 
@@ -334,11 +342,12 @@ impl Session {
     /// current variant is not among them it reseats onto the dialect's
     /// default variant (standard when served, otherwise the first) exactly
     /// as startup does, reloading the position and pawn table so nothing from
-    /// the old variant leaks through.
+    /// the old variant leaks through. Any active search is stopped first.
     ///
     /// Params:
     /// - protocol: &str -> the dialect name to switch to
     fn set_protocol(&mut self, protocol: &str) {
+        abort_search(self);
         self.protocol = protocol.to_string();
         self.variants = list_variants(protocol);
 
@@ -357,6 +366,7 @@ impl Session {
             parse_fen(&mut self.state, &startpos, None);
             refresh_eval_state(&mut self.state);
             self.ptable = Arc::new(PTable::default());
+            self.position_valid = true;
         }
 
         self.translator = Translator::find(&self.variant, protocol);
@@ -389,6 +399,40 @@ fn spawn_hash_tables(
             (hash_mb * HASH_P_PARTS / HASH_PARTS).max(1)
         )),
     )
+}
+
+/// replay_moves
+///
+/// Replays move tokens onto `state`, stopping at first parse or legality
+/// failure.
+///
+/// Params:
+/// - state : &mut State          -> position replayed into
+/// - tokens: &[&str]             -> move tokens without `moves`
+/// - dict  : Option<&Translator> -> translator for notation lookup
+///
+/// Return:
+/// Result<(), String>            -> success or first failing ply diagnostic
+fn replay_moves(
+    state: &mut State,
+    tokens: &[&str],
+    dict: Option<&Translator>,
+) -> Result<(), String> {
+    for (ply, &move_str) in tokens.iter().enumerate() {
+        let Some(mv) = parse_move(move_str, state, dict) else {
+            return Err(format!(
+                "ply {} \"{}\" parse failed", ply + 1, move_str
+            ));
+        };
+
+        if !make_move!(state, mv) {
+            return Err(format!(
+                "ply {} \"{}\" illegal", ply + 1, move_str
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 /// Session command handlers
@@ -458,40 +502,62 @@ fn spawn_hash_tables(
 ///     whitespace-split `setoption` line; applies Variant / Threads / Hash /
 ///     Overhead changes
 fn handle_position(session: &mut Session, tokens: &[&str]) {
-    let startpos = session.state.statics.startpos.clone();
-    session.state.reset();
+    abort_search(session);
 
+    let mut scratch = session.state.fork();
+    let dict = session.translator.clone();
     let mut index = 1;
 
     if tokens.get(index).copied() == Some("startpos") {
-        parse_fen(&mut session.state, &startpos, None);
         index += 1;
-    } else if matches!(tokens.get(index).copied(), Some(kw) if kw != "moves") {
-        index += 1;                                                             /* skip the dialect FEN keyword       */
-
-        let fen_end = tokens[index..]                                           /* (fen, sfen, ...) whatever it is    */
+    } else if matches!(
+        tokens.get(index).copied(),
+        Some(keyword) if keyword != "moves"
+    ) {
+        index += 1;
+        let fen_end = tokens[index..]
             .iter()
-            .position(|&t| t == "moves")
-            .map(|p| p + index)
+            .position(|&token| token == "moves")
+            .map(|position| position + index)
             .unwrap_or(tokens.len());
-        let fen_str = tokens[index..fen_end].join(" ");
-        let dict = session.translator.as_ref();
+        let fen = tokens[index..fen_end].join(" ");
 
-        parse_fen(&mut session.state, &fen_str, dict);
+        if fen.is_empty() {
+            log_2!("position: empty FEN");
+            session.position_valid = false;
+            return;
+        }
+
+        scratch.reset();
+        parse_fen(&mut scratch, &fen, dict.as_ref());
+        refresh_eval_state(&mut scratch);
         index = fen_end;
+    } else {
+        log_2!("position: missing startpos or FEN");
+        session.position_valid = false;
+        return;
     }
 
-    refresh_eval_state(&mut session.state);
+    if index < tokens.len() {
+        if tokens[index] != "moves" {
+            log_2!("position: unexpected token \"{}\"", tokens[index]);
+            session.position_valid = false;
+            return;
+        }
 
-    if tokens.get(index).copied() == Some("moves") {
-        let dict = session.translator.as_ref();
-        let state = &mut session.state;
-        for move_str in &tokens[index + 1..] {
-            if let Some(mv) = parse_move(move_str, state, dict) {
-                make_move!(state, mv);
-            }
+        if let Err(error) = replay_moves(
+            &mut scratch,
+            &tokens[index + 1..],
+            dict.as_ref(),
+        ) {
+            log_2!("position: {}", error);
+            session.position_valid = false;
+            return;
         }
     }
+
+    session.state = scratch;
+    session.position_valid = true;
 }
 
 /// start_search
@@ -507,6 +573,15 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 /// - tokens : &[&str]      -> normalized `go` limit tokens
 pub fn start_search(session: &mut Session, tokens: &[&str]) {
     abort_search(session);
+
+    if !session.position_valid {
+        log_2!("go: position invalid, refusing search");
+        emit(EngineEvent::BestMove {
+            best: "(none)".to_string(),
+            ponder: None,
+        });
+        return;
+    }
 
     let go_time = ENGINE_START.elapsed().as_nanos();
     let is_ponder = tokens.contains(&"ponder");
@@ -794,14 +869,14 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
         .join(" ");
     let value = value_pos.map(|b| tokens[(b + 1)..].join(" "));
 
-    let variant_option = session.variant_option();
+    let variant = session.variant_option();
 
     match (name.as_str(), value) {
         (OPT_PROTOCOL, Some(v)) if find_protocol(&v).is_some() => {
-            abort_search(session);
             session.set_protocol(&v);
         }
-        (n, Some(v)) if n == variant_option && session.variants.contains(&v) => {
+        (n, Some(v)) if n == variant && session.variants.contains(&v) => {
+            abort_search(session);
             let conf = format!("{}.conf", v);
             session.state = parse_config_file(&conf);
 
@@ -816,6 +891,7 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
 
             session.translator = Translator::find(&v, &session.protocol);
             session.variant = v;
+            session.position_valid = true;
         }
         (OPT_THREADS, Some(v)) => {
             if let Ok(n) = v.parse::<usize>() {
@@ -900,6 +976,7 @@ pub fn new_game(session: &mut Session) {
     session.state.reset();
     parse_fen(&mut session.state, &start, None);
     refresh_eval_state(&mut session.state);
+    session.position_valid = true;
 }
 
 /// execute_common

@@ -3070,14 +3070,19 @@ fn execute_command(
         }
         _ if trimmed.starts_with("move") => {
             let mv_str = trimmed[5..].trim();
-            if let Some(mv) = parse_move(mv_str, state, dict) {
-                make_move!(state, mv);
-
-                let board_state = BoardState::from_state(state, dict);
-
-                emit(EngineEvent::Board(board_state));
-            } else {
-                log_2!("Invalid move: {}", mv_str);
+            match parse_move(mv_str, state, dict) {
+                None => {
+                    log_2!("Invalid move: {}", mv_str);
+                }
+                Some(mv) => {
+                    if make_move!(state, mv) {
+                        let board_state =
+                            BoardState::from_state(state, dict);
+                        emit(EngineEvent::Board(board_state));
+                    } else {
+                        log_2!("Illegal move: {}", mv_str);
+                    }
+                }
             }
         }
         _ if trimmed.starts_with("add") => {
