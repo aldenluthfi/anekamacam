@@ -1465,18 +1465,18 @@ macro_rules! make_move {
 
             let move_type = move_type!(applied_move);
             let pass_move = is_pass!(applied_move);
+            let piece_index = piece!(applied_move) as usize;
+            let creates_enp = creates_enp!(applied_move);
+            let enp_square = created_enp!(applied_move) as u32;
 
             let stand_off_before =
                 stand_offs!($state) && is_in_stand_off!($state);
 
             if move_type == QUIET_MOVE {
-                let piece_index = piece!(applied_move) as usize;
                 let start_square = start!(applied_move) as u32;
                 let end_square = end!(applied_move) as u32;
                 let is_promotion = promotion!(applied_move);
-                let creates_enp = creates_enp!(applied_move);
                 let promoted_piece = promoted!(applied_move) as usize;
-                let enp_square = created_enp!(applied_move) as u32;
 
                 let piece_color =
                     p_color!($state.statics.pieces[piece_index]);
@@ -1501,19 +1501,6 @@ macro_rules! make_move {
                 }
 
                 clear!($state.virgin_board, start_square);
-
-                if creates_enp {
-                    $state.en_passant_square =
-                        enp_square as EnPassantSquare;
-                } else {
-                    $state.en_passant_square = NO_EN_PASSANT;
-                }
-
-                hash_update_en_passant!(
-                    $state,
-                    last_en_passant_square,
-                    $state.en_passant_square
-                );
 
                 hash_in_or_out_piece!(
                     $state, piece_index, start_square as Square
@@ -1626,13 +1613,6 @@ macro_rules! make_move {
                     if is_promotion { promoted_piece } else { piece_index },
                     end_square as Square
                 );
-
-                if halfmove_clock!($state)
-                && $state.statics.halfmove_pieces[piece_index] {
-                    $state.halfmove_clock = 0;
-                } else {
-                    $state.halfmove_clock += 1;
-                }
 
                 if piece_unmoved && $state.statics.castling_pieces[piece_index]
                 {
@@ -1676,13 +1656,10 @@ macro_rules! make_move {
                 );
 
             } else if move_type == SINGLE_CAPTURE_MOVE {
-                let piece_index = piece!(applied_move) as usize;
                 let start_square = start!(applied_move) as u32;
                 let end_square = end!(applied_move) as u32;
                 let is_promotion = promotion!(applied_move);
-                let creates_enp = creates_enp!(applied_move);
                 let promoted_piece = promoted!(applied_move) as usize;
-                let enp_square = created_enp!(applied_move) as u32;
                 let captured_piece = captured_piece!(applied_move) as usize;
                 let captured_square = captured_square!(applied_move) as u32;
                 let is_unload = is_unload!(applied_move);
@@ -1712,19 +1689,6 @@ macro_rules! make_move {
                 }
 
                 clear!($state.virgin_board, start_square);
-
-                if creates_enp {
-                    $state.en_passant_square =
-                        enp_square as EnPassantSquare;
-                } else {
-                    $state.en_passant_square = NO_EN_PASSANT;
-                }
-
-                hash_update_en_passant!(
-                    $state,
-                    last_en_passant_square,
-                    $state.en_passant_square
-                );
 
                 hash_in_or_out_piece!(
                     $state, piece_index, start_square as Square
@@ -1837,8 +1801,6 @@ macro_rules! make_move {
                     if is_promotion { promoted_piece } else { piece_index },
                     end_square as Square
                 );
-
-                $state.halfmove_clock = 0;
 
                 if piece_unmoved && $state.statics.castling_pieces[piece_index]
                 {
@@ -2063,13 +2025,10 @@ macro_rules! make_move {
 
                 }
             } else if move_type == MULTI_CAPTURE_MOVE {
-                let piece_index = piece!(applied_move) as usize;
                 let start_square = start!(applied_move) as u32;
                 let end_square = end!(applied_move) as u32;
                 let is_promotion = promotion!(applied_move);
-                let creates_enp = creates_enp!(applied_move);
                 let promoted_piece = promoted!(applied_move) as usize;
-                let enp_square = created_enp!(applied_move) as u32;
 
                 let piece_color = p_color!($state.statics.pieces[piece_index]);
                 let piece_unmoved = get!(
@@ -2092,19 +2051,6 @@ macro_rules! make_move {
                 }
 
                 clear!($state.virgin_board, start_square);
-
-                if creates_enp {
-                    $state.en_passant_square =
-                        enp_square as EnPassantSquare;
-                } else {
-                    $state.en_passant_square = NO_EN_PASSANT;
-                }
-
-                hash_update_en_passant!(
-                    $state,
-                    last_en_passant_square,
-                    $state.en_passant_square
-                );
 
                 hash_in_or_out_piece!(
                     $state, piece_index, start_square as Square
@@ -2217,8 +2163,6 @@ macro_rules! make_move {
                     if is_promotion { promoted_piece } else { piece_index },
                     end_square as Square
                 );
-
-                $state.halfmove_clock = 0;
 
                 if piece_unmoved && $state.statics.castling_pieces[piece_index]
                 {
@@ -2455,7 +2399,6 @@ macro_rules! make_move {
                         }
                 }
             } else if move_type == DROP_MOVE {
-                let piece_index = piece!(applied_move) as usize;
                 let drop_square = start!(applied_move) as u32;
 
                 let piece_color = p_color!($state.statics.pieces[piece_index]);
@@ -2512,8 +2455,6 @@ macro_rules! make_move {
 
                 *hand -= 1;
 
-                $state.halfmove_clock = 0;
-
                 if $state.game_phase == SETUP
                 && $state.piece_in_hand[0].iter().all(|&count| count == 0)
                 && $state.piece_in_hand[1].iter().all(|&count| count == 0)
@@ -2521,7 +2462,6 @@ macro_rules! make_move {
                     $state.game_phase = OPENING;
                 }
              } else if move_type == CASTLING_MOVE {
-                let piece_index = piece!(applied_move) as usize;
                 let start_square = start!(applied_move) as u32;
                 let end_square = end!(applied_move) as u32;
                 let captured_piece = captured_piece!(applied_move) as usize;
@@ -2578,8 +2518,6 @@ macro_rules! make_move {
 
                 piece_list_remove!($state, piece_index, start_square as Square);
                 piece_list_push!($state, piece_index, end_square as Square);
-
-                $state.halfmove_clock = 0;
 
                 if captured_square != end_square {
                     $state.main_board[captured_square as usize] =
@@ -2645,6 +2583,30 @@ macro_rules! make_move {
                     $state.castling_state
                 );
             }
+
+            $state.en_passant_square = if creates_enp {
+                enp_square as EnPassantSquare
+            } else {
+                NO_EN_PASSANT
+            };
+
+            hash_update_en_passant!(
+                $state,
+                last_en_passant_square,
+                $state.en_passant_square
+            );
+
+            let resets_halfmove = move_type == SINGLE_CAPTURE_MOVE
+                || move_type == MULTI_CAPTURE_MOVE
+                || move_type == DROP_MOVE
+                || halfmove_clock!($state)
+                    && $state.statics.halfmove_pieces[piece_index];
+
+            $state.halfmove_clock = if resets_halfmove {
+                0
+            } else {
+                last_halfmove_clock.saturating_add(1)
+            };
 
             $state.game_phase =
                 if $state.game_phase == SETUP {
@@ -3490,8 +3452,10 @@ macro_rules! undo_move {
 /// Applies a null move for the side to move.
 /// A null move:
 /// - Advances `search_ply` and `ply_counter`.
+/// - Clears en-passant state and updates hash before the side toggle.
 /// - Flips `playing` and updates side-to-move hash.
 /// - Pushes a `Snapshot` containing reversible state to history.
+/// - Does not alter the halfmove clock.
 ///
 /// This is used by null-move pruning in search and does not modify board
 /// occupancy or piece lists.
@@ -3517,6 +3481,13 @@ macro_rules! make_null_move {
             let last_game_over = $state.game_over;
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
+
+            hash_update_en_passant!(
+                $state,
+                last_en_passant_square,
+                NO_EN_PASSANT
+            );
+            $state.en_passant_square = NO_EN_PASSANT;
 
             $state.playing = 1 - $state.playing;
 
