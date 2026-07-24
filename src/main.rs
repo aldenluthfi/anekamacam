@@ -60,6 +60,7 @@ pub mod io {
     pub mod protocols {
         pub mod translation;
         pub mod protocol;
+
         pub mod uci;
         pub mod usi;
         pub mod ucci;

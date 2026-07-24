@@ -133,17 +133,6 @@ for candidate in "${CANDIDATES[@]}"; do
 	mkdir -p "$RR/$candidate"
 done
 
-reap_engine_logs() {
-	while :; do
-		find "$RR"/*/logs -name '*.log' -type f \
-			-exec truncate -s 0 {} + 2>/dev/null || true
-		sleep 30
-	done
-}
-reap_engine_logs &
-REAPER_PID=$!
-trap 'kill "$REAPER_PID" 2>/dev/null || true' EXIT
-
 read -ra ANCHORS <<<"$FSF_ELOS"
 
 run_rr() {
