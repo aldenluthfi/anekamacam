@@ -48,6 +48,39 @@ macro_rules! draw_score {
     }};
 }
 
+/// terminal_score!
+///
+/// Scores a position that has reached a terminal result, from the side to
+/// move's perspective. A `DRAW` yields the contempt-adjusted `draw_score!`; a
+/// decisive result yields a mate-scaled score matching the checkmate path so
+/// shorter wins and longer losses are preferred: the winner is `+INF - ply`,
+/// the loser `-INF + ply`, where `ply` is the search distance from the root.
+///
+/// Params:
+/// - state: &State -> position whose terminal value is computed
+///
+/// Return:
+/// i32             -> terminal score from the side to move's perspective
+#[macro_export]
+macro_rules! terminal_score {
+    ($state:expr) => {{
+        let stm_wins = ($state.game_result == WHITE_WIN
+            && $state.playing == WHITE)
+            || ($state.game_result == BLACK_WIN && $state.playing == BLACK);
+        let stm_loses = ($state.game_result == WHITE_WIN
+            && $state.playing == BLACK)
+            || ($state.game_result == BLACK_WIN && $state.playing == WHITE);
+
+        if stm_wins {
+            INF - $state.search_ply as i32
+        } else if stm_loses {
+            -INF + $state.search_ply as i32
+        } else {
+            draw_score!($state)
+        }
+    }};
+}
+
 /// king_shelter!
 ///
 /// Counts friendly pieces adjacent to each royal piece for one side.

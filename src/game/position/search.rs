@@ -219,7 +219,7 @@ pub fn search_position(
                              TERMINAL ROOT EARLY RETURN
     \*-----------------------------------------------------------------------*/
 
-    if state.game_over {
+    if is_terminal!(state) {
         info.nodes = 0;
         info.interrupt = false;
         state.search_ply = 0;
@@ -228,7 +228,7 @@ pub fn search_position(
         state.pv_length.fill(0);
 
         return SearchResult {
-            best_score: draw_score!(state),
+            best_score: terminal_score!(state),
             best_move: null_move(),
             ponder_move: null_move(),
             total_nodes: 0,
@@ -586,8 +586,8 @@ fn quiescence_search(
 ) -> i32 {
     let mut alpha = alpha;
 
-    if state.game_over {
-        return draw_score!(state);
+    if is_terminal!(state) {
+        return terminal_score!(state);
     }
 
     info.nodes += 1;
@@ -884,8 +884,8 @@ pub fn alpha_beta(
     null: bool,
 ) -> i32 {
 
-    if state.game_over {
-        return draw_score!(state);
+    if is_terminal!(state) {
+        return terminal_score!(state);
     }
 
     let ply = state.search_ply as usize;

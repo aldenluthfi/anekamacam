@@ -510,6 +510,9 @@ impl BoardState {
         let hand_info;
 
         details.push(["Game Phase".to_string(), phase]);
+        if is_terminal!(state) {
+            details.push(["Result".to_string(), format_game_result(state)]);
+        }
         details.push(
             [
                 "Turn".to_string(),
@@ -2896,7 +2899,7 @@ fn execute_command(
             let mut bufs = SearchBufs::default();
             let time_limit_ns = (time_limit * 1_000_000_000.0) as u128;
 
-            while !state.game_over {
+            while !is_terminal!(state) {
 
                 if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
                     break;
@@ -2917,13 +2920,18 @@ fn execute_command(
                 log_table_stats(&ttable, &qtable, &ptable);
 
                 if result.best_score == -INF {
-                    state.game_over = true;
+                    state.game_result =
+                        if state.playing == WHITE { BLACK_WIN } else { WHITE_WIN };
                     log_1!(
                         "Checkmate! {} wins.",
                         if state.playing == WHITE { "Black" } else { "White" }
                     );
-                } else if state.game_over {
-                    log_1!("It's a draw!");
+                } else if is_terminal!(state) {
+                    log_1!("{}", match state.game_result {
+                        WHITE_WIN => "White wins!",
+                        BLACK_WIN => "Black wins!",
+                        _ => "It's a draw!",
+                    });
                 } else {
                     make_move!(state, result.best_move);
                 }

@@ -111,7 +111,7 @@ macro_rules! is_in_check {
 /// make/undo legality probe, so no move that leaves its own royal exposed
 /// ever reaches the caller. The position is restored before the vector is
 /// yielded, so callers can enumerate legality without disturbing state.
-/// Always empty when state.game_over is true, because
+/// Always empty when the position is terminal, because
 /// generate_all_moves_and_drops returns immediately in that case.
 ///
 /// Params:
@@ -1461,7 +1461,7 @@ macro_rules! make_move {
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_pawn_hash = $state.pawn_hash;
-            let last_game_over = $state.game_over;
+            let last_game_result = $state.game_result;
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
 
@@ -2659,7 +2659,7 @@ macro_rules! make_move {
             || passing_in_stand_off
             || is_repetition
             || is_halfmove_draw {
-                $state.game_over = true;
+                $state.game_result = DRAW;
             }
 
             let snapshot: Snapshot = Snapshot {
@@ -2667,7 +2667,7 @@ macro_rules! make_move {
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
-                game_over: last_game_over,
+                game_result: last_game_result,
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
@@ -2739,7 +2739,7 @@ macro_rules! undo_move {
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
         $state.pawn_hash = snapshot.pawn_hash;
-        $state.game_over = snapshot.game_over;
+        $state.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
 
@@ -3480,7 +3480,7 @@ macro_rules! make_null_move {
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_pawn_hash = $state.pawn_hash;
-            let last_game_over = $state.game_over;
+            let last_game_result = $state.game_result;
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
 
@@ -3500,7 +3500,7 @@ macro_rules! make_null_move {
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
-                game_over: last_game_over,
+                game_result: last_game_result,
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
@@ -3545,7 +3545,7 @@ macro_rules! undo_null_move {
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
         $state.pawn_hash = snapshot.pawn_hash;
-        $state.game_over = snapshot.game_over;
+        $state.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
 
@@ -3559,7 +3559,7 @@ macro_rules! undo_null_move {
 /// Generates all pseudo-legal moves for the side to move, including drops.
 /// Normal moves are skipped during setup phase; drop generation may use
 /// either own-hand or enemy-hand inventory depending on drop flags.
-/// Returns immediately with an empty list when state.game_over is true,
+/// Returns immediately with an empty list when the position is terminal,
 /// so legal_moves! is always empty at terminal positions.
 ///
 /// Params:
@@ -3574,7 +3574,7 @@ pub fn generate_all_moves_and_drops(
 ) {
     out.clear();
 
-    if state.game_over {
+    if is_terminal!(state) {
         return;
     }
 
@@ -3621,7 +3621,7 @@ pub fn generate_all_captures(
     scratch: &mut Vec<u64>,
 ) {
     out.clear();
-    if state.game_over || state.game_phase == SETUP {
+    if is_terminal!(state) || state.game_phase == SETUP {
         return;
     }
 

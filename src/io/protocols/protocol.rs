@@ -176,7 +176,7 @@ fn print_bestmove(
     state: &mut State,
     dict: Option<&Translator>,
 ) {
-    if state.game_over {
+    if is_terminal!(state) {
         emit(EngineEvent::BestMove {
             best: "(none)".to_string(),
             ponder: None,
@@ -1031,7 +1031,9 @@ pub fn execute_common(
         }
         "d" => {
             emit(EngineEvent::Print(format!(
-                "{}\n", format_game_state(&session.state),
+                "{}\nResult: {}\n",
+                format_game_state(&session.state),
+                format_game_result(&session.state),
             )));
             verify_game_state(&session.state);
             Some(false)

@@ -2710,8 +2710,17 @@ pub fn format_position_hash(state: &State) -> String {
     format!("{:>016X}", state.position_hash)
 }
 
+pub fn format_game_result(state: &State) -> String {
+    match state.game_result {
+        DRAW => "Draw".to_string(),
+        WHITE_WIN => "White wins".to_string(),
+        BLACK_WIN => "Black wins".to_string(),
+        _ => "Ongoing".to_string(),
+    }
+}
+
 pub fn format_game_phase(state: &State) -> String {
-    if state.game_over {
+    if is_terminal!(state) {
         "Game Over".to_string()
     } else if state.game_phase == SETUP {
         "Setup Phase".to_string()

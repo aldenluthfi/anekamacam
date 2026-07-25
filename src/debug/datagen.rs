@@ -66,13 +66,11 @@ fn play_one_game(
             return None;
         }
 
-        if state.game_over {
-            let result = if is_in_check!(state.playing, state)
-            || stalemate_loss!(&state)
-            {
-                state.playing as f64
-            } else {
-                0.5
+        if is_terminal!(state) {
+            let result = match state.game_result {
+                WHITE_WIN => 1.0,
+                BLACK_WIN => 0.0,
+                _ => 0.5,
             };
 
             return Some(GeneratedGame { positions: fens, result });

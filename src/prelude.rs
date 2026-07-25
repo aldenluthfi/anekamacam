@@ -89,8 +89,9 @@ pub use crate::io::board_io::{
 };
 pub use crate::io::game_io::{
     combine_board_strings, export_tuned_parameters_file, format_castling_rights,
-    format_en_passant_square, format_fen, format_game_phase, format_game_state,
-    format_hand, format_position_hash, format_special_rules, parse_config_file,
+    format_en_passant_square, format_fen, format_game_phase, format_game_result,
+    format_game_state, format_hand, format_position_hash, format_special_rules,
+    parse_config_file,
     parse_config_preview, parse_fen, parse_tuned_parameters
 };
 pub use crate::io::logger::{
@@ -270,6 +271,11 @@ pub const ENDGAME_OCCUPANCY: f64 = 0.12;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
+
+pub const ONGOING: u8 = 0;                                                      /* game has not yet reached a terminal*/
+pub const DRAW: u8 = 1;                                                         /* terminal: drawn game               */
+pub const BLACK_WIN: u8 = 2;                                                    /* terminal: black is the winner      */
+pub const WHITE_WIN: u8 = 3;                                                    /* terminal: white is the winner      */
 
 pub const WK_INDEX: u8 = 0;
 pub const WQ_INDEX: u8 = 1;

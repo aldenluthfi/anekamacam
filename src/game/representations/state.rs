@@ -332,7 +332,7 @@ pub struct Snapshot {
     pub castling_state: u8,                                                     /* castling rights before move        */
     pub halfmove_clock: u8,                                                     /* halfmove clock before move         */
     pub en_passant_square: EnPassantSquare,                                     /* en passant sq before move          */
-    pub game_over: bool,                                                        /* game-over flag before move         */
+    pub game_result: u8,                                                        /* terminal result before move        */
     pub game_phase: u8,                                                         /* game phase before move             */
     pub phase_score: u32,                                                       /* phase score before move            */
 
@@ -347,7 +347,7 @@ impl Default for Snapshot {
             castling_state: 0,
             halfmove_clock: 0,
             en_passant_square: EnPassantSquare::MAX,
-            game_over: false,
+            game_result: ONGOING,
             game_phase: OPENING,
             phase_score: 0,
             position_hash: u128::default(),
@@ -486,6 +486,24 @@ macro_rules! game_phase_score {
 
         phase_score
     }};
+}
+
+/// is_terminal!
+///
+/// Tests whether a position has reached a terminal result. Any value other
+/// than `ONGOING` (a `DRAW`, `WHITE_WIN`, or `BLACK_WIN` decided by an end
+/// condition) means the game is over and no further move should be made.
+///
+/// Params:
+/// - state: &State -> position whose result field is tested
+///
+/// Return:
+/// bool            -> true once the game has reached a terminal outcome
+#[macro_export]
+macro_rules! is_terminal {
+    ($state:expr) => {
+        $state.game_result != ONGOING
+    };
 }
 
 /*----------------------------------------------------------------------------*\
@@ -634,7 +652,7 @@ pub struct State {
                                  DYNAMIC FIELDS
 \*----------------------------------------------------------------------------*/
 
-    pub game_over: bool,                                                        /* true once the game has ended       */
+    pub game_result: u8,                                                        /* ONGOING/DRAW/BLACK_WIN/WHITE_WIN   */
     pub game_phase: u8,                                                         /* SETUP/OPENING/MIDDLEGAME/ENDGAME   */
     pub phase_score: u32,                                                       /* game phase score for transition    */
 
@@ -697,7 +715,7 @@ impl Clone for State {
         State {
             statics: Arc::clone(&self.statics),
 
-            game_over: self.game_over,
+            game_result: self.game_result,
             game_phase: self.game_phase,
             phase_score: self.phase_score,
 
@@ -949,7 +967,7 @@ impl State {
         State {
             statics,
 
-            game_over: false,
+            game_result: ONGOING,
             game_phase: OPENING,
             phase_score: 0,
 
@@ -1057,7 +1075,7 @@ impl State {
         self.ply_counter = 0;
 
         self.game_phase = OPENING;
-        self.game_over = false;
+        self.game_result = ONGOING;
 
         self.opening_material = [0; 2];
         self.endgame_material = [0; 2];

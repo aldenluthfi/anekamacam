@@ -647,16 +647,22 @@ impl GameManager {
 
         loop {
             if SYSTEM_INTERRUPT.load(Ordering::Relaxed)
-            || state.game_over
+            || is_terminal!(state)
             || legal_moves!(state).is_empty()
             {
-                if is_in_check!(state.playing, state)
-                || stalemate_loss!(state)
-                {
-                    return SPRTGameOutcome::Score(state.playing as f64);
-                }
+                let score = match state.game_result {
+                    WHITE_WIN => 1.0,
+                    BLACK_WIN => 0.0,
+                    DRAW => 0.5,
+                    _ => if is_in_check!(state.playing, state)
+                        || stalemate_loss!(state) {
+                        state.playing as f64
+                    } else {
+                        0.5
+                    },
+                };
 
-                return SPRTGameOutcome::Score(0.5);
+                return SPRTGameOutcome::Score(score);
             }
 
             let moves: Vec<String> = state.history.iter()
