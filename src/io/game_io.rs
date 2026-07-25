@@ -1659,6 +1659,24 @@ pub fn parse_config_file(path: &str) -> State {
         }
     };
 
+    let set_piece_count = result.statics.pieces.len();
+    let parse_set = |set_str: &str| -> Vec<bool> {
+        let mut set = vec![false; set_piece_count];
+        if set_str == "*" {
+            set.iter_mut().for_each(|flag| *flag = true);
+        } else {
+            for piece_char in set_str.chars() {
+                let index = char_to_index.get(&piece_char).copied()
+                    .unwrap_or_else(|| panic!(
+                        "Unknown piece character in end condition: {}",
+                        piece_char
+                    ));
+                set[index] = true;
+            }
+        }
+        set
+    };
+
     let mut end_conditions = EndConditions::default();
 
     if let Some(entries) = sections.get("end conditions") {
@@ -1726,6 +1744,36 @@ pub fn parse_config_file(path: &str) -> State {
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Win);
                     end_conditions.checks = Some((count, outcome));
+                }
+                "extinct" => {
+                    let opponent = arguments[0] == "opp";
+                    let set = parse_set(arguments[1]);
+                    let (threshold, outcome) = if arguments.len() >= 4 {
+                        (
+                            arguments[2].parse::<u8>().unwrap_or_else(|_| {
+                                panic!("Invalid extinct count: {}",
+                                    arguments[2])
+                            }),
+                            parse_outcome(arguments[3]),
+                        )
+                    } else {
+                        (0, parse_outcome(arguments[2]))
+                    };
+                    end_conditions.extinct.push(Extinct {
+                        set, threshold, outcome, opponent,
+                    });
+                }
+                "goal" => {
+                    let set = parse_set(arguments[0]);
+                    let zone_section = format!("zone {}", arguments[1]);
+                    let zone_fen = sections.get(&zone_section)
+                        .and_then(|lines| lines.first())
+                        .unwrap_or_else(|| panic!(
+                            "Missing = {} = section for goal", zone_section
+                        ));
+                    let zone = parse_bit_fen(Some(zone_fen.as_str()), &result);
+                    let outcome = parse_outcome(arguments[2]);
+                    end_conditions.goal = Some(Goal { set, zone, outcome });
                 }
                 other => panic!("Unknown end condition: {}", other),
             }

@@ -15,6 +15,8 @@
 //! Created: 26/07/2026
 //! Author : Alden Luthfi
 
+use crate::game::representations::board::Board;
+
 /*----------------------------------------------------------------------------*\
                                OUTCOME AND COUNTER
 \*----------------------------------------------------------------------------*/
@@ -46,6 +48,32 @@ pub struct Counter {
     pub outcome: Outcome,                                                       /* result once the limit is reached   */
 }
 
+/// Extinct
+///
+/// A material-extinction rule: when a colour's count of the pieces in `set`
+/// falls to `threshold` or below, that colour receives `outcome` (or its
+/// opponent, when `opponent` is set). `set[i]` marks the piece indices the
+/// rule counts, matched per colour. Covers kinglet and horde (a side's pawns
+/// or whole army gone -> loss) and antichess/losers (own army gone -> win).
+pub struct Extinct {
+    pub set: Vec<bool>,                                                         /* piece indices the rule counts      */
+    pub threshold: u8,                                                          /* count at or below which it fires   */
+    pub outcome: Outcome,                                                       /* result for the extinct colour      */
+    pub opponent: bool,                                                         /* outcome applies to the other side  */
+}
+
+/// Goal
+///
+/// A goal-zone rule: when a colour lands one of its `set` pieces on a square
+/// of `zone`, that colour receives `outcome`. Covers king-of-the-hill (king
+/// to the centre) and racing kings (king to the far rank). The zone is a
+/// single board shared by both colours.
+pub struct Goal {
+    pub set: Vec<bool>,                                                         /* piece indices that reach the zone  */
+    pub zone: Board,                                                            /* target squares                     */
+    pub outcome: Outcome,                                                       /* result for the arriving colour     */
+}
+
 /*----------------------------------------------------------------------------*\
                                  END CONDITIONS
 \*----------------------------------------------------------------------------*/
@@ -65,6 +93,8 @@ pub struct EndConditions {
     pub counter: Option<Counter>,                                              /* progress counter, if declared      */
 
     pub checks: Option<(u8, Outcome)>,                                         /* (Nth check, checker's outcome)     */
+    pub extinct: Vec<Extinct>,                                                 /* material-extinction rules          */
+    pub goal: Option<Goal>,                                                    /* goal-zone rule                     */
 }
 
 impl Default for EndConditions {
@@ -80,6 +110,8 @@ impl Default for EndConditions {
             repetition: None,
             counter: None,
             checks: None,
+            extinct: Vec::new(),
+            goal: None,
         }
     }
 }

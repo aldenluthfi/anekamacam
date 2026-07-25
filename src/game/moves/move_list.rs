@@ -2653,6 +2653,10 @@ macro_rules! make_move {
                 && $state.check_count[mover as usize] >= limit
             {
                 Some((mover, outcome))
+            } else if let Some(hit) = goal_fired($state, mover) {
+                Some(hit)
+            } else if let Some(hit) = extinct_fired($state, move_type) {
+                Some(hit)
             } else if double_pass {
                 Some(($state.playing, Outcome::Draw))
             } else if let Some((count, outcome)) =
@@ -3575,6 +3579,78 @@ macro_rules! undo_null_move {
         #[cfg(debug_assertions)]
         verify_game_state($state);
     }};
+}
+
+/// extinct_fired
+///
+/// Detects a material-extinction terminal. Only a capturing move can drop a
+/// colour's set-count, so the scan runs only after a capture; for each colour
+/// it sums `piece_count` over the rule's set pieces of that colour and fires
+/// when the count is at or below the threshold, naming the extinct colour (or
+/// its opponent, when the rule is opponent-facing).
+///
+/// Params:
+/// - state    : &State -> position after the move
+/// - move_type: u128   -> the applied move's type tag
+///
+/// Return:
+/// Option<(u8, Outcome)> -> (subject colour, outcome) when it fires
+pub fn extinct_fired(state: &State, move_type: u128) -> Option<(u8, Outcome)> {
+    if state.statics.end_conditions.extinct.is_empty() {
+        return None;
+    }
+
+    if move_type != SINGLE_CAPTURE_MOVE && move_type != MULTI_CAPTURE_MOVE {
+        return None;
+    }
+
+    for extinct in &state.statics.end_conditions.extinct {
+        for color in [WHITE, BLACK] {
+            let mut count = 0u32;
+            for (index, piece) in state.statics.pieces.iter().enumerate() {
+                if extinct.set[index] && p_color!(piece) == color {
+                    count += state.piece_count[index];
+                }
+            }
+
+            if count <= extinct.threshold as u32 {
+                let subject =
+                    if extinct.opponent { 1 - color } else { color };
+                return Some((subject, extinct.outcome));
+            }
+        }
+    }
+
+    None
+}
+
+/// goal_fired
+///
+/// Detects a goal-zone terminal for the side that just moved: if any of the
+/// mover's goal-set pieces stands on a zone square, the mover receives the
+/// rule's outcome. Because the check runs after every move, a piece can only
+/// be found on the zone the move that placed it there.
+///
+/// Params:
+/// - state: &State -> position after the move
+/// - mover: u8     -> the colour that just moved
+///
+/// Return:
+/// Option<(u8, Outcome)> -> (mover, outcome) when a goal piece is on the zone
+pub fn goal_fired(state: &State, mover: u8) -> Option<(u8, Outcome)> {
+    let goal = state.statics.end_conditions.goal.as_ref()?;
+
+    for (index, piece) in state.statics.pieces.iter().enumerate() {
+        if goal.set[index] && p_color!(piece) == mover {
+            for &square in piece_squares!(state, index) {
+                if get!(goal.zone, square as u32) {
+                    return Some((mover, goal.outcome));
+                }
+            }
+        }
+    }
+
+    None
 }
 
 /// generate_all_moves_and_drops
