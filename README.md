@@ -128,6 +128,7 @@ Variants bundled in configs/ (the names double as their config files):
 │ koth          │ King of the Hill                  │
 │ kinglet       │ Kinglet (capture all enemy pawns) │
 │ extinction    │ Extinction Chess                  │
+│ horde         │ Horde (pawn army vs full side)    │
 └───────────────┴───────────────────────────────────┘
 
 example.conf is the documented template you copy when authoring a new
