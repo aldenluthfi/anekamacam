@@ -71,12 +71,26 @@ the pieces with their CKN move patterns. Supported rule flags:
 │ drops               │ Pieces held in hand may be dropped instead of moving     │
 │ forbidden zones     │ Marks squares no piece may enter (move/promo/drop)       │
 │ promote to captured │ A promoting piece must be one the opponent captured      │
-│ stalemate loss      │ Stalemate is a loss for the stalemated side, not a draw  │
 │ setup phase         │ Players drop pieces from hand before normal play starts  │
-│ stand-offs          │ A move may check both kings; foe must break it next turn │
-│ halfmove clock      │ Generalized 50-move rule; draw after N idle halfmoves    │
-│ repetition limit    │ Draw once a position repeats a set number of times       │
 └─────────────────────┴──────────────────────────────────────────────────────────┘
+
+How a game is won, lost, or drawn is declared separately, in the
+= end conditions = section: a flat table of parametric terminal rules —
+checkmate/stalemate outcomes, repetition, a generalized counter (50-move),
+N-check, material extinction, and goal zones. Each covers a family of
+variants rather than a single named mode:
+
+┌─────────────┬────────────────────────────────────────────────────────────────┐
+│ End rule    │ Effect                                                         │
+├─────────────┼────────────────────────────────────────────────────────────────┤
+│ checkmate   │ Outcome of a no-move position in check (default loss)          │
+│ stalemate   │ Outcome of a no-move position not in check (default draw)      │
+│ repetition  │ Outcome once a position occurs N times (default draw)          │
+│ counter     │ Generalized 50-move rule: outcome after N idle halfmoves       │
+│ checks      │ The side giving its Nth check gets the outcome (three-check)   │
+│ extinct     │ A colour losing all of a piece set gets the outcome           │
+│ goal        │ A piece reaching a named zone gets the outcome (KotH, racing)  │
+└─────────────┴────────────────────────────────────────────────────────────────┘
 
 Each rule, when enabled, requires its matching section (e.g. castling
 geometry, promotion zones, drop rules) and a correctly-formatted CFEN —
@@ -109,6 +123,11 @@ Variants bundled in configs/ (the names double as their config files):
 │ sittuyin      │ Sittuyin (Burmese chess)          │
 │ ouk-chaktrang │ Ouk Chaktrang (Cambodian chess)   │
 │ tjatoer       │ Tjatoer (Javanese chess)          │
+│ threecheck    │ Three-Check Chess                 │
+│ fivecheck     │ Five-Check Chess                  │
+│ koth          │ King of the Hill                  │
+│ kinglet       │ Kinglet (capture all enemy pawns) │
+│ extinction    │ Extinction Chess                  │
 └───────────────┴───────────────────────────────────┘
 
 example.conf is the documented template you copy when authoring a new
