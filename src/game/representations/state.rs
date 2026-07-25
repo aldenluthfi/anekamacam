@@ -64,32 +64,12 @@ pub type Square = u16;
 ///   Return:
 ///   bool -> captures promote the capturer's pool piece (bit 5)
 ///
-/// stalemate_loss!
-///
-///   Return:
-///   bool -> stalemate counts as a loss (bit 6)
-///
 /// setup_phase!
 ///
 ///   Return:
-///   bool -> game starts with a setup phase (bit 7)
+///   bool -> game starts with a setup phase (bit 6)
 ///
-/// stand_offs!
-///
-///   Return:
-///   bool -> stand-off patterns enabled (bit 8)
-///
-/// halfmove_clock!
-///
-///   Return:
-///   bool -> halfmove-clock draw rule enabled (bit 9)
-///
-/// repetition_limit!
-///
-///   Return:
-///   bool -> repetition limit enabled (bit 10)
-///
-/// enc_castling! .. enc_repetition_limit!
+/// enc_castling! .. enc_setup_phase!
 ///
 ///   Params:
 ///
@@ -183,72 +163,16 @@ macro_rules! enc_promote_to_captured {
 }
 
 #[macro_export]
-macro_rules! stalemate_loss {
+macro_rules! setup_phase {
     ($state:expr) => {
         ($state.statics.special_rules >> 6 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_stalemate_loss {
-    ($rules:expr) => {
-        $rules |= 1 << 6;
-    };
-}
-
-#[macro_export]
-macro_rules! setup_phase {
-    ($state:expr) => {
-        ($state.statics.special_rules >> 7 & 1) == 1
-    };
-}
-
-#[macro_export]
 macro_rules! enc_setup_phase {
     ($rules:expr) => {
-        $rules |= 1 << 7;
-    };
-}
-
-#[macro_export]
-macro_rules! stand_offs {
-    ($state:expr) => {
-        ($state.statics.special_rules >> 8 & 1) == 1
-    };
-}
-
-#[macro_export]
-macro_rules! enc_stand_offs {
-    ($rules:expr) => {
-        $rules |= 1 << 8;
-    };
-}
-
-#[macro_export]
-macro_rules! halfmove_clock {
-    ($state:expr) => {
-        ($state.statics.special_rules >> 9 & 1) == 1
-    };
-}
-
-#[macro_export]
-macro_rules! enc_halfmove_clock {
-    ($rules:expr) => {
-        $rules |= 1 << 9;
-    };
-}
-
-#[macro_export]
-macro_rules! repetition_limit {
-    ($state:expr) => {
-        ($state.statics.special_rules >> 10 & 1) == 1
-    };
-}
-
-#[macro_export]
-macro_rules! enc_repetition_limit {
-    ($rules:expr) => {
-        $rules |= 1 << 10;
+        $rules |= 1 << 6;
     };
 }
 
@@ -521,6 +445,7 @@ pub struct StaticState {
 
     pub pieces: Vec<Piece>,
     pub special_rules: u32,
+    pub end_conditions: EndConditions,                                          /* parametric terminal-rule table     */
 
     pub initial_setup: Vec<Board>,                                              /* piece index to board               */
 
@@ -529,10 +454,6 @@ pub struct StaticState {
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
     pub critical_castling: [Board; 4],                                          /* KQkq critical squares for each     */
 
-    pub halfmove_limit: u8,                                                     /* halfmoves before draw              */
-    pub repetition_limit: u8,                                                   /* number of repetitions for draw     */
-
-    pub halfmove_pieces: Vec<bool>,                                             /* moving these pieces resets clock   */
     pub castling_pieces: Vec<bool>,                                             /* moving/capturing voids rights      */
 
     pub files: u8,
@@ -543,7 +464,6 @@ pub struct StaticState {
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
     pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
     pub relevant_setup: Vec<DropSet>,
-    pub relevant_stand_offs: Vec<PatternSet>,
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
     pub adjacency_mask: Vec<Board>,                                             /* square to adjacent-square bitboard */
@@ -619,11 +539,10 @@ pub struct StaticState {
 /// (read configs/example.conf for more information)
 ///
 /// ```text
-///   0 1 2 3 4 5 6 7 8 9 10                                          31
-///                         11
-///   ┌─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬──────────────────────────────────────────┐
-///   │c│e│p│d│f│t│l│s│o│h│r│                  unused                  │
-///   └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴──────────────────────────────────────────┘
+///   0 1 2 3 4 5 6                                                    31
+///   ┌─┬─┬─┬─┬─┬─┬─┬──────────────────────────────────────────────────┐
+///   │c│e│p│d│f│t│s│                       unused                      │
+///   └─┴─┴─┴─┴─┴─┴─┴──────────────────────────────────────────────────┘
 /// ```
 ///
 ///
@@ -634,12 +553,11 @@ pub struct StaticState {
 /// - bit 3     : Drops allowed
 /// - bit 4     : Some pieces have forbidden zones
 /// - bit 5     : Can only promote to captured friendly pieces by the enemy
-/// - bit 6     : Stalemate is a loss for the stalemated player
-/// - bit 7     : Game begins with a setup phase
-/// - bit 8     : A player can make a move that creates a stand-off
-/// - bit 9     : Halfmove clock draw rule is enabled
-/// - bit 10    : There is a limit on the number of repetitions of a position
-/// - bit 11-31 : reserved for future use
+/// - bit 6     : Game begins with a setup phase
+/// - bit 7-31  : reserved for future use
+///
+/// Terminal rules (stalemate/checkmate outcome, repetition, counter, ...)
+/// are not bits here; they live in `StaticState::end_conditions`.
 ///
 /// Static configuration lives in `statics: Arc<StaticState>`, shared
 /// cheaply across threads. `State::clone()` calls `Arc::clone` for the
@@ -813,6 +731,7 @@ impl State {
             startpos,
             pieces,
             special_rules,
+            end_conditions: EndConditions::default(),
 
             initial_setup: vec![board!(files, ranks); piece_count],
 
@@ -821,10 +740,6 @@ impl State {
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
             critical_castling: [board!(files, ranks); 4],
 
-            halfmove_limit: u8::MAX,
-            repetition_limit: u8::MAX,
-
-            halfmove_pieces: vec![false; piece_count],
             castling_pieces: vec![false; piece_count],
 
             files,
@@ -835,9 +750,6 @@ impl State {
             relevant_captures: vec![MoveSet::new(); board_size * piece_count],
             relevant_drops: vec![DropSet::new(); board_size * piece_count],
             relevant_setup: vec![DropSet::new(); board_size * piece_count],
-            relevant_stand_offs: vec![
-                PatternSet::new(); board_size * piece_count
-            ],
             relevant_attacks: [
                 vec![Vec::new(); board_size],
                 vec![Vec::new(); board_size],
@@ -1173,7 +1085,7 @@ impl State {
         }
     }
 
-    /// State::generate_piece_moves / _drops / _stand_off
+    /// State::generate_piece_moves / _drops
     ///
     /// Expression-compilation helpers run once at precompute time. Each takes
     /// one raw expression string per piece (in config order) and compiles it
@@ -1196,14 +1108,6 @@ impl State {
     ///
     ///   Return:
     ///   Vec<DropSet>          -> drop sets, via `generate_drop_vectors`
-    ///
-    /// generate_piece_stand_off
-    ///
-    ///   Params:
-    ///   - expr_set: Vec<String> -> one stand-off expression per piece
-    ///
-    ///   Return:
-    ///   Vec<PatternSet>         -> patterns, via `generate_stand_off_patterns`
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
         let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
         for expr in expr_set {
@@ -1228,16 +1132,7 @@ impl State {
         ).collect::<Vec<DropSet>>()
     }
 
-    fn generate_piece_stand_off(
-        &self, expr_set: Vec<String>
-    ) -> Vec<PatternSet> {
-        expr_set.iter().map(
-            |expr| generate_stand_off_patterns(expr, self)
-        ).collect::<Vec<PatternSet>>()
-    }
-
-    /// State::populate_relevant_moves / _captures / _drops / _setup /
-    /// _stand_offs
+    /// State::populate_relevant_moves / _captures / _drops / _setup
     ///
     /// Precompute-time table fillers. Each walks every (piece, square) pair
     /// and stores, at `piece * board_size + square`, the compiled entries that
@@ -1273,13 +1168,6 @@ impl State {
     ///
     ///   - piece_setup_drops: &[DropSet]
     ///     compiled setup drops, one per piece; fills `relevant_setup`
-    ///
-    /// populate_relevant_stand_offs
-    ///
-    ///   Params:
-    ///
-    ///   - piece_stand_off: &[PatternSet]
-    ///     compiled patterns, one per piece; fills `relevant_stand_offs`
     fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
         let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
@@ -1342,24 +1230,6 @@ impl State {
             }
         }
         self.static_mut().relevant_setup = results;
-    }
-
-    fn populate_relevant_stand_offs(
-        &mut self, piece_stand_off: &[PatternSet]
-    ) {
-        let board_size = self.statics.board_size;
-        let piece_count = self.statics.pieces.len();
-
-        let mut results = vec![PatternSet::new(); piece_count * board_size];
-        for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..board_size {
-                results[index * board_size + square] =
-                    generate_relevant_stand_offs(
-                        piece, square as u32, self, piece_stand_off
-                    );
-            }
-        }
-        self.static_mut().relevant_stand_offs = results;
     }
 
     /// State::populate_relevant_attacks
@@ -1429,22 +1299,19 @@ impl State {
     ///
     /// One-off derivation pass that turns the variant's raw expression
     /// strings into every runtime lookup table: relevant moves, captures,
-    /// drops, setup drops, stand-offs, reverse attack masks, and adjacency
-    /// masks. Runs once after config parsing and before any search thread
-    /// is spawned; optional tables are skipped when their special rule is
-    /// disabled.
+    /// drops, setup drops, reverse attack masks, and adjacency masks. Runs
+    /// once after config parsing and before any search thread is spawned;
+    /// optional tables are skipped when their special rule is disabled.
     ///
     /// Params:
-    /// - moves_expr_set    : Vec<String> -> per-piece move expressions
-    /// - drops_expr_set    : Vec<String> -> per-piece drop expressions
-    /// - setup_expr_set    : Vec<String> -> per-piece setup expressions
-    /// - stand_off_expr_set: Vec<String> -> per-piece stand-off expressions
+    /// - moves_expr_set: Vec<String> -> per-piece move expressions
+    /// - drops_expr_set: Vec<String> -> per-piece drop expressions
+    /// - setup_expr_set: Vec<String> -> per-piece setup expressions
     pub fn precompute(
         &mut self,
         moves_expr_set: Vec<String>,
         drops_expr_set: Vec<String>,
         setup_expr_set: Vec<String>,
-        stand_off_expr_set: Vec<String>
     ) {
         let piece_count = self.statics.pieces.len();
         let piece_moves = self.generate_piece_moves(&moves_expr_set);
@@ -1459,11 +1326,6 @@ impl State {
             piece_setup = self.generate_piece_drops(&setup_expr_set);
         }
 
-        let mut piece_stand_off = vec![Vec::new(); piece_count];
-        if stand_offs!(self) {
-            piece_stand_off = self.generate_piece_stand_off(stand_off_expr_set);
-        }
-
         self.populate_relevant_moves(&piece_moves);
         self.populate_relevant_captures(&piece_moves);
 
@@ -1473,10 +1335,6 @@ impl State {
 
         if setup_phase!(self) {
             self.populate_relevant_setup(&piece_setup);
-        }
-
-        if stand_offs!(self) {
-            self.populate_relevant_stand_offs(&piece_stand_off);
         }
 
         self.populate_relevant_attacks();

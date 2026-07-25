@@ -734,15 +734,17 @@ fn quiescence_search(
     \*-----------------------------------------------------------------------*/
 
     if in_check && legal_moves == 0 {
-        let mate_score = -INF + state.search_ply as i32;
+        let outcome = state.statics.end_conditions.checkmate;
+        let score = outcome_score!(state, outcome);
 
-        return if state.history.last().is_some_and(|s| {
+        return if outcome == Outcome::Loss
+        && state.history.last().is_some_and(|s| {
             move_type!(&s.move_ply) == DROP_MOVE
             && !drop_can_checkmate!(&s.move_ply)
         }) {
-            -mate_score
+            -score
         } else {
-            mate_score
+            score
         };
     }
 
@@ -895,7 +897,7 @@ pub fn alpha_beta(
                                   REPETITION SCORING
     \*-----------------------------------------------------------------------*/
 
-    if repetition_limit!(state)
+    if state.statics.end_conditions.repetition.is_some()
     && ply > 0
     && state.position_hash_map
         .get(&state.position_hash)
@@ -1583,20 +1585,22 @@ pub fn alpha_beta(
     \*-----------------------------------------------------------------------*/
 
     if legal_moves == 0 {
-        if in_check || stalemate_loss!(&state) {
-            let mate_score = -INF + state.search_ply as i32;
+        let outcome = if in_check {
+            state.statics.end_conditions.checkmate
+        } else {
+            state.statics.end_conditions.stalemate
+        };
+        let score = outcome_score!(state, outcome);
 
-            return if state.history.last().is_some_and(|s| {
-                move_type!(&s.move_ply) == DROP_MOVE
-                && !drop_can_checkmate!(&s.move_ply)
-            }) {
-                -mate_score
-            } else {
-                mate_score
-            };
-        }
-
-        return draw_score!(state);
+        return if outcome == Outcome::Loss
+        && state.history.last().is_some_and(|s| {
+            move_type!(&s.move_ply) == DROP_MOVE
+            && !drop_can_checkmate!(&s.move_ply)
+        }) {
+            -score
+        } else {
+            score
+        };
     }
 
     /*-----------------------------------------------------------------------*\

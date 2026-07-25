@@ -16,6 +16,7 @@ pub mod game {
         pub mod board;
 
         pub mod drop;
+        pub mod end_condition;
         pub mod moves;
         pub mod pattern;
 

@@ -1471,9 +1471,6 @@ macro_rules! make_move {
             let creates_enp = creates_enp!(applied_move);
             let enp_square = created_enp!(applied_move) as u32;
 
-            let stand_off_before =
-                stand_offs!($state) && is_in_stand_off!($state);
-
             if move_type == QUIET_MOVE {
                 let start_square = start!(applied_move) as u32;
                 let end_square = end!(applied_move) as u32;
@@ -2601,8 +2598,8 @@ macro_rules! make_move {
             let resets_halfmove = move_type == SINGLE_CAPTURE_MOVE
                 || move_type == MULTI_CAPTURE_MOVE
                 || move_type == DROP_MOVE
-                || halfmove_clock!($state)
-                    && $state.statics.halfmove_pieces[piece_index];
+                || $state.statics.end_conditions.counter.as_ref()
+                    .is_some_and(|counter| counter.reset_pieces[piece_index]);
 
             $state.halfmove_clock = if resets_halfmove {
                 0
@@ -2624,15 +2621,7 @@ macro_rules! make_move {
             $state.playing = 1 - $state.playing;
 
             let in_check = is_in_check!(1 - $state.playing, $state);
-            let stand_off_after =
-                stand_offs!($state) && is_in_stand_off!($state);
-
-            let legal =
-                !in_check && (
-                    !stand_off_after  ||
-                    !stand_off_before ||
-                    stand_off_after && stand_off_before && pass_move
-                );
+            let legal = !in_check;
 
             hash_toggle_side!($state);
 
@@ -2644,22 +2633,26 @@ macro_rules! make_move {
             let double_pass = pass_move && $state.history.last().map_or(
                 false, |snapshot| pass_snapshot!(snapshot)
             );
-            let passing_in_stand_off = pass_move && stand_off_before;
-            let is_repetition =
-                repetition_limit!($state) && $state
-                .position_hash_map
-                .get(&$state.position_hash)
-                .unwrap_or(&1)
-                >= &$state.statics.repetition_limit;
-            let is_halfmove_draw =
-                halfmove_clock!($state) && $state.halfmove_clock
-                >= $state.statics.halfmove_limit;
 
-            if double_pass
-            || passing_in_stand_off
-            || is_repetition
-            || is_halfmove_draw {
-                $state.game_result = DRAW;
+            let terminal_outcome = if double_pass {
+                Some(Outcome::Draw)
+            } else if let Some((count, outcome)) =
+                $state.statics.end_conditions.repetition
+                && *$state.position_hash_map
+                    .get(&$state.position_hash).unwrap_or(&1) >= count
+            {
+                Some(outcome)
+            } else if let Some(counter) =
+                &$state.statics.end_conditions.counter
+                && $state.halfmove_clock >= counter.limit
+            {
+                Some(counter.outcome)
+            } else {
+                None
+            };
+
+            if let Some(outcome) = terminal_outcome {
+                $state.game_result = resolve_outcome!($state, outcome);
             }
 
             let snapshot: Snapshot = Snapshot {

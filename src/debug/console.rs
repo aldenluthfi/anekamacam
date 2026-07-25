@@ -315,16 +315,18 @@ impl OverviewState {
             state.statics.endgame_score.to_string(), 1
         ));
 
-        if halfmove_clock!(state) {
+        if let Some(counter) = &state.statics.end_conditions.counter {
             configs.push((
-                "Halfmove Limit".to_string(),
-                state.statics.halfmove_limit.to_string(), 1
+                "Counter Limit".to_string(),
+                counter.limit.to_string(), 1
             ));
         }
-        if repetition_limit!(state) {
+        if let Some((repetition_limit, _)) =
+            state.statics.end_conditions.repetition
+        {
             configs.push((
                 "Repetition Limit".to_string(),
-                state.statics.repetition_limit.to_string(), 1
+                repetition_limit.to_string(), 1
             ));
         }
 
@@ -533,14 +535,16 @@ impl BoardState {
                 fen_parts[2 + castling!(state) as usize].to_string(),
             ]);
         }
-        if halfmove_clock!(state) {
+        if let Some(counter) = &state.statics.end_conditions.counter {
             halfmove_clock = format!("{}/{}",
                 state.halfmove_clock,
-                state.statics.halfmove_limit
+                counter.limit
             );
             details.push(["Halfmove Clock".to_string(), halfmove_clock]);
         }
-        if repetition_limit!(state) {
+        if let Some((repetition_limit, _)) =
+            state.statics.end_conditions.repetition
+        {
             let count = state
                 .position_hash_map
                 .get(&state.position_hash)
@@ -548,7 +552,7 @@ impl BoardState {
                 .unwrap_or(1);
             repetition_count = format!("{}/{}",
                 count,
-                state.statics.repetition_limit
+                repetition_limit
             );
             details.push(["Repetition Count".to_string(), repetition_count]);
         }

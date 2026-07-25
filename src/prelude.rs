@@ -16,6 +16,7 @@
 pub use crate::game::representations::{
     board::Board,
     drop::DropSet,
+    end_condition::{Counter, EndConditions, Outcome},
     moves::{AttackMask, Move, MoveSignature, PseudoMove},
     pattern::{
         Pattern, PatternAllower, PatternSet, PatternStopper, PatternUnit,
@@ -54,7 +55,6 @@ pub use crate::game::moves::move_parse::{
 };
 
 pub use crate::game::moves::pattern_parse::{
-    generate_relevant_stand_offs, generate_stand_off_patterns,
     parse_pattern,
 };
 pub use crate::game::position::{

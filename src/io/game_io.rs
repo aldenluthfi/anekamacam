@@ -661,8 +661,8 @@ fn embedded_config(path: &str) -> Option<&'static str> {
 /// struct.
 ///
 /// After the pieces, the section-by-section walk fills in board zones
-/// (forbidden, promotion), castling layouts, special rules, and the move
-/// / drop / setup / stand-off expression sets, then runs `precompute`
+/// (forbidden, promotion), castling layouts, special rules, end conditions,
+/// and the move / drop / setup expression sets, then runs `precompute`
 /// and loads parameters — the embedded `latest.param` first so binaries
 /// are self-contained, a `res/param` file on disk next, and full
 /// derivation (plus export) when neither exists — returning a fully
@@ -751,14 +751,7 @@ pub fn parse_config_file(path: &str) -> State {
         sections["rules"].contains(&"promote to captured".to_string());
     let demote_upon_capture =
         sections["rules"].contains(&"demote upon capture".to_string());
-    let stalemate_loss =
-        sections["rules"].contains(&"stalemate loss".to_string());
     let setup_phase = sections["rules"].contains(&"setup phase".to_string());
-    let stand_offs = sections["rules"].contains(&"stand-offs".to_string());
-    let halfmove_clock =
-        sections["rules"].contains(&"halfmove clock".to_string());
-    let repetition_limit =
-        sections["rules"].contains(&"repetition limit".to_string());
 
     let (fen_castling, fen_en_passant, fen_in_hand) =
         extract_fen_components(initial_position);
@@ -816,20 +809,6 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
-    if stand_offs {
-        assert!(
-            sections.contains_key("stand-off patterns"),
-            "= stand-off patterns = section is missing"
-        )
-    }
-
-    if halfmove_clock {
-        assert!(
-            sections.contains_key("halfmove clock"),
-            "= halfmove clock = section is missing"
-        )
-    }
-
     let mut special_rules = 0u32;
 
     if castling {
@@ -856,24 +835,8 @@ pub fn parse_config_file(path: &str) -> State {
         enc_promote_to_captured!(special_rules);
     }
 
-    if stalemate_loss {
-        enc_stalemate_loss!(special_rules);
-    }
-
     if setup_phase {
         enc_setup_phase!(special_rules);
-    }
-
-    if stand_offs {
-        enc_stand_offs!(special_rules);
-    }
-
-    if halfmove_clock {
-        enc_halfmove_clock!(special_rules);
-    }
-
-    if repetition_limit {
-        enc_repetition_limit!(special_rules);
     }
 
     /*-----------------------------------------------------------------------*\
@@ -885,7 +848,6 @@ pub fn parse_config_file(path: &str) -> State {
     let mut pieces_moves;
     let mut pieces_drops;
     let mut pieces_setup;
-    let mut pieces_stand_off;
 
     let mut char_to_unordered_index: HashMap<char, usize> = HashMap::new();
     let mut char_to_type_index: HashMap<char, usize> = HashMap::new();
@@ -1221,13 +1183,6 @@ pub fn parse_config_file(path: &str) -> State {
                 .iter()
                 .all(|mv| !mv.contains('p') || !mv.contains('t')),
             "En passant movement found in piece definitions"
-        );
-    }
-
-    if repetition_limit {
-        assert!(
-            sections.contains_key("repetition limit"),
-            "[repetition limit] section is missing"
         );
     }
 
@@ -1692,124 +1647,82 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                                PARSE STAND-OFFS
+                                PARSE END CONDITIONS
     \*-----------------------------------------------------------------------*/
 
-    pieces_stand_off = vec![String::new(); result.static_mut().pieces.len()];
-    if stand_offs {
-        for pattern in &sections["stand-off patterns"] {
-            let parts: Vec<&str> = pattern.split(':').map(str::trim).collect();
-
-            assert!(
-                parts.len() == 2,
-                "Invalid stand-off pattern definition: {}",
-                pattern
-            );
-
-            let piece_chars = parts[0];
-            let stand_off_patterns = parts[1].to_string();
-
-            if piece_chars.len() == 2 {
-                let white_char = piece_chars.chars().next().unwrap();
-                let black_char = piece_chars.chars().nth(1).unwrap();
-
-                if let Some(&white_index) = char_to_index.get(&white_char) {
-                    pieces_stand_off[white_index] = stand_off_patterns.clone();
-                } else {
-                    panic!("Unknown piece character: {}", white_char);
-                }
-
-                if let Some(&black_index) = char_to_index.get(&black_char) {
-                    pieces_stand_off[black_index] = stand_off_patterns.clone();
-                } else {
-                    panic!("Unknown piece character: {}", black_char);
-                }
-            } else if piece_chars.len() == 1 {
-                let piece_char = piece_chars.chars().next().unwrap();
-
-                if let Some(&index) = char_to_index.get(&piece_char) {
-                    pieces_stand_off[index] = stand_off_patterns.clone();
-                } else {
-                    panic!("Unknown piece character: {}", piece_char);
-                }
-            } else {
-                panic!("Invalid piece character(s): {}", piece_chars);
-            }
+    let parse_outcome = |token: &str| -> Outcome {
+        match token {
+            "draw" => Outcome::Draw,
+            "win" => Outcome::Win,
+            "loss" => Outcome::Loss,
+            other => panic!("Unknown end-condition outcome: {}", other),
         }
-    }
+    };
 
-    /*-----------------------------------------------------------------------*\
-                                PARSE HALFMOVE CLOCK
-    \*-----------------------------------------------------------------------*/
+    let mut end_conditions = EndConditions::default();
 
-    if halfmove_clock {
-        let mut parsed_limit: Option<u8> = None;
-        let mut parsed_pieces: Option<Vec<bool>> = None;
-
-        for entry in &sections["halfmove clock"] {
-            let parts: Vec<&str> = entry.split(':').map(str::trim).collect();
+    if let Some(entries) = sections.get("end conditions") {
+        for entry in entries {
+            let parts: Vec<&str> =
+                entry.splitn(2, ':').map(str::trim).collect();
             assert!(
                 parts.len() == 2,
-                "Invalid halfmove clock definition: {}",
+                "Invalid end condition definition: {}",
                 entry
             );
 
+            let arguments: Vec<&str> = parts[1].split_whitespace().collect();
+
             match parts[0] {
-                "limit" => {
-                    let limit_value =
-                        parts[1].parse::<u8>().unwrap_or_else(|_| {
-                        panic!("Invalid halfmove limit: {}", parts[1].trim())
-                    });
-                    parsed_limit = Some(limit_value);
+                "checkmate" => {
+                    end_conditions.checkmate = parse_outcome(arguments[0]);
                 }
-                "pieces" => {
-                    let mut reset_mask = vec![
-                        false; result.static_mut().pieces.len()
-                    ];
-                    for piece_char in parts[1].chars() {
+                "stalemate" => {
+                    end_conditions.stalemate = parse_outcome(arguments[0]);
+                }
+                "repetition" => {
+                    let occurrences =
+                        arguments[0].parse::<u8>().unwrap_or_else(|_| {
+                            panic!(
+                                "Invalid repetition count: {}", arguments[0]
+                            )
+                        });
+                    let outcome = arguments.get(1)
+                        .map(|&token| parse_outcome(token))
+                        .unwrap_or(Outcome::Draw);
+                    end_conditions.repetition = Some((occurrences, outcome));
+                }
+                "counter" => {
+                    let limit =
+                        arguments[0].parse::<u8>().unwrap_or_else(|_| {
+                            panic!("Invalid counter limit: {}", arguments[0])
+                        });
+                    let mut reset_pieces =
+                        vec![false; result.static_mut().pieces.len()];
+                    for piece_char in arguments[1].chars() {
                         let piece_index = char_to_index
                             .get(&piece_char)
                             .copied()
                             .unwrap_or_else(|| {
                                 panic!(
-                                    concat!(
-                                        "Unknown piece character in ",
-                                        "halfmove clock pieces: {}"
-                                    ),
+                                    "Unknown piece character in counter: {}",
                                     piece_char
                                 )
                             });
-                        reset_mask[piece_index] = true;
+                        reset_pieces[piece_index] = true;
                     }
-                    parsed_pieces = Some(reset_mask);
+                    let outcome = arguments.get(2)
+                        .map(|&token| parse_outcome(token))
+                        .unwrap_or(Outcome::Draw);
+                    end_conditions.counter =
+                        Some(Counter { limit, reset_pieces, outcome });
                 }
-                _ => panic!(
-                    "Unknown halfmove clock field: {}",
-                    parts[0]
-                ),
+                other => panic!("Unknown end condition: {}", other),
             }
         }
-
-        result.static_mut().halfmove_limit = parsed_limit
-            .expect("Halfmove clock limit is missing");
-        result.static_mut().halfmove_pieces = parsed_pieces
-            .expect("Halfmove clock pieces are missing");
     }
 
-    /*-----------------------------------------------------------------------*\
-                              PARSE REPETITION LIMITS
-    \*-----------------------------------------------------------------------*/
-
-    if repetition_limit {
-        let limit_parts: Vec<&str> =
-            sections["repetition limit"][0].split(':').collect();
-        let limit_str =
-            limit_parts.get(1).expect("Invalid repetition limit format");
-        let limit_value = limit_str.parse::<u8>().unwrap_or_else(|_| {
-            panic!("Invalid repetition limit: {}", limit_str.trim())
-        });
-        result.static_mut().repetition_limit = limit_value;
-    }
+    result.static_mut().end_conditions = end_conditions;
 
     /*-----------------------------------------------------------------------*\
                                POST-PARSING COMPUTE
@@ -1819,7 +1732,6 @@ pub fn parse_config_file(path: &str) -> State {
         pieces_moves,
         pieces_drops,
         pieces_setup,
-        pieces_stand_off,
     );
     result.load_fen(initial_position, None);
 
@@ -2592,7 +2504,7 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
         fen.push_str(&format_hand(state, BLACK));
     }
 
-    if halfmove_clock!(state) {
+    if state.statics.end_conditions.counter.is_some() {
         fen.push(' ');
         fen.push_str(&state.halfmove_clock.to_string());
     }
@@ -2760,20 +2672,8 @@ pub fn format_special_rules(state: &State) -> String {
     if promote_to_captured!(state) {
         rules.push("Promote to Captured");
     }
-    if stalemate_loss!(state) {
-        rules.push("Stalemate Loss");
-    }
     if setup_phase!(state) {
         rules.push("Setup Phase");
-    }
-    if stand_offs!(state) {
-        rules.push("Stand-Offs");
-    }
-    if halfmove_clock!(state) {
-        rules.push("Halfmove Clock");
-    }
-    if repetition_limit!(state) {
-        rules.push("Repetition Limit");
     }
 
     rules.join(", ")

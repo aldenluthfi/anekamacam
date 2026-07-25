@@ -655,7 +655,8 @@ impl GameManager {
                     BLACK_WIN => 0.0,
                     DRAW => 0.5,
                     _ => if is_in_check!(state.playing, state)
-                        || stalemate_loss!(state) {
+                        || state.statics.end_conditions.stalemate
+                            == Outcome::Loss {
                         state.playing as f64
                     } else {
                         0.5
