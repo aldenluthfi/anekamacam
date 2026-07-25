@@ -1462,6 +1462,8 @@ macro_rules! make_move {
             let last_position_hash = $state.position_hash;
             let last_pawn_hash = $state.pawn_hash;
             let last_game_result = $state.game_result;
+            let last_gave_check = $state.gave_check;
+            let last_check_count = $state.check_count;
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
 
@@ -2622,6 +2624,17 @@ macro_rules! make_move {
 
             let in_check = is_in_check!(1 - $state.playing, $state);
             let legal = !in_check;
+            let mover = 1 - $state.playing;
+
+            if $state.statics.end_conditions.checks.is_some() {
+                $state.gave_check = is_in_check!($state.playing, $state);
+                if $state.gave_check {
+                    $state.check_count[mover as usize] =
+                        $state.check_count[mover as usize].saturating_add(1);
+                }
+            } else {
+                $state.gave_check = false;
+            }
 
             hash_toggle_side!($state);
 
@@ -2634,25 +2647,31 @@ macro_rules! make_move {
                 false, |snapshot| pass_snapshot!(snapshot)
             );
 
-            let terminal_outcome = if double_pass {
-                Some(Outcome::Draw)
+            let terminal_outcome = if let Some((limit, outcome)) =
+                $state.statics.end_conditions.checks
+                && $state.gave_check
+                && $state.check_count[mover as usize] >= limit
+            {
+                Some((mover, outcome))
+            } else if double_pass {
+                Some(($state.playing, Outcome::Draw))
             } else if let Some((count, outcome)) =
                 $state.statics.end_conditions.repetition
                 && *$state.position_hash_map
                     .get(&$state.position_hash).unwrap_or(&1) >= count
             {
-                Some(outcome)
+                Some(($state.playing, outcome))
             } else if let Some(counter) =
                 &$state.statics.end_conditions.counter
                 && $state.halfmove_clock >= counter.limit
             {
-                Some(counter.outcome)
+                Some(($state.playing, counter.outcome))
             } else {
                 None
             };
 
-            if let Some(outcome) = terminal_outcome {
-                $state.game_result = resolve_outcome!($state, outcome);
+            if let Some((color, outcome)) = terminal_outcome {
+                $state.game_result = resolve_outcome_for!(color, outcome);
             }
 
             let snapshot: Snapshot = Snapshot {
@@ -2661,6 +2680,8 @@ macro_rules! make_move {
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
                 game_result: last_game_result,
+                gave_check: last_gave_check,
+                check_count: last_check_count,
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
@@ -2733,6 +2754,8 @@ macro_rules! undo_move {
         $state.position_hash = snapshot.position_hash;
         $state.pawn_hash = snapshot.pawn_hash;
         $state.game_result = snapshot.game_result;
+        $state.gave_check = snapshot.gave_check;
+        $state.check_count = snapshot.check_count;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
 
@@ -3474,6 +3497,8 @@ macro_rules! make_null_move {
             let last_position_hash = $state.position_hash;
             let last_pawn_hash = $state.pawn_hash;
             let last_game_result = $state.game_result;
+            let last_gave_check = $state.gave_check;
+            let last_check_count = $state.check_count;
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
 
@@ -3485,6 +3510,7 @@ macro_rules! make_null_move {
             $state.en_passant_square = NO_EN_PASSANT;
 
             $state.playing = 1 - $state.playing;
+            $state.gave_check = false;
 
             hash_toggle_side!($state);
 
@@ -3494,6 +3520,8 @@ macro_rules! make_null_move {
                 halfmove_clock: last_halfmove_clock,
                 en_passant_square: last_en_passant_square,
                 game_result: last_game_result,
+                gave_check: last_gave_check,
+                check_count: last_check_count,
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
@@ -3539,6 +3567,8 @@ macro_rules! undo_null_move {
         $state.position_hash = snapshot.position_hash;
         $state.pawn_hash = snapshot.pawn_hash;
         $state.game_result = snapshot.game_result;
+        $state.gave_check = snapshot.gave_check;
+        $state.check_count = snapshot.check_count;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
 

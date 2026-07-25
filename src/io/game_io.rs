@@ -1717,6 +1717,16 @@ pub fn parse_config_file(path: &str) -> State {
                     end_conditions.counter =
                         Some(Counter { limit, reset_pieces, outcome });
                 }
+                "checks" => {
+                    let count =
+                        arguments[0].parse::<u8>().unwrap_or_else(|_| {
+                            panic!("Invalid check count: {}", arguments[0])
+                        });
+                    let outcome = arguments.get(1)
+                        .map(|&token| parse_outcome(token))
+                        .unwrap_or(Outcome::Win);
+                    end_conditions.checks = Some((count, outcome));
+                }
                 other => panic!("Unknown end condition: {}", other),
             }
         }

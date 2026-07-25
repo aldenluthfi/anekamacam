@@ -257,6 +257,8 @@ pub struct Snapshot {
     pub halfmove_clock: u8,                                                     /* halfmove clock before move         */
     pub en_passant_square: EnPassantSquare,                                     /* en passant sq before move          */
     pub game_result: u8,                                                        /* terminal result before move        */
+    pub gave_check: bool,                                                       /* move gave check (checked opponent) */
+    pub check_count: [u8; 2],                                                   /* checks delivered before move       */
     pub game_phase: u8,                                                         /* game phase before move             */
     pub phase_score: u32,                                                       /* phase score before move            */
 
@@ -272,6 +274,8 @@ impl Default for Snapshot {
             halfmove_clock: 0,
             en_passant_square: EnPassantSquare::MAX,
             game_result: ONGOING,
+            gave_check: false,
+            check_count: [0; 2],
             game_phase: OPENING,
             phase_score: 0,
             position_hash: u128::default(),
@@ -571,6 +575,8 @@ pub struct State {
 \*----------------------------------------------------------------------------*/
 
     pub game_result: u8,                                                        /* ONGOING/DRAW/BLACK_WIN/WHITE_WIN   */
+    pub gave_check: bool,                                                       /* last move checked the opponent     */
+    pub check_count: [u8; 2],                                                   /* checks delivered per colour        */
     pub game_phase: u8,                                                         /* SETUP/OPENING/MIDDLEGAME/ENDGAME   */
     pub phase_score: u32,                                                       /* game phase score for transition    */
 
@@ -634,6 +640,8 @@ impl Clone for State {
             statics: Arc::clone(&self.statics),
 
             game_result: self.game_result,
+            gave_check: self.gave_check,
+            check_count: self.check_count,
             game_phase: self.game_phase,
             phase_score: self.phase_score,
 
@@ -880,6 +888,8 @@ impl State {
             statics,
 
             game_result: ONGOING,
+            gave_check: false,
+            check_count: [0; 2],
             game_phase: OPENING,
             phase_score: 0,
 
@@ -988,6 +998,8 @@ impl State {
 
         self.game_phase = OPENING;
         self.game_result = ONGOING;
+        self.gave_check = false;
+        self.check_count = [0; 2];
 
         self.opening_material = [0; 2];
         self.endgame_material = [0; 2];

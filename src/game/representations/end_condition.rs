@@ -63,6 +63,8 @@ pub struct EndConditions {
 
     pub repetition: Option<(u8, Outcome)>,                                      /* (Nth occurrence, outcome)          */
     pub counter: Option<Counter>,                                              /* progress counter, if declared      */
+
+    pub checks: Option<(u8, Outcome)>,                                         /* (Nth check, checker's outcome)     */
 }
 
 impl Default for EndConditions {
@@ -77,6 +79,7 @@ impl Default for EndConditions {
             stalemate: Outcome::Draw,
             repetition: None,
             counter: None,
+            checks: None,
         }
     }
 }
@@ -96,13 +99,33 @@ impl Default for EndConditions {
 #[macro_export]
 macro_rules! resolve_outcome {
     ($state:expr, $outcome:expr) => {
+        resolve_outcome_for!($state.playing, $outcome)
+    };
+}
+
+/// resolve_outcome_for!
+///
+/// Maps an [`Outcome`] evaluated against a named colour to an absolute
+/// `game_result`. Use this when the outcome's subject is not the side to
+/// move — e.g. a check-count rule resolved from the mover's perspective,
+/// where the mover is the opponent of the side now to move.
+///
+/// Params:
+/// - color  : u8      -> the colour the outcome is named against
+/// - outcome: Outcome -> the result to resolve
+///
+/// Return:
+/// u8                 -> DRAW / WHITE_WIN / BLACK_WIN
+#[macro_export]
+macro_rules! resolve_outcome_for {
+    ($color:expr, $outcome:expr) => {
         match $outcome {
             Outcome::Draw => DRAW,
             Outcome::Win => {
-                if $state.playing == WHITE { WHITE_WIN } else { BLACK_WIN }
+                if $color == WHITE { WHITE_WIN } else { BLACK_WIN }
             }
             Outcome::Loss => {
-                if $state.playing == WHITE { BLACK_WIN } else { WHITE_WIN }
+                if $color == WHITE { BLACK_WIN } else { WHITE_WIN }
             }
         }
     };
