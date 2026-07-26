@@ -1882,6 +1882,16 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
+    if end_conditions.perpetual.is_some()
+    && end_conditions.repetition.is_none()
+    {
+        panic!(
+            "end condition `perpetual` requires `repetition`: the perpetual \
+             verdict is only reached when a repetition closes, so a perpetual \
+             rule without one never fires"
+        );
+    }
+
     result.static_mut().end_conditions = end_conditions;
 
     /*-----------------------------------------------------------------------*\
