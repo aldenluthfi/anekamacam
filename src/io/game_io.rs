@@ -1776,13 +1776,31 @@ pub fn parse_config_file(path: &str) -> State {
                     end_conditions.goal = Some(Goal { set, zone, outcome });
                 }
                 "perpetual" => {
-                    let mut perpetual = Perpetual { check: None };
+                    let mut check = None;
+                    let mut chase = None;
+                    let mut chasers = vec![true; set_piece_count];
                     let mut index = 0;
                     while index < arguments.len() {
                         match arguments[index] {
                             "check" => {
-                                perpetual.check =
+                                check =
                                     Some(parse_outcome(arguments[index + 1]));
+                                index += 2;
+                            }
+                            "chase" => {
+                                chase =
+                                    Some(parse_outcome(arguments[index + 1]));
+                                index += 2;
+                            }
+                            "exempt" => {
+                                for (piece, exempt) in
+                                    parse_set(arguments[index + 1])
+                                        .iter().enumerate()
+                                {
+                                    if *exempt {
+                                        chasers[piece] = false;
+                                    }
+                                }
                                 index += 2;
                             }
                             other => panic!(
@@ -1790,7 +1808,8 @@ pub fn parse_config_file(path: &str) -> State {
                             ),
                         }
                     }
-                    end_conditions.perpetual = Some(perpetual);
+                    end_conditions.perpetual =
+                        Some(Perpetual { check, chase, chasers });
                 }
                 other => panic!("Unknown end condition: {}", other),
             }

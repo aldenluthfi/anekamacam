@@ -46,10 +46,10 @@ pub use crate::game::representations::{
 pub use crate::game::moves::drop_list::generate_relevant_drops;
 pub use crate::game::moves::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
-    extinct_fired, generate_all_captures, generate_all_moves_and_drops,
-    generate_attack_masks, generate_relevant_captures,
-    generate_relevant_castling, generate_relevant_moves, goal_fired,
-    perpetual_fired,
+    extinct_fired, favorably_chased, generate_all_captures,
+    generate_all_moves_and_drops, generate_attack_masks,
+    generate_relevant_captures, generate_relevant_castling,
+    generate_relevant_moves, goal_fired, perpetual_fired,
 };
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,

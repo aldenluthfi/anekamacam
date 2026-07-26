@@ -264,6 +264,8 @@ pub struct Snapshot {
 
     pub position_hash: u128,                                                    /* Zobrist hash before move           */
     pub pawn_hash: u128,                                                        /* pawn-only Zobrist key before move  */
+
+    pub chase: Vec<Square>,                                                     /* enemy squares this move chased     */
 }
 
 impl Default for Snapshot {
@@ -280,6 +282,7 @@ impl Default for Snapshot {
             phase_score: 0,
             position_hash: u128::default(),
             pawn_hash: u128::default(),
+            chase: Vec::new(),
         }
     }
 }

@@ -78,13 +78,18 @@ pub struct Goal {
 ///
 /// A cycle-offence rule: when a repetition closes, one side may be the sole
 /// aggressor sustaining it, and rather than the neutral repetition outcome
-/// that side receives its offence's `Outcome`. `check` names the outcome of
-/// perpetually checking (a check on every one of the offender's cycle moves);
-/// when both sides offend, neither is sole and the repetition outcome stands.
-/// This refines the repetition rule, so it only fires once that rule's
-/// occurrence bound is met. Covers xiangqi, which forbids perpetual check.
+/// that side receives its offence's `Outcome`. Two offences are recognised:
+/// `check`, delivering a check on every one of the offender's cycle moves,
+/// and `chase`, keeping the same enemy non-royal piece under an undefended
+/// capture threat on every one of them; `chasers` marks the piece indices
+/// whose threats count as a chase (the non-exempt attackers). Check outranks
+/// chase, and when both sides offend the repetition outcome stands. This
+/// refines the repetition rule, firing only once its occurrence bound is met.
+/// Covers xiangqi, which forbids perpetual check and perpetual chase.
 pub struct Perpetual {
     pub check: Option<Outcome>,                                                 /* sole perpetual checker's result    */
+    pub chase: Option<Outcome>,                                                 /* sole perpetual chaser's result     */
+    pub chasers: Vec<bool>,                                                     /* piece indices that commit a chase  */
 }
 
 /*----------------------------------------------------------------------------*\
