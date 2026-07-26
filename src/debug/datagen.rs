@@ -66,8 +66,9 @@ fn play_one_game(
             return None;
         }
 
-        if is_terminal!(state) {
-            let result = match state.game_result {
+        let terminal = game_outcome(state);
+        if terminal != ONGOING {
+            let result = match terminal {
                 WHITE_WIN => 1.0,
                 BLACK_WIN => 0.0,
                 _ => 0.5,

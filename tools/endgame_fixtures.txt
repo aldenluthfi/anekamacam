@@ -9,15 +9,20 @@
 # which reflects `State.game_result` -- the parametric terminal rules that
 # make_move! sets. Checkmate/stalemate are no-legal-move outcomes detected in
 # search, not by make_move!, so they are out of scope here and verified via
-# `go` instead. The perpetual chase detector is constant-square: a target held
-# on one square through the cycle is caught; a target that dodges square to
-# square each ply is not, and draws (see perp-chase vs the note below).
+# `go` instead. Repetition and perpetual are decided on demand -- by search and
+# by the `d` game_outcome oracle -- not stored by make_move!. The perpetual
+# detector is a plain-undefended predicate that unifies check and chase and
+# tracks the chased piece by identity across the cycle: a dodging target is
+# caught, while a defended piece is not a chase.
 
 # --- perpetual (xiangqi): sole aggressor in a repetition loses -------------
 xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 e10e9 a10a9 e9e10 a9a10 | Black wins | perpetual check: sole checker White loses
 xiangqi | 4k4/9/9/9/9/n8/9/9/9/R4K3 w | a1a2 e10d10 a2a1 d10e10 a1a2 e10d10 a2a1 d10e10 a1a2 | Black wins | perpetual chase: sole chaser White loses (undefended horse a5)
 xiangqi | 4k4/9/9/9/9/n8/9/9/9/R4K3 w | a1b1 e10d10 b1a1 d10e10 a1b1 e10d10 b1a1 d10e10 a1b1 | Draw | chase not sustained every ply -> repetition draw
 xiangqi | 3k5/9/9/9/9/9/9/9/9/R3K4 w | a1a2 d10d9 a2a1 d9d10 a1a2 d10d9 a2a1 d9d10 a1a2 | Draw | repetition with no offence -> draw
+xiangqi | 4k4/9/9/1n7/9/9/9/9/9/R2K5 w | a1b1 b7a5 b1a1 a5b7 a1b1 b7a5 b1a1 a5b7 a1b1 | Black wins | perpetual chase: chariot tracks a dodging undefended horse (b7/a5) -> chaser loses
+xiangqi | 4k4/9/9/9/4r4/2N1r4/9/9/9/5K3 w | c5d3 e5e4 d3c5 e4e5 c5d3 e5e4 d3c5 e4e5 c5d3 | Draw | defended chariot is not chased (undefended rule) -> repetition draw
+xiangqi | 2e1k4/4r4/9/9/9/9/9/9/4R4/2E1K4 w | c1a3 c10a8 a3c1 a8c10 c1a3 c10a8 a3c1 a8c10 c1a3 | Draw | mutual equal attack on defended pieces -> no chase, draw
 
 # --- repetition / counter --------------------------------------------------
 standard | startpos | g1f3 b8c6 f3g1 c6b8 g1f3 b8c6 f3g1 c6b8 g1f3 | Draw | threefold repetition

@@ -646,11 +646,12 @@ impl GameManager {
         };
 
         loop {
+            let terminal = game_outcome(state);
             if SYSTEM_INTERRUPT.load(Ordering::Relaxed)
-            || is_terminal!(state)
+            || terminal != ONGOING
             || legal_moves!(state).is_empty()
             {
-                let score = match state.game_result {
+                let score = match terminal {
                     WHITE_WIN => 1.0,
                     BLACK_WIN => 0.0,
                     DRAW => 0.5,

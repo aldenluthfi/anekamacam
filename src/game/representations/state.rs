@@ -264,8 +264,6 @@ pub struct Snapshot {
 
     pub position_hash: u128,                                                    /* Zobrist hash before move           */
     pub pawn_hash: u128,                                                        /* pawn-only Zobrist key before move  */
-
-    pub chase: Vec<Square>,                                                     /* enemy squares this move chased     */
 }
 
 impl Default for Snapshot {
@@ -282,7 +280,6 @@ impl Default for Snapshot {
             phase_score: 0,
             position_hash: u128::default(),
             pawn_hash: u128::default(),
-            chase: Vec::new(),
         }
     }
 }
@@ -434,6 +431,27 @@ macro_rules! game_phase_score {
 macro_rules! is_terminal {
     ($state:expr) => {
         $state.game_result != ONGOING
+    };
+}
+
+/// game_over!
+///
+/// The game-truth oracle: true when the position is decided, folding in the
+/// on-demand repetition/perpetual verdict that `make_move!` no longer stores.
+/// Unlike `is_terminal!` (a cheap read of the eager, position-local
+/// `game_result` used on hot search/move-gen paths), this consults
+/// `game_outcome`, which may walk the repetition cycle — so use it only on
+/// reporting/self-play paths (`d`, datagen, sprt, console), never per node.
+///
+/// Params:
+/// - state: &mut State -> position tested (restored exactly if a walk runs)
+///
+/// Return:
+/// bool                -> true once the game has reached a terminal outcome
+#[macro_export]
+macro_rules! game_over {
+    ($state:expr) => {
+        game_outcome($state) != ONGOING
     };
 }
 

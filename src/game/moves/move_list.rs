@@ -2626,10 +2626,7 @@ macro_rules! make_move {
             let legal = !in_check;
             let mover = 1 - $state.playing;
 
-            if $state.statics.end_conditions.checks.is_some()
-                || $state.statics.end_conditions.perpetual.as_ref()
-                    .is_some_and(|perpetual| perpetual.check.is_some())
-            {
+            if $state.statics.end_conditions.checks.is_some() {
                 $state.gave_check = is_in_check!($state.playing, $state);
                 if $state.gave_check {
                     $state.check_count[mover as usize] =
@@ -2638,8 +2635,6 @@ macro_rules! make_move {
             } else {
                 $state.gave_check = false;
             }
-
-            let move_chase = favorably_chased($state, mover);
 
             hash_toggle_side!($state);
 
@@ -2666,15 +2661,6 @@ macro_rules! make_move {
                 Some(
                     adjudicate_fired($state)
                         .unwrap_or(($state.playing, Outcome::Draw))
-                )
-            } else if let Some((count, outcome)) =
-                $state.statics.end_conditions.repetition
-                && *$state.position_hash_map
-                    .get(&$state.position_hash).unwrap_or(&1) >= count
-            {
-                Some(
-                    perpetual_fired($state, mover, &move_chase)
-                        .unwrap_or(($state.playing, outcome))
                 )
             } else if let Some(counter) =
                 &$state.statics.end_conditions.counter
@@ -2704,7 +2690,6 @@ macro_rules! make_move {
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
                 pawn_hash: last_pawn_hash,
-                chase: move_chase,
             };
 
             $state.history.push(snapshot);
@@ -3545,7 +3530,6 @@ macro_rules! make_null_move {
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
                 pawn_hash: last_pawn_hash,
-                chase: Vec::new(),
             };
 
             $state.history.push(snapshot);
@@ -3700,34 +3684,36 @@ pub fn adjudicate_fired(state: &State) -> Option<(u8, Outcome)> {
     })
 }
 
-/// favorably_chased
+/// offence_set
 ///
-/// Computes the enemy squares the side that just moved threatens as a chase:
-/// an enemy non-royal piece attacked by one of the mover's non-exempt pieces
-/// and left undefended by its own side. Empty unless the variant declares a
-/// perpetual-chase rule, so a variant without one pays nothing. The result is
-/// recorded per ply and intersected across a cycle to spot a perpetual chase
-/// of one fixed square.
+/// The unified per-ply offence a mover commits against the side to move after
+/// its move: it delivers a **check** (the quarry's royal is attacked -- a full
+/// board test, so discovered checks count) and/or **chases** enemy non-royal
+/// pieces (attacked by a non-exempt mover piece and left undefended). A check
+/// is just the royal case of the same "attacked and unprotected" predicate, so
+/// check and chase share one read-only pass -- no SEE, no lva, no make/undo.
+/// The chase board is empty unless the variant declares a perpetual-chase rule.
 ///
 /// Params:
-/// - state: &State -> position after the move (side to move is the quarry)
-/// - mover: u8     -> the colour that just moved (the potential chaser)
+/// - state: &State -> position after the mover's ply (quarry is side to move)
+/// - mover: u8     -> the colour that just moved (the potential offender)
 ///
 /// Return:
-/// Vec<Square> -> enemy squares under an undefended threat from the mover
-pub fn favorably_chased(state: &State, mover: u8) -> Vec<Square> {
+/// (bool, Board) -> (mover gave check, enemy squares under an undefended chase)
+pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
+    let quarry = 1 - mover;                                                     /* side to move after the mover's ply */
+    let did_check = is_in_check!(quarry, state);
+
+    let mut chase = board!(state.statics.files, state.statics.ranks);
+
     let Some(perpetual) = state.statics.end_conditions.perpetual.as_ref()
     else {
-        return Vec::new();
+        return (did_check, chase);
     };
-
     if perpetual.chase.is_none() {
-        return Vec::new();
+        return (did_check, chase);
     }
-
-    let quarry = state.playing;                                                 /* side to move is the chased side    */
     let chasers = &perpetual.chasers;
-    let mut result = Vec::new();
 
     for index in 0..state.statics.pieces.len() {
         let piece = &state.statics.pieces[index];
@@ -3759,103 +3745,179 @@ pub fn favorably_chased(state: &State, mover: u8) -> Vec<Square> {
                 }
             );
 
-            if !attacked {
-                continue;
-            }
-
-            let defended = is_square_attacked!(
+            if attacked && !is_square_attacked!(
                 square as u32, mover, unmoved, false, target_rank, state
-            );
-
-            if !defended {
-                result.push(square);
+            ) {
+                set!(chase, square as u32);
             }
         }
     }
 
-    result
+    (did_check, chase)
 }
 
-/// perpetual_fired
+/// perpetual_offender
 ///
-/// Adjudicates a just-closed repetition cycle for a sole aggressor. The plies
-/// running from the previous occurrence of the current position up to now
-/// form the cycle, and each colour's moves in it are examined for two
-/// offences. A perpetual checker delivered a check on every cycle move (read
-/// from the per-colour `check_count` delta). A perpetual chaser kept one
-/// fixed enemy square under an undefended threat on every cycle move (the
-/// intersection of its per-ply `favorably_chased` lists is non-empty). Check
-/// outranks chase, and when both colours commit the same offence no aggressor
-/// is sole; the caller then keeps the neutral repetition outcome.
+/// Adjudicates a just-closed repetition cycle for a sole aggressor. Walking the
+/// plies from the previous occurrence of the current position up to the closing
+/// move, each colour's offences accumulate: it is a perpetual checker if it
+/// gave check on every one of its cycle moves, and a perpetual chaser if it kept
+/// the same enemy piece under an undefended chase on every one of them. Because
+/// the chased piece dodges square to square, the chase board is tracked by
+/// identity -- remapped through each undone quiet cycle move (a cycle move is
+/// capture- and drop-free, hence a pure relocation). Check outranks chase; when
+/// both colours commit the same offence no aggressor is sole. The walk uses
+/// `undo_move!`/`make_move!` and restores the position exactly, including
+/// `game_result` (a redone quiet move could otherwise trip an eager terminal).
 ///
 /// Params:
-/// - state        : &State    -> position after the cycle-closing move
-/// - mover        : u8        -> the colour that just moved (closed the cycle)
-/// - current_chase: &[Square] -> the closing move's own chased squares
+/// - state: &mut State -> position after the cycle-closing move (restored)
 ///
 /// Return:
-/// Option<(u8, Outcome)> -> (offender colour, outcome) when one side is sole
-pub fn perpetual_fired(
-    state: &State, mover: u8, current_chase: &[Square],
-) -> Option<(u8, Outcome)> {
-    let perpetual = state.statics.end_conditions.perpetual.as_ref()?;
+/// Option<u8> -> the sole offender's colour, or None when none / both offend
+fn perpetual_offender(state: &mut State) -> Option<u8> {
+    let (check_enabled, chase_enabled) = {
+        let perpetual = state.statics.end_conditions.perpetual.as_ref()?;
+        (perpetual.check.is_some(), perpetual.chase.is_some())
+    };
 
     let hash = state.position_hash;
-    let history = &state.history;
-    let plies = history.len();
+    let plies = state.history.len();
+    let start = (0..plies).rev()
+        .find(|&index| state.history[index].position_hash == hash)?;
 
-    let start =
-        (0..plies).rev().find(|&i| history[i].position_hash == hash)?;
+    let saved_result = state.game_result;
 
-    let mut cycle_moves = [0u32; 2];
-    let mut chased_lists: [Vec<&[Square]>; 2] = [Vec::new(), Vec::new()];
+    let mut check_all = [true; 2];
+    let mut cycle_plies = [0u32; 2];
+    let mut chase = [
+        board!(state.statics.files, state.statics.ranks),
+        board!(state.statics.files, state.statics.ranks),
+    ];
+    let mut chase_seen = [false; 2];
+    let mut redo: Vec<Move> = Vec::new();
+    let mut index = plies - 1;
 
-    for index in start..=plies {
-        let color = if (plies - index) % 2 == 0 { mover } else { 1 - mover };
-        cycle_moves[color as usize] += 1;
-
-        let chased: &[Square] = if index == plies {
-            current_chase
+    loop {
+        let mover = (1 - state.playing) as usize;                               /* colour that made history[index]    */
+        let (did_check, threats) = offence_set(state, mover as u8);
+        cycle_plies[mover] += 1;
+        check_all[mover] &= did_check;
+        if chase_seen[mover] {
+            and!(chase[mover], &threats);
         } else {
-            &history[index].chase
-        };
-        chased_lists[color as usize].push(chased);
+            chase[mover] = threats;
+            chase_seen[mover] = true;
+        }
+
+        if index == start {
+            break;
+        }
+
+        let cycle_move = state.history[index].move_ply.clone();
+        undo_move!(state);
+
+        let from = start!(cycle_move) as u32;                                   /* remap the quarry piece backward    */
+        let to = end!(cycle_move) as u32;                                       /* through this quiet relocation      */
+        let other = 1 - mover;
+        if get!(chase[other], to) {
+            clear!(chase[other], to);
+            set!(chase[other], from);
+        }
+
+        redo.push(cycle_move);
+        index -= 1;
     }
 
-    let base = history[start].check_count;
-    let perpetual_checker = |color: u8| -> bool {
-        let color = color as usize;
-        cycle_moves[color] > 0
-            && (state.check_count[color] as u32)
-                .wrapping_sub(base[color] as u32) == cycle_moves[color]
+    for cycle_move in redo.iter().rev() {
+        make_move!(state, cycle_move.clone());
+    }
+    state.game_result = saved_result;
+
+    let checker =
+        |c: usize| check_enabled && cycle_plies[c] > 0 && check_all[c];
+    let chaser =
+        |c: usize| chase_enabled && chase_seen[c] && !is_empty!(chase[c]);
+
+    match (checker(WHITE as usize), checker(BLACK as usize)) {
+        (true, false) => return Some(WHITE),
+        (false, true) => return Some(BLACK),
+        (true, true) => return None,                                            /* both check: repetition stands      */
+        (false, false) => {}
+    }
+
+    match (chaser(WHITE as usize), chaser(BLACK as usize)) {
+        (true, false) => Some(WHITE),
+        (false, true) => Some(BLACK),
+        _ => None,
+    }
+}
+
+/// repetition_outcome
+///
+/// The on-demand repetition/perpetual terminal, computed rather than stored:
+/// `None` unless the variant declares a `repetition` rule and the current
+/// position has occurred at least `min_count` times. When it fires it returns
+/// the outcome from the **side-to-move** perspective -- the neutral repetition
+/// outcome (usually `Draw`) unless a sole perpetual offender is found, in which
+/// case that colour loses. Non-perpetual variants short-circuit with no walk.
+/// `game_outcome` calls this at the configured fold for game truth; search
+/// calls it at a 2-fold to value repetitions.
+///
+/// Params:
+/// - state    : &mut State -> current position (restored if a walk runs)
+/// - min_count: u8         -> occurrences required before it fires
+///
+/// Return:
+/// Option<Outcome> -> the terminal outcome (side-to-move perspective), if any
+pub fn repetition_outcome(state: &mut State, min_count: u8) -> Option<Outcome> {
+    let (_, neutral) = state.statics.end_conditions.repetition?;
+
+    let occurrences = state.position_hash_map
+        .get(&state.position_hash).copied().unwrap_or(0);
+    if occurrences < min_count {
+        return None;
+    }
+
+    if state.statics.end_conditions.perpetual.is_none() {
+        return Some(neutral);
+    }
+
+    Some(match perpetual_offender(state) {
+        Some(offender) if offender == state.playing => Outcome::Loss,
+        Some(_) => Outcome::Win,
+        None => neutral,
+    })
+}
+
+/// game_outcome
+///
+/// The single game-truth oracle for reporting and self-play paths: the eager,
+/// position-local `game_result` when set, else the on-demand repetition /
+/// perpetual verdict at the variant's configured fold. Search does not use this
+/// (it keeps the cheap `is_terminal!` read plus its own 2-fold
+/// `repetition_outcome` call); this is for `d`, datagen, sprt, and the console,
+/// which must still observe a repetition/perpetual game end now that
+/// `make_move!` no longer stores it.
+///
+/// Params:
+/// - state: &mut State -> current position (restored if a walk runs)
+///
+/// Return:
+/// u8 -> ONGOING / DRAW / WHITE_WIN / BLACK_WIN
+pub fn game_outcome(state: &mut State) -> u8 {
+    if state.game_result != ONGOING {
+        return state.game_result;
+    }
+
+    let Some((count, _)) = state.statics.end_conditions.repetition else {
+        return ONGOING;
     };
 
-    let perpetual_chaser = |color: u8| -> bool {
-        let lists = &chased_lists[color as usize];
-        !lists.is_empty()
-            && lists[0].iter().any(|square| {
-                lists.iter().all(|list| list.contains(square))
-            })
-    };
-
-    if let Some(outcome) = perpetual.check {
-        match (perpetual_checker(WHITE), perpetual_checker(BLACK)) {
-            (true, false) => return Some((WHITE, outcome)),
-            (false, true) => return Some((BLACK, outcome)),
-            (true, true) => return None,                                        /* both check: repetition stands      */
-            (false, false) => {}
-        }
+    match repetition_outcome(state, count) {
+        Some(outcome) => resolve_outcome!(state, outcome),
+        None => ONGOING,
     }
-
-    if let Some(outcome) = perpetual.chase {
-        match (perpetual_chaser(WHITE), perpetual_chaser(BLACK)) {
-            (true, false) => return Some((WHITE, outcome)),
-            (false, true) => return Some((BLACK, outcome)),
-            _ => {}
-        }
-    }
-
-    None
 }
 
 /// generate_all_moves_and_drops

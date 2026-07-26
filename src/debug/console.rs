@@ -513,7 +513,9 @@ impl BoardState {
 
         details.push(["Game Phase".to_string(), phase]);
         if is_terminal!(state) {
-            details.push(["Result".to_string(), format_game_result(state)]);
+            details.push(
+                ["Result".to_string(), format_game_result(state.game_result)]
+            );
         }
         details.push(
             [
@@ -2903,7 +2905,7 @@ fn execute_command(
             let mut bufs = SearchBufs::default();
             let time_limit_ns = (time_limit * 1_000_000_000.0) as u128;
 
-            while !is_terminal!(state) {
+            while !game_over!(state) {
 
                 if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
                     break;
