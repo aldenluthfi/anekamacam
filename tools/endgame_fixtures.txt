@@ -24,6 +24,11 @@ xiangqi | 4k4/9/9/1n7/9/9/9/9/9/R2K5 w | a1b1 b7a5 b1a1 a5b7 a1b1 b7a5 b1a1 a5b7
 xiangqi | 4k4/9/9/9/4r4/2N1r4/9/9/9/5K3 w | c5d3 e5e4 d3c5 e4e5 c5d3 e5e4 d3c5 e4e5 c5d3 | Draw | defended chariot is not chased (undefended rule) -> repetition draw
 xiangqi | 2e1k4/4r4/9/9/9/9/9/9/4R4/2E1K4 w | c1a3 c10a8 a3c1 a8c10 c1a3 c10a8 a3c1 a8c10 c1a3 | Draw | mutual equal attack on defended pieces -> no chase, draw
 
+# --- perpetual check (shogi/minishogi sennichite): checker loses at 4-fold --
+shogi | 9/9/9/9/4k4/9/9/9/K2R5 w -/- | d1e1 e5d5 e1d1 d5e5 d1e1 e5d5 e1d1 d5e5 d1e1 e5d5 e1d1 d5e5 d1e1 | Black wins | perpetual check: sole checker White loses at the 4th fold
+shogi | 9/9/9/9/4k4/9/9/9/R1K6 w -/- | a1b1 e5e4 b1a1 e4e5 a1b1 e5e4 b1a1 e4e5 a1b1 e5e4 b1a1 e4e5 a1b1 | Draw | plain 4-fold repetition (no perpetual check) -> draw
+minishogi | 4k/5/5/5/K2R1 w -/- | d1e1 e5d5 e1d1 d5e5 d1e1 e5d5 e1d1 d5e5 d1e1 e5d5 e1d1 d5e5 d1e1 | Black wins | perpetual check: sole checker White loses at the 4th fold
+
 # --- repetition / counter --------------------------------------------------
 standard | startpos | g1f3 b8c6 f3g1 c6b8 g1f3 b8c6 f3g1 c6b8 g1f3 | Draw | threefold repetition
 standard | 4k3/8/8/8/8/8/8/4K2R w K - 99 1 | h1h2 | Draw | 50-move counter reaches limit on a quiet rook move
