@@ -74,6 +74,19 @@ pub struct Goal {
     pub outcome: Outcome,                                                       /* result for the arriving colour     */
 }
 
+/// Perpetual
+///
+/// A cycle-offence rule: when a repetition closes, one side may be the sole
+/// aggressor sustaining it, and rather than the neutral repetition outcome
+/// that side receives its offence's `Outcome`. `check` names the outcome of
+/// perpetually checking (a check on every one of the offender's cycle moves);
+/// when both sides offend, neither is sole and the repetition outcome stands.
+/// This refines the repetition rule, so it only fires once that rule's
+/// occurrence bound is met. Covers xiangqi, which forbids perpetual check.
+pub struct Perpetual {
+    pub check: Option<Outcome>,                                                 /* sole perpetual checker's result    */
+}
+
 /*----------------------------------------------------------------------------*\
                                  END CONDITIONS
 \*----------------------------------------------------------------------------*/
@@ -90,11 +103,12 @@ pub struct EndConditions {
     pub stalemate: Outcome,                                                     /* no moves, not in check(dflt Draw)  */
 
     pub repetition: Option<(u8, Outcome)>,                                      /* (Nth occurrence, outcome)          */
-    pub counter: Option<Counter>,                                              /* progress counter, if declared      */
+    pub counter: Option<Counter>,                                               /* progress counter, if declared      */
 
-    pub checks: Option<(u8, Outcome)>,                                         /* (Nth check, checker's outcome)     */
-    pub extinct: Vec<Extinct>,                                                 /* material-extinction rules          */
-    pub goal: Option<Goal>,                                                    /* goal-zone rule                     */
+    pub checks: Option<(u8, Outcome)>,                                          /* (Nth check, checker's outcome)     */
+    pub extinct: Vec<Extinct>,                                                  /* material-extinction rules          */
+    pub goal: Option<Goal>,                                                     /* goal-zone rule                     */
+    pub perpetual: Option<Perpetual>,                                           /* repetition-cycle offence rule      */
 }
 
 impl Default for EndConditions {
@@ -112,6 +126,7 @@ impl Default for EndConditions {
             checks: None,
             extinct: Vec::new(),
             goal: None,
+            perpetual: None,
         }
     }
 }

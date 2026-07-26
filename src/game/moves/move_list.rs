@@ -2626,7 +2626,10 @@ macro_rules! make_move {
             let legal = !in_check;
             let mover = 1 - $state.playing;
 
-            if $state.statics.end_conditions.checks.is_some() {
+            if $state.statics.end_conditions.checks.is_some()
+                || $state.statics.end_conditions.perpetual.as_ref()
+                    .is_some_and(|perpetual| perpetual.check.is_some())
+            {
                 $state.gave_check = is_in_check!($state.playing, $state);
                 if $state.gave_check {
                     $state.check_count[mover as usize] =
@@ -2664,7 +2667,10 @@ macro_rules! make_move {
                 && *$state.position_hash_map
                     .get(&$state.position_hash).unwrap_or(&1) >= count
             {
-                Some(($state.playing, outcome))
+                Some(
+                    perpetual_fired($state, mover)
+                        .unwrap_or(($state.playing, outcome))
+                )
             } else if let Some(counter) =
                 &$state.statics.end_conditions.counter
                 && $state.halfmove_clock >= counter.limit
@@ -3651,6 +3657,59 @@ pub fn goal_fired(state: &State, mover: u8) -> Option<(u8, Outcome)> {
     }
 
     None
+}
+
+/// perpetual_fired
+///
+/// Adjudicates a just-closed repetition cycle for a sole aggressor. When the
+/// variant declares a `perpetual` rule, the plies running from the previous
+/// occurrence of the current position up to now form the cycle, and each
+/// colour's moves in it are examined. A colour that delivered a check on
+/// every one of its cycle moves is a perpetual checker; if exactly one colour
+/// is, it receives the rule's outcome (a loss). When both or neither offend
+/// no aggressor is sole, and the caller keeps the neutral repetition outcome.
+///
+/// Params:
+/// - state: &State -> position after the cycle-closing move
+/// - mover: u8     -> the colour that just moved (closed the cycle)
+///
+/// Return:
+/// Option<(u8, Outcome)> -> (offender colour, outcome) when one side is sole
+pub fn perpetual_fired(state: &State, mover: u8) -> Option<(u8, Outcome)> {
+    let perpetual = state.statics.end_conditions.perpetual.as_ref()?;
+
+    let hash = state.position_hash;
+    let history = &state.history;
+    let plies = history.len();
+
+    let start =
+        (0..plies).rev().find(|&i| history[i].position_hash == hash)?;
+
+    let mut cycle_moves = [0u32; 2];
+    for index in start..=plies {
+        let color = if (plies - index) % 2 == 0 { mover } else { 1 - mover };
+        cycle_moves[color as usize] += 1;
+    }
+
+    let mut offender = None;
+
+    if let Some(outcome) = perpetual.check {
+        let base = history[start].check_count;
+        let perpetual_checker = |color: u8| -> bool {
+            let color = color as usize;
+            cycle_moves[color] > 0
+                && (state.check_count[color] as u32)
+                    .wrapping_sub(base[color] as u32) == cycle_moves[color]
+        };
+
+        match (perpetual_checker(WHITE), perpetual_checker(BLACK)) {
+            (true, false) => offender = Some((WHITE, outcome)),
+            (false, true) => offender = Some((BLACK, outcome)),
+            _ => {}
+        }
+    }
+
+    offender
 }
 
 /// generate_all_moves_and_drops

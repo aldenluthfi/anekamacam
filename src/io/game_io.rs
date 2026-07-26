@@ -1775,6 +1775,23 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = parse_outcome(arguments[2]);
                     end_conditions.goal = Some(Goal { set, zone, outcome });
                 }
+                "perpetual" => {
+                    let mut perpetual = Perpetual { check: None };
+                    let mut index = 0;
+                    while index < arguments.len() {
+                        match arguments[index] {
+                            "check" => {
+                                perpetual.check =
+                                    Some(parse_outcome(arguments[index + 1]));
+                                index += 2;
+                            }
+                            other => panic!(
+                                "Unknown perpetual offence: {}", other
+                            ),
+                        }
+                    }
+                    end_conditions.perpetual = Some(perpetual);
+                }
                 other => panic!("Unknown end condition: {}", other),
             }
         }
