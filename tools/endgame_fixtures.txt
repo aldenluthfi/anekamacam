@@ -1,0 +1,36 @@
+# Decisive end-condition regression fixtures (plan 08).
+#
+# One case per line, fields separated by '|':
+#   variant | fen | moves | expected Result | description
+#
+# `fen` may be the literal `startpos`. `fen` keeps its own internal spaces
+# (side-to-move, and the `*` en-passant marker some variants require). The
+# runner drives the release engine over UCI and asserts the `d` Result line,
+# which reflects `State.game_result` -- the parametric terminal rules that
+# make_move! sets. Checkmate/stalemate are no-legal-move outcomes detected in
+# search, not by make_move!, so they are out of scope here and verified via
+# `go` instead. The perpetual chase detector is constant-square: a target held
+# on one square through the cycle is caught; a target that dodges square to
+# square each ply is not, and draws (see perp-chase vs the note below).
+
+# --- perpetual (xiangqi): sole aggressor in a repetition loses -------------
+xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 e10e9 a10a9 e9e10 a9a10 | Black wins | perpetual check: sole checker White loses
+xiangqi | 4k4/9/9/9/9/n8/9/9/9/R4K3 w | a1a2 e10d10 a2a1 d10e10 a1a2 e10d10 a2a1 d10e10 a1a2 | Black wins | perpetual chase: sole chaser White loses (undefended horse a5)
+xiangqi | 4k4/9/9/9/9/n8/9/9/9/R4K3 w | a1b1 e10d10 b1a1 d10e10 a1b1 e10d10 b1a1 d10e10 a1b1 | Draw | chase not sustained every ply -> repetition draw
+xiangqi | 3k5/9/9/9/9/9/9/9/9/R3K4 w | a1a2 d10d9 a2a1 d9d10 a1a2 d10d9 a2a1 d9d10 a1a2 | Draw | repetition with no offence -> draw
+
+# --- repetition / counter --------------------------------------------------
+standard | startpos | g1f3 b8c6 f3g1 c6b8 g1f3 b8c6 f3g1 c6b8 g1f3 | Draw | threefold repetition
+standard | 4k3/8/8/8/8/8/8/4K2R w K - 99 1 | h1h2 | Draw | 50-move counter reaches limit on a quiet rook move
+
+# --- check family ----------------------------------------------------------
+threecheck | 4k3/8/8/8/8/8/8/R5K1 w - - 0 1 | a1a8 e8e7 a8a7 e7e6 a7a6 | White wins | third check by White wins
+fivecheck | 4k3/8/8/8/8/8/8/R5K1 w - - 0 1 | a1a8 e8e7 a8a7 e7e6 a7a6 e6e5 a6a5 e5e4 a5a4 | White wins | fifth check by White wins
+
+# --- goal zone -------------------------------------------------------------
+koth | 4k3/8/8/8/8/8/4K3/8 w - - 0 1 | e2e3 e8e7 e3e4 | White wins | king-of-the-hill: White king reaches the centre
+
+# --- material extinction ---------------------------------------------------
+kinglet | k7/pR6/8/8/8/8/P6K/8 w | b7a7 | White wins | kinglet: Black loses its last pawn
+extinction | 4k3/8/8/8/8/8/PPPqPPPP/RNBQKBNR w * | d1d2 | White wins | extinction: Black loses its only queen
+horde | r3k3/8/8/8/8/8/P7/8 b * | a8a2 | Black wins | horde: White's last piece captured (army extinct)
