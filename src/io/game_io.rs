@@ -1831,6 +1831,52 @@ pub fn parse_config_file(path: &str) -> State {
                     end_conditions.perpetual =
                         Some(Perpetual { check, chase, chasers });
                 }
+                "adjudicate" => {
+                    let section = format!("adjudicate {}", arguments[0]);
+                    let lines = sections.get(&section).unwrap_or_else(|| {
+                        panic!(
+                            "Missing = {} = section for adjudicate", section
+                        )
+                    });
+                    let mut weights = vec![0i32; set_piece_count];
+                    let mut handicap = [0i32; 2];
+                    for line in lines {
+                        let parts: Vec<&str> =
+                            line.splitn(2, ':').map(str::trim).collect();
+                        if parts[0] == "handicap" {
+                            let toks: Vec<&str> =
+                                parts[1].split_whitespace().collect();
+                            let color =
+                                if toks[0] == "w" { WHITE } else { BLACK };
+                            handicap[color as usize] =
+                                toks[1].parse::<i32>().unwrap_or_else(|_| {
+                                    panic!("Invalid handicap: {}", toks[1])
+                                });
+                        } else {
+                            let weight =
+                                parts[1].parse::<i32>().unwrap_or_else(|_| {
+                                    panic!(
+                                        "Invalid adjudicate weight: {}",
+                                        parts[1]
+                                    )
+                                });
+                            for piece_char in parts[0].chars() {
+                                for cased in [
+                                    piece_char.to_ascii_uppercase(),
+                                    piece_char.to_ascii_lowercase(),
+                                ] {
+                                    if let Some(&index) =
+                                        char_to_index.get(&cased)
+                                    {
+                                        weights[index] = weight;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    end_conditions.adjudicate =
+                        Some(Adjudicate { weights, handicap });
+                }
                 other => panic!("Unknown end condition: {}", other),
             }
         }

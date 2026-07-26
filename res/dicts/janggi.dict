@@ -1,0 +1,15 @@
+= protocols =
+uci
+
+// Janggi has no castling or en passant. The internal CFEN is "board stm"
+// (a setup hand may follow at the start, handled by the setup phase). UCI
+// FENs without a hand get the empty castling/ep fields and move counters
+// appended here.
+= uci fen =
+^([^ ]+) ([wb])$ -> $1 $2 - - 0 1
+${1} ${2} <- ^([^ ]+) ([wb]) [^ ]+ [^ ]+ [0-9]+ [0-9]+$
+
+= uci moves =
+= ->
+\* ->
+: ->

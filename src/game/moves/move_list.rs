@@ -2663,7 +2663,10 @@ macro_rules! make_move {
             } else if let Some(hit) = extinct_fired($state, move_type) {
                 Some(hit)
             } else if double_pass {
-                Some(($state.playing, Outcome::Draw))
+                Some(
+                    adjudicate_fired($state)
+                        .unwrap_or(($state.playing, Outcome::Draw))
+                )
             } else if let Some((count, outcome)) =
                 $state.statics.end_conditions.repetition
                 && *$state.position_hash_map
@@ -3664,6 +3667,37 @@ pub fn goal_fired(state: &State, mover: u8) -> Option<(u8, Outcome)> {
     }
 
     None
+}
+
+/// adjudicate_fired
+///
+/// Decides a passed-out position by weighted material. Each colour's counted
+/// pieces are multiplied by their configured point weight and summed with that
+/// colour's standing handicap; the greater sum wins and an equal sum draws.
+/// Returns None when the variant declares no `adjudicate` rule, so the caller
+/// keeps the neutral double-pass draw.
+///
+/// Params:
+/// - state: &State -> position at the second successive pass
+///
+/// Return:
+/// Option<(u8, Outcome)> -> (winner, Win) or (side to move, Draw) when ruled
+pub fn adjudicate_fired(state: &State) -> Option<(u8, Outcome)> {
+    let adjudicate = state.statics.end_conditions.adjudicate.as_ref()?;
+
+    let mut sums = adjudicate.handicap;
+    for (index, &count) in state.piece_count.iter().enumerate() {
+        let color = p_color!(state.statics.pieces[index]) as usize;
+        sums[color] += adjudicate.weights[index] * count as i32;
+    }
+
+    Some(if sums[WHITE as usize] > sums[BLACK as usize] {
+        (WHITE, Outcome::Win)
+    } else if sums[BLACK as usize] > sums[WHITE as usize] {
+        (BLACK, Outcome::Win)
+    } else {
+        (state.playing, Outcome::Draw)
+    })
 }
 
 /// favorably_chased

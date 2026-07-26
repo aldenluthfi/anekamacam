@@ -78,6 +78,20 @@ pub struct Goal {
     pub outcome: Outcome,                                                       /* result for the arriving colour     */
 }
 
+/// Adjudicate
+///
+/// A points rule: when the game is agreed ended (both sides pass in
+/// succession), the position is decided by weighted material rather than
+/// drawn. `weights[i]` is a piece index's point value; each colour's counted
+/// pieces are summed, `handicap[colour]` is added, and the greater sum wins
+/// (a tie draws). Covers janggi points, where the second player carries a
+/// standing handicap. The weights and handicap come from a named
+/// `= adjudicate <name> =` config section, never a variant name in code.
+pub struct Adjudicate {
+    pub weights: Vec<i32>,                                                      /* per piece index point value        */
+    pub handicap: [i32; 2],                                                     /* per colour standing point bonus    */
+}
+
 /// Perpetual
 ///
 /// A cycle-offence rule: when a repetition closes, one side may be the sole
@@ -118,6 +132,7 @@ pub struct EndConditions {
     pub extinct: Vec<Extinct>,                                                  /* material-extinction rules          */
     pub goal: Option<Goal>,                                                     /* goal-zone rule                     */
     pub perpetual: Option<Perpetual>,                                           /* repetition-cycle offence rule      */
+    pub adjudicate: Option<Adjudicate>,                                         /* points decision on double pass     */
 }
 
 impl Default for EndConditions {
@@ -136,6 +151,7 @@ impl Default for EndConditions {
             extinct: Vec::new(),
             goal: None,
             perpetual: None,
+            adjudicate: None,
         }
     }
 }
