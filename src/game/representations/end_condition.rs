@@ -39,13 +39,17 @@ pub enum Outcome {
 /// A generic progress counter that draws (or otherwise resolves) once it
 /// reaches its limit without a resetting move. `reset_pieces[i]` marks the
 /// piece indices whose non-capturing moves reset the counter; captures and
-/// drops always reset it. Its running value is `State::halfmove_clock`. This
-/// is the 50-move family: standard chess, and any variant with a limit and a
-/// set of progress pieces.
+/// drops always reset it. Its running value is `State::halfmove_clock`. When
+/// `material` is set, the limit is only enforced once the total piece count on
+/// the board has fallen to that threshold or below -- the makruk counting
+/// family, where a bare-king endgame must be won within a move budget. This is
+/// otherwise the 50-move family: standard chess, and any variant with a limit
+/// and a set of progress pieces.
 pub struct Counter {
     pub limit: u8,                                                              /* halfmoves before the outcome fires */
     pub reset_pieces: Vec<bool>,                                                /* moving these resets the counter    */
     pub outcome: Outcome,                                                       /* result once the limit is reached   */
+    pub material: Option<u32>,                                                  /* enforce only when pieces <= this   */
 }
 
 /// Extinct

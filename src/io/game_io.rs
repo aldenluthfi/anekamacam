@@ -1715,25 +1715,45 @@ pub fn parse_config_file(path: &str) -> State {
                         arguments[0].parse::<u8>().unwrap_or_else(|_| {
                             panic!("Invalid counter limit: {}", arguments[0])
                         });
-                    let mut reset_pieces =
-                        vec![false; result.static_mut().pieces.len()];
-                    for piece_char in arguments[1].chars() {
-                        let piece_index = char_to_index
-                            .get(&piece_char)
-                            .copied()
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "Unknown piece character in counter: {}",
-                                    piece_char
-                                )
-                            });
-                        reset_pieces[piece_index] = true;
+                    let mut reset_pieces = vec![false; set_piece_count];
+                    if arguments[1] != "-" {
+                        for piece_char in arguments[1].chars() {
+                            let piece_index = char_to_index
+                                .get(&piece_char)
+                                .copied()
+                                .unwrap_or_else(|| {
+                                    panic!(
+                                        "Unknown piece in counter: {}",
+                                        piece_char
+                                    )
+                                });
+                            reset_pieces[piece_index] = true;
+                        }
                     }
-                    let outcome = arguments.get(2)
-                        .map(|&token| parse_outcome(token))
-                        .unwrap_or(Outcome::Draw);
-                    end_conditions.counter =
-                        Some(Counter { limit, reset_pieces, outcome });
+                    let mut outcome = Outcome::Draw;
+                    let mut material = None;
+                    let mut index = 2;
+                    while index < arguments.len() {
+                        match arguments[index] {
+                            "material" => {
+                                material = Some(
+                                    arguments[index + 1].parse::<u32>()
+                                        .unwrap_or_else(|_| panic!(
+                                            "Invalid counter material: {}",
+                                            arguments[index + 1]
+                                        ))
+                                );
+                                index += 2;
+                            }
+                            token => {
+                                outcome = parse_outcome(token);
+                                index += 1;
+                            }
+                        }
+                    }
+                    end_conditions.counter = Some(Counter {
+                        limit, reset_pieces, outcome, material,
+                    });
                 }
                 "checks" => {
                     let count =

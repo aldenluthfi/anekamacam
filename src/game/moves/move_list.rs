@@ -2676,6 +2676,9 @@ macro_rules! make_move {
             } else if let Some(counter) =
                 &$state.statics.end_conditions.counter
                 && $state.halfmove_clock >= counter.limit
+                && counter.material.map_or(true, |threshold| {
+                    $state.piece_count.iter().sum::<u32>() <= threshold
+                })
             {
                 Some(($state.playing, counter.outcome))
             } else {
