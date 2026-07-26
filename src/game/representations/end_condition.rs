@@ -39,17 +39,31 @@ pub enum Outcome {
 /// A generic progress counter that draws (or otherwise resolves) once it
 /// reaches its limit without a resetting move. `reset_pieces[i]` marks the
 /// piece indices whose non-capturing moves reset the counter; captures and
-/// drops always reset it. Its running value is `State::halfmove_clock`. When
-/// `material` is set, the limit is only enforced once the total piece count on
-/// the board has fallen to that threshold or below -- the makruk counting
-/// family, where a bare-king endgame must be won within a move budget. This is
-/// otherwise the 50-move family: standard chess, and any variant with a limit
-/// and a set of progress pieces.
+/// drops always reset it. Its running value is `State::halfmove_clock`. This is
+/// the 50-move family: standard chess, makruk's board's-honour 64-move count,
+/// and any variant with a limit and a set of progress pieces.
 pub struct Counter {
     pub limit: u8,                                                              /* halfmoves before the outcome fires */
     pub reset_pieces: Vec<bool>,                                                /* moving these resets the counter    */
     pub outcome: Outcome,                                                       /* result once the limit is reached   */
-    pub material: Option<u32>,                                                  /* enforce only when pieces <= this   */
+}
+
+/// Counting
+///
+/// A material-scaled move budget for a bare-king endgame: the makruk-family
+/// pieces' honour count. When exactly one side is reduced to a lone royal, the
+/// side with material must mate within a limit set by its strongest material or
+/// the game is drawn. The running value is a frozen clock in `State::counting`
+/// -- it starts at the piece count when the bare-king situation arises and
+/// climbs by one every ply, never resetting on a capture (unlike `Counter`).
+/// `table` is an ordered list of `(requirements, limit)` rows, first
+/// fully-matched wins; a requirement is a piece set and the minimum number of
+/// the material side's members of it. `default` is the limit when no row
+/// matches. Covers makruk and the Cambodian and Burmese variants.
+pub struct Counting {
+    pub table: Vec<(Vec<(Vec<bool>, u32)>, u16)>,                               /* ordered (requirements, limit) rows */
+    pub default: u16,                                                           /* limit when no row matches          */
+    pub outcome: Outcome,                                                       /* result once the count hits limit   */
 }
 
 /// Extinct
@@ -127,6 +141,7 @@ pub struct EndConditions {
 
     pub repetition: Option<(u8, Outcome)>,                                      /* (Nth occurrence, outcome)          */
     pub counter: Option<Counter>,                                               /* progress counter, if declared      */
+    pub counting: Option<Counting>,                                             /* bare-king material count, if any   */
 
     pub checks: Option<(u8, Outcome)>,                                          /* (Nth check, checker's outcome)     */
     pub extinct: Vec<Extinct>,                                                  /* material-extinction rules          */
@@ -147,6 +162,7 @@ impl Default for EndConditions {
             stalemate: Outcome::Draw,
             repetition: None,
             counter: None,
+            counting: None,
             checks: None,
             extinct: Vec::new(),
             goal: None,

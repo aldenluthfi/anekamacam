@@ -45,9 +45,10 @@ kinglet | k7/pR6/8/8/8/8/P6K/8 w | b7a7 | White wins | kinglet: Black loses its 
 extinction | 4k3/8/8/8/8/8/PPPqPPPP/RNBQKBNR w * | d1d2 | White wins | extinction: Black loses its only queen
 horde | r3k3/8/8/8/8/8/P7/8 b * | a8a2 | Black wins | horde: White's last piece captured (army extinct)
 
-# --- material-conditioned counter (makruk board's-honour) ------------------
-makruk | 6k1/8/8/8/8/8/8/R6K w | a1a2 g8h8 a2a3 h8g8 a3a4 g8h8 a4a5 h8g8 a5a6 g8h8 a6a7 h8g8 a7b7 g8h8 b7b6 h8g8 b6b5 g8h8 b5b4 h8g8 b4b3 g8h8 b3b2 h8g8 b2b1 g8h8 b1c1 h8g8 c1c2 g8h8 c2c3 h8g8 c3c4 g8h8 c4c5 h8g8 c5c6 g8h8 c6c7 h8g8 c7d7 g8h8 d7d6 h8g8 d6d5 g8h8 d5d4 h8g8 d4d3 g8h8 d3d2 h8g8 d2d1 g8h8 d1e1 h8g8 e1e2 g8h8 e2e3 h8g8 e3e4 g8h8 e4e5 h8g8 | Draw | bare-king endgame (3 pieces) hits the 64-count
-makruk | 6k1/8/8/8/8/8/8/R5MK w | a1a2 g8h8 a2a3 h8g8 a3a4 g8h8 a4a5 h8g8 a5a6 g8h8 a6a7 h8g8 a7b7 g8h8 b7b6 h8g8 b6b5 g8h8 b5b4 h8g8 b4b3 g8h8 b3b2 h8g8 b2b1 g8h8 b1c1 h8g8 c1c2 g8h8 c2c3 h8g8 c3c4 g8h8 c4c5 h8g8 c5c6 g8h8 c6c7 h8g8 c7d7 g8h8 d7d6 h8g8 d6d5 g8h8 d5d4 h8g8 d4d3 g8h8 d3d2 h8g8 d2d1 g8h8 d1e1 h8g8 e1e2 g8h8 e2e3 h8g8 e3e4 g8h8 e4e5 h8g8 | Ongoing | 4 pieces: material gate blocks the count
+# --- makruk pieces' honour: a bare king is counted out by the winner's material
+makruk | 7k/8/8/8/8/RR6/8/K7 w | a3a4 h8h7 a4a3 h7h8 | Draw | KRRk bare king: two rooks -> counted out at the limit of 8
+makruk | 7k/8/8/8/8/R7/8/K7 w | a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 | Draw | KRk bare king: one rook -> counted out at the limit of 16
+makruk | 7k/8/8/8/8/R7/8/K7 w | a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 | Ongoing | KRk one move short of the 16-count -> still ongoing
 
 # --- material adjudication on double pass (janggi points) ------------------
 janggi | 9/4k4/9/9/9/9/9/9/4K4/R8 w -/- | e2e2 e9e9 | White wins | White's extra chariot wins the count

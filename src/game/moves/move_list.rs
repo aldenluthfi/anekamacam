@@ -1458,6 +1458,7 @@ macro_rules! make_move {
 
             let last_en_passant_square = $state.en_passant_square;
             let last_halfmove_clock = $state.halfmove_clock;
+            let last_counting = $state.counting;
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_pawn_hash = $state.pawn_hash;
@@ -2609,6 +2610,20 @@ macro_rules! make_move {
                 last_halfmove_clock.saturating_add(1)
             };
 
+            if $state.statics.end_conditions.counting.is_some() {
+                let white_bare = side_is_bare($state, WHITE);
+                let black_bare = side_is_bare($state, BLACK);
+                $state.counting = if white_bare == black_bare {
+                    None                                                        /* neither or both bare: not counting */
+                } else if let Some((count, limit)) = $state.counting {
+                    Some((count.saturating_add(1), limit))                      /* frozen limit, tick the count       */
+                } else {
+                    let winner = if white_bare { BLACK } else { WHITE };
+                    let pieces = $state.piece_count.iter().sum::<u32>() as u16;
+                    Some((pieces + 1, counting_limit($state, winner)))          /* bare-king transition: start count  */
+                };
+            }
+
             $state.game_phase =
                 if $state.game_phase == SETUP {
                     SETUP
@@ -2662,12 +2677,17 @@ macro_rules! make_move {
                     adjudicate_fired($state)
                         .unwrap_or(($state.playing, Outcome::Draw))
                 )
+            } else if let Some((count, limit)) = $state.counting
+                && count >= limit
+            {
+                Some((
+                    $state.playing,
+                    $state.statics.end_conditions.counting.as_ref()
+                        .map_or(Outcome::Draw, |counting| counting.outcome),
+                ))
             } else if let Some(counter) =
                 &$state.statics.end_conditions.counter
                 && $state.halfmove_clock >= counter.limit
-                && counter.material.map_or(true, |threshold| {
-                    $state.piece_count.iter().sum::<u32>() <= threshold
-                })
             {
                 Some(($state.playing, counter.outcome))
             } else {
@@ -2682,6 +2702,7 @@ macro_rules! make_move {
                 move_ply: applied_move,
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
+                counting: last_counting,
                 en_passant_square: last_en_passant_square,
                 game_result: last_game_result,
                 gave_check: last_gave_check,
@@ -2754,6 +2775,7 @@ macro_rules! undo_move {
         $state.playing = 1 - $state.playing;
         $state.castling_state = snapshot.castling_state;
         $state.halfmove_clock = snapshot.halfmove_clock;
+        $state.counting = snapshot.counting;
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
         $state.pawn_hash = snapshot.pawn_hash;
@@ -3497,6 +3519,7 @@ macro_rules! make_null_move {
 
             let last_en_passant_square = $state.en_passant_square;
             let last_halfmove_clock = $state.halfmove_clock;
+            let last_counting = $state.counting;
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_pawn_hash = $state.pawn_hash;
@@ -3522,6 +3545,7 @@ macro_rules! make_null_move {
                 move_ply: null_move(),
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
+                counting: last_counting,
                 en_passant_square: last_en_passant_square,
                 game_result: last_game_result,
                 gave_check: last_gave_check,
@@ -3567,6 +3591,7 @@ macro_rules! undo_null_move {
         $state.playing = 1 - $state.playing;
         $state.castling_state = snapshot.castling_state;
         $state.halfmove_clock = snapshot.halfmove_clock;
+        $state.counting = snapshot.counting;
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
         $state.pawn_hash = snapshot.pawn_hash;
@@ -3579,6 +3604,65 @@ macro_rules! undo_null_move {
         #[cfg(debug_assertions)]
         verify_game_state($state);
     }};
+}
+
+/// side_is_bare
+///
+/// Whether a colour has been reduced to only royal pieces (a lone king in the
+/// makruk family). Scans `piece_count` for any non-royal of that colour.
+///
+/// Params:
+/// - state: &State -> position to inspect
+/// - side : u8     -> the colour tested
+///
+/// Return:
+/// bool -> true when the colour has no non-royal pieces left
+pub fn side_is_bare(state: &State, side: u8) -> bool {
+    for (index, piece) in state.statics.pieces.iter().enumerate() {
+        if p_color!(piece) == side
+            && !p_is_royal!(piece)
+            && state.piece_count[index] > 0
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// counting_limit
+///
+/// The pieces'-honour move budget for the material side of a bare-king endgame:
+/// the first `Counting` table row whose requirements the `winner` meets, else
+/// the table default. A requirement is met when the winner owns at least its
+/// minimum number of the requirement's piece set. Returns 0 if the variant
+/// declares no counting rule (never reached, since the caller gates on it).
+///
+/// Params:
+/// - state : &State -> position to inspect
+/// - winner: u8     -> the colour holding material (opponent of the bare king)
+///
+/// Return:
+/// u16 -> the frozen count limit for this material
+pub fn counting_limit(state: &State, winner: u8) -> u16 {
+    let Some(counting) = state.statics.end_conditions.counting.as_ref() else {
+        return 0;
+    };
+
+    for (requirements, limit) in &counting.table {
+        let met = requirements.iter().all(|(set, minimum)| {
+            let owned = (0..state.statics.pieces.len())
+                .filter(|&index| set[index]
+                    && p_color!(state.statics.pieces[index]) == winner)
+                .map(|index| state.piece_count[index])
+                .sum::<u32>();
+            owned >= *minimum
+        });
+        if met {
+            return *limit;
+        }
+    }
+
+    counting.default
 }
 
 /// extinct_fired

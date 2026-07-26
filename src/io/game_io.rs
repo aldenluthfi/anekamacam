@@ -1730,30 +1730,60 @@ pub fn parse_config_file(path: &str) -> State {
                             reset_pieces[piece_index] = true;
                         }
                     }
-                    let mut outcome = Outcome::Draw;
-                    let mut material = None;
-                    let mut index = 2;
-                    while index < arguments.len() {
-                        match arguments[index] {
-                            "material" => {
-                                material = Some(
-                                    arguments[index + 1].parse::<u32>()
-                                        .unwrap_or_else(|_| panic!(
-                                            "Invalid counter material: {}",
-                                            arguments[index + 1]
-                                        ))
-                                );
-                                index += 2;
-                            }
-                            token => {
-                                outcome = parse_outcome(token);
-                                index += 1;
-                            }
-                        }
-                    }
+                    let outcome = arguments.get(2)
+                        .map(|&token| parse_outcome(token))
+                        .unwrap_or(Outcome::Draw);
                     end_conditions.counter = Some(Counter {
-                        limit, reset_pieces, outcome, material,
+                        limit, reset_pieces, outcome,
                     });
+                }
+                "counting" => {
+                    let section = format!("counting {}", arguments[0]);
+                    let lines = sections.get(&section).unwrap_or_else(|| {
+                        panic!("Missing = {} = section for counting", section)
+                    });
+                    let outcome = arguments.get(1)
+                        .map(|&token| parse_outcome(token))
+                        .unwrap_or(Outcome::Draw);
+                    let mut table = Vec::new();
+                    let mut default = 64u16;
+                    for line in lines {
+                        let parts: Vec<&str> =
+                            line.splitn(2, ':').map(str::trim).collect();
+                        let limit =
+                            parts[1].parse::<u16>().unwrap_or_else(|_| {
+                                panic!("Invalid counting limit: {}", parts[1])
+                            });
+                        if parts[0] == "default" {
+                            default = limit;
+                            continue;
+                        }
+                        let mut counts: HashMap<char, u32> = HashMap::new();
+                        for piece_char in parts[0].chars() {
+                            *counts
+                                .entry(piece_char.to_ascii_uppercase())
+                                .or_insert(0) += 1;
+                        }
+                        let requirements = counts.into_iter()
+                            .map(|(piece_char, minimum)| {
+                                let mut set = vec![false; set_piece_count];
+                                for cased in [
+                                    piece_char.to_ascii_uppercase(),
+                                    piece_char.to_ascii_lowercase(),
+                                ] {
+                                    if let Some(&index) =
+                                        char_to_index.get(&cased)
+                                    {
+                                        set[index] = true;
+                                    }
+                                }
+                                (set, minimum)
+                            })
+                            .collect();
+                        table.push((requirements, limit));
+                    }
+                    end_conditions.counting =
+                        Some(Counting { table, default, outcome });
                 }
                 "checks" => {
                     let count =

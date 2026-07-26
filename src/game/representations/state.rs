@@ -255,6 +255,7 @@ pub struct Snapshot {
 
     pub castling_state: u8,                                                     /* castling rights before move        */
     pub halfmove_clock: u8,                                                     /* halfmove clock before move         */
+    pub counting: Option<(u16, u16)>,                                           /* bare-king (count, limit) before mv */
     pub en_passant_square: EnPassantSquare,                                     /* en passant sq before move          */
     pub game_result: u8,                                                        /* terminal result before move        */
     pub gave_check: bool,                                                       /* move gave check (checked opponent) */
@@ -272,6 +273,7 @@ impl Default for Snapshot {
             move_ply: null_move(),
             castling_state: 0,
             halfmove_clock: 0,
+            counting: None,
             en_passant_square: EnPassantSquare::MAX,
             game_result: ONGOING,
             gave_check: false,
@@ -611,6 +613,7 @@ pub struct State {
     pub castling_state: u8,                                                     /* 4 bits for representing KQkq       */
     pub has_castled: [bool; 2],                                                 /* per-color castled-this-game flag   */
     pub halfmove_clock: u8,                                                     /* plies since pawn move/capture      */
+    pub counting: Option<(u16, u16)>,                                           /* bare-king count + frozen limit     */
     pub en_passant_square: EnPassantSquare,                                     /* active en passant square           */
 
     pub position_hash: u128,                                                    /* incremental Zobrist key            */
@@ -676,6 +679,7 @@ impl Clone for State {
             castling_state: self.castling_state,
             has_castled: self.has_castled,
             halfmove_clock: self.halfmove_clock,
+            counting: self.counting,
             en_passant_square: self.en_passant_square,
 
             position_hash: self.position_hash,
@@ -924,6 +928,7 @@ impl State {
             castling_state: 0,
             has_castled: [false; 2],
             halfmove_clock: 0,
+            counting: None,
             en_passant_square: NO_EN_PASSANT,
 
             position_hash: u128::default(),
@@ -1008,6 +1013,7 @@ impl State {
         self.castling_state = 0;
         self.has_castled = [false; 2];
         self.halfmove_clock = 0;
+        self.counting = None;
         self.en_passant_square = NO_EN_PASSANT;
 
         self.position_hash = u128::default();

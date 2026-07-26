@@ -17,7 +17,8 @@ pub use crate::game::representations::{
     board::Board,
     drop::DropSet,
     end_condition::{
-        Adjudicate, Counter, EndConditions, Extinct, Goal, Outcome, Perpetual,
+        Adjudicate, Counter, Counting, EndConditions, Extinct, Goal, Outcome,
+        Perpetual,
     },
     moves::{AttackMask, Move, MoveSignature, PseudoMove},
     pattern::{
@@ -48,10 +49,10 @@ pub use crate::game::representations::{
 pub use crate::game::moves::drop_list::generate_relevant_drops;
 pub use crate::game::moves::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
-    adjudicate_fired, extinct_fired, game_outcome, generate_all_captures,
-    generate_all_moves_and_drops, generate_attack_masks,
+    adjudicate_fired, counting_limit, extinct_fired, game_outcome,
+    generate_all_captures, generate_all_moves_and_drops, generate_attack_masks,
     generate_relevant_captures, generate_relevant_castling,
-    generate_relevant_moves, goal_fired, repetition_outcome,
+    generate_relevant_moves, goal_fired, repetition_outcome, side_is_bare,
 };
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
