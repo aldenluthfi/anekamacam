@@ -63,7 +63,7 @@ A variant lives in a single configs/&lt;name&gt;.conf file. It declares, in labe
 │ setup phase         │ Players drop pieces from hand before normal play starts  │
 └─────────────────────┴──────────────────────────────────────────────────────────┘
 
-How a game is won, lost, or drawn is declared separately, in the = end conditions = section: a flat table of parametric terminal rules — checkmate/stalemate outcomes, repetition, a generalized counter (50-move), N-check, material extinction, goal zones, and repetition-cycle offences. Each covers a family of variants rather than a single named mode:
+How a game is won, lost, or drawn is declared separately, in the = end conditions = section: a flat table of parametric terminal rules — checkmate/stalemate outcomes, repetition, a generalized counter (50-move and makruk counting), N-check, material extinction, goal zones, repetition-cycle offences, and material adjudication. Each covers a family of variants rather than a single named mode:
 
 ┌─────────────┬────────────────────────────────────────────────────────────────┐
 │ End rule    │ Effect                                                         │
@@ -71,11 +71,12 @@ How a game is won, lost, or drawn is declared separately, in the = end condition
 │ checkmate   │ Outcome of a no-move position in check (default loss)          │
 │ stalemate   │ Outcome of a no-move position not in check (default draw)      │
 │ repetition  │ Outcome once a position occurs N times (default draw)          │
-│ counter     │ Generalized 50-move rule: outcome after N idle halfmoves       │
+│ counter     │ 50-move rule; material <m> scopes it to a <=m-piece endgame     │
 │ checks      │ The side giving its Nth check gets the outcome (three-check)   │
 │ extinct     │ A colour losing all of a piece set gets the outcome            │
 │ goal        │ A piece reaching a named zone gets the outcome (KotH, racing)  │
 │ perpetual   │ Sole perpetual checker/chaser in a repetition loses (xiangqi)  │
+│ adjudicate  │ Both sides pass: decide by weighted material (janggi points)   │
 └─────────────┴────────────────────────────────────────────────────────────────┘
 
 Each rule, when enabled, requires its matching section (e.g. castling geometry, promotion zones, drop rules) and a correctly-formatted CFEN — the parser validates this and errors out otherwise. See <a href="configs/example.conf">configs/example.conf</a> for a fully commented reference of every section. Protocol translation is configured per variant in res/dicts/&lt;name&gt;.dict; evaluation parameters live in res/param/.
