@@ -63,7 +63,7 @@ A variant lives in a single configs/&lt;name&gt;.conf file. It declares, in labe
 │ setup phase         │ Players drop pieces from hand before normal play starts  │
 └─────────────────────┴──────────────────────────────────────────────────────────┘
 
-How a game is won, lost, or drawn is declared separately, in the = end conditions = section: a flat table of parametric terminal rules — checkmate/stalemate outcomes, repetition, a generalized counter (50-move and makruk counting), N-check, material extinction, goal zones, repetition-cycle offences, and material adjudication. Each covers a family of variants rather than a single named mode:
+How a game is won, lost, or drawn is declared separately, in the = end conditions = section: a flat table of parametric terminal rules — checkmate/stalemate outcomes, repetition, a generalized counter (50-move / makruk board's honour), a bare-king material count (makruk-family pieces' honour), N-check, material extinction, goal zones, repetition-cycle offences, and material adjudication. Each covers a family of variants rather than a single named mode:
 
 ┌─────────────┬────────────────────────────────────────────────────────────────┐
 │ End rule    │ Effect                                                         │
@@ -71,7 +71,8 @@ How a game is won, lost, or drawn is declared separately, in the = end condition
 │ checkmate   │ Outcome of a no-move position in check (default loss)          │
 │ stalemate   │ Outcome of a no-move position not in check (default draw)      │
 │ repetition  │ Outcome once a position occurs N times (default draw)          │
-│ counter     │ 50-move rule; material <m> scopes it to a <=m-piece endgame     │
+│ counter     │ 50-move / board's-honour progress count (default draw)         │
+│ counting    │ Bare-king material budget: mate in time, else draw (makruk)    │
 │ checks      │ The side giving its Nth check gets the outcome (three-check)   │
 │ extinct     │ A colour losing all of a piece set gets the outcome            │
 │ goal        │ A piece reaching a named zone gets the outcome (KotH, racing)  │
