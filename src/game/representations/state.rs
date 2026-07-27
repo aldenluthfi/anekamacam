@@ -472,7 +472,7 @@ pub struct StaticState {
 
     pub pieces: Vec<Piece>,
     pub special_rules: u32,
-    pub end_conditions: EndConditions,                                          /* parametric terminal-rule table     */
+    pub termination: Termination,                                          /* parametric terminal-rule table     */
 
     pub initial_setup: Vec<Board>,                                              /* piece index to board               */
 
@@ -584,7 +584,7 @@ pub struct StaticState {
 /// - bit 7-31  : reserved for future use
 ///
 /// Terminal rules (stalemate/checkmate outcome, repetition, counter, ...)
-/// are not bits here; they live in `StaticState::end_conditions`.
+/// are not bits here; they live in `StaticState::termination`.
 ///
 /// Static configuration lives in `statics: Arc<StaticState>`, shared
 /// cheaply across threads. `State::clone()` calls `Arc::clone` for the
@@ -764,7 +764,7 @@ impl State {
             startpos,
             pieces,
             special_rules,
-            end_conditions: EndConditions::default(),
+            termination: Termination::default(),
 
             initial_setup: vec![board!(files, ranks); piece_count],
 

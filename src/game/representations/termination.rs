@@ -1,4 +1,4 @@
-//! end_condition.rs
+//! termination.rs
 //!
 //! Defines the parametric terminal rules a variant can declare.
 //!
@@ -128,14 +128,14 @@ pub struct Perpetual {
                                  END CONDITIONS
 \*----------------------------------------------------------------------------*/
 
-/// EndConditions
+/// Termination
 ///
 /// The flat, directly-named terminal-rule table for one variant, shared
 /// immutably through `StaticState`. `checkmate` and `stalemate` name the
 /// outcome of a no-legal-move position (in check / not in check); the
 /// remaining fields are `Option`s that double as present-flags, `Some` only
-/// when the variant's `= end conditions =` section declared the rule.
-pub struct EndConditions {
+/// when the variant's `= termination =` section declared the rule.
+pub struct Termination {
     pub checkmate: Outcome,                                                     /* no moves + in check   (dflt Loss)  */
     pub stalemate: Outcome,                                                     /* no moves, not in check(dflt Draw)  */
 
@@ -150,14 +150,14 @@ pub struct EndConditions {
     pub adjudicate: Option<Adjudicate>,                                         /* points decision on double pass     */
 }
 
-impl Default for EndConditions {
-    /// EndConditions::default
+impl Default for Termination {
+    /// Termination::default
     ///
-    /// The behaviour every variant starts from before its `= end conditions =`
+    /// The behaviour every variant starts from before its `= termination =`
     /// section is read: a no-move position is a loss when in check (checkmate)
     /// and a draw otherwise (stalemate), with no repetition or counter rule.
     fn default() -> Self {
-        EndConditions {
+        Termination {
             checkmate: Outcome::Loss,
             stalemate: Outcome::Draw,
             repetition: None,

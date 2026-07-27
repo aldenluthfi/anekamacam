@@ -16,8 +16,8 @@
 pub use crate::game::representations::{
     board::Board,
     drop::DropSet,
-    end_condition::{
-        Adjudicate, Counter, Counting, EndConditions, Extinct, Goal, Outcome,
+    termination::{
+        Adjudicate, Counter, Counting, Termination, Extinct, Goal, Outcome,
         Perpetual,
     },
     moves::{AttackMask, Move, MoveSignature, PseudoMove},

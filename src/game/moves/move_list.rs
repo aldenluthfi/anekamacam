@@ -2601,7 +2601,7 @@ macro_rules! make_move {
             let resets_halfmove = move_type == SINGLE_CAPTURE_MOVE
                 || move_type == MULTI_CAPTURE_MOVE
                 || move_type == DROP_MOVE
-                || $state.statics.end_conditions.counter.as_ref()
+                || $state.statics.termination.counter.as_ref()
                     .is_some_and(|counter| counter.reset_pieces[piece_index]);
 
             $state.halfmove_clock = if resets_halfmove {
@@ -2610,7 +2610,7 @@ macro_rules! make_move {
                 last_halfmove_clock.saturating_add(1)
             };
 
-            if $state.statics.end_conditions.counting.is_some() {
+            if $state.statics.termination.counting.is_some() {
                 let white_bare = side_is_bare($state, WHITE);
                 let black_bare = side_is_bare($state, BLACK);
                 $state.counting = if white_bare == black_bare {
@@ -2641,7 +2641,7 @@ macro_rules! make_move {
             let legal = !in_check;
             let mover = 1 - $state.playing;
 
-            if $state.statics.end_conditions.checks.is_some() {
+            if $state.statics.termination.checks.is_some() {
                 $state.gave_check = is_in_check!($state.playing, $state);
                 if $state.gave_check {
                     $state.check_count[mover as usize] =
@@ -2663,7 +2663,7 @@ macro_rules! make_move {
             );
 
             let terminal_outcome = if let Some((limit, outcome)) =
-                $state.statics.end_conditions.checks
+                $state.statics.termination.checks
                 && $state.gave_check
                 && $state.check_count[mover as usize] >= limit
             {
@@ -2682,11 +2682,11 @@ macro_rules! make_move {
             {
                 Some((
                     $state.playing,
-                    $state.statics.end_conditions.counting.as_ref()
+                    $state.statics.termination.counting.as_ref()
                         .map_or(Outcome::Draw, |counting| counting.outcome),
                 ))
             } else if let Some(counter) =
-                &$state.statics.end_conditions.counter
+                &$state.statics.termination.counter
                 && $state.halfmove_clock >= counter.limit
             {
                 Some(($state.playing, counter.outcome))
@@ -3644,7 +3644,7 @@ pub fn side_is_bare(state: &State, side: u8) -> bool {
 /// Return:
 /// u16 -> the frozen count limit for this material
 pub fn counting_limit(state: &State, winner: u8) -> u16 {
-    let Some(counting) = state.statics.end_conditions.counting.as_ref() else {
+    let Some(counting) = state.statics.termination.counting.as_ref() else {
         return 0;
     };
 
@@ -3680,7 +3680,7 @@ pub fn counting_limit(state: &State, winner: u8) -> u16 {
 /// Return:
 /// Option<(u8, Outcome)> -> (subject colour, outcome) when it fires
 pub fn extinct_fired(state: &State, move_type: u128) -> Option<(u8, Outcome)> {
-    if state.statics.end_conditions.extinct.is_empty() {
+    if state.statics.termination.extinct.is_empty() {
         return None;
     }
 
@@ -3688,7 +3688,7 @@ pub fn extinct_fired(state: &State, move_type: u128) -> Option<(u8, Outcome)> {
         return None;
     }
 
-    for extinct in &state.statics.end_conditions.extinct {
+    for extinct in &state.statics.termination.extinct {
         for color in [WHITE, BLACK] {
             let mut count = 0u32;
             for (index, piece) in state.statics.pieces.iter().enumerate() {
@@ -3722,7 +3722,7 @@ pub fn extinct_fired(state: &State, move_type: u128) -> Option<(u8, Outcome)> {
 /// Return:
 /// Option<(u8, Outcome)> -> (mover, outcome) when a goal piece is on the zone
 pub fn goal_fired(state: &State, mover: u8) -> Option<(u8, Outcome)> {
-    let goal = state.statics.end_conditions.goal.as_ref()?;
+    let goal = state.statics.termination.goal.as_ref()?;
 
     for (index, piece) in state.statics.pieces.iter().enumerate() {
         if goal.set[index] && p_color!(piece) == mover {
@@ -3751,7 +3751,7 @@ pub fn goal_fired(state: &State, mover: u8) -> Option<(u8, Outcome)> {
 /// Return:
 /// Option<(u8, Outcome)> -> (winner, Win) or (side to move, Draw) when ruled
 pub fn adjudicate_fired(state: &State) -> Option<(u8, Outcome)> {
-    let adjudicate = state.statics.end_conditions.adjudicate.as_ref()?;
+    let adjudicate = state.statics.termination.adjudicate.as_ref()?;
 
     let mut sums = adjudicate.handicap;
     for (index, &count) in state.piece_count.iter().enumerate() {
@@ -3790,7 +3790,7 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 
     let mut chase = board!(state.statics.files, state.statics.ranks);
 
-    let Some(perpetual) = state.statics.end_conditions.perpetual.as_ref()
+    let Some(perpetual) = state.statics.termination.perpetual.as_ref()
     else {
         return (did_check, chase);
     };
@@ -3861,7 +3861,7 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 /// Option<u8> -> the sole offender's colour, or None when none / both offend
 fn perpetual_offender(state: &mut State) -> Option<u8> {
     let (check_enabled, chase_enabled) = {
-        let perpetual = state.statics.end_conditions.perpetual.as_ref()?;
+        let perpetual = state.statics.termination.perpetual.as_ref()?;
         (perpetual.check.is_some(), perpetual.chase.is_some())
     };
 
@@ -3955,7 +3955,7 @@ fn perpetual_offender(state: &mut State) -> Option<u8> {
 /// Return:
 /// Option<Outcome> -> the terminal outcome (side-to-move perspective), if any
 pub fn repetition_outcome(state: &mut State, min_count: u8) -> Option<Outcome> {
-    let (_, neutral) = state.statics.end_conditions.repetition?;
+    let (_, neutral) = state.statics.termination.repetition?;
 
     let occurrences = state.position_hash_map
         .get(&state.position_hash).copied().unwrap_or(0);
@@ -3963,7 +3963,7 @@ pub fn repetition_outcome(state: &mut State, min_count: u8) -> Option<Outcome> {
         return None;
     }
 
-    if state.statics.end_conditions.perpetual.is_none() {
+    if state.statics.termination.perpetual.is_none() {
         return Some(neutral);
     }
 
@@ -3994,7 +3994,7 @@ pub fn game_outcome(state: &mut State) -> u8 {
         return state.game_result;
     }
 
-    let Some((count, _)) = state.statics.end_conditions.repetition else {
+    let Some((count, _)) = state.statics.termination.repetition else {
         return ONGOING;
     };
 

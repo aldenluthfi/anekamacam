@@ -661,7 +661,7 @@ fn embedded_config(path: &str) -> Option<&'static str> {
 /// struct.
 ///
 /// After the pieces, the section-by-section walk fills in board zones
-/// (forbidden, promotion), castling layouts, special rules, end conditions,
+/// (forbidden, promotion), castling layouts, special rules, termination,
 /// and the move / drop / setup expression sets, then runs `precompute`
 /// and loads parameters — the embedded `latest.param` first so binaries
 /// are self-contained, a `res/param` file on disk next, and full
@@ -1677,9 +1677,9 @@ pub fn parse_config_file(path: &str) -> State {
         set
     };
 
-    let mut end_conditions = EndConditions::default();
+    let mut termination = Termination::default();
 
-    if let Some(entries) = sections.get("end conditions") {
+    if let Some(entries) = sections.get("termination") {
         for entry in entries {
             let parts: Vec<&str> =
                 entry.splitn(2, ':').map(str::trim).collect();
@@ -1693,10 +1693,10 @@ pub fn parse_config_file(path: &str) -> State {
 
             match parts[0] {
                 "checkmate" => {
-                    end_conditions.checkmate = parse_outcome(arguments[0]);
+                    termination.checkmate = parse_outcome(arguments[0]);
                 }
                 "stalemate" => {
-                    end_conditions.stalemate = parse_outcome(arguments[0]);
+                    termination.stalemate = parse_outcome(arguments[0]);
                 }
                 "repetition" => {
                     let occurrences =
@@ -1708,7 +1708,7 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = arguments.get(1)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Draw);
-                    end_conditions.repetition = Some((occurrences, outcome));
+                    termination.repetition = Some((occurrences, outcome));
                 }
                 "counter" => {
                     let limit =
@@ -1733,7 +1733,7 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = arguments.get(2)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Draw);
-                    end_conditions.counter = Some(Counter {
+                    termination.counter = Some(Counter {
                         limit, reset_pieces, outcome,
                     });
                 }
@@ -1782,7 +1782,7 @@ pub fn parse_config_file(path: &str) -> State {
                             .collect();
                         table.push((requirements, limit));
                     }
-                    end_conditions.counting =
+                    termination.counting =
                         Some(Counting { table, default, outcome });
                 }
                 "checks" => {
@@ -1793,7 +1793,7 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = arguments.get(1)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Win);
-                    end_conditions.checks = Some((count, outcome));
+                    termination.checks = Some((count, outcome));
                 }
                 "extinct" => {
                     let opponent = arguments[0] == "opp";
@@ -1809,7 +1809,7 @@ pub fn parse_config_file(path: &str) -> State {
                     } else {
                         (0, parse_outcome(arguments[2]))
                     };
-                    end_conditions.extinct.push(Extinct {
+                    termination.extinct.push(Extinct {
                         set, threshold, outcome, opponent,
                     });
                 }
@@ -1823,7 +1823,7 @@ pub fn parse_config_file(path: &str) -> State {
                         ));
                     let zone = parse_bit_fen(Some(zone_fen.as_str()), &result);
                     let outcome = parse_outcome(arguments[2]);
-                    end_conditions.goal = Some(Goal { set, zone, outcome });
+                    termination.goal = Some(Goal { set, zone, outcome });
                 }
                 "perpetual" => {
                     let mut check = None;
@@ -1858,7 +1858,7 @@ pub fn parse_config_file(path: &str) -> State {
                             ),
                         }
                     }
-                    end_conditions.perpetual =
+                    termination.perpetual =
                         Some(Perpetual { check, chase, chasers });
                 }
                 "adjudicate" => {
@@ -1904,7 +1904,7 @@ pub fn parse_config_file(path: &str) -> State {
                             }
                         }
                     }
-                    end_conditions.adjudicate =
+                    termination.adjudicate =
                         Some(Adjudicate { weights, handicap });
                 }
                 other => panic!("Unknown end condition: {}", other),
@@ -1912,8 +1912,8 @@ pub fn parse_config_file(path: &str) -> State {
         }
     }
 
-    if end_conditions.perpetual.is_some()
-    && end_conditions.repetition.is_none()
+    if termination.perpetual.is_some()
+    && termination.repetition.is_none()
     {
         panic!(
             "end condition `perpetual` requires `repetition`: the perpetual \
@@ -1922,7 +1922,7 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
-    result.static_mut().end_conditions = end_conditions;
+    result.static_mut().termination = termination;
 
     /*-----------------------------------------------------------------------*\
                                POST-PARSING COMPUTE
@@ -2704,7 +2704,7 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
         fen.push_str(&format_hand(state, BLACK));
     }
 
-    if state.statics.end_conditions.counter.is_some() {
+    if state.statics.termination.counter.is_some() {
         fen.push(' ');
         fen.push_str(&state.halfmove_clock.to_string());
     }
