@@ -2695,7 +2695,7 @@ macro_rules! make_move {
             };
 
             if let Some((color, outcome)) = terminal_outcome {
-                $state.game_result = resolve_outcome_for!(color, outcome);
+                $state.game_result = resolve_outcome!(color, outcome);
             }
 
             let snapshot: Snapshot = Snapshot {
@@ -3999,7 +3999,7 @@ pub fn game_outcome(state: &mut State) -> u8 {
     };
 
     match repetition_outcome(state, count) {
-        Some(outcome) => resolve_outcome!(state, outcome),
+        Some(outcome) => resolve_outcome!(state.playing, outcome),
         None => ONGOING,
     }
 }

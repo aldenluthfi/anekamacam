@@ -174,29 +174,9 @@ impl Default for Termination {
 
 /// resolve_outcome!
 ///
-/// Maps an [`Outcome`] evaluated against the side to move to an absolute
-/// `game_result` constant. A win for the side to move is a win for its
-/// colour; a loss is a win for the opponent's colour.
-///
-/// Params:
-/// - state  : &State  -> position whose side to move anchors the perspective
-/// - outcome: Outcome -> the result to resolve
-///
-/// Return:
-/// u8                 -> DRAW / WHITE_WIN / BLACK_WIN
-#[macro_export]
-macro_rules! resolve_outcome {
-    ($state:expr, $outcome:expr) => {
-        resolve_outcome_for!($state.playing, $outcome)
-    };
-}
-
-/// resolve_outcome_for!
-///
-/// Maps an [`Outcome`] evaluated against a named colour to an absolute
-/// `game_result`. Use this when the outcome's subject is not the side to
-/// move — e.g. a check-count rule resolved from the mover's perspective,
-/// where the mover is the opponent of the side now to move.
+/// Maps an [`Outcome`] named against a colour to an absolute `game_result`.
+/// Pass the colour the outcome is scored against (the side to move for a
+/// stalemate-style rule, or the mover for a check-count rule).
 ///
 /// Params:
 /// - color  : u8      -> the colour the outcome is named against
@@ -205,7 +185,7 @@ macro_rules! resolve_outcome {
 /// Return:
 /// u8                 -> DRAW / WHITE_WIN / BLACK_WIN
 #[macro_export]
-macro_rules! resolve_outcome_for {
+macro_rules! resolve_outcome {
     ($color:expr, $outcome:expr) => {
         match $outcome {
             Outcome::Draw => DRAW,
