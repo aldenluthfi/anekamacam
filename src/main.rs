@@ -16,9 +16,9 @@ pub mod game {
         pub mod board;
 
         pub mod drop;
-        pub mod termination;
         pub mod moves;
         pub mod pattern;
+        pub mod termination;
 
         pub mod piece;
         pub mod state;
@@ -28,7 +28,6 @@ pub mod game {
     pub mod moves {
         pub mod move_list;
         pub mod move_parse;
-        pub mod termination;
 
         pub mod drop_list;
         pub mod drop_parse;

@@ -53,7 +53,7 @@ pub use crate::game::moves::move_list::{
     generate_relevant_captures, generate_relevant_castling,
     generate_relevant_moves,
 };
-pub use crate::game::moves::termination::{
+pub use crate::game::representations::termination::{
     counting_limit, game_outcome, position_terminal, side_is_bare,
     terminal_reason,
 };
