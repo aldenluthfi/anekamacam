@@ -50,6 +50,15 @@ makruk | 7k/8/8/8/8/RR6/8/K7 w | a3a4 h8h7 a4a3 h7h8 | Draw | KRRk bare king: tw
 makruk | 7k/8/8/8/8/R7/8/K7 w | a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 | Draw | KRk bare king: one rook -> counted out at the limit of 16
 makruk | 7k/8/8/8/8/R7/8/K7 w | a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 | Ongoing | KRk one move short of the 16-count -> still ongoing
 
+# --- Cambodian (ouk-chaktrang) + Burmese (sittuyin) pieces' honour counting --
+# these variants keep threefold repetition, so the winner marches (no repeat)
+# to isolate the count.
+ouk-chaktrang | 7k/8/8/8/8/8/8/RR1K4 w | a1a2 h8h7 b1b2 h7h8 | Draw | KRRk: two rooks -> counted out at 8
+ouk-chaktrang | 7k/8/8/8/8/8/8/R2K4 w | a1a2 h8h7 a2a3 h7h8 a3a4 h8h7 a4a5 h7h8 a5b5 h8h7 b5b4 h7h8 b4b3 | Draw | KRk: one rook -> counted out at 16
+ouk-chaktrang | 7k/8/8/8/8/8/8/R2K4 w | a1a2 h8h7 a2a3 h7h8 a3a4 h8h7 a4a5 h7h8 a5b5 h8h7 b5b4 h7h8 | Ongoing | KRk one move short of the 16-count
+sittuyin | 7k/8/8/8/8/8/8/CC1K4 w -/- | a1a2 h8h7 b1b2 h7h8 | Draw | KCCk: two chariots -> counted out at 8
+sittuyin | 7k/8/8/8/8/8/8/C2K4 w -/- | a1a2 h8h7 a2a3 h7h8 a3a4 h8h7 a4a5 h7h8 a5b5 h8h7 b5b4 h7h8 b4b3 | Draw | KCk: one chariot -> counted out at 16
+
 # --- material adjudication on double pass (janggi points) ------------------
 janggi | 9/4k4/9/9/9/9/9/9/4K4/R8 w -/- | e2e2 e9e9 | White wins | White's extra chariot wins the count
 janggi | r8/4k4/9/9/9/9/9/9/4K4/9 w -/- | e2e2 e9e9 | Black wins | Black's extra chariot wins the count
