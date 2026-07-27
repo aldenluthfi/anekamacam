@@ -36,92 +36,108 @@ pub enum Outcome {
 
 /// Counter
 ///
-/// A generic progress counter that draws (or otherwise resolves) once it
-/// reaches its limit without a resetting move. `reset_pieces[i]` marks the
-/// piece indices whose non-capturing moves reset the counter; captures and
-/// drops always reset it. Its running value is `State::halfmove_clock`. This is
-/// the 50-move family: standard chess, makruk's board's-honour 64-move count,
-/// and any variant with a limit and a set of progress pieces.
+/// A progress counter that resolves once it reaches `limit` halfmoves without a
+/// resetting move. `reset_pieces[i]` marks the piece indices whose quiet moves
+/// reset it; captures and drops always reset it. Its running value is
+/// `State::halfmove_clock`.
 pub struct Counter {
     pub limit: u8,                                                              /* halfmoves before the outcome fires */
     pub reset_pieces: Vec<bool>,                                                /* moving these resets the counter    */
     pub outcome: Outcome,                                                       /* result once the limit is reached   */
+    pub name: String,                                                           /* reason reported when it fires      */
 }
 
 /// Counting
 ///
-/// A material-scaled move budget for a bare-king endgame: the makruk-family
-/// pieces' honour count. When exactly one side is reduced to a lone royal, the
-/// side with material must mate within a limit set by its strongest material or
-/// the game is drawn. The running value is a frozen clock in `State::counting`
-/// -- it starts at the piece count when the bare-king situation arises and
-/// climbs by one every ply, never resetting on a capture (unlike `Counter`).
-/// `table` is an ordered list of `(requirements, limit)` rows, first
-/// fully-matched wins; a requirement is a piece set and the minimum number of
-/// the material side's members of it. `default` is the limit when no row
-/// matches. Covers makruk and the Cambodian and Burmese variants.
+/// A material-scaled move budget for a bare-king endgame. When exactly one side
+/// is reduced to a lone royal, the side with material must mate within a limit
+/// set by its strongest material or the game resolves to `outcome`. The running
+/// value is a frozen clock in `State::counting`: it starts at the piece count
+/// when the bare king arises and climbs by one per ply, never resetting on a
+/// capture. `table` is an ordered list of `(requirements, limit)` rows, the
+/// first fully-matched winning; a requirement is a piece set and the minimum
+/// number the material side must own. `default` applies when no row matches.
 pub struct Counting {
     pub table: Vec<(Vec<(Vec<bool>, u32)>, u16)>,                               /* ordered (requirements, limit) rows */
     pub default: u16,                                                           /* limit when no row matches          */
     pub outcome: Outcome,                                                       /* result once the count hits limit   */
+    pub name: String,                                                           /* reason reported when it fires      */
 }
 
 /// Extinct
 ///
 /// A material-extinction rule: when a colour's count of the pieces in `set`
 /// falls to `threshold` or below, that colour receives `outcome` (or its
-/// opponent, when `opponent` is set). `set[i]` marks the piece indices the
-/// rule counts, matched per colour. Covers kinglet and horde (a side's pawns
-/// or whole army gone -> loss) and antichess/losers (own army gone -> win).
+/// opponent, when `opponent` is set). `set[i]` marks the counted piece indices,
+/// matched per colour.
 pub struct Extinct {
     pub set: Vec<bool>,                                                         /* piece indices the rule counts      */
     pub threshold: u8,                                                          /* count at or below which it fires   */
     pub outcome: Outcome,                                                       /* result for the extinct colour      */
     pub opponent: bool,                                                         /* outcome applies to the other side  */
+    pub name: String,                                                           /* reason reported when it fires      */
 }
 
 /// Goal
 ///
-/// A goal-zone rule: when a colour lands one of its `set` pieces on a square
-/// of `zone`, that colour receives `outcome`. Covers king-of-the-hill (king
-/// to the centre) and racing kings (king to the far rank). The zone is a
-/// single board shared by both colours.
+/// A goal-zone rule: when a colour lands one of its `set` pieces on a square of
+/// `zone`, that colour receives `outcome`. The zone is one board shared by both
+/// colours.
 pub struct Goal {
     pub set: Vec<bool>,                                                         /* piece indices that reach the zone  */
     pub zone: Board,                                                            /* target squares                     */
     pub outcome: Outcome,                                                       /* result for the arriving colour     */
+    pub name: String,                                                           /* reason reported when it fires      */
 }
 
 /// Adjudicate
 ///
-/// A points rule: when the game is agreed ended (both sides pass in
-/// succession), the position is decided by weighted material rather than
-/// drawn. `weights[i]` is a piece index's point value; each colour's counted
-/// pieces are summed, `handicap[colour]` is added, and the greater sum wins
-/// (a tie draws). Covers janggi points, where the second player carries a
-/// standing handicap. The weights and handicap come from a named
-/// `= adjudicate <name> =` config section, never a variant name in code.
+/// A points rule: when both sides pass in succession the position is decided by
+/// weighted material rather than drawn. `weights[i]` is a piece index's point
+/// value; each colour's counted pieces are summed, `handicap[colour]` added,
+/// and the greater sum wins (a tie draws). Weights and handicap come from a
+/// named `= adjudicate <name> =` config section.
 pub struct Adjudicate {
     pub weights: Vec<i32>,                                                      /* per piece index point value        */
     pub handicap: [i32; 2],                                                     /* per colour standing point bonus    */
+    pub name: String,                                                           /* reason reported when it fires      */
 }
 
 /// Perpetual
 ///
-/// A cycle-offence rule: when a repetition closes, one side may be the sole
-/// aggressor sustaining it, and rather than the neutral repetition outcome
-/// that side receives its offence's `Outcome`. Two offences are recognised:
-/// `check`, delivering a check on every one of the offender's cycle moves,
-/// and `chase`, keeping the same enemy non-royal piece under an undefended
-/// capture threat on every one of them; `chasers` marks the piece indices
-/// whose threats count as a chase (the non-exempt attackers). Check outranks
-/// chase, and when both sides offend the repetition outcome stands. This
-/// refines the repetition rule, firing only once its occurrence bound is met.
-/// Covers xiangqi, which forbids perpetual check and perpetual chase.
+/// A cycle-offence rule refining `repetition`: when a repetition closes, a sole
+/// aggressor sustaining it receives its offence's `Outcome` instead of the
+/// neutral repetition result. `check` is delivering a check on every one of the
+/// offender's cycle moves; `chase` is keeping the same enemy non-royal piece
+/// under an undefended capture threat on every one of them, with `chasers`
+/// marking the piece indices whose threats count. Check outranks chase; when
+/// both sides offend the repetition result stands.
 pub struct Perpetual {
     pub check: Option<Outcome>,                                                 /* sole perpetual checker's result    */
     pub chase: Option<Outcome>,                                                 /* sole perpetual chaser's result     */
     pub chasers: Vec<bool>,                                                     /* piece indices that commit a chase  */
+    pub name: String,                                                           /* reason reported when it fires      */
+}
+
+/// Repetition
+///
+/// A repeated-position rule: the game resolves to `outcome` once the current
+/// position has occurred `occurrences` times. A `Perpetual` rule may override
+/// the result for a sole aggressor.
+pub struct Repetition {
+    pub occurrences: u8,                                                        /* occurrences that trigger the rule  */
+    pub outcome: Outcome,                                                       /* result once reached                */
+    pub name: String,                                                           /* reason reported when it fires      */
+}
+
+/// Checks
+///
+/// An N-check rule: the side delivering its `count`-th check receives
+/// `outcome`, scored against that side.
+pub struct Checks {
+    pub count: u8,                                                              /* checks before the outcome fires    */
+    pub outcome: Outcome,                                                       /* result for the checking side       */
+    pub name: String,                                                           /* reason reported when it fires      */
 }
 
 /*----------------------------------------------------------------------------*\
@@ -139,11 +155,11 @@ pub struct Termination {
     pub checkmate: Outcome,                                                     /* no moves + in check   (dflt Loss)  */
     pub stalemate: Outcome,                                                     /* no moves, not in check(dflt Draw)  */
 
-    pub repetition: Option<(u8, Outcome)>,                                      /* (Nth occurrence, outcome)          */
+    pub repetition: Option<Repetition>,                                         /* repeated-position rule             */
     pub counter: Option<Counter>,                                               /* progress counter, if declared      */
     pub counting: Option<Counting>,                                             /* bare-king material count, if any   */
 
-    pub checks: Option<(u8, Outcome)>,                                          /* (Nth check, checker's outcome)     */
+    pub checks: Option<Checks>,                                                 /* N-check rule                       */
     pub extinct: Vec<Extinct>,                                                  /* material-extinction rules          */
     pub goal: Option<Goal>,                                                     /* goal-zone rule                     */
     pub perpetual: Option<Perpetual>,                                           /* repetition-cycle offence rule      */

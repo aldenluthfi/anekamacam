@@ -17,8 +17,8 @@ pub use crate::game::representations::{
     board::Board,
     drop::DropSet,
     termination::{
-        Adjudicate, Counter, Counting, Termination, Extinct, Goal, Outcome,
-        Perpetual,
+        Adjudicate, Checks, Counter, Counting, Termination, Extinct, Goal,
+        Outcome, Perpetual, Repetition,
     },
     moves::{AttackMask, Move, MoveSignature, PseudoMove},
     pattern::{
@@ -55,6 +55,7 @@ pub use crate::game::moves::move_list::{
 };
 pub use crate::game::moves::termination::{
     counting_limit, game_outcome, position_terminal, side_is_bare,
+    terminal_reason,
 };
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,

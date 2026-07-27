@@ -1469,7 +1469,6 @@ macro_rules! make_move {
             let last_phase_score = $state.phase_score;
 
             let move_type = move_type!(applied_move);
-            let pass_move = is_pass!(applied_move);
             let piece_index = piece!(applied_move) as usize;
             let creates_enp = creates_enp!(applied_move);
             let enp_square = created_enp!(applied_move) as u32;
@@ -2658,16 +2657,6 @@ macro_rules! make_move {
                 .or_insert(0);
             *repetition_count += 1;
 
-            let double_pass = pass_move && $state.history.last().map_or(
-                false, |snapshot| pass_snapshot!(snapshot)
-            );
-
-            if let Some((color, outcome)) =
-                position_terminal($state, move_type, double_pass)
-            {
-                $state.game_result = resolve_outcome!(color, outcome);
-            }
-
             let snapshot: Snapshot = Snapshot {
                 move_ply: applied_move,
                 castling_state: last_castling_state,
@@ -2688,6 +2677,12 @@ macro_rules! make_move {
                 undo_move!($state);
                 false
             } else {
+                let terminal = position_terminal($state)
+                    .map(|(color, outcome, _)| (color, outcome));
+                if let Some((color, outcome)) = terminal {
+                    $state.game_result = resolve_outcome!(color, outcome);
+                }
+
                 #[cfg(debug_assertions)]
                 verify_game_state($state);
 

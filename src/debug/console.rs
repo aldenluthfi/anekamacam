@@ -321,12 +321,10 @@ impl OverviewState {
                 counter.limit.to_string(), 1
             ));
         }
-        if let Some((repetition_limit, _)) =
-            state.statics.termination.repetition
-        {
+        if let Some(repetition) = &state.statics.termination.repetition {
             configs.push((
                 "Repetition Limit".to_string(),
-                repetition_limit.to_string(), 1
+                repetition.occurrences.to_string(), 1
             ));
         }
 
@@ -513,9 +511,11 @@ impl BoardState {
 
         details.push(["Game Phase".to_string(), phase]);
         if is_terminal!(state) {
-            details.push(
-                ["Result".to_string(), format_game_result(state.game_result)]
-            );
+            let mut result = format_game_result(state.game_result);
+            if let Some(name) = terminal_reason(state) {
+                result = format!("{} ({})", result, name);
+            }
+            details.push(["Result".to_string(), result]);
         }
         details.push(
             [
@@ -544,9 +544,7 @@ impl BoardState {
             );
             details.push(["Halfmove Clock".to_string(), halfmove_clock]);
         }
-        if let Some((repetition_limit, _)) =
-            state.statics.termination.repetition
-        {
+        if let Some(repetition) = &state.statics.termination.repetition {
             let count = state
                 .position_hash_map
                 .get(&state.position_hash)
@@ -554,7 +552,7 @@ impl BoardState {
                 .unwrap_or(1);
             repetition_count = format!("{}/{}",
                 count,
-                repetition_limit
+                repetition.occurrences
             );
             details.push(["Repetition Count".to_string(), repetition_count]);
         }

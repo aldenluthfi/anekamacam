@@ -1690,6 +1690,7 @@ pub fn parse_config_file(path: &str) -> State {
             );
 
             let arguments: Vec<&str> = parts[1].split_whitespace().collect();
+            let name = parts[0].to_string();
 
             match parts[0] {
                 "checkmate" => {
@@ -1708,7 +1709,9 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = arguments.get(1)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Draw);
-                    termination.repetition = Some((occurrences, outcome));
+                    termination.repetition = Some(Repetition {
+                        occurrences, outcome, name,
+                    });
                 }
                 "counter" => {
                     let limit =
@@ -1734,7 +1737,7 @@ pub fn parse_config_file(path: &str) -> State {
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Draw);
                     termination.counter = Some(Counter {
-                        limit, reset_pieces, outcome,
+                        limit, reset_pieces, outcome, name,
                     });
                 }
                 "counting" => {
@@ -1783,7 +1786,7 @@ pub fn parse_config_file(path: &str) -> State {
                         table.push((requirements, limit));
                     }
                     termination.counting =
-                        Some(Counting { table, default, outcome });
+                        Some(Counting { table, default, outcome, name });
                 }
                 "checks" => {
                     let count =
@@ -1793,7 +1796,7 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = arguments.get(1)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Win);
-                    termination.checks = Some((count, outcome));
+                    termination.checks = Some(Checks { count, outcome, name });
                 }
                 "extinct" => {
                     let opponent = arguments[0] == "opp";
@@ -1810,7 +1813,7 @@ pub fn parse_config_file(path: &str) -> State {
                         (0, parse_outcome(arguments[2]))
                     };
                     termination.extinct.push(Extinct {
-                        set, threshold, outcome, opponent,
+                        set, threshold, outcome, opponent, name,
                     });
                 }
                 "goal" => {
@@ -1823,7 +1826,7 @@ pub fn parse_config_file(path: &str) -> State {
                         ));
                     let zone = parse_bit_fen(Some(zone_fen.as_str()), &result);
                     let outcome = parse_outcome(arguments[2]);
-                    termination.goal = Some(Goal { set, zone, outcome });
+                    termination.goal = Some(Goal { set, zone, outcome, name });
                 }
                 "perpetual" => {
                     let mut check = None;
@@ -1859,7 +1862,7 @@ pub fn parse_config_file(path: &str) -> State {
                         }
                     }
                     termination.perpetual =
-                        Some(Perpetual { check, chase, chasers });
+                        Some(Perpetual { check, chase, chasers, name });
                 }
                 "adjudicate" => {
                     let section = format!("adjudicate {}", arguments[0]);
@@ -1905,7 +1908,7 @@ pub fn parse_config_file(path: &str) -> State {
                         }
                     }
                     termination.adjudicate =
-                        Some(Adjudicate { weights, handicap });
+                        Some(Adjudicate { weights, handicap, name });
                 }
                 other => panic!("Unknown end condition: {}", other),
             }

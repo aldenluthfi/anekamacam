@@ -646,7 +646,7 @@ impl GameManager {
         };
 
         loop {
-            let terminal = game_outcome(state);
+            let terminal = game_outcome(state).0;
             if SYSTEM_INTERRUPT.load(Ordering::Relaxed)
             || terminal != ONGOING
             || legal_moves!(state).is_empty()

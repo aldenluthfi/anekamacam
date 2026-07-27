@@ -453,7 +453,7 @@ macro_rules! is_terminal {
 #[macro_export]
 macro_rules! game_over {
     ($state:expr) => {
-        game_outcome($state) != ONGOING
+        game_outcome($state).0 != ONGOING
     };
 }
 

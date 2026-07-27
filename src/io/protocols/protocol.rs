@@ -1030,12 +1030,16 @@ pub fn execute_common(
             Some(false)
         }
         "d" => {
-            let result = game_outcome(&mut session.state);
-            emit(EngineEvent::Print(format!(
+            let (result, reason) = game_outcome(&mut session.state);
+            let mut output = format!(
                 "{}\nResult: {}\n",
                 format_game_state(&session.state),
                 format_game_result(result),
-            )));
+            );
+            if let Some(name) = reason {
+                output.push_str(&format!("Reason: {}\n", name));
+            }
+            emit(EngineEvent::Print(output));
             verify_game_state(&session.state);
             Some(false)
         }

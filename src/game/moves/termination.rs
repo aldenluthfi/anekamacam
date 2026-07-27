@@ -86,8 +86,10 @@ pub fn counting_limit(state: &State, winner: u8) -> u16 {
 /// - move_type: u128   -> the applied move's type tag
 ///
 /// Return:
-/// Option<(u8, Outcome)> -> (subject colour, outcome) when it fires
-pub fn extinct_outcome(state: &State, move_type: u128) -> Option<(u8, Outcome)> {
+/// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) when it fires
+pub fn extinct_outcome(
+    state: &State, move_type: u128,
+) -> Option<(u8, Outcome, &str)> {
     if state.statics.termination.extinct.is_empty() {
         return None;
     }
@@ -108,7 +110,7 @@ pub fn extinct_outcome(state: &State, move_type: u128) -> Option<(u8, Outcome)> 
             if count <= extinct.threshold as u32 {
                 let subject =
                     if extinct.opponent { 1 - color } else { color };
-                return Some((subject, extinct.outcome));
+                return Some((subject, extinct.outcome, &extinct.name));
             }
         }
     }
@@ -128,15 +130,15 @@ pub fn extinct_outcome(state: &State, move_type: u128) -> Option<(u8, Outcome)> 
 /// - mover: u8     -> the colour that just moved
 ///
 /// Return:
-/// Option<(u8, Outcome)> -> (mover, outcome) when a goal piece is on the zone
-pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome)> {
+/// Option<(u8, Outcome, &str)> -> (mover, outcome, name) when a goal is reached
+pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome, &str)> {
     let goal = state.statics.termination.goal.as_ref()?;
 
     for (index, piece) in state.statics.pieces.iter().enumerate() {
         if goal.set[index] && p_color!(piece) == mover {
             for &square in piece_squares!(state, index) {
                 if get!(goal.zone, square as u32) {
-                    return Some((mover, goal.outcome));
+                    return Some((mover, goal.outcome, &goal.name));
                 }
             }
         }
@@ -157,8 +159,8 @@ pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome)> {
 /// - state: &State -> position at the second successive pass
 ///
 /// Return:
-/// Option<(u8, Outcome)> -> (winner, Win) or (side to move, Draw) when ruled
-pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome)> {
+/// Option<(u8, Outcome, &str)> -> (winner, Win, name) / (mover, Draw, name)
+pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
     let adjudicate = state.statics.termination.adjudicate.as_ref()?;
 
     let mut sums = adjudicate.handicap;
@@ -167,39 +169,43 @@ pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome)> {
         sums[color] += adjudicate.weights[index] * count as i32;
     }
 
-    Some(if sums[WHITE as usize] > sums[BLACK as usize] {
+    let (winner, outcome) = if sums[WHITE as usize] > sums[BLACK as usize] {
         (WHITE, Outcome::Win)
     } else if sums[BLACK as usize] > sums[WHITE as usize] {
         (BLACK, Outcome::Win)
     } else {
         (state.playing, Outcome::Draw)
-    })
+    };
+
+    Some((winner, outcome, &adjudicate.name))
 }
 
 /// position_terminal
 ///
-/// The eager, position-local terminal check run after every move: the first of
-/// the N-check, goal, extinction, double-pass, counting, and counter rules to
-/// fire, naming the colour the outcome is scored against. Repetition and
-/// perpetual are not here -- `game_outcome` computes them on demand.
+/// The eager, position-local terminal check for the last move in history: the
+/// first of the N-check, goal, extinction, double-pass, counting, and counter
+/// rules to fire, with the name of the rule and the colour its outcome is
+/// scored against. Repetition and perpetual are not here -- `game_outcome`
+/// computes them on demand. `None` when no move has been made.
 ///
 /// Params:
-/// - state      : &State -> position after the move
-/// - move_type  : u128   -> the applied move's type tag
-/// - double_pass: bool   -> whether this is the second successive pass
+/// - state: &State -> position with the ending move on top of history
 ///
 /// Return:
-/// Option<(u8, Outcome)> -> (subject colour, outcome) when a rule fires
-pub fn position_terminal(
-    state: &State, move_type: u128, double_pass: bool,
-) -> Option<(u8, Outcome)> {
+/// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) when firing
+pub fn position_terminal(state: &State) -> Option<(u8, Outcome, &str)> {
+    let last = state.history.last()?;
+    let move_type = move_type!(last.move_ply);
+    let double_pass = pass_snapshot!(last)
+        && state.history.len() >= 2
+        && pass_snapshot!(state.history[state.history.len() - 2]);
     let mover = 1 - state.playing;
 
-    if let Some((limit, outcome)) = state.statics.termination.checks
+    if let Some(checks) = &state.statics.termination.checks
         && state.gave_check
-        && state.check_count[mover as usize] >= limit
+        && state.check_count[mover as usize] >= checks.count
     {
-        Some((mover, outcome))
+        Some((mover, checks.outcome, &checks.name))
     } else if let Some(hit) = goal_outcome(state, mover) {
         Some(hit)
     } else if let Some(hit) = extinct_outcome(state, move_type) {
@@ -207,20 +213,17 @@ pub fn position_terminal(
     } else if double_pass {
         Some(
             adjudicate_outcome(state)
-                .unwrap_or((state.playing, Outcome::Draw)),
+                .unwrap_or((state.playing, Outcome::Draw, "")),
         )
     } else if let Some((count, limit)) = state.counting
         && count >= limit
+        && let Some(counting) = &state.statics.termination.counting
     {
-        Some((
-            state.playing,
-            state.statics.termination.counting.as_ref()
-                .map_or(Outcome::Draw, |counting| counting.outcome),
-        ))
+        Some((state.playing, counting.outcome, &counting.name))
     } else if let Some(counter) = &state.statics.termination.counter
         && state.halfmove_clock >= counter.limit
     {
-        Some((state.playing, counter.outcome))
+        Some((state.playing, counter.outcome, &counter.name))
     } else {
         None
     }
@@ -399,21 +402,21 @@ fn perpetual_offender(state: &mut State) -> Option<u8> {
 ///
 /// The on-demand repetition/perpetual terminal, computed rather than stored:
 /// `None` unless the variant declares a `repetition` rule and the current
-/// position has occurred at least `min_count` times. When it fires it returns
-/// the outcome from the **side-to-move** perspective -- the neutral repetition
-/// outcome (usually `Draw`) unless a sole perpetual offender is found, in which
-/// case that colour loses. Non-perpetual variants short-circuit with no walk.
-/// `game_outcome` calls this at the configured fold for game truth; search
-/// calls it at a 2-fold to value repetitions.
+/// position has occurred at least `min_count` times. Otherwise the outcome is
+/// from the side-to-move perspective -- the neutral repetition outcome unless a
+/// sole perpetual offender is found, in which case that colour loses. The bool
+/// is true when a perpetual offender decided it (for reason reporting).
 ///
 /// Params:
 /// - state    : &mut State -> current position (restored if a walk runs)
 /// - min_count: u8         -> occurrences required before it fires
 ///
 /// Return:
-/// Option<Outcome> -> the terminal outcome (side-to-move perspective), if any
-pub fn repetition_outcome(state: &mut State, min_count: u8) -> Option<Outcome> {
-    let (_, neutral) = state.statics.termination.repetition?;
+/// Option<(Outcome, bool)> -> (outcome, perpetual decided it) when it fires
+pub fn repetition_outcome(
+    state: &mut State, min_count: u8,
+) -> Option<(Outcome, bool)> {
+    let neutral = state.statics.termination.repetition.as_ref()?.outcome;
 
     let occurrences = state.position_hash_map
         .get(&state.position_hash).copied().unwrap_or(0);
@@ -422,42 +425,66 @@ pub fn repetition_outcome(state: &mut State, min_count: u8) -> Option<Outcome> {
     }
 
     if state.statics.termination.perpetual.is_none() {
-        return Some(neutral);
+        return Some((neutral, false));
     }
 
     Some(match perpetual_offender(state) {
-        Some(offender) if offender == state.playing => Outcome::Loss,
-        Some(_) => Outcome::Win,
-        None => neutral,
+        Some(offender) if offender == state.playing => (Outcome::Loss, true),
+        Some(_) => (Outcome::Win, true),
+        None => (neutral, false),
     })
+}
+
+/// terminal_reason
+///
+/// The name of the eager rule that ended the current position, recomputed so no
+/// reason need be stored. `None` when no eager rule applies (e.g. a
+/// search-injected mate) or the rule is unnamed.
+///
+/// Params:
+/// - state: &State -> position after the ending move
+///
+/// Return:
+/// Option<String> -> the fired rule's name, if any
+pub fn terminal_reason(state: &State) -> Option<String> {
+    position_terminal(state)
+        .map(|(_, _, name)| name)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
 }
 
 /// game_outcome
 ///
 /// The single game-truth oracle for reporting and self-play paths: the eager,
 /// position-local `game_result` when set, else the on-demand repetition /
-/// perpetual verdict at the variant's configured fold. Search does not use this
-/// (it keeps the cheap `is_terminal!` read plus its own 2-fold
-/// `repetition_outcome` call); this is for `d`, datagen, sprt, and the console,
-/// which must still observe a repetition/perpetual game end now that
-/// `make_move!` no longer stores it.
+/// perpetual verdict. Also reports the reason name of whichever rule decided
+/// it. Search does not use this; it keeps the cheap `is_terminal!` read.
 ///
 /// Params:
 /// - state: &mut State -> current position (restored if a walk runs)
 ///
 /// Return:
-/// u8 -> ONGOING / DRAW / WHITE_WIN / BLACK_WIN
-pub fn game_outcome(state: &mut State) -> u8 {
+/// (u8, Option<String>) -> (result, reason name) with result ONGOING when live
+pub fn game_outcome(state: &mut State) -> (u8, Option<String>) {
     if state.game_result != ONGOING {
-        return state.game_result;
+        return (state.game_result, terminal_reason(state));
     }
 
-    let Some((count, _)) = state.statics.termination.repetition else {
-        return ONGOING;
+    let Some(occurrences) = state.statics.termination.repetition
+        .as_ref().map(|repetition| repetition.occurrences)
+    else {
+        return (ONGOING, None);
     };
 
-    match repetition_outcome(state, count) {
-        Some(outcome) => resolve_outcome!(state.playing, outcome),
-        None => ONGOING,
+    match repetition_outcome(state, occurrences) {
+        Some((outcome, perpetual)) => {
+            let rule = if perpetual {
+                state.statics.termination.perpetual.as_ref().map(|p| &p.name)
+            } else {
+                state.statics.termination.repetition.as_ref().map(|r| &r.name)
+            };
+            (resolve_outcome!(state.playing, outcome), rule.cloned())
+        }
+        None => (ONGOING, None),
     }
 }
