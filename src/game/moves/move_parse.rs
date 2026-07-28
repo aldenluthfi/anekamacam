@@ -107,7 +107,7 @@ lazy_static! {
                 panic!("Failed to compile COLON_RANGE_TOKEN regex: {e}")
             });
     pub static ref LEG: Regex =
-        Regex::new(r"^([mcdukvgtip!]+)?([^@mcdukvgtip]+)@?([^@]+)?$")
+        Regex::new(r"^([mcdukvgtipr!]+)?([^@mcdukvgtipr]+)@?([^@]+)?$")
             .unwrap_or_else(|e| panic!("Failed to compile LEG regex: {e}"));
     pub static ref LEG_TOKENS: Regex = Regex::new(concat!(
         r"(?:(?:ne|nw|se|sw|n|s|e|w)?(?:\[\d+\])?K)+|",
@@ -115,7 +115,7 @@ lazy_static! {
         r"\[\d+\]|",
         r"(?:\.+)|",
         r"-(?:\.+)|",
-        r"[mcdukvgtip!]+|",
+        r"[mcdukvgtipr!]+|",
         r":?\{\d+(?:\.\.(?:\d+|\*))?\}|",
         r"-:\{\d+(?:\.\.(?:\d+|\*))?\}|",
         r"-\{\d+(?:\.\.(?:\d+|\*))?\}|",
@@ -125,7 +125,7 @@ lazy_static! {
         panic!("Failed to compile LEG_TOKENS regex: {e}")
     });
     pub static ref MODIFIERS: Regex =
-        Regex::new(r"^[mcdukvgtip!]+$").unwrap_or_else(|e| {
+        Regex::new(r"^[mcdukvgtipr!]+$").unwrap_or_else(|e| {
             panic!("Failed to compile MODIFIERS regex: {e}")
         });
     pub static ref INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] =

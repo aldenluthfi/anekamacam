@@ -608,11 +608,15 @@ macro_rules! validate_attack_vector {
         let piece_rank = p_rank!($attacking_piece);
         let piece_unmoved =
             get!($state.virgin_board, $square_index as u32);
+        let piece_index = p_index!($attacking_piece);
 
         let mut accumulated_index = $square_index as i16;
         let mut target_was_last_captured = false;
 
         let leg_count = $multi_leg_vector.len();
+
+        let promotable =
+            promotions!($state) && p_can_promote!($attacking_piece);
 
         let mut valid = true;
 
@@ -639,10 +643,12 @@ macro_rules! validate_attack_vector {
             let v = v!(leg);
             let t = t!(leg);
             let i = i!(leg);
+            let r = r!(leg);
             let not_k = not_k!(leg);
             let not_g = not_g!(leg);
             let not_v = not_v!(leg);
             let not_i = not_i!(leg);
+            let not_r = not_r!(leg);
             let special_v = v && not_v;
 
             if i && !piece_unmoved || not_i && piece_unmoved {
@@ -650,10 +656,47 @@ macro_rules! validate_attack_vector {
                 break;
             }
 
+            if promotable {
+                let start_mandatory = get!(
+                    $state.statics.promotion_zones_mandatory[
+                        piece_index as usize
+                    ],
+                    start_square
+                );
+                let start_optional = get!(
+                    $state.statics.promotion_zones_optional[
+                        piece_index as usize
+                    ],
+                    start_square
+                );
+                let end_mandatory = get!(
+                    $state.statics.promotion_zones_mandatory[
+                        piece_index as usize
+                    ],
+                    end_square
+                );
+                let end_optional = get!(
+                    $state.statics.promotion_zones_optional[
+                        piece_index as usize
+                    ],
+                    end_square
+                );
+
+                if r
+                && !start_mandatory && !end_mandatory
+                && !start_optional  && !end_optional
+                || not_r && start_mandatory
+                || not_r && end_mandatory
+                {
+                    valid = false;
+                    break;
+                }
+            }
+
             let friendly = get!(
                 $state.pieces_board[piece_color as usize],
                 end_square
-            ) && end_square != start_square;
+            ) && end_square != $square_index as u32;
             let enemy = get!(
                 $state.pieces_board[1 - piece_color as usize],
                 end_square
@@ -661,7 +704,7 @@ macro_rules! validate_attack_vector {
             let empty = !friendly && !enemy;
 
             let pass_move = file_offset == 0 && rank_offset == 0;
-            let imaginary_move = end_square == $attacked_square;
+            let imaginary_move = end_square == $attacked_square && (c || d);
 
             if u && target_was_last_captured {
                 valid = false;
@@ -846,8 +889,7 @@ macro_rules! process_multi_leg_vector {
         let piece_index = p_index!($piece);
         let piece_color = p_color!($piece);
         let piece_rank = p_rank!($piece);
-        let piece_unmoved =
-            get!($state.virgin_board, $square_index as u32);
+        let piece_unmoved = get!($state.virgin_board, $square_index as u32);
 
         let mut encoded_move = Move::default();
         enc_start!(encoded_move, $square_index as u128);
@@ -858,6 +900,11 @@ macro_rules! process_multi_leg_vector {
         let mut accumulated_index = $square_index as i16;
 
         let leg_count = $vector.len();
+
+        let promotable = promotions!($state) && p_can_promote!($piece);
+
+        let mut mandatory = false;
+        let mut optionals = false;
 
         for (leg_index, leg) in $vector.iter().enumerate() {
             let last_leg = leg_index + 1 == leg_count;
@@ -884,10 +931,12 @@ macro_rules! process_multi_leg_vector {
             let t = t!(leg);
             let i = i!(leg);
             let p = p!(leg);
+            let r = r!(leg);
             let not_k = not_k!(leg);
             let not_g = not_g!(leg);
             let not_v = not_v!(leg);
             let not_i = not_i!(leg);
+            let not_r = not_r!(leg);
             let special_v = v && not_v;
 
             if i && !piece_unmoved || not_i && piece_unmoved {
@@ -895,11 +944,57 @@ macro_rules! process_multi_leg_vector {
                 break;
             }
 
+            if promotable {
+                let start_mandatory = get!(
+                    $state.statics.promotion_zones_mandatory[
+                        piece_index as usize
+                    ],
+                    start_square
+                );
+                let start_optional = get!(
+                    $state.statics.promotion_zones_optional[
+                        piece_index as usize
+                    ],
+                    start_square
+                );
+                let end_mandatory = get!(
+                    $state.statics.promotion_zones_mandatory[
+                        piece_index as usize
+                    ],
+                    end_square
+                );
+                let end_optional = get!(
+                    $state.statics.promotion_zones_optional[
+                        piece_index as usize
+                    ],
+                    end_square
+                );
+
+                if r
+                && !start_mandatory && !end_mandatory
+                && !start_optional  && !end_optional
+                || not_r && start_mandatory
+                || not_r && end_mandatory
+                {
+                    invalid = true;
+                    break;
+                }
+
+                if start_mandatory || end_mandatory
+                || start_optional  || end_optional {
+                    optionals = !not_r;
+                }
+
+                if r || start_mandatory || end_mandatory {
+                    mandatory = true;
+                }
+            }
+
             enc_is_initial!(encoded_move, (i | piece_unmoved) as u128);
 
             let friendly = get!(
                 $state.pieces_board[piece_color as usize], end_square
-            ) && end_square != start_square;
+            ) && end_square != $square_index as u32;
             let enemy = get!(
                 $state.pieces_board[1 - piece_color as usize], end_square
             );
@@ -939,10 +1034,10 @@ macro_rules! process_multi_leg_vector {
                         let capt_royal = p_is_royal!(capt_piece);
 
                         if k || not_k && capt_royal
-                            || g && piece_rank >= capt_rank
-                            || not_g && piece_rank < capt_rank
-                            || (v && !capt_unmoved || not_v && capt_unmoved)
-                                && !special_v
+                        || g && piece_rank >= capt_rank
+                        || not_g && piece_rank < capt_rank
+                        || (v && !capt_unmoved || not_v && capt_unmoved)
+                        && !special_v
                         {
                             invalid = true;
                             break;
@@ -978,10 +1073,10 @@ macro_rules! process_multi_leg_vector {
                 let capt_royal = p_is_royal!(capt_piece);
 
                 if k || not_k && capt_royal
-                    || g && piece_rank >= capt_rank
-                    || not_g && piece_rank < capt_rank
-                    || (v && !capt_unmoved || not_v && capt_unmoved)
-                        && !special_v
+                || g && piece_rank >= capt_rank
+                || not_g && piece_rank < capt_rank
+                || (v && !capt_unmoved || not_v && capt_unmoved)
+                && !special_v
                 {
                     invalid = true;
                     break;
@@ -1015,10 +1110,10 @@ macro_rules! process_multi_leg_vector {
                 let capt_royal = p_is_royal!(capt_piece);
 
                 if k || not_k && capt_royal
-                    || g && piece_rank >= capt_rank
-                    || not_g && piece_rank < capt_rank
-                    || (v && !capt_unmoved || not_v && capt_unmoved)
-                        && !special_v
+                || g && piece_rank >= capt_rank
+                || not_g && piece_rank < capt_rank
+                || (v && !capt_unmoved || not_v && capt_unmoved)
+                && !special_v
                 {
                     invalid = true;
                     break;
@@ -1068,9 +1163,10 @@ macro_rules! process_multi_leg_vector {
             );
         }
 
-        enc_end!(encoded_move, accumulated_index as u128);
 
-        if promotions!($state) && p_can_promote!($piece) && !invalid {
+        if !invalid {
+            enc_end!(encoded_move, accumulated_index as u128);
+
             if $scratch.is_empty() {
                 enc_move_type!(encoded_move, QUIET_MOVE);
             } else if $scratch.len() == 1 {
@@ -1081,35 +1177,7 @@ macro_rules! process_multi_leg_vector {
                 encoded_move.1 = Some(Arc::new(mem::take($scratch)));
             }
 
-            let entered_mandatory = get!(
-                $state.statics.promotion_zones_mandatory[
-                    piece_index as usize
-                ],
-                accumulated_index as u32
-            );
-            let left_mandatory = get!(
-                $state.statics.promotion_zones_mandatory[
-                    piece_index as usize
-                ],
-                $square_index as u32
-            );
-            let entered_optional = get!(
-                $state.statics.promotion_zones_optional[
-                    piece_index as usize
-                ],
-                accumulated_index as u32
-            );
-            let left_optional = get!(
-                $state.statics.promotion_zones_optional[
-                    piece_index as usize
-                ],
-                $square_index as u32
-            );
-
-            let mandatory = entered_mandatory || left_mandatory;
-            let optional = entered_optional || left_optional;
-
-            if mandatory || optional {
+            if mandatory || optionals {
                 for promo_piece_index in &$piece.promotions {
                     let mut can_promote = true;
 
@@ -1134,25 +1202,11 @@ macro_rules! process_multi_leg_vector {
                         $out.push(promo_move);
                     }
                 }
+            }
 
-                if !mandatory {
-                    $out.push(encoded_move);
-                }
-            } else {
+            if !mandatory {
                 $out.push(encoded_move);
             }
-        } else if !invalid {
-            if $scratch.is_empty() {
-                enc_move_type!(encoded_move, QUIET_MOVE);
-            } else if $scratch.len() == 1 {
-                enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
-                enc_capture_part!(encoded_move, $scratch[0] as u128);
-            } else {
-                enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = Some(Arc::new(mem::take($scratch)));
-            }
-
-            $out.push(encoded_move);
         }
     }};
 }

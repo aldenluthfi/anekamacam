@@ -111,25 +111,35 @@ use crate::*;
 ///   Return:
 ///   bool -> start square creates an en passant square (bit 25)
 ///
+/// r!
+///
+///   Return:
+///   bool -> this leg must be used to promote (bit 26)
+///
 /// not_k!
 ///
 ///   Return:
-///   bool -> capture must not be royal (bit 26)
+///   bool -> capture must not be royal (bit 27)
 ///
 /// not_v!
 ///
 ///   Return:
-///   bool -> capture must not be virgin (bit 27)
+///   bool -> capture must not be virgin (bit 28)
 ///
 /// not_g!
 ///
 ///   Return:
-///   bool -> capture must not be of greater rank (bit 28)
+///   bool -> capture must not be of greater rank (bit 29)
 ///
 /// not_i!
 ///
 ///   Return:
-///   bool -> must not be an initial move (bit 29)
+///   bool -> must not be an initial move (bit 30)
+///
+/// not_r!
+///
+///   Return:
+///   bool -> this leg must not be used to promote (bit 31)
 #[macro_export]
 macro_rules! leg {
     ($l:expr) => {
@@ -224,30 +234,44 @@ macro_rules! p {
 }
 
 #[macro_export]
-macro_rules! not_k {
+macro_rules! r {
     ($l:expr) => {
         ($l >> 26) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_v {
+macro_rules! not_k {
     ($l:expr) => {
         ($l >> 27) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_g {
+macro_rules! not_v {
     ($l:expr) => {
         ($l >> 28) & 1 == 1
     };
 }
 
 #[macro_export]
-macro_rules! not_i {
+macro_rules! not_g {
     ($l:expr) => {
         ($l >> 29) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_i {
+    ($l:expr) => {
+        ($l >> 30) & 1 == 1
+    };
+}
+
+#[macro_export]
+macro_rules! not_r {
+    ($l:expr) => {
+        ($l >> 31) & 1 == 1
     };
 }
 
@@ -372,10 +396,10 @@ pub type MultiLegVector = Vec<LegVector>;
 ///
 /// ```text
 ///   32  34  36  38  40  42  44  46                                  63
-///     33  35  37  39  41  43  45
-///   ┌─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬────────────────────────────────────┐
-///   │m│c│d│u│k│v│g│t│i│p│K│V│G│I│               unused               │
-///   └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴────────────────────────────────────┘
+///     33  35  37  39  41  43  45  47
+///   ┌─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬────────────────────────────────┐
+///   │m│c│d│u│k│v│g│t│i│p│r│K│V│G│I│R│             unused             │
+///   └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴────────────────────────────────┘
 /// ```
 ///
 /// - Bits 0..31 : whole `AtomicVector`
@@ -389,18 +413,20 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - Bit 39     : `t`, may capture en passant
 /// - Bit 40     : `i`, must be an initial move
 /// - Bit 41     : `p`, creates an en-passant square
-/// - Bit 42     : `K`, meaning `!k`
-/// - Bit 43     : `V`, meaning `!v`
-/// - Bit 44     : `G`, meaning `!g`
-/// - Bit 45     : `I`, meaning `!i`
-/// - Bits 46..63: unused
+/// - Bit 42     : `r`, must promote on this leg
+/// - Bit 43     : `K`, meaning `!k`
+/// - Bit 44     : `V`, meaning `!v`
+/// - Bit 45     : `G`, meaning `!g`
+/// - Bit 46     : `I`, meaning `!i`
+/// - Bit 47     : `R`, meaning `!r`
+/// - Bits 48..63: unused
 ///
-/// The 14 active modifier bits are grouped as follows:
+/// The 16 active modifier bits are grouped as follows:
 /// - main                      : m, c, d, u
 /// - capture/destroy modifiers : k, v, g, t
-/// - miscellaneous modifiers   : i, p
+/// - miscellaneous modifiers   : i, p, r
 /// - negated capture modifiers : !k, !v, !g
-/// - negated misc modifiers    : !i
+/// - negated misc modifiers    : !i, !r
 ///
 /// Main modifiers:
 /// - (m)ove:
@@ -489,11 +515,26 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - (true)  : this leg's start square creates an en passant square.
 /// - (false) : this leg's start square does not create an en passant square.
 ///
+/// - (r) promote:
+///     - r:
+///       indicates this leg must be used to promote. The leg is only valid
+///       when its own start or end square lies in a promotion zone, and a
+///       valid r leg forces the completed move to be a promotion.
+///     - !r:
+///       indicates this leg must not be used to promote. The leg is invalid
+///       when its own end square lies in a mandatory promotion zone.
+///
+/// Usage of (r, !r):
+/// - (false, false) : promotion follows the piece's zones (regular leg).
+/// - (false, true)  : this leg must not be used to promote.
+/// - (true, false)  : this leg must be used to promote.
+/// - (true, true)   : special modifier r!r (explained below).
+///
 /// Combined positive and negative modifiers:
 ///
 /// - v!v : this leg bypasses forbidden zones.
-/// - i!i, k!k, and g!g : no special behavior is defined. Do not use these
-///   combinations in variant movement definitions.
+/// - i!i, k!k, g!g, and r!r : no special behavior is defined. Do not use
+///   these combinations in variant movement definitions.
 ///
 /// Defaults:
 ///
@@ -570,6 +611,7 @@ impl LegVector {
                 't' => 1 << 7,
                 'i' => 1 << 8,
                 'p' => 1 << 9,
+                'r' => 1 << 10,
                 '!' => break,
                 _ => panic!("Invalid modifier character: {}", ch),
             };
@@ -577,10 +619,11 @@ impl LegVector {
 
         for ch in &mut *chars {
             bits |= match ch {
-                'k' => 1 << 10,
-                'v' => 1 << 11,
-                'g' => 1 << 12,
-                'i' => 1 << 13,
+                'k' => 1 << 11,
+                'v' => 1 << 12,
+                'g' => 1 << 13,
+                'i' => 1 << 14,
+                'r' => 1 << 15,
                 _ => panic!("Invalid modifier character: {}", ch),
             };
         }
@@ -609,6 +652,7 @@ impl LegVector {
             ('t', t!(self.0 >> 32)),
             ('i', i!(self.0 >> 32)),
             ('p', p!(self.0 >> 32)),
+            ('r', r!(self.0 >> 32)),
         ];
 
         let not_mods = [
@@ -616,6 +660,7 @@ impl LegVector {
             ('v', not_v!(self.0 >> 32)),
             ('g', not_g!(self.0 >> 32)),
             ('i', not_i!(self.0 >> 32)),
+            ('r', not_r!(self.0 >> 32)),
         ];
 
         for (ch, val) in mods {
