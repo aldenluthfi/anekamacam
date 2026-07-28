@@ -883,6 +883,9 @@ pub fn perft(
     }
 
     if depth == 0 {
+        if branch == 0 {
+            emit(EngineEvent::Print(format!("{}: 1\n", prefix.trim())));
+        }
         if branch >= 0 {
             log_5!("{} moves | Nodes: 1", prefix);
         }
@@ -915,6 +918,11 @@ pub fn perft(
         }
     }
 
+    if branch == 0 {
+        emit(EngineEvent::Print(format!(
+            "{}: {}\n", prefix.trim(), nodes
+        )));
+    }
     log_4!("{} moves | Nodes: {}", prefix, nodes);
 
     nodes

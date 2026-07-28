@@ -61,6 +61,7 @@ A variant lives in a single configs/&lt;name&gt;.conf file. It declares, in labe
 │ forbidden zones     │ Marks squares no piece may enter (move/promo/drop)       │
 │ promote to captured │ A promoting piece must be one the opponent captured      │
 │ setup phase         │ Players drop pieces from hand before normal play starts  │
+│ stand-offs          │ A facing/formation the mover must break, or pass to end  │
 └─────────────────────┴──────────────────────────────────────────────────────────┘
 
 How a game is won, lost, or drawn is declared separately, in the = termination = section: a flat table of parametric terminal rules — checkmate/stalemate outcomes, repetition, a generalized counter (50-move / makruk board's honour), a bare-king material count (makruk-family pieces' honour), N-check, material extinction, goal zones, repetition-cycle offences, and material adjudication. Each covers a family of variants rather than a single named mode:
