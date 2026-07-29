@@ -272,12 +272,14 @@ macro_rules! enp_piece {
 pub struct Snapshot {
     pub move_ply: Move,                                                         /* the move that was played           */
 
+    pub in_check: Option<bool>,                                                 /* side to move checked after move    */
+    pub in_stand_off: Option<bool>,                                             /* stand-off remained after move      */
+
     pub castling_state: u8,                                                     /* castling rights before move        */
     pub halfmove_clock: u8,                                                     /* halfmove clock before move         */
     pub counting: Option<(u16, u16)>,                                           /* bare-king (count, limit) before mv */
     pub en_passant_square: EnPassantSquare,                                     /* en passant sq before move          */
     pub game_result: u8,                                                        /* terminal result before move        */
-    pub gave_check: bool,                                                       /* move gave check (checked opponent) */
     pub check_count: [u8; 2],                                                   /* checks delivered before move       */
     pub game_phase: u8,                                                         /* game phase before move             */
     pub phase_score: u32,                                                       /* phase score before move            */
@@ -290,12 +292,13 @@ impl Default for Snapshot {
     fn default() -> Self {
         Snapshot {
             move_ply: null_move(),
+            in_check: None,
+            in_stand_off: None,
             castling_state: 0,
             halfmove_clock: 0,
             counting: None,
             en_passant_square: EnPassantSquare::MAX,
             game_result: ONGOING,
-            gave_check: false,
             check_count: [0; 2],
             game_phase: OPENING,
             phase_score: 0,
@@ -439,9 +442,9 @@ macro_rules! game_phase_score {
 
 /// is_terminal!
 ///
-/// Tests whether a position has reached a terminal result. Any value other
-/// than `ONGOING` (a `DRAW`, `WHITE_WIN`, or `BLACK_WIN` decided by an end
-/// condition) means the game is over and no further move should be made.
+/// Tests whether an eager, position-local terminal result has been stored.
+/// Any value other than `ONGOING` means move generation and search must stop;
+/// on-demand repetition/perpetual game truth comes from `game_outcome`.
 ///
 /// Params:
 /// - state: &State -> position whose result field is tested
@@ -451,28 +454,7 @@ macro_rules! game_phase_score {
 #[macro_export]
 macro_rules! is_terminal {
     ($state:expr) => {
-        $state.game_result != ONGOING
-    };
-}
-
-/// game_over!
-///
-/// The game-truth oracle: true when the position is decided, folding in the
-/// on-demand repetition/perpetual verdict that `make_move!` no longer stores.
-/// Unlike `is_terminal!` (a cheap read of the eager, position-local
-/// `game_result` used on hot search/move-gen paths), this consults
-/// `game_outcome`, which may walk the repetition cycle — so use it only on
-/// reporting/self-play paths (`d`, datagen, sprt, console), never per node.
-///
-/// Params:
-/// - state: &mut State -> position tested (restored exactly if a walk runs)
-///
-/// Return:
-/// bool                -> true once the game has reached a terminal outcome
-#[macro_export]
-macro_rules! game_over {
-    ($state:expr) => {
-        game_outcome($state).0 != ONGOING
+        $state.termination.game_result != ONGOING
     };
 }
 
@@ -491,7 +473,6 @@ pub struct StaticState {
 
     pub pieces: Vec<Piece>,
     pub special_rules: u32,
-    pub termination: Termination,                                               /* parametric terminal-rule table     */
 
     pub initial_setup: Vec<Board>,                                              /* piece index to board               */
 
@@ -605,7 +586,7 @@ pub struct StaticState {
 /// - bit 8-31  : reserved for future use
 ///
 /// Terminal rules (stalemate/checkmate outcome, repetition, counter, ...)
-/// are not bits here; they live in `StaticState::termination`.
+/// are not bits here; each position owns them in `State::termination`.
 ///
 /// Static configuration lives in `statics: Arc<StaticState>`, shared
 /// cheaply across threads. `State::clone()` calls `Arc::clone` for the
@@ -613,14 +594,12 @@ pub struct StaticState {
 pub struct State {
 
     pub statics: Arc<StaticState>,
+    pub termination: Termination,                                               /* rules, result, progress            */
 
 /*----------------------------------------------------------------------------*\
                                  DYNAMIC FIELDS
 \*----------------------------------------------------------------------------*/
 
-    pub game_result: u8,                                                        /* ONGOING/DRAW/BLACK_WIN/WHITE_WIN   */
-    pub gave_check: bool,                                                       /* last move checked the opponent     */
-    pub check_count: [u8; 2],                                                   /* checks delivered per colour        */
     pub game_phase: u8,                                                         /* SETUP/OPENING/MIDDLEGAME/ENDGAME   */
     pub phase_score: u32,                                                       /* game phase score for transition    */
 
@@ -633,8 +612,6 @@ pub struct State {
 
     pub castling_state: u8,                                                     /* 4 bits for representing KQkq       */
     pub has_castled: [bool; 2],                                                 /* per-color castled-this-game flag   */
-    pub halfmove_clock: u8,                                                     /* plies since pawn move/capture      */
-    pub counting: Option<(u16, u16)>,                                           /* bare-king count + frozen limit     */
     pub en_passant_square: EnPassantSquare,                                     /* active en passant square           */
 
     pub position_hash: u128,                                                    /* incremental Zobrist key            */
@@ -683,10 +660,8 @@ impl Clone for State {
     fn clone(&self) -> Self {
         State {
             statics: Arc::clone(&self.statics),
+            termination: self.termination.clone(),
 
-            game_result: self.game_result,
-            gave_check: self.gave_check,
-            check_count: self.check_count,
             game_phase: self.game_phase,
             phase_score: self.phase_score,
 
@@ -699,8 +674,6 @@ impl Clone for State {
 
             castling_state: self.castling_state,
             has_castled: self.has_castled,
-            halfmove_clock: self.halfmove_clock,
-            counting: self.counting,
             en_passant_square: self.en_passant_square,
 
             position_hash: self.position_hash,
@@ -785,7 +758,6 @@ impl State {
             startpos,
             pieces,
             special_rules,
-            termination: Termination::default(),
 
             initial_setup: vec![board!(files, ranks); piece_count],
 
@@ -935,10 +907,8 @@ impl State {
 
         State {
             statics,
+            termination: Termination::default(),
 
-            game_result: ONGOING,
-            gave_check: false,
-            check_count: [0; 2],
             game_phase: OPENING,
             phase_score: 0,
 
@@ -951,8 +921,6 @@ impl State {
 
             castling_state: 0,
             has_castled: [false; 2],
-            halfmove_clock: 0,
-            counting: None,
             en_passant_square: NO_EN_PASSANT,
 
             position_hash: u128::default(),
@@ -1036,8 +1004,6 @@ impl State {
 
         self.castling_state = 0;
         self.has_castled = [false; 2];
-        self.halfmove_clock = 0;
-        self.counting = None;
         self.en_passant_square = NO_EN_PASSANT;
 
         self.position_hash = u128::default();
@@ -1048,9 +1014,7 @@ impl State {
         self.ply_counter = 0;
 
         self.game_phase = OPENING;
-        self.game_result = ONGOING;
-        self.gave_check = false;
-        self.check_count = [0; 2];
+        self.termination.reset_progress();
 
         self.opening_material = [0; 2];
         self.endgame_material = [0; 2];
@@ -1114,6 +1078,7 @@ impl State {
     /// FEN round-trip.
     pub fn fork(&self) -> State {
         let mut state = State::from_statics(Arc::clone(&self.statics));
+        state.termination = self.termination.clone();
         state.load_fen(&self.statics.startpos, None);
         refresh_eval_state(&mut state);
         state

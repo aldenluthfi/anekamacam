@@ -57,10 +57,10 @@ scope **janggi-only, family-ready**.
 
 The restored engine gives a pass from an existing stand-off priority over the
 ordinary self-check gate, matching FSF's `legal()` ordering. Every non-pass move
-must remain out of check and break the stand-off. An accepted pass yields a
-0-child node and is scored through the existing `adjudicate: janggipts` (points,
-matching FSF base `janggi`) rather than a flat draw; perft is unaffected by the
-score.
+must remain out of check and break the stand-off. An accepted pass records its
+post-move stand-off fact in the snapshot; `position_terminal` then scores it
+through existing `adjudicate: janggipts` (points, matching FSF base `janggi`)
+rather than a flat draw. Perft is unaffected by score.
 
 ## Design — restore the move-gen half of `b286c17` (not the terminal table)
 
@@ -74,8 +74,9 @@ score.
 4. **`move_list.rs make_move!`** — capture `stand_off_before` before applying;
    a pass accepts an existing stand-off before the self-check gate, matching
    FSF; every non-pass move must remain out of check and break any existing
-   stand-off. Set the accepted pass result via `adjudicate_outcome` (fallback
-   draw), eager so the pass is a 0-child leaf.
+   stand-off. Record optional post-move check/stand-off facts in `Snapshot` and
+   let `position_terminal` adjudicate accepted pass (fallback draw), eager so
+   pass is a 0-child leaf.
 5. **`game_io.rs`** — read the `stand-offs` token → `enc_stand_offs!`; assert the
    section; build `pieces_stand_off`; pass to `precompute`.
 6. **Display + docs** — `format_special_rules` shows Stand-offs; fix

@@ -1804,6 +1804,7 @@ pub fn parse_config_file(path: &str) -> State {
                         .unwrap_or(Outcome::Draw);
                     
                     termination.counter = Some(Counter {
+                        clock: 0,
                         limit, reset_pieces, outcome, name,
                     });
                 }
@@ -1854,9 +1855,10 @@ pub fn parse_config_file(path: &str) -> State {
                         table.push((requirements, limit));
                     }
 
-                    termination.counting = Some(
-                        Counting { table, default, outcome, name }
-                    );
+                    termination.counting = Some(Counting {
+                        progress: None,
+                        table, default, outcome, name,
+                    });
                 }
                 "checks" => {
                     let count =
@@ -1867,7 +1869,9 @@ pub fn parse_config_file(path: &str) -> State {
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Win);
 
-                    termination.checks = Some(Checks { count, outcome, name });
+                    termination.checks = Some(Checks {
+                        delivered: [0; 2], count, outcome, name,
+                    });
                 }
                 "extinct" => {
                     let opponent = arguments[0] == "opp";
@@ -1999,7 +2003,7 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
-    result.static_mut().termination = termination;
+    result.termination = termination;
 
     /*-----------------------------------------------------------------------*\
                                POST-PARSING COMPUTE
@@ -2530,9 +2534,12 @@ pub fn parse_fen(
     }
 
     if parts.len() > part_index {
-        state.halfmove_clock = parts[part_index].parse().map_err(|_| {
+        let halfmove_clock = parts[part_index].parse().map_err(|_| {
             format!("Invalid halfmove clock: {}", parts[part_index].trim())
         })?;
+        if let Some(counter) = &mut state.termination.counter {
+            counter.clock = halfmove_clock;
+        }
         part_index += 1;
     }
 
@@ -2781,9 +2788,9 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
         fen.push_str(&format_hand(state, BLACK));
     }
 
-    if state.statics.termination.counter.is_some() {
+    if let Some(counter) = &state.termination.counter {
         fen.push(' ');
-        fen.push_str(&state.halfmove_clock.to_string());
+        fen.push_str(&counter.clock.to_string());
     }
 
     fen.push(' ');

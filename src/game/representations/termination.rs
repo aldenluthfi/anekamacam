@@ -35,8 +35,10 @@ pub enum Outcome {
 /// A progress counter that resolves once it reaches `limit` halfmoves without a
 /// resetting move. `reset_pieces[i]` marks the piece indices whose quiet moves
 /// reset it; captures and drops always reset it. Its running value is
-/// `State::halfmove_clock`.
+/// `Counter::clock`.
+#[derive(Clone)]
 pub struct Counter {
+    pub clock: u8,                                                              /* current reversible halfmove count */
     pub limit: u8,                                                              /* halfmoves before the outcome fires */
     pub reset_pieces: Vec<bool>,                                                /* moving these resets the counter    */
     pub outcome: Outcome,                                                       /* result once the limit is reached   */
@@ -48,12 +50,14 @@ pub struct Counter {
 /// A material-scaled move budget for a bare-king endgame. When exactly one side
 /// is reduced to a lone royal, the side with material must mate within a limit
 /// set by its strongest material or the game resolves to `outcome`. The running
-/// value is a frozen clock in `State::counting`: it starts at the piece count
-/// when the bare king arises and climbs by one per ply, never resetting on a
-/// capture. `table` is an ordered list of `(requirements, limit)` rows, the
-/// first fully-matched winning; a requirement is a piece set and the minimum
-/// number the material side must own. `default` applies when no row matches.
+/// value is a frozen `progress` clock: it starts at the piece count when the
+/// bare king arises and climbs by one per ply, never resetting on a capture.
+/// `table` is an ordered list of `(requirements, limit)` rows, the first
+/// fully-matched winning; a requirement is a piece set and the minimum number
+/// the material side must own. `default` applies when no row matches.
+#[derive(Clone)]
 pub struct Counting {
+    pub progress: Option<(u16, u16)>,                                           /* current count and frozen limit     */
     pub table: Vec<(Vec<(Vec<bool>, u32)>, u16)>,                               /* ordered (requirements, limit) rows */
     pub default: u16,                                                           /* limit when no row matches          */
     pub outcome: Outcome,                                                       /* result once the count hits limit   */
@@ -66,6 +70,7 @@ pub struct Counting {
 /// falls to `threshold` or below, that colour receives `outcome` (or its
 /// opponent, when `opponent` is set). `set[i]` marks the counted piece indices,
 /// matched per colour.
+#[derive(Clone)]
 pub struct Extinct {
     pub set: Vec<bool>,                                                         /* piece indices the rule counts      */
     pub threshold: u8,                                                          /* count at or below which it fires   */
@@ -79,6 +84,7 @@ pub struct Extinct {
 /// A goal-zone rule: when a colour lands one of its `set` pieces on a square of
 /// `zone`, that colour receives `outcome`. The zone is one board shared by both
 /// colours.
+#[derive(Clone)]
 pub struct Goal {
     pub set: Vec<bool>,                                                         /* piece indices that reach the zone  */
     pub zone: Board,                                                            /* target squares                     */
@@ -93,6 +99,7 @@ pub struct Goal {
 /// value; each colour's counted pieces are summed, `handicap[colour]` added,
 /// and the greater sum wins (a tie draws). Weights and handicap come from a
 /// named `= adjudicate <name> =` config section.
+#[derive(Clone)]
 pub struct Adjudicate {
     pub weights: Vec<i32>,                                                      /* per piece index point value        */
     pub handicap: [i32; 2],                                                     /* per colour standing point bonus    */
@@ -108,6 +115,7 @@ pub struct Adjudicate {
 /// under an undefended capture threat on every one of them, with `chasers`
 /// marking the piece indices whose threats count. Check outranks chase; when
 /// both sides offend the repetition result stands.
+#[derive(Clone)]
 pub struct Perpetual {
     pub check: Option<Outcome>,                                                 /* sole perpetual checker's result    */
     pub chase: Option<Outcome>,                                                 /* sole perpetual chaser's result     */
@@ -120,6 +128,7 @@ pub struct Perpetual {
 /// A repeated-position rule: the game resolves to `outcome` once the current
 /// position has occurred `occurrences` times. A `Perpetual` rule may override
 /// the result for a sole aggressor.
+#[derive(Clone)]
 pub struct Repetition {
     pub occurrences: u8,                                                        /* occurrences that trigger the rule  */
     pub outcome: Outcome,                                                       /* result once reached                */
@@ -130,7 +139,9 @@ pub struct Repetition {
 ///
 /// An N-check rule: the side delivering its `count`-th check receives
 /// `outcome`, scored against that side.
+#[derive(Clone)]
 pub struct Checks {
+    pub delivered: [u8; 2],                                                    /* checks delivered per colour        */
     pub count: u8,                                                              /* checks before the outcome fires    */
     pub outcome: Outcome,                                                       /* result for the checking side       */
     pub name: String,                                                           /* reason reported when it fires      */
@@ -142,12 +153,13 @@ pub struct Checks {
 
 /// Termination
 ///
-/// The flat, directly-named terminal-rule table for one variant, shared
-/// immutably through `StaticState`. `checkmate` and `stalemate` name the
-/// outcome of a no-legal-move position (in check / not in check); the
-/// remaining fields are `Option`s that double as present-flags, `Some` only
-/// when the variant's `= termination =` section declared the rule.
+/// The flat, directly-named terminal-rule table and mutable progress for one
+/// position. `checkmate` and `stalemate` name no-legal-move outcomes; remaining
+/// rule fields are `Some` only when declared by the variant. Runtime result and
+/// progress reset between games while configured rules remain intact.
+#[derive(Clone)]
 pub struct Termination {
+    pub game_result: u8,                                                        /* eager position-local result        */
     pub checkmate: Outcome,                                                     /* no moves + in check   (dflt Loss)  */
     pub stalemate: Outcome,                                                     /* no moves, not in check(dflt Draw)  */
 
@@ -170,6 +182,7 @@ impl Default for Termination {
     /// and a draw otherwise (stalemate), with no repetition or counter rule.
     fn default() -> Self {
         Termination {
+            game_result: ONGOING,
             checkmate: Outcome::Loss,
             stalemate: Outcome::Draw,
             repetition: None,
@@ -180,6 +193,26 @@ impl Default for Termination {
             goal: None,
             perpetual: None,
             adjudicate: None,
+        }
+    }
+}
+
+impl Termination {
+    /// Termination::reset_progress
+    ///
+    /// Clears eager result and mutable rule progress while preserving every
+    /// configured rule, threshold, outcome, and reported name.
+    pub fn reset_progress(&mut self) {
+        self.game_result = ONGOING;
+
+        if let Some(counter) = &mut self.counter {
+            counter.clock = 0;
+        }
+        if let Some(counting) = &mut self.counting {
+            counting.progress = None;
+        }
+        if let Some(checks) = &mut self.checks {
+            checks.delivered = [0; 2];
         }
     }
 }
@@ -241,8 +274,8 @@ macro_rules! outcome_score {
 
 /// side_is_bare
 ///
-/// Whether a colour has been reduced to only royal pieces. Scans `piece_count`
-/// for any non-royal of that colour.
+/// Whether a colour has been reduced to only royal pieces. Existing major and
+/// minor counters jointly cover every non-royal piece class.
 ///
 /// Params:
 /// - state: &State -> position to inspect
@@ -251,15 +284,8 @@ macro_rules! outcome_score {
 /// Return:
 /// bool -> true when the colour has no non-royal pieces left
 pub fn side_is_bare(state: &State, side: u8) -> bool {
-    for (index, piece) in state.statics.pieces.iter().enumerate() {
-        if p_color!(piece) == side
-            && !p_is_royal!(piece)
-            && state.piece_count[index] > 0
-        {
-            return false;
-        }
-    }
-    true
+    state.major_pieces[side as usize] == 0
+        && state.minor_pieces[side as usize] == 0
 }
 
 /// counting_limit
@@ -277,7 +303,7 @@ pub fn side_is_bare(state: &State, side: u8) -> bool {
 /// Return:
 /// u16 -> the frozen count limit for this material
 pub fn counting_limit(state: &State, winner: u8) -> u16 {
-    let Some(counting) = state.statics.termination.counting.as_ref() else {
+    let Some(counting) = state.termination.counting.as_ref() else {
         return 0;
     };
 
@@ -315,7 +341,7 @@ pub fn counting_limit(state: &State, winner: u8) -> u16 {
 pub fn extinct_outcome(
     state: &State, move_type: u128,
 ) -> Option<(u8, Outcome, &str)> {
-    if state.statics.termination.extinct.is_empty() {
+    if state.termination.extinct.is_empty() {
         return None;
     }
 
@@ -323,7 +349,7 @@ pub fn extinct_outcome(
         return None;
     }
 
-    for extinct in &state.statics.termination.extinct {
+    for extinct in &state.termination.extinct {
         for color in [WHITE, BLACK] {
             let mut count = 0u32;
             for (index, piece) in state.statics.pieces.iter().enumerate() {
@@ -357,7 +383,7 @@ pub fn extinct_outcome(
 /// Return:
 /// Option<(u8, Outcome, &str)> -> (mover, outcome, name) when a goal is reached
 pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome, &str)> {
-    let goal = state.statics.termination.goal.as_ref()?;
+    let goal = state.termination.goal.as_ref()?;
 
     for (index, piece) in state.statics.pieces.iter().enumerate() {
         if goal.set[index] && p_color!(piece) == mover {
@@ -386,7 +412,7 @@ pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome, &str)> {
 /// Return:
 /// Option<(u8, Outcome, &str)> -> (winner, Win, name) / (mover, Draw, name)
 pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
-    let adjudicate = state.statics.termination.adjudicate.as_ref()?;
+    let adjudicate = state.termination.adjudicate.as_ref()?;
 
     let mut sums = adjudicate.handicap;
     for (index, &count) in state.piece_count.iter().enumerate() {
@@ -408,10 +434,10 @@ pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
 /// position_terminal
 ///
 /// The eager, position-local terminal check for the last move in history: the
-/// first of the N-check, goal, extinction, double-pass, counting, and counter
-/// rules to fire, with the name of the rule and the colour its outcome is
-/// scored against. Repetition and perpetual are not here -- `game_outcome`
-/// computes them on demand. `None` when no move has been made.
+/// first of accepted stand-off, N-check, goal, extinction, double-pass,
+/// counting, and counter rules to fire, with the name and subject colour.
+/// Repetition and perpetual are computed on demand by `game_outcome`. `None`
+/// when no move has been made.
 ///
 /// Params:
 /// - state: &State -> position with the ending move on top of history
@@ -421,51 +447,39 @@ pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
 pub fn position_terminal(state: &State) -> Option<(u8, Outcome, &str)> {
     let last = state.history.last()?;
     let move_type = move_type!(last.move_ply);
+    let accepted_stand_off =
+        pass_snapshot!(last) && last.in_stand_off == Some(true);
     let double_pass = pass_snapshot!(last)
         && state.history.len() >= 2
         && pass_snapshot!(state.history[state.history.len() - 2]);
     let mover = 1 - state.playing;
 
-    if let Some(checks) = &state.statics.termination.checks
-        && state.gave_check
-        && state.check_count[mover as usize] >= checks.count
+    if let Some(checks) = &state.termination.checks
+        && last.in_check == Some(true)
+        && checks.delivered[mover as usize] >= checks.count
     {
-
         Some((mover, checks.outcome, &checks.name))
-
     } else if let Some(hit) = goal_outcome(state, mover) {
-
         Some(hit)
-
     } else if let Some(hit) = extinct_outcome(state, move_type) {
-
         Some(hit)
-
-    } else if double_pass {
-
+    } else if double_pass || accepted_stand_off {
         Some(
             adjudicate_outcome(state).unwrap_or(
                 (state.playing, Outcome::Draw, "")
             ),
         )
-
-    } else if let Some((count, limit)) = state.counting
+    } else if let Some(counting) = &state.termination.counting
+        && let Some((count, limit)) = counting.progress
         && count >= limit
-        && let Some(counting) = &state.statics.termination.counting
     {
-
         Some((state.playing, counting.outcome, &counting.name))
-
-    } else if let Some(counter) = &state.statics.termination.counter
-        && state.halfmove_clock >= counter.limit
+    } else if let Some(counter) = &state.termination.counter
+        && counter.clock >= counter.limit
     {
-
         Some((state.playing, counter.outcome, &counter.name))
-
     } else {
-
         None
-
     }
 }
 
@@ -490,7 +504,7 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 
     let mut chase = board!(state.statics.files, state.statics.ranks);
 
-    let Some(perpetual) = state.statics.termination.perpetual.as_ref()
+    let Some(perpetual) = state.termination.perpetual.as_ref()
         .filter(|perpetual| perpetual.chase.is_some())
     else {
         return (did_check, chase);
@@ -557,7 +571,7 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 /// Option<u8> -> the sole offender's colour, or None when none / both offend
 fn perpetual_offender(state: &mut State) -> Option<u8> {
     let (check_enabled, chase_enabled) = {
-        let perpetual = state.statics.termination.perpetual.as_ref()?;
+        let perpetual = state.termination.perpetual.as_ref()?;
         (perpetual.check.is_some(), perpetual.chase.is_some())
     };
 
@@ -566,7 +580,7 @@ fn perpetual_offender(state: &mut State) -> Option<u8> {
     let start = (0..plies).rev()
         .find(|&index| state.history[index].position_hash == hash)?;
 
-    let saved_result = state.game_result;
+    let saved_result = state.termination.game_result;
 
     let mut check_all = [true; 2];
     let mut cycle_plies = [0u32; 2];
@@ -612,7 +626,7 @@ fn perpetual_offender(state: &mut State) -> Option<u8> {
     for cycle_move in redo.iter().rev() {
         make_move!(state, cycle_move.clone());
     }
-    state.game_result = saved_result;
+    state.termination.game_result = saved_result;
 
     let checker =
         |c: usize| check_enabled && cycle_plies[c] > 0 && check_all[c];
@@ -651,7 +665,7 @@ fn perpetual_offender(state: &mut State) -> Option<u8> {
 pub fn repetition_outcome(
     state: &mut State, min_count: u8,
 ) -> Option<(Outcome, bool)> {
-    let neutral = state.statics.termination.repetition.as_ref()?.outcome;
+    let neutral = state.termination.repetition.as_ref()?.outcome;
 
     let occurrences = state.position_hash_map
         .get(&state.position_hash).copied().unwrap_or(0);
@@ -659,7 +673,7 @@ pub fn repetition_outcome(
         return None;
     }
 
-    if state.statics.termination.perpetual.is_none() {
+    if state.termination.perpetual.is_none() {
         return Some((neutral, false));
     }
 
@@ -701,11 +715,11 @@ pub fn terminal_reason(state: &State) -> Option<String> {
 /// Return:
 /// (u8, Option<String>) -> (result, reason name) with result ONGOING when live
 pub fn game_outcome(state: &mut State) -> (u8, Option<String>) {
-    if state.game_result != ONGOING {
-        return (state.game_result, terminal_reason(state));
+    if state.termination.game_result != ONGOING {
+        return (state.termination.game_result, terminal_reason(state));
     }
 
-    let Some(occurrences) = state.statics.termination.repetition
+    let Some(occurrences) = state.termination.repetition
         .as_ref().map(|repetition| repetition.occurrences)
     else {
         return (ONGOING, None);
@@ -714,9 +728,9 @@ pub fn game_outcome(state: &mut State) -> (u8, Option<String>) {
     match repetition_outcome(state, occurrences) {
         Some((outcome, perpetual)) => {
             let rule = if perpetual {
-                state.statics.termination.perpetual.as_ref().map(|p| &p.name)
+                state.termination.perpetual.as_ref().map(|p| &p.name)
             } else {
-                state.statics.termination.repetition.as_ref().map(|r| &r.name)
+                state.termination.repetition.as_ref().map(|r| &r.name)
             };
             (resolve_outcome!(state.playing, outcome), rule.cloned())
         }

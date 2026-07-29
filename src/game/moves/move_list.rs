@@ -1511,14 +1511,16 @@ macro_rules! make_move {
             $state.ply_counter += 1;
 
             let last_en_passant_square = $state.en_passant_square;
-            let last_halfmove_clock = $state.halfmove_clock;
-            let last_counting = $state.counting;
+            let last_halfmove_clock = $state.termination.counter
+                .as_ref().map_or(0, |counter| counter.clock);
+            let last_counting = $state.termination.counting
+                .as_ref().and_then(|counting| counting.progress);
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_pawn_hash = $state.pawn_hash;
-            let last_game_result = $state.game_result;
-            let last_gave_check = $state.gave_check;
-            let last_check_count = $state.check_count;
+            let last_game_result = $state.termination.game_result;
+            let last_check_count = $state.termination.checks
+                .as_ref().map_or([0; 2], |checks| checks.delivered);
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
 
@@ -1528,8 +1530,13 @@ macro_rules! make_move {
             let enp_square = created_enp!(applied_move) as u32;
             let pass_move = is_pass!(applied_move);
 
-            let stand_off_before =
-                stand_offs!($state) && is_in_stand_off!($state);
+            let stand_off_before = if stand_offs!($state) {
+                $state.history.last()
+                    .and_then(|snapshot| snapshot.in_stand_off)
+                    .unwrap_or_else(|| is_in_stand_off!($state))
+            } else {
+                false
+            };
 
             if move_type == QUIET_MOVE {
                 let start_square = start!(applied_move) as u32;
@@ -2658,27 +2665,34 @@ macro_rules! make_move {
             let resets_halfmove = move_type == SINGLE_CAPTURE_MOVE
                 || move_type == MULTI_CAPTURE_MOVE
                 || move_type == DROP_MOVE
-                || $state.statics.termination.counter.as_ref()
-                    .is_some_and(|counter| counter.reset_pieces[piece_index]);
+                || $state.termination.counter.as_ref().is_some_and(
+                    |counter| counter.reset_pieces[piece_index]
+                );
 
-            $state.halfmove_clock = if resets_halfmove {
-                0
-            } else {
-                last_halfmove_clock.saturating_add(1)
-            };
+            if let Some(counter) = &mut $state.termination.counter {
+                counter.clock = if resets_halfmove {
+                    0
+                } else {
+                    last_halfmove_clock.saturating_add(1)
+                };
+            }
 
-            if $state.statics.termination.counting.is_some() {
+            if $state.termination.counting.is_some() {
                 let white_bare = side_is_bare($state, WHITE);
                 let black_bare = side_is_bare($state, BLACK);
-                $state.counting = if white_bare == black_bare {
+                let progress = if white_bare == black_bare {
                     None                                                        /* neither or both bare: not counting */
-                } else if let Some((count, limit)) = $state.counting {
+                } else if let Some((count, limit)) = last_counting {
                     Some((count.saturating_add(1), limit))                      /* frozen limit, tick the count       */
                 } else {
                     let winner = if white_bare { BLACK } else { WHITE };
                     let pieces = $state.piece_count.iter().sum::<u32>() as u16;
                     Some((pieces + 1, counting_limit($state, winner)))          /* bare-king transition: start count  */
                 };
+
+                if let Some(counting) = &mut $state.termination.counting {
+                    counting.progress = progress;
+                }
             }
 
             $state.game_phase =
@@ -2692,27 +2706,26 @@ macro_rules! make_move {
                     cmp::max(MIDDLEGAME, $state.game_phase)
                 };
 
-            $state.playing = 1 - $state.playing;
+            let this_player = $state.playing;
+            let next_player = 1 - this_player;
 
-            let in_check = is_in_check!(1 - $state.playing, $state);
-            let stand_off_after =
-                stand_offs!($state) && is_in_stand_off!($state);
-            let accepts_stand_off = stand_off_before && pass_move;
-            let legal = accepts_stand_off
-                || !in_check && (!stand_off_after || !stand_off_before);
+            let still_in_check = is_in_check!(this_player, $state);
 
-            let mover = 1 - $state.playing;
+            let in_stand_off = stand_offs!($state)
+                .then(|| is_in_stand_off!($state));
 
-            if $state.statics.termination.checks.is_some() {
-                $state.gave_check = is_in_check!($state.playing, $state);
-                if $state.gave_check {
-                    $state.check_count[mover as usize] =
-                        $state.check_count[mover as usize].saturating_add(1);
-                }
-            } else {
-                $state.gave_check = false;
+            let in_check = $state.termination.checks.as_ref().map(
+                |_| is_in_check!(next_player, $state)
+            );
+
+            if in_check == Some(true)
+            && let Some(checks) = &mut $state.termination.checks
+            {
+                checks.delivered[this_player as usize] =
+                checks.delivered[this_player as usize].saturating_add(1);
             }
 
+            $state.playing = next_player;
             hash_toggle_side!($state);
 
             let repetition_count = $state.position_hash_map
@@ -2722,12 +2735,13 @@ macro_rules! make_move {
 
             let snapshot: Snapshot = Snapshot {
                 move_ply: applied_move,
+                in_check,
+                in_stand_off,
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
                 counting: last_counting,
                 en_passant_square: last_en_passant_square,
                 game_result: last_game_result,
-                gave_check: last_gave_check,
                 check_count: last_check_count,
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
@@ -2736,18 +2750,21 @@ macro_rules! make_move {
             };
 
             $state.history.push(snapshot);
+
+            let legal = stand_off_before && pass_move || (
+                !still_in_check && (
+                    in_stand_off != Some(true) || !stand_off_before
+                )
+            );
+
             if !legal {
                 undo_move!($state);
                 false
             } else {
-                if accepts_stand_off {
-                    let (color, outcome, _) = adjudicate_outcome($state)
-                        .unwrap_or(($state.playing, Outcome::Draw, ""));
-                    $state.game_result = resolve_outcome!(color, outcome);
-                } else if let Some((color, outcome, _)) =
-                    position_terminal($state)
-                {
-                    $state.game_result = resolve_outcome!(color, outcome);
+                if let Some((color, outcome, _)) = position_terminal($state) {
+                    $state.termination.game_result = resolve_outcome!(
+                        color, outcome
+                    );
                 }
 
                 #[cfg(debug_assertions)]
@@ -2806,14 +2823,21 @@ macro_rules! undo_move {
 
         $state.playing = 1 - $state.playing;
         $state.castling_state = snapshot.castling_state;
-        $state.halfmove_clock = snapshot.halfmove_clock;
-        $state.counting = snapshot.counting;
+
+        if let Some(counter) = &mut $state.termination.counter {
+            counter.clock = snapshot.halfmove_clock;
+        }
+        if let Some(counting) = &mut $state.termination.counting {
+            counting.progress = snapshot.counting;
+        }
+        if let Some(checks) = &mut $state.termination.checks {
+            checks.delivered = snapshot.check_count;
+        }
+
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
         $state.pawn_hash = snapshot.pawn_hash;
-        $state.game_result = snapshot.game_result;
-        $state.gave_check = snapshot.gave_check;
-        $state.check_count = snapshot.check_count;
+        $state.termination.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
 
@@ -3550,14 +3574,16 @@ macro_rules! make_null_move {
             $state.ply_counter += 1;
 
             let last_en_passant_square = $state.en_passant_square;
-            let last_halfmove_clock = $state.halfmove_clock;
-            let last_counting = $state.counting;
+            let last_halfmove_clock = $state.termination.counter
+                .as_ref().map_or(0, |counter| counter.clock);
+            let last_counting = $state.termination.counting
+                .as_ref().and_then(|counting| counting.progress);
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_pawn_hash = $state.pawn_hash;
-            let last_game_result = $state.game_result;
-            let last_gave_check = $state.gave_check;
-            let last_check_count = $state.check_count;
+            let last_game_result = $state.termination.game_result;
+            let last_check_count = $state.termination.checks
+                .as_ref().map_or([0; 2], |checks| checks.delivered);
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
 
@@ -3569,18 +3595,24 @@ macro_rules! make_null_move {
             $state.en_passant_square = NO_EN_PASSANT;
 
             $state.playing = 1 - $state.playing;
-            $state.gave_check = false;
 
             hash_toggle_side!($state);
 
             let snapshot: Snapshot = Snapshot {
                 move_ply: null_move(),
+                in_check: None,
+                in_stand_off: if stand_offs!($state) {
+                    Some($state.history.last()
+                        .and_then(|snapshot| snapshot.in_stand_off)
+                        .unwrap_or_else(|| is_in_stand_off!($state)))
+                } else {
+                    None
+                },
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
                 counting: last_counting,
                 en_passant_square: last_en_passant_square,
                 game_result: last_game_result,
-                gave_check: last_gave_check,
                 check_count: last_check_count,
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
@@ -3622,14 +3654,19 @@ macro_rules! undo_null_move {
 
         $state.playing = 1 - $state.playing;
         $state.castling_state = snapshot.castling_state;
-        $state.halfmove_clock = snapshot.halfmove_clock;
-        $state.counting = snapshot.counting;
+        if let Some(counter) = &mut $state.termination.counter {
+            counter.clock = snapshot.halfmove_clock;
+        }
+        if let Some(counting) = &mut $state.termination.counting {
+            counting.progress = snapshot.counting;
+        }
+        if let Some(checks) = &mut $state.termination.checks {
+            checks.delivered = snapshot.check_count;
+        }
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
         $state.pawn_hash = snapshot.pawn_hash;
-        $state.game_result = snapshot.game_result;
-        $state.gave_check = snapshot.gave_check;
-        $state.check_count = snapshot.check_count;
+        $state.termination.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
 

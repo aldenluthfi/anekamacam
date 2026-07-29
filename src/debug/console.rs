@@ -315,13 +315,13 @@ impl OverviewState {
             state.statics.endgame_score.to_string(), 1
         ));
 
-        if let Some(counter) = &state.statics.termination.counter {
+        if let Some(counter) = &state.termination.counter {
             configs.push((
                 "Counter Limit".to_string(),
                 counter.limit.to_string(), 1
             ));
         }
-        if let Some(repetition) = &state.statics.termination.repetition {
+        if let Some(repetition) = &state.termination.repetition {
             configs.push((
                 "Repetition Limit".to_string(),
                 repetition.occurrences.to_string(), 1
@@ -511,7 +511,7 @@ impl BoardState {
 
         details.push(["Game Phase".to_string(), phase]);
         if is_terminal!(state) {
-            let mut result = format_game_result(state.game_result);
+            let mut result = format_game_result(state.termination.game_result);
             if let Some(name) = terminal_reason(state) {
                 result = format!("{} ({})", result, name);
             }
@@ -537,14 +537,14 @@ impl BoardState {
                 fen_parts[2 + castling!(state) as usize].to_string(),
             ]);
         }
-        if let Some(counter) = &state.statics.termination.counter {
+        if let Some(counter) = &state.termination.counter {
             halfmove_clock = format!("{}/{}",
-                state.halfmove_clock,
+                counter.clock,
                 counter.limit
             );
             details.push(["Halfmove Clock".to_string(), halfmove_clock]);
         }
-        if let Some(repetition) = &state.statics.termination.repetition {
+        if let Some(repetition) = &state.termination.repetition {
             let count = state
                 .position_hash_map
                 .get(&state.position_hash)
@@ -2903,7 +2903,7 @@ fn execute_command(
             let mut bufs = SearchBufs::default();
             let time_limit_ns = (time_limit * 1_000_000_000.0) as u128;
 
-            while !game_over!(state) {
+            while game_outcome(state).0 == ONGOING {
 
                 if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
                     break;
@@ -2924,14 +2924,14 @@ fn execute_command(
                 log_table_stats(&ttable, &qtable, &ptable);
 
                 if result.best_score == -INF {
-                    state.game_result =
+                    state.termination.game_result =
                         if state.playing == WHITE { BLACK_WIN } else { WHITE_WIN };
                     log_1!(
                         "Checkmate! {} wins.",
                         if state.playing == WHITE { "Black" } else { "White" }
                     );
                 } else if is_terminal!(state) {
-                    log_1!("{}", match state.game_result {
+                    log_1!("{}", match state.termination.game_result {
                         WHITE_WIN => "White wins!",
                         BLACK_WIN => "Black wins!",
                         _ => "It's a draw!",

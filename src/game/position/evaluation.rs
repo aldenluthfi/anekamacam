@@ -64,12 +64,14 @@ macro_rules! draw_score {
 #[macro_export]
 macro_rules! terminal_score {
     ($state:expr) => {{
-        let stm_wins = ($state.game_result == WHITE_WIN
+        let stm_wins = ($state.termination.game_result == WHITE_WIN
             && $state.playing == WHITE)
-            || ($state.game_result == BLACK_WIN && $state.playing == BLACK);
-        let stm_loses = ($state.game_result == WHITE_WIN
+            || ($state.termination.game_result == BLACK_WIN
+                && $state.playing == BLACK);
+        let stm_loses = ($state.termination.game_result == WHITE_WIN
             && $state.playing == BLACK)
-            || ($state.game_result == BLACK_WIN && $state.playing == WHITE);
+            || ($state.termination.game_result == BLACK_WIN
+                && $state.playing == WHITE);
 
         if stm_wins {
             INF - $state.search_ply as i32

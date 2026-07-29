@@ -734,7 +734,7 @@ fn quiescence_search(
     \*-----------------------------------------------------------------------*/
 
     if in_check && legal_moves == 0 {
-        let outcome = state.statics.termination.checkmate;
+        let outcome = state.termination.checkmate;
         let score = outcome_score!(state, outcome);
 
         return if outcome == Outcome::Loss
@@ -897,7 +897,7 @@ pub fn alpha_beta(
                                   REPETITION SCORING
     \*-----------------------------------------------------------------------*/
 
-    if state.statics.termination.repetition.is_some()
+    if state.termination.repetition.is_some()
     && ply > 0
     && state.position_hash_map
         .get(&state.position_hash)
@@ -1586,9 +1586,9 @@ pub fn alpha_beta(
 
     if legal_moves == 0 {
         let outcome = if in_check {
-            state.statics.termination.checkmate
+            state.termination.checkmate
         } else {
-            state.statics.termination.stalemate
+            state.termination.stalemate
         };
         let score = outcome_score!(state, outcome);
 
