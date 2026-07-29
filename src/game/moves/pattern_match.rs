@@ -75,3 +75,44 @@ macro_rules! match_pattern {
         !invalid
     }};
 }
+
+/// is_in_stand_off!
+///
+/// Tests whether any active stand-off pattern matches in the current position.
+///
+/// The scan visits each piece instance and its precomputed candidate patterns,
+/// stopping as soon as one pattern matches.
+///
+/// Params:
+/// - state: &State -> current position to scan for stand-offs
+///
+/// Return:
+/// bool            -> true if any piece's stand-off pattern currently matches
+#[macro_export]
+macro_rules! is_in_stand_off {
+    ($state:expr) => {{
+        let mut found = false;
+        let board_size = $state.statics.board_size;
+
+        'main: for index in 0..$state.statics.pieces.len() {
+            for &square in piece_squares!($state, index) {
+                for pattern in
+                    &$state.statics.relevant_stand_offs
+                        [index * board_size + square as usize]
+                {
+                    if match_pattern!(
+                        pattern,
+                        square as u32,
+                        p_color!($state.statics.pieces[index]),
+                        &$state
+                    ) {
+                        found = true;
+                        break 'main;
+                    }
+                }
+            }
+        }
+
+        found
+    }};
+}

@@ -54,15 +54,15 @@ pub use crate::game::moves::move_list::{
     generate_relevant_moves,
 };
 pub use crate::game::representations::termination::{
-    counting_limit, game_outcome, position_terminal, side_is_bare,
-    terminal_reason,
+    adjudicate_outcome, counting_limit, game_outcome, position_terminal,
+    side_is_bare, terminal_reason,
 };
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
 };
 
 pub use crate::game::moves::pattern_parse::{
-    parse_pattern,
+    generate_relevant_stand_offs, generate_stand_off_patterns, parse_pattern,
 };
 pub use crate::game::position::{
     hash::{hash_pawns, hash_position, PositionHash},

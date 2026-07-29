@@ -430,27 +430,42 @@ pub fn position_terminal(state: &State) -> Option<(u8, Outcome, &str)> {
         && state.gave_check
         && state.check_count[mover as usize] >= checks.count
     {
+
         Some((mover, checks.outcome, &checks.name))
+
     } else if let Some(hit) = goal_outcome(state, mover) {
+
         Some(hit)
+
     } else if let Some(hit) = extinct_outcome(state, move_type) {
+
         Some(hit)
+
     } else if double_pass {
+
         Some(
-            adjudicate_outcome(state)
-                .unwrap_or((state.playing, Outcome::Draw, "")),
+            adjudicate_outcome(state).unwrap_or(
+                (state.playing, Outcome::Draw, "")
+            ),
         )
+
     } else if let Some((count, limit)) = state.counting
         && count >= limit
         && let Some(counting) = &state.statics.termination.counting
     {
+
         Some((state.playing, counting.outcome, &counting.name))
+
     } else if let Some(counter) = &state.statics.termination.counter
         && state.halfmove_clock >= counter.limit
     {
+
         Some((state.playing, counter.outcome, &counter.name))
+
     } else {
+
         None
+
     }
 }
 

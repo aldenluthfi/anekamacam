@@ -1526,6 +1526,10 @@ macro_rules! make_move {
             let piece_index = piece!(applied_move) as usize;
             let creates_enp = creates_enp!(applied_move);
             let enp_square = created_enp!(applied_move) as u32;
+            let pass_move = is_pass!(applied_move);
+
+            let stand_off_before =
+                stand_offs!($state) && is_in_stand_off!($state);
 
             if move_type == QUIET_MOVE {
                 let start_square = start!(applied_move) as u32;
@@ -2691,7 +2695,12 @@ macro_rules! make_move {
             $state.playing = 1 - $state.playing;
 
             let in_check = is_in_check!(1 - $state.playing, $state);
-            let legal = !in_check;
+            let stand_off_after =
+                stand_offs!($state) && is_in_stand_off!($state);
+            let accepts_stand_off = stand_off_before && pass_move;
+            let legal = accepts_stand_off
+                || !in_check && (!stand_off_after || !stand_off_before);
+
             let mover = 1 - $state.playing;
 
             if $state.statics.termination.checks.is_some() {
@@ -2731,9 +2740,13 @@ macro_rules! make_move {
                 undo_move!($state);
                 false
             } else {
-                let terminal = position_terminal($state)
-                    .map(|(color, outcome, _)| (color, outcome));
-                if let Some((color, outcome)) = terminal {
+                if accepts_stand_off {
+                    let (color, outcome, _) = adjudicate_outcome($state)
+                        .unwrap_or(($state.playing, Outcome::Draw, ""));
+                    $state.game_result = resolve_outcome!(color, outcome);
+                } else if let Some((color, outcome, _)) =
+                    position_terminal($state)
+                {
                     $state.game_result = resolve_outcome!(color, outcome);
                 }
 

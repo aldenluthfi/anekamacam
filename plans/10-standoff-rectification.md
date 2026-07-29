@@ -55,13 +55,12 @@ scope **janggi-only, family-ready**.
 - `is_immediate_game_end()`: bikjang standing **two consecutive plies**
   (reachable only via a facing-preserving pass) → empty legal list (terminal).
 
-The old engine reproduced this: legality `!in_check && (!after || !before ||
-(after && before && pass))`, and `passing_in_stand_off → draw`. Passing while
-facing yields a 0-child node in both engines, so perft is identical. Re-adding
-the old logic (adapted to the new code) is the proven path to the FSF match. The
-accepted bikjang is scored through the existing `adjudicate: janggipts` (points,
-matching FSF base `janggi`) rather than a flat draw; perft is unaffected either
-way.
+The restored engine gives a pass from an existing stand-off priority over the
+ordinary self-check gate, matching FSF's `legal()` ordering. Every non-pass move
+must remain out of check and break the stand-off. An accepted pass yields a
+0-child node and is scored through the existing `adjudicate: janggipts` (points,
+matching FSF base `janggi`) rather than a flat draw; perft is unaffected by the
+score.
 
 ## Design — restore the move-gen half of `b286c17` (not the terminal table)
 
@@ -73,9 +72,10 @@ way.
 3. **`pattern_match.rs`** — `is_in_stand_off!`. **`pattern_parse.rs`** —
    `generate_stand_off_patterns`, `generate_relevant_stand_offs`.
 4. **`move_list.rs make_move!`** — capture `stand_off_before` before applying;
-   `let legal = !in_check && (!after || !before || (after && before && pass))`;
-   on `pass_move && stand_off_before`, set the accept result via
-   `adjudicate_outcome` (fallback draw), eager so the pass is a 0-child leaf.
+   a pass accepts an existing stand-off before the self-check gate, matching
+   FSF; every non-pass move must remain out of check and break any existing
+   stand-off. Set the accepted pass result via `adjudicate_outcome` (fallback
+   draw), eager so the pass is a 0-child leaf.
 5. **`game_io.rs`** — read the `stand-offs` token → `enc_stand_offs!`; assert the
    section; build `pieces_stand_off`; pass to `precompute`.
 6. **Display + docs** — `format_special_rules` shows Stand-offs; fix
@@ -94,4 +94,3 @@ way.
 ## Out of scope (named for the record)
 
 - Migrating xiangqi/minixiangqi flying-general onto a shared facing mechanism.
-- FSF's out-of-check pass legality beyond the proven `!in_check` gate.

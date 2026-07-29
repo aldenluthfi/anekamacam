@@ -662,7 +662,7 @@ fn embedded_config(path: &str) -> Option<&'static str> {
 ///
 /// After the pieces, the section-by-section walk fills in board zones
 /// (forbidden, promotion), castling layouts, special rules, termination,
-/// and the move / drop / setup expression sets, then runs `precompute`
+/// and move / drop / setup / stand-off expressions, then runs `precompute`
 /// and loads parameters — the embedded `latest.param` first so binaries
 /// are self-contained, a `res/param` file on disk next, and full
 /// derivation (plus export) when neither exists — returning a fully
@@ -752,6 +752,7 @@ pub fn parse_config_file(path: &str) -> State {
     let demote_upon_capture =
         sections["rules"].contains(&"demote upon capture".to_string());
     let setup_phase = sections["rules"].contains(&"setup phase".to_string());
+    let stand_offs = sections["rules"].contains(&"stand-offs".to_string());
 
     let (fen_castling, fen_en_passant, fen_in_hand) =
         extract_fen_components(initial_position);
@@ -809,6 +810,13 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
+    if stand_offs {
+        assert!(
+            sections.contains_key("stand-off patterns"),
+            "= stand-off patterns = section is missing"
+        );
+    }
+
     let mut special_rules = 0u32;
 
     if castling {
@@ -839,6 +847,10 @@ pub fn parse_config_file(path: &str) -> State {
         enc_setup_phase!(special_rules);
     }
 
+    if stand_offs {
+        enc_stand_offs!(special_rules);
+    }
+
     /*-----------------------------------------------------------------------*\
                                   PARSE PIECES
     \*-----------------------------------------------------------------------*/
@@ -848,6 +860,7 @@ pub fn parse_config_file(path: &str) -> State {
     let mut pieces_moves;
     let mut pieces_drops;
     let mut pieces_setup;
+    let mut pieces_stand_off;
 
     let mut char_to_unordered_index: HashMap<char, usize> = HashMap::new();
     let mut char_to_type_index: HashMap<char, usize> = HashMap::new();
@@ -1647,6 +1660,56 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
+                                PARSE STAND-OFFS
+    \*-----------------------------------------------------------------------*/
+
+    pieces_stand_off = vec![String::new(); result.statics.pieces.len()];
+    if stand_offs {
+        for pattern in &sections["stand-off patterns"] {
+            let parts: Vec<&str> =
+                pattern.split(':').map(str::trim).collect();
+
+            assert!(
+                parts.len() == 2,
+                "Invalid stand-off pattern definition: {}",
+                pattern
+            );
+
+            let piece_chars = parts[0];
+            let stand_off_patterns = parts[1].to_string();
+
+            if piece_chars.len() == 2 {
+                let white_char = piece_chars.chars().next().unwrap();
+                let black_char = piece_chars.chars().nth(1).unwrap();
+
+                if let Some(&white_index) = char_to_index.get(&white_char) {
+                    pieces_stand_off[white_index] =
+                        stand_off_patterns.clone();
+                } else {
+                    panic!("Unknown piece character: {}", white_char);
+                }
+
+                if let Some(&black_index) = char_to_index.get(&black_char) {
+                    pieces_stand_off[black_index] =
+                        stand_off_patterns.clone();
+                } else {
+                    panic!("Unknown piece character: {}", black_char);
+                }
+            } else if piece_chars.len() == 1 {
+                let piece_char = piece_chars.chars().next().unwrap();
+
+                if let Some(&index) = char_to_index.get(&piece_char) {
+                    pieces_stand_off[index] = stand_off_patterns.clone();
+                } else {
+                    panic!("Unknown piece character: {}", piece_char);
+                }
+            } else {
+                panic!("Invalid piece character(s): {}", piece_chars);
+            }
+        }
+    }
+
+    /*-----------------------------------------------------------------------*\
                                 PARSE END CONDITIONS
     \*-----------------------------------------------------------------------*/
 
@@ -1709,6 +1772,7 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = arguments.get(1)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Draw);
+                    
                     termination.repetition = Some(Repetition {
                         occurrences, outcome, name,
                     });
@@ -1719,6 +1783,7 @@ pub fn parse_config_file(path: &str) -> State {
                             panic!("Invalid counter limit: {}", arguments[0])
                         });
                     let mut reset_pieces = vec![false; set_piece_count];
+                    
                     if arguments[1] != "-" {
                         for piece_char in arguments[1].chars() {
                             let piece_index = char_to_index
@@ -1733,9 +1798,11 @@ pub fn parse_config_file(path: &str) -> State {
                             reset_pieces[piece_index] = true;
                         }
                     }
+                    
                     let outcome = arguments.get(2)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Draw);
+                    
                     termination.counter = Some(Counter {
                         limit, reset_pieces, outcome, name,
                     });
@@ -1750,6 +1817,7 @@ pub fn parse_config_file(path: &str) -> State {
                         .unwrap_or(Outcome::Draw);
                     let mut table = Vec::new();
                     let mut default = 64u16;
+
                     for line in lines {
                         let parts: Vec<&str> =
                             line.splitn(2, ':').map(str::trim).collect();
@@ -1785,8 +1853,10 @@ pub fn parse_config_file(path: &str) -> State {
                             .collect();
                         table.push((requirements, limit));
                     }
-                    termination.counting =
-                        Some(Counting { table, default, outcome, name });
+
+                    termination.counting = Some(
+                        Counting { table, default, outcome, name }
+                    );
                 }
                 "checks" => {
                     let count =
@@ -1796,6 +1866,7 @@ pub fn parse_config_file(path: &str) -> State {
                     let outcome = arguments.get(1)
                         .map(|&token| parse_outcome(token))
                         .unwrap_or(Outcome::Win);
+
                     termination.checks = Some(Checks { count, outcome, name });
                 }
                 "extinct" => {
@@ -1812,6 +1883,7 @@ pub fn parse_config_file(path: &str) -> State {
                     } else {
                         (0, parse_outcome(arguments[2]))
                     };
+
                     termination.extinct.push(Extinct {
                         set, threshold, outcome, opponent, name,
                     });
@@ -1826,6 +1898,7 @@ pub fn parse_config_file(path: &str) -> State {
                         ));
                     let zone = parse_bit_fen(Some(zone_fen.as_str()), &result);
                     let outcome = parse_outcome(arguments[2]);
+
                     termination.goal = Some(Goal { set, zone, outcome, name });
                 }
                 "perpetual" => {
@@ -1836,20 +1909,21 @@ pub fn parse_config_file(path: &str) -> State {
                     while index < arguments.len() {
                         match arguments[index] {
                             "check" => {
-                                check =
-                                    Some(parse_outcome(arguments[index + 1]));
+                                check = Some(
+                                    parse_outcome(arguments[index + 1])
+                                );
                                 index += 2;
                             }
                             "chase" => {
-                                chase =
-                                    Some(parse_outcome(arguments[index + 1]));
+                                chase = Some(
+                                    parse_outcome(arguments[index + 1])
+                                );
                                 index += 2;
                             }
                             "exempt" => {
-                                for (piece, exempt) in
-                                    parse_set(arguments[index + 1])
-                                        .iter().enumerate()
-                                {
+                                for (piece, exempt) in parse_set(
+                                    arguments[index + 1]
+                                ).iter().enumerate() {
                                     if *exempt {
                                         chasers[piece] = false;
                                     }
@@ -1876,14 +1950,16 @@ pub fn parse_config_file(path: &str) -> State {
                     for line in lines {
                         let parts: Vec<&str> =
                             line.splitn(2, ':').map(str::trim).collect();
+
                         if parts[0] == "handicap" {
-                            let toks: Vec<&str> =
+                            let tokens: Vec<&str> =
                                 parts[1].split_whitespace().collect();
                             let color =
-                                if toks[0] == "w" { WHITE } else { BLACK };
+                                if tokens[0] == "w" { WHITE } else { BLACK };
+
                             handicap[color as usize] =
-                                toks[1].parse::<i32>().unwrap_or_else(|_| {
-                                    panic!("Invalid handicap: {}", toks[1])
+                                tokens[1].parse::<i32>().unwrap_or_else(|_| {
+                                    panic!("Invalid handicap: {}", tokens[1])
                                 });
                         } else {
                             let weight =
@@ -1893,6 +1969,7 @@ pub fn parse_config_file(path: &str) -> State {
                                         parts[1]
                                     )
                                 });
+
                             for piece_char in parts[0].chars() {
                                 for cased in [
                                     piece_char.to_ascii_uppercase(),
@@ -1907,21 +1984,18 @@ pub fn parse_config_file(path: &str) -> State {
                             }
                         }
                     }
-                    termination.adjudicate =
-                        Some(Adjudicate { weights, handicap, name });
+                    termination.adjudicate = Some(
+                        Adjudicate { weights, handicap, name }
+                    );
                 }
                 other => panic!("Unknown end condition: {}", other),
             }
         }
     }
 
-    if termination.perpetual.is_some()
-    && termination.repetition.is_none()
-    {
+    if termination.perpetual.is_some() && termination.repetition.is_none() {
         panic!(
-            "end condition `perpetual` requires `repetition`: the perpetual \
-             verdict is only reached when a repetition closes, so a perpetual \
-             rule without one never fires"
+            "end condition `perpetual` requires `repetition`"
         );
     }
 
@@ -1935,6 +2009,7 @@ pub fn parse_config_file(path: &str) -> State {
         pieces_moves,
         pieces_drops,
         pieces_setup,
+        pieces_stand_off,
     );
     result.load_fen(initial_position, None);
 
@@ -1951,8 +2026,7 @@ pub fn parse_config_file(path: &str) -> State {
         log_3!("Loading embedded default parameters");
         parse_tuned_parameters(&mut result, content);
         derive_search_parameters(&mut result);
-    } else if Path::new(&param_path).exists()
-    && let Ok(content) = fs::read_to_string(&param_path) {
+    } else if let Ok(content) = fs::read_to_string(&param_path) {
         log_3!("Loading parameters from disk");
         parse_tuned_parameters(&mut result, &content);
         derive_search_parameters(&mut result);
@@ -2877,6 +2951,9 @@ pub fn format_special_rules(state: &State) -> String {
     }
     if setup_phase!(state) {
         rules.push("Setup Phase");
+    }
+    if stand_offs!(state) {
+        rules.push("Stand-Offs");
     }
 
     rules.join(", ")
