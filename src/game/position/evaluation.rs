@@ -567,21 +567,23 @@ macro_rules! pawn_structure {
 /// Evaluates the current position from the side-to-move perspective.
 ///
 /// Evaluation model:
+///
 /// - `OPENING` | `SETUP`: opening material delta + opening PST delta.
 /// - `ENDGAME`: endgame material delta + endgame PST delta.
 /// - `MIDDLEGAME`: linear interpolation between opening and endgame.
 ///
 /// Hot-path notes:
+///
 /// - Uses cached per-side material/PST totals from `State`.
 /// - Uses a branch-light side-to-move sign (`WHITE => +1`, `BLACK => -1`).
 /// - Handles `opening_score == 0` safely during interpolation.
 ///
 /// Params:
 ///
-/// - state: &State
+/// - state : &State
 ///   position to evaluate
 ///
-/// - bufs: &mut SearchBufs
+/// - bufs  : &mut SearchBufs
 ///   search scratch buffers (reused pawn entry lists)
 ///
 /// - ptable: &PTable

@@ -27,8 +27,8 @@ Evaluation             --> piece-square tables and parameters derived
                            game phase).
 Protocol translation   --> dictionaries convert CFEN to/from target
                            protocol FENs (UCI, USI-style, etc.).
-TUI & tooling          --> a ratatui/crossterm interface, a debug
-                           console, logging, and perft test suites.
+Debug tooling          --> graphical ratatui frontend, nested headless
+                           commands, logging, and perft test suites.
 
 [ NOTATIONS ]
 
@@ -122,17 +122,40 @@ Build with Cargo (release is strongly recommended — the dev profile is much sl
 
     cargo build --release
 
-The workspace produces a binary named anekamacam. It takes a subcommand:
+The workspace produces a binary named anekamacam. It takes a frontend command:
 
-    anekamacam uci      # UCI protocol mode (this is also the default)
-    anekamacam debug    # interactive debug console
+    anekamacam uci                       # protocol mode (also the default)
+    anekamacam debug-graphics            # graphical debug frontend
+    anekamacam debug-headless help       # non-graphical debug/tool commands
 
-With no subcommand it starts in UCI mode. Default variant configs and parameters are embedded in the binary, so it runs standalone.
+`debug-headless` uses nested one-shot commands. Position commands accept `--protocol`, a quoted `--fen`, and `--moves`:
+
+    anekamacam debug-headless state standard
+    anekamacam debug-headless movegen xiangqi --protocol ucci
+    anekamacam debug-headless evaluate makruk
+    anekamacam debug-headless search standard 8 1
+    anekamacam debug-headless play minishogi 4 0.1 1 256
+    anekamacam debug-headless see standard e4d5 --protocol uci \
+        --fen "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1"
+
+Direct perft runs one position and prints a root divide by default. Add `--suite` to run the embedded reference suite and `--limit` to cap positions:
+
+    anekamacam debug-headless perft standard 5
+    anekamacam debug-headless perft standard 3 --suite --limit 100
+
+Long-running tools use the same umbrella:
+
+    anekamacam debug-headless derive
+    anekamacam debug-headless datagen standard 100 50 1
+    anekamacam debug-headless tune standard 100 1.0
+    anekamacam debug-headless sprt standard old-bin new-bin 100
+
+With no frontend command the engine starts in protocol mode. Default configs, dictionaries, perft suites, and parameters are embedded in the binary, so it runs standalone.
 
 [ PROJECT LAYOUT ]
 
     src/
-    ├── main.rs                  # Entry point + subcommand dispatch
+    ├── main.rs                  # Entry point + frontend dispatch
     ├── prelude.rs               # Project-wide re-exports
     ├── game/
     │   ├── representations/     # board, piece, move, drop, pattern, vector, state
@@ -144,7 +167,12 @@ With no subcommand it starts in UCI mode. Default variant configs and parameters
     │   ├── board_io / piece_io / game_io / move_io
     │   ├── logger.rs
     │   └── protocols/           # uci, translation
-    └── debug/console.rs         # debug console
+    └── debug/
+        ├── graphics.rs          # graphical debug frontend
+        ├── headless.rs          # nested headless command dispatcher
+        ├── datagen.rs           # self-play dataset generation
+        ├── tuning.rs            # Texel parameter tuning
+        └── sprt.rs              # engine match runner
     configs/                     # per-variant .conf files
     res/
     ├── dicts/                   # protocol translation dictionaries

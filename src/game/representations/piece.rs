@@ -269,13 +269,12 @@ macro_rules! p_evalue {
 ///
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
 ///
-///   0 1 2                           16                          30  31
 /// ```text
+///   0 1 2                           16                          30  31
 ///   ┌─┬─┬───────────────────────────┬───────────────────────────┬────┐
 ///   │b│m│          opening          │          endgame          │ -- │
 ///   └─┴─┴───────────────────────────┴───────────────────────────┴────┘
 /// ```
-///
 ///
 /// - Bit 0         : big-piece role
 /// - Bit 1         : major-piece role; clear means minor when non-royal
@@ -283,8 +282,8 @@ macro_rules! p_evalue {
 /// - Bits 16..29   : 14-bit endgame material value
 /// - Bits 30..31   : unused
 ///
-/// The `promotions` field is a `Vec<u8>` that encodes the pieces this piece can
-/// promote to.
+/// The `promotions` field is a `Vec<PieceIndex>` listing the piece types this
+/// piece can promote to.
 #[derive(Clone)]
 pub struct Piece {
     pub name: String,                                                           /* display name of the piece          */

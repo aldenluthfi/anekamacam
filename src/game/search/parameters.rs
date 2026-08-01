@@ -877,7 +877,7 @@ fn derive_pawn_like(state: &mut State) {
 /// Closure of quiet-move landing squares reachable from `square`, i.e. the set
 /// of squares the pawn can traverse toward its promotion zone. A friendly pawn
 /// standing on any of these squares is doubled, since it blocks this pawn's
-/// advance, this is the `doubled` term's mask.
+/// advance; this is the `doubled` term's mask.
 ///
 /// A straight mover (FIDE) traces its own file ahead; a diagonal mover
 /// (Berolina) fans out across files, so `##` follows the move geometry rather
@@ -948,7 +948,7 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
 ///
 /// Enemy source squares from which a pawn-like piece could stop this pawn: any
 /// square on its path (a blocker) plus any square whose capture reaches the
-/// path or the pawn itself. A pawn is passed when none of these are occupied,
+/// path or the pawn itself. A pawn is passed when none of these are occupied;
 /// this is the `passed` term's mask.
 ///
 /// For a FIDE white pawn: `##` are the path blockers on its own file, and `xx`
@@ -1247,7 +1247,7 @@ fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
 /// `oo`. This drives the `isolated` term: a pawn with no friendly pawn on any
 /// of these files (at any rank) is isolated.
 ///
-/// - FIDE      : {-1,+1},
+/// - FIDE      : {-1,+1}
 /// - Berolina  : {-1,0,+1}
 /// - Shogi     : {0}
 ///
@@ -1467,12 +1467,11 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
 /// derive_search_parameters
 ///
-/// Scales every search margin to the variant's material: futility,
-/// reverse-futility, razoring, SEE-pruning, and delta margins, the null-
-/// move zugzwang guard, tempo bonus, imbalance weights, king-safety
-/// bonuses, and pair bonuses are all expressed as fractions of the average
-/// derived piece value, so pruning aggressiveness stays comparable across
-/// variants whose value scales differ wildly.
+/// Scales search margins to the variant's material: futility, reverse
+/// futility, razoring, SEE, delta, ProbCut, and aspiration values. It also
+/// derives null-move, capture-history, singular-search, draw-bias, and pair
+/// parameters, then builds the pawn and royal-safety lookup tables. This keeps
+/// pruning aggressiveness comparable across variants with different scales.
 ///
 /// Params:
 /// - state: &mut State -> variant whose search margins are filled

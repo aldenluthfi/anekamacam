@@ -77,7 +77,7 @@ macro_rules! is_square_attacked {
 /// - state: &State -> current position providing royal list and attack tables
 ///
 /// Return:
-/// bool -> true if the side is in check
+/// bool            -> true if the side is in check
 #[macro_export]
 macro_rules! is_in_check {
     ($side:expr, $state:expr) => {
@@ -416,11 +416,12 @@ pub fn generate_relevant_moves(
 /// This mirrors `generate_relevant_moves` in structure (same bounds and
 /// forbidden-zone checks), but keeps only multi-leg vectors containing a leg
 /// with effective capture semantics:
+///
 /// - explicit capture (`c`)
 /// - destroy (`d`)
 /// - implicit last-leg capture
 ///
-/// Result: capture-only generation can reuse the full normal move-construction
+/// Capture-only generation can therefore reuse the full move-construction
 /// pipeline while starting from a narrower prefiltered vector set.
 ///
 /// Params:
@@ -506,7 +507,7 @@ pub fn generate_relevant_captures(
 ///
 /// Params:
 /// - square_index: u16        -> origin square of the outgoing attacks
-/// - state       : &mut State -> engine state receiving the rev attack table
+/// - state       : &mut State -> engine state receiving reverse attack table
 pub fn generate_attack_masks(square_index: u16, state: &mut State) {
     let board_size = state.statics.board_size;
     let files = state.statics.files;
@@ -586,7 +587,7 @@ pub fn generate_attack_masks(square_index: u16, state: &mut State) {
 /// - state           : &State      -> current position for occupancy checks
 ///
 /// Return:
-/// bool -> true if the vector currently realizes the attack
+/// bool                            -> true when the vector realizes the attack
 ///
 /// Notes:
 /// Direction offsets scale by the attacking piece's color, reversing both
@@ -1157,9 +1158,11 @@ macro_rules! process_multi_leg_vector {
             enc_created_enp!(
                 encoded_move,
                 p as u128
-                    * ((start_square as u128 & 0xFFF)
-                        | (accumulated_index as u128) << 12
-                        | (piece_index as u128) << 24)
+                    * (
+                        (start_square as u128 & 0xFFF) |
+                        (accumulated_index as u128) << 12 |
+                        (piece_index as u128) << 24
+                    )
             );
         }
 
@@ -1218,6 +1221,7 @@ macro_rules! process_multi_leg_vector {
 /// side conditions, and promotion branching for all vectors in `$vector_set`.
 /// Shared move constructor used by `generate_move_list!` and
 /// `generate_capture_list!`, which select the appropriate precomputed source:
+///
 /// - `relevant_moves`    -> full pseudo-legal move list
 /// - `relevant_captures` -> capture-focused pseudo-legal list
 ///
@@ -1475,6 +1479,7 @@ macro_rules! generate_castling_list {
 ///
 /// Applies a move to the game state with full incremental bookkeeping.
 /// This macro performs a complete state transition:
+///
 /// - advances ply counters
 /// - updates board occupancy, piece lists, virgin flags, castling/en-passant
 /// - handles quiet, capture, multi-capture, unload, promotion, and drop flows
@@ -1484,8 +1489,8 @@ macro_rules! generate_castling_list {
 ///
 /// ```text
 /// save before-state -> apply -> push Snapshot -> legal?
-///                                        | yes: committed
-///                                        \ no: undo_move! -> restored
+///                                                | yes: pass
+///                                                | no : undo move
 /// ```
 ///
 /// Params:
@@ -1493,7 +1498,7 @@ macro_rules! generate_castling_list {
 /// - mv   : Move       -> encoded move to play
 ///
 /// Return:
-/// bool -> true when legal; false when self-check caused automatic rollback
+/// bool                -> true if legal; false after self-check rollback
 ///
 /// Notes:
 /// Call `undo_move!` only after a true return. A false return has already
@@ -3551,6 +3556,7 @@ macro_rules! undo_move {
 ///
 /// Applies a null move for the side to move.
 /// A null move:
+///
 /// - Advances `search_ply` and `ply_counter`.
 /// - Clears en-passant state and updates hash before the side toggle.
 /// - Flips `playing` and updates side-to-move hash.
@@ -3634,11 +3640,11 @@ macro_rules! make_null_move {
 /// This restores the `Snapshot` saved by `make_null_move!`, including turn,
 /// clocks, castling/en-passant data, phase flags, and position hash.
 ///
-/// Notes:
-/// Panics if no history snapshot exists to undo.
-///
 /// Params:
 /// - state: &mut State -> position whose most recent null move is reverted
+///
+/// Notes:
+/// Panics if no history snapshot exists to undo.
 #[macro_export]
 macro_rules! undo_null_move {
     ($state:expr) => {{

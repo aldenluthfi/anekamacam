@@ -15,7 +15,8 @@ use crate::*;
 
 /// GeneratedGame
 ///
-/// One completed self-play result and every quiet position collected from it.
+/// One completed self-play result and every quiet position collected during
+/// its search.
 struct GeneratedGame {
     positions: Vec<String>,
     result: f64,
@@ -68,13 +69,10 @@ fn play_one_game(
 
         let terminal = game_outcome(state).0;
         if terminal != ONGOING {
-            let result = match terminal {
-                WHITE_WIN => 1.0,
-                BLACK_WIN => 0.0,
-                _ => 0.5,
-            };
-
-            return Some(GeneratedGame { positions: fens, result });
+            return Some(GeneratedGame {
+                positions: fens,
+                result: game_result_score(terminal),
+            });
         }
 
         let now = ENGINE_START.elapsed().as_nanos();
@@ -90,10 +88,14 @@ fn play_one_game(
             return None;
         }
 
+        if outcome.best_move == null_move() && info.interrupt {
+            return None;
+        }
         if outcome.best_move == null_move() || outcome.best_score == -INF {
+            let result = adjudicate_no_move(state);
             return Some(GeneratedGame {
                 positions: fens,
-                result: state.playing as f64,
+                result: game_result_score(result),
             });
         }
 
@@ -116,7 +118,7 @@ fn play_one_game(
 
 /// run_datagen
 ///
-/// Console entry point for the `datagen` command. Plays `games`
+/// Debug-tool entry point for `datagen`. Plays `games`
 /// self-play games on the loaded variant and writes each game's quiet
 /// positions, labelled with its White-view result, to a fresh
 /// `res/data/{variant}/latest.data` — any dataset from a previous run is

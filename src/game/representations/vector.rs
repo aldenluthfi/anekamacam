@@ -31,7 +31,6 @@ use crate::*;
 ///   └───────────────┴───────────────┴────────────────────────────────┘
 /// ```
 ///
-///
 /// - Bits 0..7     : signed file displacement
 /// - Bits 8..15    : signed rank displacement
 /// - Bits 16..31   : movement and capture modifiers
@@ -47,8 +46,8 @@ use crate::*;
 ///   Return:
 ///   Leg                      -> packed `u32` leg word
 ///
-
 /// Reader params (every reader):
+///
 /// - leg_word: Leg -> packed leg word read
 ///
 /// x!
@@ -296,6 +295,7 @@ pub type MoveSet = Vec<MoveVector>;
 /// Whole-vector predicates over a `MoveVector`, reading its ordered `Leg`s
 /// through the leg accessors above. Every member takes the same single
 /// parameter:
+///
 /// - vector: &MoveVector -> ordered legs of one movement option
 ///
 /// vector_offset!
@@ -392,6 +392,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///   │                          AtomicVector                          │
 ///   └────────────────────────────────────────────────────────────────┘
 /// ```
+///
 /// Bits 32..63:
 ///
 /// ```text
@@ -422,6 +423,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - Bits 48..63: unused
 ///
 /// The 16 active modifier bits are grouped as follows:
+///
 /// - main                      : m, c, d, u
 /// - capture/destroy modifiers : k, v, g, t
 /// - miscellaneous modifiers   : i, p, r
@@ -429,6 +431,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - negated misc modifiers    : !i, !r
 ///
 /// Main modifiers:
+///
 /// - (m)ove:
 ///   can move with this leg.
 /// - (c)apture:
@@ -440,6 +443,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///   back on the board to the start square of this leg.
 ///
 /// Capture/destroy modifiers:
+///
 /// - (k) royal target:
 ///     - k:
 ///       requires the captured piece to be royal.
@@ -447,6 +451,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       requires the captured piece to be non-royal.
 ///
 /// Usage of (k, !k):
+///
 /// - (false, false) : this capture can be royal or not royal, regular capture.
 /// - (false, true)  : this capture must not be royal.
 /// - (true, false)  : this capture must be royal.
@@ -459,6 +464,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       indicates the capture must not be virgin (has moved).
 ///
 /// Usage of (v, !v):
+///
 /// - (false, false) : this capture can be virgin or not (regular capture).
 /// - (false, true)  : this capture must not be virgin.
 /// - (true, false)  : this capture must be virgin.
@@ -481,6 +487,7 @@ pub type MultiLegVector = Vec<LegVector>;
 /// has rank 0.
 ///
 /// Usage of (g, !g):
+///
 /// - (false, false) : this capture can be of any rank (regular capture).
 /// - (false, true)  : this capture must not be of greater rank.
 /// - (true, false)  : this capture must be of greater rank.
@@ -490,6 +497,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///    - t : means this leg can capture en passant.
 ///
 /// Usage of (t):
+///
 /// - (true)  : this leg can capture en passant.
 /// - (false) : this leg cannot capture en passant.
 ///
@@ -502,6 +510,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       indicates this leg must not be used as an initial move of the piece.
 ///
 /// Usage of (i, !i):
+///
 /// - (false, false) : this leg can be used as initial or not (regular leg).
 /// - (false, true)  : this leg must not be used as initial.
 /// - (true, false)  : this leg must be used as initial.
@@ -512,6 +521,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       indicates this leg's start square creates an en passant square.
 ///
 /// Usage of (p):
+///
 /// - (true)  : this leg's start square creates an en passant square.
 /// - (false) : this leg's start square does not create an en passant square.
 ///
@@ -525,6 +535,7 @@ pub type MultiLegVector = Vec<LegVector>;
 ///       when its own end square lies in a mandatory promotion zone.
 ///
 /// Usage of (r, !r):
+///
 /// - (false, false) : promotion follows the piece's zones (regular leg).
 /// - (false, true)  : this leg must not be used to promote.
 /// - (true, false)  : this leg must be used to promote.
@@ -820,7 +831,8 @@ impl Debug for Token {
 
 /// AtomicVector
 ///
-/// A 32 bit vector representation for atomic move vectors.
+/// A 32-bit vector representation for atomic move vectors.
+///
 /// - each vector is represented as [(x1, y1), (x2, y2)]
 /// - (x1, y1) is the whole vector
 /// - (x2, y2) is the last vector applied

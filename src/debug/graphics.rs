@@ -1,6 +1,6 @@
-//! console.rs
+//! graphics.rs
 //!
-//! Ratatui-based interactive debug interface for the engine.
+//! Ratatui-based graphical debug interface for the engine.
 //!
 //! Debugging a variant engine means watching several things at once -- the
 //! board, the move history, and the derived per-piece data that a variant's
@@ -72,7 +72,7 @@ fn peel_help(mut tab: usize) -> (usize, usize) {
 
 /// Tui
 ///
-/// The full interface state of the debug console.
+/// The full interface state of the graphical debug frontend.
 /// Tracks which tab and pane have focus (with per-pane scroll offsets in
 /// `scroll_map`), the command input line and its mode, help/lock flags,
 /// the loaded variant with its translator, the shared game and
@@ -113,7 +113,9 @@ impl Tui {
     ///   - receiver: Receiver<EngineEvent> -> engine-to-TUI event channel
     ///
     ///   Return:
-    ///   Self                              -> the interface on the game-selection screen
+    ///
+    ///   Self
+    ///   interface on the game-selection screen
     ///
     /// reset
     ///   returns to the selection screen, dropping loaded states and
@@ -710,10 +712,16 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
 ///
 /// Every member takes the same parameters (except `render`, which takes
 /// only `frame` and `app` and computes its own areas):
-/// - frame: &mut Frame<'_> -> ratatui frame drawn into
-/// - area : Rect           -> region of the frame allotted
-/// - app  : &Tui / &mut Tui -> interface state read (mutable only where
-///                             scroll offsets or picks are updated)
+///
+/// - frame: &mut Frame<'_>
+///   ratatui frame drawn into
+///
+/// - area : Rect
+///   region of the frame allotted
+///
+/// - app  : &Tui / &mut Tui
+///   interface state read; mutable only where scroll offsets or picks
+///   are updated
 ///
 /// draw_game_selection
 ///
@@ -2890,59 +2898,46 @@ fn execute_command(
                 log_2!("Invalid depth: {}", parts[1]);
                 return;
             };
+            if depth == 0 {
+                log_2!("Depth must be positive");
+                return;
+            }
 
             let Ok(time_limit) = parts[2].parse::<f64>() else {
                 log_2!("Invalid time limit: {}", parts[2]);
                 return;
             };
+            if time_limit < 0.0 {
+                log_2!("Time limit cannot be negative");
+                return;
+            }
 
-            let mut info = SearchInfo {
-                set_depth: depth,
-                ..Default::default()
-            };
-            let mut bufs = SearchBufs::default();
-            let time_limit_ns = (time_limit * 1_000_000_000.0) as u128;
+            let time_limit_ns =
+                (time_limit * 1_000_000_000.0) as u128;
+            let result = play_search_game(
+                state,
+                Arc::clone(&ttable),
+                Arc::clone(&qtable),
+                Arc::clone(&ptable),
+                depth,
+                time_limit_ns,
+                threads,
+                usize::MAX,
+                dict,
+                |position, _| {
+                    emit(EngineEvent::Board(
+                        BoardState::from_state(position, dict)
+                    ));
+                },
+            );
 
-            while game_outcome(state).0 == ONGOING {
-
-                if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                if time_limit_ns > 0 {
-                    let now = ENGINE_START.elapsed().as_nanos();
-                    info.soft_deadline = now + time_limit_ns;
-                    info.hard_deadline = now + time_limit_ns;
-                }
-
-                let result = search_position(
-                    state,
-                    Arc::clone(&ttable), Arc::clone(&qtable),
-                    Arc::clone(&ptable),
-                    &mut info, &mut bufs, threads, dict
-                );
-                log_table_stats(&ttable, &qtable, &ptable);
-
-                if result.best_score == -INF {
-                    state.termination.game_result =
-                        if state.playing == WHITE { BLACK_WIN } else { WHITE_WIN };
-                    log_1!(
-                        "Checkmate! {} wins.",
-                        if state.playing == WHITE { "Black" } else { "White" }
-                    );
-                } else if is_terminal!(state) {
-                    log_1!("{}", match state.termination.game_result {
-                        WHITE_WIN => "White wins!",
-                        BLACK_WIN => "Black wins!",
-                        _ => "It's a draw!",
-                    });
-                } else {
-                    make_move!(state, result.best_move);
-                }
-
-                let board_state = BoardState::from_state(state, dict);
-
-                emit(EngineEvent::Board(board_state));
+            emit(EngineEvent::Board(BoardState::from_state(state, dict)));
+            match result {
+                Ok((WHITE_WIN, _)) => log_1!("White wins!"),
+                Ok((BLACK_WIN, _)) => log_1!("Black wins!"),
+                Ok((DRAW, _)) => log_1!("It's a draw!"),
+                Ok(_) => log_2!("Play interrupted"),
+                Err(error) => log_2!("{}", error),
             }
         }
         _ if trimmed.starts_with("datagen") => {
@@ -3009,21 +3004,9 @@ fn execute_command(
                 return;
             }
 
-            let time_control = if let Some((base, inc)) =
-                parts[3].split_once('+')
-            {
-                match (base.parse::<u128>(), inc.parse::<u128>()) {
-                    (Ok(base_ms), Ok(inc_ms)) => {
-                        SPRTTimeControl::Clock { base_ms, inc_ms }
-                    }
-                    _ => {
-                        log_2!("Invalid time control: {}", parts[3]);
-                        return;
-                    }
-                }
-            } else if let Ok(movetime) = parts[3].parse::<u128>() {
-                SPRTTimeControl::MoveTime(movetime)
-            } else {
+            let Ok(time_control) =
+                parse_sprt_time_control(parts[3])
+            else {
                 log_2!("Invalid time control: {}", parts[3]);
                 return;
             };
@@ -3489,15 +3472,15 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
     }
 }
 
-/// debug_console
+/// run_debug_graphics
 ///
-/// Entry point for the debug interface: initializes the ratatui
+/// Entry point for the graphical debug interface: initializes the ratatui
 /// terminal with mouse capture, runs the `Tui` loop, and restores the
 /// terminal even when the loop errors.
 ///
 /// Return:
 /// IoResult<()> -> Ok on clean exit, Err on terminal I/O failure
-pub fn debug_console() -> IoResult<()> {
+pub fn run_debug_graphics() -> IoResult<()> {
     log_3!("Starting TUI...");
     let mut terminal = ratatui::init();
     execute!(terminal.backend_mut(), EnableMouseCapture)?;

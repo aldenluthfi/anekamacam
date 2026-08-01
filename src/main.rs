@@ -1,9 +1,9 @@
 //! main.rs
 //!
 //! Entry point for the anekamacam engine and the root of its module tree.
-//! Reads the first CLI argument to pick a run mode -- the UCI protocol loop
-//! (also the default), the interactive debug console, or the derive / bench /
-//! perft utilities -- initializing logging before handing off to that mode.
+//! Reads the first CLI argument to pick protocol, graphical debug, or nested
+//! headless debug tooling. Initializes logging before handing control to the
+//! selected frontend while protocol mode remains the default.
 //!
 //! Created: 01/02/2026
 //! Author : Alden Luthfi
@@ -71,7 +71,8 @@ pub mod io {
 }
 
 pub mod debug {
-    pub mod console;
+    pub mod graphics;
+    pub mod headless;
 
     pub mod datagen;
     pub mod sprt;
@@ -83,26 +84,25 @@ pub mod prelude;
 /// main
 ///
 /// Dispatches on the first CLI argument to one of the engine's modes:
-/// - (default) : the text-protocol loop; the dialect (uci / usi / ucci) is
-///               chosen at runtime by the handshake word or the `Protocol`
-///               option, not by a launch flag
-/// - `debug`   : the interactive ratatui debug console
-/// - `derive`  : headless parameter derivation for every embedded config
-/// - `datagen` : headless self-play dataset generation for one variant
-/// - `tune`    : headless Texel tuning of one variant from its dataset
+///
+/// - (default)        : text-protocol loop
+/// - `debug-graphics` : interactive ratatui debug frontend
+/// - `debug-headless` : nested non-graphical debug and tooling commands
 #[hotpath::main]
 fn main() {
     init_logging();
 
-    let args: Vec<String> = env::args().collect();
-    match args.get(1).map(|s| s.as_str()) {
-        Some("debug") => {
+    let arguments: Vec<String> = env::args().collect();
+    match arguments.get(1).map(|value| value.as_str()) {
+        Some("debug-graphics") => {
             DEBUG_FLAG.store(true, Ordering::Relaxed);
-            let _ = debug_console();
+            let _ = run_debug_graphics();
         }
-        Some("derive") => with_stdout_sink(run_derive_headless),
-        Some("datagen") => run_datagen_headless(&args),
-        Some("tune") => run_tune_headless(&args),
-        _ => { let _ = run(); }
+        Some("debug-headless") => {
+            with_stdout_sink(|| run_debug_headless(&arguments[2..]));
+        }
+        _ => {
+            let _ = run();
+        }
     }
 }

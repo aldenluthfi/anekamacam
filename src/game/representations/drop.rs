@@ -27,8 +27,8 @@ use crate::*;
 /// enc_can_checkmate!
 ///
 ///   Params:
-///   - move_word : &mut Move -> drop-format move whose word is written
-///   - flag_value: u128      -> may-checkmate flag, masked into bit 23
+///   - mv : &mut Move -> drop-format move whose word is written
+///   - val: u128      -> may-checkmate flag, masked into bit 23
 #[macro_export]
 macro_rules! enc_can_checkmate {
     ($mv:expr, $val:expr) => {
@@ -48,10 +48,10 @@ macro_rules! enc_can_checkmate {
 /// drop_can_checkmate!
 ///
 ///   Params:
-///   - mv: &Move -> drop-format move whose word is read
+///   - drop: &Move -> drop-format move whose word is read
 ///
 ///   Return:
-///   bool        -> may-checkmate flag (bit 23)
+///   bool          -> may-checkmate flag (bit 23)
 #[macro_export]
 macro_rules! drop_can_checkmate {
     ($drop:expr) => {
@@ -69,7 +69,6 @@ macro_rules! drop_can_checkmate {
 ///   │     piece     │        square         │       modifiers        │
 ///   └───────────────┴───────────────────────┴────────────────────────┘
 /// ```
-///
 ///
 /// - Bits 0..7   : dropped piece index
 /// - Bits 8..19  : target square index

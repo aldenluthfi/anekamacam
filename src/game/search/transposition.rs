@@ -365,9 +365,28 @@ macro_rules! tt_eval {
 ///
 /// Return:
 ///
-/// (bool, i32, PseudoMove, i32, i32, usize, u8, i32)
-/// (cutoff valid, score, stored best move, stored static eval, bound-refined pruning eval, stored
-/// depth, stored bound flags, ply-adjusted stored score)
+/// (
+///     bool,
+///     i32,
+///     PseudoMove,
+///     i32,
+///     i32,
+///     usize,
+///     u8,
+///     i32
+/// )
+///
+/// (
+///     cutoff valid,
+///     score,
+///     stored best move,
+///     stored static eval,
+///     bound-refined pruning eval,
+///     stored
+///     depth,
+///     stored bound flags,
+///     ply-adjusted stored score
+/// )
 #[macro_export]
 macro_rules! probe_tt_entry {
     ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {

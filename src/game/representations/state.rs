@@ -32,6 +32,7 @@ pub type Square = u16;
 /// `enc_rule_name!(rules)`, for the same bit.
 ///
 /// Reader params (every reader):
+///
 /// - state: &State -> position whose rule flags are read
 ///
 /// castling!
@@ -80,9 +81,6 @@ pub type Square = u16;
 ///
 ///   - rules: &mut u32
 ///     rules word being built; each writer sets the bit its reader tests
-///
-///   Return:
-///   () -> mutates the supplied rules word in place
 #[macro_export]
 macro_rules! castling {
     ($state:expr) => {
@@ -212,7 +210,6 @@ macro_rules! enc_stand_offs {
 ///   └───────────────────────┴───────────────────────┴────────────────┘
 /// ```
 ///
-///
 /// - Bits 0..11  : capture target square
 /// - Bits 12..23 : square of the capturable piece
 /// - Bits 24..31 : captured piece index
@@ -221,6 +218,7 @@ pub type EnPassantSquare = u32;
 /// En passant packed-field accessor macros.
 ///
 /// Every accessor takes the same single parameter:
+///
 /// - en_passant: EnPassantSquare -> packed descriptor read
 ///
 /// enp_square!
@@ -335,7 +333,6 @@ impl Default for Snapshot {
 /// piece_list_remove!
 ///
 ///   Params:
-///
 ///   - state      : &mut State -> position whose piece list shrinks
 ///   - piece_index: usize      -> piece whose row loses the square
 ///   - square     : Square     -> square swap-removed
@@ -573,17 +570,17 @@ pub struct StaticState {
 ///   └─┴─┴─┴─┴─┴─┴─┴─┴────────────────────────────────────────────────┘
 /// ```
 ///
-///
 /// The bits are defined as follows:
-/// - bit 0     : castling allowed
-/// - bit 1     : en passant allowed
-/// - bit 2     : Promotions allowed
-/// - bit 3     : Drops allowed
-/// - bit 4     : Some pieces have forbidden zones
-/// - bit 5     : Can only promote to captured friendly pieces by the enemy
-/// - bit 6     : Game begins with a setup phase
-/// - bit 7     : A player can make a move that creates a stand-off
-/// - bit 8-31  : reserved for future use
+///
+/// - bit 0      : castling allowed
+/// - bit 1      : en passant allowed
+/// - bit 2      : promotions allowed
+/// - bit 3      : drops allowed
+/// - bit 4      : some pieces have forbidden zones
+/// - bit 5      : promotes only to friendly pieces captured by the enemy
+/// - bit 6      : game begins with a setup phase
+/// - bit 7      : a move may create a stand-off
+/// - bits 8..31 : reserved for future use
 ///
 /// Terminal rules (stalemate/checkmate outcome, repetition, counter, ...)
 /// are not bits here; each position owns them in `State::termination`.
@@ -1127,7 +1124,7 @@ impl State {
     ///   - expr_set: &Vec<String> -> one move expression per piece
     ///
     ///   Return:
-    ///   Vec<MoveSet>             -> packed `Leg` lists, via `generate_move_vectors`
+    ///   Vec<MoveSet>             -> move sets from `generate_move_vectors`
     ///
     /// generate_piece_drops
     ///

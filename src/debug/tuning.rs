@@ -46,6 +46,7 @@ struct Sample {
 /// TuneDataset
 ///
 /// Game-disjoint training and validation samples loaded from one dataset.
+/// Keeps both partitions separate throughout scaling and optimization.
 struct TuneDataset {
     training: Vec<Sample>,
     validation: Vec<Sample>,
@@ -692,7 +693,7 @@ fn export_theta(
 
 /// run_tuning
 ///
-/// Console entry point for the `tune` command. Loads the loaded
+/// Debug-tool entry point for `tune`. Loads the selected
 /// variant's game-disjoint dataset, fits scaling on training samples, then
 /// runs Adam while tracking validation error. Training stops after sustained
 /// validation stagnation, and the best validation epoch is exported through

@@ -141,7 +141,7 @@ pub struct Repetition {
 /// `outcome`, scored against that side.
 #[derive(Clone)]
 pub struct Checks {
-    pub delivered: [u8; 2],                                                    /* checks delivered per colour        */
+    pub delivered: [u8; 2],                                                     /* checks delivered per colour        */
     pub count: u8,                                                              /* checks before the outcome fires    */
     pub outcome: Outcome,                                                       /* result for the checking side       */
     pub name: String,                                                           /* reason reported when it fires      */
@@ -208,9 +208,11 @@ impl Termination {
         if let Some(counter) = &mut self.counter {
             counter.clock = 0;
         }
+
         if let Some(counting) = &mut self.counting {
             counting.progress = None;
         }
+
         if let Some(checks) = &mut self.checks {
             checks.delivered = [0; 2];
         }
@@ -262,7 +264,7 @@ macro_rules! outcome_score {
     ($state:expr, $outcome:expr) => {
         match $outcome {
             Outcome::Draw => draw_score!($state),
-            Outcome::Win => INF - $state.search_ply as i32,
+            Outcome::Win  =>  INF - $state.search_ply as i32,
             Outcome::Loss => -INF + $state.search_ply as i32,
         }
     };
@@ -282,10 +284,11 @@ macro_rules! outcome_score {
 /// - side : u8     -> the colour tested
 ///
 /// Return:
-/// bool -> true when the colour has no non-royal pieces left
+/// bool            -> true when the colour has no non-royal pieces left
 pub fn side_is_bare(state: &State, side: u8) -> bool {
-    state.major_pieces[side as usize] == 0
-        && state.minor_pieces[side as usize] == 0
+    state.major_pieces[side as usize] == 0 &&
+    state.minor_pieces[side as usize] == 0 &&
+    state.royal_pieces[side as usize] == 1
 }
 
 /// counting_limit
@@ -301,7 +304,7 @@ pub fn side_is_bare(state: &State, side: u8) -> bool {
 /// - winner: u8     -> the colour holding material (opponent of the bare king)
 ///
 /// Return:
-/// u16 -> the frozen count limit for this material
+/// u16              -> the frozen count limit for this material
 pub fn counting_limit(state: &State, winner: u8) -> u16 {
     let Some(counting) = state.termination.counting.as_ref() else {
         return 0;
@@ -333,8 +336,8 @@ pub fn counting_limit(state: &State, winner: u8) -> u16 {
 /// its opponent, when the rule is opponent-facing).
 ///
 /// Params:
-/// - state    : &State -> position after the move
-/// - move_type: u128   -> the applied move's type tag
+/// - state    : &State         -> position after the move
+/// - move_type: u128           -> the applied move's type tag
 ///
 /// Return:
 /// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) when it fires
@@ -352,6 +355,7 @@ pub fn extinct_outcome(
     for extinct in &state.termination.extinct {
         for color in [WHITE, BLACK] {
             let mut count = 0u32;
+
             for (index, piece) in state.statics.pieces.iter().enumerate() {
                 if extinct.set[index] && p_color!(piece) == color {
                     count += state.piece_count[index];
@@ -377,8 +381,8 @@ pub fn extinct_outcome(
 /// be found on the zone the move that placed it there.
 ///
 /// Params:
-/// - state: &State -> position after the move
-/// - mover: u8     -> the colour that just moved
+/// - state: &State             -> position after the move
+/// - mover: u8                 -> the colour that just moved
 ///
 /// Return:
 /// Option<(u8, Outcome, &str)> -> (mover, outcome, name) when a goal is reached
@@ -407,7 +411,7 @@ pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome, &str)> {
 /// keeps the neutral double-pass draw.
 ///
 /// Params:
-/// - state: &State -> position at the second successive pass
+/// - state: &State             -> position at the second successive pass
 ///
 /// Return:
 /// Option<(u8, Outcome, &str)> -> (winner, Win, name) / (mover, Draw, name)
@@ -440,7 +444,7 @@ pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
 /// when no move has been made.
 ///
 /// Params:
-/// - state: &State -> position with the ending move on top of history
+/// - state: &State             -> position after the ending move
 ///
 /// Return:
 /// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) when firing
@@ -497,7 +501,7 @@ pub fn position_terminal(state: &State) -> Option<(u8, Outcome, &str)> {
 /// - mover: u8     -> the colour that just moved (the potential offender)
 ///
 /// Return:
-/// (bool, Board) -> (mover gave check, enemy squares under an undefended chase)
+/// (bool, Board)   -> (mover gave check, undefended enemy chase squares)
 pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
     let quarry = 1 - mover;                                                     /* side to move after the mover's ply */
     let did_check = is_in_check!(quarry, state);
@@ -559,8 +563,8 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 /// move: a colour is a perpetual checker if it checked on all of its cycle
 /// moves, and a perpetual chaser if it kept the same enemy piece under an
 /// undefended chase on all of them. The chased piece is tracked by identity
-/// -- its square remapped through each undone quiet move -- since a cycle move
-/// is capture- and drop-free. Check outranks chase; when both colours share
+/// (its square remapped through each undone quiet move) since a cycle move is
+/// capture-free and drop-free. Check outranks chase; when both colours share
 /// an offence none is sole. The walk uses undo/redo and restores the position
 /// exactly, including `game_result`.
 ///
@@ -568,7 +572,7 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 /// - state: &mut State -> position after the cycle-closing move (restored)
 ///
 /// Return:
-/// Option<u8> -> the sole offender's colour, or None when none / both offend
+/// Option<u8>          -> sole offender, or None when neither or both offend
 fn perpetual_offender(state: &mut State) -> Option<u8> {
     let (check_enabled, chase_enabled) = {
         let perpetual = state.termination.perpetual.as_ref()?;
@@ -597,6 +601,7 @@ fn perpetual_offender(state: &mut State) -> Option<u8> {
         let (did_check, threats) = offence_set(state, mover as u8);
         cycle_plies[mover] += 1;
         check_all[mover] &= did_check;
+
         if chase_seen[mover] {
             and!(chase[mover], &threats);
         } else {
@@ -694,7 +699,7 @@ pub fn repetition_outcome(
 /// - state: &State -> position after the ending move
 ///
 /// Return:
-/// Option<String> -> the fired rule's name, if any
+/// Option<String>  -> the fired rule's name, if any
 pub fn terminal_reason(state: &State) -> Option<String> {
     position_terminal(state)
         .map(|(_, _, name)| name)
@@ -710,7 +715,7 @@ pub fn terminal_reason(state: &State) -> Option<String> {
 /// it. Search does not use this; it keeps the cheap `is_terminal!` read.
 ///
 /// Params:
-/// - state: &mut State -> current position (restored if a walk runs)
+/// - state: &mut State  -> current position (restored if a walk runs)
 ///
 /// Return:
 /// (u8, Option<String>) -> (result, reason name) with result ONGOING when live

@@ -145,9 +145,6 @@ pub type Board = (u8, u8, U4096);
 ///
 ///   Params:
 ///   - board : &mut Board -> board whose every bit is inverted
-///
-///   Return:
-///   ()                   -> mutates the supplied board in place
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {

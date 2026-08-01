@@ -2808,7 +2808,7 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
 /// State field formatters
 ///
 /// Small display helpers, each rendering one field of the state as a string
-/// for FEN output and the debug console. Every member takes the same first
+/// for FEN output and debug graphics. Every member takes the same first
 /// parameter and returns the rendered field as a `String`:
 /// - state: &State -> position whose field is rendered
 ///

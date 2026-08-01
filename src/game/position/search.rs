@@ -174,8 +174,8 @@ pub fn clear_search(
 /// search_position
 ///
 /// Runs a full search from the root position.
-/// Resets TT/QT stats, then dispatches to a single iterative_deepening call
-/// when thread_count ≤ 1, or a ThreadPool when thread_count > 1. Callers
+/// Resets TT/QT stats, then dispatches to one `iterative_deepening` call
+/// when `thread_num` ≤ 1, or a `ThreadPool` when `thread_num` > 1. Callers
 /// report table stats afterwards via `log_table_stats`.
 ///
 /// Params:
@@ -1691,19 +1691,19 @@ macro_rules! corr_hist_index {
 ///
 /// Params:
 ///
-/// - state: &mut State
+/// - state  : &mut State
 ///   position providing the correction table and its index
 ///
-/// - eval: i32
+/// - eval   : i32
 ///   raw static evaluation recorded at the node
 ///
-/// - score: i32
+/// - score  : i32
 ///   score the node's search returned
 ///
-/// - depth: usize
+/// - depth  : usize
 ///   remaining depth, weights the blend
 ///
-/// - flag: u8
+/// - flag   : u8
 ///   TT bound flag (FEXACT/FBETA/FALPHA)
 ///
 /// - capture: bool
@@ -1750,28 +1750,28 @@ macro_rules! update_corr_hist {
 ///
 /// Params:
 ///
-/// - state: &State
+/// - state            : &State
 ///   supplies the precomputed LMR tables
 ///
-/// - depth: usize
+/// - depth            : usize
 ///   remaining depth, one table index
 ///
-/// - moves: usize
+/// - moves            : usize
 ///   legal moves tried so far, the other table index
 ///
-/// - in_check: bool
+/// - in_check         : bool
 ///   whether the side to move is in check
 ///
 /// - opponent_in_check: bool
 ///   whether the move gives check
 ///
-/// - is_capture: bool
+/// - is_capture       : bool
 ///   whether the move captures
 ///
-/// - is_promotion: bool
+/// - is_promotion     : bool
 ///   whether the move promotes
 ///
-/// - is_drop: bool
+/// - is_drop          : bool
 ///   whether the move is a drop
 ///
 /// Return:

@@ -828,7 +828,11 @@ fn stop_search(session: &mut Session) {
     if let Some((result, was_ponder)) = abort_search(session)
         && was_ponder
     {
-        print_bestmove(&result, &mut session.state, session.translator.as_ref());
+        print_bestmove(
+            &result,
+            &mut session.state,
+            session.translator.as_ref(),
+        );
     }
 }
 
@@ -993,10 +997,10 @@ pub fn new_game(session: &mut Session) {
 ///
 /// Serves the commands that behave identically in every protocol, with no
 /// dialect token anywhere: readiness, position setup (the FEN keyword is
-/// skipped whatever it is), `go perft`, stop, ponderhit, option changes, the
-/// debug `d` command, and quit. It runs before the protocol's own `execute`,
-/// so a line it does not recognize returns `None` and falls through to the
-/// dialect handler (handshake, new-game, search `go`).
+/// skipped whatever it is), stop, ponderhit, option changes, the debug `d`
+/// command, and quit. It runs before the protocol's own `execute`, so a line
+/// it does not recognize returns `None` and falls through to the dialect
+/// handler (handshake, new-game, search `go`).
 ///
 /// Params:
 /// - session: &mut Session -> the session being driven
@@ -1011,34 +1015,6 @@ pub fn execute_common(
     match tokens.first().copied().unwrap_or("") {
         "isready" => {
             emit(EngineEvent::Print("readyok\n".to_string()));
-            Some(false)
-        }
-        "go" if tokens.get(1) == Some(&"perft") => {
-            abort_search(session);
-
-            if !session.position_valid {
-                log_2!("go: position invalid, refusing perft");
-                emit(EngineEvent::Print(
-                    "\nNodes searched: 0\n\n".to_string()
-                ));
-                return Some(false);
-            }
-
-            let depth = tokens
-                .get(2)
-                .and_then(|value| value.parse::<u8>().ok())
-                .unwrap_or(0);
-            let translator = session.translator.clone();
-            let nodes = perft(
-                &mut session.state,
-                depth,
-                1,
-                "",
-                translator.as_ref(),
-            );
-            emit(EngineEvent::Print(format!(
-                "\nNodes searched: {}\n\n", nodes
-            )));
             Some(false)
         }
         "position" => {

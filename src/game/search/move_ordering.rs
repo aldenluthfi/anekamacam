@@ -43,16 +43,16 @@
 ///
 ///   Params:
 ///
-///   - state: &State
+///   - state  : &State
 ///     position providing attacks and board
 ///
-///   - target: Square
+///   - target : Square
 ///     square the exchange happens on
 ///
-///   - color: u8
+///   - color  : u8
 ///     side owning the target piece
 ///
-///   - out: &mut Vec<Move>
+///   - out    : &mut Vec<Move>
 ///     cleared, then filled with capture moves onto the target, sorted
 ///     cheapest-attacker-last for `pop`
 ///
@@ -152,13 +152,13 @@ macro_rules! lva {
 ///
 /// Params:
 ///
-/// - state: &mut State
+/// - state      : &mut State
 ///   position simulated on (restored before returning)
 ///
-/// - mv: &Move
+/// - mv         : &Move
 ///   the capture move to evaluate
 ///
-/// - see_moves: &mut Vec<Move>
+/// - see_moves  : &mut Vec<Move>
 ///   reusable buffer for attacker candidate moves
 ///
 /// - see_scratch: &mut Vec<u64>
@@ -261,22 +261,22 @@ macro_rules! see {
 ///
 /// Params:
 ///
-/// - state: &mut State
+/// - state      : &mut State
 ///   position providing killers, history, and piece values
 ///
-/// - mv: &Move
+/// - mv         : &Move
 ///   the move to score
 ///
-/// - pv_move: &Option<PseudoMove>
+/// - pv_move    : &Option<PseudoMove>
 ///   TT best move for this node
 ///
-/// - see_moves: &mut Vec<Move>
+/// - see_moves  : &mut Vec<Move>
 ///   reusable buffer for attacker candidate moves
 ///
 /// - see_scratch: &mut Vec<u64>
 ///   reusable buffer for capture payloads
 ///
-/// - cont_bases: &[usize; 2]
+/// - cont_bases : &[usize; 2]
 ///   1-ply and 2-ply continuation base offsets, usize::MAX none
 ///
 /// Return:
@@ -357,7 +357,7 @@ macro_rules! score_move {
 ///
 /// Params:
 ///
-/// - mv: &Move
+/// - mv   : &Move
 ///   the capture move to index
 ///
 /// - state: &State
@@ -388,28 +388,28 @@ macro_rules! capt_hist_index {
 ///
 /// Params:
 ///
-/// - state: &mut State
+/// - state      : &mut State
 ///   position used for lazy scoring
 ///
-/// - moves: &mut Vec<Move>
+/// - moves      : &mut Vec<Move>
 ///   move list, reordered in place
 ///
-/// - scores: &mut Vec<usize>
+/// - scores     : &mut Vec<usize>
 ///   parallel score cache, filled lazily
 ///
-/// - index: usize
+/// - index      : usize
 ///   slot to fill with the best remaining move
 ///
-/// - pv_move: &Option<PseudoMove>
+/// - pv_move    : &Option<PseudoMove>
 ///   TT best move for this node
 ///
-/// - see_moves: &mut Vec<Move>
+/// - see_moves  : &mut Vec<Move>
 ///   reusable buffer for attacker candidate moves
 ///
 /// - see_scratch: &mut Vec<u64>
 ///   reusable buffer for capture payloads
 ///
-/// - cont_bases: &[usize; 2]
+/// - cont_bases : &[usize; 2]
 ///   1-ply and 2-ply continuation base offsets, usize::MAX none
 ///
 /// Notes:

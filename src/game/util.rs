@@ -2,11 +2,8 @@
 //!
 //! Cross-cutting engine utilities that belong to no single subsystem.
 //!
-//! The file groups four concerns: randomness for Zobrist seeding, state
-//! integrity helpers (recomputing cached evaluation terms and asserting
-//! that incrementally maintained caches still match a from-scratch
-//! recount), the perft/benchmark harness used to validate move generation
-//! against known node counts and to profile search speed, and rolling a
+//! The file groups randomness for Zobrist seeding, state integrity helpers,
+//! shared game-driving rules, perft/search benchmarks, and rolling a
 //! `latest.*` output file to a timestamped backup.
 //!
 //! Created: 25/01/2025
@@ -227,6 +224,142 @@ pub fn refresh_eval_state(state: &mut State) {
     } else {
         MIDDLEGAME
     };
+}
+
+/// adjudicate_no_move
+///
+/// Resolves a position with no legal moves through the variant's configured
+/// checkmate or stalemate outcome. Stores and returns the absolute result.
+///
+/// Params:
+/// - state: &mut State -> position whose side to move has no legal move
+///
+/// Return:
+/// u8                -> absolute game result
+pub fn adjudicate_no_move(state: &mut State) -> u8 {
+    let outcome = if is_in_check!(state.playing, state) {
+        state.termination.checkmate
+    } else {
+        state.termination.stalemate
+    };
+    let result = resolve_outcome!(state.playing, outcome);
+    state.termination.game_result = result;
+    result
+}
+
+/// game_result_score
+///
+/// Maps an absolute game result to White's score for generated games and
+/// engine matches.
+///
+/// Params:
+/// - result: u8 -> absolute game result
+///
+/// Return:
+/// f64          -> 1.0 White win, 0.0 Black win, otherwise 0.5
+pub fn game_result_score(result: u8) -> f64 {
+    match result {
+        WHITE_WIN => 1.0,
+        BLACK_WIN => 0.0,
+        _ => 0.5,
+    }
+}
+
+/// play_search_game
+///
+/// Plays both sides with fixed depth and per-move wall-clock budget until a
+/// configured terminal result, no legal move, interrupt, or ply cap. Search
+/// tables and buffers are reused for every turn. `on_move` receives the
+/// post-move state and move text after each successful move.
+///
+/// Params:
+/// - state        : &mut State          -> live game position
+/// - ttable       : Arc<TTable>         -> shared main table
+/// - qtable       : Arc<QTable>         -> shared quiescence table
+/// - ptable       : Arc<PTable>         -> shared pawn table
+/// - depth        : usize               -> fixed search depth
+/// - time_limit_ns: u128                -> wall-clock budget per move
+/// - threads      : usize               -> search worker count
+/// - max_plies    : usize               -> maximum moves to play
+/// - dict         : Option<&Translator> -> move translator
+/// - on_move      : F                   -> callback after each played move
+///
+/// Return:
+/// Result<(u8, Option<String>), String>
+/// Absolute result/reason, or illegal search-move diagnostic
+pub fn play_search_game<F>(
+    state: &mut State,
+    ttable: Arc<TTable>,
+    qtable: Arc<QTable>,
+    ptable: Arc<PTable>,
+    depth: usize,
+    time_limit_ns: u128,
+    threads: usize,
+    max_plies: usize,
+    dict: Option<&Translator>,
+    mut on_move: F,
+) -> Result<(u8, Option<String>), String>
+where
+    F: FnMut(&State, &str),
+{
+    let mut info = SearchInfo {
+        set_depth: depth,
+        ..Default::default()
+    };
+    let mut bufs = SearchBufs::default();
+
+    for _ in 0..max_plies {
+        let terminal = game_outcome(state);
+        if terminal.0 != ONGOING
+        || SYSTEM_INTERRUPT.load(Ordering::Relaxed)
+        {
+            return Ok(terminal);
+        }
+
+        if time_limit_ns > 0 {
+            let now = ENGINE_START.elapsed().as_nanos();
+            info.soft_deadline = now + time_limit_ns;
+            info.hard_deadline = now + time_limit_ns;
+        }
+
+        let result = search_position(
+            state,
+            Arc::clone(&ttable),
+            Arc::clone(&qtable),
+            Arc::clone(&ptable),
+            &mut info,
+            &mut bufs,
+            threads.max(1),
+            dict,
+        );
+        log_table_stats(&ttable, &qtable, &ptable);
+
+        if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+            return Ok(game_outcome(state));
+        }
+
+        if result.best_move == null_move() {
+            if info.interrupt {
+                return Ok(game_outcome(state));
+            }
+            adjudicate_no_move(state);
+            return Ok(game_outcome(state));
+        }
+        if result.best_score == -INF {
+            adjudicate_no_move(state);
+            return Ok(game_outcome(state));
+        }
+
+        let move_text = format_move(&result.best_move, state, dict);
+        if !make_move!(state, result.best_move) {
+            return Err(format!(
+                "Search returned illegal move: {}", move_text
+            ));
+        }
+        on_move(state, &move_text);
+    }
+
+    Ok(game_outcome(state))
 }
 
 /// square_distance
@@ -934,7 +1067,7 @@ pub fn perft(
 /// embedded-first parameter path the engine uses at startup. Variants
 /// without a parameter payload derive one and export it to
 /// `res/param/{variant}/latest.param`, so a delete-then-derive cycle
-/// regenerates every shipped file without the interactive console.
+/// regenerates every shipped file without debug graphics.
 pub fn run_derive_headless() {
     for config in EMBEDDED_CONFIGS.files() {
         let Some(filename) = config.path().to_str() else {
@@ -948,77 +1081,5 @@ pub fn run_derive_headless() {
         emit(EngineEvent::Print(format!("deriving {}\n", filename)));
         let _ = parse_config_file(filename);
     }
-}
-
-/// run_datagen_headless
-///
-/// Headless entry point for the `datagen` subcommand. Loads the named
-/// variant through the embedded-first config path, drains the event
-/// channel the interactive console would own, and generates a self-play
-/// dataset into `res/data/{variant}/latest.data`. Games run sequentially
-/// per process, so dataset volume comes from launching many single-thread
-/// processes rather than one many-thread process.
-///
-/// Params:
-/// - args: &[String] -> full argv, expects
-///                      `datagen <variant> <games> <movetime_ms> [threads=1]`
-pub fn run_datagen_headless(args: &[String]) {
-    let Some(variant) = args.get(2) else {
-        log_2!("Usage: datagen <variant> <games> <movetime (ms)> [threads = 1]");
-        return;
-    };
-
-    let Some(Ok(games)) = args.get(3).map(|value| value.parse::<usize>()) else {
-        log_2!("Usage: datagen <variant> <games> <movetime (ms)> [threads = 1]");
-        return;
-    };
-
-    let Some(Ok(movetime)) = args.get(4).map(|value| value.parse::<u128>())
-    else {
-        log_2!("Usage: datagen <variant> <games> <movetime (ms)> [threads = 1]");
-        return;
-    };
-
-    let threads = args.get(5)
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(1)
-        .max(1);
-
-    let state = parse_config_file(&format!("{}.conf", variant));
-
-    run_datagen(
-        &state, variant, None,
-        Arc::new(TTable::default()), Arc::new(QTable::default()),
-        Arc::new(PTable::default()), threads, games, movetime,
-    );
-}
-
-/// run_tune_headless
-///
-/// Headless entry point for the `tune` subcommand. Loads the named variant
-/// and Texel-tunes its evaluation from `res/data/{variant}/latest.data`,
-/// exporting the best validation epoch to `res/param/{variant}/latest.param`
-/// through the same startup parameter pipeline the console uses.
-///
-/// Params:
-/// - args: &[String] -> full argv, expects `tune <variant> <epochs> [rate=1.0]`
-pub fn run_tune_headless(args: &[String]) {
-    let Some(variant) = args.get(2) else {
-        log_2!("Usage: tune <variant> <epochs> [learning rate = 1.0]");
-        return;
-    };
-
-    let Some(Ok(epochs)) = args.get(3).map(|value| value.parse::<usize>())
-    else {
-        log_2!("Usage: tune <variant> <epochs> [learning rate = 1.0]");
-        return;
-    };
-
-    let learning_rate = args.get(4)
-        .and_then(|value| value.parse::<f64>().ok())
-        .unwrap_or(1.0);
-
-    let mut state = parse_config_file(&format!("{}.conf", variant));
-    run_tuning(&mut state, variant, epochs, learning_rate);
 }
 

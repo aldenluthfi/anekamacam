@@ -618,7 +618,7 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 /// It is written to support parallel-friendly processing semantics.
 ///
 /// Params:
-/// - expr: &str                       -> full expression whose `|` branches are processed
+/// - expr: &str                       -> expression containing `|` branches
 /// - f   : impl Fn(&str) -> Option<T> -> stage applied to each branch
 ///
 /// Return:
@@ -639,6 +639,7 @@ where
 ///
 /// Ensures move strings are suitable for processing by the functions
 /// below:
+///
 /// - `atomic_to_vector`
 /// - `chained_atomic_to_vector`
 /// - `compound_atomic_to_vector`
@@ -843,7 +844,8 @@ fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
 /// Return:
 ///
 /// impl Fn(i8, i8)   -> (bool, bool, bool, bool)
-/// per-point classifier yielding (is north, is east, is south, is west) in that frame
+/// per-point classifier yielding north, east, south, and west checks in that
+/// frame
 fn quadrant_function(
     direction: &str,
 ) -> impl Fn(i8, i8) -> (bool, bool, bool, bool) {
@@ -1547,6 +1549,7 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 /// ```
 ///
 /// Mapping:
+///
 /// - 1: n  (north)      - vector (0, 1)
 /// - 2: ne (northeast)  - vector (1, 1)
 /// - 3: e  (east)       - vector (1, 0)
@@ -1707,6 +1710,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// chained_atomic_to_vector
 ///
 /// Returns a vector containing a list of 2 tuples:
+///
 /// - The first tuple represents the whole vector of the move.
 /// - The second tuple represents the last applied vector of the move.
 ///
@@ -1716,9 +1720,11 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// previous atomic.
 ///
 /// Example:
+///
 /// - `N → FnF → [2468]Kn[2468]K`, starting from the `S` square
 ///
 /// 1. Start with a Ferz (`F -> [2468]K`) move which produces these vectors:
+///
 ///     - (1, 1)
 ///     - (1, -1)
 ///     - (-1, -1)
@@ -1747,6 +1753,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// ```
 ///
 /// 2. For each vector, apply `nF -> n[2468]K` relative to its last vector:
+///
 ///    - for (1, 1), direction is ne, so `n[2468]K` rotated by ne produces
 ///      (0, 1)
 ///      and (1, 0)
@@ -1796,6 +1803,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// ```
 ///
 /// A chained atomic can also end in three ways:
+///
 /// - one or more dots (.) means to repeat last vector regardless of direction
 ///   for each dot.
 /// - a range {i..j} or {i} is a shorthand for writing dots.
@@ -1920,6 +1928,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 /// last atomic influences the next atomic.
 ///
 /// Example:
+///
 /// - <FnF>. means moving N followed by repeating the last vector of N once more
 ///   but N. will expand to FnF. so the final result is equivalent to N followed
 ///   by the last F move.
@@ -1983,6 +1992,7 @@ fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 /// compound_atomic_to_vector
 ///
 /// Returns a vector containing a list of 2 tuples:
+///
 /// - The first tuple represents the whole vector of the move.
 /// - The second tuple represents the last applied vector of the move.
 ///

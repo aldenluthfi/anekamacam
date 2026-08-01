@@ -8,7 +8,7 @@
 //! referee, and accumulates a normalised pentanomial log-likelihood
 //! ratio to decide — as early as the evidence allows — whether a patch
 //! is a real strength gain. It replaces the manual GUI-and-Fairy-Stockfish
-//! loop with a self-contained console command.
+//! loop with a self-contained debug command.
 //!
 //! Created: 05/07/2026
 //! Author : Alden Luthfi
@@ -24,7 +24,7 @@ use crate::*;
 /// patches measurable.
 ///
 /// Params:
-/// - binary: &str -> path to the engine executable
+/// - binary: &str          -> path to the engine executable
 ///
 /// Return:
 /// Result<PathBuf, String> -> sandbox path or path-resolution error
@@ -49,6 +49,36 @@ fn engine_sandbox(binary: &str) -> Result<PathBuf, String> {
 pub enum SPRTTimeControl {
     MoveTime(u128),                                                             /* fixed milliseconds per move        */
     Clock { base_ms: u128, inc_ms: u128 },                                      /* bank + increment, in milliseconds  */
+}
+
+/// parse_sprt_time_control
+///
+/// Parses fixed movetime or base-plus-increment notation. Every value is in
+/// milliseconds.
+///
+/// Params:
+/// - value: &str                   -> fixed or base-plus-increment milliseconds
+///
+/// Return:
+/// Result<SPRTTimeControl, String> -> parsed control or diagnostic
+pub fn parse_sprt_time_control(
+    value: &str,
+) -> Result<SPRTTimeControl, String> {
+    if let Some((base, increment)) = value.split_once('+') {
+        let base_ms = base
+            .parse::<u128>()
+            .map_err(|_| format!("Invalid time control: {}", value))?;
+        let inc_ms = increment
+            .parse::<u128>()
+            .map_err(|_| format!("Invalid time control: {}", value))?;
+
+        return Ok(SPRTTimeControl::Clock { base_ms, inc_ms });
+    }
+
+    value
+        .parse::<u128>()
+        .map(SPRTTimeControl::MoveTime)
+        .map_err(|_| format!("Invalid time control: {}", value))
 }
 
 impl Display for SPRTTimeControl {
@@ -101,7 +131,7 @@ struct SPRTChild {
     errors: ChildStderr,                                                        /* pipe of its stderr diagnostics     */
 }
 
-/// UciEngine protocol driver.
+/// SPRTChild protocol driver.
 ///
 /// A tight family of methods that own one subprocess engine's UCI
 /// conversation.
@@ -114,8 +144,8 @@ struct SPRTChild {
 /// spawn
 ///
 ///   Params:
-///   - binary : &str -> path to the engine executable
-///   - variant: &str -> UCI variant name to select
+///   - binary : &str                   -> path to the engine executable
+///   - variant: &str                   -> UCI variant name to select
 ///
 ///   Return:
 ///   Result<SPRTChild, SPRTChildError> -> handshaken child or setup failure
@@ -123,7 +153,7 @@ struct SPRTChild {
 /// send
 ///
 ///   Params:
-///   - command: &str -> the command line to write and flush
+///   - command: &str            -> the command line to write and flush
 ///
 ///   Return:
 ///   Result<(), SPRTChildError> -> success or command-write failure
@@ -131,7 +161,7 @@ struct SPRTChild {
 /// read_line
 ///
 ///   Params:
-///   - timeout: Duration -> maximum wait for one response line
+///   - timeout: Duration                    -> maximum wait for one reply line
 ///
 ///   Return:
 ///   Result<Option<String>, SPRTChildError> -> reply, EOF, or read failure
@@ -139,22 +169,26 @@ struct SPRTChild {
 /// wait_for
 ///
 ///   Params:
-///   - token  : &str     -> leading token that ends the wait
-///   - timeout: Duration -> absolute protocol deadline
+///   - token  : &str            -> leading token that ends the wait
+///   - timeout: Duration        -> absolute protocol deadline
 ///
 ///   Return:
 ///   Result<(), SPRTChildError> -> success or protocol failure
 ///
 /// new_game
-///   resets the engine between games and returns any protocol failure
+///
+///   Resets the engine between games.
+///
+///   Return:
+///   Result<(), SPRTChildError> -> success or protocol failure
 ///
 /// bestmove
 ///
 ///   Params:
-///   - startpos  : &str      -> the variant start-position FEN
-///   - moves     : &[String] -> moves played so far, in UCI notation
-///   - go_command: &str      -> the `go` line carrying the time control
-///   - timeout   : Duration  -> absolute response deadline
+///   - startpos  : &str                     -> the variant start-position FEN
+///   - moves     : &[String]                -> played moves in UCI notation
+///   - go_command: &str                     -> `go` line with time control
+///   - timeout   : Duration                 -> absolute response deadline
 ///
 ///   Return:
 ///   Result<Option<String>, SPRTChildError> -> move, missing move, or failure
@@ -525,10 +559,10 @@ struct GameManager {
 /// new
 ///
 ///   Params:
-///   - template: &State -> loaded variant, forked as the referee
-///   - binary_a: &str   -> path to the child that starts as White
-///   - binary_b: &str   -> path to the child that starts as Black
-///   - variant : &str   -> UCI variant name for both children
+///   - template: &State                  -> variant forked as referee
+///   - binary_a: &str                    -> child starting as White
+///   - binary_b: &str                    -> child starting as Black
+///   - variant : &str                    -> UCI variant for both children
 ///
 ///   Return:
 ///   Result<GameManager, SPRTChildError> -> manager or setup failure
@@ -537,6 +571,15 @@ struct GameManager {
 ///   exchanges which child plays which colour; no parameters, no
 ///   return value
 ///
+/// restart
+///
+///   Params:
+///   - side   : u8              -> child side to restart
+///   - variant: &str            -> UCI variant used for setup
+///
+///   Return:
+///   Result<(), SPRTChildError> -> success or setup failure
+///
 /// reset_to
 ///
 ///   Params:
@@ -544,20 +587,14 @@ struct GameManager {
 ///   - opening : &[Move] -> shared opening line to replay
 ///
 ///   Return:
-///   Result<(), String> -> success or one/both child reset failures
+///   Result<(), String>  -> success or one/both child reset failures
 ///
 /// play
 ///
 ///   Params:
-///
-///   - dict: Option<&Translator>
-///     UCI translator for move I/O
-///
-///   - startpos: &str
-///     the variant start FEN
-///
-///   - time_control: SPRTTimeControl
-///     per-move budget or clock bank
+///   - dict        : Option<&Translator> -> UCI translator for move I/O
+///   - startpos    : &str                -> the variant start FEN
+///   - time_control: SPRTTimeControl     -> per-move budget or clock bank
 ///
 ///   Return:
 ///
@@ -647,24 +684,26 @@ impl GameManager {
 
         loop {
             let terminal = game_outcome(state).0;
-            if SYSTEM_INTERRUPT.load(Ordering::Relaxed)
-            || terminal != ONGOING
-            || legal_moves!(state).is_empty()
-            {
-                let score = match terminal {
-                    WHITE_WIN => 1.0,
-                    BLACK_WIN => 0.0,
-                    DRAW => 0.5,
-                    _ => if is_in_check!(state.playing, state)
-                        || state.termination.stalemate
-                            == Outcome::Loss {
-                        state.playing as f64
-                    } else {
-                        0.5
-                    },
+            if terminal != ONGOING {
+                return SPRTGameOutcome::Score(
+                    game_result_score(terminal)
+                );
+            }
+            if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+                let score = if is_in_check!(state.playing, state)
+                    || state.termination.stalemate == Outcome::Loss
+                {
+                    state.playing as f64
+                } else {
+                    0.5
                 };
-
                 return SPRTGameOutcome::Score(score);
+            }
+            if legal_moves!(state).is_empty() {
+                let result = adjudicate_no_move(state);
+                return SPRTGameOutcome::Score(
+                    game_result_score(result)
+                );
             }
 
             let moves: Vec<String> = state.history.iter()
@@ -832,15 +871,17 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 /// ratio, and the verdict, so completed tests leave a durable record.
 ///
 /// Params:
-/// - variant          : &str            -> variant, selects the output dir
-/// - binary_a         : &str            -> path of the first engine
-/// - binary_b         : &str            -> path of the second engine
-/// - time_control     : SPRTTimeControl -> per-move time control used
-/// - h0               : f64             -> null-hypothesis Elo bound
-/// - h1               : f64             -> alternative-hypothesis Elo bound
-/// - wins/draws/losses: u32             -> tally from engine A's view
-/// - llr              : f64             -> the final log-likelihood ratio
-/// - verdict          : &str            -> the test outcome text
+/// - variant     : &str            -> variant, selects the output dir
+/// - binary_a    : &str            -> path of the first engine
+/// - binary_b    : &str            -> path of the second engine
+/// - time_control: SPRTTimeControl -> per-move time control used
+/// - h0          : f64             -> null-hypothesis Elo bound
+/// - h1          : f64             -> alternative-hypothesis Elo bound
+/// - wins        : u32             -> wins from engine A's view
+/// - draws       : u32             -> draws from engine A's view
+/// - losses      : u32             -> losses from engine A's view
+/// - llr         : f64             -> the final log-likelihood ratio
+/// - verdict     : &str            -> the test outcome text
 fn write_result_file(
     variant: &str,
     binary_a: &str,
@@ -921,7 +962,7 @@ fn harvest_child_logs(variant: &str, binary_a: &str, binary_b: &str) {
 
 /// run_sprt
 ///
-/// Console entry point for the `sprt` command. Spawns both engine
+/// Debug-tool entry point for `sprt`. Spawns both engine
 /// binaries on the loaded variant — each in a freshly cleared
 /// `engine_sandbox` so their parameter files stay isolated — plays
 /// paired random openings (each engine gets White once), folds every
@@ -954,7 +995,9 @@ pub fn run_sprt(
     let translator = Translator::find(variant, SPRT_PROTOCOL);
 
     if translator.is_none() {
-        log_4!("Variant {variant} doesn't support {SPRT_PROTOCOL} for SPRT yet!");
+        log_4!(
+            "Variant {variant} doesn't support {SPRT_PROTOCOL} for SPRT yet!"
+        );
         return;
     }
 

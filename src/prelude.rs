@@ -81,10 +81,10 @@ pub use crate::game::search::{
 };
 
 pub use crate::game::util::{
-    benchmark_headless_perft, benchmark_perft, benchmark_search, exe_tag,
-    format_time, perft, prune_backups, random_u128, refresh_eval_state,
-    roll_latest, run_datagen_headless, run_derive_headless, run_tune_headless,
-    square_distance, verify_game_state,
+    adjudicate_no_move, benchmark_headless_perft, benchmark_perft,
+    benchmark_search, exe_tag, format_time, game_result_score, perft,
+    play_search_game, prune_backups, random_u128, refresh_eval_state,
+    roll_latest, run_derive_headless, square_distance, verify_game_state,
 };
 
 /*----------------------------------------------------------------------------*\
@@ -123,10 +123,12 @@ pub use crate::io::protocols::{
 /*----------------------------------------------------------------------------*\
                                    DEBUG API
 \*----------------------------------------------------------------------------*/
-pub use crate::debug::console::debug_console;
-pub use crate::debug::console::BoardState;
+pub use crate::debug::graphics::{run_debug_graphics, BoardState};
+pub use crate::debug::headless::run_debug_headless;
 pub use crate::debug::datagen::run_datagen;
-pub use crate::debug::sprt::{run_sprt, SPRTTimeControl};
+pub use crate::debug::sprt::{
+    parse_sprt_time_control, run_sprt, SPRTTimeControl,
+};
 pub use crate::debug::tuning::run_tuning;
 
 /*----------------------------------------------------------------------------*\
@@ -445,7 +447,7 @@ pub fn emit(event: EngineEvent) {
 /// receiving end of the event channel and, for every event, formats the
 /// engine's data into the protocol's line and flushes it, so search threads
 /// and the command loop share one ordered, race-free output path. `Board` and
-/// TUI-control events are ignored — those matter only to the debug console,
+/// TUI-control events are ignored — those matter only to debug graphics,
 /// which installs its own receiver instead.
 ///
 /// Params:

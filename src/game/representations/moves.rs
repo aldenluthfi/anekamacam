@@ -39,9 +39,9 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 ///
 /// Bits 32..63:
 ///
+/// ```text
 ///   32  34                                                          63
 ///         35
-/// ```text
 ///   ┌───┬─┬──────────────────────────────────────────────────────────┐
 ///   │← X│c│                          unused                          │
 ///   └───┴─┴──────────────────────────────────────────────────────────┘
@@ -145,7 +145,6 @@ pub type PseudoMove = (u128, MoveSignature);
 ///   │u│       unload sq       │    capt pc    │      capt sq →       │
 ///   └─┴───────────────────────┴───────────────┴──────────────────────┘
 /// ```
-///
 ///
 /// Bits 32..63:
 ///
@@ -263,7 +262,7 @@ macro_rules! m_captures {
 /// m_signature!
 ///
 /// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
-/// `move.1`.  The result is 0 for moves with no captures (empty list).
+/// `move.1`. The result is 0 for moves with no captures (empty list).
 ///
 /// The 34th bit is set if there is an actual capture in the capture list (not
 /// all unloads).
@@ -315,7 +314,7 @@ macro_rules! m_signature {
 /// m_pseudocapture!
 ///
 ///   Params:
-///   - pseudo: &PseudoMove -> stored move word + signature
+///   - mv    : &PseudoMove -> stored move word + signature
 ///
 ///   Return:
 ///
@@ -399,7 +398,7 @@ macro_rules! m_quiet {
 /// Primary move-bitfield encoder macros.
 ///
 /// These macros write individual fields into `Move.0` (`u128`) using the
-/// packed move layout described above the `Move` type alias.
+/// packed move layout described above the `Move` type.
 ///
 /// They are intentionally low-level and composable: callers build a move in
 /// stages by applying only the fields relevant for the current move format.
@@ -604,6 +603,7 @@ macro_rules! enc_capture_part {
 /// checks, make/undo logic, and IO serialization. Each takes the same
 /// single parameter (a `PseudoMove` also works wherever only `.0` is
 /// read, since its first field mirrors `Move.0`):
+///
 /// - mv: &Move -> move whose packed word is read
 ///
 /// `is_pass!` is a semantic helper built on top of raw fields: a quiet move
@@ -798,6 +798,7 @@ macro_rules! captured_unmoved {
 /// captures in `Move.1` as compact 34-bit packed records. These macros unpack
 /// those records during make/undo and move display logic. Each takes the
 /// same single parameter:
+///
 /// - entry: u64 -> packed multi-capture record read
 ///
 /// multi_move_is_unload!
@@ -869,6 +870,7 @@ macro_rules! multi_move_captured_unmoved {
 /// the variable-length captured-piece list for `MULTI_CAPTURE_MOVE`. All OR
 /// the masked value into place and return nothing; every entry takes the
 /// same first parameter:
+///
 /// - entry: &mut u64 -> packed multi-capture record written
 ///
 /// Second parameter per member:
