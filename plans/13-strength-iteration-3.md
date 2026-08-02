@@ -578,29 +578,37 @@ self-inflicted: `49bf8d4` had to add crazyhouse's promoted types to fix the
 pocket, and doubled its opening threshold as a side effect.
 
 The threshold should name the army the variant starts with, not how many
-names that army goes by. Two corrections to the obvious fix:
+names that army goes by. Three corrections to the obvious fix.
 
 **`initial_setup` alone is not the starting army.** It is parsed from the
 startpos BOARD field only (game_io.rs:1159-1170), so in a setup variant
 every piece that starts in hand has an empty `initial_setup`. Sittuyin
 starts `8/8/4pppp/pppp4/4PPPP/PPPP4/8/8 w KSSFRRNN/kssfrrnn` — only pawns
-on the board — and janggi starts with `HHEEQ/hheeq` in hand. Deriving from
-`initial_setup` would hand sittuyin a pawns-only army and an opening
-threshold near zero. The starting army is board **plus** initial hand, and
-both are available where the threshold is computed: `derive_eval_parameters`
-runs on the freshly loaded initial position, so `piece_count` already holds
-the startpos board counts and `piece_in_hand` the startpos hands.
+on the board — and janggi starts with `HHEEQ/hheeq` in hand.
 
-**The threshold must be a fraction of that army, not the army.** The
+**The initial hand is not the starting army either.** A hand can be a
+*menu* rather than a *reserve*. Chess with Different Armies is naturally
+expressed here as a setup variant holding every selectable army in hand at
+once, with the setup patterns locking out the rival armies as soon as the
+first piece of one is placed — so a side deploying one of three armies
+holds 3x its real army at startpos. Counting the hand would overshoot by
+the number of armies on offer, which is the current defect with a bigger
+multiplier.
+
+**The threshold must be a fraction of the army, not the army.** The
 comparison is `phase_score > opening_score`, so a threshold equal to the
-full army is never exceeded and every variant would read MIDDLEGAME from
-move one — today's bug with the sign flipped. Standard currently sits at
-0.625 of its army (4140 of 6622) and 0.26 for endgame (1725), and standard
-is the only variant whose strength is validated, so calibrate to it:
+full army is never exceeded and every variant reads MIDDLEGAME from move
+one — today's bug with the sign flipped. Standard sits at 0.625 of its army
+(4140 of 6622) and 0.26 for endgame (1725), and standard is the only
+variant whose strength is validated, so calibrate to it.
+
+What all three corrections point at: the reference is **the board when the
+game proper begins**, and hands never enter it.
 
 ```
-army = Σ over big non-royal piece type t of
-       ovalue(t) * (board_count(t) + hand_count(t))    /* at startpos */
+army = game_phase_score!(state) at the moment play begins
+       /* config startpos board for a normal variant,   */
+       /* the deployed board when SETUP ends otherwise  */
 opening_score = 5 * army / 8
 endgame_score = army / 4
 ```
@@ -612,15 +620,31 @@ endgame_score = army / 4
 | shogi | 5662 | 7644 | 3539 | 1365 | 1415 |
 
 Standard is unchanged to within a unit — that is the point of the
-calibration. Setup variants are unaffected during setup, where `game_phase`
-is pinned to SETUP regardless, and land on a correct threshold once their
-hands empty onto the board.
+calibration. Sittuyin and janggi land on the same value either way, since
+their whole hand deploys. CwDA lands on the army actually chosen.
+
+**Prerequisite: SETUP currently cannot end in a menu variant.**
+move_list.rs:2568 leaves SETUP only when `piece_in_hand[0]` and
+`piece_in_hand[1]` are both entirely empty. Locked-out armies stay in hand
+forever, so a CwDA game would never leave the setup phase at all —
+independent of any eval question. The general predicate is *no side has a
+legal placement*, which is equivalent for sittuyin and janggi (empty hand
+implies no placement) and correct for a menu. That makes it a move-gen
+rule, the same shape as the stand-off restoration in plan 08-12, and it is
+also the moment at which the reference army above should be captured.
+
+**Not affected, checked:** `setup phase` is rule bit 6 and `drops` is bit
+3; sittuyin and janggi declare only the former. E-3's hand king-danger term
+and the capture-to-hand material accounting both gate on `drops!`, so a
+menu hand contributes to neither. Note also that thresholds cannot stay in
+`StaticState` if they are captured mid-game — `static_mut` is
+`Arc::get_mut(..).unwrap_unchecked()`, unsound once SMP threads hold
+clones — so they move to `State`, and out of the `.param` schema, which is
+H-3 work.
 
 Scope honestly: this recovers the 0.74 discount, not the 5x gap. Crazyhouse
 exposure would go from 126 to roughly 170 against an FSF-equivalent 867.
-Worth a stage, not a substitute for one. It also needs a param regen
-(`opening_score` is token 0 of every `.param` file), which H-3 already
-schedules.
+Worth a stage, not a substitute for one.
 
 ### F-3 — royal exposure PST replaces castling knowledge
 
