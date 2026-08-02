@@ -12,14 +12,14 @@ set -euo pipefail
 #
 # Each PHASES row is "name ref parent". ref is the configured base commit-ish
 # (normally the phase's own branch name). parent is the phase a missing
-# branch is auto-created from ("-" means none). Phase H-3 is conditional on
-# measurement, so I-3 defaults to branching from it but takes PHASE_I_PARENT
-# when H-3 is dropped.
+# branch is auto-created from ("-" means none). Phase M-3 is conditional on
+# measurement, so N-3 defaults to branching from it but takes PHASE_N_PARENT
+# when M-3 is dropped.
 #
 # Usage:
 #   build-stages.sh A-3
 #   build-stages.sh B-3 C-3 D-3
-#   PHASE_I_PARENT=phaseG-3 build-stages.sh phaseI-3
+#   PHASE_N_PARENT=phaseL-3 build-stages.sh phaseN-3
 
 PHASES=(
 	"phaseA-3  phaseA-3  -"
@@ -31,6 +31,11 @@ PHASES=(
 	"phaseG-3  phaseG-3  phaseF-3"
 	"phaseH-3  phaseH-3  phaseG-3"
 	"phaseI-3  phaseI-3  phaseH-3"
+	"phaseJ-3  phaseJ-3  phaseI-3"
+	"phaseK-3  phaseK-3  phaseJ-3"
+	"phaseL-3  phaseL-3  phaseK-3"
+	"phaseM-3  phaseM-3  phaseL-3"
+	"phaseN-3  phaseN-3  phaseM-3"
 )
 
 if [[ $# -eq 0 ]]; then
@@ -78,15 +83,15 @@ phase_ref() {
 	return 1
 }
 
-# Parent phase (third column) for a phase name, honoring PHASE_I_PARENT.
+# Parent phase (third column) for a phase name, honoring PHASE_N_PARENT.
 phase_parent() {
 	local want=$1 name ref parent
 
 	for entry in "${PHASES[@]}"; do
 		read -r name ref parent <<<"$entry"
 		if [[ "$name" == "$want" ]]; then
-			if [[ "$want" == "phaseI-3" ]]; then
-				echo "${PHASE_I_PARENT:-$parent}"
+			if [[ "$want" == "phaseN-3" ]]; then
+				echo "${PHASE_N_PARENT:-$parent}"
 			else
 				echo "$parent"
 			fi

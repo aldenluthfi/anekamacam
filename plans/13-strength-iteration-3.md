@@ -99,7 +99,7 @@ quadratic zone-attack king danger, open-shield-file penalty, 7 pawn
 sub-terms (passed/protected/chained/connected/doubled/isolated/backward)
 cached in PTable, material-scaled draw contempt.
 
-## Stage ladder (iteration 3 — phase labels A-3..I-3)
+## Stage ladder (iteration 3 — phase labels A-3..N-3)
 
 One significant, RR-differentiable change per stage; one commit per stage on
 its own `phaseX-3` branch via build-stages.sh. Rejected experiments consume
@@ -132,11 +132,11 @@ no letter.
   8), `PROCS` (10 interleaved passes), `LIMIT` (16), `SEED` (42).
   Geomean nodes/time/nps per variant + B-vs-A deltas; fails loudly when
   same-binary node counts differ across passes.
-- build-stages.sh: `PHASES` now A-3..I-3, one row per stage (the F-3a/b/c
+- build-stages.sh: `PHASES` now A-3..N-3, one row per stage (the F-3a/b/c
   sub-ablation rows are gone with the sub-stages); `phaseA-3` pinned via
   its own branch (created at the A-3 commit — hash unknowable at commit
-  time), `PHASE_I_PARENT` overrides I-3's default H-3 parent for when the
-  conditional H-3 is dropped. round-robin.sh: `*-3*` patterns, VARIANTS
+  time), `PHASE_N_PARENT` overrides N-3's default M-3 parent for when the
+  conditional M-3 is dropped. round-robin.sh: `*-3*` patterns, VARIANTS
   defaults to the four campaign variants.
 - Verified: perft suites green (standard depth-4 x400 + 13 variants full
   depth-4); same-seed bench node counts IDENTICAL cross-process on all
@@ -497,8 +497,13 @@ hand and now scales, growing 13x from empty to `qqrrbb` where FSF grows
 8.5x. **It does not fix crazyhouse king safety.** Against FSF as the
 standard we still charge 6-22% of what it charges, and the empty-hand row
 — 126 against an expected 867 — is untouched by this stage, because that
-gap is in the base exposure signal, not the hand. That is F-3's target,
-and on this evidence F-3 matters more than E-3 did.
+gap is in the base exposure signal, not the hand. That is the exposure
+PST's target.
+
+**Superseded as a priority by the RR-2 diagnosis below.** E-3 stays — the
+term was missing and is now correct — but the eval block it was the first
+stage of has been pushed behind a search block, because the drop-variant
+deficit turns out to be dominated by search efficiency, not eval.
 
 Speed (seed 42, limit 12): standard and grand byte-identical node counts
 and NPS within 0.3%, confirming the `drops!` gate costs nothing. Shogi
@@ -542,10 +547,257 @@ the enemy hand instead of staying at +16, and the sign must invert so the
 sheltered king scores higher. Then bench (drop variants only should move),
 and SPRT shogi and crazyhouse against phaseD-3.
 
-### F-3 — phase reference from the board at first play
+### RR-2 diagnosis: the drop deficit is search, not evaluation
 
-Found while calibrating E-3 against FSF. Correctness, and it runs first
-because every later eval measurement is read through the taper: measuring a
+Prompted by the question "can the abysmal crazyhouse and shogi performance
+be caused by something other than king safety?". It can, and it is.
+
+**The measurement.** Nodes to reach depth 9, single thread, **both engines
+at `Hash=16`**, ours over UCI/USI and FSF over UCI:
+
+| position | FSF | ours | ratio |
+|---|---|---|---|
+| startpos as chess | 18,080 | 9,663 | **0.5** |
+| startpos as crazyhouse — identical board, empty pockets | 11,023 | 47,538 | **4.3** |
+| crazyhouse midgame, N+n in hand | 8,971 | 52,130 | **5.8** |
+| shogi startpos | 6,324 | 37,146 | **5.9** |
+
+We need **half** FSF's nodes in standard and **4-6x** its nodes in the drop
+variants — a 9-12x relative swing. Rows 1 and 2 are the same board at the
+same depth with only the rule set changing.
+
+**Hash sizes must match or the table lies.** The first version of this
+table used `debug-headless search`, which hard-codes `TTable::with_mb(1)`
+(headless.rs:470), against FSF's 16 MB default, and reported ratios up to
+16.5x. Matching the hash cut shogi from 11.2x to 5.9x. Always drive both
+engines through their protocol with an explicit `Hash` option; do not use
+`debug-headless search` for cross-engine comparison, and do not "fix" it to
+16 MB either, since that would move the A-3 baseline.
+
+**Four mechanisms, all verified in the code.**
+
+1. **Drop moves read a history index that belongs to another move.**
+   `drop_list.rs:141-144` writes the drop square into `start` and
+   `can_checkmate` into bit 23 — bit 0 of the `end` field
+   (`moves.rs:714-719`). So `end!(drop)` is 0 or 1, never a square. Three
+   consumers use it: `score_move!`'s `idx`/`cont_key`
+   (`move_ordering.rs:312-318`), the move loop's `hist_idx`/`cont_key`
+   (`search.rs:1273-1277`, which also drives the LMR history adjustment at
+   `:1377-1388`), and — the one that hurts most — `cont_bases`
+   (`search.rs:1192-1196`), which keys the continuation table on
+   `end!(previous)`. When the *parent* is a drop, every child at that node,
+   including ordinary quiet moves, collapses onto 2 of `P*B` keys. That is
+   why crazyhouse with empty pockets is already 4.3x.
+2. **Drops never write history.** Every update is gated on
+   `is_quiet = m_quiet!(mv)` (`search.rs:1282`), and `m_quiet!` requires
+   `QUIET_MOVE` (`moves.rs:388-392`). Sites `search.rs:1465`, `:1497`,
+   `:1534`. Drops read history and never learn.
+3. **Drops are exempt from both move-count prunings.** `&& !is_drop` in
+   futility (`search.rs:1294-1300`) and LMP (`search.rs:1328-1336`).
+   Measured drop share of the legal move list: crazyhouse with N+Q in hand
+   **68 of 99 (69%)**, shogi with P+N+S+G **116 of 146 (79%)**. Most of the
+   tree is exempt from the rules that bound it. They are also on the
+   *capture* LMR curve (`search.rs:1759-1764`), which reduces about half as
+   much as the quiet curve.
+4. **Qsearch has no drops except check evasions.** Not in check calls
+   `generate_all_captures` (`search.rs:649-657`), which never emits drops.
+   Drop-checks and drop-mates — the characteristic tactic of both variants
+   — are invisible at the horizon.
+
+**Also true, eval-side, and smaller.** Held pieces are priced identically
+to placed ones. FSF puts a held piece 54-154 cp *above* the same piece on
+the board and compresses held values toward the pawn: FSF P:N:B:R:Q =
+1 : 1.84 : 1.68 : 2.27 : 3.32 against our 1 : 3.19 : 3.63 : 6.70 : 11.1.
+We undervalue held pawns and overvalue held majors by roughly 2x in ratio.
+Hands also contribute nothing to `phase_score`, PST, pair bonus or
+imbalance.
+
+**Consequence for the ladder.** The eval block runs *after* a five-stage
+search block, not before it, and is renumbered K-3..N-3. The search block's
+gate is the node table above; the eval block keeps its FSF-anchored eval
+gates. They must not interleave: the phase-reference stage moves drop
+variants from MIDDLEGAME to OPENING, which selects the *larger* opening
+futility margins (`parameters.rs:1490-1494`) and so pushes node counts the
+wrong way — its own gate is standard-bench-identity, independent of this
+table.
+
+### F-3 — the drop square lives in `end`
+
+`generate_drop_list!` (`drop_list.rs:141-144`) also writes
+`enc_end!(encoded_move, square)`, and `can_checkmate` moves from bit 23 to
+**bit 112** (`drop.rs:33-37`, `:56-60`). Bits 112-127 are documented unused
+in every move format — the highest field in use is `captured_unmoved` at
+bit 111 — so no reader can confuse it, and unlike reusing `is_initial` at
+bit 35 it does not overload a named field. Redraw the format diagrams
+(`moves.rs:135`, `:166-209`).
+
+Resulting indices: `hist_idx = piece*B² + sq*(B+1)`, the diagonal, which
+only a same-square quiet could collide with and none exists; and
+`cont_key = piece*B + sq`, deliberately the same key a normal move landing
+on that square gets, so "this piece ends up here" is one signal.
+
+Every `end!` consumer was checked: make/undo read it only inside
+QUIET/SINGLE/MULTI/CASTLING branches, the drop branches (`move_list.rs:2505`,
+`:3461`) use `start!`; `format_move` prints `end` only for those same types
+(`move_io.rs:70-99`); `see!` is capture-only; TT stores the raw `u128`, so
+bit 112 survives. `graphics.rs:2502` starts lighting the real drop square
+instead of square 0, which is a display fix.
+
+Gate: node table rerun; speed suite flat (one extra OR in the encoder).
+**Perft is the insurance** — this touches move encoding, so full suites on
+all 14 embedded variants, and every one must be *identical*, drop variants
+included: no move's legality changes, only spare bits.
+
+Honest risk of a null result: today drops read whatever a well-trodden
+quiet slot happens to hold; afterwards they read a permanently-zero slot
+and tie, falling back to generation order. Most of this stage's gain should
+come from the `cont_bases` parent-key fix rather than from drop ordering
+itself. If the table barely moves, do not roll back — merge with G-3 and
+measure the pair.
+
+### G-3 — drops write history and can be killers
+
+`search.rs:1282` becomes `let is_quiet = m_quiet!(mv) || is_drop;`. The
+bonus/malus sites (`:1465`, `:1497`, `:1534`) then reach drops and
+`killer_hist[ply]` can hold one; killers are matched by `==` on the whole
+`Move`, which already works for drops, and a stale illegal killer drop is
+rejected by `make_move!` exactly as a stale quiet killer is.
+
+Do this at the call site rather than by widening `m_quiet!`, which is an
+exported classifier documented as "quiet and not a promotion" — widening it
+silently changes every future use.
+
+**Hard dependency on F-3.** Writing bonuses through the aliased index would
+corrupt the ordering of the *non-drop* tree. Do not reorder.
+
+Gate: node table; standard/xiangqi/grand bench **byte-identical** — that is
+the variant-agnosticism proof, not a nicety. Perft cannot change (search
+shape only).
+
+### H-3 — drops enter futility and late-move pruning
+
+Delete `&& !is_drop` from `search.rs:1298` and `:1332`, and widen the
+existing `dangerous_push` guard (`:1284-1288`) rather than inventing a new
+flag — it already gates both prunings and grants an LMR discount at `:1392`,
+so it is exactly the "move-count pruning must not touch this" primitive.
+Two extensions: remove `&& !is_drop` from its own definition, so a dropped
+pawn gets a correct `pawn_advancement` lookup once F-3 lands; and add a
+royal-zone term reading `zone_attack` (`state.rs:499`) so a drop is exempt
+when it bears on *either* royal zone — the enemy's (attacking/checking drop)
+or our own (interposing drop). Hoist `royal*P*B` per side outside the move
+loop.
+
+`zone_attack` is the right primitive because it is derived purely from
+compiled movement vectors and adjacency under an occupancy model, with no
+variant knowledge, and `derive_zone_attack` fills it for *all* piece types
+including pawns and royals — the pawn/royal exclusion lives only in
+`king_danger!`. It is indexed on every eval, so it is guaranteed non-empty
+on both load paths.
+
+Soundness against the mate-defence objection: LMP is already gated on
+`!in_check` and `futile` is only set at `!in_check` nodes, so "only defence
+to check" is unreachable; "only defence to a mate threat" lies on a line
+into our own king's zone, which the own-royal term covers. Futility's
+premise holds because a drop is currently exactly eval-neutral, and only
+strengthens if the eval block later prices held pieces above placed ones.
+
+Declare in the commit message that royal-zone drops also inherit the `-1`
+LMR discount — same mechanism, but the RR attribution should be honest.
+
+Expected to be the largest single lever. Gate: node table (shogi and
+crazyhouse-with-hand should move hardest); standard/xiangqi/grand bench
+byte-identical. Risk is tactical blindness, not game truth, so perft cannot
+catch it: run a depth ladder on the drop-mate positions in
+`res/perft/shogi.perft` and require the mate score at the same depth as the
+F-3 binary, plus the endgame fixtures. If shogi regresses while nodes
+collapse, widen the zone test before abandoning the stage.
+
+### I-3 — drops move to the quiet LMR curve
+
+Remove `$is_drop` from the capture-curve test in `reduction!`
+(`search.rs:1759`) so drops select `quiesce_lmr`. The capture curve
+(base 1.0, div 4.0) reduces about half as much as the quiet curve
+(0.75, 2.25); drops neither remove material nor resolve tension, so they
+are under-reduced by accident. Safe only after G-3, because the history
+adjustment at `:1381-1391` must read a real drop statistic.
+
+Its own stage rather than folded into H-3 because the two act on different
+axes — H-3 removes moves from the tree, I-3 shrinks the ones that stay —
+and folded together a regression is unattributable. If the RR budget only
+supports four search stages, merge this into H-3 rather than dropping it.
+
+Gate: node table; standard bench identical; watch the re-search rate, since
+over-reduction shows up as nodes *rising* (`:1402-1408`).
+
+### J-3 — checking drops in quiescence search
+
+Qsearch generates drops that give check, bounded by a check-ply budget.
+
+Build the candidate list by inverting the query rather than filtering a
+full drop list: `relevant_attacks[1 - playing][R]` (`state.rs:494`) already
+holds every `(piece, from, vector)` that could attack royal square `R`.
+Keep entries whose piece belongs to the side to move, whose hand count is
+positive, and whose `from` square is empty; dedupe on `(piece, from)`; emit
+through a new `generate_square_drops!` extracted from `generate_drop_list!`
+so forbidden zones, hand counts and every allower/stopper constraint
+(nifu, last-rank bans, uchifuzume flagging) are enforced by the same code
+the main generator uses. That extraction must be mechanical — perft
+identical after the split alone, before the new generator exists.
+
+`relevant_attacks` gives candidates, not confirmed checks. Confirm after
+the fact: once `make_move!` succeeds, `if !is_in_check!(state.playing,
+state)` undo and continue. Reusing `is_in_check!` is cheaper and far safer
+than validating an attack vector from an empty origin square, where
+`virgin_board` and the leg filters would read state the dropped piece does
+not have yet.
+
+**Two latent panics must be fixed in the same commit.** `search.rs:687-698`
+calls `victim_value!`, which is `unreachable!()` for any non-capture
+(`move_ordering.rs:88-90`) — it panics on a drop, in release. And
+`search.rs:678-681` skips everything below `WINNING_CAPTURE_SCORE`, which
+silently discards every drop. Both need a `!m_drop!(mv)` exemption.
+
+Bound the explosion with a `qdepth` parameter (new `QS_CHECK_PLIES` beside
+`MAX_CHECK_EXTENSION`): entry points pass 1, the recursion passes
+`saturating_sub(1)`, generation is gated on `qdepth > 0`. There is no way
+to derive this from `state.search_ply` — qsearch does not record where it
+was entered.
+
+Gate is **different from the other four**: this stage buys horizon accuracy
+and spends nodes. (a) drop-variant node ratio must not regress more than
+25% versus I-3, (b) the shogi/crazyhouse drop-mate positions must find
+their mate at a strictly lower depth than I-3, (c) standard NPS regression
+under 3% (the generator must be provably skipped there), (d) RR decides.
+FSF searches drop checks in qsearch and still uses 4-6x fewer nodes, so the
+table stays the right reference.
+
+Highest correctness risk of the five: full perft after the split alone and
+again after the generator lands, debug-assertion runs, endgame fixtures
+(which now traverse a qsearch that makes and unmakes drops). If the node
+ceiling is breached, the first knob is a cheap safety filter — require the
+drop square to be undefended by the opponent or defended by us, two
+existing `is_square_attacked!` calls — added as a follow-up commit so it
+stays attributable.
+
+### Found while verifying, not stages
+
+- **`cont_hist` is O((P*B)^2).** `state.rs:948` and `search.rs:156`
+  allocate and zero `2 * cont_dim^2` `i16` where
+  `cont_dim = pieces.len() * board_size`. Shogi: 28 types on 81 squares,
+  2268^2 * 2 * 2 bytes ≈ **20.6 MB zeroed at every `clear_search`**, and
+  every read is a cache miss. Crazyhouse ≈ 6.6 MB, standard 2.4 MB.
+  Invisible to a node table; measure with the speed suite before designing
+  anything. Reducing the parent axis to `piece` alone would cut shogi to
+  ~127 KB.
+- **NMP's material guard ignores hands.** `search.rs:1020-1021` tests
+  `big_pieces[playing]`, board only, so a side with an empty board and a
+  full hand passes or fails for the wrong reason in both directions.
+- `MIN_LMP_DEPTH` (`prelude.rs:252`) is defined and never read.
+
+### K-3 — phase reference from the board at first play
+
+Was F-3. Correctness, and it runs first *within the eval block* because
+every later eval measurement is read through the taper: measuring a
 king-safety change while crazyhouse and shogi sit at blend weight 0.74 and
 sliding means measuring it again afterwards.
 
@@ -647,7 +899,7 @@ As-built shape:
 - `opening_score`/`endgame_score` stay in the `.param` schema as the
   static default, derived from the config startpos board plus its initial
   hand — correct for every shipped variant, so no regen here and no
-  collision with I-3's atomic regen.
+  collision with N-3's atomic regen.
 - The same two values also become `State` fields, initialised from the
   statics at load and overwritten by a capture when SETUP ends, so a menu
   hand cannot poison them. They cannot live only in `StaticState`:
@@ -666,7 +918,7 @@ Scope honestly: this recovers the 0.74 discount, not the 5x gap. Crazyhouse
 exposure would go from 126 to roughly 170 against an FSF-equivalent 867.
 Worth a stage, not a substitute for one.
 
-### G-3 — royal exposure PST replaces castling knowledge
+### L-3 — royal exposure PST replaces castling knowledge
 
 - Move `derive_zone_attack` call (parameters.rs:1577) to run BEFORE PST
   derivation — top of `derive_eval_parameters`; ensure BOTH load paths
@@ -691,7 +943,7 @@ score(s) = -pressure(s)
   `evaluate_position!` line (:625); `State.has_castled` (state.rs:611 +
   clone/from_statics/reset) + writes (move_list.rs:2650, :3477). Scalars
   `castled_bonus`/`castling_rights_bonus`: stop reading here, delete in
-  I-3.
+  N-3.
 - Keep: `king_shelter!`, quadratic `king_danger!`, `pawn_shield!`,
   `open_shield!`. No sub-ablation arms — one change per stage.
 
@@ -703,7 +955,7 @@ FSF-anchored exposure table from E-3, rerun on top of F-3, not merely
 castling knowledge from our strongest variant — so SPRT standard against
 F-3 before the RR.
 
-### H-3 — drop-aware king-zone porosity (conditional)
+### M-3 — drop-aware king-zone porosity (conditional)
 
 The part of the gap E-3 did not touch. FSF charges 438 cp for the exposed
 king in crazyhouse against 100 cp in standard — identical board, empty
@@ -726,7 +978,7 @@ dropped rather than invented — that is the reason it sits after the two
 stages that might explain it, and the reason this section specifies a
 measurement instead of a diff.
 
-### I-3 — simplification: pawn collapse + schema shrink + pair ablation
+### N-3 — simplification: pawn collapse + schema shrink + pair ablation
 
 One stage, one param regen, one RR arm. These were separate stages while
 the pawn work was a strength bet; it is not — it addresses none of the
@@ -804,7 +1056,7 @@ code plus regenerated params.
 Verify: `debug-headless evaluate` monotonicity on passed/blocked/supported
 FEN triples across geometries (standard, berolina, shogi); every variant
 loads (`debug-headless state <variant>` over the config list); perft
-suites; bench; SPRT against the H-3 winner. Expected ~0 — everything here
+suites; bench; SPRT against the M-3 winner. Expected ~0 — everything here
 is either behaviour-neutral deletion of already-unread terms or the
 deliberately-measured pair arm, so a large SPRT swing is a leaked bug, not
 a result.
@@ -812,8 +1064,11 @@ a result.
 ## Ordering, dependencies, RR campaign
 
 ```
-A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → [H-3] → I-3 → final RR
-       └── speed block ──┘    └──────── eval block ────────┘
+A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → H-3 → I-3 → J-3 →
+       └── speed block ──┘     └───────── search block ─────────┘
+
+  → K-3 → L-3 → [M-3] → N-3 → final RR
+    └────── eval block ──────┘
 ```
 
 - A-3 prerequisite for every gate (bench + seed). The RR-1 correctness
@@ -822,26 +1077,40 @@ A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → [H-3] → I-3 → final 
   and the pre-fix crazyhouse and shogi standings are void.
 - B-3 before C-3: C's NPS measured on lean search. C-3 before D-3: keeps
   speed-suite attribution clean.
-- The eval block is ordered by what would invalidate a later measurement.
-  F-3 (phase reference) first: it is correctness, and every eval number
-  after it is read through the taper it fixes. G-3 (exposure PST) next,
-  since it targets the base exposure signal E-3 left untouched. H-3
-  (drop-aware porosity) is **conditional** — its trigger is the
-  FSF-anchored table rerun on top of G-3, and if F-3 plus G-3 close the
-  gap it is dropped rather than invented. I-3 (simplification) last,
-  because it is expected to be ~0 Elo and would only add noise earlier.
-- E-3/F-3/G-3/H-3 hold the `.param` schema fixed so eval-block binaries
-  stay param-compatible for RR; all schema change and the single regen
-  land together in I-3.
-- RRs on the VPS: (1) **running** — A-3..E-3 from rebuilt binaries, which
-  also measures what the RR-1 correctness fixes alone bought in shogi and
-  crazyhouse, (2) eval block after G-3 (E-3 vs F-3 vs G-3), (3) final
-  RR after I-3 vs FSF 1700-1900, adding 2000+ anchors once 1900 is beaten.
-- Standing measurement rule for the whole eval block: the reference is
-  Fairy-Stockfish on the same positions, not the previous phase binary.
-  Beating the last build while sitting an order of magnitude under FSF is
-  not a result. Anchor the unit conversion on the standard variant, where
-  our play is competitive (2026-08-02: FSF 100 cp = 198 of our units).
+- **Search block before eval block.** The RR-2 diagnosis measured the
+  drop-variant deficit at 4-6x FSF's nodes for the same depth while
+  standard sits at 0.5x. That is the dominant cause; the eval gaps are
+  real but second-order. Interleaving would also break both gates: the
+  phase-reference stage selects the larger opening futility margins and
+  pushes node counts the wrong way, while its own gate is standard-bench
+  identity, which is independent of the node table.
+- Search block internal order is dependency, not taste. F-3 before G-3 is
+  **hard**: writing history through the aliased index would corrupt the
+  ordering of the non-drop tree. G-3 before H-3 is soft but strong — LMP
+  prunes the ordering tail, so pruning noise-ordered drops would both
+  under-report H-3's value and raise its tactical risk. G-3 and H-3 before
+  I-3, since the reduction is corrected by history. H-3 and I-3 before
+  J-3, which *adds* nodes and would be unreadable before the tree is
+  bounded.
+- Eval block internal order unchanged: K-3 (phase reference) first as
+  correctness, L-3 (exposure PST) next, M-3 conditional on the FSF table
+  rerun, N-3 (simplification) last.
+- E-3 through M-3 hold the `.param` schema fixed so binaries stay
+  param-compatible for RR; all schema change and the single regen land
+  together in N-3.
+- RRs on the VPS: (1) A-3..E-3 from rebuilt binaries, which also measures
+  what the RR-1 correctness fixes alone bought, (2) search block after
+  J-3, (3) eval block after L-3, (4) final RR after N-3 vs FSF 1700-1900,
+  adding 2000+ anchors once 1900 is beaten.
+- **Standing measurement rules.** For the search block the reference is
+  the node table: both engines driven through their protocol at an
+  explicit matching `Hash`, never `debug-headless search`, whose 1 MB TT
+  against FSF's 16 MB default inflated the first version of that table by
+  up to 2x. For the eval block the reference is Fairy-Stockfish's own eval
+  on the same positions, not the previous phase binary; anchor the unit
+  conversion on the standard variant, where our play is competitive
+  (2026-08-02: FSF 100 cp = 198 of our units). In both cases, beating the
+  last build while sitting far under FSF is not a result.
 
 ## Risks and rollback
 
@@ -855,18 +1124,35 @@ A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → [H-3] → I-3 → final 
   makes any mistake visible immediately. Revert = drop branch.
 - **E-3**: done; derive-order risk removed by reducing `zone_attack_best`
   inside `derive_zone_attack`.
-- **F-3**: touches the phase taper, so it touches every eval in every
+- **F-3**: move encoding, so perft-critical. Every suite must be
+  *identical* on every variant — no legality changes, only spare bits. The
+  subtle failure is a missed `end!` consumer that reads a drop; the
+  audited list is in the stage. Rollback = drop branch.
+- **G-3/I-3**: search shape only, perft cannot change. The
+  agnosticism proof is byte-identical bench on standard/xiangqi/grand; if
+  that moves, a non-drop path was touched.
+- **H-3**: tactical blindness, invisible to perft. Caught by the shogi
+  drop-mate depth ladder and the endgame fixtures, arbitrated by RR. If
+  shogi regresses while nodes collapse, the royal-zone guard is too
+  narrow — widen it before abandoning.
+- **J-3**: highest risk of the search block. Touches move generation
+  (perft after the mechanical split *and* after the generator), adds nodes
+  by design, and carries two latent release-mode panics that must be fixed
+  in the same commit (`victim_value!` is `unreachable!()` on a non-capture;
+  the SEE-band skip silently discards drops). Node ceiling breach is
+  handled by a follow-up safety filter, not a revert.
+- **K-3**: touches the phase taper, so it touches every eval in every
   variant. Standard must come out byte-identical — that is the gate, not a
   nicety. Second risk is the SETUP exit predicate: get it wrong and
   sittuyin/janggi either never leave setup or leave it early, both caught
   by their fixtures. Rollback = drop branch.
-- **G-3**: derive-order risk (zone_attack before PSTs on BOTH load paths —
+- **L-3**: derive-order risk (zone_attack before PSTs on BOTH load paths —
   miss one and royal PSTs are silently zero; guard on
   `zone_attack.is_empty()`), plus castling-variant strength risk in our
   strongest variant. PST sanity dump per variant, SPRT standard first.
-- **H-3**: does not exist until the measurement says it should. The risk
+- **M-3**: does not exist until the measurement says it should. The risk
   is inventing it anyway.
-- **I-3**: strength risk from the lost isolated/backward pawn signal;
+- **N-3**: strength risk from the lost isolated/backward pawn signal;
   masks and scalars survive until this stage, so re-enabling any single
   term is a small diff. Param regen schema mismatch panics loudly at load
   (exact-length assert) and cannot fail silently; the regen sequence is
