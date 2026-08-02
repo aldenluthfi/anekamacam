@@ -540,6 +540,55 @@ the enemy hand instead of staying at +16, and the sign must invert so the
 sheltered king scores higher. Then bench (drop variants only should move),
 and SPRT shogi and crazyhouse against phaseD-3.
 
+### Finding: drop variants can never reach OPENING phase
+
+Found while calibrating E-3 against FSF; not yet a stage, and not folded
+into E-3.
+
+`derive_eval_parameters` (parameters.rs:726) sets
+
+```
+opening_score = round(average_big_value) * pieces.len()
+endgame_score = round(average_big_value) * 5
+```
+
+`pieces.len()` counts piece **types**, both colors, so declaring promoted
+types raises the opening threshold without adding a single piece to the
+starting army. `game_phase_score!` meanwhile sums the actual army. The two
+no longer meet:
+
+| variant | opening_score | startpos phase |
+|---|---|---|
+| standard | 4140 | Opening |
+| grand | 8400 | Opening |
+| xiangqi | 3332 | Opening |
+| crazyhouse | 8280 | **Middlegame** |
+| shogi | 7644 | **Middlegame** |
+| minishogi | 4640 | **Middlegame** |
+
+The split is exactly the variants that declare promoted types. Crazyhouse
+carries the identical starting army to standard — its startpos phase score
+is 6664 against standard's 6622 — yet its threshold is exactly double
+(8280 = 2 x 4140) because the promoted types doubled the type count. A
+crazyhouse game therefore starts at blend weight
+`(6664 - 2070) / (8280 - 2070) = 0.74` and slides toward endgame from
+there, discounting `king_safety` and the whole opening half of the taper
+from move one. Shogi and minishogi are the same. Note this is partly
+self-inflicted: `49bf8d4` had to add crazyhouse's promoted types to fix the
+pocket, and doubled its opening threshold as a side effect.
+
+Fix is a one-liner in spirit: derive `opening_score` from the phase score
+of `initial_setup` — the army the variant actually starts with — instead of
+from the type count. That is the quantity the threshold is trying to name,
+it is variant-agnostic, and it makes "startpos is the opening" true by
+construction.
+
+Scope honestly: this recovers the 0.74 discount, not the 5x gap. Crazyhouse
+exposure would go from 126 to roughly 170 against an FSF-equivalent 867.
+Worth a stage, not a substitute for one. It also needs a param regen
+(`opening_score` is token 0 of every `.param` file), which H-3 already
+schedules.
+
 ### F-3 — royal exposure PST replaces castling knowledge
 
 - Move `derive_zone_attack` call (parameters.rs:1577) to run BEFORE PST
