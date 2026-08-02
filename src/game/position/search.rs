@@ -884,12 +884,7 @@ pub fn alpha_beta(
                                   REPETITION SCORING
     \*-----------------------------------------------------------------------*/
 
-    if state.termination.repetition.is_some()
-    && ply > 0
-    && state.position_hash_map
-        .get(&state.position_hash)
-        .copied()
-        .unwrap_or(0) >= 2 {
+    if ply > 0 && has_repetition(state, REP_SCAN_CAP) {
         return draw_score!(state);
     }
 

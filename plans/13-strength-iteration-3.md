@@ -173,7 +173,45 @@ unchanged — ProbCut reads depth/flags), NMP, all pruning.
 Verify: bench node counts per variant (cap: ≤ +16% from singular removal,
 ~0 from capture history); perft suites as insurance; RR arbitrates.
 
-### C-3 — hot-path structural speed (repetition overhaul + board width)
+### C-3 — hot-path structural speed (repetition overhaul + board width) — DONE
+
+As-built deltas from the design below:
+
+- **No `hashes` Vec.** `Snapshot.position_hash` already stores exactly the
+  pre-move hash the design wanted to mirror, so the scan reads
+  `state.history` directly and `Repetition` carries only `clock: u16`.
+  One less allocation per position, nothing to keep index-aligned across
+  null moves. `Snapshot` gained `repetition_clock: u16` (plan-12 pattern).
+- `has_repetition`/`count_repetitions` take a `cap` argument and derive the
+  bound through a private `repetition_scan_bound` (full history when
+  `drops!`, else the clock, then capped). Search passes `REP_SCAN_CAP`,
+  game-truth callers pass `usize::MAX`.
+- The clock resets on any non-quiet move type and on promotions; a pawn
+  push only inflates the bound, which is safe (the bound must never be too
+  small — extra entries simply cannot match the current hash).
+- `has_repetition` returns false when no `repetition` rule is declared, so
+  the old `is_some()` gate at the search probe is now internal.
+- Restored `tools/run_endgame_fixtures.sh` + `tools/endgame_fixtures.txt`
+  (deleted along with `tools/` when history was re-signed). Two sittuyin
+  counting fixtures were already broken before this stage: they used `C`
+  for the chariot (sittuyin uses `R`) and omitted the clock fields the
+  variant's FEN dict regex requires, so the FEN was rejected and the case
+  silently ran from startpos. Fixed to `R` + ` 0 1`; verified they fail
+  identically on phaseB-3, so this is a fixture repair, not a behavior fix.
+
+Verified: 32/32 endgame fixtures (all repetition, perpetual-check,
+perpetual-chase, and sennichite cases) at both widths; FULL standard perft
+suite 27008/27008 plus all 13 other variant suites at depth 4 (U256), and
+a 300-position standard subset plus every drop/large-board suite under
+`--features wide-board`; debug-build perft with `verify_game_state`
+assertions green; cross-width eval equality on 41 standard FENs + 24
+shogi/xiangqi/janggi/crazyhouse/grand FENs + 10 startpos (0 mismatches).
+
+Speed vs phaseB-3 (seed 42, geomean of interleaved passes): shogi +5.8%,
+crazyhouse +5.9%, xiangqi +6.2%, grand +4.9% NPS; standard +1.0% NPS /
+-5.1% time at depth 10 (an initial -1.2% at depth 9 was pass noise).
+Node counts shift both ways — Zobrist tables changed size with
+`MAX_SQUARES`, so tree shape is not comparable across this stage.
 
 **Repetition without HashMap.** Design constraints discovered in review:
 there is NO unconditional halfmove clock (`Snapshot.halfmove_clock` mirrors

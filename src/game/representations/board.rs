@@ -13,12 +13,23 @@
 
 use crate::*;
 
+/// BoardBits
+///
+/// The bitset backing every [`Board`]. Its width caps the playable board
+/// area and sets the per-board copy cost, so it defaults to the 256 bits
+/// that cover every shipped geometry (16x16) and widens to 4096 bits under
+/// the `wide-board` feature for larger grids.
+#[cfg(not(feature = "wide-board"))]
+pub type BoardBits = U256;
+#[cfg(feature = "wide-board")]
+pub type BoardBits = U4096;
+
 /// Board
 ///
 /// Compact board representation as a `(files, ranks, bits)` triple: the
-/// file count, the rank count, and a `U4096` bitboard whose bit at index
-/// `rank * files + file` marks occupancy of that square.
-pub type Board = (u8, u8, U4096);
+/// file count, the rank count, and a [`BoardBits`] bitboard whose bit at
+/// index `rank * files + file` marks occupancy of that square.
+pub type Board = (u8, u8, BoardBits);
 
 /*----------------------------------------------------------------------------*\
                         BITBOARD HELPER REPRESENTATIONS
@@ -27,7 +38,7 @@ pub type Board = (u8, u8, U4096);
 /// Bitboard helper macros over the compact [`Board`] tuple.
 ///
 /// All operate on the `(files, ranks, bits)` representation, where `bits`
-/// is a `U4096` bitset indexed by `rank * files + file`. They keep move
+/// is a [`BoardBits`] bitset indexed by `rank * files + file`. They keep move
 /// generation and state updates free of raw bit twiddling.
 ///
 /// The index is file-fastest, `rank * files + file`; on a 4x3 board:
@@ -148,7 +159,7 @@ pub type Board = (u8, u8, U4096);
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {
-        ($files, $ranks, U4096::MIN)
+        ($files, $ranks, BoardBits::MIN)
     };
 }
 

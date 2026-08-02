@@ -1774,7 +1774,7 @@ pub fn parse_config_file(path: &str) -> State {
                         .unwrap_or(Outcome::Draw);
                     
                     termination.repetition = Some(Repetition {
-                        occurrences, outcome, name,
+                        occurrences, outcome, name, clock: 0,
                     });
                 }
                 "counter" => {

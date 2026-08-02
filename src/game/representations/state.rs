@@ -275,6 +275,7 @@ pub struct Snapshot {
 
     pub castling_state: u8,                                                     /* castling rights before move        */
     pub halfmove_clock: u8,                                                     /* halfmove clock before move         */
+    pub repetition_clock: u16,                                                  /* reversible-ply clock before move   */
     pub counting: Option<(u16, u16)>,                                           /* bare-king (count, limit) before mv */
     pub en_passant_square: EnPassantSquare,                                     /* en passant sq before move          */
     pub game_result: u8,                                                        /* terminal result before move        */
@@ -294,6 +295,7 @@ impl Default for Snapshot {
             in_stand_off: None,
             castling_state: 0,
             halfmove_clock: 0,
+            repetition_clock: 0,
             counting: None,
             en_passant_square: EnPassantSquare::MAX,
             game_result: ONGOING,
@@ -635,7 +637,6 @@ pub struct State {
                                  SEARCH FIELDS
 \*----------------------------------------------------------------------------*/
 
-    pub position_hash_map: HashMap<PositionHash, u8>,                           /* position hash to repetition count  */
     pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
     pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
@@ -690,7 +691,6 @@ impl Clone for State {
             piece_list: self.piece_list.clone(),
             piece_in_hand: self.piece_in_hand.clone(),
 
-            position_hash_map: self.position_hash_map.clone(),
             pv_line: self.pv_line.clone(),
             pv_table: self.pv_table.clone(),
             pv_length: self.pv_length.clone(),
@@ -741,6 +741,13 @@ impl State {
 
         let piece_count: usize = pieces.len();
         let board_size: usize = (files as usize) * (ranks as usize);
+
+        assert!(
+            board_size <= MAX_SQUARES,
+            "Board {}x{} needs {} squares, but this build caps at {}; \
+             rebuild with --features wide-board",
+            files, ranks, board_size, MAX_SQUARES
+        );
 
         let statics = Arc::new(StaticState {
             title,
@@ -932,7 +939,6 @@ impl State {
             piece_list: vec![NO_SQUARE; piece_count * board_size],
             piece_in_hand: [vec![0; piece_count], vec![0; piece_count]],
 
-            position_hash_map: HashMap::with_capacity(128),
             pv_line: array::from_fn(|_| null_move()),
             pv_table: vec![null_move(); PV_STRIDE * PV_STRIDE],
             pv_length: vec![0; PV_STRIDE],
@@ -1014,7 +1020,6 @@ impl State {
         self.piece_list = vec![NO_SQUARE; piece_count * board_size];
         self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
 
-        self.position_hash_map.clear();
         self.pv_line = array::from_fn(|_| null_move());
         self.pv_table = vec![null_move(); PV_STRIDE * PV_STRIDE];
         self.pv_length = vec![0; PV_STRIDE];

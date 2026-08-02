@@ -1484,7 +1484,7 @@ macro_rules! generate_castling_list {
 /// - updates board occupancy, piece lists, virgin flags, castling/en-passant
 /// - handles quiet, capture, multi-capture, unload, promotion, and drop flows
 /// - updates material/piece-class counters and in-hand inventories
-/// - updates Zobrist hash and repetition map
+/// - updates Zobrist hash and declared rule-progress counters
 /// - pushes a reversible [`Snapshot`] and rejects illegal self-check outcomes
 ///
 /// ```text
@@ -1518,6 +1518,8 @@ macro_rules! make_move {
             let last_en_passant_square = $state.en_passant_square;
             let last_halfmove_clock = $state.termination.counter
                 .as_ref().map_or(0, |counter| counter.clock);
+            let last_repetition_clock = $state.termination.repetition
+                .as_ref().map_or(0, |repetition| repetition.clock);
             let last_counting = $state.termination.counting
                 .as_ref().and_then(|counting| counting.progress);
             let last_castling_state = $state.castling_state;
@@ -2733,10 +2735,14 @@ macro_rules! make_move {
             $state.playing = next_player;
             hash_toggle_side!($state);
 
-            let repetition_count = $state.position_hash_map
-                .entry($state.position_hash)
-                .or_insert(0);
-            *repetition_count += 1;
+            if let Some(repetition) = &mut $state.termination.repetition {
+                repetition.clock = if move_type == QUIET_MOVE
+                && !promotion!(applied_move) {
+                    last_repetition_clock.saturating_add(1)
+                } else {
+                    0
+                };
+            }
 
             let snapshot: Snapshot = Snapshot {
                 move_ply: applied_move,
@@ -2744,6 +2750,7 @@ macro_rules! make_move {
                 in_stand_off,
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
+                repetition_clock: last_repetition_clock,
                 counting: last_counting,
                 en_passant_square: last_en_passant_square,
                 game_result: last_game_result,
@@ -2785,8 +2792,8 @@ macro_rules! make_move {
 ///
 /// Reverts the last applied move using the most recent [`Snapshot`].
 /// This macro restores all dynamic state fields and reverses side effects made
-/// by `make_move!`, including board occupancy, piece lists, counters, and the
-/// position repetition map.
+/// by `make_move!`, including board occupancy, piece lists, and rule-progress
+/// counters.
 ///
 /// Params:
 /// - state: &mut State -> position whose most recent move is reverted
@@ -2805,24 +2812,6 @@ macro_rules! undo_move {
         $state.search_ply = $state.search_ply.saturating_sub(1);
         $state.ply_counter -= 1;
 
-        let repetition_count = $state
-            .position_hash_map
-            .get_mut(&$state.position_hash)
-            .unwrap_or_else(|| {
-                panic!(
-                    concat!(
-                        "Missing repetition entry for current ",
-                        "position hash {} during undo"
-                    ),
-                    $state.position_hash
-                )
-            });
-        *repetition_count -= 1;
-
-        if *repetition_count == 0 {
-            $state.position_hash_map.remove(&$state.position_hash);
-        }
-
         let snapshot =
             $state.history.pop().unwrap_or_else(|| panic!("No move to undo!"));
 
@@ -2831,6 +2820,9 @@ macro_rules! undo_move {
 
         if let Some(counter) = &mut $state.termination.counter {
             counter.clock = snapshot.halfmove_clock;
+        }
+        if let Some(repetition) = &mut $state.termination.repetition {
+            repetition.clock = snapshot.repetition_clock;
         }
         if let Some(counting) = &mut $state.termination.counting {
             counting.progress = snapshot.counting;
@@ -3582,6 +3574,8 @@ macro_rules! make_null_move {
             let last_en_passant_square = $state.en_passant_square;
             let last_halfmove_clock = $state.termination.counter
                 .as_ref().map_or(0, |counter| counter.clock);
+            let last_repetition_clock = $state.termination.repetition
+                .as_ref().map_or(0, |repetition| repetition.clock);
             let last_counting = $state.termination.counting
                 .as_ref().and_then(|counting| counting.progress);
             let last_castling_state = $state.castling_state;
@@ -3592,6 +3586,10 @@ macro_rules! make_null_move {
                 .as_ref().map_or([0; 2], |checks| checks.delivered);
             let last_game_phase = $state.game_phase;
             let last_phase_score = $state.phase_score;
+
+            if let Some(repetition) = &mut $state.termination.repetition {
+                repetition.clock = last_repetition_clock.saturating_add(1);
+            }
 
             hash_update_en_passant!(
                 $state,
@@ -3616,6 +3614,7 @@ macro_rules! make_null_move {
                 },
                 castling_state: last_castling_state,
                 halfmove_clock: last_halfmove_clock,
+                repetition_clock: last_repetition_clock,
                 counting: last_counting,
                 en_passant_square: last_en_passant_square,
                 game_result: last_game_result,
@@ -3662,6 +3661,9 @@ macro_rules! undo_null_move {
         $state.castling_state = snapshot.castling_state;
         if let Some(counter) = &mut $state.termination.counter {
             counter.clock = snapshot.halfmove_clock;
+        }
+        if let Some(repetition) = &mut $state.termination.repetition {
+            repetition.clock = snapshot.repetition_clock;
         }
         if let Some(counting) = &mut $state.termination.counting {
             counting.progress = snapshot.counting;

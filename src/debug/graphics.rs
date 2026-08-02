@@ -547,13 +547,8 @@ impl BoardState {
             details.push(["Halfmove Clock".to_string(), halfmove_clock]);
         }
         if let Some(repetition) = &state.termination.repetition {
-            let count = state
-                .position_hash_map
-                .get(&state.position_hash)
-                .copied()
-                .unwrap_or(1);
             repetition_count = format!("{}/{}",
-                count,
+                count_repetitions(state, usize::MAX),
                 repetition.occurrences
             );
             details.push(["Repetition Count".to_string(), repetition_count]);

@@ -94,13 +94,13 @@ pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
 /// first — the unstyled core that `format_board` decorates.
 ///
 /// Params:
-/// - board: &U4096 -> raw bit storage to render
+/// - board: &BoardBits -> raw bit storage to render
 /// - files: u8     -> board width
 /// - ranks: u8     -> board height
 ///
 /// Return:
 /// String          -> newline-separated 0/1 grid
-fn format_bitboard(board: &U4096, files: u8, ranks: u8) -> String {
+fn format_bitboard(board: &BoardBits, files: u8, ranks: u8) -> String {
     let mut result = String::new();
 
     for row in (0..ranks).rev() {

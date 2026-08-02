@@ -14,7 +14,7 @@
                               CORE REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 pub use crate::game::representations::{
-    board::Board,
+    board::{Board, BoardBits},
     drop::DropSet,
     termination::{
         Adjudicate, Checks, Counter, Counting, Termination, Extinct, Goal,
@@ -54,8 +54,8 @@ pub use crate::game::moves::move_list::{
     generate_relevant_moves,
 };
 pub use crate::game::representations::termination::{
-    adjudicate_outcome, counting_limit, game_outcome, position_terminal,
-    side_is_bare, terminal_reason,
+    adjudicate_outcome, count_repetitions, counting_limit, game_outcome,
+    has_repetition, position_terminal, side_is_bare, terminal_reason,
 };
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
@@ -136,7 +136,7 @@ pub use crate::debug::tuning::run_tuning;
                              EXTERNAL DEPENDENCIES
 \*----------------------------------------------------------------------------*/
 pub use arboard::Clipboard;
-pub use bnum::types::U4096;
+pub use bnum::types::{U256, U4096};
 pub use chrono;
 pub use core::cell::SyncUnsafeCell;
 pub use crossterm::{
@@ -213,7 +213,11 @@ pub use std::{
 /// and tables (LMP/NMP/RFP/razor/IIR/LMR limits, `HIST_BONUS_TABLE`), phase
 /// occupancies, colour and castling codes, piece/en-passant sentinels, and
 /// the move-type tags. Values are fixed at compile time and shared through
-/// the prelude.
+/// the prelude. `MAX_SQUARES` tracks [`BoardBits`], so it and the Zobrist
+/// tables sized by it widen together under the `wide-board` feature.
+#[cfg(not(feature = "wide-board"))]
+pub const MAX_SQUARES: usize = 256;
+#[cfg(feature = "wide-board")]
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 255;
 pub const MAX_DEPTH: usize = 128;
@@ -269,6 +273,8 @@ pub const LMR_CAPTURE_CHECK_DIV: f64 = 4.5;
 pub const DANGEROUS_PUSH_THRESHOLD: i32 = 92;
 
 pub const DRAW_BIAS_DIV: i32 = 16;
+
+pub const REP_SCAN_CAP: usize = 64;                                             /* per-node repetition scan budget    */
 
 pub const PAWN_MIN_START_COUNT: usize = 5;
 

@@ -127,12 +127,16 @@ pub struct Perpetual {
 ///
 /// A repeated-position rule: the game resolves to `outcome` once the current
 /// position has occurred `occurrences` times. A `Perpetual` rule may override
-/// the result for a sole aggressor.
+/// the result for a sole aggressor. Occurrences are counted on demand by
+/// scanning the pre-move hashes history already stores; `clock` bounds that
+/// scan in variants without drops (a capture, drop, promotion, or castling
+/// move makes every earlier position unreachable).
 #[derive(Clone)]
 pub struct Repetition {
     pub occurrences: u8,                                                        /* occurrences that trigger the rule  */
     pub outcome: Outcome,                                                       /* result once reached                */
     pub name: String,                                                           /* reason reported when it fires      */
+    pub clock: u16,                                                             /* plies since an irreversible move   */
 }
 
 /// Checks
@@ -204,6 +208,10 @@ impl Termination {
     /// configured rule, threshold, outcome, and reported name.
     pub fn reset_progress(&mut self) {
         self.game_result = ONGOING;
+
+        if let Some(repetition) = &mut self.repetition {
+            repetition.clock = 0;
+        }
 
         if let Some(counter) = &mut self.counter {
             counter.clock = 0;
@@ -652,6 +660,87 @@ fn perpetual_offender(state: &mut State) -> Option<u8> {
     }
 }
 
+/// repetition_scan_bound
+///
+/// How many trailing history entries can hold the current position's hash: the
+/// full history in drop variants (a capture-to-hand followed by a drop can
+/// restore an identical position, hands included), else the repetition rule's
+/// reversible-ply clock. `cap` tightens the bound for per-node search probes.
+///
+/// Params:
+/// - state: &State -> position whose history is bounded
+/// - cap  : usize  -> caller's scan budget (`usize::MAX` for game truth)
+///
+/// Return:
+/// usize           -> number of trailing history entries to scan
+fn repetition_scan_bound(state: &State, cap: usize) -> usize {
+    let length = state.history.len();
+    let reversible = if drops!(state) {
+        length
+    } else {
+        state.termination.repetition
+            .as_ref().map_or(0, |repetition| repetition.clock as usize)
+    };
+
+    reversible.min(length).min(cap)
+}
+
+/// has_repetition
+///
+/// Whether the current position occurred before, by scanning the pre-move
+/// hashes history stores backward within `repetition_scan_bound`. False when
+/// no `repetition` rule is declared. Every entry is scanned -- null moves
+/// break ply parity, and the side to move is part of the hash, so wrong-side
+/// entries can never match.
+///
+/// Params:
+/// - state: &State -> current position
+/// - cap  : usize  -> scan budget (`REP_SCAN_CAP` for per-node probes)
+///
+/// Return:
+/// bool            -> true when the position occurred at least once before
+pub fn has_repetition(state: &State, cap: usize) -> bool {
+    if state.termination.repetition.is_none() {
+        return false;
+    }
+
+    let bound = repetition_scan_bound(state, cap);
+    let start = state.history.len() - bound;
+
+    state.history[start..]
+        .iter()
+        .rev()
+        .any(|snapshot| snapshot.position_hash == state.position_hash)
+}
+
+/// count_repetitions
+///
+/// How many times the current position has occurred, the current occurrence
+/// included, within `repetition_scan_bound`. Zero when no `repetition` rule
+/// is declared. The scan counts the root position too, which the old
+/// per-move occurrence map missed.
+///
+/// Params:
+/// - state: &State -> current position
+/// - cap  : usize  -> scan budget (`usize::MAX` for game truth)
+///
+/// Return:
+/// u8              -> occurrence count including the current position
+pub fn count_repetitions(state: &State, cap: usize) -> u8 {
+    if state.termination.repetition.is_none() {
+        return 0;
+    }
+
+    let bound = repetition_scan_bound(state, cap);
+    let start = state.history.len() - bound;
+    let matches = state.history[start..]
+        .iter()
+        .filter(|snapshot| snapshot.position_hash == state.position_hash)
+        .count();
+
+    (matches + 1).min(u8::MAX as usize) as u8
+}
+
 /// repetition_outcome
 ///
 /// The on-demand repetition/perpetual terminal, computed rather than stored:
@@ -672,8 +761,7 @@ pub fn repetition_outcome(
 ) -> Option<(Outcome, bool)> {
     let neutral = state.termination.repetition.as_ref()?.outcome;
 
-    let occurrences = state.position_hash_map
-        .get(&state.position_hash).copied().unwrap_or(0);
+    let occurrences = count_repetitions(state, usize::MAX);
     if occurrences < min_count {
         return None;
     }

@@ -1,0 +1,74 @@
+# Decisive end-condition regression fixtures (plan 08).
+#
+# One case per line, fields separated by '|':
+#   variant | fen | moves | expected Result | description
+#
+# `fen` may be the literal `startpos`. `fen` keeps its own internal spaces
+# (side-to-move, and the `*` en-passant marker some variants require). The
+# runner drives the release engine over UCI and asserts the `d` Result line,
+# which reflects `State.game_result` -- the parametric terminal rules that
+# make_move! sets. Checkmate/stalemate are no-legal-move outcomes detected in
+# search, not by make_move!, so they are out of scope here and verified via
+# `go` instead. Repetition and perpetual are decided on demand -- by search and
+# by the `d` game_outcome oracle -- not stored by make_move!. The perpetual
+# detector is a plain-undefended predicate that unifies check and chase and
+# tracks the chased piece by identity across the cycle: a dodging target is
+# caught, while a defended piece is not a chase.
+
+# --- perpetual (xiangqi): sole aggressor in a repetition loses -------------
+xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 e10e9 a10a9 e9e10 a9a10 | Black wins | perpetual check: sole checker White loses
+xiangqi | 4k4/9/9/9/9/n8/9/9/9/R4K3 w | a1a2 e10d10 a2a1 d10e10 a1a2 e10d10 a2a1 d10e10 a1a2 | Black wins | perpetual chase: sole chaser White loses (undefended horse a5)
+xiangqi | 4k4/9/9/9/9/n8/9/9/9/R4K3 w | a1b1 e10d10 b1a1 d10e10 a1b1 e10d10 b1a1 d10e10 a1b1 | Draw | chase not sustained every ply -> repetition draw
+xiangqi | 3k5/9/9/9/9/9/9/9/9/R3K4 w | a1a2 d10d9 a2a1 d9d10 a1a2 d10d9 a2a1 d9d10 a1a2 | Draw | repetition with no offence -> draw
+xiangqi | 4k4/9/9/1n7/9/9/9/9/9/R2K5 w | a1b1 b7a5 b1a1 a5b7 a1b1 b7a5 b1a1 a5b7 a1b1 | Black wins | perpetual chase: chariot tracks a dodging undefended horse (b7/a5) -> chaser loses
+xiangqi | 4k4/9/9/9/4r4/2N1r4/9/9/9/5K3 w | c5d3 e5e4 d3c5 e4e5 c5d3 e5e4 d3c5 e4e5 c5d3 | Draw | defended chariot is not chased (undefended rule) -> repetition draw
+xiangqi | 2e1k4/4r4/9/9/9/9/9/9/4R4/2E1K4 w | c1a3 c10a8 a3c1 a8c10 c1a3 c10a8 a3c1 a8c10 c1a3 | Draw | mutual equal attack on defended pieces -> no chase, draw
+
+# --- perpetual check (shogi/minishogi sennichite): checker loses at 4-fold --
+shogi | 9/9/9/9/4k4/9/9/9/K2R5 w -/- | d1e1 e5d5 e1d1 d5e5 d1e1 e5d5 e1d1 d5e5 d1e1 e5d5 e1d1 d5e5 d1e1 | Black wins | perpetual check: sole checker White loses at the 4th fold
+shogi | 9/9/9/9/4k4/9/9/9/R1K6 w -/- | a1b1 e5e4 b1a1 e4e5 a1b1 e5e4 b1a1 e4e5 a1b1 e5e4 b1a1 e4e5 a1b1 | Draw | plain 4-fold repetition (no perpetual check) -> draw
+minishogi | 4k/5/5/5/K2R1 w -/- | d1e1 e5d5 e1d1 d5e5 d1e1 e5d5 e1d1 d5e5 d1e1 e5d5 e1d1 d5e5 d1e1 | Black wins | perpetual check: sole checker White loses at the 4th fold
+
+# --- repetition / counter --------------------------------------------------
+standard | startpos | g1f3 b8c6 f3g1 c6b8 g1f3 b8c6 f3g1 c6b8 g1f3 | Draw | threefold repetition
+standard | 4k3/8/8/8/8/8/8/4K2R w K - 99 1 | h1h2 | Draw | 50-move counter reaches limit on a quiet rook move
+
+# --- check family ----------------------------------------------------------
+threecheck | 4k3/8/8/8/8/8/8/R5K1 w - - 0 1 | a1a8 e8e7 a8a7 e7e6 a7a6 | White wins | third check by White wins
+fivecheck | 4k3/8/8/8/8/8/8/R5K1 w - - 0 1 | a1a8 e8e7 a8a7 e7e6 a7a6 e6e5 a6a5 e5e4 a5a4 | White wins | fifth check by White wins
+
+# --- goal zone -------------------------------------------------------------
+koth | 4k3/8/8/8/8/8/4K3/8 w - - 0 1 | e2e3 e8e7 e3e4 | White wins | king-of-the-hill: White king reaches the centre
+
+# --- material extinction ---------------------------------------------------
+kinglet | k7/pR6/8/8/8/8/P6K/8 w | b7a7 | White wins | kinglet: Black loses its last pawn
+extinction | 4k3/8/8/8/8/8/PPPqPPPP/RNBQKBNR w * | d1d2 | White wins | extinction: Black loses its only queen
+horde | r3k3/8/8/8/8/8/P7/8 b * | a8a2 | Black wins | horde: White's last piece captured (army extinct)
+
+# --- makruk pieces' honour: a bare king is counted out by the winner's material
+makruk | 7k/8/8/8/8/RR6/8/K7 w | a3a4 h8h7 a4a3 h7h8 | Draw | KRRk bare king: two rooks -> counted out at the limit of 8
+makruk | 7k/8/8/8/8/R7/8/K7 w | a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 | Draw | KRk bare king: one rook -> counted out at the limit of 16
+makruk | 7k/8/8/8/8/R7/8/K7 w | a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 a3a4 h8h7 a4a3 h7h8 | Ongoing | KRk one move short of the 16-count -> still ongoing
+
+# --- Cambodian (ouk-chaktrang) + Burmese (sittuyin) pieces' honour counting --
+# these variants keep threefold repetition, so the winner marches (no repeat)
+# to isolate the count.
+ouk-chaktrang | 7k/8/8/8/8/8/8/RR1K4 w | a1a2 h8h7 b1b2 h7h8 | Draw | KRRk: two rooks -> counted out at 8
+ouk-chaktrang | 7k/8/8/8/8/8/8/R2K4 w | a1a2 h8h7 a2a3 h7h8 a3a4 h8h7 a4a5 h7h8 a5b5 h8h7 b5b4 h7h8 b4b3 | Draw | KRk: one rook -> counted out at 16
+ouk-chaktrang | 7k/8/8/8/8/8/8/R2K4 w | a1a2 h8h7 a2a3 h7h8 a3a4 h8h7 a4a5 h7h8 a5b5 h8h7 b5b4 h7h8 | Ongoing | KRk one move short of the 16-count
+sittuyin | 7k/8/8/8/8/8/8/RR1K4 w -/- 0 1 | a1a2 h8h7 b1b2 h7h8 | Draw | KRRk: two chariots -> counted out at 8
+sittuyin | 7k/8/8/8/8/8/8/R2K4 w -/- 0 1 | a1a2 h8h7 a2a3 h7h8 a3a4 h8h7 a4a5 h7h8 a5b5 h8h7 b5b4 h7h8 b4b3 | Draw | KRk: one chariot -> counted out at 16
+
+# --- material adjudication on double pass (janggi points) ------------------
+# Kings sit off the same file, so a pass is a plain pass rather than a bikjang
+# stand-off; both sides passing adjudicates by the points count.
+janggi | 9/4k4/9/9/9/9/9/9/3K5/R8 w -/- | d2d2 e9e9 | White wins | White's extra chariot wins the count
+janggi | r8/4k4/9/9/9/9/9/9/3K5/9 w -/- | d2d2 e9e9 | Black wins | Black's extra chariot wins the count
+janggi | 9/4k4/9/9/9/9/9/9/3K5/9 w -/- | d2d2 e9e9 | Black wins | equal material: Black handicap decides
+janggi | 9/4k4/9/9/9/9/9/9/3K5/R8 w -/- | d2d2 | Ongoing | a lone pass does not adjudicate
+# --- bikjang stand-off (janggi): facing generals, a pass accepts ------------
+# The generals face on the e-file with a clear path (a stand-off). The side to
+# move must break it or pass; passing accepts the bikjang, decided by the
+# points count -- matching Fairy-Stockfish's double-bikjang immediate end.
+janggi | 9/4k4/9/9/9/9/9/9/4K4/R8 w -/- | e2e2 | White wins | bikjang accepted: White's extra chariot wins the count
+janggi | 9/4k4/9/9/9/9/9/9/4K4/9 w -/- | e2e2 | Black wins | bikjang accepted: equal material, Black handicap decides
