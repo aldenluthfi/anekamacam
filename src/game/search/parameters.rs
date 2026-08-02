@@ -1469,9 +1469,9 @@ pub fn derive_pawn_parameters(state: &mut State) {
 ///
 /// Scales search margins to the variant's material: futility, reverse
 /// futility, razoring, SEE, delta, ProbCut, and aspiration values. It also
-/// derives null-move, capture-history, singular-search, draw-bias, and pair
-/// parameters, then builds the pawn and royal-safety lookup tables. This keeps
-/// pruning aggressiveness comparable across variants with different scales.
+/// derives null-move, draw-bias, and pair parameters, then builds the pawn
+/// and royal-safety lookup tables. This keeps pruning aggressiveness
+/// comparable across variants with different scales.
 ///
 /// Params:
 /// - state: &mut State -> variant whose search margins are filled
@@ -1543,12 +1543,6 @@ pub fn derive_search_parameters(state: &mut State) {
 
     let nmp_eval_div = (avg / 2).max(1);
     state.static_mut().nmp_eval_div = nmp_eval_div;
-
-    let capt_hist_div = (avg / 4).max(1);
-    state.static_mut().capt_hist_div = capt_hist_div;
-
-    let singular_margin = (avg / 128).max(1);
-    state.static_mut().singular_margin = singular_margin;
 
     let draw_bias = (avg / 8).max(10);
     state.static_mut().draw_bias = draw_bias;

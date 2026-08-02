@@ -252,8 +252,6 @@ pub const MIN_LMR_DEPTH: usize = 4;
 pub const MIN_LMP_DEPTH: usize = 3;
 pub const MIN_NMP_DEPTH: usize = 2;
 pub const MIN_NMP_ENDGAME_DEPTH: usize = 8;
-pub const MIN_SINGULAR_DEPTH: usize = 8;
-pub const SINGULAR_TT_DEPTH_SLACK: usize = 3;
 pub const MAX_CHECK_EXTENSION: usize = 2;
 pub const MIN_PROBCUT_DEPTH: usize = 5;
 pub const PROBCUT_DEPTH_REDUCTION: usize = 4;
@@ -567,7 +565,6 @@ pub const P_TABLE_SIZE: usize = 1 <<
 
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000;                               /* ordering band for SEE >= 0 moves   */
 pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000;                                /* ordering band for SEE < 0          */
-pub const CAPT_HIST_BUCKETS: usize = 8;                                         /* capture-history victim buckets     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

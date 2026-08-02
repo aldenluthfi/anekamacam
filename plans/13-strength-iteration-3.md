@@ -140,7 +140,15 @@ no letter.
   depth-4); same-seed bench node counts IDENTICAL cross-process on all
   five campaign variants; A/A speed-suite delta ±0.8%.
 
-### B-3 — lean search (delete proven-worthless machinery)
+### B-3 — lean search (delete proven-worthless machinery) — DONE
+
+As-built notes: executed exactly as specified below; also un-gated the
+beta-cutoff corr-hist/TT stores and dropped the singular paragraph from
+the alpha_beta doc block + the `probe_tt_entry!` doc's singular mention
+(now cites ProbCut's TT-refutation guard). Node gate vs A-3 baseline
+(seed 42, limit 6, standard d9 / others d8): standard -1.0%, shogi
+-0.8%, crazyhouse -17.3%, xiangqi -1.8%, grand +11.6% — all within the
++16% cap.
 
 Delete **capture history**: `State.capt_hist` (state.rs:646, clone :704,
 from_statics :952-954, reset :1039-1040), clear_search realloc
