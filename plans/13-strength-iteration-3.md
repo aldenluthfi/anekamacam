@@ -577,11 +577,44 @@ from move one. Shogi and minishogi are the same. Note this is partly
 self-inflicted: `49bf8d4` had to add crazyhouse's promoted types to fix the
 pocket, and doubled its opening threshold as a side effect.
 
-Fix is a one-liner in spirit: derive `opening_score` from the phase score
-of `initial_setup` — the army the variant actually starts with — instead of
-from the type count. That is the quantity the threshold is trying to name,
-it is variant-agnostic, and it makes "startpos is the opening" true by
-construction.
+The threshold should name the army the variant starts with, not how many
+names that army goes by. Two corrections to the obvious fix:
+
+**`initial_setup` alone is not the starting army.** It is parsed from the
+startpos BOARD field only (game_io.rs:1159-1170), so in a setup variant
+every piece that starts in hand has an empty `initial_setup`. Sittuyin
+starts `8/8/4pppp/pppp4/4PPPP/PPPP4/8/8 w KSSFRRNN/kssfrrnn` — only pawns
+on the board — and janggi starts with `HHEEQ/hheeq` in hand. Deriving from
+`initial_setup` would hand sittuyin a pawns-only army and an opening
+threshold near zero. The starting army is board **plus** initial hand, and
+both are available where the threshold is computed: `derive_eval_parameters`
+runs on the freshly loaded initial position, so `piece_count` already holds
+the startpos board counts and `piece_in_hand` the startpos hands.
+
+**The threshold must be a fraction of that army, not the army.** The
+comparison is `phase_score > opening_score`, so a threshold equal to the
+full army is never exceeded and every variant would read MIDDLEGAME from
+move one — today's bug with the sign flipped. Standard currently sits at
+0.625 of its army (4140 of 6622) and 0.26 for endgame (1725), and standard
+is the only variant whose strength is validated, so calibrate to it:
+
+```
+army = Σ over big non-royal piece type t of
+       ovalue(t) * (board_count(t) + hand_count(t))    /* at startpos */
+opening_score = 5 * army / 8
+endgame_score = army / 4
+```
+
+| variant | army | opening now | opening new | endgame now | endgame new |
+|---|---|---|---|---|---|
+| standard | 6622 | 4140 | 4139 | 1725 | 1655 |
+| crazyhouse | 6664 | 8280 | 4165 | 2070 | 1666 |
+| shogi | 5662 | 7644 | 3539 | 1365 | 1415 |
+
+Standard is unchanged to within a unit — that is the point of the
+calibration. Setup variants are unaffected during setup, where `game_phase`
+is pinned to SETUP regardless, and land on a correct threshold once their
+hands empty onto the board.
 
 Scope honestly: this recovers the 0.74 discount, not the 5x gap. Crazyhouse
 exposure would go from 126 to roughly 170 against an FSF-equivalent 867.
