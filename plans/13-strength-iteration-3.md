@@ -99,7 +99,7 @@ quadratic zone-attack king danger, open-shield-file penalty, 7 pawn
 sub-terms (passed/protected/chained/connected/doubled/isolated/backward)
 cached in PTable, material-scaled draw contempt.
 
-## Stage ladder (iteration 3 — phase labels A-3..H-3)
+## Stage ladder (iteration 3 — phase labels A-3..I-3)
 
 One significant, RR-differentiable change per stage; one commit per stage on
 its own `phaseX-3` branch via build-stages.sh. Rejected experiments consume
@@ -132,10 +132,12 @@ no letter.
   8), `PROCS` (10 interleaved passes), `LIMIT` (16), `SEED` (42).
   Geomean nodes/time/nps per variant + B-vs-A deltas; fails loudly when
   same-binary node counts differ across passes.
-- build-stages.sh: `PHASES` A-3..G-3 incl. F-3a/b/c; `phaseA-3` pinned
-  via its own branch (created at the A-3 commit — hash unknowable at
-  commit time), `PHASE_G_PARENT` overrides G-3's default F-3a parent.
-  round-robin.sh: `*-3*` patterns, default VARIANTS = all five.
+- build-stages.sh: `PHASES` now A-3..I-3, one row per stage (the F-3a/b/c
+  sub-ablation rows are gone with the sub-stages); `phaseA-3` pinned via
+  its own branch (created at the A-3 commit — hash unknowable at commit
+  time), `PHASE_I_PARENT` overrides I-3's default H-3 parent for when the
+  conditional H-3 is dropped. round-robin.sh: `*-3*` patterns, VARIANTS
+  defaults to the four campaign variants.
 - Verified: perft suites green (standard depth-4 x400 + 13 variants full
   depth-4); same-seed bench node counts IDENTICAL cross-process on all
   five campaign variants; A/A speed-suite delta ±0.8%.
@@ -540,10 +542,12 @@ the enemy hand instead of staying at +16, and the sign must invert so the
 sheltered king scores higher. Then bench (drop variants only should move),
 and SPRT shogi and crazyhouse against phaseD-3.
 
-### Finding: drop variants can never reach OPENING phase
+### F-3 — phase reference from the board at first play
 
-Found while calibrating E-3 against FSF; not yet a stage, and not folded
-into E-3.
+Found while calibrating E-3 against FSF. Correctness, and it runs first
+because every later eval measurement is read through the taper: measuring a
+king-safety change while crazyhouse and shogi sit at blend weight 0.74 and
+sliding means measuring it again afterwards.
 
 `derive_eval_parameters` (parameters.rs:726) sets
 
@@ -636,17 +640,33 @@ also the moment at which the reference army above should be captured.
 **Not affected, checked:** `setup phase` is rule bit 6 and `drops` is bit
 3; sittuyin and janggi declare only the former. E-3's hand king-danger term
 and the capture-to-hand material accounting both gate on `drops!`, so a
-menu hand contributes to neither. Note also that thresholds cannot stay in
-`StaticState` if they are captured mid-game — `static_mut` is
-`Arc::get_mut(..).unwrap_unchecked()`, unsound once SMP threads hold
-clones — so they move to `State`, and out of the `.param` schema, which is
-H-3 work.
+menu hand contributes to neither.
+
+As-built shape:
+
+- `opening_score`/`endgame_score` stay in the `.param` schema as the
+  static default, derived from the config startpos board plus its initial
+  hand — correct for every shipped variant, so no regen here and no
+  collision with I-3's atomic regen.
+- The same two values also become `State` fields, initialised from the
+  statics at load and overwritten by a capture when SETUP ends, so a menu
+  hand cannot poison them. They cannot live only in `StaticState`:
+  `static_mut` is `Arc::get_mut(..).unwrap_unchecked()`, undefined
+  behaviour once SMP threads hold clones. `Snapshot` carries the army
+  scalar for undo, plan-12 pattern.
+- SETUP exit predicate becomes "no side has a legal placement" rather than
+  "both hands empty" (move_list.rs:2568).
+
+Verify: startpos reads Opening for all five campaign variants; **standard
+bench byte-identical** — its thresholds move by one unit, so any tree
+change at all means the derivation is wrong; sittuyin and janggi still
+terminate setup and still pass their fixtures; perft suites; RR vs E-3.
 
 Scope honestly: this recovers the 0.74 discount, not the 5x gap. Crazyhouse
 exposure would go from 126 to roughly 170 against an FSF-equivalent 867.
 Worth a stage, not a substitute for one.
 
-### F-3 — royal exposure PST replaces castling knowledge
+### G-3 — royal exposure PST replaces castling knowledge
 
 - Move `derive_zone_attack` call (parameters.rs:1577) to run BEFORE PST
   derivation — top of `derive_eval_parameters`; ensure BOTH load paths
@@ -670,20 +690,51 @@ score(s) = -pressure(s)
 - Delete: `castling_bonus!` (evaluation.rs:163-177) + its
   `evaluate_position!` line (:625); `State.has_castled` (state.rs:611 +
   clone/from_statics/reset) + writes (move_list.rs:2650, :3477). Scalars
-  `castled_bonus`/`castling_rights_bonus`: stop reading at F-3, delete at
-  G-3.
-- Keep: `king_shelter!`, quadratic `king_danger!`, and initially
-  `pawn_shield!`/`open_shield!`.
-- Sub-ablation arms sharing the F-3 base: F-3a = full F; F-3b = F minus
-  pawn-shield term; F-3c = F-3b minus open-shield term. Eval-block RR
-  picks the winner before G-3.
+  `castled_bonus`/`castling_rights_bonus`: stop reading here, delete in
+  I-3.
+- Keep: `king_shelter!`, quadratic `king_danger!`, `pawn_shield!`,
+  `open_shield!`. No sub-ablation arms — one change per stage.
 
 Verify: dump derived royal opening PSTs — standard (g1/c1/b1 ≥ e1,
 corners high), shogi (low ranks, edge-file bias), xiangqi (palace
-gradient); non-degenerate PSTs for all variants in derive log; SPRT F-3
-vs E-3.
+gradient); non-degenerate PSTs for all variants in derive log. Gate is the
+FSF-anchored exposure table from E-3, rerun on top of F-3, not merely
+"PSTs look non-degenerate". Standard carries the risk here — this deletes
+castling knowledge from our strongest variant — so SPRT standard against
+F-3 before the RR.
 
-### G-3 — pawn eval collapse → advancing-piece path quality
+### H-3 — drop-aware king-zone porosity (conditional)
+
+The part of the gap E-3 did not touch. FSF charges 438 cp for the exposed
+king in crazyhouse against 100 cp in standard — identical board, empty
+hands on both sides — a 4.4x multiplier that comes from the rules alone.
+Our number is the same in both variants. E-3 added danger proportional to
+what is *in* the hand; this is the danger that exists because material
+*will* pass through hands at all.
+
+Mechanism: where drops are legal an empty square in the royal's zone is a
+landing pad, not merely an empty square, and `derive_zone_attack`'s
+travel-based occupancy model cannot express that — every entry in it
+assumes the attacker must reach the square by moving. The candidate term is
+therefore a zone-porosity count (`adjacency_mask[royal] & !occupied`,
+already the complement of what `king_shelter!` walks) weighted by the best
+droppable attacker, gated on `drops!`.
+
+**The form is deliberately not fixed here.** Rerun the FSF-anchored
+exposure table after F-3 and G-3 land. If those two close the gap, H-3 is
+dropped rather than invented — that is the reason it sits after the two
+stages that might explain it, and the reason this section specifies a
+measurement instead of a diff.
+
+### I-3 — simplification: pawn collapse + schema shrink + pair ablation
+
+One stage, one param regen, one RR arm. These were separate stages while
+the pawn work was a strength bet; it is not — it addresses none of the
+measured failures — so it merges with the schema shrink it was only ever
+deferring deletions into. Expectation for the whole stage is ~0 Elo and the
+payoff is less machinery.
+
+#### Pawn collapse
 
 Replace the 7-sub-term scoring pass (evaluation.rs:439-563) with ~35
 lines. Per pawn-like piece at `entry = index * board_size + square`, with
@@ -713,52 +764,56 @@ test (one pass instead of two).
   shipped armies: gold/silver/advisor/elephant/ferz still excluded
   (backward steps), lance/shogi-knight excluded (range/no step); minishogi
   pawn + minixiangqi soldiers now qualify — intended.
-- Stop READING (deletion deferred to G-3 so `PARAM_SCALAR_TAIL` stays 19
-  and no param regen mid-block): `pawn_connected_opening/endgame`,
-  `pawn_doubled_penalty`, `pawn_isolated_penalty`,
-  `pawn_backward_penalty`, `pawn_backward_mask`, `pawn_support_offsets`,
-  `pawn_passed_support_opening/endgame`. Stop deriving the backward mask
-  + support offsets (parameters.rs:1371-1396 region).
 - Keep: `pawn_advancement` (dangerous-push search.rs:1300-1304),
   `derive_pawn_stop`, PTable, `pawn_board`, `hash_pawns`.
 
+#### Schema shrink and dead-weight purge
+
+Delete end-to-end, in the same commit as the pawn collapse so there is one
+regen and one token-count change: the pawn scalars the collapse stops
+reading (`pawn_connected_opening/endgame`, `pawn_doubled_penalty`,
+`pawn_isolated_penalty`, `pawn_backward_penalty`,
+`pawn_passed_support_opening/endgame`), their masks
+(`pawn_backward_mask`, `pawn_support_offsets`, derivation at
+parameters.rs:1371-1396), the castling scalars G-3 stopped reading
+(`castled_bonus`, `castling_rights_bonus`), and the vestigial
+`mobility_opening/endgame`. Sites: StaticState (state.rs:538-539,
+547-557), `State::new` inits, `derive_eval_scalars`
+(parameters.rs:625-643), `parse_tuned_parameters` (game_io.rs:318-336),
+`export_tuned_parameters_file` (game_io.rs:412-432), `export_theta`
+(tuning.rs:663-683). `PARAM_SCALAR_TAIL` 19 → 10 (tempo, pawn_shield,
+king_shelter, king_danger_scale, open_shield, imbalance_major/minor,
+pair_bonus_value, passed_scale_opening/endgame). Delete
+`PAWN_MIN_START_COUNT`.
+
+#### Pair-bonus ablation
+
+SPRT arm without the term on the lean baseline; if neutral, delete the term
+and the incremental `pair_score` machinery (state.rs:350-392 hooks,
+verify_game_state check); if it loses strength, keep it — it is incremental
+and ~free, so "keep" is the expectation and the measurement is the point.
+
+#### Atomic param regen
+
+Parse asserts an exact token count and embedded params are compile-time
+`include_dir!`, so: rm `res/param/*/latest.param` → `cargo build --release`
+(empty embed, falls to fresh derive) → `debug-headless derive` (walks every
+config, exports) → `cargo build --release` (re-embed) → single commit of
+code plus regenerated params.
+
 Verify: `debug-headless evaluate` monotonicity on passed/blocked/supported
-FEN triples across geometries (standard, berolina, shogi); bench; SPRT
-G-3 vs F-3 before RR.
-
-### H-3 — schema shrink + dead-weight purge + pair ablation
-
-- Delete fields deferred from E-3/F-3 plus `mobility_opening/endgame`
-  end-to-end: StaticState (state.rs:538-539, 547-557), `State::new`
-  inits, `derive_eval_scalars` (parameters.rs:625-643),
-  `parse_tuned_parameters` (game_io.rs:318-336),
-  `export_tuned_parameters_file` (game_io.rs:412-432), `export_theta`
-  (tuning.rs:663-683). `PARAM_SCALAR_TAIL` 19 → 10 (tempo, pawn_shield,
-  king_shelter, king_danger_scale, open_shield, imbalance_major/minor,
-  pair_bonus_value, passed_scale_opening/endgame) — minus terms F-3b/c
-  killed. Delete `PAWN_MIN_START_COUNT`.
-- **Pair-bonus ablation** (user decision): SPRT arm without the term on
-  the lean baseline; if neutral → delete term + incremental `pair_score`
-  machinery (state.rs:350-392 hooks, verify_game_state check); if it
-  loses strength → keep (it is incremental and ~free — expectation is
-  "keep" but measurement decides).
-- Atomic param regen (parse asserts exact token count; embedded params
-  are compile-time `include_dir!`): rm `res/param/*/latest.param` →
-  `cargo build --release` (empty embed, falls to fresh derive) →
-  `debug-headless derive` (walks every config, exports) →
-  `cargo build --release` (re-embed) → single commit of code +
-  regenerated params.
-
-Verify: every variant loads (`debug-headless state <variant>` over config
-list); perft suites; bench; SPRT G-3 vs F-winner expected ~0 (G is
-behavior-neutral except deletions of already-unread terms — non-neutral
-SPRT = leaked bug, not a result).
+FEN triples across geometries (standard, berolina, shogi); every variant
+loads (`debug-headless state <variant>` over the config list); perft
+suites; bench; SPRT against the H-3 winner. Expected ~0 — everything here
+is either behaviour-neutral deletion of already-unread terms or the
+deliberately-measured pair arm, so a large SPRT swing is a leaked bug, not
+a result.
 
 ## Ordering, dependencies, RR campaign
 
 ```
-A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → H-3 → final RR
-       └── speed block ──┘    └──── eval block ────┘
+A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → [H-3] → I-3 → final RR
+       └── speed block ──┘    └──────── eval block ────────┘
 ```
 
 - A-3 prerequisite for every gate (bench + seed). The RR-1 correctness
@@ -767,18 +822,26 @@ A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → H-3 → final RR
   and the pre-fix crazyhouse and shogi standings are void.
 - B-3 before C-3: C's NPS measured on lean search. C-3 before D-3: keeps
   speed-suite attribution clean.
-- Eval block reordered by measurement: E-3 (hand-drop king danger) first,
-  since it is the only stage addressing the drop-variant deficit that the
-  RR-1 decomposition actually identified. F-3 (exposure PST) follows,
-  G-3 (pawn collapse) after — it addresses none of the measured failures
-  and is now a simplification stage, not a strength bet.
-- E-3/F-3/G-3 defer schema changes to H-3 so eval-block binaries stay
-  param-compatible for RR.
-- RRs on the VPS: (1) re-run of the speed block from rebuilt A-3..D-3
-  binaries — this also measures what the correctness fixes alone bought
-  in shogi and crazyhouse, (2) eval block after F-3 (D-3 vs E-3 vs F-3),
-  (3) final five-variant RR after H-3 vs FSF 1700-1900, adding 2000+
-  anchors once 1900 is beaten.
+- The eval block is ordered by what would invalidate a later measurement.
+  F-3 (phase reference) first: it is correctness, and every eval number
+  after it is read through the taper it fixes. G-3 (exposure PST) next,
+  since it targets the base exposure signal E-3 left untouched. H-3
+  (drop-aware porosity) is **conditional** — its trigger is the
+  FSF-anchored table rerun on top of G-3, and if F-3 plus G-3 close the
+  gap it is dropped rather than invented. I-3 (simplification) last,
+  because it is expected to be ~0 Elo and would only add noise earlier.
+- E-3/F-3/G-3/H-3 hold the `.param` schema fixed so eval-block binaries
+  stay param-compatible for RR; all schema change and the single regen
+  land together in I-3.
+- RRs on the VPS: (1) **running** — A-3..E-3 from rebuilt binaries, which
+  also measures what the RR-1 correctness fixes alone bought in shogi and
+  crazyhouse, (2) eval block after G-3 (E-3 vs F-3 vs G-3), (3) final
+  RR after I-3 vs FSF 1700-1900, adding 2000+ anchors once 1900 is beaten.
+- Standing measurement rule for the whole eval block: the reference is
+  Fairy-Stockfish on the same positions, not the previous phase binary.
+  Beating the last build while sitting an order of magnitude under FSF is
+  not a result. Anchor the unit conversion on the standard variant, where
+  our play is competitive (2026-08-02: FSF 100 cp = 198 of our units).
 
 ## Risks and rollback
 
@@ -790,15 +853,24 @@ A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → H-3 → final RR
   one line.
 - **D-3**: ordering-preservation is the risk; node-count identity gate
   makes any mistake visible immediately. Revert = drop branch.
-- **G-3**: strength risk (isolated/backward signal lost). Masks/scalars
-  still exist until G-3 → re-enabling any term is a small diff. SPRT
-  before RR.
-- **E-3/F-3**: derive-order risk (zone_attack before PSTs on BOTH load
-  paths) + castling-variant strength risk. Sub-ablations isolate
-  shield-term regressions. PST sanity dump per variant.
-- **H-3**: param regen schema mismatch panics loudly at load (exact-length
-  assert) — cannot fail silently; the regen sequence is the rollback
-  boundary.
+- **E-3**: done; derive-order risk removed by reducing `zone_attack_best`
+  inside `derive_zone_attack`.
+- **F-3**: touches the phase taper, so it touches every eval in every
+  variant. Standard must come out byte-identical — that is the gate, not a
+  nicety. Second risk is the SETUP exit predicate: get it wrong and
+  sittuyin/janggi either never leave setup or leave it early, both caught
+  by their fixtures. Rollback = drop branch.
+- **G-3**: derive-order risk (zone_attack before PSTs on BOTH load paths —
+  miss one and royal PSTs are silently zero; guard on
+  `zone_attack.is_empty()`), plus castling-variant strength risk in our
+  strongest variant. PST sanity dump per variant, SPRT standard first.
+- **H-3**: does not exist until the measurement says it should. The risk
+  is inventing it anyway.
+- **I-3**: strength risk from the lost isolated/backward pawn signal;
+  masks and scalars survive until this stage, so re-enabling any single
+  term is a small diff. Param regen schema mismatch panics loudly at load
+  (exact-length assert) and cannot fail silently; the regen sequence is
+  the rollback boundary.
 
 ## Out of scope (this iteration)
 
