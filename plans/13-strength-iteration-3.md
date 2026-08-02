@@ -99,7 +99,7 @@ quadratic zone-attack king danger, open-shield-file penalty, 7 pawn
 sub-terms (passed/protected/chained/connected/doubled/isolated/backward)
 cached in PTable, material-scaled draw contempt.
 
-## Stage ladder (iteration 3 — phase labels A-3..G-3)
+## Stage ladder (iteration 3 — phase labels A-3..H-3)
 
 One significant, RR-differentiable change per stage; one commit per stage on
 its own `phaseX-3` branch via build-stages.sh. Rejected experiments consume
@@ -356,7 +356,228 @@ drop moves per node. Restructure:
 - Expected: largest gain in shogi/crazyhouse — precisely the weakest
   variants. Qsearch already capture-only; ProbCut unchanged.
 
-### E-3 — pawn eval collapse → advancing-piece path quality
+### RR-1 findings and correctness fixes (2026-08-02, after D-3)
+
+First RR exposed three bugs and invalidated part of the campaign. All three
+are committed on main and cherry-picked onto phaseA-3..phaseD-3, so every
+phase binary shares one rule set; the pre-fix drop-variant RR numbers are
+void and must be re-run.
+
+Data provenance: shogi figures from `rr/rr-shogi.pgn` (1079 games, the run
+that aborted on an engine-init failure); crazyhouse figures from the full
+`~/rr/rr-crazyhouse.pgn` (**2987 games**). The king-danger table below comes
+from `debug-headless evaluate` on constructed positions, not from any game
+file.
+
+**Crazyhouse deficit, decomposed (2987 games, pre-fix binaries).** The
+promoted-piece bug is separable from the eval hole because its trigger is
+identifiable: a game is corrupted exactly when someone captures a promoted
+piece, after which our pocket diverges from the arbiter's.
+
+| | forfeits | claiming >= +10 six moves from death | sign agreement, \|fsf\|>=10 |
+|---|---|---|---|
+| all games | 466 (15.6%) | 22.4% | 68.9% |
+| clean (no promoted capture, 66%) | — | 17.2% | 70.6% |
+| corrupted (34% of games) | — | 31.8% | 65.8% |
+| standard, for scale | 0 | 0.7% | 94.3% |
+
+Reading: the bug cost **466 games outright** (15.6% of the run; 95-131
+forfeits per phase binary out of ~843 games each) and roughly **doubled**
+eval blindness where it fired (17.2% → 31.8%). But the clean subset is
+still nowhere near standard — 17.2% blindness against 0.7%, 70.6% sign
+agreement against 94.3% — so a large eval hole remains after the fix.
+
+Search is exonerated: mean depth ours 17.3-18.1 ply vs FSF 17.8-18.7. We
+see nearly as deep and still lose, which is why every remaining stage in
+this iteration is eval work.
+
+- **Crazyhouse promoted pieces** (`49bf8d4`). crazyhouse.conf promoted
+  straight to `R/N/B/Q`, so a queen-from-pawn was indistinguishable from a
+  real queen and `piece_demotion_map` — which the engine already applies on
+  every capture — had nothing to demote. The pocket then diverged from the
+  arbiter's and the engine eventually dropped a piece it did not own:
+  **65 games forfeited**, every illegal move a drop. Fixed with the shogi
+  pattern: distinct `Tt/Uu/Vv/Ww` types, `= demotions =` back to `P`, dict
+  rules rendering them as `R~/N~/B~/Q~` (the lowercase `w` needs shogi's
+  anchored rule, since it collides with the side-to-move field). Verified by
+  replaying 121 real games against python-chess and comparing board, side,
+  castling, pocket and ep: **53 of 121 diverged before the fix, 1 after** —
+  and that one differs only in the ep field (see below), so no pocket
+  disagreement remains.
+- **Dropped pieces never marked unmoved** (`ac38125`). A pawn dropped on its
+  home rank could not double-step. Gated on `initial_setup`, so only drops
+  onto a piece's own starting squares count as unmoved. Differential perft
+  against Fairy-Stockfish now matches exactly on all probe positions.
+- **`pv_length` reset after the terminal return** (`9906c8d`). Behaviour
+  fix only; never reproduced a failure from it.
+
+**Not a bug — do not "fix" it.** Our FEN records an en-passant square after
+every double push; the reference prints one only when the capture is legal
+(game 15, ply 54, `b7b5`: white Ka4/Pa5 pinned by black Ra6, so `a5xb6`
+e.p. self-checks). `make_move!` already rejects self-check and ep captures
+are gated on our own ep square, so this cannot change a move the engine
+plays. Its only cost is hash canonicality. Leave the hot path alone.
+
+**Eval evidence for the drop-variant deficit.** `king_danger!`
+(evaluation.rs:196) iterates `piece_squares!` — board pieces only — so
+enemy pieces in hand contribute zero danger. Measured in crazyhouse with a
+sheltered white king (g1 behind f2/g2/h2) versus an exposed one (d4), the
+rest of the position held fixed at
+`r2qk2r/pppppppp/8/8/8/8/PPPPPPPP/R2Q…`, varying only Black's hand:
+
+| black hand | sheltered | exposed | delta |
+|---|---|---|---|
+| `-/-` | -648 | -668 | +20 |
+| `-/rb` | -1688 | -1708 | +20 |
+| `-/qrb` | -2798 | -2819 | +21 |
+| `-/qqrrbb` | -4949 | -4969 | +20 |
+
+The delta is constant: a hand holding two queens, two rooks and two bishops
+makes the exposed king exactly as unsafe as an empty hand does, namely not
+at all. This is the drop-variant hole, and it is why shogi and crazyhouse
+trail standard while searching to comparable depth (crazyhouse: ours
+16.9-18.2 ply vs FSF 17.3-18.4).
+
+**Correction to the first version of this table.** It was measured on a
+bare `4k3/8/8/8/8/8/5PPP/6K1` position, which the engine classifies as
+ENDGAME — and `evaluate_position!` zeroes the whole `king_safety` block,
+`king_danger!` included, in that phase. Those numbers therefore measured
+phase gating, not the hand omission, and the claim they supported was
+unearned. The table above is remeasured in MIDDLEGAME, where the term is
+live.
+
+**Phase gating investigated and dismissed.** `game_phase_score!`
+(state.rs:427) counts `piece_count`, which is board-only, while
+`opening_material`/`endgame_material` include held pieces in drop variants
+— so a hand full of majors does not hold the phase up. Constructed
+positions do reach ENDGAME with every big piece in hand, silently disabling
+king safety. But it does not fire in real play: three self-played shogi
+games taken to move 48/55/101, including one with a hand of
+`PPPPPPPLLNNNNSSS`, all still evaluate as MIDDLEGAME. Not worth a stage
+until a real game shows otherwise.
+
+**Consequence for ordering: the eval block was renumbered.** Hand-drop king
+danger is now **E-3** and runs first, since it is the only stage addressing
+the deficit this data identifies. The exposure PST is **F-3**; the pawn
+collapse, which addresses none of the measured failures, drops to **G-3**
+as a simplification stage; schema shrink becomes **H-3**.
+
+**Fix verified against the failures it was built for.** All **466** games
+that were forfeited by an illegal drop replay through the fixed binary with
+an exact board, side-to-move and pocket match against python-chess — 466/466,
+zero mismatches. The phantom piece those games dropped no longer exists in
+the engine's pocket.
+
+### E-3 — hand-drop king danger — DONE
+
+As-built: exactly the design below. `zone_attack_best` is reduced inside
+`derive_zone_attack` rather than in its own pass, which removes the
+ordering hazard entirely — neither table can exist without the other, on
+either load path. The eval term sits inside `king_danger!`'s existing
+enemy-piece loop (no new loop) behind a `drops!` test, so non-drop variants
+execute nothing.
+
+**Gate met, measured against Fairy-Stockfish.** Full-army crazyhouse,
+white king castled g1 versus exposed d4, material identical, varying only
+Black's hand. Our units are not centipawns, so the standard-variant row
+anchors the scale: FSF charges 100 cp there and we charge 198 u, giving
+1.98 u/cp.
+
+| hand | FSF | FSF at 1.98 u/cp | pre-E-3 | E-3 | E-3 vs FSF |
+|---|---|---|---|---|---|
+| `-/-` | 438 | 867 | 126 | 126 | 15% |
+| `-/rb` | 1954 | 3869 | 126 | 220 | 6% |
+| `-/qrb` | 2869 | 5681 | 126 | 503 | 9% |
+| `-/qqrrbb` | 3715 | 7356 | 126 | 1632 | 22% |
+
+E-3 does what it was scoped to do: the penalty was flat at 126 for every
+hand and now scales, growing 13x from empty to `qqrrbb` where FSF grows
+8.5x. **It does not fix crazyhouse king safety.** Against FSF as the
+standard we still charge 6-22% of what it charges, and the empty-hand row
+— 126 against an expected 867 — is untouched by this stage, because that
+gap is in the base exposure signal, not the hand. That is F-3's target,
+and on this evidence F-3 matters more than E-3 did.
+
+Speed (seed 42, limit 12): standard and grand byte-identical node counts
+and NPS within 0.3%, confirming the `drops!` gate costs nothing. Shogi
+-7.0% NPS with +39% nodes and crazyhouse -2.3% NPS with -2.2% nodes; node
+counts are not comparable across an eval change, and the NPS cost is the
+real per-type multiply-add the term adds. Fixtures 32/32.
+
+Original design follows.
+
+The measurement
+above shows enemy hand material contributes zero king danger, which is the
+single largest identified deficit in the two weakest variants. `king_danger!`
+accumulates `zone_attack[(royal * piece_count + t) * board_size + from]`
+over each enemy piece's occupied squares; a piece in hand has no square, so
+it is skipped entirely.
+
+Fix: give a held piece the square it would choose. Derive, once per
+variant, `zone_attack_best[royal * piece_count + t]` = max over `from` of
+`zone_attack[(royal * piece_count + t) * board_size + from]` — a reduction
+of a table that already exists, so no new hot-path scan. Then add, per
+royal:
+
+```
+hand_units = Σ over enemy piece type t (non-royal)
+             piece_in_hand[enemy][t] * zone_attack_best[royal * pc + t]
+```
+
+folded into the existing `units` total so the quadratic `king_danger_scale`
+applies to board and hand pressure together. Cost is one loop over piece
+types per royal, only when a hand is non-empty; variants without hands add
+nothing and pay a single emptiness test.
+
+Deliberately ignores drop legality and occupancy (a held piece cannot land
+on an occupied square, and some variants forbid zones): the term is a
+danger estimate, and over-estimating a held queen's reach is the correct
+direction. Guard: `zone_attack_best` must be derived after `zone_attack`,
+same ordering constraint as the PST work below.
+
+Verify: rerun the table above — the sheltered/exposed delta must grow with
+the enemy hand instead of staying at +16, and the sign must invert so the
+sheltered king scores higher. Then bench (drop variants only should move),
+and SPRT shogi and crazyhouse against phaseD-3.
+
+### F-3 — royal exposure PST replaces castling knowledge
+
+- Move `derive_zone_attack` call (parameters.rs:1577) to run BEFORE PST
+  derivation — top of `derive_eval_parameters`; ensure BOTH load paths
+  (fresh derive AND tuned-param load, game_io.rs:2032) have zone_attack
+  ready before PSTs (miss one → royal PSTs silently zero; guard on
+  `zone_attack.is_empty()`).
+- Replace royal opening branch of `derive_pst` (parameters.rs:560-562):
+
+```
+pressure(s) = Σ over enemy piece type t (non-royal, non-pawn)
+              Σ over f in set_indices!(initial_setup[t])
+              zone_attack[(s * piece_count + t) * board_size + f]
+score(s) = -pressure(s)
+```
+
+  computed in the white frame against the black initial army (black
+  mirrored afterward, as today), fed through existing mean-centering +
+  amplitude-24 normalization. Castling destinations now score well only
+  when genuinely less exposed. Endgame royal PST (centralization)
+  unchanged.
+- Delete: `castling_bonus!` (evaluation.rs:163-177) + its
+  `evaluate_position!` line (:625); `State.has_castled` (state.rs:611 +
+  clone/from_statics/reset) + writes (move_list.rs:2650, :3477). Scalars
+  `castled_bonus`/`castling_rights_bonus`: stop reading at F-3, delete at
+  G-3.
+- Keep: `king_shelter!`, quadratic `king_danger!`, and initially
+  `pawn_shield!`/`open_shield!`.
+- Sub-ablation arms sharing the F-3 base: F-3a = full F; F-3b = F minus
+  pawn-shield term; F-3c = F-3b minus open-shield term. Eval-block RR
+  picks the winner before G-3.
+
+Verify: dump derived royal opening PSTs — standard (g1/c1/b1 ≥ e1,
+corners high), shogi (low ranks, edge-file bias), xiangqi (palace
+gradient); non-degenerate PSTs for all variants in derive log; SPRT F-3
+vs E-3.
+
+### G-3 — pawn eval collapse → advancing-piece path quality
 
 Replace the 7-sub-term scoring pass (evaluation.rs:439-563) with ~35
 lines. Per pawn-like piece at `entry = index * board_size + square`, with
@@ -397,46 +618,9 @@ test (one pass instead of two).
 
 Verify: `debug-headless evaluate` monotonicity on passed/blocked/supported
 FEN triples across geometries (standard, berolina, shogi); bench; SPRT
-E-3 vs D-3 before RR.
+G-3 vs F-3 before RR.
 
-### F-3 — royal safety rebuild (exposure PST replaces castling knowledge)
-
-- Move `derive_zone_attack` call (parameters.rs:1577) to run BEFORE PST
-  derivation — top of `derive_eval_parameters`; ensure BOTH load paths
-  (fresh derive AND tuned-param load, game_io.rs:2032) have zone_attack
-  ready before PSTs (miss one → royal PSTs silently zero; guard on
-  `zone_attack.is_empty()`).
-- Replace royal opening branch of `derive_pst` (parameters.rs:560-562):
-
-```
-pressure(s) = Σ over enemy piece type t (non-royal, non-pawn)
-              Σ over f in set_indices!(initial_setup[t])
-              zone_attack[(s * piece_count + t) * board_size + f]
-score(s) = -pressure(s)
-```
-
-  computed in the white frame against the black initial army (black
-  mirrored afterward, as today), fed through existing mean-centering +
-  amplitude-24 normalization. Castling destinations now score well only
-  when genuinely less exposed. Endgame royal PST (centralization)
-  unchanged.
-- Delete: `castling_bonus!` (evaluation.rs:163-177) + its
-  `evaluate_position!` line (:625); `State.has_castled` (state.rs:611 +
-  clone/from_statics/reset) + writes (move_list.rs:2650, :3477). Scalars
-  `castled_bonus`/`castling_rights_bonus`: stop reading at F-3, delete at
-  G-3.
-- Keep: `king_shelter!`, quadratic `king_danger!`, and initially
-  `pawn_shield!`/`open_shield!`.
-- Sub-ablation arms sharing the F-3 base: F-3a = full F; F-3b = F minus
-  pawn-shield term; F-3c = F-3b minus open-shield term. Eval-block RR
-  picks the winner before G-3.
-
-Verify: dump derived royal opening PSTs — standard (g1/c1/b1 ≥ e1,
-corners high), shogi (low ranks, edge-file bias), xiangqi (palace
-gradient); non-degenerate PSTs for all variants in derive log; SPRT F-3
-vs E-3.
-
-### G-3 — schema shrink + dead-weight purge + pair ablation
+### H-3 — schema shrink + dead-weight purge + pair ablation
 
 - Delete fields deferred from E-3/F-3 plus `mobility_opening/endgame`
   end-to-end: StaticState (state.rs:538-539, 547-557), `State::new`
@@ -467,21 +651,28 @@ SPRT = leaked bug, not a result).
 ## Ordering, dependencies, RR campaign
 
 ```
-A-3 → B-3 → C-3 → D-3 → E-3 → F-3(a/b/c) → G-3 → final RR
-       └── speed block ──┘    └─ eval block ─┘
+A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → H-3 → final RR
+       └── speed block ──┘    └──── eval block ────┘
 ```
 
-- A-3 prerequisite for every gate (bench + seed).
+- A-3 prerequisite for every gate (bench + seed). The RR-1 correctness
+  fixes are cherry-picked onto phaseA-3..phaseD-3 so every binary shares
+  one rule set; the drop-variant RR must be re-run from rebuilt binaries,
+  and the pre-fix crazyhouse and shogi standings are void.
 - B-3 before C-3: C's NPS measured on lean search. C-3 before D-3: keeps
-  speed-suite attribution clean; D-3 gated on node-count identity.
-- E-3/F-3 defer schema changes to G-3 so eval-block binaries stay
-  param-compatible with A-3..D-3 for RR.
-- Three RRs on the VPS: (1) speed block after D-3 (A-3 vs B-3 vs C-3 vs
-  D-3 + FSF anchors; expect ~0 Elo from B, gains from C/D via
-  time-to-depth), (2) eval block after F-3 (D-3 vs E-3 vs F-3a/b/c),
-  (3) final five-variant RR after G-3 vs FSF 1700-1900, add 2000+ anchors
-  once 1900 beaten. Earlier RRs stay valid as within-block comparisons
-  only.
+  speed-suite attribution clean.
+- Eval block reordered by measurement: E-3 (hand-drop king danger) first,
+  since it is the only stage addressing the drop-variant deficit that the
+  RR-1 decomposition actually identified. F-3 (exposure PST) follows,
+  G-3 (pawn collapse) after — it addresses none of the measured failures
+  and is now a simplification stage, not a strength bet.
+- E-3/F-3/G-3 defer schema changes to H-3 so eval-block binaries stay
+  param-compatible for RR.
+- RRs on the VPS: (1) re-run of the speed block from rebuilt A-3..D-3
+  binaries — this also measures what the correctness fixes alone bought
+  in shogi and crazyhouse, (2) eval block after F-3 (D-3 vs E-3 vs F-3),
+  (3) final five-variant RR after H-3 vs FSF 1700-1900, adding 2000+
+  anchors once 1900 is beaten.
 
 ## Risks and rollback
 
@@ -493,13 +684,13 @@ A-3 → B-3 → C-3 → D-3 → E-3 → F-3(a/b/c) → G-3 → final RR
   one line.
 - **D-3**: ordering-preservation is the risk; node-count identity gate
   makes any mistake visible immediately. Revert = drop branch.
-- **E-3**: strength risk (isolated/backward signal lost). Masks/scalars
+- **G-3**: strength risk (isolated/backward signal lost). Masks/scalars
   still exist until G-3 → re-enabling any term is a small diff. SPRT
   before RR.
-- **F-3**: derive-order risk (zone_attack before PSTs on BOTH load
+- **E-3/F-3**: derive-order risk (zone_attack before PSTs on BOTH load
   paths) + castling-variant strength risk. Sub-ablations isolate
   shield-term regressions. PST sanity dump per variant.
-- **G-3**: param regen schema mismatch panics loudly at load (exact-length
+- **H-3**: param regen schema mismatch panics loudly at load (exact-length
   assert) — cannot fail silently; the regen sequence is the rollback
   boundary.
 

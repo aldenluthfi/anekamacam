@@ -1645,8 +1645,15 @@ fn derive_royal_front_mask(state: &mut State) {
 /// attacker and squares the total, giving the standard superlinear
 /// king-attack shape without walking any vector at search time.
 ///
+/// The same pass reduces the table over its origin axis into
+/// `zone_attack_best[royal * pieces + piece]`, the pressure that piece
+/// would exert from its most dangerous origin. A piece held in hand
+/// occupies no square, so `king_danger!` has nothing to sum for it; the
+/// reduction supplies the square it would choose. Deriving both here makes
+/// it impossible for one to exist without the other.
+///
 /// Params:
-/// - state: &mut State -> variant whose zone-attack table is filled
+/// - state: &mut State -> variant whose zone-attack tables are filled
 fn derive_zone_attack(state: &mut State) {
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
@@ -1697,7 +1704,17 @@ fn derive_zone_attack(state: &mut State) {
         }
     }
 
+    let mut best = vec![0u8; board_size * piece_count];
+
+    for (entry, value) in best.iter_mut().enumerate() {
+        *value = *table[entry * board_size..(entry + 1) * board_size]
+            .iter()
+            .max()
+            .unwrap_or(&0);
+    }
+
     state.static_mut().zone_attack = table;
+    state.static_mut().zone_attack_best = best;
 }
 
 /// derive_royal_shield_mask

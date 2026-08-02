@@ -497,6 +497,7 @@ pub struct StaticState {
     pub royal_shield_mask: Vec<Board>,                                          /* color * board size + royal square  */
     pub royal_front_mask: Vec<Board>,                                           /* color * board size + royal square  */
     pub zone_attack: Vec<u8>,                                                   /* (royal * P + piece) * B + from     */
+    pub zone_attack_best: Vec<u8>,                                              /* royal * P + piece, best from       */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: Vec<PieceIndex>,                                    /* piece index to demotion piece idx  */
@@ -784,6 +785,7 @@ impl State {
             royal_shield_mask: vec![board!(files, ranks); 2 * board_size],
             royal_front_mask: vec![board!(files, ranks); 2 * board_size],
             zone_attack: Vec::new(),
+            zone_attack_best: Vec::new(),
 
             piece_swap_map: vec![NO_PIECE; piece_count],
             piece_demotion_map: vec![NO_PIECE; piece_count],

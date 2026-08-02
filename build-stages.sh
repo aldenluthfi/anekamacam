@@ -12,14 +12,13 @@ set -euo pipefail
 #
 # Each PHASES row is "name ref parent". ref is the configured base commit-ish
 # (normally the phase's own branch name). parent is the phase a missing
-# branch is auto-created from ("-" means none). Phase G-3's parent defaults
-# to phaseF-3a; override with PHASE_G_PARENT once the F-3 sub-ablation RR
-# picks a winner.
+# branch is auto-created from ("-" means none). Phase H-3's parent defaults
+# to phaseG-3; override with PHASE_H_PARENT if an earlier stage is dropped.
 #
 # Usage:
 #   build-stages.sh A-3
 #   build-stages.sh B-3 C-3 D-3
-#   build-stages.sh phaseF-3a phaseG-3
+#   build-stages.sh phaseF-3 phaseH-3
 
 PHASES=(
 	"phaseA-3  phaseA-3  -"
@@ -27,10 +26,9 @@ PHASES=(
 	"phaseC-3  phaseC-3  phaseB-3"
 	"phaseD-3  phaseD-3  phaseC-3"
 	"phaseE-3  phaseE-3  phaseD-3"
-	"phaseF-3a phaseF-3a phaseE-3"
-	"phaseF-3b phaseF-3b phaseF-3a"
-	"phaseF-3c phaseF-3c phaseF-3b"
-	"phaseG-3  phaseG-3  phaseF-3a"
+	"phaseF-3  phaseF-3  phaseE-3"
+	"phaseG-3  phaseG-3  phaseF-3"
+	"phaseH-3  phaseH-3  phaseG-3"
 )
 
 if [[ $# -eq 0 ]]; then
@@ -85,8 +83,8 @@ phase_parent() {
 	for entry in "${PHASES[@]}"; do
 		read -r name ref parent <<<"$entry"
 		if [[ "$name" == "$want" ]]; then
-			if [[ "$want" == "phaseG-3" ]]; then
-				echo "${PHASE_G_PARENT:-$parent}"
+			if [[ "$want" == "phaseH-3" ]]; then
+				echo "${PHASE_H_PARENT:-$parent}"
 			else
 				echo "$parent"
 			fi

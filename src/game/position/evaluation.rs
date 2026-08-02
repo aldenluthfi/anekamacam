@@ -186,6 +186,15 @@ macro_rules! castling_bonus {
 /// standard king-attack shape. The caller subtracts this from the side
 /// under attack, opening and middlegame only.
 ///
+/// Where the rules allow drops, each enemy piece held in hand adds
+/// `zone_attack_best` — its pressure from the origin it would choose —
+/// to the same total, so a hand and a board threaten the royal on one
+/// scale. Held pieces are the whole attacking reserve in drop variants;
+/// leaving them out made a hand of two queens as harmless as an empty
+/// one. Drop legality and occupancy are deliberately ignored: the term
+/// estimates danger, and over-stating a held attacker's reach errs
+/// toward caution.
+///
 /// Params:
 /// - state: &State -> position whose zone pressure is measured
 /// - color: u8     -> side whose royals are under attack
@@ -199,12 +208,18 @@ macro_rules! king_danger {
         let piece_count = $state.statics.pieces.len();
         let half = piece_count / 2;
         let enemy_start = (1 - $color as usize) * half;
+        let hand = &$state.piece_in_hand[1 - $color as usize];
+        let drops = drops!($state);
         let mut units = 0i32;
 
         for &royal_square in $state.royal_list[$color as usize].iter() {
             let zone = &$state.statics.zone_attack[
                 royal_square as usize * piece_count * board_size
                 ..(royal_square as usize + 1) * piece_count * board_size
+            ];
+            let best = &$state.statics.zone_attack_best[
+                royal_square as usize * piece_count
+                ..(royal_square as usize + 1) * piece_count
             ];
 
             for piece_index in enemy_start..enemy_start + half {
@@ -218,6 +233,11 @@ macro_rules! king_danger {
                     units += zone[
                         piece_index * board_size + square as usize
                     ] as i32;
+                }
+
+                if drops {
+                    units += hand[piece_index] as i32
+                        * best[piece_index] as i32;
                 }
             }
         }

@@ -6,3 +6,5 @@ flamegraph*
 notes
 /res/data
 /shard_*
+/bin
+/rr

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Strength Iteration 3 round robin over selected phase binaries plus
-# configurable Fairy-Stockfish anchors. Defaults to all five campaign
-# variants. Engines vary games through per-process Zobrist seeding, so no
-# opening book is used; leave ANEKAMACAM_SEED unset here.
+# configurable Fairy-Stockfish anchors. Defaults to the campaign variants
+# named in VARIANTS. Engines vary games through per-process Zobrist seeding,
+# so no opening book is used; leave ANEKAMACAM_SEED unset here.
 #
 # No draw/resign adjudication: AnekaMacam evaluation units are not centipawns,
 # so score thresholds would misfire. Every engine receives an isolated working
@@ -16,7 +16,7 @@ set -euo pipefail
 #
 # Usage:
 #   round-robin.sh phaseA-3 phaseD-3
-#   round-robin.sh A-3 D-3 F-3a
+#   round-robin.sh A-3 D-3 E-3
 #   round-robin.sh --status
 #   round-robin.sh --stop
 #
@@ -34,7 +34,7 @@ ROUNDS=${ROUNDS:-1024}
 CONCURRENCY=${CONCURRENCY:-$(
 	nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null
 )}
-VARIANTS=${VARIANTS:-"standard shogi crazyhouse xiangqi grand"}
+VARIANTS=${VARIANTS:-"standard shogi crazyhouse grand"}
 FSF_ELOS=${FSF_ELOS:-"1700 1800 1900"}
 
 LOG="$RR/round-robin.log"
