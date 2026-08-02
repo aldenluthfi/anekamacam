@@ -873,12 +873,12 @@ pub fn alpha_beta(
     null: bool,
 ) -> i32 {
 
+    let ply = state.search_ply as usize;
+    state.pv_length[ply] = ply;                                                 /* truncate before any early return,  */
+                                                                                /* else the parent splices a stale PV */
     if is_terminal!(state) {
         return terminal_score!(state);
     }
-
-    let ply = state.search_ply as usize;
-    state.pv_length[ply] = ply;
 
     /*-----------------------------------------------------------------------*\
                                   REPETITION SCORING
