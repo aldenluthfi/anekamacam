@@ -2491,6 +2491,13 @@ macro_rules! make_move {
                     piece_index as PieceIndex;
                 piece_list_push!($state, piece_index, drop_square as Square);
 
+                if get!(
+                    $state.statics.initial_setup[piece_index],
+                    drop_square
+                ) {
+                    set!($state.virgin_board, drop_square);
+                }
+
                 $state.opening_pst_bonus[piece_color as usize] +=
                     $state.statics.pst_opening
                     [piece_index][drop_square as usize];
@@ -3444,6 +3451,8 @@ macro_rules! undo_move {
 
             $state.main_board[drop_square as usize] = NO_PIECE;
             piece_list_remove!($state, piece_index, drop_square as Square);
+
+            clear!($state.virgin_board, drop_square);
 
             $state.opening_pst_bonus[piece_color as usize] -=
                 $state.statics.pst_opening[piece_index][drop_square as usize];
