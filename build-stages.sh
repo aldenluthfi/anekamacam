@@ -1,37 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds selected Strength Iteration 2 phase binaries into bin/.
+# Builds selected Strength Iteration 3 phase binaries into bin/.
 # Run from anywhere inside the repo.
 #
-# phaseA-2 is exact Stage AC commit 773d04e. phaseB-2 through phaseJ-2
-# resolve temporary experiment branch names, auto-created from their parent
-# phase when the branch does not yet exist. Current configs/ and res/dicts/ are
-# copied into every build worktree so all phase binaries expose identical
+# phaseA-3 is the pinned Stage A-3 branch, created at the harness commit.
+# Later phases resolve their own branch names, auto-created from their parent
+# phase when the branch does not yet exist. Current configs/ and res/dicts/
+# are copied into every build worktree so all phase binaries expose identical
 # protocol variants.
 #
 # Each PHASES row is "name ref parent". ref is the configured base commit-ish
-# (for phaseA-2, commit 773d04e; for experiment phases, their own branch name).
-# parent is the phase a missing branch is auto-created from ("-" means none).
-# Phase H-2's parent defaults to phaseF-2; override with PHASE_H_PARENT once the
-# F-2 vs G-2 comparison picks a winner.
+# (normally the phase's own branch name). parent is the phase a missing
+# branch is auto-created from ("-" means none). Phase G-3's parent defaults
+# to phaseF-3a; override with PHASE_G_PARENT once the F-3 sub-ablation RR
+# picks a winner.
 #
 # Usage:
-#   build-stages.sh A-2
-#   build-stages.sh B-2 C-2 D-2
-#   build-stages.sh phaseA-2 phaseJ-2
+#   build-stages.sh A-3
+#   build-stages.sh B-3 C-3 D-3
+#   build-stages.sh phaseF-3a phaseG-3
 
 PHASES=(
-	"phaseA-2 773d04e  -"
-	"phaseB-2 phaseB-2 phaseA-2"
-	"phaseC-2 phaseC-2 phaseB-2"
-	"phaseD-2 phaseD-2 phaseB-2"
-	"phaseE-2 phaseE-2 phaseB-2"
-	"phaseF-2 phaseF-2 phaseA-2"
-	"phaseG-2 phaseG-2 phaseF-2"
-	"phaseH-2 phaseH-2 phaseF-2"
-	"phaseI-2 phaseI-2 phaseA-2"
-	"phaseJ-2 phaseJ-2 phaseI-2"
+	"phaseA-3  phaseA-3  -"
+	"phaseB-3  phaseB-3  phaseA-3"
+	"phaseC-3  phaseC-3  phaseB-3"
+	"phaseD-3  phaseD-3  phaseC-3"
+	"phaseE-3  phaseE-3  phaseD-3"
+	"phaseF-3a phaseF-3a phaseE-3"
+	"phaseF-3b phaseF-3b phaseF-3a"
+	"phaseF-3c phaseF-3c phaseF-3b"
+	"phaseG-3  phaseG-3  phaseF-3a"
 )
 
 if [[ $# -eq 0 ]]; then
@@ -42,8 +41,8 @@ fi
 REQUESTED=()
 for requested in "$@"; do
 	case "$requested" in
-	phase*-2) REQUESTED+=("$requested") ;;
-	*-2) REQUESTED+=("phase$requested") ;;
+	phase*-3*) REQUESTED+=("$requested") ;;
+	*-3*) REQUESTED+=("phase$requested") ;;
 	*)
 		echo "ERROR: invalid phase: $requested" >&2
 		exit 1
@@ -79,15 +78,15 @@ phase_ref() {
 	return 1
 }
 
-# Parent phase (third column) for a phase name, honoring PHASE_H_PARENT.
+# Parent phase (third column) for a phase name, honoring PHASE_G_PARENT.
 phase_parent() {
 	local want=$1 name ref parent
 
 	for entry in "${PHASES[@]}"; do
 		read -r name ref parent <<<"$entry"
 		if [[ "$name" == "$want" ]]; then
-			if [[ "$want" == "phaseH-2" ]]; then
-				echo "${PHASE_H_PARENT:-$parent}"
+			if [[ "$want" == "phaseG-3" ]]; then
+				echo "${PHASE_G_PARENT:-$parent}"
 			else
 				echo "$parent"
 			fi

@@ -574,14 +574,14 @@ fn expand_cardinals(expr: &str) -> Option<String> {
     }
 
     let mut stack = vec![expr.to_string()];
-    let mut result_stack = HashSet::new();
+    let mut result_stack = Vec::new();
 
     while let Some(term) = stack.pop() {
 
         log_4!("expand_cardinals processing term: {}", term);
 
         if !CARDINAL_PATTERN.is_match(&term) {
-            result_stack.insert(term);
+            result_stack.push(term);
             continue;
         }
 
@@ -606,8 +606,8 @@ fn expand_cardinals(expr: &str) -> Option<String> {
         }
     }
 
-    let result_vec: Vec<String> = result_stack.into_iter().collect();
-    Some(result_vec.join("|"))                                                  /* Return Some with expanded cardinals*/
+    remove_duplicates_in_place(&mut result_stack);
+    Some(result_stack.join("|"))                                                /* Return Some with expanded cardinals*/
 }
 
 /// split_and_process
@@ -1047,7 +1047,7 @@ fn process_atomic_range_token(
                 s.as_str().parse().expect("Invalid start range token.");
             let end_count: i8 = e.as_str().parse().unwrap_or(i8::MAX);
 
-            let mut all_updated_vectors: HashSet<_> = HashSet::new();
+            let mut all_updated_vectors: Vec<AtomicVector> = Vec::new();
 
             for count in start_count..=end_count {
                 let updated_vectors: Vec<_> = vector_set
@@ -1057,22 +1057,19 @@ fn process_atomic_range_token(
                         new_vector.set(&new_vector.add_last(count - 1));
                         new_vector
                     })
-                    .collect::<HashSet<_>>()
-                    .into_iter()
                     .collect();
 
                 let prev_len = all_updated_vectors.len();
                 all_updated_vectors.extend(updated_vectors);
+                remove_duplicates_in_place(&mut all_updated_vectors);
                 if all_updated_vectors.len() == prev_len {
                     break;                                                      /* No new vectors are added so break  */
                 }
             }
 
-            let mut result: Vec<AtomicVector> =
-                all_updated_vectors.into_iter().collect();
+            let mut result = all_updated_vectors;
 
             filter_atomic_out_of_bounds(&mut result, state);
-            remove_duplicates_in_place(&mut result);
             result
         }
         (Some(s), None) => {
@@ -1086,8 +1083,6 @@ fn process_atomic_range_token(
                     new_vector.set(&new_vector.add_last(count - 1));
                     new_vector
                 })
-                .collect::<HashSet<_>>()
-                .into_iter()
                 .collect();
 
             filter_atomic_out_of_bounds(&mut updated_vectors, state);
@@ -1139,7 +1134,7 @@ fn process_atomic_colon_range_token(
     }
 
     let element = element.unwrap();
-    let mut result: HashSet<AtomicVector> = HashSet::new();
+    let mut result: Vec<AtomicVector> = Vec::new();
 
     let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
 
@@ -1176,13 +1171,12 @@ fn process_atomic_colon_range_token(
                     result.extend(extension);
                 }
 
+                remove_duplicates_in_place(&mut result);
                 if prev_len == result.len() {
                     break;                                                      /* No new vectors are added so break  */
                 }
                 prev_len = result.len();
             }
-
-            let mut result: Vec<AtomicVector> = result.into_iter().collect();
 
             filter_atomic_out_of_bounds(&mut result, state);
             result
@@ -1209,8 +1203,7 @@ fn process_atomic_colon_range_token(
                 result.extend(extension);
             }
 
-            let mut result: Vec<AtomicVector> = result.into_iter().collect();
-
+            remove_duplicates_in_place(&mut result);
             filter_atomic_out_of_bounds(&mut result, state);
             result
         }
@@ -1297,7 +1290,7 @@ fn evaluate_atomic_term(
         }
     };
 
-    let mut new_result: HashSet<AtomicVector> = HashSet::new();
+    let mut new_result: Vec<AtomicVector> = Vec::new();
     for branch_vector in &result {
         let rotation_vector = &branch_vector.last();
         let rotation = irregular_vector_direction(rotation_vector);
@@ -1313,7 +1306,8 @@ fn evaluate_atomic_term(
 
         new_result.extend(extension);
     }
-    new_result.into_iter().collect()
+    remove_duplicates_in_place(&mut new_result);
+    new_result
 }
 
 /// evaluate_atomic_subexpression
@@ -1335,7 +1329,7 @@ fn evaluate_atomic_subexpression(
     modifiers: &(Option<Token>, Option<Token>),
     state: &State,
 ) -> Vec<AtomicVector> {
-    let mut new_result: HashSet<AtomicVector> = HashSet::new();
+    let mut new_result: Vec<AtomicVector> = Vec::new();
     for branch_vector in &result {
         let rotation_vector = &branch_vector.last();
 
@@ -1366,7 +1360,8 @@ fn evaluate_atomic_subexpression(
         new_result.extend(extension);
     }
 
-    new_result.into_iter().collect()
+    remove_duplicates_in_place(&mut new_result);
+    new_result
 }
 
 /// evaluate_atomic_expression
@@ -1653,7 +1648,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
         expr, rotation
     );
 
-    let mut set = HashSet::new();
+    let mut vectors = Vec::new();
 
     let cap = ATOMIC
         .captures(expr)
@@ -1670,7 +1665,7 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
         for digit_char in digits.chars() {
             if let Some(digit) = digit_char.to_digit(10) {
                 let index = (digit - 1 + rotation_index as u32) as usize;
-                set.insert(
+                vectors.push(
                     INDEX_TO_CARDINAL_VECTORS
                         [index % INDEX_TO_CARDINAL_VECTORS.len()],
                 );
@@ -1680,9 +1675,11 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
         for i in 0..INDEX_TO_CARDINAL_VECTORS.len() {
             let index =
                 (i + rotation_index as usize) % INDEX_TO_CARDINAL_VECTORS.len();
-            set.insert(INDEX_TO_CARDINAL_VECTORS[index]);
+            vectors.push(INDEX_TO_CARDINAL_VECTORS[index]);
         }
     }
+
+    remove_duplicates_in_place(&mut vectors);
 
     if let Some(direction_str) = direction {
         if let Some(direction_set) = DIRECTION_VECTOR_SETS.get(direction_str) {
@@ -1698,13 +1695,13 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
                     INDEX_TO_CARDINAL_VECTORS[rotated_index]
                 })
                 .collect();
-            set.intersection(&rotated_direction_set).copied().collect()
-        } else {
-            set.into_iter().collect()
+            vectors.retain(|vector| {
+                rotated_direction_set.contains(vector)
+            });
         }
-    } else {
-        set.into_iter().collect()
     }
+
+    vectors
 }
 
 /// chained_atomic_to_vector
@@ -2416,7 +2413,7 @@ fn process_multi_leg_range_token(
                 s.as_str().parse().expect("Invalid start range token.");
             let end_count: i8 = e.as_str().parse().unwrap_or(i8::MAX);
 
-            let mut all_updated_vectors: HashSet<_> = HashSet::new();
+            let mut all_updated_vectors: Vec<MultiLegVector> = Vec::new();
 
             for count in start_count..=end_count {
                 let updated_vectors: Vec<_> = vector_set
@@ -2432,22 +2429,19 @@ fn process_multi_leg_range_token(
                         }
                         vector
                     })
-                    .collect::<HashSet<_>>()
-                    .into_iter()
                     .collect();
 
                 let prev_len = all_updated_vectors.len();
                 all_updated_vectors.extend(updated_vectors);
+                remove_duplicates_in_place(&mut all_updated_vectors);
                 if all_updated_vectors.len() == prev_len {
                     break;                                                      /* No new vectors are added so break  */
                 }
             }
 
-            let mut result: Vec<MultiLegVector> =
-                all_updated_vectors.into_iter().collect();
+            let mut result = all_updated_vectors;
 
             filter_multi_leg_out_of_bounds(&mut result, state);
-            remove_duplicates_in_place(&mut result);
             result
         }
         (Some(s), None) => {
@@ -2466,8 +2460,6 @@ fn process_multi_leg_range_token(
                     }
                     vector
                 })
-                .collect::<HashSet<_>>()
-                .into_iter()
                 .collect();
 
             filter_multi_leg_out_of_bounds(&mut updated_vectors, state);
@@ -2518,7 +2510,7 @@ fn process_multi_leg_colon_range_token(
     }
 
     let element = element.unwrap();
-    let mut result: HashSet<MultiLegVector> = HashSet::new();
+    let mut result: Vec<MultiLegVector> = Vec::new();
 
     let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
 
@@ -2577,13 +2569,12 @@ fn process_multi_leg_colon_range_token(
                     }
                 }
 
+                remove_duplicates_in_place(&mut result);
                 if prev_len == result.len() {
                     break;                                                      /* No new vectors are added so break  */
                 }
                 prev_len = result.len();
             }
-
-            let mut result: Vec<MultiLegVector> = result.into_iter().collect();
 
             filter_multi_leg_out_of_bounds(&mut result, state);
             result
@@ -2632,8 +2623,7 @@ fn process_multi_leg_colon_range_token(
                 }
             }
 
-            let mut result: Vec<MultiLegVector> = result.into_iter().collect();
-
+            remove_duplicates_in_place(&mut result);
             filter_multi_leg_out_of_bounds(&mut result, state);
             result
         }
@@ -2751,7 +2741,7 @@ fn evaluate_multi_leg_term_leg(
         return eval;
     }
 
-    let mut new_result: HashSet<MultiLegVector> = HashSet::new();
+    let mut new_result: Vec<MultiLegVector> = Vec::new();
     for branch_leg_vector in &result {
         let branch_vector = branch_leg_vector
             .last()
@@ -2784,7 +2774,8 @@ fn evaluate_multi_leg_term_leg(
         new_result.extend(extension);
     }
 
-    new_result.into_iter().collect()
+    remove_duplicates_in_place(&mut new_result);
+    new_result
 }
 
 /// evaluate_multi_leg_subexpression
@@ -2856,7 +2847,7 @@ fn evaluate_multi_leg_subexpression(
         };
     }
 
-    let mut new_result: HashSet<MultiLegVector> = HashSet::new();
+    let mut new_result: Vec<MultiLegVector> = Vec::new();
     for branch_leg_vector in &result {
         let branch_vector = branch_leg_vector
             .last()
@@ -2903,7 +2894,8 @@ fn evaluate_multi_leg_subexpression(
         new_result.extend(extension);
     }
 
-    new_result.into_iter().collect()
+    remove_duplicates_in_place(&mut new_result);
+    new_result
 }
 
 /// evaluate_multi_leg_expression
@@ -3386,13 +3378,15 @@ pub fn generate_move_vectors(
         expr, parsed_expr
     );
 
-    split_and_process(&parsed_expr, |m| {
-        Some(multi_leg_to_vector(m, "n", state))
-    })
-    .into_iter()
-    .flatten()
-    .flatten()
-    .collect::<HashSet<_>>()
-    .into_iter()
-    .collect()
+    let mut result: Vec<MultiLegVector> =
+        split_and_process(&parsed_expr, |m| {
+            Some(multi_leg_to_vector(m, "n", state))
+        })
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect();
+
+    remove_duplicates_in_place(&mut result);
+    result
 }

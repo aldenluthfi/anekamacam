@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Strength Iteration 2 round robin over selected phase binaries plus
-# configurable Fairy-Stockfish anchors. Defaults to Standard, Shogi, and Grand.
-# Engines vary games through per-process Zobrist seeding, so no opening book is
-# used.
+# Strength Iteration 3 round robin over selected phase binaries plus
+# configurable Fairy-Stockfish anchors. Defaults to all five campaign
+# variants. Engines vary games through per-process Zobrist seeding, so no
+# opening book is used; leave ANEKAMACAM_SEED unset here.
 #
 # No draw/resign adjudication: AnekaMacam evaluation units are not centipawns,
 # so score thresholds would misfire. Every engine receives an isolated working
@@ -15,8 +15,8 @@ set -euo pipefail
 # pid. cutechess-cli reprints a full rank table every rating interval.
 #
 # Usage:
-#   round-robin.sh phaseA-2 phaseJ-2
-#   round-robin.sh A-2 J-2
+#   round-robin.sh phaseA-3 phaseD-3
+#   round-robin.sh A-3 D-3 F-3a
 #   round-robin.sh --status
 #   round-robin.sh --stop
 #
@@ -34,7 +34,7 @@ ROUNDS=${ROUNDS:-1024}
 CONCURRENCY=${CONCURRENCY:-$(
 	nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null
 )}
-VARIANTS=${VARIANTS:-"standard shogi grand"}
+VARIANTS=${VARIANTS:-"standard shogi crazyhouse xiangqi grand"}
 FSF_ELOS=${FSF_ELOS:-"1700 1800 1900"}
 
 LOG="$RR/round-robin.log"
@@ -84,17 +84,17 @@ if [[ "${1:-}" == "--stop" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-	echo "usage: round-robin.sh <iteration-2-phase> [...]" >&2
+	echo "usage: round-robin.sh <iteration-3-phase> [...]" >&2
 	exit 1
 fi
 
 CANDIDATES=()
 for requested in "$@"; do
 	case "$requested" in
-	phase*-2) candidate=$requested ;;
-	*-2) candidate="phase$requested" ;;
+	phase*-3*) candidate=$requested ;;
+	*-3*) candidate="phase$requested" ;;
 	*)
-		echo "ERROR: invalid iteration-2 phase: $requested" >&2
+		echo "ERROR: invalid iteration-3 phase: $requested" >&2
 		exit 1
 		;;
 	esac

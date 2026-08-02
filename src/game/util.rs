@@ -705,7 +705,7 @@ pub fn verify_game_state(state: &State) {
 ///
 /// Vec<(String, u64, ...)>
 /// FEN plus expected node counts for depths 1-6, one tuple per suite line
-fn parse_perft_content(                                                         /* until perft 6                      */
+pub fn parse_perft_content(                                                     /* until perft 6                      */
     content: &str,
 ) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
     let uncommented = COMMENT_PATTERN.replace_all(content, "");

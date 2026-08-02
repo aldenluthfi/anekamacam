@@ -1,7 +1,7 @@
 //! headless.rs
 //!
 //! Non-graphical debug command dispatcher for engine inspection and tooling.
-//! Keeps perft, search, evaluation, self-play, parameter work, dataset
+//! Keeps perft, bench, search, evaluation, self-play, parameter work, dataset
 //! generation, tuning, and SPRT under one nested one-shot CLI frontend.
 //!
 //! Created: 30/07/2026
@@ -51,6 +51,7 @@ fn headless_usage() -> String {
         "  search <variant> [depth] [threads]\n",
         "  play <variant> <depth> <seconds> [threads] [max-plies]\n",
         "  perft <variant> <depth> [--branch n] [--suite] [--limit n]\n",
+        "  bench <variant> <depth> [--limit n]\n",
         "  derive\n",
         "  datagen <variant> <games> <movetime-ms> [threads]\n",
         "  tune <variant> <epochs> [learning-rate]\n",
@@ -182,7 +183,7 @@ fn parse_position_arguments(
                 suite = true;
                 index += 1;
             }
-            "--limit" if command == "perft" => {
+            "--limit" if command == "perft" || command == "bench" => {
                 limit = Some(
                     arguments
                         .get(index + 1)
@@ -300,9 +301,10 @@ fn run_state_command(
 
     let (result, reason) = game_outcome(&mut position.state);
     let mut output = format!(
-        "{}\nFEN: {}\nResult: {}\n",
+        "{}\nFEN: {}\nHash: {}\nResult: {}\n",
         format_game_state(&position.state),
         format_fen(&position.state, position.translator.as_ref()),
+        format_position_hash(&position.state),
         format_game_result(result),
     );
     if let Some(name) = reason {
@@ -652,6 +654,165 @@ fn run_perft_command(
     Ok(())
 }
 
+/// bench_walk_fen
+///
+/// Builds one deterministic random-walk position from the variant start
+/// position. Moves are drawn through a fixed linear congruential generator
+/// over the sorted formatted legal moves, so the walk depends only on the
+/// seed, the walk index, and the legal move set — never on move generation
+/// order. Walks stop before entering a terminal position.
+///
+/// Params:
+/// - state: &mut State -> variant state, reused for every walk
+/// - seed : u64        -> mixing seed shared across compared binaries
+/// - index: usize      -> walk number driving ply count and mixing
+///
+/// Return:
+/// String              -> FEN of the reached non-terminal position
+fn bench_walk_fen(
+    state: &mut State,
+    seed: u64,
+    index: usize,
+) -> String {
+    let startpos = state.statics.startpos.clone();
+    state.load_fen(&startpos, None);
+
+    let plies = 6 + index % 10;
+    let mut mix = seed
+        ^ (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+
+    for _ in 0..plies {
+        let mut choices = legal_moves!(state)
+            .iter()
+            .map(|candidate| {
+                (format_move(candidate, state, None), candidate.clone())
+            })
+            .collect::<Vec<_>>();
+        if choices.is_empty() {
+            break;
+        }
+        choices.sort_by(|left, right| left.0.cmp(&right.0));
+
+        mix = mix
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let chosen = choices[(mix >> 33) as usize % choices.len()]
+            .1
+            .clone();
+        if !make_move!(state, chosen) {
+            break;
+        }
+        if is_terminal!(state) {
+            undo_move!(state);
+            break;
+        }
+    }
+
+    format_fen(state, None)
+}
+
+/// run_bench_command
+///
+/// Searches a fixed position set at fixed depth on one thread with fresh
+/// tables per position: live suite positions first, deterministic
+/// random-walk positions when the suite runs short. Prints one
+/// nodes/time/speed line per position plus a machine-readable totals line
+/// for speed-suite tooling.
+///
+/// Params:
+/// - position: HeadlessPosition -> loaded command position and options
+///
+/// Return:
+/// Result<(), String>           -> success or argument diagnostic
+fn run_bench_command(
+    mut position: HeadlessPosition,
+) -> Result<(), String> {
+    let depth = parse_number(&position.values, 0, 0usize, "depth")?;
+    if depth == 0 {
+        return Err("bench requires positive depth".to_string());
+    }
+    if position.values.len() > 1 {
+        return Err("bench accepts one positional depth".to_string());
+    }
+    if position.custom_position {
+        return Err("bench does not accept FEN or moves".to_string());
+    }
+
+    let suite_name = format!("{}.perft", position.variant);
+    let content = EMBEDDED_PERFT
+        .get_file(&suite_name)
+        .and_then(|file| file.contents_utf8())
+        .ok_or_else(|| {
+            format!("No perft suite for {}", position.variant)
+        })?;
+    let limit = position.limit.unwrap_or(16);
+    if limit == 0 {
+        return Err("bench limit must be positive".to_string());
+    }
+
+    let mut fens = parse_perft_content(content)
+        .into_iter()
+        .filter(|case| case.1 > 0)
+        .take(limit)
+        .map(|case| case.0)
+        .collect::<Vec<_>>();
+    let mut walk = 0usize;
+
+    while fens.len() < limit {
+        fens.push(bench_walk_fen(&mut position.state, *SEED, walk));
+        walk += 1;
+    }
+
+    let mut total_nodes = 0u128;
+    let mut total_time = 0u128;
+    let mut output = String::new();
+
+    for (index, fen) in fens.iter().enumerate() {
+        position.state.load_fen(fen, None);
+
+        let ttable = Arc::new(TTable::with_mb(16));
+        let qtable = Arc::new(QTable::with_mb(1));
+        let ptable = Arc::new(PTable::with_mb(1));
+        let mut information = SearchInfo {
+            set_depth: depth,
+            ..Default::default()
+        };
+        let mut buffers = SearchBufs::default();
+        let start = ENGINE_START.elapsed().as_nanos();
+        let result = search_position(
+            &mut position.state,
+            ttable,
+            qtable,
+            ptable,
+            &mut information,
+            &mut buffers,
+            1,
+            position.translator.as_ref(),
+        );
+        let elapsed = ENGINE_START
+            .elapsed()
+            .as_nanos()
+            .saturating_sub(start)
+            .max(1);
+        let speed = result.total_nodes * 1_000_000_000 / elapsed;
+
+        total_nodes += result.total_nodes;
+        total_time += elapsed;
+        output.push_str(&format!(
+            "position {:03} nodes {:>12} time_ns {:>13} nps {:>9}\n",
+            index + 1, result.total_nodes, elapsed, speed,
+        ));
+    }
+
+    let total_speed = total_nodes * 1_000_000_000 / total_time.max(1);
+    output.push_str(&format!(
+        "total nodes {} time_ns {} nps {}\n",
+        total_nodes, total_time, total_speed,
+    ));
+    emit(EngineEvent::Print(output));
+    Ok(())
+}
+
 /*----------------------------------------------------------------------------*\
                                  TOOL COMMANDS
 \*----------------------------------------------------------------------------*/
@@ -804,7 +965,7 @@ pub fn run_debug_headless(arguments: &[String]) {
         "tune" => run_tune_command(&arguments[1..]),
         "sprt" => run_sprt_command(&arguments[1..]),
         "state" | "movegen" | "evaluate" | "see" | "search"
-        | "play" | "perft" => {
+        | "play" | "perft" | "bench" => {
             parse_position_arguments(command, &arguments[1..]).and_then(
                 |position| match command {
                     "state" => run_state_command(position),
@@ -814,6 +975,7 @@ pub fn run_debug_headless(arguments: &[String]) {
                     "search" => run_search_command(position),
                     "play" => run_play_command(position),
                     "perft" => run_perft_command(position),
+                    "bench" => run_bench_command(position),
                     _ => unreachable!(),
                 },
             )

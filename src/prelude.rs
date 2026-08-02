@@ -82,7 +82,8 @@ pub use crate::game::search::{
 
 pub use crate::game::util::{
     adjudicate_no_move, benchmark_headless_perft, benchmark_perft,
-    benchmark_search, exe_tag, format_time, game_result_score, perft,
+    benchmark_search, exe_tag, format_time, game_result_score,
+    parse_perft_content, perft,
     play_search_game, prune_backups, random_u128, refresh_eval_state,
     roll_latest, run_derive_headless, square_distance, verify_game_state,
 };
@@ -315,7 +316,9 @@ lazy_static! {
     /// The rest are shared runtime state:
     ///
     /// - `ENGINE_START` fixes the time origin
-    /// - `RNG` seeds all randomness
+    /// - `SEED` fixes all randomness: the `ANEKAMACAM_SEED` environment
+    ///   variable pins it for reproducible runs, unset falls back to a
+    ///   per-process time-based value; `RNG` draws from it
     /// - `RUNTIME_VERBOSITY` / `DEBUG_FLAG` drive logging
     /// - `SYSTEM_INTERRUPT` / `LOG_MESSAGES` bridge the signal handler and TUI
     /// - `COMMENT_PATTERN` / `SECTION_PATTERN` are shared config-parse regexes
@@ -352,10 +355,12 @@ lazy_static! {
 
         result
     };
+    pub static ref SEED: u64 = env::var("ANEKAMACAM_SEED")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or_else(|| ENGINE_START.elapsed().as_nanos() as u64);
     pub static ref RNG: Mutex<StdRng> =
-        Mutex::new(
-            StdRng::seed_from_u64(ENGINE_START.elapsed().as_nanos() as u64)
-        );
+        Mutex::new(StdRng::seed_from_u64(*SEED));
     pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(5);
     pub static ref SIDE_HASHES: u128 = random_u128();
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
