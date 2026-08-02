@@ -781,14 +781,33 @@ stays attributable.
 
 ### Found while verifying, not stages
 
-- **`cont_hist` is O((P*B)^2).** `state.rs:948` and `search.rs:156`
-  allocate and zero `2 * cont_dim^2` `i16` where
-  `cont_dim = pieces.len() * board_size`. Shogi: 28 types on 81 squares,
-  2268^2 * 2 * 2 bytes ≈ **20.6 MB zeroed at every `clear_search`**, and
-  every read is a cache miss. Crazyhouse ≈ 6.6 MB, standard 2.4 MB.
-  Invisible to a node table; measure with the speed suite before designing
-  anything. Reducing the parent axis to `piece` alone would cut shogi to
-  ~127 KB.
+- **`cont_hist` is O((P*B)^2) and too sparse to learn anything in shogi.**
+  `state.rs:948` and `search.rs:156` allocate `2 * cont_dim^2` `i16` where
+  `cont_dim = pieces.len() * board_size`: standard 2.25 MiB, crazyhouse
+  6.25 MiB, **shogi 19.62 MiB**.
+
+  The allocation itself is *not* the problem — measured, and my first note
+  claiming "20.6 MB zeroed every `clear_search`" was wrong. `vec![0i16; n]`
+  uses `alloc_zeroed`, so a large block comes back as kernel zero pages and
+  is faulted lazily: 300 `go depth 1` searches take 0.13 s in standard and
+  0.14 s in shogi, i.e. ~0.45 ms each in both.
+
+  The problem is **density**. Approximating one history write per node
+  (real writes are fewer on cutoffs and several on the malus loop, so this
+  is order-of-magnitude), a 1-second search writes 1,721,482 nodes into
+  standard's 589,824 slots per ply-table — about 2.9 writes per slot, a
+  saturated table carrying real statistics — versus 1,033,009 nodes into
+  shogi's 5,143,824 slots, about **0.20 writes per slot**. Most of the
+  shogi table is never touched, so continuation history is largely reading
+  zeros in the variant whose move ordering needs it most, and every probe
+  that does land is a cold miss in a 19.6 MiB working set.
+
+  This compounds with F-3: while the parent is a drop, the parent key
+  collapses to 2 of 2268 values, so two rows are hammered and the rest is
+  dead. Do not design the fix until F-3 lands and the access pattern is
+  real. Direction: reduce the parent axis from `(piece, square)` to
+  `piece`, which takes shogi to 28 * 2268 * 2 * 2 bytes ≈ 248 KiB — 80x
+  denser and back inside L2.
 - **NMP's material guard ignores hands.** `search.rs:1020-1021` tests
   `big_pieces[playing]`, board only, so a side with an empty board and a
   full hand passes or fails for the wrong reason in both directions.
