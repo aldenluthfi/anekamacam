@@ -268,7 +268,66 @@ sample FENs; sennichite fixture with a capture-containing repetition cycle
 perpetual-check fixture via `d`/state reason; bench (counts shift slightly
 from root-occurrence fix — record, don't gate on identity).
 
-### D-3 — staged move generation (the real movegen lever)
+### D-3 — staged move generation (the real movegen lever) — DONE
+
+Two design premises below turned out to be wrong; both were settled by
+measurement.
+
+**1. The node-count identity gate is unachievable in principle.** Move
+scores are computed lazily inside `pick_by_score!`, and the pick at index
+0 scans the whole list — so today every quiet's history score is computed
+at node entry, before any child search runs. Staged generation creates the
+quiets only after some captures have been searched, and those subtrees have
+already updated `search_hist`/`cont_hist`, so the quiets are scored against
+fresher history and reorder relative to each other. Deferring generation
+necessarily defers scoring; keeping identity would mean pre-scoring the
+quiets at node entry, which means generating them there. Move-set equality
+was proven instead: forcing stage 1 to derive its captures from the full
+`relevant_moves` walk rather than `relevant_captures` produced byte-
+identical node counts on all five variants, so the capture halves match
+exactly, and the quiet half is that walk's exact complement by
+construction.
+
+**2. Staging is a net loss without hands.** Because the tables are not
+disjoint, stage 2 re-walks and re-encodes the captures only to discard
+them, so every node that reaches quiets pays the capture work twice.
+Measured with staging forced on everywhere (vs C-3): standard -7.4% NPS at
+identical node counts, xiangqi +20% time, grand +21% time; only shogi
+(-19% time) and crazyhouse (-11% time) won, because skipping the drop list
+on a capture cutoff dwarfs the duplicated walk. Staging is therefore gated
+on `drops!(state) || game_phase == SETUP` — a cost model ("defer only when
+the deferred list is large"), expressed with a rule bit movegen already
+uses, not a variant name. Non-drop variants take the original single-stage
+path unchanged.
+
+As-built:
+
+- `retain_captures!(out, start, keep)` in move_list.rs — stable in-place
+  compaction to one side of the capture split. Replaces the `swap_remove`
+  loop in `generate_capture_list!`, which scrambled the surviving captures'
+  order. Effect measured alone (vs C-3): standard identical, xiangqi
+  -0.03%, shogi +0.09%, crazyhouse +2.9%, grand -14.1% nodes — a qsearch
+  tie-break lottery, net neutral in expectation, kept because stable order
+  is what makes the capture stage a subsequence of the full walk.
+- `generate_all_quiets_and_drops` — appends rather than clears, so the
+  unsearched losing captures survive into stage 2.
+- alpha_beta's move loop became an index `loop` (every `continue` now
+  advances `i` explicitly). Stage 2 is injected when the buffer runs out,
+  or when a pick scores below `LOSING_CAPTURE_SCORE` — the point where only
+  losing captures remain, since the bands are disjoint (winning captures
+  >= 4M, killers/quiets >= 1M, losing captures < 1M - MAX_HIST). Injection
+  re-picks at the same index so the merged tail is ordered correctly.
+- A TT move that is not among the captures (typically a quiet one) forces
+  stage 2 immediately, so it is still the first move tried.
+
+Result vs C-3 (geomean, seed 42): shogi -18.1% time / +7.9% NPS,
+crazyhouse -10.8% time (nodes -17%), standard and xiangqi within noise
+(staging bypassed), grand +6.0% time from the stable-filter node lottery.
+Verified: 32/32 fixtures, perft green on 8 variants incl. every drop
+variant, debug-build searches on shogi/crazyhouse/minishogi/janggi with
+`verify_game_state` assertions active.
+
+Original design follows.
 
 alpha_beta currently pays full move+drop generation at every node even
 when the first capture cuts off; drop variants pay hundreds of encoded

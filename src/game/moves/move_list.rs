@@ -1288,6 +1288,12 @@ macro_rules! generate_move_list {
 /// follows the same pipeline as normal move generation, then drops any
 /// non-capturing moves it produced.
 ///
+/// The surviving captures keep the order they were generated in, which is
+/// the order `generate_move_list!` would have produced them: both vector
+/// tables filter one piece's vector set and then stable-sort it by the
+/// same key, so the captures are a subsequence of the full move list.
+/// Staged generation in `alpha_beta` relies on that correspondence.
+///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
 /// - piece       : &Piece         -> moving piece type
@@ -1310,10 +1316,34 @@ macro_rules! generate_capture_list {
             $square_index, $piece, vector_set, $state, $out, $scratch
         );
 
-        let mut i = start;
-        while i < $out.len() {
-            if m_capture!(&$out[i]) { i += 1; } else { $out.swap_remove(i); }
+        retain_captures!($out, start, true);
+    }};
+}
+
+/// retain_captures!
+///
+/// Compacts `$out[$start..]` down to the moves whose capture status matches
+/// `$keep`, preserving their generated order. Used to split one generation
+/// pass into its capturing and quiet halves without disturbing move
+/// ordering.
+///
+/// Params:
+/// - out  : &mut Vec<Move> -> list whose tail is compacted in place
+/// - start: usize          -> first index the filter applies to
+/// - keep : bool           -> true keeps captures, false keeps quiets
+#[macro_export]
+macro_rules! retain_captures {
+    ($out:expr, $start:expr, $keep:expr) => {{
+        let mut write = $start;
+
+        for read in $start..$out.len() {
+            if m_capture!(&$out[read]) == $keep {
+                $out.swap(write, read);
+                write += 1;
+            }
         }
+
+        $out.truncate(write);
     }};
 }
 
@@ -3732,12 +3762,67 @@ pub fn generate_all_moves_and_drops(
     }
 }
 
+/// generate_all_quiets_and_drops
+///
+/// Quiet counterpart of `generate_all_captures`, completing a staged
+/// generation: everything `generate_all_moves_and_drops` would produce
+/// except the capturing moves. Appends to `out` rather than clearing it,
+/// so the caller's unsearched captures survive the second stage.
+///
+/// The normal-move walk covers the same vectors as the capture stage, so
+/// dual-purpose vectors are visited twice; what the capture stage saves is
+/// encoding the quiet moves and the whole drop list, which dominate in
+/// variants with hands.
+///
+/// Params:
+/// - state  : &State         -> position to generate for
+/// - out    : &mut Vec<Move> -> list extended with the quiet moves
+/// - scratch: &mut Vec<u64>  -> reusable multi-capture payload buffer
+#[hotpath::measure]
+pub fn generate_all_quiets_and_drops(
+    state: &State,
+    out: &mut Vec<Move>,
+    scratch: &mut Vec<u64>,
+) {
+    if is_terminal!(state) {
+        return;
+    }
+
+    let piece_count = state.statics.pieces.len() / 2;
+    let start_index = piece_count * state.playing as usize;
+    let end_index = start_index + piece_count;
+
+    if state.game_phase != SETUP {
+        let start = out.len();
+
+        for piece_index in start_index..end_index {
+            let piece = &state.statics.pieces[piece_index];
+            for &index in piece_squares!(state, piece_index) {
+                generate_move_list!(index, piece, state, out, scratch);
+            }
+        }
+
+        retain_captures!(out, start, false);
+    }
+
+    if drops!(state) || state.game_phase == SETUP {
+        for piece_index in start_index..end_index {
+            let piece = &state.statics.pieces[piece_index];
+            generate_drop_list!(piece, state, out);
+        }
+    }
+
+    if castling!(state) {
+        generate_castling_list!(state, out);
+    }
+}
+
 /// generate_all_captures
 ///
 /// Capture-only counterpart of `generate_all_moves_and_drops`, used by
-/// quiescence search. Walks the narrower `relevant_captures` tables and
-/// keeps only moves that actually capture; quiet moves, drops, and
-/// castling are never generated.
+/// quiescence search and as the first stage of `alpha_beta` generation.
+/// Walks the narrower `relevant_captures` tables and keeps only moves that
+/// actually capture; quiet moves, drops, and castling are never generated.
 ///
 /// Params:
 /// - state  : &State         -> position to generate for

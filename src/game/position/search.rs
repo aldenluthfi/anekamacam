@@ -1196,17 +1196,51 @@ pub fn alpha_beta(
             plies_back * cont_dim * cont_dim + key * cont_dim;
     }
 
-    generate_all_moves_and_drops(
-        state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
-    );
+    let staged = drops!(state) || state.game_phase == SETUP;                    /* only hands defer enough work to    */
+                                                                                /* pay for the second stage's walk    */
+    if staged {
+        generate_all_captures(
+            state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+        );
+    } else {
+        generate_all_moves_and_drops(
+            state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+        );
+    }
 
     let n = bufs.move_buf[ply].len();
     bufs.score_buf[ply].clear();
     bufs.score_buf[ply].resize(n, usize::MAX);
 
-    let moves_len = bufs.move_buf[ply].len();
+    let mut quiets_pending = staged && pv_move.as_ref().is_none_or(|pv| {       /* a quiet TT move needs stage two    */
+        bufs.move_buf[ply].iter().any(|mv| m_matches!(mv, pv))                  /* now, to stay the first move tried  */
+    });
 
-    for i in 0..moves_len {
+    if staged && !quiets_pending {
+        generate_all_quiets_and_drops(
+            state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+        );
+        bufs.score_buf[ply].resize(bufs.move_buf[ply].len(), usize::MAX);
+    }
+
+    let mut i = 0;
+
+    loop {
+        if i >= bufs.move_buf[ply].len() {
+            if !quiets_pending {
+                break;
+            }
+
+            generate_all_quiets_and_drops(
+                state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+            );
+            bufs.score_buf[ply].resize(bufs.move_buf[ply].len(), usize::MAX);
+            quiets_pending = false;
+
+            if i >= bufs.move_buf[ply].len() {
+                break;
+            }
+        }
 
         pick_by_score!(
             state,
@@ -1215,6 +1249,24 @@ pub fn alpha_beta(
             &mut bufs.see_move_buf, &mut bufs.see_scratch_buf,
             cont_bases
         );
+
+        if quiets_pending
+        && bufs.score_buf[ply][i] < LOSING_CAPTURE_SCORE as usize               /* only losing captures rank below    */
+        {                                                                       /* the quiets still ungenerated       */
+            generate_all_quiets_and_drops(
+                state, &mut bufs.move_buf[ply], &mut bufs.scratch_buf
+            );
+            bufs.score_buf[ply].resize(bufs.move_buf[ply].len(), usize::MAX);
+            quiets_pending = false;
+
+            pick_by_score!(
+                state,
+                &mut bufs.move_buf[ply], &mut bufs.score_buf[ply],
+                i, &pv_move,
+                &mut bufs.see_move_buf, &mut bufs.see_scratch_buf,
+                cont_bases
+            );
+        }
 
         let mv = &bufs.move_buf[ply][i];
 
@@ -1246,6 +1298,7 @@ pub fn alpha_beta(
         && !is_drop
         && !dangerous_push
         {
+            i += 1;
             continue;
         }
 
@@ -1263,6 +1316,7 @@ pub fn alpha_beta(
             let see = bufs.score_buf[ply][i] as i32                             /* losing band: 1M - h + SEE + capt   */
                 - (LOSING_CAPTURE_SCORE - MAX_HIST_VALUE as i32);
             if see < -state.statics.see_margin[depth] {
+                i += 1;
                 continue;
             }
         }
@@ -1281,10 +1335,12 @@ pub fn alpha_beta(
         && beta - alpha == 1
         && legal_moves >= LMP_THRESHOLD[improving as usize][depth] as usize
         {
+            i += 1;
             continue;
         }
 
         if !make_move!(state, mv.clone()) {
+            i += 1;
             continue;
         }
 
@@ -1488,6 +1544,8 @@ pub fn alpha_beta(
                 }
             }
         }
+
+        i += 1;
     }
 
     /*-----------------------------------------------------------------------*\
