@@ -1874,22 +1874,21 @@ pub fn parse_config_file(path: &str) -> State {
                     });
                 }
                 "extinct" => {
-                    let opponent = arguments[0] == "opp";
-                    let set = parse_set(arguments[1]);
-                    let (threshold, outcome) = if arguments.len() >= 4 {
+                    let set = parse_set(arguments[0]);
+                    let (threshold, outcome) = if arguments.len() >= 3 {
                         (
-                            arguments[2].parse::<u8>().unwrap_or_else(|_| {
+                            arguments[1].parse::<u8>().unwrap_or_else(|_| {
                                 panic!("Invalid extinct count: {}",
-                                    arguments[2])
+                                    arguments[1])
                             }),
-                            parse_outcome(arguments[3]),
+                            parse_outcome(arguments[2]),
                         )
                     } else {
-                        (0, parse_outcome(arguments[2]))
+                        (0, parse_outcome(arguments[1]))
                     };
 
                     termination.extinct.push(Extinct {
-                        set, threshold, outcome, opponent, name,
+                        set, threshold, outcome, name,
                     });
                 }
                 "goal" => {
@@ -2366,7 +2365,6 @@ pub fn parse_fen(
                 if p_is_royal!(piece) {
                     state.royal_list[piece_color as usize]
                         .push(square_index as Square);
-                    state.royal_pieces[piece_color as usize] += 1;
                 }
 
                 if p_is_major!(piece) {
@@ -2533,17 +2531,29 @@ pub fn parse_fen(
         state.game_phase = SETUP;
     }
 
-    if parts.len() > part_index {
-        let halfmove_clock = parts[part_index].parse().map_err(|_| {
-            format!("Invalid halfmove clock: {}", parts[part_index].trim())
-        })?;
+    let trailing = parts.len() - part_index;                                    /* clock fields are told apart by     */
+                                                                                /* count, not by rule: two means      */
+    if trailing > 2 {                                                           /* halfmove + fullmove, one means the */
+        return Err(format!(                                                     /* fullmove alone, and format_fen     */
+            "Unexpected FEN field: {}",                                         /* emits the halfmove only when a     */
+            parts[part_index + 2]                                               /* counter rule declares one          */
+        ));
+    }
+
+    if trailing == 2 {
+        let halfmove = parts[part_index].trim().parse::<u32>()
+            .map_err(|_| {
+                format!("Invalid halfmove clock: {}", parts[part_index].trim())
+            })?;
+
         if let Some(counter) = &mut state.termination.counter {
-            counter.clock = halfmove_clock;
+            counter.clock = halfmove.min(u8::MAX as u32) as u8;
         }
+
         part_index += 1;
     }
 
-    if parts.len() > part_index {
+    if trailing >= 1 {
         let fullmove = parts[part_index].trim().parse::<u32>()
             .map_err(|_| {
                 format!("Invalid fullmove number: {}", parts[part_index])
@@ -2554,17 +2564,16 @@ pub fn parse_fen(
             .ok_or_else(|| {
                 format!("Invalid fullmove number: {}", fullmove)
             })?;
-        part_index += 1;
-    }
-
-    if parts.len() > part_index {
-        return Err(format!("Unexpected FEN field: {}", parts[part_index]));
     }
 
     refresh_eval_state(state);
 
     state.position_hash = hash_position(state);
     state.pawn_hash = hash_pawns(state);
+
+    if let Some((color, outcome, _)) = position_terminal(state) {
+        state.termination.game_result = resolve_outcome!(color, outcome);       /* a loaded position can already be   */
+    }                                                                           /* over; only make_move! knew before  */
 
     Ok(())
 }

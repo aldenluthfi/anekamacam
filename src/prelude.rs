@@ -54,7 +54,8 @@ pub use crate::game::moves::move_list::{
     generate_relevant_moves,
 };
 pub use crate::game::representations::termination::{
-    adjudicate_outcome, counting_limit, game_outcome, position_terminal,
+    adjudicate_outcome, counting_limit, counting_progress, game_outcome,
+    position_terminal, repetition_outcome,
     side_is_bare, terminal_reason,
 };
 pub use crate::game::moves::move_parse::{
@@ -256,6 +257,7 @@ pub const MAX_CHECK_EXTENSION: usize = 2;
 pub const MIN_PROBCUT_DEPTH: usize = 5;
 pub const PROBCUT_DEPTH_REDUCTION: usize = 4;
 pub const PROBCUT_MAX_CAPTURES: usize = 3;
+pub const REP_SCAN_CAP: usize = 64;
 
 pub const LMR_QUIET_BASE: f64 = 0.75;
 pub const LMR_QUIET_DIV: f64 = 2.25;

@@ -59,6 +59,30 @@ macro_rules! drop_can_checkmate {
     };
 }
 
+/// illegal_mating_drop!
+///
+/// Whether the move that reached this position was a drop the variant forbids
+/// from delivering mate. The side to move having no legal move is then not a
+/// loss for it but a loss for the dropper, so every caller that turns "no legal
+/// move" into a result has to ask this -- search when it scores a mate, and
+/// `adjudicate_no_move` when it decides one. Reading the same flag from one
+/// place is what keeps the two from disagreeing.
+///
+///   Params:
+///   - state: &State -> position whose last move is inspected
+///
+///   Return:
+///   bool            -> true when the mating move was a banned drop
+#[macro_export]
+macro_rules! illegal_mating_drop {
+    ($state:expr) => {
+        $state.history.last().is_some_and(|snapshot| {
+            move_type!(&snapshot.move_ply) == DROP_MOVE
+                && !drop_can_checkmate!(&snapshot.move_ply)
+        })
+    };
+}
+
 /// DropMove / Drops / DropSet
 ///
 /// A `DropMove` is a packed `u32` (bit 0 = LSB):
