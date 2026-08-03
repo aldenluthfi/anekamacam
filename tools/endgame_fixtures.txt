@@ -3,6 +3,10 @@
 # One case per line, fields separated by '|':
 #   variant | fen | moves | expected Result | description
 #
+# An expectation of `score cp` or `score mate` makes the case a search case:
+# the runner plays the moves, runs `go depth $GO_DEPTH` and asserts the kind
+# of the last score. Use it for verdicts search reaches before the game does.
+#
 # `fen` may be the literal `startpos`. `fen` keeps its own internal spaces
 # (side-to-move, and the `*` en-passant marker some variants require). The
 # runner drives the release engine over UCI and asserts the `d` Result line,
@@ -45,6 +49,13 @@ kinglet | k7/pR6/8/8/8/8/P6K/8 w | b7a7 | White wins | kinglet: Black loses its 
 extinction | rnb1kbnr/pppppppp/8/8/8/8/PPPqPPPP/RNBQKBNR w * | d1d2 | White wins | extinction: Black loses its only queen
 extinction | rnb1kbnr/pppppppp/8/8/8/8/PPPqPPPP/RNBQKBNR w * | | Ongoing | extinction: every black type still present, not yet decided
 horde | r3k3/8/8/8/8/8/P7/8 b * | a8a2 | Black wins | horde: White's last piece captured (army extinct)
+kinglet | 7k/P7/8/8/8/8/7p/K7 w | a7a8q | Black wins | kinglet: White promotes its own last pawn out of existence
+kinglet | 7k/P7/8/8/8/8/7p/K7 w | | Ongoing | kinglet: that pawn still on the board decides nothing
+extinction | 1nbqkbnr/Pppppppp/8/8/8/8/8/RNBQKBNR w * | a7a8q | Black wins | extinction: White promotes its own last pawn out of existence
+
+# --- perpetual reaches search before it reaches the game -------------------
+xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 | score cp | perpetual one cycle short: nothing terminal to score
+xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 e10e9 a10a9 | score mate | perpetual closing: search sees the loss while `d` still reads Ongoing
 
 # --- makruk pieces' honour: a bare king is counted out by the winner's material
 makruk | 7k/8/8/8/8/RR6/8/K7 w | a3a4 h8h7 a4a3 h7h8 | Draw | KRRk bare king: two rooks -> counted out at the limit of 8
