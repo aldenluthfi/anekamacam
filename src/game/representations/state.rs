@@ -627,7 +627,6 @@ pub struct State {
     pub big_pieces: [u32; 2],                                                   /* per-color big-piece counts         */
     pub major_pieces: [u32; 2],                                                 /* per-color major-piece counts       */
     pub minor_pieces: [u32; 2],                                                 /* per-color minor-piece counts       */
-    pub royal_pieces: [u32; 2],                                                 /* per-color royal-piece counts       */
     pub royal_list: [Vec<Square>; 2],                                           /* color to royal piece square list   */
 
     pub piece_count: Vec<u32>,                                                  /* piece index to count               */
@@ -685,7 +684,6 @@ impl Clone for State {
             big_pieces: self.big_pieces,
             major_pieces: self.major_pieces,
             minor_pieces: self.minor_pieces,
-            royal_pieces: self.royal_pieces,
             royal_list: self.royal_list.clone(),
 
             piece_count: self.piece_count.clone(),
@@ -934,7 +932,6 @@ impl State {
             big_pieces: [0; 2],
             major_pieces: [0; 2],
             minor_pieces: [0; 2],
-            royal_pieces: [0; 2],
             royal_list: [Vec::new(), Vec::new()],
 
             piece_count: vec![0u32; piece_count],
@@ -1015,7 +1012,6 @@ impl State {
         self.big_pieces = [0; 2];
         self.major_pieces = [0; 2];
         self.minor_pieces = [0; 2];
-        self.royal_pieces = [0; 2];
         self.royal_list = [Vec::new(), Vec::new()];
 
         self.piece_count = vec![0u32; piece_count];

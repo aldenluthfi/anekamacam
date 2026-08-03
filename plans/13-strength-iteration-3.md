@@ -621,6 +621,577 @@ futility margins (`parameters.rs:1490-1494`) and so pushes node counts the
 wrong way — its own gate is standard-bench-identity, independent of this
 table.
 
+### Termination correctness patch — lands before F-3, no letter
+
+**Context.** A shogi RR lost four games to "makes an illegal move" and logged
+1271 illegal-PV warnings. The cause was real — search scored every repetition
+a draw and never read the `perpetual` rule, so the engine steered into a
+perpetual check that Cute Chess rejects outright — but the two patches
+attempted on 2026-08-03 were each incomplete, and each was caught by the user
+rather than by me. Auditing them turned up a wider set of defects in the same
+subsystem: twenty in all, of which the illegal moves are one.
+
+The intended outcome is that the engine and its declared rule set stop
+disagreeing. Concretely: no arbiter can reject a move we choose; every
+terminal rule names a subject that is documented and computed rather than
+inferred from ply parity; and a rule that a `.conf` declares is the rule the
+engine actually plays. This section replaces both attempts: **one commit,
+everything below, nothing shipped piecemeal.**
+
+Both attempted commits (`7c4a04a`, `3bd2998`) are local-only — `origin/main`
+is at `24f74be` — so they are reset and rewritten, not amended. The RR-script
+commit is re-made separately since it shares no code with this.
+
+#### Decisions taken (user, 2026-08-03)
+
+- **Subject convention is per-rule, documented on each rule.** No global
+  convention is achievable: `extinct` names the colour whose count ran out,
+  `adjudicate` names the points winner, and `perpetual` names the sole
+  offender — three colours computed from position data, not from turn order.
+  `Outcome`'s doc must stop claiming one. No config outcome word changes and
+  no shipped variant changes behaviour.
+- **Landing:** one clean commit on `main`, cherry-picked onto
+  `phaseA-3..phaseE-3` so every binary shares one rule set. Binaries rebuild;
+  the drop-variant RR re-runs.
+- **Scope:** code *and* configs — a `.conf` that misstates its variant's real
+  rules is fixed in the same patch, each change carrying a cited source.
+- **Freshly-loaded FENs** evaluate the state-only rules after `parse_fen`.
+  `checks`, double-pass and stand-off stay history-dependent: "the Nth check
+  was just delivered" and "both sides passed" are facts about moves, not about
+  a position.
+
+  **As built, `counting` is NOT among them** — the design said its progress
+  needs no serialization because the count is position-derivable. That is
+  wrong, and measured: seeding `counting.progress` at load makes the first
+  move tick from the seed instead of initialising, so the count runs one ply
+  ahead, the game ends mid-fixture, the remaining moves cannot be applied and
+  the whole position is rejected. Six counting fixtures failed. The *condition*
+  that starts a count is a position fact; how far the count has run is a
+  history fact the FEN does not carry, and seeding one would invent a number.
+  Counting therefore still begins on the first move played from a loaded
+  position. Root evaluation covers `goal`, `extinct` and `counter`, whose
+  clock the FEN does carry.
+- **The TUI joins the same oracle** — `graphics.rs:515-520` calls
+  `game_outcome` rather than formatting `game_result` raw. Not runnable here,
+  so it ships as a code-path match with no behavioural claim attached.
+
+#### Per-rule subject table (the contract to document and enforce)
+
+| rule | subject | today |
+|---|---|---|
+| `checkmate` / `stalemate` | the side with no legal move | correct (`util.rs:245`, `search.rs:1567`) |
+| `checks` | the mover that delivered the Nth check | correct (`termination.rs:485`) |
+| `goal` | the mover that reached the zone | correct (`:411`) |
+| `extinct` | the colour whose count ran out | correct after dropping `opponent` |
+| `perpetual` | the sole offender | correct after honouring the declared outcome |
+| `adjudicate` | the points winner | correct (`:442-450`) |
+| `counting` | **the material side** (the non-bare colour) | **wrong** — names `state.playing` at HEAD, `mover` in the working tree; both are ply parity |
+| `counter` / `repetition` | the mover that triggered it | flipped in the working tree; needs documenting either way |
+
+`counting`'s material side is already computed at `move_list.rs:2733`
+(`let winner = if white_bare { BLACK } else { WHITE }`) but used only to pick
+the limit and never carried to the resolution point. Reuse `side_is_bare`
+(`termination.rs:296`) at the resolution point rather than plumbing a new
+field.
+
+#### Confirmed defects, each verified directly
+
+1. **Search never consulted `perpetual`.** `alpha_beta` returned
+   `draw_score!` for any repetition, so a perpetual check scored as a draw and
+   the engine steered into it. Cute Chess implements shogi perpetual check as
+   a move-generation prohibition (`ShogiBoard::vIsLegalMove`:
+   `isIncheck && repeatCount() > 2 && (m_checks[opp] & 0b1111111) == 0b1111111`),
+   so the cycle-closing check is rejected and the game forfeited.
+2. **The declared per-offence outcome was discarded.** `Perpetual.check` and
+   `Perpetual.chase` each hold an `Outcome` parsed at `game_io.rs:1915-1925`;
+   only their `is_some()` was read, so `perpetual: check draw` scored as a
+   loss. The `Option` should be the enable flag and the payload the result.
+3. **The verdict fired at the first repeat, not the rule's count.** Scoring a
+   perpetual terminal at the second occurrence forbids the checker a legal
+   continuation — shogi's rule is `repetition: 4`, xiangqi's `3`. Verified:
+   with the gate on the declared count, xiangqi scores `mate 1` at the third
+   occurrence and matches the baseline's `cp 45` at the second.
+4. **`perpetual_offender` does not restore `search_ply`.** `undo_move!` uses
+   `saturating_sub` (`move_list.rs:2849`) while `make_move!` counts up with no
+   floor, so a cycle reaching back past the search root leaves the counter
+   inflated; every node below then reads its ply — and its PV row — from the
+   wrong slot. Reproduced: the root returned `e1e7+` from an empty square
+   where the baseline returned `d1d7+`.
+5. **A cycle span holding a search null move must be rejected.** `null_move()`
+   is all-ones and its snapshot has no move to undo; real passes are
+   unaffected, since `is_pass!` requires `QUIET_MOVE` with `end == start`.
+6. **Extinction misses promotion.** `extinct_outcome` gated on capture move
+   types, but a promotion retypes a piece (`piece_list_remove!` on the old
+   index, `piece_list_push!` on `promoted_piece`, `move_list.rs:1713-1718`).
+   Demonstrated in kinglet: capturing the last black pawn gives `White wins`,
+   promoting your own last pawn gives `Ongoing`. Capture-or-promotion is the
+   complete predicate — drops only add, castling relocates without retyping,
+   and `is_unload` moves already carry a capture move type.
+7. **`Extinct.opponent` and the `any|own|opp` token are dead.** No shipped
+   config used `opp` or `own`, the parser never distinguished `own` from
+   `any`, and inverting the outcome word says the same thing. Removing them
+   shrinks the grammar to `extinct: <set> [<count>] <outcome>`.
+8. **Uchifuzume is scored in search and ignored by game truth.** An illegal
+   mating drop is flagged by the generator (`enc_can_checkmate!(.., !drop_k)`,
+   `drop_list.rs:144`) and read at exactly two sites, `search.rs:740` and
+   `:1572`, which negate the mate score. `adjudicate_no_move`
+   (`util.rs:239-248`) — the oracle behind `d`, self-play, datagen and SPRT —
+   has no equivalent, so search and game truth disagree on who won. Note the
+   flag moves from bit 23 to bit 112 in F-3; the two changes do not conflict.
+9. **No eager rule can fire on a freshly-loaded FEN.** `position_terminal`
+   opens with `state.history.last()?` (`termination.rs:473`) and `parse_fen`
+   never touches `game_result` (no write anywhere in `game_io.rs`). A FEN of a
+   position that already satisfies `goal`, `extinct` or `counter` reports
+   `Ongoing` until someone moves.
+10. **The TUI reports a different result from `d`.** `graphics.rs:515-520`
+    formats `state.termination.game_result` raw instead of calling
+    `game_outcome`, so repetition and perpetual verdicts never appear there.
+
+#### Further defects, from the detector audit — each re-verified by hand
+
+11. **`royal_pieces` is never maintained.** One writer in the whole repo,
+    `game_io.rs:2368`, inside the FEN board loop; `make_move!` updates
+    `royal_list` on a drop (`move_list.rs:2513-2516`) and never the counter,
+    and `verify_game_state` does not assert it. `side_is_bare`
+    (`termination.rs:298`) requires `royal_pieces[side] == 1`, so **sittuyin,
+    whose kings start in hand, has `[0, 0]` forever and its
+    `counting: burmese draw` rule can never fire.** Any variant that drops or
+    captures a royal is wrong the same way. Fix by maintaining the counter
+    beside `major`/`minor` and adding it to `verify_game_state`, which is what
+    would have caught it.
+12. **FEN round trip loses the move number, and fails outright past fullmove
+    255.** `format_fen` emits the halfmove field only when a `counter` rule
+    exists (`game_io.rs:2790-2793`) but always emits the fullmove; `parse_fen`
+    unconditionally consumes the next field *as* the halfmove
+    (`:2535-2543`) and only then reads the fullmove. For a counter-less
+    variant the fullmove is eaten by the halfmove slot — which is typed `u8`
+    — so `ply_counter` is silently zero and any fullmove above 255 returns
+    `Invalid halfmove clock`. Verified by grep: of the campaign variants only
+    `standard.conf` declares `counter:` — **shogi, crazyhouse, grand and
+    xiangqi all round-trip wrong.** The lost `ply_counter` is mostly
+    cosmetic; the parse failure past fullmove 255 is not, since fixtures,
+    datagen and the position sweeps all feed FENs back in.
+13. **`checks.delivered` and `counting.progress` are not serialized at all,**
+    so `position fen <midgame threecheck>` restarts both check counters, and
+    a restored makruk/sittuyin game restarts the pieces'-honour count *and*
+    re-freezes its limit from the current material.
+14. **`counting.progress` can restart and re-freeze.** The transition arm at
+    `move_list.rs:2727-2735` recomputes `pieces + 1` and a fresh limit
+    whenever bareness flickers off and back on; both sides going bare cancels
+    counting outright rather than resolving it.
+15. **`extinct_outcome` reports the first matching colour, WHITE first.** A
+    colour already at or below threshold from a state the rule never
+    evaluated — a loaded FEN, or a hand — is attributed to the *next* capture
+    or promotion by anyone. Interacts with defect 9.
+16. **`extinct` and `adjudicate` both ignore `piece_in_hand`**
+    (`termination.rs:376-380`, `:437-440`). Latent — no shipped drop variant
+    declares either — but the schema permits the combination.
+17. **`goal_outcome` can fire for a piece that predates the last move.** Its
+    doc justifies scanning by "the check runs after every move", which fails
+    at a loaded FEN (defect 9) and when the mover's *unload* or castling
+    relocates an enemy goal piece onto the zone.
+18. **In SETUP, `is_in_check!` is hard-false** (`move_list.rs:87`), so a side
+    with no legal placement is adjudicated stalemate rather than checkmate,
+    and setup checks are never counted. Latent for shipped variants; becomes
+    live the moment K-3 changes the SETUP exit predicate.
+19. **`counter` and `counting` fire ahead of checkmate.** Once `game_result`
+    is set, `generate_all_moves_and_drops` returns empty
+    (`move_list.rs:3745`), so a move that both exhausts the clock and mates is
+    scored as the clock rule. FIDE gives mate priority.
+20. **`make_null_move!` ticks `repetition.clock` and nothing else**
+    (`move_list.rs:3610-3631`). Leaving `counter.clock` and
+    `checks.delivered` alone is defensible — a passed turn is not a halfmove
+    and delivers no check. `counting.progress` is the odd one out: that count
+    ticks every ply by rule, so search under-estimates how close a
+    makruk-family position is to being counted out. Smallest of the twenty;
+    fix or document, do not invent machinery for it.
+
+Suspected, to settle with a `debug_assert!` rather than argument: the redo
+loop in `perpetual_offender` (`termination.rs:673-675`) discards
+`make_move!`'s bool, and `make_move!` self-undoes and returns `false` on a
+rejected move — which would desynchronise history for the rest of the search.
+A faithful replay should never be rejected; assert it and find out.
+
+Also suspected: `virgin_board` is not part of the Zobrist hash while virginity
+is a live move-generation input, so two positions differing only in virginity
+hash alike and repetition can over-count. Needs a constructed test before it
+is treated as real.
+
+Not in scope, recorded so it is not re-found: `sprt.rs:693-699` scores an
+operator-interrupted game as a loss for the side to move. It fires only on
+`SYSTEM_INTERRUPT`, never on a no-move position (that path is
+`adjudicate_no_move` at `:703`), so it is a harness detail, not a rules bug.
+
+#### Why this is one patch and not several
+
+The groups are entangled, not merely adjacent. `extinct` and `goal`
+mis-attribution (15, 17) exists *because* the root is never evaluated (9), so
+fixing either alone leaves the other looking arbitrary. Evaluating the root
+(9) is what makes serializing `counting.progress` unnecessary, which is what
+keeps the FEN fix (12) small enough to be safe. And the perpetual group (1-5)
+cannot be split at all: routing search through the shared oracle is unsafe
+until both the scan cap and the `search_ply` restore exist. Splitting any of
+these ships a half-fix again, which is the failure this section exists to
+correct.
+
+The FEN format is the sharp edge. Adding `checks.delivered` and
+`counting.progress` fields changes a format that `.dict` regexes rewrite for
+each protocol dialect (see the anchored-ep lesson in `cbfea3a`) and that every
+fixture FEN and `res/perft` entry is written in. Field order, optionality and
+the dict interaction must be settled before any of it is written — the
+existing halfmove field is already positionally ambiguous (defect 12), so the
+fix is to make presence unambiguous, not to add more optional trailing fields.
+
+The anchor for that: `parse_fen` reads board, side, `[castling]`, `[ep]`,
+`[hands]`, `[halfmove]`, `[fullmove]` (`game_io.rs:2235-2560`). Every
+conditional block is gated on the variant's rule bits — except the halfmove
+block at `:2535`, gated only on "a field remains", while `format_fen` emits it
+only when `counter.is_some()` (`:2790`).
+
+**Decision: fix the ambiguity, do not serialize progress.** The three losses
+are different species. The halfmove clock has a slot in every dialect our
+dicts speak; `checks.delivered` and `counting.progress` have none, so
+serializing them is a private extension that all 28 `= uci fen =` blocks would
+have to strip outbound and rebuild inbound, and that Cute Chess and FSF would
+reject — breaking the very harness this patch exists to satisfy. That is the
+anchored-ep lesson of `cbfea3a` at larger scale. And `counting.progress` needs
+no serialization once the root is evaluated: its start condition *is* the
+position (exactly one side bare) and `counting_limit` re-derives the frozen
+limit from material on the board, so re-deriving at load is the definition
+rather than a loss. `checks.delivered` genuinely is lost; document that on the
+field, and note that mid-game three-check state reaches us as
+`position fen <start> moves …`, which replays it exactly.
+
+**Mechanism:** disambiguate by *field count*, not by rule declaration.
+`parse_fen`'s two independent `if parts.len() > part_index` blocks become one
+match on the number remaining — `>= 2` is (halfmove, fullmove), `1` is
+fullmove alone, `0` is neither. That is correct for the internal dialect, for
+perft's clock-less FENs, and for an external six-field FEN handed to a
+counterless variant, which gating on `counter.is_some()` would not be. Parse
+the halfmove as `u32` and saturate into `counter.clock: u8`, which also
+removes the fullmove-above-255 parse failure. `format_fen` keeps its
+`counter`-gated emission and is then provably the reader's inverse.
+
+**Blast radius, verified by reading rather than assumed:**
+
+- `res/perft/*.perft` — **zero edits.** Every FEN carries no trailing numeric
+  field (`standard.perft` ends `b KQ *`, `shogi.perft` ends `w LPP/psn`), so
+  they take the `0 remaining` arm and counts cannot move.
+- `tools/endgame_fixtures.txt` — **zero edits.** Its FENs are either two-field
+  (`xiangqi | … w`) or already carry both clocks (`sittuyin … -/- 0 1`).
+- `res/dicts/*.dict` — **moved to S6, last step of this patch.** The problem is
+  larger than "capture the inbound move number". Measured:
+
+  ```
+  xiangqi --protocol uci -> rnbakabnr/9/… w - - 0 1   translated
+  makruk  --protocol uci -> rnhmkhnr/8/…  w 0 1       NOT translated
+  ```
+
+  `makruk`'s outbound rule is `^([^ ]+) ([wb])$ -> $1 $2 - - 0 1`, matching a
+  two-field FEN only, while `makruk` declares a `counter` so `format_fen`
+  emits four — nothing matches and no translation fires. The inbound rules in
+  `xiangqi`, `makruk`, `ouk-chaktrang`, `asean` and `ai-wok` separately drop
+  both clock fields. **Inbound is on the gameplay path** —
+  `handle_position` calls `parse_fen(.., dict.as_ref())`
+  (`protocol.rs:534`) — so a GUI-supplied makruk FEN restarts the
+  board's-honour count at zero. Not cosmetic.
+
+  It goes last because it needs every dict mapped against `format_fen`'s real
+  per-variant output first; editing one regex on a guess is what produced the
+  board corruption behind `cbfea3a`. Gate: a round trip per affected variant,
+  `state --protocol uci` out and `position fen` back in, board and both clocks
+  preserved.
+
+  **Ordering is safe:** verified the `parse_fen` rewrite does not interact. An
+  inbound-translated FEN carries no clock fields, which is `trailing == 0`
+  under the new reader and was skipped by both old blocks — S2 neither
+  worsens nor improves the dict path.
+
+#### Design notes, including one flaw in the attempted patch
+
+- **The repetition probe must stay bounded.** C-3 capped the per-node scan
+  at `REP_SCAN_CAP = 64` (`prelude.rs:279`) precisely because the drop-variant
+  bound is the whole history. Routing search through `repetition_outcome`
+  reintroduces an *unbounded* rescan, since that function calls
+  `count_repetitions(state, usize::MAX)`. Give `repetition_outcome` a `cap`
+  parameter alongside `min_count` — matching `has_repetition` and
+  `count_repetitions`, which already take one — and have search pass
+  `REP_SCAN_CAP` while game truth passes `usize::MAX`. Sound because a genuine
+  perpetual is a short consecutive cycle: reaching 3 or 4 occurrences inside
+  64 plies is not a constraint, and the neutral twofold draw already scans
+  under the same cap.
+- **One mirror site, not two.** `perpetual_offender` reports
+  `(offender, declared_outcome)` and `repetition_outcome` re-expresses both it
+  and the neutral outcome against the side to move in one place. The separate
+  `perpetual_verdict` helper introduced mid-patch is deleted — it existed only
+  to mirror one of the two.
+- **`counting` reads `side_is_bare`** at the resolution point rather than
+  carrying a new field; the material side is the non-bare colour, and
+  `counting.progress` is `None` unless exactly one side is bare
+  (`move_list.rs:2727-2728`).
+- **F-3 interaction.** This patch adds a second reader of
+  `drop_can_checkmate!` (the game-truth uchifuzume fix); F-3 moves that flag
+  from bit 23 to bit 112. Independent changes to the same flag — land this
+  first, and F-3's bit move then updates both readers together.
+- **K-3 interaction.** In SETUP only drops are generated
+  (`move_list.rs:3753-3767`) and `is_in_check!` is hard-false (`:87`), so a
+  side that runs out of placements before its opponent has zero legal moves
+  and is adjudicated *stalemate*. Shipped variants escape only because their
+  hands are equal-sized — sittuyin `KSSFRRNN/kssfrrnn`, janggi `HHEEQ/hheeq`
+  — so both empty on the same ply and SETUP ends
+  (`move_list.rs:2567-2571`). K-3 replaces that exit with "no side has a
+  legal placement", which removes the coincidence this currently rests on.
+  Record the dependency; do not pre-empt K-3 here.
+- **Delete `royal_pieces`, do not start maintaining it.** It has one writer
+  and one reader, and `royal_list` already carries the same fact: it is
+  updated on quiet moves (`move_list.rs:1599`), promotions (`:1787`),
+  captures (`:2081`, `:2149`, `:2454`) and drops (`:2514`), and
+  `verify_game_state` recomputes and asserts it (`util.rs:599-616`) while
+  asserting nothing about `royal_pieces`. Keep the test at exactly `== 1`:
+  it reproduces today's semantics, and whether a bare-king test should accept
+  a side holding two royals is a separate rules question —
+  `janggi.conf:40` declares `royal: KQkq`, so the question is real. Raise it,
+  do not answer it inside this patch. `side_is_bare` becomes
+  `royal_list[side].len() == 1`, which removes a field, removes the
+  divergence, and inherits the assertion that would have caught this.
+
+#### Implementation shape
+
+**Root evaluation without duplicating `position_terminal`.** The last-move
+reads only ever *narrow*, so invert the dependency rather than forking the
+body. Drop the `let last = state.history.last()?` early return
+(`termination.rs:473`) for a plain `let last = state.history.last();` and
+derive `accepted_stand_off` / `double_pass` through `is_some_and`, so an empty
+history yields `false` and the chain falls through to the state-only arms.
+`checks` then stays history-dependent for free, because `last.in_check` is
+simply absent. Hoist extinct's capture-or-promotion gate out of
+`extinct_outcome` into `position_terminal` — called when history is empty or
+when the last move retypes — which leaves `extinct_outcome` a pure position
+scan and closes defect 15 in the same stroke, since the WHITE-first
+mis-attribution exists only because the root was never evaluated. Have
+`goal_outcome` scan `[mover, 1 - mover]` in that order, which closes defect
+17's enemy-relocation case without changing any shipped verdict. Extract the
+inline block at `move_list.rs:2725-2739` into the patch's **one new
+function**, shared by `make_move!` and `parse_fen`; initialising only on the
+`None -> Some` edge is also defect 14's fix. The root hook is then two calls
+at the end of `parse_fen` (`game_io.rs:2563-2566`).
+
+**Signatures.**
+
+```rust
+pub fn side_is_bare(state: &State, side: u8) -> bool
+pub fn extinct_outcome(state: &State) -> Option<(u8, Outcome, &str)>
+pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome, &str)>
+pub fn position_terminal(state: &State) -> Option<(u8, Outcome, &str)>
+pub fn repetition_outcome(
+    state: &mut State, min_count: u8, cap: usize,
+) -> Option<(Outcome, bool)>
+fn perpetual_offender(state: &mut State, cap: usize) -> Option<(u8, Outcome)>
+pub fn counting_progress(
+    state: &State, last: Option<(u16, u16)>,
+) -> Option<(u16, u16)>
+```
+
+No lifetime annotation appears, which is the signal that the shapes are right.
+`perpetual_offender` takes `cap` because its own backward `find`
+(`termination.rs:618-619`) is unbounded too, not just the count scan. Uchifuzume
+needs no new signature: extract the `search.rs:740` / `:1572` predicate as an
+`illegal_mating_drop!` macro beside `drop_can_checkmate!` and read it from all
+three sites, which also makes F-3's bit move a single edit.
+
+**Sequencing** — five steps, each building and passing fixtures:
+
+- **S1 — field deletion and the subject contract.** Delete `royal_pieces`;
+  `side_is_bare` reads `royal_list`. Rewrite `Outcome`'s doc and every rule's
+  subject doc; `counting` names the non-bare colour. Gate: all perfts plus
+  bench byte-identity.
+- **S2 — FEN.** Count-based `parse_fen`, `u32` halfmove, dict inbound capture.
+  Must precede S3, which reads the clock. Gate: perft unchanged, plus a
+  `debug-headless state` round trip past fullmove 255 on shogi, xiangqi,
+  crazyhouse and grand.
+- **S3 — root evaluation, one indivisible group.** De-`?` `position_terminal`,
+  hoist the extinct gate, two-colour `goal_outcome`, extract
+  `counting_progress` and call it from both sites, hook `parse_fen`. Splitting
+  it loses the extinct gate or leaves the re-freeze. Gate: the new extinction
+  and counting fixtures.
+- **S4 — perpetual, defects 1-5 as one group.** The search route is unsafe
+  until both the `cap` and the `search_ply` restore exist, so they land
+  together, with a `debug_assert!` on the redo loop's discarded
+  `make_move!` bool. Gate: the `go`-based xiangqi fixture.
+- **S5 — independents. As built, narrower than planned.**
+
+  Shipped: uchifuzume parity, via an `illegal_mating_drop!` macro beside
+  `drop_can_checkmate!` read by both search sites and by
+  `adjudicate_no_move`, which had no equivalent and so disagreed with search
+  on who won. The TUI now routes through `game_outcome` — **not the one-line
+  change the plan claimed**: `from_state` takes `&State` while `game_outcome`
+  needs `&mut` for the repetition walk, so it calls it on a clone rather than
+  threading mutability through a render path that cannot be exercised here.
+  `janggi.conf` gains `perpetual: check loss`, confirmed against FSF's
+  `janggi_variant()` (`v->perpetualCheckIllegal = true;`).
+
+  **Not shipped, deliberately:**
+  - *makruk / ouk-chaktrang counting numbers.* The research put
+    `count_limit()` in `position.cpp`; it is not there, so the Cambodian
+    figures (63, 7/15/21/31/43) are unverified. FSF also counts in plies with
+    doubled limits — `st->countingLimit = 2 * count_limit(..)`,
+    `st->countingPly = 2 * count<ALL_PIECES>()` — so its numbers are not
+    directly comparable to ours and a naive swap could silently break three
+    variants. Needs the real function read first.
+  - *`make_null_move!` ticking `counting.progress`.* A search null move is not
+    a game ply; leaving it alone is consistent with `counter` and `checks`.
+  - *SETUP `is_in_check!`.* Changing it moves drop legality in sittuyin and
+    janggi; it belongs with K-3, which rewrites the SETUP exit anyway.
+  - *Clock-vs-mate priority.* Real — FIDE gives mate priority when the 50th
+    move mates — but deciding it needs legal-move generation inside
+    `position_terminal`, which runs in every `make_move!`. Too costly a hot
+    path change for a coincidence this rare; recorded, not attempted.
+
+  Gate: bench nodes identical on 15 variants, perft identical on all 38,
+  fixtures 33/33.
+- **S6 — dict FEN rules.** Map every `= uci fen =` block against
+  `format_fen`'s actual output for that variant, then fix outbound match
+  arity and inbound clock capture together. Last because it is the only step
+  whose failure mode is silent board corruption, and because S2 fixed the
+  reader it has to agree with. Gate: per-variant round trip, out through
+  `state --protocol uci` and back in through `position fen`, with the board
+  and both clocks preserved.
+
+**Hot path.** Every change is either behind a rule's `is_some()` or strictly
+cheaper: hoisting the extinct gate means a non-extinction variant does one
+`Vec::is_empty` in the caller instead of a call that early-returns, and
+deleting `royal_pieces` turns two array loads into one `len()`. The one fix to
+measure is **S4's `perpetual_offender`** — it is the only thing that walks
+history driving `make_move!`/`undo_move!` in a loop and runs `offence_set`, a
+full-board attack pass, per cycle ply. Compare bench NPS against the parent on
+shogi, minishogi and xiangqi; every other variant is covered by the
+byte-identity gate, which proves zero added work by construction.
+
+#### Config corrections — what the grammar can express today
+
+Checked against Fairy-Stockfish `variant.cpp` / `position.cpp`. **Confirm each
+against the FSF source before editing** — these come from research, not from
+my own reading, and one wrong number silently changes a variant's rules.
+
+Expressible now, so in scope:
+
+- **`janggi.conf` is missing `perpetual: check loss`.** FSF sets
+  `perpetualCheckIllegal = true` for janggi; we declare only
+  `repetition: 3 draw`, so a perpetual check resolves as a draw. One line,
+  and it makes janggi's rule set match the one xiangqi already has.
+- **`makruk.conf` has a spurious `N: 44` row.** One knight with no rook and
+  no khon counts to 64, not 44, in both FSF and the published table.
+- **`ouk-chaktrang.conf` ships makruk's numbers.** Cambodian counting is
+  uniformly one lower: board's honour 63, table `RR: 7 / R: 15 / HH: 21 /
+  NN: 31 / H: 43 / default: 63`.
+
+Not expressible, so **not** in this patch — each needs schema work and its own
+decision:
+
+- **Minishogi sennichite is a loss for Sente, absolutely** (FSF
+  `nFoldValue = -VALUE_MATE`, `nFoldValueAbsolute = true`), not a draw and not
+  relative to whoever closed the cycle. Our `repetition: <n> <outcome>` is
+  always relative to a subject; a colour-fixed result has no spelling.
+- **Sittuyin uses ASEAN counting**, which is a plain 50-move rule with no
+  board's honour at all, a three-row table (`R: 16`, khon `44`, `N: 64`) and a
+  count starting at **zero** rather than the piece total.
+- **Board's honour semantics generally**: the real count begins only once no
+  pawns remain, is measured in full moves, starts at the both-sides piece
+  total, and survives ordinary captures. `counter:` is a halfmove clock that
+  starts at move 1 and resets on every capture — none of the four properties
+  is expressible. Cambodian adds a further gate (counting side down to three
+  pieces or fewer).
+- **Xiangqi chase exemptions are half-modelled.** `exempt KkPp` correctly
+  exempts general and soldier as *chasers*, but FSF also exempts them as
+  *targets* — chasing the enemy general, or a soldier that has not crossed the
+  river, is not a chase, while a crossed soldier is. `exempt` scopes to
+  chasers only.
+- Both honour counts are **claimed**, not automatic: the disadvantaged side
+  starts, may stop, and may restart them. The grammar has no claim concept.
+
+**The fixtures encode the current numbers.** `tools/endgame_fixtures.txt`
+asserts ouk-chaktrang counting out at 8 and at 16; under Cambodian rules those
+become 7 and 15. Update them as part of the same change, deliberately, and say
+so in the commit message — a fixture edit that follows a rules correction is
+fine, a fixture edited to make a test pass is not.
+
+#### Files touched
+
+- **`src/game/representations/termination.rs`** — the bulk. `Outcome`'s doc
+  stops claiming a global convention; every rule struct's doc states its own
+  subject. `Extinct` loses `opponent`. `extinct_outcome` gains the
+  capture-or-promotion gate and names the extinct colour. `position_terminal`
+  splits so the state-only rules can also run without a last move.
+  `perpetual_offender` returns `(offender, declared_outcome)`, restores
+  `search_ply`, and rejects a span holding a null move.
+  `repetition_outcome` takes a scan `cap`, resolves the offender, and mirrors
+  once. `side_is_bare` reads `royal_list`. `perpetual_verdict` is deleted.
+- **`src/game/moves/move_list.rs`** — the `counting` transition stops
+  re-freezing its limit when bareness flickers; `make_null_move!` ticks
+  `counting.progress`; `royal_pieces` maintenance is not added because the
+  field goes away.
+- **`src/io/game_io.rs`** — `extinct` grammar drops the dead
+  `any|own|opp` token; `parse_fen`'s halfmove block is gated on
+  `counter.is_some()` to match `format_fen`; the `royal_pieces` write goes.
+- **`src/game/position/search.rs`** — the repetition probe calls
+  `repetition_outcome` with `REP_SCAN_CAP` and the rule's own `occurrences`.
+- **`src/game/util.rs`** — `adjudicate_no_move` gains the uchifuzume branch
+  search already has, so game truth and search agree;
+  `verify_game_state` loses the `royal_pieces` gap by losing the field.
+- **`src/game/representations/state.rs`** — `royal_pieces` deleted, with its
+  init, `reset` and `fork` copies.
+- **`src/debug/graphics.rs:515`** — result row routed through `game_outcome`.
+- **`src/prelude.rs`** — export list follows the renames.
+- **`configs/*.conf`** — `extinct:` lines lose the leading token
+  (`extinction`, `horde`, `kinglet`, `example`); any rule the research shows
+  misdeclared is corrected with its source in the commit message.
+- **`configs/example.conf`** — schema block rewritten: per-rule subjects, the
+  shortened `extinct` grammar, and `perpetual`'s per-offence outcome.
+- **`tools/endgame_fixtures.txt`, `tools/run_endgame_fixtures.sh`** — new
+  cases plus a `go`-based expectation mode.
+
+#### Verification
+
+The differential harness comes first, because two of the ten defects were
+invisible to reading and only showed as a diff against the parent binary.
+
+1. **Parent baseline.** `git worktree add --detach` at the parent commit,
+   build to a scratch `CARGO_TARGET_DIR`, keep the binary. Every claim below
+   is new-vs-parent, not new-vs-expectation.
+2. **Agnosticism gate.** `debug-headless bench` at `ANEKAMACAM_SEED=42` must
+   be **byte-identical** on every variant declaring no `perpetual` rule —
+   standard, crazyhouse, grand, and the rest. Only shogi, minishogi and
+   xiangqi declare one, and only they may move.
+3. **Perft** on standard, shogi, xiangqi, crazyhouse, minishogi, extinction,
+   kinglet, horde. Nothing here touches move generation, so every count must
+   be unchanged; a change means a detector reached into make/undo.
+4. **Fixtures.** `tools/run_endgame_fixtures.sh` currently has 32 cases and
+   asserts the `d` Result line. Every behaviour this patch adds needs one,
+   and the extinction family has none for the bug being fixed — all three of
+   `kinglet`/`extinction`/`horde` (lines 44-46) are capture-driven. Add at
+   minimum: extinction by promoting your own last pawn (kinglet and
+   extinction chess); a perpetual that fires at exactly the declared
+   occurrence; the same line one cycle short, expecting `Ongoing`; a
+   `counting` case for each of makruk, ouk-chaktrang and sittuyin proving the
+   subject change is inert; and an uchifuzume case proving `d` now agrees
+   with search.
+5. **Search-side assertions are not covered by that harness**, which reads
+   `d` only. Extend it with a `go`-based expectation (the printer already
+   emits `EngineScore::Mate` as `score mate N`, `prelude.rs:474-484`) so the
+   perpetual scoring has a regression test: xiangqi's perpetual position must
+   report `score mate` at the third occurrence and a plain `cp` score at the
+   second.
+6. **Debug build** with `verify_game_state` active over the perpetual and
+   extinction repros — the `search_ply` defect produced a legal-looking
+   illegal move, so assertions matter more here than usual.
+7. **Whole-corpus load check.** `debug-headless state <variant>` over every
+   config, since the `extinct` grammar changes and a stale `.conf` would
+   otherwise panic only when that variant is first selected.
+8. **RR** on rebuilt phaseA-3..phaseE-3 binaries, with the shogi log grepped
+   for `Illegal PV move` — 1271 of them in the last run is the number this
+   patch has to move, and it is a far more sensitive signal than the four
+   forfeits.
+
 ### F-3 — the drop square lives in `end`
 
 `generate_drop_list!` (`drop_list.rs:141-144`) also writes
@@ -1083,17 +1654,26 @@ a result.
 ## Ordering, dependencies, RR campaign
 
 ```
-A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → H-3 → I-3 → J-3 →
-       └── speed block ──┘     └───────── search block ─────────┘
+A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] →
+       └── speed block ──┘      cherry-picked onto A-3..E-3
 
-  → K-3 → L-3 → [M-3] → N-3 → final RR
-    └────── eval block ──────┘
+  → F-3 → G-3 → H-3 → I-3 → J-3 → K-3 → L-3 → [M-3] → N-3 → final RR
+    └───────── search block ─────────┘  └────── eval block ──────┘
 ```
 
 - A-3 prerequisite for every gate (bench + seed). The RR-1 correctness
   fixes are cherry-picked onto phaseA-3..phaseD-3 so every binary shares
   one rule set; the drop-variant RR must be re-run from rebuilt binaries,
   and the pre-fix crazyhouse and shogi standings are void.
+- **The termination patch lands before F-3 and takes no letter**, on the
+  RR-1 precedent: it is rule correctness that predates the ladder, present
+  in phaseA-3, and it changes shogi and xiangqi tree shape. Cherry-picked
+  onto phaseA-3..phaseE-3 so no phase binary plays a different rule set.
+  The port to phaseA-3/phaseB-3 is small but not automatic — their search
+  probe still reads `position_hash_map` (C-3 replaced it with
+  `has_repetition`), so the gate stays as it is on those branches and only
+  the returned score changes. Every phase binary rebuilds; the running
+  shogi RR is void for shogi and xiangqi once it lands.
 - B-3 before C-3: C's NPS measured on lean search. C-3 before D-3: keeps
   speed-suite attribution clean.
 - **Search block before eval block.** The RR-2 diagnosis measured the
@@ -1143,6 +1723,16 @@ A-3 → B-3 → C-3 → D-3 → E-3 → F-3 → G-3 → H-3 → I-3 → J-3 →
   makes any mistake visible immediately. Revert = drop branch.
 - **E-3**: done; derive-order risk removed by reducing `zone_attack_best`
   inside `derive_zone_attack`.
+- **Termination patch**: touches the one path every variant's result flows
+  through, and two of its defects were found only by diffing against a
+  pre-change binary rather than by reading. So the gate is differential,
+  not inspectional: build the parent commit to a scratch binary and require
+  byte-identical bench node counts on every variant that declares no
+  `perpetual` rule, plus an explicit expected-result fixture for every
+  behaviour the patch adds. A rule whose subject changes must be shown to
+  produce the same result as before on every shipped config, since all of
+  them declare `draw` where the subject was ambiguous. Rollback is a branch
+  drop — nothing is pushed.
 - **F-3**: move encoding, so perft-critical. Every suite must be
   *identical* on every variant — no legality changes, only spare bits. The
   subtle failure is a missed `end!` consumer that reads a drop; the

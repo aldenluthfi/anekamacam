@@ -55,8 +55,9 @@ pub use crate::game::moves::move_list::{
     generate_relevant_moves,
 };
 pub use crate::game::representations::termination::{
-    adjudicate_outcome, count_repetitions, counting_limit, game_outcome,
-    has_repetition, position_terminal, side_is_bare, terminal_reason,
+    adjudicate_outcome, count_repetitions, counting_limit, counting_progress,
+    game_outcome, has_repetition, position_terminal, repetition_outcome,
+    side_is_bare, terminal_reason,
 };
 pub use crate::game::moves::move_parse::{
     INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
