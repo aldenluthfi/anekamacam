@@ -61,6 +61,25 @@ reference_fen() {
         | fairy-stockfish 2>/dev/null | sed -n 's/^Fen: //p'
 }
 
+# Sorts the holdings inside [...] so two spellings of the same hand compare
+# equal. The order carries no meaning -- sittuyin writes FKRRNNSS where the
+# reference writes KSSFRRNN, and both name one position.
+canonical() {
+    case "$1" in
+        *"["*"]"*) ;;
+        *) printf '%s' "$1"; return ;;
+    esac
+
+    local head=${1%%"["*}
+    local rest=${1#*"["}
+    local hand=${rest%%"]"*}
+    local tail=${rest#*"]"}
+
+    printf '%s[%s]%s' \
+        "$head" "$(printf '%s' "$hand" | grep -o . | sort | tr -d '\n')" \
+        "$tail"
+}
+
 for config in "$ROOT"/configs/*.conf; do
     variant=$(basename "$config" .conf)
     [ "$variant" = "example" ] && continue
@@ -98,15 +117,16 @@ for config in "$ROOT"/configs/*.conf; do
         elif [ "$protocol" = "uci" ] && command -v fairy-stockfish >/dev/null
         then
             reference=$(reference_fen "$variant")
-            if [ "${reference%% *}" != "${out%% *}" ]; then
+            echoed=$(reference_fen "$variant" "fen $out")
+            if [ "$(canonical "${reference%% *}")" \
+                 != "$(canonical "${out%% *}")" ]; then
                 printf 'INFO  %-13s %-5s %s\n' "$variant" "$protocol" \
                     'reference models a different board, not cross-checked'
                 pass=$((pass + 1))
-            elif [ "$(reference_fen "$variant" "fen $out")" != "$out" ]; then
+            elif [ "$(canonical "$echoed")" != "$(canonical "$out")" ]; then
                 printf 'FAIL  %-13s %-5s reference will not read it back\n' \
                     "$variant" "$protocol"
-                printf '      sent [%s]\n      ref  [%s]\n' \
-                    "$out" "$(reference_fen "$variant" "fen $out")"
+                printf '      sent [%s]\n      ref  [%s]\n' "$out" "$echoed"
                 fail=$((fail + 1))
             else
                 printf 'PASS  %-13s %-5s %s\n' "$variant" "$protocol" "$out"
