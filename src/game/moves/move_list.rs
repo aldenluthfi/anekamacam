@@ -2722,17 +2722,7 @@ macro_rules! make_move {
             }
 
             if $state.termination.counting.is_some() {
-                let white_bare = side_is_bare($state, WHITE);
-                let black_bare = side_is_bare($state, BLACK);
-                let progress = if white_bare == black_bare {
-                    None                                                        /* neither or both bare: not counting */
-                } else if let Some((count, limit)) = last_counting {
-                    Some((count.saturating_add(1), limit))                      /* frozen limit, tick the count       */
-                } else {
-                    let winner = if white_bare { BLACK } else { WHITE };
-                    let pieces = $state.piece_count.iter().sum::<u32>() as u16;
-                    Some((pieces + 1, counting_limit($state, winner)))          /* bare-king transition: start count  */
-                };
+                let progress = counting_progress($state, last_counting);
 
                 if let Some(counting) = &mut $state.termination.counting {
                     counting.progress = progress;

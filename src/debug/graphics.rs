@@ -512,11 +512,16 @@ impl BoardState {
         let hand_info;
 
         details.push(["Game Phase".to_string(), phase]);
-        if is_terminal!(state) {
-            let mut result = format_game_result(state.termination.game_result);
-            if let Some(name) = terminal_reason(state) {
+
+        let (outcome, reason) = game_outcome(&mut state.clone());               /* the `d` command's oracle, so the   */
+                                                                                /* pane cannot report a different     */
+        if outcome != ONGOING {                                                 /* result from the engine; cloned     */
+            let mut result = format_game_result(outcome);                       /* because the repetition walk needs  */
+                                                                                /* a mutable position to undo into    */
+            if let Some(name) = reason {
                 result = format!("{} ({})", result, name);
             }
+
             details.push(["Result".to_string(), result]);
         }
         details.push(
