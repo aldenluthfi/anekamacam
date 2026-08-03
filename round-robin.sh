@@ -14,6 +14,15 @@ set -euo pipefail
 # re-execs itself under setsid/nohup, streams output to a log, and returns its
 # pid. cutechess-cli reprints a full rank table every rating interval.
 #
+# DEBUG passes -debug, logging every command exchanged with every engine.
+# cutechess-cli writes its PGN strictly in game order, so a single stalled game
+# withholds the PGN of every game started after it, however many finish -- one
+# hung game cost a 15000-game run its entire PGN on 2026-08-03. The debug
+# stream carries `position startpos moves ...` for every ply, so a run whose
+# PGN is lost that way can still be reconstructed from the log, and a stall
+# shows which command an engine never answered. Engine `info` lines are dropped
+# on the way to the log: they are the bulk of the volume and none of the value.
+#
 # Usage:
 #   round-robin.sh phaseA-3 phaseD-3
 #   round-robin.sh A-3 D-3 E-3
@@ -26,6 +35,7 @@ set -euo pipefail
 #   CONCURRENCY    concurrent games (default: CPU count)
 #   VARIANTS       space-separated variants
 #   FSF_ELOS       space-separated Fairy-Stockfish anchors
+#   DEBUG          log engine commands (default 1; costs ~100 KB per game)
 #   ALLOW_EXISTING_RR=1 permits launch into an existing result directory
 
 REPO=$(cd "$(dirname "$0")" && pwd)
@@ -36,6 +46,7 @@ CONCURRENCY=${CONCURRENCY:-$(
 )}
 VARIANTS=${VARIANTS:-"standard shogi crazyhouse grand"}
 FSF_ELOS=${FSF_ELOS:-"1700 1800 1900"}
+DEBUG=${DEBUG:-1}
 
 LOG="$RR/round-robin.log"
 PIDFILE="$RR/round-robin.pid"
@@ -138,10 +149,15 @@ read -ra ANCHORS <<<"$FSF_ELOS"
 run_rr() {
 	local variant=$1
 	local engines=()
+	local flags=(-recover)
 	local candidate
 	local elo
 
 	echo "=== variant $variant ==="
+
+	if [[ "$DEBUG" == "1" ]]; then
+		flags+=(-debug)
+	fi
 
 	for candidate in "${CANDIDATES[@]}"; do
 		engines+=(
@@ -162,10 +178,11 @@ run_rr() {
 		-each proto=uci option.Threads=1 option.Hash=64 \
 		tc=30+0.3 timemargin=200 \
 		-tournament round-robin -rounds "$ROUNDS" -games 2 \
-		-recover \
+		"${flags[@]}" \
 		-concurrency "$CONCURRENCY" -ratinginterval 50 \
 		-pgnout "$RR/rr-$variant.pgn" \
-		-variant "$variant"
+		-variant "$variant" |
+		awk '!/: info /{ print; fflush() }'
 }
 
 read -ra TARGET_VARIANTS <<<"$VARIANTS"
