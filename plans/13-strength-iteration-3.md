@@ -1192,6 +1192,58 @@ invisible to reading and only showed as a diff against the parent binary.
    patch has to move, and it is a far more sensitive signal than the four
    forfeits.
 
+#### Follow-up, landed after the patch (2026-08-03)
+
+Two commits on top of `de04444`, both gated on tools that did not exist when
+the patch shipped.
+
+**`abfbe1c` — every dialect FEN is now one an outside reader accepts.** S6
+fixed eight dictionaries; a sweep found ten broken, and the two it had
+deferred were the least severe of them. Fairy-Stockfish, driven with the same
+variant name, rejects six outright and silently misreads a seventh:
+`shogi`/`minishogi`/`euroshogi`/`judkins` wrote `[-]` holdings in four fields
+where FSF writes `[]` in six; `judkins` also carried an unanchored
+`w -> +s` that rewrote the side to move as a promoted silver; `pocketknight`
+leaked the internal `N/n` hand as its own field; `berolina` omitted the
+halfmove entirely, so FSF read the move number as the clock; `extinction` and
+`horde` inherited standard's `$1 * <- ([^wb]) -`, which needs a non-`wb`
+character before the ep dash and therefore *cannot* match in a variant with
+no castling field. `janggi` and `kinglet` fired no rule at all.
+
+`tools/run_fen_roundtrip.sh` is the standing gate — every variant, every
+declared protocol, out and straight back in, failing both a no-op dictionary
+and one whose output will not reparse, plus an FSF read-back where the two
+agree on the starting board. 44/44. It deliberately reports INFO rather than
+FAIL where the boards differ, since makruk's khon letters, shatranj's
+`A`/`F`, sittuyin's hand order and our janggi's setup phase are questions
+about what to model, not about dialect shape. Those four remain open.
+
+**`7b92638` — the two fixed defects got the regression tests they shipped
+without.** Extinction by promoting your own last pawn (kinglet and
+extinction; all three pre-existing extinction cases are capture-driven), and
+the search-side perpetual score. The latter needed a probe the harness
+lacked: an expectation of `score cp` or `score mate` now runs
+`go depth $GO_DEPTH` and asserts the score kind, because the `d` oracle
+cannot see a verdict search reaches on its own. Each new case was checked to
+fail on the parent binary — the closing perpetual answers `cp` there, which
+is the bug behind the four forfeits and 1271 illegal-PV warnings. 33 → 38.
+
+**New defect, found by trying to write the janggi fixture and left open.**
+`move_list.rs:2766` resets `repetition.clock` on any promotion, so
+`repetition_scan_bound` never looks past the last one. That is sound only
+where promotions are irreversible. Janggi encodes palace-diagonal geometry as
+a reversible `K:Q` / `Q:K` type swap, so **every general move is a
+promotion**, the bound never exceeds a ply or two, and no cycle containing a
+general is ever seen. Consequence: the `perpetual: check loss` line S5 added
+to `janggi.conf` **is inert** — it was recorded as shipped and cannot fire.
+Isolated three ways: janggi chariot-only repetition draws normally, the
+identical xiangqi geometry resolves as a perpetual, and only the janggi
+general cycle reads `Ongoing`. Two candidate fixes — drop the promotion term
+(a too-large bound cannot produce a false positive, but widens the scan in
+shogi) or derive a reversible-promotions flag from the promotion map. Not
+attempted here: it moves shogi node counts, and the campaign baseline is
+measured there.
+
 ### F-3 — the drop square lives in `end`
 
 `generate_drop_list!` (`drop_list.rs:141-144`) also writes
