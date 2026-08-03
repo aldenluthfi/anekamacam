@@ -1213,10 +1213,36 @@ no castling field. `janggi` and `kinglet` fired no rule at all.
 `tools/run_fen_roundtrip.sh` is the standing gate — every variant, every
 declared protocol, out and straight back in, failing both a no-op dictionary
 and one whose output will not reparse, plus an FSF read-back where the two
-agree on the starting board. 44/44. It deliberately reports INFO rather than
-FAIL where the boards differ, since makruk's khon letters, shatranj's
-`A`/`F`, sittuyin's hand order and our janggi's setup phase are questions
-about what to model, not about dialect shape. Those four remain open.
+agree on the starting board. 44/44. It reports INFO rather than FAIL where
+the boards genuinely differ, which is not a dialect question: capablanca's
+rival setup, our janggi's setup phase, and `los-alamos`/`tjatoer`, whose
+names FSF does not know and silently answers as chess.
+
+**`737344c` — the piece letters were fixed in the `.conf`, not the `.dict`.**
+Three configs named pieces with letters no outside reader shares: makruk and
+ouk-chaktrang wrote the khon `H`, shatranj the alfil `A` and ferz `F`. Our
+own `ai-wok` and `sittuyin` already spell that silver-shaped piece `S`, so
+the repo disagreed with itself too. Renaming in the config removes the
+translation instead of adding it, and removes a hazard rather than working
+around one — inbound, a bare `a <- b` rule rewrites the *side to move*, so
+the dictionary version needed the anchored repeat xiangqi uses for its
+elephant. Piece order keeps its positions, so tuned parameters stay valid
+with no regen, and the movement tokens are untouched (`Bb:A`, `Qq:F` are
+still the alfil leap and the ferz step). The same commit made the promotion
+suffix rank-agnostic: it was pinned in all four makruk-family dicts (`8=F`,
+`8=M`, `6=A`) so it covered one colour only, and makruk had none, emitting an
+uppercase `a5a6M`. Verified on the move path, which is what the RR exchanges.
+
+Still open, and each its own question rather than a dialect bug:
+**ouk-chaktrang** is `cambodian` to FSF and carries the king/met one-time
+leaps in the *castling* field as `DEde`, while we model them with virgin
+prefixes (`Kk:K|iN`, `Mm:F|inW.`) and serialise nothing — matching letters
+alone would hand FSF a FEN it reads happily while losing the leap state, so
+it stays mismatched on purpose, and it ties to the `virgin_board`-not-in-hash
+suspicion. **shatranj lacks the bare-king rule** (FSF returns `mate 0` for a
+bared king; found while testing promotion notation); its base case looks
+expressible as `extinct: PRNBQprnbq 0 loss`, the counter-baring exception
+does not.
 
 **`7b92638` — the two fixed defects got the regression tests they shipped
 without.** Extinction by promoting your own last pawn (kinglet and
