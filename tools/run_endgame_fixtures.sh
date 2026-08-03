@@ -14,11 +14,16 @@
 #
 # Usage: tools/run_endgame_fixtures.sh   (build the release binary first)
 #        GO_DEPTH=8 tools/run_endgame_fixtures.sh
+#        BIN=bin/phaseC-3 tools/run_endgame_fixtures.sh
+#
+# The BIN override is how a whole set of phase binaries is checked to be
+# playing one rule set: run it against each and require the same result on
+# every case. Phase binaries built before a rules fix will not agree.
 
 set -u
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$ROOT/target/release/anekamacam"
+BIN="${BIN:-$ROOT/target/release/anekamacam}"
 FIXTURES="$ROOT/tools/endgame_fixtures.txt"
 GO_DEPTH="${GO_DEPTH:-6}"
 
