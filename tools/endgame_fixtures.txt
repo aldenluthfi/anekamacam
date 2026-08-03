@@ -42,7 +42,8 @@ koth | 4k3/8/8/8/8/8/4K3/8 w - - 0 1 | e2e3 e8e7 e3e4 | White wins | king-of-the
 
 # --- material extinction ---------------------------------------------------
 kinglet | k7/pR6/8/8/8/8/P6K/8 w | b7a7 | White wins | kinglet: Black loses its last pawn
-extinction | 4k3/8/8/8/8/8/PPPqPPPP/RNBQKBNR w * | d1d2 | White wins | extinction: Black loses its only queen
+extinction | rnb1kbnr/pppppppp/8/8/8/8/PPPqPPPP/RNBQKBNR w * | d1d2 | White wins | extinction: Black loses its only queen
+extinction | rnb1kbnr/pppppppp/8/8/8/8/PPPqPPPP/RNBQKBNR w * | | Ongoing | extinction: every black type still present, not yet decided
 horde | r3k3/8/8/8/8/8/P7/8 b * | a8a2 | Black wins | horde: White's last piece captured (army extinct)
 
 # --- makruk pieces' honour: a bare king is counted out by the winner's material

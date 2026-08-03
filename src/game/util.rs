@@ -242,7 +242,14 @@ pub fn adjudicate_no_move(state: &mut State) -> u8 {
     } else {
         state.termination.stalemate
     };
-    let result = resolve_outcome!(state.playing, outcome);
+    let subject = if outcome == Outcome::Loss
+        && illegal_mating_drop!(state)
+    {
+        1 - state.playing                                                       /* a drop barred from mating loses    */
+    } else {                                                                    /* for the dropper, not the mated     */
+        state.playing
+    };
+    let result = resolve_outcome!(subject, outcome);
     state.termination.game_result = result;
     result
 }
