@@ -14,7 +14,7 @@ set -euo pipefail
 # re-execs itself under setsid/nohup, streams output to a log, and returns its
 # pid. cutechess-cli reprints a full rank table every rating interval.
 #
-# DEBUG passes -debug, logging every command exchanged with every engine.
+# DEBUG passes -debug all, logging every command exchanged with every engine.
 # cutechess-cli writes its PGN strictly in game order, so a single stalled game
 # withholds the PGN of every game started after it, however many finish -- one
 # hung game cost a 15000-game run its entire PGN on 2026-08-03. The debug
@@ -156,7 +156,7 @@ run_rr() {
 	echo "=== variant $variant ==="
 
 	if [[ "$DEBUG" == "1" ]]; then
-		flags+=(-debug)
+		flags+=(-debug all)
 	fi
 
 	for candidate in "${CANDIDATES[@]}"; do
