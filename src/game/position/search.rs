@@ -737,11 +737,7 @@ fn quiescence_search(
         let outcome = state.termination.checkmate;
         let score = outcome_score!(state, outcome);
 
-        return if outcome == Outcome::Loss
-        && state.history.last().is_some_and(|s| {
-            move_type!(&s.move_ply) == DROP_MOVE
-            && !drop_can_checkmate!(&s.move_ply)
-        }) {
+        return if outcome == Outcome::Loss && illegal_mating_drop!(state) {
             -score
         } else {
             score
@@ -897,13 +893,28 @@ pub fn alpha_beta(
                                   REPETITION SCORING
     \*-----------------------------------------------------------------------*/
 
-    if state.termination.repetition.is_some()
-    && ply > 0
-    && state.position_hash_map
-        .get(&state.position_hash)
-        .copied()
-        .unwrap_or(0) >= 2 {
-        return draw_score!(state);
+    let declared = state.termination.repetition
+        .as_ref().map(|repetition| repetition.occurrences);
+
+    if ply > 0 && let Some(occurrences) = declared {
+        let root = state.history.first()
+            .is_some_and(|snapshot| {
+                snapshot.position_hash == state.position_hash
+            });
+        let repeats = state.position_hash_map
+            .get(&state.position_hash).copied().unwrap_or(0)
+            .saturating_add(root as u8);
+
+        if repeats >= occurrences {
+            return match repetition_outcome(state, occurrences, REP_SCAN_CAP) {
+                Some((outcome, _)) => outcome_score!(state, outcome),
+                None => draw_score!(state),
+            };
+        }
+
+        if repeats >= 2 {
+            return draw_score!(state);
+        }
     }
 
     /*-----------------------------------------------------------------------*\
@@ -1592,11 +1603,7 @@ pub fn alpha_beta(
         };
         let score = outcome_score!(state, outcome);
 
-        return if outcome == Outcome::Loss
-        && state.history.last().is_some_and(|s| {
-            move_type!(&s.move_ply) == DROP_MOVE
-            && !drop_can_checkmate!(&s.move_ply)
-        }) {
+        return if outcome == Outcome::Loss && illegal_mating_drop!(state) {
             -score
         } else {
             score
