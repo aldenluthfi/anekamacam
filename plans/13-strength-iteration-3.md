@@ -2,6 +2,23 @@
 
 ## Context
 
+**Revised 2026-08-04 after RR-3.** A-3..E-3 are done and the termination patch
+has landed on all five branches; the first clean RR on those binaries put us
+136-172 Elo below Fairy-Stockfish at 1700 in crazyhouse with zero rule
+failures, so the loss is pure play strength. Measuring it found three causes
+where the plan had one: an effective branching factor of 1.90 against FSF's
+1.38 in drop variants — stated unit-free, **our own engine needs 26x more
+nodes to reach depth 13 in crazyhouse than in standard, where FSF needs
+0.45x** — a time manager that spends 53% of the clock where FSF spends 96%,
+and, new, grand: a variant with *no drops at all* sitting at 48x, which is on
+its own enough to stop "the deficit is drops" from being the whole story. It
+also found that the eval unit anchor this plan has reasoned with since
+2026-08-02 is wrong by 2.7x, and that its replacement is unsound too, so
+cross-engine unit multipliers are dropped from gates entirely. The ladder past
+E-3 is renumbered (F→G … N→Q) to put time management first and to add three
+stages; nothing past phaseE-3 has a branch, so the renumbering costs only the
+`PHASES` table. Full evidence in **RR-3 diagnosis**, below.
+
 Engine sits at ~1920 FIDE / <1700 shogi; target ~2300. Hard evidence from two
 prior iterations:
 
@@ -99,7 +116,7 @@ quadratic zone-attack king danger, open-shield-file penalty, 7 pawn
 sub-terms (passed/protected/chained/connected/doubled/isolated/backward)
 cached in PTable, material-scaled draw contempt.
 
-## Stage ladder (iteration 3 — phase labels A-3..N-3)
+## Stage ladder (iteration 3 — phase labels A-3..Q-3)
 
 One significant, RR-differentiable change per stage; one commit per stage on
 its own `phaseX-3` branch via build-stages.sh. Rejected experiments consume
@@ -132,12 +149,15 @@ no letter.
   8), `PROCS` (10 interleaved passes), `LIMIT` (16), `SEED` (42).
   Geomean nodes/time/nps per variant + B-vs-A deltas; fails loudly when
   same-binary node counts differ across passes.
-- build-stages.sh: `PHASES` now A-3..N-3, one row per stage (the F-3a/b/c
-  sub-ablation rows are gone with the sub-stages); `phaseA-3` pinned via
-  its own branch (created at the A-3 commit — hash unknowable at commit
-  time), `PHASE_N_PARENT` overrides N-3's default M-3 parent for when the
-  conditional M-3 is dropped. round-robin.sh: `*-3*` patterns, VARIANTS
-  defaults to the four campaign variants.
+- build-stages.sh: `PHASES` originally A-3..N-3, one row per stage (the
+  F-3a/b/c sub-ablation rows are gone with the sub-stages); `phaseA-3`
+  pinned via its own branch (created at the A-3 commit — hash unknowable at
+  commit time), `PHASE_N_PARENT` overrides a conditional stage's parent for
+  when that stage is dropped. round-robin.sh: `*-3*` patterns, VARIANTS
+  defaults to the four campaign variants. **The `PHASES` table is rewritten
+  for the 2026-08-04 renumbering** (A-3..Q-3, with the parent override
+  generalised to the three conditional stages L-3, M-3 and P-3); that edit
+  lands with F-3, since no branch past phaseE-3 exists.
 - Verified: perft suites green (standard depth-4 x400 + 13 variants full
   depth-4); same-seed bench node counts IDENTICAL cross-process on all
   five campaign variants; A/A speed-suite delta ±0.8%.
@@ -481,29 +501,31 @@ execute nothing.
 
 **Gate met, measured against Fairy-Stockfish.** Full-army crazyhouse,
 white king castled g1 versus exposed d4, material identical, varying only
-Black's hand. Our units are not centipawns, so the standard-variant row
-anchors the scale: FSF charges 100 cp there and we charge 198 u, giving
-1.98 u/cp.
+Black's hand. Our units are not centipawns, so a standard-variant row has to
+anchor the scale — and **the anchor used here was wrong**. It came from one
+king-exposure position and read 1.98 u/cp; measured on 2026-08-04 against
+clean material imbalances in standard the ratio is **0.74 u/cp** (see RR-3).
+Both columns are shown, the corrected one being the one to use:
 
-| hand | FSF | FSF at 1.98 u/cp | pre-E-3 | E-3 | E-3 vs FSF |
-|---|---|---|---|---|---|
-| `-/-` | 438 | 867 | 126 | 126 | 15% |
-| `-/rb` | 1954 | 3869 | 126 | 220 | 6% |
-| `-/qrb` | 2869 | 5681 | 126 | 503 | 9% |
-| `-/qqrrbb` | 3715 | 7356 | 126 | 1632 | 22% |
+| hand | FSF | at 1.98 (wrong) | at 0.74 (correct) | pre-E-3 | E-3 | vs FSF |
+|---|---|---|---|---|---|---|
+| `-/-` | 438 | 867 | 324 | 126 | 126 | **39%** |
+| `-/rb` | 1954 | 3869 | 1446 | 126 | 220 | **15%** |
+| `-/qrb` | 2869 | 5681 | 2123 | 126 | 503 | **24%** |
+| `-/qqrrbb` | 3715 | 7356 | 2749 | 126 | 1632 | **59%** |
 
 E-3 does what it was scoped to do: the penalty was flat at 126 for every
 hand and now scales, growing 13x from empty to `qqrrbb` where FSF grows
-8.5x. **It does not fix crazyhouse king safety.** Against FSF as the
-standard we still charge 6-22% of what it charges, and the empty-hand row
-— 126 against an expected 867 — is untouched by this stage, because that
-gap is in the base exposure signal, not the hand. That is the exposure
-PST's target.
+8.5x. It does not close crazyhouse king safety, but the remaining gap is
+15-59%, not the 6-22% first recorded — a real shortfall rather than a
+chasm, and the empty-hand row is 126 against 324 rather than against 867.
+That row is untouched by this stage, because the gap is in the base
+exposure signal, not the hand; it is the exposure PST's target.
 
-**Superseded as a priority by the RR-2 diagnosis below.** E-3 stays — the
-term was missing and is now correct — but the eval block it was the first
-stage of has been pushed behind a search block, because the drop-variant
-deficit turns out to be dominated by search efficiency, not eval.
+**Superseded as a priority, first by the RR-2 diagnosis below and then more
+sharply by RR-3.** E-3 stays — the term was missing and is now correct — but
+the eval block it was the first stage of sits behind the search block,
+because the drop-variant deficit is dominated by branching factor, not eval.
 
 Speed (seed 42, limit 12): standard and grand byte-identical node counts
 and NPS within 0.3%, confirming the `drops!` gate costs nothing. Shogi
@@ -547,7 +569,7 @@ the enemy hand instead of staying at +16, and the sign must invert so the
 sheltered king scores higher. Then bench (drop variants only should move),
 and SPRT shogi and crazyhouse against phaseD-3.
 
-### RR-2 diagnosis: the drop deficit is search, not evaluation
+### RR-2 diagnosis: the drop deficit is search, not evaluation — direction right, magnitude wrong (see RR-3)
 
 Prompted by the question "can the abysmal crazyhouse and shogi performance
 be caused by something other than king safety?". It can, and it is.
@@ -621,7 +643,10 @@ futility margins (`parameters.rs:1490-1494`) and so pushes node counts the
 wrong way — its own gate is standard-bench-identity, independent of this
 table.
 
-### Termination correctness patch — lands before F-3, no letter
+### Termination correctness patch — landed after E-3, no letter — DONE
+
+*(Written when the next stage was called F-3; that stage is G-3 after the
+2026-08-04 renumbering. Every "F-3 interaction" below means G-3.)*
 
 **Context.** A shogi RR lost four games to "makes an illegal move" and logged
 1271 illegal-PV warnings. The cause was real — search scored every repetition
@@ -1270,9 +1295,333 @@ shogi) or derive a reversible-promotions flag from the promotion map. Not
 attempted here: it moves shogi node counts, and the campaign baseline is
 measured there.
 
-### F-3 — the drop square lives in `end`
+### RR-3 diagnosis (2026-08-04): three causes, and only one was in the plan
 
-`generate_drop_list!` (`drop_list.rs:141-144`) also writes
+The first RR on the patched A-3..E-3 binaries ran crazyhouse alone, ~620 games
+per engine, `tc=30+0.3`, cutechess concurrency 30 on 32 cores, `Hash=64`, no
+book. **Zero illegal moves, zero forfeits, zero time losses, 11 draws in 1558
+games** — the termination patch did what it was for. The standings did not
+follow:
+
+```
+fsf-1900  +217    fsf-1800  +100    fsf-1700    0
+phaseE-3  -136    phaseA-3  -172
+```
+
+Three separate causes, measured. The plan had one of them.
+
+**1. Effective branching factor, and it is not only about drops.**
+
+The headline number is **intra-engine**, which is what makes it safe: same
+binary, same harness, same depth, only the rule set changing. Mean over 3
+standard midgame and 6 crazyhouse midgame positions, `go depth 13`,
+single thread, `Hash=64`:
+
+| | standard | crazyhouse-mid | change |
+|---|---|---|---|
+| **ours**, nodes @13 | 128 668 | 3 335 901 | **x26** |
+| **ours**, EBF | 1.57 | 1.87 | +0.30 |
+| FSF, nodes @13 | 409 146 | 182 473 | **x0.45** |
+| FSF, EBF | 2.10 | 1.73 | -0.37 |
+
+Read it as one sentence: **our engine needs 26x more nodes to reach depth 13
+in crazyhouse than in standard, where FSF needs less than half.** That is a
+58x relative swing and it needs no cross-engine unit, no matched `Hash`, and
+no assumption that the two engines mean the same thing by "depth". It also
+kills the lazy reading in the other direction — in standard our EBF is 1.57
+against FSF's 2.10 and we use 0.31x its nodes, so the search machinery is not
+generally weak. Only the drop path is.
+
+The cross-engine columns below are kept because they size the gap, but they
+are **not** the gate. FSF's nominal depth is not ours (different reduction
+schedule), and the RR's FSF ran `UCI_LimitStrength=true` while these probes
+ran it at full strength, so the two are not the same opponent.
+
+Cumulative nodes per iteration on one crazyhouse midgame position (ply 36,
+full pockets, taken from the live RR debug log):
+
+| depth | 1 | 3 | 5 | 7 | 9 | 11 | 13 | EBF |
+|---|---|---|---|---|---|---|---|---|
+| ours | 425 | 2 855 | 10 100 | 35 684 | 62 822 | 477 825 | 1 786 459 | **1.90** |
+| FSF | 726 | 1 922 | 3 631 | 4 590 | 6 819 | 25 312 | 45 660 | **1.38** |
+
+39x the nodes at depth 13. Nodes to fixed depth over 12 such positions: 20.9x
+at depth 8, 16.6x at 10, 12.0x at 12 — the ratio *shrinks* with depth, which is
+what a compounding EBF gap looks like, not a fixed per-node surcharge.
+
+The same probe across variants, from startpos unless noted:
+
+| variant | depth | ours | FSF | ratio | EBF ours / FSF |
+|---|---|---|---|---|---|
+| standard (midgame) | 12 | 64 990 | 72 738 | **0.89x** | — |
+| xiangqi | 13 | 57 703 | 94 465 | **0.6x** | 1.70 / 1.88 |
+| janus | 10 | 59 061 | 77 959 | 0.8x | — |
+| minixiangqi | 10 | 19 121 | 16 225 | 1.2x | — |
+| los-alamos | 10 | 52 310 | 36 457 | 1.4x | — |
+| modern | 10 | 58 932 | 33 725 | 1.7x | — |
+| crazyhouse (startpos, empty pockets) | 13 | 372 743 | 203 697 | 1.8x | 2.11 / 2.16 |
+| capablanca | 10 | 56 156 | 25 341 | 2.2x | — |
+| shogi | 13 | 523 385 | 104 456 | **5.0x** | 2.11 / 1.97 |
+| crazyhouse (midgame, full pockets) | 13 | 1 786 459 | 45 660 | **39x** | 1.90 / 1.38 |
+| grand | 11 | 4 912 871 | 51 285 | **48x** | 2.66 / 1.95 |
+
+Two readings the previous diagnosis did not have. First, **crazyhouse with
+empty pockets is fine (1.8x) and only blows up once the hands fill** — that is
+the drop hypothesis confirmed far more sharply than RR-2's 4.3x, and it is why
+the search block is still the right block. Second, **grand is the worst variant
+in the corpus at 48x and has no drops at all**, so a fix aimed only at drops
+leaves a campaign variant untouched.
+
+Grand's mechanism is separate and visible in the iteration log: our score
+alternates `5, 33, 5, 36, 5, 46, 5, 33, 5, 33, 12` on consecutive plies while
+the best move flips between back-rank rook shuffles (`a1f1`, `j1f1`) and only
+reaches a developing move at depth 8; FSF settles on `c3c4` at depth 3 and
+climbs `92 → 176`. Root move generation is not the problem — perft(1) is 65 for
+both engines. A near-flat eval with an odd/even oscillation gives the ordering
+nothing to work with, which is exactly what an EBF of 2.66 looks like. The
+cause is not yet identified, so grand gets a diagnosis stage, not a guessed fix.
+
+**2. The time manager spends half the clock.** `compute_budgets`
+(`protocol.rs:707-733`) computes `soft = (time/40 + inc*2/3) / 2`, i.e.
+`time/80 + inc/3` — 479 ms at 30.3 s remaining — and `hard = soft * 4`. The
+per-iteration scale (`search.rs:483-500`) then multiplies the soft budget by
+`TM_STABILITY_PCT = [160,130,110,100,85,75]`, so a settled search takes 75% of
+an already-halved allocation.
+
+Measured in the RR, total clock consumed per game against a ~38.7 s budget
+(30 s + 29 moves x 0.3 s):
+
+| | clock used / game | median move | median depth |
+|---|---|---|---|
+| fsf-1700/1800/1900 | 37.2 s (96%) | 0.96 s | 13 |
+| phaseA-3 / phaseE-3 | 19.5 / 20.4 s (**53%**) | 0.58 s | 11 |
+
+The formula predicts 0.48 s x 29 moves ≈ 14 s plus iteration overshoot ≈ 19 s,
+which is what was observed, so this is the allocation and not the RR's CPU
+oversubscription. It is variant-agnostic, it has been true of every RR this
+project has ever run, and **it was not in the plan at all**.
+
+**3. The eval unit anchor recorded in this plan is wrong — and so is the
+replacement. Stop using a cross-engine scalar.** The plan states "FSF 100 cp =
+198 of our units", derived from a single king-exposure position. Measured
+fresh on standard positions with clean material imbalances:
+
+| position | ours | FSF | ratio |
+|---|---|---|---|
+| remove g1 knight | -313 | -433 | 0.72 |
+| remove f1 bishop + g1 knight | -594 | -949 | 0.63 |
+| remove b1N + c1B + d1Q | -1558 | -2055 | 0.76 |
+
+Median 0.74 — so the 1.98 figure is wrong by 2.7x in the direction that
+*inflated* the eval block's case. But 0.74 is not a sound replacement either,
+and saying so is the point. `derive_eval_parameters` already normalises the
+cheapest opening value to exactly 100 (`parameters.rs:677-680`; standard's
+param file opens `4140 1725 100 556 318 315 933`), so a pawn is 100 in both
+engines *by construction* and the residual is not a unit difference at all —
+it is FSF pricing above-pawn material and its positional terms higher relative
+to its own pawn than we do. The three samples spread 0.63-0.76, a 20% band, so
+there is no clean scalar to find; and none of them measures a pawn, which is
+the one point that would pin a scale.
+
+**Standing rule from here: express each engine's term as a fraction of that
+engine's own knight, and compare fractions.** No cross-engine multiplier
+appears in a gate again. Where 1.98 appears in the E-3 section both columns are
+shown so the arithmetic is auditable, but neither is a gate.
+
+What survives the correction: on the 12 crazyhouse midgame positions our eval
+agrees with FSF on sign 92% of the time and is within a factor of two on 9 of
+12; the three misses read ~0 where FSF reads +468..+653 and are attack
+positions, not material ones. **The eval is not the dominant problem.**
+
+**Corroborating symptoms, consistent with cause 1.** FSF makes a check with
+42-50% of its drops; we do with 29-30%. 65-76% of our wins are drop mates
+against FSF's 53-56%. We lose faster than FSF loses (p10 game length 34-35
+plies against 39-45).
+
+**4. NPS also collapses in drop variants, and two of its causes are untouched
+by the whole drop block.** Our NPS falls 48% moving from standard to
+crazyhouse (1.35-1.47 M to 0.66-0.81 M) where FSF falls 22% (1.62-1.65 M to
+1.23-1.31 M). Per-search fixed overhead is *not* the cause and the earlier
+suspicion of the `cont_hist` allocation is dismissed again: `go depth 1` costs
+us 0.72 ms against FSF's 0.21 ms, against a 580 ms median move. Two causes
+verified by reading, both of which G-3..K-3 leave in place:
+
+- **Futility and LMP `continue`, they do not `break`** (`search.rs:1304-1313`,
+  `:1336-1349`). A pruned move has already been generated, encoded and scored;
+  only make/undo and eval are skipped. So the O(k·n) `pick_by_score!` selection
+  cost over a 100-150 move list survives every pruning stage. Making drops
+  prunable (I-3) removes their subtrees, not their selection cost.
+- **`repetition_scan_bound` is drop-gated to the full history**
+  (`termination.rs:810-822`): `if drops!(state) { length } else { clock }`,
+  then capped at `REP_SCAN_CAP = 64`. So every node in crazyhouse and shogi
+  walks up to 64 strided `Snapshot` reads where standard walks single digits.
+  C-3 chose this deliberately — a capture-then-drop cycle restores an identical
+  position, so an irreversibility bound is unsound with hands — but it is a
+  per-node cost that scales with exactly the variants that are slow.
+
+These make the NPS collapse a candidate stage of its own (R-3) rather than
+something expected to fall out of the drop block.
+
+**Harness note, not a stage.** The RR ran `-concurrency 30` on 32 cores, so 60
+engine processes shared 32 cores and every engine got under half a core at a
+wall-clock time control. That depresses both sides equally and cannot explain a
+one-sided result, but it adds noise. Future RRs cap concurrency at cores/2.
+
+**Consequence for the ladder.** The search block keeps its place and its
+letters shift by one to make room for the time-management stage, which runs
+first because it is cheap, variant-agnostic, and worth more than any single
+drop stage. The eval block survives but its case is weaker than recorded and
+it stays last.
+
+### F-3 — time management: spend the clock
+
+The largest single lever measured, and the cheapest. Two defects in one
+formula: the per-move allocation is halved after it is computed, and the
+sudden-death divisor of 40 is already conservative for games that last ~29
+moves, so the increment bank is never spent and the engine finishes every game
+with roughly half its clock unused.
+
+Replace the clock arm of `compute_budgets` (`protocol.rs:707-733`):
+
+```
+usable  = (time - overhead).max(1)
+divisor = movestogo > 0 ? min(movestogo, TM_MOVE_HORIZON)     /* new, 18 */
+                        : TM_MOVE_HORIZON
+raw     = usable / divisor + inc * 3 / 4
+reserve = (usable * TM_MAX_SHARE_PCT / 100)                   /* new, 40 */
+              .max(MIN_TIME_BUDGET_NS)
+soft    = raw.clamp(MIN_TIME_BUDGET_NS, reserve)
+hard    = (soft * HARD_BUDGET_FACTOR).clamp(MIN_TIME_BUDGET_NS, reserve)
+```
+
+Four corrections against the first draft of this stage, three of them found by
+a design review and each verified before adopting:
+
+- **The overhead never reached the budget.** Today `raw` divides `time_ms`
+  while only `cap` subtracts `overhead_ms` (`protocol.rs:725-727`), so the lag
+  allowance bounds the ceiling and never the allocation. Subtract once, up
+  front, and both derive from `usable`.
+- **A divisor of 25 lands at 82%, not 90%.** Simulating
+  `T' = T − k·(T/D + 0.75·inc) + inc` over 30 moves at `30+0.3`, where `k` is
+  the realisation factor (our own median move was 0.58 s against a 0.479 s soft
+  budget, so `k ≈ 1.2`):
+
+  | D | k=1.0 | k=1.2 | k=1.4 |
+  |---|---|---|---|
+  | 16 | 87% | 92% | 96% |
+  | **18** | **84%** | **90%** | **94%** |
+  | 20 | 81% | 88% | 92% |
+  | 25 | 75% | 82% | 88% |
+  | 40 (today, before the extra ÷2) | 60% | 68% | 75% |
+
+  **18** is the ship value: it hits the 85-95% target across the whole
+  plausible range of `k` and is the least sensitive to `k` being wrong.
+- **`movestogo` needs a ceiling.** Left uncapped, `movestogo 40` spreads the
+  clock over 40 moves and underspends exactly as today's divisor does. Cap it
+  at the same horizon.
+- **`clamp` panics when `min > max`.** On a nearly-exhausted clock `reserve`
+  falls under `MIN_TIME_BUDGET_NS` and `raw.clamp(MIN, reserve)` aborts, so
+  `reserve` is floored first. That also preserves today's behaviour of never
+  handing a timed search the untimed sentinel of zero.
+
+The `/ 2` goes. `TM_STABILITY_PCT` and `TM_SCORE_DROP_PCT` keep their meaning
+and now scale a budget that means what its doc says it means, so a settled
+search takes `0.75 x raw` and an unstable one `1.6 x raw`, bounded by `hard`.
+
+**Invariant to write down in the code, not just here:**
+`HARD_BUDGET_FACTOR >= 2.08`, because the worst-case iteration scale is
+`TM_STABILITY_PCT[0]/100 * TM_SCORE_DROP_PCT/100 = 1.60 * 1.30 = 2.08` and
+`search.rs:495` takes `.min(info.hard_deadline)`. Below 2.08 the ceiling
+silently clips the stability logic and an RR result gets attributed to the
+wrong mechanism. At 4 there is headroom; if the factor is ever tuned down,
+2.08 is the floor.
+
+Why this cannot flag, argued rather than hoped: the allocation is recomputed
+from the clock every move, so spending `k·(usable/18 + 0.75·inc)` against a
+gain of `inc` is a contraction — `T' = T(1 − k/18) + inc(1 − 0.75k)` — with a
+positive fixed point (0.45 s at `k=1.2`, `inc=0.3`). `reserve` caps any single
+move at 40% of what is left, `overhead` (`TIME_OVERHEAD_MS = 50`) is subtracted
+before that, and cutechess is run with `timemargin=200`. Spot checks:
+`T=1000 ms` gives soft 278 / hard 380, leaving 570 ms; `T=100 ms` gives soft =
+hard = 20 ms. The existing `cap` at `protocol.rs:726` is subsumed by `reserve`
+and is deleted rather than kept alongside it.
+
+New constants in `prelude.rs` beside the existing block at `:585-591`:
+`TM_MOVE_HORIZON: u128 = 18` and `TM_MAX_SHARE_PCT: u128 = 40`. No variant
+knowledge enters; `movetime` and `infinite` arms are untouched.
+
+Gate, and it is a clock gate rather than a node gate:
+
+- A 200-game self-play or short RR at `tc=30+0.3` must land median clock
+  consumed per game at **85-95%** of `30 + moves*0.3`, with **zero** time
+  losses. Below 85% the divisor is still too large; a single time loss fails
+  the stage outright.
+- `tools/speed-suite.sh` is fixed-depth and must be **byte-identical** — this
+  stage may not touch the search at all.
+- Fixtures 38/38; `tools/run_endgame_fixtures.sh` drives `go depth`, so it is
+  also unaffected and any movement means the change leaked.
+- RR against phaseE-3 on all four campaign variants, since this is the first
+  stage since A-3 that is expected to move standard. This arm queues behind
+  the running RR-3 crazyhouse run; everything above it is local and gates the
+  commit on its own.
+
+**Files:** `src/io/protocols/protocol.rs` (`compute_budgets`, `:707-733`),
+`src/prelude.rs` (two new constants beside `:585-591`), `build-stages.sh`
+(the renumbered `PHASES` table), and the plan copies. `search.rs:483-500` is
+read but not edited — the stability scale keeps its meaning.
+
+### The EBF harness — `tools/ebf-suite.sh`, built with F-3
+
+Every remaining search stage is gated on branching factor, and the numbers
+above were produced by throwaway scripts. They become a committed harness in
+the same shape as `tools/speed-suite.sh`: fixed positions, pinned settings, one
+machine-readable line per case.
+
+- `tools/ebf_positions.txt` — `variant | position command | depth`, seeded with
+  the crazyhouse midgame positions used above plus shogi, standard, xiangqi and
+  grand cases. Crazyhouse midgame and crazyhouse startpos are **both** present:
+  the pair is what proves the deficit is the hand and not the board.
+
+  Two sampling defects in the throwaway version to fix here. The crazyhouse
+  positions were all taken from our own RR games, so they are the positions our
+  own play reaches — mix in an equal number from `fsf`-versus-`fsf` games. And
+  the standard control was two positions, which is far too thin to carry a
+  claim that broad, especially with grand sitting at 48x; take standard to at
+  least 8 and keep the per-position spread in the output rather than only the
+  mean.
+- `tools/ebf-suite.sh BIN_A [BIN_B]` — drives each case over UCI with an
+  explicit `Hash` and `Threads 1`, parses the per-iteration `nodes` from the
+  `info` lines, and reports cumulative nodes at the target depth plus the
+  geometric-mean iteration ratio. With `fairy-stockfish` on PATH it runs the
+  same cases through it and prints the ratio, matching `Hash` explicitly —
+  RR-2 already recorded that a 1 MB-versus-16 MB mismatch inflated its table by
+  up to 2x.
+- It must keep the engine's stdin open until `bestmove` arrives. Feeding a
+  script through a pipe that closes sends `quit` immediately and truncates the
+  search at depth 2 — that is how the first version of the grand measurement
+  went wrong.
+
+**Block target, stated once so the individual stages can be judged against it,
+and stated intra-engine so no cross-engine unit or depth convention enters
+it:** our own `nodes@13(crazyhouse-mid) / nodes@13(standard)` from **26x** to
+**≤8x**, and our own crazyhouse-mid EBF from **1.87** toward our standard 1.57
+— target **≤1.70**. FSF's own ratio on the same cases is 0.45x, which is the
+scale of what is being chased, not a threshold. Per-stage thresholds are
+relative to the previous phase binary and are stated in each stage.
+
+### G-3 — the drop square lives in `end`
+
+Re-verified against HEAD on 2026-08-04, and one word of the original framing
+was wrong: a drop's `end!` is 0 or 1, never out of range, so every index built
+from it stays inside its table. The defect is **aliasing**, not overflow — a
+drop's `hist_idx` lands on the quiet-move slot `(piece, start = drop square,
+end = 0|1)`, and `cont_bases` (`search.rs:1188-1207`) keys the continuation
+table on `end!(previous)`, so when the *parent* is a drop every child at that
+node, ordinary quiet moves included, collapses onto 2 rows per piece type
+instead of `board_size`. That parent-key collapse is why crazyhouse with empty
+pockets already searches 1.8x FSF's nodes.
+
+`generate_drop_list!` (`drop_list.rs:137-144`) also writes
 `enc_end!(encoded_move, square)`, and `can_checkmate` moves from bit 23 to
 **bit 112** (`drop.rs:33-37`, `:56-60`). Bits 112-127 are documented unused
 in every move format — the highest field in use is `captured_unmoved` at
@@ -1292,7 +1641,15 @@ QUIET/SINGLE/MULTI/CASTLING branches, the drop branches (`move_list.rs:2505`,
 bit 112 survives. `graphics.rs:2502` starts lighting the real drop square
 instead of square 0, which is a display fix.
 
-Gate: node table rerun; speed suite flat (one extra OR in the encoder).
+The termination patch added a third reader of bit 23, `illegal_mating_drop!`
+(`drop.rs:77-84`), which search calls at `search.rs:1565-1578` and
+`adjudicate_no_move` calls in `util.rs`. All three move together in this
+commit; that is the interaction the termination patch recorded in advance.
+
+Gate: `tools/ebf-suite.sh` against phaseF-3 — crazyhouse-midgame nodes at
+depth 12 must fall at least **15%**; standard, xiangqi and grand bench
+**byte-identical**, which is the proof the encoder change cannot reach a
+variant without hands. Speed suite flat (one extra OR in the encoder).
 **Perft is the insurance** — this touches move encoding, so full suites on
 all 14 embedded variants, and every one must be *identical*, drop variants
 included: no move's legality changes, only spare bits.
@@ -1301,13 +1658,13 @@ Honest risk of a null result: today drops read whatever a well-trodden
 quiet slot happens to hold; afterwards they read a permanently-zero slot
 and tie, falling back to generation order. Most of this stage's gain should
 come from the `cont_bases` parent-key fix rather than from drop ordering
-itself. If the table barely moves, do not roll back — merge with G-3 and
+itself. If the table barely moves, do not roll back — merge with H-3 and
 measure the pair.
 
-### G-3 — drops write history and can be killers
+### H-3 — drops write history and can be killers
 
-`search.rs:1282` becomes `let is_quiet = m_quiet!(mv) || is_drop;`. The
-bonus/malus sites (`:1465`, `:1497`, `:1534`) then reach drops and
+`search.rs:1292` becomes `let is_quiet = m_quiet!(mv) || is_drop;`. The
+bonus/malus sites (`:1475-1489`, `:1507-1519`, `:1544-1556`) then reach drops and
 `killer_hist[ply]` can hold one; killers are matched by `==` on the whole
 `Move`, which already works for drops, and a stale illegal killer drop is
 rejected by `make_move!` exactly as a stale quiet killer is.
@@ -1316,21 +1673,29 @@ Do this at the call site rather than by widening `m_quiet!`, which is an
 exported classifier documented as "quiet and not a promotion" — widening it
 silently changes every future use.
 
-**Hard dependency on F-3.** Writing bonuses through the aliased index would
+**Hard dependency on G-3.** Writing bonuses through the aliased index would
 corrupt the ordering of the *non-drop* tree. Do not reorder.
 
-Gate: node table; standard/xiangqi/grand bench **byte-identical** — that is
-the variant-agnosticism proof, not a nicety. Perft cannot change (search
-shape only).
+Gate: `tools/ebf-suite.sh` — a further **15%** off crazyhouse-midgame nodes at
+depth 12 versus phaseG-3; standard/xiangqi/grand bench **byte-identical** —
+that is the variant-agnosticism proof, not a nicety. Perft cannot change
+(search shape only).
 
-### H-3 — drops enter futility and late-move pruning
+**Decision point, taken here rather than guessed.** Re-measure `cont_hist`
+write density on shogi and crazyhouse-midgame immediately after this stage:
+drops start writing, so the table that was 0.20 writes per slot per second
+gets its first honest reading. If density is still under ~1 write per slot,
+L-3 fires; if the drop writes saturate it, L-3 is dropped and consumes no
+letter.
 
-Delete `&& !is_drop` from `search.rs:1298` and `:1332`, and widen the
-existing `dangerous_push` guard (`:1284-1288`) rather than inventing a new
+### I-3 — drops enter futility and late-move pruning
+
+Delete `&& !is_drop` from `search.rs:1308` and `:1342`, and widen the
+existing `dangerous_push` guard (`:1296`) rather than inventing a new
 flag — it already gates both prunings and grants an LMR discount at `:1392`,
 so it is exactly the "move-count pruning must not touch this" primitive.
 Two extensions: remove `&& !is_drop` from its own definition, so a dropped
-pawn gets a correct `pawn_advancement` lookup once F-3 lands; and add a
+pawn gets a correct `pawn_advancement` lookup once G-3 lands; and add a
 royal-zone term reading `zone_attack` (`state.rs:499`) so a drop is exempt
 when it bears on *either* royal zone — the enemy's (attacking/checking drop)
 or our own (interposing drop). Hoist `royal*P*B` per side outside the move
@@ -1353,32 +1718,44 @@ strengthens if the eval block later prices held pieces above placed ones.
 Declare in the commit message that royal-zone drops also inherit the `-1`
 LMR discount — same mechanism, but the RR attribution should be honest.
 
-Expected to be the largest single lever. Gate: node table (shogi and
-crazyhouse-with-hand should move hardest); standard/xiangqi/grand bench
-byte-identical. Risk is tactical blindness, not game truth, so perft cannot
-catch it: run a depth ladder on the drop-mate positions in
-`res/perft/shogi.perft` and require the mate score at the same depth as the
-F-3 binary, plus the endgame fixtures. If shogi regresses while nodes
-collapse, widen the zone test before abandoning the stage.
+**Fold in here, not its own letter: NMP's material guard ignores hands.**
+`search.rs:1020-1021` tests `state.big_pieces[playing]`, which counts the board
+only, so in a drop variant a side with an empty board and a full hand passes or
+fails the zugzwang guard for the wrong reason in both directions. It belongs
+with this stage because both are "the pruning rules do not know hands exist",
+and it costs nothing in the agnosticism proof: `piece_in_hand` is all zeros in
+a non-drop variant, so standard/xiangqi/grand stay byte-identical either way.
 
-### I-3 — drops move to the quiet LMR curve
+Expected to be the largest single lever, and the measurement supports that:
+drops are 69-79% of the legal move list once hands fill, and move-count
+pruning is precisely the mechanism that bounds a list that size. Gate:
+`tools/ebf-suite.sh` — at least **30%** off crazyhouse-midgame nodes at depth
+12 versus phaseH-3, with shogi moving in the same direction;
+standard/xiangqi/grand bench byte-identical. Risk is tactical blindness, not
+game truth, so perft cannot catch it: run a depth ladder on the drop-mate
+positions in `res/perft/shogi.perft` and require the mate score at the same
+depth as the phaseH-3 binary, plus the endgame fixtures. If shogi regresses
+while nodes collapse, widen the zone test before abandoning the stage.
+
+### J-3 — drops move to the quiet LMR curve
 
 Remove `$is_drop` from the capture-curve test in `reduction!`
-(`search.rs:1759`) so drops select `quiesce_lmr`. The capture curve
+(`search.rs:1765-1775`) so drops select `quiesce_lmr`. The capture curve
 (base 1.0, div 4.0) reduces about half as much as the quiet curve
 (0.75, 2.25); drops neither remove material nor resolve tension, so they
-are under-reduced by accident. Safe only after G-3, because the history
-adjustment at `:1381-1391` must read a real drop statistic.
+are under-reduced by accident. Safe only after H-3, because the history
+adjustment at `:1382-1388` must read a real drop statistic.
 
-Its own stage rather than folded into H-3 because the two act on different
-axes — H-3 removes moves from the tree, I-3 shrinks the ones that stay —
+Its own stage rather than folded into I-3 because the two act on different
+axes — I-3 removes moves from the tree, J-3 shrinks the ones that stay —
 and folded together a regression is unattributable. If the RR budget only
-supports four search stages, merge this into H-3 rather than dropping it.
+supports four search stages, merge this into I-3 rather than dropping it.
 
-Gate: node table; standard bench identical; watch the re-search rate, since
-over-reduction shows up as nodes *rising* (`:1402-1408`).
+Gate: `tools/ebf-suite.sh`, at least **10%** off crazyhouse-midgame nodes at
+depth 12; standard bench identical; watch the re-search rate, since
+over-reduction shows up as nodes *rising*.
 
-### J-3 — checking drops in quiescence search
+### K-3 — checking drops in quiescence search
 
 Qsearch generates drops that give check, bounded by a check-ply budget.
 
@@ -1400,11 +1777,16 @@ than validating an attack vector from an empty origin square, where
 `virgin_board` and the leg filters would read state the dropped piece does
 not have yet.
 
-**Two latent panics must be fixed in the same commit.** `search.rs:687-698`
-calls `victim_value!`, which is `unreachable!()` for any non-capture
-(`move_ordering.rs:88-90`) — it panics on a drop, in release. And
-`search.rs:678-681` skips everything below `WINNING_CAPTURE_SCORE`, which
-silently discards every drop. Both need a `!m_drop!(mv)` exemption.
+**Two hazards this stage creates, and the earlier wording of them was wrong.**
+`search.rs:689` calls `victim_value!`, which ends in `unreachable!()` for any
+non-capture (`move_ordering.rs:89`), and `search.rs:678-681` skips everything
+scoring below `WINNING_CAPTURE_SCORE`, which would silently discard every drop.
+Both sit inside the `if !in_check {` block opened at `search.rs:687`, and today
+qsearch only ever holds drops *while in check* — so neither is reachable at
+HEAD. They are not latent release-mode panics waiting to fire; they become
+reachable the moment this stage puts drops in a non-check qsearch list, which
+is why the `!m_drop!(mv)` exemptions belong in this commit and not an earlier
+one. Verified 2026-08-04.
 
 Bound the explosion with a `qdepth` parameter (new `QS_CHECK_PLIES` beside
 `MAX_CHECK_EXTENSION`): entry points pass 1, the recursion passes
@@ -1413,12 +1795,14 @@ to derive this from `state.search_ply` — qsearch does not record where it
 was entered.
 
 Gate is **different from the other four**: this stage buys horizon accuracy
-and spends nodes. (a) drop-variant node ratio must not regress more than
-25% versus I-3, (b) the shogi/crazyhouse drop-mate positions must find
-their mate at a strictly lower depth than I-3, (c) standard NPS regression
-under 3% (the generator must be provably skipped there), (d) RR decides.
-FSF searches drop checks in qsearch and still uses 4-6x fewer nodes, so the
-table stays the right reference.
+and spends nodes. (a) crazyhouse-midgame nodes at depth 12 may rise by at
+most 25% versus phaseJ-3, (b) the shogi/crazyhouse drop-mate positions must
+find their mate at a strictly lower depth than phaseJ-3, (c) standard NPS
+regression under 3% (the generator must be provably skipped there), (d) RR
+decides. FSF searches drop checks in qsearch and still needs *fewer* nodes in
+crazyhouse than in standard, so `tools/ebf-suite.sh` stays the reference and
+the block target — our own crazyhouse-mid/standard node ratio ≤8x — still has
+to hold after this stage.
 
 Highest correctness risk of the five: full perft after the split alone and
 again after the generator lands, debug-assertion runs, endgame fixtures
@@ -1451,20 +1835,65 @@ stays attributable.
   zeros in the variant whose move ordering needs it most, and every probe
   that does land is a cold miss in a 19.6 MiB working set.
 
-  This compounds with F-3: while the parent is a drop, the parent key
+  This compounds with G-3: while the parent is a drop, the parent key
   collapses to 2 of 2268 values, so two rows are hammered and the rest is
-  dead. Do not design the fix until F-3 lands and the access pattern is
-  real. Direction: reduce the parent axis from `(piece, square)` to
-  `piece`, which takes shogi to 28 * 2268 * 2 * 2 bytes ≈ 248 KiB — 80x
-  denser and back inside L2.
+  dead. **Promoted to a conditional stage, L-3**, on the RR-3 evidence that
+  the deficit is branching factor rather than eval; the decision is taken on
+  a re-measurement after H-3, when drops finally write history.
 - **NMP's material guard ignores hands.** `search.rs:1020-1021` tests
   `big_pieces[playing]`, board only, so a side with an empty board and a
   full hand passes or fails for the wrong reason in both directions.
 - `MIN_LMP_DEPTH` (`prelude.rs:252`) is defined and never read.
 
-### K-3 — phase reference from the board at first play
+### L-3 — continuation-history density (conditional on the H-3 measurement)
 
-Was F-3. Correctness, and it runs first *within the eval block* because
+Fires only if `cont_hist` write density after H-3 is still below ~1 write per
+slot. Direction, not yet a design: reduce the parent axis from
+`(piece, square)` to `piece`, which takes shogi from 19.62 MiB to
+`28 * 2268 * 2 * 2` bytes ≈ 248 KiB — 80x denser and back inside L2. Do not
+fix the shape before the access pattern is real; that is the whole reason this
+sits after H-3 rather than beside G-3.
+
+Gate: `tools/ebf-suite.sh` on shogi and crazyhouse-midgame; standard bench
+must move by less than 1% in nodes, because standard's table is already
+saturated at 2.9 writes per slot and has nothing to gain — a large standard
+swing means the reduction lost information rather than density.
+
+### M-3 — grand: find out why it searches 48x FSF's nodes
+
+**Diagnosis first, no design committed.** Grand is a campaign variant, has no
+drops, and is the worst variant measured: 4 912 871 nodes to depth 11 against
+FSF's 51 285, iteration ratio 2.66 against 1.95. Nothing in the search block
+touches it, so it would sail through F-3..L-3 unchanged.
+
+What is already known and must not be re-derived: root move generation is
+correct (perft(1) is 65 for both engines); the board width is not the cause
+(capablanca at 10x8 is 2.2x, janus 0.8x, modern 1.7x, minixiangqi 1.2x,
+los-alamos 1.4x — grand is an outlier, not the top of a trend); and the
+iteration log shows a near-flat eval oscillating `5, 33, 5, 36, 5, 46, …` with
+the best move flipping between back-rank rook shuffles until depth 8, against
+FSF settling on `c3c4` at depth 3 and climbing `92 → 176`.
+
+That points at eval or parameter derivation rather than search, but it is a
+hypothesis. The stage begins by isolating it: compare `debug-headless
+evaluate` against FSF on constructed grand positions with known imbalances,
+check whether `res/param/grand/latest.param` is degenerate by diffing a fresh
+`debug-headless derive` against it, and check whether `promote to captured`
+(the one rule grand declares that capablanca and janus do not) reaches the
+promotion-gain terms that feed the pawn scores and the passed-pawn tables.
+Only then is a fix scoped; if the cause turns out to be variant-specific
+config data rather than engine code, this becomes a `.conf`/param correction
+and consumes no letter.
+
+Gate: whatever the fix is, `tools/ebf-suite.sh` grand nodes at depth 11 must
+fall by at least half, and standard/shogi/crazyhouse must be byte-identical
+unless the cause is genuinely shared — in which case say so explicitly and
+re-gate.
+
+### N-3 — phase reference from the board at first play
+
+Was F-3, then K-3. Correctness, and it runs first *within the eval block*
+because
 every later eval measurement is read through the taper: measuring a
 king-safety change while crazyhouse and shogi sit at blend weight 0.74 and
 sliding means measuring it again afterwards.
@@ -1567,7 +1996,7 @@ As-built shape:
 - `opening_score`/`endgame_score` stay in the `.param` schema as the
   static default, derived from the config startpos board plus its initial
   hand — correct for every shipped variant, so no regen here and no
-  collision with N-3's atomic regen.
+  collision with Q-3's atomic regen.
 - The same two values also become `State` fields, initialised from the
   statics at load and overwritten by a capture when SETUP ends, so a menu
   hand cannot poison them. They cannot live only in `StaticState`:
@@ -1580,13 +2009,38 @@ As-built shape:
 Verify: startpos reads Opening for all five campaign variants; **standard
 bench byte-identical** — its thresholds move by one unit, so any tree
 change at all means the derivation is wrong; sittuyin and janggi still
-terminate setup and still pass their fixtures; perft suites; RR vs E-3.
+terminate setup and still pass their fixtures; perft suites; RR vs the last
+search-block binary.
 
 Scope honestly: this recovers the 0.74 discount, not the 5x gap. Crazyhouse
 exposure would go from 126 to roughly 170 against an FSF-equivalent 867.
 Worth a stage, not a substitute for one.
 
-### L-3 — royal exposure PST replaces castling knowledge
+### O-3 — royal exposure PST replaces castling knowledge
+
+**Re-argued 2026-08-04; the original justification does not survive.** This
+stage was scoped to close the crazyhouse exposure gap. It cannot: the pressure
+integral below is built from `initial_setup` and `zone_attack`, and both are
+byte-identical between standard and crazyhouse, so it derives the *same* royal
+PST in both. Whatever is variant-dependent about king safety in a drop variant
+has to come from P-3, not from here.
+
+Two justifications that do hold, both verified rather than argued:
+
+- **The royal opening PST today carries no file information at all.**
+  `parameters.rs:560-562` special-cases it to
+  `(0..board_size).map(|square| -((square / files) as f64))` — a pure rank
+  gradient. Confirmed in `res/param/standard/latest.param`, whose royal opening
+  block is `24 24 24 24 24 24 24 24 / 17 17 … / … / -24 -24 …`: every file the
+  same value, so g1 == e1 == a1 for the king. Every variant is in this state,
+  and shogi, xiangqi and janggi have no royal file preference of any kind.
+- **`State.has_castled` is not FEN-serialized**, so `castling_bonus!` is
+  already wrong for every FEN-loaded position — fixtures, datagen and the
+  position sweeps all reach the engine that way. Deleting it removes a term
+  that is silently incorrect on one of its two load paths.
+
+Gate accordingly: **standard SPRT non-negative** plus a per-variant PST dump,
+*not* the exposure table, which this stage was never able to move.
 
 - Move `derive_zone_attack` call (parameters.rs:1577) to run BEFORE PST
   derivation — top of `derive_eval_parameters`; ensure BOTH load paths
@@ -1611,24 +2065,36 @@ score(s) = -pressure(s)
   `evaluate_position!` line (:625); `State.has_castled` (state.rs:611 +
   clone/from_statics/reset) + writes (move_list.rs:2650, :3477). Scalars
   `castled_bonus`/`castling_rights_bonus`: stop reading here, delete in
-  N-3.
+  Q-3.
 - Keep: `king_shelter!`, quadratic `king_danger!`, `pawn_shield!`,
   `open_shield!`. No sub-ablation arms — one change per stage.
 
-Verify: dump derived royal opening PSTs — standard (g1/c1/b1 ≥ e1,
-corners high), shogi (low ranks, edge-file bias), xiangqi (palace
-gradient); non-degenerate PSTs for all variants in derive log. Gate is the
-FSF-anchored exposure table from E-3, rerun on top of F-3, not merely
-"PSTs look non-degenerate". Standard carries the risk here — this deletes
-castling knowledge from our strongest variant — so SPRT standard against
-F-3 before the RR.
+Verify: dump derived royal opening PSTs and require they stop being a bare
+rank gradient — standard (g1/c1/b1 ≥ e1, corners high), shogi (low ranks,
+edge-file bias), xiangqi (palace gradient); non-degenerate PSTs for all
+variants in the derive log. Standard carries the risk here — this deletes
+castling knowledge from our strongest variant — so SPRT standard against N-3
+before the RR, and the bar is non-negative rather than positive.
 
-### M-3 — drop-aware king-zone porosity (conditional)
+### P-3 — drop-aware king-zone porosity — promoted from conditional to planned
+
+**Promoted 2026-08-04.** It was conditional on F-3/G-3 failing to close the
+exposure gap; O-3 has since been shown structurally incapable of closing it
+(its integral is variant-invariant), so this is now the *only* candidate that
+produces a variant-dependent king-safety multiplier. It is planned, and the
+conditional slot it vacated is taken by the held-piece valuation question
+below.
 
 The part of the gap E-3 did not touch. FSF charges 438 cp for the exposed
 king in crazyhouse against 100 cp in standard — identical board, empty
 hands on both sides — a 4.4x multiplier that comes from the rules alone.
-Our number is the same in both variants. E-3 added danger proportional to
+Our number is the same in both variants: 198 in standard, and 126 in
+crazyhouse, so relative to FSF's own standard figure we *over*charge exposure
+in chess and undercharge it in crazyhouse. The defect is not that king safety
+is too small, it is that it is **variant-invariant**. Note also that E-3's
+worst row is `-/rb` at 15%, not the empty hand — the linear per-held-piece
+term already covers large hands; what is missing fires the moment drops become
+legal at all, which is exactly this term. E-3 added danger proportional to
 what is *in* the hand; this is the danger that exists because material
 *will* pass through hands at all.
 
@@ -1640,13 +2106,65 @@ therefore a zone-porosity count (`adjacency_mask[royal] & !occupied`,
 already the complement of what `king_shelter!` walks) weighted by the best
 droppable attacker, gated on `drops!`.
 
-**The form is deliberately not fixed here.** Rerun the FSF-anchored
-exposure table after F-3 and G-3 land. If those two close the gap, H-3 is
-dropped rather than invented — that is the reason it sits after the two
-stages that might explain it, and the reason this section specifies a
-measurement instead of a diff.
+**The form is deliberately not fixed here**, but the stage is. Rerun the
+exposure table after N-3 and O-3 land, expressing each engine's charge as a
+fraction of that engine's own knight rather than through a cross-engine
+scalar, and design the term against what that shows. The measurement that
+decides the *form* is the standard-versus-crazyhouse ratio within each engine:
+FSF's is 4.4x, ours is 0.64x, and any candidate term has to move ours toward
+FSF's without touching standard at all.
 
-### N-3 — simplification: pawn collapse + schema shrink + pair ablation
+### [conditional] Held-piece valuation
+
+Takes the conditional slot P-3 vacated, and fires only on a measurement.
+`util.rs:200-213` and `:543-557` price a piece in hand at exactly
+`p_ovalue!`/`p_evalue!` — its value on the board — so a held queen is worth
+9.4 held pawns in crazyhouse.
+
+**Do not act on the ratios recorded in the RR-2 section.** They are the
+*endgame* row of `res/param/crazyhouse/latest.param` answering a midgame
+question, and the two claims attached to them are in tension: "held is
+54-154 cp above board" is an additive premium, which by itself compresses the
+ratios toward the pawn, so "compressed toward the pawn" may be the same fact
+counted twice. Measure first: compare each engine's held-piece value to its
+own knight, in the phase the games actually reach.
+
+### R-3 — drop-variant NPS (conditional, and it must land last)
+
+Our NPS falls 48% from standard to crazyhouse where FSF's falls 22%. Three
+candidate causes, two of which no other stage touches:
+
+- **Pruned moves are still generated, encoded and scored.** Futility and LMP
+  `continue` rather than `break` (`search.rs:1304-1313`, `:1336-1349`), so the
+  O(k·n) `pick_by_score!` selection cost over a 100-150 move list survives
+  I-3 entirely. n=150 against n=35 is roughly 18x the selection work per
+  all-node.
+- **`repetition_scan_bound` walks up to 64 snapshots per node in drop
+  variants** (`termination.rs:810-822`), against single digits in standard.
+  C-3 chose the full-history bound deliberately and the reasoning still holds
+  — capture-then-drop restores an identical position — but the *cost* is
+  addressable without changing the bound: a `Vec<u64>` of truncated hashes
+  turns 64 strided reads across ~96-byte `Snapshot`s into ~8 cache lines,
+  verified against the full `u128` only on a hit. C-3 removed a parallel hash
+  vector on the grounds that `Snapshot.position_hash` already held it; that
+  was right for correctness and wrong for locality.
+- The `cont_hist` working set (6.25 MiB crazyhouse, 19.6 MiB shogi against
+  standard's 2.25 MiB) — already L-3's target, which is why this stage must be
+  measured *after* L-3 rather than before it.
+
+**Deciding measurement, taken after J-3:** our own
+`nps(crazyhouse) / nps(standard)` on one binary and one harness, against FSF's
+own 0.78 (1.27/1.63) on the same axis. **≥0.70 drops this stage.** Below 0.70,
+take a sampling profile of `bench crazyhouse 12` against `bench standard 13`
+and scope the stage only to sites whose crazyhouse self-time share exceeds
+their standard share by ≥8 percentage points — that keeps it a speed stage and
+stops it becoming a second search stage.
+
+Gate if it lands: NPS only, with **byte-identical node counts in every
+variant**. A pure speed stage must not change the tree; that is what makes it
+safe to land after everything else.
+
+### Q-3 — simplification: pawn collapse + schema shrink + pair ablation
 
 One stage, one param regen, one RR arm. These were separate stages while
 the pawn work was a strength bet; it is not — it addresses none of the
@@ -1695,7 +2213,7 @@ reading (`pawn_connected_opening/endgame`, `pawn_doubled_penalty`,
 `pawn_isolated_penalty`, `pawn_backward_penalty`,
 `pawn_passed_support_opening/endgame`), their masks
 (`pawn_backward_mask`, `pawn_support_offsets`, derivation at
-parameters.rs:1371-1396), the castling scalars G-3 stopped reading
+parameters.rs:1371-1396), the castling scalars O-3 stopped reading
 (`castled_bonus`, `castling_rights_bonus`), and the vestigial
 `mobility_opening/endgame`. Sites: StaticState (state.rs:538-539,
 547-557), `State::new` inits, `derive_eval_scalars`
@@ -1724,7 +2242,7 @@ code plus regenerated params.
 Verify: `debug-headless evaluate` monotonicity on passed/blocked/supported
 FEN triples across geometries (standard, berolina, shogi); every variant
 loads (`debug-headless state <variant>` over the config list); perft
-suites; bench; SPRT against the M-3 winner. Expected ~0 — everything here
+suites; bench; SPRT against the P-3 winner. Expected ~0 — everything here
 is either behaviour-neutral deletion of already-unread terms or the
 deliberately-measured pair arm, so a large SPRT swing is a leaked bug, not
 a result.
@@ -1735,15 +2253,28 @@ a result.
 A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] →
        └── speed block ──┘      cherry-picked onto A-3..E-3
 
-  → F-3 → G-3 → H-3 → I-3 → J-3 → K-3 → L-3 → [M-3] → N-3 → final RR
-    └───────── search block ─────────┘  └────── eval block ──────┘
+  → F-3 → G-3 → H-3 → I-3 → J-3 → K-3 → [L-3] → M-3 →
+    time  └──────── drop block ────────┘  cont   grand
+                                          hist   diag
+
+  → N-3 → O-3 → P-3 → [held pieces] → [R-3] → Q-3 → final RR
+    └───────── eval block ─────────┘    nps    simplify
 ```
+
+**Letters shifted by one on 2026-08-04** to make room for F-3 (time
+management) at the front, and three stages were added. Nothing past E-3 had a
+branch, so the renumbering costs only the `PHASES` rows in `build-stages.sh`.
+Old → new: F→G, G→H, H→I, I→J, J→K, K→N, L→O, M→P, N→Q. New: L-3
+(continuation-history density, conditional), M-3 (grand diagnosis), R-3
+(drop-variant NPS, conditional, lands after Q-3's regen only if the tree is
+already frozen — see its own gate). P-3 was promoted from conditional to
+planned; a conditional held-piece valuation stage takes the slot it left.
 
 - A-3 prerequisite for every gate (bench + seed). The RR-1 correctness
   fixes are cherry-picked onto phaseA-3..phaseD-3 so every binary shares
   one rule set; the drop-variant RR must be re-run from rebuilt binaries,
   and the pre-fix crazyhouse and shogi standings are void.
-- **The termination patch lands before F-3 and takes no letter**, on the
+- **The termination patch landed after E-3 and takes no letter**, on the
   RR-1 precedent: it is rule correctness that predates the ladder, present
   in phaseA-3, and it changes shogi and xiangqi tree shape. Cherry-picked
   onto phaseA-3..phaseE-3 so no phase binary plays a different rule set.
@@ -1754,40 +2285,79 @@ A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] →
   shogi RR is void for shogi and xiangqi once it lands.
 - B-3 before C-3: C's NPS measured on lean search. C-3 before D-3: keeps
   speed-suite attribution clean.
-- **Search block before eval block.** The RR-2 diagnosis measured the
-  drop-variant deficit at 4-6x FSF's nodes for the same depth while
-  standard sits at 0.5x. That is the dominant cause; the eval gaps are
-  real but second-order. Interleaving would also break both gates: the
-  phase-reference stage selects the larger opening futility margins and
-  pushes node counts the wrong way, while its own gate is standard-bench
-  identity, which is independent of the node table.
-- Search block internal order is dependency, not taste. F-3 before G-3 is
+- **Decisions taken 2026-08-04.** The RR-3 crazyhouse run stays up to its full
+  1024 rounds rather than being cut short, so the VPS is busy and F-3's RR
+  queues behind it; F-3 is still written, built and gated locally in the
+  meantime, since every gate except the RR arm is local. The time fix ships
+  **as F-3 only** and is *not* cherry-picked onto phaseA-3..E-3 — unlike the
+  termination patch it is a strength change, not rule correctness, so
+  back-porting it would leave F-3 with nothing to measure against. A-3..E-3
+  therefore keep spending half their clock, which is consistent within RR-3
+  and consistent with every earlier RR in this iteration.
+- **F-3 first.** It is the cheapest stage in the ladder, it is worth more
+  than any single drop stage (53% of the clock against FSF's 96%), and it is
+  the only one that moves every variant. Running it first also means every
+  later RR is played by an engine that uses its time, so later stages are
+  measured on a realistic time control rather than on a self-handicapped one.
+- **Drop block before eval block.** RR-3 measured crazyhouse-midgame at 39x
+  FSF's nodes at depth 13 with an iteration ratio of 1.90 against 1.38, while
+  standard sits at 0.89x and xiangqi at 0.6x. That is the dominant cause; the
+  eval gaps are real but second-order and smaller than this plan used to
+  claim once the 1.98 anchor is discarded. Interleaving would also break both
+  gates: the phase-reference stage selects the larger opening futility margins
+  and pushes node counts the wrong way, while its own gate is standard-bench
+  identity, independent of the EBF suite.
+- Drop block internal order is dependency, not taste. G-3 before H-3 is
   **hard**: writing history through the aliased index would corrupt the
-  ordering of the non-drop tree. G-3 before H-3 is soft but strong — LMP
+  ordering of the non-drop tree. H-3 before I-3 is soft but strong — LMP
   prunes the ordering tail, so pruning noise-ordered drops would both
-  under-report H-3's value and raise its tactical risk. G-3 and H-3 before
-  I-3, since the reduction is corrected by history. H-3 and I-3 before
-  J-3, which *adds* nodes and would be unreadable before the tree is
+  under-report I-3's value and raise its tactical risk. H-3 and I-3 before
+  J-3, since the reduction is corrected by history. I-3 and J-3 before
+  K-3, which *adds* nodes and would be unreadable before the tree is
   bounded.
-- Eval block internal order unchanged: K-3 (phase reference) first as
-  correctness, L-3 (exposure PST) next, M-3 conditional on the FSF table
-  rerun, N-3 (simplification) last.
-- E-3 through M-3 hold the `.param` schema fixed so binaries stay
-  param-compatible for RR; all schema change and the single regen land
-  together in N-3.
-- RRs on the VPS: (1) A-3..E-3 from rebuilt binaries, which also measures
-  what the RR-1 correctness fixes alone bought, (2) search block after
-  J-3, (3) eval block after L-3, (4) final RR after N-3 vs FSF 1700-1900,
-  adding 2000+ anchors once 1900 is beaten.
-- **Standing measurement rules.** For the search block the reference is
-  the node table: both engines driven through their protocol at an
-  explicit matching `Hash`, never `debug-headless search`, whose 1 MB TT
-  against FSF's 16 MB default inflated the first version of that table by
-  up to 2x. For the eval block the reference is Fairy-Stockfish's own eval
-  on the same positions, not the previous phase binary; anchor the unit
-  conversion on the standard variant, where our play is competitive
-  (2026-08-02: FSF 100 cp = 198 of our units). In both cases, beating the
-  last build while sitting far under FSF is not a result.
+- L-3 and M-3 are both conditional and both are decided by measurement, not
+  argument: L-3 by the `cont_hist` density re-reading after H-3, M-3 by
+  whatever the grand diagnosis finds. Either may consume no letter.
+- Eval block internal order: N-3 (phase reference) first as correctness, O-3
+  (royal PST, re-argued as "the royal opening PST is a bare rank gradient")
+  next, P-3 (porosity, now planned rather than conditional) after it, the
+  conditional held-piece stage last. Q-3 (simplification) closes the ladder,
+  and the conditional R-3 (NPS) is measured after J-3 but landed after Q-3,
+  since its gate is byte-identical node counts and that is only meaningful
+  once the tree has stopped moving.
+- E-3 through the held-piece stage hold the `.param` schema fixed so binaries
+  stay param-compatible for RR; all schema change and the single regen land
+  together in Q-3.
+- RRs on the VPS, **capped at `-concurrency $(cores/2)`** so engines are not
+  fighting for cores at a wall-clock time control: (1) F-3 against
+  phaseE-3 on all four campaign variants, since it is the first stage since
+  A-3 expected to move standard, (2) drop block after K-3, (3) eval block
+  after O-3, (4) final RR after Q-3 vs FSF 1700-1900, adding 2000+ anchors
+  once 1900 is beaten.
+- **Standing measurement rules, rewritten 2026-08-04 to be unit-free.**
+  - *Search gates are intra-engine.* The primary number is our own
+    `nodes@D(drop variant) / nodes@D(standard)` on one binary and one harness
+    — 26x today against FSF's 0.45x. It needs no matched `Hash`, no shared
+    depth convention, and no assumption that the RR's `UCI_LimitStrength`
+    opponent is the same engine as the full-strength one on the bench. Keep
+    the cross-engine column for scale, never as a threshold.
+  - *Eval gates are ratio-to-own-knight.* Express each engine's term as a
+    fraction of that engine's own knight and compare fractions. **No
+    cross-engine unit multiplier appears in a gate again.** Both anchors this
+    plan has used are unsound: 1.98 came from one king-exposure position, and
+    0.74 came from three material positions spread across a 20% band that mix
+    material with positional compensation. `parameters.rs:677-680` already
+    normalises the cheapest piece to exactly 100, so a pawn is 100 in both
+    engines and the residual is not a unit difference at all.
+  - *Harness hygiene.* Drive both engines through their protocol with an
+    explicit matching `Hash`; never `debug-headless search`, whose 1 MB TT
+    against FSF's 16 MB default inflated an earlier table by up to 2x; never
+    through a pipe that closes stdin, which sends `quit` mid-search and
+    truncated the first grand measurement at depth 2; and never sample
+    positions only from our own games, which selects for the positions our own
+    play reaches.
+  - In all cases, beating the last build while sitting far under FSF is not a
+    result.
 
 ## Risks and rollback
 
@@ -1811,35 +2381,64 @@ A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] →
   produce the same result as before on every shipped config, since all of
   them declare `draw` where the subject was ambiguous. Rollback is a branch
   drop — nothing is pushed.
-- **F-3**: move encoding, so perft-critical. Every suite must be
+- **F-3**: the only stage whose failure mode is losing a game outright rather
+  than playing it worse. A time forfeit is not a strength regression, it is a
+  zero, so the gate is zero forfeits over ≥500 games and not a percentage.
+  The three guards are independent — the fixed point at `time = 6.25 * inc`,
+  the `reserve` share cap, and `overhead` — so a single one being miscoded
+  still cannot flag. Second risk is leaking into search: the speed suite is
+  fixed-depth and must be byte-identical. Rollback = drop branch, and the
+  formula is four lines.
+- **G-3**: move encoding, so perft-critical. Every suite must be
   *identical* on every variant — no legality changes, only spare bits. The
   subtle failure is a missed `end!` consumer that reads a drop; the
-  audited list is in the stage. Rollback = drop branch.
-- **G-3/I-3**: search shape only, perft cannot change. The
+  audited list is in the stage, and the termination patch's
+  `illegal_mating_drop!` reader is now part of it. Rollback = drop branch.
+- **H-3/J-3**: search shape only, perft cannot change. The
   agnosticism proof is byte-identical bench on standard/xiangqi/grand; if
   that moves, a non-drop path was touched.
-- **H-3**: tactical blindness, invisible to perft. Caught by the shogi
+- **I-3**: tactical blindness, invisible to perft. Caught by the shogi
   drop-mate depth ladder and the endgame fixtures, arbitrated by RR. If
   shogi regresses while nodes collapse, the royal-zone guard is too
   narrow — widen it before abandoning.
-- **J-3**: highest risk of the search block. Touches move generation
+- **K-3**: highest risk of the drop block. Touches move generation
   (perft after the mechanical split *and* after the generator), adds nodes
-  by design, and carries two latent release-mode panics that must be fixed
-  in the same commit (`victim_value!` is `unreachable!()` on a non-capture;
-  the SEE-band skip silently discards drops). Node ceiling breach is
-  handled by a follow-up safety filter, not a revert.
-- **K-3**: touches the phase taper, so it touches every eval in every
+  by design, and makes two currently-unreachable hazards reachable, which
+  must be fixed in the same commit (`victim_value!` is `unreachable!()` on a
+  non-capture; the SEE-band skip silently discards drops — both are
+  `!in_check`-gated today). Node ceiling breach is handled by a follow-up
+  safety filter, not a revert.
+- **L-3**: conditional; the risk is doing it before the density
+  re-measurement and trading real statistics for cache locality that the
+  drop stages had already bought. Standard bench moving more than 1% is the
+  tell.
+- **M-3**: the risk is shipping a fix before the diagnosis names a cause.
+  Grand is one variant out of 38 and 48x is a startling enough number that
+  the first plausible story will be tempting; require the same evidence
+  standard as the termination patch, which means a differential measurement
+  against a scratch binary, not a reading of the code.
+- **N-3**: touches the phase taper, so it touches every eval in every
   variant. Standard must come out byte-identical — that is the gate, not a
   nicety. Second risk is the SETUP exit predicate: get it wrong and
   sittuyin/janggi either never leave setup or leave it early, both caught
   by their fixtures. Rollback = drop branch.
-- **L-3**: derive-order risk (zone_attack before PSTs on BOTH load paths —
+- **O-3**: derive-order risk (zone_attack before PSTs on BOTH load paths —
   miss one and royal PSTs are silently zero; guard on
   `zone_attack.is_empty()`), plus castling-variant strength risk in our
-  strongest variant. PST sanity dump per variant, SPRT standard first.
-- **M-3**: does not exist until the measurement says it should. The risk
-  is inventing it anyway.
-- **N-3**: strength risk from the lost isolated/backward pawn signal;
+  strongest variant. PST sanity dump per variant, SPRT standard first. Its
+  expected size shrank with the anchor correction, so a large measured swing
+  in either direction deserves suspicion before celebration.
+- **P-3**: now planned rather than conditional, which moves the risk from
+  "inventing a stage" to "inventing a *term*". The measurement fixes the
+  target (our standard-to-crazyhouse exposure ratio 0.64x against FSF's 4.4x)
+  but not the mechanism; if no candidate moves that ratio without touching
+  standard, drop the stage rather than shipping a term that only looks right.
+- **R-3**: the risk is letting a speed stage change the tree. Its gate is
+  byte-identical node counts in every variant, which is why it lands after
+  Q-3 and not next to the pruning stages that would mask it. Second risk is
+  scoping it from argument rather than a profile — the ≥8-point self-time rule
+  exists to stop that.
+- **Q-3**: strength risk from the lost isolated/backward pawn signal;
   masks and scalars survive until this stage, so re-enabling any single
   term is a small diff. Param regen schema mismatch panics loudly at load
   (exact-length assert) and cannot fail silently; the regen sequence is
