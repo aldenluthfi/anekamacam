@@ -1617,27 +1617,35 @@ decided around move 50 and crazyhouse games run past 400 plies without a
 rules terminal. E-3's effective divisor of 80 (40, then halved) accidentally
 matched the real game length better than 18 does.
 
-**No Elo verdict exists yet, and the intermediate counts must not be quoted
-as one.** `debug-headless sprt` prints a running tally every five pairs; at
-roughly 90 s a game on one box, an SPRT with these bounds needs hundreds to
-low thousands of games, so every tally read before then is noise. Two
-pairings are running to a bound at `10+0.1` crazyhouse — phaseE-3 against
-phaseF-3, and phaseF-3 against a horizon-36 probe — each from two independent
-processes whose raw counts pool (their LLRs do not). The authoritative arm is
-still the VPS RR at `30+0.3` once RR-3 frees the cores.
+**The stage is closed at +3 Elo.** RR-3 ran phaseF-3 against phaseE-3 on
+crazyhouse to 1941 games each: **-142 against -145**, inside the ±17 error
+bars, with zero `Termination` tags in 4923 games — no forfeit, no
+adjudication, no illegal move. Spending the clock is correct and costs
+nothing; it also buys nothing here, and the 115 Elo to fsf-1700 is elsewhere
+(RR-4).
 
-One trap worth writing down: `sprt.rs` scores a clock overstep as an ordinary
-loss and logs nothing for it, so an absence of `scored engine loss` lines is
-**not** evidence that games were decided on the board. What evidence there is
-against forfeits is external — an instrumented referee saw zero oversteps in
-37 games of 800 plies at `10+0.1` and 29 games of 1000 plies at `30+0.3`.
+Two traps this stage produced, both worth keeping:
 
-The unit is right and the halving fix is right; the horizon constant is a
-game-length estimate that no longer matches the games. Options, in the order
-they should be measured: raise `TM_MOVE_HORIZON` toward the observed game
-length (a `36` probe binary is built and under SPRT), or derive the horizon
-from the phase reference the engine already computes, which keeps it
-variant-agnostic instead of tuning one number per campaign.
+- `sprt.rs` scores a clock overstep as an ordinary loss and logs nothing for
+  it, so an absence of `scored engine loss` lines is **not** evidence that
+  games were decided on the board. The evidence against forfeits is external —
+  an instrumented referee saw zero oversteps in 37 games of 800 plies at
+  `10+0.1` and 29 games of 1000 plies at `30+0.3`, and the RR's own PGN
+  carries no termination tag.
+- Its running tally, printed every five pairs, is not a result. Four SPRT
+  processes at `10+0.1` were read at 10-40 games each during this stage and
+  swung from "+240 Elo for E-3" to "+70 for F-3" and back; nothing under a few
+  hundred games at these bounds means anything.
+
+**The horizon is a footnote, not a stage.** `TM_MOVE_HORIZON = 18` front-loads
+— phaseF-3 spends 65% of its clock in its first 18 moves against phaseE-3's
+38%, and *less per move than E-3* from move 21 on. That reads +97 Elo in
+our-versus-our SPRT at `10+0.1` and +3 in the RR, because self-play crazyhouse
+runs 300-1000 plies where real games run 60: the SPRT was measuring a game
+length that does not occur. `bin/tm36` and `bin/tm54` are built. They are
+worth **one RR arm against the anchors** when a slot is free, and nothing
+else; if that arm moves, the variant-agnostic form is to derive the horizon
+from the phase reference rather than to ship a second tuned constant.
 
 ### The EBF harness — `tools/ebf-suite.sh`, built with F-3
 
@@ -1727,6 +1735,14 @@ games. Per-stage thresholds relative to the previous phase binary still hold,
 and the block target above should be restated against 6.8x before G-3 lands.
 
 ### G-3 — the drop square lives in `end`
+
+**Reclassified after RR-4: cheap correctness, expected ~0 Elo.** The
+aliasing below is a real defect in the code and stays worth fixing on those
+terms, but the number that put it and the rest of the drop block first — 26x
+nodes against standard — is 6.8x at a matched Hash, and RR-4 puts the deficit
+in evaluation. Its gate is the EBF suite plus identical node counts in the
+variants without hands; it does not carry an Elo expectation and must not be
+argued for on one.
 
 Re-verified against HEAD on 2026-08-04, and one word of the original framing
 was wrong: a drop's `end!` is 0 or 1, never out of range, so every index built
@@ -2216,6 +2232,17 @@ ratios toward the pawn, so "compressed toward the pawn" may be the same fact
 counted twice. Measure first: compare each engine's held-piece value to its
 own knight, in the phase the games actually reach.
 
+**It stays conditional, and RR-4 lowered rather than raised its odds.** The
+temptation after RR-4 is to read "held pieces enter our evaluation at full
+board value, and our evaluation is 97% material" as this stage's case. It is
+not: on the same 28 positions, `corr(optimism, hand balance)` is **+0.13**. We
+are optimistic when holding *less* material than the opponent as readily as
+when holding more, so a term that only rescales the hand cannot account for
+the gap. The firing condition is therefore sharper than "the hand is
+mispriced": this stage fires only if, after P-3 lands, the residual optimism
+still tracks hand balance. If it tracks king exposure instead, the answer is
+more of P-3, not this.
+
 ### R-3 — drop-variant NPS (conditional, and it must land last)
 
 Our NPS falls 48% from standard to crazyhouse where FSF's falls 22%. Three
@@ -2334,28 +2361,93 @@ is either behaviour-neutral deletion of already-unread terms or the
 deliberately-measured pair arm, so a large SPRT swing is a leaked bug, not
 a result.
 
+## RR-4 diagnosis (2026-08-04, after F-3): the drop deficit is evaluation
+
+RR-3 ran F-3 against E-3 on crazyhouse to 1941 games each and returned
+**phaseF-3 -142, phaseE-3 -145** against anchors at fsf-1700 -27, fsf-1800
++104, fsf-1900 +225. Time management bought +3 ± 17: it is closed, and it is
+not a lever. That result freed the question this section answers — where the
+115 Elo between us and fsf-1700 actually goes.
+
+**Every loss is a checkmate.** Across 4923 RR games, zero `Termination` tags:
+no forfeits, no adjudications, no illegal moves. Of phaseF-3's 1122 losses to
+the three anchors, **100% end in mate**, at mean ply 51.8-53.8. Draws are
+0-1 per 496 games. Half the mating moves (1133 of 2269) are drops.
+
+**We are not blind at the horizon.** Six plies before we are mated we report
+the mate in 26 of 30 positions; the reference reports it in 29. The tactics
+arrive. Thirteen moves earlier, on the same positions, our median score is
+**+422** where the reference reads **-1184** — and the reference is right,
+because we are mated thirteen moves later.
+
+**The gap is not selection bias, and standard is the control.** Sampling every
+eleventh RR game at a fixed ply, independent of result, `tools/agree-suite.sh`
+reads:
+
+| variant | cases | median gap | sign flips | reference sees lost, we do not |
+|---|---|---|---|---|
+| standard | 9 | **-45** | 1 | 0 |
+| crazyhouse | 21 | **+958** | 6 | 5 |
+
+We are calibrated in standard and roughly nine pawns optimistic in crazyhouse.
+
+**What the optimism is made of.** On 28 unbiased positions at ply 30:
+`corr(our static eval, material) = +0.970` with a median positional content of
+264 cp, against a median material balance of **+620** for the side to move —
+our crazyhouse evaluation is material counting, and held pieces enter it at
+full board value. But `corr(optimism, hand balance)` is only **+0.13**: we are
+optimistic even holding less, so this is not merely held-piece overvaluation,
+it is a missing account of what the *opponent* can do. The reference's own
+search decorrelates from material entirely (`+0.09`); so does ours (`+0.10`),
+which is search repairing what eval got wrong — and it repairs 826 cp short.
+
+**Three claims this plan has been ordered around are now contradicted.**
+
+1. *"The drop deficit is search, not evaluation"* (RR-2, restated by RR-3).
+   We spend 1.5-5x the reference's nodes at the same depth in crazyhouse, our
+   EBF is *below* theirs on every EBF case, and we still misjudge the
+   position. We out-search the reference and lose to it.
+2. *The 26x node ratio* that put the drop block first is 6.8x at a matched 64
+   MB Hash and 11.8x at 1 MB — a table-size artifact, recorded already in the
+   EBF section but never carried into the ordering it justified.
+3. *"Eval gaps are real but second-order."* They are the first-order effect,
+   with a clean standard control saying so.
+
 ## Ordering, dependencies, RR campaign
 
 ```
-A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] →
-       └── speed block ──┘      cherry-picked onto A-3..E-3
+A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] → F-3 → RR-3
+       └── speed block ──┘      cherry-picked onto A-3..E-3   time (+3, closed)
 
-  → F-3 → G-3 → H-3 → I-3 → J-3 → K-3 → [L-3] → M-3 →
-    time  └──────── drop block ────────┘  cont   grand
-                                          hist   diag
+  → P-3 → O-3 → [held pieces] → eval RR
+    └──── eval block, now first ────┘
 
-  → N-3 → O-3 → P-3 → [held pieces] → [R-3] → Q-3 → final RR
-    └───────── eval block ─────────┘    nps    simplify
+  → G-3 → [H-3 → I-3 → J-3 → K-3] → [L-3] → [M-3] → [R-3] → N-3 → Q-3 → final RR
+    alias  └── drop block, now efficiency ──┘  cont   grand    nps   phase  simplify
 ```
 
-**Letters shifted by one on 2026-08-04** to make room for F-3 (time
-management) at the front, and three stages were added. Nothing past E-3 had a
-branch, so the renumbering costs only the `PHASES` rows in `build-stages.sh`.
-Old → new: F→G, G→H, H→I, I→J, J→K, K→N, L→O, M→P, N→Q. New: L-3
-(continuation-history density, conditional), M-3 (grand diagnosis), R-3
-(drop-variant NPS, conditional, lands after Q-3's regen only if the tree is
-already frozen — see its own gate). P-3 was promoted from conditional to
-planned; a conditional held-piece valuation stage takes the slot it left.
+**Letters are labels, not order.** They were shifted once already on
+2026-08-04 and nothing is gained by shifting them again — `phaseF-3` exists,
+the `PHASES` table names them, and a second renumber would invalidate every
+reference in this document for no measurement. What changed on 2026-08-04
+after RR-4 is the **execution order**: the eval block runs before the drop
+block, and N-3 moves from the front of the eval block to the end of the
+ladder. Read the stage sections by letter; read this diagram for what is
+built next.
+
+- **P-3 first.** It is the only stage that names the measured defect:
+  drop-aware king-zone porosity, plus the empty-hand base E-3 left at 39% of
+  the reference's charge on an identical board. Its gate is
+  `tools/agree-suite.sh` — crazyhouse median gap and sign flips both fall,
+  standard unmoved — and then an RR arm against the anchors.
+- **O-3 after it**, because it is a standard-variant lever first and a drop
+  lever second, and the RR says standard is not where we are losing.
+- **N-3 deferred to the end.** It is correctness, not strength: its own
+  section scopes it as a prerequisite for measuring rather than a lever, and
+  the readings it would clean up can be retaken once after it lands. Keeping
+  it in front of P-3 would spend a stage before the stage that carries the
+  Elo, on the argument that the measurement would otherwise be taken twice —
+  taking a measurement twice is cheaper than deferring the fix.
 
 - A-3 prerequisite for every gate (bench + seed). The RR-1 correctness
   fixes are cherry-picked onto phaseA-3..phaseD-3 so every binary shares
@@ -2386,32 +2478,34 @@ planned; a conditional held-piece valuation stage takes the slot it left.
   the only one that moves every variant. Running it first also means every
   later RR is played by an engine that uses its time, so later stages are
   measured on a realistic time control rather than on a self-handicapped one.
-- **Drop block before eval block.** RR-3 measured crazyhouse-midgame at 39x
-  FSF's nodes at depth 13 with an iteration ratio of 1.90 against 1.38, while
-  standard sits at 0.89x and xiangqi at 0.6x. That is the dominant cause; the
-  eval gaps are real but second-order and smaller than this plan used to
-  claim once the 1.98 anchor is discarded. Interleaving would also break both
-  gates: the phase-reference stage selects the larger opening futility margins
-  and pushes node counts the wrong way, while its own gate is standard-bench
-  identity, independent of the EBF suite.
-- Drop block internal order is dependency, not taste. G-3 before H-3 is
-  **hard**: writing history through the aliased index would corrupt the
-  ordering of the non-drop tree. H-3 before I-3 is soft but strong — LMP
-  prunes the ordering tail, so pruning noise-ordered drops would both
-  under-report I-3's value and raise its tactical risk. H-3 and I-3 before
-  J-3, since the reduction is corrected by history. I-3 and J-3 before
-  K-3, which *adds* nodes and would be unreadable before the tree is
-  bounded.
+- **The drop block is efficiency work now, not the lever.** The RR-2 and RR-3
+  claim it was ordered on — "the drop deficit is search" — is contradicted by
+  RR-4 above, and the 26x node ratio behind it is 6.8x at a matched Hash. The
+  block keeps its internal dependency order but loses its Elo expectation:
+  G-3 first as **cheap correctness** (the `end`-aliasing collapse is a defect
+  in the code whatever the Elo says), gated on the EBF suite and on identical
+  node counts in the variants without hands, and expected to return **~0 Elo
+  on its own**. H-3 before I-3 (LMP prunes the ordering tail), H-3 and I-3
+  before J-3 (the reduction is corrected by history), I-3 and J-3 before K-3
+  (which *adds* nodes and is unreadable before the tree is bounded). Nothing
+  in the block ships on argument alone: each stage carries an EBF threshold
+  against the previous phase binary, and a stage that misses it is dropped
+  rather than kept for tidiness.
 - L-3 and M-3 are both conditional and both are decided by measurement, not
   argument: L-3 by the `cont_hist` density re-reading after H-3, M-3 by
   whatever the grand diagnosis finds. Either may consume no letter.
-- Eval block internal order: N-3 (phase reference) first as correctness, O-3
-  (royal PST, re-argued as "the royal opening PST is a bare rank gradient")
-  next, P-3 (porosity, now planned rather than conditional) after it, the
-  conditional held-piece stage last. Q-3 (simplification) closes the ladder,
-  and the conditional R-3 (NPS) is measured after J-3 but landed after Q-3,
-  since its gate is byte-identical node counts and that is only meaningful
-  once the tree has stopped moving.
+- **Eval block internal order, revised 2026-08-04 (second pass).** P-3
+  (drop-aware porosity) runs **first**: it is the only stage aimed straight at
+  the +958 cp the agreement suite measures, and the RR says that number is
+  where the Elo is. O-3 (royal exposure PST) follows, then the conditional
+  held-piece stage. **N-3 (phase reference) is deferred to the end of the
+  ladder**, beside Q-3 — it is correctness rather than strength, its own
+  section scopes it as "a prerequisite for measuring, not a lever", and the
+  measurement it would clean up can be re-read once after it lands rather
+  than gating the stage that carries the Elo. Q-3 (simplification) closes the
+  ladder, and the conditional R-3 (NPS) is measured after J-3 but landed
+  after Q-3, since its gate is byte-identical node counts and that is only
+  meaningful once the tree has stopped moving.
 - E-3 through the held-piece stage hold the `.param` schema fixed so binaries
   stay param-compatible for RR; all schema change and the single regen land
   together in Q-3.
@@ -2424,18 +2518,30 @@ planned; a conditional held-piece valuation stage takes the slot it left.
 - **Standing measurement rules, rewritten 2026-08-04 to be unit-free.**
   - *Search gates are intra-engine.* The primary number is our own
     `nodes@D(drop variant) / nodes@D(standard)` on one binary and one harness
-    — 26x today against FSF's 0.45x. It needs no matched `Hash`, no shared
-    depth convention, and no assumption that the RR's `UCI_LimitStrength`
-    opponent is the same engine as the full-strength one on the bench. Keep
-    the cross-engine column for scale, never as a threshold.
-  - *Eval gates are ratio-to-own-knight.* Express each engine's term as a
-    fraction of that engine's own knight and compare fractions. **No
-    cross-engine unit multiplier appears in a gate again.** Both anchors this
-    plan has used are unsound: 1.98 came from one king-exposure position, and
-    0.74 came from three material positions spread across a 20% band that mix
-    material with positional compensation. `parameters.rs:677-680` already
-    normalises the cheapest piece to exactly 100, so a pawn is 100 in both
-    engines and the residual is not a unit difference at all.
+    — 6.8x at a matched 64 MB Hash (11.8x at 1 MB, which is why the harness
+    pins it). It needs no shared depth convention and no assumption that the
+    RR's `UCI_LimitStrength` opponent is the same engine as the full-strength
+    one on the bench. Keep the cross-engine column for scale, never as a
+    threshold, and pin `ANEKAMACAM_SEED`: unseeded, two binaries that search
+    identically read up to 2x apart on the same case.
+  - *Eval gates are sign agreement on a result-independent sample.*
+    `tools/agree-suite.sh` asks which side each engine thinks is better, over
+    positions sampled from real games at a fixed ply **regardless of who won**
+    — a set drawn from games we lost measures our losses, not our evaluation.
+    The gate is the sign-flip count and the median gap against a standard
+    control, never a centipawn threshold on the reference's scale. Both
+    cross-engine unit anchors this plan has used were unsound (1.98 from one
+    king-exposure position; 0.74 from three material positions spread over a
+    20% band), and no cross-engine unit multiplier appears in a gate again.
+    Ratio-to-own-knight remains valid for a *single term* read in isolation.
+  - *Self-play A/B is not evidence for this engine.* Self-play crazyhouse
+    games run 300-1000 plies where real games against the anchors run 60,
+    because two equal engines shuffle past the point either can make progress.
+    A time-management horizon read **+97 Elo** in our-versus-our SPRT at
+    `10+0.1` and **+3** in the RR at `30+0.3`; the SPRT was measuring a game
+    length that does not occur. Any change whose effect depends on game length
+    or clock shape is decided by the RR against the anchors, never by
+    self-play.
   - *Harness hygiene.* Drive both engines through their protocol with an
     explicit matching `Hash`; never `debug-headless search`, whose 1 MB TT
     against FSF's 16 MB default inflated an earlier table by up to 2x; never
