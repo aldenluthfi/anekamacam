@@ -2009,129 +2009,99 @@ re-gate.
 
 ### N-3 — phase reference from the board at first play
 
-Was F-3, then K-3. Correctness, and it runs first *within the eval block*
-because
-every later eval measurement is read through the taper: measuring a
-king-safety change while crazyhouse and shogi sit at blend weight 0.74 and
-sliding means measuring it again afterwards.
+Was F-3, then K-3. Correctness, and it runs first *within the eval block*:
+every later eval reading is taken through the phase taper, so a king-safety
+change measured while crazyhouse and shogi are already sliding out of the
+opening is a change that has to be measured again once they are not.
 
-`derive_eval_parameters` (parameters.rs:726) sets
+**Measured on phaseF-3, 2026-08-04**, `debug-headless evaluate <variant>` on
+each startpos: standard, xiangqi and grand read `Opening`; crazyhouse, shogi
+and minishogi read `Middlegame` before a move is played. The split is exactly
+the variants that declare promoted piece types.
+
+**The mechanism, re-read in the code rather than repeated from the last draft,
+which named the wrong term.** `derive_eval_parameters`
+(`parameters.rs:662-729`) builds `values` from WHITE pieces only, then
 
 ```
-opening_score = round(average_big_value) * pieces.len()
-endgame_score = round(average_big_value) * 5
+average_value  = sum(raw opening value of big non-royal WHITE types)
+                 / values.len()                 /* = white type count   */
+opening_score  = round(average_value) * pieces.len()   /* = 2x that     */
+endgame_score  = round(average_value) * 5
 ```
 
-`pieces.len()` counts piece **types**, both colors, so declaring promoted
-types raises the opening threshold without adding a single piece to the
-starting army. `game_phase_score!` meanwhile sums the actual army. The two
-no longer meet:
+so `pieces.len()` **cancels** the divisor and `opening_score` is simply twice
+the summed value of every declared big non-royal type. The type count is not
+the fault; the *sum over declared types* is. Crazyhouse declares `TUVW`
+alongside `RNBQ`, so that sum doubles while the starting board is unchanged,
+and its threshold lands at twice standard's on an identical army. Two further
+defects sit in the same three lines: the sum uses the **raw** derived values
+while `game_phase_score!` sums the **offset-normalised** `p_ovalue`, so the
+two sides of `phase_score > opening_score` are not in the same unit; and the
+log line calls the quantity an average over big non-royal pieces when its
+denominator is every white type.
 
-| variant | opening_score | startpos phase |
-|---|---|---|
-| standard | 4140 | Opening |
-| grand | 8400 | Opening |
-| xiangqi | 3332 | Opening |
-| crazyhouse | 8280 | **Middlegame** |
-| shogi | 7644 | **Middlegame** |
-| minishogi | 4640 | **Middlegame** |
-
-The split is exactly the variants that declare promoted types. Crazyhouse
-carries the identical starting army to standard — its startpos phase score
-is 6664 against standard's 6622 — yet its threshold is exactly double
-(8280 = 2 x 4140) because the promoted types doubled the type count. A
-crazyhouse game therefore starts at blend weight
-`(6664 - 2070) / (8280 - 2070) = 0.74` and slides toward endgame from
-there, discounting `king_safety` and the whole opening half of the taper
-from move one. Shogi and minishogi are the same. Note this is partly
-self-inflicted: `49bf8d4` had to add crazyhouse's promoted types to fix the
-pocket, and doubled its opening threshold as a side effect.
-
-The threshold should name the army the variant starts with, not how many
-names that army goes by. Three corrections to the obvious fix.
-
-**`initial_setup` alone is not the starting army.** It is parsed from the
-startpos BOARD field only (game_io.rs:1159-1170), so in a setup variant
-every piece that starts in hand has an empty `initial_setup`. Sittuyin
-starts `8/8/4pppp/pppp4/4PPPP/PPPP4/8/8 w KSSFRRNN/kssfrrnn` — only pawns
-on the board — and janggi starts with `HHEEQ/hheeq` in hand.
-
-**The initial hand is not the starting army either.** A hand can be a
-*menu* rather than a *reserve*. Chess with Different Armies is naturally
-expressed here as a setup variant holding every selectable army in hand at
-once, with the setup patterns locking out the rival armies as soon as the
-first piece of one is placed — so a side deploying one of three armies
-holds 3x its real army at startpos. Counting the hand would overshoot by
-the number of armies on offer, which is the current defect with a bigger
-multiplier.
-
-**The threshold must be a fraction of the army, not the army.** The
-comparison is `phase_score > opening_score`, so a threshold equal to the
-full army is never exceeded and every variant reads MIDDLEGAME from move
-one — today's bug with the sign flipped. Standard sits at 0.625 of its army
-(4140 of 6622) and 0.26 for endgame (1725), and standard is the only
-variant whose strength is validated, so calibrate to it.
-
-What all three corrections point at: the reference is **the board when the
-game proper begins**, and hands never enter it.
+The fix is the reference, and it is derived, not tuned:
 
 ```
 army = game_phase_score!(state) at the moment play begins
-       /* config startpos board for a normal variant,   */
-       /* the deployed board when SETUP ends otherwise  */
-opening_score = 5 * army / 8
-endgame_score = army / 4
+       /* the config startpos board; the deployed board  */
+       /* when SETUP ends. Hands never enter it.         */
 ```
 
-| variant | army | opening now | opening new | endgame now | endgame new |
-|---|---|---|---|---|---|
-| standard | 6622 | 4140 | 4139 | 1725 | 1655 |
-| crazyhouse | 6664 | 8280 | 4165 | 2070 | 1666 |
-| shogi | 5662 | 7644 | 3539 | 1365 | 1415 |
+Same macro, same units, both sides of the comparison now measure pieces on a
+board rather than names in a config. Hands stay out: a hand can be a *menu*
+rather than a reserve (Chess with Different Armies is naturally expressed here
+as a setup variant holding every selectable army at once), so counting it
+would overshoot by the number of armies on offer.
 
-Standard is unchanged to within a unit — that is the point of the
-calibration. Sittuyin and janggi land on the same value either way, since
-their whole hand deploys. CwDA lands on the army actually chosen.
+**The two thresholds derive from the army's own composition, so nothing here
+is tunable and nothing enters the `.param` schema:**
 
-**Prerequisite: SETUP currently cannot end in a menu variant.**
-move_list.rs:2568 leaves SETUP only when `piece_in_hand[0]` and
-`piece_in_hand[1]` are both entirely empty. Locked-out armies stay in hand
-forever, so a CwDA game would never leave the setup phase at all —
-independent of any eval question. The general predicate is *no side has a
-legal placement*, which is equivalent for sittuyin and janggi (empty hand
-implies no placement) and correct for a menu. That makes it a move-gen
-rule, the same shape as the stand-off restoration in plan 08-12, and it is
-also the moment at which the reference army above should be captured.
+```
+opening_score = army - 2 * cheapest_big_ovalue     /* one big trade a side */
+endgame_score = 2 * dearest_non_royal_ovalue       /* one heavy piece each */
+```
 
-**Not affected, checked:** `setup phase` is rule bit 6 and `drops` is bit
-3; sittuyin and janggi declare only the former. E-3's hand king-danger term
-and the capture-to-hand material accounting both gate on `drops!`, so a
-menu hand contributes to neither.
+The only literal is 2, which is the number of players. Opening ends once each
+side has parted with its cheapest big piece; endgame begins once neither side
+has more than its single heaviest piece left. Both read the variant's own
+derived values, so a variant with three queens and a variant with none get
+boundaries in their own terms, and no constant is ever fitted to a particular
+game.
 
-As-built shape:
+**This changes standard, and the gate has to admit it.** Standard's opening
+would run until 2 x its cheapest big piece has left the board rather than the
+~2 x summed-type-value threshold it uses today, so `standard bench
+byte-identical` is *not* available as a gate here — an earlier draft claimed
+it, on a calibration (`5 * army / 8`, `army / 4`) whose whole purpose was to
+reproduce standard's current numbers. That calibration is a tuned constant
+wearing a derivation's clothes and it is dropped. If the SPRT says standard
+regresses, the answer is to argue a different structural boundary, not to fit
+a fraction.
 
-- `opening_score`/`endgame_score` stay in the `.param` schema as the
-  static default, derived from the config startpos board plus its initial
-  hand — correct for every shipped variant, so no regen here and no
-  collision with Q-3's atomic regen.
-- The same two values also become `State` fields, initialised from the
-  statics at load and overwritten by a capture when SETUP ends, so a menu
-  hand cannot poison them. They cannot live only in `StaticState`:
-  `static_mut` is `Arc::get_mut(..).unwrap_unchecked()`, undefined
-  behaviour once SMP threads hold clones. `Snapshot` carries the army
-  scalar for undo, plan-12 pattern.
-- SETUP exit predicate becomes "no side has a legal placement" rather than
-  "both hands empty" (move_list.rs:2568).
+Shape, and one hazard: for a normal variant the army is known at load and both
+thresholds can stay in `StaticState` beside the values they derive from. A
+setup variant only knows it when SETUP ends, and `static_mut` is
+`Arc::get_mut(..).unwrap_unchecked()` — undefined behaviour once SMP threads
+hold clones — so the runtime capture writes `State` fields initialised from
+the statics, with `Snapshot` carrying the scalar for undo (the plan-12
+pattern). Sittuyin and janggi are the only shipped variants that take that
+path. The menu case needs `move_list.rs:2568`'s SETUP exit to become "no side
+has a legal placement" rather than "both hands empty", which is a move-gen
+rule and **not part of this stage** — no shipped variant is a menu variant.
 
-Verify: startpos reads Opening for all five campaign variants; **standard
-bench byte-identical** — its thresholds move by one unit, so any tree
-change at all means the derivation is wrong; sittuyin and janggi still
-terminate setup and still pass their fixtures; perft suites; RR vs the last
-search-block binary.
+Verify: startpos reads `Opening` for all five campaign variants; every
+variant still loads (`debug-headless state` over the config list); sittuyin
+and janggi still leave SETUP and still pass their fixtures; perft suites
+unchanged (this touches no move generation); `tools/agree-suite.sh`
+crazyhouse median gap and sign flips both fall; SPRT on standard, which is
+the variant this can regress.
 
-Scope honestly: this recovers the 0.74 discount, not the 5x gap. Crazyhouse
-exposure would go from 126 to roughly 170 against an FSF-equivalent 867.
-Worth a stage, not a substitute for one.
+Scope honestly: this recovers the taper discount, not the whole gap. It is a
+prerequisite for measuring O-3 and P-3 rather than a lever of its own — every
+later eval reading is taken through this blend, so a king-safety change
+measured before it is a change measured twice.
 
 ### O-3 — royal exposure PST replaces castling knowledge
 
@@ -2364,109 +2334,28 @@ is either behaviour-neutral deletion of already-unread terms or the
 deliberately-measured pair arm, so a large SPRT swing is a leaked bug, not
 a result.
 
-## RR-4 diagnosis (2026-08-04, after F-3): the drop deficit is evaluation
-
-RR-3 ran F-3 against E-3 on crazyhouse to 1941 games each and returned
-**phaseF-3 -142, phaseE-3 -145** against anchors at fsf-1700 -27, fsf-1800
-+104, fsf-1900 +225. Time management bought +3 ± 17: it is closed, and it is
-not a lever. That result freed the question this section answers — where the
-115 Elo between us and fsf-1700 actually goes.
-
-**Every loss is a checkmate.** Across 4923 RR games, zero `Termination` tags:
-no forfeits, no adjudications, no illegal moves. Of phaseF-3's 1122 losses to
-the three anchors, **100% end in mate**, at mean ply 51.8-53.8. Draws are
-0-1 per 496 games. Half the mating moves (1133 of 2269) are drops.
-
-**We are not blind at the horizon.** Six plies before we are mated we report
-the mate in 26 of 30 positions; the reference reports it in 29. The tactics
-arrive. Thirteen moves earlier, on the same positions, our median score is
-**+422** where the reference reads **-1184** — and the reference is right,
-because we are mated thirteen moves later.
-
-**The gap is not selection bias, and standard is the control.** Sampling every
-eleventh RR game at a fixed ply, independent of result, `tools/agree-suite.sh`
-reads:
-
-| variant | cases | median gap | sign flips | reference sees lost, we do not |
-|---|---|---|---|---|
-| standard | 9 | **-45** | 1 | 0 |
-| crazyhouse | 21 | **+958** | 6 | 5 |
-
-We are calibrated in standard and roughly nine pawns optimistic in crazyhouse.
-
-**What the optimism is made of.** On 28 unbiased positions at ply 30:
-`corr(our static eval, material) = +0.970` with a median positional content of
-264 cp, against a median material balance of **+620** for the side to move —
-our crazyhouse evaluation is material counting, and held pieces enter it at
-full board value. But `corr(optimism, hand balance)` is only **+0.13**: we are
-optimistic even holding less, so this is not merely held-piece overvaluation,
-it is a missing account of what the *opponent* can do. The reference's own
-search decorrelates from material entirely (`+0.09`); so does ours (`+0.10`),
-which is search repairing what eval got wrong — and it repairs 826 cp short.
-
-**Three claims this plan has been ordered around are now contradicted.**
-
-1. *"The drop deficit is search, not evaluation"* (RR-2, restated by RR-3).
-   We spend 1.5-5x the reference's nodes at the same depth in crazyhouse, our
-   EBF is *below* theirs on every EBF case, and we still misjudge the
-   position. We out-search the reference and lose to it.
-2. *The 26x node ratio* that put the drop block first is 6.8x at a matched 64
-   MB Hash and 11.8x at 1 MB — a table-size artifact, recorded already in the
-   EBF section but never carried into the ordering it justified.
-3. *"Eval gaps are real but second-order."* They are the first-order effect,
-   with a clean standard control saying so.
-
 ## Ordering, dependencies, RR campaign
 
 ```
-A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] → F-3 → RR-3
-       └── speed block ──┘      cherry-picked onto A-3..E-3   time (+3, closed)
+A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] →
+       └── speed block ──┘      cherry-picked onto A-3..E-3
 
-  → N-3 → P-3 → O-3 → [held pieces] → eval RR
-    └──────── eval block, now first ────┘
+  → F-3 → G-3 → H-3 → I-3 → J-3 → K-3 → [L-3] → M-3 →
+    time  └──────── drop block ────────┘  cont   grand
+                                          hist   diag
 
-  → G-3 → [H-3 → I-3 → J-3 → K-3] → [L-3] → [M-3] → [R-3] → Q-3 → final RR
-    alias  └── drop block, now efficiency ──┘  cont   grand    nps   simplify
+  → N-3 → O-3 → P-3 → [held pieces] → [R-3] → Q-3 → final RR
+    └───────── eval block ─────────┘    nps    simplify
 ```
 
-**Letters are labels, not order.** They were shifted once already on
-2026-08-04 and nothing is gained by shifting them again — `phaseF-3` exists,
-the `PHASES` table names them, and a second renumber would invalidate every
-reference in this document for no measurement. What changed on 2026-08-04
-after RR-4 is the **execution order**: the eval block runs before the drop
-block. Read the stage sections by letter; read this diagram for what is built
-next.
-
-- **N-3 first, and it is correctness rather than a bet.** Every eval
-  measurement after it is read through the taper, and crazyhouse, shogi and
-  minishogi start at blend weight 0.74 and slide from there. Tuning king
-  safety against a phase reference that is provably wrong in exactly the
-  variants that are broken bakes the error into the tuned values. Its gate is
-  standard-bench identity, which is independent of everything else here.
-- **P-3 next, ahead of O-3.** It is the stage that names the measured defect:
-  drop-aware king-zone porosity, plus the empty-hand base E-3 left at 39% of
-  the reference's charge for an identical board. O-3 (royal exposure PST)
-  follows because it is a standard-variant lever first and a drop lever
-  second, and the RR says standard is not where we are losing.
-- **Held-piece valuation stays conditional and now has its measurement.**
-  `corr(optimism, hand balance) = +0.13` says it is not the main term; do not
-  promote it on the strength of the +620 median material balance alone, which
-  is the same number counted from the other end.
-- **The drop block demotes to efficiency work, and G-3 survives on its own
-  merit.** The `end`-aliasing collapse is a defect in the code whatever the
-  Elo says, it is cheap, and its gate is the EBF suite rather than an RR arm.
-  H-3 through K-3 wait until the evaluation they would be searching with is
-  worth searching harder for. K-3 keeps a standing claim on a re-read after
-  the eval block: half the mates against us are drop-delivered, and a qsearch
-  that cannot see a drop check is the natural suspect for the last few plies
-  even though the six-ply measurement above exonerates it at that range.
-- **New standing rule, from how this diagnosis nearly went wrong.**
-  *Eval gates are sign-agreement against a reference, on positions sampled
-  independent of the game's result.* Two centipawn anchors (1.98, then 0.74)
-  were both wrong; sign agreement needs no unit. And *self-play A/B is
-  unreliable for this engine*: self-play crazyhouse games run 300-1000 plies
-  where real games against the anchors run 60, which is exactly how the F-3
-  horizon measured +97 Elo in our-versus-our play and +3 in the RR.
+**Letters shifted by one on 2026-08-04** to make room for F-3 (time
+management) at the front, and three stages were added. Nothing past E-3 had a
+branch, so the renumbering costs only the `PHASES` rows in `build-stages.sh`.
+Old → new: F→G, G→H, H→I, I→J, J→K, K→N, L→O, M→P, N→Q. New: L-3
+(continuation-history density, conditional), M-3 (grand diagnosis), R-3
+(drop-variant NPS, conditional, lands after Q-3's regen only if the tree is
+already frozen — see its own gate). P-3 was promoted from conditional to
+planned; a conditional held-piece valuation stage takes the slot it left.
 
 - A-3 prerequisite for every gate (bench + seed). The RR-1 correctness
   fixes are cherry-picked onto phaseA-3..phaseD-3 so every binary shares
@@ -2497,15 +2386,14 @@ next.
   the only one that moves every variant. Running it first also means every
   later RR is played by an engine that uses its time, so later stages are
   measured on a realistic time control rather than on a self-handicapped one.
-- ~~**Drop block before eval block.**~~ **Reversed by RR-4** (see the
-  diagnosis above). It rested on RR-3's crazyhouse-midgame node ratio, which
-  was measured through a 1 MB table on positions drawn only from our own
-  games; at a matched Hash on a mixed sample it is 6.8x, and our EBF is below
-  the reference's on every case. One half of the old argument survives and is
-  now an argument the other way: the phase-reference stage moves node counts,
-  so it must not be interleaved with an EBF-gated stage — which is satisfied
-  by running the whole eval block first, since N-3's own gate is
-  standard-bench identity.
+- **Drop block before eval block.** RR-3 measured crazyhouse-midgame at 39x
+  FSF's nodes at depth 13 with an iteration ratio of 1.90 against 1.38, while
+  standard sits at 0.89x and xiangqi at 0.6x. That is the dominant cause; the
+  eval gaps are real but second-order and smaller than this plan used to
+  claim once the 1.98 anchor is discarded. Interleaving would also break both
+  gates: the phase-reference stage selects the larger opening futility margins
+  and pushes node counts the wrong way, while its own gate is standard-bench
+  identity, independent of the EBF suite.
 - Drop block internal order is dependency, not taste. G-3 before H-3 is
   **hard**: writing history through the aliased index would corrupt the
   ordering of the non-drop tree. H-3 before I-3 is soft but strong — LMP
