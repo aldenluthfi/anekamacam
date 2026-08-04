@@ -1,0 +1,48 @@
+# Agreement-suite cases, read by tools/agree-suite.sh.
+#
+# Format, one case per line:
+#   variant | label | position command | depth
+#
+# The gate this file serves is a sign test, not a scale test. Two engines'
+# centipawns are not the same unit and this plan has twice been misled by an
+# anchor that claimed they were, so the suite asks a unit-free question: on a
+# position neither engine has been tuned on, do the two engines agree about
+# WHICH SIDE is better, and by roughly how much relative to their own pawn?
+#
+# `rr-pN` cases are ply N of round-robin games against fairy-stockfish anchors,
+# sampled every eleventh game and independent of the result -- a set drawn only
+# from games we lost would measure our losses, not our evaluation. Positions in
+# check are skipped, because a reference static eval refuses them. `ebf-*` cases
+# are the committed EBF positions, half of which come from fairy-stockfish
+# self-play, and the standard ones are the control: an evaluation defect that
+# shows up in standard as well is not a drop-variant defect.
+crazyhouse | rr-p26 | position startpos moves g1f3 e7e6 d2d4 f8e7 c1d2 c7c5 d4c5 e7c5 P@d4 c5b6 d2g5 P@f6 g5f4 g8e7 f4b8 d7d6 b8d6 d8d6 P@c5 d6c6 c5b6 B@a5 b1d2 a5b6 B@b5 P@d6 | 12
+crazyhouse | rr-p34 | position startpos moves c2c4 b8c6 g1f3 d7d5 c4d5 d8d5 b1c3 d5d8 P@d5 P@g4 d5c6 d8d6 c6b7 c8b7 N@b5 d6d8 f3e5 g8f6 P@c6 b7c8 e5f7 e8f7 P@b7 a7a6 b7a8q N@g6 b5a7 e7e6 a8c8 f8a3 c8d8 h8d8 b2a3 P@e3 | 12
+crazyhouse | rr-p26 | position startpos moves b1c3 g8f6 g1f3 d7d5 d2d4 b8c6 f3e5 d8d6 e5c6 b7c6 e2e3 a8b8 f1e2 e7e5 e1g1 N@h4 d4e5 d6e5 N@d3 e5f5 P@e5 f5g5 g2g3 P@g2 f1e1 f6e4 | 12
+crazyhouse | rr-p26 | position startpos moves d2d4 d7d5 h2h4 b8c6 c2c3 d8d7 c1e3 g8f6 b1d2 f6g4 e3f4 d7f5 g1h3 g4f2 e1f2 P@e3 f2e3 g7g5 h4g5 h7h6 g5h6 f8h6 f4h6 h8g8 P@e4 f5h5 | 12
+crazyhouse | rr-p26 | position startpos moves c2c4 b8c6 d2d4 e7e5 d4d5 f8b4 c1d2 b7b6 d5c6 d7c6 d2b4 d8d1 e1d1 g8e7 b4e7 c8f5 N@e3 f5b1 a1b1 Q@d7 N@d5 c6d5 c4d5 N@d4 P@b7 e8e7 | 12
+crazyhouse | rr-p26 | position startpos moves d2d4 g8f6 c2c4 d7d5 c4d5 e7e6 d5e6 c8e6 P@e5 f6e4 P@c3 d8d5 c1e3 P@d6 g1f3 f8e7 e5d6 c7d6 P@d3 e4f2 e3f2 e8g8 N@c7 d5a5 c7a8 b8a6 | 12
+crazyhouse | rr-p34 | position startpos moves h2h4 b8c6 g2g3 e7e5 c2c4 f8b4 a2a3 b4c5 d2d3 g8f6 b1d2 d7d5 c4d5 c5f2 e1f2 f6g4 f2f3 d8d5 e2e4 d5c5 g1h3 g4e3 d1e1 P@g4 f3e2 P@f3 d2f3 g4f3 e2f2 N@d1 f2g1 e3f1 P@e3 c8h3 | 12
+crazyhouse | rr-p26 | position startpos moves d2d4 d7d5 c2c3 g8f6 c1f4 e7e6 a2a4 f8d6 f4d6 c7d6 B@h4 B@h5 h4f6 d8f6 N@c7 e8e7 c7a8 B@g6 R@c7 c8d7 c7b7 h8c8 b7a7 g6b1 d1b1 N@e4 | 12
+crazyhouse | rr-p26 | position startpos moves h2h4 e7e5 c2c4 d7d5 c4d5 c8f5 P@e4 f5g4 d1b3 b8d7 b3b7 g8f6 P@f3 a8b8 b7a7 f8c5 a7a6 f6e4 f3e4 c5f2 e1f2 P@g3 f2g3 d8f6 a6f6 d7f6 | 12
+crazyhouse | rr-p26 | position startpos moves b2b3 e7e5 c2c4 g8f6 b1c3 f8e7 a2a3 e8g8 h2h4 d7d5 c4d5 c8g4 P@c4 e7c5 d2d3 b8d7 c1g5 c7c6 d5c6 b7c6 c3a4 P@f4 b3b4 c5f2 e1f2 h7h6 | 12
+crazyhouse | rr-p26 | position startpos moves b2b3 e7e5 c2c4 e5e4 a2a3 c7c6 d2d3 d8f6 d3d4 d7d5 c4d5 c6d5 P@c7 b8a6 c1e3 a6c7 d1d2 f6c6 a1a2 g8f6 e3g5 f8e7 a2c2 c6b6 d2c1 P@c6 | 12
+crazyhouse | rr-p30 | position startpos moves b1c3 g8f6 b2b3 d7d5 a2a4 e7e5 c1b2 d5d4 c3b1 f6e4 g2g3 h7h5 f1g2 e4f2 e1f2 h5h4 g3h4 d8f6 g1f3 P@h3 P@g5 f6f5 N@g3 h3g2 g3f5 g2h1n d1h1 c8f5 Q@b5 b8d7 | 12
+standard | ebf-startpos | position startpos | 12
+standard | ebf-aneka-p24 | position startpos moves f2f4 d7d6 e2e4 e7e5 d2d4 g8f6 b1c3 b8d7 f1e2 d8e7 e2f3 e5d4 d1d4 e7e6 c3b5 e8d8 g1h3 d7c5 h3g5 e6d7 d4c4 c5e6 e1g1 c7c6 | 12
+standard | ebf-aneka-p28 | position startpos moves b2b3 g8h6 g2g3 c7c5 a2a4 b8c6 g1f3 b7b6 h2h4 h6f5 b1c3 a7a6 a1a3 f5d6 c3d5 c8b7 f1g2 d6e4 c1b2 a8b8 h1f1 h7h6 d5e3 e4d6 d1a1 h8h7 f3e5 c6e5 | 12
+standard | ebf-aneka-p32 | position startpos moves b1a3 a7a6 b2b4 b7b5 g1f3 b8c6 a1b1 g8f6 c2c3 a8b8 h2h3 b8b6 d1c2 c8b7 b1b2 e7e6 d2d3 b7c8 c1e3 b6b7 a3b1 f8d6 a2a4 e8g8 a4b5 a6b5 b1d2 f6d5 e3g5 d6e7 g5e7 c6e7 | 12
+standard | ebf-aneka-p36 | position startpos moves b1a3 b8a6 g2g3 g8h6 h2h4 h8g8 g1f3 h6g4 f1h3 g4f6 h1f1 a6c5 a3c4 h7h6 c2c3 d7d6 h3c8 d8c8 b2b4 c5e4 c4e3 c8d7 d1b3 d7h3 e3d5 h3d7 b3c4 c7c6 d5f6 e4f6 a2a4 a7a5 b4b5 c6b5 a4b5 a8c8 | 12
+standard | ebf-fsf-p24 | position startpos moves f2f4 d7d6 e2e4 e7e5 g1f3 b8c6 b1c3 c6d4 d2d3 h7h5 f1e2 c7c6 e1g1 g7g6 c1e3 f8g7 e3d4 e5d4 c3b1 c8d7 b1d2 g8e7 f3g5 d6d5 | 12
+standard | ebf-fsf-p28 | position startpos moves b2b3 g8h6 g2g3 c7c5 d2d4 d7d5 c2c3 e7e6 c1h6 g7h6 g1f3 b8d7 e2e3 c5d4 e3d4 h6h5 f1d3 f8h6 e1g1 e8g8 b1d2 d7f6 f3e5 b7b6 f2f4 d8e7 b3b4 a7a5 | 12
+standard | ebf-fsf-p32 | position startpos moves b1a3 a7a6 b2b4 b7b5 g1f3 e7e6 c2c3 c8b7 e2e3 d7d6 a3c2 g8f6 a2a4 b5a4 a1a4 b8d7 d2d4 f6e4 a4a3 g7g6 f1d3 f8g7 e1g1 e8g8 f3d2 e4d2 c1d2 f7f5 f2f3 d6d5 d1e2 e6e5 | 12
+standard | ebf-fsf-p36 | position startpos moves b1a3 b8a6 g2g3 g8h6 c2c3 c7c6 d2d4 h6g4 f1g2 d7d5 g1f3 e7e6 e1g1 f8d6 c1g5 g4f6 e2e4 d5e4 f3d2 d6e7 d2e4 f6e4 g5e7 e4c3 b2c3 d8e7 a3c4 a6c7 f1e1 e8g8 d1d3 f8d8 a1b1 c7b5 d3c2 b5a3 | 12
+crazyhouse | ebf-startpos | position startpos | 12
+crazyhouse | ebf-aneka-p38 | position startpos moves f2f4 f7f5 b1a3 a7a5 g2g3 b7b6 h2h3 g8f6 g1f3 b8c6 a3c4 f6e4 h1g1 b6b5 c4e3 e7e6 c2c3 f8e7 d2d3 e4d6 e1f2 e8g8 d1d2 a8b8 b2b3 f8f6 a2a4 b5a4 b3a4 P@b4 c1b2 f6f7 P@b5 d6b5 a4b5 b8b5 c3b4 a5b4 | 12
+crazyhouse | ebf-aneka-p52 | position startpos moves b2b3 d7d5 h2h4 e8d7 a2a4 d7e8 g2g3 c7c5 b1c3 b8c6 c1a3 e7e5 f2f3 f7f5 e2e3 g8f6 f1b5 d8d6 e1f2 a7a6 b5c6 d6c6 g1h3 b7b6 h3g5 f8d6 d1f1 a8a7 a1e1 e8f8 h1g1 f8g8 f1e2 a7e7 a3b2 c6e8 e1f1 e8h5 g1g2 h5g6 f1g1 h7h6 g5h3 g6e8 N@f1 d5d4 c3d1 f5f4 g3g4 f4e3 d2e3 d4e3 | 12
+crazyhouse | ebf-aneka-p38 | position startpos moves b2b3 e7e5 d2d4 d8h4 d4e5 f8c5 e2e3 h4e4 P@f4 g8h6 b1d2 e4c6 a2a3 e8g8 b3b4 c5e7 c2c4 a7a5 b4b5 c6g6 d1e2 g6e6 g1f3 b7b6 h2h3 a8a7 e3e4 a7b7 f4f5 h6f5 e4f5 e6f5 f3d4 f5g5 d2f3 P@d2 e2d2 g5d2 | 12
+crazyhouse | ebf-aneka-p36 | position startpos moves g2g3 d7d5 f2f4 c8f5 h2h3 c7c5 g3g4 f5e4 h1h2 d5d4 h2f2 g8f6 g4g5 f6h5 h3h4 c5c4 a2a3 h5g3 f1g2 d8d6 g1h3 b8c6 g2f3 e4f5 h3g1 d6g6 f3c6 g6c6 g1f3 d4d3 N@d4 d3c2 d4c2 P@d3 e2d3 c4d3 | 12
+crazyhouse | ebf-fsf-p26 | position startpos moves f2f4 e7e6 g2g4 g7g6 g1f3 g8f6 g4g5 f6h5 d2d4 d7d5 e2e3 f8g7 b1c3 e8g8 c1d2 b8c6 h1g1 h5f4 e3f4 P@e4 c3e4 d5e4 N@f6 g7f6 g5f6 e4f3 | 12
+crazyhouse | ebf-fsf-p24 | position startpos moves g1h3 e7e5 h1g1 g8e7 d2d4 e5d4 d1d4 b8c6 d4f4 d7d5 f4a4 d8d7 g2g4 h7h5 g4h5 c6e5 a4f4 h8h5 P@e6 f7e6 g1g5 e7g6 g5g6 h5f5 | 12
+crazyhouse | ebf-fsf-p24 | position startpos moves a2a3 b8c6 f2f3 c6b8 e2e4 d7d5 d2d4 d5e4 f3e4 P@f2 e1f2 e7e5 P@d5 e5d4 d1d4 b8c6 d4a4 c8d7 d5c6 d8f6 P@f3 d7c6 a4a5 b7b6 | 12
+crazyhouse | ebf-fsf-p28 | position startpos moves c2c3 c7c5 d1a4 g8f6 d2d4 c5d4 e2e3 b7b5 a4d1 d4e3 c1e3 d7d5 P@e6 f7e6 f1b5 P@c6 b5e2 P@f7 b1d2 d8c7 d1a4 e6e5 P@g5 P@f4 g5f6 f4e3 f2e3 e7f6 | 12
