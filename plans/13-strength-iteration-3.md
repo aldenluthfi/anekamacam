@@ -2364,28 +2364,109 @@ is either behaviour-neutral deletion of already-unread terms or the
 deliberately-measured pair arm, so a large SPRT swing is a leaked bug, not
 a result.
 
+## RR-4 diagnosis (2026-08-04, after F-3): the drop deficit is evaluation
+
+RR-3 ran F-3 against E-3 on crazyhouse to 1941 games each and returned
+**phaseF-3 -142, phaseE-3 -145** against anchors at fsf-1700 -27, fsf-1800
++104, fsf-1900 +225. Time management bought +3 ± 17: it is closed, and it is
+not a lever. That result freed the question this section answers — where the
+115 Elo between us and fsf-1700 actually goes.
+
+**Every loss is a checkmate.** Across 4923 RR games, zero `Termination` tags:
+no forfeits, no adjudications, no illegal moves. Of phaseF-3's 1122 losses to
+the three anchors, **100% end in mate**, at mean ply 51.8-53.8. Draws are
+0-1 per 496 games. Half the mating moves (1133 of 2269) are drops.
+
+**We are not blind at the horizon.** Six plies before we are mated we report
+the mate in 26 of 30 positions; the reference reports it in 29. The tactics
+arrive. Thirteen moves earlier, on the same positions, our median score is
+**+422** where the reference reads **-1184** — and the reference is right,
+because we are mated thirteen moves later.
+
+**The gap is not selection bias, and standard is the control.** Sampling every
+eleventh RR game at a fixed ply, independent of result, `tools/agree-suite.sh`
+reads:
+
+| variant | cases | median gap | sign flips | reference sees lost, we do not |
+|---|---|---|---|---|
+| standard | 9 | **-45** | 1 | 0 |
+| crazyhouse | 21 | **+958** | 6 | 5 |
+
+We are calibrated in standard and roughly nine pawns optimistic in crazyhouse.
+
+**What the optimism is made of.** On 28 unbiased positions at ply 30:
+`corr(our static eval, material) = +0.970` with a median positional content of
+264 cp, against a median material balance of **+620** for the side to move —
+our crazyhouse evaluation is material counting, and held pieces enter it at
+full board value. But `corr(optimism, hand balance)` is only **+0.13**: we are
+optimistic even holding less, so this is not merely held-piece overvaluation,
+it is a missing account of what the *opponent* can do. The reference's own
+search decorrelates from material entirely (`+0.09`); so does ours (`+0.10`),
+which is search repairing what eval got wrong — and it repairs 826 cp short.
+
+**Three claims this plan has been ordered around are now contradicted.**
+
+1. *"The drop deficit is search, not evaluation"* (RR-2, restated by RR-3).
+   We spend 1.5-5x the reference's nodes at the same depth in crazyhouse, our
+   EBF is *below* theirs on every EBF case, and we still misjudge the
+   position. We out-search the reference and lose to it.
+2. *The 26x node ratio* that put the drop block first is 6.8x at a matched 64
+   MB Hash and 11.8x at 1 MB — a table-size artifact, recorded already in the
+   EBF section but never carried into the ordering it justified.
+3. *"Eval gaps are real but second-order."* They are the first-order effect,
+   with a clean standard control saying so.
+
 ## Ordering, dependencies, RR campaign
 
 ```
-A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] →
-       └── speed block ──┘      cherry-picked onto A-3..E-3
+A-3 → B-3 → C-3 → D-3 → E-3 → [termination patch] → F-3 → RR-3
+       └── speed block ──┘      cherry-picked onto A-3..E-3   time (+3, closed)
 
-  → F-3 → G-3 → H-3 → I-3 → J-3 → K-3 → [L-3] → M-3 →
-    time  └──────── drop block ────────┘  cont   grand
-                                          hist   diag
+  → N-3 → P-3 → O-3 → [held pieces] → eval RR
+    └──────── eval block, now first ────┘
 
-  → N-3 → O-3 → P-3 → [held pieces] → [R-3] → Q-3 → final RR
-    └───────── eval block ─────────┘    nps    simplify
+  → G-3 → [H-3 → I-3 → J-3 → K-3] → [L-3] → [M-3] → [R-3] → Q-3 → final RR
+    alias  └── drop block, now efficiency ──┘  cont   grand    nps   simplify
 ```
 
-**Letters shifted by one on 2026-08-04** to make room for F-3 (time
-management) at the front, and three stages were added. Nothing past E-3 had a
-branch, so the renumbering costs only the `PHASES` rows in `build-stages.sh`.
-Old → new: F→G, G→H, H→I, I→J, J→K, K→N, L→O, M→P, N→Q. New: L-3
-(continuation-history density, conditional), M-3 (grand diagnosis), R-3
-(drop-variant NPS, conditional, lands after Q-3's regen only if the tree is
-already frozen — see its own gate). P-3 was promoted from conditional to
-planned; a conditional held-piece valuation stage takes the slot it left.
+**Letters are labels, not order.** They were shifted once already on
+2026-08-04 and nothing is gained by shifting them again — `phaseF-3` exists,
+the `PHASES` table names them, and a second renumber would invalidate every
+reference in this document for no measurement. What changed on 2026-08-04
+after RR-4 is the **execution order**: the eval block runs before the drop
+block. Read the stage sections by letter; read this diagram for what is built
+next.
+
+- **N-3 first, and it is correctness rather than a bet.** Every eval
+  measurement after it is read through the taper, and crazyhouse, shogi and
+  minishogi start at blend weight 0.74 and slide from there. Tuning king
+  safety against a phase reference that is provably wrong in exactly the
+  variants that are broken bakes the error into the tuned values. Its gate is
+  standard-bench identity, which is independent of everything else here.
+- **P-3 next, ahead of O-3.** It is the stage that names the measured defect:
+  drop-aware king-zone porosity, plus the empty-hand base E-3 left at 39% of
+  the reference's charge for an identical board. O-3 (royal exposure PST)
+  follows because it is a standard-variant lever first and a drop lever
+  second, and the RR says standard is not where we are losing.
+- **Held-piece valuation stays conditional and now has its measurement.**
+  `corr(optimism, hand balance) = +0.13` says it is not the main term; do not
+  promote it on the strength of the +620 median material balance alone, which
+  is the same number counted from the other end.
+- **The drop block demotes to efficiency work, and G-3 survives on its own
+  merit.** The `end`-aliasing collapse is a defect in the code whatever the
+  Elo says, it is cheap, and its gate is the EBF suite rather than an RR arm.
+  H-3 through K-3 wait until the evaluation they would be searching with is
+  worth searching harder for. K-3 keeps a standing claim on a re-read after
+  the eval block: half the mates against us are drop-delivered, and a qsearch
+  that cannot see a drop check is the natural suspect for the last few plies
+  even though the six-ply measurement above exonerates it at that range.
+- **New standing rule, from how this diagnosis nearly went wrong.**
+  *Eval gates are sign-agreement against a reference, on positions sampled
+  independent of the game's result.* Two centipawn anchors (1.98, then 0.74)
+  were both wrong; sign agreement needs no unit. And *self-play A/B is
+  unreliable for this engine*: self-play crazyhouse games run 300-1000 plies
+  where real games against the anchors run 60, which is exactly how the F-3
+  horizon measured +97 Elo in our-versus-our play and +3 in the RR.
 
 - A-3 prerequisite for every gate (bench + seed). The RR-1 correctness
   fixes are cherry-picked onto phaseA-3..phaseD-3 so every binary shares
@@ -2416,14 +2497,15 @@ planned; a conditional held-piece valuation stage takes the slot it left.
   the only one that moves every variant. Running it first also means every
   later RR is played by an engine that uses its time, so later stages are
   measured on a realistic time control rather than on a self-handicapped one.
-- **Drop block before eval block.** RR-3 measured crazyhouse-midgame at 39x
-  FSF's nodes at depth 13 with an iteration ratio of 1.90 against 1.38, while
-  standard sits at 0.89x and xiangqi at 0.6x. That is the dominant cause; the
-  eval gaps are real but second-order and smaller than this plan used to
-  claim once the 1.98 anchor is discarded. Interleaving would also break both
-  gates: the phase-reference stage selects the larger opening futility margins
-  and pushes node counts the wrong way, while its own gate is standard-bench
-  identity, independent of the EBF suite.
+- ~~**Drop block before eval block.**~~ **Reversed by RR-4** (see the
+  diagnosis above). It rested on RR-3's crazyhouse-midgame node ratio, which
+  was measured through a 1 MB table on positions drawn only from our own
+  games; at a matched Hash on a mixed sample it is 6.8x, and our EBF is below
+  the reference's on every case. One half of the old argument survives and is
+  now an argument the other way: the phase-reference stage moves node counts,
+  so it must not be interleaved with an EBF-gated stage — which is satisfied
+  by running the whole eval block first, since N-3's own gate is
+  standard-bench identity.
 - Drop block internal order is dependency, not taste. G-3 before H-3 is
   **hard**: writing history through the aliased index would corrupt the
   ordering of the non-drop tree. H-3 before I-3 is soft but strong — LMP
