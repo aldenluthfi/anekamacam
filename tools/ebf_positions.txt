@@ -1,0 +1,57 @@
+# EBF suite cases, read by tools/ebf-suite.sh.
+#
+# Format, one case per line:
+#   variant | label | position command | depth
+#
+# The position command is sent verbatim, so it must be one both engines
+# accept. `position startpos moves ...` is that command: the move notation is
+# identical in fairy-stockfish for every variant here (verified by replaying
+# each list into it and comparing the board), while the FENs are not -- our
+# crazyhouse pocket and shogi spellings are our own dialect's.
+#
+# The label records where the position came from. `aneka-pN` is ply N of a
+# self-play game by this engine, `fsf-pN` ply N of a fairy-stockfish self-play
+# game, and both sources appear in equal numbers for every variant: positions
+# sampled only from our own games select for the positions our own play
+# reaches, which is a different claim than the one these cases are used for.
+# Each game opens on four random plies so the sources are not one game each.
+#
+# crazyhouse carries `startpos` as well as its midgame cases, and standard
+# does the same. The startpos-versus-midgame pair is what separates a deficit
+# that belongs to the hand from one that belongs to the board, and standard is
+# the control the drop-variant ratio is stated against, so it is eight cases
+# rather than the two an earlier throwaway version used.
+#
+# Depth is per variant, chosen so one pass is minutes rather than hours;
+# the suite reports the whole node curve, so a gate written against a
+# shallower depth reads the same run.
+standard | startpos | position startpos | 13
+standard | aneka-p24 | position startpos moves f2f4 d7d6 e2e4 e7e5 d2d4 g8f6 b1c3 b8d7 f1e2 d8e7 e2f3 e5d4 d1d4 e7e6 c3b5 e8d8 g1h3 d7c5 h3g5 e6d7 d4c4 c5e6 e1g1 c7c6 | 13
+standard | aneka-p28 | position startpos moves b2b3 g8h6 g2g3 c7c5 a2a4 b8c6 g1f3 b7b6 h2h4 h6f5 b1c3 a7a6 a1a3 f5d6 c3d5 c8b7 f1g2 d6e4 c1b2 a8b8 h1f1 h7h6 d5e3 e4d6 d1a1 h8h7 f3e5 c6e5 | 13
+standard | aneka-p32 | position startpos moves b1a3 a7a6 b2b4 b7b5 g1f3 b8c6 a1b1 g8f6 c2c3 a8b8 h2h3 b8b6 d1c2 c8b7 b1b2 e7e6 d2d3 b7c8 c1e3 b6b7 a3b1 f8d6 a2a4 e8g8 a4b5 a6b5 b1d2 f6d5 e3g5 d6e7 g5e7 c6e7 | 13
+standard | aneka-p36 | position startpos moves b1a3 b8a6 g2g3 g8h6 h2h4 h8g8 g1f3 h6g4 f1h3 g4f6 h1f1 a6c5 a3c4 h7h6 c2c3 d7d6 h3c8 d8c8 b2b4 c5e4 c4e3 c8d7 d1b3 d7h3 e3d5 h3d7 b3c4 c7c6 d5f6 e4f6 a2a4 a7a5 b4b5 c6b5 a4b5 a8c8 | 13
+standard | fsf-p24 | position startpos moves f2f4 d7d6 e2e4 e7e5 g1f3 b8c6 b1c3 c6d4 d2d3 h7h5 f1e2 c7c6 e1g1 g7g6 c1e3 f8g7 e3d4 e5d4 c3b1 c8d7 b1d2 g8e7 f3g5 d6d5 | 13
+standard | fsf-p28 | position startpos moves b2b3 g8h6 g2g3 c7c5 d2d4 d7d5 c2c3 e7e6 c1h6 g7h6 g1f3 b8d7 e2e3 c5d4 e3d4 h6h5 f1d3 f8h6 e1g1 e8g8 b1d2 d7f6 f3e5 b7b6 f2f4 d8e7 b3b4 a7a5 | 13
+standard | fsf-p32 | position startpos moves b1a3 a7a6 b2b4 b7b5 g1f3 e7e6 c2c3 c8b7 e2e3 d7d6 a3c2 g8f6 a2a4 b5a4 a1a4 b8d7 d2d4 f6e4 a4a3 g7g6 f1d3 f8g7 e1g1 e8g8 f3d2 e4d2 c1d2 f7f5 f2f3 d6d5 d1e2 e6e5 | 13
+standard | fsf-p36 | position startpos moves b1a3 b8a6 g2g3 g8h6 c2c3 c7c6 d2d4 h6g4 f1g2 d7d5 g1f3 e7e6 e1g1 f8d6 c1g5 g4f6 e2e4 d5e4 f3d2 d6e7 d2e4 f6e4 g5e7 e4c3 b2c3 d8e7 a3c4 a6c7 f1e1 e8g8 d1d3 f8d8 a1b1 c7b5 d3c2 b5a3 | 13
+crazyhouse | startpos | position startpos | 13
+crazyhouse | aneka-p38 | position startpos moves f2f4 f7f5 b1a3 a7a5 g2g3 b7b6 h2h3 g8f6 g1f3 b8c6 a3c4 f6e4 h1g1 b6b5 c4e3 e7e6 c2c3 f8e7 d2d3 e4d6 e1f2 e8g8 d1d2 a8b8 b2b3 f8f6 a2a4 b5a4 b3a4 P@b4 c1b2 f6f7 P@b5 d6b5 a4b5 b8b5 c3b4 a5b4 | 13
+crazyhouse | aneka-p52 | position startpos moves b2b3 d7d5 h2h4 e8d7 a2a4 d7e8 g2g3 c7c5 b1c3 b8c6 c1a3 e7e5 f2f3 f7f5 e2e3 g8f6 f1b5 d8d6 e1f2 a7a6 b5c6 d6c6 g1h3 b7b6 h3g5 f8d6 d1f1 a8a7 a1e1 e8f8 h1g1 f8g8 f1e2 a7e7 a3b2 c6e8 e1f1 e8h5 g1g2 h5g6 f1g1 h7h6 g5h3 g6e8 N@f1 d5d4 c3d1 f5f4 g3g4 f4e3 d2e3 d4e3 | 13
+crazyhouse | aneka-p38 | position startpos moves b2b3 e7e5 d2d4 d8h4 d4e5 f8c5 e2e3 h4e4 P@f4 g8h6 b1d2 e4c6 a2a3 e8g8 b3b4 c5e7 c2c4 a7a5 b4b5 c6g6 d1e2 g6e6 g1f3 b7b6 h2h3 a8a7 e3e4 a7b7 f4f5 h6f5 e4f5 e6f5 f3d4 f5g5 d2f3 P@d2 e2d2 g5d2 | 13
+crazyhouse | aneka-p36 | position startpos moves g2g3 d7d5 f2f4 c8f5 h2h3 c7c5 g3g4 f5e4 h1h2 d5d4 h2f2 g8f6 g4g5 f6h5 h3h4 c5c4 a2a3 h5g3 f1g2 d8d6 g1h3 b8c6 g2f3 e4f5 h3g1 d6g6 f3c6 g6c6 g1f3 d4d3 N@d4 d3c2 d4c2 P@d3 e2d3 c4d3 | 13
+crazyhouse | fsf-p26 | position startpos moves f2f4 e7e6 g2g4 g7g6 g1f3 g8f6 g4g5 f6h5 d2d4 d7d5 e2e3 f8g7 b1c3 e8g8 c1d2 b8c6 h1g1 h5f4 e3f4 P@e4 c3e4 d5e4 N@f6 g7f6 g5f6 e4f3 | 13
+crazyhouse | fsf-p24 | position startpos moves g1h3 e7e5 h1g1 g8e7 d2d4 e5d4 d1d4 b8c6 d4f4 d7d5 f4a4 d8d7 g2g4 h7h5 g4h5 c6e5 a4f4 h8h5 P@e6 f7e6 g1g5 e7g6 g5g6 h5f5 | 13
+crazyhouse | fsf-p24 | position startpos moves a2a3 b8c6 f2f3 c6b8 e2e4 d7d5 d2d4 d5e4 f3e4 P@f2 e1f2 e7e5 P@d5 e5d4 d1d4 b8c6 d4a4 c8d7 d5c6 d8f6 P@f3 d7c6 a4a5 b7b6 | 13
+crazyhouse | fsf-p28 | position startpos moves c2c3 c7c5 d1a4 g8f6 d2d4 c5d4 e2e3 b7b5 a4d1 d4e3 c1e3 d7d5 P@e6 f7e6 f1b5 P@c6 b5e2 P@f7 b1d2 d8c7 d1a4 e6e5 P@g5 P@f4 g5f6 f4e3 f2e3 e7f6 | 13
+shogi | aneka-p30 | position startpos moves f1e2 d7d6 e2f2 f9e8 c3c4 e7e6 g3g4 g7g6 h1g3 h9g7 e1e2 c7c6 b1c3 b9c7 a3a4 a7a6 i3i4 i7i6 a1a3 a9a7 i1i3 i9i7 c1d2 c9d8 b3b4 g9f8 h3h4 h7h6 e3e4 d8e7 | 11
+shogi | aneka-p38 | position startpos moves e1d2 b8c8 d2e1 e9d8 c3c4 a7a6 b1c3 b9a7 e1e2 d7d6 a3a4 g7g6 a4a5 a6a5 a1a3 a5a4 a3a4 P@a3 P@a1 a7b5 c3b5 a9a4 N@e5 f9f8 b5a7+ L@b9 g1f2 e7e6 e5f7+ f8f7 b2h8 g9h8 B@a8 N@c3 a8b9+ c3d1+ b9c8 d9c8 | 11
+shogi | fsf-p30 | position startpos moves f1e2 d7d6 e2f2 f9e8 c3c4 g9f8 e1f1 e7e6 c1d2 c9d8 g1g2 d8e7 e3e4 e9f9 d2e3 f7f6 d1e2 e8f7 b2c3 f9g8 f1g1 b7b6 f3f4 g7g6 h3h4 g6g5 a3a4 c7c6 g3g4 g5g4 | 11
+shogi | fsf-p38 | position startpos moves e1d2 b8c8 d2e1 e9d8 c3c4 g7g6 b2h8+ g9h8 B@d5 B@e6 d5e6 e7e6 B@d5 B@c6 d5c6 c7c6 B@f4 b9c7 c1b2 d8e9 d1d2 B@f6 b2c3 c9d8 e3e4 f9g9 d3d4 e9f9 g1f2 g9f8 g3g4 d7d6 f4d6 d8e7 d6f4 f9g8 f2e3 h9g7 | 11
+xiangqi | aneka-p24 | position startpos moves h3h6 b8b1 h6h5 e7e6 a1b1 h8g8 h5i5 g10i8 b3e3 i7i6 i5a5 g8a8 e3e6 a8a5 a4a5 i10i9 b1b8 i9d9 b8e8 d9e9 e8e9 e10e9 i1i2 a10a8 | 12
+xiangqi | aneka-p32 | position startpos moves i1i2 h10i8 i2i3 h8h4 h3e3 h4e4 e3e7 i8g9 b1c3 e4e6 i3d3 b10c8 e7d7 b8b4 h1i3 g9e8 a1b1 b4b5 d3d5 b5b9 e1e2 b9e9 e2d2 e9d9 c4c5 a10b10 b3b9 e6e1 g1e3 b10b9 b1b9 d9d5 | 12
+xiangqi | fsf-p24 | position startpos moves h3h6 b8b1 h6h5 e7e6 a1b1 g10e8 b3e3 b10c8 h1g3 h10g8 h5g5 g8e7 i1h1 h8f8 e3e6 d10e9 g5e5 i7i6 b1b9 f8f9 b9b6 i6i5 h1h9 f9f8 | 12
+xiangqi | fsf-p32 | position startpos moves i1i2 h10i8 i2i3 h8h4 h1g3 b8g8 c1e3 i10i9 h3h2 b10c8 b1d2 i9d9 d1e2 g8g4 a1d1 d10e9 i4i5 a10b10 b3c3 d9d5 c3c7 c10e8 i5i6 i7i6 i3i6 g7g6 h2i2 b10d10 i2i8 g10i8 i6i8 d5d2 | 12
+grand | aneka-p24 | position startpos moves g2i1 c8c6 i2j4 j10h10 g3g4 b8b7 h2d6 a8a7 a1d1 a10f10 i1f4 g9f7 h3h5 j8j7 j1e1 i9h7 j4h3 d8d7 f2g2 c9f6 g4g5 h7g5 d6c7 b9c7 | 10
+grand | aneka-p32 | position startpos moves e3e4 b9d10 j1c1 f9h10 c1f1 i9h7 i2h4 h10f9 g2e3 j10e10 a1e1 g8g7 c2d1 c8c7 b2c4 g9f7 j3j4 a10c10 h4f5 f7g6 f5h4 g6e7 h4f5 e7c8 f5d4 j8j7 i3i4 b8b6 a3a5 a8a6 a5b6 c7b6 | 10
+grand | fsf-p24 | position startpos moves g2i1 c8c6 i2j4 j10h10 i1g2 d8d6 g3g4 f9e7 c3c4 a10d10 g2h4 e7b7 h4g3 i8i7 d3d4 g8g7 h3h4 c9e7 j4h3 b9c7 f3f5 c6c5 b2d3 d6d5 | 10
+grand | fsf-p32 | position startpos moves e3e4 b9d10 j1c1 f9h10 d3d5 d10f9 g3g5 j8j6 c3c5 f8f6 g5f6 g9c5 e4e5 g8g7 f2g4 c8c7 b2d3 c5a6 g2e3 d8d6 b3b5 a6b7 d3b4 d6e5 b4c6 i9h7 h2e5 h7f6 e5f6 c9f6 c6b8 d9d5 | 10
