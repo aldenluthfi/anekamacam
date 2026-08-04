@@ -1570,6 +1570,75 @@ Gate, and it is a clock gate rather than a node gate:
 (the renumbered `PHASES` table), and the plan copies. `search.rs:483-500` is
 read but not edited — the stability scale keeps its meaning.
 
+#### As built (2026-08-04) — landed, and the horizon is now the open question
+
+The formula is exactly the design above. `compute_budgets` subtracts the
+overhead once into `usable`, divides by `min(movestogo, TM_MOVE_HORIZON)`,
+adds `inc * 3 / 4`, and clamps both budgets into a reserve floored at
+`MIN_TIME_BUDGET_NS` before it is used. The `HARD_BUDGET_FACTOR >= 2.08`
+invariant is written into the `compute_budgets` doc comment rather than only
+here. `build-stages.sh` carries the renumbered table through `phaseR-3`, and
+its `PHASE_N_PARENT` special case is now a `PHASE_<LETTER>_PARENT` override
+for every phase, since L-3, M-3 and R-3 are all conditional.
+
+**The no-leak gates passed twice over.** `tools/speed-suite.sh` reports
+identical node counts for phaseE-3 and phaseF-3 in all five variants
+(standard 208063, shogi 974763, crazyhouse 437026, xiangqi 221528, grand
+8639479), and the new EBF suite agrees on all thirty of its cases at
+`b_over_a=1.000`. Fixtures 38/38. Budget spot checks on the built binary:
+`wtime 30000 winc 300` spends 3.13 s, `movestogo 40` is capped at the horizon
+(1.44 s), and a 30 ms clock returns in 0.10 s without panicking.
+
+**The clock gate reads 97%, not 85-95%, and the band was wrong.** 87
+self-play games at `30+0.3` measured with an instrumented referee, 33282
+moves: median **97.7%** of `30 + moves*0.3` consumed by the time the game is
+decided, **zero** time losses; a further 29 games against phaseE-3 at the same
+control ran to 1000 plies each with no overstep by either side. The 85-95% band came from a 29-move game model. The leftover clock
+converges to the fixed point `inc(1 - 0.75k)D/k`, about 0.45 s at this
+control, *regardless* of game length, so any converging manager lands at
+96-99% once a game passes forty moves. The band is unreachable and is not the
+number to gate on; zero time losses is.
+
+**What the same data says against the stage, and it is the reason the RR arm
+matters.** Median milliseconds per move, self-play at `30+0.3`:
+
+| moves | phaseE-3 | phaseF-3 |
+|---|---|---|
+| 1-10 | 672 | **2066** |
+| 11-20 | 649 | **1075** |
+| 21-40 | **588** | 425 |
+| 41-60 | **401** | 288 |
+| share of clock spent in the first 18 moves | 38% | **65%** |
+
+F-3 outspends E-3 only in the opening and *underspends* it from move 21
+onward. A horizon of 18 asserts that eighteen moves remain; the campaign
+variants do not play eighteen-move games — the median self-play game here is
+decided around move 50 and crazyhouse games run past 400 plies without a
+rules terminal. E-3's effective divisor of 80 (40, then halved) accidentally
+matched the real game length better than 18 does.
+
+**No Elo verdict exists yet, and the intermediate counts must not be quoted
+as one.** `debug-headless sprt` prints a running tally every five pairs; at
+roughly 90 s a game on one box, an SPRT with these bounds needs hundreds to
+low thousands of games, so every tally read before then is noise. Two
+pairings are running to a bound at `10+0.1` crazyhouse — phaseE-3 against
+phaseF-3, and phaseF-3 against a horizon-36 probe — each from two independent
+processes whose raw counts pool (their LLRs do not). The authoritative arm is
+still the VPS RR at `30+0.3` once RR-3 frees the cores.
+
+One trap worth writing down: `sprt.rs` scores a clock overstep as an ordinary
+loss and logs nothing for it, so an absence of `scored engine loss` lines is
+**not** evidence that games were decided on the board. What evidence there is
+against forfeits is external — an instrumented referee saw zero oversteps in
+37 games of 800 plies at `10+0.1` and 29 games of 1000 plies at `30+0.3`.
+
+The unit is right and the halving fix is right; the horizon constant is a
+game-length estimate that no longer matches the games. Options, in the order
+they should be measured: raise `TM_MOVE_HORIZON` toward the observed game
+length (a `36` probe binary is built and under SPRT), or derive the horizon
+from the phase reference the engine already computes, which keeps it
+variant-agnostic instead of tuning one number per campaign.
+
 ### The EBF harness — `tools/ebf-suite.sh`, built with F-3
 
 Every remaining search stage is gated on branching factor, and the numbers
@@ -1608,6 +1677,54 @@ it:** our own `nodes@13(crazyhouse-mid) / nodes@13(standard)` from **26x** to
 — target **≤1.70**. FSF's own ratio on the same cases is 0.45x, which is the
 scale of what is being chased, not a threshold. Per-stage thresholds are
 relative to the previous phase binary and are stated in each stage.
+
+#### As built (2026-08-04), and the baseline it measures is not 26x
+
+The suite is `tools/ebf-suite.sh` over `tools/ebf_positions.txt`: thirty cases
+carrying a fourth column (a source label) beside the three the design named,
+because the per-position spread the design asks for has to say which position
+it belongs to. Every case is a `position startpos moves ...` line, which both
+engines accept verbatim — the move notation matches fairy-stockfish in all
+five variants (checked by replaying each list into it and comparing the board
+and the move counter), while the FENs do not, our crazyhouse pockets and shogi
+spellings being our own dialect's. Half of each variant's positions come from
+fairy-stockfish self-play, each game opens on four random plies, and the eight
+crazyhouse midgames were re-sampled until the pocket held at least four
+pieces: the first pass sampled quiet positions whose hands were nearly empty,
+which is the board case wearing the hand's label.
+
+**A pinned Zobrist seed is load-bearing in this suite.** Unseeded, phaseE-3
+and phaseF-3 — which search identically — came back up to **2x** apart on the
+same case, larger than any gate the suite carries. With `ANEKAMACAM_SEED`
+pinned, all thirty cases match to the node.
+
+Measured on phaseF-3 at a matched 64 MB Hash, one thread:
+
+| variant | cases | nodes (geo-mean) | spread | our EBF | FSF EBF |
+|---|---|---|---|---|---|
+| standard@13 | 9 | 110911 | 41k..339k | 1.596 | ~2.0 |
+| crazyhouse@13 | 9 | 698110 | 373k..1227k | 1.674 | ~1.9 |
+| shogi@11 | 4 | 99538 | 16k..558k | 1.582 | ~1.9 |
+| xiangqi@12 | 4 | 25642 | 14k..71k | 1.407 | ~1.9 |
+| grand@10 | 4 | 84463 | 46k..200k | 1.741 | ~2.2 |
+
+**`nodes@13(crazyhouse-mid) / nodes@13(standard)` is 6.8x, not 26x, and our
+crazyhouse EBF is 1.67, not 1.87 — both already inside the block target
+before a single drop stage lands.** The same suite run at `HASH=1` returns
+**11.8x**, so TT size alone moves this number by a factor of 1.7, which is the
+direction the RR-2 note about `debug-headless search`'s 1 MB table predicted;
+the rest is the sampling fix. Note also that our EBF is *below* fairy-stockfish's
+on every one of these cases, which is the opposite of what the 1.87-against-1.38
+row claimed and is what should be expected of a more aggressively pruned tree —
+a low EBF is not by itself evidence of a healthy search.
+
+**This does not by itself retire the drop block, and it must not be read as
+retiring it.** The 6.8x is nine positions at one depth on one machine, and the
+G-3 aliasing defect is a code fact that no measurement makes untrue. What it
+does retire is the *number*: any stage justified by "26x" is justified by a
+measurement taken through a 1 MB table on positions drawn only from our own
+games. Per-stage thresholds relative to the previous phase binary still hold,
+and the block target above should be restated against 6.8x before G-3 lands.
 
 ### G-3 — the drop square lives in `end`
 
