@@ -74,33 +74,6 @@ pub fn hash_position(state: &State) -> u128 {
     hash
 }
 
-/// hash_pawns
-///
-/// Computes the pawn-like-piece Zobrist key for one state from scratch.
-///
-/// The key ignores all non-pawn-like pieces, allowing evaluation to cache
-/// pawn-structure scores across positions with unchanged pawn placement.
-///
-/// Params:
-/// - state: &State -> position whose pawns are hashed
-///
-/// Return:
-/// u128            -> the position's pawn-only Zobrist key
-pub fn hash_pawns(state: &State) -> u128 {
-    let mut hash = u128::default();
-
-    for index in 0..state.statics.pieces.len() {
-        if !p_is_pawn!(state.statics.pieces[index]) {
-            continue;
-        }
-        for &square in piece_squares!(state, index) {
-            hash ^= &PIECE_HASHES[index][square as usize];
-        }
-    }
-
-    hash
-}
-
 /*----------------------------------------------------------------------------*\
                          INCREMENTAL HASH UPDATE HELPERS
 \*----------------------------------------------------------------------------*/
@@ -111,15 +84,10 @@ pub fn hash_pawns(state: &State) -> u128 {
 /// during make/undo flow without recomputing from scratch. None return a
 /// value; each XORs its component in or out of the running key.
 ///
-/// `hash_in_or_out_piece!` also keeps the per-color `pawn_board` bitboards
-/// in sync: every pawn placement or removal flows through this macro during
-/// move execution, so toggling the square bit alongside the pawn hash keeps
-/// the board exact under the same pairing that keeps the hash exact.
-///
 /// hash_in_or_out_piece!
 ///
 ///   Params:
-///   - state       : &mut State -> position whose keys are updated
+///   - state       : &mut State -> position whose key is updated
 ///   - piece_index : usize      -> piece being placed or removed
 ///   - square_index: Square     -> square the piece enters or leaves
 ///
@@ -154,41 +122,6 @@ macro_rules! hash_in_or_out_piece {
     ($state:expr, $piece_index:expr, $square_index:expr) => {
         $state.position_hash ^=
             &PIECE_HASHES[$piece_index][$square_index as usize];
-
-        $state.pawn_hash ^=
-            p_is_pawn!($state.statics.pieces[$piece_index]) as u128 *
-            &PIECE_HASHES[$piece_index][$square_index as usize];
-
-        if p_is_pawn!($state.statics.pieces[$piece_index]) {
-            let pawn_color =
-                p_color!($state.statics.pieces[$piece_index]) as usize;
-
-            toggle!($state.pawn_board[pawn_color], $square_index as u32);
-        }
-    };
-}
-
-/// pawn_board_in_or_out!
-///
-/// Toggles one square of the per-color `pawn_board` for a pawn-flagged
-/// piece, and is a no-op for every other piece. `undo_move!` restores the
-/// hashes wholesale from the snapshot instead of re-toggling them, so it
-/// calls this at each board-placement reversal to give `pawn_board` the
-/// exact inverse of the toggles `hash_in_or_out_piece!` applied on make.
-///
-/// Params:
-/// - state       : &mut State -> position whose pawn board is updated
-/// - piece_index : usize      -> piece being placed or removed
-/// - square_index: Square     -> square whose pawn bit is toggled
-#[macro_export]
-macro_rules! pawn_board_in_or_out {
-    ($state:expr, $piece_index:expr, $square_index:expr) => {
-        if p_is_pawn!($state.statics.pieces[$piece_index]) {
-            let pawn_color =
-                p_color!($state.statics.pieces[$piece_index]) as usize;
-
-            toggle!($state.pawn_board[pawn_color], $square_index as u32);
-        }
     };
 }
 

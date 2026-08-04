@@ -14,6 +14,31 @@
 //! Author : Alden Luthfi
 use crate::*;
 
+/// Session constants.
+///
+/// The dialect and hash ceiling a fresh session starts from, the option
+/// names the `setoption` dispatcher matches, and the time-management
+/// limits `compute_budgets` works within: a fixed transmission overhead
+/// and its user-settable ceiling, a floor no timed search budgets below,
+/// the hard-to-soft budget multiplier, the move horizon the remaining
+/// clock is spread across, and the ceiling on any one move's share of it.
+pub const DEFAULT_PROTOCOL: &str = "uci";
+pub const HASH_MAX_MB: usize = 65536;
+
+pub const OPT_PROTOCOL: &str = "Protocol";
+pub const OPT_PONDER: &str = "Ponder";
+pub const OPT_HASH: &str = "Hash";
+pub const OPT_CLEAR_HASH: &str = "Clear Hash";
+pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
+
+pub const TIME_OVERHEAD_MS: u128 = 50;
+pub const MAX_OVERHEAD_MS: u128 = 1000;
+pub const MIN_TIME_BUDGET_NS: u128 = 1_000_000;                                 /* timed searches never budget below  */
+pub const HARD_BUDGET_FACTOR: u128 = 4;                                         /* soft x factor; floor 2.08, see     */
+                                                                                /* compute_budgets                    */
+pub const TM_MOVE_HORIZON: u128 = 18;                                           /* moves the clock is spread across   */
+pub const TM_MAX_SHARE_PCT: u128 = 40;                                          /* ceiling on one move's clock share  */
+
 /// Protocol
 ///
 /// One text protocol the engine speaks.
@@ -262,7 +287,6 @@ pub struct Session {
     overhead_ms: u128,                                                          /* move overhead in milliseconds      */
     ttable: Arc<TTable>,                                                        /* shared main transposition table    */
     qtable: Arc<QTable>,                                                        /* shared quiescence table            */
-    ptable: Arc<PTable>,                                                        /* shared pawn structure table        */
     active: Option<SearchHandle>,                                               /* in-flight search, if any           */
     position_valid: bool,                                                       /* false after a failed position cmd  */
 }
@@ -303,7 +327,7 @@ impl Session {
             .map(|n| n.get())
             .unwrap_or(1);
 
-        let (ttable, qtable, ptable) = spawn_hash_tables(HASH_DEFAULT_MB);
+        let (ttable, qtable) = spawn_hash_tables(HASH_DEFAULT_MB);
 
         Session {
             protocol: protocol.to_string(),
@@ -317,7 +341,6 @@ impl Session {
             overhead_ms: TIME_OVERHEAD_MS,
             ttable,
             qtable,
-            ptable,
             active: None,
             position_valid: true,
         }
@@ -342,8 +365,8 @@ impl Session {
     /// variants that dialect serves and its notation translator; when the
     /// current variant is not among them it reseats onto the dialect's
     /// default variant (standard when served, otherwise the first) exactly
-    /// as startup does, reloading the position and pawn table so nothing from
-    /// the old variant leaks through. Any active search is stopped first.
+    /// as startup does, reloading the position so nothing from the old
+    /// variant leaks through. Any active search is stopped first.
     ///
     /// Params:
     /// - protocol: &str -> the dialect name to switch to
@@ -367,7 +390,6 @@ impl Session {
             parse_fen(&mut self.state, &startpos, None)
                 .unwrap_or_else(|error| panic!("{}", error));
             refresh_eval_state(&mut self.state);
-            self.ptable = Arc::new(PTable::default());
             self.position_valid = true;
         }
 
@@ -377,28 +399,25 @@ impl Session {
 
 /// spawn_hash_tables
 ///
-/// Allocates the three shared hash tables from one megabyte budget, split
+/// Allocates the two shared hash tables from one megabyte budget, split
 /// between them by the fixed `HASH_*_PARTS` ratio so a `Hash` change scales
-/// all three consistently. Used at session startup and whenever `Hash` or
+/// both consistently. Used at session startup and whenever `Hash` or
 /// `Clear Hash` rebuilds the tables.
 ///
 /// Params:
-/// - hash_mb: usize                        -> total table budget in megabytes
+/// - hash_mb: usize          -> total table budget in megabytes
 ///
 /// Return:
-/// (Arc<TTable>, Arc<QTable>, Arc<PTable>) -> the freshly sized tables
+/// (Arc<TTable>, Arc<QTable>) -> the freshly sized tables
 fn spawn_hash_tables(
     hash_mb: usize,
-) -> (Arc<TTable>, Arc<QTable>, Arc<PTable>) {
+) -> (Arc<TTable>, Arc<QTable>) {
     (
         Arc::new(TTable::with_mb(
             (hash_mb * HASH_T_PARTS / HASH_PARTS).max(1)
         )),
         Arc::new(QTable::with_mb(
             (hash_mb * HASH_Q_PARTS / HASH_PARTS).max(1)
-        )),
-        Arc::new(PTable::with_mb(
-            (hash_mb * HASH_P_PARTS / HASH_PARTS).max(1)
         )),
     )
 }
@@ -762,7 +781,6 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
     let state_clone = session.state.clone();
     let tt_clone = Arc::clone(&session.ttable);
     let qt_clone = Arc::clone(&session.qtable);
-    let pt_clone = Arc::clone(&session.ptable);
     let dict_clone = session.translator.clone();
     let tc = session.threads;
     let is_ponder = limits.is_ponder;
@@ -790,10 +808,9 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
 
             let table = Arc::clone(&tt_clone);
             let qtable = Arc::clone(&qt_clone);
-            let ptable = Arc::clone(&pt_clone);
             let result = catch_unwind(AssertUnwindSafe(|| {
                 search_position(
-                    &mut s, table, qtable, ptable,
+                    &mut s, table, qtable,
                     &mut info, &mut bufs, tc,
                     dict_clone.as_ref(),
                 )
@@ -810,7 +827,7 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
                 print_bestmove(&result, &mut s, dict_clone.as_ref());
             }
 
-            log_table_stats(&tt_clone, &qt_clone, &pt_clone);
+            log_table_stats(&tt_clone, &qt_clone);
 
             result
         }).expect("failed to spawn search thread");
@@ -917,8 +934,6 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
 
             refresh_eval_state(&mut session.state);
 
-            session.ptable = Arc::new(PTable::default());
-
             session.translator = Translator::find(&v, &session.protocol);
             session.variant = v;
             session.position_valid = true;
@@ -931,12 +946,12 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
         (OPT_HASH, Some(v)) => {
             if let Ok(mb) = v.parse::<usize>() {
                 session.hash_mb = mb.clamp(1, HASH_MAX_MB);
-                (session.ttable, session.qtable, session.ptable) =
+                (session.ttable, session.qtable) =
                     spawn_hash_tables(session.hash_mb);
             }
         }
         (OPT_CLEAR_HASH, None) => {
-            (session.ttable, session.qtable, session.ptable) =
+            (session.ttable, session.qtable) =
                 spawn_hash_tables(session.hash_mb);
         }
         (OPT_MOVE_OVERHEAD, Some(v)) => {

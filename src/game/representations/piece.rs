@@ -117,14 +117,6 @@ macro_rules! p_value {
 ///   Return:
 ///   u8              -> variant-defined capture rank (bits 11-18)
 ///
-/// p_is_pawn!
-///
-///   Params:
-///   - piece: &Piece -> piece record read
-///
-///   Return:
-///   bool            -> pawn-like flag, set at derive time (bit 19)
-///
 /// Dynamic accessors (encoded_dynamic):
 ///
 /// p_is_big!
@@ -195,13 +187,6 @@ macro_rules! p_is_royal {
 }
 
 #[macro_export]
-macro_rules! p_is_pawn {
-    ($piece:expr) => {
-        ($piece.encoded_static & (1 << 19)) != 0
-    };
-}
-
-#[macro_export]
 macro_rules! p_rank {
     ($piece:expr) => {
         (($piece.encoded_static >> 11) & 0xFF) as u8
@@ -252,11 +237,11 @@ macro_rules! p_evalue {
 /// Static data (`encoded_static`) is encoded in 32 bits:
 ///
 /// ```text
-///   0               8 9 10                19                        31
-///                         11                20
-///   ┌───────────────┬─┬─┬─┬───────────────┬─┬────────────────────────┐
-///   │     index     │c│p│r│     rank      │w│         unused         │
-///   └───────────────┴─┴─┴─┴───────────────┴─┴────────────────────────┘
+///   0               8 9 10                19                       31
+///                         11
+///   ┌───────────────┬─┬─┬─┬───────────────┬─────────────────────────┐
+///   │     index     │c│p│r│     rank      │         unused          │
+///   └───────────────┴─┴─┴─┴───────────────┴─────────────────────────┘
 /// ```
 ///
 /// - Bits 0..7     : piece index
@@ -264,8 +249,7 @@ macro_rules! p_evalue {
 /// - Bit 9         : promotion capability
 /// - Bit 10        : royal status
 /// - Bits 11..18   : variant-defined rank
-/// - Bit 19        : derived pawn-like status
-/// - Bits 20..31   : unused
+/// - Bits 19..31   : unused
 ///
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
 ///

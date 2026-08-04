@@ -67,7 +67,7 @@ pub use crate::game::moves::pattern_parse::{
     generate_relevant_stand_offs, generate_stand_off_patterns, parse_pattern,
 };
 pub use crate::game::position::{
-    hash::{hash_pawns, hash_position, PositionHash},
+    hash::{hash_position, PositionHash},
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
         log_table_stats, search_position, SearchBufs, SearchInfo,
@@ -79,7 +79,7 @@ pub use crate::game::search::{
     parameters::{
         derive_eval_parameters, derive_parameters, derive_search_parameters,
     },
-    transposition::{PTable, PTEntry, QTable, QTEntry, TTEntry, TTable},
+    transposition::{QTable, QTEntry, TTEntry, TTable},
 };
 
 pub use crate::game::util::{
@@ -212,27 +212,21 @@ pub use std::{
 /// Engine-wide constants.
 ///
 /// Board and search bounds (`MAX_*`, `*_DEPTH`), search-tuning thresholds
-/// and tables (LMP/NMP/RFP/razor/IIR/LMR limits, `HIST_BONUS_TABLE`), phase
-/// occupancies, colour and castling codes, piece/en-passant sentinels, and
-/// the move-type tags. Values are fixed at compile time and shared through
+/// and tables (LMP/NMP/RFP/razor/IIR/LMR limits, `HIST_BONUS_TABLE`),
+/// colour and castling codes, piece/en-passant sentinels, and the
+/// move-type tags. Values are fixed at compile time and shared through
 /// the prelude. `MAX_SQUARES` tracks [`BoardBits`], so it and the Zobrist
 /// tables sized by it widen together under the `wide-board` feature.
 #[cfg(not(feature = "wide-board"))]
 pub const MAX_SQUARES: usize = 256;
 #[cfg(feature = "wide-board")]
 pub const MAX_SQUARES: usize = 2048;
-pub const MAX_PIECES: usize = 255;
 pub const MAX_DEPTH: usize = 128;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
 pub const MAX_LMR_DEPTH: usize = 32;
 pub const MAX_LOGS_LEN: usize = u16::MAX as usize;
 pub const MAX_HIST_VALUE: i16 = 16384;
 pub const HIST_BONUS_SCALE: i32 = 32;
-pub const CORR_HIST_SIZE: usize = 16384;
-pub const CORR_HIST_GRAIN: i32 = 64;
-pub const CORR_HIST_SCALE: i32 = 256;
-pub const CORR_HIST_MAX_WEIGHT: i32 = 16;
-pub const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 pub const HIST_BONUS_TABLE: [i32; MAX_DEPTH] = {
     let cap = MAX_HIST_VALUE as i32;
     let mut table = [0i32; MAX_DEPTH];
@@ -255,7 +249,6 @@ pub const MAX_RZR_DEPTH: usize = 4;
 pub const MAX_SEE_DEPTH: usize = 8;
 pub const MIN_IIR_DEPTH: usize = 4;
 pub const MIN_LMR_DEPTH: usize = 4;
-pub const MIN_LMP_DEPTH: usize = 3;
 pub const MIN_NMP_DEPTH: usize = 2;
 pub const MIN_NMP_ENDGAME_DEPTH: usize = 8;
 pub const MAX_CHECK_EXTENSION: usize = 2;
@@ -272,18 +265,7 @@ pub const LMR_CAPTURE_DIV: f64 = 4.0;
 pub const LMR_CAPTURE_CHECK_BASE: f64 = 0.0;
 pub const LMR_CAPTURE_CHECK_DIV: f64 = 4.5;
 
-pub const DANGEROUS_PUSH_THRESHOLD: i32 = 92;
-
-pub const DRAW_BIAS_DIV: i32 = 16;
-
 pub const REP_SCAN_CAP: usize = 64;                                             /* per-node repetition scan budget    */
-
-pub const PAWN_MIN_START_COUNT: usize = 5;
-
-pub const PARAM_SCALAR_TAIL: usize = 19;
-
-pub const OPENING_OCCUPANCY: f64 = 0.36;
-pub const ENDGAME_OCCUPANCY: f64 = 0.12;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
@@ -557,9 +539,7 @@ pub const ENDGAME: u8 = 3;
 
 pub const HASH_T_PARTS: usize = 16;
 pub const HASH_Q_PARTS: usize = 8;
-pub const HASH_P_PARTS: usize = 1;
-pub const HASH_PARTS: usize =
-    HASH_T_PARTS + HASH_Q_PARTS + HASH_P_PARTS;
+pub const HASH_PARTS: usize = HASH_T_PARTS + HASH_Q_PARTS;
 
 pub const T_TABLE_SIZE: usize = 1 <<
     ((HASH_DEFAULT_MB * HASH_T_PARTS / HASH_PARTS * 0x100000)
@@ -567,9 +547,6 @@ pub const T_TABLE_SIZE: usize = 1 <<
 pub const Q_TABLE_SIZE: usize = 1 <<
     ((HASH_DEFAULT_MB * HASH_Q_PARTS / HASH_PARTS * 0x100000)
     / size_of::<QTEntry>()).ilog2();
-pub const P_TABLE_SIZE: usize = 1 <<
-    ((HASH_DEFAULT_MB * HASH_P_PARTS / HASH_PARTS * 0x100000)
-    / size_of::<PTEntry>()).ilog2();
 
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000;                               /* ordering band for SEE >= 0 moves   */
 pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000;                                /* ordering band for SEE < 0          */
@@ -577,71 +554,20 @@ pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000;                                
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
 pub const DATA_DIR: &str = "res/data";
-pub const SPRT_DIR: &str = "res/sprt";
 pub const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";                        /* rolled-file backup name stamp      */
 pub const LOG_HISTORY_KEEP: usize = 32;                                         /* rolled logs kept before pruning    */
-pub const SPRT_HISTORY_KEEP: usize = 64;                                        /* rolled sprt files kept per family  */
 
-pub const TIME_OVERHEAD_MS: u128 = 50;
-pub const MAX_OVERHEAD_MS: u128 = 1000;
-pub const MIN_TIME_BUDGET_NS: u128 = 1_000_000;                                 /* timed searches never budget below  */
-pub const HARD_BUDGET_FACTOR: u128 = 4;                                         /* soft x factor; floor 2.08, see     */
-                                                                                /* compute_budgets                    */
 pub const TM_STABILITY_PCT: [u128; 6] = [160, 130, 110, 100, 85, 75];           /* soft budget scale by best stability*/
 pub const TM_SCORE_DROP_PCT: u128 = 130;                                        /* budget scale on a falling score    */
-pub const TM_MOVE_HORIZON: u128 = 18;                                           /* moves the clock is spread across   */
-pub const TM_MAX_SHARE_PCT: u128 = 40;                                          /* ceiling on one move's clock share  */
 
-pub const OPT_PROTOCOL: &str = "Protocol";
 pub const OPT_THREADS: &str = "Threads";
-pub const OPT_PONDER: &str = "Ponder";
-pub const OPT_HASH: &str = "Hash";
-pub const OPT_CLEAR_HASH: &str = "Clear Hash";
-pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
-
-pub const DEFAULT_PROTOCOL: &str = "uci";
 
 pub const HASH_DEFAULT_MB: usize = 256;
-pub const HASH_MAX_MB: usize = 65536;
 
-/// SPRT and Texel-tuning tool constants.
-///
-/// Fixed knobs for the debug self-play tools shared across `datagen`,
-/// `tuning`, and `sprt`:
-///
-/// - `OPENING_RANDOM_PLIES` -> random-opening depth
-///
-/// - `ADAM_BETA_ONE` / `ADAM_BETA_TWO` / `ADAM_EPSILON` -> the Adam
-///   optimiser moment decay rates and denominator floor for tuning.
-///
-/// - `TEXEL_K_MIN` / `TEXEL_K_MAX` / `TEXEL_K_ITERATIONS` -> the search
-///   bounds and step count for fitting the sigmoid scaling constant `K`.
-///
-/// - `TUNING_VALIDATION_MODULUS` / `TUNING_VALIDATION_PATIENCE` ->
-///   game-level validation split and early-stop patience.
-///
-/// - `SPRT_ALPHA` / `SPRT_BETA` -> the SPRT type-one and type-two error
-///   rates that set the log-likelihood acceptance bounds.
-///
-/// - `SPRT_HANDSHAKE_TIMEOUT_MS` / `SPRT_RESPONSE_GRACE_MS` /
-///   `SPRT_SHUTDOWN_TIMEOUT_MS` -> subprocess protocol and cleanup limits.
+/// Self-play opening depth, shared by `datagen` and `sprt`: how many
+/// uniformly random legal plies a generated or match game opens with, so
+/// no two games repeat the same line.
 pub const OPENING_RANDOM_PLIES: usize = 8;
-pub const ADAM_BETA_ONE: f64 = 0.9;
-pub const ADAM_BETA_TWO: f64 = 0.999;
-pub const ADAM_EPSILON: f64 = 1e-8;
-
-pub const TEXEL_K_MIN: f64 = 0.01;
-pub const TEXEL_K_MAX: f64 = 3.0;
-pub const TEXEL_K_ITERATIONS: usize = 32;
-pub const TUNING_VALIDATION_MODULUS: u64 = 5;
-pub const TUNING_VALIDATION_PATIENCE: usize = 10;
-
-pub const SPRT_PROTOCOL: &str = "uci";                                          /* dialect the sprt harness speaks    */
-pub const SPRT_ALPHA: f64 = 0.05;
-pub const SPRT_BETA: f64 = 0.05;
-pub const SPRT_HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
-pub const SPRT_RESPONSE_GRACE_MS: u128 = 5_000;
-pub const SPRT_SHUTDOWN_TIMEOUT_MS: u64 = 1_000;
 
 pub static EMBEDDED_CONFIGS: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../configs");

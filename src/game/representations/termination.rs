@@ -288,10 +288,9 @@ macro_rules! resolve_outcome {
 
 /// outcome_score!
 ///
-/// Maps an [`Outcome`] to a side-to-move search score: a draw yields the
-/// contempt-adjusted `draw_score!`, a win `+INF - ply`, a loss `-INF + ply`,
-/// matching the checkmate scale so shorter wins and longer losses are
-/// preferred.
+/// Maps an [`Outcome`] to a side-to-move search score: a draw yields zero, a
+/// win `+INF - ply`, and a loss `-INF + ply`, matching checkmate scale so
+/// shorter wins and longer losses are preferred.
 ///
 /// Params:
 /// - state  : &State  -> position whose ply and draw value are read
@@ -303,7 +302,7 @@ macro_rules! resolve_outcome {
 macro_rules! outcome_score {
     ($state:expr, $outcome:expr) => {
         match $outcome {
-            Outcome::Draw => draw_score!($state),
+            Outcome::Draw => 0,
             Outcome::Win  =>  INF - $state.search_ply as i32,
             Outcome::Loss => -INF + $state.search_ply as i32,
         }

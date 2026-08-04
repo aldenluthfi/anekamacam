@@ -284,7 +284,6 @@ pub struct Snapshot {
     pub phase_score: u32,                                                       /* phase score before move            */
 
     pub position_hash: u128,                                                    /* Zobrist hash before move           */
-    pub pawn_hash: u128,                                                        /* pawn-only Zobrist key before move  */
 }
 
 impl Default for Snapshot {
@@ -303,7 +302,6 @@ impl Default for Snapshot {
             game_phase: OPENING,
             phase_score: 0,
             position_hash: u128::default(),
-            pawn_hash: u128::default(),
         }
     }
 }
@@ -355,12 +353,6 @@ macro_rules! piece_list_push {
         let pushed_piece = $piece_index;
         let count = $state.piece_count[pushed_piece] as usize;
 
-        if count == 1 {
-            let bonus = $state.statics.pair_bonus[pushed_piece];
-            let color = p_color!($state.statics.pieces[pushed_piece]);
-            $state.pair_score += bonus * (1 - 2 * color as i32);
-        }
-
         $state.piece_list[
             pushed_piece * $state.statics.board_size + count
         ] = pushed_square;
@@ -380,12 +372,6 @@ macro_rules! piece_list_remove {
         if let Some(found) =
             row.iter().position(|&square| square == removed_square)
         {
-            if count == 2 {
-                let bonus = $state.statics.pair_bonus[removed_piece];
-                let color = p_color!($state.statics.pieces[removed_piece]);
-                $state.pair_score -= bonus * (1 - 2 * color as i32);
-            }
-
             row[found] = row[count - 1];
             row[count - 1] = NO_SQUARE;
             $state.piece_count[removed_piece] -= 1;
@@ -493,11 +479,6 @@ pub struct StaticState {
     pub relevant_stand_offs: Vec<PatternSet>,                                   /* facing-config veto patterns        */
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
-    pub adjacency_mask: Vec<Board>,                                             /* square to adjacent-square bitboard */
-    pub royal_shield_mask: Vec<Board>,                                          /* color * board size + royal square  */
-    pub royal_front_mask: Vec<Board>,                                           /* color * board size + royal square  */
-    pub zone_attack: Vec<u8>,                                                   /* (royal * P + piece) * B + from     */
-    pub zone_attack_best: Vec<u8>,                                              /* royal * P + piece, best from       */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
     pub piece_demotion_map: Vec<PieceIndex>,                                    /* piece index to demotion piece idx  */
@@ -524,38 +505,6 @@ pub struct StaticState {
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
     pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                 */
     pub nmp_eval_div: i32,                                                      /* NMP eval-surplus reduction divisor */
-    pub tempo_bonus: i32,                                                       /* tempo advantage bonus              */
-    pub draw_bias: i32,                                                         /* draw contempt clamp                */
-    pub pawn_shield_bonus: i32,                                                 /* per-shield-pawn royal cover bonus  */
-    pub king_shelter_bonus: i32,                                                /* per-adjacent-piece shelter bonus   */
-    pub castled_bonus: i32,                                                     /* bonus once a side has castled      */
-    pub castling_rights_bonus: i32,                                             /* bonus for still holding rights     */
-    pub king_danger_scale: i32,                                                 /* quadratic zone-attack danger scale */
-    pub open_shield_penalty: i32,                                               /* no-pawn-ahead-of-royal penalty     */
-    pub imbalance_major: i32,                                                   /* major piece imbalance weight       */
-    pub imbalance_minor: i32,                                                   /* minor piece imbalance weight       */
-    pub pair_bonus: Vec<i32>,                                                   /* pair bonus per piece index         */
-    pub pair_bonus_value: i32,                                                  /* bonus granted to qualifying pairs  */
-    pub mobility_opening: i32,                                                  /* mobility scale, opening phase      */
-    pub mobility_endgame: i32,                                                  /* mobility scale, endgame phase      */
-
-    pub pawn_path_mask: Vec<Board>,                                             /* idx = piece * board size + square  */
-    pub pawn_interference_mask: Vec<Board>,                                     /* enemy squares that stop a passer   */
-    pub pawn_support_mask: Vec<Board>,                                          /* friendly squares that defend it    */
-    pub pawn_advancement: Vec<i32>,                                             /* fixed-point advancement^2 * 256    */
-    pub pawn_passed_opening: Vec<i32>,                                          /* passed bonus, opening, per square  */
-    pub pawn_passed_endgame: Vec<i32>,                                          /* passed bonus, endgame, per square  */
-    pub pawn_connected_opening: i32,                                            /* phalanx/defended bonus, opening    */
-    pub pawn_connected_endgame: i32,                                            /* phalanx/defended bonus, endgame    */
-    pub pawn_doubled_penalty: i32,                                              /* doubled pawn penalty, both phases  */
-    pub pawn_isolated_penalty: i32,                                             /* isolated pawn penalty, both phases */
-    pub pawn_backward_penalty: i32,                                             /* backward pawn penalty, both phases */
-    pub passed_scale_opening: i32,                                              /* passer gain percent, opening       */
-    pub passed_scale_endgame: i32,                                              /* passer gain percent, endgame       */
-    pub pawn_backward_mask: Vec<Board>,                                         /* enemy squares contesting the stop  */
-    pub pawn_support_offsets: Vec<Vec<i32>>,                                    /* friendly support file offsets      */
-    pub pawn_passed_support_opening: Vec<i32>,                                  /* passer support bonus, opening      */
-    pub pawn_passed_support_endgame: Vec<i32>,                                  /* passer support bonus, endgame      */
 }
 
 /// State
@@ -605,15 +554,12 @@ pub struct State {
     pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
 
     pub pieces_board: [Board; 2],                                               /* per-color occupancy bitboards      */
-    pub pawn_board: [Board; 2],                                                 /* per-color pawn-only bitboards      */
     pub virgin_board: Board,                                                    /* squares whose piece is unmoved     */
 
     pub castling_state: u8,                                                     /* 4 bits for representing KQkq       */
-    pub has_castled: [bool; 2],                                                 /* per-color castled-this-game flag   */
     pub en_passant_square: EnPassantSquare,                                     /* active en passant square           */
 
     pub position_hash: u128,                                                    /* incremental Zobrist key            */
-    pub pawn_hash: u128,                                                        /* incremental pawn-only Zobrist key  */
     pub history: Vec<Snapshot>,                                                 /* undo stack of snapshots            */
 
     pub search_ply: u32,                                                        /* the number of plies in the search  */
@@ -623,7 +569,6 @@ pub struct State {
     pub endgame_material: [u32; 2],                                             /* color to endgame material          */
     pub opening_pst_bonus: [i32; 2],                                            /* color to opening pst bonus         */
     pub endgame_pst_bonus: [i32; 2],                                            /* color to endgame pst bonus         */
-    pub pair_score: i32,                                                        /* incremental white-black pair bonus*/
     pub big_pieces: [u32; 2],                                                   /* per-color big-piece counts         */
     pub major_pieces: [u32; 2],                                                 /* per-color major-piece counts       */
     pub minor_pieces: [u32; 2],                                                 /* per-color minor-piece counts       */
@@ -642,7 +587,6 @@ pub struct State {
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
     pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] (piece*B+end)^2    */
-    pub corr_hist: Vec<i16>,                                                    /* per-side pawn-hash eval correction */
 
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
@@ -662,15 +606,12 @@ impl Clone for State {
             main_board: self.main_board.clone(),
 
             pieces_board: self.pieces_board,
-            pawn_board: self.pawn_board,
             virgin_board: self.virgin_board,
 
             castling_state: self.castling_state,
-            has_castled: self.has_castled,
             en_passant_square: self.en_passant_square,
 
             position_hash: self.position_hash,
-            pawn_hash: self.pawn_hash,
             history: self.history.clone(),
 
             search_ply: self.search_ply,
@@ -680,7 +621,6 @@ impl Clone for State {
             endgame_material: self.endgame_material,
             opening_pst_bonus: self.opening_pst_bonus,
             endgame_pst_bonus: self.endgame_pst_bonus,
-            pair_score: self.pair_score,
             big_pieces: self.big_pieces,
             major_pieces: self.major_pieces,
             minor_pieces: self.minor_pieces,
@@ -695,7 +635,6 @@ impl Clone for State {
             pv_length: self.pv_length.clone(),
 
             cont_hist: self.cont_hist.clone(),
-            corr_hist: self.corr_hist.clone(),
 
             search_hist: self.search_hist.clone(),
             killer_hist: self.killer_hist.clone(),
@@ -779,11 +718,6 @@ impl State {
                 vec![Vec::new(); board_size],
             ],
             relevant_castling: array::from_fn(|_| Vec::new()),
-            adjacency_mask: vec![board!(files, ranks); board_size],
-            royal_shield_mask: vec![board!(files, ranks); 2 * board_size],
-            royal_front_mask: vec![board!(files, ranks); 2 * board_size],
-            zone_attack: Vec::new(),
-            zone_attack_best: Vec::new(),
 
             piece_swap_map: vec![NO_PIECE; piece_count],
             piece_demotion_map: vec![NO_PIECE; piece_count],
@@ -834,42 +768,6 @@ impl State {
             pst_endgame: vec![vec![0; board_size]; piece_count],
             nmp_min_material: 1,
             nmp_eval_div: 1,
-            tempo_bonus: 0,
-            draw_bias: 0,
-            pawn_shield_bonus: 0,
-            king_shelter_bonus: 0,
-            castled_bonus: 0,
-            castling_rights_bonus: 0,
-            king_danger_scale: 0,
-            open_shield_penalty: 0,
-            imbalance_major: 0,
-            imbalance_minor: 0,
-            pair_bonus: vec![0; piece_count],
-            pair_bonus_value: 0,
-            mobility_opening: 0,
-            mobility_endgame: 0,
-
-            pawn_path_mask:
-                vec![board!(files, ranks); board_size * piece_count],
-            pawn_interference_mask:
-                vec![board!(files, ranks); board_size * piece_count],
-            pawn_support_mask:
-                vec![board!(files, ranks); board_size * piece_count],
-            pawn_advancement: vec![0; board_size * piece_count],
-            pawn_passed_opening: vec![0; board_size * piece_count],
-            pawn_passed_endgame: vec![0; board_size * piece_count],
-            pawn_connected_opening: 0,
-            pawn_connected_endgame: 0,
-            pawn_doubled_penalty: 0,
-            pawn_isolated_penalty: 0,
-            pawn_backward_penalty: 0,
-            passed_scale_opening: 0,
-            passed_scale_endgame: 0,
-            pawn_backward_mask:
-                vec![board!(files, ranks); board_size * piece_count],
-            pawn_support_offsets: vec![Vec::new(); piece_count],
-            pawn_passed_support_opening: vec![0; board_size * piece_count],
-            pawn_passed_support_endgame: vec![0; board_size * piece_count],
         });
 
         Self::from_statics(statics)
@@ -910,15 +808,12 @@ impl State {
             main_board: vec![NO_PIECE; board_size],
 
             pieces_board: [board!(files, ranks); 2],
-            pawn_board: [board!(files, ranks); 2],
             virgin_board: board!(files, ranks),
 
             castling_state: 0,
-            has_castled: [false; 2],
             en_passant_square: NO_EN_PASSANT,
 
             position_hash: u128::default(),
-            pawn_hash: u128::default(),
             history: Vec::with_capacity(8192),
 
             search_ply: 0,
@@ -928,7 +823,6 @@ impl State {
             endgame_material: [0; 2],
             opening_pst_bonus: [0; 2],
             endgame_pst_bonus: [0; 2],
-            pair_score: 0,
             big_pieces: [0; 2],
             major_pieces: [0; 2],
             minor_pieces: [0; 2],
@@ -944,7 +838,6 @@ impl State {
 
             cont_hist: vec![0i16; 2 * cont_dim * cont_dim],
             search_hist: vec![0i16; piece_count * board_size * board_size],
-            corr_hist: vec![0i16; 2 * CORR_HIST_SIZE],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
             static_eval: vec![-INF; MAX_DEPTH],
         }
@@ -983,19 +876,14 @@ impl State {
         self.pieces_board = [board!(
             self.statics.files, self.statics.ranks
         ); 2];
-        self.pawn_board = [board!(
-            self.statics.files, self.statics.ranks
-        ); 2];
         self.virgin_board = board!(
             self.statics.files, self.statics.ranks
         );
 
         self.castling_state = 0;
-        self.has_castled = [false; 2];
         self.en_passant_square = NO_EN_PASSANT;
 
         self.position_hash = u128::default();
-        self.pawn_hash = u128::default();
         self.history = Vec::with_capacity(8192);
 
         self.search_ply = 0;
@@ -1008,7 +896,6 @@ impl State {
         self.endgame_material = [0; 2];
         self.opening_pst_bonus = [0; 2];
         self.endgame_pst_bonus = [0; 2];
-        self.pair_score = 0;
         self.big_pieces = [0; 2];
         self.major_pieces = [0; 2];
         self.minor_pieces = [0; 2];
@@ -1025,7 +912,6 @@ impl State {
         self.cont_hist = vec![0i16; 2 * cont_dim * cont_dim];
         self.search_hist =
             vec![0i16; piece_count * board_size * board_size];
-        self.corr_hist = vec![0i16; 2 * CORR_HIST_SIZE];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
         self.static_eval = vec![-INF; MAX_DEPTH];
     }
@@ -1297,65 +1183,13 @@ impl State {
         }
     }
 
-    /// State::populate_adjacency_mask
-    ///
-    /// Builds, for every square, a bitboard of its up-to-eight neighbours,
-    /// clipped at the board edges:
-    ///
-    /// ```text
-    /// ┌────┬────┬────┐
-    /// │ ## │ ## │ ## │
-    /// ├────┼────┼────┤
-    /// │ ## │ sq │ ## │
-    /// ├────┼────┼────┤
-    /// │ ## │ ## │ ## │
-    /// └────┴────┴────┘
-    /// ```
-    ///
-    /// The masks accelerate king-safety and pawn-connectivity tests during
-    /// evaluation, replacing per-use neighbour arithmetic with one lookup.
-    fn populate_adjacency_mask(&mut self) {
-        let file_count = self.statics.files;
-        let rank_count = self.statics.ranks;
-        let board_size = self.statics.board_size;
-        let files = file_count as i32;
-        let ranks = rank_count as i32;
-
-        let mut results = vec![board!(file_count, rank_count); board_size];
-
-        for (square, board) in results.iter_mut().enumerate() {
-            let start_file = square as i32 % files;
-            let start_rank = square as i32 / files;
-
-            for file_offset in -1..=1 {
-                for rank_offset in -1..=1 {
-                    if file_offset == 0 && rank_offset == 0 {
-                        continue;
-                    }
-
-                    let neighbour_file = start_file + file_offset;
-                    let neighbour_rank = start_rank + rank_offset;
-
-                    if neighbour_file >= 0 && neighbour_file < files
-                    && neighbour_rank >= 0 && neighbour_rank < ranks {
-                        let neighbour = neighbour_rank * files + neighbour_file;
-                        set!(board, neighbour as u32);
-                    }
-                }
-            }
-        }
-
-        self.static_mut().adjacency_mask = results;
-    }
-
     /// State::precompute
     ///
     /// One-off derivation pass that turns the variant's raw expression
     /// strings into every runtime lookup table: relevant moves, captures,
-    /// drops, setup drops, stand-offs, reverse attack masks, and adjacency
-    /// masks. Runs once after config parsing and before any search thread
-    /// is spawned; optional tables are skipped when their special rule is
-    /// disabled.
+    /// drops, setup drops, stand-offs, and reverse attack masks. Runs once
+    /// after config parsing and before any search thread is spawned;
+    /// optional tables are skipped when their special rule is disabled.
     ///
     /// Params:
     /// - moves_expr_set    : Vec<String> -> per-piece move expressions
@@ -1403,6 +1237,5 @@ impl State {
         }
 
         self.populate_relevant_attacks();
-        self.populate_adjacency_mask();
     }
 }

@@ -23,7 +23,6 @@ pub struct ThreadPool {
     pub main_state: State,                                                      /* root position, cloned per worker   */
     pub tt: Arc<TTable>,                                                        /* shared main transposition table    */
     pub qt: Arc<QTable>,                                                        /* shared quiescence table            */
-    pub pt: Arc<PTable>,                                                        /* shared pawn structure table        */
     thread_count: usize,                                                        /* number of worker threads           */
 }
 
@@ -38,14 +37,12 @@ impl ThreadPool {
     /// - root : &State      -> root position, cloned per worker
     /// - tt   : Arc<TTable> -> shared transposition table
     /// - qt   : Arc<QTable> -> shared quiescence table
-    /// - pt   : Arc<PTable> -> shared pawn structure table
     /// - count: usize       -> requested worker count, clamped to >= 1
     ///
     /// Return:
     /// Self                 -> the configured pool
     pub fn with_threads(
-        root: &State, tt: Arc<TTable>, qt: Arc<QTable>, pt: Arc<PTable>,
-        count: usize,
+        root: &State, tt: Arc<TTable>, qt: Arc<QTable>, count: usize,
     ) -> Self {
         let thread_count = count.max(1);
 
@@ -53,7 +50,7 @@ impl ThreadPool {
 
         let main_state = root.clone();
 
-        Self { main_state, tt, qt, pt, thread_count }
+        Self { main_state, tt, qt, thread_count }
     }
 
     /// ThreadPool::run
@@ -77,7 +74,6 @@ impl ThreadPool {
     ) -> SearchResult {
         let tt = Arc::clone(&self.tt);
         let qtable = Arc::clone(&self.qt);
-        let ptable = Arc::clone(&self.pt);
         let total_threads = self.thread_count;
         let mut workers = Vec::with_capacity(total_threads);
 
@@ -85,7 +81,6 @@ impl ThreadPool {
             let state_clone = self.main_state.clone();
             let tt_clone = Arc::clone(&tt);
             let qt_clone = Arc::clone(&qtable);
-            let pt_clone = Arc::clone(&ptable);
             let set_depth = info.set_depth;
             let set_nodes = info.set_nodes;
             let soft_deadline = info.soft_deadline;
@@ -108,7 +103,7 @@ impl ThreadPool {
                     let mut state = state_clone;
                     iterative_deepening(
                         &mut state,
-                        &tt_clone, &qt_clone, &pt_clone,
+                        &tt_clone, &qt_clone,
                         &mut info, &mut bufs,
                         i, dict_clone.as_ref(),
                     )

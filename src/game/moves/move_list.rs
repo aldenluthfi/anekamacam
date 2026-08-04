@@ -1554,7 +1554,6 @@ macro_rules! make_move {
                 .as_ref().and_then(|counting| counting.progress);
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
-            let last_pawn_hash = $state.pawn_hash;
             let last_game_result = $state.termination.game_result;
             let last_check_count = $state.termination.checks
                 .as_ref().map_or([0; 2], |checks| checks.delivered);
@@ -2686,8 +2685,6 @@ macro_rules! make_move {
                     WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE
                 ][piece_color as usize];
 
-                $state.has_castled[piece_color as usize] = true;
-
                 hash_update_castling!(
                     $state, last_castling_state,
                     $state.castling_state
@@ -2785,7 +2782,6 @@ macro_rules! make_move {
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
-                pawn_hash: last_pawn_hash,
             };
 
             $state.history.push(snapshot);
@@ -2860,7 +2856,6 @@ macro_rules! undo_move {
 
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
-        $state.pawn_hash = snapshot.pawn_hash;
         $state.termination.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
@@ -2880,13 +2875,6 @@ macro_rules! undo_move {
 
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
-
-            pawn_board_in_or_out!(
-                $state,
-                if is_promotion { promoted_piece } else { piece_index },
-                end_square
-            );
-            pawn_board_in_or_out!($state, piece_index, start_square);
 
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
@@ -2994,13 +2982,6 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
-            pawn_board_in_or_out!(
-                $state,
-                if is_promotion { promoted_piece } else { piece_index },
-                end_square
-            );
-            pawn_board_in_or_out!($state, piece_index, start_square);
-
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);
@@ -3103,11 +3084,6 @@ macro_rules! undo_move {
                 );
             }
 
-            pawn_board_in_or_out!($state, captured_piece, captured_square);
-
-            if is_unload {
-                pawn_board_in_or_out!($state, captured_piece, unload_square);
-            }
 
             if captured_unmoved {
                 set!($state.virgin_board, captured_square);
@@ -3216,13 +3192,6 @@ macro_rules! undo_move {
 
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
-
-            pawn_board_in_or_out!(
-                $state,
-                if is_promotion { promoted_piece } else { piece_index },
-                end_square
-            );
-            pawn_board_in_or_out!($state, piece_index, start_square);
 
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
@@ -3334,15 +3303,6 @@ macro_rules! undo_move {
                     );
                 }
 
-                pawn_board_in_or_out!(
-                    $state, captured_piece, captured_square
-                );
-
-                if is_unload {
-                    pawn_board_in_or_out!(
-                        $state, captured_piece, unload_square
-                    );
-                }
 
                 if captured_unmoved {
                     set!($state.virgin_board, captured_square);
@@ -3454,8 +3414,6 @@ macro_rules! undo_move {
 
             clear!($state.pieces_board[piece_color as usize], drop_square);
 
-            pawn_board_in_or_out!($state, piece_index, drop_square);
-
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != drop_square);
@@ -3495,13 +3453,8 @@ macro_rules! undo_move {
                 $state.statics.pieces[captured_piece]
             );
 
-            $state.has_castled[piece_color as usize] = false;
-
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
-
-            pawn_board_in_or_out!($state, piece_index, end_square);
-            pawn_board_in_or_out!($state, piece_index, start_square);
 
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
@@ -3537,9 +3490,6 @@ macro_rules! undo_move {
                 $state.pieces_board[captured_color as usize],
                 captured_square
             );
-
-            pawn_board_in_or_out!($state, captured_piece, unload_square);
-            pawn_board_in_or_out!($state, captured_piece, captured_square);
 
             set!($state.virgin_board, captured_square);
             clear!($state.virgin_board, unload_square);
@@ -3609,7 +3559,6 @@ macro_rules! make_null_move {
                 .as_ref().and_then(|counting| counting.progress);
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
-            let last_pawn_hash = $state.pawn_hash;
             let last_game_result = $state.termination.game_result;
             let last_check_count = $state.termination.checks
                 .as_ref().map_or([0; 2], |checks| checks.delivered);
@@ -3651,7 +3600,6 @@ macro_rules! make_null_move {
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
-                pawn_hash: last_pawn_hash,
             };
 
             $state.history.push(snapshot);
@@ -3702,7 +3650,6 @@ macro_rules! undo_null_move {
         }
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
-        $state.pawn_hash = snapshot.pawn_hash;
         $state.termination.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;

@@ -373,13 +373,7 @@ fn run_evaluate_command(
         return Err("evaluate accepts no positional values".to_string());
     }
 
-    let pawn_table = PTable::with_mb(1);
-    let mut buffers = SearchBufs::default();
-    let score = evaluate_position!(
-        &position.state,
-        &mut buffers,
-        &pawn_table
-    );
+    let score = evaluate_position!(&position.state);
 
     emit(EngineEvent::Print(format!(
         "Variant: {}\nPhase: {}\nEvaluation: {} cp\n",
@@ -469,7 +463,6 @@ fn run_search_command(
 
     let ttable = Arc::new(TTable::with_mb(1));
     let qtable = Arc::new(QTable::with_mb(1));
-    let ptable = Arc::new(PTable::with_mb(1));
     let mut information = SearchInfo {
         set_depth: depth,
         ..Default::default()
@@ -480,7 +473,6 @@ fn run_search_command(
         state,
         ttable,
         qtable,
-        ptable,
         &mut information,
         &mut buffers,
         threads,
@@ -548,7 +540,6 @@ fn run_play_command(
 
     let ttable = Arc::new(TTable::with_mb(1));
     let qtable = Arc::new(QTable::with_mb(1));
-    let ptable = Arc::new(PTable::with_mb(1));
     let time_limit_ns =
         (time_seconds * 1_000_000_000.0) as u128;
     let translator = position.translator.as_ref();
@@ -556,7 +547,6 @@ fn run_play_command(
         &mut position.state,
         ttable,
         qtable,
-        ptable,
         depth,
         time_limit_ns,
         threads,
@@ -772,7 +762,6 @@ fn run_bench_command(
 
         let ttable = Arc::new(TTable::with_mb(16));
         let qtable = Arc::new(QTable::with_mb(1));
-        let ptable = Arc::new(PTable::with_mb(1));
         let mut information = SearchInfo {
             set_depth: depth,
             ..Default::default()
@@ -783,7 +772,6 @@ fn run_bench_command(
             &mut position.state,
             ttable,
             qtable,
-            ptable,
             &mut information,
             &mut buffers,
             1,
@@ -851,7 +839,6 @@ fn run_datagen_command(arguments: &[String]) -> Result<(), String> {
         None,
         Arc::new(TTable::default()),
         Arc::new(QTable::default()),
-        Arc::new(PTable::default()),
         threads,
         games,
         movetime,

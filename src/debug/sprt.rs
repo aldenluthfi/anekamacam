@@ -15,6 +15,23 @@
 
 use crate::*;
 
+/// SPRT harness constants.
+///
+/// Fixed knobs for the match runner: `SPRT_DIR` and `SPRT_HISTORY_KEEP`
+/// place and cap the rolled result files, `SPRT_PROTOCOL` is the dialect
+/// spoken to both engine subprocesses, `SPRT_ALPHA` / `SPRT_BETA` are the
+/// type-one and type-two error rates that set the log-likelihood
+/// acceptance bounds, and the three `*_TIMEOUT_MS` / `*_GRACE_MS` values
+/// bound handshake, reply, and shutdown waits on those subprocesses.
+pub const SPRT_DIR: &str = "res/sprt";
+pub const SPRT_HISTORY_KEEP: usize = 64;                                        /* rolled sprt files kept per family  */
+pub const SPRT_PROTOCOL: &str = "uci";                                          /* dialect the sprt harness speaks    */
+pub const SPRT_ALPHA: f64 = 0.05;
+pub const SPRT_BETA: f64 = 0.05;
+pub const SPRT_HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
+pub const SPRT_RESPONSE_GRACE_MS: u128 = 5_000;
+pub const SPRT_SHUTDOWN_TIMEOUT_MS: u64 = 1_000;
+
 /// engine_sandbox
 ///
 /// Maps an engine binary to its private working directory under the

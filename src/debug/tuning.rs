@@ -12,6 +12,24 @@
 
 use crate::*;
 
+/// Texel-tuning constants.
+///
+/// `ADAM_BETA_ONE` / `ADAM_BETA_TWO` / `ADAM_EPSILON` are the optimiser's
+/// moment decay rates and denominator floor; `TEXEL_K_MIN` / `TEXEL_K_MAX`
+/// / `TEXEL_K_ITERATIONS` bound and step the search for the sigmoid
+/// scaling constant `K`; `TUNING_VALIDATION_MODULUS` and
+/// `TUNING_VALIDATION_PATIENCE` set the game-level validation split and
+/// the early-stop patience.
+pub const ADAM_BETA_ONE: f64 = 0.9;
+pub const ADAM_BETA_TWO: f64 = 0.999;
+pub const ADAM_EPSILON: f64 = 1e-8;
+
+pub const TEXEL_K_MIN: f64 = 0.01;
+pub const TEXEL_K_MAX: f64 = 3.0;
+pub const TEXEL_K_ITERATIONS: usize = 32;
+pub const TUNING_VALIDATION_MODULUS: u64 = 5;
+pub const TUNING_VALIDATION_PATIENCE: usize = 10;
+
 /// TuneShape
 ///
 /// The fixed geometry of one variant's tunable parameter vector.
@@ -35,11 +53,11 @@ struct TuneShape {
 ///
 /// One dataset position reduced to a linear tuning target.
 ///
-/// `features` stores sparse White-view score derivatives, `base` stores the
-/// frozen non-tuned residual, and `label` is the White-view game result.
+/// `features` stores sparse White-view score derivatives and `label` is the
+/// White-view game result. The evaluator is exactly this linear model, so a
+/// sample needs no frozen residual.
 struct Sample {
     features: Vec<(usize, f64)>,                                                /* sparse ∂score/∂θ coefficients      */
-    base: f64,                                                                  /* frozen non-tuned score residual    */
     label: f64,                                                                 /* White-view game result             */
 }
 
@@ -182,26 +200,19 @@ fn mirror_square(square: Square, files: usize, ranks: usize) -> usize {
 /// White-view partial derivatives of the tapered material-and-PST score:
 /// material types contribute their phase-weighted net count, White
 /// pieces add their phase-weighted PST square, and Black pieces subtract
-/// theirs at the mirrored square. The frozen `base` is the real
-/// White-view evaluation minus the current linear part, capturing the
-/// non-tuned derived terms.
+/// theirs at the mirrored square. These derivatives are the whole
+/// evaluation, so the sample carries no residual term.
 ///
 /// Params:
-/// - state : &State          -> quiet position to reduce
-/// - shape : &TuneShape      -> vector geometry to index into
-/// - theta : &[f64]          -> current parameters, for the base residual
-/// - bufs  : &mut SearchBufs -> scratch for the evaluation macro
-/// - ptable: &PTable         -> shared pawn structure table
-/// - label : f64             -> White-view game result for this position
+/// - state: &State     -> quiet position to reduce
+/// - shape: &TuneShape -> vector geometry to index into
+/// - label: f64        -> White-view game result for this position
 ///
 /// Return:
-/// Sample                    -> sparse features, frozen base, and label
+/// Sample              -> sparse features and label
 fn extract_sample(
     state: &State,
     shape: &TuneShape,
-    theta: &[f64],
-    bufs: &mut SearchBufs,
-    ptable: &PTable,
     label: f64,
 ) -> Sample {
     let (opening_weight, endgame_weight) = phase_weights(state);
@@ -265,12 +276,7 @@ fn extract_sample(
         }
     }
 
-    let stm_eval = evaluate_position!(state, bufs, ptable) as f64;
-    let white_eval =
-        if state.playing == WHITE { stm_eval } else { -stm_eval };
-    let base = white_eval - dot(&features, theta);
-
-    Sample { features, base, label }
+    Sample { features, label }
 }
 
 /// Tuning math primitives.
@@ -302,7 +308,7 @@ fn extract_sample(
 ///   - theta : &[f64]  -> parameter vector
 ///
 ///   Return:
-///   f64               -> the sample's modelled centipawn score `base + f·θ`
+///   f64               -> the sample's modelled centipawn score `f·θ`
 ///
 /// mean_squared_error
 ///
@@ -322,7 +328,7 @@ fn sigmoid(value: f64) -> f64 {
 }
 
 fn model_score(sample: &Sample, theta: &[f64]) -> f64 {
-    sample.base + dot(&sample.features, theta)
+    dot(&sample.features, theta)
 }
 
 fn mean_squared_error(samples: &[Sample], theta: &[f64], scaling: f64) -> f64 {
@@ -466,7 +472,6 @@ fn clamp_material(theta: &mut [f64], shape: &TuneShape) {
 /// - template: &State     -> loaded variant to clone scratch states
 /// - variant : &str       -> variant name, selects the dataset file
 /// - shape   : &TuneShape -> vector geometry for feature extraction
-/// - theta   : &[f64]     -> starting parameters for the base term
 ///
 /// Return:
 /// TuneDataset            -> game-disjoint training and validation samples
@@ -474,7 +479,6 @@ fn load_dataset(
     template: &State,
     variant: &str,
     shape: &TuneShape,
-    theta: &[f64],
 ) -> TuneDataset {
     let path = format!("{}/{}/latest.data", DATA_DIR, variant);
 
@@ -490,8 +494,6 @@ fn load_dataset(
     };
 
     let mut scratch = template.clone();
-    let mut bufs = SearchBufs::default();
-    let ptable = PTable::default();
     let mut training = Vec::new();
     let mut validation = Vec::new();
     let mut game_results = HashMap::new();
@@ -551,9 +553,7 @@ fn load_dataset(
         };
         phases[phase_index] += 1;
 
-        let sample = extract_sample(
-            &scratch, shape, theta, &mut bufs, &ptable, label
-        );
+        let sample = extract_sample(&scratch, shape, label);
         if game_id % TUNING_VALIDATION_MODULUS == 0 {
             validation.push(sample);
         } else {
@@ -660,32 +660,6 @@ fn export_theta(
         }
     }
 
-    let scalar_tail = [
-        state.statics.tempo_bonus,
-        state.statics.pawn_shield_bonus,
-        state.statics.king_shelter_bonus,
-        state.statics.castled_bonus,
-        state.statics.castling_rights_bonus,
-        state.statics.king_danger_scale,
-        state.statics.open_shield_penalty,
-        state.statics.imbalance_major,
-        state.statics.imbalance_minor,
-        state.statics.pair_bonus_value,
-        state.statics.pawn_connected_opening,
-        state.statics.pawn_connected_endgame,
-        state.statics.pawn_doubled_penalty,
-        state.statics.pawn_isolated_penalty,
-        state.statics.pawn_backward_penalty,
-        state.statics.passed_scale_opening,
-        state.statics.passed_scale_endgame,
-        state.statics.mobility_opening,
-        state.statics.mobility_endgame,
-    ];
-
-    for value in scalar_tail {
-        tokens.push(value.to_string());
-    }
-
     parse_tuned_parameters(state, &tokens.join(" "));
     derive_search_parameters(state);
     export_tuned_parameters_file(state, variant);
@@ -713,7 +687,7 @@ pub fn run_tuning(
     let shape = build_shape(state);
     let mut theta = initial_theta(state, &shape);
 
-    let dataset = load_dataset(state, variant, &shape, &theta);
+    let dataset = load_dataset(state, variant, &shape);
     if dataset.training.is_empty() || dataset.validation.is_empty() {
         log_2!("Training and validation samples are both required");
         return;
