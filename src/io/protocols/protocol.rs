@@ -17,11 +17,8 @@ use crate::*;
 /// Session constants.
 ///
 /// The dialect and hash ceiling a fresh session starts from, the option
-/// names the `setoption` dispatcher matches, and the time-management
-/// limits `compute_budgets` works within: a fixed transmission overhead
-/// and its user-settable ceiling, a floor no timed search budgets below,
-/// the hard-to-soft budget multiplier, the move horizon the remaining
-/// clock is spread across, and the ceiling on any one move's share of it.
+/// names the `setoption` dispatcher matches, and the default and maximum
+/// transmission overhead subtracted from timed searches.
 pub const DEFAULT_PROTOCOL: &str = "uci";
 pub const HASH_MAX_MB: usize = 65536;
 
@@ -33,11 +30,6 @@ pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
 
 pub const TIME_OVERHEAD_MS: u128 = 50;
 pub const MAX_OVERHEAD_MS: u128 = 1000;
-pub const MIN_TIME_BUDGET_NS: u128 = 1_000_000;                                 /* timed searches never budget below  */
-pub const HARD_BUDGET_FACTOR: u128 = 4;                                         /* soft x factor; floor 2.08, see     */
-                                                                                /* compute_budgets                    */
-pub const TM_MOVE_HORIZON: u128 = 18;                                           /* moves the clock is spread across   */
-pub const TM_MAX_SHARE_PCT: u128 = 40;                                          /* ceiling on one move's clock share  */
 
 /// Protocol
 ///
@@ -233,32 +225,26 @@ fn print_bestmove(
 /// A running (possibly pondering) search thread.
 /// Keeps the join handle together with the launch parameters needed to
 /// restart the search on `ponderhit`: whether it was a ponder search,
-/// its depth and node limits, and the soft/hard time budgets (as
-/// durations) to apply from the moment the hit arrives.
+/// its depth and node limits, and the time budget to apply after the hit.
 struct SearchHandle {
     handle: JoinHandle<SearchResult>,                                           /* the running search thread          */
     is_ponder: bool,                                                            /* true if launched as a ponder       */
     search_depth: usize,                                                        /* depth limit for restart            */
     search_nodes: u128,                                                         /* node limit for restart             */
-    ponderhit_soft_ns: u128,                                                    /* soft budget on ponderhit           */
-    ponderhit_hard_ns: u128,                                                    /* hard budget on ponderhit           */
+    ponderhit_budget_ns: u128,                                                  /* time budget after ponderhit        */
 }
 
 /// SearchLimits
 ///
 /// Launch parameters for one search thread.
-/// Bundles the ponder flag, depth/node limits, and absolute deadlines
-/// (ns since engine launch, 0 = none) for a spawned search, plus the
-/// budget durations to re-apply when a ponder search is converted to a
-/// timed one by `ponderhit`.
+/// Bundles the ponder flag, depth/node limits, absolute deadline, and
+/// duration to apply when a ponder search becomes timed on `ponderhit`.
 struct SearchLimits {
     is_ponder: bool,                                                            /* launch as a ponder search          */
     depth: usize,                                                               /* search depth limit                 */
     nodes: u128,                                                                /* search node limit                  */
-    soft_deadline: u128,                                                        /* soft deadline, ns since launch     */
-    hard_deadline: u128,                                                        /* hard deadline, ns since launch     */
-    ponderhit_soft_ns: u128,                                                    /* soft budget for ponderhit          */
-    ponderhit_hard_ns: u128,                                                    /* hard budget for ponderhit          */
+    deadline: u128,                                                             /* deadline, ns since launch          */
+    ponderhit_budget_ns: u128,                                                  /* time budget after ponderhit        */
 }
 
 /// Session
@@ -399,9 +385,9 @@ impl Session {
 
 /// spawn_hash_tables
 ///
-/// Allocates the two shared hash tables from one megabyte budget, split
-/// between them by the fixed `HASH_*_PARTS` ratio so a `Hash` change scales
-/// both consistently. Used at session startup and whenever `Hash` or
+/// Allocates the two shared hash tables from one megabyte budget: two thirds
+/// for main search and one third for quiescence. Used at startup and whenever
+/// `Hash` or
 /// `Clear Hash` rebuilds the tables.
 ///
 /// Params:
@@ -413,12 +399,8 @@ fn spawn_hash_tables(
     hash_mb: usize,
 ) -> (Arc<TTable>, Arc<QTable>) {
     (
-        Arc::new(TTable::with_mb(
-            (hash_mb * HASH_T_PARTS / HASH_PARTS).max(1)
-        )),
-        Arc::new(QTable::with_mb(
-            (hash_mb * HASH_Q_PARTS / HASH_PARTS).max(1)
-        )),
+        Arc::new(TTable::with_mb((hash_mb * 2 / 3).max(1))),
+        Arc::new(QTable::with_mb((hash_mb / 3).max(1))),
     )
 }
 
@@ -459,7 +441,7 @@ fn replay_moves(
 /// Session command handlers
 ///
 /// Each applies one command's side effects to the session.
-/// `compute_budgets` and `spawn_search` interleave below as internal
+/// `compute_budget` and `spawn_search` interleave below as internal
 /// helpers and keep their own docs.
 ///
 /// handle_position
@@ -478,7 +460,7 @@ fn replay_moves(
 ///   Params:
 ///
 ///   - session: &mut Session
-///     session the `go` runs in; deadlines anchored, search thread spawned
+///     session the `go` runs in; deadline anchored, search thread spawned
 ///
 ///   - tokens: &[&str]
 ///     whitespace-split `go` limits (depth, nodes, movetime, clocks, ponder,
@@ -679,14 +661,14 @@ pub fn start_search(session: &mut Session, tokens: &[&str]) {
         (btime_ms, binc_ms)
     };
 
-    let (soft_ns, hard_ns) = compute_budgets(
+    let budget_ns = compute_budget(
         movetime_ms, time_ms, inc_ms, movestogo, session.overhead_ms,
     );
 
-    let (soft_deadline, hard_deadline) = if infinite || soft_ns == 0 {
-        (0, 0)
+    let deadline = if infinite || budget_ns == 0 {
+        0
     } else {
-        (go_time + soft_ns, go_time + hard_ns)
+        go_time + budget_ns
     };
 
     let search_depth = if depth > 0 { depth } else { MAX_DEPTH };
@@ -695,77 +677,47 @@ pub fn start_search(session: &mut Session, tokens: &[&str]) {
         is_ponder,
         depth: search_depth,
         nodes,
-        soft_deadline,
-        hard_deadline,
-        ponderhit_soft_ns: soft_ns,
-        ponderhit_hard_ns: hard_ns,
+        deadline,
+        ponderhit_budget_ns: budget_ns,
     });
 }
 
-/// compute_budgets
+/// compute_budget
 ///
-/// Derives the soft and hard time budgets for one `go` command as
-/// durations in nanoseconds. `movetime` spends its whole allotment on
-/// both budgets. Clock time subtracts the move overhead once, up front,
-/// then allocates `usable/divisor + inc*3/4` per move, where the divisor
-/// is the smaller of `movestogo` and TM_MOVE_HORIZON: no new depth
-/// starts past that allocation (soft), while a started depth may run to
-/// HARD_BUDGET_FACTOR times it (hard), so iterations finish instead of
-/// being cut. Both are bounded by a reserve of TM_MAX_SHARE_PCT of the
-/// usable clock, so no single move can spend what the rest of the game
-/// needs, and floored at MIN_TIME_BUDGET_NS, so a timed search never
-/// receives the untimed sentinel of zero. The reserve is floored before
-/// it bounds anything, because on a nearly exhausted clock it falls
-/// under that floor and an inverted clamp panics.
-///
-/// The soft budget is rescaled every iteration by TM_STABILITY_PCT and
-/// TM_SCORE_DROP_PCT and only then capped by the hard deadline, so
-/// HARD_BUDGET_FACTOR must stay at or above the worst-case iteration
-/// scale of `TM_STABILITY_PCT[0]/100 * TM_SCORE_DROP_PCT/100` = 2.08.
-/// Below that floor the ceiling silently clips the stability logic,
-/// which spends the budget for reasons no measurement can then see.
+/// Derives one time budget in nanoseconds. `movetime` uses its requested
+/// duration after overhead. Clock searches divide remaining time by
+/// `movestogo`, or 20 when absent, then add the increment. Budget never
+/// exceeds the remaining clock and never falls below one millisecond.
 ///
 /// Params:
 /// - movetime_ms: u128  -> fixed time per move (0 = unset)
-/// - time_ms    : u128  -> remaining clock for the side to move
+/// - time_ms    : u128  -> remaining clock for side to move
 /// - inc_ms     : u128  -> increment per move
-/// - movestogo  : usize -> moves to the next time control (0 = unset)
+/// - movestogo  : usize -> moves to next control (0 = unset)
 /// - overhead_ms: u128  -> per-move lag allowance
 ///
 /// Return:
-/// (u128, u128)         -> (soft, hard) budgets in ns, (0, 0) when untimed
-fn compute_budgets(
+/// u128 -> budget in nanoseconds, 0 when untimed
+fn compute_budget(
     movetime_ms: u128,
     time_ms: u128,
     inc_ms: u128,
     movestogo: usize,
     overhead_ms: u128,
-) -> (u128, u128) {
+) -> u128 {
     if movetime_ms > 0 {
-        let budget = (movetime_ms.saturating_sub(overhead_ms) * 1_000_000)
-            .max(MIN_TIME_BUDGET_NS);
-        return (budget, budget);
+        return movetime_ms.saturating_sub(overhead_ms).max(1) * 1_000_000;
     }
 
     if time_ms == 0 {
-        return (0, 0);
+        return 0;
     }
 
-    let usable = time_ms.saturating_sub(overhead_ms).max(1);
-    let divisor = if movestogo > 0 {
-        (movestogo as u128).min(TM_MOVE_HORIZON)
-    } else {
-        TM_MOVE_HORIZON
-    };
+    let remaining = time_ms.saturating_sub(overhead_ms).max(1);
+    let moves = if movestogo > 0 { movestogo as u128 } else { 20 };
+    let budget = (remaining / moves).saturating_add(inc_ms);
 
-    let raw = (usable / divisor + inc_ms * 3 / 4) * 1_000_000;
-    let reserve = (usable * 1_000_000 * TM_MAX_SHARE_PCT / 100)
-        .max(MIN_TIME_BUDGET_NS);
-
-    let soft = raw.clamp(MIN_TIME_BUDGET_NS, reserve);
-    let hard = (soft * HARD_BUDGET_FACTOR).clamp(MIN_TIME_BUDGET_NS, reserve);
-
-    (soft, hard)
+    budget.clamp(1, remaining) * 1_000_000
 }
 
 /// spawn_search
@@ -786,8 +738,7 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
     let is_ponder = limits.is_ponder;
 
     let thread_depth = if is_ponder { MAX_DEPTH } else { limits.depth };
-    let soft_deadline = if is_ponder { 0 } else { limits.soft_deadline };
-    let hard_deadline = if is_ponder { 0 } else { limits.hard_deadline };
+    let deadline = if is_ponder { 0 } else { limits.deadline };
     let set_nodes = if is_ponder { 0 } else { limits.nodes };
 
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
@@ -800,19 +751,15 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
             let mut info = SearchInfo {
                 set_depth: thread_depth,
                 set_nodes,
-                soft_deadline,
-                hard_deadline,
+                deadline,
                 ..Default::default()
             };
-            let mut bufs = SearchBufs::default();
-
             let table = Arc::clone(&tt_clone);
             let qtable = Arc::clone(&qt_clone);
             let result = catch_unwind(AssertUnwindSafe(|| {
                 search_position(
                     &mut s, table, qtable,
-                    &mut info, &mut bufs, tc,
-                    dict_clone.as_ref(),
+                    &mut info, tc, dict_clone.as_ref(),
                 )
             }))
             .unwrap_or_else(|_| SearchResult {
@@ -837,8 +784,7 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
         is_ponder,
         search_depth: limits.depth,
         search_nodes: limits.nodes,
-        ponderhit_soft_ns: limits.ponderhit_soft_ns,
-        ponderhit_hard_ns: limits.ponderhit_hard_ns,
+        ponderhit_budget_ns: limits.ponderhit_budget_ns,
     });
 }
 
@@ -885,23 +831,18 @@ fn handle_ponderhit(session: &mut Session) {
     let _ = sh.handle.join();
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
 
-    let (soft_deadline, hard_deadline) = if sh.ponderhit_soft_ns == 0 {
-        (0, 0)
+    let deadline = if sh.ponderhit_budget_ns == 0 {
+        0
     } else {
-        (
-            hit_time + sh.ponderhit_soft_ns,
-            hit_time + sh.ponderhit_hard_ns,
-        )
+        hit_time + sh.ponderhit_budget_ns
     };
 
     spawn_search(session, SearchLimits {
         is_ponder: false,
         depth: sh.search_depth,
         nodes: sh.search_nodes,
-        soft_deadline,
-        hard_deadline,
-        ponderhit_soft_ns: 0,
-        ponderhit_hard_ns: 0,
+        deadline,
+        ponderhit_budget_ns: 0,
     });
 }
 

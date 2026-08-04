@@ -485,26 +485,13 @@ pub struct StaticState {
     pub piece_char_map: HashMap<char, PieceIndex>,                              /* char to piece index map            */
 
 /*----------------------------------------------------------------------------*\
-                                 SEARCH FIELDS
+                               EVALUATION FIELDS
 \*----------------------------------------------------------------------------*/
 
-    pub futility_margin: [[i32; MAX_FUTILITY_DEPTH]; 3],                        /* [phase 0-2][depth 0-4]             */
-    pub rfp_margin: [[i32; MAX_RFP_DEPTH]; 2],                                  /* [improving 0-1][depth 0-8]         */
-    pub see_margin: Vec<i32>,                                                   /* [depth 0-7] SEE prune threshold    */
-    pub delta_margin: i32,                                                      /* qsearch delta pruning safety margin*/
-    pub probcut_margin: i32,                                                    /* ProbCut beta surplus requirement   */
-    pub aspiration_delta: i32,                                                  /* initial aspiration half-window     */
-    pub razor_margin: [i32; MAX_RZR_DEPTH],                                     /* [depth 0-3]                        */
-    pub quiesce_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
-    pub quiesce_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
-    pub capture_lmr: Vec<u8>,                                                   /* [depth * MAX_LMR_DEPTH + moves]    */
-    pub capture_lmr_check: Vec<u8>,                                             /* check-adjusted variant             */
     pub opening_score: u32,                                                     /* opening threshold                  */
     pub endgame_score: u32,                                                     /* endgame threshold                  */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
-    pub nmp_min_material: u32,                                                  /* NMP zugzwang guard                 */
-    pub nmp_eval_div: i32,                                                      /* NMP eval-surplus reduction divisor */
 }
 
 /// State
@@ -586,11 +573,8 @@ pub struct State {
     pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
-    pub cont_hist: Vec<i16>,                                                    /* [1-ply | 2-ply] (piece*B+end)^2    */
-
     pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
-    pub static_eval: Vec<i32>,                                                  /* static eval per ply; -INF in check */
 }
 
 impl Clone for State {
@@ -634,11 +618,8 @@ impl Clone for State {
             pv_table: self.pv_table.clone(),
             pv_length: self.pv_length.clone(),
 
-            cont_hist: self.cont_hist.clone(),
-
             search_hist: self.search_hist.clone(),
             killer_hist: self.killer_hist.clone(),
-            static_eval: self.static_eval.clone(),
         }
     }
 }
@@ -664,10 +645,6 @@ impl State {
     ///
     /// Self
     /// a fresh state with empty boards and zeroed search tables
-    ///
-    /// Notes:
-    /// The LMR reduction tables are the only values computed here, since
-    /// they depend on nothing but depth and move-count indices.
     pub fn new(
         title: String,
         startpos: String,
@@ -723,51 +700,10 @@ impl State {
             piece_demotion_map: vec![NO_PIECE; piece_count],
             piece_char_map: HashMap::new(),
 
-            futility_margin: [[0; MAX_FUTILITY_DEPTH]; 3],
-            rfp_margin: [[0; MAX_RFP_DEPTH]; 2],
-            razor_margin: [0; MAX_RZR_DEPTH],
-            see_margin: vec![0; MAX_SEE_DEPTH],
-            delta_margin: 0,
-            probcut_margin: 0,
-            aspiration_delta: 50,
-            quiesce_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
-                let depth = i / MAX_LMR_DEPTH + 1;
-                let moves = i % MAX_LMR_DEPTH;
-                let base = (depth as f64).ln() * (moves.max(1) as f64).ln();
-
-                (LMR_QUIET_BASE + base / LMR_QUIET_DIV)
-                    .clamp(0.0, depth as f64 - 1.0) as u8
-            }).collect(),
-            quiesce_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
-                let depth = i / MAX_LMR_DEPTH + 1;
-                let moves = i % MAX_LMR_DEPTH;
-                let base = (depth as f64).sqrt() * (moves as f64).ln();
-
-                (LMR_QUIET_CHECK_BASE + base / LMR_QUIET_CHECK_DIV)
-                    .clamp(0.0, depth as f64 - 1.0) as u8
-            }).collect(),
-            capture_lmr: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
-                let depth = i / MAX_LMR_DEPTH + 1;
-                let moves = i % MAX_LMR_DEPTH;
-                let base = (depth as f64).ln() * (moves as f64).sqrt();
-
-                (LMR_CAPTURE_BASE + base / LMR_CAPTURE_DIV)
-                    .clamp(0.0, depth as f64 - 1.0) as u8
-            }).collect(),
-            capture_lmr_check: (0..MAX_DEPTH * MAX_LMR_DEPTH).map(|i| {
-                let depth = i / MAX_LMR_DEPTH + 1;
-                let moves = i % MAX_LMR_DEPTH;
-                let base = (depth as f64).ln() * (moves as f64).ln();
-
-                (LMR_CAPTURE_CHECK_BASE + base / LMR_CAPTURE_CHECK_DIV)
-                    .clamp(0.0, depth as f64 - 1.0) as u8
-            }).collect(),
             opening_score: 0,
             endgame_score: 0,
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
-            nmp_min_material: 1,
-            nmp_eval_div: 1,
         });
 
         Self::from_statics(statics)
@@ -793,7 +729,6 @@ impl State {
     fn from_statics(statics: Arc<StaticState>) -> State {
         let piece_count = statics.pieces.len();
         let board_size = statics.board_size;
-        let cont_dim = piece_count * board_size;
         let files = statics.files;
         let ranks = statics.ranks;
 
@@ -836,10 +771,8 @@ impl State {
             pv_table: vec![null_move(); PV_STRIDE * PV_STRIDE],
             pv_length: vec![0; PV_STRIDE],
 
-            cont_hist: vec![0i16; 2 * cont_dim * cont_dim],
             search_hist: vec![0i16; piece_count * board_size * board_size],
             killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
-            static_eval: vec![-INF; MAX_DEPTH],
         }
     }
 
@@ -868,7 +801,6 @@ impl State {
     pub fn reset(&mut self) {
         let piece_count = self.statics.pieces.len();
         let board_size = self.statics.board_size;
-        let cont_dim = piece_count * board_size;
 
         self.playing = WHITE;
         self.main_board = vec![NO_PIECE; board_size];
@@ -909,11 +841,9 @@ impl State {
         self.pv_table = vec![null_move(); PV_STRIDE * PV_STRIDE];
         self.pv_length = vec![0; PV_STRIDE];
 
-        self.cont_hist = vec![0i16; 2 * cont_dim * cont_dim];
         self.search_hist =
             vec![0i16; piece_count * board_size * board_size];
         self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
-        self.static_eval = vec![-INF; MAX_DEPTH];
     }
 
     /// State::load_fen

@@ -828,7 +828,7 @@ fn repetition_scan_bound(state: &State, cap: usize) -> usize {
 ///
 /// Params:
 /// - state: &State -> current position
-/// - cap  : usize  -> scan budget (`REP_SCAN_CAP` for per-node probes)
+/// - cap  : usize  -> scan budget for this repetition probe
 ///
 /// Return:
 /// bool            -> true when the position occurred at least once before

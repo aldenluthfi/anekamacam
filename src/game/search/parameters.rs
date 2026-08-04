@@ -600,7 +600,6 @@ fn derive_pst(
 /// - state: &mut State -> freshly precomputed variant state
 pub fn derive_parameters(state: &mut State) {
     derive_eval_parameters(state);
-    derive_search_parameters(state);
     refresh_eval_state(state);
 }
 
@@ -747,85 +746,4 @@ pub fn derive_eval_parameters(state: &mut State) {
 
     log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
-}
-
-/// derive_search_parameters
-///
-/// Scales search margins to the variant's material: futility, reverse
-/// futility, razoring, SEE, delta, ProbCut, and aspiration values, plus the
-/// null-move guards. This keeps pruning aggressiveness comparable across
-/// variants with different scales.
-///
-/// Params:
-/// - state: &mut State -> variant whose search margins are filled
-pub fn derive_search_parameters(state: &mut State) {
-    let piece_values: Vec<i32> = state.statics.pieces.iter()
-        .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
-        .map(|p| p_ovalue!(p) as i32)
-        .collect();
-
-    let avg = if piece_values.is_empty() {
-        panic!("No pieces found to derive futility margins from")
-    } else {
-        piece_values.iter().sum::<i32>() / piece_values.len() as i32
-    };
-
-    state.static_mut().futility_margin = [
-        [0, 200, avg,         10 * avg / 7, 15 * avg / 7],
-        [0, 200, 5 * avg / 7,  9 * avg / 7, 13 * avg / 7],
-        [0, 150, 4 * avg / 7,  7 * avg / 7, 10 * avg / 7],
-    ];
-
-    let rfp_base = avg / 15;
-    state.static_mut().rfp_margin = [0, 1].map(|i| {
-        (0..MAX_RFP_DEPTH)
-            .map(|depth| rfp_base * depth as i32 * (-i + 2))
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap()
-    });
-
-    state.static_mut().razor_margin = [
-        0,
-        avg / 3 + 100,
-        avg / 2 + 200,
-        avg + 300,
-    ];
-
-    let see_base = (avg / 8).max(1);
-    state.static_mut().see_margin = (0..MAX_SEE_DEPTH)
-        .map(|depth| see_base * depth as i32)
-        .collect();
-
-    state.static_mut().delta_margin = (avg / 3).max(200);
-    state.static_mut().probcut_margin = (avg / 4).max(100);
-    state.static_mut().aspiration_delta = (avg / 12).clamp(25, 80);
-
-    log_3!(
-        "Derived Futility Margins: {:?} | {:?} | {:?}",
-        state.statics.futility_margin[0],
-        state.statics.futility_margin[1],
-        state.statics.futility_margin[2],
-    );
-    log_3!(
-        "Derived RFP Margins: {:?} | {:?}",
-        state.statics.rfp_margin[0],
-        state.statics.rfp_margin[1],
-    );
-    log_3!(
-        "Derived Razor Margins: {:?}", state.statics.razor_margin,
-    );
-    log_3!(
-        "Derived SEE Capture Margins: {:?}",
-        state.statics.see_margin,
-    );
-
-    let nmp_min_material = ((state.major_pieces[WHITE as usize]
-        + state.major_pieces[BLACK as usize]) / 4).clamp(1, 4);
-    state.static_mut().nmp_min_material = nmp_min_material;
-
-    let nmp_eval_div = (avg / 2).max(1);
-    state.static_mut().nmp_eval_div = nmp_eval_div;
-
-    log_3!("Dynamic search parameters derived successfully.");
 }

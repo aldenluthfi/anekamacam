@@ -3708,66 +3708,11 @@ pub fn generate_all_moves_and_drops(
     }
 }
 
-/// generate_all_quiets_and_drops
-///
-/// Quiet counterpart of `generate_all_captures`, completing a staged
-/// generation: everything `generate_all_moves_and_drops` would produce
-/// except the capturing moves. Appends to `out` rather than clearing it,
-/// so the caller's unsearched captures survive the second stage.
-///
-/// The normal-move walk covers the same vectors as the capture stage, so
-/// dual-purpose vectors are visited twice; what the capture stage saves is
-/// encoding the quiet moves and the whole drop list, which dominate in
-/// variants with hands.
-///
-/// Params:
-/// - state  : &State         -> position to generate for
-/// - out    : &mut Vec<Move> -> list extended with the quiet moves
-/// - scratch: &mut Vec<u64>  -> reusable multi-capture payload buffer
-#[hotpath::measure]
-pub fn generate_all_quiets_and_drops(
-    state: &State,
-    out: &mut Vec<Move>,
-    scratch: &mut Vec<u64>,
-) {
-    if is_terminal!(state) {
-        return;
-    }
-
-    let piece_count = state.statics.pieces.len() / 2;
-    let start_index = piece_count * state.playing as usize;
-    let end_index = start_index + piece_count;
-
-    if state.game_phase != SETUP {
-        let start = out.len();
-
-        for piece_index in start_index..end_index {
-            let piece = &state.statics.pieces[piece_index];
-            for &index in piece_squares!(state, piece_index) {
-                generate_move_list!(index, piece, state, out, scratch);
-            }
-        }
-
-        retain_captures!(out, start, false);
-    }
-
-    if drops!(state) || state.game_phase == SETUP {
-        for piece_index in start_index..end_index {
-            let piece = &state.statics.pieces[piece_index];
-            generate_drop_list!(piece, state, out);
-        }
-    }
-
-    if castling!(state) {
-        generate_castling_list!(state, out);
-    }
-}
-
 /// generate_all_captures
 ///
 /// Capture-only counterpart of `generate_all_moves_and_drops`, used by
-/// quiescence search and as the first stage of `alpha_beta` generation.
-/// Walks the narrower `relevant_captures` tables and keeps only moves that
+/// quiescence search. Walks the narrower `relevant_captures` tables and keeps
+/// only moves that
 /// actually capture; quiet moves, drops, and castling are never generated.
 ///
 /// Params:

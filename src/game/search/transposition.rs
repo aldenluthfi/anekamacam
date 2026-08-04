@@ -53,7 +53,7 @@ use crate::*;
 ///
 ///   96                105                                          127
 ///   ┌─────────────────┬──────────────────────────────────────────────┐
-///   │   ← signature   │                     eval                     │
+///   │   ← signature   │                   unused                     │
 ///   └─────────────────┴──────────────────────────────────────────────┘
 /// ```
 ///
@@ -62,7 +62,7 @@ use crate::*;
 ///   - depth      : clamped search depth
 ///   - score      : ply-adjusted node score (32-bit)
 ///   - signature  : MoveSignature of the stored best move
-///   - eval       : static eval, 23-bit signed
+///   - bits 105..127: unused
 ///
 /// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
 /// - age     = plain u64, excluded from parity
@@ -110,14 +110,7 @@ unsafe impl Send for TTable {}
 
 impl Default for TTable {
     fn default() -> Self {
-        Self {
-            table: SyncUnsafeCell::new(vec![TTEntry::default(); T_TABLE_SIZE]),
-            age: AtomicU64::new(0),
-            new_write: AtomicU64::new(0),
-            over_write: AtomicU64::new(0),
-            hit: AtomicU64::new(0),
-            valid: AtomicU64::new(0),
-        }
+        Self::with_mb(HASH_DEFAULT_MB * 2 / 3)
     }
 }
 
@@ -192,11 +185,9 @@ impl TTable {
 
 /// Main-table packing macros.
 ///
-/// `tt_index!` masks a Zobrist hash onto a power-of-two table slot; the
-/// `tt_enc_*` writers pack bound flags (bits 0-1), clamped depth (bits
-/// 2-8), score (bits 9-40), and static eval (bits 105-127, 23-bit signed)
-/// into the words stored in `slot[1]`; the `tt_flags!` / `tt_depth!` /
-/// `tt_score!` / `tt_eval!` readers extract them again.
+/// `tt_index!` masks a Zobrist hash onto a power-of-two table slot. The
+/// writers pack bound flags (bits 0-1), clamped depth (bits 2-8), and score
+/// (bits 9-40) into `slot[1]`; the readers extract those fields again.
 ///
 /// tt_index!
 ///
@@ -227,45 +218,6 @@ impl TTable {
 ///   - encoded: &mut u128 -> slot[1] word being built
 ///   - val    : i32       -> score, masked into bits 9-40
 ///
-/// tt_enc_eval!
-///
-///   Params:
-///   - encoded: &mut u128 -> slot[1] word being built
-///   - val    : i32       -> static eval, 23 bits into 105-127
-///
-/// The readers take the packed word and return the field:
-///
-/// tt_flags!
-///
-///   Params:
-///   - encoded: u32 -> flags/depth word (slot[1] low bits)
-///
-///   Return:
-///   u8             -> bound flag (bits 0-1)
-///
-/// tt_depth!
-///
-///   Params:
-///   - encoded: u32 -> flags/depth word (slot[1] low bits)
-///
-///   Return:
-///   usize          -> stored depth (bits 2-8)
-///
-/// tt_score!
-///
-///   Params:
-///   - b_prime: u128 -> raw slot[1] word
-///
-///   Return:
-///   i32             -> stored score (bits 9-40)
-///
-/// tt_eval!
-///
-///   Params:
-///   - b_prime: u128 -> raw slot[1] word
-///
-///   Return:
-///   i32             -> sign-extended static eval (bits 105-127)
 #[macro_export]
 macro_rules! tt_index {
     ($hash:expr, $size:expr) => {{
@@ -316,19 +268,6 @@ macro_rules! tt_score {
     };
 }
 
-#[macro_export]
-macro_rules! tt_enc_eval {
-    ($encoded:expr, $val:expr) => {{
-        $encoded |= (($val as u32 as u128) & 0x7F_FFFF) << 105;
-    }};
-}
-
-#[macro_export]
-macro_rules! tt_eval {
-    ($b_prime:expr) => {
-        (((($b_prime >> 105) as u32) << 9) as i32) >> 9
-    };
-}
 
 /*----------------------------------------------------------------------------*\
                         TRANSPOSITION TABLE STORE / PROBE
@@ -336,57 +275,19 @@ macro_rules! tt_eval {
 
 /// probe_tt_entry!
 ///
-/// Probes the TT with parity + seqlock integrity check; returns (valid,
-/// score, pseudo_move, eval, pruning_eval, depth, flags, entry_score).
-///
-/// Validation:
-///   Step 1: version is even (no write in progress)
-///   Step 2: (slot[0] ^ slot[1] ^ slot[2]) == position_hash
-///   Step 3: version unchanged during read (seqlock: no torn write)
-///
-/// The stored static eval is returned regardless of depth (`-INF` on any
-/// miss or when the entry was written in check). `pruning_eval` refines
-/// it with the stored score whenever the bound brackets it: an exact
-/// entry replaces the eval, a lower bound raises it, an upper bound
-/// lowers it; mate-range scores are left out of the refinement. The raw
-/// entry fields (depth, bound flags, ply-adjusted score) are returned for
-/// ProbCut's TT-refutation guard; on a miss they read as depth 0, FALPHA,
-/// and i32::MIN.
-///
-/// On failure returns
-/// (false, i32::MIN, null_pseudo_move(), -INF, -INF, 0, FALPHA, i32::MIN).
+/// Probes the main table with parity and seqlock validation. Stored depth and
+/// bound flags decide whether the score can cut; the stored move is returned
+/// on every valid hash match for move ordering.
 ///
 /// Params:
 /// - state: &State  -> position whose hash is probed
-/// - table: &TTable -> the shared transposition table
-/// - alpha: i32     -> lower search bound at this node
-/// - beta : i32     -> upper search bound at this node
-/// - depth: usize   -> minimum stored depth for the score to be usable
+/// - table: &TTable -> shared transposition table
+/// - alpha: i32     -> lower search bound
+/// - beta : i32     -> upper search bound
+/// - depth: usize   -> minimum stored depth for a cutoff
 ///
 /// Return:
-///
-/// (
-///     bool,
-///     i32,
-///     PseudoMove,
-///     i32,
-///     i32,
-///     usize,
-///     u8,
-///     i32
-/// )
-///
-/// (
-///     cutoff valid,
-///     score,
-///     stored best move,
-///     stored static eval,
-///     bound-refined pruning eval,
-///     stored
-///     depth,
-///     stored bound flags,
-///     ply-adjusted stored score
-/// )
+/// (bool, i32, PseudoMove) -> cutoff validity, score, and stored move
 #[macro_export]
 macro_rules! probe_tt_entry {
     ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {
@@ -395,36 +296,32 @@ macro_rules! probe_tt_entry {
         let index = tt_index!(hash, $table.len());
         let entry = &mut unsafe { &mut *($table.table.get()) }[index];
 
-        let v1 = entry.version.load(Ordering::Acquire);
-        if v1 & 1 != 0 {                                                        /* write in progress: skip            */
-            (false, i32::MIN, null_pseudo_move(), -INF, -INF, 0, FALPHA,
-                i32::MIN)
+        let first_version = entry.version.load(Ordering::Acquire);
+
+        if first_version & 1 != 0 {
+            (false, i32::MIN, null_pseudo_move())
         } else {
-            let s0 = entry.slot[0];
-            let s1 = entry.slot[1];
-            let s2 = entry.slot[2];
+            let move_slot = entry.slot[0];
+            let data_slot = entry.slot[1];
+            let parity_slot = entry.slot[2];
 
-            if s0 ^ s1 ^ s2 != hash {                                           /* parity check: all slots covered    */
-                (false, i32::MIN, null_pseudo_move(), -INF, -INF, 0, FALPHA,
-                    i32::MIN)
+            if move_slot ^ data_slot ^ parity_slot != hash {
+                (false, i32::MIN, null_pseudo_move())
             } else {
-                $table.hit.fetch_add(1, Ordering::Relaxed);                     /* parity matched                     */
-                let v2 = entry.version.load(Ordering::Acquire);
+                $table.hit.fetch_add(1, Ordering::Relaxed);
+                let second_version = entry.version.load(Ordering::Acquire);
 
-                if v1 != v2 {                                                   /* seqlock: torn read detected        */
-                    (false, i32::MIN, null_pseudo_move(), -INF, -INF, 0,
-                        FALPHA, i32::MIN)
+                if first_version != second_version {
+                    (false, i32::MIN, null_pseudo_move())
                 } else {
-                    $table.valid.fetch_add(1, Ordering::Relaxed);               /* consistent read confirmed          */
-                    let a_prime = s0;                                           /* a = slot[0] (direct)               */
-                    let b_prime = s1;                                           /* b = slot[1] (direct)               */
-                    let encoded = (b_prime & 0x1FF) as u32;                     /* bits  0-8  = flags/depth           */
-                    let sig     = (b_prime >> 41) as u64;                       /* bits 41-104 = MoveSignature        */
-                    let pseudo_mv: PseudoMove = (a_prime, sig);
-                    let tt_eval = tt_eval!(b_prime);                            /* bits 105-127 = static eval         */
-                    let entry_depth = tt_depth!(encoded);
+                    $table.valid.fetch_add(1, Ordering::Relaxed);
 
-                    let mut entry_score = tt_score!(b_prime);
+                    let encoded = (data_slot & 0x1FF) as u32;
+                    let signature = (data_slot >> 41) as u64;
+                    let pseudo_move = (move_slot, signature);
+                    let entry_depth = tt_depth!(encoded);
+                    let entry_flags = tt_flags!(encoded);
+                    let mut entry_score = tt_score!(data_slot);
 
                     if entry_score > MATE_SCORE {
                         entry_score -= $state.search_ply as i32;
@@ -432,25 +329,8 @@ macro_rules! probe_tt_entry {
                         entry_score += $state.search_ply as i32;
                     }
 
-                    let entry_flags = tt_flags!(encoded);
-                    let mut pruning_eval = tt_eval;
-
-                    if tt_eval != -INF && entry_score.abs() < MATE_SCORE {
-                        match entry_flags {
-                            FEXACT => pruning_eval = entry_score,
-                            FBETA  => {
-                                pruning_eval = pruning_eval.max(entry_score);
-                            }
-                            FALPHA => {
-                                pruning_eval = pruning_eval.min(entry_score);
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-
                     if entry_depth < $depth {
-                        (false, i32::MIN, pseudo_mv, tt_eval, pruning_eval,
-                            entry_depth, entry_flags, entry_score)
+                        (false, i32::MIN, pseudo_move)
                     } else {
                         let mut valid_cutoff = false;
                         let mut cutoff_score = entry_score;
@@ -472,11 +352,7 @@ macro_rules! probe_tt_entry {
                             _ => unreachable!(),
                         }
 
-                        (
-                            valid_cutoff, cutoff_score, pseudo_mv,
-                            tt_eval, pruning_eval,
-                            entry_depth, entry_flags, entry_score
-                        )
+                        (valid_cutoff, cutoff_score, pseudo_move)
                     }
                 }
             }
@@ -540,23 +416,15 @@ macro_rules! probe_pv_move {
 
 /// hash_tt_entry!
 ///
-/// Stores a search result in the TT with seqlock write protection and parity.
-///
-/// Write order:
-///
-/// version++ (lock) → slot[0] → slot[1] → slot[2] → age → version++ (unlock).
-///
-/// Parity (slot[2]) is written last so a reader seeing fresh parity sees fresh
-/// data too.
+/// Stores one main-search result with seqlock write protection and parity.
 ///
 /// Params:
 /// - tt_move: &Move   -> best move found at this node
-/// - score  : i32     -> score to store (mate scores are ply-adjusted)
-/// - flags  : u8      -> bound type: FEXACT, FALPHA, or FBETA
+/// - score  : i32     -> score to store
+/// - flags  : u8      -> FEXACT, FALPHA, or FBETA
 /// - depth  : usize   -> search depth the score is valid for
-/// - eval   : i32     -> static eval at this node (`-INF` when in check)
 /// - state  : &State  -> position whose hash keys the entry
-/// - table  : &TTable -> the shared transposition table
+/// - table  : &TTable -> shared transposition table
 #[macro_export]
 macro_rules! hash_tt_entry {
     (
@@ -564,7 +432,6 @@ macro_rules! hash_tt_entry {
         $score:expr,
         $flags:expr,
         $depth:expr,
-        $eval:expr,
         $state:expr,
         $table:expr
     ) => {
@@ -587,26 +454,25 @@ macro_rules! hash_tt_entry {
             store_score -= $state.search_ply as i32;
         }
 
-        let mut encoded: u128 = flags_depth as u128;
+        let mut encoded = flags_depth as u128;
         tt_enc_score!(encoded, store_score);
-        tt_enc_eval!(encoded, $eval);
 
-        let sig = m_signature!($tt_move);                                       /* XOR of move.1 entries              */
+        let signature = m_signature!($tt_move);
         let age = $table.age.load(Ordering::Relaxed);
-        let a = $tt_move.0;                                                     /* move.0 128-bit                     */
-        let b = ((sig as u128) << 41) | encoded;                                /* eval<<105 | sig<<41 | score/flags  */
+        let move_slot = $tt_move.0;
+        let data_slot = ((signature as u128) << 41) | encoded;
 
-        let old_s0 = entry.slot[0];
-        let old_s1 = entry.slot[1];
-        let old_s2 = entry.slot[2];
+        let old_move = entry.slot[0];
+        let old_data = entry.slot[1];
+        let old_parity = entry.slot[2];
 
-        let empty = old_s0 == 0 && old_s1 == 0 && old_s2 == 0;
-        let different = old_s0 ^ old_s1 ^ old_s2 != hash;
+        let empty = old_move == 0 && old_data == 0 && old_parity == 0;
+        let different = old_move ^ old_data ^ old_parity != hash;
 
-        let old_enc = (old_s1 & 0x1FF) as u32;
-        let old_depth = tt_depth!(old_enc);
-        let old_score = tt_score!(old_s1);
-        let old_flags = tt_flags!(old_enc);
+        let old_encoded = (old_data & 0x1FF) as u32;
+        let old_depth = tt_depth!(old_encoded);
+        let old_score = tt_score!(old_data);
+        let old_flags = tt_flags!(old_encoded);
 
         let should_write = empty
             || different
@@ -622,12 +488,12 @@ macro_rules! hash_tt_entry {
                 $table.over_write.fetch_add(1, Ordering::Relaxed);
             }
 
-            entry.version.fetch_add(1, Ordering::Release);                      /* seqlock lock: version now odd      */
-            entry.slot[0] = a;                                                  /* a = move.0 (raw)                   */
-            entry.slot[1] = b;                                                  /* b = eval|sig|encoded (raw)         */
-            entry.slot[2] = a ^ b ^ hash;                                       /* parity = a ^ b ^ c (written last)  */
+            entry.version.fetch_add(1, Ordering::Release);
+            entry.slot[0] = move_slot;
+            entry.slot[1] = data_slot;
+            entry.slot[2] = move_slot ^ data_slot ^ hash;
             entry.age = age;
-            entry.version.fetch_add(1, Ordering::Release);                      /* seqlock unlock: version now even   */
+            entry.version.fetch_add(1, Ordering::Release);
         }
         })
     };
@@ -861,14 +727,7 @@ unsafe impl Send for QTable {}
 
 impl Default for QTable {
     fn default() -> Self {
-        Self {
-            table: SyncUnsafeCell::new(vec![QTEntry::default(); Q_TABLE_SIZE]),
-            age: AtomicU64::new(0),
-            new_write: AtomicU64::new(0),
-            over_write: AtomicU64::new(0),
-            hit: AtomicU64::new(0),
-            valid: AtomicU64::new(0),
-        }
+        Self::with_mb(HASH_DEFAULT_MB / 3)
     }
 }
 

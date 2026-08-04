@@ -255,7 +255,7 @@ pub fn game_result_score(result: u8) -> f64 {
 ///
 /// Plays both sides with fixed depth and per-move wall-clock budget until a
 /// configured terminal result, no legal move, interrupt, or ply cap. Search
-/// tables and buffers are reused for every turn. `on_move` receives the
+/// transposition tables are reused for every turn. `on_move` receives the
 /// post-move state and move text after each successful move.
 ///
 /// Params:
@@ -290,7 +290,6 @@ where
         set_depth: depth,
         ..Default::default()
     };
-    let mut bufs = SearchBufs::default();
 
     for _ in 0..max_plies {
         let terminal = game_outcome(state);
@@ -302,8 +301,7 @@ where
 
         if time_limit_ns > 0 {
             let now = ENGINE_START.elapsed().as_nanos();
-            info.soft_deadline = now + time_limit_ns;
-            info.hard_deadline = now + time_limit_ns;
+            info.deadline = now + time_limit_ns;
         }
 
         let result = search_position(
@@ -311,7 +309,6 @@ where
             Arc::clone(&ttable),
             Arc::clone(&qtable),
             &mut info,
-            &mut bufs,
             threads.max(1),
             dict,
         );
@@ -930,11 +927,10 @@ pub fn benchmark_search(
     log_3!("Search benchmark started with depth {}...", depth);
 
     let mut info = SearchInfo { set_depth: depth, ..Default::default() };
-    let mut bufs = SearchBufs::default();
 
     search_position(
         state, Arc::clone(&ttable), Arc::clone(&qtable),
-        &mut info, &mut bufs, thread_num, dict
+        &mut info, thread_num, dict
     );
     log_table_stats(&ttable, &qtable);
 }

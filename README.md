@@ -7,9 +7,15 @@
 <pre>
 [ ABOUT ]
 
-A chess engine that can (hopefully) play most chess variants. It speaks UCI on the surface, but under the hood it is built on a stack of custom notations — a move notation, a modified move-pattern notation, a drop notation, and an expandable, fully data-driven variant configuration format. Define a board, a set of pieces and their movement, and a handful of rule flags, and the engine will play it.
+A chess engine that can (hopefully) play most chess variants. It speaks UCI on
+the surface, but under the hood it is built on a stack of custom notations — a
+move notation, a modified move-pattern notation, a drop notation, and an
+expandable, fully data-driven variant configuration format. Define a board, a
+set of pieces and their movement, and a handful of rule flags, and the engine
+will play it.
 
-Written in Rust as a Cargo workspace. "Aneka macam" is Indonesian for "all sorts" — which is the point: all sorts of chess.
+Written in Rust as a Cargo workspace. "Aneka macam" is Indonesian for "all
+sorts" — which is the point: all sorts of chess.
 
 [ FEATURES ]
 
@@ -19,9 +25,8 @@ Variant-agnostic core  --> board sizes, piece sets, drop rules, and
 Data-driven variants   --> each variant is a plain .conf file; default
                            variants are embedded into the binary.
 Custom notations       --> CFEN / CKN / CPMN / CDN (see below).
-Search                 --> parallel search (rayon), transposition table,
-                           move ordering, and per-variant tunable
-                           pruning parameters.
+Search                 --> parallel alpha-beta, T/Q tables, SEE ordering,
+                           NMP/LMP, killers, and history.
 Evaluation             --> piece-square tables and parameters derived
                            per-variant (avg piece value, board size,
                            game phase).
@@ -41,7 +46,9 @@ Debug tooling          --> graphical ratatui frontend, nested headless
 │ CDN      │ Cheesy Drop Notation            │ Per-piece drop rules               │
 └──────────┴─────────────────────────────────┴────────────────────────────────────┘
 
-CFEN extends ordinary FEN with board dimensions, pieces-in-hand, and the extra state that variants need (e.g. setup phase, drops). Move patterns are written in CKN, a Betza-like atom language. For example, the FIDE pawn's full move set is:
+CFEN extends ordinary FEN with board dimensions, pieces-in-hand, and the extra
+state that variants need (e.g. setup phase, drops). Move patterns are written in
+CKN, a Betza-like atom language. For example, the FIDE pawn's full move set is:
 
     Pp:mnW|im&lt;nW-pnW&gt;|tcnF
 
@@ -49,7 +56,9 @@ Drops and stand-offs are matched with CPMN; per-piece drop rules use CDN.
 
 [ VARIANT CONFIGURATION ]
 
-A variant lives in a single configs/&lt;name&gt;.conf file. It declares, in labelled sections, the title, the starting CFEN, the enabled rules, and the pieces with their CKN move patterns. Supported rule flags:
+A variant lives in a single configs/&lt;name&gt;.conf file. It declares, in
+labelled sections, the title, the starting CFEN, the enabled rules, and the
+pieces with their CKN move patterns. Supported rule flags:
 
 ┌─────────────────────┬──────────────────────────────────────────────────────────┐
 │ Rule                │ Effect                                                   │
@@ -64,7 +73,12 @@ A variant lives in a single configs/&lt;name&gt;.conf file. It declares, in labe
 │ stand-offs          │ A facing/formation the mover must break, or pass to end  │
 └─────────────────────┴──────────────────────────────────────────────────────────┘
 
-How a game is won, lost, or drawn is declared separately, in the = termination = section: a flat table of parametric terminal rules — checkmate/stalemate outcomes, repetition, a generalized counter (50-move / makruk board's honour), a bare-king material count (makruk-family pieces' honour), N-check, material extinction, goal zones, repetition-cycle offences, and material adjudication. Each covers a family of variants rather than a single named mode:
+How a game is won, lost, or drawn is declared separately, in the = termination =
+section: a flat table of parametric terminal rules — checkmate/stalemate
+outcomes, repetition, a generalized counter (50-move / makruk board's honour),
+a bare-king material count (makruk-family pieces' honour), N-check, material
+extinction, goal zones, repetition-cycle offences, and material adjudication.
+Each covers a family of variants rather than a single named mode:
 
 ┌─────────────┬────────────────────────────────────────────────────────────────┐
 │ End rule    │ Effect                                                         │
@@ -81,7 +95,12 @@ How a game is won, lost, or drawn is declared separately, in the = termination =
 │ adjudicate  │ Both sides pass: decide by weighted material (janggi points)   │
 └─────────────┴────────────────────────────────────────────────────────────────┘
 
-Each rule, when enabled, requires its matching section (e.g. castling geometry, promotion zones, drop rules) and a correctly-formatted CFEN — the parser validates this and errors out otherwise. See <a href="configs/example.conf">configs/example.conf</a> for a fully commented reference of every section. Protocol translation is configured per variant in res/dicts/&lt;name&gt;.dict; evaluation parameters live in res/param/.
+Each rule, when enabled, requires its matching section (e.g. castling geometry,
+promotion zones, drop rules) and a correctly-formatted CFEN — the parser
+validates this and errors out otherwise. See <a href="configs/example.conf">configs/example.conf</a>
+for a fully commented reference of every section. Protocol translation is
+configured per variant in res/dicts/&lt;name&gt;.dict; evaluation parameters
+live in res/param/.
 
 [ SUPPORTED VARIANTS ]
 
@@ -114,11 +133,13 @@ Variants bundled in configs/ (the names double as their config files):
 │ horde         │ Horde (pawn army vs full side)    │
 └───────────────┴───────────────────────────────────┘
 
-example.conf is the documented template you copy when authoring a new variant. res/perft/ holds perft suites used to validate move generation.
+example.conf is the documented template you copy when authoring a new variant.
+res/perft/ holds perft suites used to validate move generation.
 
 [ USAGE ]
 
-Build with Cargo (release is strongly recommended — the dev profile is much slower):
+Build with Cargo (release is strongly recommended — the dev profile is much
+slower):
 
     cargo build --release
 
@@ -128,17 +149,17 @@ The workspace produces a binary named anekamacam. It takes a frontend command:
     anekamacam debug-graphics            # graphical debug frontend
     anekamacam debug-headless help       # non-graphical debug/tool commands
 
-`debug-headless` uses nested one-shot commands. Position commands accept `--protocol`, a quoted `--fen`, and `--moves`:
+`debug-headless` uses nested one-shot commands. Position commands accept
+`--protocol`, a quoted `--fen`, and `--moves`:
 
     anekamacam debug-headless state standard
     anekamacam debug-headless movegen xiangqi --protocol ucci
     anekamacam debug-headless evaluate makruk
     anekamacam debug-headless search standard 8 1
     anekamacam debug-headless play minishogi 4 0.1 1 256
-    anekamacam debug-headless see standard e4d5 --protocol uci \
-        --fen "4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1"
 
-Direct perft runs one position and prints a root divide by default. Add `--suite` to run the embedded reference suite and `--limit` to cap positions:
+Direct perft runs one position and prints a root divide by default. Add
+`--suite` to run the embedded reference suite and `--limit` to cap positions:
 
     anekamacam debug-headless perft standard 5
     anekamacam debug-headless perft standard 3 --suite --limit 100
@@ -150,7 +171,9 @@ Long-running tools use the same umbrella:
     anekamacam debug-headless tune standard 100 1.0
     anekamacam debug-headless sprt standard old-bin new-bin 100
 
-With no frontend command the engine starts in protocol mode. Default configs, dictionaries, perft suites, and parameters are embedded in the binary, so it runs standalone.
+With no frontend command the engine starts in protocol mode. Default configs,
+dictionaries, perft suites, and parameters are embedded in the binary, so it
+runs standalone.
 
 [ PROJECT LAYOUT ]
 

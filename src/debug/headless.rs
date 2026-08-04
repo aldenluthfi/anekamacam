@@ -387,7 +387,6 @@ fn run_evaluate_command(
 /// run_see_command
 ///
 /// Parses one capture and reports static exchange evaluation.
-/// Rejects invalid moves and legal non-captures before calculation.
 ///
 /// Params:
 /// - position: HeadlessPosition -> loaded command position and move
@@ -397,36 +396,26 @@ fn run_evaluate_command(
 fn run_see_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
-    let move_text = position
-        .values
-        .first()
+    let move_text = position.values.first()
         .ok_or_else(|| "see requires one move".to_string())?;
+
     if position.values.len() > 1 {
         return Err("see accepts one move".to_string());
     }
 
     let state = &mut position.state;
     let candidate = parse_move(
-        move_text,
-        state,
-        position.translator.as_ref(),
-    )
-    .ok_or_else(|| format!("Invalid move: {}", move_text))?;
-    if !matches!(
-        move_type!(candidate),
-        SINGLE_CAPTURE_MOVE | MULTI_CAPTURE_MOVE
-    ) {
+        move_text, state, position.translator.as_ref(),
+    ).ok_or_else(|| format!("Invalid move: {}", move_text))?;
+
+    if !m_capture!(&candidate) {
         return Err("see requires a capture move".to_string());
     }
 
     let formatted = format_move(
-        &candidate,
-        state,
-        position.translator.as_ref(),
+        &candidate, state, position.translator.as_ref(),
     );
-    let mut moves = Vec::with_capacity(32);
-    let mut scratch = Vec::with_capacity(32);
-    let score = see!(state, &candidate, &mut moves, &mut scratch);
+    let score = see!(state, &candidate);
 
     emit(EngineEvent::Print(format!(
         "SEE {}: {}\n", formatted, score
@@ -467,14 +456,12 @@ fn run_search_command(
         set_depth: depth,
         ..Default::default()
     };
-    let mut buffers = SearchBufs::default();
     let state = &mut position.state;
     let result = search_position(
         state,
         ttable,
         qtable,
         &mut information,
-        &mut buffers,
         threads,
         position.translator.as_ref(),
     );
@@ -766,14 +753,12 @@ fn run_bench_command(
             set_depth: depth,
             ..Default::default()
         };
-        let mut buffers = SearchBufs::default();
         let start = ENGINE_START.elapsed().as_nanos();
         let result = search_position(
             &mut position.state,
             ttable,
             qtable,
             &mut information,
-            &mut buffers,
             1,
             position.translator.as_ref(),
         );

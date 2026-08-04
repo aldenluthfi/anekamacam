@@ -57,7 +57,6 @@ fn play_one_game(
         set_depth: MAX_DEPTH,
         ..Default::default()
     };
-    let mut bufs = SearchBufs::default();
     let movetime_ns = movetime_ms * 1_000_000;
 
     loop {
@@ -74,12 +73,11 @@ fn play_one_game(
         }
 
         let now = ENGINE_START.elapsed().as_nanos();
-        info.soft_deadline = now + movetime_ns;
-        info.hard_deadline = now + movetime_ns;
+        info.deadline = now + movetime_ns;
 
         let outcome = search_position(
             state, Arc::clone(&ttable), Arc::clone(&qtable),
-            &mut info, &mut bufs, threads, dict,
+            &mut info, threads, dict,
         );
 
         if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {

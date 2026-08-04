@@ -2835,9 +2835,9 @@ fn execute_command(
                 return;
             }
 
-            let mv_str = parts[1];
-            let mv = parse_move(mv_str, state, dict).unwrap_or_else(|| {
-                log_2!("Invalid move: {}", mv_str);
+            let move_text = parts[1];
+            let mv = parse_move(move_text, state, dict).unwrap_or_else(|| {
+                log_2!("Invalid move: {}", move_text);
                 null_move()
             });
 
@@ -2845,13 +2845,8 @@ fn execute_command(
                 return;
             }
 
-            let mut lva_moves: Vec<Move> = Vec::new();
-            let mut lva_scratch: Vec<u64> = Vec::new();
-            let see_score = see!(
-                state, &mv, &mut lva_moves, &mut lva_scratch
-            );
-
-            log_2!("SEE for {}: {}", format_move(&mv, state, dict), see_score);
+            let score = see!(state, &mv);
+            log_2!("SEE for {}: {}", format_move(&mv, state, dict), score);
         }
         _ if trimmed.starts_with("fen") => {
             let fen = trimmed[4..].trim();
@@ -2872,10 +2867,9 @@ fn execute_command(
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
             };
-            let mut bufs = SearchBufs::default();
             let result = search_position(
                 state, Arc::clone(&ttable), Arc::clone(&qtable),
-                &mut info, &mut bufs, threads, dict
+                &mut info, threads, dict
             );
             log_table_stats(&ttable, &qtable);
 

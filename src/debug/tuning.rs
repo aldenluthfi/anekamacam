@@ -661,7 +661,6 @@ fn export_theta(
     }
 
     parse_tuned_parameters(state, &tokens.join(" "));
-    derive_search_parameters(state);
     export_tuned_parameters_file(state, variant);
 }
 

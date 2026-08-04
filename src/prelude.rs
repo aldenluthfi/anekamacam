@@ -50,7 +50,7 @@ pub use crate::game::moves::drop_list::generate_relevant_drops;
 pub use crate::game::moves::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
     generate_all_captures, generate_all_moves_and_drops,
-    generate_all_quiets_and_drops, generate_attack_masks,
+    generate_attack_masks,
     generate_relevant_captures, generate_relevant_castling,
     generate_relevant_moves,
 };
@@ -70,15 +70,12 @@ pub use crate::game::position::{
     hash::{hash_position, PositionHash},
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
-        log_table_stats, search_position, SearchBufs, SearchInfo,
-        SearchResult,
+        log_table_stats, search_position, SearchInfo, SearchResult,
     },
 };
 pub use crate::game::search::{
     parallel::ThreadPool,
-    parameters::{
-        derive_eval_parameters, derive_parameters, derive_search_parameters,
-    },
+    parameters::{derive_eval_parameters, derive_parameters},
     transposition::{QTable, QTEntry, TTEntry, TTable},
 };
 
@@ -211,10 +208,9 @@ pub use std::{
 
 /// Engine-wide constants.
 ///
-/// Board and search bounds (`MAX_*`, `*_DEPTH`), search-tuning thresholds
-/// and tables (LMP/NMP/RFP/razor/IIR/LMR limits, `HIST_BONUS_TABLE`),
-/// colour and castling codes, piece/en-passant sentinels, and the
-/// move-type tags. Values are fixed at compile time and shared through
+/// Board and search bounds, colour and castling codes, piece/en-passant
+/// sentinels, and move-type tags. Values are fixed at compile time and shared
+/// through
 /// the prelude. `MAX_SQUARES` tracks [`BoardBits`], so it and the Zobrist
 /// tables sized by it widen together under the `wide-board` feature.
 #[cfg(not(feature = "wide-board"))]
@@ -223,49 +219,7 @@ pub const MAX_SQUARES: usize = 256;
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_DEPTH: usize = 128;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
-pub const MAX_LMR_DEPTH: usize = 32;
 pub const MAX_LOGS_LEN: usize = u16::MAX as usize;
-pub const MAX_HIST_VALUE: i16 = 16384;
-pub const HIST_BONUS_SCALE: i32 = 32;
-pub const HIST_BONUS_TABLE: [i32; MAX_DEPTH] = {
-    let cap = MAX_HIST_VALUE as i32;
-    let mut table = [0i32; MAX_DEPTH];
-    let mut depth = 0;
-    while depth < MAX_DEPTH {
-        let value = (depth * depth) as i32 * HIST_BONUS_SCALE;
-        table[depth] = if value < cap { value } else { cap };
-        depth += 1;
-    }
-    table
-};
-pub const MAX_FUTILITY_DEPTH: usize = 5;
-pub const MAX_LMP_DEPTH: usize = 9;
-pub const LMP_THRESHOLD: [[u8; MAX_LMP_DEPTH]; 2] = [
-    [0, 4, 5, 9,  14, 22, 34, 46, 60],                                          /* not improving                      */
-    [0, 5, 8, 14, 22, 36, 48, 66, 90],                                          /* improving                          */
-];
-pub const MAX_RFP_DEPTH: usize = 9;
-pub const MAX_RZR_DEPTH: usize = 4;
-pub const MAX_SEE_DEPTH: usize = 8;
-pub const MIN_IIR_DEPTH: usize = 4;
-pub const MIN_LMR_DEPTH: usize = 4;
-pub const MIN_NMP_DEPTH: usize = 2;
-pub const MIN_NMP_ENDGAME_DEPTH: usize = 8;
-pub const MAX_CHECK_EXTENSION: usize = 2;
-pub const MIN_PROBCUT_DEPTH: usize = 5;
-pub const PROBCUT_DEPTH_REDUCTION: usize = 4;
-pub const PROBCUT_MAX_CAPTURES: usize = 3;
-
-pub const LMR_QUIET_BASE: f64 = 0.75;
-pub const LMR_QUIET_DIV: f64 = 2.25;
-pub const LMR_QUIET_CHECK_BASE: f64 = 1.0;
-pub const LMR_QUIET_CHECK_DIV: f64 = 4.0;
-pub const LMR_CAPTURE_BASE: f64 = 1.0;
-pub const LMR_CAPTURE_DIV: f64 = 4.0;
-pub const LMR_CAPTURE_CHECK_BASE: f64 = 0.0;
-pub const LMR_CAPTURE_CHECK_DIV: f64 = 4.5;
-
-pub const REP_SCAN_CAP: usize = 64;                                             /* per-node repetition scan budget    */
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
@@ -537,28 +491,11 @@ pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
-pub const HASH_T_PARTS: usize = 16;
-pub const HASH_Q_PARTS: usize = 8;
-pub const HASH_PARTS: usize = HASH_T_PARTS + HASH_Q_PARTS;
-
-pub const T_TABLE_SIZE: usize = 1 <<
-    ((HASH_DEFAULT_MB * HASH_T_PARTS / HASH_PARTS * 0x100000)
-    / size_of::<TTEntry>()).ilog2();
-pub const Q_TABLE_SIZE: usize = 1 <<
-    ((HASH_DEFAULT_MB * HASH_Q_PARTS / HASH_PARTS * 0x100000)
-    / size_of::<QTEntry>()).ilog2();
-
-pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000;                               /* ordering band for SEE >= 0 moves   */
-pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000;                                /* ordering band for SEE < 0          */
-
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
 pub const DATA_DIR: &str = "res/data";
 pub const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";                        /* rolled-file backup name stamp      */
 pub const LOG_HISTORY_KEEP: usize = 32;                                         /* rolled logs kept before pruning    */
-
-pub const TM_STABILITY_PCT: [u128; 6] = [160, 130, 110, 100, 85, 75];           /* soft budget scale by best stability*/
-pub const TM_SCORE_DROP_PCT: u128 = 130;                                        /* budget scale on a falling score    */
 
 pub const OPT_THREADS: &str = "Threads";
 

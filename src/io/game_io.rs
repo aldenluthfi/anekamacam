@@ -182,8 +182,7 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// 5. then white endgame PST rows (piece-type count × board_size)
 ///
 /// Black PST rows are derived by mirroring white rows across the
-/// horizontal axis. Search-time margins (futility, RFP, razoring, SEE)
-/// remain derived-only.
+/// horizontal axis.
 ///
 /// Params:
 /// - state  : &mut State -> variant whose parameters are overwritten
@@ -1971,11 +1970,9 @@ pub fn parse_config_file(path: &str) -> State {
     {
         log_3!("Loading embedded default parameters");
         parse_tuned_parameters(&mut result, content);
-        derive_search_parameters(&mut result);
     } else if let Ok(content) = fs::read_to_string(&param_path) {
         log_3!("Loading parameters from disk");
         parse_tuned_parameters(&mut result, &content);
-        derive_search_parameters(&mut result);
     } else {
         derive_parameters(&mut result);
         export_tuned_parameters_file(&result, variant);

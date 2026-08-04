@@ -17,7 +17,7 @@ use crate::*;
 ///
 /// Runs independent iterative-deepening workers with shared lock-free tables.
 ///
-/// Every worker owns a state clone and search buffers. The pool synchronizes
+/// Every worker owns a state clone. The pool synchronizes
 /// only launch and join, then returns the highest-scoring completed result.
 pub struct ThreadPool {
     pub main_state: State,                                                      /* root position, cloned per worker   */
@@ -83,8 +83,7 @@ impl ThreadPool {
             let qt_clone = Arc::clone(&qtable);
             let set_depth = info.set_depth;
             let set_nodes = info.set_nodes;
-            let soft_deadline = info.soft_deadline;
-            let hard_deadline = info.hard_deadline;
+            let deadline = info.deadline;
             let dict_clone = dict.cloned();
 
             let handle = thread::Builder::new()
@@ -94,17 +93,15 @@ impl ThreadPool {
                     let mut info = SearchInfo {
                         set_depth,
                         set_nodes,
-                        soft_deadline,
-                        hard_deadline,
+                        deadline,
                         thread_count: total_threads,
                         ..Default::default()
                     };
-                    let mut bufs = SearchBufs::default();
                     let mut state = state_clone;
                     iterative_deepening(
                         &mut state,
                         &tt_clone, &qt_clone,
-                        &mut info, &mut bufs,
+                        &mut info,
                         i, dict_clone.as_ref(),
                     )
             })
