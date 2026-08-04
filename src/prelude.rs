@@ -585,9 +585,12 @@ pub const SPRT_HISTORY_KEEP: usize = 64;                                        
 pub const TIME_OVERHEAD_MS: u128 = 50;
 pub const MAX_OVERHEAD_MS: u128 = 1000;
 pub const MIN_TIME_BUDGET_NS: u128 = 1_000_000;                                 /* timed searches never budget below  */
-pub const HARD_BUDGET_FACTOR: u128 = 4;                                         /* hard limit = soft budget x factor  */
+pub const HARD_BUDGET_FACTOR: u128 = 4;                                         /* soft x factor; floor 2.08, see     */
+                                                                                /* compute_budgets                    */
 pub const TM_STABILITY_PCT: [u128; 6] = [160, 130, 110, 100, 85, 75];           /* soft budget scale by best stability*/
 pub const TM_SCORE_DROP_PCT: u128 = 130;                                        /* budget scale on a falling score    */
+pub const TM_MOVE_HORIZON: u128 = 18;                                           /* moves the clock is spread across   */
+pub const TM_MAX_SHARE_PCT: u128 = 40;                                          /* ceiling on one move's clock share  */
 
 pub const OPT_PROTOCOL: &str = "Protocol";
 pub const OPT_THREADS: &str = "Threads";

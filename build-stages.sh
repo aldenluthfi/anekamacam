@@ -12,14 +12,19 @@ set -euo pipefail
 #
 # Each PHASES row is "name ref parent". ref is the configured base commit-ish
 # (normally the phase's own branch name). parent is the phase a missing
-# branch is auto-created from ("-" means none). Phase M-3 is conditional on
-# measurement, so N-3 defaults to branching from it but takes PHASE_N_PARENT
-# when M-3 is dropped.
+# branch is auto-created from ("-" means none). L-3, M-3 and R-3 are
+# conditional on measurement and may never exist, so every phase takes a
+# PHASE_<LETTER>_PARENT override that re-parents it onto whatever did land.
+#
+# Ladder order (iteration 3, renumbered 2026-08-04 when F-3 took the front):
+# A-3..E-3 speed block, F-3 time management, G-3..K-3 drop block, L-3
+# continuation-history density, M-3 grand diagnosis, N-3..P-3 eval block,
+# Q-3 simplification, R-3 drop-variant NPS last of all.
 #
 # Usage:
 #   build-stages.sh A-3
 #   build-stages.sh B-3 C-3 D-3
-#   PHASE_N_PARENT=phaseL-3 build-stages.sh phaseN-3
+#   PHASE_N_PARENT=phaseK-3 build-stages.sh phaseN-3
 
 PHASES=(
 	"phaseA-3  phaseA-3  -"
@@ -36,6 +41,10 @@ PHASES=(
 	"phaseL-3  phaseL-3  phaseK-3"
 	"phaseM-3  phaseM-3  phaseL-3"
 	"phaseN-3  phaseN-3  phaseM-3"
+	"phaseO-3  phaseO-3  phaseN-3"
+	"phaseP-3  phaseP-3  phaseO-3"
+	"phaseQ-3  phaseQ-3  phaseP-3"
+	"phaseR-3  phaseR-3  phaseQ-3"
 )
 
 if [[ $# -eq 0 ]]; then
@@ -83,18 +92,16 @@ phase_ref() {
 	return 1
 }
 
-# Parent phase (third column) for a phase name, honoring PHASE_N_PARENT.
+# Parent phase (third column) for a phase name, honoring the phase's own
+# PHASE_<LETTER>_PARENT override so a dropped conditional stage is skipped.
 phase_parent() {
-	local want=$1 name ref parent
+	local want=$1 name ref parent override
 
 	for entry in "${PHASES[@]}"; do
 		read -r name ref parent <<<"$entry"
 		if [[ "$name" == "$want" ]]; then
-			if [[ "$want" == "phaseN-3" ]]; then
-				echo "${PHASE_N_PARENT:-$parent}"
-			else
-				echo "$parent"
-			fi
+			override="PHASE_${want:5:1}_PARENT"
+			echo "${!override:-$parent}"
 			return 0
 		fi
 	done

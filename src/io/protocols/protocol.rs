@@ -687,13 +687,24 @@ pub fn start_search(session: &mut Session, tokens: &[&str]) {
 ///
 /// Derives the soft and hard time budgets for one `go` command as
 /// durations in nanoseconds. `movetime` spends its whole allotment on
-/// both budgets. Clock time allocates `time/divisor + inc*2/3` per
-/// move: no new depth starts past half of that (soft), while a started
-/// depth may run to twice it (hard), so the average spend stays near
-/// the allocation but iterations finish instead of being cut. Both are
-/// capped by the remaining clock minus the move overhead and floored
-/// at MIN_TIME_BUDGET_NS, so a timed search never receives the untimed
-/// sentinel of zero.
+/// both budgets. Clock time subtracts the move overhead once, up front,
+/// then allocates `usable/divisor + inc*3/4` per move, where the divisor
+/// is the smaller of `movestogo` and TM_MOVE_HORIZON: no new depth
+/// starts past that allocation (soft), while a started depth may run to
+/// HARD_BUDGET_FACTOR times it (hard), so iterations finish instead of
+/// being cut. Both are bounded by a reserve of TM_MAX_SHARE_PCT of the
+/// usable clock, so no single move can spend what the rest of the game
+/// needs, and floored at MIN_TIME_BUDGET_NS, so a timed search never
+/// receives the untimed sentinel of zero. The reserve is floored before
+/// it bounds anything, because on a nearly exhausted clock it falls
+/// under that floor and an inverted clamp panics.
+///
+/// The soft budget is rescaled every iteration by TM_STABILITY_PCT and
+/// TM_SCORE_DROP_PCT and only then capped by the hard deadline, so
+/// HARD_BUDGET_FACTOR must stay at or above the worst-case iteration
+/// scale of `TM_STABILITY_PCT[0]/100 * TM_SCORE_DROP_PCT/100` = 2.08.
+/// Below that floor the ceiling silently clips the stability logic,
+/// which spends the budget for reasons no measurement can then see.
 ///
 /// Params:
 /// - movetime_ms: u128  -> fixed time per move (0 = unset)
@@ -721,13 +732,19 @@ fn compute_budgets(
         return (0, 0);
     }
 
-    let divisor = if movestogo > 0 { movestogo as u128 } else { 40 };
-    let raw = (time_ms / divisor + inc_ms * 2 / 3) * 1_000_000;
-    let cap = (time_ms.saturating_sub(overhead_ms) * 1_000_000)
+    let usable = time_ms.saturating_sub(overhead_ms).max(1);
+    let divisor = if movestogo > 0 {
+        (movestogo as u128).min(TM_MOVE_HORIZON)
+    } else {
+        TM_MOVE_HORIZON
+    };
+
+    let raw = (usable / divisor + inc_ms * 3 / 4) * 1_000_000;
+    let reserve = (usable * 1_000_000 * TM_MAX_SHARE_PCT / 100)
         .max(MIN_TIME_BUDGET_NS);
 
-    let soft = (raw / 2).clamp(MIN_TIME_BUDGET_NS, cap);
-    let hard = (soft * HARD_BUDGET_FACTOR).clamp(MIN_TIME_BUDGET_NS, cap);
+    let soft = raw.clamp(MIN_TIME_BUDGET_NS, reserve);
+    let hard = (soft * HARD_BUDGET_FACTOR).clamp(MIN_TIME_BUDGET_NS, reserve);
 
     (soft, hard)
 }
