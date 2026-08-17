@@ -163,25 +163,27 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - bit 33      (`m`): captured piece was unmoved
 /// - bits 34..63      : unused
 ///
-/// A drop (`011`) needs no origin square:
+/// A drop (`011`) has no origin square, so it repeats the placement square in
+/// both `start` and `end`. Make/undo reads `start`, while every target-indexed
+/// consumer — history and ordering — reads `end`, so the two have to agree
+/// rather than leaving `end` unwritten:
 ///
 /// Bits 0..31:
 ///
 /// ```text
 ///   0     3               11                      23                31
-///                                                   24
-///   ┌─────┬───────────────┬───────────────────────┬─┬────────────────┐
-///   │type │     piece     │        drop sq        │c│    unused →    │
-///   └─────┴───────────────┴───────────────────────┴─┴────────────────┘
+///   ┌─────┬───────────────┬───────────────────────┬──────────────────┐
+///   │type │     piece     │        drop sq        │    drop sq →     │
+///   └─────┴───────────────┴───────────────────────┴──────────────────┘
 /// ```
 ///
 /// Bits 32..63:
 ///
 /// ```text
-///   32                                                              63
-///   ┌────────────────────────────────────────────────────────────────┐
-///   │                           ← unused →                           │
-///   └────────────────────────────────────────────────────────────────┘
+///   32    35                                                        63
+///   ┌─────┬──────────────────────────────────────────────────────────┐
+///   │← sq │                        unused →                          │
+///   └─────┴──────────────────────────────────────────────────────────┘
 /// ```
 ///
 /// Bits 64..95:
@@ -196,17 +198,19 @@ pub type PseudoMove = (u128, MoveSignature);
 /// Bits 96..127:
 ///
 /// ```text
-///   96                                                             127
-///   ┌────────────────────────────────────────────────────────────────┐
-///   │                            ← unused                            │
-///   └────────────────────────────────────────────────────────────────┘
+///   96                            112                              127
+///   ┌─────────────────────────────┬─┬────────────────────────────────┐
+///   │          ← unused           │c│             unused             │
+///   └─────────────────────────────┴─┴────────────────────────────────┘
 /// ```
 ///
-/// - bits 0..2   (`type`) : drop format tag
-/// - bits 3..10  (`piece`): dropped piece index
-/// - bits 11..22          : target square
-/// - bit 23      (`c`)    : whether the drop may deliver checkmate
-/// - bits 24..127         : unused
+/// - bits 0..2    (`type`) : drop format tag
+/// - bits 3..10   (`piece`): dropped piece index
+/// - bits 11..22  (`start`): target square
+/// - bits 23..34  (`end`)  : target square, repeated
+/// - bits 35..111          : unused
+/// - bit 112      (`c`)    : whether the drop may deliver checkmate
+/// - bits 113..127         : unused
 ///
 /// Castling (`100`) keeps the primary castling piece's step in the base
 /// word's `start`/`end` squares. It packs the secondary castling piece's

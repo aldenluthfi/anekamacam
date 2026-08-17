@@ -28,11 +28,11 @@ use crate::*;
 ///
 ///   Params:
 ///   - mv : &mut Move -> drop-format move whose word is written
-///   - val: u128      -> may-checkmate flag, masked into bit 23
+///   - val: u128      -> may-checkmate flag, masked into bit 112
 #[macro_export]
 macro_rules! enc_can_checkmate {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 23;
+        $mv.0 |= ($val & 1) << 112;
     };
 }
 
@@ -51,11 +51,11 @@ macro_rules! enc_can_checkmate {
 ///   - drop: &Move -> drop-format move whose word is read
 ///
 ///   Return:
-///   bool          -> may-checkmate flag (bit 23)
+///   bool          -> may-checkmate flag (bit 112)
 #[macro_export]
 macro_rules! drop_can_checkmate {
     ($drop:expr) => {
-        ($drop.0 >> 23) & 1 == 1
+        ($drop.0 >> 112) & 1 == 1
     };
 }
 

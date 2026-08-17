@@ -141,6 +141,7 @@ macro_rules! generate_drop_list {
                 enc_move_type!(encoded_move, DROP_MOVE);
                 enc_piece!(encoded_move, index as u128);
                 enc_start!(encoded_move, square as u128);
+                enc_end!(encoded_move, square as u128);
                 enc_can_checkmate!(encoded_move, !drop_k as u128);
 
                 let drop_allowers = &drop.1.0;
