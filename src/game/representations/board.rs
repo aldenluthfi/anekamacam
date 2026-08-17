@@ -15,13 +15,8 @@ use crate::*;
 
 /// BoardBits
 ///
-/// The bitset backing every [`Board`]. Its width caps the playable board
-/// area and sets the per-board copy cost, so it defaults to the 256 bits
-/// that cover every shipped geometry (16x16) and widens to 4096 bits under
-/// the `wide-board` feature for larger grids.
-#[cfg(not(feature = "wide-board"))]
-pub type BoardBits = U256;
-#[cfg(feature = "wide-board")]
+/// The 4096-bit bitset backing every [`Board`]. Its width caps the playable
+/// board area and sets the per-board copy cost.
 pub type BoardBits = U4096;
 
 /// Board

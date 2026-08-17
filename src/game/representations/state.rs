@@ -659,8 +659,7 @@ impl State {
 
         assert!(
             board_size <= MAX_SQUARES,
-            "Board {}x{} needs {} squares, but this build caps at {}; \
-             rebuild with --features wide-board",
+            "Board {}x{} needs {} squares, but this build caps at {}",
             files, ranks, board_size, MAX_SQUARES
         );
 

@@ -135,7 +135,7 @@ pub use crate::debug::tuning::run_tuning;
                              EXTERNAL DEPENDENCIES
 \*----------------------------------------------------------------------------*/
 pub use arboard::Clipboard;
-pub use bnum::types::{U256, U4096};
+pub use bnum::types::U4096;
 pub use chrono;
 pub use core::cell::SyncUnsafeCell;
 pub use crossterm::{
@@ -211,11 +211,8 @@ pub use std::{
 /// Board and search bounds, colour and castling codes, piece/en-passant
 /// sentinels, and move-type tags. Values are fixed at compile time and shared
 /// through
-/// the prelude. `MAX_SQUARES` tracks [`BoardBits`], so it and the Zobrist
-/// tables sized by it widen together under the `wide-board` feature.
-#[cfg(not(feature = "wide-board"))]
-pub const MAX_SQUARES: usize = 256;
-#[cfg(feature = "wide-board")]
+/// the prelude. `MAX_SQUARES` tracks [`BoardBits`] and sizes the Zobrist
+/// tables used with it.
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_DEPTH: usize = 128;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
