@@ -20,6 +20,17 @@ use crate::*;
 pub const OPENING_OCCUPANCY: f64 = 0.36;
 pub const ENDGAME_OCCUPANCY: f64 = 0.12;
 
+/// How small the big non-royal army has to get before play counts as an
+/// endgame, measured in pieces of average deployed value.
+const ENDGAME_ARMY_SIZE: u64 = 5;
+
+/// Bounds on the derive-time setup walk: how many distinct censuses may
+/// be expanded, and how many completed setups are averaged. A placement
+/// tree that outgrows either bound is referenced against the endings
+/// already reached rather than being explored to exhaustion.
+const SETUP_STATE_CAP: usize = 4096;
+const SETUP_ENDING_CAP: usize = 256;
+
 /// PieceRoles
 ///
 /// One derived role assignment: the piece index paired with its is-big
@@ -590,6 +601,136 @@ fn derive_pst(
     }).collect()
 }
 
+/// setup_census_key
+///
+/// Builds the identity the setup walk memoizes on: the board census, both
+/// hands, and the side to place. Two part-built setups differing only in
+/// where equal pieces stand share a key, which is what keeps the walk
+/// bounded on a variant whose placements are largely interchangeable.
+///
+/// Params:
+/// - state: &State -> position part-way through its placement phase
+///
+/// Return:
+/// Vec<u32>        -> census, both hands, and side to place, flattened
+fn setup_census_key(state: &State) -> Vec<u32> {
+    let mut key = state.piece_count.clone();
+
+    for side in [WHITE as usize, BLACK as usize] {
+        key.extend(state.piece_in_hand[side].iter().map(|held| *held as u32));
+    }
+
+    key.push(state.playing as u32);
+
+    key
+}
+
+/// walk_setup_endings
+///
+/// Depth-first walk of the placement phase over one scratch position,
+/// recording the board census every time the variant's own rules end
+/// SETUP. Placements are made and unmade in place, so the walk costs one
+/// position rather than one per node, and it never asks what ends a setup
+/// -- it plays until the position says it has.
+///
+/// Params:
+/// - probe  : &mut State             -> scratch position, restored on return
+/// - visited: &mut HashSet<Vec<u32>> -> censuses already expanded
+/// - endings: &mut Vec<Vec<u32>>     -> censuses of completed setups
+fn walk_setup_endings(
+    probe: &mut State,
+    visited: &mut HashSet<Vec<u32>>,
+    endings: &mut Vec<Vec<u32>>,
+) {
+    if endings.len() >= SETUP_ENDING_CAP
+    || visited.len() >= SETUP_STATE_CAP
+    || !visited.insert(setup_census_key(probe))
+    {
+        return;
+    }
+
+    let mut placements = Vec::new();
+    let mut scratch = Vec::new();
+
+    generate_all_moves_and_drops(probe, &mut placements, &mut scratch);
+
+    for placement in placements {
+        if !make_move!(probe, placement) {
+            continue;
+        }
+
+        if probe.game_phase == SETUP {
+            walk_setup_endings(probe, visited, endings);
+        } else {
+            endings.push(probe.piece_count.clone());
+        }
+
+        undo_move!(probe);
+
+        if endings.len() >= SETUP_ENDING_CAP {
+            break;
+        }
+    }
+}
+
+/// resolve_setup_army
+///
+/// Reports the army a variant actually begins play with. Most variants
+/// already stand theirs on the board, so their live census answers
+/// directly. A variant with a placement phase does not: what it starts
+/// with is whatever that phase leaves behind, and a hand there is a menu
+/// of what may be placed rather than a promise that all of it will be --
+/// a variant offering a choice of armies holds every one of them and
+/// deploys exactly one.
+///
+/// So the walk plays legal placements until the rules end SETUP and
+/// averages the census over the completed setups it reaches, leaving a
+/// variant that chooses between armies referenced against a
+/// representative one rather than the union of every offer. It runs once,
+/// at derivation, over a copy of the position; nothing here happens per
+/// node.
+///
+/// Notes:
+/// The copy has to be dropped before the caller writes any static, since
+/// `static_mut` claims sole ownership of the shared static state.
+///
+/// Params:
+/// - state: &State -> start position, piece values already derived
+///
+/// Return:
+/// Vec<u32>        -> deployed count per piece index once play begins
+fn resolve_setup_army(state: &State) -> Vec<u32> {
+    if state.game_phase != SETUP {
+        return state.piece_count.clone();
+    }
+
+    let mut probe = state.clone();
+    let mut visited = HashSet::new();
+    let mut endings = Vec::new();
+
+    walk_setup_endings(&mut probe, &mut visited, &mut endings);
+
+    log_4!(
+        "Setup walk: {} censuses expanded, {} endings reached",
+        visited.len(), endings.len()
+    );
+
+    if endings.is_empty() {
+        return state.piece_count.clone();
+    }
+
+    (0..state.piece_count.len())
+        .map(|piece_index| {
+            let total = endings
+                .iter()
+                .map(|ending| ending[piece_index] as u64)
+                .sum::<u64>();
+
+            (total / endings.len() as u64) as u32
+        })
+        .collect()
+}
+
 /// derive_parameters
 ///
 /// Startup entry point for the whole derivation pass: computes the
@@ -608,9 +749,9 @@ pub fn derive_parameters(state: &mut State) {
 /// Drives the evaluation half of parameter derivation: values every
 /// white piece for both phases (black twins copy them via the swap map),
 /// normalizes against the cheapest piece, assigns big/major/minor roles,
-/// derives the opening/endgame phase thresholds from average material,
-/// and builds all piece-square tables (black tables are the white ones
-/// mirrored across the horizontal axis).
+/// derives the opening/endgame phase thresholds from the army the variant
+/// actually starts play with, and builds all piece-square tables (black
+/// tables are the white ones mirrored across the horizontal axis).
 ///
 /// Params:
 /// - state: &mut State -> variant whose dynamic parameters are filled
@@ -637,7 +778,7 @@ pub fn derive_eval_parameters(state: &mut State) {
         .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
-    for (index, opening, endgame) in values.clone() {
+    for (index, opening, endgame) in values {
         let black_index = state.statics.piece_swap_map[index] as usize;
         let white_index = index;
         let ovalue = (opening - offset).round() as u16;
@@ -665,26 +806,37 @@ pub fn derive_eval_parameters(state: &mut State) {
         );
     }
 
-    let total_values = values.len() as f64;
-    let average_value = values
-        .into_iter()
-        .filter(
-            |(index, _, _)|
-                p_is_big!(&state.statics.pieces[*index]) &&
-                !p_is_royal!(&state.statics.pieces[*index]) &&
-                p_color!(&state.statics.pieces[*index]) == WHITE
-        )
-        .map(|(_, opening, _)| opening)
-        .sum::<f64>() / total_values;
+    let start_army = resolve_setup_army(state);
+
+    let mut deployed_value = 0u64;
+    let mut deployed_count = 0u64;
+    let mut deployed_big = 0u64;
+
+    for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
+        if p_is_royal!(piece) {
+            continue;
+        }
+
+        let deployed = start_army[piece_index] as u64;
+
+        deployed_value += p_ovalue!(piece) as u64 * deployed;
+        deployed_count += deployed;
+        deployed_big += deployed * p_is_big!(piece) as u64;
+    }
+
+    let mean_value = deployed_value.checked_div(deployed_count).unwrap_or(0);
 
     log_3!(
-        "Average piece value (for big non-royal pieces): {:.4}", average_value
+        "Mean deployed non-royal value: {} over {} pieces, {} of them big",
+        mean_value, deployed_count, deployed_big
     );
 
-    state.static_mut().opening_score =
-        average_value.round() as u32 * state.statics.pieces.len() as u32;
-    state.static_mut().endgame_score =
-        average_value.round() as u32 * 5;
+    let opening_score = (mean_value * deployed_big).max(1);                     /* a variant with no big army still   */
+    let endgame_score =                                                         /* needs a positive taper divisor     */
+        (mean_value * ENDGAME_ARMY_SIZE).min(opening_score - 1);
+
+    state.static_mut().opening_score = opening_score as u32;
+    state.static_mut().endgame_score = endgame_score as u32;
 
     state.big_pieces = [0; 2];
     state.major_pieces = [0; 2];
