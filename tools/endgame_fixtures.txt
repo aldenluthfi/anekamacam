@@ -74,13 +74,13 @@ sittuyin | 7k/8/8/8/8/8/8/R2K4 w -/- 0 1 | a1a2 h8h7 a2a3 h7h8 a3a4 h8h7 a4a5 h7
 # --- material adjudication on double pass (janggi points) ------------------
 # Kings sit off the same file, so a pass is a plain pass rather than a bikjang
 # stand-off; both sides passing adjudicates by the points count.
-janggi | 9/4k4/9/9/9/9/9/9/3K5/R8 w -/- | d2d2 e9e9 | White wins | White's extra chariot wins the count
-janggi | r8/4k4/9/9/9/9/9/9/3K5/9 w -/- | d2d2 e9e9 | Black wins | Black's extra chariot wins the count
-janggi | 9/4k4/9/9/9/9/9/9/3K5/9 w -/- | d2d2 e9e9 | Black wins | equal material: Black handicap decides
-janggi | 9/4k4/9/9/9/9/9/9/3K5/R8 w -/- | d2d2 | Ongoing | a lone pass does not adjudicate
+janggi | 9/4q4/9/9/9/9/9/9/3K5/R8 w -/- | d2d2 e9e9 | White wins | White's extra chariot wins the count
+janggi | r8/4q4/9/9/9/9/9/9/3K5/9 w -/- | d2d2 e9e9 | Black wins | Black's extra chariot wins the count
+janggi | 9/4q4/9/9/9/9/9/9/3K5/9 w -/- | d2d2 e9e9 | Black wins | equal material: Black handicap decides
+janggi | 9/4q4/9/9/9/9/9/9/3K5/R8 w -/- | d2d2 | Ongoing | a lone pass does not adjudicate
 # --- bikjang stand-off (janggi): facing generals, a pass accepts ------------
 # The generals face on the e-file with a clear path (a stand-off). The side to
 # move must break it or pass; passing accepts the bikjang, decided by the
 # points count -- matching Fairy-Stockfish's double-bikjang immediate end.
-janggi | 9/4k4/9/9/9/9/9/9/4K4/R8 w -/- | e2e2 | White wins | bikjang accepted: White's extra chariot wins the count
-janggi | 9/4k4/9/9/9/9/9/9/4K4/9 w -/- | e2e2 | Black wins | bikjang accepted: equal material, Black handicap decides
+janggi | 9/4q4/9/9/9/9/9/9/4Q4/R8 w -/- | e2e2 | White wins | bikjang accepted: White's extra chariot wins the count
+janggi | 9/4q4/9/9/9/9/9/9/4Q4/9 w -/- | e2e2 | Black wins | bikjang accepted: equal material, Black handicap decides

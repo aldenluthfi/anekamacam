@@ -764,14 +764,10 @@ pub fn parse_config_file(path: &str) -> State {
     let en_passant = sections["rules"].contains(&"en passant".to_string());
     let promotions = sections["rules"].contains(&"promotions".to_string());
     let drops = sections["rules"].contains(&"drops".to_string());
-    let piece_count_limits =
-        sections["rules"].contains(&"piece count limits".to_string());
     let forbidden_zones =
         sections["rules"].contains(&"forbidden zones".to_string());
     let promote_to_captured =
         sections["rules"].contains(&"promote to captured".to_string());
-    let demote_upon_capture =
-        sections["rules"].contains(&"demote upon capture".to_string());
     let setup_phase = sections["rules"].contains(&"setup phase".to_string());
     let stand_offs = sections["rules"].contains(&"stand-offs".to_string());
 
@@ -794,7 +790,7 @@ pub fn parse_config_file(path: &str) -> State {
         assert!(!fen_en_passant, "En passant square found in FEN");
     }
 
-    if drops || promote_to_captured || demote_upon_capture || setup_phase {
+    if drops || promote_to_captured || setup_phase {
         assert!(fen_in_hand, "No pieces in hand found in FEN");
     }
 
@@ -817,13 +813,6 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
-    if piece_count_limits {
-        assert!(
-            sections.contains_key("piece count limits"),
-            "= piece count limits = section is missing"
-        );
-    }
-
     if forbidden_zones {
         assert!(
             sections.contains_key("forbidden zones"),
@@ -838,7 +827,7 @@ pub fn parse_config_file(path: &str) -> State {
         );
     }
 
-    let mut special_rules = 0u32;
+    let mut special_rules = 0u8;
 
     if castling {
         enc_castling!(special_rules);
@@ -2344,9 +2333,9 @@ pub fn parse_fen(
                         format!("Unknown piece character: {}", character)
                     })? as usize;
 
-                let mut piece = &state.statics.pieces[piece_index];
-                let mut piece_index = p_index!(piece);
-                let mut piece_color = p_color!(piece);
+                let piece = &state.statics.pieces[piece_index];
+                let piece_index = p_index!(piece);
+                let piece_color = p_color!(piece);
                 let square_index = rank
                     .checked_mul(board_files)
                     .and_then(|base| base.checked_add(file))
@@ -2356,21 +2345,6 @@ pub fn parse_fen(
                         "FEN square index {} is outside the board",
                         square_index,
                     ));
-                }
-
-                if promotions!(state)
-                    && piece.promotions.len() == 1
-                    && get!(
-                        state.statics
-                            .promotion_zones_mandatory[piece_index as usize],
-                        square_index
-                    )
-                {
-                    piece = &state.statics.pieces[
-                        piece.promotions[0] as usize
-                    ];
-                    piece_index = p_index!(piece);
-                    piece_color = p_color!(piece);
                 }
 
                 state.main_board[square_index as usize] = piece_index;

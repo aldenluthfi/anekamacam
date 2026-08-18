@@ -79,8 +79,8 @@ pub type Square = u16;
 ///
 ///   Params:
 ///
-///   - rules: &mut u32
-///     rules word being built; each writer sets the bit its reader tests
+///   - rules: &mut u8
+///     rules byte being built; each writer sets the bit its reader tests
 #[macro_export]
 macro_rules! castling {
     ($state:expr) => {
@@ -452,12 +452,34 @@ macro_rules! is_terminal {
 /// Immutable variant configuration, shared across threads via Arc.
 /// All fields fixed after `precompute()` live here. `State::clone()` shares
 /// this via `Arc::clone` instead of deep-copying.
+///
+/// The special rules field is a bitmask representing enabled special rules.
+/// (read configs/example.conf for more information)
+///
+/// ```text
+///   0               7
+///   ┌─┬─┬─┬─┬─┬─┬─┬─┐
+///   │c│e│p│d│f│t│s│o│
+///   └─┴─┴─┴─┴─┴─┴─┴─┘
+/// ```
+///
+/// The bits are defined as follows:
+///
+/// - bit 0      : castling allowed
+/// - bit 1      : en passant allowed
+/// - bit 2      : promotions allowed
+/// - bit 3      : drops allowed
+/// - bit 4      : some pieces have forbidden zones
+/// - bit 5      : promotes only to friendly pieces captured by the enemy
+/// - bit 6      : game begins with a setup phase
+/// - bit 7      : a move may create a stand-off
+///
 pub struct StaticState {
     pub title: String,
     pub startpos: String,
 
     pub pieces: Vec<Piece>,
-    pub special_rules: u32,
+    pub special_rules: u8,
 
     pub initial_setup: Vec<Board>,                                              /* piece index to board               */
 
@@ -507,27 +529,6 @@ pub struct StaticState {
 /// State
 ///
 /// Main state of the game.
-/// The special rules field is a bitmask representing enabled special rules.
-/// (read configs/example.conf for more information)
-///
-/// ```text
-///   0 1 2 3 4 5 6 7                                                  31
-///   ┌─┬─┬─┬─┬─┬─┬─┬─┬────────────────────────────────────────────────┐
-///   │c│e│p│d│f│t│s│o│                      unused                     │
-///   └─┴─┴─┴─┴─┴─┴─┴─┴────────────────────────────────────────────────┘
-/// ```
-///
-/// The bits are defined as follows:
-///
-/// - bit 0      : castling allowed
-/// - bit 1      : en passant allowed
-/// - bit 2      : promotions allowed
-/// - bit 3      : drops allowed
-/// - bit 4      : some pieces have forbidden zones
-/// - bit 5      : promotes only to friendly pieces captured by the enemy
-/// - bit 6      : game begins with a setup phase
-/// - bit 7      : a move may create a stand-off
-/// - bits 8..31 : reserved for future use
 ///
 /// Terminal rules (stalemate/checkmate outcome, repetition, counter, ...)
 /// are not bits here; each position owns them in `State::termination`.
@@ -631,7 +632,7 @@ impl State {
     /// - files        : u8         -> number of board files
     /// - ranks        : u8         -> number of board ranks
     /// - pieces       : Vec<Piece> -> piece definitions, indexed by PieceIndex
-    /// - special_rules: u32        -> special-rules bitmask (see [`State`])
+    /// - special_rules: u8         -> special-rules bitmask (see [`State`])
     ///
     /// Return:
     ///
@@ -643,7 +644,7 @@ impl State {
         files: u8,
         ranks: u8,
         pieces: Vec<Piece>,
-        special_rules: u32,
+        special_rules: u8,
     ) -> Self {
 
         let piece_count: usize = pieces.len();
