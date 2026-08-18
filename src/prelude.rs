@@ -484,6 +484,20 @@ pub const DEFAULT_DROP: &str = "@#~?@";
 pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 
+/// Move-ordering bands, searched in descending score order: the table
+/// move, winning captures, killers, quiet moves, then losing captures.
+/// Each constant is a band's base score, already carrying the offset that
+/// keeps the signed tiebreak added to it -- history for quiets, exchange
+/// score for captures -- inside its own band. History is clamped to
+/// `HISTORY_BOUND` either way, so a quiet move spans `QUIET_MOVE_SCORE`
+/// plus or minus that bound and stays clear of both neighbours.
+pub const HISTORY_BOUND: i32 = i16::MAX as i32 / 2;
+pub const TABLE_MOVE_SCORE: usize = 5_000_000;
+pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000 + HISTORY_BOUND;
+pub const KILLER_MOVE_SCORE: usize = 1_000_000 + 3 * HISTORY_BOUND as usize;
+pub const QUIET_MOVE_SCORE: i32 = 1_000_000 + HISTORY_BOUND;
+pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000 - HISTORY_BOUND;
+
 pub const FALPHA: u8 = 0;
 pub const FBETA: u8 = 1;
 pub const FEXACT: u8 = 2;

@@ -805,6 +805,6 @@ pub fn alpha_beta(
 /// - bonus: i32      -> signed bonus or malus
 #[inline(always)]
 fn update_history(entry: &mut i16, bonus: i32) {
-    let bound = i16::MAX as i32 / 2;
-    *entry = (*entry as i32 + bonus).clamp(-bound, bound) as i16;
+    *entry = (*entry as i32 + bonus)
+        .clamp(-HISTORY_BOUND, HISTORY_BOUND) as i16;
 }

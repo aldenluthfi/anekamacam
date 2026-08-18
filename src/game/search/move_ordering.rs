@@ -239,18 +239,15 @@ macro_rules! score_move {
         if $table_move.as_ref().is_some_and(
             |table_move| m_matches!(scored_move, table_move)
         ) {
-            5_000_000
+            TABLE_MOVE_SCORE
         } else if !m_capture!(scored_move) {
             let killers =
                 &$info.killer_hist[$state.search_ply as usize];
-            let history_bound = i16::MAX as i32 / 2;
-            let killer_base =
-                1_000_000 + 3 * history_bound as usize;
 
             if *scored_move == killers[0] {
-                killer_base + 2
+                KILLER_MOVE_SCORE + 2
             } else if *scored_move == killers[1] {
-                killer_base + 1
+                KILLER_MOVE_SCORE + 1
             } else {
                 let piece = piece!(scored_move) as usize;
                 let end = end!(scored_move) as usize;
@@ -258,17 +255,15 @@ macro_rules! score_move {
                 let index = piece * board_size + end;
                 let history = $info.search_hist[index] as i32;
 
-                (1_000_000 + history_bound + history) as usize
+                (QUIET_MOVE_SCORE + history) as usize
             }
         } else {
             let see_score = see!($state, scored_move);
 
-            let history_bound = i16::MAX as i32 / 2;
-
             if see_score >= 0 {
-                (4_000_000 + history_bound + see_score) as usize
+                (WINNING_CAPTURE_SCORE + see_score) as usize
             } else {
-                (1_000_000 - history_bound + see_score) as usize
+                (LOSING_CAPTURE_SCORE + see_score) as usize
             }
         }
     }};
@@ -308,7 +303,7 @@ macro_rules! pick_by_score {
                 {
                     moves.swap(0, table_index);
                     scores.swap(0, table_index);
-                    scores[0] = 5_000_000;
+                    scores[0] = TABLE_MOVE_SCORE;
                 }
             }
         }
@@ -322,7 +317,7 @@ macro_rules! pick_by_score {
         let mut best_index = index;
         let mut best_score = scores[index];
 
-        if best_score != 5_000_000 {
+        if best_score != TABLE_MOVE_SCORE {
             for candidate in (index + 1)..moves.len() {
                 if scores[candidate] == usize::MAX {
                     scores[candidate] = score_move!(
