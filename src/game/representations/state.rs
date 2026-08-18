@@ -492,6 +492,16 @@ pub struct StaticState {
     pub endgame_score: u32,                                                     /* endgame threshold                  */
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
+
+/*----------------------------------------------------------------------------*\
+                              DERIVATION SCALARS
+\*----------------------------------------------------------------------------*/
+
+    pub opening_occupancy: u32,                                                 /* blocked-square fraction, x1000     */
+    pub endgame_occupancy: u32,                                                 /* blocked-square fraction, x1000     */
+    pub role_non_big_split: u32,                                                /* cheapest non-big share, x1000      */
+    pub role_major_split: u32,                                                  /* dearest major share, x1000         */
+    pub endgame_army_size: u32,                                                 /* endgame at this many mean pieces   */
 }
 
 /// State
@@ -703,6 +713,12 @@ impl State {
             endgame_score: 0,
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
+
+            opening_occupancy: OPENING_OCCUPANCY,
+            endgame_occupancy: ENDGAME_OCCUPANCY,
+            role_non_big_split: ROLE_NON_BIG_SPLIT,
+            role_major_split: ROLE_MAJOR_SPLIT,
+            endgame_army_size: ENDGAME_ARMY_SIZE,
         });
 
         Self::from_statics(statics)

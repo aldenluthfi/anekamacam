@@ -75,7 +75,11 @@ pub use crate::game::position::{
 };
 pub use crate::game::search::{
     parallel::ThreadPool,
-    parameters::{derive_eval_parameters, derive_parameters},
+    parameters::{
+        COEFFICIENT_SCALE, ENDGAME_ARMY_SIZE, ENDGAME_OCCUPANCY,
+        OPENING_OCCUPANCY, ROLE_MAJOR_SPLIT, ROLE_NON_BIG_SPLIT,
+        derive_eval_parameters, derive_parameters,
+    },
     transposition::{QTable, QTEntry, TTEntry, TTable},
 };
 
@@ -99,7 +103,8 @@ pub use crate::io::game_io::{
     format_en_passant_square, format_fen, format_game_phase, format_game_result,
     format_game_state, format_hand, format_position_hash, format_special_rules,
     parse_config_file,
-    parse_config_preview, parse_fen, parse_tuned_parameters
+    parse_config_preview, parse_fen, parse_tuned_parameters,
+    scalar_parameter_tokens
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, dec_verbosity,
@@ -487,6 +492,8 @@ pub const SETUP: u8 = 0;
 pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
+
+pub const PARAM_SCALAR_COUNT: usize = 5;                                        /* derivation scalars per payload     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

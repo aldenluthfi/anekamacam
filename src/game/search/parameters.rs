@@ -14,15 +14,24 @@
 
 use crate::*;
 
+/// Scale the fractional derivation coefficients are stored against, so
+/// they survive a round trip through the all-integer parameter payload.
+pub const COEFFICIENT_SCALE: f64 = 1000.0;
+
 /// Board occupancy assumed when valuing a piece: the fraction of squares
 /// a slider expects to find blocked in each phase, which is what makes an
 /// opening value differ from an endgame one.
-pub const OPENING_OCCUPANCY: f64 = 0.36;
-pub const ENDGAME_OCCUPANCY: f64 = 0.12;
+pub const OPENING_OCCUPANCY: u32 = 360;
+pub const ENDGAME_OCCUPANCY: u32 = 120;
+
+/// Where the ranked non-royal army is cut into roles: the cheapest share
+/// that is not big, and the dearest share that is major.
+pub const ROLE_NON_BIG_SPLIT: u32 = 100;
+pub const ROLE_MAJOR_SPLIT: u32 = 200;
 
 /// How small the big non-royal army has to get before play counts as an
 /// endgame, measured in pieces of average deployed value.
-const ENDGAME_ARMY_SIZE: u64 = 5;
+pub const ENDGAME_ARMY_SIZE: u32 = 5;
 
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement
@@ -70,8 +79,13 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
         |(value, white_index, _)| (*value, *white_index)
     );
 
-    let non_big_count = (ranked.len() as f32 * 0.1).ceil() as usize;
-    let major_count = (ranked.len() as f32 * 0.2).ceil() as usize;
+    let non_big_share =
+        state.statics.role_non_big_split as f32 / COEFFICIENT_SCALE as f32;
+    let major_share =
+        state.statics.role_major_split as f32 / COEFFICIENT_SCALE as f32;
+
+    let non_big_count = (ranked.len() as f32 * non_big_share).ceil() as usize;
+    let major_count = (ranked.len() as f32 * major_share).ceil() as usize;
 
     log_4!(
         "Role counts - Non-big: {}, Major: {}",
@@ -472,10 +486,10 @@ fn derive_square_score(
     state: &State, piece_index: PieceIndex, square: usize, is_endgame: bool
 ) -> f64 {
     let occupancy = if is_endgame {
-        ENDGAME_OCCUPANCY
+        state.statics.endgame_occupancy
     } else {
-        OPENING_OCCUPANCY
-    };
+        state.statics.opening_occupancy
+    } as f64 / COEFFICIENT_SCALE;
 
     let mobility =
         derive_piece_mobility(state, piece_index, square, occupancy);
@@ -758,6 +772,11 @@ pub fn derive_parameters(state: &mut State) {
 pub fn derive_eval_parameters(state: &mut State) {
     log_3!("Deriving dynamic evaluation parameters...");
 
+    let opening_occupancy =
+        state.statics.opening_occupancy as f64 / COEFFICIENT_SCALE;
+    let endgame_occupancy =
+        state.statics.endgame_occupancy as f64 / COEFFICIENT_SCALE;
+
     let values = state.statics.pieces
         .par_iter()
         .filter_map(|piece| {
@@ -766,8 +785,8 @@ pub fn derive_eval_parameters(state: &mut State) {
             }
 
             let index = p_index!(piece) as usize;
-            let opening = derive_piece_value(state, piece, OPENING_OCCUPANCY);
-            let endgame = derive_piece_value(state, piece, ENDGAME_OCCUPANCY);
+            let opening = derive_piece_value(state, piece, opening_occupancy);
+            let endgame = derive_piece_value(state, piece, endgame_occupancy);
 
             Some((index, opening, endgame))
         })
@@ -833,7 +852,8 @@ pub fn derive_eval_parameters(state: &mut State) {
 
     let opening_score = (mean_value * deployed_big).max(1);                     /* a variant with no big army still   */
     let endgame_score =                                                         /* needs a positive taper divisor     */
-        (mean_value * ENDGAME_ARMY_SIZE).min(opening_score - 1);
+        (mean_value * state.statics.endgame_army_size as u64)
+            .min(opening_score - 1);
 
     state.static_mut().opening_score = opening_score as u32;
     state.static_mut().endgame_score = endgame_score as u32;

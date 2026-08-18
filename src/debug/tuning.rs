@@ -660,6 +660,8 @@ fn export_theta(
         }
     }
 
+    tokens.extend(scalar_parameter_tokens(state));
+
     parse_tuned_parameters(state, &tokens.join(" "));
     export_tuned_parameters_file(state, variant);
 }

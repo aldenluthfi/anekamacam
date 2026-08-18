@@ -169,6 +169,70 @@ fn validate_castling(fen: &str, state: &State) -> bool {
     valid
 }
 
+/// apply_scalar_parameters
+///
+/// Writes a payload's trailing derivation coefficients into the static
+/// state, in the one order the schema defines. Adding a coefficient means
+/// appending a slot here and in `scalar_parameter_tokens`, raising
+/// `PARAM_SCALAR_COUNT`, and regenerating every shipped payload in the
+/// same change.
+///
+/// Params:
+/// - state  : &mut State -> variant receiving the coefficients
+/// - scalars: &[i32]     -> the trailing `PARAM_SCALAR_COUNT` tokens
+fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
+    assert_eq!(
+        scalars.len(), PARAM_SCALAR_COUNT,
+        "Scalar tail length mismatch: expected {}, found {}.",
+        PARAM_SCALAR_COUNT, scalars.len()
+    );
+
+    let fractions = [scalars[0], scalars[1], scalars[2], scalars[3]];
+
+    for (slot, value) in fractions.iter().enumerate() {
+        assert!(
+            (0..=COEFFICIENT_SCALE as i32).contains(value),
+            "Scalar {} is a fraction of {} and must be within it, got {}",
+            slot, COEFFICIENT_SCALE as i32, value
+        );
+    }
+
+    assert!(
+        scalars[4] >= 0,
+        "Scalar 4 counts pieces and cannot be negative, got {}",
+        scalars[4]
+    );
+
+    let statics = state.static_mut();
+
+    statics.opening_occupancy = scalars[0].unsigned_abs();
+    statics.endgame_occupancy = scalars[1].unsigned_abs();
+    statics.role_non_big_split = scalars[2].unsigned_abs();
+    statics.role_major_split = scalars[3].unsigned_abs();
+    statics.endgame_army_size = scalars[4].unsigned_abs();
+}
+
+/// scalar_parameter_tokens
+///
+/// Serializes the derivation coefficients in the same order
+/// `apply_scalar_parameters` reads them back, so the reader and every
+/// writer cannot drift apart.
+///
+/// Params:
+/// - state: &State -> variant whose coefficients are serialized
+///
+/// Return:
+/// Vec<String>     -> exactly `PARAM_SCALAR_COUNT` tokens
+pub fn scalar_parameter_tokens(state: &State) -> Vec<String> {
+    vec![
+        state.statics.opening_occupancy.to_string(),
+        state.statics.endgame_occupancy.to_string(),
+        state.statics.role_non_big_split.to_string(),
+        state.statics.role_major_split.to_string(),
+        state.statics.endgame_army_size.to_string(),
+    ]
+}
+
 /// parse_tuned_parameters
 ///
 /// Parses tuned parameters from a flat space-separated string.
@@ -178,11 +242,18 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// 1. opening phase score, endgame phase score,
 /// 2. opening values (piece-type count), endgame values (piece-type count),
 /// 3. big flags, major flags,
-/// 4. then white opening/middlegame PST rows (piece-type count × board_size),
-/// 5. then white endgame PST rows (piece-type count × board_size)
+/// 4. per piece type, its white opening PST row then its white endgame PST
+///    row, each board_size long,
+/// 5. the `PARAM_SCALAR_COUNT` derivation scalars, in the order given by
+///    `apply_scalar_parameters`
 ///
 /// Black PST rows are derived by mirroring white rows across the
 /// horizontal axis.
+///
+/// There is one accepted payload shape. A file whose length does not match
+/// the shape this build emits is rejected rather than partially read: every
+/// shipped payload is regenerated whenever the shape changes, so a
+/// mismatch means a stale file, not an older dialect to support.
 ///
 /// Params:
 /// - state  : &mut State -> variant whose parameters are overwritten
@@ -202,11 +273,15 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let board_size = state.statics.board_size;
     let expected_count = 2
         + piece_type_count * 4
-        + piece_type_count * board_size * 2;
+        + piece_type_count * board_size * 2
+        + PARAM_SCALAR_COUNT;
 
     assert_eq!(
         tokens.len(), expected_count,
-        "Parameter count mismatch."
+        "Parameter count mismatch: expected {} tokens for {} piece types on \
+         {} squares plus {} scalars, found {}.",
+        expected_count, piece_type_count, board_size,
+        PARAM_SCALAR_COUNT, tokens.len()
     );
 
     let mut cursor = 0usize;
@@ -308,6 +383,8 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
             );
     }
 
+    apply_scalar_parameters(state, &tokens[cursor..]);
+
     state.big_pieces = [0; 2];
     state.major_pieces = [0; 2];
     state.minor_pieces = [0; 2];
@@ -381,6 +458,8 @@ pub fn export_tuned_parameters_file(
             output_tokens.push(value.to_string());
         }
     }
+
+    output_tokens.extend(scalar_parameter_tokens(state));
 
     let dir_path = format!("{}/{}", PARAMS_DIR, variant);
 
