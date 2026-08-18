@@ -574,17 +574,6 @@ pub struct State {
     pub piece_count: Vec<u32>,                                                  /* piece index to count               */
     pub piece_list: Vec<Square>,                                                /* board_size slots per piece, packed */
     pub piece_in_hand: [Vec<u16>; 2],                                           /* color to pieces in hand list       */
-
-/*----------------------------------------------------------------------------*\
-                                 SEARCH FIELDS
-\*----------------------------------------------------------------------------*/
-
-    pub pv_line: [Move; MAX_DEPTH],                                             /* principal variation line for search*/
-    pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
-    pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
-
-    pub search_hist: Vec<i16>,                                                  /* [piece*B*B + start*B + end]        */
-    pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 }
 
 impl Clone for State {
@@ -623,13 +612,6 @@ impl Clone for State {
             piece_count: self.piece_count.clone(),
             piece_list: self.piece_list.clone(),
             piece_in_hand: self.piece_in_hand.clone(),
-
-            pv_line: self.pv_line.clone(),
-            pv_table: self.pv_table.clone(),
-            pv_length: self.pv_length.clone(),
-
-            search_hist: self.search_hist.clone(),
-            killer_hist: self.killer_hist.clone(),
         }
     }
 }
@@ -781,13 +763,6 @@ impl State {
             piece_count: vec![0u32; piece_count],
             piece_list: vec![NO_SQUARE; piece_count * board_size],
             piece_in_hand: [vec![0; piece_count], vec![0; piece_count]],
-
-            pv_line: array::from_fn(|_| null_move()),
-            pv_table: vec![null_move(); PV_STRIDE * PV_STRIDE],
-            pv_length: vec![0; PV_STRIDE],
-
-            search_hist: vec![0i16; piece_count * board_size * board_size],
-            killer_hist: vec![array::from_fn(|_| null_move()); MAX_DEPTH],
         }
     }
 
@@ -851,14 +826,6 @@ impl State {
         self.piece_count = vec![0u32; piece_count];
         self.piece_list = vec![NO_SQUARE; piece_count * board_size];
         self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
-
-        self.pv_line = array::from_fn(|_| null_move());
-        self.pv_table = vec![null_move(); PV_STRIDE * PV_STRIDE];
-        self.pv_length = vec![0; PV_STRIDE];
-
-        self.search_hist =
-            vec![0i16; piece_count * board_size * board_size];
-        self.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
     }
 
     /// State::load_fen

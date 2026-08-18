@@ -224,7 +224,8 @@ macro_rules! see {
 /// killers, butterfly history, losing SEE capture.
 ///
 /// Params:
-/// - state     : &mut State          -> position and ordering history
+/// - state     : &mut State          -> position the move is scored on
+/// - info      : &SearchInfo         -> killer and history tables
 /// - mv        : &Move               -> move to score
 /// - table_move: &Option<PseudoMove> -> stored table move for this node
 ///
@@ -232,7 +233,7 @@ macro_rules! see {
 /// usize -> ordering score, larger searched earlier
 #[macro_export]
 macro_rules! score_move {
-    ($state:expr, $mv:expr, $table_move:expr) => {{
+    ($state:expr, $info:expr, $mv:expr, $table_move:expr) => {{
         let scored_move: &Move = $mv;
 
         if $table_move.as_ref().is_some_and(
@@ -241,7 +242,7 @@ macro_rules! score_move {
             5_000_000
         } else if !m_capture!(scored_move) {
             let killers =
-                &$state.killer_hist[$state.search_ply as usize];
+                &$info.killer_hist[$state.search_ply as usize];
             let history_bound = i16::MAX as i32 / 2;
             let killer_base =
                 1_000_000 + 3 * history_bound as usize;
@@ -252,12 +253,10 @@ macro_rules! score_move {
                 killer_base + 1
             } else {
                 let piece = piece!(scored_move) as usize;
-                let start = start!(scored_move) as usize;
                 let end = end!(scored_move) as usize;
                 let board_size = $state.statics.board_size;
-                let index = piece * board_size * board_size
-                    + start * board_size + end;
-                let history = $state.search_hist[index] as i32;
+                let index = piece * board_size + end;
+                let history = $info.search_hist[index] as i32;
 
                 (1_000_000 + history_bound + history) as usize
             }
@@ -282,6 +281,7 @@ macro_rules! score_move {
 ///
 /// Params:
 /// - state     : &mut State          -> position used for scoring
+/// - info      : &SearchInfo         -> killer and history tables
 /// - moves     : &mut Vec<Move>      -> move list reordered in place
 /// - scores    : &mut Vec<usize>     -> lazily filled score cache
 /// - index     : usize               -> slot receiving best remaining move
@@ -290,6 +290,7 @@ macro_rules! score_move {
 macro_rules! pick_by_score {
     (
         $state:expr,
+        $info:expr,
         $moves:expr,
         $scores:expr,
         $index:expr,
@@ -314,7 +315,7 @@ macro_rules! pick_by_score {
 
         if scores[index] == usize::MAX {
             scores[index] = score_move!(
-                $state, &moves[index], $table_move
+                $state, $info, &moves[index], $table_move
             );
         }
 
@@ -325,7 +326,7 @@ macro_rules! pick_by_score {
             for candidate in (index + 1)..moves.len() {
                 if scores[candidate] == usize::MAX {
                     scores[candidate] = score_move!(
-                        $state, &moves[candidate], $table_move
+                        $state, $info, &moves[candidate], $table_move
                     );
                 }
 

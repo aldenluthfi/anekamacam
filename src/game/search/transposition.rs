@@ -537,16 +537,18 @@ macro_rules! hash_tt_entry {
 /// are also skipped once terminal to avoid extending past terminal state.
 ///
 /// Params:
-/// - state: &mut State -> position walked and restored
-/// - table: &TTable    -> the shared transposition table
-/// - depth: usize      -> maximum PV length to reconstruct
+/// - state: &mut State      -> position walked and restored
+/// - info : &mut SearchInfo -> worker holding the PV storage
+/// - table: &TTable         -> the shared transposition table
+/// - depth: usize           -> maximum PV length to reconstruct
 #[macro_export]
 macro_rules! fill_pv_line {
-    ($state:expr, $table:expr, $depth:expr) => {{
-        let triangular_length = $state.pv_length[0].min(MAX_DEPTH);
+    ($state:expr, $info:expr, $table:expr, $depth:expr) => {{
+        let pv_depth = $depth;
+        let triangular_length = $info.pv_length[0].min(MAX_DEPTH);
 
         for index in 0..triangular_length {
-            $state.pv_line[index] = $state.pv_table[index].clone();
+            $info.pv_line[index] = $info.pv_table[index].clone();
         }
 
         let mut out: Vec<Move> = Vec::with_capacity(64);
@@ -554,7 +556,7 @@ macro_rules! fill_pv_line {
         let mut walk_complete = true;
 
         for slot in 0..triangular_length {
-            let pv_move = $state.pv_line[slot].clone();
+            let pv_move = $info.pv_line[slot].clone();
 
             generate_all_moves_and_drops(
                 $state, &mut out, &mut scratch
@@ -572,7 +574,7 @@ macro_rules! fill_pv_line {
             }
         }
 
-        for slot in triangular_length..$depth {
+        for slot in triangular_length..pv_depth {
             if !walk_complete {
                 break;
             }
@@ -609,7 +611,7 @@ macro_rules! fill_pv_line {
                 break;
             };
 
-            $state.pv_line[slot] = pv_move;
+            $info.pv_line[slot] = pv_move;
 
             if is_terminal!($state) {
                 break;
@@ -617,7 +619,7 @@ macro_rules! fill_pv_line {
         }
 
         for index in ($state.search_ply as usize)..MAX_DEPTH {
-            $state.pv_line[index] = null_move();
+            $info.pv_line[index] = null_move();
         }
 
         while $state.search_ply > 0 {

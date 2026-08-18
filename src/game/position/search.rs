@@ -13,7 +13,10 @@ use crate::*;
 
 /// SearchInfo
 ///
-/// Search limits, counters, and stop flags for an active search.
+/// Everything one search worker owns: limits, counters, stop flags, and the
+/// principal variation, killer, and history tables it orders moves with.
+/// These tables are search scratch, not game state, so a worker allocates
+/// them once in `clear_search` and no `State` clone ever carries them.
 #[derive(Default)]
 pub struct SearchInfo {
     pub start_time: u128,                                                       /* start time since engine launch     */
@@ -28,6 +31,13 @@ pub struct SearchInfo {
     pub nodes: u128,                                                            /* total nodes searched so far        */
 
     pub interrupt: bool,                                                        /* flag set by external stop events   */
+
+    pub pv_line: Vec<Move>,                                                     /* reported principal variation       */
+    pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
+    pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
+
+    pub search_hist: Vec<i16>,                                                  /* [piece * board_size + end]         */
+    pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 }
 
 /// SearchResult
@@ -84,13 +94,14 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 
 /// clear_search
 ///
-/// Resets search counters, ordering tables, and principal variation storage.
+/// Resets search counters and allocates this worker's ordering tables and
+/// principal variation storage at the sizes the position calls for.
 ///
 /// Params:
-/// - state : &mut State      -> position whose search state is reset
+/// - state : &mut State      -> position the tables are sized from
 /// - ttable: &TTable         -> main table, aged one generation
 /// - qtable: &QTable         -> qsearch table, aged one generation
-/// - info  : &mut SearchInfo -> counters and flags to reset
+/// - info  : &mut SearchInfo -> worker whose counters and tables are reset
 pub fn clear_search(
     state: &mut State,
     ttable: &TTable,
@@ -104,12 +115,12 @@ pub fn clear_search(
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
 
-    state.search_hist = vec![0i16; piece_count * board_size * board_size];
-    state.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
+    info.search_hist = vec![0i16; piece_count * board_size];
+    info.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
-    state.pv_line.fill(null_move());
-    state.pv_table.fill(null_move());
-    state.pv_length.fill(0);
+    info.pv_line = vec![null_move(); MAX_DEPTH];
+    info.pv_table = vec![null_move(); PV_STRIDE * PV_STRIDE];
+    info.pv_length = vec![0; PV_STRIDE];
 
     ttable.age.fetch_add(1, Ordering::Relaxed);
     qtable.age.fetch_add(1, Ordering::Relaxed);
@@ -153,9 +164,6 @@ pub fn search_position(
         info.nodes = 0;
         info.interrupt = false;
         state.search_ply = 0;
-        state.pv_line.fill(null_move());
-        state.pv_table.fill(null_move());
-        state.pv_length.fill(0);
 
         return SearchResult {
             best_score: terminal_score!(state),
@@ -252,14 +260,14 @@ pub fn iterative_deepening(
             state, ttable, qtable, depth, -INF, INF, info, true,
         );
 
-        fill_pv_line!(state, ttable, depth);
+        fill_pv_line!(state, info, ttable, depth);
 
         if info.interrupt {
             break;
         }
 
         best_score = score;
-        best_move = state.pv_line[0].clone();
+        best_move = info.pv_line[0].clone();
 
         let depth_elapsed = ENGINE_START
             .elapsed()
@@ -284,7 +292,7 @@ pub fn iterative_deepening(
             .and_then(|nodes| nodes.checked_div(total_elapsed))
             .unwrap_or(0);
 
-        let pv_line = state.pv_line
+        let pv_line = info.pv_line
             .iter()
             .take(depth)
             .take_while(|mv| mv != &&null_move())
@@ -353,10 +361,10 @@ pub fn iterative_deepening(
         format_time(total_elapsed),
     );
 
-    fill_pv_line!(state, ttable, info.set_depth);
+    fill_pv_line!(state, info, ttable, info.set_depth);
 
-    let ponder_move = if state.pv_line.first() == Some(&best_move) {
-        state.pv_line
+    let ponder_move = if info.pv_line.first() == Some(&best_move) {
+        info.pv_line
             .get(1)
             .filter(|mv| *mv != &null_move())
             .cloned()
@@ -465,7 +473,7 @@ fn quiescence_search(
 
     for index in 0..moves.len() {
         pick_by_score!(
-            state, &mut moves, &mut scores, index, &table_move
+            state, info, &mut moves, &mut scores, index, &table_move
         );
 
         if !make_move!(state, moves[index].clone()) {
@@ -549,7 +557,7 @@ pub fn alpha_beta(
 ) -> i32 {
     let ply = state.search_ply as usize;
     let mut alpha = alpha;
-    state.pv_length[ply] = ply;
+    info.pv_length[ply] = ply;
 
     if is_terminal!(state) {
         return terminal_score!(state);
@@ -638,7 +646,6 @@ pub fn alpha_beta(
     }
 
     let board_size = state.statics.board_size;
-    let board_area = board_size * board_size;
     let history_bonus = (depth * depth) as i32;
 
     let mut moves = Vec::with_capacity(64);
@@ -655,15 +662,13 @@ pub fn alpha_beta(
 
     for index in 0..moves.len() {
         pick_by_score!(
-            state, &mut moves, &mut scores, index, &table_move
+            state, info, &mut moves, &mut scores, index, &table_move
         );
 
         let mv = &moves[index];
         let piece = piece!(mv) as usize;
-        let start = start!(mv) as usize;
         let end = end!(mv) as usize;
-        let history_index =
-            piece * board_area + start * board_size + end;
+        let history_index = piece * board_size + end;
 
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
@@ -712,14 +717,14 @@ pub fn alpha_beta(
             if score > alpha {
                 if score >= beta {
                     if is_quiet {
-                        if state.killer_hist[ply][0] != best_move {
-                            state.killer_hist[ply][1] =
-                                state.killer_hist[ply][0].clone();
-                            state.killer_hist[ply][0] = best_move.clone();
+                        if info.killer_hist[ply][0] != best_move {
+                            info.killer_hist[ply][1] =
+                                info.killer_hist[ply][0].clone();
+                            info.killer_hist[ply][0] = best_move.clone();
                         }
 
                         update_history(
-                            &mut state.search_hist[history_index],
+                            &mut info.search_hist[history_index],
                             history_bonus,
                         );
                     }
@@ -733,7 +738,7 @@ pub fn alpha_beta(
 
                 if is_quiet {
                     update_history(
-                        &mut state.search_hist[history_index],
+                        &mut info.search_hist[history_index],
                         history_bonus,
                     );
                 }
@@ -741,10 +746,10 @@ pub fn alpha_beta(
                 alpha = score;
 
                 let next_ply = ply + 1;
-                let child_length = state.pv_length[next_ply];
-                state.pv_length[ply] = child_length;
+                let child_length = info.pv_length[next_ply];
+                info.pv_length[ply] = child_length;
 
-                let (parent_row, child_rows) = state.pv_table
+                let (parent_row, child_rows) = info.pv_table
                     .split_at_mut(next_ply * PV_STRIDE);
 
                 parent_row[ply * PV_STRIDE + ply] = moves[index].clone();
@@ -756,7 +761,7 @@ pub fn alpha_beta(
             }
         } else if is_quiet {
             update_history(
-                &mut state.search_hist[history_index],
+                &mut info.search_hist[history_index],
                 -history_bonus,
             );
         }
