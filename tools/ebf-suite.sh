@@ -84,14 +84,41 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/anekamacam-ebf-suite.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/logs"
 
-# fairy-stockfish spells three of our variants differently and has no name
-# for the rest, so a case it cannot play drops out of its column.
+# fairy-stockfish's own UCI_Variant combo is the list of record, so the names
+# it shares with us are read from the engine rather than declared here: a
+# hardcoded whitelist silently dropped capablanca and gothic, which are the
+# same-board control the grand node ratio is stated against. `standard` is the
+# one name we spell differently. A case fairy-stockfish cannot play drops out
+# of its column.
+FSF_VARIANTS="$TMP/fsf-variants"
+: >"$FSF_VARIANTS"
+
+if [[ -n "$FSF" ]]; then
+	printf 'uci\nquit\n' | "$FSF" 2>/dev/null |
+		sed -n 's/.*option name UCI_Variant .*default //p' |
+		tr ' ' '\n' | grep -vx 'var' | grep -v '^$' \
+			>"$FSF_VARIANTS" || true
+
+	# An empty list would drop the external column from every case at once,
+	# which reads exactly like a run that had no external engine at all.
+	if [[ ! -s "$FSF_VARIANTS" ]]; then
+		echo "ERROR: $FSF named no UCI_Variant values" >&2
+		exit 1
+	fi
+fi
+
 fsf_variant() {
-	case "$1" in
-	standard) echo "chess" ;;
-	crazyhouse | shogi | xiangqi | grand) echo "$1" ;;
-	*) echo "" ;;
-	esac
+	local name=$1
+
+	if [[ "$name" == standard ]]; then
+		name=chess
+	fi
+
+	if grep -qx "$name" "$FSF_VARIANTS" 2>/dev/null; then
+		echo "$name"
+	else
+		echo ""
+	fi
 }
 
 # Runs one case to its depth and leaves the engine's whole output in $5.

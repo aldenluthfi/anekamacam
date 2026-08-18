@@ -22,6 +22,14 @@
 # the control the drop-variant ratio is stated against, so it is eight cases
 # rather than the two an earlier throwaway version used.
 #
+# The four `startpos` cases of standard, capablanca, gothic and grand are a
+# board-width ladder: 8x8, two different 10x8 setups, and 10x10. Grand's node
+# ratio against fairy-stockfish only means something next to them, because the
+# same ratio climbs on boards grand has nothing to do with. capablanca and
+# gothic share a board and differ only in setup, which separates width from
+# opening material. They carry no midgame cases yet, so they gate nothing on
+# their own.
+#
 # Depth is per variant, chosen so one pass is minutes rather than hours;
 # the suite reports the whole node curve, so a gate written against a
 # shallower depth reads the same run.
@@ -51,6 +59,9 @@ xiangqi | aneka-p24 | position startpos moves h3h6 b8b1 h6h5 e7e6 a1b1 h8g8 h5i5
 xiangqi | aneka-p32 | position startpos moves i1i2 h10i8 i2i3 h8h4 h3e3 h4e4 e3e7 i8g9 b1c3 e4e6 i3d3 b10c8 e7d7 b8b4 h1i3 g9e8 a1b1 b4b5 d3d5 b5b9 e1e2 b9e9 e2d2 e9d9 c4c5 a10b10 b3b9 e6e1 g1e3 b10b9 b1b9 d9d5 | 12
 xiangqi | fsf-p24 | position startpos moves h3h6 b8b1 h6h5 e7e6 a1b1 g10e8 b3e3 b10c8 h1g3 h10g8 h5g5 g8e7 i1h1 h8f8 e3e6 d10e9 g5e5 i7i6 b1b9 f8f9 b9b6 i6i5 h1h9 f9f8 | 12
 xiangqi | fsf-p32 | position startpos moves i1i2 h10i8 i2i3 h8h4 h1g3 b8g8 c1e3 i10i9 h3h2 b10c8 b1d2 i9d9 d1e2 g8g4 a1d1 d10e9 i4i5 a10b10 b3c3 d9d5 c3c7 c10e8 i5i6 i7i6 i3i6 g7g6 h2i2 b10d10 i2i8 g10i8 i6i8 d5d2 | 12
+capablanca | startpos | position startpos | 10
+gothic | startpos | position startpos | 10
+grand | startpos | position startpos | 10
 grand | aneka-p24 | position startpos moves g2i1 c8c6 i2j4 j10h10 g3g4 b8b7 h2d6 a8a7 a1d1 a10f10 i1f4 g9f7 h3h5 j8j7 j1e1 i9h7 j4h3 d8d7 f2g2 c9f6 g4g5 h7g5 d6c7 b9c7 | 10
 grand | aneka-p32 | position startpos moves e3e4 b9d10 j1c1 f9h10 c1f1 i9h7 i2h4 h10f9 g2e3 j10e10 a1e1 g8g7 c2d1 c8c7 b2c4 g9f7 j3j4 a10c10 h4f5 f7g6 f5h4 g6e7 h4f5 e7c8 f5d4 j8j7 i3i4 b8b6 a3a5 a8a6 a5b6 c7b6 | 10
 grand | fsf-p24 | position startpos moves g2i1 c8c6 i2j4 j10h10 i1g2 d8d6 g3g4 f9e7 c3c4 a10d10 g2h4 e7b7 h4g3 i8i7 d3d4 g8g7 h3h4 c9e7 j4h3 b9c7 f3f5 c6c5 b2d3 d6d5 | 10

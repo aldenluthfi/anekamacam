@@ -320,10 +320,13 @@ macro_rules! outcome_score {
 /// count comes from `royal_list`, which make/undo maintain on every move type
 /// and `verify_game_state` recomputes.
 ///
-/// The royal count stays pinned at exactly one. Whether a bare-king rule
-/// should also accept a colour holding two royals is a rules question this
-/// does not answer -- `janggi.conf` declares `royal: KQkq`, so it is a real
-/// one.
+/// The royal count stays pinned at exactly one, and no declared rule reaches
+/// this with more. Both callers sit behind a `counting` rule; only makruk,
+/// sittuyin and ouk-chaktrang declare one, all three declare `royal: Kk`, and
+/// none promotes to a royal letter. `janggi.conf` is the only config naming
+/// two royal letters a side, but `K` and `Q` are the two forms of one general
+/// that `K:Q` and `Q:K` convert between, so a janggi colour still holds
+/// exactly one royal -- and janggi adjudicates on points instead of counting.
 ///
 /// Params:
 /// - state: &State -> position to inspect

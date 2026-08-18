@@ -9,10 +9,10 @@ Baseline branch: `experiment/blank-slate`.
   quiescence, simplified NMP, flat LMP, two killers, butterfly history,
   SEE ordering, TT/QT, and Lazy SMP.
 
-Unlettered prerequisites 1 through 7 have landed, except RR #0 itself, which is
-blocked on a missing `cutechess-cli`. No letter has been opened. Per-prerequisite
-status lines record what was proved, what was left open, and where the shipped
-design departs from this plan.
+Every unlettered prerequisite has landed, except RR #0 itself, which is blocked
+on a missing `cutechess-cli`. No letter has been opened. Per-prerequisite status
+lines record what was proved, what was left open, and where the shipped design
+departs from this plan.
 
 | # | state | commit |
 | --- | --- | --- |
@@ -22,8 +22,8 @@ design departs from this plan.
 | 4. Search ownership and wide-board feasibility | landed, wide-board proof void | `074b158` |
 | 5. Ordering constants and derivation entry point | landed, SEE band defect open | `42ff0f3` |
 | 6. Binary provenance and external anchor RR #0 | provenance landed, RR #0 blocked | `2c6f5db` |
-| 7. Drop-pocket integrity verification | landed, PGN gate proxied by replay | this commit |
-| 8. Grand diagnosis and multi-royal rules question | not started | — |
+| 7. Drop-pocket integrity verification | landed, PGN gate proxied by replay | `30693f4` |
+| 8. Grand diagnosis and multi-royal rules question | landed, cause gated in Phase B | this commit |
 
 ## Purpose
 
@@ -541,6 +541,60 @@ letter and is gated there.
 behavior as an open rules question. Resolve it from declared rules and fixtures;
 do not call it a bug without evidence.
 
+Status: landed. No config or parameter fault was found, and the ratio is not
+Grand's.
+
+- Grand's configuration and parameters are clean. `debug-headless derive`
+  rewrites `res/param/grand/latest.param` byte for byte. Constructed
+  single-piece imbalances off the start position, all in `Opening` phase and
+  none in `ENDGAME`, read Q 1106, C 986, A 800, R 628, B 372, N 334, P 106
+  centipawns; against Fairy-Stockfish normalised to the knight that is
+  Q 3.31 / C 2.95 / A 2.40 / B 1.11 against its 3.23 / 2.62 / 2.49 / 1.26.
+  `promote to captured` is correct in both directions: a white pawn one step
+  from the last rank has no promotion at all with empty hands, exactly one with
+  `-/r`, and all six with `-/rnbqac`. The colour convention is that a side's
+  captured pieces sit in the *other* hand field in the enemy's case, so
+  `rnbqac/-` correctly offers white nothing.
+- The ratio climbs with board width on boards Grand has nothing to do with.
+  At depth 8, Hash 64, Threads 1, `ANEKAMACAM_SEED=1`, our nodes against
+  Fairy-Stockfish are standard 186289/5247 = 35.5x, capablanca
+  1028187/13125 = 78.3x, gothic 816609/8317 = 98.1x, and grand
+  851834/6905 = 123.3x. Root move counts run 20, 28, 28, 65. Capablanca and
+  gothic share a 10x8 board and differ only in setup, so width and material
+  are separated: both are already far above standard without Grand present.
+- The mechanism is effective branching, not a Grand term. Over depths five to
+  nine our EBF is standard 3.41, capablanca 4.06, gothic 3.88, grand 4.62,
+  while Fairy-Stockfish sits at 2.28, 2.31, 2.16, 2.15 and does not move with
+  width. `tools/ebf-suite.sh` reproduces the shape at its own seed and window:
+  ours 3.670, 3.880, 3.973, 4.477 against 2.042, 2.154, 2.031, 2.126.
+- The cause is that nothing in the search adapts to how many moves a node has.
+  Every child is searched with a full window, the only reduction in the tree is
+  the null-move `(4 + depth / 4).min(depth)`, and the late-move gate is
+  `legal_moves >= 3 + depth * depth`; all three are functions of depth alone,
+  and `board_size` reaches the search only as a history index. Phase B's four
+  curves carry the plan's only `ln(moves)` and `sqrt(moves)` terms, nested
+  inside Phase A's scout, so the shared cause joins Phase B and its support
+  gate now names the width ladder.
+- The historical 48x figure is an ordinary midgame sample, not an anomaly.
+  Grand's four midgame cases spread from 55.23x to 427.18x at depth 10 in the
+  same run whose start position reads 519.65x.
+- The multi-royal question resolves without a code change. Both `side_is_bare`
+  callers sit behind a declared `counting` rule; only makruk, sittuyin and
+  ouk-chaktrang declare one; all three declare `royal: Kk` and promote to `M`
+  or `F`, never to a royal letter. `janggi.conf` is the only config naming two
+  royal letters a side, but `K` and `Q` are the two forms of one general that
+  `K:Q` and `Q:K` convert between, so a janggi colour holds exactly one royal,
+  and janggi adjudicates on `janggipts` rather than counting. The
+  `royal_list[side].len() == 1` test is therefore correct for every position
+  that reaches it; only the doc comment changed.
+- `tools/ebf-suite.sh` hardcoded five Fairy-Stockfish variant names and
+  silently dropped the rest, which is why the same-board control had no
+  external column. It now reads Fairy-Stockfish's own `UCI_Variant` list and
+  keeps `standard` to `chess` as the single rename, which admits every variant
+  the two engines spell alike. `tools/ebf_positions.txt` gained the four
+  `startpos` width-ladder cases. Capablanca and gothic still carry no sampled
+  midgame cases, so they gate nothing on their own yet.
+
 ## Shared measurement protocol
 
 - Support work: set `ANEKAMACAM_SEED`, use Threads 1 unless testing SMP, match
@@ -658,6 +712,12 @@ No live state.
 
 Record reduced-search, full-depth re-search, and full-window re-search rates.
 Mate discovery may stay equal or improve, never move later. Reject node explosion.
+
+Also record the standard, capablanca, gothic, and grand `startpos` width ladder
+from `tools/ebf-suite.sh`. Prerequisite 8 measured our EBF rising with board
+width, 3.41 to 4.62 over depths five to nine, against a Fairy-Stockfish curve
+flat near 2.2. These reductions carry the plan's only move-count terms, so the
+gate requires that spread to narrow, not merely the node totals to fall.
 
 ### Promotion gate
 
@@ -1594,6 +1654,9 @@ Losing groups revert independently and do not discard accepted groups.
 - `res/dicts/{euroshogi,judkins}.dict`, `res/perft/*`: hand conversion and
   drop-pocket perft fixtures. Any FEN dialect difference belongs in a dict.
 - `tools/drop-integrity.sh`: external Fairy-Stockfish pocket replay.
+- `tools/ebf-suite.sh`, `tools/ebf_positions.txt`: the Fairy-Stockfish name
+  mapping read from that engine's own variant list, and the standard,
+  capablanca, gothic, and grand `startpos` width ladder that B is gated on.
 - `src/debug/tuning.rs`, `src/debug/datagen.rs`: Y.
 - `src/io/protocols/protocol.rs`: W.
 - `res/param/*`: every accepted parameter/PST rider.
