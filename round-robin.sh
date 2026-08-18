@@ -1,18 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Strength Iteration 3 round robin over selected phase binaries plus
+# Strength Iteration 4 round robin over selected ladder binaries plus
 # configurable Fairy-Stockfish anchors. Defaults to the campaign variants
 # named in VARIANTS. Engines vary games through per-process Zobrist seeding,
 # so no opening book is used; leave ANEKAMACAM_SEED unset here.
+#
+# RR #0 is this script run on base-4 alone: pick FSF_ELOS so the weakest rung
+# scores above roughly 15% and the strongest below roughly 85%, which is what
+# makes the anchor two-sided rather than a floor or a ceiling.
+#
+# Every launch writes $RR/provenance.txt: the run's own settings plus the
+# build record of each candidate binary, so a result directory says which
+# binaries produced it without depending on anything still being in bin/.
 #
 # No draw/resign adjudication: AnekaMacam evaluation units are not centipawns,
 # so score thresholds would misfire. Every engine receives an isolated working
 # directory. Use a fresh RR directory for every experiment campaign.
 #
 # Detaches from the shell so it survives SSH logout. The first invocation
-# re-execs itself under setsid/nohup, streams output to a log, and returns its
-# pid. cutechess-cli reprints a full rank table every rating interval.
+# re-execs itself under nohup as its own process group leader, streams output
+# to a log, and returns its pid; the group is what --stop kills, so no engine
+# outlives the run. cutechess-cli reprints a full rank table every rating
+# interval.
 #
 # DEBUG passes -debug all, logging every command exchanged with every engine.
 # cutechess-cli writes its PGN strictly in game order, so a single stalled game
@@ -24,8 +34,9 @@ set -euo pipefail
 # on the way to the log: they are the bulk of the volume and none of the value.
 #
 # Usage:
-#   round-robin.sh phaseA-3 phaseD-3
-#   round-robin.sh A-3 D-3 E-3
+#   round-robin.sh base-4
+#   round-robin.sh phaseA-4 phaseD-4
+#   round-robin.sh A-4 D-4 E-4
 #   round-robin.sh --status
 #   round-robin.sh --stop
 #
@@ -35,6 +46,9 @@ set -euo pipefail
 #   CONCURRENCY    concurrent games (default: CPU count)
 #   VARIANTS       space-separated variants
 #   FSF_ELOS       space-separated Fairy-Stockfish anchors
+#   TC             cutechess time control (default: 30+0.3)
+#   HASH           per-engine hash in MB (default: 64)
+#   THREADS        per-engine threads (default: 1)
 #   DEBUG          log engine commands (default 1; costs ~100 KB per game)
 #   ALLOW_EXISTING_RR=1 permits launch into an existing result directory
 
@@ -44,9 +58,12 @@ ROUNDS=${ROUNDS:-1024}
 CONCURRENCY=${CONCURRENCY:-$(
 	nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null
 )}
-VARIANTS=${VARIANTS:-"standard shogi crazyhouse grand"}
+VARIANTS=${VARIANTS:-"standard crazyhouse shogi xiangqi grand"}
 FSF_ELOS=${FSF_ELOS:-"1700 1800 1900"}
 DEBUG=${DEBUG:-1}
+TC=${TC:-30+0.3}
+HASH=${HASH:-64}
+THREADS=${THREADS:-1}
 
 LOG="$RR/round-robin.log"
 PIDFILE="$RR/round-robin.pid"
@@ -95,17 +112,28 @@ if [[ "${1:-}" == "--stop" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-	echo "usage: round-robin.sh <iteration-3-phase> [...]" >&2
+	echo "usage: round-robin.sh <ladder-binary> [...]" >&2
+	exit 1
+fi
+
+if ! command -v cutechess-cli >/dev/null 2>&1; then
+	echo "ERROR: cutechess-cli not found in PATH" >&2
+	exit 1
+fi
+
+if ! command -v fairy-stockfish >/dev/null 2>&1; then
+	echo "ERROR: fairy-stockfish not found in PATH" >&2
 	exit 1
 fi
 
 CANDIDATES=()
 for requested in "$@"; do
 	case "$requested" in
-	phase*-3*) candidate=$requested ;;
-	*-3*) candidate="phase$requested" ;;
+	base | base-4) candidate="base-4" ;;
+	phase?-4) candidate=$requested ;;
+	?-4) candidate="phase$requested" ;;
 	*)
-		echo "ERROR: invalid iteration-3 phase: $requested" >&2
+		echo "ERROR: invalid ladder binary: $requested" >&2
 		exit 1
 		;;
 	esac
@@ -114,12 +142,18 @@ for requested in "$@"; do
 		echo "ERROR: missing executable bin/$candidate" >&2
 		exit 1
 	fi
+
+	if [[ ! -f "$REPO/bin/$candidate.provenance" ]]; then
+		echo "ERROR: no provenance record for bin/$candidate" >&2
+		echo "rebuild it with build-stages.sh" >&2
+		exit 1
+	fi
 	CANDIDATES+=("$candidate")
 done
 
 if [[ "${RR_DETACHED:-}" != "1" ]]; then
 	if [[ "${ALLOW_EXISTING_RR:-0}" != "1" ]]; then
-		if [[ -f "$LOG" ]] ||
+		if [[ -f "$LOG" ]] || [[ -f "$RR/provenance.txt" ]] ||
 			compgen -G "$RR/rr-*.pgn" >/dev/null; then
 			echo "ERROR: RR directory already contains results: $RR" >&2
 			echo "use a fresh RR path or set ALLOW_EXISTING_RR=1" >&2
@@ -127,8 +161,29 @@ if [[ "${RR_DETACHED:-}" != "1" ]]; then
 		fi
 	fi
 
-	RR_DETACHED=1 setsid nohup "$0" "${CANDIDATES[@]}" \
-		>"$LOG" 2>&1 </dev/null &
+	{
+		echo "started     $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+		echo "repo        $REPO"
+		echo "candidates  ${CANDIDATES[*]}"
+		echo "anchors     $FSF_ELOS"
+		echo "variants    $VARIANTS"
+		echo "rounds      $ROUNDS"
+		echo "concurrency $CONCURRENCY"
+		echo "tc          $TC"
+		echo "hash        $HASH"
+		echo "threads     $THREADS"
+		echo "seed        ${ANEKAMACAM_SEED:-unset}"
+		echo "fsf         $(fairy-stockfish --version 2>/dev/null |
+			head -1)"
+		echo "cutechess   $(cutechess-cli --version 2>/dev/null |
+			head -1)"
+		echo
+		"$REPO/tools/provenance.sh" show \
+			"${CANDIDATES[@]/#/$REPO/bin/}"
+	} >"$RR/provenance.txt"
+
+	RR_DETACHED=1 nohup perl -e 'setpgrp; exec @ARGV' \
+		"$0" "${CANDIDATES[@]}" >"$LOG" 2>&1 </dev/null &
 	pid=$!
 	echo "$pid" >"$PIDFILE"
 	echo "round-robin detached (pid $pid)"
@@ -137,6 +192,7 @@ if [[ "${RR_DETACHED:-}" != "1" ]]; then
 	echo "  standings: $0 --status"
 	echo "  stop:      $0 --stop"
 	echo "  pgn:       $RR/rr-<variant>.pgn"
+	echo "  built by:  $RR/provenance.txt"
 	exit 0
 fi
 
@@ -175,8 +231,8 @@ run_rr() {
 
 	cutechess-cli \
 		"${engines[@]}" \
-		-each proto=uci option.Threads=1 option.Hash=64 \
-		tc=30+0.3 timemargin=200 \
+		-each proto=uci "option.Threads=$THREADS" "option.Hash=$HASH" \
+		"tc=$TC" timemargin=200 \
 		-tournament round-robin -rounds "$ROUNDS" -games 2 \
 		"${flags[@]}" \
 		-concurrency "$CONCURRENCY" -ratinginterval 50 \

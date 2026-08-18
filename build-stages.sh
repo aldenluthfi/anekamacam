@@ -1,62 +1,56 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds selected Strength Iteration 3 phase binaries into bin/.
+# Builds Strength Iteration 4 ladder binaries into bin/.
 # Run from anywhere inside the repo.
 #
-# phaseA-3 is the pinned Stage A-3 branch, created at the harness commit.
-# Later phases resolve their own branch names, auto-created from their parent
-# phase when the branch does not yet exist. Current configs/ and res/dicts/
-# are copied into every build worktree so all phase binaries expose identical
-# protocol variants.
+# The ladder is derived, not listed: base-4 is the prerequisite-complete
+# baseline that RR #0 anchors, phaseA-4 branches from it, and every later
+# letter branches from the one before it. A phase builds from its own branch
+# when that branch exists and is auto-created from its parent when it does
+# not. Any letter can be re-parented with PHASE_<LETTER>_PARENT, which is how
+# a rejected phase is skipped without renaming everything after it.
 #
-# Each PHASES row is "name ref parent". ref is the configured base commit-ish
-# (normally the phase's own branch name). parent is the phase a missing
-# branch is auto-created from ("-" means none). L-3, M-3 and R-3 are
-# conditional on measurement and may never exist, so every phase takes a
-# PHASE_<LETTER>_PARENT override that re-parents it onto whatever did land.
-#
-# Ladder order (iteration 3, renumbered 2026-08-04 when F-3 took the front):
-# A-3..E-3 speed block, F-3 time management, G-3..K-3 drop block, L-3
-# continuation-history density, M-3 grand diagnosis, N-3..P-3 eval block,
-# Q-3 simplification, R-3 drop-variant NPS last of all.
+# Current configs/ and res/dicts/ are copied into every build worktree, so all
+# ladder binaries expose identical protocol variants no matter which commit
+# they are built from. That makes the working tree part of what a binary is,
+# so each build writes a bin/<name>.provenance record naming its commit and
+# hashing those resources. Verify a binary with
+# `tools/provenance.sh verify bin/<name>`.
 #
 # Usage:
-#   build-stages.sh A-3
-#   build-stages.sh B-3 C-3 D-3
-#   PHASE_N_PARENT=phaseK-3 build-stages.sh phaseN-3
+#   build-stages.sh base-4
+#   build-stages.sh A-4
+#   build-stages.sh B-4 C-4 D-4
+#   PHASE_C_PARENT=phaseA-4 build-stages.sh C-4
+#
+# Env:
+#   LADDER_BASE  commit-ish base-4 is built from (default: current branch)
 
-PHASES=(
-	"phaseA-3  phaseA-3  -"
-	"phaseB-3  phaseB-3  phaseA-3"
-	"phaseC-3  phaseC-3  phaseB-3"
-	"phaseD-3  phaseD-3  phaseC-3"
-	"phaseE-3  phaseE-3  phaseD-3"
-	"phaseF-3  phaseF-3  phaseE-3"
-	"phaseG-3  phaseG-3  phaseF-3"
-	"phaseH-3  phaseH-3  phaseG-3"
-	"phaseI-3  phaseI-3  phaseH-3"
-	"phaseJ-3  phaseJ-3  phaseI-3"
-	"phaseK-3  phaseK-3  phaseJ-3"
-	"phaseL-3  phaseL-3  phaseK-3"
-	"phaseM-3  phaseM-3  phaseL-3"
-	"phaseN-3  phaseN-3  phaseM-3"
-	"phaseO-3  phaseO-3  phaseN-3"
-	"phaseP-3  phaseP-3  phaseO-3"
-	"phaseQ-3  phaseQ-3  phaseP-3"
-	"phaseR-3  phaseR-3  phaseQ-3"
-)
+BASE_NAME="base-4"
+LETTERS=({A..Z})
 
 if [[ $# -eq 0 ]]; then
 	echo "usage: build-stages.sh <phase> [...]" >&2
 	exit 1
 fi
 
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+
+LADDER_BASE=${LADDER_BASE:-$(git rev-parse --abbrev-ref HEAD)}
+
+NAMES=("$BASE_NAME")
+for letter in "${LETTERS[@]}"; do
+	NAMES+=("phase$letter-4")
+done
+
 REQUESTED=()
 for requested in "$@"; do
 	case "$requested" in
-	phase*-3*) REQUESTED+=("$requested") ;;
-	*-3*) REQUESTED+=("phase$requested") ;;
+	base | base-4) REQUESTED+=("$BASE_NAME") ;;
+	phase?-4) REQUESTED+=("$requested") ;;
+	?-4) REQUESTED+=("phase$requested") ;;
 	*)
 		echo "ERROR: invalid phase: $requested" >&2
 		exit 1
@@ -64,9 +58,15 @@ for requested in "$@"; do
 	esac
 done
 
+for requested in "${REQUESTED[@]}"; do
+	if ! printf '%s\n' "${NAMES[@]}" | grep -qx "$requested"; then
+		echo "ERROR: not a ladder binary: $requested" >&2
+		exit 1
+	fi
+done
+
 is_requested() {
-	local name=$1
-	local requested
+	local name=$1 requested
 
 	for requested in "${REQUESTED[@]}"; do
 		if [[ "$name" == "$requested" ]]; then
@@ -77,54 +77,67 @@ is_requested() {
 	return 1
 }
 
-# Configured base ref (second column) for a phase name.
+# Configured base ref for a phase: the baseline follows LADDER_BASE, every
+# letter owns a branch named after itself.
 phase_ref() {
-	local want=$1 name ref parent
+	local want=$1
 
-	for entry in "${PHASES[@]}"; do
-		read -r name ref parent <<<"$entry"
-		if [[ "$name" == "$want" ]]; then
-			echo "$ref"
-			return 0
-		fi
-	done
-
-	return 1
+	if [[ "$want" == "$BASE_NAME" ]]; then
+		echo "$LADDER_BASE"
+	else
+		echo "$want"
+	fi
 }
 
-# Parent phase (third column) for a phase name, honoring the phase's own
-# PHASE_<LETTER>_PARENT override so a dropped conditional stage is skipped.
+# Phase a missing branch is created from: the letter before it, or the
+# baseline for the first letter, honoring a PHASE_<LETTER>_PARENT override so
+# a dropped phase is skipped.
 phase_parent() {
-	local want=$1 name ref parent override
+	local want=$1 letter override index
 
-	for entry in "${PHASES[@]}"; do
-		read -r name ref parent <<<"$entry"
-		if [[ "$name" == "$want" ]]; then
-			override="PHASE_${want:5:1}_PARENT"
-			echo "${!override:-$parent}"
+	if [[ "$want" == "$BASE_NAME" ]]; then
+		echo "-"
+		return 0
+	fi
+
+	letter=${want:5:1}
+	override="PHASE_${letter}_PARENT"
+
+	if [[ -n "${!override:-}" ]]; then
+		echo "${!override}"
+		return 0
+	fi
+
+	if [[ "$letter" == "A" ]]; then
+		echo "$BASE_NAME"
+		return 0
+	fi
+
+	for index in "${!LETTERS[@]}"; do
+		if [[ "${LETTERS[index]}" == "$letter" ]]; then
+			echo "phase${LETTERS[index - 1]}-4"
 			return 0
 		fi
 	done
 
+	echo "ERROR: unknown phase letter: $letter" >&2
 	return 1
 }
 
 # Commit-ish to build or branch from: the phase's own branch if it exists,
 # otherwise its configured base ref.
 resolve_commit() {
-	local phase=$1 ref
+	local phase=$1
 
-	if git rev-parse --verify -q "$phase^{commit}" >/dev/null; then
+	if [[ "$phase" != "$BASE_NAME" ]] &&
+		git rev-parse --verify -q "$phase^{commit}" >/dev/null; then
 		echo "$phase"
 		return 0
 	fi
 
-	ref=$(phase_ref "$phase") || return 1
-	echo "$ref"
+	phase_ref "$phase"
 }
 
-ROOT=$(git rev-parse --show-toplevel)
-cd "$ROOT"
 mkdir -p bin
 
 BUILD_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/anekamacam-phase-build.XXXXXX")
@@ -139,15 +152,13 @@ trap cleanup EXIT
 
 BUILT=()
 
-for entry in "${PHASES[@]}"; do
-	read -r name ref parent <<<"$entry"
-
+for name in "${NAMES[@]}"; do
 	if ! is_requested "$name"; then
 		continue
 	fi
 
-	if [[ "$parent" != "-" ]] \
-	&& ! git rev-parse --verify -q "$name^{commit}" >/dev/null; then
+	if [[ "$name" != "$BASE_NAME" ]] &&
+		! git rev-parse --verify -q "$name^{commit}" >/dev/null; then
 		parent_name=$(phase_parent "$name")
 		if ! base=$(resolve_commit "$parent_name"); then
 			echo "ERROR: cannot resolve parent $parent_name for $name" >&2
@@ -174,13 +185,9 @@ for entry in "${PHASES[@]}"; do
 
 	(cd "$WT" && cargo build --release)
 	cp "$CARGO_TARGET_DIR/release/anekamacam" "bin/$name"
+	tools/provenance.sh record "bin/$name" "$build_ref"
 	BUILT+=("bin/$name")
 done
-
-if [[ ${#BUILT[@]} -ne ${#REQUESTED[@]} ]]; then
-	echo "ERROR: one or more requested phases were not defined" >&2
-	exit 1
-fi
 
 echo "done:"
 ls -l "${BUILT[@]}"
@@ -189,12 +196,4 @@ if cksum "${BUILT[@]}" | awk '{print $1}' | sort | uniq -d | grep -q .; then
 	echo "ERROR: duplicate phase binaries detected" >&2
 	cksum "${BUILT[@]}"
 	exit 1
-fi
-
-if command -v md5 >/dev/null 2>&1; then
-	md5 "${BUILT[@]}"
-elif command -v md5sum >/dev/null 2>&1; then
-	md5sum "${BUILT[@]}"
-else
-	cksum "${BUILT[@]}"
 fi
