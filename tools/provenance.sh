@@ -8,13 +8,14 @@ set -euo pipefail
 # the configs and dicts that were embedded into it, and the hash of the file
 # itself. `verify` rebuilds that commit and compares the result.
 #
-# Two builds of one commit are not byte-identical: the linker derives LC_UUID
-# from the build path and the ad-hoc signature hashes the image including that
-# UUID, so the files differ in exactly those 48 bytes and nowhere else. The
-# record therefore carries two hashes. `md5` is the file as copied and only
-# answers whether it changed on disk since the build. `content_md5` is the
-# image with its signature removed and its UUID zeroed, so it is stable across
-# build paths and is what a rebuild is compared against.
+# Two builds of one commit are not byte-identical. Mach-O derives LC_UUID from
+# the build path and its ad-hoc signature hashes the image including that UUID,
+# so the files differ in exactly those 48 bytes and nowhere else. ELF carries
+# the same kind of build-path stamp in its GNU build-id note. The record
+# therefore carries two hashes. `md5` is the file as copied and only answers
+# whether it changed on disk since the build. `content_md5` is the image with
+# that stamp taken out, so it is stable across build paths and is what a
+# rebuild is compared against.
 #
 # Records live next to their binary as bin/<name>.provenance and are ignored
 # by git along with bin/ itself.
@@ -54,31 +55,41 @@ hash_tree() {
 		hash_stream
 }
 
-# Hash of a Mach-O image with the two build-path-dependent regions taken out:
-# the ad-hoc code signature, dropped whole, and the LC_UUID payload, zeroed
-# where it appears. Everything the compiler produced is left alone.
+# Hash of an executable image with its build-path-dependent stamp taken out:
+# on Mach-O the ad-hoc code signature, dropped whole, and the LC_UUID payload,
+# zeroed where it appears; on ELF the GNU build-id note, zeroed the same way.
+# Everything the compiler produced is left alone. The format is read from the
+# file's own magic rather than from whichever reader happens to be installed,
+# so a host missing its reader stops here instead of hashing the stamp in.
 content_hash() {
-	local binary=$1 copy uuid
+	local binary=$1 copy magic stamp hashed
 
 	copy=$(mktemp "${TMPDIR:-/tmp}/anekamacam-content.XXXXXX")
 	cp "$binary" "$copy"
-	codesign --remove-signature "$copy" 2>/dev/null || true
+	magic=$(head -c 4 "$copy" | od -An -tx1 | tr -d ' \n')
 
-	uuid=$(otool -l "$copy" |
-		awk '$1 == "uuid" { gsub(/-/, "", $2); print $2; exit }')
-
-	if [[ -z "$uuid" ]]; then
-		rm -f "$copy"
-		echo "ERROR: no LC_UUID found in $binary" >&2
-		exit 1
+	if [[ "$magic" == "7f454c46" ]]; then
+		stamp=$(readelf -n "$copy" 2>/dev/null |
+			awk '$1 == "Build" && $2 == "ID:" { print $3; exit }') || true
+	else
+		codesign --remove-signature "$copy" 2>/dev/null || true
+		stamp=$(otool -l "$copy" 2>/dev/null |
+			awk '$1 == "uuid" { gsub(/-/, "", $2); print $2; exit }') || true
 	fi
 
-	UUID="$uuid" perl -0777 -pe '
-		BEGIN { $uuid = pack "H*", $ENV{UUID} }
-		s/\Q$uuid\E/"\0" x 16/ge
-	' "$copy" | hash_stream
+	if [[ -z "$stamp" ]]; then
+		rm -f "$copy"
+		echo "ERROR: no build stamp found in $binary" >&2
+		return 1
+	fi
+
+	hashed=$(STAMP="$stamp" perl -0777 -pe '
+		BEGIN { $stamp = pack "H*", $ENV{STAMP} }
+		s/\Q$stamp\E/"\0" x length($stamp)/ge
+	' "$copy" | hash_stream)
 
 	rm -f "$copy"
+	printf '%s\n' "$hashed"
 }
 
 field() {
@@ -88,9 +99,15 @@ field() {
 		"$record"
 }
 
+# Every field is computed before the record is opened. A failure inside the
+# redirected block reaches the file as an empty value and nothing else: a
+# command substitution that exits takes only its own subshell with it, so a
+# host that could not read the build stamp still wrote a complete-looking
+# record whose content hash was blank, and round-robin.sh accepts any record
+# that exists.
 record_one() {
 	local binary=$1 ref=$2 record="$1.provenance"
-	local commit subject dirty handshake
+	local commit subject dirty handshake content
 
 	if [[ ! -x "$binary" ]]; then
 		echo "ERROR: not an executable: $binary" >&2
@@ -109,11 +126,12 @@ record_one() {
 	fi
 
 	handshake=$(printf 'uci\nquit\n' | "$binary" uci 2>/dev/null)
+	content=$(content_hash "$binary")
 
 	{
 		echo "binary      $binary"
 		echo "md5         $(hash_file "$binary")"
-		echo "content_md5 $(content_hash "$binary")"
+		echo "content_md5 $content"
 		echo "bytes       $(wc -c <"$binary" | tr -d ' ')"
 		echo "built       $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 		echo "ref         $ref"
