@@ -530,7 +530,12 @@ fn quiescence_search(
 
 /// alpha_beta
 ///
-/// Plain negamax alpha-beta with TT/QT, NMP, LMP, killers, and history.
+/// Principal variation search with TT/QT, NMP, LMP, killers, and history.
+/// The first legal move takes the full window and later moves take the
+/// scout window `(-alpha - 1, -alpha)`, which either confirms the first
+/// move is best or fails high and costs a full-window re-search. A node
+/// already entered on a narrow window scouts at no extra cost, since its
+/// scout window is the window it was given.
 ///
 /// Params:
 /// - state          : &mut State      -> position searched, restored on return
@@ -693,16 +698,48 @@ pub fn alpha_beta(
 
         legal_moves += 1;
 
-        let score = -alpha_beta(
-            state,
-            ttable,
-            qtable,
-            depth - 1,
-            -beta,
-            -alpha,
-            info,
-            true,
-        );
+        let wide_window = beta - alpha > 1;                                     /* alpha is fixed for this iteration  */
+
+        let mut score = if legal_moves == 1 {
+            -alpha_beta(
+                state,
+                ttable,
+                qtable,
+                depth - 1,
+                -beta,
+                -alpha,
+                info,
+                true,
+            )
+        } else {
+            -alpha_beta(
+                state,
+                ttable,
+                qtable,
+                depth - 1,
+                -alpha - 1,
+                -alpha,
+                info,
+                true,
+            )
+        };
+
+        if wide_window
+        && legal_moves > 1
+        && score > alpha
+        && !info.interrupt
+        {
+            score = -alpha_beta(
+                state,
+                ttable,
+                qtable,
+                depth - 1,
+                -beta,
+                -alpha,
+                info,
+                true,
+            );
+        }
 
         undo_move!(state);
 
