@@ -221,7 +221,8 @@ macro_rules! see {
 /// score_move!
 ///
 /// Returns one ordering score. Priority: table move, winning SEE capture,
-/// killers, butterfly history, losing SEE capture.
+/// killers, butterfly history, losing SEE capture, then a capture the
+/// exchange simulation could not make.
 ///
 /// Params:
 /// - state     : &mut State          -> position the move is scored on
@@ -260,7 +261,9 @@ macro_rules! score_move {
         } else {
             let see_score = see!($state, scored_move);
 
-            if see_score >= 0 {
+            if see_score == -INF {
+                UNMAKEABLE_CAPTURE_SCORE
+            } else if see_score >= 0 {
                 (WINNING_CAPTURE_SCORE + see_score) as usize
             } else {
                 (LOSING_CAPTURE_SCORE + see_score) as usize

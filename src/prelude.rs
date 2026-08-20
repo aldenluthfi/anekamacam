@@ -491,12 +491,18 @@ pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 /// score for captures -- inside its own band. History is clamped to
 /// `HISTORY_BOUND` either way, so a quiet move spans `QUIET_MOVE_SCORE`
 /// plus or minus that bound and stays clear of both neighbours.
+///
+/// A capture the exchange simulation cannot make has no exchange score to
+/// place it within a band, so it sorts below all of them on its own score
+/// rather than being folded into the losing band as arithmetic on the
+/// simulation's out-of-band failure value.
 pub const HISTORY_BOUND: i32 = i16::MAX as i32 / 2;
 pub const TABLE_MOVE_SCORE: usize = 5_000_000;
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000 + HISTORY_BOUND;
 pub const KILLER_MOVE_SCORE: usize = 1_000_000 + 3 * HISTORY_BOUND as usize;
 pub const QUIET_MOVE_SCORE: i32 = 1_000_000 + HISTORY_BOUND;
 pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000 - HISTORY_BOUND;
+pub const UNMAKEABLE_CAPTURE_SCORE: usize = 0;
 
 pub const FALPHA: u8 = 0;
 pub const FBETA: u8 = 1;
