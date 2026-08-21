@@ -1102,6 +1102,106 @@ Pooled standard, xiangqi, and grand SPRT, H1 floor +8 Elo.
 If RFP fails, retain the eval stack only as unlettered infrastructure and keep
 Phase D unresolved until another significant candidate is approved.
 
+### Status
+
+Status: support gate passed, promotion campaign running.
+
+Two departures from the candidate as written:
+
+- The footprint names a per-thread `[i32; MAX_DEPTH + 1]`. It is a
+  `Vec<i32>` of that length instead. `SearchInfo` is `#[derive(Default)]` and
+  every other per-thread table it owns — the principal variation triangle, the
+  history table, the killer table — is a `Vec` allocated in `clear_search` at
+  the size the position calls for. A fixed array would be the only member that
+  is not, for no gain: the stack is indexed by ply, which the `search_ply >=
+  MAX_DEPTH` guard already bounds.
+- The candidate says "the derived improving-indexed margin" without naming
+  what it is derived from. It is the dearest non-royal opening piece value,
+  the same anchor Phase C prices the aspiration window off and for the same
+  reason: normalization pins the cheapest value at 100 in every variant, so
+  only the dearest carries per-variant information. The margin is
+  `RFP_RATIO` of it per ply still to search, and the improving row is that
+  scaled by `RFP_IMPROVING`. Per-ply steps span 57 (minixiangqi) to 121
+  (grand); standard is 102, so a depth-6 node has to clear 612 flat or 459
+  improving.
+
+`PARAM_SCALAR_COUNT` rose from 20 to 23; all 38 payloads were regenerated. The
+eval prefix is untouched, so the node counts below compare searches and not
+weights.
+
+The stack is written after the transposition probe and before null-move
+pruning, which is what makes reading two plies down sound. Every node that
+recurses has passed that write, and quiescence never re-enters `alpha_beta`,
+so a main-search node at ply `p` always finds its own line's ancestor value at
+`p - 2` rather than a sibling's. Nodes that return before the write — the
+depth-zero handoff, a transposition cutoff, a terminal or repetition score —
+have no main-search descendants to mislead. A node in check stores `EVAL_NONE`
+rather than a score, and a ply reading that reports `improving` false, so the
+flag is conservative exactly where a static score means least.
+
+Support gate, one thread, Hash 64, `ANEKAMACAM_SEED=42`, A being this phase and
+B `bin/phaseC-4`:
+
+- Hit rates are nonzero in both rows in every variant tried. One search per
+  case, counters read at the last completed iteration:
+
+| variant | depth | flat cuts | improving cuts |
+| --- | --- | --- | --- |
+| standard startpos | 12 | 517 | 11,242 |
+| standard mid-game | 12 | 2,585 | 18,536 |
+| shogi startpos | 10 | 323 | 4,828 |
+| xiangqi startpos | 11 | 1,978 | 38,677 |
+| grand startpos | 10 | 522 | 8,188 |
+| crazyhouse startpos | 11 | 296 | 8,665 |
+
+  The improving row outcuts the flat row by roughly twenty to one. That is
+  the expected sign and not a defect: the row is chosen by the same condition
+  the cut tests, so a node whose evaluation already beats beta by a wide
+  margin is usually a node whose evaluation rose, and it is offered the
+  smaller cushion of the two.
+
+- Fixtures are unchanged. All 38 end-condition cases in
+  `tools/endgame_fixtures.txt` pass. On six forced-mate fixtures searched to
+  depth 12 and 14, every mate distance and every best move is identical to
+  `bin/phaseC-4`:
+
+| case | score | A best | B best |
+| --- | --- | --- | --- |
+| `6k1/5ppp/8/8/8/8/8/R3K3 w Q` | mate 1 | a1a8 | a1a8 |
+| `7k/8/8/8/8/8/R7/1R5K w` | mate 2 | a2a7 | a2a7 |
+| `r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq` | mate 2 | d5f6 | d5f6 |
+| `1k5r/pP3ppp/3p2b1/1BN1n3/1Q2P3/P1B5/KP3P1P/7q w` | mate 3 | c5a6 | c5a6 |
+| `6k1/pp4p1/2p5/2bp4/8/P5Pb/1P3rrP/2BRRN1K b` | mate 2 | g2g1 | g2g1 |
+| `2rr3k/pp3pp1/1nnqbN1p/3pN3/2pP4/2P3Q1/PPB4P/R4RK1 w` | mate 2 | g3g6 | g3g6 |
+
+  One of the six reports a different mating line at the same distance, which
+  is two ways to mate in two and not a disagreement. Quiet positions do move:
+  on the seven-position tactical set five keep their best move and the score
+  shifts by at most 24 centipawns. A pruning change that left every quiet line
+  alone would not be pruning anything.
+
+- Nodes fall, not rise. `tools/ebf-suite.sh` over all 33 cases, both binaries
+  at Hash 64:
+
+| variant | cases | geometric mean A/B ratio | total nodes ratio |
+| --- | --- | --- | --- |
+| standard | 9 | 0.683 | 0.951 |
+| crazyhouse | 9 | 0.269 | 0.532 |
+| shogi | 4 | 0.259 | 0.282 |
+| xiangqi | 4 | 0.512 | 0.427 |
+| grand | 5 | 0.483 | 0.570 |
+| capablanca | 1 | 0.475 | 0.475 |
+| gothic | 1 | 2.299 | 2.299 |
+| all | 33 | 0.443 | 0.550 |
+
+  Total nodes over the suite fall from 166,797,149 to 91,659,605. Thirty-one
+  of thirty-three cases fall; two rise, `standard/fsf-p24` at 1.615x and
+  `gothic/startpos` at 2.299x. The same non-uniformity Phase C recorded
+  applies here for the same reason: cutting a node changes which lines the
+  rest of the search sees, and on a minority of positions that trade loses.
+  No variant regresses in aggregate except gothic, whose single case is not
+  a campaign arm and is one position.
+
 ## Phase E — Frontier pruning tranche
 
 ### Candidate

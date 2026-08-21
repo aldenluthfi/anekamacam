@@ -266,6 +266,25 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
         scalars[19]
     );
 
+    assert!(
+        scalars[20] > 0,
+        "Scalar 20 prices the futility margin per ply and must be \
+        positive, got {}",
+        scalars[20]
+    );
+
+    assert!(
+        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[21]),
+        "Scalar 21 is a fraction of {} and must be within it, got {}",
+        COEFFICIENT_SCALE as i32, scalars[21]
+    );
+
+    assert!(
+        scalars[22] >= 1,
+        "Scalar 22 is the deepest node cutting on its evaluation, got {}",
+        scalars[22]
+    );
+
     let statics = state.static_mut();
 
     statics.opening_occupancy = scalars[0].unsigned_abs();
@@ -292,6 +311,10 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
     statics.aspiration_clamp = scalars[17].unsigned_abs();
     statics.aspiration_widen = scalars[18].unsigned_abs();
     statics.aspiration_start_depth = scalars[19].unsigned_abs();
+
+    statics.rfp_ratio = scalars[20].unsigned_abs();
+    statics.rfp_improving = scalars[21].unsigned_abs();
+    statics.rfp_depth = scalars[22].unsigned_abs();
 
     derive_search_parameters(state);
 }
@@ -329,6 +352,9 @@ pub fn scalar_parameter_tokens(state: &State) -> Vec<String> {
         state.statics.aspiration_clamp.to_string(),
         state.statics.aspiration_widen.to_string(),
         state.statics.aspiration_start_depth.to_string(),
+        state.statics.rfp_ratio.to_string(),
+        state.statics.rfp_improving.to_string(),
+        state.statics.rfp_depth.to_string(),
     ]
 }
 

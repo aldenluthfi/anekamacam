@@ -71,6 +71,7 @@ pub use crate::game::position::{
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
         log_table_stats, search_position, SearchInfo, SearchResult,
+        EVAL_NONE,
     },
 };
 pub use crate::game::search::{
@@ -84,7 +85,8 @@ pub use crate::game::search::{
         REDUCTION_QUIET_CHECK_BASE, REDUCTION_QUIET_CHECK_DIVISOR,
         REDUCTION_QUIET_DIVISOR, REDUCTION_TACTICAL_BASE,
         REDUCTION_TACTICAL_CHECK_BASE, REDUCTION_TACTICAL_CHECK_DIVISOR,
-        REDUCTION_TACTICAL_DIVISOR, ROLE_MAJOR_SPLIT, ROLE_NON_BIG_SPLIT,
+        REDUCTION_TACTICAL_DIVISOR, RFP_DEPTH, RFP_IMPROVING, RFP_RATIO,
+        ROLE_MAJOR_SPLIT, ROLE_NON_BIG_SPLIT,
         derive_eval_parameters, derive_parameters, derive_search_parameters,
         reduction_surface,
     },
@@ -521,7 +523,7 @@ pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
-pub const PARAM_SCALAR_COUNT: usize = 20;                                       /* derivation scalars per payload     */
+pub const PARAM_SCALAR_COUNT: usize = 23;                                       /* derivation scalars per payload     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

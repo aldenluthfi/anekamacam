@@ -525,6 +525,7 @@ pub struct StaticState {
     pub reduction_tactical_check: Vec<u8>,
 
     pub aspiration_delta: u32,                                                  /* half-width the root opens at       */
+    pub rfp_margin: Vec<i32>,                                                   /* cushion, improving major, by depth */
 
 /*----------------------------------------------------------------------------*\
                               DERIVATION SCALARS
@@ -554,6 +555,10 @@ pub struct StaticState {
     pub aspiration_clamp: u32,                                                  /* widest window kept, x1000 of delta */
     pub aspiration_widen: u32,                                                  /* growth per failed side, x1000      */
     pub aspiration_start_depth: u32,                                            /* shallowest narrowed iteration      */
+
+    pub rfp_ratio: u32,                                                         /* share of the dearest piece, x1000  */
+    pub rfp_improving: u32,                                                     /* rising side's share, x1000 of flat */
+    pub rfp_depth: u32,                                                         /* deepest node allowed to cut early  */
 }
 
 /// State
@@ -733,6 +738,7 @@ impl State {
             reduction_tactical_check: Vec::new(),
 
             aspiration_delta: 0,
+            rfp_margin: Vec::new(),
 
             opening_occupancy: OPENING_OCCUPANCY,
             endgame_occupancy: ENDGAME_OCCUPANCY,
@@ -759,6 +765,10 @@ impl State {
             aspiration_clamp: ASPIRATION_CLAMP,
             aspiration_widen: ASPIRATION_WIDEN,
             aspiration_start_depth: ASPIRATION_START_DEPTH,
+
+            rfp_ratio: RFP_RATIO,
+            rfp_improving: RFP_IMPROVING,
+            rfp_depth: RFP_DEPTH,
         });
 
         Self::from_statics(statics)

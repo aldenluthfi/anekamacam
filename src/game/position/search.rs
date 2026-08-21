@@ -38,6 +38,9 @@ pub struct SearchInfo {
     pub aspiration_fail_high: u128,                                             /* roots that fell out the high side  */
     pub aspiration_nodes: u128,                                                 /* nodes spent on rejected windows    */
 
+    pub futility_cuts: u128,                                                    /* nodes cut on a flat margin         */
+    pub futility_cuts_improving: u128,                                          /* and on the rising side's margin    */
+
     pub interrupt: bool,                                                        /* flag set by external stop events   */
 
     pub pv_line: Vec<Move>,                                                     /* reported principal variation       */
@@ -46,7 +49,15 @@ pub struct SearchInfo {
 
     pub search_hist: Vec<i16>,                                                  /* [piece * board_size + end]         */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
+
+    pub eval_stack: Vec<i32>,                                                   /* static score standing at each ply  */
 }
+
+/// What a ply holds before anything has been evaluated at it, and what a
+/// node in check leaves there: no static score describes a position whose
+/// king is already attacked, so a ply reading one two below it and finding
+/// this reads no trend at all. `INF` is outside every real evaluation.
+pub const EVAL_NONE: i32 = INF;
 
 /// SearchResult
 ///
@@ -128,6 +139,9 @@ pub fn clear_search(
     info.aspiration_fail_high = 0;
     info.aspiration_nodes = 0;
 
+    info.futility_cuts = 0;
+    info.futility_cuts_improving = 0;
+
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
 
@@ -137,6 +151,8 @@ pub fn clear_search(
     info.pv_line = vec![null_move(); MAX_DEPTH];
     info.pv_table = vec![null_move(); PV_STRIDE * PV_STRIDE];
     info.pv_length = vec![0; PV_STRIDE];
+
+    info.eval_stack = vec![EVAL_NONE; MAX_DEPTH + 1];
 
     ttable.age.fetch_add(1, Ordering::Relaxed);
     qtable.age.fetch_add(1, Ordering::Relaxed);
@@ -398,6 +414,13 @@ pub fn iterative_deepening(
             info.aspiration_fail_low,
             info.aspiration_fail_high,
             info.aspiration_nodes,
+        );
+
+        log_3!(
+            "(Thread {}) Futility: {:>10} | Improving: {:>10}",
+            thread_num,
+            info.futility_cuts,
+            info.futility_cuts_improving,
         );
 
         log_2!(
@@ -715,13 +738,45 @@ pub fn alpha_beta(
         return table_entry.1;
     }
 
+    let static_eval = if in_check {                                             /* a checked king is worth no score  */
+        EVAL_NONE
+    } else {
+        evaluate_position!(state)
+    };
+
+    info.eval_stack[ply] = static_eval;
+
+    let improving = static_eval != EVAL_NONE
+        && ply >= 2
+        && info.eval_stack[ply - 2] != EVAL_NONE
+        && static_eval > info.eval_stack[ply - 2];
+
+    let deepest = state.statics.rfp_depth as usize;
+    let row = improving as usize * (deepest + 1);                               /* the rising side asks for less     */
+
+    if !in_check
+    && ply > 0
+    && depth <= deepest
+    && beta - alpha == 1
+    && beta.abs() < MATE_SCORE
+    && static_eval - state.statics.rfp_margin[row + depth] >= beta
+    {
+        if improving {
+            info.futility_cuts_improving += 1;
+        } else {
+            info.futility_cuts += 1;
+        }
+
+        return beta;
+    }
+
     if allow_null_move
     && !in_check
     && depth > 2
     && ply > 0
     && state.game_phase != ENDGAME
     && state.big_pieces[state.playing as usize] > 0
-    && evaluate_position!(state) >= beta
+    && static_eval >= beta
     {
         let reduction = (4 + depth / 4).min(depth);
 

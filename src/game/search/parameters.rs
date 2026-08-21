@@ -77,6 +77,19 @@ pub const ASPIRATION_WIDEN: u32 = 2000;
 /// completed score exists that is worth centring one on.
 pub const ASPIRATION_START_DEPTH: u32 = 4;
 
+/// The cushion a node has to clear before its static evaluation alone is
+/// trusted to beat beta: `RATIO` of the dearest non-royal piece per ply
+/// still to search, the same anchor the aspiration window is priced off.
+/// A side already standing better than it did two plies ago is believed
+/// on less, so its row is the flat one scaled by `IMPROVING`. Both are
+/// held against `COEFFICIENT_SCALE`.
+pub const RFP_RATIO: u32 = 110;
+pub const RFP_IMPROVING: u32 = 750;
+
+/// The deepest node allowed to cut that way. Past it a static score has
+/// too much search left under it to stand in for one.
+pub const RFP_DEPTH: u32 = 6;
+
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement
 /// tree that outgrows either bound is referenced against the endings
@@ -848,7 +861,9 @@ where
 /// The window is priced off the dearest non-royal piece rather than the
 /// cheapest, which normalization pins at 100 in every variant and so says
 /// nothing: a flat value range moves the score less per capture and earns
-/// the narrower window that follows from it.
+/// the narrower window that follows from it. The reverse futility margin
+/// reads the same piece for the same reason, one flat row and one for a
+/// side whose evaluation has risen, indexed by the depth left to search.
 ///
 /// Params:
 /// - state: &mut State -> variant whose derived search values are rebuilt
@@ -864,6 +879,19 @@ pub fn derive_search_parameters(state: &mut State) {
 
     let delta = dearest * statics.aspiration_ratio as u64
         / COEFFICIENT_SCALE as u64;
+
+    let deepest = statics.rfp_depth as usize;
+    let step = dearest * statics.rfp_ratio as u64 / COEFFICIENT_SCALE as u64;
+    let mut margins = vec![0i32; 2 * (deepest + 1)];
+
+    for depth in 1..=deepest {
+        let flat = step * depth as u64;
+
+        margins[depth] = flat as i32;
+        margins[deepest + 1 + depth] = (flat
+            * statics.rfp_improving as u64
+            / COEFFICIENT_SCALE as u64) as i32;
+    }
 
     let quiet = reduction_surface(
         statics.reduction_quiet_base,
@@ -897,6 +925,7 @@ pub fn derive_search_parameters(state: &mut State) {
     statics.reduction_tactical_check = tactical_check;
 
     statics.aspiration_delta = (delta as u32).max(1);                           /* a window has to hold two scores    */
+    statics.rfp_margin = margins;
 }
 
 /// derive_eval_parameters
