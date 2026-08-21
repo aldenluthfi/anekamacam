@@ -29,7 +29,7 @@ the shipped design departs from this plan.
 | --- | --- | --- |
 | A. Principal variation search | accepted, pooled +29.3 Elo | `595af09`, `a5cf736` |
 | B. Mature Stage-U late-move reductions | accepted, pooled +100.2 Elo | `a41c825` |
-| C. Aspiration windows and mate-distance clipping | accepted, pooled +38.7 Elo | `PENDING` |
+| C. Aspiration windows and mate-distance clipping | accepted, pooled +38.7 Elo | `4794d8c` |
 
 ## Purpose
 
