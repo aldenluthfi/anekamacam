@@ -76,8 +76,10 @@ pub use crate::game::position::{
 pub use crate::game::search::{
     parallel::ThreadPool,
     parameters::{
-        COEFFICIENT_SCALE, ENDGAME_ARMY_SIZE, ENDGAME_OCCUPANCY,
-        OPENING_OCCUPANCY, REDUCTION_MINIMUM_DEPTH, REDUCTION_MOVE_BASE,
+        ASPIRATION_CLAMP, ASPIRATION_RATIO, ASPIRATION_START_DEPTH,
+        ASPIRATION_WIDEN, COEFFICIENT_SCALE, ENDGAME_ARMY_SIZE,
+        ENDGAME_OCCUPANCY, OPENING_OCCUPANCY,
+        REDUCTION_MINIMUM_DEPTH, REDUCTION_MOVE_BASE,
         REDUCTION_MOVE_CAP, REDUCTION_MOVE_WIDE, REDUCTION_QUIET_BASE,
         REDUCTION_QUIET_CHECK_BASE, REDUCTION_QUIET_CHECK_DIVISOR,
         REDUCTION_QUIET_DIVISOR, REDUCTION_TACTICAL_BASE,
@@ -519,7 +521,7 @@ pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
-pub const PARAM_SCALAR_COUNT: usize = 16;                                       /* derivation scalars per payload     */
+pub const PARAM_SCALAR_COUNT: usize = 20;                                       /* derivation scalars per payload     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

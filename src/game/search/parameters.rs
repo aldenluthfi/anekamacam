@@ -62,6 +62,21 @@ pub const REDUCTION_MOVE_WIDE: u32 = 2;
 /// it, so further rows would repeat what the table already says.
 pub const REDUCTION_MOVE_CAP: usize = 64;
 
+/// The window the root reopens around the previous completed score: a
+/// fraction of the dearest piece, that being the top of this variant's
+/// score range and so the scale one iteration's swing away from the last
+/// is drawn against. Only the side that failed widens, by `WIDEN` each
+/// time, until it passes `CLAMP` times the width it opened at; past that
+/// the root reopens fully instead of widening again. Every one of the
+/// three is held against `COEFFICIENT_SCALE`.
+pub const ASPIRATION_RATIO: u32 = 30;
+pub const ASPIRATION_CLAMP: u32 = 16000;
+pub const ASPIRATION_WIDEN: u32 = 2000;
+
+/// The shallowest iteration allowed to narrow its window. Below it no
+/// completed score exists that is worth centring one on.
+pub const ASPIRATION_START_DEPTH: u32 = 4;
+
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement
 /// tree that outgrows either bound is referenced against the endings
@@ -825,15 +840,30 @@ where
 /// derive_search_parameters
 ///
 /// Drives the search half of derivation: rebuilds all four late-move
-/// reduction surfaces from the curve coefficients currently held in the
-/// static state. Every write of those coefficients ends here, whether it
-/// came from a payload or from the defaults, so the tables cannot be left
-/// describing curves the variant no longer carries.
+/// reduction surfaces and the root aspiration width from the coefficients
+/// currently held in the static state. Every write of those coefficients
+/// ends here, whether it came from a payload or from the defaults, so no
+/// derived value can be left describing the variant before it.
+///
+/// The window is priced off the dearest non-royal piece rather than the
+/// cheapest, which normalization pins at 100 in every variant and so says
+/// nothing: a flat value range moves the score less per capture and earns
+/// the narrower window that follows from it.
 ///
 /// Params:
-/// - state: &mut State -> variant whose reduction tables are rebuilt
+/// - state: &mut State -> variant whose derived search values are rebuilt
 pub fn derive_search_parameters(state: &mut State) {
     let statics = &state.statics;
+
+    let dearest = statics.pieces
+        .iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_ovalue!(piece) as u64)
+        .max()
+        .unwrap_or(0);
+
+    let delta = dearest * statics.aspiration_ratio as u64
+        / COEFFICIENT_SCALE as u64;
 
     let quiet = reduction_surface(
         statics.reduction_quiet_base,
@@ -865,6 +895,8 @@ pub fn derive_search_parameters(state: &mut State) {
     statics.reduction_quiet_check = quiet_check;
     statics.reduction_tactical = tactical;
     statics.reduction_tactical_check = tactical_check;
+
+    statics.aspiration_delta = (delta as u32).max(1);                           /* a window has to hold two scores    */
 }
 
 /// derive_eval_parameters

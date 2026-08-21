@@ -34,6 +34,10 @@ pub struct SearchInfo {
     pub depth_researches: u128,                                                 /* short searches that raised alpha   */
     pub window_researches: u128,                                                /* scouts re-run on the full window   */
 
+    pub aspiration_fail_low: u128,                                              /* roots that fell out the low side   */
+    pub aspiration_fail_high: u128,                                             /* roots that fell out the high side  */
+    pub aspiration_nodes: u128,                                                 /* nodes spent on rejected windows    */
+
     pub interrupt: bool,                                                        /* flag set by external stop events   */
 
     pub pv_line: Vec<Move>,                                                     /* reported principal variation       */
@@ -119,6 +123,10 @@ pub fn clear_search(
     info.reduced_searches = 0;
     info.depth_researches = 0;
     info.window_researches = 0;
+
+    info.aspiration_fail_low = 0;
+    info.aspiration_fail_high = 0;
+    info.aspiration_nodes = 0;
 
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
@@ -248,7 +256,7 @@ pub fn iterative_deepening(
     dict: Option<&Translator>,
 ) -> SearchResult {
     let mut best_move = null_move();
-    let mut best_score = 0;
+    let mut best_score: i32 = 0;
     let start_time = ENGINE_START.elapsed().as_nanos();
 
     let max_parallelism = thread::available_parallelism()
@@ -260,13 +268,63 @@ pub fn iterative_deepening(
 
     clear_search(state, ttable, qtable, info);
 
+    let scale = COEFFICIENT_SCALE as i64;
+    let start_depth = state.statics.aspiration_start_depth as usize;
+    let opening_delta = state.statics.aspiration_delta as i64;
+    let widen = state.statics.aspiration_widen as i64;
+    let widest = opening_delta * state.statics.aspiration_clamp as i64 / scale;
+
     for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
-        let score = alpha_beta(
-            state, ttable, qtable, depth, -INF, INF, info, true,
-        );
+        let mut delta = opening_delta;
+        let mut alpha = -INF;
+        let mut beta = INF;
+
+        if depth >= start_depth && best_score.abs() < MATE_SCORE {
+            alpha = (best_score as i64 - delta).max(-INF as i64) as i32;
+            beta = (best_score as i64 + delta).min(INF as i64) as i32;
+        }
+
+        let score = loop {
+            let attempt_start_nodes = info.nodes;
+
+            let score = alpha_beta(
+                state, ttable, qtable, depth, alpha, beta, info, true,
+            );
+
+            if info.interrupt {
+                break score;
+            }
+
+            let failed_low = score <= alpha && alpha > -INF;
+            let failed_high = score >= beta && beta < INF;
+
+            if !failed_low && !failed_high {
+                break score;
+            }
+
+            info.aspiration_fail_low += failed_low as u128;
+            info.aspiration_fail_high += failed_high as u128;
+            info.aspiration_nodes += info.nodes - attempt_start_nodes;
+
+            delta = (delta * widen / scale).max(delta + 1);                     /* the floor must never stall a widen */
+
+            if failed_low {
+                alpha = if delta > widest {
+                    -INF
+                } else {
+                    (score as i64 - delta).max(-INF as i64) as i32
+                };
+            } else {
+                beta = if delta > widest {
+                    INF
+                } else {
+                    (score as i64 + delta).min(INF as i64) as i32
+                };
+            }
+        };
 
         fill_pv_line!(state, info, ttable, depth);
 
@@ -329,6 +387,17 @@ pub fn iterative_deepening(
             info.reduced_searches,
             info.depth_researches,
             info.window_researches,
+        );
+
+        log_3!(
+            concat!(
+                "(Thread {}) Fail Low: {:>10} | Fail High: {:>10} | ",
+                "Window Nodes: {:>10}",
+            ),
+            thread_num,
+            info.aspiration_fail_low,
+            info.aspiration_fail_high,
+            info.aspiration_nodes,
         );
 
         log_2!(
@@ -617,6 +686,13 @@ pub fn alpha_beta(
         check_interrupt(info);
     }
 
+    alpha = alpha.max(-INF + ply as i32);                                       /* mated here bounds this node below */
+    let beta = beta.min(INF - ply as i32);                                      /* and mating here bounds it above   */
+
+    if alpha >= beta {
+        return alpha;
+    }
+
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
@@ -792,6 +868,7 @@ pub fn alpha_beta(
         if wide_window
         && legal_moves > 1
         && score > alpha
+        && score < beta                                                         /* a terminal child escapes the clamp */
         && !info.interrupt
         {
             info.window_researches += 1;

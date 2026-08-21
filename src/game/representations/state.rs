@@ -524,6 +524,8 @@ pub struct StaticState {
     pub reduction_tactical: Vec<u8>,                                            /* or tactical, in check or not       */
     pub reduction_tactical_check: Vec<u8>,
 
+    pub aspiration_delta: u32,                                                  /* half-width the root opens at       */
+
 /*----------------------------------------------------------------------------*\
                               DERIVATION SCALARS
 \*----------------------------------------------------------------------------*/
@@ -547,6 +549,11 @@ pub struct StaticState {
     pub reduction_minimum_depth: u32,                                           /* shallowest reducible depth         */
     pub reduction_move_base: u32,                                               /* move-count gate, and how much      */
     pub reduction_move_wide: u32,                                               /* wider it sits on a full window     */
+
+    pub aspiration_ratio: u32,                                                  /* share of the dearest piece, x1000  */
+    pub aspiration_clamp: u32,                                                  /* widest window kept, x1000 of delta */
+    pub aspiration_widen: u32,                                                  /* growth per failed side, x1000      */
+    pub aspiration_start_depth: u32,                                            /* shallowest narrowed iteration      */
 }
 
 /// State
@@ -725,6 +732,8 @@ impl State {
             reduction_tactical: Vec::new(),
             reduction_tactical_check: Vec::new(),
 
+            aspiration_delta: 0,
+
             opening_occupancy: OPENING_OCCUPANCY,
             endgame_occupancy: ENDGAME_OCCUPANCY,
             role_non_big_split: ROLE_NON_BIG_SPLIT,
@@ -745,6 +754,11 @@ impl State {
             reduction_minimum_depth: REDUCTION_MINIMUM_DEPTH,
             reduction_move_base: REDUCTION_MOVE_BASE,
             reduction_move_wide: REDUCTION_MOVE_WIDE,
+
+            aspiration_ratio: ASPIRATION_RATIO,
+            aspiration_clamp: ASPIRATION_CLAMP,
+            aspiration_widen: ASPIRATION_WIDEN,
+            aspiration_start_depth: ASPIRATION_START_DEPTH,
         });
 
         Self::from_statics(statics)

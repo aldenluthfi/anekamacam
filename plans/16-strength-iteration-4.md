@@ -10,7 +10,7 @@ Baseline branch: `experiment/blank-slate`.
   SEE ordering, TT/QT, and Lazy SMP.
 
 Every unlettered prerequisite has landed, except RR #0 itself, which is blocked
-on a missing `cutechess-cli`. Phases A and B are accepted. Per-prerequisite and
+on a missing `cutechess-cli`. Phases A, B and C are accepted. Per-prerequisite and
 per-letter status lines record what was proved, what was left open, and where
 the shipped design departs from this plan.
 
@@ -29,6 +29,7 @@ the shipped design departs from this plan.
 | --- | --- | --- |
 | A. Principal variation search | accepted, pooled +29.3 Elo | `595af09`, `a5cf736` |
 | B. Mature Stage-U late-move reductions | accepted, pooled +100.2 Elo | `a41c825` |
+| C. Aspiration windows and mate-distance clipping | accepted, pooled +38.7 Elo | `PENDING` |
 
 ## Purpose
 
@@ -941,6 +942,129 @@ Standard real-clock SPRT, H1 floor +8 Elo, plus pooled campaign non-regression.
 1. Larger initial window with the same widening.
 2. Asymmetric widening: wider after deterioration, narrower after improvement.
 3. Mate-distance clipping plus a very broad aspiration window.
+
+### Status
+
+Status: accepted. Every campaign arm reached H1 on its own bound.
+
+Three departures from the candidate as written:
+
+- The candidate says "a derived initial window" without naming what it is
+  derived from. It is the dearest non-royal opening piece value, scaled by
+  `ASPIRATION_RATIO`. The cheapest value cannot serve: piece-value
+  normalization pins the cheapest opening value at exactly 100 in every
+  variant, so it carries no per-variant information at all. The dearest does
+  vary, and it is the top of the variant's own score range, which is the scale
+  a one-iteration swing should be drawn against. A flatter value range moves
+  the score less per capture and correctly earns a narrower window. Derived
+  deltas span 15 (minixiangqi) to 33 (grand); standard is 27.
+- The footprint names four scalar-tail entries; it takes four, but the
+  widening ratio is asserted **strictly greater** than `COEFFICIENT_SCALE` at
+  payload load rather than merely at least. Equality would leave the window
+  the same width after a failure and the loop would never terminate. The
+  integer floor `.max(delta + 1)` covers the remaining stall case where the
+  division rounds a small delta back onto itself.
+- Phase B's shipped imprecision is closed here, as its status said this phase
+  could: the full-window re-search now also requires `score < beta`. It is not
+  dead code. `alpha_beta` is fail-hard for every searched line, but terminal
+  returns — `terminal_score!`, the repetition `outcome_score!`, and the
+  no-legal-move outcome — are not clamped to the window, so a scout child can
+  genuinely return above beta.
+
+`PARAM_SCALAR_COUNT` rose from 16 to 20; all 38 payloads were regenerated. The
+eval prefix is untouched, so the node counts below compare searches and not
+weights.
+
+Mate-distance clipping is sound in both directions. `alpha.max(-INF + ply)` is
+the score of being mated at this node and `beta.min(INF - ply)` the score of
+mating at it, so when the two cross, `alpha` is the correct fail-hard answer:
+either the floor already beat beta, which is a genuine fail-high, or the
+ceiling fell to alpha, which is the fail-low signal. The clip is placed in
+`alpha_beta` only. Quiescence is not a main-search node and its identical
+prologue is deliberately left alone. It does not disable the
+`alpha.abs() < MATE_SCORE` late-move-pruning guard, because at any node whose
+alpha is a real score the clip is a no-op.
+
+Support gate, all standard, one thread, Hash 64, `ANEKAMACAM_SEED=42`, A being
+this phase and B `bin/phaseB-4`:
+
+- Mate exactness, four fixtures searched to depth 8. Every score, every mate
+  distance, every principal variation and every best move is identical between
+  A and B. The clip pays for itself where it applies:
+
+| case | score | A nodes | B nodes |
+| --- | --- | --- | --- |
+| `k7/7R/1K6/8/8/8/8/8` | mate 1 from depth 1 | 191 | 7,171 |
+| `k7/8/1K6/8/8/8/8/1R6` | mate 2 from depth 3 | 1,420 | 10,159 |
+| `8/8/8/8/8/2k5/8/K1R5` | cp 696 | 6,959 | 6,958 |
+| `8/8/8/3k4/8/8/8/3QK3` | cp 1182 / 1186 | 6,338 | 6,961 |
+
+  The two mated positions collapse by a factor of 38 and 7. The two won-but-
+  unmated endgames are unchanged to within search noise, which is what a clip
+  that only bites near mate should do.
+
+- Fail counts and rejected-window nodes by depth, three positions to depth 14.
+  Depths below 4 never narrow; depths that failed nothing are omitted.
+
+| position | depth | fail low | fail high | window nodes |
+| --- | --- | --- | --- | --- |
+| `startpos` | — | 0 | 0 | 0 |
+| open centre | 7 | 0 | 3 | 41,221 |
+| open centre | 8 | 2 | 0 | 1,478 |
+| open centre | 9 | 0 | 1 | 7,206 |
+| open centre | 11 | 1 | 0 | 40,869 |
+| open centre | 13 | 1 | 0 | 53,914 |
+| open centre | 14 | 0 | 1 | 113,946 |
+| symmetric | 12 | 0 | 1 | 54,969 |
+| symmetric | 13 | 1 | 0 | 331,356 |
+
+  Rejected windows cost 0%, 26.3%, and 30.8% of each position's nodes. Totals
+  to depth 14 went 4,028,081 nodes to 3,404,865, a 15.5% cut, but the sign is
+  not uniform: the startpos fell 8.1% and the open-centre position 45.2% while
+  the symmetric position rose 30.4%. A narrower window is a bet, and one of
+  three lost it.
+
+- Widening storms. The structural bound is five narrowed attempts per side:
+  `widest` is 16 times the opening delta and each failure doubles, so the
+  fifth doubling passes it and that side reopens to `±INF`, after which the
+  `alpha > -INF` / `beta < INF` guards stop it re-triggering. Measured worst
+  case is three re-searches in one iteration, both on the three-position set
+  above and on a four-position tactical set to depth 13. No iteration
+  approached the bound.
+
+Promotion games ran on `debug-headless sprt` with A = the Phase C build and
+B = `bin/phaseB-4`, clock 5000+50ms, bounds [0, 8], alpha = beta = 0.05, and
+`ANEKAMACAM_SEED` unset. The four arms ran concurrently from per-variant copies
+of both binaries in separate working directories.
+
+| arm | games | W | L | D | score | Elo | LLR |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 1272 | 521 | 431 | 320 | 0.5354 | +24.4 | 2.945 |
+| shogi | 722 | 421 | 299 | 2 | 0.5845 | +59.4 | 2.949 |
+| crazyhouse | 584 | 346 | 233 | 5 | 0.5967 | +67.3 | 2.944 |
+| xiangqi | 1280 | 572 | 469 | 239 | 0.5402 | +28.0 | 2.988 |
+| pooled | 3858 | 1860 | 1432 | 566 | 0.5555 | +38.7 | 11.826 |
+
+Every arm crossed its own +2.944 bound against a hypothesis pair of [0, 8], so
+the promotion gate's H1 floor of +8 Elo is met on the named standard arm and on
+all three campaign arms besides. The pooled LLR is the sum of four independent
+ratios taken against the same pair. No arm is near a non-regression bound; on
+independent-game variance the weakest 95% interval is standard at [+8.1, +41.2]
+and the next is xiangqi at [+10.9, +45.3]. Games are paired two per opening, so
+the true intervals are tighter than that arithmetic gives.
+
+Both arms that needed the most games are the two with heavy draw rates —
+standard drew 25.2% and xiangqi 18.7%, against 0.3% and 0.9% for shogi and
+crazyhouse — which is why they took roughly twice the games to separate at
+half the measured margin. That ordering says nothing about where the patch
+helps; it is the variance of the variant, not the size of the effect.
+
+The margin is smaller than Phase B's by design. Phase B replaced a search that
+examined every move at full depth, and aspiration windows only change the shape
+of the window the root opens on a search that is already sound. A quarter of
+the nodes at the root are now spent on windows that get rejected, and the patch
+still wins, because the three quarters that survive are searched with far
+tighter bounds than a full window gives.
 
 ## Phase D — Hoisted static evaluation, improving, and RFP
 

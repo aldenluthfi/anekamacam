@@ -240,6 +240,32 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
         );
     }
 
+    assert!(
+        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[16]),
+        "Scalar 16 is a fraction of {} and must be within it, got {}",
+        COEFFICIENT_SCALE as i32, scalars[16]
+    );
+
+    assert!(
+        scalars[17] >= COEFFICIENT_SCALE as i32,
+        "Scalar 17 clamps the window against the width it opened at and \
+        cannot fall under {}, got {}",
+        COEFFICIENT_SCALE as i32, scalars[17]
+    );
+
+    assert!(
+        scalars[18] > COEFFICIENT_SCALE as i32,
+        "Scalar 18 widens a failed side and must exceed {} for the \
+        widening to terminate, got {}",
+        COEFFICIENT_SCALE as i32, scalars[18]
+    );
+
+    assert!(
+        scalars[19] >= 1,
+        "Scalar 19 is the shallowest narrowed iteration, got {}",
+        scalars[19]
+    );
+
     let statics = state.static_mut();
 
     statics.opening_occupancy = scalars[0].unsigned_abs();
@@ -261,6 +287,11 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
     statics.reduction_minimum_depth = scalars[13].unsigned_abs();
     statics.reduction_move_base = scalars[14].unsigned_abs();
     statics.reduction_move_wide = scalars[15].unsigned_abs();
+
+    statics.aspiration_ratio = scalars[16].unsigned_abs();
+    statics.aspiration_clamp = scalars[17].unsigned_abs();
+    statics.aspiration_widen = scalars[18].unsigned_abs();
+    statics.aspiration_start_depth = scalars[19].unsigned_abs();
 
     derive_search_parameters(state);
 }
@@ -294,6 +325,10 @@ pub fn scalar_parameter_tokens(state: &State) -> Vec<String> {
         state.statics.reduction_minimum_depth.to_string(),
         state.statics.reduction_move_base.to_string(),
         state.statics.reduction_move_wide.to_string(),
+        state.statics.aspiration_ratio.to_string(),
+        state.statics.aspiration_clamp.to_string(),
+        state.statics.aspiration_widen.to_string(),
+        state.statics.aspiration_start_depth.to_string(),
     ]
 }
 
