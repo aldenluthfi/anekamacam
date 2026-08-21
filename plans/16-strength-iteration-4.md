@@ -10,9 +10,9 @@ Baseline branch: `experiment/blank-slate`.
   SEE ordering, TT/QT, and Lazy SMP.
 
 Every unlettered prerequisite has landed, except RR #0 itself, which is blocked
-on a missing `cutechess-cli`. No letter has been opened. Per-prerequisite status
-lines record what was proved, what was left open, and where the shipped design
-departs from this plan.
+on a missing `cutechess-cli`. Phase A is accepted. Per-prerequisite and
+per-letter status lines record what was proved, what was left open, and where
+the shipped design departs from this plan.
 
 | # | state | commit |
 | --- | --- | --- |
@@ -23,7 +23,11 @@ departs from this plan.
 | 5. Ordering constants and derivation entry point | landed, SEE band defect open | `42ff0f3` |
 | 6. Binary provenance and external anchor RR #0 | provenance landed, RR #0 blocked | `2c6f5db` |
 | 7. Drop-pocket integrity verification | landed, PGN gate proxied by replay | `30693f4` |
-| 8. Grand diagnosis and multi-royal rules question | landed, cause gated in Phase B | this commit |
+| 8. Grand diagnosis and multi-royal rules question | landed, cause gated in Phase B | `aa3ed0b` |
+
+| letter | state | commit |
+| --- | --- | --- |
+| A. Principal variation search | accepted, pooled +29.3 Elo | `595af09`, `a5cf736` |
 
 ## Purpose
 
@@ -450,17 +454,27 @@ Status: provenance landed and verified, RR #0 blocked on a missing tool.
   relaunch now goes through `nohup perl -e 'setpgrp; exec @ARGV'`, one
   mechanism on both platforms, which restores the process group `--stop`
   kills.
-- `bin/base-4` is built and verified: commit `42ff0f3`, file md5
+- `bin/base-4` was first built and verified at commit `42ff0f3`: file md5
   `3f3d05fc32302f05627566279dcc306c`, content md5
-  `3e62c300a25ed960674811f769e4ee75`, 38 variants. Its file hash differs from
+  `3e62c300a25ed960674811f769e4ee75`, 38 variants. Its file hash differed from
   a repo-root build of the same commit, `de333d18a4bed47d08c2a9568b0cb256`,
-  and its content hash matches it, which is the distinction the two fields
+  and its content hash matched it, which is the distinction the two fields
   exist to make.
-- RR #0 is not run. `cutechess-cli` is installed nowhere on this machine, and
-  the plan orders RR #0 after prerequisites 7 and 8, which are still open.
-  `fairy-stockfish` 14.0.1 XQ is present. The harness was exercised
-  end-to-end against a stub `cutechess-cli`: detach, log, standings, and
-  `provenance.txt` all behaved.
+- Both ladder binaries were rebuilt for Phase A and their records rewritten,
+  because prerequisites 7 and 8 changed the embedded `configs` and
+  `res/dicts` trees after the first build and a baseline carrying the older
+  trees is not comparable. `bin/base-4` is now commit `5849de4`, file md5
+  `cfd8d3115733b2d529597b9ea46a7c48`, content md5
+  `be9d2399dabfdb8777f621a79920bcf0`; `bin/phaseA-4` is commit `a5cf736`,
+  file md5 `90cb5939cd9ed290f0cc756f1b25ee66`, content md5
+  `725ab78cb56709616e605586e1bcd360`. Both carry 38 variants, the same
+  `configs` hash `c09f443d`, the same `res/dicts` hash `39bee958`, and the
+  same options hash, so the pair differs only in the two commits' source.
+- RR #0 is not run. `cutechess-cli` is installed nowhere on this machine,
+  which is now its only blocker: prerequisites 7 and 8, which the plan orders
+  RR #0 after, have both landed. `fairy-stockfish` 14.0.1 XQ is present. The
+  harness was exercised end-to-end against a stub `cutechess-cli`: detach,
+  log, standings, and `provenance.txt` all behaved.
 
 ### 7. Drop-pocket integrity verification
 
@@ -680,6 +694,63 @@ separate standard arm if pooling hides a standard regression.
 
 Rollback removes only the PVS branch. The correctness rider stays on any
 outcome, including a terminal H0 that rejects every fallback.
+
+### Status
+
+Status: accepted. The pooled test is terminal H1 at the +10 floor.
+
+- The correctness rider landed first as `595af09` and the PVS branch as
+  `a5cf736`, attributed separately as this phase requires. `see!` still
+  returns `-INF` for a capture it cannot make, but `score_move!` no longer
+  does arithmetic on that value: such a capture takes
+  `UNMAKEABLE_CAPTURE_SCORE` and sorts below every band, so the wrap to
+  18446744073708535233 that put illegal captures ahead of every real move is
+  gone.
+- Promotion games ran on the built-in `debug-headless sprt` harness with
+  A = `bin/phaseA-4` and B = `bin/base-4`, clock 5000+50ms, bounds [0, 10],
+  alpha = beta = 0.05, and `ANEKAMACAM_SEED` unset. Threads is 1 and Hash is
+  256 on both by construction: the harness sets only Threads, and neither
+  engine overrides `HASH_DEFAULT_MB`. The patch is engine A because every
+  reported figure -- mean, Elo, the win/loss tally and the LLR -- is taken
+  from engine A's view, and H1 is the hypothesis that A is stronger.
+
+| arm | pairs | W | L | D | score | Elo | LLR |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 500 | 443 | 362 | 195 | 0.5405 | +28.2 | 2.633 |
+| xiangqi | 500 | 455 | 418 | 127 | 0.5185 | +12.9 | 0.940 |
+| grand | 202 | 228 | 144 | 32 | 0.6040 | +73.3 | 2.999 |
+| pooled | 1202 | 1126 | 924 | 354 | 0.5420 | +29.3 | 6.655 |
+
+- Only grand reached a bound on its own, at 202 pairs. Standard and xiangqi
+  were stopped at a 1000-game budget with the LLR still inside the bounds,
+  which under rule 7 leaves those two arms unresolved rather than rejected.
+  The gate is the pooled test and the pooled test is terminal: folded into one
+  sample the three arms give LLR 6.655 against the +2.944 acceptance bound.
+  That figure is reconstructed rather than run as one sequential test -- each
+  arm's pair variance is inverted from its own reported LLR and the arms are
+  then combined, so between-variant spread is carried into the pooled
+  variance. It does not rest on grand, whose early stop at its own boundary
+  biases any pool containing it upward: standard and xiangqi pooled without
+  grand give LLR 3.611, also past the bound.
+- The gate's separate standard arm was not needed. Pooling hides no standard
+  regression; standard alone is the second strongest arm at +28.2 with LLR
+  2.633, just short of its own acceptance bound.
+- On independent-game variance the pooled 95% interval is [+16.4, +42.1],
+  clear of the +10 floor at its lower end. Games are paired two per opening,
+  so the true interval is tighter than the one that arithmetic gives.
+- Two support gates were not measured: legal PV at every completed depth, and
+  the scout and full-window re-search rates. Both need instrumentation that
+  does not exist in the tree, and none was added.
+- Harness behaviour the next letter will meet again. `engine_sandbox` keys its
+  scratch directory on the binary path alone and clears it at run start, so
+  two concurrent runs sharing a binary pair overwrite each other's
+  `res/param`; per-variant copies of both binaries avoid it.
+  `ARCHIVE_STAMP_FMT` has second resolution, so runs starting in the same
+  second compute the same rolled log name and all but one panic in
+  `roll_latest`; stagger the launches. The sprt path emits only through
+  `log_1!` and installs no stdout sink, so a redirected file stays empty for
+  the whole run and liveness is read from `logs/`. An SPRT cannot be resumed,
+  because the LLR needs the pair sequence, so any restart is a full reset.
 
 ## Phase B — Mature Stage-U late-move reductions
 
