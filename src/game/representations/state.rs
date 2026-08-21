@@ -516,6 +516,15 @@ pub struct StaticState {
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 
 /*----------------------------------------------------------------------------*\
+                                 SEARCH FIELDS
+\*----------------------------------------------------------------------------*/
+
+    pub reduction_quiet: Vec<u8>,                                               /* plies given up, depth major, one   */
+    pub reduction_quiet_check: Vec<u8>,                                         /* surface per class of move: quiet   */
+    pub reduction_tactical: Vec<u8>,                                            /* or tactical, in check or not       */
+    pub reduction_tactical_check: Vec<u8>,
+
+/*----------------------------------------------------------------------------*\
                               DERIVATION SCALARS
 \*----------------------------------------------------------------------------*/
 
@@ -524,6 +533,20 @@ pub struct StaticState {
     pub role_non_big_split: u32,                                                /* cheapest non-big share, x1000      */
     pub role_major_split: u32,                                                  /* dearest major share, x1000         */
     pub endgame_army_size: u32,                                                 /* endgame at this many mean pieces   */
+
+    pub reduction_quiet_base: u32,                                              /* curve base, x1000, one per         */
+    pub reduction_quiet_check_base: u32,                                        /* reduction surface above            */
+    pub reduction_tactical_base: u32,
+    pub reduction_tactical_check_base: u32,
+
+    pub reduction_quiet_divisor: u32,                                           /* curve divisor, x1000, one per      */
+    pub reduction_quiet_check_divisor: u32,                                     /* reduction surface above            */
+    pub reduction_tactical_divisor: u32,
+    pub reduction_tactical_check_divisor: u32,
+
+    pub reduction_minimum_depth: u32,                                           /* shallowest reducible depth         */
+    pub reduction_move_base: u32,                                               /* move-count gate, and how much      */
+    pub reduction_move_wide: u32,                                               /* wider it sits on a full window     */
 }
 
 /// State
@@ -697,11 +720,31 @@ impl State {
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
 
+            reduction_quiet: Vec::new(),
+            reduction_quiet_check: Vec::new(),
+            reduction_tactical: Vec::new(),
+            reduction_tactical_check: Vec::new(),
+
             opening_occupancy: OPENING_OCCUPANCY,
             endgame_occupancy: ENDGAME_OCCUPANCY,
             role_non_big_split: ROLE_NON_BIG_SPLIT,
             role_major_split: ROLE_MAJOR_SPLIT,
             endgame_army_size: ENDGAME_ARMY_SIZE,
+
+            reduction_quiet_base: REDUCTION_QUIET_BASE,
+            reduction_quiet_check_base: REDUCTION_QUIET_CHECK_BASE,
+            reduction_tactical_base: REDUCTION_TACTICAL_BASE,
+            reduction_tactical_check_base: REDUCTION_TACTICAL_CHECK_BASE,
+
+            reduction_quiet_divisor: REDUCTION_QUIET_DIVISOR,
+            reduction_quiet_check_divisor: REDUCTION_QUIET_CHECK_DIVISOR,
+            reduction_tactical_divisor: REDUCTION_TACTICAL_DIVISOR,
+            reduction_tactical_check_divisor:
+                REDUCTION_TACTICAL_CHECK_DIVISOR,
+
+            reduction_minimum_depth: REDUCTION_MINIMUM_DEPTH,
+            reduction_move_base: REDUCTION_MOVE_BASE,
+            reduction_move_wide: REDUCTION_MOVE_WIDE,
         });
 
         Self::from_statics(statics)

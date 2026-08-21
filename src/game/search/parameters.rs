@@ -33,6 +33,35 @@ pub const ROLE_MAJOR_SPLIT: u32 = 200;
 /// endgame, measured in pieces of average deployed value.
 pub const ENDGAME_ARMY_SIZE: u32 = 5;
 
+/// Late-move reduction curves, one per class of move. Each surface is
+/// `base + shape(depth, moves) / divisor`, and only the base and the
+/// divisor are stored: which terms a curve mixes is fixed by the class,
+/// because a quiet move buried in a long list and a capture that answers
+/// a check do not respond to the same variable. Both are held against
+/// `COEFFICIENT_SCALE` so they survive the all-integer payload.
+pub const REDUCTION_QUIET_BASE: u32 = 750;
+pub const REDUCTION_QUIET_DIVISOR: u32 = 2250;
+pub const REDUCTION_QUIET_CHECK_BASE: u32 = 1000;
+pub const REDUCTION_QUIET_CHECK_DIVISOR: u32 = 4000;
+pub const REDUCTION_TACTICAL_BASE: u32 = 1000;
+pub const REDUCTION_TACTICAL_DIVISOR: u32 = 4000;
+pub const REDUCTION_TACTICAL_CHECK_BASE: u32 = 0;
+pub const REDUCTION_TACTICAL_CHECK_DIVISOR: u32 = 4500;
+
+/// Where reductions begin: the shallowest depth that may give up plies,
+/// and the move-count gate `base + wide * wide_window` a move has to pass
+/// before its curve applies at all. The gate is wider on a full window
+/// because the moves it orders first have not yet been priced against a
+/// bound worth trusting.
+pub const REDUCTION_MINIMUM_DEPTH: u32 = 3;
+pub const REDUCTION_MOVE_BASE: u32 = 2;
+pub const REDUCTION_MOVE_WIDE: u32 = 2;
+
+/// How many move slots each surface stores. A node ordering more moves
+/// than this reuses the last slot: every curve has flattened well before
+/// it, so further rows would repeat what the table already says.
+pub const REDUCTION_MOVE_CAP: usize = 64;
+
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement
 /// tree that outgrows either bound is referenced against the endings
@@ -755,7 +784,87 @@ fn resolve_setup_army(state: &State) -> Vec<u32> {
 /// - state: &mut State -> freshly precomputed variant state
 pub fn derive_parameters(state: &mut State) {
     derive_eval_parameters(state);
+    derive_search_parameters(state);
     refresh_eval_state(state);
+}
+
+/// reduction_surface
+///
+/// Builds one late-move reduction table: for every remaining depth and
+/// every move number, how many plies a move of that class gives up on its
+/// first search. Depth zero and move zero index nothing the search ever
+/// reduces, so they hold zero rather than the logarithm of it.
+///
+/// Params:
+/// - base   : u32 -> curve base, held against `COEFFICIENT_SCALE`
+/// - divisor: u32 -> curve divisor, held against `COEFFICIENT_SCALE`
+/// - shape  : F   -> the depth and move terms this curve mixes
+///
+/// Return:
+/// Vec<u8> -> `MAX_DEPTH * REDUCTION_MOVE_CAP` plies, depth major
+pub fn reduction_surface<F>(base: u32, divisor: u32, shape: F) -> Vec<u8>
+where
+    F: Fn(f64, f64) -> f64,
+{
+    let base = base as f64 / COEFFICIENT_SCALE;
+    let divisor = divisor as f64 / COEFFICIENT_SCALE;
+    let mut table = vec![0u8; MAX_DEPTH * REDUCTION_MOVE_CAP];
+
+    for depth in 1..MAX_DEPTH {
+        for moves in 1..REDUCTION_MOVE_CAP {
+            let plies = base + shape(depth as f64, moves as f64) / divisor;
+
+            table[depth * REDUCTION_MOVE_CAP + moves] =
+                plies.clamp(0.0, u8::MAX as f64) as u8;
+        }
+    }
+
+    table
+}
+
+/// derive_search_parameters
+///
+/// Drives the search half of derivation: rebuilds all four late-move
+/// reduction surfaces from the curve coefficients currently held in the
+/// static state. Every write of those coefficients ends here, whether it
+/// came from a payload or from the defaults, so the tables cannot be left
+/// describing curves the variant no longer carries.
+///
+/// Params:
+/// - state: &mut State -> variant whose reduction tables are rebuilt
+pub fn derive_search_parameters(state: &mut State) {
+    let statics = &state.statics;
+
+    let quiet = reduction_surface(
+        statics.reduction_quiet_base,
+        statics.reduction_quiet_divisor,
+        |depth, moves| depth.ln() * moves.ln(),
+    );
+
+    let quiet_check = reduction_surface(
+        statics.reduction_quiet_check_base,
+        statics.reduction_quiet_check_divisor,
+        |depth, moves| depth.sqrt() * moves.ln(),
+    );
+
+    let tactical = reduction_surface(
+        statics.reduction_tactical_base,
+        statics.reduction_tactical_divisor,
+        |depth, moves| depth.ln() * moves.sqrt(),
+    );
+
+    let tactical_check = reduction_surface(
+        statics.reduction_tactical_check_base,
+        statics.reduction_tactical_check_divisor,
+        |depth, moves| depth.ln() * moves.ln(),
+    );
+
+    let statics = state.static_mut();
+
+    statics.reduction_quiet = quiet;
+    statics.reduction_quiet_check = quiet_check;
+    statics.reduction_tactical = tactical;
+    statics.reduction_tactical_check = tactical_check;
 }
 
 /// derive_eval_parameters

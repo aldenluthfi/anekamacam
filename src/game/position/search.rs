@@ -30,6 +30,10 @@ pub struct SearchInfo {
 
     pub nodes: u128,                                                            /* total nodes searched so far        */
 
+    pub reduced_searches: u128,                                                 /* moves first searched short         */
+    pub depth_researches: u128,                                                 /* short searches that raised alpha   */
+    pub window_researches: u128,                                                /* scouts re-run on the full window   */
+
     pub interrupt: bool,                                                        /* flag set by external stop events   */
 
     pub pv_line: Vec<Move>,                                                     /* reported principal variation       */
@@ -111,6 +115,10 @@ pub fn clear_search(
     info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;
     info.interrupt = false;
+
+    info.reduced_searches = 0;
+    info.depth_researches = 0;
+    info.window_researches = 0;
 
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
@@ -310,6 +318,17 @@ pub fn iterative_deepening(
             format_move(&best_move, state, dict),
             depth_nodes,
             depth_nps,
+        );
+
+        log_3!(
+            concat!(
+                "(Thread {}) Reduced: {:>10} | Depth Re: {:>10} | ",
+                "Window Re: {:>10}",
+            ),
+            thread_num,
+            info.reduced_searches,
+            info.depth_researches,
+            info.window_researches,
         );
 
         log_2!(
@@ -653,6 +672,10 @@ pub fn alpha_beta(
     let board_size = state.statics.board_size;
     let history_bonus = (depth * depth) as i32;
 
+    let minimum_depth = state.statics.reduction_minimum_depth as usize;
+    let move_base = state.statics.reduction_move_base as usize;
+    let move_wide = state.statics.reduction_move_wide as usize;
+
     let mut moves = Vec::with_capacity(64);
     let mut scores = Vec::with_capacity(64);
     let mut scratch = Vec::with_capacity(32);
@@ -699,6 +722,30 @@ pub fn alpha_beta(
         legal_moves += 1;
 
         let wide_window = beta - alpha > 1;                                     /* alpha is fixed for this iteration  */
+        let move_gate = move_base + move_wide * wide_window as usize;
+
+        let reduction = if depth >= minimum_depth
+        && legal_moves > move_gate
+        {
+            let surface = match (
+                is_capture || is_promotion || is_drop, in_check
+            ) {
+                (false, false) => &state.statics.reduction_quiet,
+                (false, true) => &state.statics.reduction_quiet_check,
+                (true, false) => &state.statics.reduction_tactical,
+                (true, true) => &state.statics.reduction_tactical_check,
+            };
+
+            let depth_slot = depth.min(MAX_DEPTH - 1);
+            let move_slot = legal_moves.min(REDUCTION_MOVE_CAP - 1);
+
+            (surface[depth_slot * REDUCTION_MOVE_CAP + move_slot] as usize)
+                .min(depth - 2)                                                 /* one ply always survives the cut    */
+        } else {
+            0
+        };
+
+        info.reduced_searches += (reduction > 0) as u128;
 
         let mut score = if legal_moves == 1 {
             -alpha_beta(
@@ -716,7 +763,7 @@ pub fn alpha_beta(
                 state,
                 ttable,
                 qtable,
-                depth - 1,
+                depth - 1 - reduction,
                 -alpha - 1,
                 -alpha,
                 info,
@@ -724,11 +771,31 @@ pub fn alpha_beta(
             )
         };
 
+        if reduction > 0
+        && score > alpha
+        && !info.interrupt
+        {
+            info.depth_researches += 1;
+
+            score = -alpha_beta(
+                state,
+                ttable,
+                qtable,
+                depth - 1,
+                -alpha - 1,
+                -alpha,
+                info,
+                true,
+            );
+        }
+
         if wide_window
         && legal_moves > 1
         && score > alpha
         && !info.interrupt
         {
+            info.window_researches += 1;
+
             score = -alpha_beta(
                 state,
                 ttable,

@@ -10,7 +10,7 @@ Baseline branch: `experiment/blank-slate`.
   SEE ordering, TT/QT, and Lazy SMP.
 
 Every unlettered prerequisite has landed, except RR #0 itself, which is blocked
-on a missing `cutechess-cli`. Phase A is accepted. Per-prerequisite and
+on a missing `cutechess-cli`. Phases A and B are accepted. Per-prerequisite and
 per-letter status lines record what was proved, what was left open, and where
 the shipped design departs from this plan.
 
@@ -28,6 +28,7 @@ the shipped design departs from this plan.
 | letter | state | commit |
 | --- | --- | --- |
 | A. Principal variation search | accepted, pooled +29.3 Elo | `595af09`, `a5cf736` |
+| B. Mature Stage-U late-move reductions | accepted, pooled +100.2 Elo | `f904452` |
 
 ## Purpose
 
@@ -802,6 +803,115 @@ campaign variant below its declared non-regression bound.
 3. Raise minimum depth and delay the move-count gate.
 
 Never substitute the rejected sqrt/sqrt quiet curve.
+
+### Status
+
+Status: accepted. Every campaign arm reached H1 on its own bound.
+
+Two departures from the candidate as written, both deliberate:
+
+- The tail carries eight curve coefficients, not six. Four surfaces need four
+  bases and four divisors; "six" counts distinct values, which would tie the
+  quiet-check base to the tactical base and the tactical divisor to the
+  quiet-check divisor. Phases P and S move those curves independently, so they
+  are stored independently: scalars 5 to 12, then minimum depth and the two
+  move-gate offsets at 13 to 15.
+- The candidate names no minimum depth. It is 3, the shallowest depth at which
+  `depth - 1 - reduction` can still leave a ply after the clamp.
+
+`PARAM_SCALAR_COUNT` rose from 5 to 16, so every shipped payload became fatal
+until regenerated; all 38 were. The eval prefix md5 is unchanged for standard,
+shogi, xiangqi, and grand, which is what makes the node counts below
+comparable with Phase A rather than a measurement of new eval weights.
+
+Prerequisite 3 deferred its post-value derivation hook to "the phase that first
+adds a scalar feeding a runtime table". This is that phase, so the hook landed
+here: `derive_search_parameters` runs from `derive_parameters` on the
+no-payload path and as the tail statement of `apply_scalar_parameters` on the
+payload path. No write of the eight coefficients can leave the four tables
+describing the curves of the payload before it.
+
+- Rates, standard `startpos` to depth 12, one thread, Hash 64,
+  `ANEKAMACAM_SEED=42`: 63,994 reduced searches, 1,963 full-depth re-searches,
+  818 full-window re-searches, cumulative over the whole iteration. The
+  full-depth re-search rate is 3.07% of reduced searches, below the 10 to 20%
+  other engines report. Read alone it says the reductions are seldom proved
+  wrong; it does not say they are seldom wrong, because a reduction that is
+  never re-searched is never tested.
+- Node totals fell rather than exploded: standard depth 12 went from
+  44,757,908 nodes to 836,287, a factor of 53.5 at an unchanged score
+  (cp 11 against cp 10).
+- Width ladder, `tools/ebf-suite.sh`, all four cases at depth 9 with
+  `EBF_FROM=5` so the window matches the one prerequisite 8 quoted, Hash 64,
+  seed 42:
+
+| case | A ebf | B ebf | fsf ebf | A nodes / fsf | B nodes / fsf |
+| --- | --- | --- | --- | --- | --- |
+| standard | 3.113 | 2.348 | 2.422 | 21.6 | 3.6 |
+| capablanca | 3.605 | 2.784 | 2.045 | 84.6 | 11.1 |
+| gothic | 3.840 | 2.962 | 2.035 | 91.0 | 12.0 |
+| grand | 3.859 | 2.594 | 1.952 | 214.4 | 13.4 |
+
+  The spread narrowed. Across the four widths our EBF ran 3.113 to 3.859 before
+  and 2.348 to 2.962 after, and the standard-to-grand gap the prerequisite
+  named fell from 0.746 to 0.246. The node ratio against the reference, which
+  is the figure prerequisite 8 raised, fell from a tenfold widening across the
+  ladder (21.6 to 214.4) to under fourfold (3.6 to 13.4). The prerequisite's
+  own numbers are not reproduced here: it reported 3.41 to 4.62 and this run
+  measures 3.11 to 3.86 for the same binary lineage, because Phase A's search
+  is not the search that was measured then.
+- Mate discovery is the one gate that did not pass as written. Four cases, all
+  standard, seed 42, Hash 64:
+
+| case | A first mate | B first mate |
+| --- | --- | --- |
+| `k7/7R/1K6/8/8/8/8/8` | depth 1, mate 1 | depth 1, mate 1 |
+| `k7/8/1K6/8/8/8/8/1R6` | depth 3, mate 2 | depth 3, mate 2 |
+| `8/8/8/3k4/8/8/8/3QK3` | depth 15, mate 9 | depth 20, mate 10 |
+| `8/8/8/8/8/2k5/8/K1R5` | none by depth 16 | none by depth 16 |
+
+  On the bare queen the mate moved five iterations later, which the gate as
+  phrased forbids. Indexed by the resource a game actually spends it moved
+  earlier: first mate at 3,894,326 nodes and 0.96s against 9,587,340 nodes and
+  1.64s, and the true mate 8 at 10,955,342 nodes and 2.28s against 14,876,605
+  nodes and 2.62s. A depth index is not comparable across a patch that changes
+  what a ply costs, so the gate is recorded as failed on its literal wording
+  and passed on the measure it exists to protect. No fallback was applied on
+  this evidence alone; fallback 1 could not have helped in any case, since the
+  position has no captures for it to exempt.
+- One imprecision is shipped knowingly. The full-window re-search fires on
+  `score > alpha` without also requiring `score < beta`, so a scout that
+  already beat beta pays one full-window search before the cutoff breaks the
+  loop. It costs correctness nothing and, at 818 re-searches against 836,287
+  nodes, close to nothing in work; Phase C touches this line for aspiration
+  windows and can tighten it there.
+
+Promotion games ran on `debug-headless sprt` with A = `bin/phaseB-4` and
+B = `bin/phaseA-4`, clock 5000+50ms, bounds [0, 15], alpha = beta = 0.05, and
+`ANEKAMACAM_SEED` unset. The four arms ran concurrently from per-variant copies
+of both binaries in separate working directories, which is what Phase A's
+status says the sandbox and the log roll require.
+
+| arm | games | W | L | D | score | Elo | LLR |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 106 | 64 | 20 | 22 | 0.7075 | +153.5 | 3.006 |
+| shogi | 292 | 183 | 109 | 0 | 0.6267 | +90.0 | 2.977 |
+| crazyhouse | 286 | 174 | 109 | 3 | 0.6136 | +80.4 | 2.958 |
+| xiangqi | 164 | 96 | 41 | 27 | 0.6677 | +121.2 | 2.982 |
+| pooled | 848 | 517 | 279 | 52 | 0.6403 | +100.2 | 11.923 |
+
+Unlike Phase A the pooled figure needs no reconstruction. Every arm crossed its
+own +2.944 acceptance bound, so the pooled LLR is the sum of four independent
+log-likelihood ratios taken against the same hypothesis pair: 11.923. No
+campaign variant is near a non-regression bound, the weakest arm being
+crazyhouse at +80.4 with a 95% interval of [+40.1, +122.8] on independent-game
+variance. Games are paired two per opening, so the true intervals are tighter
+than that arithmetic gives.
+
+The margin is large enough to be worth naming plainly: this is the first search
+patch in the iteration that changes what a ply costs, and the baseline it beats
+searched every move at full depth. A patch of that shape should win by a lot,
+and does.
 
 ## Phase C — Aspiration windows and mate-distance clipping
 

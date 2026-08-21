@@ -177,6 +177,10 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// `PARAM_SCALAR_COUNT`, and regenerating every shipped payload in the
 /// same change.
 ///
+/// Coefficients that feed a runtime table are followed by the derivation
+/// that rebuilds it, so no payload can leave a table still describing the
+/// curves of the one before it.
+///
 /// Params:
 /// - state  : &mut State -> variant receiving the coefficients
 /// - scalars: &[i32]     -> the trailing `PARAM_SCALAR_COUNT` tokens
@@ -203,6 +207,39 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
         scalars[4]
     );
 
+    for slot in 5..=8 {
+        assert!(
+            scalars[slot] >= 0,
+            "Scalar {} bases a reduction curve and cannot be negative, \
+            got {}",
+            slot, scalars[slot]
+        );
+    }
+
+    for slot in 9..=12 {
+        assert!(
+            scalars[slot] > 0,
+            "Scalar {} divides a reduction curve and must be positive, \
+            got {}",
+            slot, scalars[slot]
+        );
+    }
+
+    assert!(
+        scalars[13] >= 1,
+        "Scalar 13 is the shallowest reducible depth, got {}",
+        scalars[13]
+    );
+
+    for slot in 14..=15 {
+        assert!(
+            scalars[slot] >= 0,
+            "Scalar {} gates reductions by move count and cannot be \
+            negative, got {}",
+            slot, scalars[slot]
+        );
+    }
+
     let statics = state.static_mut();
 
     statics.opening_occupancy = scalars[0].unsigned_abs();
@@ -210,6 +247,22 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
     statics.role_non_big_split = scalars[2].unsigned_abs();
     statics.role_major_split = scalars[3].unsigned_abs();
     statics.endgame_army_size = scalars[4].unsigned_abs();
+
+    statics.reduction_quiet_base = scalars[5].unsigned_abs();
+    statics.reduction_quiet_check_base = scalars[6].unsigned_abs();
+    statics.reduction_tactical_base = scalars[7].unsigned_abs();
+    statics.reduction_tactical_check_base = scalars[8].unsigned_abs();
+
+    statics.reduction_quiet_divisor = scalars[9].unsigned_abs();
+    statics.reduction_quiet_check_divisor = scalars[10].unsigned_abs();
+    statics.reduction_tactical_divisor = scalars[11].unsigned_abs();
+    statics.reduction_tactical_check_divisor = scalars[12].unsigned_abs();
+
+    statics.reduction_minimum_depth = scalars[13].unsigned_abs();
+    statics.reduction_move_base = scalars[14].unsigned_abs();
+    statics.reduction_move_wide = scalars[15].unsigned_abs();
+
+    derive_search_parameters(state);
 }
 
 /// scalar_parameter_tokens
@@ -230,6 +283,17 @@ pub fn scalar_parameter_tokens(state: &State) -> Vec<String> {
         state.statics.role_non_big_split.to_string(),
         state.statics.role_major_split.to_string(),
         state.statics.endgame_army_size.to_string(),
+        state.statics.reduction_quiet_base.to_string(),
+        state.statics.reduction_quiet_check_base.to_string(),
+        state.statics.reduction_tactical_base.to_string(),
+        state.statics.reduction_tactical_check_base.to_string(),
+        state.statics.reduction_quiet_divisor.to_string(),
+        state.statics.reduction_quiet_check_divisor.to_string(),
+        state.statics.reduction_tactical_divisor.to_string(),
+        state.statics.reduction_tactical_check_divisor.to_string(),
+        state.statics.reduction_minimum_depth.to_string(),
+        state.statics.reduction_move_base.to_string(),
+        state.statics.reduction_move_wide.to_string(),
     ]
 }
 
