@@ -28,7 +28,7 @@ the shipped design departs from this plan.
 | letter | state | commit |
 | --- | --- | --- |
 | A. Principal variation search | accepted, pooled +29.3 Elo | `595af09`, `a5cf736` |
-| B. Mature Stage-U late-move reductions | accepted, pooled +100.2 Elo | `f904452` |
+| B. Mature Stage-U late-move reductions | accepted, pooled +100.2 Elo | `a41c825` |
 
 ## Purpose
 
