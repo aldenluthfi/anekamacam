@@ -529,6 +529,7 @@ pub struct StaticState {
     pub futility_margin: Vec<i32>,                                              /* alpha cushion, improving major     */
     pub lmp_count: Vec<usize>,                                                  /* moves ordered, improving major     */
     pub see_allowance: Vec<i32>,                                                /* loss a capture may show, by depth  */
+    pub qsearch_delta: i32,                                                     /* gain a leaf capture must promise   */
 
 /*----------------------------------------------------------------------------*\
                               DERIVATION SCALARS
@@ -575,6 +576,8 @@ pub struct StaticState {
 
     pub see_prune_ratio: u32,                                                   /* share of the dearest piece, x1000  */
     pub see_prune_depth: u32,                                                   /* deepest node dropping a capture    */
+
+    pub qsearch_delta_ratio: u32,                                               /* share of the dearest piece, x1000  */
 }
 
 /// State
@@ -758,6 +761,7 @@ impl State {
             futility_margin: Vec::new(),
             lmp_count: Vec::new(),
             see_allowance: Vec::new(),
+            qsearch_delta: 0,
 
             opening_occupancy: OPENING_OCCUPANCY,
             endgame_occupancy: ENDGAME_OCCUPANCY,
@@ -801,6 +805,7 @@ impl State {
 
             see_prune_ratio: SEE_PRUNE_RATIO,
             see_prune_depth: SEE_PRUNE_DEPTH,
+            qsearch_delta_ratio: QSEARCH_DELTA_RATIO,
         });
 
         Self::from_statics(statics)

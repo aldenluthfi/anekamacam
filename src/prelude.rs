@@ -82,7 +82,7 @@ pub use crate::game::search::{
         ENDGAME_OCCUPANCY, FUTILITY_DEPTH, FUTILITY_FLOOR,
         FUTILITY_IMPROVING, FUTILITY_RATIO, LMP_BASE, LMP_DEPTH,
         LMP_IMPROVING, LMP_RATIO, OPENING_OCCUPANCY,
-        REDUCTION_MINIMUM_DEPTH, REDUCTION_MOVE_BASE,
+        QSEARCH_DELTA_RATIO, REDUCTION_MINIMUM_DEPTH, REDUCTION_MOVE_BASE,
         REDUCTION_MOVE_CAP, REDUCTION_MOVE_WIDE, REDUCTION_QUIET_BASE,
         REDUCTION_QUIET_CHECK_BASE, REDUCTION_QUIET_CHECK_DIVISOR,
         REDUCTION_QUIET_DIVISOR, REDUCTION_TACTICAL_BASE,
@@ -526,7 +526,7 @@ pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
-pub const PARAM_SCALAR_COUNT: usize = 33;                                       /* derivation scalars per payload     */
+pub const PARAM_SCALAR_COUNT: usize = 34;                                       /* derivation scalars per payload     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

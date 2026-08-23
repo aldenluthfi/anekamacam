@@ -349,6 +349,12 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
         scalars[32]
     );
 
+    assert!(
+        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[33]),
+        "Scalar 33 is a fraction of {} and must be within it, got {}",
+        COEFFICIENT_SCALE as i32, scalars[33]
+    );
+
     let statics = state.static_mut();
 
     statics.opening_occupancy = scalars[0].unsigned_abs();
@@ -392,6 +398,8 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
 
     statics.see_prune_ratio = scalars[31].unsigned_abs();
     statics.see_prune_depth = scalars[32].unsigned_abs();
+
+    statics.qsearch_delta_ratio = scalars[33].unsigned_abs();
 
     derive_search_parameters(state);
 }
@@ -442,6 +450,7 @@ pub fn scalar_parameter_tokens(state: &State) -> Vec<String> {
         state.statics.lmp_depth.to_string(),
         state.statics.see_prune_ratio.to_string(),
         state.statics.see_prune_depth.to_string(),
+        state.statics.qsearch_delta_ratio.to_string(),
     ]
 }
 

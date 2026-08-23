@@ -129,6 +129,15 @@ pub const SEE_PRUNE_RATIO: u32 = 250;
 /// The deepest node allowed to discard a capture on that price alone.
 pub const SEE_PRUNE_DEPTH: u32 = 5;
 
+/// How much a capture has to promise at a quiet leaf before it is
+/// searched: what it takes, plus `RATIO` of the dearest non-royal piece
+/// held against `COEFFICIENT_SCALE`. A capture that cannot reach alpha
+/// even at the full price of the piece it takes says nothing the score
+/// already standing at that leaf does not. An endgame position is thin
+/// enough that a single capture is most of what is left to play for, so
+/// the margin is not applied there.
+pub const QSEARCH_DELTA_RATIO: u32 = 100;
+
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement
 /// tree that outgrows either bound is referenced against the endings
@@ -979,6 +988,9 @@ pub fn derive_search_parameters(state: &mut State) {
         allowance[depth] = (see_step * depth as u64) as i32;
     }
 
+    let qsearch_delta = dearest * statics.qsearch_delta_ratio as u64
+        / COEFFICIENT_SCALE as u64;
+
     assert!(
         futility.chunks(futility_deepest + 1)
             .all(|row| row.windows(2).all(|pair| pair[0] <= pair[1])),
@@ -1032,6 +1044,7 @@ pub fn derive_search_parameters(state: &mut State) {
     statics.futility_margin = futility;
     statics.lmp_count = counts;
     statics.see_allowance = allowance;
+    statics.qsearch_delta = qsearch_delta as i32;
 }
 
 /// derive_eval_parameters

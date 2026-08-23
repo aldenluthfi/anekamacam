@@ -1387,6 +1387,83 @@ Pooled standard, shogi, and xiangqi SPRT, H1 floor +8 Elo.
 2. Delta pruning only with a larger derived margin.
 3. SEE pruning only below the first qsearch ply.
 
+### Status
+
+Status: support gate open, promotion campaign held until the Phase E arms
+finish.
+
+As landed, a quiescence node not in check stops at the first capture the
+ordering has priced as losing. Captures are picked in descending score
+order, so every capture behind that one is priced no better and the stop
+costs nothing a scan would find. The same node skips a non-promotion
+capture whose victim plus a margin still stands under alpha. The margin
+is one new scalar, `qsearch_delta_ratio` at 100 -- a tenth of the dearest
+non-royal piece, the anchor `futility_floor` already uses -- derived into
+`StaticState.qsearch_delta`. The scalar tail is 33 to 34 and all 38
+payloads were regenerated. Neither cut touches a position in check, and
+the margin is not applied in ENDGAME.
+
+The plan's footprint asked for a SEE threshold scalar as well. There is
+none: the threshold is the boundary between the winning and losing
+ordering bands, which is the sign of the exchange simulation, so a scalar
+there would be a payload slot nothing ever moves.
+
+Endgame fixtures pass 38 of 38.
+
+Quiescence share of all nodes, depth 11, standard, Hash 64, seed 42:
+
+| case | nodes | qsearch nodes | share | price stops | margin skips |
+| --- | --- | --- | --- | --- | --- |
+| startpos | 45,208 | 16,615 | 36.8% | 4,828 | 1,186 |
+| aneka-p24 | 69,737 | 34,150 | 49.0% | 22,896 | 6,755 |
+| aneka-p28 | 33,496 | 13,552 | 40.5% | 4,977 | 2,359 |
+| aneka-p32 | 69,536 | 30,947 | 44.5% | 14,986 | 4,992 |
+| aneka-p36 | 47,933 | 18,285 | 38.1% | 14,316 | 2,529 |
+| fsf-p24 | 591,262 | 311,250 | 52.6% | 135,668 | 53,574 |
+| fsf-p28 | 90,961 | 44,046 | 48.4% | 42,112 | 6,560 |
+| fsf-p32 | 36,861 | 20,354 | 55.2% | 7,856 | 3,718 |
+| fsf-p36 | 49,348 | 18,780 | 38.1% | 23,598 | 3,228 |
+
+The price stop carries roughly four times what the margin does on every
+case, which is what a capture-only leaf should look like: most of what a
+node generates there is already priced, and only what survives the price
+is worth measuring against alpha.
+
+Nodes to fixed depth against Phase E, `tools/ebf-suite.sh`, Hash 64:
+
+| variant | depth | cases under Phase E | range of Phase F over Phase E |
+| --- | --- | --- | --- |
+| standard | 13 | 9 of 9 | 0.31 to 0.81 |
+| xiangqi | 12 | 4 of 4 | 0.37 to 0.63 |
+| shogi | 11 | 3 of 4 | 0.46 to 1.49 |
+| crazyhouse | 13 | 5 of 9 | 0.15 to 3.50 |
+
+Standard and xiangqi cut nodes on every case. Crazyhouse swings both
+ways by more than an order of magnitude, which is what a variant that
+drops pieces back onto the board does to any change in leaf ordering: the
+tree is wide enough that a different first capture moves the whole
+iteration. The promotion campaign, not this table, decides whether that
+swing costs anything.
+
+Score signs agree with Phase E on 9 of 9 standard cases at depth 11, with
+no gap wider than 12 units.
+
+The mate fixtures hold except `puzzle-b`
+(`1k5r/pP3ppp/3p2b1/1BN1n3/1Q2P3/P1B5/KP3P1P/7q w`), where Phase E
+reports `mate 3` at depth 12 and Phase F reports `cp 381`, finding the
+same `mate 3` at depth 13 and holding it through 16. The cost is one ply,
+not the mate. Two bisect builds place it on neither cut alone:
+
+| build | depth 12 verdict |
+| --- | --- |
+| `qsearch_delta_ratio` 100 to 1000, margin unreachable | `cp 1327` |
+| price stop removed, margin left in | `cp 448` |
+
+Each cut on its own still misses the mate at depth 12, so what costs the
+ply is the leaf score being cheaper rather than either rule discarding
+the mating line. `puzzle-a`, `puzzle-c`, `puzzle-d`, and the `kqk`
+conversion read the same as Phase E.
+
 ## Phase G — Capped check extensions
 
 ### Candidate

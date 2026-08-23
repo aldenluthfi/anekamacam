@@ -5,7 +5,9 @@
 //! Search uses two transposition tables, null-move pruning, one static
 //! evaluation per ply cutting against either bound, move-count and
 //! exchange pruning, SEE move ordering, killer moves, and history.
-//! SearchInfo carries limits, counters, and stop state.
+//! Quiescence drops captures the exchange simulation already prices as
+//! losing and captures too small to reach alpha. SearchInfo carries
+//! limits, counters, and stop state.
 //!
 //! Created: 22/03/2026
 //! Author : Alden Luthfi
@@ -45,6 +47,10 @@ pub struct SearchInfo {
     pub futility_prunes: u128,                                                  /* late quiets left unsearched        */
     pub move_count_prunes: u128,                                                /* quiets past the count for a node   */
     pub exchange_prunes: u128,                                                  /* captures priced as losing too much */
+
+    pub qsearch_nodes: u128,                                                    /* nodes spent settling the position  */
+    pub qsearch_see_prunes: u128,                                               /* leaf captures priced as losing     */
+    pub qsearch_delta_prunes: u128,                                             /* leaf captures too small to matter  */
 
     pub interrupt: bool,                                                        /* flag set by external stop events   */
 
@@ -150,6 +156,10 @@ pub fn clear_search(
     info.futility_prunes = 0;
     info.move_count_prunes = 0;
     info.exchange_prunes = 0;
+
+    info.qsearch_nodes = 0;
+    info.qsearch_see_prunes = 0;
+    info.qsearch_delta_prunes = 0;
 
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
@@ -443,6 +453,17 @@ pub fn iterative_deepening(
             info.exchange_prunes,
         );
 
+        log_3!(
+            concat!(
+                "(Thread {}) Quiescence: {:>10} | Leaf Exchange: {:>10} | ",
+                "Delta: {:>10}",
+            ),
+            thread_num,
+            info.qsearch_nodes,
+            info.qsearch_see_prunes,
+            info.qsearch_delta_prunes,
+        );
+
         log_2!(
             "(Thread {}) Depth {:>2} | Time: {:>10} | Best Line: {}",
             thread_num,
@@ -520,7 +541,12 @@ pub fn iterative_deepening(
 /// quiescence_search
 ///
 /// Capture-only negamax leaf search. Checked positions search every evasion;
-/// other positions may stand pat and search captures only.
+/// other positions may stand pat and search captures only. A position not
+/// in check stops at the first capture ordering prices as losing, since
+/// every capture behind it is priced no better, and skips a capture whose
+/// victim plus a margin still stands under alpha. The margin is not
+/// applied to a promotion, nor in an endgame, where a single capture is
+/// most of what is left to play for.
 ///
 /// Params:
 /// - state : &mut State      -> position searched, restored on return
@@ -548,6 +574,8 @@ fn quiescence_search(
     }
 
     info.nodes += 1;
+    info.qsearch_nodes += 1;
+
     if info.nodes & 2047 == 0 {
         check_interrupt(info);
     }
@@ -602,10 +630,25 @@ fn quiescence_search(
 
     scores.resize(moves.len(), usize::MAX);
 
+    let delta = state.statics.qsearch_delta;
+    let delta_prunable = !in_check && state.game_phase != ENDGAME;               /* a thin board plays for one capture */
+
     for index in 0..moves.len() {
         pick_by_score!(
             state, info, &mut moves, &mut scores, index, &table_move
         );
+
+        if !in_check && scores[index] < LOSING_CAPTURE_SCORE as usize {
+            info.qsearch_see_prunes += (moves.len() - index) as u128;
+            break;                                                              /* ordered: every later one loses too */
+        }
+
+        if delta_prunable
+        && !m_promotion!(&moves[index])
+        && stand_pat + victim_value!(&moves[index], state) + delta <= alpha {
+            info.qsearch_delta_prunes += 1;
+            continue;
+        }
 
         if !make_move!(state, moves[index].clone()) {
             continue;
