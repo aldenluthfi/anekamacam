@@ -138,6 +138,19 @@ pub const SEE_PRUNE_DEPTH: u32 = 5;
 /// the margin is not applied there.
 pub const QSEARCH_DELTA_RATIO: u32 = 100;
 
+/// How far past the depth an iteration set out to reach a checked node may
+/// be carried: `RATIO` of the root depth, held against `COEFFICIENT_SCALE`.
+/// A node whose king is under attack has no quiet score to stand on and a
+/// quiescence that only prices captures reads it worst of all, so the
+/// frontier hands it one more ply of real search. Every ply so gained is
+/// spent from the same budget, so a line that keeps checking runs out.
+pub const EXTENSION_CAP_RATIO: u32 = 500;
+
+/// The shallowest iteration allowed to extend. A shallow iteration is
+/// cheap enough to be worth finishing as it stands, and the deeper ones it
+/// feeds read the same checks with a budget behind them.
+pub const EXTENSION_START_DEPTH: u32 = 4;
+
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement
 /// tree that outgrows either bound is referenced against the endings

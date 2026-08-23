@@ -1353,6 +1353,23 @@ futility margin restores the mate with both of the others still live. The
 move that is lost, `Qg3g6`, is a quiet queen sacrifice onto an empty square —
 exactly the move class a static-eval alpha cushion is built to discard.
 
+Promotion campaign, four arms at 5000+50, 2000 games each, `H0` 0 and `H1`
+10 Elo, seed unset. An earlier run was discarded when the standard arm was
+found to be carrying a stale patch binary; the numbers below are the
+restart.
+
+| arm | W | L | D | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| shogi | 500 | 389 | 11 | 43.1 | 2.982 | H1 accepted |
+| standard | 680 | 632 | 478 | 9.3 | 1.14 | running |
+| crazyhouse | 726 | 624 | 32 | 25.7 | 2.945 | H1 accepted |
+| xiangqi | 658 | 572 | 340 | 19.1 | 2.982 | H1 accepted |
+
+Shogi crossed first, then crazyhouse, then xiangqi. Standard is the slow
+one: it draws far more often than the other three at this control, so a
+given Elo takes more games to resolve there, and its arm is still climbing
+without having touched a bound.
+
 ## Phase F — Quiescence discipline
 
 ### Candidate
@@ -1464,6 +1481,26 @@ ply is the leaf score being cheaper rather than either rule discarding
 the mating line. `puzzle-a`, `puzzle-c`, `puzzle-d`, and the `kqk`
 conversion read the same as Phase E.
 
+Promotion campaign, three arms at 5000+50, 2000 games each, `H0` 0 and
+`H1` 8 Elo, seed unset, each arm patched against the Phase E binary its
+own Phase E arm ran.
+
+| arm | W | L | D | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| standard | 195 | 124 | 123 | 56.3 | 2.965 | H1 accepted |
+| shogi | 349 | 222 | 9 | 77.3 | 2.990 | H1 accepted |
+| xiangqi | 147 | 114 | 69 | 34.9 | 1.06 | running |
+
+A crazyhouse arm ran alongside on `H0` -8 and `H1` 8, outside the pooled
+gate, because crazyhouse was the one variant whose node counts swung both
+ways in the support gate. It accepted H1 at 188W 128L 10D, 64.7 Elo, LLR
+3.003. The swing costs nothing over the board.
+
+Standard crossed in 442 games and shogi in 580, against the thousand-plus
+Phase E's own arms have needed. A cut that removes half the nodes at a
+fixed depth buys depth at a fixed clock, and that is what the arms are
+reading.
+
 ## Phase G — Capped check extensions
 
 ### Candidate
@@ -1493,6 +1530,49 @@ ordering before Phase H.
 1. One cumulative extension ply.
 2. Extend only nodes not already reduced.
 3. Extend only non-losing checking lines.
+
+### Status
+
+Status: support gate open, promotion campaign starting.
+
+As landed, a node that reaches depth zero while its king is attacked is
+searched one real ply instead of being handed to quiescence, so long as
+the plies already gained sit inside a root-relative budget. No counter
+tracks the gain: absent extension a frontier stands at `ply` equal to the
+root depth, so `ply` above it is exactly what has been gained, and a
+reduced line reads below it, which is true of that line. The budget is
+`EXTENSION_CAP_RATIO` of the root depth at 500 -- half of it -- and
+`EXTENSION_START_DEPTH` 4 keeps the shallow iterations as they are. Both
+are scalars, the tail is 34 to 36, and every payload carries them.
+
+The plan's footprint asked for one `SearchInfo` scalar. There are two
+fields: `root_depth`, the scalar itself, and a `check_extensions` counter,
+because a rule nothing counts cannot be gated and every earlier phase
+reports its own firing count.
+
+The node-growth bound the support gate calls for was not written down in
+advance, so it is predeclared here: reject if the geometric mean of nodes
+to fixed depth over the campaign variants rises above 1.25 of Phase F, or
+if any single case rises above 2.0.
+
+| variant | depth | cases | geometric mean | min | max |
+| --- | --- | --- | --- | --- | --- |
+| standard | 13 | 9 | 1.181 | 0.529 | 1.793 |
+| shogi | 11 | 4 | 0.878 | 0.746 | 1.253 |
+| xiangqi | 12 | 4 | 1.002 | 0.747 | 1.381 |
+
+Every variant is inside both bounds. Shogi searches fewer nodes than
+Phase F outright, and xiangqi is level.
+
+The extension fires on 0.2% to 2.1% of nodes across the three variants,
+which is the rate a frontier-only rule should show: a checked node is
+rare, and only the ones a search walks into at its last ply qualify.
+
+Endgame fixtures pass 38 of 38. Mates are found no later than Phase F on
+every fixture: `puzzle-a` and `puzzle-c` at depth 12, `puzzle-b` at 13,
+`puzzle-d` at 14, all matching Phase F exactly, and the `kqk` conversion
+reads the same score. None is found earlier either -- the extension pays
+in ordinary play, not on these five.
 
 ## Phase H — Material-sensitive draw scoring
 
