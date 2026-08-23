@@ -10,7 +10,7 @@ Baseline branch: `experiment/blank-slate`.
   SEE ordering, TT/QT, and Lazy SMP.
 
 Every unlettered prerequisite has landed, except RR #0 itself, which is blocked
-on a missing `cutechess-cli`. Phases A, B and C are accepted. Per-prerequisite and
+on a missing `cutechess-cli`. Phases A, B, C and D are accepted. Per-prerequisite and
 per-letter status lines record what was proved, what was left open, and where
 the shipped design departs from this plan.
 
@@ -30,6 +30,7 @@ the shipped design departs from this plan.
 | A. Principal variation search | accepted, pooled +29.3 Elo | `595af09`, `a5cf736` |
 | B. Mature Stage-U late-move reductions | accepted, pooled +100.2 Elo | `a41c825` |
 | C. Aspiration windows and mate-distance clipping | accepted, pooled +38.7 Elo | `4794d8c` |
+| D. Hoisted static evaluation, improving, and RFP | accepted, pooled +61.8 Elo | `c8927db` |
 
 ## Purpose
 
@@ -1104,7 +1105,7 @@ Phase D unresolved until another significant candidate is approved.
 
 ### Status
 
-Status: support gate passed, promotion campaign running.
+Status: accepted. Pooled +61.8 Elo over Phase C across three arms.
 
 Two departures from the candidate as written:
 
@@ -1202,6 +1203,20 @@ B `bin/phaseC-4`:
   No variant regresses in aggregate except gothic, whose single case is not
   a campaign arm and is one position.
 
+  Promotion campaign, `bin/phaseC-4` as base, clock 5000+50ms, H0 0 Elo,
+  H1 +8 Elo, alpha = beta = 0.05, bounds +-2.944:
+
+| arm | games | W | L | D | score | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| grand | 400 | 213 | 115 | 72 | 0.6225 | +86.9 | 2.987 | H1 accepted |
+| standard | 548 | 245 | 156 | 147 | 0.5812 | +56.9 | 2.980 | H1 accepted |
+| xiangqi | 642 | 304 | 211 | 127 | 0.5724 | +50.7 | 2.956 | H1 accepted |
+| pooled | 1590 | 762 | 482 | 346 | 0.5881 | +61.8 | — | — |
+
+  Every arm accepted H1 on its own. Grand gains most, which is the expected
+  shape: the widest board carries the most nodes per ply, so a beta cut taken
+  before any move is made saves the most there.
+
 ## Phase E — Frontier pruning tranche
 
 ### Candidate
@@ -1238,6 +1253,105 @@ Pooled campaign SPRT, H1 floor +10 Elo.
 2. Futility only with a looser deepest margin.
 3. Improving LMP only.
 4. Use improving only as an LMR input if all frontier pruning remains unsafe.
+
+### Status
+
+Status: support gate open on one finding, promotion campaign running.
+Started ahead of Phase D's promotion gate on request, stacked on the Phase D
+commit so either can be dropped whole.
+
+All three prunes are in and the tree type-checks. `PARAM_SCALAR_COUNT` rises
+23 to 33: floor, ratio, improving multiplier and maximum depth for the
+futility margin; base, ratio, improving multiplier and maximum depth for the
+move count; ratio and maximum depth for the exchange allowance. Payload
+regeneration and every measurement were held until a Phase D arm freed
+cores, so the arms were not made to share cores with a build.
+
+Five departures from the candidate as written:
+
+- The maximum depth on the move count is a clamp, not a gate. A gate would
+  leave every node deeper than it with no count at all, which is a removal:
+  today's `3 + depth * depth` applies at every depth. Nodes past the last row
+  reuse it, the same way a node ordering more moves than `REDUCTION_MOVE_CAP`
+  reuses its last slot. The rows are built to depth 12, by which the count
+  asks for 147 moves and no deeper row would say anything new.
+- The gates require a null window, and the move count did not before. That
+  narrows an existing prune rather than widening it: principal variation
+  nodes now order every quiet. The candidate asks for null-window nodes
+  throughout and it is the safer half of the trade.
+- Exchange pruning reads the ordering score rather than simulating again.
+  `score_move!` has already run the exchange simulation on every capture and
+  banded the result, and the bands are disjoint, so the losing captures are
+  exactly the scores below `LOSING_CAPTURE_SCORE` and the loss is recovered
+  by subtracting it. A capture the simulation could not make keeps its own
+  band and is left alone.
+- Capturing promotions are exempt from exchange pruning. The simulation
+  prices attacker against victim and never sees the promotion, so its verdict
+  on a capturing promotion understates it. Quiet promotions were already
+  exempt.
+- Phase D's counters are renamed `reverse_cuts` and `reverse_cuts_improving`.
+  Two unrelated things called futility in one struct is a defect, and the cut
+  against beta is the reverse one.
+
+The improving multiplier names the row that prunes harder, which is not the
+same row in all three tables. The cut against beta believes a risen side
+sooner, so its improving row is the smaller cushion. Both cuts against alpha
+give up on a side that has not risen first, so theirs is the shorter count and
+the smaller margin. Every node indexes by its own improving flag, so the
+choice is made once in derivation rather than at each use.
+
+Derived rows for standard, whose dearest non-royal opening value is 933:
+
+| row | depth 1 | 2 | 3 | 4 | 5 | 6 |
+| --- | --- | --- | --- | --- | --- | --- |
+| futility margin, risen | 214 | 335 | 456 | 577 | 698 | 819 |
+| futility margin, flat | 149 | 234 | 319 | 403 | 488 | 573 |
+| move count, risen | 4 | 7 | 12 | 19 | 28 | 39 |
+| move count, flat | 2 | 3 | 6 | 10 | 15 | 21 |
+| exchange allowance | 233 | 466 | 699 | 932 | 1165 | — |
+
+The risen move-count row reproduces `3 + depth * depth` exactly, so on that
+row the change is not a change; only the flat row prunes earlier than today.
+Derivation asserts every row rises with depth in every variant.
+
+Each prune records independently. Every one fires in every variant probed
+(seed 42, Hash 64, one thread):
+
+| probe | futility | move count | exchange |
+| --- | --- | --- | --- |
+| standard d12 startpos | 69,557 | 218,418 | 2,015 |
+| standard d12 midgame | 216,401 | 309,404 | 16,619 |
+| shogi d10 | 22,984 | 88,458 | 443 |
+| xiangqi d11 | 213,848 | 204,034 | 7,978 |
+| grand d10 | 76,707 | 432,735 | 6,934 |
+| crazyhouse d11 | 57,938 | 164,421 | 1,657 |
+
+The Phase D reverse counters fall alongside — standard d12 startpos goes
+517 flat and 11,242 improving to 351 and 5,357 — which is the expected shape:
+the new prunes remove nodes before a reverse cut ever sees them.
+
+The endgame fixtures pass 38 of 38. Four of five mate puzzles and all seven
+tactical cases are byte-identical to Phase D.
+
+One case regresses. On `2rr3k/pp3pp1/1nnqbN1p/3pN3/2pP4/2P3Q1/PPB4P/R4RK1 w`
+Phase D reports `mate 2` at depth 12; Phase E reports `cp 20` and finds the
+same mate only at depth 14. The cost is two plies of delay, not a lost mate.
+
+The cause was isolated by rebuilding with one prune neutralised at a time
+through its own scalars — the embedded payload wins over `res/param` on disk,
+so each probe needed its own build:
+
+| build | depth 12 verdict |
+| --- | --- |
+| `lmp_improving` 550 to 1000, flat row equal to the risen row | `cp 20` |
+| `futility_ratio` 130 to 100000, margin unreachable | `mate 2` |
+| `see_prune_ratio` 250 to 100000, allowance unreachable | `cp 20` |
+
+Futility alone carries it. The move count and the exchange allowance are
+innocent: neutralising either leaves the miss in place, and neutralising the
+futility margin restores the mate with both of the others still live. The
+move that is lost, `Qg3g6`, is a quiet queen sacrifice onto an empty square —
+exactly the move class a static-eval alpha cushion is built to discard.
 
 ## Phase F — Quiescence discipline
 
