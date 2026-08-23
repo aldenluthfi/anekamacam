@@ -31,6 +31,8 @@ the shipped design departs from this plan.
 | B. Mature Stage-U late-move reductions | accepted, pooled +100.2 Elo | `a41c825` |
 | C. Aspiration windows and mate-distance clipping | accepted, pooled +38.7 Elo | `4794d8c` |
 | D. Hoisted static evaluation, improving, and RFP | accepted, pooled +61.8 Elo | `c8927db` |
+| E. Frontier pruning: futility, move count, exchange | accepted, pooled +20.7 Elo | `dd933fe` |
+| F. Quiescence discipline | accepted, pooled +56.6 Elo | `fdbcf8d` |
 
 ## Purpose
 
@@ -1256,7 +1258,7 @@ Pooled campaign SPRT, H1 floor +10 Elo.
 
 ### Status
 
-Status: support gate open on one finding, promotion campaign running.
+Status: accepted, pooled +20.7 Elo over 5852 games.
 Started ahead of Phase D's promotion gate on request, stacked on the Phase D
 commit so either can be dropped whole.
 
@@ -1361,14 +1363,19 @@ restart.
 | arm | W | L | D | Elo | LLR | verdict |
 | --- | --- | --- | --- | --- | --- | --- |
 | shogi | 500 | 389 | 11 | 43.1 | 2.982 | H1 accepted |
-| standard | 680 | 632 | 478 | 9.3 | 1.14 | running |
+| standard | 760 | 710 | 530 | 8.7 | 1.113 | inconclusive |
 | crazyhouse | 726 | 624 | 32 | 25.7 | 2.945 | H1 accepted |
 | xiangqi | 658 | 572 | 340 | 19.1 | 2.982 | H1 accepted |
 
-Shogi crossed first, then crazyhouse, then xiangqi. Standard is the slow
-one: it draws far more often than the other three at this control, so a
-given Elo takes more games to resolve there, and its arm is still climbing
-without having touched a bound.
+Shogi crossed first, then crazyhouse, then xiangqi. Standard spent its
+whole 2000-game budget without touching either bound: 530 draws out of
+2000 is more than the other three arms drew between them, and a draw
+carries no evidence either way, so the same Elo needs far more games to
+resolve there. It ended positive at +8.7 and never once read negative.
+
+Pooled over all four arms the campaign reads 2644W 2295L 913D, +20.7 Elo
+over 5852 games, which clears the +10 floor the gate asks for. Three arms
+accepted H1 outright. Phase E is accepted.
 
 ## Phase F — Quiescence discipline
 
@@ -1406,8 +1413,7 @@ Pooled standard, shogi, and xiangqi SPRT, H1 floor +8 Elo.
 
 ### Status
 
-Status: support gate open, promotion campaign held until the Phase E arms
-finish.
+Status: accepted, pooled +56.6 Elo over 1784 games.
 
 As landed, a quiescence node not in check stops at the first capture the
 ordering has priced as losing. Captures are picked in descending score
@@ -1489,17 +1495,19 @@ own Phase E arm ran.
 | --- | --- | --- | --- | --- | --- | --- |
 | standard | 195 | 124 | 123 | 56.3 | 2.965 | H1 accepted |
 | shogi | 349 | 222 | 9 | 77.3 | 2.990 | H1 accepted |
-| xiangqi | 147 | 114 | 69 | 34.9 | 1.06 | running |
+| xiangqi | 343 | 253 | 166 | 41.2 | 2.952 | H1 accepted |
 
 A crazyhouse arm ran alongside on `H0` -8 and `H1` 8, outside the pooled
 gate, because crazyhouse was the one variant whose node counts swung both
 ways in the support gate. It accepted H1 at 188W 128L 10D, 64.7 Elo, LLR
 3.003. The swing costs nothing over the board.
 
-Standard crossed in 442 games and shogi in 580, against the thousand-plus
-Phase E's own arms have needed. A cut that removes half the nodes at a
-fixed depth buys depth at a fixed clock, and that is what the arms are
-reading.
+All three arms accepted H1. Standard crossed in 442 games and shogi in
+580, against the thousand-plus Phase E's own arms needed for the same
+call. A cut that removes half the nodes at a fixed depth buys depth at a
+fixed clock, and that is what the arms are reading. Pooled over the three
+the campaign reads 887W 599L 298D, +56.6 Elo over 1784 games. Phase F is
+accepted.
 
 ## Phase G — Capped check extensions
 
