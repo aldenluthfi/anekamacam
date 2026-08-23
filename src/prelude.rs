@@ -79,14 +79,17 @@ pub use crate::game::search::{
     parameters::{
         ASPIRATION_CLAMP, ASPIRATION_RATIO, ASPIRATION_START_DEPTH,
         ASPIRATION_WIDEN, COEFFICIENT_SCALE, ENDGAME_ARMY_SIZE,
-        ENDGAME_OCCUPANCY, OPENING_OCCUPANCY,
+        ENDGAME_OCCUPANCY, FUTILITY_DEPTH, FUTILITY_FLOOR,
+        FUTILITY_IMPROVING, FUTILITY_RATIO, LMP_BASE, LMP_DEPTH,
+        LMP_IMPROVING, LMP_RATIO, OPENING_OCCUPANCY,
         REDUCTION_MINIMUM_DEPTH, REDUCTION_MOVE_BASE,
         REDUCTION_MOVE_CAP, REDUCTION_MOVE_WIDE, REDUCTION_QUIET_BASE,
         REDUCTION_QUIET_CHECK_BASE, REDUCTION_QUIET_CHECK_DIVISOR,
         REDUCTION_QUIET_DIVISOR, REDUCTION_TACTICAL_BASE,
         REDUCTION_TACTICAL_CHECK_BASE, REDUCTION_TACTICAL_CHECK_DIVISOR,
         REDUCTION_TACTICAL_DIVISOR, RFP_DEPTH, RFP_IMPROVING, RFP_RATIO,
-        ROLE_MAJOR_SPLIT, ROLE_NON_BIG_SPLIT,
+        ROLE_MAJOR_SPLIT, ROLE_NON_BIG_SPLIT, SEE_PRUNE_DEPTH,
+        SEE_PRUNE_RATIO,
         derive_eval_parameters, derive_parameters, derive_search_parameters,
         reduction_surface,
     },
@@ -523,7 +526,7 @@ pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
-pub const PARAM_SCALAR_COUNT: usize = 23;                                       /* derivation scalars per payload     */
+pub const PARAM_SCALAR_COUNT: usize = 33;                                       /* derivation scalars per payload     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

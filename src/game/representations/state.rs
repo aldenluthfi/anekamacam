@@ -526,6 +526,9 @@ pub struct StaticState {
 
     pub aspiration_delta: u32,                                                  /* half-width the root opens at       */
     pub rfp_margin: Vec<i32>,                                                   /* cushion, improving major, by depth */
+    pub futility_margin: Vec<i32>,                                              /* alpha cushion, improving major     */
+    pub lmp_count: Vec<usize>,                                                  /* moves ordered, improving major     */
+    pub see_allowance: Vec<i32>,                                                /* loss a capture may show, by depth  */
 
 /*----------------------------------------------------------------------------*\
                               DERIVATION SCALARS
@@ -559,6 +562,19 @@ pub struct StaticState {
     pub rfp_ratio: u32,                                                         /* share of the dearest piece, x1000  */
     pub rfp_improving: u32,                                                     /* rising side's share, x1000 of flat */
     pub rfp_depth: u32,                                                         /* deepest node allowed to cut early  */
+
+    pub futility_floor: u32,                                                    /* share of the dearest piece, x1000  */
+    pub futility_ratio: u32,                                                    /* share added per ply, x1000         */
+    pub futility_improving: u32,                                                /* flat side's share, x1000 of risen  */
+    pub futility_depth: u32,                                                    /* deepest node skipping late quiets  */
+
+    pub lmp_base: u32,                                                          /* moves ordered before the curve     */
+    pub lmp_ratio: u32,                                                         /* share of the squared depth, x1000  */
+    pub lmp_improving: u32,                                                     /* flat side's share, x1000 of risen  */
+    pub lmp_depth: u32,                                                         /* deepest row the counts are built   */
+
+    pub see_prune_ratio: u32,                                                   /* share of the dearest piece, x1000  */
+    pub see_prune_depth: u32,                                                   /* deepest node dropping a capture    */
 }
 
 /// State
@@ -739,6 +755,9 @@ impl State {
 
             aspiration_delta: 0,
             rfp_margin: Vec::new(),
+            futility_margin: Vec::new(),
+            lmp_count: Vec::new(),
+            see_allowance: Vec::new(),
 
             opening_occupancy: OPENING_OCCUPANCY,
             endgame_occupancy: ENDGAME_OCCUPANCY,
@@ -769,6 +788,19 @@ impl State {
             rfp_ratio: RFP_RATIO,
             rfp_improving: RFP_IMPROVING,
             rfp_depth: RFP_DEPTH,
+
+            futility_floor: FUTILITY_FLOOR,
+            futility_ratio: FUTILITY_RATIO,
+            futility_improving: FUTILITY_IMPROVING,
+            futility_depth: FUTILITY_DEPTH,
+
+            lmp_base: LMP_BASE,
+            lmp_ratio: LMP_RATIO,
+            lmp_improving: LMP_IMPROVING,
+            lmp_depth: LMP_DEPTH,
+
+            see_prune_ratio: SEE_PRUNE_RATIO,
+            see_prune_depth: SEE_PRUNE_DEPTH,
         });
 
         Self::from_statics(statics)

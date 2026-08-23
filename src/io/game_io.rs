@@ -285,6 +285,70 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
         scalars[22]
     );
 
+    assert!(
+        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[23]),
+        "Scalar 23 is a fraction of {} and must be within it, got {}",
+        COEFFICIENT_SCALE as i32, scalars[23]
+    );
+
+    assert!(
+        scalars[24] > 0,
+        "Scalar 24 prices the alpha cushion per ply and must be \
+        positive, got {}",
+        scalars[24]
+    );
+
+    assert!(
+        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[25]),
+        "Scalar 25 is a fraction of {} and must be within it, got {}",
+        COEFFICIENT_SCALE as i32, scalars[25]
+    );
+
+    assert!(
+        scalars[26] >= 1,
+        "Scalar 26 is the deepest node skipping late quiets, got {}",
+        scalars[26]
+    );
+
+    assert!(
+        scalars[27] >= 1,
+        "Scalar 27 is how many moves a node orders before the count \
+        applies and must leave it one, got {}",
+        scalars[27]
+    );
+
+    assert!(
+        scalars[28] > 0,
+        "Scalar 28 prices the move count against depth and must be \
+        positive, got {}",
+        scalars[28]
+    );
+
+    assert!(
+        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[29]),
+        "Scalar 29 is a fraction of {} and must be within it, got {}",
+        COEFFICIENT_SCALE as i32, scalars[29]
+    );
+
+    assert!(
+        scalars[30] >= 1,
+        "Scalar 30 is the deepest row the counts are built to, got {}",
+        scalars[30]
+    );
+
+    assert!(
+        scalars[31] > 0,
+        "Scalar 31 prices the loss a capture may show and must be \
+        positive, got {}",
+        scalars[31]
+    );
+
+    assert!(
+        scalars[32] >= 1,
+        "Scalar 32 is the deepest node dropping a capture, got {}",
+        scalars[32]
+    );
+
     let statics = state.static_mut();
 
     statics.opening_occupancy = scalars[0].unsigned_abs();
@@ -315,6 +379,19 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
     statics.rfp_ratio = scalars[20].unsigned_abs();
     statics.rfp_improving = scalars[21].unsigned_abs();
     statics.rfp_depth = scalars[22].unsigned_abs();
+
+    statics.futility_floor = scalars[23].unsigned_abs();
+    statics.futility_ratio = scalars[24].unsigned_abs();
+    statics.futility_improving = scalars[25].unsigned_abs();
+    statics.futility_depth = scalars[26].unsigned_abs();
+
+    statics.lmp_base = scalars[27].unsigned_abs();
+    statics.lmp_ratio = scalars[28].unsigned_abs();
+    statics.lmp_improving = scalars[29].unsigned_abs();
+    statics.lmp_depth = scalars[30].unsigned_abs();
+
+    statics.see_prune_ratio = scalars[31].unsigned_abs();
+    statics.see_prune_depth = scalars[32].unsigned_abs();
 
     derive_search_parameters(state);
 }
@@ -355,6 +432,16 @@ pub fn scalar_parameter_tokens(state: &State) -> Vec<String> {
         state.statics.rfp_ratio.to_string(),
         state.statics.rfp_improving.to_string(),
         state.statics.rfp_depth.to_string(),
+        state.statics.futility_floor.to_string(),
+        state.statics.futility_ratio.to_string(),
+        state.statics.futility_improving.to_string(),
+        state.statics.futility_depth.to_string(),
+        state.statics.lmp_base.to_string(),
+        state.statics.lmp_ratio.to_string(),
+        state.statics.lmp_improving.to_string(),
+        state.statics.lmp_depth.to_string(),
+        state.statics.see_prune_ratio.to_string(),
+        state.statics.see_prune_depth.to_string(),
     ]
 }
 

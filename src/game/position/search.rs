@@ -2,9 +2,10 @@
 //!
 //! Iterative deepening, alpha-beta search, and quiescence.
 //!
-//! Search uses two transposition tables, null-move and late-move pruning,
-//! SEE move ordering, killer moves, and history. SearchInfo carries limits,
-//! counters, and stop state.
+//! Search uses two transposition tables, null-move pruning, one static
+//! evaluation per ply cutting against either bound, move-count and
+//! exchange pruning, SEE move ordering, killer moves, and history.
+//! SearchInfo carries limits, counters, and stop state.
 //!
 //! Created: 22/03/2026
 //! Author : Alden Luthfi
@@ -38,8 +39,12 @@ pub struct SearchInfo {
     pub aspiration_fail_high: u128,                                             /* roots that fell out the high side  */
     pub aspiration_nodes: u128,                                                 /* nodes spent on rejected windows    */
 
-    pub futility_cuts: u128,                                                    /* nodes cut on a flat margin         */
-    pub futility_cuts_improving: u128,                                          /* and on the rising side's margin    */
+    pub reverse_cuts: u128,                                                     /* nodes cut on a flat margin         */
+    pub reverse_cuts_improving: u128,                                           /* and on the rising side's margin    */
+
+    pub futility_prunes: u128,                                                  /* late quiets left unsearched        */
+    pub move_count_prunes: u128,                                                /* quiets past the count for a node   */
+    pub exchange_prunes: u128,                                                  /* captures priced as losing too much */
 
     pub interrupt: bool,                                                        /* flag set by external stop events   */
 
@@ -139,8 +144,12 @@ pub fn clear_search(
     info.aspiration_fail_high = 0;
     info.aspiration_nodes = 0;
 
-    info.futility_cuts = 0;
-    info.futility_cuts_improving = 0;
+    info.reverse_cuts = 0;
+    info.reverse_cuts_improving = 0;
+
+    info.futility_prunes = 0;
+    info.move_count_prunes = 0;
+    info.exchange_prunes = 0;
 
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
@@ -417,10 +426,21 @@ pub fn iterative_deepening(
         );
 
         log_3!(
-            "(Thread {}) Futility: {:>10} | Improving: {:>10}",
+            "(Thread {}) Reverse: {:>10} | Improving: {:>10}",
             thread_num,
-            info.futility_cuts,
-            info.futility_cuts_improving,
+            info.reverse_cuts,
+            info.reverse_cuts_improving,
+        );
+
+        log_3!(
+            concat!(
+                "(Thread {}) Futility: {:>10} | Move Count: {:>10} | ",
+                "Exchange: {:>10}",
+            ),
+            thread_num,
+            info.futility_prunes,
+            info.move_count_prunes,
+            info.exchange_prunes,
         );
 
         log_2!(
@@ -762,9 +782,9 @@ pub fn alpha_beta(
     && static_eval - state.statics.rfp_margin[row + depth] >= beta
     {
         if improving {
-            info.futility_cuts_improving += 1;
+            info.reverse_cuts_improving += 1;
         } else {
-            info.futility_cuts += 1;
+            info.reverse_cuts += 1;
         }
 
         return beta;
@@ -807,6 +827,14 @@ pub fn alpha_beta(
     let move_base = state.statics.reduction_move_base as usize;
     let move_wide = state.statics.reduction_move_wide as usize;
 
+    let futility_deepest = state.statics.futility_depth as usize;
+    let lmp_deepest = state.statics.lmp_depth as usize;
+    let see_deepest = state.statics.see_prune_depth as usize;
+
+    let futility_row = improving as usize * (futility_deepest + 1);
+    let lmp_row = improving as usize * (lmp_deepest + 1);
+    let lmp_slot = depth.min(lmp_deepest);                                      /* deeper nodes reuse the last row    */
+
     let mut moves = Vec::with_capacity(64);
     let mut scores = Vec::with_capacity(64);
     let mut scratch = Vec::with_capacity(32);
@@ -834,15 +862,39 @@ pub fn alpha_beta(
         let is_drop = m_drop!(mv);
         let is_quiet = m_quiet!(mv);
 
-        if ply > 0
-        && !in_check
-        && legal_moves > 0
-        && !is_capture
+        let prunable = ply > 0
+            && !in_check
+            && legal_moves > 0
+            && beta - alpha == 1
+            && alpha.abs() < MATE_SCORE;
+
+        if prunable && !is_capture && !is_promotion && !is_drop {
+            if legal_moves >= state.statics.lmp_count[lmp_row + lmp_slot] {
+                info.move_count_prunes += 1;
+                continue;
+            }
+
+            if depth <= futility_deepest
+            && static_eval
+                + state.statics.futility_margin[futility_row + depth]
+                <= alpha
+            {
+                info.futility_prunes += 1;
+                continue;
+            }
+        }
+
+        if prunable
+        && is_capture
         && !is_promotion
         && !is_drop
-        && alpha.abs() < MATE_SCORE
-        && legal_moves >= 3 + depth * depth
+        && depth <= see_deepest
+        && scores[index] != UNMAKEABLE_CAPTURE_SCORE
+        && scores[index] < LOSING_CAPTURE_SCORE as usize
+        && scores[index] as i32 - LOSING_CAPTURE_SCORE
+            < -state.statics.see_allowance[depth]
         {
+            info.exchange_prunes += 1;
             continue;
         }
 

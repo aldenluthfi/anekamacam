@@ -90,6 +90,45 @@ pub const RFP_IMPROVING: u32 = 750;
 /// too much search left under it to stand in for one.
 pub const RFP_DEPTH: u32 = 6;
 
+/// How far under alpha a node may stand and still search its late quiet
+/// moves: `FLOOR` of the dearest non-royal piece, plus `RATIO` of it for
+/// every ply still to search. A quiet move promises nothing immediate, so
+/// a node further under alpha than that has none left worth ordering. The
+/// side whose evaluation has not risen is believed least and so is given
+/// the smaller margin, the risen side's row scaled by `IMPROVING`. All
+/// three are held against `COEFFICIENT_SCALE`.
+pub const FUTILITY_FLOOR: u32 = 100;
+pub const FUTILITY_RATIO: u32 = 130;
+pub const FUTILITY_IMPROVING: u32 = 700;
+
+/// The deepest node whose late quiets may be skipped that way.
+pub const FUTILITY_DEPTH: u32 = 6;
+
+/// How many moves a node orders before the quiets after them are taken
+/// for noise: `BASE`, plus `RATIO` of the square of the depth left. The
+/// row for a side whose evaluation has not risen is the risen side's
+/// scaled by `IMPROVING`, so the side already doing worse gives up on its
+/// quiets first. `RATIO` and `IMPROVING` are held against
+/// `COEFFICIENT_SCALE`.
+pub const LMP_BASE: u32 = 3;
+pub const LMP_RATIO: u32 = 1000;
+pub const LMP_IMPROVING: u32 = 550;
+
+/// The deepest row the count is built to. A node past it reuses that row
+/// rather than losing the gate: the counts have already outgrown any real
+/// move list, so no deeper row would say anything new.
+pub const LMP_DEPTH: u32 = 12;
+
+/// How much material a capture may already be seen to lose and still be
+/// searched: `RATIO` of the dearest non-royal piece per ply still to
+/// search, held against `COEFFICIENT_SCALE`. Ordering has priced every
+/// capture by exchange simulation before the first is searched, so this
+/// reads that price back rather than paying for it twice.
+pub const SEE_PRUNE_RATIO: u32 = 250;
+
+/// The deepest node allowed to discard a capture on that price alone.
+pub const SEE_PRUNE_DEPTH: u32 = 5;
+
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement
 /// tree that outgrows either bound is referenced against the endings
@@ -864,6 +903,15 @@ where
 /// the narrower window that follows from it. The reverse futility margin
 /// reads the same piece for the same reason, one flat row and one for a
 /// side whose evaluation has risen, indexed by the depth left to search.
+/// The futility margin and the exchange allowance are drawn against that
+/// same piece, and the late-move count against depth alone, having no
+/// material in it to price.
+///
+/// Every improving multiplier names the row that prunes harder, which is
+/// not the same row throughout: a cut against beta believes a risen side
+/// sooner, while both cuts against alpha give up on a side that has not
+/// risen first. The row a node reads is always its improving flag, so the
+/// choice lives here rather than at every use.
 ///
 /// Params:
 /// - state: &mut State -> variant whose derived search values are rebuilt
@@ -892,6 +940,61 @@ pub fn derive_search_parameters(state: &mut State) {
             * statics.rfp_improving as u64
             / COEFFICIENT_SCALE as u64) as i32;
     }
+
+    let futility_deepest = statics.futility_depth as usize;
+    let futility_floor = dearest * statics.futility_floor as u64
+        / COEFFICIENT_SCALE as u64;
+    let futility_step = dearest * statics.futility_ratio as u64
+        / COEFFICIENT_SCALE as u64;
+    let mut futility = vec![0i32; 2 * (futility_deepest + 1)];
+
+    for depth in 1..=futility_deepest {
+        let risen = futility_floor + futility_step * depth as u64;
+
+        futility[futility_deepest + 1 + depth] = risen as i32;
+        futility[depth] = (risen
+            * statics.futility_improving as u64
+            / COEFFICIENT_SCALE as u64) as i32;
+    }
+
+    let lmp_deepest = statics.lmp_depth as usize;
+    let mut counts = vec![0usize; 2 * (lmp_deepest + 1)];
+
+    for depth in 0..=lmp_deepest {
+        let risen = statics.lmp_base as u64
+            + (depth * depth) as u64 * statics.lmp_ratio as u64
+                / COEFFICIENT_SCALE as u64;
+
+        counts[lmp_deepest + 1 + depth] = risen as usize;
+        counts[depth] = (risen * statics.lmp_improving as u64
+            / COEFFICIENT_SCALE as u64).max(1) as usize;                        /* one quiet always gets ordered      */
+    }
+
+    let see_deepest = statics.see_prune_depth as usize;
+    let see_step = dearest * statics.see_prune_ratio as u64
+        / COEFFICIENT_SCALE as u64;
+    let mut allowance = vec![0i32; see_deepest + 1];
+
+    for depth in 1..=see_deepest {
+        allowance[depth] = (see_step * depth as u64) as i32;
+    }
+
+    assert!(
+        futility.chunks(futility_deepest + 1)
+            .all(|row| row.windows(2).all(|pair| pair[0] <= pair[1])),
+        "Futility margins must not fall with the depth left to search."
+    );
+
+    assert!(
+        counts.chunks(lmp_deepest + 1)
+            .all(|row| row.windows(2).all(|pair| pair[0] <= pair[1])),
+        "Late-move counts must not fall with the depth left to search."
+    );
+
+    assert!(
+        allowance.windows(2).all(|pair| pair[0] <= pair[1]),
+        "Exchange allowances must not fall with the depth left to search."
+    );
 
     let quiet = reduction_surface(
         statics.reduction_quiet_base,
@@ -926,6 +1029,9 @@ pub fn derive_search_parameters(state: &mut State) {
 
     statics.aspiration_delta = (delta as u32).max(1);                           /* a window has to hold two scores    */
     statics.rfp_margin = margins;
+    statics.futility_margin = futility;
+    statics.lmp_count = counts;
+    statics.see_allowance = allowance;
 }
 
 /// derive_eval_parameters
