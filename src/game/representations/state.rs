@@ -578,9 +578,6 @@ pub struct StaticState {
     pub see_prune_depth: u32,                                                   /* deepest node dropping a capture    */
 
     pub qsearch_delta_ratio: u32,                                               /* share of the dearest piece, x1000  */
-
-    pub extension_cap_ratio: u32,                                               /* share of the root depth, x1000     */
-    pub extension_start_depth: u32,                                             /* shallowest extending iteration     */
 }
 
 /// State
@@ -809,9 +806,6 @@ impl State {
             see_prune_ratio: SEE_PRUNE_RATIO,
             see_prune_depth: SEE_PRUNE_DEPTH,
             qsearch_delta_ratio: QSEARCH_DELTA_RATIO,
-
-            extension_cap_ratio: EXTENSION_CAP_RATIO,
-            extension_start_depth: EXTENSION_START_DEPTH,
         });
 
         Self::from_statics(statics)

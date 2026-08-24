@@ -1541,46 +1541,109 @@ ordering before Phase H.
 
 ### Status
 
-Status: support gate open, promotion campaign starting.
+Status: candidate 1 abandoned by the user at intermediate tallies; fallback 1
+landed, its support gate is open, and its promotion campaign is running.
 
-As landed, a node that reaches depth zero while its king is attacked is
-searched one real ply instead of being handed to quiescence, so long as
-the plies already gained sit inside a root-relative budget. No counter
-tracks the gain: absent extension a frontier stands at `ply` equal to the
-root depth, so `ply` above it is exactly what has been gained, and a
-reduced line reads below it, which is true of that line. The budget is
-`EXTENSION_CAP_RATIO` of the root depth at 500 -- half of it -- and
-`EXTENSION_START_DEPTH` 4 keeps the shallow iterations as they are. Both
-are scalars, the tail is 34 to 36, and every payload carries them.
+Candidate 1 handed a checked frontier node a budget of `EXTENSION_CAP_RATIO`
+of the root depth -- half of it -- so one line could gain several plies before
+quiescence took over. Its support gate passed on every item and its campaign
+ran at `[0, 8]` on standard, shogi and xiangqi. Standard stood at 70W 75L 55D
+and shogi at 90W 105L 5D, LLR -0.33 and -0.40 against a lower bound of -2.94.
+Neither verdict was terminal, so by rule 6 the candidate was never rejected on
+evidence. The user abandoned it and directed the first fallback, which by rule
+7 consumes no letter and is recorded as no evidence against the rule itself.
 
-The plan's footprint asked for one `SearchInfo` scalar. There are two
-fields: `root_depth`, the scalar itself, and a `check_extensions` counter,
-because a rule nothing counts cannot be gated and every earlier phase
-reports its own firing count.
+Fallback 1 replaces the budget with one cumulative extension ply.
+`EXTENSION_CAP_PLIES` is 1 and `EXTENSION_START_DEPTH` stays 4: a node that
+reaches depth zero while its king is attacked is searched one further ply past
+the depth the iteration set out for, and a second check in the same line is
+priced by quiescence as before. The scalar keeps slot 34, so the tail stays 36
+and every payload carries 1 where it carried 500.
+
+No counter tracks the gain: absent extension a frontier stands at `ply` equal
+to the root depth, so `ply` above it is exactly what has been gained, and a
+reduced line reads below it, which is true of that line.
+
+The plan's footprint asked for one `SearchInfo` scalar. There are two fields:
+`root_depth`, the scalar itself, and a `check_extensions` counter, because a
+rule nothing counts cannot be gated and every earlier phase reports its own
+firing count.
 
 The node-growth bound the support gate calls for was not written down in
-advance, so it is predeclared here: reject if the geometric mean of nodes
-to fixed depth over the campaign variants rises above 1.25 of Phase F, or
-if any single case rises above 2.0.
+advance, so it is predeclared here: reject if the geometric mean of nodes to
+fixed depth over the campaign variants rises above 1.25 of Phase F, or if any
+single case rises above 2.0.
 
 | variant | depth | cases | geometric mean | min | max |
 | --- | --- | --- | --- | --- | --- |
-| standard | 13 | 9 | 1.181 | 0.529 | 1.793 |
+| standard | 13 | 9 | 1.114 | 0.415 | 1.793 |
 | shogi | 11 | 4 | 0.878 | 0.746 | 1.253 |
 | xiangqi | 12 | 4 | 1.002 | 0.747 | 1.381 |
 
-Every variant is inside both bounds. Shogi searches fewer nodes than
-Phase F outright, and xiangqi is level.
+Every variant is inside both bounds. Shogi searches fewer nodes than Phase F
+outright and xiangqi is level; standard costs 11% on the geometric mean, down
+from the 18% candidate 1 asked for.
 
-The extension fires on 0.2% to 2.1% of nodes across the three variants,
-which is the rate a frontier-only rule should show: a checked node is
-rare, and only the ones a search walks into at its last ply qualify.
+The extension fires on 0.2% to 2.1% of nodes across the three variants, the
+rate a frontier-only rule should show: a checked node is rare, and only the
+ones a search walks into at its last ply qualify.
 
-Endgame fixtures pass 38 of 38. Mates are found no later than Phase F on
-every fixture: `puzzle-a` and `puzzle-c` at depth 12, `puzzle-b` at 13,
-`puzzle-d` at 14, all matching Phase F exactly, and the `kqk` conversion
-reads the same score. None is found earlier either -- the extension pays
-in ordinary play, not on these five.
+Endgame fixtures pass 38 of 38. Mates are found at the same depth as Phase F
+on every fixture: `puzzle-a` and `puzzle-c` mate in 2 at depth 12, `puzzle-b`
+mate in 3 at 13, `puzzle-d` mate in 2 at 14, each swept from depth 12 to 16
+against Phase F, and the `kqk` conversion reads the same score. None is found
+earlier either -- the extension pays in ordinary play, not on these five.
+
+The campaign runs the same three arms at `5000+50`, 2000 games, bounds
+`[0, 8]`, seed unset, patch `91e3d133` against Phase F base `b9b03be1`.
+
+A first run of this campaign was stopped by the user before any arm reached a
+bound and no `latest.sprt` was written, so nothing from it is a verdict and by
+rule 8 none of it is acted on. The tallies at that stop were standard 80W 83L
+67D, shogi 100W 125L 5D and xiangqi 82W 71L 67D. An SPRT keeps no resumable
+state, so all three arms were relaunched from zero on the same staged binaries
+in `/tmp/pg2-sprt`, each with:
+
+```
+cd /tmp/pg2-sprt/<variant> && env -u ANEKAMACAM_SEED nohup ./patch \
+    debug-headless sprt <variant> ./patch ./base 5000+50 2000 0 8 \
+    > run.log 2>&1 &
+```
+
+| arm | W | L | D | games | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 705 | 695 | 600 | 2000 | +1.7 | -0.569 | inconclusive, budget reached |
+| shogi | 998 | 933 | 69 | 2000 | +11.3 | +1.022 | inconclusive, budget reached |
+| pooled | 2467 | 2405 | 1128 | 6000 | +3.6 | -0.906 | inconclusive |
+| xiangqi | 764 | 777 | 459 | 2000 | -2.3 | -1.359 | inconclusive, budget reached |
+
+All three arms spent their whole 2000-game budget without touching a bound, and
+the pooled LLR, which is the sum of the three, is -0.906 against bounds of plus
+and minus 2.94. Nothing here is terminal, so by rule 7 the candidate is not
+rejected and stays unresolved; it also comes nowhere near the +8 floor the
+promotion gate asks for. Shogi carries the whole of the pooled lean at +11.3,
+while standard and xiangqi sit within a couple of Elo of zero, so on those two
+variants one cumulative extension ply neither pays nor costs.
+
+Rule 7 would extend the same cumulative test rather than call this a failure,
+and a second 2000 games per arm was launched to pool with the first 6000. The
+user stopped that extension on the pooled read and abandoned letter G outright,
+fallbacks 2 and 3 included. By rules 7 and 9 the abandonment consumes no letter
+and stands as no evidence against check extensions as an idea; what it records
+is that neither shape tested paid for its plies at this time control.
+
+The check extension is therefore gone from the tree. `9f94ae3` stays in history
+and the code it carried was reverted, so `src` and every payload match Phase F
+`fdbcf8d` exactly: no `EXTENSION_*` constants, no `root_depth` or
+`check_extensions` in `SearchInfo`, the scalar tail back to 34 tokens, and a
+rebuilt binary that reproduces Phase F node counts and principal variation on a
+seeded fixed-depth search. The anchor round robin the promotion gate asks for
+never ran: `cutechess-cli` is not installed. Letter G stays open for a future
+candidate; the roadmap continues at Phase H.
+
+The working tree carries fallback 1 uncommitted. Rule 11 commits only an
+accepted candidate, and candidate 1 already sits on this branch as `9f94ae3`,
+so on acceptance that commit is amended and letter G stays one commit.
 
 ## Phase H — Material-sensitive draw scoring
 

@@ -6,10 +6,8 @@
 //! evaluation per ply cutting against either bound, move-count and
 //! exchange pruning, SEE move ordering, killer moves, and history.
 //! Quiescence drops captures the exchange simulation already prices as
-//! losing and captures too small to reach alpha. A frontier node in check
-//! is searched a further ply while the plies so gained stay inside a
-//! root-relative budget. SearchInfo carries limits, counters, and stop
-//! state.
+//! losing and captures too small to reach alpha. SearchInfo carries
+//! limits, counters, and stop state.
 //!
 //! Created: 22/03/2026
 //! Author : Alden Luthfi
@@ -28,8 +26,6 @@ pub struct SearchInfo {
 
     pub set_depth: usize,                                                       /* maximum search depth               */
     pub set_nodes: u128,                                                        /* node limit (0 = unlimited)         */
-
-    pub root_depth: usize,                                                      /* depth this iteration set out for   */
 
     pub deadline: u128,                                                         /* ns since launch (0 = unlimited)    */
 
@@ -55,8 +51,6 @@ pub struct SearchInfo {
     pub qsearch_nodes: u128,                                                    /* nodes spent settling the position  */
     pub qsearch_see_prunes: u128,                                               /* leaf captures priced as losing     */
     pub qsearch_delta_prunes: u128,                                             /* leaf captures too small to matter  */
-
-    pub check_extensions: u128,                                                 /* frontier checks given a real ply   */
 
     pub interrupt: bool,                                                        /* flag set by external stop events   */
 
@@ -166,9 +160,6 @@ pub fn clear_search(
     info.qsearch_nodes = 0;
     info.qsearch_see_prunes = 0;
     info.qsearch_delta_prunes = 0;
-
-    info.root_depth = 0;
-    info.check_extensions = 0;
 
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
@@ -319,7 +310,6 @@ pub fn iterative_deepening(
     let widest = opening_delta * state.statics.aspiration_clamp as i64 / scale;
 
     for depth in 1..=info.set_depth {
-        info.root_depth = depth;
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
 
@@ -472,12 +462,6 @@ pub fn iterative_deepening(
             info.qsearch_nodes,
             info.qsearch_see_prunes,
             info.qsearch_delta_prunes,
-        );
-
-        log_3!(
-            "(Thread {}) Extensions: {:>10}",
-            thread_num,
-            info.check_extensions,
         );
 
         log_2!(
@@ -647,7 +631,7 @@ fn quiescence_search(
     scores.resize(moves.len(), usize::MAX);
 
     let delta = state.statics.qsearch_delta;
-    let delta_prunable = !in_check && state.game_phase != ENDGAME;              /* a thin board plays for one capture */
+    let delta_prunable = !in_check && state.game_phase != ENDGAME;               /* a thin board plays for one capture */
 
     for index in 0..moves.len() {
         pick_by_score!(
@@ -799,16 +783,6 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     let in_check = is_in_check!(state.playing, state);
-
-    let extended = depth == 0
-        && in_check
-        && info.root_depth >= state.statics.extension_start_depth as usize
-        && ply < info.root_depth
-            + info.root_depth * state.statics.extension_cap_ratio as usize
-                / COEFFICIENT_SCALE as usize;
-
-    info.check_extensions += extended as u128;
-    let depth = if extended { 1 } else { depth };                               /* one real ply, not a leaf score     */
 
     if depth == 0 {
         return quiescence_search(

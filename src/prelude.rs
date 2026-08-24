@@ -79,10 +79,9 @@ pub use crate::game::search::{
     parameters::{
         ASPIRATION_CLAMP, ASPIRATION_RATIO, ASPIRATION_START_DEPTH,
         ASPIRATION_WIDEN, COEFFICIENT_SCALE, ENDGAME_ARMY_SIZE,
-        ENDGAME_OCCUPANCY, EXTENSION_CAP_RATIO, EXTENSION_START_DEPTH,
-        FUTILITY_DEPTH, FUTILITY_FLOOR, FUTILITY_IMPROVING,
-        FUTILITY_RATIO, LMP_BASE, LMP_DEPTH, LMP_IMPROVING, LMP_RATIO,
-        OPENING_OCCUPANCY,
+        ENDGAME_OCCUPANCY, FUTILITY_DEPTH, FUTILITY_FLOOR,
+        FUTILITY_IMPROVING, FUTILITY_RATIO, LMP_BASE, LMP_DEPTH,
+        LMP_IMPROVING, LMP_RATIO, OPENING_OCCUPANCY,
         QSEARCH_DELTA_RATIO, REDUCTION_MINIMUM_DEPTH, REDUCTION_MOVE_BASE,
         REDUCTION_MOVE_CAP, REDUCTION_MOVE_WIDE, REDUCTION_QUIET_BASE,
         REDUCTION_QUIET_CHECK_BASE, REDUCTION_QUIET_CHECK_DIVISOR,
@@ -527,7 +526,7 @@ pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
-pub const PARAM_SCALAR_COUNT: usize = 36;                                       /* derivation scalars per payload     */
+pub const PARAM_SCALAR_COUNT: usize = 34;                                       /* derivation scalars per payload     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";
