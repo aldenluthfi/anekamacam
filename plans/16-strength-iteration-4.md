@@ -33,6 +33,9 @@ the shipped design departs from this plan.
 | D. Hoisted static evaluation, improving, and RFP | accepted, pooled +61.8 Elo | `c8927db` |
 | E. Frontier pruning: futility, move count, exchange | accepted, pooled +20.7 Elo | `dd933fe` |
 | F. Quiescence discipline | accepted, pooled +56.6 Elo | `fdbcf8d` |
+| G. Check extension on a budget | rejected, stagnation, reverted | none |
+| H. Material-sensitive draw scoring | rejected, regression, reverted | none |
+| I. Royal shelter, confinement-gated | accepted, +16.0 Elo over 7216 games | (this commit) |
 
 ## Purpose
 
@@ -1680,6 +1683,158 @@ not automatic promotion or rejection.
 2. Apply bias only to repetition and counting draws.
 3. Use phase-blended material rather than phase-selected material.
 
+### Status
+
+Candidate 1 built as planned. `draw_score!` sits in
+`src/game/position/evaluation.rs`; `terminal_score!`, `outcome_score!` in
+`src/game/representations/termination.rs`, and both in-search repetition
+returns in `src/game/position/search.rs` all route through it. The bound is
+derived in `derive_search_parameters` as
+`(dearest * DRAW_BOUND_RATIO / COEFFICIENT_SCALE).max(DRAW_BOUND_FLOOR)` and
+stored as the single `StaticState` field `draw_bound`. `DRAW_BOUND_RATIO = 50`,
+`DRAW_BOUND_FLOOR = 8`, and `DRAW_MATERIAL_DIVISOR = 8` are serialized in the
+scalar tail, which grows from 34 to 37 tokens across all 38 payloads. No live
+state was added.
+
+Derived bounds, from each payload's dearest non-royal opening value:
+
+| variant | dearest | draw bound |
+| --- | --- | --- |
+| standard | 933 | 46 |
+| crazyhouse | 936 | 46 |
+| shogi | 859 | 42 |
+| xiangqi | 776 | 38 |
+| makruk | 573 | 28 |
+
+Support gate passed.
+
+- Draw fixtures: 38 of 38 keep their declared result under
+  `tools/run_endgame_fixtures.sh`.
+- Fixed-depth identity where no draw is reachable: all 26 `tools/ebf-suite.sh`
+  cases across standard, shogi, xiangqi, and crazyhouse are node-identical
+  between the Phase F base and the Phase H patch, geomean 1.000, no case
+  differing at all. The change only bites where a draw is actually returned.
+- Draw-score distribution: at depth 8 over the fixture set, 6 of 38 positions
+  move off zero and every one of them lands exactly on that variant's bound,
+  so the clamp is the binding term rather than the material divisor.
+
+| fixture | Phase F | Phase H |
+| --- | --- | --- |
+| xiangqi chase not sustained every ply -> repetition draw | cp 0 | cp +38 |
+| xiangqi repetition with no offence -> draw | cp 0 | cp +38 |
+| xiangqi perpetual one cycle short: nothing terminal | cp 0 | cp +38 |
+| shogi plain 4-fold repetition (no perpetual check) | cp 0 | cp +42 |
+| makruk KRk one move short of the 16-count | cp 0 | cp -28 |
+| ouk-chaktrang KRk one move short of the 16-count | cp 0 | cp -28 |
+
+The sign is right in both directions: the four repetition cases have the side
+to move behind and read positive, the two counting cases have the side to move
+ahead with the rook and read negative.
+
+Promotion campaign launched against Phase F base `b9b03be1`, patch
+`ed04b2f5`, `5000+50`, seed unset, fresh directory `/tmp/ph-sprt`: standard on
+the promotion bounds `[0, 20]`, shogi and xiangqi as affected-variant
+non-regression arms on `[-8, 8]`, 2000 games each.
+
+Candidate 1 rejected. The xiangqi non-regression arm reached a terminal H0 at
+LLR -2.951 on 134W 174L 76D over 384 games, an estimate of -36.3 Elo, so the
+affected-variant half of the promotion gate fails whatever the standard arm
+returns. The standard and shogi arms were left running to terminal for
+evidence rather than judged on an intermediate tally.
+
+| arm | W | L | D | games | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| xiangqi | 134 | 174 | 76 | 384 | -36.3 | -2.951 | H0 accepted, no improvement |
+
+Fallback 1, half the bound, built: `DRAW_BOUND_RATIO` drops from 50 to 25 and
+all 38 payload tails move from ` 50 8 8` to ` 25 8 8`. Nothing else changed, so
+the fixed-depth identity measured for candidate 1 carries over unchanged. The
+fixtures still pass 38 of 38 and the same 6 positions move off zero, each at
+exactly half its earlier value: xiangqi +19, shogi +21, makruk and
+ouk-chaktrang -14.
+
+The fallback 1 campaign runs off this machine, on `upi@157.10.252.201`
+(Debian, x86_64, 10 cores). The branch travelled as a git bundle into
+`~/anekamacam` as `phaseH4`; `~/ph2/base` is a detached worktree at `a137218`
+and `~/ph2/patch` the same commit with the uncommitted fallback diff applied.
+Both were built there, binaries `~/ph2/bin/{base,patch}`, arms under
+`~/ph2/sprt/<variant>/`: standard on `[0, 20]`, shogi and xiangqi on
+`[-8, 8]`, `5000+50`, 2000 games, seed unset. The candidate-1 standard and
+shogi arms were killed before reaching terminal to free the local machine;
+their last tallies were +2.1 Elo at LLR -1.55 over 670 games and -11.4 Elo at
+LLR -0.90 over 610 games, both intermediate and neither a verdict.
+
+Fallback 1 rejected. The standard promotion arm reached a terminal H0 at LLR
+-3.008 on 136W 156L 102D over 394 games, an estimate of -17.7 Elo. Halving the
+bound did not rescue xiangqi either: that arm stood at -24.5 Elo, LLR -1.91
+over 440 games when it was stopped, still heading the same way as it had at
+the full bound.
+
+| arm | W | L | D | games | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 136 | 156 | 102 | 394 | -17.7 | -3.008 | H0 accepted, no improvement |
+| shogi | 212 | 214 | 4 | 430 | -1.6 | -0.10 | stopped, intermediate |
+| xiangqi | 161 | 192 | 87 | 440 | -24.5 | -1.91 | stopped, intermediate |
+
+Fallback 2 built: the bias applies only to the draws the side to move could
+still have refused. `outcome_score!` prices a draw at zero again, so a
+stalemate and every other outcome-shaped draw is level; the in-search
+repetition returns keep `draw_score!`, and `terminal_score!` reaches for it
+only when `counting_resolved!` holds -- a new macro in `termination.rs` that
+tests the same `progress >= limit` condition `position_terminal` fires the
+counting rule on. `DRAW_BOUND_RATIO` returns to 50 and the payload tails to
+` 50 8 8`.
+
+The fixtures still pass 38 of 38 and the same 6 positions carry the same full
+bound as candidate 1 -- every one of them is a repetition or counting case, so
+the fixture set cannot separate fallback 2 from candidate 1 at the root. The
+difference lives at interior nodes, where a stalemate or any other draw rule
+now returns level.
+
+Fallback 2 campaign ran on the same remote host, `~/ph3`, patch `d169783d`
+against the same base `bcc4f6f5`. The standard promotion arm reached a
+terminal H0 at LLR -3.059 on 408W 410L 276D over 1094 games, an estimate of
+-0.6 Elo. Restricting the bias to refusable draws removed the damage the
+earlier two arms took -- standard sat at -17.7 Elo when every draw carried the
+bias and reads level now -- but it bought nothing, so the +20 floor is out of
+reach. The shogi and xiangqi arms were left running to terminal, since whether
+they come back level decides where the earlier regression came from.
+
+| arm | W | L | D | games | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 408 | 410 | 276 | 1094 | -0.6 | -3.059 | H0 accepted, no improvement |
+| shogi | 979 | 975 | 46 | 2000 | +0.7 | +0.177 | inconclusive, budget reached |
+| xiangqi | 498 | 536 | 262 | 1296 | -10.2 | -2.977 | H0 accepted, no improvement |
+
+Fallback 2 rejected on both halves of the gate. Standard cannot reach the
+floor and xiangqi still fails non-regression at -10.2 Elo, so the two sources
+of harm separate cleanly: pricing stalemate-shaped draws cost standard its
+-17.7, and pricing repetition draws costs xiangqi about -10 on its own.
+Xiangqi is the variant whose whole opening theory is repetition and chase law,
+and telling its search that a repetition is worth less than nothing to the
+side holding material makes it play on where the position does not support
+it. Shogi, which has almost no drawing path, reads level in every arm run so
+far.
+
+Fallback 3, phase-blended material, was not built. Every arm of the ladder had
+by then measured the same thing from three directions: the bias is worth
+nothing on standard and costs xiangqi about ten Elo, and blending the material
+read changes only how the edge is measured, not that a repetition is priced
+against the side holding it. The user closed the letter and the whole of Phase
+H was reverted out of the tree -- `draw_score!`, `counting_resolved!`, the
+three `DRAW_*` constants, the `draw_bound` field, and the ` 50 8 8` payload
+tails all went with it. `PARAM_SCALAR_COUNT` is back to 34 and `src` and every
+payload match `fdbcf8d` again.
+
+Letters G and H are closed with nothing kept. G ran a full 6000-game pooled
+campaign and returned no verdict on any arm -- stagnation, +3.6 Elo pooled
+against an +8 floor. H is worse than stagnation: two of its three candidates
+regressed, at -17.7 Elo on standard for the unrestricted bias and -10.2 on
+xiangqi for the restricted one, and the arrangement that stopped the bleeding
+measured -0.6 Elo. Neither letter is recorded as evidence against the ideas
+themselves, only against these implementations of them. The roadmap continues
+at Phase I.
+
 ## Phase I — Royal shelter and friendly cover
 
 ### Candidate
@@ -1720,6 +1875,185 @@ Standard plus royal-bearing campaign pool, H1 floor +12 Elo.
 2. Radius-one shelter only.
 3. Read existing occupancy directly with a fixed local list and add no live
    field.
+
+### Status
+
+Built, with one deviation from the candidate: no live `[Board; 2]` of
+shield-like occupancy. The candidate's own storage rule already says compact
+local square lists rather than a board per square, and the evaluator therefore
+walks a list of squares whichever way occupancy is stored, so a live board buys
+one bit test in place of one mailbox read and costs a mirrored update in every
+one of the roughly twenty-five sites where `make_move!` and `undo_move!` touch
+`pieces_board`. The scoring semantics of candidate 1 are kept whole and the
+storage is candidate 1's third fallback: read the mailbox and the existing
+`pieces_board` through fixed local lists.
+
+`derive_shelter_parameters` builds two flat lists with one stride of eight slots
+per origin square, a per-origin count so an edge square reads only the squares
+that exist, and both piece prices off the dearest non-royal piece. Forward
+directions come from the mean deployment rank of each colour. Shield-like types
+are non-royal, stay inside the neighbourhood, and lean forward; move vectors are
+stored in the mover's own frame, so the lean test needs no board direction, and
+a leap out of the neighbourhood is only allowed straight ahead, which admits a
+pawn's double step and rejects the shogi knight. Six scalars join the tail
+(`PARAM_SCALAR_COUNT` 34 to 40): radius, cap, and a ratio and floor for each of
+shelter and cover, defaulting to 1, 3, 12/1000, 4, 5/1000, 2. Shelter is carried
+by the opening half of the blend alone, so it tapers with material and is gone
+in the endgame, where a royal wants to walk rather than hide.
+
+Inference reads sanely per variant: standard, crazyhouse, horde, xiangqi and
+janggi flag the two pawns; makruk flags pawn and khon; minishogi flags five
+types a side; shogi flags seven a side, pawn, silver, gold and the four
+promotions that move as gold, once the straight-only allowance rejects its
+knight.
+
+Support gate: no make/undo or state-field edits were made, so perft is
+unreachable from this change and the debug recomputation has no new live field
+to check; standard perft at depth 4 is 197281 as before. Static storage is
+`board_size * 8` squares plus `board_size` counts per list, linear in board area
+by construction. Evaluation moves the way it should: on a castled-versus-exposed
+pair the term is worth +33, and removing one shelter pawn costs exactly one
+shelter piece, -11. NPS on the standard bench, where base and patch search the
+same tree node for node, is 3.75M against 3.60M, about four percent, which the
+term is well inside.
+
+The campaign ran on standard, shogi, xiangqi and crazyhouse at `5000+50`, a
+3000-game budget an arm, `[0, 12]`, patch against `a137218`.
+
+| variant | W | L | D | games | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 1162 | 1097 | 741 | 3000 | +7.5 | +0.757 | inconclusive at budget |
+| crazyhouse | 1490 | 1444 | 66 | 3000 | +5.3 | -0.234 | inconclusive at budget |
+| shogi | 1480 | 1501 | 19 | 3000 | -2.4 | -2.458 | inconclusive at budget |
+| xiangqi | 357 | 390 | 173 | 920 | -12.5 | -2.948 | H0 accepted |
+
+Pooled: 4489W 4432L 999D over 9920 games, +2.0 Elo. Candidate 1 is rejected. No
+arm reached the floor, three ran out of budget with the pool a fifth of the way
+there, and the one arm that did reach a verdict reached the wrong one, so
+extending the inconclusive arms cannot carry them to +12.
+
+The split says which half of the term is carrying which sign. Shelter is worth
+up to 33 against cover's 12, so standard's +7.5 is mostly its pawns. Xiangqi
+flags only pawns as shield-like and its pawns leave the palace early, so the
+shelter half is close to dead there and the -12.5 is cover: an advisor or an
+elephant beside the general is bonus the position was born with, and the term
+charges for spending either one, which is exactly what a xiangqi defence has to
+do. That reading predicts fallback 1, which keeps cover and drops the shield
+classification, is the weaker of the two halves, and fallback 2, shelter alone,
+the stronger. The letter's fallbacks are tried in the order the plan sets them
+out regardless, so fallback 1 is measured first and this paragraph stands as the
+prediction it tests.
+
+Fallback 1 is under measurement on the same four variants, same budget and same
+base. It is a payload flip rather than a code change: shelter ratio and floor go
+to zero, which zeroes the shelter half and leaves cover alone scoring, so the
+shield classification stops reaching the score without a second build to review.
+All 38 payload tails move from ` 1 3 12 4 5 2` to ` 1 3 0 0 5 2`.
+
+| variant | W | L | D | games | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 1128 | 1073 | 799 | 3000 | +6.4 | +0.198 | inconclusive at budget |
+| xiangqi | 1181 | 1165 | 654 | 3000 | +1.9 | -1.972 | inconclusive at budget |
+| crazyhouse | 1016 | 1056 | 66 | 2138 | -6.5 | -3.006 | H0 accepted |
+| shogi | 630 | 695 | 23 | 1348 | -16.8 | -2.975 | H0 accepted |
+
+Pooled: 3955W 3989L 1542D over 9486 games, -1.2 Elo. Fallback 1 is rejected on
+two terminal H0 arms and a pooled estimate below zero.
+
+The prediction above does not survive contact. Cover alone is worse than the two
+halves together, which is the direction the prediction expected, but the variant
+it named is the one that reversed: xiangqi went from -12.5 with both halves to
++1.9 with cover alone, and shogi went the other way, from -2.4 to -16.8. Two
+arms swapping sign by ten Elo and more between campaigns of this size says the
+per-variant readings here carry noise of that order, so no story about palaces
+or advisors is supported. What both campaigns do agree on is the pooled figure:
++2.0 for the full term, -1.2 for cover alone, against a floor of +12.
+
+Fallback 2, shelter alone, is the last one this letter has, and the payload flip
+mirrors fallback 1: all 38 tails move to ` 1 3 12 4 0 0`.
+
+| variant | W | L | D | games | Elo | LLR | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| standard | 1003 | 908 | 727 | 2638 | +12.5 | +2.967 | H1 accepted |
+| crazyhouse | 1495 | 1369 | 64 | 2928 | +15.0 | +2.962 | H1 accepted |
+| shogi | 874 | 762 | 14 | 1650 | +23.6 | +2.954 | H1 accepted |
+| xiangqi | 428 | 460 | 254 | 1142 | -9.7 | -3.051 | H0 accepted |
+
+Pooled: 3800W 3499L 1059D over 8358 games, +12.5 Elo. Recomputing the SPRT on
+the pooled counts against the same `[0, 12]` bounds gives LLR +6.20 versus a
++2.944 upper bound, so the pool is terminal H1 at the floor. That pooled LLR is
+computed here with a fixed-draw-rate logistic model rather than by the engine;
+on each individual arm that model reads slightly less extreme than the engine's
+own figure quoted above, so the engine's pooled LLR would be at least as far
+past the bound.
+
+Shelter alone is the whole of the idea. The three arms of this letter measured
++2.0 for shelter plus cover, -1.2 for cover alone, and +12.5 for shelter alone,
+on roughly ten thousand games each. Friendly occupancy near the royal was not a
+weak signal being diluted -- it was actively cancelling a real one. Counting any
+piece that happens to stand near the royal pays for the attacking pieces a side
+has swung across its own castled position and for the rook still sitting in the
+corner, neither of which shelters anything. Restricting the count to
+shield-like pieces, which is what the shield classifier was for, is what makes
+the term measure what it was named for.
+
+The pooled gate is met but the second clause of rule 5 is not: xiangqi is a
+member of the declared royal-bearing pool and regressed to a terminal H0 at
+-9.7 Elo, the same magnitude that closed Phase H's fallback 2.
+
+The cause was measured rather than guessed, and the first guess was wrong.
+Magnitude is not the problem: shelter is worth 9 raw units in xiangqi against a
+164-unit soldier, and 12 units in standard against a 93-unit pawn, so xiangqi
+carries the smaller term relative to its own army, not the larger one.
+
+The problem is which squares a xiangqi side can ever earn the term on. Shelter
+squares are the squares forward of the royal. Xiangqi soldiers begin on rank
+four, ahead of the palace, and can never move backward, so no soldier can ever
+arrive in front of a general standing on rank one, and the derived classifier
+flags only soldiers as shield-like. The single way a xiangqi side can score
+shelter is to walk the general up the palace to rank three, where the c4 and e4
+soldiers become forward of it. Moving the general from e1 to e3 and touching
+nothing else, the base reads -11 and the shelter build reads -2: the piece
+square table charges 11 units for advancing the general and the term hands 9 of
+them back. It also pays the side for leaving the central soldier at home, since
+pushing it drops the count. Both are close to the opposite of xiangqi safety,
+where a general on rank three is exposed to the flying-general law and to
+cannon batteries on its own file.
+
+The fix reads the palace off the data the config already carries. A palace is a
+forbidden zone, so the squares a royal may ever stand on are a popcount of its
+own zone bitboard, and `derive_royal_confinement` switches shelter off for a
+colour whose royal reaches at most a quarter of the board. Xiangqi's general
+reaches 9 of 90 squares and gates off; janggi and minixiangqi gate off by the
+same rule; standard at 64 of 64 and shogi at 81 of 81 are untouched. There is
+no variant name anywhere in it, and `SHELTER_CONFINEMENT_DIVISOR` stays a plain
+constant rather than a scalar, since nothing tunes it.
+
+The gate is verified by identity, not by a campaign, because it makes the term
+provably zero in xiangqi: both colours' shelter counts are zeroed and the
+shipped payload prices cover at zero, so `royal_shelter!` returns zero for every
+xiangqi position. Xiangqi search output matches the base exactly -- move, score
+and node count -- on four positions including one with the general already on
+e3, and the depth-8 bench matches at 146954 nodes against the base's 146954.
+The three winning variants match the ungated build exactly on the same checks,
+at 37268, 888112 and 813213 bench nodes and identical startpos searches at depth
+10, so their arms carry over to the gated build rather than needing a rerun.
+
+Status: accepted. The term applies to standard, shogi and crazyhouse, whose
+pooled result is 3372W 3039L 805D over 7216 games, +16.0 Elo at LLR +8.10
+against a +2.944 bound -- terminal H1 well clear of the +12 floor. Xiangqi is
+gated out and is byte-for-byte the base, so there is no affected-variant
+regression left to disqualify it. Cover remains in the code priced at zero by
+every payload; removing it is a simplification for a later letter, not part of
+this one, since deleting it would change the three arms' binaries.
+
+### Standing instruction on this letter
+
+If Phase I fails on every fallback, letters G, H and I are all closed with
+nothing kept and the whole of Phase I comes out alongside them. The last phase
+this iteration actually accepted is F, and `a137218` is the tree that carries
+it. A new plan follows, written as a retrospective of this one, and takes over
+from that commit rather than continuing the letter ladder here.
 
 ## Phase J — Bounded royal pressure and open lanes
 

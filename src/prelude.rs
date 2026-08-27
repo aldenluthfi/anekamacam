@@ -78,8 +78,8 @@ pub use crate::game::search::{
     parallel::ThreadPool,
     parameters::{
         ASPIRATION_CLAMP, ASPIRATION_RATIO, ASPIRATION_START_DEPTH,
-        ASPIRATION_WIDEN, COEFFICIENT_SCALE, ENDGAME_ARMY_SIZE,
-        ENDGAME_OCCUPANCY, FUTILITY_DEPTH, FUTILITY_FLOOR,
+        ASPIRATION_WIDEN, COEFFICIENT_SCALE, COVER_FLOOR, COVER_RATIO,
+        ENDGAME_ARMY_SIZE, ENDGAME_OCCUPANCY, FUTILITY_DEPTH, FUTILITY_FLOOR,
         FUTILITY_IMPROVING, FUTILITY_RATIO, LMP_BASE, LMP_DEPTH,
         LMP_IMPROVING, LMP_RATIO, OPENING_OCCUPANCY,
         QSEARCH_DELTA_RATIO, REDUCTION_MINIMUM_DEPTH, REDUCTION_MOVE_BASE,
@@ -89,8 +89,10 @@ pub use crate::game::search::{
         REDUCTION_TACTICAL_CHECK_BASE, REDUCTION_TACTICAL_CHECK_DIVISOR,
         REDUCTION_TACTICAL_DIVISOR, RFP_DEPTH, RFP_IMPROVING, RFP_RATIO,
         ROLE_MAJOR_SPLIT, ROLE_NON_BIG_SPLIT, SEE_PRUNE_DEPTH,
-        SEE_PRUNE_RATIO,
-        derive_eval_parameters, derive_parameters, derive_search_parameters,
+        SEE_PRUNE_RATIO, SHELTER_CAP, SHELTER_CONFINEMENT_DIVISOR,
+        SHELTER_FLOOR, SHELTER_RADIUS, SHELTER_RATIO,
+        derive_eval_parameters, derive_parameters,
+        derive_search_parameters, derive_shelter_parameters,
         reduction_surface,
     },
     transposition::{QTable, QTEntry, TTEntry, TTable},
@@ -526,7 +528,7 @@ pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
 
-pub const PARAM_SCALAR_COUNT: usize = 34;                                       /* derivation scalars per payload     */
+pub const PARAM_SCALAR_COUNT: usize = 40;                                       /* derivation scalars per payload     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

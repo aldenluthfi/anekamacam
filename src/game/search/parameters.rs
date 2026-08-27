@@ -138,6 +138,32 @@ pub const SEE_PRUNE_DEPTH: u32 = 5;
 /// the margin is not applied there.
 pub const QSEARCH_DELTA_RATIO: u32 = 100;
 
+/// The ring a royal calls its own ground: every square within `RADIUS`
+/// steps on both axes. Squares of that ring lying ahead of the royal are
+/// its shelter, held by pieces that only ever advance, and the whole ring
+/// is its cover, held by anything friendly. `CAP` is how many sheltering
+/// pieces are still worth counting -- past it a royal is as walled in as
+/// this term can say, and the next piece is better placed elsewhere. Both
+/// terms are priced as `RATIO` of the dearest non-royal piece, held
+/// against `COEFFICIENT_SCALE` and never below `FLOOR` in raw units, so a
+/// variant whose army is cheap still separates a sheltered royal from a
+/// bare one.
+pub const SHELTER_RADIUS: u32 = 1;
+pub const SHELTER_CAP: u32 = 3;
+pub const SHELTER_RATIO: u32 = 12;
+pub const SHELTER_FLOOR: u32 = 4;
+pub const COVER_RATIO: u32 = 5;
+pub const COVER_FLOOR: u32 = 2;
+
+/// Share of the board a royal must be able to stand on before shelter is
+/// worth pricing at all. A royal walled into a palace by its own forbidden
+/// zones cannot be sheltered in the sense this term means: it never left
+/// its own camp, its guards are pinned to it by their own move rules, and
+/// the only way it can gather friendly pieces in front of itself is to
+/// walk forward, which is exactly the move such variants punish. Below
+/// this share the term is switched off for that colour.
+pub const SHELTER_CONFINEMENT_DIVISOR: usize = 4;
+
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement
 /// tree that outgrows either bound is referenced against the endings
@@ -289,20 +315,21 @@ fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
     mean / board_size as f64
 }
 
-/// derive_piece_maneuverability
+/// derive_piece_offsets
 ///
-/// Fraction of a piece's distinct move offsets whose reverse offset is also a
-/// move offset. Symmetric movers (knight, rook, bishop, queen) score 1.0;
-/// one-directional movers (pawn, shogi lance) score near 0.0, capturing the
-/// value penalty of being unable to retreat.
+/// Every distinct net displacement a piece can make, summed over the legs
+/// of each multi-leg vector and gathered across every square it could
+/// stand on. A slider contributes one offset per distance it can travel,
+/// so the set says how far a piece reaches as well as in which
+/// directions.
 ///
 /// Params:
 /// - state: &State -> precomputed relevant-move tables
-/// - piece: &Piece -> piece whose offsets are examined
+/// - piece: &Piece -> piece whose offsets are gathered
 ///
 /// Return:
-/// f64             -> reversible-offset fraction, in [0, 1]
-fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
+/// HashSet<(i32, i32)> -> file and rank displacements, origin excluded
+fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
     let board_size = state.statics.board_size;
     let piece_index = p_index!(piece) as usize;
 
@@ -326,6 +353,25 @@ fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
             }
         }
     }
+
+    offsets
+}
+
+/// derive_piece_maneuverability
+///
+/// Fraction of a piece's distinct move offsets whose reverse offset is also a
+/// move offset. Symmetric movers (knight, rook, bishop, queen) score 1.0;
+/// one-directional movers (pawn, shogi lance) score near 0.0, capturing the
+/// value penalty of being unable to retreat.
+///
+/// Params:
+/// - state: &State -> precomputed relevant-move tables
+/// - piece: &Piece -> piece whose offsets are examined
+///
+/// Return:
+/// f64             -> reversible-offset fraction, in [0, 1]
+fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
+    let offsets = derive_piece_offsets(state, piece);
 
     if offsets.is_empty() {
         return 1.0;
@@ -853,14 +899,16 @@ fn resolve_setup_army(state: &State) -> Vec<u32> {
 /// derive_parameters
 ///
 /// Startup entry point for the whole derivation pass: computes the
-/// evaluation parameters, then the search margins built on top of them,
-/// and finally refreshes the incremental eval caches.
+/// evaluation parameters, then the search margins and the royal shelter
+/// tables built on top of them, and finally refreshes the incremental eval
+/// caches.
 ///
 /// Params:
 /// - state: &mut State -> freshly precomputed variant state
 pub fn derive_parameters(state: &mut State) {
     derive_eval_parameters(state);
     derive_search_parameters(state);
+    derive_shelter_parameters(state);
     refresh_eval_state(state);
 }
 
@@ -1207,4 +1255,239 @@ pub fn derive_eval_parameters(state: &mut State) {
 
     log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
+}
+
+/// derive_forward_directions
+///
+/// Rank step each colour advances by, read from the army the variant
+/// starts play with: the side deployed on the lower ranks is the side that
+/// moves up the board. A variant that deploys nothing, or deploys both
+/// colours around the same rank, still has to name a direction and sends
+/// white up.
+///
+/// Params:
+/// - state: &State -> variant whose initial deployment is read
+///
+/// Return:
+/// [i32; 2] -> colour to rank step, either 1 or -1
+fn derive_forward_directions(state: &State) -> [i32; 2] {
+    let files = state.statics.files as usize;
+    let board_size = state.statics.board_size;
+
+    let mut ranks = [0i64; 2];
+    let mut counts = [0i64; 2];
+
+    for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
+        let color = p_color!(piece) as usize;
+        let setup = &state.statics.initial_setup[piece_index];
+
+        for square in 0..board_size {
+            if get!(setup, square as u32) {
+                ranks[color] += (square / files) as i64;
+                counts[color] += 1;
+            }
+        }
+    }
+
+    let white = ranks[WHITE as usize]
+        .checked_div(counts[WHITE as usize])
+        .unwrap_or(0);
+    let black = ranks[BLACK as usize]
+        .checked_div(counts[BLACK as usize])
+        .unwrap_or(1);
+
+    if black < white {
+        [-1, 1]
+    } else {
+        [1, -1]
+    }
+}
+
+/// derive_shield_pieces
+///
+/// Marks the piece types worth having in front of a royal: a non-royal
+/// that never leaves the local neighbourhood, and whose offsets lean
+/// forward on balance. A pawn, a shogi gold and a silver all qualify; a
+/// piece leaping over the neighbourhood shelters nothing, so only a
+/// straight step out of the deployment rank is allowed past the radius,
+/// and a piece with no forward lean is not standing in front of anything.
+///
+/// Move vectors are stored in the mover's own frame, with the colour sign
+/// applied only when a move is walked, so a rank offset is forward for
+/// whichever colour owns the piece and needs no board direction here.
+///
+/// Params:
+/// - state : &State -> precomputed relevant-move tables
+/// - radius: i32    -> radius the local square lists are built at
+///
+/// Return:
+/// Vec<bool> -> piece index to shield-like role
+fn derive_shield_pieces(state: &State, radius: i32) -> Vec<bool> {
+    state.statics.pieces.iter().map(|piece| {
+        if p_is_royal!(piece) {
+            return false;
+        }
+
+        let offsets = derive_piece_offsets(state, piece);
+
+        if offsets.is_empty() {
+            return false;
+        }
+
+        let local = offsets.iter().all(|(file_offset, rank_offset)| {
+            let reach = file_offset.abs().max(rank_offset.abs());
+
+            reach <= radius
+                || (reach == radius + 1 && *file_offset == 0)                   /* a straight double step counts too  */
+        });
+        let lean: i32 = offsets
+            .iter()
+            .map(|(_, rank_offset)| rank_offset)
+            .sum();
+
+        local && lean > 0
+    }).collect()
+}
+
+/// derive_royal_confinement
+///
+/// Whether each colour's royals are locked into a small corner of the board
+/// by their own forbidden zones. Reach is read straight off the zone
+/// bitboard rather than walked, since a zone already states every square
+/// the piece may ever stand on.
+///
+/// Params:
+/// - state: &State -> variant whose royal zones are read
+///
+/// Return:
+/// [bool; 2]       -> per colour, whether shelter should be priced at all
+fn derive_royal_confinement(state: &State) -> [bool; 2] {
+    let board_size = state.statics.board_size;
+    let mut confined = [false; 2];
+
+    for piece in &state.statics.pieces {
+        if !p_is_royal!(piece) {
+            continue;
+        }
+
+        let zone = &state.statics.forbidden_zones[p_index!(piece) as usize];
+        let reach = (0..board_size)
+            .filter(|square| !get!(zone, *square as u32))
+            .count();
+
+        confined[p_color!(piece) as usize] |=
+            reach * SHELTER_CONFINEMENT_DIVISOR <= board_size;
+    }
+
+    confined
+}
+
+/// derive_shelter_parameters
+///
+/// Builds everything the royal shelter term reads. Two flat square lists
+/// are laid out with one fixed stride per origin square: the cover list
+/// holds every square within the shelter radius of that origin, and the
+/// shelter list holds the subset lying forward of it, one list per colour.
+/// A count per origin says how many of its slots a board edge left usable,
+/// so a corner royal reads three squares and a central one reads all
+/// eight, with no bounds arithmetic left for the evaluator.
+///
+/// Both piece values are priced off the dearest non-royal piece, the same
+/// piece the search margins are drawn against, so a variant whose army is
+/// cheap does not pay a fixed price for cover it cannot afford.
+///
+/// Params:
+/// - state: &mut State -> variant whose shelter tables are rebuilt
+pub fn derive_shelter_parameters(state: &mut State) {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let radius = state.statics.shelter_radius as i32;
+    let stride = (2 * radius + 1).pow(2) as usize - 1;                          /* the origin itself is never stored  */
+
+    let forward = derive_forward_directions(state);
+    let shield_pieces = derive_shield_pieces(state, radius);
+
+    let mut cover_squares = vec![0 as Square; board_size * stride];
+    let mut cover_counts = vec![0u8; board_size];
+    let mut shelter_squares = [
+        vec![0 as Square; board_size * stride],
+        vec![0 as Square; board_size * stride]
+    ];
+    let mut shelter_counts = [vec![0u8; board_size], vec![0u8; board_size]];
+
+    for square in 0..board_size {
+        let file = square as i32 % files;
+        let rank = square as i32 / files;
+
+        for rank_offset in -radius..=radius {
+            for file_offset in -radius..=radius {
+                let local_file = file + file_offset;
+                let local_rank = rank + rank_offset;
+
+                if (file_offset, rank_offset) == (0, 0)
+                    || local_file < 0 || local_file >= files
+                    || local_rank < 0 || local_rank >= ranks {
+                    continue;
+                }
+
+                let local = (local_rank * files + local_file) as Square;
+                let slot = cover_counts[square] as usize;
+
+                cover_squares[square * stride + slot] = local;
+                cover_counts[square] += 1;
+
+                for color in [WHITE as usize, BLACK as usize] {
+                    if rank_offset * forward[color] <= 0 {
+                        continue;
+                    }
+
+                    let slot = shelter_counts[color][square] as usize;
+
+                    shelter_squares[color][square * stride + slot] = local;
+                    shelter_counts[color][square] += 1;
+                }
+            }
+        }
+    }
+
+    let confined = derive_royal_confinement(state);
+
+    for color in [WHITE as usize, BLACK as usize] {
+        if confined[color] {
+            shelter_counts[color] = vec![0u8; board_size];                      /* a walled royal reads no squares    */
+        }
+    }
+
+    let dearest = state.statics.pieces
+        .iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_ovalue!(piece) as u64)
+        .max()
+        .unwrap_or(0);
+
+    let shelter_value = (dearest * state.statics.shelter_ratio as u64
+        / COEFFICIENT_SCALE as u64).max(state.statics.shelter_floor as u64);
+    let cover_value = (dearest * state.statics.cover_ratio as u64
+        / COEFFICIENT_SCALE as u64).max(state.statics.cover_floor as u64);
+
+    log_3!(
+        "Derived shelter worth {} and cover worth {} per piece, \
+         {} of {} piece types shield-like, royals confined {:?}",
+        shelter_value, cover_value,
+        shield_pieces.iter().filter(|shield| **shield).count(),
+        shield_pieces.len(),
+        confined
+    );
+
+    let statics = state.static_mut();
+
+    statics.shield_pieces = shield_pieces;
+    statics.shelter_squares = shelter_squares;
+    statics.shelter_counts = shelter_counts;
+    statics.cover_squares = cover_squares;
+    statics.cover_counts = cover_counts;
+    statics.local_stride = stride;
+    statics.shelter_value = shelter_value as i32;
+    statics.cover_value = cover_value as i32;
 }

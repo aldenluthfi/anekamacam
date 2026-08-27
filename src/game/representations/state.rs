@@ -515,6 +515,15 @@ pub struct StaticState {
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 
+    pub shield_pieces: Vec<bool>,                                               /* piece index to shield-like role    */
+    pub shelter_squares: [Vec<Square>; 2],                                      /* color to forward local squares     */
+    pub shelter_counts: [Vec<u8>; 2],                                           /* squares stored per origin above    */
+    pub cover_squares: Vec<Square>,                                             /* every local square, either color   */
+    pub cover_counts: Vec<u8>,                                                  /* squares stored per origin above    */
+    pub local_stride: usize,                                                    /* slots each origin owns in both     */
+    pub shelter_value: i32,                                                     /* worth of one sheltering piece      */
+    pub cover_value: i32,                                                       /* worth of one covering piece        */
+
 /*----------------------------------------------------------------------------*\
                                  SEARCH FIELDS
 \*----------------------------------------------------------------------------*/
@@ -578,6 +587,13 @@ pub struct StaticState {
     pub see_prune_depth: u32,                                                   /* deepest node dropping a capture    */
 
     pub qsearch_delta_ratio: u32,                                               /* share of the dearest piece, x1000  */
+
+    pub shelter_radius: u32,                                                    /* steps out the local ring reaches   */
+    pub shelter_cap: u32,                                                       /* sheltering pieces still counted    */
+    pub shelter_ratio: u32,                                                     /* share of the dearest piece, x1000  */
+    pub shelter_floor: u32,                                                     /* least worth of one shelter, raw    */
+    pub cover_ratio: u32,                                                       /* share of the dearest piece, x1000  */
+    pub cover_floor: u32,                                                       /* least worth of one cover, raw      */
 }
 
 /// State
@@ -751,6 +767,15 @@ impl State {
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
 
+            shield_pieces: vec![false; piece_count],
+            shelter_squares: [Vec::new(), Vec::new()],
+            shelter_counts: [Vec::new(), Vec::new()],
+            cover_squares: Vec::new(),
+            cover_counts: Vec::new(),
+            local_stride: 0,
+            shelter_value: 0,
+            cover_value: 0,
+
             reduction_quiet: Vec::new(),
             reduction_quiet_check: Vec::new(),
             reduction_tactical: Vec::new(),
@@ -806,6 +831,13 @@ impl State {
             see_prune_ratio: SEE_PRUNE_RATIO,
             see_prune_depth: SEE_PRUNE_DEPTH,
             qsearch_delta_ratio: QSEARCH_DELTA_RATIO,
+
+            shelter_radius: SHELTER_RADIUS,
+            shelter_cap: SHELTER_CAP,
+            shelter_ratio: SHELTER_RATIO,
+            shelter_floor: SHELTER_FLOOR,
+            cover_ratio: COVER_RATIO,
+            cover_floor: COVER_FLOOR,
         });
 
         Self::from_statics(statics)

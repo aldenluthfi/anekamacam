@@ -355,6 +355,44 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
         COEFFICIENT_SCALE as i32, scalars[33]
     );
 
+    assert!(
+        scalars[34] >= 1,
+        "Scalar 34 is how far from a royal the shelter reaches and must \
+        reach a square, got {}",
+        scalars[34]
+    );
+
+    assert!(
+        scalars[35] >= 1,
+        "Scalar 35 is how many pieces a royal is paid for and must leave \
+        it one, got {}",
+        scalars[35]
+    );
+
+    assert!(
+        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[36]),
+        "Scalar 36 is a fraction of {} and must be within it, got {}",
+        COEFFICIENT_SCALE as i32, scalars[36]
+    );
+
+    assert!(
+        scalars[37] >= 0,
+        "Scalar 37 is the least a sheltering piece is worth, got {}",
+        scalars[37]
+    );
+
+    assert!(
+        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[38]),
+        "Scalar 38 is a fraction of {} and must be within it, got {}",
+        COEFFICIENT_SCALE as i32, scalars[38]
+    );
+
+    assert!(
+        scalars[39] >= 0,
+        "Scalar 39 is the least a covering piece is worth, got {}",
+        scalars[39]
+    );
+
     let statics = state.static_mut();
 
     statics.opening_occupancy = scalars[0].unsigned_abs();
@@ -401,7 +439,15 @@ fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
 
     statics.qsearch_delta_ratio = scalars[33].unsigned_abs();
 
+    statics.shelter_radius = scalars[34].unsigned_abs();
+    statics.shelter_cap = scalars[35].unsigned_abs();
+    statics.shelter_ratio = scalars[36].unsigned_abs();
+    statics.shelter_floor = scalars[37].unsigned_abs();
+    statics.cover_ratio = scalars[38].unsigned_abs();
+    statics.cover_floor = scalars[39].unsigned_abs();
+
     derive_search_parameters(state);
+    derive_shelter_parameters(state);
 }
 
 /// scalar_parameter_tokens
@@ -451,6 +497,12 @@ pub fn scalar_parameter_tokens(state: &State) -> Vec<String> {
         state.statics.see_prune_ratio.to_string(),
         state.statics.see_prune_depth.to_string(),
         state.statics.qsearch_delta_ratio.to_string(),
+        state.statics.shelter_radius.to_string(),
+        state.statics.shelter_cap.to_string(),
+        state.statics.shelter_ratio.to_string(),
+        state.statics.shelter_floor.to_string(),
+        state.statics.cover_ratio.to_string(),
+        state.statics.cover_floor.to_string(),
     ]
 }
 
