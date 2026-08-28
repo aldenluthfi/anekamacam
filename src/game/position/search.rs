@@ -16,7 +16,7 @@ use crate::*;
 
 /// SearchInfo
 ///
-/// Everything one search worker owns: limits, counters, stop flags, and the
+/// Everything one search worker owns: limits, node count, stop flags, and the
 /// principal variation, killer, and history tables it orders moves with.
 /// These tables are search scratch, not game state, so a worker allocates
 /// them once in `clear_search` and no `State` clone ever carries them.
@@ -32,25 +32,6 @@ pub struct SearchInfo {
     pub thread_count: usize,                                                    /* threads active in this search      */
 
     pub nodes: u128,                                                            /* total nodes searched so far        */
-
-    pub reduced_searches: u128,                                                 /* moves first searched short         */
-    pub depth_researches: u128,                                                 /* short searches that raised alpha   */
-    pub window_researches: u128,                                                /* scouts re-run on the full window   */
-
-    pub aspiration_fail_low: u128,                                              /* roots that fell out the low side   */
-    pub aspiration_fail_high: u128,                                             /* roots that fell out the high side  */
-    pub aspiration_nodes: u128,                                                 /* nodes spent on rejected windows    */
-
-    pub reverse_cuts: u128,                                                     /* nodes cut on a flat margin         */
-    pub reverse_cuts_improving: u128,                                           /* and on the rising side's margin    */
-
-    pub futility_prunes: u128,                                                  /* late quiets left unsearched        */
-    pub move_count_prunes: u128,                                                /* quiets past the count for a node   */
-    pub exchange_prunes: u128,                                                  /* captures priced as losing too much */
-
-    pub qsearch_nodes: u128,                                                    /* nodes spent settling the position  */
-    pub qsearch_see_prunes: u128,                                               /* leaf captures priced as losing     */
-    pub qsearch_delta_prunes: u128,                                             /* leaf captures too small to matter  */
 
     pub interrupt: bool,                                                        /* flag set by external stop events   */
 
@@ -124,8 +105,8 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 
 /// clear_search
 ///
-/// Resets search counters and allocates this worker's ordering tables and
-/// principal variation storage at the sizes the position calls for.
+/// Resets node state and allocates this worker's ordering tables and principal
+/// variation storage at the sizes the position calls for.
 ///
 /// Params:
 /// - state : &mut State      -> position the tables are sized from
@@ -141,25 +122,6 @@ pub fn clear_search(
     info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;
     info.interrupt = false;
-
-    info.reduced_searches = 0;
-    info.depth_researches = 0;
-    info.window_researches = 0;
-
-    info.aspiration_fail_low = 0;
-    info.aspiration_fail_high = 0;
-    info.aspiration_nodes = 0;
-
-    info.reverse_cuts = 0;
-    info.reverse_cuts_improving = 0;
-
-    info.futility_prunes = 0;
-    info.move_count_prunes = 0;
-    info.exchange_prunes = 0;
-
-    info.qsearch_nodes = 0;
-    info.qsearch_see_prunes = 0;
-    info.qsearch_delta_prunes = 0;
 
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
@@ -323,8 +285,6 @@ pub fn iterative_deepening(
         }
 
         let score = loop {
-            let attempt_start_nodes = info.nodes;
-
             let score = alpha_beta(
                 state, ttable, qtable, depth, alpha, beta, info, true,
             );
@@ -339,10 +299,6 @@ pub fn iterative_deepening(
             if !failed_low && !failed_high {
                 break score;
             }
-
-            info.aspiration_fail_low += failed_low as u128;
-            info.aspiration_fail_high += failed_high as u128;
-            info.aspiration_nodes += info.nodes - attempt_start_nodes;
 
             delta = (delta * widen / scale).max(delta + 1);                     /* the floor must never stall a widen */
 
@@ -411,57 +367,6 @@ pub fn iterative_deepening(
             format_move(&best_move, state, dict),
             depth_nodes,
             depth_nps,
-        );
-
-        log_3!(
-            concat!(
-                "(Thread {}) Reduced: {:>10} | Depth Re: {:>10} | ",
-                "Window Re: {:>10}",
-            ),
-            thread_num,
-            info.reduced_searches,
-            info.depth_researches,
-            info.window_researches,
-        );
-
-        log_3!(
-            concat!(
-                "(Thread {}) Fail Low: {:>10} | Fail High: {:>10} | ",
-                "Window Nodes: {:>10}",
-            ),
-            thread_num,
-            info.aspiration_fail_low,
-            info.aspiration_fail_high,
-            info.aspiration_nodes,
-        );
-
-        log_3!(
-            "(Thread {}) Reverse: {:>10} | Improving: {:>10}",
-            thread_num,
-            info.reverse_cuts,
-            info.reverse_cuts_improving,
-        );
-
-        log_3!(
-            concat!(
-                "(Thread {}) Futility: {:>10} | Move Count: {:>10} | ",
-                "Exchange: {:>10}",
-            ),
-            thread_num,
-            info.futility_prunes,
-            info.move_count_prunes,
-            info.exchange_prunes,
-        );
-
-        log_3!(
-            concat!(
-                "(Thread {}) Quiescence: {:>10} | Leaf Exchange: {:>10} | ",
-                "Delta: {:>10}",
-            ),
-            thread_num,
-            info.qsearch_nodes,
-            info.qsearch_see_prunes,
-            info.qsearch_delta_prunes,
         );
 
         log_2!(
@@ -574,8 +479,6 @@ fn quiescence_search(
     }
 
     info.nodes += 1;
-    info.qsearch_nodes += 1;
-
     if info.nodes & 2047 == 0 {
         check_interrupt(info);
     }
@@ -639,14 +542,12 @@ fn quiescence_search(
         );
 
         if !in_check && scores[index] < LOSING_CAPTURE_SCORE as usize {
-            info.qsearch_see_prunes += (moves.len() - index) as u128;
             break;                                                              /* ordered: every later one loses too */
         }
 
         if delta_prunable
         && !m_promotion!(&moves[index])
         && stand_pat + victim_value!(&moves[index], state) + delta <= alpha {
-            info.qsearch_delta_prunes += 1;
             continue;
         }
 
@@ -824,12 +725,6 @@ pub fn alpha_beta(
     && beta.abs() < MATE_SCORE
     && static_eval - state.statics.rfp_margin[row + depth] >= beta
     {
-        if improving {
-            info.reverse_cuts_improving += 1;
-        } else {
-            info.reverse_cuts += 1;
-        }
-
         return beta;
     }
 
@@ -913,7 +808,6 @@ pub fn alpha_beta(
 
         if prunable && !is_capture && !is_promotion && !is_drop {
             if legal_moves >= state.statics.lmp_count[lmp_row + lmp_slot] {
-                info.move_count_prunes += 1;
                 continue;
             }
 
@@ -922,7 +816,6 @@ pub fn alpha_beta(
                 + state.statics.futility_margin[futility_row + depth]
                 <= alpha
             {
-                info.futility_prunes += 1;
                 continue;
             }
         }
@@ -937,7 +830,6 @@ pub fn alpha_beta(
         && scores[index] as i32 - LOSING_CAPTURE_SCORE
             < -state.statics.see_allowance[depth]
         {
-            info.exchange_prunes += 1;
             continue;
         }
 
@@ -971,8 +863,6 @@ pub fn alpha_beta(
             0
         };
 
-        info.reduced_searches += (reduction > 0) as u128;
-
         let mut score = if legal_moves == 1 {
             -alpha_beta(
                 state,
@@ -1001,8 +891,6 @@ pub fn alpha_beta(
         && score > alpha
         && !info.interrupt
         {
-            info.depth_researches += 1;
-
             score = -alpha_beta(
                 state,
                 ttable,
@@ -1021,8 +909,6 @@ pub fn alpha_beta(
         && score < beta                                                         /* a terminal child escapes the clamp */
         && !info.interrupt
         {
-            info.window_researches += 1;
-
             score = -alpha_beta(
                 state,
                 ttable,

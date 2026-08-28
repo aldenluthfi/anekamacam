@@ -2,7 +2,7 @@
 
 ## Status
 
-**P0 complete. P1 is next. No strength campaign has started.**
+**P0-P1 complete. P2 is next. No strength campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
 
@@ -346,6 +346,28 @@ Touch:
 
 Proof: debug/release build without warning suppression; pinned-seed nodes, score,
 best move, PV, and protocol output unchanged.
+
+#### P1 evidence, 2026-08-29
+
+Status: complete.
+
+- Removed all fourteen permanent diagnostic fields, resets, increments, and
+  five reporting blocks from `SearchInfo` and iterative search.
+- Kept limits, interrupt state, total protocol node count, thread count, PV,
+  history, killers, evaluation stack, and table ages unchanged.
+- `parallel.rs` had no diagnostic field or reporting use; its constructor uses
+  `Default` and required no source edit.
+- Debug and release builds completed without warnings or suppression.
+- B10 depth-6 nodes, score, best move, and PV match P0 exactly.
+- Semantic signature MD5:
+  `5f7424ecea84734a3c48db0c6138ed8c`.
+- Host-normalized UCI handshake matches P0 exactly. Normalized MD5:
+  `6d09737f7b323b00b20b98f3f08a925f`.
+- Runtime log contains zero removed diagnostic report labels.
+- Pre-existing comment-alignment change in `search.rs` remains preserved but
+  outside P1 candidate staging.
+
+P1 result: accepted as neutral cleanup. No playing-policy code changed.
 
 ### P2. Replace scalar payload with material and PST residuals
 
