@@ -14,8 +14,8 @@
 
 use crate::*;
 
-/// Scale the fractional derivation coefficients are stored against, so
-/// they survive a round trip through the all-integer parameter payload.
+/// Scale used by integer derivation coefficients wherever a fractional share
+/// must remain exact without floating-point state.
 pub const COEFFICIENT_SCALE: f64 = 1000.0;
 
 /// Board occupancy assumed when valuing a piece: the fraction of squares
@@ -34,11 +34,10 @@ pub const ROLE_MAJOR_SPLIT: u32 = 200;
 pub const ENDGAME_ARMY_SIZE: u32 = 5;
 
 /// Late-move reduction curves, one per class of move. Each surface is
-/// `base + shape(depth, moves) / divisor`, and only the base and the
-/// divisor are stored: which terms a curve mixes is fixed by the class,
-/// because a quiet move buried in a long list and a capture that answers
-/// a check do not respond to the same variable. Both are held against
-/// `COEFFICIENT_SCALE` so they survive the all-integer payload.
+/// `base + shape(depth, moves) / divisor`. Which terms a curve mixes is fixed
+/// by class because a quiet move buried in a long list and a capture answering
+/// check do not respond to the same variable. Base and divisor are held against
+/// `COEFFICIENT_SCALE`.
 pub const REDUCTION_QUIET_BASE: u32 = 750;
 pub const REDUCTION_QUIET_DIVISOR: u32 = 2250;
 pub const REDUCTION_QUIET_CHECK_BASE: u32 = 1000;
@@ -140,20 +139,15 @@ pub const QSEARCH_DELTA_RATIO: u32 = 100;
 
 /// The ring a royal calls its own ground: every square within `RADIUS`
 /// steps on both axes. Squares of that ring lying ahead of the royal are
-/// its shelter, held by pieces that only ever advance, and the whole ring
-/// is its cover, held by anything friendly. `CAP` is how many sheltering
-/// pieces are still worth counting -- past it a royal is as walled in as
-/// this term can say, and the next piece is better placed elsewhere. Both
-/// terms are priced as `RATIO` of the dearest non-royal piece, held
-/// against `COEFFICIENT_SCALE` and never below `FLOOR` in raw units, so a
-/// variant whose army is cheap still separates a sheltered royal from a
-/// bare one.
+/// its shelter, held by pieces that only ever advance. `CAP` is how many
+/// sheltering pieces are still worth counting -- past it a royal is as
+/// walled in as this term can say, and the next piece belongs elsewhere.
+/// Shelter is priced as `RATIO` of the dearest non-royal piece, held
+/// against `COEFFICIENT_SCALE` and never below `FLOOR` in raw units.
 pub const SHELTER_RADIUS: u32 = 1;
 pub const SHELTER_CAP: u32 = 3;
 pub const SHELTER_RATIO: u32 = 12;
 pub const SHELTER_FLOOR: u32 = 4;
-pub const COVER_RATIO: u32 = 5;
-pub const COVER_FLOOR: u32 = 2;
 
 /// Share of the board a royal must be able to stand on before shelter is
 /// worth pricing at all. A royal walled into a palace by its own forbidden
@@ -210,10 +204,8 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
         |(value, white_index, _)| (*value, *white_index)
     );
 
-    let non_big_share =
-        state.statics.role_non_big_split as f32 / COEFFICIENT_SCALE as f32;
-    let major_share =
-        state.statics.role_major_split as f32 / COEFFICIENT_SCALE as f32;
+    let non_big_share = ROLE_NON_BIG_SPLIT as f32 / COEFFICIENT_SCALE as f32;
+    let major_share = ROLE_MAJOR_SPLIT as f32 / COEFFICIENT_SCALE as f32;
 
     let non_big_count = (ranked.len() as f32 * non_big_share).ceil() as usize;
     let major_count = (ranked.len() as f32 * major_share).ceil() as usize;
@@ -637,9 +629,9 @@ fn derive_square_score(
     state: &State, piece_index: PieceIndex, square: usize, is_endgame: bool
 ) -> f64 {
     let occupancy = if is_endgame {
-        state.statics.endgame_occupancy
+        ENDGAME_OCCUPANCY
     } else {
-        state.statics.opening_occupancy
+        OPENING_OCCUPANCY
     } as f64 / COEFFICIENT_SCALE;
 
     let mobility =
@@ -949,10 +941,8 @@ where
 /// derive_search_parameters
 ///
 /// Drives the search half of derivation: rebuilds all four late-move
-/// reduction surfaces and the root aspiration width from the coefficients
-/// currently held in the static state. Every write of those coefficients
-/// ends here, whether it came from a payload or from the defaults, so no
-/// derived value can be left describing the variant before it.
+/// reduction surfaces, margins, move counts, and root aspiration width from
+/// universal coefficients and loaded material.
 ///
 /// The window is priced off the dearest non-royal piece rather than the
 /// cheapest, which normalization pins at 100 in every variant and so says
@@ -982,11 +972,11 @@ pub fn derive_search_parameters(state: &mut State) {
         .max()
         .unwrap_or(0);
 
-    let delta = dearest * statics.aspiration_ratio as u64
+    let delta = dearest * ASPIRATION_RATIO as u64
         / COEFFICIENT_SCALE as u64;
 
-    let deepest = statics.rfp_depth as usize;
-    let step = dearest * statics.rfp_ratio as u64 / COEFFICIENT_SCALE as u64;
+    let deepest = RFP_DEPTH as usize;
+    let step = dearest * RFP_RATIO as u64 / COEFFICIENT_SCALE as u64;
     let mut margins = vec![0i32; 2 * (deepest + 1)];
 
     for depth in 1..=deepest {
@@ -994,14 +984,14 @@ pub fn derive_search_parameters(state: &mut State) {
 
         margins[depth] = flat as i32;
         margins[deepest + 1 + depth] = (flat
-            * statics.rfp_improving as u64
+            * RFP_IMPROVING as u64
             / COEFFICIENT_SCALE as u64) as i32;
     }
 
-    let futility_deepest = statics.futility_depth as usize;
-    let futility_floor = dearest * statics.futility_floor as u64
+    let futility_deepest = FUTILITY_DEPTH as usize;
+    let futility_floor = dearest * FUTILITY_FLOOR as u64
         / COEFFICIENT_SCALE as u64;
-    let futility_step = dearest * statics.futility_ratio as u64
+    let futility_step = dearest * FUTILITY_RATIO as u64
         / COEFFICIENT_SCALE as u64;
     let mut futility = vec![0i32; 2 * (futility_deepest + 1)];
 
@@ -1010,25 +1000,25 @@ pub fn derive_search_parameters(state: &mut State) {
 
         futility[futility_deepest + 1 + depth] = risen as i32;
         futility[depth] = (risen
-            * statics.futility_improving as u64
+            * FUTILITY_IMPROVING as u64
             / COEFFICIENT_SCALE as u64) as i32;
     }
 
-    let lmp_deepest = statics.lmp_depth as usize;
+    let lmp_deepest = LMP_DEPTH as usize;
     let mut counts = vec![0usize; 2 * (lmp_deepest + 1)];
 
     for depth in 0..=lmp_deepest {
-        let risen = statics.lmp_base as u64
-            + (depth * depth) as u64 * statics.lmp_ratio as u64
+        let risen = LMP_BASE as u64
+            + (depth * depth) as u64 * LMP_RATIO as u64
                 / COEFFICIENT_SCALE as u64;
 
         counts[lmp_deepest + 1 + depth] = risen as usize;
-        counts[depth] = (risen * statics.lmp_improving as u64
+        counts[depth] = (risen * LMP_IMPROVING as u64
             / COEFFICIENT_SCALE as u64).max(1) as usize;                        /* one quiet always gets ordered      */
     }
 
-    let see_deepest = statics.see_prune_depth as usize;
-    let see_step = dearest * statics.see_prune_ratio as u64
+    let see_deepest = SEE_PRUNE_DEPTH as usize;
+    let see_step = dearest * SEE_PRUNE_RATIO as u64
         / COEFFICIENT_SCALE as u64;
     let mut allowance = vec![0i32; see_deepest + 1];
 
@@ -1036,7 +1026,7 @@ pub fn derive_search_parameters(state: &mut State) {
         allowance[depth] = (see_step * depth as u64) as i32;
     }
 
-    let qsearch_delta = dearest * statics.qsearch_delta_ratio as u64
+    let qsearch_delta = dearest * QSEARCH_DELTA_RATIO as u64
         / COEFFICIENT_SCALE as u64;
 
     assert!(
@@ -1057,26 +1047,26 @@ pub fn derive_search_parameters(state: &mut State) {
     );
 
     let quiet = reduction_surface(
-        statics.reduction_quiet_base,
-        statics.reduction_quiet_divisor,
+        REDUCTION_QUIET_BASE,
+        REDUCTION_QUIET_DIVISOR,
         |depth, moves| depth.ln() * moves.ln(),
     );
 
     let quiet_check = reduction_surface(
-        statics.reduction_quiet_check_base,
-        statics.reduction_quiet_check_divisor,
+        REDUCTION_QUIET_CHECK_BASE,
+        REDUCTION_QUIET_CHECK_DIVISOR,
         |depth, moves| depth.sqrt() * moves.ln(),
     );
 
     let tactical = reduction_surface(
-        statics.reduction_tactical_base,
-        statics.reduction_tactical_divisor,
+        REDUCTION_TACTICAL_BASE,
+        REDUCTION_TACTICAL_DIVISOR,
         |depth, moves| depth.ln() * moves.sqrt(),
     );
 
     let tactical_check = reduction_surface(
-        statics.reduction_tactical_check_base,
-        statics.reduction_tactical_check_divisor,
+        REDUCTION_TACTICAL_CHECK_BASE,
+        REDUCTION_TACTICAL_CHECK_DIVISOR,
         |depth, moves| depth.ln() * moves.ln(),
     );
 
@@ -1095,24 +1085,81 @@ pub fn derive_search_parameters(state: &mut State) {
     statics.qsearch_delta = qsearch_delta as i32;
 }
 
-/// derive_eval_parameters
+/// derive_base_pst
 ///
-/// Drives the evaluation half of parameter derivation: values every
-/// white piece for both phases (black twins copy them via the swap map),
-/// normalizes against the cheapest piece, assigns big/major/minor roles,
-/// derives the opening/endgame phase thresholds from the army the variant
-/// actually starts play with, and builds all piece-square tables (black
-/// tables are the white ones mirrored across the horizontal axis).
+/// Builds rule-derived opening and endgame PST bases for every piece. Loaded
+/// material must be final because promotion gradients use it. Black rows mirror
+/// their White twins across the horizontal axis.
 ///
 /// Params:
-/// - state: &mut State -> variant whose dynamic parameters are filled
-pub fn derive_eval_parameters(state: &mut State) {
-    log_3!("Deriving dynamic evaluation parameters...");
+/// - state: &State -> variant whose rule-derived PST bases are built
+///
+/// Return:
+/// (Vec<Vec<i32>>, Vec<Vec<i32>>) -> opening and endgame rows by piece index
+pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
+    let promoted_opening = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_ovalue!(piece) as f64)
+        .fold(0.0_f64, f64::max);
+    let promoted_endgame = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_evalue!(piece) as f64)
+        .fold(0.0_f64, f64::max);
 
-    let opening_occupancy =
-        state.statics.opening_occupancy as f64 / COEFFICIENT_SCALE;
-    let endgame_occupancy =
-        state.statics.endgame_occupancy as f64 / COEFFICIENT_SCALE;
+    let pst_entries: Vec<(usize, Vec<i32>, Vec<i32>)> =
+        state.statics.pieces.par_iter().map(|piece| {
+            let mut index = p_index!(piece);
+
+            if p_color!(piece) == BLACK {
+                index = state.statics.piece_swap_map[index as usize];
+            }
+
+            let mut opening_pst =
+                derive_pst(index, state, false, promoted_opening);
+            let mut endgame_pst =
+                derive_pst(index, state, true, promoted_endgame);
+
+            if p_color!(piece) == BLACK {
+                opening_pst = mirror_pst_across_horizontal_axis(
+                    &opening_pst,
+                    state.statics.files as usize,
+                    state.statics.ranks as usize
+                );
+                endgame_pst = mirror_pst_across_horizontal_axis(
+                    &endgame_pst,
+                    state.statics.files as usize,
+                    state.statics.ranks as usize
+                );
+
+                index = state.statics.piece_swap_map[index as usize];
+            }
+
+            (index as usize, opening_pst, endgame_pst)
+        }).collect();
+
+    let piece_count = state.statics.pieces.len();
+    let board_size = state.statics.board_size;
+    let mut opening = vec![vec![0; board_size]; piece_count];
+    let mut endgame = vec![vec![0; board_size]; piece_count];
+
+    for (index, opening_pst, endgame_pst) in pst_entries {
+        opening[index] = opening_pst;
+        endgame[index] = endgame_pst;
+    }
+
+    (opening, endgame)
+}
+
+/// derive_material_values
+///
+/// Derives opening and endgame material from movement rules. Role flags stay
+/// clear until the loaded-value post-pass ranks the finished material table.
+///
+/// Params:
+/// - state: &mut State -> variant whose material values are derived
+fn derive_material_values(state: &mut State) {
+    let opening_occupancy = OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
+    let endgame_occupancy = ENDGAME_OCCUPANCY as f64 / COEFFICIENT_SCALE;
 
     let values = state.statics.pieces
         .par_iter()
@@ -1149,6 +1196,29 @@ pub fn derive_eval_parameters(state: &mut State) {
             ovalue, evalue, false, false
         );
     }
+}
+
+/// derive_eval_parameters
+///
+/// Derives material from rules, then rebuilds every material-dependent
+/// evaluation product through the same post-load path used by payloads.
+///
+/// Params:
+/// - state: &mut State -> variant whose evaluation parameters are derived
+pub fn derive_eval_parameters(state: &mut State) {
+    derive_material_values(state);
+    derive_eval_products(state);
+}
+
+/// derive_eval_products
+///
+/// Rebuilds roles, phase thresholds, dynamic role counts, and rule-derived PST
+/// bases after final material values have loaded.
+///
+/// Params:
+/// - state: &mut State -> variant whose loaded-material products are rebuilt
+pub fn derive_eval_products(state: &mut State) {
+    log_3!("Deriving dynamic evaluation parameters...");
 
     let piece_roles = derive_piece_roles(state);
 
@@ -1189,7 +1259,7 @@ pub fn derive_eval_parameters(state: &mut State) {
 
     let opening_score = (mean_value * deployed_big).max(1);                     /* a variant with no big army still   */
     let endgame_score =                                                         /* needs a positive taper divisor     */
-        (mean_value * state.statics.endgame_army_size as u64)
+        (mean_value * ENDGAME_ARMY_SIZE as u64)
             .min(opening_score - 1);
 
     state.static_mut().opening_score = opening_score as u32;
@@ -1208,50 +1278,9 @@ pub fn derive_eval_parameters(state: &mut State) {
         state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
     }
 
-    let promoted_opening = state.statics.pieces.iter()
-        .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
-        .map(|p| p_ovalue!(p) as f64)
-        .fold(0.0_f64, f64::max);
-    let promoted_endgame = state.statics.pieces.iter()
-        .filter(|p| p_color!(p) == WHITE && !p_is_royal!(p))
-        .map(|p| p_evalue!(p) as f64)
-        .fold(0.0_f64, f64::max);
-
-    let pst_entries: Vec<(usize, Vec<i32>, Vec<i32>)> =
-        state.statics.pieces.par_iter().map(|piece| {
-            let mut index = p_index!(piece);
-
-            if p_color!(piece) == BLACK {
-                index = state.statics.piece_swap_map[index as usize];
-            }
-
-            let mut opening_pst =
-                derive_pst(index, state, false, promoted_opening);
-            let mut endgame_pst =
-                derive_pst(index, state, true, promoted_endgame);
-
-            if p_color!(piece) == BLACK {
-                opening_pst = mirror_pst_across_horizontal_axis(
-                    &opening_pst,
-                    state.statics.files as usize,
-                    state.statics.ranks as usize
-                );
-                endgame_pst = mirror_pst_across_horizontal_axis(
-                    &endgame_pst,
-                    state.statics.files as usize,
-                    state.statics.ranks as usize
-                );
-
-                index = state.statics.piece_swap_map[index as usize];
-            }
-
-            (index as usize, opening_pst, endgame_pst)
-        }).collect();
-
-    for (index, opening_pst, endgame_pst) in pst_entries {
-        state.static_mut().pst_opening[index] = opening_pst;
-        state.static_mut().pst_endgame[index] = endgame_pst;
-    }
+    let (pst_opening, pst_endgame) = derive_base_pst(state);
+    state.static_mut().pst_opening = pst_opening;
+    state.static_mut().pst_endgame = pst_endgame;
 
     log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
@@ -1384,17 +1413,13 @@ fn derive_royal_confinement(state: &State) -> [bool; 2] {
 
 /// derive_shelter_parameters
 ///
-/// Builds everything the royal shelter term reads. Two flat square lists
-/// are laid out with one fixed stride per origin square: the cover list
-/// holds every square within the shelter radius of that origin, and the
-/// shelter list holds the subset lying forward of it, one list per colour.
-/// A count per origin says how many of its slots a board edge left usable,
-/// so a corner royal reads three squares and a central one reads all
-/// eight, with no bounds arithmetic left for the evaluator.
+/// Builds everything the royal shelter term reads. One flat square list per
+/// colour holds squares inside the royal's local ring that lie forward of its
+/// origin. A count per origin records how many slots survive board edges, so
+/// evaluation needs no bounds arithmetic.
 ///
-/// Both piece values are priced off the dearest non-royal piece, the same
-/// piece the search margins are drawn against, so a variant whose army is
-/// cheap does not pay a fixed price for cover it cannot afford.
+/// Shelter is priced off the dearest non-royal piece, the same piece search
+/// margins use, so a variant whose army is cheap pays a proportionate value.
 ///
 /// Params:
 /// - state: &mut State -> variant whose shelter tables are rebuilt
@@ -1402,14 +1427,12 @@ pub fn derive_shelter_parameters(state: &mut State) {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
     let board_size = state.statics.board_size;
-    let radius = state.statics.shelter_radius as i32;
+    let radius = SHELTER_RADIUS as i32;
     let stride = (2 * radius + 1).pow(2) as usize - 1;                          /* the origin itself is never stored  */
 
     let forward = derive_forward_directions(state);
     let shield_pieces = derive_shield_pieces(state, radius);
 
-    let mut cover_squares = vec![0 as Square; board_size * stride];
-    let mut cover_counts = vec![0u8; board_size];
     let mut shelter_squares = [
         vec![0 as Square; board_size * stride],
         vec![0 as Square; board_size * stride]
@@ -1432,10 +1455,6 @@ pub fn derive_shelter_parameters(state: &mut State) {
                 }
 
                 let local = (local_rank * files + local_file) as Square;
-                let slot = cover_counts[square] as usize;
-
-                cover_squares[square * stride + slot] = local;
-                cover_counts[square] += 1;
 
                 for color in [WHITE as usize, BLACK as usize] {
                     if rank_offset * forward[color] <= 0 {
@@ -1466,15 +1485,15 @@ pub fn derive_shelter_parameters(state: &mut State) {
         .max()
         .unwrap_or(0);
 
-    let shelter_value = (dearest * state.statics.shelter_ratio as u64
-        / COEFFICIENT_SCALE as u64).max(state.statics.shelter_floor as u64);
-    let cover_value = (dearest * state.statics.cover_ratio as u64
-        / COEFFICIENT_SCALE as u64).max(state.statics.cover_floor as u64);
+    let shelter_value = (dearest * SHELTER_RATIO as u64
+        / COEFFICIENT_SCALE as u64).max(SHELTER_FLOOR as u64);
 
     log_3!(
-        "Derived shelter worth {} and cover worth {} per piece, \
-         {} of {} piece types shield-like, royals confined {:?}",
-        shelter_value, cover_value,
+        concat!(
+            "Derived shelter worth {} per piece, {} of {} piece types ",
+            "shield-like, royals confined {:?}"
+        ),
+        shelter_value,
         shield_pieces.iter().filter(|shield| **shield).count(),
         shield_pieces.len(),
         confined
@@ -1485,9 +1504,6 @@ pub fn derive_shelter_parameters(state: &mut State) {
     statics.shield_pieces = shield_pieces;
     statics.shelter_squares = shelter_squares;
     statics.shelter_counts = shelter_counts;
-    statics.cover_squares = cover_squares;
-    statics.cover_counts = cover_counts;
     statics.local_stride = stride;
     statics.shelter_value = shelter_value as i32;
-    statics.cover_value = cover_value as i32;
 }

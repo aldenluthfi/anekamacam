@@ -266,10 +266,10 @@ pub fn iterative_deepening(
     clear_search(state, ttable, qtable, info);
 
     let scale = COEFFICIENT_SCALE as i64;
-    let start_depth = state.statics.aspiration_start_depth as usize;
+    let start_depth = ASPIRATION_START_DEPTH as usize;
     let opening_delta = state.statics.aspiration_delta as i64;
-    let widen = state.statics.aspiration_widen as i64;
-    let widest = opening_delta * state.statics.aspiration_clamp as i64 / scale;
+    let widen = ASPIRATION_WIDEN as i64;
+    let widest = opening_delta * ASPIRATION_CLAMP as i64 / scale;
 
     for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
@@ -715,7 +715,7 @@ pub fn alpha_beta(
         && info.eval_stack[ply - 2] != EVAL_NONE
         && static_eval > info.eval_stack[ply - 2];
 
-    let deepest = state.statics.rfp_depth as usize;
+    let deepest = RFP_DEPTH as usize;
     let row = improving as usize * (deepest + 1);                               /* the rising side asks for less     */
 
     if !in_check
@@ -761,13 +761,13 @@ pub fn alpha_beta(
     let board_size = state.statics.board_size;
     let history_bonus = (depth * depth) as i32;
 
-    let minimum_depth = state.statics.reduction_minimum_depth as usize;
-    let move_base = state.statics.reduction_move_base as usize;
-    let move_wide = state.statics.reduction_move_wide as usize;
+    let minimum_depth = REDUCTION_MINIMUM_DEPTH as usize;
+    let move_base = REDUCTION_MOVE_BASE as usize;
+    let move_wide = REDUCTION_MOVE_WIDE as usize;
 
-    let futility_deepest = state.statics.futility_depth as usize;
-    let lmp_deepest = state.statics.lmp_depth as usize;
-    let see_deepest = state.statics.see_prune_depth as usize;
+    let futility_deepest = FUTILITY_DEPTH as usize;
+    let lmp_deepest = LMP_DEPTH as usize;
+    let see_deepest = SEE_PRUNE_DEPTH as usize;
 
     let futility_row = improving as usize * (futility_deepest + 1);
     let lmp_row = improving as usize * (lmp_deepest + 1);

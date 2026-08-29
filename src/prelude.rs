@@ -78,7 +78,7 @@ pub use crate::game::search::{
     parallel::ThreadPool,
     parameters::{
         ASPIRATION_CLAMP, ASPIRATION_RATIO, ASPIRATION_START_DEPTH,
-        ASPIRATION_WIDEN, COEFFICIENT_SCALE, COVER_FLOOR, COVER_RATIO,
+        ASPIRATION_WIDEN, COEFFICIENT_SCALE,
         ENDGAME_ARMY_SIZE, ENDGAME_OCCUPANCY, FUTILITY_DEPTH, FUTILITY_FLOOR,
         FUTILITY_IMPROVING, FUTILITY_RATIO, LMP_BASE, LMP_DEPTH,
         LMP_IMPROVING, LMP_RATIO, OPENING_OCCUPANCY,
@@ -91,8 +91,8 @@ pub use crate::game::search::{
         ROLE_MAJOR_SPLIT, ROLE_NON_BIG_SPLIT, SEE_PRUNE_DEPTH,
         SEE_PRUNE_RATIO, SHELTER_CAP, SHELTER_CONFINEMENT_DIVISOR,
         SHELTER_FLOOR, SHELTER_RADIUS, SHELTER_RATIO,
-        derive_eval_parameters, derive_parameters,
-        derive_search_parameters, derive_shelter_parameters,
+        derive_base_pst, derive_eval_parameters, derive_eval_products,
+        derive_parameters, derive_search_parameters, derive_shelter_parameters,
         reduction_surface,
     },
     transposition::{QTable, QTEntry, TTEntry, TTable},
@@ -114,12 +114,12 @@ pub use crate::io::board_io::{
     format_square, mirror_pst_across_horizontal_axis, parse_square,
 };
 pub use crate::io::game_io::{
-    combine_board_strings, export_tuned_parameters_file, format_castling_rights,
+    combine_board_strings, export_tuned_parameters_file,
+    format_castling_rights,
     format_en_passant_square, format_fen, format_game_phase, format_game_result,
     format_game_state, format_hand, format_position_hash, format_special_rules,
     parse_config_file,
-    parse_config_preview, parse_fen, parse_tuned_parameters,
-    scalar_parameter_tokens
+    parse_config_preview, parse_fen, parse_tuned_parameters
 };
 pub use crate::io::logger::{
     configured_log_level, configured_verbosity_level, dec_verbosity,
@@ -527,8 +527,6 @@ pub const SETUP: u8 = 0;
 pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
 pub const ENDGAME: u8 = 3;
-
-pub const PARAM_SCALAR_COUNT: usize = 40;                                       /* derivation scalars per payload     */
 
 pub const LOG_DIR: &str = "logs";
 pub const PARAMS_DIR: &str = "res/param";

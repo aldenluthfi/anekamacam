@@ -169,368 +169,25 @@ fn validate_castling(fen: &str, state: &State) -> bool {
     valid
 }
 
-/// apply_scalar_parameters
-///
-/// Writes a payload's trailing derivation coefficients into the static
-/// state, in the one order the schema defines. Adding a coefficient means
-/// appending a slot here and in `scalar_parameter_tokens`, raising
-/// `PARAM_SCALAR_COUNT`, and regenerating every shipped payload in the
-/// same change.
-///
-/// Coefficients that feed a runtime table are followed by the derivation
-/// that rebuilds it, so no payload can leave a table still describing the
-/// curves of the one before it.
-///
-/// Params:
-/// - state  : &mut State -> variant receiving the coefficients
-/// - scalars: &[i32]     -> the trailing `PARAM_SCALAR_COUNT` tokens
-fn apply_scalar_parameters(state: &mut State, scalars: &[i32]) {
-    assert_eq!(
-        scalars.len(), PARAM_SCALAR_COUNT,
-        "Scalar tail length mismatch: expected {}, found {}.",
-        PARAM_SCALAR_COUNT, scalars.len()
-    );
-
-    let fractions = [scalars[0], scalars[1], scalars[2], scalars[3]];
-
-    for (slot, value) in fractions.iter().enumerate() {
-        assert!(
-            (0..=COEFFICIENT_SCALE as i32).contains(value),
-            "Scalar {} is a fraction of {} and must be within it, got {}",
-            slot, COEFFICIENT_SCALE as i32, value
-        );
-    }
-
-    assert!(
-        scalars[4] >= 0,
-        "Scalar 4 counts pieces and cannot be negative, got {}",
-        scalars[4]
-    );
-
-    for slot in 5..=8 {
-        assert!(
-            scalars[slot] >= 0,
-            "Scalar {} bases a reduction curve and cannot be negative, \
-            got {}",
-            slot, scalars[slot]
-        );
-    }
-
-    for slot in 9..=12 {
-        assert!(
-            scalars[slot] > 0,
-            "Scalar {} divides a reduction curve and must be positive, \
-            got {}",
-            slot, scalars[slot]
-        );
-    }
-
-    assert!(
-        scalars[13] >= 1,
-        "Scalar 13 is the shallowest reducible depth, got {}",
-        scalars[13]
-    );
-
-    for slot in 14..=15 {
-        assert!(
-            scalars[slot] >= 0,
-            "Scalar {} gates reductions by move count and cannot be \
-            negative, got {}",
-            slot, scalars[slot]
-        );
-    }
-
-    assert!(
-        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[16]),
-        "Scalar 16 is a fraction of {} and must be within it, got {}",
-        COEFFICIENT_SCALE as i32, scalars[16]
-    );
-
-    assert!(
-        scalars[17] >= COEFFICIENT_SCALE as i32,
-        "Scalar 17 clamps the window against the width it opened at and \
-        cannot fall under {}, got {}",
-        COEFFICIENT_SCALE as i32, scalars[17]
-    );
-
-    assert!(
-        scalars[18] > COEFFICIENT_SCALE as i32,
-        "Scalar 18 widens a failed side and must exceed {} for the \
-        widening to terminate, got {}",
-        COEFFICIENT_SCALE as i32, scalars[18]
-    );
-
-    assert!(
-        scalars[19] >= 1,
-        "Scalar 19 is the shallowest narrowed iteration, got {}",
-        scalars[19]
-    );
-
-    assert!(
-        scalars[20] > 0,
-        "Scalar 20 prices the futility margin per ply and must be \
-        positive, got {}",
-        scalars[20]
-    );
-
-    assert!(
-        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[21]),
-        "Scalar 21 is a fraction of {} and must be within it, got {}",
-        COEFFICIENT_SCALE as i32, scalars[21]
-    );
-
-    assert!(
-        scalars[22] >= 1,
-        "Scalar 22 is the deepest node cutting on its evaluation, got {}",
-        scalars[22]
-    );
-
-    assert!(
-        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[23]),
-        "Scalar 23 is a fraction of {} and must be within it, got {}",
-        COEFFICIENT_SCALE as i32, scalars[23]
-    );
-
-    assert!(
-        scalars[24] > 0,
-        "Scalar 24 prices the alpha cushion per ply and must be \
-        positive, got {}",
-        scalars[24]
-    );
-
-    assert!(
-        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[25]),
-        "Scalar 25 is a fraction of {} and must be within it, got {}",
-        COEFFICIENT_SCALE as i32, scalars[25]
-    );
-
-    assert!(
-        scalars[26] >= 1,
-        "Scalar 26 is the deepest node skipping late quiets, got {}",
-        scalars[26]
-    );
-
-    assert!(
-        scalars[27] >= 1,
-        "Scalar 27 is how many moves a node orders before the count \
-        applies and must leave it one, got {}",
-        scalars[27]
-    );
-
-    assert!(
-        scalars[28] > 0,
-        "Scalar 28 prices the move count against depth and must be \
-        positive, got {}",
-        scalars[28]
-    );
-
-    assert!(
-        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[29]),
-        "Scalar 29 is a fraction of {} and must be within it, got {}",
-        COEFFICIENT_SCALE as i32, scalars[29]
-    );
-
-    assert!(
-        scalars[30] >= 1,
-        "Scalar 30 is the deepest row the counts are built to, got {}",
-        scalars[30]
-    );
-
-    assert!(
-        scalars[31] > 0,
-        "Scalar 31 prices the loss a capture may show and must be \
-        positive, got {}",
-        scalars[31]
-    );
-
-    assert!(
-        scalars[32] >= 1,
-        "Scalar 32 is the deepest node dropping a capture, got {}",
-        scalars[32]
-    );
-
-    assert!(
-        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[33]),
-        "Scalar 33 is a fraction of {} and must be within it, got {}",
-        COEFFICIENT_SCALE as i32, scalars[33]
-    );
-
-    assert!(
-        scalars[34] >= 1,
-        "Scalar 34 is how far from a royal the shelter reaches and must \
-        reach a square, got {}",
-        scalars[34]
-    );
-
-    assert!(
-        scalars[35] >= 1,
-        "Scalar 35 is how many pieces a royal is paid for and must leave \
-        it one, got {}",
-        scalars[35]
-    );
-
-    assert!(
-        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[36]),
-        "Scalar 36 is a fraction of {} and must be within it, got {}",
-        COEFFICIENT_SCALE as i32, scalars[36]
-    );
-
-    assert!(
-        scalars[37] >= 0,
-        "Scalar 37 is the least a sheltering piece is worth, got {}",
-        scalars[37]
-    );
-
-    assert!(
-        (0..=COEFFICIENT_SCALE as i32).contains(&scalars[38]),
-        "Scalar 38 is a fraction of {} and must be within it, got {}",
-        COEFFICIENT_SCALE as i32, scalars[38]
-    );
-
-    assert!(
-        scalars[39] >= 0,
-        "Scalar 39 is the least a covering piece is worth, got {}",
-        scalars[39]
-    );
-
-    let statics = state.static_mut();
-
-    statics.opening_occupancy = scalars[0].unsigned_abs();
-    statics.endgame_occupancy = scalars[1].unsigned_abs();
-    statics.role_non_big_split = scalars[2].unsigned_abs();
-    statics.role_major_split = scalars[3].unsigned_abs();
-    statics.endgame_army_size = scalars[4].unsigned_abs();
-
-    statics.reduction_quiet_base = scalars[5].unsigned_abs();
-    statics.reduction_quiet_check_base = scalars[6].unsigned_abs();
-    statics.reduction_tactical_base = scalars[7].unsigned_abs();
-    statics.reduction_tactical_check_base = scalars[8].unsigned_abs();
-
-    statics.reduction_quiet_divisor = scalars[9].unsigned_abs();
-    statics.reduction_quiet_check_divisor = scalars[10].unsigned_abs();
-    statics.reduction_tactical_divisor = scalars[11].unsigned_abs();
-    statics.reduction_tactical_check_divisor = scalars[12].unsigned_abs();
-
-    statics.reduction_minimum_depth = scalars[13].unsigned_abs();
-    statics.reduction_move_base = scalars[14].unsigned_abs();
-    statics.reduction_move_wide = scalars[15].unsigned_abs();
-
-    statics.aspiration_ratio = scalars[16].unsigned_abs();
-    statics.aspiration_clamp = scalars[17].unsigned_abs();
-    statics.aspiration_widen = scalars[18].unsigned_abs();
-    statics.aspiration_start_depth = scalars[19].unsigned_abs();
-
-    statics.rfp_ratio = scalars[20].unsigned_abs();
-    statics.rfp_improving = scalars[21].unsigned_abs();
-    statics.rfp_depth = scalars[22].unsigned_abs();
-
-    statics.futility_floor = scalars[23].unsigned_abs();
-    statics.futility_ratio = scalars[24].unsigned_abs();
-    statics.futility_improving = scalars[25].unsigned_abs();
-    statics.futility_depth = scalars[26].unsigned_abs();
-
-    statics.lmp_base = scalars[27].unsigned_abs();
-    statics.lmp_ratio = scalars[28].unsigned_abs();
-    statics.lmp_improving = scalars[29].unsigned_abs();
-    statics.lmp_depth = scalars[30].unsigned_abs();
-
-    statics.see_prune_ratio = scalars[31].unsigned_abs();
-    statics.see_prune_depth = scalars[32].unsigned_abs();
-
-    statics.qsearch_delta_ratio = scalars[33].unsigned_abs();
-
-    statics.shelter_radius = scalars[34].unsigned_abs();
-    statics.shelter_cap = scalars[35].unsigned_abs();
-    statics.shelter_ratio = scalars[36].unsigned_abs();
-    statics.shelter_floor = scalars[37].unsigned_abs();
-    statics.cover_ratio = scalars[38].unsigned_abs();
-    statics.cover_floor = scalars[39].unsigned_abs();
-
-    derive_search_parameters(state);
-    derive_shelter_parameters(state);
-}
-
-/// scalar_parameter_tokens
-///
-/// Serializes the derivation coefficients in the same order
-/// `apply_scalar_parameters` reads them back, so the reader and every
-/// writer cannot drift apart.
-///
-/// Params:
-/// - state: &State -> variant whose coefficients are serialized
-///
-/// Return:
-/// Vec<String>     -> exactly `PARAM_SCALAR_COUNT` tokens
-pub fn scalar_parameter_tokens(state: &State) -> Vec<String> {
-    vec![
-        state.statics.opening_occupancy.to_string(),
-        state.statics.endgame_occupancy.to_string(),
-        state.statics.role_non_big_split.to_string(),
-        state.statics.role_major_split.to_string(),
-        state.statics.endgame_army_size.to_string(),
-        state.statics.reduction_quiet_base.to_string(),
-        state.statics.reduction_quiet_check_base.to_string(),
-        state.statics.reduction_tactical_base.to_string(),
-        state.statics.reduction_tactical_check_base.to_string(),
-        state.statics.reduction_quiet_divisor.to_string(),
-        state.statics.reduction_quiet_check_divisor.to_string(),
-        state.statics.reduction_tactical_divisor.to_string(),
-        state.statics.reduction_tactical_check_divisor.to_string(),
-        state.statics.reduction_minimum_depth.to_string(),
-        state.statics.reduction_move_base.to_string(),
-        state.statics.reduction_move_wide.to_string(),
-        state.statics.aspiration_ratio.to_string(),
-        state.statics.aspiration_clamp.to_string(),
-        state.statics.aspiration_widen.to_string(),
-        state.statics.aspiration_start_depth.to_string(),
-        state.statics.rfp_ratio.to_string(),
-        state.statics.rfp_improving.to_string(),
-        state.statics.rfp_depth.to_string(),
-        state.statics.futility_floor.to_string(),
-        state.statics.futility_ratio.to_string(),
-        state.statics.futility_improving.to_string(),
-        state.statics.futility_depth.to_string(),
-        state.statics.lmp_base.to_string(),
-        state.statics.lmp_ratio.to_string(),
-        state.statics.lmp_improving.to_string(),
-        state.statics.lmp_depth.to_string(),
-        state.statics.see_prune_ratio.to_string(),
-        state.statics.see_prune_depth.to_string(),
-        state.statics.qsearch_delta_ratio.to_string(),
-        state.statics.shelter_radius.to_string(),
-        state.statics.shelter_cap.to_string(),
-        state.statics.shelter_ratio.to_string(),
-        state.statics.shelter_floor.to_string(),
-        state.statics.cover_ratio.to_string(),
-        state.statics.cover_floor.to_string(),
-    ]
-}
-
 /// parse_tuned_parameters
 ///
-/// Parses tuned parameters from a flat space-separated string.
+/// Parses one material-and-PST-residual payload. Material loads first, then
+/// roles, phase thresholds, search parameters, shelter, and rule-derived PST
+/// bases are rebuilt. Residual rows are added only after their bases exist.
 ///
 /// Token order:
 ///
-/// 1. opening phase score, endgame phase score,
-/// 2. opening values (piece-type count), endgame values (piece-type count),
-/// 3. big flags, major flags,
-/// 4. per piece type, its white opening PST row then its white endgame PST
-///    row, each board_size long,
-/// 5. the `PARAM_SCALAR_COUNT` derivation scalars, in the order given by
-///    `apply_scalar_parameters`
+/// 1. opening material values, one per piece type,
+/// 2. endgame material values, one per piece type,
+/// 3. per piece type, its White opening PST residual row then its White
+///    endgame PST residual row, each `board_size` long.
 ///
-/// Black PST rows are derived by mirroring white rows across the
-/// horizontal axis.
-///
-/// There is one accepted payload shape. A file whose length does not match
-/// the shape this build emits is rejected rather than partially read: every
-/// shipped payload is regenerated whenever the shape changes, so a
-/// mismatch means a stale file, not an older dialect to support.
+/// Black final PST rows mirror White final rows across the horizontal axis.
+/// One exact payload shape is accepted; stale shapes fail by token count.
 ///
 /// Params:
-/// - state  : &mut State -> variant whose parameters are overwritten
-/// - content: &str       -> flat space-separated parameter dump
+/// - state  : &mut State -> variant whose parameters are loaded
+/// - content: &str       -> flat space-separated parameter payload
 pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let tokens: Vec<i32> = content
         .split_whitespace()
@@ -544,144 +201,111 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let piece_type_pairs = collect_piece_type_pairs(state);
     let piece_type_count = piece_type_pairs.len();
     let board_size = state.statics.board_size;
-    let expected_count = 2
-        + piece_type_count * 4
-        + piece_type_count * board_size * 2
-        + PARAM_SCALAR_COUNT;
+    let expected_count = 2 * piece_type_count
+        + 2 * piece_type_count * board_size;
 
     assert_eq!(
         tokens.len(), expected_count,
-        "Parameter count mismatch: expected {} tokens for {} piece types on \
-         {} squares plus {} scalars, found {}.",
-        expected_count, piece_type_count, board_size,
-        PARAM_SCALAR_COUNT, tokens.len()
+        concat!(
+            "Parameter count mismatch: expected {} tokens for {} piece ",
+            "types on {} squares, found {}."
+        ),
+        expected_count, piece_type_count, board_size, tokens.len()
     );
 
     let mut cursor = 0usize;
-
-    state.static_mut().opening_score = tokens[cursor]
-        .unsigned_abs();
-    cursor += 1;
-
-    state.static_mut().endgame_score = tokens[cursor]
-        .unsigned_abs();
-    cursor += 1;
-
-    let ovalues = &tokens[cursor..cursor + piece_type_count];
+    let opening_values = &tokens[cursor..cursor + piece_type_count];
     cursor += piece_type_count;
-
-    let evalues = &tokens[cursor..cursor + piece_type_count];
+    let endgame_values = &tokens[cursor..cursor + piece_type_count];
     cursor += piece_type_count;
+    let mut residuals = Vec::with_capacity(piece_type_count);
 
-    let big_flags = &tokens[cursor..cursor + piece_type_count];
-    cursor += piece_type_count;
-
-    let major_flags = &tokens[cursor..cursor + piece_type_count];
-    cursor += piece_type_count;
-
-    for piece_type_idx in 0..piece_type_count {
-        let ovalue_i32 = ovalues[piece_type_idx];
-        let evalue_i32 = evalues[piece_type_idx];
-        let abs_ovalue = ovalue_i32.unsigned_abs();
-        let abs_evalue = evalue_i32.unsigned_abs();
+    for piece_type_index in 0..piece_type_count {
+        let opening_value = opening_values[piece_type_index];
+        let endgame_value = endgame_values[piece_type_index];
+        let absolute_opening = opening_value.unsigned_abs();
+        let absolute_endgame = endgame_value.unsigned_abs();
 
         assert!(
-            abs_ovalue <= 0x3FFF,
+            absolute_opening <= 0x3FFF,
             "Opening piece value out of range at index {}: {}",
-            piece_type_idx,
-            ovalue_i32
+            piece_type_index,
+            opening_value
         );
-
         assert!(
-            abs_evalue <= 0x3FFF,
+            absolute_endgame <= 0x3FFF,
             "Endgame piece value out of range at index {}: {}",
-            piece_type_idx,
-            evalue_i32
+            piece_type_index,
+            endgame_value
         );
 
-        let big_flag = big_flags[piece_type_idx];
-        assert!(
-            big_flag == 0 || big_flag == 1,
-            "Big flag must be 0 or 1 at index {}, got {}",
-            piece_type_idx,
-            big_flag
-        );
-
-        let major_flag = major_flags[piece_type_idx];
-        assert!(
-            major_flag == 0 || major_flag == 1,
-            "Major flag must be 0 or 1 at index {}, got {}",
-            piece_type_idx,
-            major_flag
-        );
-
-        let white_pst_opening = &tokens[cursor..cursor + board_size];
+        let opening = tokens[cursor..cursor + board_size].to_vec();
         cursor += board_size;
-
-        let white_pst_endgame = &tokens[cursor..cursor + board_size];
+        let endgame = tokens[cursor..cursor + board_size].to_vec();
         cursor += board_size;
+        residuals.push((opening, endgame));
 
-        let (white_idx, black_idx) = piece_type_pairs[piece_type_idx];
+        let (white_index, black_index) = piece_type_pairs[piece_type_index];
 
         set_piece_dynamic_parameters(
-            &mut state.static_mut().pieces[white_idx],
-            abs_ovalue as u16,
-            abs_evalue as u16,
-            big_flag == 1,
-            major_flag == 1,
+            &mut state.static_mut().pieces[white_index],
+            absolute_opening as u16,
+            absolute_endgame as u16,
+            false,
+            false,
         );
-
         set_piece_dynamic_parameters(
-            &mut state.static_mut().pieces[black_idx],
-            abs_ovalue as u16,
-            abs_evalue as u16,
-            big_flag == 1,
-            major_flag == 1,
+            &mut state.static_mut().pieces[black_index],
+            absolute_opening as u16,
+            absolute_endgame as u16,
+            false,
+            false,
         );
+    }
 
-        state.static_mut().pst_opening[white_idx] = white_pst_opening.to_vec();
-        state.static_mut().pst_opening[black_idx] =
+    derive_eval_products(state);
+
+    for (piece_type_index, (white_index, black_index)) in
+        piece_type_pairs.iter().copied().enumerate()
+    {
+        let (opening_residual, endgame_residual) = &residuals[piece_type_index];
+        let opening = state.statics.pst_opening[white_index]
+            .iter()
+            .zip(opening_residual)
+            .map(|(base, residual)| base + residual)
+            .collect::<Vec<_>>();
+        let endgame = state.statics.pst_endgame[white_index]
+            .iter()
+            .zip(endgame_residual)
+            .map(|(base, residual)| base + residual)
+            .collect::<Vec<_>>();
+
+        state.static_mut().pst_opening[white_index] = opening.clone();
+        state.static_mut().pst_opening[black_index] =
             mirror_pst_across_horizontal_axis(
-                white_pst_opening,
+                &opening,
                 state.statics.files as usize,
                 state.statics.ranks as usize,
             );
-
-        state.static_mut().pst_endgame[white_idx] = white_pst_endgame.to_vec();
-        state.static_mut().pst_endgame[black_idx] =
+        state.static_mut().pst_endgame[white_index] = endgame.clone();
+        state.static_mut().pst_endgame[black_index] =
             mirror_pst_across_horizontal_axis(
-                white_pst_endgame,
+                &endgame,
                 state.statics.files as usize,
                 state.statics.ranks as usize,
             );
     }
 
-    apply_scalar_parameters(state, &tokens[cursor..]);
-
-    state.big_pieces = [0; 2];
-    state.major_pieces = [0; 2];
-    state.minor_pieces = [0; 2];
-
-    for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
-        let color = p_color!(piece) as usize;
-        let count = state.piece_count[piece_idx];
-
-        state.big_pieces[color] += count * (p_is_big!(piece) as u32);
-        state.major_pieces[color] += count * (p_is_major!(piece) as u32);
-        state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
-    }
-
+    derive_search_parameters(state);
+    derive_shelter_parameters(state);
     refresh_eval_state(state);
 }
 
 /// export_tuned_parameters_file
 ///
-/// Exports tuned parameters to `parameters/{variant}/latest.param`,
-/// first rolling any existing `latest.param` to a timestamped backup via
-/// `roll_latest`.
-///
-/// Used to save parameters tuned by Texel's Tuning method and to avoid
-/// recomputing parameters from scratch when restarting the engine.
+/// Exports material and final-PST residuals to
+/// `res/param/{variant}/latest.param`, first rolling any current payload to a
+/// timestamped backup through `roll_latest`.
 ///
 /// Params:
 /// - state: &State -> variant whose parameters are serialized
@@ -692,53 +316,42 @@ pub fn export_tuned_parameters_file(
     assert!(!variant.trim().is_empty(), "Variant name cannot be empty");
 
     let piece_type_pairs = collect_piece_type_pairs(state);
+    let (base_opening, base_endgame) = derive_base_pst(state);
     let mut output_tokens = Vec::new();
 
-    output_tokens.push(state.statics.opening_score.to_string());
-    output_tokens.push(state.statics.endgame_score.to_string());
-
-    for (white_idx, _) in &piece_type_pairs {
+    for (white_index, _) in &piece_type_pairs {
         output_tokens.push(
-            p_ovalue!(state.statics.pieces[*white_idx]).to_string()
+            p_ovalue!(state.statics.pieces[*white_index]).to_string()
         );
     }
 
-    for (white_idx, _) in &piece_type_pairs {
+    for (white_index, _) in &piece_type_pairs {
         output_tokens.push(
-            p_evalue!(state.statics.pieces[*white_idx]).to_string()
+            p_evalue!(state.statics.pieces[*white_index]).to_string()
         );
     }
 
-    for (white_idx, _) in &piece_type_pairs {
-        output_tokens.push(
-            (p_is_big!(&state.statics.pieces[*white_idx]) as u8).to_string()
-        );
-    }
-
-    for (white_idx, _) in &piece_type_pairs {
-        output_tokens.push(
-            (p_is_major!(&state.statics.pieces[*white_idx])
-                as u8).to_string()
-        );
-    }
-
-    for (white_idx, _) in &piece_type_pairs {
-        for value in &state.statics.pst_opening[*white_idx] {
-            output_tokens.push(value.to_string());
+    for (white_index, _) in &piece_type_pairs {
+        for square in 0..state.statics.board_size {
+            output_tokens.push(
+                (state.statics.pst_opening[*white_index][square]
+                    - base_opening[*white_index][square]).to_string()
+            );
         }
 
-        for value in &state.statics.pst_endgame[*white_idx] {
-            output_tokens.push(value.to_string());
+        for square in 0..state.statics.board_size {
+            output_tokens.push(
+                (state.statics.pst_endgame[*white_index][square]
+                    - base_endgame[*white_index][square]).to_string()
+            );
         }
     }
-
-    output_tokens.extend(scalar_parameter_tokens(state));
 
     let dir_path = format!("{}/{}", PARAMS_DIR, variant);
 
     if !Path::new(&dir_path).exists() {
-        fs::create_dir_all(&dir_path).unwrap_or_else(|e| {
-            panic!("Failed to create directory {}: {}", dir_path, e)
+        fs::create_dir_all(&dir_path).unwrap_or_else(|error| {
+            panic!("Failed to create directory {}: {}", dir_path, error)
         });
     }
 
@@ -746,8 +359,8 @@ pub fn export_tuned_parameters_file(
 
     roll_latest(&dir_path, "", "param");
 
-    fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|e| {
-        panic!("Failed to write parameter file {}: {}", file_path, e)
+    fs::write(&file_path, output_tokens.join(" ")).unwrap_or_else(|error| {
+        panic!("Failed to write parameter file {}: {}", file_path, error)
     });
 }
 

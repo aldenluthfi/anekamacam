@@ -518,11 +518,8 @@ pub struct StaticState {
     pub shield_pieces: Vec<bool>,                                               /* piece index to shield-like role    */
     pub shelter_squares: [Vec<Square>; 2],                                      /* color to forward local squares     */
     pub shelter_counts: [Vec<u8>; 2],                                           /* squares stored per origin above    */
-    pub cover_squares: Vec<Square>,                                             /* every local square, either color   */
-    pub cover_counts: Vec<u8>,                                                  /* squares stored per origin above    */
-    pub local_stride: usize,                                                    /* slots each origin owns in both     */
+    pub local_stride: usize,                                                    /* slots each origin owns             */
     pub shelter_value: i32,                                                     /* worth of one sheltering piece      */
-    pub cover_value: i32,                                                       /* worth of one covering piece        */
 
 /*----------------------------------------------------------------------------*\
                                  SEARCH FIELDS
@@ -539,61 +536,6 @@ pub struct StaticState {
     pub lmp_count: Vec<usize>,                                                  /* moves ordered, improving major     */
     pub see_allowance: Vec<i32>,                                                /* loss a capture may show, by depth  */
     pub qsearch_delta: i32,                                                     /* gain a leaf capture must promise   */
-
-/*----------------------------------------------------------------------------*\
-                              DERIVATION SCALARS
-\*----------------------------------------------------------------------------*/
-
-    pub opening_occupancy: u32,                                                 /* blocked-square fraction, x1000     */
-    pub endgame_occupancy: u32,                                                 /* blocked-square fraction, x1000     */
-    pub role_non_big_split: u32,                                                /* cheapest non-big share, x1000      */
-    pub role_major_split: u32,                                                  /* dearest major share, x1000         */
-    pub endgame_army_size: u32,                                                 /* endgame at this many mean pieces   */
-
-    pub reduction_quiet_base: u32,                                              /* curve base, x1000, one per         */
-    pub reduction_quiet_check_base: u32,                                        /* reduction surface above            */
-    pub reduction_tactical_base: u32,
-    pub reduction_tactical_check_base: u32,
-
-    pub reduction_quiet_divisor: u32,                                           /* curve divisor, x1000, one per      */
-    pub reduction_quiet_check_divisor: u32,                                     /* reduction surface above            */
-    pub reduction_tactical_divisor: u32,
-    pub reduction_tactical_check_divisor: u32,
-
-    pub reduction_minimum_depth: u32,                                           /* shallowest reducible depth         */
-    pub reduction_move_base: u32,                                               /* move-count gate, and how much      */
-    pub reduction_move_wide: u32,                                               /* wider it sits on a full window     */
-
-    pub aspiration_ratio: u32,                                                  /* share of the dearest piece, x1000  */
-    pub aspiration_clamp: u32,                                                  /* widest window kept, x1000 of delta */
-    pub aspiration_widen: u32,                                                  /* growth per failed side, x1000      */
-    pub aspiration_start_depth: u32,                                            /* shallowest narrowed iteration      */
-
-    pub rfp_ratio: u32,                                                         /* share of the dearest piece, x1000  */
-    pub rfp_improving: u32,                                                     /* rising side's share, x1000 of flat */
-    pub rfp_depth: u32,                                                         /* deepest node allowed to cut early  */
-
-    pub futility_floor: u32,                                                    /* share of the dearest piece, x1000  */
-    pub futility_ratio: u32,                                                    /* share added per ply, x1000         */
-    pub futility_improving: u32,                                                /* flat side's share, x1000 of risen  */
-    pub futility_depth: u32,                                                    /* deepest node skipping late quiets  */
-
-    pub lmp_base: u32,                                                          /* moves ordered before the curve     */
-    pub lmp_ratio: u32,                                                         /* share of the squared depth, x1000  */
-    pub lmp_improving: u32,                                                     /* flat side's share, x1000 of risen  */
-    pub lmp_depth: u32,                                                         /* deepest row the counts are built   */
-
-    pub see_prune_ratio: u32,                                                   /* share of the dearest piece, x1000  */
-    pub see_prune_depth: u32,                                                   /* deepest node dropping a capture    */
-
-    pub qsearch_delta_ratio: u32,                                               /* share of the dearest piece, x1000  */
-
-    pub shelter_radius: u32,                                                    /* steps out the local ring reaches   */
-    pub shelter_cap: u32,                                                       /* sheltering pieces still counted    */
-    pub shelter_ratio: u32,                                                     /* share of the dearest piece, x1000  */
-    pub shelter_floor: u32,                                                     /* least worth of one shelter, raw    */
-    pub cover_ratio: u32,                                                       /* share of the dearest piece, x1000  */
-    pub cover_floor: u32,                                                       /* least worth of one cover, raw      */
 }
 
 /// State
@@ -770,11 +712,8 @@ impl State {
             shield_pieces: vec![false; piece_count],
             shelter_squares: [Vec::new(), Vec::new()],
             shelter_counts: [Vec::new(), Vec::new()],
-            cover_squares: Vec::new(),
-            cover_counts: Vec::new(),
             local_stride: 0,
             shelter_value: 0,
-            cover_value: 0,
 
             reduction_quiet: Vec::new(),
             reduction_quiet_check: Vec::new(),
@@ -787,57 +726,6 @@ impl State {
             lmp_count: Vec::new(),
             see_allowance: Vec::new(),
             qsearch_delta: 0,
-
-            opening_occupancy: OPENING_OCCUPANCY,
-            endgame_occupancy: ENDGAME_OCCUPANCY,
-            role_non_big_split: ROLE_NON_BIG_SPLIT,
-            role_major_split: ROLE_MAJOR_SPLIT,
-            endgame_army_size: ENDGAME_ARMY_SIZE,
-
-            reduction_quiet_base: REDUCTION_QUIET_BASE,
-            reduction_quiet_check_base: REDUCTION_QUIET_CHECK_BASE,
-            reduction_tactical_base: REDUCTION_TACTICAL_BASE,
-            reduction_tactical_check_base: REDUCTION_TACTICAL_CHECK_BASE,
-
-            reduction_quiet_divisor: REDUCTION_QUIET_DIVISOR,
-            reduction_quiet_check_divisor: REDUCTION_QUIET_CHECK_DIVISOR,
-            reduction_tactical_divisor: REDUCTION_TACTICAL_DIVISOR,
-            reduction_tactical_check_divisor:
-                REDUCTION_TACTICAL_CHECK_DIVISOR,
-
-            reduction_minimum_depth: REDUCTION_MINIMUM_DEPTH,
-            reduction_move_base: REDUCTION_MOVE_BASE,
-            reduction_move_wide: REDUCTION_MOVE_WIDE,
-
-            aspiration_ratio: ASPIRATION_RATIO,
-            aspiration_clamp: ASPIRATION_CLAMP,
-            aspiration_widen: ASPIRATION_WIDEN,
-            aspiration_start_depth: ASPIRATION_START_DEPTH,
-
-            rfp_ratio: RFP_RATIO,
-            rfp_improving: RFP_IMPROVING,
-            rfp_depth: RFP_DEPTH,
-
-            futility_floor: FUTILITY_FLOOR,
-            futility_ratio: FUTILITY_RATIO,
-            futility_improving: FUTILITY_IMPROVING,
-            futility_depth: FUTILITY_DEPTH,
-
-            lmp_base: LMP_BASE,
-            lmp_ratio: LMP_RATIO,
-            lmp_improving: LMP_IMPROVING,
-            lmp_depth: LMP_DEPTH,
-
-            see_prune_ratio: SEE_PRUNE_RATIO,
-            see_prune_depth: SEE_PRUNE_DEPTH,
-            qsearch_delta_ratio: QSEARCH_DELTA_RATIO,
-
-            shelter_radius: SHELTER_RADIUS,
-            shelter_cap: SHELTER_CAP,
-            shelter_ratio: SHELTER_RATIO,
-            shelter_floor: SHELTER_FLOOR,
-            cover_ratio: COVER_RATIO,
-            cover_floor: COVER_FLOOR,
         });
 
         Self::from_statics(statics)

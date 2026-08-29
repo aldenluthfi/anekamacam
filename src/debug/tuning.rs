@@ -602,12 +602,10 @@ fn load_dataset(
 
 /// export_theta
 ///
-/// Serialises the tuned vector into the on-disk parameter layout,
-/// carrying the untuned phase scores and role flags through unchanged,
-/// then loads it into the variant and writes it out — reusing the exact
-/// parse-and-derive path the engine runs at startup so the reloaded
-/// parameters behave identically. `export_tuned_parameters_file` rolls
-/// the previous `latest.param` to a timestamped backup.
+/// Serialises tuned material and final PST targets into material plus PST
+/// residuals. Loaded material first rebuilds rule-derived PST bases. Each final
+/// target minus its base becomes the payload residual. Parser reload and export
+/// then prove runtime and written forms agree.
 ///
 /// Params:
 /// - state  : &mut State -> loaded variant, updated with the tuned vector
@@ -621,46 +619,63 @@ fn export_theta(
     theta: &[f64],
 ) {
     let board_size = shape.board_size;
-    let mut tokens: Vec<String> = Vec::new();
-
-    tokens.push(state.statics.opening_score.to_string());
-    tokens.push(state.statics.endgame_score.to_string());
-
-    let rounded = |value: f64| value.round() as i64;
-    let material = |value: f64| rounded(value).clamp(0, 0x3FFF).to_string();
+    let rounded = |value: f64| value.round() as i32;
+    let material = |value: f64| rounded(value).clamp(0, 0x3FFF) as u16;
+    let mut opening_material = Vec::with_capacity(shape.piece_types);
+    let mut endgame_material = Vec::with_capacity(shape.piece_types);
 
     for type_index in 0..shape.piece_types {
-        tokens.push(material(theta[shape.opening_material_base + type_index]));
+        opening_material.push(
+            material(theta[shape.opening_material_base + type_index])
+        );
+        endgame_material.push(
+            material(theta[shape.endgame_material_base + type_index])
+        );
     }
 
-    for type_index in 0..shape.piece_types {
-        tokens.push(material(theta[shape.endgame_material_base + type_index]));
+    for (type_index, (white_index, black_index)) in
+        shape.pairs.iter().copied().enumerate()
+    {
+        set_piece_dynamic_parameters(
+            &mut state.static_mut().pieces[white_index],
+            opening_material[type_index],
+            endgame_material[type_index],
+            false,
+            false,
+        );
+        set_piece_dynamic_parameters(
+            &mut state.static_mut().pieces[black_index],
+            opening_material[type_index],
+            endgame_material[type_index],
+            false,
+            false,
+        );
     }
 
-    for (white_index, _) in shape.pairs.iter() {
-        let flag = p_is_big!(&state.statics.pieces[*white_index]) as u8;
-        tokens.push(flag.to_string());
-    }
+    derive_eval_products(state);
 
-    for (white_index, _) in shape.pairs.iter() {
-        let flag = p_is_major!(&state.statics.pieces[*white_index]) as u8;
-        tokens.push(flag.to_string());
-    }
+    let mut tokens: Vec<String> = opening_material
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    tokens.extend(endgame_material.iter().map(ToString::to_string));
 
-    for type_index in 0..shape.piece_types {
+    for (type_index, (white_index, _)) in
+        shape.pairs.iter().copied().enumerate()
+    {
         for square in 0..board_size {
             let offset = type_index * board_size + square;
-            tokens.push(rounded(theta[shape.opening_pst_base + offset])
-                .to_string());
+            let target = rounded(theta[shape.opening_pst_base + offset]);
+            let base = state.statics.pst_opening[white_index][square];
+            tokens.push((target - base).to_string());
         }
         for square in 0..board_size {
             let offset = type_index * board_size + square;
-            tokens.push(rounded(theta[shape.endgame_pst_base + offset])
-                .to_string());
+            let target = rounded(theta[shape.endgame_pst_base + offset]);
+            let base = state.statics.pst_endgame[white_index][square];
+            tokens.push((target - base).to_string());
         }
     }
-
-    tokens.extend(scalar_parameter_tokens(state));
 
     parse_tuned_parameters(state, &tokens.join(" "));
     export_tuned_parameters_file(state, variant);

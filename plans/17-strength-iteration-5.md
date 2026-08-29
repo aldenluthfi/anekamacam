@@ -2,7 +2,7 @@
 
 ## Status
 
-**P0-P1 complete. P2 is next. No strength campaign has started.**
+**P0-P2 complete. P3 is next. No strength campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
 
@@ -418,6 +418,63 @@ Touch:
 Proof: every payload parses and round-trips; every config derives; loaded material,
 roles, phases, final PST, shelter, evaluation, and fixed-depth search match P0;
 no cover, scalar-tail, phase-threshold, or role-flag token remains.
+
+#### P2 evidence, 2026-08-29
+
+Status: complete.
+
+Payload migration:
+
+- All 38 payloads now contain opening material, endgame material, opening PST
+  residual rows, and endgame PST residual rows only.
+- Shape validation proved each new token count from its piece-type count and
+  board size. Shape manifest MD5:
+  `6b1d06a5fe58db671c0aede770f05573`.
+- Opening and endgame material blocks match P1 payload bytes for all variants.
+- Residuals were generated as old final PST minus `derive_base_pst` under loaded
+  material. Final parser uses that same base helper and adds residuals after
+  post-load derivation.
+- Engine-backed export of all 38 loaded payloads reproduced every payload byte.
+  Payload and round-trip manifest MD5:
+  `62ec66f6a3ffc7fd78f79fc570694e11`.
+- All 38 previous scalar tails were identical before removal. Cover ratio and
+  floor were `0 0`, so deleting rejected cover evaluation changes no score.
+
+Architecture removal:
+
+- Deleted 40-token scalar parser/export, scalar-count constant, phase
+  thresholds, role flags, and all derivation-only scalar shadows from
+  `StaticState`.
+- Search now reads universal depth and gate constants directly. Derived
+  surfaces, margins, counts, SEE allowances, and qsearch delta remain runtime
+  products.
+- Material loads before roles, phase thresholds, PST base, search parameters,
+  shelter, and final incremental evaluation refresh.
+- Deleted cover constants, fields, tables, derivation, and evaluation term.
+- Tuner exports final PST targets as residuals against bases rederived under
+  tuned material. No removed scalar, phase, or role passthrough remains.
+- Removal search found zero forbidden scalar-tail or cover symbols.
+
+Verification:
+
+- Debug and release builds completed without warnings or suppression.
+- `debug-headless derive`: 38/38 configs, output MD5 unchanged at
+  `dba3a046d66a533729883c33829a0f60`.
+- All 38 start-position phases and evaluations match P0 exactly. Manifest MD5:
+  `a8dc4452a764d4010fead0cfdfdb8ef9`.
+- B10 depth-6 nodes, score, best move, and PV match P0 exactly. Semantic MD5:
+  `5f7424ecea84734a3c48db0c6138ed8c`.
+- Bounded perft matches P0 exactly: MD5
+  `a4872e8f5f19141489c3c7cfb7fbc38e`.
+- Endgame fixtures: 38 passed, 0 failed.
+- FEN round trip: 44 passed, 0 failed, 0 skipped.
+- Drop integrity: 0 mismatching games of 12.
+- `search.rs` and `prelude.rs` changed beyond original touch list only because
+  runtime scalar-shadow readers and `PARAM_SCALAR_COUNT` had to disappear.
+- Pre-existing `search.rs` comment alignment remains outside P2 staging.
+
+P2 result: accepted as neutral payload and derivation cleanup. Final PST and
+playing policy remain identical to P0.
 
 ### P3. Localize constants and embedded resources
 
