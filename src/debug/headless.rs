@@ -284,8 +284,9 @@ fn parse_position_arguments(
 
 /// run_state_command
 ///
-/// Prints board, FEN, game result, and active termination reason.
-/// Rejects extra positional values before producing state output.
+/// Prints board, FEN, canonical hash, search and quiescence keys, game
+/// result, and active termination reason. Rejects extra positional values
+/// before producing state output.
 ///
 /// Params:
 /// - position: HeadlessPosition -> loaded command position
@@ -301,10 +302,11 @@ fn run_state_command(
 
     let (result, reason) = game_outcome(&mut position.state);
     let mut output = format!(
-        "{}\nFEN: {}\nHash: {}\nResult: {}\n",
+        "{}\nFEN: {}\nHash: {}\nKeys: {}\nResult: {}\n",
         format_game_state(&position.state),
         format_fen(&position.state, position.translator.as_ref()),
         format_position_hash(&position.state),
+        format_search_keys(&position.state),
         format_game_result(result),
     );
     if let Some(name) = reason {

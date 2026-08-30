@@ -2,7 +2,7 @@
 
 ## Status
 
-**P0-P3 complete. P4 is next. No strength campaign has started.**
+**P0-P4 complete. P5 is next. No strength campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
 
@@ -576,6 +576,93 @@ Touch:
 Proof: same board with different search-relevant progress/path gets different
 search key while canonical repetition identity stays correct; make/undo restores
 both; TT/QT-on and off fixtures agree.
+
+#### P4 evidence, 2026-08-30
+
+Status: complete.
+
+Identity:
+
+- `position_hash` is untouched: no component was added to `hash_position`, and
+  repetition matching still compares canonical board keys alone.
+- `virgin_hash` is a new incremental key over `virgin_board`, maintained by
+  `set_virgin!` / `clear_virgin!` at the eleven make-path sites that move,
+  capture, unload, or drop onto a square. Undo restores it from the snapshot.
+- `search_key` folds the canonical hash with `virgin_hash`, counter clock and
+  limit, counting count and frozen limit, delivered checks and required count,
+  declared-repetition occurrences, and a pass/double-pass/stand-off class.
+- `qsearch_key` adds the leaf move-set class (in check, endgame delta stand-down).
+- Context rows live in a private `CONTEXT_HASHES` table in `hash.rs`;
+  `VIRGIN_HASHES` lives in prelude because exported macros expand elsewhere.
+  Nothing was added to `StaticState`.
+- 16-bit counting values fold through two byte rows each, so every representable
+  value keys exactly and the "disable TT/QT reuse" fallback is never needed.
+- Synthetic null moves are excluded from repetition context: `has_repetition`
+  and `count_repetitions` stop the scan at the newest null. Nested nulls restore
+  side-to-move parity, which previously read as a repetition inside null search.
+
+Separation, seed 1, canonical hash held equal:
+
+- Unmoved pieces: crazyhouse (no counter rule) after `g1f3 a7a6 f3g1 b7b6`
+  versus the same board loaded from FEN, where g1 is still virgin. Hash
+  `302FC52A0ED990578E9A89C3C7085596` on both; search keys
+  `1496EE96E62817F0EB96A989E7ECDA4F` versus `DC20DC3976DA6C098872D3FC87067517`.
+  Search and qsearch keys differ by the identical component
+  `C8B632AF90F27BF963E47A7560EAAF58`, one `VIRGIN_HASHES` row.
+- Repetition occurrences: crazyhouse after one versus two knight round trips.
+  Hash `C3BE45A0834CF291CCCB9397BCC9D333` on both; keys
+  `293485D35F5FA0FEF289EA2516F5F742` versus `FF2E4B08B58F6A15A4FE2721C7A4B9BD`.
+  Canonical identity stays correct: the same run flips Result from Ongoing to
+  Draw at the third occurrence.
+- Counter progress: standard start position at halfmove clock 0 versus 40. Hash
+  `D3E0102EEF039F6EFBC4E476487A40BC` on both; keys
+  `13180FE280217F2326C29CA11FB908AF` versus `8D75747BC754C38325F73185B2A9C6F6`.
+
+Make/undo:
+
+- `verify_game_state` now recomputes `hash_virgin_board` and names the differing
+  square on mismatch. Debug builds assert it at every make and undo.
+- Debug fixed-depth search, all 38 configs: 36 completed with no assertion.
+  `janggi` and `sittuyin` abort on the pre-existing `Game phase score doesn't
+  match expected value based on material counts` assertion at `util.rs:382`;
+  the binary built from `c0c0a82` aborts identically on both, so this is not a
+  P4 regression and is not fixed here.
+- Bounded perft passes: crazyhouse 16/16 at depth 4; standard 1200/1200,
+  shogi 12/12, minishogi 9/9, judkins 9/9, xiangqi 33/33, janggi 21/21 at
+  depth 3.
+- Crazyhouse drop integrity against fairy-stockfish: 16 games, 0 mismatches.
+- FEN round trip: 44 passed, 0 failed, 0 skipped.
+
+Table agreement:
+
+- End-condition fixtures: 38 passed, 0 failed.
+- Only two fixtures are search cases; the other 36 are `d` game-truth cases that
+  never consult a table. Both search cases were rerun at Hash 1 and Hash 256 and
+  agree exactly: `score cp 0` / `bestmove e10e9` one cycle short, `score mate 1`
+  / `bestmove e9e10` on the closing cycle, with identical node counts.
+- Fixed-depth start-position search does differ between Hash 1 and Hash 256, but
+  it differs the same way at `c0c0a82`: table size changes move ordering, and
+  that dependence is pre-existing, not introduced here. P7 owns the PV-node
+  cutoff scope that this exposes.
+
+Cost, speed suite, 6 interleaved passes, `c0c0a82` versus P4:
+
+| Variant    | Nodes A / B         | Time delta | NPS delta |
+| ---------- | ------------------- | ---------- | --------- |
+| standard   | 119679 / 125623     | +7.67%     | -2.52%    |
+| shogi      | 888112 / 885436     | +2.26%     | -2.51%    |
+| crazyhouse | 813213 / 671451     | -14.11%    | -3.87%    |
+| xiangqi    | 223320 / 238822     | +9.45%     | -2.30%    |
+| grand      | 1346591 / 1303166   | -4.65%     | +1.49%    |
+
+Node counts move in both directions because entries that previously collided now
+separate, and the null-move barrier removes false draws inside null search. The
+per-node price of the wider key and the repetition count is 2.3% to 3.9% of
+nps outside noise.
+
+P4 result: accepted as a correctness prerequisite. It is not strength-neutral by
+node count and was not claimed to be; the canonical hash, the rule set, and the
+playing policy are unchanged.
 
 ### P5. Honor declared repetition and perpetual outcomes
 

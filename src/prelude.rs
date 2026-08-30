@@ -65,7 +65,10 @@ pub use crate::game::moves::pattern_parse::{
     generate_relevant_stand_offs, generate_stand_off_patterns, parse_pattern,
 };
 pub use crate::game::position::{
-    hash::{hash_position, PositionHash},
+    hash::{
+        hash_position, hash_virgin_board, qsearch_key, search_key,
+        PositionHash,
+    },
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
         log_table_stats, search_position, SearchInfo, SearchResult,
@@ -100,7 +103,8 @@ pub use crate::io::game_io::{
     combine_board_strings, export_tuned_parameters_file,
     format_castling_rights,
     format_en_passant_square, format_fen, format_game_phase, format_game_result,
-    format_game_state, format_hand, format_position_hash, format_special_rules,
+    format_game_state, format_hand, format_position_hash,
+    format_search_keys, format_special_rules,
     parse_config_file,
     parse_config_preview, parse_fen, parse_tuned_parameters
 };
@@ -290,6 +294,8 @@ lazy_static! {
         Mutex::new(StdRng::seed_from_u64(*SEED));
     pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(5);
     pub static ref SIDE_HASHES: u128 = random_u128();
+    pub static ref VIRGIN_HASHES: [u128; MAX_SQUARES] =
+        array::from_fn(|_| random_u128());
     pub static ref SYSTEM_INTERRUPT: AtomicBool = AtomicBool::new(false);
     pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(false);
     pub static ref ENGINE_SINK: Mutex<Option<Sender<EngineEvent>>> =
@@ -510,6 +516,7 @@ pub const FUTILITY_DEPTH: u32 = 6;
 pub const LMP_DEPTH: u32 = 12;
 pub const SEE_PRUNE_DEPTH: u32 = 5;
 pub const SHELTER_CAP: u32 = 3;
+pub const SEARCH_REPETITION_CAP: usize = 64;
 
 /// Shared protocol, storage, and debug constants.
 pub const DATA_DIR: &str = "res/data";

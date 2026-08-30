@@ -280,7 +280,8 @@ macro_rules! tt_score {
 /// on every valid hash match for move ordering.
 ///
 /// Params:
-/// - state: &State  -> position whose hash is probed
+/// - state: &State  -> position the stored mate scores are relative to
+/// - key  : u128    -> search key this node is filed under
 /// - table: &TTable -> shared transposition table
 /// - alpha: i32     -> lower search bound
 /// - beta : i32     -> upper search bound
@@ -290,9 +291,16 @@ macro_rules! tt_score {
 /// (bool, i32, PseudoMove) -> cutoff validity, score, and stored move
 #[macro_export]
 macro_rules! probe_tt_entry {
-    ($state:expr, $table:expr, $alpha:expr, $beta:expr, $depth:expr) => {
+    (
+        $state:expr,
+        $key:expr,
+        $table:expr,
+        $alpha:expr,
+        $beta:expr,
+        $depth:expr
+    ) => {
         hotpath::measure_block!("tt::probe", {
-        let hash = $state.position_hash;
+        let hash = $key;
         let index = tt_index!(hash, $table.len());
         let entry = &mut unsafe { &mut *($table.table.get()) }[index];
 
@@ -368,15 +376,15 @@ macro_rules! probe_tt_entry {
 /// ignores depth and bounds, returning only the stored best move.
 ///
 /// Params:
-/// - state: &State    -> position whose hash is probed
+/// - key  : u128      -> search key this node is filed under
 /// - table: &TTable   -> the shared transposition table
 ///
 /// Return:
 /// Option<PseudoMove> -> the stored move, or None on any miss
 #[macro_export]
 macro_rules! probe_pv_move {
-    ($state:expr, $table:expr) => {{
-        let hash = $state.position_hash;
+    ($key:expr, $table:expr) => {{
+        let hash = $key;
         let index = tt_index!(hash, $table.len());
         let entry = &mut unsafe { &mut *($table.table.get()) }[index];
 
@@ -423,7 +431,8 @@ macro_rules! probe_pv_move {
 /// - score  : i32     -> score to store
 /// - flags  : u8      -> FEXACT, FALPHA, or FBETA
 /// - depth  : usize   -> search depth the score is valid for
-/// - state  : &State  -> position whose hash keys the entry
+/// - state  : &State  -> position the stored mate scores are relative to
+/// - key    : u128    -> search key this node is filed under
 /// - table  : &TTable -> shared transposition table
 #[macro_export]
 macro_rules! hash_tt_entry {
@@ -433,10 +442,11 @@ macro_rules! hash_tt_entry {
         $flags:expr,
         $depth:expr,
         $state:expr,
+        $key:expr,
         $table:expr
     ) => {
         hotpath::measure_block!("tt::store", {
-        let hash = $state.position_hash;
+        let hash = $key;
         let index = tt_index!(hash, $table.len());
         let table_vec: &mut Vec<TTEntry> =
             unsafe { &mut *($table.table.get()) };
@@ -583,7 +593,10 @@ macro_rules! fill_pv_line {
                 break;
             }
 
-            let Some(pm) = probe_pv_move!($state, $table) else {
+            let repeats = count_repetitions($state, SEARCH_REPETITION_CAP);
+            let pv_key = search_key($state, repeats);
+
+            let Some(pm) = probe_pv_move!(pv_key, $table) else {
                 break;
             };
 
@@ -900,7 +913,8 @@ macro_rules! qt_flags {
 ///   Step 3: sig field matches the stored MoveSignature (anti-collision)
 ///
 /// Params:
-/// - state : &State        -> position whose hash is probed
+/// - state : &State        -> position the stored mate scores are relative to
+/// - key   : u128          -> qsearch key this node is filed under
 /// - qtable: &QTable       -> the shared qsearch table
 /// - alpha : i32           -> lower search bound at this node
 /// - beta  : i32           -> upper search bound at this node
@@ -909,9 +923,9 @@ macro_rules! qt_flags {
 /// (bool, i32, PseudoMove) -> (cutoff valid, score, stored best move)
 #[macro_export]
 macro_rules! probe_qt_entry {
-    ($state:expr, $qtable:expr, $alpha:expr, $beta:expr) => {
+    ($state:expr, $key:expr, $qtable:expr, $alpha:expr, $beta:expr) => {
         hotpath::measure_block!("qt::probe", {
-        let hash = $state.position_hash;
+        let hash = $key;
         let index = qt_index!(hash, $qtable.len());
         let entry = &mut unsafe { &mut *($qtable.table.get()) }[index];
 
@@ -982,13 +996,21 @@ macro_rules! probe_qt_entry {
 /// - tt_move: &Move   -> best move found at this qsearch node
 /// - score  : i32     -> score to store (mate scores are ply-adjusted)
 /// - flags  : u8      -> bound type: FEXACT or FBETA
-/// - state  : &State  -> position whose hash keys the entry
+/// - state  : &State  -> position the stored mate scores are relative to
+/// - key    : u128    -> qsearch key this node is filed under
 /// - qtable : &QTable -> the shared qsearch table
 #[macro_export]
 macro_rules! hash_qt_entry {
-    ($tt_move:expr, $score:expr, $flags:expr, $state:expr, $qtable:expr) => {
+    (
+        $tt_move:expr,
+        $score:expr,
+        $flags:expr,
+        $state:expr,
+        $key:expr,
+        $qtable:expr
+    ) => {
         hotpath::measure_block!("qt::store", {
-        let hash = $state.position_hash;
+        let hash = $key;
         let index = qt_index!(hash, $qtable.len());
         let table_vec: &mut Vec<QTEntry> =
             unsafe { &mut *($qtable.table.get()) };

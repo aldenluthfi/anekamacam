@@ -283,7 +283,8 @@ pub struct Snapshot {
     pub game_phase: u8,                                                         /* game phase before move             */
     pub phase_score: u32,                                                       /* phase score before move            */
 
-    pub position_hash: u128,                                                    /* Zobrist hash before move           */
+    pub position_hash: u128,                                                    /* canonical hash before move         */
+    pub virgin_hash: u128,                                                      /* virgin-state hash before move      */
 }
 
 impl Default for Snapshot {
@@ -302,6 +303,7 @@ impl Default for Snapshot {
             game_phase: OPENING,
             phase_score: 0,
             position_hash: u128::default(),
+            virgin_hash: u128::default(),
         }
     }
 }
@@ -569,7 +571,8 @@ pub struct State {
     pub castling_state: u8,                                                     /* 4 bits for representing KQkq       */
     pub en_passant_square: EnPassantSquare,                                     /* active en passant square           */
 
-    pub position_hash: u128,                                                    /* incremental Zobrist key            */
+    pub position_hash: u128,                                                    /* canonical incremental key          */
+    pub virgin_hash: u128,                                                      /* virgin-state incremental key       */
     pub history: Vec<Snapshot>,                                                 /* undo stack of snapshots            */
 
     pub search_ply: u32,                                                        /* the number of plies in the search  */
@@ -608,6 +611,7 @@ impl Clone for State {
             en_passant_square: self.en_passant_square,
 
             position_hash: self.position_hash,
+            virgin_hash: self.virgin_hash,
             history: self.history.clone(),
 
             search_ply: self.search_ply,
@@ -771,6 +775,7 @@ impl State {
             en_passant_square: NO_EN_PASSANT,
 
             position_hash: u128::default(),
+            virgin_hash: u128::default(),
             history: Vec::with_capacity(8192),
 
             search_ply: 0,
@@ -831,6 +836,7 @@ impl State {
         self.en_passant_square = NO_EN_PASSANT;
 
         self.position_hash = u128::default();
+        self.virgin_hash = u128::default();
         self.history = Vec::with_capacity(8192);
 
         self.search_ply = 0;

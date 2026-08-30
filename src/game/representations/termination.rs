@@ -825,9 +825,11 @@ fn repetition_scan_bound(state: &State, cap: usize) -> usize {
 ///
 /// Whether the current position occurred before, by scanning the pre-move
 /// hashes history stores backward within `repetition_scan_bound`. False when
-/// no `repetition` rule is declared. Every entry is scanned -- null moves
-/// break ply parity, and the side to move is part of the hash, so wrong-side
-/// entries can never match.
+/// no `repetition` rule is declared.
+///
+/// The scan stops at the newest null move. A null is a search device, not a
+/// ply anyone played, and a pair of them restores the side to move without
+/// touching the board, so a position across one repeats nothing.
 ///
 /// Params:
 /// - state: &State -> current position
@@ -842,10 +844,12 @@ pub fn has_repetition(state: &State, cap: usize) -> bool {
 
     let bound = repetition_scan_bound(state, cap);
     let start = state.history.len() - bound;
+    let null = null_move();
 
     state.history[start..]
         .iter()
         .rev()
+        .take_while(|snapshot| snapshot.move_ply != null)
         .any(|snapshot| snapshot.position_hash == state.position_hash)
 }
 
@@ -854,7 +858,8 @@ pub fn has_repetition(state: &State, cap: usize) -> bool {
 /// How many times the current position has occurred, the current occurrence
 /// included, within `repetition_scan_bound`. Zero when no `repetition` rule
 /// is declared. The scan counts the root position too, which the old
-/// per-move occurrence map missed.
+/// per-move occurrence map missed, and stops at the newest null move for the
+/// reason [`has_repetition`] gives.
 ///
 /// Params:
 /// - state: &State -> current position
@@ -869,8 +874,11 @@ pub fn count_repetitions(state: &State, cap: usize) -> u8 {
 
     let bound = repetition_scan_bound(state, cap);
     let start = state.history.len() - bound;
+    let null = null_move();
     let matches = state.history[start..]
         .iter()
+        .rev()
+        .take_while(|snapshot| snapshot.move_ply != null)
         .filter(|snapshot| snapshot.position_hash == state.position_hash)
         .count();
 

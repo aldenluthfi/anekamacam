@@ -509,8 +509,13 @@ fn quiescence_search(
         return stand_pat;
     }
 
-    let qtable_entry = probe_qt_entry!(state, qtable, alpha, beta);
-    let table_entry = probe_tt_entry!(state, ttable, alpha, beta, 1);
+    let repeats = count_repetitions(state, SEARCH_REPETITION_CAP);
+    let table_key = search_key(state, repeats);
+    let qtable_key = qsearch_key(state, repeats, in_check);
+
+    let qtable_entry = probe_qt_entry!(state, qtable_key, qtable, alpha, beta);
+    let table_entry =
+        probe_tt_entry!(state, table_key, ttable, alpha, beta, 1);
 
     if qtable_entry.0 {
         return qtable_entry.1;
@@ -575,7 +580,9 @@ fn quiescence_search(
 
         if score > alpha {
             if score >= beta {
-                hash_qt_entry!(moves[index], beta, FBETA, state, qtable);
+                hash_qt_entry!(
+                    moves[index], beta, FBETA, state, qtable_key, qtable
+                );
                 return beta;
             }
 
@@ -599,7 +606,9 @@ fn quiescence_search(
     verify_game_state(state);
 
     if alpha != alpha_start && best_move != null_move() {
-        hash_qt_entry!(best_move, alpha, FEXACT, state, qtable);
+        hash_qt_entry!(
+            best_move, alpha, FEXACT, state, qtable_key, qtable
+        );
     }
 
     alpha
@@ -649,16 +658,14 @@ pub fn alpha_beta(
         return terminal_score!(state);
     }
 
+    let repeats = count_repetitions(state, SEARCH_REPETITION_CAP);
     let declared = state.termination.repetition
         .as_ref().map(|repetition| repetition.occurrences);
 
     if ply > 0 && let Some(occurrences) = declared {
-        let scan_limit = 64;
-        let repeats = count_repetitions(state, scan_limit);
-
         if repeats >= occurrences {
             return match repetition_outcome(
-                state, occurrences, scan_limit,
+                state, occurrences, SEARCH_REPETITION_CAP,
             ) {
                 Some((outcome, _)) => outcome_score!(state, outcome),
                 None => 0,
@@ -697,7 +704,9 @@ pub fn alpha_beta(
         );
     }
 
-    let table_entry = probe_tt_entry!(state, ttable, alpha, beta, depth);
+    let table_key = search_key(state, repeats);
+    let table_entry =
+        probe_tt_entry!(state, table_key, ttable, alpha, beta, depth);
     let table_move = if table_entry.2 != null_pseudo_move() {
         Some(table_entry.2)
     } else {
@@ -953,7 +962,8 @@ pub fn alpha_beta(
                     }
 
                     hash_tt_entry!(
-                        moves[index], beta, FBETA, depth, state, ttable
+                        moves[index], beta, FBETA, depth,
+                        state, table_key, ttable
                     );
 
                     return beta;
@@ -1010,10 +1020,12 @@ pub fn alpha_beta(
 
     if alpha != alpha_start {
         hash_tt_entry!(
-            best_move, best_score, FEXACT, depth, state, ttable
+            best_move, best_score, FEXACT, depth, state, table_key, ttable
         );
     } else {
-        hash_tt_entry!(best_move, alpha, FALPHA, depth, state, ttable);
+        hash_tt_entry!(
+            best_move, alpha, FALPHA, depth, state, table_key, ttable
+        );
     }
 
     alpha

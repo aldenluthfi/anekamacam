@@ -1554,6 +1554,7 @@ macro_rules! make_move {
                 .as_ref().and_then(|counting| counting.progress);
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
+            let last_virgin_hash = $state.virgin_hash;
             let last_game_result = $state.termination.game_result;
             let last_check_count = $state.termination.checks
                 .as_ref().map_or([0; 2], |checks| checks.delivered);
@@ -1602,7 +1603,7 @@ macro_rules! make_move {
                         .push(end_square as Square);
                 }
 
-                clear!($state.virgin_board, start_square);
+                clear_virgin!($state, start_square);
 
                 hash_in_or_out_piece!(
                     $state, piece_index, start_square as Square
@@ -1790,7 +1791,7 @@ macro_rules! make_move {
                         .push(end_square as Square);
                 }
 
-                clear!($state.virgin_board, start_square);
+                clear_virgin!($state, start_square);
 
                 hash_in_or_out_piece!(
                     $state, piece_index, start_square as Square
@@ -2031,7 +2032,7 @@ macro_rules! make_move {
                     captured_square as Square
                 );
 
-                clear!($state.virgin_board, captured_square);
+                clear_virgin!($state, captured_square);
 
                 if is_unload {
                     set!(
@@ -2045,7 +2046,7 @@ macro_rules! make_move {
                         unload_square as Square
                     );
 
-                    set!($state.virgin_board, unload_square);
+                    set_virgin!($state, unload_square);
                 }
 
                 if is_unload {
@@ -2152,7 +2153,7 @@ macro_rules! make_move {
                         .push(end_square as Square);
                 }
 
-                clear!($state.virgin_board, start_square);
+                clear_virgin!($state, start_square);
 
                 hash_in_or_out_piece!(
                     $state, piece_index, start_square as Square
@@ -2404,7 +2405,7 @@ macro_rules! make_move {
                         captured_square as Square
                     );
 
-                    clear!($state.virgin_board, captured_square);
+                    clear_virgin!($state, captured_square);
 
                     if is_unload {
                         set!(
@@ -2418,7 +2419,7 @@ macro_rules! make_move {
                             unload_square as Square
                         );
 
-                        set!($state.virgin_board, unload_square);
+                        set_virgin!($state, unload_square);
                     }
 
                     if is_unload {
@@ -2526,7 +2527,7 @@ macro_rules! make_move {
                     $state.statics.initial_setup[piece_index],
                     drop_square
                 ) {
-                    set!($state.virgin_board, drop_square);
+                    set_virgin!($state, drop_square);
                 }
 
                 $state.opening_pst_bonus[piece_color as usize] +=
@@ -2597,7 +2598,7 @@ macro_rules! make_move {
                         .push(end_square as Square);
                 }
 
-                clear!($state.virgin_board, start_square);
+                clear_virgin!($state, start_square);
 
                 hash_in_or_out_piece!(
                     $state, piece_index, start_square as Square
@@ -2644,7 +2645,7 @@ macro_rules! make_move {
                     captured_square as Square
                 );
 
-                clear!($state.virgin_board, captured_square);
+                clear_virgin!($state, captured_square);
 
                 set!(
                     $state.pieces_board[captured_color as usize],
@@ -2657,7 +2658,7 @@ macro_rules! make_move {
                     unload_square as Square
                 );
 
-                set!($state.virgin_board, unload_square);
+                set_virgin!($state, unload_square);
 
                 $state.main_board[unload_square as usize] =
                     captured_piece as PieceIndex;
@@ -2782,6 +2783,7 @@ macro_rules! make_move {
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
+                virgin_hash: last_virgin_hash,
             };
 
             $state.history.push(snapshot);
@@ -2856,6 +2858,7 @@ macro_rules! undo_move {
 
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
+        $state.virgin_hash = snapshot.virgin_hash;
         $state.termination.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
@@ -3559,6 +3562,7 @@ macro_rules! make_null_move {
                 .as_ref().and_then(|counting| counting.progress);
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
+            let last_virgin_hash = $state.virgin_hash;
             let last_game_result = $state.termination.game_result;
             let last_check_count = $state.termination.checks
                 .as_ref().map_or([0; 2], |checks| checks.delivered);
@@ -3600,6 +3604,7 @@ macro_rules! make_null_move {
                 game_phase: last_game_phase,
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
+                virgin_hash: last_virgin_hash,
             };
 
             $state.history.push(snapshot);
@@ -3650,6 +3655,7 @@ macro_rules! undo_null_move {
         }
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
+        $state.virgin_hash = snapshot.virgin_hash;
         $state.termination.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;

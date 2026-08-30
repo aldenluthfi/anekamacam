@@ -372,8 +372,8 @@ pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
 ///
 /// Recomputes derived state and asserts it matches the stored caches.
 /// Debug integrity check for boards, piece lists, material counts, royal
-/// lists, and the incremental Zobrist hash. On mismatch it also attempts to
-/// pinpoint the source before panicking.
+/// lists, and the incremental Zobrist and unmoved-piece keys. On mismatch it
+/// also attempts to pinpoint the source before panicking.
 ///
 /// Params:
 /// - state: &State -> position whose incremental caches are validated
@@ -638,6 +638,23 @@ pub fn verify_game_state(state: &State) {
         temp_hash, state.position_hash,
         "Computed hash doesn't match state position hash"
     );
+
+    let temp_virgin_hash = hash_virgin_board(state);
+
+    if temp_virgin_hash != state.virgin_hash {
+        let missing_hash = temp_virgin_hash ^ state.virgin_hash;
+
+        for (index, &hash) in VIRGIN_HASHES.iter().enumerate() {
+            if hash == missing_hash {
+                panic!(
+                    "Hash mismatch! Unmoved-piece mark differs at {}",
+                    format_square(index as Square, state),
+                );
+            }
+        }
+
+        panic!("Hash mismatch! Unmoved-piece key differs on many squares");
+    }
 }
 
 /// parse_perft_content

@@ -2454,6 +2454,7 @@ pub fn parse_fen(
     refresh_eval_state(state);
 
     state.position_hash = hash_position(state);
+    state.virgin_hash = hash_virgin_board(state);
 
     if let Some((color, outcome, _)) = position_terminal(state) {
         state.termination.game_result = resolve_outcome!(color, outcome);       /* a loaded position can already be   */
@@ -2728,6 +2729,11 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
 ///   Return:
 ///   String -> the Zobrist hash in hexadecimal
 ///
+/// format_search_keys
+///
+///   Return:
+///   String -> the search and quiescence keys in hexadecimal
+///
 /// format_game_phase
 ///
 ///   Return:
@@ -2797,6 +2803,17 @@ pub fn format_hand(state: &State, color: u8) -> String {
 
 pub fn format_position_hash(state: &State) -> String {
     format!("{:>016X}", state.position_hash)
+}
+
+pub fn format_search_keys(state: &State) -> String {
+    let repeats = count_repetitions(state, SEARCH_REPETITION_CAP);
+    let in_check = is_in_check!(state.playing, state);
+
+    format!(
+        "{:>016X} / {:>016X}",
+        search_key(state, repeats),
+        qsearch_key(state, repeats, in_check),
+    )
 }
 
 pub fn format_game_result(result: u8) -> String {
