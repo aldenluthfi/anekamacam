@@ -2,7 +2,7 @@
 
 ## Status
 
-**P0-P6 complete, plus the setup-probe cache fix. P7 is next. No strength
+**P0-P7 complete, plus the setup-probe cache fix. P8 is next. No strength
 campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
@@ -646,6 +646,11 @@ Table agreement:
   that dependence is pre-existing, not introduced here. P7 owns the PV-node
   cutoff scope that this exposes.
 
+  Corrected by the P7 evidence below: P7 does not own it and does not remove
+  it. The dependence belongs to the stored move driving ordering, which no
+  cutoff scope reaches. The sentence above was a guess and is retained as
+  written so the correction has something to point at.
+
 Cost, speed suite, 6 interleaved passes, `c0c0a82` versus P4:
 
 | Variant    | Nodes A / B         | Time delta | NPS delta |
@@ -959,6 +964,81 @@ Touch:
 
 Proof: TT-on/off terminal and PV fixtures agree; root score/best move stable;
 search-context keys never cross.
+
+#### P7 evidence, 2026-08-30
+
+Baseline `2571c01`. One condition: the main-table bound cutoff now requires
+`!pv_node`, where `pv_node` is a window wider than one ply after the mate
+clamps. The stored move is still read at every node, since ordering is what it
+was for. Replacement policy and mate encoding are untouched.
+
+Two of the four clauses were already satisfied and are recorded rather than
+changed. Eager terminals precede table reuse: `is_terminal!` is the first
+statement in `alpha_beta` and the declared repetition threshold has sat above
+the probe since P5. Search contexts never cross: the main table is probed and
+stored under `search_key` and the quiescence table under `qsearch_key`, and
+quiescence's main-table probe reads only the stored move, never a bound.
+
+What it fixes. A bound names a score and no move. Returning one at a node
+opened on a wide window answers "which move" with something that cannot
+answer it, and the printed line then comes from walking the table rather than
+from the search. Across all 38 configs at depths 6 through 10, the baseline
+printed a principal variation shorter than its depth in 12 of 190 lines. P7
+prints 12 of 12 at full length and shortens none:
+
+| Config        | Depth | Base PV | P7 PV |
+| ------------- | ----- | ------- | ----- |
+| makruk        | 6     | 4       | 6     |
+| judkins       | 7     | 4       | 7     |
+| almost        | 8     | 5       | 8     |
+| amazon        | 8     | 5       | 8     |
+| embassy       | 8     | 6       | 8     |
+| asean         | 8     | 7       | 8     |
+| minishogi     | 9     | 7       | 9     |
+| standard      | 10    | 7       | 10    |
+| shogi         | 10    | 8       | 10    |
+| chancellor    | 10    | 9       | 10    |
+| janus         | 10    | 9       | 10    |
+| ouk-chaktrang | 10    | 9       | 10    |
+
+Fixtures: 38 passed at `GO_DEPTH` 6 and again at 8. Both xiangqi search
+fixtures are identical at Hash 1 and Hash 256 -- 826 nodes at `mate -2` with
+`pv e10e9 a10f10 e9e8 f10f9`, and 13 nodes at `mate 1` with `pv e9e10` -- so
+the terminal verdicts search reaches do not depend on table size.
+
+Correction to the P4 evidence. That block guessed P7 owned the hash-size
+dependence of fixed-depth search. It does not. Over the 30 agreement positions
+at their declared depths, the baseline reports a different best move at Hash 1
+than at Hash 256 on 15, and P7 on 17. The cause is the stored move driving
+ordering: a different table size collides and replaces differently, a different
+move is read first, and a different tree is searched. Every table that stores a
+move for ordering has this, and no cutoff scope reaches it. Removing it would
+mean not ordering on the stored move at all.
+
+Cost. Node counts move both ways and mostly down: over 38 configs at depth 9
+from the start position, 20 fall, 13 rise, 5 are unchanged, median -1.9%.
+Largest falls are xiangqi -52.7%, judkins -46.7%, ai-wok -42.8%; largest rises
+are embassy +146.4%, fivecheck +81.9%, janus +76.6%. Searching a PV node
+instead of trusting a bound costs work at that node and saves it wherever the
+bound was wrong about the move.
+
+Speed suite, 5 interleaved passes, nodes and time:
+
+| Variant    | Nodes A / B         | Time delta | NPS delta |
+| ---------- | ------------------- | ---------- | --------- |
+| standard   | 127797 / 133695     | +2.50%     | +2.07%    |
+| shogi      | 994456 / 1007941    | +1.70%     | -0.34%    |
+| crazyhouse | 794715 / 777281     | -2.69%     | +0.52%    |
+| xiangqi    | 398210 / 493122     | +24.70%    | -0.69%    |
+| grand      | 2440329 / 2400555   | -2.42%     | +0.81%    |
+
+Other suites: debug fixed-depth search over all 38 configs, 0 assertions; perft
+standard 20256/20256, crazyhouse 16/16, xiangqi 33/33; FEN round trip 44/44;
+crazyhouse drop integrity 24 games, 0 mismatches. Agreement holds its gate:
+standard 9 cases, 0 sign flips; crazyhouse 21 cases, 5 sign flips,
+`reference-sees-lost-we-do-not` unchanged at 8.
+
+P7 result: accepted as a correctness prerequisite.
 
 ### P8. Exclude incomplete SMP results
 

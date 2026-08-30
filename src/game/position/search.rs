@@ -652,6 +652,13 @@ fn quiescence_search(
 /// full depth, so it reorders work without ever dropping a move, and no rule
 /// can make that unsound.
 ///
+/// A stored bound cuts a scout node but not a node opened on a wide window.
+/// A scout asks one question and a bound answers it; a wide window is asking
+/// which move to play, and a bound names no move. Cutting there returns a
+/// score with an empty principal variation and makes the answer depend on how
+/// large the table is, which is not a property of the position. The stored
+/// move is still read at every node, since ordering is what it was for.
+///
 /// Params:
 /// - state          : &mut State      -> position searched, restored on return
 /// - ttable         : &TTable         -> main table probed and updated
@@ -726,6 +733,8 @@ pub fn alpha_beta(
         );
     }
 
+    let pv_node = beta - alpha > 1;                                             /* a window this wide wants a move   */
+
     let table_key = search_key(state, repeats);
     let table_entry =
         probe_tt_entry!(state, table_key, ttable, alpha, beta, depth);
@@ -735,7 +744,7 @@ pub fn alpha_beta(
         None
     };
 
-    if table_entry.0 {
+    if table_entry.0 && !pv_node {
         return table_entry.1;
     }
 
