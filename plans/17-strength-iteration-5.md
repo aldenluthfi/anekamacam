@@ -932,6 +932,20 @@ P6 result: accepted as a correctness prerequisite. It costs nodes in nineteen
 variants and buys the right to keep the shortcuts in the other nineteen
 without an argument that was never checked.
 
+Where the cost is collected, decided 2026-08-30 after this evidence was
+written. The node cost above is expected under P6's own proof clause and law
+12, not a regression -- but the roadmap as first written scheduled nothing to
+collect it, and several lettered phases are gated on the mask and so improve
+only the configurations that never lost a bit. Corrected here: `Q-5`, `R-5`,
+`V-5`, `W-5`, and `X-5` each gained a **Capability close** step that re-derives
+the bit its own mechanism addresses; `AA-5` and `AB-5` were appended after
+`Z-5` for the two mechanisms no letter owned, screened movement and the
+pass-or-counting pair. Both are strength phases with real floors, since
+restored search depth is Elo rather than node accounting. Nothing in the
+`P0`-`P9` chain reopens: every phase after P6 already builds on it, and
+re-basing the chain to collect this would cost more than the ground it
+recovers.
+
 ### P7. Correct TT cutoff scope
 
 Main-TT early bound cutoff applies only at non-PV nodes. PV nodes may reuse move,
@@ -968,6 +982,12 @@ capability result for every shipped configuration. This ledger defines every
 affected-variant audit and every identity control. Every strength arm compares
 against previous accepted phase, never directly against `64fbf9a`.
 
+The ledger also records a fixed-depth node signature for all 38 shipped
+configurations, gate-positive and gate-negative alike. Both halves are on the
+record because both are audited: identity holds the gate-positive half in
+place, and the gate-negative half needs a number to be measured against or it
+drifts unwatched through every later phase.
+
 ## Campaign protocol
 
 ### Support mode
@@ -979,6 +999,13 @@ against previous accepted phase, never directly against `64fbf9a`.
 - Temporary counters leave before promotion binary.
 - Support may veto. It cannot promote.
 - Gate-false controls remain support-only and never dilute game SPRT.
+- Re-run the fixed-depth node signature against all 38 shipped configurations
+  from the P9 ledger, not the gate-positive subset. Gate-positive configs must
+  hold identity. Gate-negative configs are not held to identity, since a phase
+  touching move ordering or pruning is expected to move their restricted paths;
+  they are held to monotonic non-regression, so their fixed-depth node count
+  must not rise against the previous accepted phase. A rise is a support veto,
+  the authority support already has. No extra SPRT, no game-pool dilution.
 
 ### Game mode
 
@@ -993,6 +1020,13 @@ against previous accepted phase, never directly against `64fbf9a`.
 - Representative affected pool decides first. After pooled H1, audit every
   capability-positive shipped configuration from P9 ledger.
 - Any terminal negative affected-variant result rejects candidate.
+
+Raw node delta against the pre-P6 baseline is a diagnostic, never a pass or a
+fail. Law 12 already refuses that comparison, and `horde` is why: its forward
+pruning was cutting branches its extinction rule made decisive, so the faster
+baseline number was wrong rather than better. Read the P6 cost table as a map
+of where `Q-5`, `R-5`, `U-5`, `V-5`, `W-5`, `X-5`, `AA-5`, and `AB-5` recover
+ground, not as a debt P6 owes back.
 
 ### Representative affected pools
 
@@ -1042,11 +1076,29 @@ Names define campaign composition only. Engine behavior uses declarations.
 | X-5   | tuned extinction exposure       | proposed |
 | Y-5   | side-derived royal-home PST     | proposed |
 | Z-5   | material-only retune            | proposed |
+| AA-5  | screened-movement reachability  | proposed |
+| AB-5  | pass/counting null and exchange | proposed |
 
 ## Strength phases
 
 Expected bands are priors. Low-confidence prior below floor is stated explicitly;
 such candidate must clear floor or consume no letter.
+
+Bands for phases whose payoff sits inside the configurations P6 restricted --
+`D-5`, `Q-5`, `R-5`, `U-5`, `V-5`, `W-5`, `X-5` -- are priors against `base-5`
+and its measured mask cost, not against the pre-P6 engine those numbers were
+first drafted against. A smaller observed gain there is a smaller starting
+board, not a failed campaign.
+
+A phase carrying a **Capability close** step ends by re-deriving the one
+capability bit its own mechanism addresses, then re-running the node-cost
+bench. Flipping a bit is never justified by "the feature shipped". It is
+justified by the reason the bit was cleared: the bit named something the engine
+did not know, the phase taught it, and re-enabling the shortcut is then the
+same argument that justified the feature rather than a new claim. Before any
+flip, gate-enabled tactical and fixed-depth fixtures on the affected pool must
+show no win missed by pruning past the decisive move. The close belongs to its
+own phase and its own campaign. It consumes no letter.
 
 ### A-5 — Threshold early-exit SEE
 
@@ -1394,6 +1446,11 @@ coverage/cutoff output, gate-false identity.
 
 **Promotion.** D8, floor +10, 12,000 games.
 
+**Capability close.** A hand makes a capture pay twice, which is why drops and
+`promote to captured` clear `see_pruning` and `recapture_order` for the shogi
+family, `grand`, and `sittuyin`. Once role-and-destination indexing prices the
+second payment, re-derive both bits for those declarations and re-measure.
+
 **Fallbacks.** Gravity ordering only; continuation only; countermove only.
 
 **Rollback.** Remove drop index/history integration and restore generic order.
@@ -1413,6 +1470,11 @@ P6 drop-reduction capability.
 reduction-only counters, EBF/NPS; ordering fixed to Q-5 baseline.
 
 **Promotion.** D8, floor +8, 12,000 games.
+
+**Capability close.** Finish what `Q-5` opened: with reductions proved on the
+drop tree, re-derive whether `see_pruning` and `recapture_order` remain unsafe
+for drop and `promote to captured` declarations, and re-measure. If `Q-5`
+already restored them, this step records that nothing is left to restore.
 
 **Fallbacks.** Depth >= 6 only; after first four drops only; one-ply maximum
 reduction.
@@ -1503,6 +1565,12 @@ unsupported/non-goal final-PST identity.
 **Promotion.** G1 and any later gate-positive goal configs, floor +12,
 12,000 games; 18,000 if draw rate exceeds 70%.
 
+**Capability close.** `koth` lost `forward_pruning` and `quiet_pruning` because
+a positionally quiet king walk decides the game with no material signal, which
+is exactly what a static score cannot bound and a late-move cut assumes cannot
+happen. Graph proximity to the goal zone puts that signal in the score. Once it
+is there, re-derive both bits for declared winning goals and re-measure.
+
 **Fallbacks.** Winning royal goals only; one-move goal region only; move-order
 tie-break with no PST change.
 
@@ -1525,6 +1593,14 @@ path key, held-out loss, coefficient stability across C2.
 
 **Promotion.** C2, floor +12, 12,000 games.
 
+**Capability close.** `threecheck` and `fivecheck` lost `see_pruning`,
+`recapture_order`, `forward_pruning`, `null_pruning`, and `quiet_pruning`
+because a check is currency the score does not hold: a quiet checking move and
+a materially losing capture both buy progress the search could not see. The
+progress feature makes that visible. Re-derive each of those five bits for
+declared `checks` and re-measure, keeping any bit whose reason the feature does
+not answer.
+
 **Fallbacks.** One-check-from-terminal universal feature; move-ordering-only
 progress; abandon if tuner cannot move coefficient consistently.
 
@@ -1545,6 +1621,14 @@ Expected +12 to +35 Elo.
 declared groups, held-out loss, coefficient stability across E3.
 
 **Promotion.** E3, floor +12, 12,000 games.
+
+**Capability close.** `extinction`, `kinglet`, and `horde` lost `see_valid` and
+`forward_pruning` because a set one member above its threshold makes the piece
+that leaves it decisive at a value material never assigned it. The last-stock
+feature prices exactly that. Re-derive both bits for declared extinction sets
+and re-measure. The E3 pool already carries all three, so `horde` closes here
+too -- and its close is the one that may find nothing to restore, since it
+searched fewer nodes without forward pruning, not more.
 
 **Fallbacks.** Explicit groups only; loss-outcome groups only; final-target capture
 ordering with no evaluation term.
@@ -1599,6 +1683,68 @@ endgame material only. No joint PST fallback.
 
 **Rollback.** Restore every payload byte and any active tuner/datagen mapping
 change.
+
+### AA-5 — Occupancy-aware reachability for screened movement
+
+**Primary / expected.** Give the exchange simulation and the movement graph a
+reachability model that reads the pieces standing in the way, so a leg that
+unloads what it destroyed is priced as what it is: an attack that needs a
+screen present and that a capture can therefore take away, not only reveal.
+Restores `static_movement` and, with it, `see_valid` where nothing else clears
+it. This is the mechanism `U-5` deferred rather than overlooked -- its graph is
+pseudo-legal and occupancy-independent by construction, and a screened family
+cannot be modelled inside that choice. Largest single pool of ground P6 gave
+up: `janggi` +151%, `xiangqi` +55%, `minixiangqi` +51%, `sittuyin` +43% in
+nodes. Expected +15 to +40 Elo on screened variants.
+
+**Touch / derive.** `src/game/search/move_ordering.rs`,
+`src/game/representations/state.rs`, `src/game/search/parameters.rs`. Unload
+legs, screen occupancy, attacker enumeration order; P6 capability derivation.
+
+**Support.** Exchange results on screened positions checked against an explicit
+enumeration; perft and endgame fixtures for `xiangqi`, `minixiangqi`, `janggi`,
+`sittuyin`; identity for every configuration whose `static_movement` was
+already set; node-cost bench against `base-5`; per-node cost of the wider
+attacker model.
+
+**Promotion.** Screened-declaration pool, floor +10, 12,000 games.
+
+**Fallbacks.** Screen-aware attacker enumeration with exchange ordering only
+and no exchange pruning; single-screen families only; movement graph left
+untouched and only the exchange model widened.
+
+**Rollback.** Restore the occupancy-independent enumeration and the P6
+derivation of `static_movement`.
+
+### AB-5 — Pass and counting aware null and exchange capability
+
+**Primary / expected.** One mechanism for two declarations that break the same
+two shortcuts. Where a variant offers a real pass, searching that pass is a
+legal move already in the list, so giving up the move needs no null and
+bypasses no rule. Where a counting clock is running, both the null and a
+materially losing capture are measurable once the frozen clock and its distance
+to the declared limit are carried into the decision. Restores `null_pruning`
+for `janggi` and `sittuyin`, and `null_pruning` with `see_pruning` for `makruk`
+and `ouk-chaktrang`. Expected +10 to +25 Elo on pass and counting variants.
+
+**Touch / derive.** `src/game/position/search.rs`,
+`src/game/representations/termination.rs`,
+`src/game/search/parameters.rs`. Zero-displacement quiet vectors, setup phase,
+stand-off vetoes, `Counting` progress and limit; P6 capability derivation.
+
+**Support.** Pass-search and null-search agreement on positions where both are
+available; counting fixtures at and near the declared limit; identity for every
+configuration whose `null_pruning` was already set; node-cost bench against
+`base-5`.
+
+**Promotion.** Pass and counting declaration pool, floor +8, 12,000 games.
+
+**Fallbacks.** Pass-move search only, leaving counting bits cleared; counting
+distance only, leaving pass variants on the cleared bit; restore
+`see_pruning` for counting without touching `null_pruning`.
+
+**Rollback.** Remove the pass-move search path and the counting distance term,
+and restore the P6 derivation of both bits.
 
 ## Disposition of old iteration-4 J-Z roadmap
 
