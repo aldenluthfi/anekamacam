@@ -1333,6 +1333,13 @@ P9 result: accepted. `base-5` is `a94018d`, `content_md5`
 
 - Unset `ANEKAMACAM_SEED`.
 - Match Hash, threads, time control, openings, and colors.
+- Give every arm a disk-backed `TMPDIR` and keep its engine sandbox logs
+  truncated. The sandboxes sit under `env::temp_dir()` and grow about 400 MB
+  per engine every two hours; where `/tmp` is tmpfs that is memory, and a
+  starved host stalls engines into response timeouts that the referee scores
+  as engine losses. An arm that aborts that way is not slow evidence, it is
+  no evidence: the first A-5 wave lost five arms to it on 2026-08-30, and both
+  aborts named the second-spawned engine, so the starvation picks a side.
 - Use built-in `debug-headless sprt`; add no wrapper.
 - Pentanomial H0 = 0, H1 = phase floor, alpha = beta = 0.05.
 - Start 12,000 games for +8 to +15 floor; 18,000 where tuning variance or draw
