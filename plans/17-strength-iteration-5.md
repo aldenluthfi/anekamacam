@@ -2,12 +2,13 @@
 
 ## Status
 
-**P0-P8 complete, plus the setup-probe cache fix. P9 is next. No strength
-campaign has started.**
+**All prerequisites complete. `base-5` is frozen at `a94018d`. `A-5` is next.
+No strength campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
 
-Target baseline after neutral prerequisites: `base-5`.
+Baseline after neutral prerequisites: `base-5`, commit `a94018d`,
+`content_md5` `d2ab2a5b6b142c2a4aa3fd87eecfceff`.
 
 Fairy-Stockfish reference: commit
 `6d9d0f5724677dc3aba3c577b0b482b6ec11e44a`, dated 2026-08-23.
@@ -1125,6 +1126,189 @@ configurations, gate-positive and gate-negative alike. Both halves are on the
 record because both are audited: identity holds the gate-positive half in
 place, and the gate-negative half needs a number to be measured against or it
 drifts unwatched through every later phase.
+
+#### P9 evidence, 2026-08-30
+
+Status: complete. `base-5` is frozen. Every strength arm compares against the
+previous accepted phase, and the first of them compares against this.
+
+Build and provenance:
+
+- HEAD: `a94018d996bd6bacd31450c7bfb79d8aede05dc9` on `main`.
+- Build: `cargo build --release`, default features, no warnings.
+- Compiler: `rustc 1.97.0-nightly (e96c36b6f 2026-05-21)`.
+- Cargo: `cargo 1.97.0-nightly (4d1f98451 2026-05-15)`.
+- Host: macOS 26.5.1, build 25F80, arm64.
+- Binary: `bin/base-5`, 5,548,080 bytes.
+- Binary MD5: `830bb671e67cae00674a4e1102f2676e`.
+- `content_md5`: `d2ab2a5b6b142c2a4aa3fd87eecfceff`.
+- Config tree MD5: `c09f443db4fe35a46cec187ed619c637`, unchanged from P0.
+- Dictionary tree MD5: `39bee9589de36c8d7562b8c42c09af44`, unchanged from P0.
+- UCI option MD5: `f3f291236fa49c71c5569f2beec47411`, unchanged from P0.
+- Embedded variants: 38.
+- `tools/provenance.sh verify bin/base-5` rebuilt `a94018d` and matched
+  `content_md5` exactly.
+- The pre-existing `src/game/position/search.rs` diff still changes only
+  comment alignment on the `delta_prunable` line. It remained unstaged
+  throughout and does not change rebuilt binary content.
+
+Prerequisite commits, `64fbf9a..a94018d` in order:
+
+| Commit    | Phase | Subject                                              |
+| --------- | ----- | ---------------------------------------------------- |
+| `a3c502d` | P0    | freeze strength iteration 5 baseline                 |
+| `37be6c2` | P1    | remove permanent search diagnostics                  |
+| `fd50650` | P2    | store material and PST residuals                     |
+| `c0c0a82` | P3    | separate private and shared constants                |
+| `1755eea` | P4    | separate canonical, search, and qsearch identity     |
+| `5074cef` | fix   | rebuild the setup probe's caches before it plays     |
+| `119dcc8` | P5    | let a repetition mean what its variant declares      |
+| `1aa2511` | P6    | ask the rules before taking a search shortcut        |
+| `2571c01` | docs  | schedule the ground P6 gave up                       |
+| `a5bd5cd` | P7    | stop answering a wide window with a bound            |
+| `54bc66d` | P8    | pick the deepest finished worker, not the score      |
+| `a94018d` | docs  | say the P8 measurement in plain terms                |
+
+Deterministic search settings:
+
+- Fixed-depth anchors: `ANEKAMACAM_SEED=42`, Threads 1, depth 6, run through
+  `debug-headless search <variant> 6 1`.
+- Table entries are 64 bytes in both tables: three `u128` slots, one `u64`
+  age, one `AtomicU64` seqlock version. Capacity is rounded down to a power of
+  two.
+- `debug-headless search` builds a 1 MB main table and a 1 MB quiescence
+  table, which is 16,384 slots each and 2 MiB retained. The P0 evidence said
+  this command used the 256 MB protocol default; it does not, and the anchors
+  above are only reproducible at 1 MB. Corrected here.
+- Protocol default Hash 256 MB splits two thirds to the main table and one
+  third to quiescence: nominal 170 MB and 85 MB, rounded to 2,097,152 and
+  1,048,576 slots, 192 MiB retained.
+- EBF and agreement use matched Hash 64 MB: nominal 42 MB and 21 MB, rounded
+  to 524,288 and 262,144 slots, 48 MiB retained.
+
+Derivation and payload:
+
+- `debug-headless derive`: 38/38 configs derived.
+- Derive output MD5: `6994599453246c06ee1476255cedac3e`.
+- Payload manifest: 38 files, manifest MD5 `e573893836904609d060584f6bc0a7c2`.
+
+Capability ledger and fixed-depth signature. Mask bits read most significant
+first: static movement, quiet pruning, recapture order, null pruning, forward
+pruning, exchange pruning, exchange validity.
+
+```text
+config         mask     best      score     nodes
+ai-wok         1111111  d3:d4        -1      7657
+almost         1111111  b1:c3         0      4226
+amazon         1111111  b1:c3         0      2772
+asean          1111111  e1:e2         0      2620
+berolina       1111111  g2:e4         6      5462
+capablanca     1111111  b1:c3         1      5353
+chancellor     1111111  b1:c3         5      4403
+chigorin       1111111  b1:c3       -41      3943
+crazyhouse     1101101  b1:c3         1      3749
+embassy        1111111  b1:c3         0      7908
+euroshogi      1101101  c1:d2        -1      5863
+extinction     1111010  b1:c3         0      5857
+fivecheck      1000001  b1:c3         0     10014
+gothic         1111111  b1:c3         2      4836
+grand          1101100  i2:h4         0     21614
+hoppelpoppel   1111111  b1:c3         0      3625
+horde          1111010  e4:e5      -540      4995
+janggi         0110111  Q@e2          0       730
+janus          1111111  b1:c3         0      5224
+judkins        1101101  d1:c3        15      5620
+kinglet        1111010  g1:f3         0      1482
+knightmate     1111111  d2:d4        10      3645
+koth           1000001  b1:c3         0     10014
+los-alamos     1111111  a2:a3         0      2653
+makruk         1110101  g1:e2         2      4905
+minishogi      1101101  d1:c2         4      6897
+minixiangqi    0111110  f1:f4        23      3510
+modern         1111111  b1:c3         0      3297
+newzealand     1111111  b1:c3         1      4643
+ouk-chaktrang  1110101  c1:c2         0      6762
+pocketknight   1101101  d2:d4         2     30319
+shatranj       1111111  b1:c3         0      2036
+shogi          1101101  c1:d2         0      4512
+sittuyin       0100100  K@b2          0    139366
+standard       1111111  c2:c4         5      4391
+threecheck     1000001  b1:c3         0     10014
+tjatoer        1111111  h4:h8        10     19700
+xiangqi        0111110  b3:g3        16     14420
+```
+
+Nineteen configurations carry a full mask and are the identity half. The other
+nineteen are the monotonic half: their node counts above are the ceiling every
+later phase is measured against.
+
+B10 principal variations at the same anchors:
+
+- `standard`: c2:c4 b8:c6 b1:c3 g8:f6 g1:f3 d7:d5
+- `shatranj`: b1:c3 b8:c6 g1:f3 g8:f6 c1:e3 c8:e6
+- `grand`: i2:h4 i9:h7 b2:c4 b9:c7 a3:a5 g9:f7
+- `xiangqi`: b3:g3 h8:g8 b1:c3 b8:c8 c1:e3 c10:e8
+- `janggi`: Q@e2 q@e9 E@c1 e@c10 E@g1 e@g10
+- `shogi`: c1:d2 c9:d8 g1:f2 f9:e8 f1:e2 g9:f8
+- `crazyhouse`: b1:c3 b8:c6 g1:f3 g8:f6 e2:e4 a7:a5
+- `koth`: b1:c3 b8:c6 g1:f3 g8:f6 a2:a4 a7:a5
+- `threecheck`: b1:c3 b8:c6 g1:f3 g8:f6 a2:a4 a7:a5
+- `extinction`: b1:c3 g8:f6 g1:f3 b8:c6 d2:d4 d7:d5
+
+EBF suite, seed 42, Hash 64 MB, one thread:
+
+- Log MD5: `766fcd0410223f54b503805ca6e78fd9`; suite exited 0.
+- `standard@13`: 9 cases, geometric nodes 169,808, EBF 1.734.
+- `crazyhouse@13`: 9 cases, geometric nodes 2,124,515, EBF 1.882.
+- `shogi@11`: 4 cases, geometric nodes 221,523, EBF 1.952.
+- `xiangqi@12`: 4 cases, geometric nodes 84,708, EBF 1.543.
+- `capablanca@10`: 1 case, nodes 175,555, EBF 2.537.
+- `gothic@10`: 1 case, nodes 91,143, EBF 2.273.
+- `grand@10`: 5 cases, geometric nodes 123,677, EBF 1.849.
+- Crazyhouse-mid / standard node ratio at depth 13: 14.62x, against 13.68x at
+  P0.
+
+Agreement suite against `/opt/homebrew/bin/fairy-stockfish`, seed 42, Hash
+64 MB, one thread:
+
+- Log MD5: `2b74de0c92a8fbbfea0862ecaeafe47b`; suite exited 0.
+- `standard`: 9 cases, median gap -56, 0 sign flips, 0 blind losses.
+- `crazyhouse`: 21 cases, median gap +814, 5 sign flips, 8 reference-sees-lost
+  cases missed locally, against 6 at P0. The sign gate is unchanged; the blind
+  count rose across P6 and is recorded there.
+
+Speed suite, seed 42, one thread, 10 passes per variant:
+
+- Log MD5: `b39429c049b5a48bd304fa2527e85c22`; suite exited 0.
+- `standard`, depth 11, 16 positions: 133,695 nodes, 4,002,426 NPS.
+- `shogi`, depth 8, 16 positions: 1,007,941 nodes, 1,776,062 NPS.
+- `crazyhouse`, depth 8, 16 positions: 777,281 nodes, 1,281,091 NPS.
+- `xiangqi`, depth 9, 16 positions: 493,122 nodes, 1,188,551 NPS.
+- `grand`, depth 9, 16 positions: 2,400,555 nodes, 1,076,565 NPS.
+- Node counts matched across all ten passes.
+
+Correctness suites, all against `bin/base-5`:
+
+- End-condition fixtures: 38 passed, 0 failed, log MD5
+  `eed18fb511f87a487a70c2282ecdeaf1`.
+- FEN round trip: 44 passed, 0 failed, 0 skipped, log MD5
+  `270795e6d6eff2495253876fc8102a50`.
+- Crazyhouse drop integrity: 24 games, 0 mismatches, log MD5
+  `f779b4c771da3eb0f1678a7095cb2b2b`.
+
+Bounded perft, seed 42, depth 4, log MD5
+`b3101e3f201074069a22875a9f8e0c72`. Every count matches P0 exactly:
+
+- `standard`: first 64 positions, 256/256 depth rows passed.
+- `crazyhouse` 16/16, `euroshogi` 16/16, `janggi` 28/28, `judkins` 12/12,
+  `minishogi` 12/12, `minixiangqi` 4/4, `pocketknight` 12/12, `shogi` 16/16,
+  `sittuyin` 16/16, `xiangqi` 44/44.
+
+The detached remote full standard depth-6 run recorded at P0 remains untouched
+and informative only, as directed.
+
+P9 result: accepted. `base-5` is `a94018d`, `content_md5`
+`d2ab2a5b6b142c2a4aa3fd87eecfceff`. `A-5` may start.
 
 ## Campaign protocol
 
