@@ -459,6 +459,12 @@ pub fn iterative_deepening(
 /// applied to a promotion, nor in an endgame, where a single capture is
 /// most of what is left to play for.
 ///
+/// Stopping early is a claim that the ordering is monotone, and a variant
+/// where a capture also fills a hand, counts toward a check tally, or takes
+/// two pieces at once orders no such thing, so the capability mask decides
+/// whether that stop is available and the rest of the list is searched where
+/// it is not.
+///
 /// Params:
 /// - state : &mut State      -> position searched, restored on return
 /// - ttable: &TTable         -> main table, read for table-move ordering
@@ -552,7 +558,11 @@ fn quiescence_search(
             state, info, &mut moves, &mut scores, index, &table_move
         );
 
-        if !in_check && scores[index] < LOSING_CAPTURE_SCORE as usize {
+        if recapture_order!(state)
+        && static_movement!(state)
+        && !in_check
+        && scores[index] < LOSING_CAPTURE_SCORE as usize
+        {
             break;                                                              /* ordered: every later one loses too */
         }
 
@@ -632,6 +642,15 @@ fn quiescence_search(
 /// that count the position is ordinary and stays searchable: a rule wanting
 /// three occurrences has not fired on the second, and a variant that punishes
 /// whoever sustained the cycle would lose that verdict to a neutral score.
+///
+/// Every shortcut that answers without searching -- standing on a static
+/// score, giving up the move, skipping a capture priced as losing, dropping a
+/// late quiet move -- asks the capability mask first. Each is an argument
+/// about the game rather than about the position, and a variant that never
+/// makes the argument has its moves searched instead. The late-move reduction
+/// below is not among them: a reduced search that beats alpha is repeated at
+/// full depth, so it reorders work without ever dropping a move, and no rule
+/// can make that unsound.
 ///
 /// Params:
 /// - state          : &mut State      -> position searched, restored on return
@@ -736,7 +755,8 @@ pub fn alpha_beta(
     let deepest = RFP_DEPTH as usize;
     let row = improving as usize * (deepest + 1);                               /* the rising side asks for less     */
 
-    if !in_check
+    if forward_pruning!(state)
+    && !in_check
     && ply > 0
     && depth <= deepest
     && beta - alpha == 1
@@ -746,7 +766,8 @@ pub fn alpha_beta(
         return beta;
     }
 
-    if allow_null_move
+    if null_pruning!(state)
+    && allow_null_move
     && !in_check
     && depth > 2
     && ply > 0
@@ -825,11 +846,14 @@ pub fn alpha_beta(
             && alpha.abs() < MATE_SCORE;
 
         if prunable && !is_capture && !is_promotion && !is_drop {
-            if legal_moves >= state.statics.lmp_count[lmp_row + lmp_slot] {
+            if quiet_pruning!(state)
+            && legal_moves >= state.statics.lmp_count[lmp_row + lmp_slot]
+            {
                 continue;
             }
 
-            if depth <= futility_deepest
+            if forward_pruning!(state)
+            && depth <= futility_deepest
             && static_eval
                 + state.statics.futility_margin[futility_row + depth]
                 <= alpha
@@ -839,6 +863,9 @@ pub fn alpha_beta(
         }
 
         if prunable
+        && see_pruning!(state)
+        && see_valid!(state)
+        && static_movement!(state)
         && is_capture
         && !is_promotion
         && !is_drop

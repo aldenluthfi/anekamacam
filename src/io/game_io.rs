@@ -304,6 +304,7 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
 
     derive_search_parameters(state);
     derive_shelter_parameters(state);
+    derive_search_capabilities(state);
     refresh_eval_state(state);
 }
 

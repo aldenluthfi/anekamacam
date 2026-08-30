@@ -220,9 +220,17 @@ macro_rules! see {
 
 /// score_move!
 ///
-/// Returns one ordering score. Priority: table move, winning SEE capture,
-/// killers, butterfly history, losing SEE capture, then a capture the
-/// exchange simulation could not make.
+/// Returns one ordering score. Priority: table move, winning capture,
+/// killers, butterfly history, losing capture, then a capture the exchange
+/// simulation could not make.
+///
+/// A capture is priced by the exchange simulation only where the variant's
+/// rules leave that simulation meaning what it says: the swing has to be the
+/// currency, and the attackers of a square must not depend on who is standing
+/// nearby. Elsewhere the price is the plain difference between what the move
+/// takes and what it risks, which claims less and stays inside the same score
+/// bands, so every reader downstream keeps reading winning and losing the
+/// same way.
 ///
 /// Params:
 /// - state     : &mut State          -> position the move is scored on
@@ -258,7 +266,7 @@ macro_rules! score_move {
 
                 (QUIET_MOVE_SCORE + history) as usize
             }
-        } else {
+        } else if see_valid!($state) && static_movement!($state) {
             let see_score = see!($state, scored_move);
 
             if see_score == -INF {
@@ -267,6 +275,15 @@ macro_rules! score_move {
                 (WINNING_CAPTURE_SCORE + see_score) as usize
             } else {
                 (LOSING_CAPTURE_SCORE + see_score) as usize
+            }
+        } else {
+            let swing = victim_value!(scored_move, $state)
+                - attack_value!(scored_move, $state);
+
+            if swing >= 0 {
+                (WINNING_CAPTURE_SCORE + swing) as usize
+            } else {
+                (LOSING_CAPTURE_SCORE + swing) as usize
             }
         }
     }};

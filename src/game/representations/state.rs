@@ -194,6 +194,166 @@ macro_rules! enc_stand_offs {
 }
 
 /*----------------------------------------------------------------------------*\
+                       SEARCH CAPABILITY REPRESENTATIONS
+\*----------------------------------------------------------------------------*/
+
+/// Search-capability bitmask accessor/encoder macros.
+///
+/// The `capabilities` field in [`StaticState`] answers, once per variant and
+/// before a game starts, which search shortcuts this rule set still permits.
+/// Every shortcut here is a claim about the game that a variant may simply not
+/// make: that material decides, that passing is bad, that a quiet move cannot
+/// win on the spot. `derive_search_capabilities` sets a bit only when the rules
+/// establish the claim, so a rule nobody has thought about leaves its bit
+/// clear and the search plays the position out instead.
+///
+/// Each pair contains a reader, `capability!(state)`, and a writer,
+/// `enc_capability!(mask)`, for the same bit.
+///
+/// Reader params (every reader):
+///
+/// - state: &State -> position whose capability flags are read
+///
+/// see_valid!
+///
+///   Return:
+///   bool -> an exchange on one square is worth its material swing (bit 0)
+///
+/// see_pruning!
+///
+///   Return:
+///   bool -> a capture priced as losing may be skipped outright (bit 1)
+///
+/// forward_pruning!
+///
+///   Return:
+///   bool -> a static evaluation may stand in for a search (bit 2)
+///
+/// null_pruning!
+///
+///   Return:
+///   bool -> giving up the move is a concession worth measuring (bit 3)
+///
+/// recapture_order!
+///
+///   Return:
+///   bool -> capture ordering is monotone enough to stop early (bit 4)
+///
+/// quiet_pruning!
+///
+///   Return:
+///   bool -> a late quiet move may be dropped unsearched (bit 5)
+///
+/// static_movement!
+///
+///   Return:
+///   bool -> a piece's reach never needs another piece present (bit 6)
+///
+/// enc_see_valid! .. enc_static_movement!
+///
+///   Params:
+///
+///   - mask: &mut u16
+///     capability mask being built; each writer sets the bit its reader tests
+#[macro_export]
+macro_rules! see_valid {
+    ($state:expr) => {
+        ($state.statics.capabilities & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_see_valid {
+    ($mask:expr) => {
+        $mask |= 1;
+    };
+}
+
+#[macro_export]
+macro_rules! see_pruning {
+    ($state:expr) => {
+        ($state.statics.capabilities >> 1 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_see_pruning {
+    ($mask:expr) => {
+        $mask |= 1 << 1;
+    };
+}
+
+#[macro_export]
+macro_rules! forward_pruning {
+    ($state:expr) => {
+        ($state.statics.capabilities >> 2 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_forward_pruning {
+    ($mask:expr) => {
+        $mask |= 1 << 2;
+    };
+}
+
+#[macro_export]
+macro_rules! null_pruning {
+    ($state:expr) => {
+        ($state.statics.capabilities >> 3 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_null_pruning {
+    ($mask:expr) => {
+        $mask |= 1 << 3;
+    };
+}
+
+#[macro_export]
+macro_rules! recapture_order {
+    ($state:expr) => {
+        ($state.statics.capabilities >> 4 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_recapture_order {
+    ($mask:expr) => {
+        $mask |= 1 << 4;
+    };
+}
+
+#[macro_export]
+macro_rules! quiet_pruning {
+    ($state:expr) => {
+        ($state.statics.capabilities >> 5 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_quiet_pruning {
+    ($mask:expr) => {
+        $mask |= 1 << 5;
+    };
+}
+
+#[macro_export]
+macro_rules! static_movement {
+    ($state:expr) => {
+        ($state.statics.capabilities >> 6 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_static_movement {
+    ($mask:expr) => {
+        $mask |= 1 << 6;
+    };
+}
+
+/*----------------------------------------------------------------------------*\
                             EN PASSANT REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
@@ -482,6 +642,7 @@ pub struct StaticState {
 
     pub pieces: Vec<Piece>,
     pub special_rules: u8,
+    pub capabilities: u16,                                                      /* search shortcuts the rules allow   */
 
     pub initial_setup: Vec<Board>,                                              /* piece index to board               */
 
@@ -677,6 +838,7 @@ impl State {
             startpos,
             pieces,
             special_rules,
+            capabilities: 0,                                                    /* nothing is allowed until derived   */
 
             initial_setup: vec![board!(files, ranks); piece_count],
 

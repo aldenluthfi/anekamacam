@@ -855,8 +855,8 @@ fn resolve_setup_army(state: &State) -> Vec<u32> {
 ///
 /// Startup entry point for the whole derivation pass: computes the
 /// evaluation parameters, then the search margins and the royal shelter
-/// tables built on top of them, and finally refreshes the incremental eval
-/// caches.
+/// tables built on top of them, then the capabilities the rules permit, and
+/// finally refreshes the incremental eval caches.
 ///
 /// Params:
 /// - state: &mut State -> freshly precomputed variant state
@@ -864,6 +864,7 @@ pub fn derive_parameters(state: &mut State) {
     derive_eval_parameters(state);
     derive_search_parameters(state);
     derive_shelter_parameters(state);
+    derive_search_capabilities(state);
     refresh_eval_state(state);
 }
 
@@ -1046,6 +1047,136 @@ pub fn derive_search_parameters(state: &mut State) {
     statics.lmp_count = counts;
     statics.see_allowance = allowance;
     statics.qsearch_delta = qsearch_delta as i32;
+}
+
+/// derive_search_capabilities
+///
+/// Decides once, before any game starts, which of the search's shortcuts this
+/// rule set still permits, and records them in `capabilities` for the readers
+/// documented on [`StaticState`]. Each shortcut rests on a claim about the
+/// game rather than about a position -- that material is the currency, that a
+/// static score bounds a subtree, that giving up the move concedes something,
+/// that a late quiet move is a bad one -- and a variant that never makes the
+/// claim leaves the bit clear and has the position played out instead.
+///
+/// Two kinds of fact answer the questions. Movement facts come from the
+/// generated vectors: a leg that unloads what it destroyed needs a second
+/// piece standing where it stands, a leg that may take a royal is not trading
+/// material, a vector that destroys twice wins more than its victim, a vector
+/// that ends where it started having taken nothing is a pass the variant
+/// already offers -- a lion returning home over a corpse is not one, which is
+/// why the destroy flag disqualifies the shape rather than the displacement
+/// alone -- and a piece with no quiet vector cannot give up a tempo at all.
+/// Terminal facts
+/// come from the declared rules: counting pieces, holding a zone, or tallying
+/// checks all pay in a currency material does not convert to.
+///
+/// Nothing here reads a variant's name, and nothing asks whether a rule is
+/// familiar. A rule set written tomorrow is judged by the same questions.
+///
+/// Params:
+/// - state: &mut State -> variant whose capability mask is derived
+pub fn derive_search_capabilities(state: &mut State) {
+    let statics = &state.statics;
+    let board_size = statics.board_size;
+
+    let mut screened = false;
+    let mut royal_capture = false;
+    let mut multi_capture = false;
+    let mut capture_only = false;
+    let mut may_pass = false;
+
+    for piece_index in 0..statics.pieces.len() {
+        let mut vectors = 0;
+        let mut quiet_vectors = 0;
+
+        for square in 0..board_size {
+            let slot = piece_index * board_size + square;
+
+            for vector in statics.relevant_moves[slot].iter()
+                .chain(statics.relevant_captures[slot].iter())
+            {
+                let mut destroyed = 0;
+                let mut destroys = false;
+
+                for leg in vector {
+                    screened |= u!(leg);
+                    royal_capture |= k!(leg);
+                    destroys |= d!(leg);
+                    destroyed += (d!(leg) && !u!(leg)) as usize;                /* an unloaded piece is put back      */
+                }
+
+                let (files_crossed, ranks_crossed) = vector_offset!(vector);
+                let moves_quietly = vector_moves_quietly!(vector);
+
+                multi_capture |= destroyed > 1;
+                may_pass |= moves_quietly && !destroys
+                    && files_crossed == 0 && ranks_crossed == 0;                /* nothing moved and nothing taken   */
+                vectors += 1;
+                quiet_vectors += moves_quietly as usize;
+            }
+        }
+
+        capture_only |= vectors > 0 && quiet_vectors == 0;
+    }
+
+    let termination = &state.termination;
+
+    let counts_pieces = !termination.extinct.is_empty();
+    let holds_zone = termination.goal.is_some();
+    let counts_checks = termination.checks.is_some();
+    let counts_material = termination.counting.is_some();
+
+    let misere = termination.checkmate == Outcome::Win
+        || termination.stalemate == Outcome::Win
+        || termination.extinct.iter()
+            .any(|rule| rule.outcome == Outcome::Win);
+
+    let recycles_captures = promote_to_captured!(state) || drops!(state);
+    let places_army = setup_phase!(state);
+    let vetoes_moves = stand_offs!(state);
+
+    let mut capabilities = 0u16;
+
+    if !royal_capture && !multi_capture && !misere
+    && !counts_pieces && !promote_to_captured!(state)
+    {
+        enc_see_valid!(capabilities);
+    }
+
+    if !recycles_captures && !counts_checks
+    && !counts_material && !holds_zone
+    {
+        enc_see_pruning!(capabilities);
+    }
+
+    if !misere && !counts_pieces && !holds_zone && !counts_checks {
+        enc_forward_pruning!(capabilities);
+    }
+
+    if !misere && !holds_zone && !counts_checks && !counts_material
+    && !may_pass && !vetoes_moves && !places_army && !capture_only
+    {
+        enc_null_pruning!(capabilities);
+    }
+
+    if !multi_capture && !recycles_captures
+    && !counts_checks && !holds_zone
+    {
+        enc_recapture_order!(capabilities);
+    }
+
+    if !misere && !holds_zone && !counts_checks {
+        enc_quiet_pruning!(capabilities);
+    }
+
+    if !screened {
+        enc_static_movement!(capabilities);
+    }
+
+    state.static_mut().capabilities = capabilities;
+
+    log_3!("Derived Search Capabilities: {:07b}", capabilities);
 }
 
 /// derive_base_pst

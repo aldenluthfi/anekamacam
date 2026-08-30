@@ -1039,6 +1039,10 @@ pub fn perft(
 /// without a parameter payload derive one and export it to
 /// `res/param/{variant}/latest.param`, so a delete-then-derive cycle
 /// regenerates every shipped file without debug graphics.
+///
+/// Each line also carries the search capabilities the variant's rules allow,
+/// in the bit order documented on [`StaticState`], so one run is the record
+/// of what every shipped config permits.
 pub fn run_derive_headless() {
     for config in EMBEDDED_CONFIGS.files() {
         let Some(filename) = config.path().to_str() else {
@@ -1049,8 +1053,11 @@ pub fn run_derive_headless() {
             continue;
         }
 
-        emit(EngineEvent::Print(format!("deriving {}\n", filename)));
-        let _ = parse_config_file(filename);
+        emit(EngineEvent::Print(format!("deriving {}", filename)));
+        let derived = parse_config_file(filename);
+        emit(EngineEvent::Print(format!(
+            " capabilities {:07b}\n", derived.statics.capabilities
+        )));
     }
 }
 

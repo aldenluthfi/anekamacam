@@ -2,7 +2,7 @@
 
 ## Status
 
-**P0-P5 complete, plus the setup-probe cache fix. P6 is next. No strength
+**P0-P6 complete, plus the setup-probe cache fix. P7 is next. No strength
 campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
@@ -818,6 +818,119 @@ Proof: derive output records mask for every shipped config. Capability-enabled
 ordinary variants retain baseline behavior. Capability-disabled variants compare
 against an explicit pruning-disabled reference and declared-rule fixtures, not
 unsafe baseline nodes. No variant-name branch.
+
+#### P6 evidence, 2026-08-30
+
+Baseline `119dcc8`. `StaticState` carries a `capabilities: u16`;
+`derive_search_capabilities` fills it from movement vectors and declared
+terminal rules, and every shortcut that answers without searching reads it.
+`debug-headless derive` prints the mask beside each config, most significant
+bit first: static movement, quiet pruning, recapture order, null pruning,
+forward pruning, exchange pruning, exchange validity.
+
+Movement facts come from the generated vectors: a leg that unloads what it
+destroyed needs a second piece standing where it stands, a leg that may take a
+royal is not trading material, a vector that destroys twice wins more than its
+victim, a vector that returns to its own square having destroyed nothing is a
+pass the variant already offers, and a piece with no quiet vector cannot give
+up a tempo. Terminal facts come from the declared rules: extinction, a goal
+zone, a check tally, and a bare-king count all pay in a currency material does
+not convert to; a hand or a promote-to-captured pool means a capture is not the
+end of the transaction; a setup phase and a stand-off rule both make passing a
+real decision.
+
+Late-move reduction is deliberately not gated. A reduced search that beats
+alpha is repeated at full depth, so it reorders work and never drops a move,
+and no rule can make that unsound. Gating it was measured first and cost koth
+40739% and sittuyin 30313% of baseline nodes for no soundness gained.
+
+Nineteen of the 38 shipped configs derive a full mask. The other nineteen:
+
+| Mask      | Configs                                              |
+| --------- | ---------------------------------------------------- |
+| `1101101` | crazyhouse, euroshogi, judkins, minishogi, shogi, pocketknight |
+| `1111010` | extinction, horde, kinglet                           |
+| `1110101` | makruk, ouk-chaktrang                                |
+| `0111110` | minixiangqi, xiangqi                                 |
+| `1000001` | fivecheck, threecheck, koth                          |
+| `1101100` | grand                                                |
+| `0110111` | janggi                                               |
+| `0100100` | sittuyin                                             |
+
+The mask is the only thing that changed. A scratch build of this tree that
+reads the mask from the environment, run with every bit forced on, reproduces
+`119dcc8` exactly on all 38 configs -- same nodes, scores, and PVs. With the
+derived masks, exactly the nineteen full-mask configs stay byte-identical to
+`119dcc8` and exactly the nineteen restricted ones differ. The partition is
+the mask and nothing else.
+
+Every bit is live. From all bits on, clearing one at a time changes the
+standard start position at depth 8 (15591 nodes with everything on):
+
+| Bit cleared     | Nodes |
+| --------------- | ----- |
+| see_valid       | 26167 |
+| see_pruning     | 18627 |
+| forward_pruning | 14923 |
+| null_pruning    | 36336 |
+| recapture_order | 17692 |
+| quiet_pruning   | 68386 |
+| static_movement | 26877 |
+
+Cost, 16-position bench at depth 8 against `119dcc8`, nodes:
+
+| Variant      | Base / P6           | Delta   |
+| ------------ | ------------------- | ------- |
+| standard     | 38618 / 38618       | 0.0%    |
+| berolina     | 297315 / 297315     | 0.0%    |
+| capablanca   | 364127 / 364127     | 0.0%    |
+| los-alamos   | 110639 / 110639     | 0.0%    |
+| shatranj     | 129319 / 129319     | 0.0%    |
+| judkins      | 336245 / 349150     | +3.8%   |
+| shogi        | 885437 / 994456     | +12.3%  |
+| crazyhouse   | 675247 / 794715     | +17.7%  |
+| euroshogi    | 692352 / 883372     | +27.6%  |
+| pocketknight | 354219 / 474640     | +34.0%  |
+| minishogi    | 202504 / 284606     | +40.5%  |
+| sittuyin     | 270564 / 386832     | +43.0%  |
+| makruk       | 268867 / 397712     | +47.9%  |
+| minixiangqi  | 113123 / 170644     | +50.8%  |
+| xiangqi      | 142360 / 220140     | +54.6%  |
+| grand        | 684975 / 1199834    | +75.2%  |
+| janggi       | 287914 / 722834     | +151.1% |
+
+`sittuyin` ran at depth 6 over 12 positions; the rest at depth 8 over 16.
+The five zero rows are the control: a full-mask config searches the same tree
+it did before.
+
+Configs without a perft suite were measured over the first 20 standard perft
+positions at depth 7, which share their board and pieces: `koth` +52.8%,
+`threecheck` +118.9%, `fivecheck` +118.9%. `extinction`, `horde`, and
+`kinglet` reject those FENs, so they were swept from their own start position
+at depths 6 through 9: extinction +89/+262/+216/+210%, kinglet +8/-5/+4/+219%,
+horde -7/-25/-52/-85%. Horde searches less because the forward pruning it lost
+was costing it nodes, not saving them.
+
+Wall clock, speed suite, 5 interleaved passes: standard unchanged at +0.03%
+nps, so the mask reads are free. The restricted variants pay in time but gain
+in rate -- xiangqi +28.01% time at +29.12% nps, grand +42.18% time at +32.23%
+nps -- because a node that no longer runs the exchange simulation is much
+cheaper than one that does.
+
+Suites: debug fixed-depth search over all 38 configs, 0 assertions; perft
+standard 20256/20256, crazyhouse 16/16, shogi 12/12, xiangqi 33/33, janggi
+21/21, sittuyin 12/12; end-condition fixtures 38 passed; FEN round trip 44/44;
+crazyhouse drop integrity 24 games, 0 mismatches. Agreement against
+fairy-stockfish holds its gate: standard 9 cases with 0 sign flips, crazyhouse
+21 cases with 5 sign flips, unchanged. Crazyhouse's
+`reference-sees-lost-we-do-not` rose from 6 to 8, which is the one number that
+moved the wrong way and is recorded here rather than explained away.
+
+No variant name appears anywhere in the change.
+
+P6 result: accepted as a correctness prerequisite. It costs nodes in nineteen
+variants and buys the right to keep the shortcuts in the other nineteen
+without an argument that was never checked.
 
 ### P7. Correct TT cutoff scope
 
