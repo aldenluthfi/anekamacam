@@ -58,15 +58,27 @@ impl ThreadPool {
     /// Spawns one named searcher thread per worker, each running full
     /// iterative deepening on its own state clone with a large stack
     /// (deep recursion) while sharing the lock-free tables. All workers
-    /// inherit the caller's depth, node, and deadline limits. After all
-    /// workers join, the result with the highest score wins.
+    /// inherit the caller's depth, node, and deadline limits.
+    ///
+    /// After all workers join, the worker that finished the most iterations
+    /// wins, and worker zero wins a tie. Score decides nothing: a worker cut
+    /// off inside an iteration can be holding a high number no window ever
+    /// confirmed, and picking on score lets that number outrank a shallower
+    /// but finished answer. Depth is a fact about how much work was completed,
+    /// and the lowest index breaks ties the same way on every run, so two runs
+    /// of the same position return the same move. Choosing among the deepest
+    /// by anything richer than an index is voting, and voting is S-5.
+    ///
+    /// Nodes are summed across every worker and elapsed time is the longest
+    /// any of them ran, since they run concurrently. Reporting the winner's
+    /// own counters would be reporting one worker's share as the whole.
     ///
     /// Params:
     /// - info: &SearchInfo         -> limits shared by every worker
     /// - dict: Option<&Translator> -> translator for printed move names
     ///
     /// Return:
-    /// SearchResult                -> the best result across all workers
+    /// SearchResult                -> the deepest finished result
     pub fn run(
         self,
         info: &SearchInfo,
@@ -116,22 +128,37 @@ impl ThreadPool {
             best_score: -INF,
             best_move: null_move(),
             ponder_move: null_move(),
+            completed_depth: 0,
             total_nodes: 0,
             total_elapsed: 0,
         };
+
+        let mut total_nodes = 0;
+        let mut total_elapsed = 0;
+        let mut deepest = 0;
 
         for (i, worker) in workers.into_iter().enumerate() {
             let result = worker.join().unwrap_or_else(|_| {
                 panic!("Thread {} panicked", i)
             });
 
-            if result.best_score >= main_result.best_score
+            total_nodes += result.total_nodes;
+            total_elapsed = total_elapsed.max(result.total_elapsed);
+
+            log_3!(
+                "Thread {} joined at completed depth {}",
+                i, result.completed_depth
+            );
+
+            if result.completed_depth > deepest
             && result.best_move != null_move() {
+                deepest = result.completed_depth;
                 main_result = result;
             }
-
-            log_3!("Thread {} joined", i);
         }
+
+        main_result.total_nodes = total_nodes;
+        main_result.total_elapsed = total_elapsed;
 
         main_result
     }

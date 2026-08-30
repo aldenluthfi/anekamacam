@@ -60,10 +60,16 @@ const ASPIRATION_START_DEPTH: u32 = 4;
 /// SearchResult
 ///
 /// Packaged outcome of one root search.
+///
+/// `completed_depth` counts only iterations that finished. An iteration cut
+/// short by the clock leaves a score that no window ever confirmed, so it
+/// updates nothing here and cannot be mistaken for a deeper answer than the
+/// last one that was actually reached.
 pub struct SearchResult {
     pub best_score: i32,                                                        /* best score at the root             */
     pub best_move: Move,                                                        /* best root move found               */
     pub ponder_move: Move,                                                      /* expected reply to best move        */
+    pub completed_depth: usize,                                                 /* deepest iteration that finished    */
     pub total_nodes: u128,                                                      /* nodes searched, all threads        */
     pub total_elapsed: u128,                                                    /* wall time in nanoseconds           */
 }
@@ -188,6 +194,7 @@ pub fn search_position(
             best_score: terminal_score!(state),
             best_move: null_move(),
             ponder_move: null_move(),
+            completed_depth: 0,
             total_nodes: 0,
             total_elapsed: 0,
         };
@@ -260,6 +267,7 @@ pub fn iterative_deepening(
 ) -> SearchResult {
     let mut best_move = null_move();
     let mut best_score: i32 = 0;
+    let mut completed_depth = 0;
     let start_time = ENGINE_START.elapsed().as_nanos();
 
     let max_parallelism = thread::available_parallelism()
@@ -331,6 +339,7 @@ pub fn iterative_deepening(
 
         best_score = score;
         best_move = info.pv_line[0].clone();
+        completed_depth = depth;
 
         let depth_elapsed = ENGINE_START
             .elapsed()
@@ -440,6 +449,7 @@ pub fn iterative_deepening(
         best_score,
         best_move,
         ponder_move,
+        completed_depth,
         total_nodes,
         total_elapsed,
     }

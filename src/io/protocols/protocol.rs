@@ -766,6 +766,7 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
                 best_score: 0,
                 best_move: null_move(),
                 ponder_move: null_move(),
+                completed_depth: 0,
                 total_nodes: 0,
                 total_elapsed: 0,
             });

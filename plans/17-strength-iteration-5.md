@@ -2,7 +2,7 @@
 
 ## Status
 
-**P0-P7 complete, plus the setup-probe cache fix. P8 is next. No strength
+**P0-P8 complete, plus the setup-probe cache fix. P9 is next. No strength
 campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
@@ -1054,6 +1054,59 @@ Touch:
 Proof: one-thread identity; unfinished shallow/high score cannot beat completed
 deeper result; shorter mate and longer loss ordering remains correct; deadline
 and node accounting stay bounded.
+
+#### P8 evidence, 2026-08-30
+
+Baseline `a5bd5cd`. `SearchResult` carries `completed_depth`, written only where
+`best_score` and `best_move` are, which is below the interrupt guard. The pool
+selects the greatest completed depth and keeps the first worker holding it, so
+worker zero wins a tie. Score decides nothing.
+
+The phase name is half right and the correction matters. A partial iteration
+never counted even before: `best_score` and `best_move` sit below the interrupt
+guard, so an unfinished depth already updated nothing. What the pool did wrong
+was compare scores reached at different depths. A worker that finished depth 15
+holding +13 outranked three workers that finished depth 16 holding less, and
+the deeper answer lost to the shallower one on a number the two never computed
+about the same tree.
+
+Measured on timed four-thread runs from the start position, 1500 ms, Hash 64:
+
+| Variant  | Base returned a move no deepest worker chose | P8   | Exposed |
+| -------- | -------------------------------------------- | ---- | ------- |
+| standard | 3 of 24                                      | 0/24 | 10 of 24 |
+| shogi    | 2 of 24                                      | 0/24 | 9 of 24  |
+
+"Exposed" counts trials where the highest final score was held only by a worker
+that finished shallower than the deepest -- the bait was on the table in about
+four trials in ten, and the baseline took it in three of the ten times it was
+offered. One standard trial is the whole phase in one line: depths 16, 16, 16,
+15, and the depth-15 worker's `c2c4` was returned over three workers that
+finished depth 16.
+
+One-thread identity: all 38 configs byte-identical to `a5bd5cd` at depth 9,
+including nodes, scores, and PVs. The single-thread path does not enter the
+pool at all.
+
+Node accounting. The pool used to copy the winning worker's counters into the
+returned result, so a four-thread search reported one worker's share as the
+whole. Nodes are now summed across workers and elapsed time is the longest any
+worker ran, since they run concurrently. Standard at depth 12: one thread
+329545 nodes before and after, four threads 199647 before and 851467 after.
+Protocol `info` lines are unaffected -- those are thread zero's own counters,
+emitted per iteration, and always were.
+
+Mate ordering: end-condition fixtures pass, including the `mate 1` and
+`mate -2` search cases. Choosing among equally deep workers by mate distance is
+`S-5`; P8 takes worker zero by specification and does not vote.
+
+Other suites: debug fixed-depth search over all 38 configs, 0 assertions; perft
+standard 20256/20256, crazyhouse 16/16; end-condition fixtures 38 passed; FEN
+round trip 44/44; crazyhouse drop integrity 24 games, 0 mismatches. Speed
+suite, single thread, within noise on all five variants: time between -2.27%
+and +0.34%.
+
+P8 result: accepted as a correctness prerequisite.
 
 ### P9. Freeze `base-5` and capability ledger
 
