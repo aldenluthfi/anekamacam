@@ -20,7 +20,7 @@ lazy_static! {
     /// body: `[kf]*` captures the optional flags, and the `@`-delimited
     /// remainder captures the neighbourhood pattern compiled by
     /// `parse_pattern`.
-    pub static ref DROP_PATTERN: Regex =
+    static ref DROP_PATTERN: Regex =
         Regex::new(r"^([kf]*)@(.*@.*)$").unwrap_or_else(|e| {
             panic!("Failed to compile DROP_PATTERN regex: {e}")
         });

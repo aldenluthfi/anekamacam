@@ -14,6 +14,8 @@
 
 use crate::*;
 
+const MAX_LOGS_LEN: usize = u16::MAX as usize;
+
 /// TUI layout constants.
 ///
 /// - `TUI_INPUT_MODE` / `TUI_NORMAL_MODE` tag the two input modes of the cmd.

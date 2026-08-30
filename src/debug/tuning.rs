@@ -20,15 +20,15 @@ use crate::*;
 /// scaling constant `K`; `TUNING_VALIDATION_MODULUS` and
 /// `TUNING_VALIDATION_PATIENCE` set the game-level validation split and
 /// the early-stop patience.
-pub const ADAM_BETA_ONE: f64 = 0.9;
-pub const ADAM_BETA_TWO: f64 = 0.999;
-pub const ADAM_EPSILON: f64 = 1e-8;
+const ADAM_BETA_ONE: f64 = 0.9;
+const ADAM_BETA_TWO: f64 = 0.999;
+const ADAM_EPSILON: f64 = 1e-8;
 
-pub const TEXEL_K_MIN: f64 = 0.01;
-pub const TEXEL_K_MAX: f64 = 3.0;
-pub const TEXEL_K_ITERATIONS: usize = 32;
-pub const TUNING_VALIDATION_MODULUS: u64 = 5;
-pub const TUNING_VALIDATION_PATIENCE: usize = 10;
+const TEXEL_K_MIN: f64 = 0.01;
+const TEXEL_K_MAX: f64 = 3.0;
+const TEXEL_K_ITERATIONS: usize = 32;
+const TUNING_VALIDATION_MODULUS: u64 = 5;
+const TUNING_VALIDATION_PATIENCE: usize = 10;
 
 /// TuneShape
 ///

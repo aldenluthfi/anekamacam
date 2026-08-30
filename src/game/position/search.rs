@@ -49,7 +49,13 @@ pub struct SearchInfo {
 /// node in check leaves there: no static score describes a position whose
 /// king is already attacked, so a ply reading one two below it and finding
 /// this reads no trend at all. `INF` is outside every real evaluation.
-pub const EVAL_NONE: i32 = INF;
+const EVAL_NONE: i32 = INF;
+const REDUCTION_MINIMUM_DEPTH: u32 = 3;
+const REDUCTION_MOVE_BASE: u32 = 2;
+const REDUCTION_MOVE_WIDE: u32 = 2;
+const ASPIRATION_CLAMP: u32 = 16000;
+const ASPIRATION_WIDEN: u32 = 2000;
+const ASPIRATION_START_DEPTH: u32 = 4;
 
 /// SearchResult
 ///

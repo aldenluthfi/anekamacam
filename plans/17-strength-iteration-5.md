@@ -2,7 +2,7 @@
 
 ## Status
 
-**P0-P2 complete. P3 is next. No strength campaign has started.**
+**P0-P3 complete. P4 is next. No strength campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
 
@@ -88,9 +88,10 @@ Binding results:
 1. No variant names or protocol-dialect concepts in engine behavior.
 2. `StaticState` stores final runtime products, not startup inputs already
    consumed by derivation.
-3. Universal coefficients are private constants beside owning behavior.
-4. `prelude.rs` is not a constants or embedded-resource registry. Do not create
-   `constants.rs`.
+3. A constant or static used by one file stays private in that file. A value
+   shared across files is defined once in `prelude.rs`.
+4. `prelude.rs` is the registry for genuinely cross-file constants and statics,
+   not single-file implementation details. Do not create `constants.rs`.
 5. Payload contains values current runtime consumes and current tuner moves:
    material plus PST residuals only after P2.
 6. Rule-derived base PST and tuned residual PST stay separate. Tuning cannot
@@ -476,38 +477,71 @@ Verification:
 P2 result: accepted as neutral payload and derivation cleanup. Final PST and
 playing policy remain identical to P0.
 
-### P3. Localize constants and embedded resources
+### P3. Separate private and shared constants
 
-Move ordering/history constants to `move_ordering.rs`; TT flags/layout to
-`transposition.rs`; move tags to `moves.rs`; phase/result tags to state,
-termination, or evaluation owner; derivation coefficients to `parameters.rs`;
-protocol constants to `protocol.rs`; I/O paths and `EMBEDDED_PARAMS` to
-`game_io.rs`; debug-only constants to `headless.rs`.
+User-directed architecture revision, 2026-08-29: visibility follows actual use,
+not subsystem category.
 
-Remove parameter constant and embedded-resource re-exports from `prelude.rs`.
-Private by default; narrow export only for concrete caller. Replace `use crate::*`
-in these owners and direct dependants when wildcard existed only for moved items.
-No replacement dump.
+- A constant or static used in one file stays private beside that behavior.
+- A constant or static used by multiple files is defined once in `prelude.rs`.
+- Do not use mismatched `pub`, `pub(crate)`, and private copies for one value.
+- Do not create `constants.rs` or duplicate shared values beside each caller.
+- Embedded resources follow the same rule: private when one file reads them,
+  shared through prelude when multiple files read them.
+- Keep wildcard imports where they still carry broad engine vocabulary. Remove
+  only imports made redundant or unused by this separation.
 
-Touch:
+This revision replaces the earlier owner-local P3 wording. It does not change
+runtime values, payload bytes, or behavior.
 
-- `src/prelude.rs`
-- `src/game/position/search.rs`
-- `src/game/position/evaluation.rs`
-- `src/game/search/move_ordering.rs`
-- `src/game/search/transposition.rs`
-- `src/game/search/parameters.rs`
-- `src/game/representations/moves.rs`
-- `src/game/representations/state.rs`
-- `src/game/representations/termination.rs`
-- `src/io/game_io.rs`
-- `src/io/protocols/protocol.rs`
-- `src/debug/headless.rs`
+Touch `src/prelude.rs`, files retaining private constants/statics, and direct
+callers whose imports change.
 
-Proof: no parameter, ordering, TT, phase, path, protocol, or parameter-resource
-constant is re-exported through prelude; no duplicate/unused import; all builds,
+Proof: every constant/static has one definition; single-file values are private;
+cross-file values live in prelude; no duplicate or unused import; all builds,
 protocols, derive, evaluation, perft, and fixed-depth signatures remain identical.
-Payload builds use clean resource-owner recompilation, not source edits for mtime.
+Payload builds use clean resource recompilation, not source edits for mtime.
+
+#### P3 evidence, 2026-08-29
+
+Status: complete.
+
+Ownership:
+
+- Audited 170 constant and static definitions; duplicate definitions: 0.
+- Public constant/static definitions outside `prelude.rs`: 0.
+- Private constants/statics referenced from another file: 0.
+- Single-file tuner, SPRT, protocol, parser-regex, payload-resource, logger,
+  archive, graphics, derivation, and search-gate values remain private.
+- Cross-file values and macro expansion dependencies live once in prelude.
+- `EMBEDDED_PARAMS` remains private to `game_io.rs`; shared config, dictionary,
+  and perft resources live in prelude.
+- `INDEX_TO_CARDINAL_VECTORS` became a shared constant rather than a public
+  file-local lazy static. Other parser regex/maps became private.
+- No `pub(crate)` constant/static visibility remains.
+
+Verification:
+
+- `cargo check`, debug build, and release build completed without warnings or
+  suppression.
+- UCI, USI, and UCCI handshakes match P0 after normalizing host thread maximum.
+  Protocol manifest MD5: `1b5698fad5b7f19e7a2b215e7ff6cb1c`.
+- `debug-headless derive`: 38/38 configs, output MD5 unchanged at
+  `dba3a046d66a533729883c33829a0f60`.
+- All 38 start-position phases and evaluations match P0 exactly. Manifest MD5:
+  `a8dc4452a764d4010fead0cfdfdb8ef9`.
+- B10 depth-6 nodes, score, best move, and PV match P0 exactly. Semantic MD5:
+  `5f7424ecea84734a3c48db0c6138ed8c`.
+- Bounded perft matches P0 exactly: MD5
+  `a4872e8f5f19141489c3c7cfb7fbc38e`.
+- FEN round trip: 44 passed, 0 failed, 0 skipped.
+- Release resource embedding rebuilt through actual owner/prelude source
+  changes; no unrelated source mtime edit was used.
+- Pre-existing `search.rs` comment alignment remains outside P3 staging.
+
+P3 result: accepted as neutral ownership cleanup under user-directed
+private/shared rule. Runtime values, payload bytes, and playing policy remain
+unchanged.
 
 ### P4. Separate canonical, search, and qsearch identity
 

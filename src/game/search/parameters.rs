@@ -14,52 +14,34 @@
 
 use crate::*;
 
-/// Scale used by integer derivation coefficients wherever a fractional share
-/// must remain exact without floating-point state.
-pub const COEFFICIENT_SCALE: f64 = 1000.0;
-
 /// Board occupancy assumed when valuing a piece: the fraction of squares
 /// a slider expects to find blocked in each phase, which is what makes an
 /// opening value differ from an endgame one.
-pub const OPENING_OCCUPANCY: u32 = 360;
-pub const ENDGAME_OCCUPANCY: u32 = 120;
+const OPENING_OCCUPANCY: u32 = 360;
+const ENDGAME_OCCUPANCY: u32 = 120;
 
 /// Where the ranked non-royal army is cut into roles: the cheapest share
 /// that is not big, and the dearest share that is major.
-pub const ROLE_NON_BIG_SPLIT: u32 = 100;
-pub const ROLE_MAJOR_SPLIT: u32 = 200;
+const ROLE_NON_BIG_SPLIT: u32 = 100;
+const ROLE_MAJOR_SPLIT: u32 = 200;
 
 /// How small the big non-royal army has to get before play counts as an
 /// endgame, measured in pieces of average deployed value.
-pub const ENDGAME_ARMY_SIZE: u32 = 5;
+const ENDGAME_ARMY_SIZE: u32 = 5;
 
 /// Late-move reduction curves, one per class of move. Each surface is
 /// `base + shape(depth, moves) / divisor`. Which terms a curve mixes is fixed
 /// by class because a quiet move buried in a long list and a capture answering
 /// check do not respond to the same variable. Base and divisor are held against
 /// `COEFFICIENT_SCALE`.
-pub const REDUCTION_QUIET_BASE: u32 = 750;
-pub const REDUCTION_QUIET_DIVISOR: u32 = 2250;
-pub const REDUCTION_QUIET_CHECK_BASE: u32 = 1000;
-pub const REDUCTION_QUIET_CHECK_DIVISOR: u32 = 4000;
-pub const REDUCTION_TACTICAL_BASE: u32 = 1000;
-pub const REDUCTION_TACTICAL_DIVISOR: u32 = 4000;
-pub const REDUCTION_TACTICAL_CHECK_BASE: u32 = 0;
-pub const REDUCTION_TACTICAL_CHECK_DIVISOR: u32 = 4500;
-
-/// Where reductions begin: the shallowest depth that may give up plies,
-/// and the move-count gate `base + wide * wide_window` a move has to pass
-/// before its curve applies at all. The gate is wider on a full window
-/// because the moves it orders first have not yet been priced against a
-/// bound worth trusting.
-pub const REDUCTION_MINIMUM_DEPTH: u32 = 3;
-pub const REDUCTION_MOVE_BASE: u32 = 2;
-pub const REDUCTION_MOVE_WIDE: u32 = 2;
-
-/// How many move slots each surface stores. A node ordering more moves
-/// than this reuses the last slot: every curve has flattened well before
-/// it, so further rows would repeat what the table already says.
-pub const REDUCTION_MOVE_CAP: usize = 64;
+const REDUCTION_QUIET_BASE: u32 = 750;
+const REDUCTION_QUIET_DIVISOR: u32 = 2250;
+const REDUCTION_QUIET_CHECK_BASE: u32 = 1000;
+const REDUCTION_QUIET_CHECK_DIVISOR: u32 = 4000;
+const REDUCTION_TACTICAL_BASE: u32 = 1000;
+const REDUCTION_TACTICAL_DIVISOR: u32 = 4000;
+const REDUCTION_TACTICAL_CHECK_BASE: u32 = 0;
+const REDUCTION_TACTICAL_CHECK_DIVISOR: u32 = 4500;
 
 /// The window the root reopens around the previous completed score: a
 /// fraction of the dearest piece, that being the top of this variant's
@@ -68,13 +50,7 @@ pub const REDUCTION_MOVE_CAP: usize = 64;
 /// time, until it passes `CLAMP` times the width it opened at; past that
 /// the root reopens fully instead of widening again. Every one of the
 /// three is held against `COEFFICIENT_SCALE`.
-pub const ASPIRATION_RATIO: u32 = 30;
-pub const ASPIRATION_CLAMP: u32 = 16000;
-pub const ASPIRATION_WIDEN: u32 = 2000;
-
-/// The shallowest iteration allowed to narrow its window. Below it no
-/// completed score exists that is worth centring one on.
-pub const ASPIRATION_START_DEPTH: u32 = 4;
+const ASPIRATION_RATIO: u32 = 30;
 
 /// The cushion a node has to clear before its static evaluation alone is
 /// trusted to beat beta: `RATIO` of the dearest non-royal piece per ply
@@ -82,12 +58,8 @@ pub const ASPIRATION_START_DEPTH: u32 = 4;
 /// A side already standing better than it did two plies ago is believed
 /// on less, so its row is the flat one scaled by `IMPROVING`. Both are
 /// held against `COEFFICIENT_SCALE`.
-pub const RFP_RATIO: u32 = 110;
-pub const RFP_IMPROVING: u32 = 750;
-
-/// The deepest node allowed to cut that way. Past it a static score has
-/// too much search left under it to stand in for one.
-pub const RFP_DEPTH: u32 = 6;
+const RFP_RATIO: u32 = 110;
+const RFP_IMPROVING: u32 = 750;
 
 /// How far under alpha a node may stand and still search its late quiet
 /// moves: `FLOOR` of the dearest non-royal piece, plus `RATIO` of it for
@@ -96,12 +68,9 @@ pub const RFP_DEPTH: u32 = 6;
 /// side whose evaluation has not risen is believed least and so is given
 /// the smaller margin, the risen side's row scaled by `IMPROVING`. All
 /// three are held against `COEFFICIENT_SCALE`.
-pub const FUTILITY_FLOOR: u32 = 100;
-pub const FUTILITY_RATIO: u32 = 130;
-pub const FUTILITY_IMPROVING: u32 = 700;
-
-/// The deepest node whose late quiets may be skipped that way.
-pub const FUTILITY_DEPTH: u32 = 6;
+const FUTILITY_FLOOR: u32 = 100;
+const FUTILITY_RATIO: u32 = 130;
+const FUTILITY_IMPROVING: u32 = 700;
 
 /// How many moves a node orders before the quiets after them are taken
 /// for noise: `BASE`, plus `RATIO` of the square of the depth left. The
@@ -109,24 +78,16 @@ pub const FUTILITY_DEPTH: u32 = 6;
 /// scaled by `IMPROVING`, so the side already doing worse gives up on its
 /// quiets first. `RATIO` and `IMPROVING` are held against
 /// `COEFFICIENT_SCALE`.
-pub const LMP_BASE: u32 = 3;
-pub const LMP_RATIO: u32 = 1000;
-pub const LMP_IMPROVING: u32 = 550;
-
-/// The deepest row the count is built to. A node past it reuses that row
-/// rather than losing the gate: the counts have already outgrown any real
-/// move list, so no deeper row would say anything new.
-pub const LMP_DEPTH: u32 = 12;
+const LMP_BASE: u32 = 3;
+const LMP_RATIO: u32 = 1000;
+const LMP_IMPROVING: u32 = 550;
 
 /// How much material a capture may already be seen to lose and still be
 /// searched: `RATIO` of the dearest non-royal piece per ply still to
 /// search, held against `COEFFICIENT_SCALE`. Ordering has priced every
 /// capture by exchange simulation before the first is searched, so this
 /// reads that price back rather than paying for it twice.
-pub const SEE_PRUNE_RATIO: u32 = 250;
-
-/// The deepest node allowed to discard a capture on that price alone.
-pub const SEE_PRUNE_DEPTH: u32 = 5;
+const SEE_PRUNE_RATIO: u32 = 250;
 
 /// How much a capture has to promise at a quiet leaf before it is
 /// searched: what it takes, plus `RATIO` of the dearest non-royal piece
@@ -135,7 +96,7 @@ pub const SEE_PRUNE_DEPTH: u32 = 5;
 /// already standing at that leaf does not. An endgame position is thin
 /// enough that a single capture is most of what is left to play for, so
 /// the margin is not applied there.
-pub const QSEARCH_DELTA_RATIO: u32 = 100;
+const QSEARCH_DELTA_RATIO: u32 = 100;
 
 /// The ring a royal calls its own ground: every square within `RADIUS`
 /// steps on both axes. Squares of that ring lying ahead of the royal are
@@ -144,10 +105,9 @@ pub const QSEARCH_DELTA_RATIO: u32 = 100;
 /// walled in as this term can say, and the next piece belongs elsewhere.
 /// Shelter is priced as `RATIO` of the dearest non-royal piece, held
 /// against `COEFFICIENT_SCALE` and never below `FLOOR` in raw units.
-pub const SHELTER_RADIUS: u32 = 1;
-pub const SHELTER_CAP: u32 = 3;
-pub const SHELTER_RATIO: u32 = 12;
-pub const SHELTER_FLOOR: u32 = 4;
+const SHELTER_RADIUS: u32 = 1;
+const SHELTER_RATIO: u32 = 12;
+const SHELTER_FLOOR: u32 = 4;
 
 /// Share of the board a royal must be able to stand on before shelter is
 /// worth pricing at all. A royal walled into a palace by its own forbidden
@@ -156,7 +116,7 @@ pub const SHELTER_FLOOR: u32 = 4;
 /// the only way it can gather friendly pieces in front of itself is to
 /// walk forward, which is exactly the move such variants punish. Below
 /// this share the term is switched off for that colour.
-pub const SHELTER_CONFINEMENT_DIVISOR: usize = 4;
+const SHELTER_CONFINEMENT_DIVISOR: usize = 4;
 
 /// Bounds on the derive-time setup walk: how many distinct censuses may
 /// be expanded, and how many completed setups are averaged. A placement

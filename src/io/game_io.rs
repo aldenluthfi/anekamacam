@@ -12,6 +12,12 @@
 //! Author : Alden Luthfi
 use crate::*;
 
+const PARAMS_DIR: &str = "res/param";
+const DEFAULT_DROP: &str = "@#~?@";
+
+static EMBEDDED_PARAMS: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/../res/param");
+
 lazy_static! {
     /// CFEN field regexes.
     ///
@@ -21,11 +27,11 @@ lazy_static! {
     /// - CASTLING_PATTERN : KQkq rights, or `-`
     /// - ENP_PATTERN      : packed en passant square, or `*`
     /// - HAND_PATTERN     : the `white/black` in-hand split
-    pub static ref CASTLING_PATTERN: Regex =
+    static ref CASTLING_PATTERN: Regex =
         Regex::new(r"^([KQkq]+)$|^-$").unwrap();
-    pub static ref ENP_PATTERN: Regex =
+    static ref ENP_PATTERN: Regex =
         Regex::new(r"^([0-9a-fA-F]{3})([0-9a-fA-F]{3})(.)$|^\*$").unwrap();
-    pub static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
+    static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
 }
 
 /// extract_fen_components

@@ -59,9 +59,7 @@ pub use crate::game::representations::termination::{
     game_outcome, has_repetition, position_terminal, repetition_outcome,
     side_is_bare, terminal_reason,
 };
-pub use crate::game::moves::move_parse::{
-    INDEX_TO_CARDINAL_VECTORS, generate_move_vectors,
-};
+pub use crate::game::moves::move_parse::generate_move_vectors;
 
 pub use crate::game::moves::pattern_parse::{
     generate_relevant_stand_offs, generate_stand_off_patterns, parse_pattern,
@@ -71,26 +69,11 @@ pub use crate::game::position::{
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
         log_table_stats, search_position, SearchInfo, SearchResult,
-        EVAL_NONE,
     },
 };
 pub use crate::game::search::{
     parallel::ThreadPool,
     parameters::{
-        ASPIRATION_CLAMP, ASPIRATION_RATIO, ASPIRATION_START_DEPTH,
-        ASPIRATION_WIDEN, COEFFICIENT_SCALE,
-        ENDGAME_ARMY_SIZE, ENDGAME_OCCUPANCY, FUTILITY_DEPTH, FUTILITY_FLOOR,
-        FUTILITY_IMPROVING, FUTILITY_RATIO, LMP_BASE, LMP_DEPTH,
-        LMP_IMPROVING, LMP_RATIO, OPENING_OCCUPANCY,
-        QSEARCH_DELTA_RATIO, REDUCTION_MINIMUM_DEPTH, REDUCTION_MOVE_BASE,
-        REDUCTION_MOVE_CAP, REDUCTION_MOVE_WIDE, REDUCTION_QUIET_BASE,
-        REDUCTION_QUIET_CHECK_BASE, REDUCTION_QUIET_CHECK_DIVISOR,
-        REDUCTION_QUIET_DIVISOR, REDUCTION_TACTICAL_BASE,
-        REDUCTION_TACTICAL_CHECK_BASE, REDUCTION_TACTICAL_CHECK_DIVISOR,
-        REDUCTION_TACTICAL_DIVISOR, RFP_DEPTH, RFP_IMPROVING, RFP_RATIO,
-        ROLE_MAJOR_SPLIT, ROLE_NON_BIG_SPLIT, SEE_PRUNE_DEPTH,
-        SEE_PRUNE_RATIO, SHELTER_CAP, SHELTER_CONFINEMENT_DIVISOR,
-        SHELTER_FLOOR, SHELTER_RADIUS, SHELTER_RATIO,
         derive_base_pst, derive_eval_parameters, derive_eval_products,
         derive_parameters, derive_search_parameters, derive_shelter_parameters,
         reduction_surface,
@@ -133,7 +116,7 @@ pub use crate::io::protocols::{
     translation::Translator,
     protocol::{
         find_protocol, Protocol, Session, run, start_search, new_game,
-        print_handshake, PROTOCOLS,
+        print_handshake,
     },
     uci::Uci,
     usi::Usi,
@@ -228,23 +211,15 @@ pub use std::{
 
 /// Engine-wide constants.
 ///
-/// Board and search bounds, colour and castling codes, piece/en-passant
-/// sentinels, and move-type tags. Values are fixed at compile time and shared
-/// through
-/// the prelude. `MAX_SQUARES` tracks [`BoardBits`] and sizes the Zobrist
-/// tables used with it.
+/// Board and search bounds, colour and castling codes, and representation
+/// sentinels shared across otherwise independent subsystems. `MAX_SQUARES`
+/// tracks [`BoardBits`] and sizes its Zobrist tables.
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_DEPTH: usize = 128;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
-pub const MAX_LOGS_LEN: usize = u16::MAX as usize;
 
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
-
-pub const ONGOING: u8 = 0;                                                      /* game has not yet reached a terminal*/
-pub const DRAW: u8 = 1;                                                         /* terminal: drawn game               */
-pub const BLACK_WIN: u8 = 2;                                                    /* terminal: black is the winner      */
-pub const WHITE_WIN: u8 = 3;                                                    /* terminal: white is the winner      */
 
 pub const WK_INDEX: u8 = 0;
 pub const WQ_INDEX: u8 = 1;
@@ -254,17 +229,10 @@ pub const WK_CASTLE: u8 = 0b0001;
 pub const WQ_CASTLE: u8 = 0b0010;
 pub const BK_CASTLE: u8 = 0b0100;
 pub const BQ_CASTLE: u8 = 0b1000;
-pub const CASTLING: [u8; 4] = [WK_CASTLE, WQ_CASTLE, BQ_CASTLE, BK_CASTLE];
 
 pub const NO_PIECE: PieceIndex = PieceIndex::MAX;
 pub const NO_SQUARE: Square = Square::MAX;
 pub const NO_EN_PASSANT: u32 = u32::MAX;
-
-pub const QUIET_MOVE: u128 = 0;
-pub const SINGLE_CAPTURE_MOVE: u128 = 1;
-pub const MULTI_CAPTURE_MOVE: u128 = 2;
-pub const DROP_MOVE: u128 = 3;
-pub const CASTLING_MOVE: u128 = 4;
 
 lazy_static! {
     /// Process-wide lazy statics.
@@ -494,27 +462,38 @@ pub fn null_pseudo_move() -> PseudoMove {
     (!0u128, 0u64)
 }
 
-pub const DEFAULT_DROP: &str = "@#~?@";
+/// Shared move-format tags.
+pub const QUIET_MOVE: u128 = 0;
+pub const SINGLE_CAPTURE_MOVE: u128 = 1;
+pub const MULTI_CAPTURE_MOVE: u128 = 2;
+pub const DROP_MOVE: u128 = 3;
+pub const CASTLING_MOVE: u128 = 4;
 
+pub const INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] = [
+    (0, 1), (1, 1), (1, 0), (1, -1),
+    (0, -1), (-1, -1), (-1, 0), (-1, 1),
+];
+
+/// Shared game-phase and result tags.
+pub const SETUP: u8 = 0;
+pub const OPENING: u8 = 1;
+pub const MIDDLEGAME: u8 = 2;
+pub const ENDGAME: u8 = 3;
+
+pub const ONGOING: u8 = 0;
+pub const DRAW: u8 = 1;
+pub const BLACK_WIN: u8 = 2;
+pub const WHITE_WIN: u8 = 3;
+
+/// Shared search score bands and transposition bound tags.
 pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 
-/// Move-ordering bands, searched in descending score order: the table
-/// move, winning captures, killers, quiet moves, then losing captures.
-/// Each constant is a band's base score, already carrying the offset that
-/// keeps the signed tiebreak added to it -- history for quiets, exchange
-/// score for captures -- inside its own band. History is clamped to
-/// `HISTORY_BOUND` either way, so a quiet move spans `QUIET_MOVE_SCORE`
-/// plus or minus that bound and stays clear of both neighbours.
-///
-/// A capture the exchange simulation cannot make has no exchange score to
-/// place it within a band, so it sorts below all of them on its own score
-/// rather than being folded into the losing band as arithmetic on the
-/// simulation's out-of-band failure value.
 pub const HISTORY_BOUND: i32 = i16::MAX as i32 / 2;
 pub const TABLE_MOVE_SCORE: usize = 5_000_000;
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000 + HISTORY_BOUND;
-pub const KILLER_MOVE_SCORE: usize = 1_000_000 + 3 * HISTORY_BOUND as usize;
+pub const KILLER_MOVE_SCORE: usize =
+    1_000_000 + 3 * HISTORY_BOUND as usize;
 pub const QUIET_MOVE_SCORE: i32 = 1_000_000 + HISTORY_BOUND;
 pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000 - HISTORY_BOUND;
 pub const UNMAKEABLE_CAPTURE_SCORE: usize = 0;
@@ -523,24 +502,19 @@ pub const FALPHA: u8 = 0;
 pub const FBETA: u8 = 1;
 pub const FEXACT: u8 = 2;
 
-pub const SETUP: u8 = 0;
-pub const OPENING: u8 = 1;
-pub const MIDDLEGAME: u8 = 2;
-pub const ENDGAME: u8 = 3;
+/// Derivation and search constants read by multiple files.
+pub const COEFFICIENT_SCALE: f64 = 1000.0;
+pub const REDUCTION_MOVE_CAP: usize = 64;
+pub const RFP_DEPTH: u32 = 6;
+pub const FUTILITY_DEPTH: u32 = 6;
+pub const LMP_DEPTH: u32 = 12;
+pub const SEE_PRUNE_DEPTH: u32 = 5;
+pub const SHELTER_CAP: u32 = 3;
 
-pub const LOG_DIR: &str = "logs";
-pub const PARAMS_DIR: &str = "res/param";
+/// Shared protocol, storage, and debug constants.
 pub const DATA_DIR: &str = "res/data";
-pub const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";                        /* rolled-file backup name stamp      */
-pub const LOG_HISTORY_KEEP: usize = 32;                                         /* rolled logs kept before pruning    */
-
 pub const OPT_THREADS: &str = "Threads";
-
 pub const HASH_DEFAULT_MB: usize = 256;
-
-/// Self-play opening depth, shared by `datagen` and `sprt`: how many
-/// uniformly random legal plies a generated or match game opens with, so
-/// no two games repeat the same line.
 pub const OPENING_RANDOM_PLIES: usize = 8;
 
 pub static EMBEDDED_CONFIGS: Dir<'static> =
@@ -549,5 +523,3 @@ pub static EMBEDDED_DICTS: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../res/dicts");
 pub static EMBEDDED_PERFT: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../res/perft");
-pub static EMBEDDED_PARAMS: Dir<'static> =
-    include_dir!("$CARGO_MANIFEST_DIR/../res/param");

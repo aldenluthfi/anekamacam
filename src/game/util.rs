@@ -11,6 +11,8 @@
 
 use crate::*;
 
+const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";
+
 /// exe_tag
 ///
 /// Short identity of the running binary, taken from the invoking path

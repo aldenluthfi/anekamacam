@@ -20,7 +20,7 @@ lazy_static! {
     /// halves: `(.+)~(.+)` captures each half's multi-leg offsets and its
     /// piece list, and the `@`-delimited optional group captures the
     /// stopper half when present.
-    pub static ref PATTERN_PATTERN: Regex =
+    static ref PATTERN_PATTERN: Regex =
         Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap_or_else(|e| {
             panic!("Failed to compile PATTERN_PATTERN regex: {e}")
         });

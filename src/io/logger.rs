@@ -13,6 +13,9 @@
 
 use crate::*;
 
+const LOG_DIR: &str = "logs";
+const LOG_HISTORY_KEEP: usize = 32;
+
 /// TUI log-forwarding macros.
 ///
 /// `push_log_message!` mirrors a formatted log line into the shared

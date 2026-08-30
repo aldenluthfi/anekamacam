@@ -19,17 +19,17 @@ use crate::*;
 /// The dialect and hash ceiling a fresh session starts from, the option
 /// names the `setoption` dispatcher matches, and the default and maximum
 /// transmission overhead subtracted from timed searches.
-pub const DEFAULT_PROTOCOL: &str = "uci";
-pub const HASH_MAX_MB: usize = 65536;
+const DEFAULT_PROTOCOL: &str = "uci";
+const HASH_MAX_MB: usize = 65536;
 
-pub const OPT_PROTOCOL: &str = "Protocol";
-pub const OPT_PONDER: &str = "Ponder";
-pub const OPT_HASH: &str = "Hash";
-pub const OPT_CLEAR_HASH: &str = "Clear Hash";
-pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
+const OPT_PROTOCOL: &str = "Protocol";
+const OPT_PONDER: &str = "Ponder";
+const OPT_HASH: &str = "Hash";
+const OPT_CLEAR_HASH: &str = "Clear Hash";
+const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
 
-pub const TIME_OVERHEAD_MS: u128 = 50;
-pub const MAX_OVERHEAD_MS: u128 = 1000;
+const TIME_OVERHEAD_MS: u128 = 50;
+const MAX_OVERHEAD_MS: u128 = 1000;
 
 /// Protocol
 ///
@@ -79,7 +79,7 @@ pub trait Protocol {
 /// `Protocol` option — not by a launch flag, so one running process serves
 /// any GUI. The markers are zero-sized, so this is a table of `'static`
 /// trait objects with no allocation.
-pub const PROTOCOLS: [&dyn Protocol; 3] = [&Uci, &Usi, &Ucci];
+const PROTOCOLS: [&dyn Protocol; 3] = [&Uci, &Usi, &Ucci];
 
 /// find_protocol
 ///

@@ -58,29 +58,29 @@ lazy_static! {
     /// - DIRECTION_VECTOR_SETS    : direction letter to unit vector set
     /// - CARDINAL_STR_TO_INDEX    : cardinal name ("n".."nw") to index
     /// - CARDINAL_INDEX_TO_STR    : index 0-7 back to cardinal name
-    pub static ref NORMALIZE_PATTERN: Regex =
+    static ref NORMALIZE_PATTERN: Regex =
         Regex::new(r"[^(^|]\(|\)[^()^|]").unwrap_or_else(|e| {
             panic!("Failed to compile NORMALIZE_PATTERN regex: {e}")
         });
-    pub static ref RANGE_PATTERN: Regex =
+    static ref RANGE_PATTERN: Regex =
         Regex::new(r"(-?)(?:\{(?:\.\.(\d+)|(\d+)\.\.|\.\.)\}|\*)")
             .unwrap_or_else(|e| {
                 panic!("Failed to compile RANGE_PATTERN regex: {e}")
             });
-    pub static ref DIRECTION_PATTERN: Regex =
+    static ref DIRECTION_PATTERN: Regex =
         Regex::new(r"\[(\d+)?\.\.(\d+)?(?:\$(\d+))?\]|\[(\d+)\$(\d+)\]")
             .unwrap_or_else(|e| {
                 panic!("Failed to compile DIRECTION_PATTERN regex: {e}")
             });
-    pub static ref CARDINAL_PATTERN: Regex =
+    static ref CARDINAL_PATTERN: Regex =
         Regex::new(r"([nsew]{1,2}\+[nsew]{1,2})+").unwrap_or_else(|e| {
             panic!("Failed to compile CARDINAL_PATTERN regex: {e}")
         });
-    pub static ref ATOMIC: Regex =
+    static ref ATOMIC: Regex =
         Regex::new(r"(ne|nw|se|sw|n|s|e|w)?(\[\d+\])?K").unwrap_or_else(|e| {
             panic!("Failed to compile ATOMIC regex: {e}")
         });
-    pub static ref ATOMIC_TOKENS: Regex = Regex::new(concat!(
+    static ref ATOMIC_TOKENS: Regex = Regex::new(concat!(
         r"(?:(?:ne|nw|se|sw|n|s|e|w)?(?:\[\d+\])?K)+|",
         r"(?:ne|nw|se|sw|n|s|e|w)|",
         r"\[\d+\]|",
@@ -91,25 +91,25 @@ lazy_static! {
     .unwrap_or_else(|e| {
         panic!("Failed to compile ATOMIC_TOKENS regex: {e}")
     });
-    pub static ref DOTS_TOKEN: Regex = Regex::new(r"^-?\.+$")
+    static ref DOTS_TOKEN: Regex = Regex::new(r"^-?\.+$")
         .unwrap_or_else(|e| panic!("Failed to compile DOTS_TOKEN regex: {e}"));
-    pub static ref DIRECTION_FILTER_TOKEN: Regex =
+    static ref DIRECTION_FILTER_TOKEN: Regex =
         Regex::new(r"^\[\d+\]$").unwrap_or_else(|e| {
             panic!("Failed to compile DIRECTION_FILTER_TOKEN regex: {e}")
         });
-    pub static ref RANGE_TOKEN: Regex =
+    static ref RANGE_TOKEN: Regex =
         Regex::new(r"^-?\{(\d+)(?:\.\.(\d+|\*))?\}$").unwrap_or_else(|e| {
             panic!("Failed to compile RANGE_TOKEN regex: {e}")
         });
-    pub static ref COLON_RANGE_TOKEN: Regex =
+    static ref COLON_RANGE_TOKEN: Regex =
         Regex::new(r"^-?:\{(\d+)(?:\.\.(\d+|\*))?\}$")
             .unwrap_or_else(|e| {
                 panic!("Failed to compile COLON_RANGE_TOKEN regex: {e}")
             });
-    pub static ref LEG: Regex =
+    static ref LEG: Regex =
         Regex::new(r"^([mcdukvgtipr!]+)?([^@mcdukvgtipr]+)@?([^@]+)?$")
             .unwrap_or_else(|e| panic!("Failed to compile LEG regex: {e}"));
-    pub static ref LEG_TOKENS: Regex = Regex::new(concat!(
+    static ref LEG_TOKENS: Regex = Regex::new(concat!(
         r"(?:(?:ne|nw|se|sw|n|s|e|w)?(?:\[\d+\])?K)+|",
         r"(?:ne|nw|se|sw|n|s|e|w)|",
         r"\[\d+\]|",
@@ -124,13 +124,11 @@ lazy_static! {
     .unwrap_or_else(|e| {
         panic!("Failed to compile LEG_TOKENS regex: {e}")
     });
-    pub static ref MODIFIERS: Regex =
+    static ref MODIFIERS: Regex =
         Regex::new(r"^[mcdukvgtipr!]+$").unwrap_or_else(|e| {
             panic!("Failed to compile MODIFIERS regex: {e}")
         });
-    pub static ref INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] =
-        [(0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1)];
-    pub static ref CARDINAL_VECTORS_TO_INDEX: HashMap<(i8, i8), usize> = {
+    static ref CARDINAL_VECTORS_TO_INDEX: HashMap<(i8, i8), usize> = {
         let mut m = HashMap::new();
         m.insert((0, 1), 0);
         m.insert((1, 1), 1);
@@ -142,7 +140,7 @@ lazy_static! {
         m.insert((-1, 1), 7);
         m
     };
-    pub static ref DIRECTION_VECTOR_SETS:
+    static ref DIRECTION_VECTOR_SETS:
         HashMap<&'static str, HashSet<(i8, i8)>> = {
         let mut m = HashMap::new();
         m.insert("n", HashSet::from([(-1, 1), (0, 1), (1, 1)]));
@@ -155,7 +153,7 @@ lazy_static! {
         m.insert("nw", HashSet::from([(-1, 1)]));
         m
     };
-    pub static ref CARDINAL_STR_TO_INDEX: HashMap<&'static str, i8> = {
+    static ref CARDINAL_STR_TO_INDEX: HashMap<&'static str, i8> = {
         let mut m = HashMap::new();
         m.insert("n", 0);
         m.insert("ne", 1);
@@ -167,7 +165,7 @@ lazy_static! {
         m.insert("nw", 7);
         m
     };
-    pub static ref CARDINAL_INDEX_TO_STR: HashMap<usize, &'static str> = {
+    static ref CARDINAL_INDEX_TO_STR: HashMap<usize, &'static str> = {
         let mut m = HashMap::new();
         m.insert(0, "n");
         m.insert(1, "ne");
