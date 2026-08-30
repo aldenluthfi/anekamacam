@@ -901,9 +901,9 @@ pub fn count_repetitions(state: &State, cap: usize) -> u8 {
 ///
 /// Both game truth and search pass the rule's own `occurrences`, so a perpetual
 /// verdict lands on exactly the repetition the rule names and not a ply sooner.
-/// Search falls back to the twofold draw below that count: repeating a position
-/// costs nothing, but an offence the rule has not yet recognised is not a
-/// terminal and must not be scored as one.
+/// Below that count there is no verdict to report and search invents none: an
+/// offence the rule has not yet recognised is not a terminal, so the position
+/// stays ordinary rather than being scored as one.
 ///
 /// Params:
 /// - state    : &mut State -> current position (restored if a walk runs)

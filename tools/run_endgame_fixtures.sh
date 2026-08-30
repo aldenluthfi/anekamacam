@@ -12,6 +12,11 @@
 # oracle cannot see -- a perpetual scored terminal before the game itself has
 # ended is the reason this mode exists.
 #
+# Adding the value, as in `score mate -2`, asserts the whole score rather than
+# its kind. Sign is what separates a perpetual verdict from an ordinary one:
+# the side the rule punishes and the side being mated are opposites, so a case
+# that must not adjudicate early pins the number.
+#
 # Usage: tools/run_endgame_fixtures.sh   (build the release binary first)
 #        GO_DEPTH=8 tools/run_endgame_fixtures.sh
 #        BIN=bin/phaseC-3 tools/run_endgame_fixtures.sh
@@ -65,7 +70,11 @@ while IFS='|' read -r variant fen moves expected description; do
     case "$expected" in
         score\ *)
             got=$(drive "go depth $GO_DEPTH" \
-                  | grep -o 'score [a-z]*' | tail -1)
+                  | grep -o 'score [a-z]* -\{0,1\}[0-9]\{1,\}' | tail -1)
+            case "$expected" in
+                score\ *\ *) ;;
+                *) got=$(printf '%s' "$got" | cut -d' ' -f1,2) ;;
+            esac
             ;;
         *)
             got=$(drive d | sed -n 's/^Result: //p' | tail -1)

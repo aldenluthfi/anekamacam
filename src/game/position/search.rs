@@ -627,6 +627,12 @@ fn quiescence_search(
 /// already entered on a narrow window scouts at no extra cost, since its
 /// scout window is the window it was given.
 ///
+/// A repeated position scores only the outcome its own variant declares, and
+/// only once the occurrence count that variant names has been reached. Below
+/// that count the position is ordinary and stays searchable: a rule wanting
+/// three occurrences has not fired on the second, and a variant that punishes
+/// whoever sustained the cycle would lose that verdict to a neutral score.
+///
 /// Params:
 /// - state          : &mut State      -> position searched, restored on return
 /// - ttable         : &TTable         -> main table probed and updated
@@ -662,19 +668,16 @@ pub fn alpha_beta(
     let declared = state.termination.repetition
         .as_ref().map(|repetition| repetition.occurrences);
 
-    if ply > 0 && let Some(occurrences) = declared {
-        if repeats >= occurrences {
-            return match repetition_outcome(
-                state, occurrences, SEARCH_REPETITION_CAP,
-            ) {
-                Some((outcome, _)) => outcome_score!(state, outcome),
-                None => 0,
-            };
-        }
-
-        if repeats >= 2 {
-            return 0;
-        }
+    if ply > 0
+    && let Some(occurrences) = declared
+    && repeats >= occurrences
+    {
+        return match repetition_outcome(
+            state, occurrences, SEARCH_REPETITION_CAP,
+        ) {
+            Some((outcome, _)) => outcome_score!(state, outcome),
+            None => 0,
+        };
     }
 
     if state.search_ply >= MAX_DEPTH as u32 {

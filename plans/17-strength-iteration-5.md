@@ -2,7 +2,7 @@
 
 ## Status
 
-**P0-P4 complete, plus the setup-probe cache fix. P5 is next. No strength
+**P0-P5 complete, plus the setup-probe cache fix. P6 is next. No strength
 campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
@@ -719,6 +719,74 @@ Touch:
 Proof: twofold game history remains searchable when declaration requires more;
 threshold draw/win/loss agrees with `game_outcome`; shogi, minishogi, janggi, and
 xiangqi perpetual fixtures agree; synthetic null history is absent.
+
+#### P5 evidence, 2026-08-30
+
+Baseline `5074cef`. The `repeats >= 2` neutral is gone, and the declared
+threshold is the only repetition verdict search reports. No cycle guard: the
+measured cost of leaving sub-threshold repetitions searchable is under 2% of
+nodes, so nothing needed mitigating, and any guard that returns a number is a
+verdict wearing another name.
+
+What the neutral was hiding:
+
+- xiangqi `4k4/R8/9/9/9/9/9/9/9/3K5 w` after `a9a10 e10e9 a10a9 e9e10 a9a10`,
+  one fold short of the declared three: baseline answered `score cp 0` after
+  five nodes. It is chariot and general against a bare general. P5 answers
+  `score mate -2`, stable from depth 6 through 12.
+- The sign is the load-bearing part. Xiangqi punishes the perpetual checker, so
+  an early perpetual verdict would score this position as a win for the side to
+  move. It is mated instead, which is how the fixture now tells the two apart.
+- shogi `9/9/9/9/4k4/9/9/9/R1K6 w -/-` declares four occurrences. Baseline
+  answered `score cp 0` at both the second and third fold, two full folds before
+  the rule fires; P5 answers `score cp -1021` at each. minishogi at the second
+  fold: `score cp 0` becomes `score cp -618`.
+
+Threshold verdicts against the `d` oracle, at the fold the rule names:
+
+| Case                                | `d`        | Search        |
+| ----------------------------------- | ---------- | ------------- |
+| shogi perpetual check, 4th fold     | Black wins | `mate 1`      |
+| shogi plain 4-fold                  | Draw       | `cp 0`        |
+| minishogi perpetual check, 4th fold | Black wins | `mate 1`      |
+| xiangqi repetition, no offence      | Draw       | `cp 0`        |
+
+Fixtures: 38 passed, 0 failed. Two changed here. The xiangqi one-cycle-short
+case asserted `score cp`, which only the neutral could produce, and now asserts
+`score mate -2`; its closing partner asserts `score mate 1`. Both needed the
+runner to compare a score's value and not only its kind, which is the one
+harness change. The baseline binary fails the first of them, so the pair is a
+real discriminator rather than a restatement.
+
+Synthetic null history: `history` is pushed in exactly two places, `make_move!`
+and `make_null_move!`, and nothing else in the tree fabricates a snapshot. The
+null snapshot carries `move_ply: null_move()`, and both `count_repetitions` and
+`has_repetition` stop their scan there, so a null never contributes an
+occurrence.
+
+Other suites: debug fixed-depth search over all 38 configs, 0 assertions; perft
+standard 20256/20256, crazyhouse 16/16, shogi 12/12, xiangqi 33/33, janggi
+21/21; FEN round trip 44/44; crazyhouse drop integrity 24 games, 0 mismatches.
+Agreement against fairy-stockfish is unchanged in standard (9 cases, 0 sign
+flips) and crazyhouse holds at 5 sign flips with `reference-sees-lost-we-do-not`
+falling from 7 to 6.
+
+Cost, speed suite, 6 interleaved passes, `5074cef` versus P5:
+
+| Variant    | Nodes A / B         | Time delta | NPS delta |
+| ---------- | ------------------- | ---------- | --------- |
+| standard   | 125623 / 127797     | +0.61%     | +1.11%    |
+| shogi      | 885436 / 885437     | +0.09%     | -0.09%    |
+| crazyhouse | 671451 / 675247     | +0.26%     | +0.31%    |
+| xiangqi    | 238822 / 240930     | +0.31%     | +0.57%    |
+| grand      | 1303166 / 1298088   | -0.59%     | +0.20%    |
+
+`newzealand` has no perft suite to bench, and from its start position alone it
+costs 3.6x nodes at depth 8. Over the first 24 standard perft positions, which
+share its board, the same depth costs +0.58%, so the start position is one
+outlier and not the variant's price.
+
+P5 result: accepted as a correctness prerequisite.
 
 ### P6. Derive compact search capabilities
 

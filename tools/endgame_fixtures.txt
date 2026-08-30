@@ -6,6 +6,9 @@
 # An expectation of `score cp` or `score mate` makes the case a search case:
 # the runner plays the moves, runs `go depth $GO_DEPTH` and asserts the kind
 # of the last score. Use it for verdicts search reaches before the game does.
+# Naming the value too, as in `score mate -2`, asserts the whole score. A
+# repetition rule punishes one named side, so the sign of a mate is what tells
+# an early perpetual verdict apart from the ordinary mate underneath it.
 #
 # `fen` may be the literal `startpos`. `fen` keeps its own internal spaces
 # (side-to-move, and the `*` en-passant marker some variants require). The
@@ -54,8 +57,8 @@ kinglet | 7k/P7/8/8/8/8/7p/K7 w | | Ongoing | kinglet: that pawn still on the bo
 extinction | 1nbqkbnr/Pppppppp/8/8/8/8/8/RNBQKBNR w * | a7a8q | Black wins | extinction: White promotes its own last pawn out of existence
 
 # --- perpetual reaches search before it reaches the game -------------------
-xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 | score cp | perpetual one cycle short: nothing terminal to score
-xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 e10e9 a10a9 | score mate | perpetual closing: search sees the loss while `d` still reads Ongoing
+xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 | score mate -2 | perpetual one cycle short: the chariot mates the checked side
+xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 e10e9 a10a9 | score mate 1 | perpetual closing: search sees the loss while `d` still reads Ongoing
 
 # --- makruk pieces' honour: a bare king is counted out by the winner's material
 makruk | 7k/8/8/8/8/RR6/8/K7 w | a3a4 h8h7 a4a3 h7h8 | Draw | KRRk bare king: two rooks -> counted out at the limit of 8
