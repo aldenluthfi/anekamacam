@@ -1072,17 +1072,22 @@ about the same tree.
 
 Measured on timed four-thread runs from the start position, 1500 ms, Hash 64:
 
-| Variant  | Base returned a move no deepest worker chose | P8   | Exposed |
-| -------- | -------------------------------------------- | ---- | ------- |
-| standard | 3 of 24                                      | 0/24 | 10 of 24 |
-| shogi    | 2 of 24                                      | 0/24 | 9 of 24  |
+| Variant  | Exposed  | Base wrong move | P8 wrong move |
+| -------- | -------- | --------------- | ------------- |
+| standard | 10 of 24 | 3 of 24         | 0 of 24       |
+| shogi    | 9 of 24  | 2 of 24         | 0 of 24       |
 
-"Exposed" counts trials where the highest final score was held only by a worker
-that finished shallower than the deepest -- the bait was on the table in about
-four trials in ten, and the baseline took it in three of the ten times it was
-offered. One standard trial is the whole phase in one line: depths 16, 16, 16,
-15, and the depth-15 worker's `c2c4` was returned over three workers that
-finished depth 16.
+Exposed counts trials where the highest final score was held only by a worker
+that finished shallower than the deepest, which is the shape the old rule
+mishandles. Wrong move counts trials where the returned move is one no deepest
+worker chose. The two differ because a shallower worker often picks the same
+move anyway, and because the old comparison used `>=`, so a deeper worker tying
+the top score at a higher index still won. The hazard arises just as often
+under P8 -- the same 10 and 9 -- and stops deciding anything.
+
+One standard trial is the whole phase in one line: depths 16, 16, 16, 15, and
+the depth-15 worker's `c2c4` was returned over three workers that finished
+depth 16.
 
 One-thread identity: all 38 configs byte-identical to `a5bd5cd` at depth 9,
 including nodes, scores, and PVs. The single-thread path does not enter the
