@@ -151,10 +151,10 @@ pub fn prune_backups(dir: &str, prefix: &str, extension: &str, keep: usize) {
 
 /// refresh_eval_state
 ///
-/// Recomputes opening/endgame eval caches and current game phase.
+/// Recomputes every board-derived eval cache and the current game phase.
 /// Used after position-level changes (load, tune import, make/undo move) to
-/// keep material, PST bonus, and phase classification in sync with
-/// `piece_list` and PST tables.
+/// keep material, PST bonus, role counts, phase score, and phase
+/// classification in sync with `piece_list` and PST tables.
 ///
 /// Params:
 /// - state: &mut State -> position whose eval caches are rebuilt
@@ -163,9 +163,17 @@ pub fn refresh_eval_state(state: &mut State) {
     state.endgame_material = [0; 2];
     state.opening_pst_bonus = [0; 2];
     state.endgame_pst_bonus = [0; 2];
+    state.big_pieces = [0; 2];
+    state.major_pieces = [0; 2];
+    state.minor_pieces = [0; 2];
 
     for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
         let color = p_color!(piece) as usize;
+        let count = state.piece_count[piece_idx];
+
+        state.big_pieces[color] += count * (p_is_big!(piece) as u32);
+        state.major_pieces[color] += count * (p_is_major!(piece) as u32);
+        state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
 
         for &square in piece_squares!(state, piece_idx) {
             state.opening_material[color] += p_ovalue!(piece) as u32;

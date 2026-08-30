@@ -2,7 +2,8 @@
 
 ## Status
 
-**P0-P4 complete. P5 is next. No strength campaign has started.**
+**P0-P4 complete, plus the setup-probe cache fix. P5 is next. No strength
+campaign has started.**
 
 Source baseline: `64fbf9a` on `main`.
 
@@ -663,6 +664,44 @@ nps outside noise.
 P4 result: accepted as a correctness prerequisite. It is not strength-neutral by
 node count and was not claimed to be; the canonical hash, the rule set, and the
 playing policy are unchanged.
+
+#### Setup-probe cache fix, 2026-08-30
+
+Fixes the pre-existing abort P4 recorded above, before P5 starts.
+
+Defect: `resolve_setup_army` clones the position and immediately walks legal
+placements with `make_move!`, but `derive_eval_products` calls it right after
+`derive_piece_roles` has rewritten which pieces count as big, major, or minor,
+and long before `derive_parameters` runs its closing `refresh_eval_state`. The
+clone therefore carries the role counts and `phase_score` the position was
+loaded with, which no longer describe the army standing on its board. Debug
+builds catch it on the first make: `janggi` reports `right: 6398`, `sittuyin`
+`right: 2464` (16 Feudal Lords, whose pawns are big under its derived
+dynamics). Release builds walked the same inconsistent probe silently.
+
+Fix: `refresh_eval_state` now owns every board-derived cache, role counts
+included, instead of leaving `big_pieces` / `major_pieces` / `minor_pieces` to a
+separate loop in `derive_eval_products`; that loop is gone and
+`derive_eval_products` ends by refreshing, so each of its three callers leaves a
+consistent position. `resolve_setup_army` refreshes its copy before walking.
+
+Evidence:
+
+- Debug fixed-depth search, all 38 configs: 38 completed, 0 assertions.
+  `janggi` and `sittuyin` were the only two failing before.
+- Depth-6 single-thread search, all 38 configs, `1755eea` versus fixed: every
+  variant reports identical nodes, scores, and PVs. Six variants differ only in
+  the `time` and `nps` fields of an `info` line. `janggi` and `sittuyin` are
+  bit-identical too, so no derived parameter moved.
+- `debug-headless derive` output identical across all 38 configs; `state` output
+  identical for `janggi`, `sittuyin`, `standard`, `shogi`, `crazyhouse`,
+  `xiangqi`.
+- Only `janggi` and `sittuyin` declare a setup phase, so `resolve_setup_army`
+  returns early for the other 36 and cannot change them.
+- Debug perft suites: `sittuyin` 12/12, `janggi` 21/21 at depth 3. Release
+  perft: standard 20256/20256, crazyhouse 16/16, shogi 12/12, xiangqi 33/33.
+- End-condition fixtures 38 passed, FEN round trip 44 passed, crazyhouse drop
+  integrity 24 games with 0 mismatches.
 
 ### P5. Honor declared repetition and perpetual outcomes
 

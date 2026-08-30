@@ -809,7 +809,9 @@ fn walk_setup_endings(
 ///
 /// Notes:
 /// The copy has to be dropped before the caller writes any static, since
-/// `static_mut` claims sole ownership of the shared static state.
+/// `static_mut` claims sole ownership of the shared static state. Its eval
+/// caches are rebuilt first because the roles the caller just assigned
+/// invalidate the counts the position was loaded with.
 ///
 /// Params:
 /// - state: &State -> start position, piece values already derived
@@ -825,6 +827,7 @@ fn resolve_setup_army(state: &State) -> Vec<u32> {
     let mut visited = HashSet::new();
     let mut endings = Vec::new();
 
+    refresh_eval_state(&mut probe);                                             /* roles changed under the copy       */
     walk_setup_endings(&mut probe, &mut visited, &mut endings);
 
     log_4!(
@@ -1225,22 +1228,11 @@ pub fn derive_eval_products(state: &mut State) {
     state.static_mut().opening_score = opening_score as u32;
     state.static_mut().endgame_score = endgame_score as u32;
 
-    state.big_pieces = [0; 2];
-    state.major_pieces = [0; 2];
-    state.minor_pieces = [0; 2];
-
-    for (piece_idx, piece) in state.statics.pieces.iter().enumerate() {
-        let color = p_color!(piece) as usize;
-        let count = state.piece_count[piece_idx];
-
-        state.big_pieces[color] += count * (p_is_big!(piece) as u32);
-        state.major_pieces[color] += count * (p_is_major!(piece) as u32);
-        state.minor_pieces[color] += count * (p_is_minor!(piece) as u32);
-    }
-
     let (pst_opening, pst_endgame) = derive_base_pst(state);
     state.static_mut().pst_opening = pst_opening;
     state.static_mut().pst_endgame = pst_endgame;
+
+    refresh_eval_state(state);
 
     log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
