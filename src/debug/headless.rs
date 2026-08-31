@@ -55,7 +55,9 @@ fn headless_usage() -> String {
         "  derive\n",
         "  datagen <variant> <games> <movetime-ms> [threads]\n",
         "  tune <variant> <epochs> [learning-rate]\n",
-        "  sprt <variant> <bin-a> <bin-b> <ms|base+inc> [games] [h0] [h1]\n\n",
+        "  sprt <variant> <bin-a> <bin-b> <ms|base+inc> [games] [h0] [h1]\n",
+        "      every reported figure is from bin-a's view; the hypothesis\n",
+        "      tested is that bin-a is stronger\n\n",
 
         "Position options:\n",
         "  --protocol <uci|usi|ucci>\n",

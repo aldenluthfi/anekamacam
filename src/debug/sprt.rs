@@ -922,6 +922,7 @@ fn write_result_file(
     let body = format!(
         "engine A: {}\nengine B: {}\nvariant: {}\ntime control: {}\n\
          elo bounds: [{}, {}]  alpha: {}  beta: {}\n\
+         every figure below is from engine A's view\n\
          result (A): {}W {}L {}D\nLLR: {:.3}\nverdict: {}\n",
         binary_a, binary_b, variant, time_control,
         h0, h1, SPRT_ALPHA, SPRT_BETA,
@@ -1147,8 +1148,8 @@ pub fn run_sprt(
 
         if (pair_index + 1) % 5 == 0 {
             log_1!(
-                "SPRT {}W {}L {}D | elo {:.1} | LLR {:.2} [{:.2}, {:.2}]",
-                wins, losses, draws, elo_from_score(mean),
+                "SPRT A={} {}W {}L {}D | A elo {:.1} | LLR {:.2} [{:.2}, {:.2}]",
+                binary_a, wins, losses, draws, elo_from_score(mean),
                 llr, lower, upper,
             );
         }
@@ -1159,11 +1160,11 @@ pub fn run_sprt(
         }
 
         if llr >= upper {
-            verdict = "H1 accepted (patch is stronger)".to_string();
+            verdict = format!("H1 accepted ({} is stronger)", binary_a);
             break;
         }
         if llr <= lower {
-            verdict = "H0 accepted (no improvement)".to_string();
+            verdict = format!("H0 accepted ({} is not stronger)", binary_a);
             break;
         }
     }
