@@ -2,8 +2,9 @@
 
 ## Status
 
-**All prerequisites complete. `base-5` is frozen at `a94018d`. `A-5` is next.
-No strength campaign has started.**
+**All prerequisites complete. `base-5` frozen at `a94018d`. `A-5` attempted and
+rejected. Letter A held closed. Tier 0 is blocking; no further campaign may
+launch until it passes.**
 
 Source baseline: `64fbf9a` on `main`.
 
@@ -14,11 +15,74 @@ Fairy-Stockfish reference: commit
 `6d9d0f5724677dc3aba3c577b0b482b6ec11e44a`, dated 2026-08-23.
 
 Remote campaign host `upi@157.10.252.201` became reachable on 2026-08-28 after
-VPS restart. Check returned `remote-ok`; promotion campaigns and long remote
-perft may use it after local prerequisites finish.
+VPS restart. Reachability is not fitness; see Host specification.
 
-Expected Elo bands below are priors, not additive promises. Every accepted phase
-must independently beat previous accepted phase at its declared floor.
+This document was restructured on 2026-08-31 after `A-5`. The failure was
+structural, not local. The restructure replaces the verdict law, the support
+model, the expected-Elo bands, and the phase ordering. The P0-P9 record, the
+capability ledger, the campaign pools, the architecture law, and the commit law
+are carried forward.
+
+## The A-5 record
+
+- Support gate: **passed**. Over 400,000 differential comparisons of
+  `see_ge(m, t)` against `see(m) >= t`, 14 thresholds, 17 variants, zero
+  mismatches. Fully green.
+- Campaign: shogi `base-5` 631W / `a5` 493L / 22D, A-perspective Elo +39.4,
+  LLR 2.981. standard A-Elo +17.2. crazyhouse A-Elo +18.2. The candidate lost
+  every arm across an eight-hour run.
+- Verdict: terminal H0. Point estimate approximately **-39 Elo** against a
+  declared +8 floor and a written +10 to +25 expectation. Wrong sign, roughly
+  three times the predicted magnitude.
+
+## What went wrong, named once
+
+Every prerequisite needed a correction found during execution, never during
+planning, and the corrections share one defect:
+
+- P0 recorded debug-headless search as using the 256 MB protocol default. It
+  builds 1 MB tables. Nine phases carried fixed-depth anchors labelled with the
+  wrong table size.
+- P4 asserted P7 owned the hash-size dependence of fixed-depth search. P7 does
+  not own it and does not remove it: 15/30 positions diverged before, 17/30
+  after. The attribution was a guess written as a finding.
+- P6 cleared search capabilities for 19 of 38 configs at up to +151% nodes and
+  scheduled nothing to recover any of it, gated later phases on the mask so they
+  improve only the configs that lost nothing, and wrote a promotion audit that
+  left the restricted half unwatched for 26 phases.
+- P8's text names a defect that did not exist. "Partial iteration never counts"
+  was already true; `best_score` and `best_move` sat below the interrupt guard.
+  The real defect — comparing scores reached at different depths — is never
+  named.
+- P7's proof clause listed four properties, two already satisfied.
+
+**The defect: this document asserted properties of code it had not measured, and
+wrote those assertions where evidence belongs.**
+
+`A-5` is the same defect at the level of strength. Its support gate proved the
+*predicate*. The regression lived in the *call sites*, where a magnitude became
+a boolean and the tree changed shape. Nothing in the phase asked whether the
+tree changed. EBF over the committed positions showed standard at +21.9% nodes
+for the threshold-only form and +15.5% after two-probe reconstruction. That
+number was available in minutes, from a tool P0 already lists, and `A-5`'s
+support section did not ask for it.
+
+A speed optimization that grows the tree 22% must return more than 22% in NPS to
+break even. It did not. This was knowable before the first game.
+
+Separately: the campaign nearly promoted it. See T0.1.
+
+## Corrective law
+
+1. No proof clause may assert a property that has not been observed. A phase's
+   proof section lists **measurements to take**, never facts believed.
+2. Every recorded evidence line names the exact command and quotes its output. A
+   description of expected behavior is not evidence.
+3. Faithfulness and strength are different questions. A gate that proves a
+   refactor faithful carries no authority over whether it is stronger and may not
+   be presented as though it does.
+4. **Prove the tree, not the function.** A differential test on a helper proves
+   the helper. Only node counts across the config ledger prove the search.
 
 ## Purpose
 
@@ -68,15 +132,21 @@ Binding results:
 
 ## Verdict and commit law
 
-- One accepted strength phase per commit, in letter order.
+- One accepted strength phase per commit.
+- **Letters are names, not sequence.** They are stable identifiers so commits and
+  evidence keep pointing at the same thing. Execution order is declared under
+  Execution order and differs from alphabetical. The rule "never advance around
+  an open letter" is replaced by **never advance around an open tier**.
+- No campaign may launch unless Tier 0 is green and the host holds its
+  certificate.
 - Terminal H1 at declared floor promotes.
 - Terminal H0 with negative estimate rejects candidate and starts first
   same-letter fallback.
 - Inconclusive extends and blocks letter. Budget exhaustion is not rejection.
 - Failed, abandoned, reverted, correctness, cleanup, and tooling work consume no
-  letter.
-- If all fallbacks reject, letter remains open until new evidence supplies a
-  candidate. Later letters do not advance around it.
+  letter. **A phase abandoned at L2, L3, or L4 consumes no letter and no games.**
+- If all fallbacks reject, letter closes and is documented as closed. A closed
+  letter does not block its tier.
 - Revert complete candidate before starting fallback.
 - No rejected helper, field, flag, constant, payload token, table, counter, or
   support output survives.
@@ -136,6 +206,281 @@ Binding results:
 - `src/debug/datagen.rs`
 - `src/debug/tuning.rs`
 - `res/param/*/latest.param`
+
+## C1 — Re-anchor base-5 fixed-depth evidence (blocking, no letter)
+
+P0's anchors are labelled 256 MB and were taken at 1 MB. Fixed-depth search is
+hash-size dependent by construction — TT replacement is history-dependent, so
+divergence across table sizes is a property, not a bug. The anchors are
+therefore not comparable to anything, and the L2 falsifier below depends on them.
+
+Re-take fixed-depth node signatures for **all 38** shipped configs at `base-5`,
+hash **pinned and stated in the record**, seed pinned, one thread, recording the
+exact `debug-headless` invocation. This set is the reference for every L2
+measurement. Blocking: Tier 0 cannot complete without it.
+
+## Tier 0 — Instrument and host validation
+
+**No campaign may launch until Tier 0 passes. Tier 0 re-runs whenever the SPRT
+code, the referee, the protocol layer, or the campaign host changes.**
+
+### T0.1 — Fix and label the verdict
+
+`src/debug/sprt.rs` computes wins, losses, and `elo_from_score(mean)` from
+engine A's perspective (`:897`, `:1151`). The verdict at `:1161-1166` prints
+`"H1 accepted (patch is stronger)"` on `llr >= upper` with no knowledge of which
+argument is the patch, and the usage line
+`sprt <variant> <bin-a> <bin-b> <ms|base+inc> [games] [h0] [h1]` never declares a
+convention. Invoked baseline-first, as `A-5` was, the string is inverted.
+
+`A-5` crossed `upper` (LLR 2.981 against `ln(0.95/0.05) = 2.944`) while losing
+39 Elo, and would have printed a promotion. It was stopped only by a human
+reading the W/L line and disbelieving the verdict.
+
+Fix: the verdict string names **the binary it is talking about**, taken from the
+argument itself, never the word "patch". Every printed Elo figure states whose
+perspective it is from. The result file carries the same labelling.
+
+This is the answer to "where in the plan is the step that would have caught
+this". There was none. There is now, and it is blocking.
+
+### T0.2 — Sign test against a calibrated regression
+
+`A-5` is now a measured, reproducible −39 Elo binary. Keep it as the
+instrument's calibration standard.
+
+Run a short SPRT of `base-5` against the `A-5` binary, then run it again with
+arguments swapped. Required: both runs identify the same binary as weaker, the
+reported Elo changes sign between them, and neither verdict claims the weaker
+binary is stronger. A build that cannot do this invalidates every campaign result
+taken with it.
+
+### T0.3 — Null test, engine against itself
+
+`base-5` against `base-5`, seeds unset, enough pairs to bound the estimate within
+roughly ±5 Elo. Required: estimate near zero, wins and losses balanced within
+sampling error, no aborts.
+
+The null test does double duty deliberately. It is the instrument check **and**
+the host check: colour bias, side-assignment defects, pentanomial pairing errors,
+and resource starvation that favours one spawn order all appear here as a
+non-zero result between two identical binaries.
+
+### T0.4 — Standing rule
+
+The verdict string is a convenience, never evidence. Every campaign report
+records raw W/L/D, the point estimate **with its perspective stated**, the LLR,
+and both bounds. A result read only from the verdict line is not a result.
+
+## Host specification
+
+The first `A-5` wave lost five arms to engine response timeouts. Cause: SPRT
+sandboxes are created under `env::temp_dir()`, `/tmp` on the host is tmpfs,
+engine logs reached 783 MB of RAM on a 3.9 GB box with no swap, engines stalled
+8-10s, and the referee scored those stalls as losses. Both aborts named the
+second-spawned engine — the starvation picks a side. The old protocol specified
+openings, colours, Hash, threads, and time control, and nothing about the machine.
+
+Minimum specification, recorded before arms launch:
+
+- `TMPDIR` on disk, never tmpfs; confirm the resolved sandbox path's filesystem.
+- Log truncation active; free disk headroom recorded.
+- Physical RAM at least `4 × (threads × Hash)` across both engines, with the
+  arithmetic written into the record.
+- Swap present, or RAM headroom at least 2× computed engine residency.
+- No other campaign, datagen, tuning, or build sharing the host.
+- Recorded: hostname, cores, physical RAM, swap, sandbox filesystem, resolved
+  `TMPDIR`.
+
+**Verified by T0.3.** The null test is the preflight; it runs on the campaign
+host at the campaign's Hash, threads, and time control, and its result is the
+host's fitness certificate. A non-zero null result or any abort means the host is
+unfit and no arm launches. Reachability is not fitness.
+
+An abort is never a neutral event. Any arm that aborts invalidates its campaign;
+partial results are not merged across an abort.
+
+## Phase classification and the falsification ladder
+
+Every phase declares its class **before implementation**.
+
+- **Class S — tree-identical.** Same nodes visited, faster.
+- **Class T — tree-changing.** Different nodes visited, in a declared direction.
+
+A Class S phase that cannot demonstrate exact node identity **is a Class T phase
+that was described wrongly**, and is judged as Class T from that point. This is
+not a formality: `A-5` was written Class S, was Class T, and the document had no
+step that would notice.
+
+The ladder runs in order. **L2 through L4 are abandon gates, not report lines.**
+
+- **L0.** Clean build, no new warnings, no suppression.
+- **L1.** Class declared in writing, with the direction the tree should move and
+  roughly how far.
+- **L2. Fixed-depth node signature across all 38 configs**, hash pinned to the C1
+  reference, seed pinned, one thread.
+  - Class S: exact identity on all 38. Any divergence reclassifies to Class T.
+  - Class T: declared direction on the declared pool; no other config regresses
+    beyond a stated tolerance.
+- **L3. Nodes-to-depth and EBF** via `tools/ebf-suite.sh`, pinned seed, matched
+  Hash. Class T only. Declared sign required. A tree that grows where shrinkage
+  was claimed ends the phase.
+- **L4. NPS** via `tools/speed-suite.sh`. Class S only. Pooled NPS must be
+  positive or the phase is abandoned before games.
+- **L5. Correctness suites** — perft, endgame fixtures, drop integrity, FEN
+  round-trip, agreement. **Veto authority only; these never promote anything.**
+  This is what the old document called "support", demoted to its actual power.
+- **L6. Campaign.** Reachable only with L0-L5 passed and Tier 0 green.
+
+Applied to `A-5`: L2 fails (tree not identical), phase reclassifies to Class T,
+L3 shows +21.9% nodes against no compensating claim, phase abandoned. Zero games.
+
+### The NPS threshold
+
+**Any positive pooled NPS at an identical tree sends a Class S phase to games.**
+
+The earlier +8% figure was borrowed from the rule of thumb that doubling speed
+is worth 50-70 Elo, and borrowing it made L4 do work it has no standing to do.
+A Class S phase has already proved at L2 that it searches the same tree, so the
+only question left is whether the engine reaches that tree sooner. Any positive
+pooled NPS answers yes. How much Elo that converts to is what the campaign
+measures, and refusing to run the campaign on an imported constant is guessing
+the answer instead of asking.
+
+The threshold is a sign test, not a size test. It is not a prediction, and
+nothing in this document should be read as claiming a given NPS gain buys a
+given Elo. A phase that clears it may still return H0 -- that outcome is a
+measurement of this engine's NPS-to-Elo conversion, which is exactly the
+quantity no one here has ever measured.
+
+Pooled NPS is the geometric mean over the speed-suite variants, and the tree
+identity at L2 is what makes the comparison meaningful at all: without it, an
+NPS gain can come from searching a cheaper tree rather than a faster engine.
+
+## Expected-Elo bands: withdrawn
+
+All bands are withdrawn from this document.
+
+Not because one missed — because when asked what generated them, the answer is
+nothing measurable: no local calibration, no per-phase model, no reference
+campaign. A single disconfirmation of an ungrounded estimator is enough to
+discard the estimator. Had the bands been derived from something, one miss would
+have been a data point instead.
+
+Each phase now carries three fields in their place:
+
+- **Mechanism claim** — which tree property changes, in which direction.
+  Falsifiable at L2/L3, cheaply, before games.
+- **Floor** — the SPRT H1. A decision threshold, not a prediction.
+- **Prior** — exactly one of `measured-here`; `upstream-only` (Fairy-Stockfish
+  history, different engine and evaluation — weak, not transferable as a
+  magnitude); or `none — guess`.
+
+Most read `none — guess`. That is the honest state and stating it is the point. A
+phase whose only prior is a guess is not forbidden; presenting that guess as a
+number with a range is.
+
+## Execution order
+
+Order is by **information per unit of machine time**, not expected Elo. The
+question each tier answers is which *other* phases its result removes.
+
+The old ordering put `A-5` first on a dependency argument — SEE feeds the picker
+feeds everything. That is a build-order argument wearing an experiment's clothes,
+and it put the narrowest, most heavily gated, speed-only phase at the front,
+resting on the prerequisite that had just disturbed the most variants.
+
+### Tier 1 — the three structural bets
+
+The plan rests on three bets. Tier 1 tests all three in three campaigns, and each
+result deletes phases from the document.
+
+1. **`B-5` — bounded reusable search buffers. Class S.**
+   Bet: *does NPS convert to Elo in this engine at all?* Universal, no capability
+   gate, allocation-only diff, and the sharpest available falsifier — exact node
+   identity is trivially expected of a change touching only allocation. If `B-5`
+   is positive on NPS with identical trees on all 38 and still returns
+   terminal H0, **Class S is worthless here and every Class S phase dies at
+   once**, including whatever survives of letter A.
+
+2. **`E-5` — fail-soft score propagation. Class T.**
+   Bet: *does standard search-mechanism transplant work in a variant-agnostic
+   engine?* Universal, no gate, small diff. Direction: fewer nodes to fixed depth
+   from better TT bounds and fewer aspiration re-searches. Fail-soft is about as
+   uncontroversial as published search results get. If it does not reduce nodes
+   here, the TT and aspiration interaction is wrong in a way that invalidates
+   `F-5`, `G-5`, `H-5`, `M-5`, `N-5` — five phases removed by one campaign.
+
+3. **`I-5` — gravity history reward. Class T.**
+   Bet: *do ordering heuristics transfer to a rule-derived move set?* Universal,
+   no gate. Direction: higher first-move cutoff rate, fewer nodes. If ordering
+   does not transfer, `C-5`, `J-5`, `K-5`, `L-5`, `Q-5` are all suspect.
+
+All three resolve before any Tier 2 phase begins.
+
+### Letter A is held closed
+
+All three of `A-5`'s fallbacks were run down on 2026-08-31. Two closed without
+a build:
+
+- **`see_ge(0)` partition only** is Class T and changes ordering. It is the
+  primary that measured −39 Elo. Closed by measurement.
+- **qsearch and pruning only** assumes a threshold-only exchange caller
+  exists. None does. `score_move!` is the sole search-path caller, it needs
+  the magnitude for the band offset, and it caches the result in `scores[]`
+  where the pruning site reads it for free. Adding a threshold call there
+  costs work rather than saving it. Closed by inspection.
+- **the existing make/undo loop stopped early** has no threshold to stop on,
+  for the same reason. It survives only as "the same loop, cheaper", and the
+  cost it can shed is the two vectors the simulation allocated and dropped on
+  every scored capture.
+
+That last one was implemented and measured: tree-identical on all 38 configs,
+pooled NPS +3.91%. Under the +8% threshold it was abandoned at L4. Under the
+sign test that replaced it, it reaches games, and it is the `B-5` mechanism
+applied to one path rather than a distinct idea — so the campaign it runs is
+`B-5`'s bet, answered with a smaller diff.
+
+**Letter A stays closed regardless of that campaign's outcome.** Its mechanism
+claim was that a threshold predicate is cheaper than an exact exchange at
+equal tree, and the engine has no caller that can take a predicate. A future
+phase proposing one has to create the caller first, and would be a new letter
+with a new claim, not letter A reopened.
+
+### Tiers 2 to 5
+
+- **Tier 2**, conditional on Tier 1: if bet 2 held, `F-5`, `G-5`, `H-5`, `N-5`,
+  `M-5`. If bet 3 held, `C-5`, `J-5`, `K-5`, `L-5`. If bet 1 held, `H-5` may run
+  as Class S with exact identity required, plus reopened letter A.
+- **Tier 3**, bounded-pool search: `D-5`, `O-5`, `P-5`, `Q-5`, `R-5`, `S-5`,
+  `T-5`.
+- **Tier 4**, rule-derived evaluation and capability recovery: `U-5`, `V-5`,
+  `W-5`, `X-5`, `Y-5`, `AA-5`, `AB-5`.
+- **Tier 5**, retune last: `Z-5`.
+
+## Plan failure condition
+
+The iteration needs a stopping rule. Without one, a long enough phase list always
+produces an acceptance eventually and never produces a verdict on the approach.
+
+**Halt and re-derive when any of these holds:**
+
+1. All three Tier 1 phases return terminal H0. The premise — that
+   Fairy-Stockfish search shape transplants into this engine for Elo — is wrong.
+   Do not proceed to Tier 2. Do not run fallbacks.
+2. Two of three Tier 1 phases return terminal H0. Only the surviving bet's
+   dependants continue; the rest are struck from the document.
+3. Three or more of the first six attempted letters close terminal H0.
+4. Tier 1 consumes more than 40 campaign-hours without a single acceptance.
+5. Any accepted phase is found to have been promoted under an unvalidated
+   instrument or an unfit host. Every phase accepted after it is void and must be
+   re-run. This is the near-miss `A-5` produced, written as a rule.
+
+**A terminal H0 on a Tier 1 phase is a successful experiment, not a wasted one.**
+It removes phases at the cost of one campaign; the document should be shorter
+after Tier 1 in every branch. "Wasted" means a campaign that changed nothing
+about what happens next — which is what `A-5` was, and what the ladder exists to
+prevent.
 
 ## Unlettered prerequisites
 
@@ -1377,47 +1722,60 @@ Names define campaign composition only. Engine behavior uses declarations.
 
 ## Phase status
 
-| Phase | Candidate                       | Status   |
-| ----- | ------------------------------- | -------- |
-| A-5   | threshold SEE                   | proposed |
-| B-5   | reusable buffers                | proposed |
-| C-5   | staged sorted picker            | proposed |
-| D-5   | deferred drop/SETUP generation  | proposed |
-| E-5   | fail-soft propagation           | proposed |
-| F-5   | complete QTable bounds          | proposed |
-| G-5   | QTable probe before evaluation  | proposed |
-| H-5   | TT static-evaluation cache      | proposed |
-| I-5   | gravity reward                  | proposed |
-| J-5   | compressed continuation history | proposed |
-| K-5   | countermove                     | proposed |
-| L-5   | strong-history LMR relief       | proposed |
-| M-5   | pruning-only correction history | proposed |
-| N-5   | internal iterative reduction    | proposed |
-| O-5   | non-capture qsearch promotions  | proposed |
-| P-5   | recapture-first qsearch         | proposed |
-| Q-5   | first-class drop ordering       | proposed |
-| R-5   | drop LMR                        | proposed |
-| S-5   | completed-depth root voting     | proposed |
-| T-5   | deterministic SMP diversity     | proposed |
-| U-5   | promotion-graph PST             | proposed |
-| V-5   | goal-zone PST redistribution    | proposed |
-| W-5   | tuned check progress            | proposed |
-| X-5   | tuned extinction exposure       | proposed |
-| Y-5   | side-derived royal-home PST     | proposed |
-| Z-5   | material-only retune            | proposed |
-| AA-5  | screened-movement reachability  | proposed |
-| AB-5  | pass/counting null and exchange | proposed |
+Class, mechanism claim, falsifier, floor, prior, tier, status. Support detail
+that used to sit per phase now lives in the shared ladder.
+
+| Phase | Cl | Mechanism claim | Falsifier | Floor | Prior | Tier | Status |
+| ----- | -- | --------------- | --------- | ----- | ----- | ---- | ------ |
+| A-5 | S | threshold exchange cheaper at equal tree | L2 exact, L4 NPS | any + | −39 measured | — | closed, no caller exists |
+| B-5 | S | allocation removal at identical tree | L2 exact on 38, L4 NPS | any + | +3.91% NPS measured | 1 | in campaign |
+| E-5 | T | true bounds cut aspiration re-searches | L3 nodes fall on 38 | +8 | upstream-only | 1 | proposed |
+| I-5 | T | gravity reward raises first-move cutoffs | L3 cutoffs up, nodes down | +8 | upstream-only | 1 | proposed |
+| C-5 | T | one sort per band lowers picker cost | L2 direction, L3 nodes | +8 | none — guess | 2 | proposed |
+| F-5 | T | complete qsearch bounds reuse failed-low work | L3 qnodes fall | +8 | upstream-only | 2 | proposed |
+| G-5 | T | probe before evaluate skips evaluations | L3 eval calls fall | +8 | upstream-only | 2 | proposed |
+| H-5 | S | cached static eval equals recomputed | L2 exact, L4 NPS | any + | upstream-only | 2 | proposed |
+| J-5 | T | one-ply continuation sharpens quiet order | L3 nodes fall | +8 | none — guess | 2 | proposed |
+| K-5 | T | countermove sharpens reply order | L3 nodes fall | +8 | upstream-only | 2 | proposed |
+| L-5 | T | strong-history relief cuts re-searches | L3 re-search rate falls | +8 | none — guess | 2 | proposed |
+| M-5 | T | corrected eval prunes better | L3 nodes fall | +8 | upstream-only | 2 | proposed |
+| N-5 | T | reduce when TT gives no guidance | L3 nodes fall | +8 | upstream-only | 2 | proposed |
+| D-5 | T | deferred drop generation shrinks drop trees | L3 nodes on D8 | +8 | none — guess | 3 | proposed |
+| O-5 | T | positive promotions close tactical gaps | L3 on P6 pool | +8 | none — guess | 3 | proposed |
+| P-5 | T | recapture-first cuts earlier | L3 qnodes fall | +8 | none — guess | 3 | proposed |
+| Q-5 | T | role-target history orders drops | L3 on D8, bit recovery | +10 | none — guess | 3 | proposed |
+| R-5 | T | drop LMR shrinks drop trees | L3 on D8, bit recovery | +8 | none — guess | 3 | proposed |
+| S-5 | T | deepest-completed vote picks better roots | L3 at thread count | +8 | upstream-only | 3 | proposed |
+| T-5 | T | worker root rotation cuts duplicated work | L3 overlap falls | +8 | upstream-only | 3 | proposed |
+| U-5 | T | promotion graph beats straight-line distance | L2 non-promotion identity | +10 | none — guess | 4 | proposed |
+| V-5 | T | goal proximity replaces centrality | L2 non-goal identity, bit recovery | +12 | none — guess | 4 | proposed |
+| W-5 | T | check progress is a real eval term | tuner moves coefficient, bit recovery | +12 | none — guess | 4 | proposed |
+| X-5 | T | last-stock exposure is a real eval term | tuner moves coefficient, bit recovery | +12 | none — guess | 4 | proposed |
+| Y-5 | T | side-derived royal home replaces `-rank` | L2 symmetric identity | +8 | none — guess | 4 | proposed |
+| AA-5 | T | occupancy-aware reachability restores bits | bit recovery, L3 screened pool | +10 | none — guess | 4 | proposed |
+| AB-5 | T | pass and counting aware null and exchange | bit recovery, L3 affected pool | +10 | none — guess | 4 | proposed |
+| Z-5 | T | fresh data improves material values | held-out loss improves | +8 | none — guess | 5 | proposed |
 
 ## Strength phases
 
-Expected bands are priors. Low-confidence prior below floor is stated explicitly;
-such candidate must clear floor or consume no letter.
+**Every `Expected ... Elo` sentence in the entries below is withdrawn.** They are
+left in place only so the diff of this restructure stays readable; they carry no
+authority and must not be quoted as a target. The register above supersedes them
+in full: class, mechanism claim, falsifier, floor, prior. A phase entry's
+remaining content — touch list, derivation, fallbacks, rollback boundary —
+stays in force.
 
-Bands for phases whose payoff sits inside the configurations P6 restricted --
-`D-5`, `Q-5`, `R-5`, `U-5`, `V-5`, `W-5`, `X-5` -- are priors against `base-5`
-and its measured mask cost, not against the pre-P6 engine those numbers were
-first drafted against. A smaller observed gain there is a smaller starting
-board, not a failed campaign.
+Each entry's **Support** paragraph is likewise demoted. It is L5 material:
+veto-only, never promoting. The gates that decide whether a phase reaches games
+are L2, L3, and L4 in the shared ladder, not the entry's own support prose. This
+is the specific correction `A-5` forced: its support list was fully green on a
+39-Elo regression, and the measurement that would have killed it — EBF over the
+committed positions — was not in that list.
+
+Phases whose payoff sits inside the configurations P6 restricted — `D-5`, `Q-5`,
+`R-5`, `U-5`, `V-5`, `W-5`, `X-5` — are read against `base-5` and its measured
+mask cost, not against the pre-P6 engine. A smaller observed gain there is a
+smaller starting board, not a failed campaign.
 
 A phase carrying a **Capability close** step ends by re-deriving the one
 capability bit its own mechanism addresses, then re-running the node-cost

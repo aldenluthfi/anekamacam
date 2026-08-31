@@ -561,7 +561,7 @@ fn quiescence_search(
     scores.resize(moves.len(), usize::MAX);
 
     let delta = state.statics.qsearch_delta;
-    let delta_prunable = !in_check && state.game_phase != ENDGAME;               /* a thin board plays for one capture */
+    let delta_prunable = !in_check && state.game_phase != ENDGAME;              /* a thin board plays for one capture */
 
     for index in 0..moves.len() {
         pick_by_score!(
