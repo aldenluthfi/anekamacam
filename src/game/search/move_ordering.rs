@@ -134,6 +134,12 @@ macro_rules! lva {
 /// Evaluates a capture sequence on one target square. Positive scores win
 /// material; negative scores lose material. Position is restored on return.
 ///
+/// The candidate list and its multi-capture payload come from
+/// [`SEE_BUFFERS`] rather than from a fresh allocation. Every scored capture
+/// runs this once, so the pair was being asked of the allocator and handed
+/// straight back hundreds of thousands of times a search, for two vectors
+/// that carry nothing between calls.
+///
 /// Params:
 /// - state: &mut State -> position simulated and restored
 /// - mv   : &Move      -> capture move evaluated
@@ -144,12 +150,13 @@ macro_rules! lva {
 macro_rules! see {
     ($state:expr, $mv:expr) => {
         hotpath::measure_block!("order::see", {
+        SEE_BUFFERS.with(|buffers| {
+        let borrowed = &mut *buffers.borrow_mut();
+        let (moves, scratch) = (&mut borrowed.0, &mut borrowed.1);
         let state: &mut State = $state;
         let seen_move: &Move = $mv;
         let initial_attacker = attack_value!(seen_move, state);
         let initial_attackee = victim_value!(seen_move, state);
-        let mut moves = Vec::with_capacity(32);
-        let mut scratch = Vec::with_capacity(32);
         let mut gain = [0i32; 32];
         let mut gain_length = 0usize;
 
@@ -166,9 +173,7 @@ macro_rules! see {
             let mut moves_to_undo = 1;
 
             'main_loop: loop {
-                lva!(
-                    state, target, state.playing, &mut moves, &mut scratch
-                );
+                lva!(state, target, state.playing, moves, scratch);
 
                 let Some(mut attacker) = moves.pop() else {
                     break;
@@ -210,6 +215,7 @@ macro_rules! see {
 
             gain[0]
         }
+        })
         })
     };
 }

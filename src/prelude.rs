@@ -190,7 +190,7 @@ pub use rayon::iter::{
 };
 pub use regex::Regex;
 pub use std::{
-    array, cmp, env,
+    array, cell::RefCell, cmp, env,
     collections::VecDeque,
     fmt::{Debug, Display, Formatter as FmtFormatter, Result as FmtResult},
     fs::{self, OpenOptions},
@@ -301,6 +301,22 @@ lazy_static! {
     pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(false);
     pub static ref ENGINE_SINK: Mutex<Option<Sender<EngineEvent>>> =
         Mutex::new(None);
+}
+
+thread_local! {
+    /// Exchange-simulation scratch, one pair per search thread.
+    ///
+    /// `see!` refills these on every call and reads nothing across calls, so
+    /// they carry no state between exchanges and only exist to stop the
+    /// allocator being asked for the same two vectors on every scored
+    /// capture. Cleared by `lva!` on entry.
+    ///
+    /// Worst case retained per worker is
+    /// `64 * size_of::<Move>() + 32 * size_of::<u64>()` bytes, reached the
+    /// first time a square has that many attackers and never growing with
+    /// depth, nodes, or table size.
+    pub static SEE_BUFFERS: RefCell<(Vec<Move>, Vec<u64>)> =
+        RefCell::new((Vec::with_capacity(64), Vec::with_capacity(32)));
 }
 
 /*----------------------------------------------------------------------------*\
