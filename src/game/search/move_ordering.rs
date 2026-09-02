@@ -155,20 +155,21 @@ macro_rules! see {
         let (moves, scratch) = (&mut borrowed.0, &mut borrowed.1);
         let state: &mut State = $state;
         let seen_move: &Move = $mv;
-        let initial_attacker = attack_value!(seen_move, state);
         let initial_attackee = victim_value!(seen_move, state);
         let mut gain = [0i32; 32];
         let mut gain_length = 0usize;
 
-        gain[gain_length] = initial_attackee;
-        gain_length += 1;
-
-        gain[gain_length] = initial_attacker - initial_attackee;
+        gain[gain_length] = initial_attackee;                                   /* it leaves at this ply's phase     */
         gain_length += 1;
 
         if !make_move!(state, seen_move.clone()) {
             -INF
         } else {
+            let initial_attacker = attack_value!(seen_move, state);             /* it leaves at the next one         */
+
+            gain[gain_length] = initial_attacker - initial_attackee;
+            gain_length += 1;
+
             let target = end!(seen_move) as Square;
             let mut moves_to_undo = 1;
 
@@ -178,7 +179,11 @@ macro_rules! see {
                 let Some(mut attacker) = moves.pop() else {
                     break;
                 };
-                let mut attacker_value = attack_value!(attacker, state);
+                let mut attacker_piece = if m_promotion!(&attacker) {
+                    promoted!(&attacker)
+                } else {
+                    piece!(&attacker)
+                };
 
                 while !make_move!(state, attacker) {
                     if moves.is_empty() {
@@ -186,8 +191,14 @@ macro_rules! see {
                     }
 
                     attacker = moves.pop().unwrap();
-                    attacker_value = attack_value!(attacker, state);
+                    attacker_piece = if m_promotion!(&attacker) {
+                        promoted!(&attacker)
+                    } else {
+                        piece!(&attacker)
+                    };
                 }
+
+                let attacker_value = p_value!(attacker_piece, state) as i32;    /* priced once its capture is made   */
 
                 gain[gain_length] =
                     attacker_value - gain[gain_length - 1];
