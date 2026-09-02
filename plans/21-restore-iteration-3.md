@@ -13,6 +13,10 @@ content, `951eda0`, is the fix `316861a` carries.
 The iteration 6 batch at `9d633d8` is deliberately abandoned. It was built
 on the ablated `b971865`, not on this line, and it holds no ref.
 
+One stage was attempted and reverted before the ladder below was fixed:
+dropping the PST residual region from the param format. It is recorded as
+a deferred open question, not as a stage.
+
 ## Goal
 
 Restore the strength and speed the engine had at the end of iteration 3
@@ -53,9 +57,40 @@ These are preserved by every stage; a stage that would remove one is wrong.
   target square (`532ef34`).
 - Variant-declared repetition and perpetual outcomes, deepest-worker SMP
   selection, and the wide-window bound fix.
-- The material and PST residual param schema. Restored evaluation scalars
-  are **derived**, via `derive_eval_scalars` and `derive_pawn_parameters`,
-  so no param file is rewritten and the 19-token tail does not come back.
+Restored evaluation scalars are **derived**, via `derive_eval_scalars` and
+`derive_pawn_parameters`, so no param file gains a scalar region and
+iteration 3's 19-token tail does not come back.
+
+## Open question, deferred: the PST residual region
+
+The param schema is not on the keeper list. Its shape was measured, not
+assumed: `res/param/standard/latest.param` is 780 tokens, 12 absolute
+material values then 768 zeros, and every token past the material prefix
+is zero in all 38 files. The region has one writer, `export_theta` in
+`src/debug/tuning.rs`, which stores each final target minus its
+rule-derived base. No tuning run has happened since the schema changed, so
+every PST in use is the derived one.
+
+Storing the derived numbers in place of the zeros does not fix the
+redundancy. It is the same 768 numbers per file, and it costs the one
+property the residual encoding buys: the derivation stays live. Change
+`derive_base_pst` and all 38 variants pick the change up, keeping whatever
+tuning added on top. Absolutes freeze it — a stale file silently overrides
+an improved derivation with the old one, and nothing distinguishes a
+square tuning touched from a square that is derivation output copied down.
+Determinism is the argument for not storing the output at all, not for
+storing it verbatim.
+
+Removing the region was attempted and reverted, because it is not
+independent of the tuner. `compute_gradient` optimises material and every
+per-square PST value, and `export_theta`
+(`src/debug/tuning.rs:663-678`) writes those residuals back through
+`parse_tuned_parameters`, whose stricter token count then rejects its own
+tuner's output: `tune` panics at export. A material-only format therefore
+requires first deciding what `tune` optimises — material alone, or PSTs
+into a region that has to keep existing. Deferred at the user's
+instruction. No stage below reads a PST residual, so the ladder is
+unaffected either way.
 
 ## Deliberately not restored
 
@@ -95,13 +130,13 @@ Evaluation and time carried all of the roughly 100 Elo:
 
 | iteration 3 stage | Elo | restored as |
 | --- | --- | --- |
-| M repetition scoring and material draw bias | +48 | R2 |
-| O royal back-rank PST, pawn shield, castling | +27 | R3 |
-| P zone-attack king danger, open-shield penalty | +21 | R4 |
-| B continuation history | +14 | R7 |
-| F TT static-eval cache | +9 | R9 |
-| I correction history | +9 | R8 |
-| Q stability-scaled soft deadline | +4 | R12 |
+| M repetition scoring and material draw bias | +48 | R1 |
+| O royal back-rank PST, pawn shield, castling | +27 | R2 |
+| P zone-attack king danger, open-shield penalty | +21 | R3 |
+| B continuation history | +14 | R6 |
+| F TT static-eval cache | +9 | R8 |
+| I correction history | +9 | R7 |
+| Q stability-scaled soft deadline | +4 | R11 |
 
 Evaluation therefore goes first. The search family that netted zero goes
 last, and goes in gated by `capabilities` rather than unconditionally,
@@ -112,19 +147,17 @@ which is the one thing iteration 3 never tried.
 Each stage is one commit. Each states what it restores, what it derives
 rather than tunes, and what it is gated by.
 
-### R1. Evaluation support state
+Support state lands with the stage that consumes it, not as a preparatory
+stage of its own. A stage adding a table no term reads yet is dead weight
+and separates each term from the state it needs, so `adjacency_mask`,
+`royal_shield_mask`, `royal_front_mask`, `zone_attack`,
+`zone_attack_best`, the `pawn_*` masks, `pawn_hash`, `pawn_board`,
+`pair_score`, `has_castled`, `draw_bias`, and the `PTable` and `PTEntry`
+pair each appear in the stage below that first uses them. The pawn hash
+joins the identity separation from P4 rather than reusing the canonical
+key.
 
-Restore the state and tables the evaluation stages consume, with no
-evaluation term reading them yet: `pawn_hash`, `pawn_board`, the `PTable`
-and `PTEntry` pair, `adjacency_mask`, `royal_shield_mask`,
-`royal_front_mask`, `zone_attack` and `zone_attack_best`, the `pawn_*`
-masks, `pair_score`, and `has_castled`. The pawn hash joins the identity
-separation from P4 rather than reusing the canonical key.
-
-Acceptance: builds without warnings; the 38-config depth-6 signature in
-plan 18 is unchanged, because nothing reads the new state yet.
-
-### R2. Draw scoring and material draw bias
+### R1. Draw scoring and material draw bias
 
 Restore `draw_score!` and route `terminal_score!` and every repetition and
 perpetual path through it, with `draw_bias` derived. Iteration 3's largest
@@ -133,54 +166,54 @@ single result, +48.
 Acceptance: signature moves only where a draw is scored; a drawn endgame
 that is winning on material no longer evaluates to zero.
 
-### R3. Royal back-rank PST, pawn shield, castling incentive
+### R2. Royal back-rank PST, pawn shield, castling incentive
 
 Restore `king_shelter!`, `pawn_shield!`, and `castling_bonus!`, folding
 the existing `royal_shelter!` into them rather than running both. Scalars
 `king_shelter_bonus`, `pawn_shield_bonus`, `castled_bonus`, and
 `castling_rights_bonus` are derived from mean non-royal piece value.
 
-### R4. Zone-attack king danger and open shield
+### R3. Zone-attack king danger and open shield
 
 Restore `king_danger!` and `open_shield!` with `king_danger_scale` and
 `open_shield_penalty` derived.
 
-### R5. Pawn structure
+### R4. Pawn structure
 
 Restore `pawn_structure!` and its seven sub-terms, with connected,
 doubled, isolated, backward, and passed scalars from
-`derive_pawn_parameters`. This is the stage that makes the pawn hash and
-`PTable` from R1 load-bearing.
+`derive_pawn_parameters`. This is the stage that introduces the pawn
+masks, `pawn_board`, `pawn_hash`, and the `PTable` and `PTEntry` pair.
 
-### R6. Tempo, imbalance, pair bonus
+### R5. Tempo, imbalance, pair bonus
 
 Restore the three remaining scalar terms, derived.
 
-### R7. Continuation history
+### R6. Continuation history
 
 Restore 1-ply and 2-ply continuation history, the best of A-L at +14.
 Iteration 2 measured its removal at +26% nodes on correction history and
 kept continuation; both are load-bearing.
 
-### R8. Correction history
+### R7. Correction history
 
 Restore pawn-hash correction history, +9, and the all-node malus update
 rule. Do not standardise updates to fail-high-only: that was measured at
 +19 to +47% nodes.
 
-### R9. TT static-eval cache
+### R8. TT static-eval cache
 
 Restore `tt_enc_eval!` and `tt_eval!` and the cached static evaluation in
 the main transposition payload, +9.
 
-### R10. Gated search family
+### R9. Gated search family
 
 Restore PVS, razoring, ProbCut, IIR, mate-distance pruning, and check
 extensions, each gated on `capabilities`. This family netted about zero in
 iteration 3 applied unconditionally; the hypothesis under test is that the
 gate is what was missing, not the mechanisms.
 
-### R11. Board width and staged move generation
+### R10. Board width and staged move generation
 
 Restore `BoardBits = U256` as the default with `wide-board` reinstated in
 `src/Cargo.toml`, and restore `generate_all_quiets_and_drops` as the
@@ -193,7 +226,7 @@ against 133,695 at 37.8 ms; grand depth 9 is 8,639,479 at 3048 ms against
 2,400,555 at 2201 ms. The two run different evaluators, so nodes and nps
 are confounded and only games settle the sign.
 
-### R12. Soft and hard deadline split
+### R11. Soft and hard deadline split
 
 Restore the stability-scaled soft deadline, +4. Carry forward the known
 defect: F-3 spent 65% of the clock in the first 18 moves and less than
