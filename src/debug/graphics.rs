@@ -863,15 +863,8 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 
     let tab_titles: Vec<Line> = TAB_TITLES
         .iter()
-        .enumerate()
-        .map(|(i, title)| {
-            if i == 2 && app.locked {
-                Line::styled(
-                    *title, Style::default().fg(Color::DarkGray)
-                )
-            } else {
-                Line::raw(*title)
-            }
+        .map(|title| {
+            Line::raw(*title)
         })
         .collect();
 
@@ -2336,7 +2329,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 )
                 .style(
                     if state.piece_count[p_index!(p) as usize] == 0 {
-                        Style::default().fg(Color::Gray)
+                        Style::default().fg(Color::DarkGray)
                     } else {
                         Style::default()
                     }
@@ -2725,21 +2718,138 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     }
 }
 
+/// switch_protocol
+///
+/// Resolves a `protocol [name]` line to the translator it names and asks the
+/// interface to adopt it. Shared by both dispatchers, since the active
+/// dialect is a property of the interface rather than of either board.
+///
+/// Params:
+/// - command: &str            -> the raw input line
+/// - variant: Option<String>  -> active variant name, needed to find a dialect
+fn switch_protocol(command: &str, variant: Option<String>) {
+    let parts: Vec<_> = command.split_whitespace().collect();
+
+    let new_dict = if let Some(name) = parts.get(1) {
+        let Some(ref loaded) = variant else {
+            log_2!("No variant loaded");
+            return;
+        };
+
+        let Some(translator) = Translator::find(loaded, name) else {
+            log_2!("Unknown protocol: {}", name);
+            return;
+        };
+
+        Some(translator)
+    } else {
+        None
+    };
+
+    emit(EngineEvent::SwitchDict(new_dict));
+}
+
+/// execute_playground_command
+///
+/// Interprets one line typed on the playground tab: board reset, piece
+/// placement and removal, and protocol switching.
+///
+/// The playground is a scratch board that shares nothing with the game but
+/// its variant tables, so none of these commands reads the game state and
+/// none of them can be made to wait on it. That is what lets the playground
+/// stay usable while a search, a match, or a tuning run owns the game.
+///
+/// Params:
+/// - command   : &str           -> the raw input line
+/// - playground: &mut State     -> the scratch position, already locked
+/// - variant   : Option<String> -> active variant name
+fn execute_playground_command(
+    command: &str,
+    playground: &mut State,
+    variant: Option<String>,
+) {
+    let trimmed = command.trim();
+
+    match trimmed.split_whitespace().next().unwrap_or("") {
+        "reset" => {
+            init_playground(playground, 0);
+
+            emit(EngineEvent::PlaygroundUpdate(
+                Box::new(playground.clone()),
+            ));
+        }
+        "add" => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() != 3 {
+                log_2!("Usage: add <piece> <square>");
+                return;
+            }
+
+            let piece_character = parts[1].chars().next();
+            let piece_index = piece_character.and_then(|character| {
+                playground.statics.pieces
+                    .iter()
+                    .position(|piece| piece.char == character)
+                    .map(|index| index as PieceIndex)
+            });
+            let target_square = parse_square(parts[2], playground);
+
+            match (piece_index, target_square) {
+                (Some(index), Some(square)) =>
+                    set_playground_piece(playground, index, square),
+                _ => {
+                    log_2!("Usage: add <piece> <square>");
+                    return;
+                }
+            }
+
+            emit(EngineEvent::PlaygroundUpdate(
+                Box::new(playground.clone()),
+            ));
+        }
+        "del" => {
+            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+
+            if parts.len() != 2 {
+                log_2!("Usage: del <square>");
+                return;
+            }
+
+            let Some(square) = parse_square(parts[1], playground) else {
+                log_2!("Usage: del <square>");
+                return;
+            };
+
+            set_playground_piece(playground, NO_PIECE, square);
+
+            emit(EngineEvent::PlaygroundUpdate(
+                Box::new(playground.clone()),
+            ));
+        }
+        "protocol" => switch_protocol(trimmed, variant),
+        "" => {}
+        _ => log_2!("Invalid command: {}", trimmed),
+    }
+}
+
 /// execute_command
 ///
-/// Interprets one line from the TUI input in game or playground context:
-/// move/undo/reset handling, FEN load and print, perft and search benchmarks,
-/// parameter derivation and export, protocol switching, playground piece
-/// placement (`add`/`del`), and the self-play tooling — `datagen` (build a
-/// tuning dataset), `tune` (Texel-tune the evaluation), and `sprt` (run an
-/// SPRT match between two engine binaries). Long operations run on this worker
-/// thread and report back through `sender`, so the interface never blocks;
-/// commands not valid for the current context are rejected with a log message.
+/// Interprets one line from the TUI input in game context: move/undo/reset
+/// handling, FEN load and print, perft and search benchmarks, parameter
+/// derivation and export, protocol switching, and the self-play tooling —
+/// `datagen` (build a tuning dataset), `tune` (Texel-tune the evaluation),
+/// and `sprt` (run an SPRT match between two engine binaries). Long
+/// operations run on this worker thread and report back through the engine
+/// sink, so the interface never blocks.
+///
+/// Playground commands are not handled here; see
+/// `execute_playground_command`, which needs no game state and therefore no
+/// wait on it.
 ///
 /// Params:
 /// - command   : &str                -> the raw input line
 /// - state     : &mut State          -> the live game state
-/// - playground: Option<&mut State>  -> playground state
 /// - variant   : Option<String>      -> active variant name, for exports
 /// - dict      : Option<&Translator> -> translator for printed move names
 /// - ttable    : Arc<TTable>         -> shared main table for searches
@@ -2748,7 +2858,6 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 fn execute_command(
     command: &str,
     state: &mut State,
-    playground: Option<&mut State>,
     variant: Option<String>,
     dict: Option<&Translator>,
     ttable: Arc<TTable>,
@@ -2758,24 +2867,6 @@ fn execute_command(
     let trimmed = command.trim();
 
     if trimmed.is_empty() {
-        return;
-    }
-
-    let is_playground = playground.is_some();
-
-    if is_playground && !matches!(
-        trimmed.split_whitespace().next().unwrap_or(""),
-        "reset" | "add" | "del" | "protocol"
-    ) {
-        log_2!("Invalid command: {}", trimmed);
-        return;
-    }
-
-    if !is_playground && matches!(
-        trimmed.split_whitespace().next().unwrap_or(""),
-        "add" | "del"
-    ) {
-        log_2!("Invalid command: {}", trimmed);
         return;
     }
 
@@ -2792,21 +2883,12 @@ fn execute_command(
             emit(EngineEvent::Board(board_state));
         }
         "reset" => {
-            if let Some(pg) = playground {
-                *pg = state.clone();
-                init_playground(pg, 0);
+            while state.ply_counter > 0 {
+                undo_move!(state);
 
-                emit(EngineEvent::PlaygroundUpdate(
-                    Box::new((*pg).clone()),
-                ));
-            } else {
-                while state.ply_counter > 0 {
-                    undo_move!(state);
+                let board_state = BoardState::from_state(state, dict);
 
-                    let board_state = BoardState::from_state(state, dict);
-
-                    emit(EngineEvent::Board(board_state));
-                }
+                emit(EngineEvent::Board(board_state));
             }
         }
         "ls" => {
@@ -2862,9 +2944,11 @@ fn execute_command(
         _ if trimmed.starts_with("search") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();
 
-            let depth = parts.get(1)
-                .and_then(|value| value.parse::<usize>().ok())
-                .unwrap_or(MAX_DEPTH);
+            let depth = parse_number(&parts, 1, MAX_DEPTH, "depth")
+                .unwrap_or_else(|diagnostic| {
+                    log_2!("{}", diagnostic);
+                    MAX_DEPTH
+                });
 
             let mut info = SearchInfo {
                 set_depth: depth, ..Default::default()
@@ -2974,9 +3058,11 @@ fn execute_command(
                 return;
             };
 
-            let learning_rate = parts.get(2)
-                .and_then(|value| value.parse::<f64>().ok())
-                .unwrap_or(1.0);
+            let learning_rate = parse_number(&parts, 2, 1.0, "rate")
+                .unwrap_or_else(|diagnostic| {
+                    log_2!("{}", diagnostic);
+                    1.0
+                });
 
             let Some(ref variant_name) = variant else {
                 log_2!("No variant loaded for tune");
@@ -3003,15 +3089,21 @@ fn execute_command(
                 return;
             };
 
-            let max_games = parts.get(4)
-                .and_then(|value| value.parse::<usize>().ok())
-                .unwrap_or(2000);
-            let h0 = parts.get(5)
-                .and_then(|value| value.parse::<f64>().ok())
-                .unwrap_or(0.0);
-            let h1 = parts.get(6)
-                .and_then(|value| value.parse::<f64>().ok())
-                .unwrap_or(5.0);
+            let max_games = parse_number(&parts, 4, 2000usize, "games")
+                .unwrap_or_else(|diagnostic| {
+                    log_2!("{}", diagnostic);
+                    2000
+                });
+            let h0 = parse_number(&parts, 5, 0.0f64, "h0")
+                .unwrap_or_else(|diagnostic| {
+                    log_2!("{}", diagnostic);
+                    0.0
+                });
+            let h1 = parse_number(&parts, 6, 5.0f64, "h1")
+                .unwrap_or_else(|diagnostic| {
+                    log_2!("{}", diagnostic);
+                    5.0
+                });
 
             let Some(ref variant_name) = variant else {
                 log_2!("No variant loaded for sprt");
@@ -3036,9 +3128,11 @@ fn execute_command(
                 return;
             };
 
-            let branch = parts.get(2)
-                .and_then(|value| value.parse::<i8>().ok())
-                .unwrap_or(-1);
+            let branch = parse_number(&parts, 2, -1i8, "branch")
+                .unwrap_or_else(|diagnostic| {
+                    log_2!("{}", diagnostic);
+                    -1
+                });
 
             if let Some(ref variant) = variant {
                 let perft_name = format!("{}.perft", variant);
@@ -3072,90 +3166,24 @@ fn execute_command(
                 }
             }
         }
-        _ if trimmed.starts_with("add") => {
-            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
-
-            if parts.len() != 3 {
-                log_2!("Usage: add <piece> <square>");
-                return;
-            }
-
-            let playground_state = playground.unwrap();
-
-            let piece_character = parts[1].chars().next();
-            let piece_index = piece_character.and_then(|character| {
-                playground_state.statics.pieces
-                    .iter()
-                    .position(|piece| piece.char == character)
-                    .map(|index| index as PieceIndex)
-            });
-            let target_square = parse_square(parts[2], playground_state);
-
-            match (piece_index, target_square) {
-                (Some(index), Some(square)) =>
-                    set_playground_piece(playground_state, index, square),
-                _ => {
-                    log_2!("Usage: add <piece> <square>");
-                    return;
-                }
-            }
-
-            emit(EngineEvent::PlaygroundUpdate(
-                Box::new(playground_state.clone()),
-            ));
-        }
-        _ if trimmed.starts_with("del") => {
-            let parts = trimmed.split_whitespace().collect::<Vec<_>>();
-
-            if parts.len() != 2 {
-                log_2!("Usage: del <square>");
-                return;
-            }
-
-            let playground_state = playground.unwrap();
-
-            let target_square = parse_square(parts[1], playground_state);
-
-            if target_square.is_none() {
-                log_2!("Usage: del <square>");
-                return;
-            }
-
-            let square = target_square.unwrap();
-
-            set_playground_piece(playground_state, NO_PIECE, square);
-
-            emit(EngineEvent::PlaygroundUpdate(
-                Box::new(playground_state.clone()),
-            ));
-        }
         _ if trimmed.starts_with("protocol") => {
-            let parts: Vec<_> = trimmed.split_whitespace().collect();
-
-            let protocol_name = parts.get(1);
-
-            let new_dict = if let Some(name) = protocol_name {
-                let Some(ref v) = variant else {
-                    log_2!("No variant loaded");
-                    return;
-                };
-
-                let Some(translator) = Translator::find(v, name) else {
-                    log_2!("Unknown protocol: {}", name);
-                    return;
-                };
-
-                Some(translator)
-            } else {
-                None
-            };
-
-            emit(EngineEvent::SwitchDict(new_dict));
+            switch_protocol(trimmed, variant);
         }
         _ => {
             log_2!("Invalid command: {}", trimmed);
         }
     }
+}
+
+/// CommandTarget
+///
+/// Which board a submitted line acts on, and so which mutex its worker
+/// takes. The distinction is the whole reason the input lock is a branch
+/// gate rather than a guard: the playground shares nothing with the game
+/// but its variant tables, so only the game arm can be busy.
+enum CommandTarget {
+    Playground(Arc<Mutex<State>>),                                              /* never gated, never waits           */
+    Game(Arc<Mutex<State>>),                                                    /* gated, holds the lock until done   */
 }
 
 /// handle_key
@@ -3191,75 +3219,72 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 return false;
             }
 
-            if app.locked {
+            let target = if main_tab == 2 {
+                app.playground_state.clone().map(CommandTarget::Playground)
+            } else if app.locked {
                 log_2!("Command execution in progress, please wait...");
-                return false;
-            }
+                return false;                                                   /* the line stays for a retry        */
+            } else {
+                app.game_state.clone().map(CommandTarget::Game)
+            };
 
-            app.locked = true;
+            let Some(target) = target else {
+                log_2!("No board loaded");
+                app.input.clear();
+                return false;
+            };
+
+            if matches!(target, CommandTarget::Game(_)) {
+                app.locked = true;
+            }
 
             thread::spawn({
                 let command = app.input.clone();
                 let variant = app.variant.clone();
                 let dict = app.translator.clone();
-
-                let arc_state = app.game_state.as_mut().unwrap_or_else(
-                    || {
-                        panic!("Game state is None when executing command")
-                    }
-                ).clone();
-
-                let arc_playground = app.playground_state.as_mut()
-                    .unwrap_or_else(
-                    || {
-                        panic!(
-                            "Playground state is None when executing command"
-                        )
-                    }
-                ).clone();
-
                 let threads = app.threads;
 
-                move || {
-                    let table = TTable::default();
-                    let qtable = QTable::default();
-
-                    let mut state = arc_state.lock()
-                        .unwrap_or_else(|_| {
-                            panic!(
-                                concat!(
-                                    "Failed to lock game state ",
-                                    "for command execution"
+                move || match target {
+                    CommandTarget::Playground(arc) => {
+                        let mut playground = arc.lock()
+                            .unwrap_or_else(|_| {
+                                panic!(
+                                    concat!(
+                                        "Failed to lock playground state ",
+                                        "for command execution"
+                                    )
                                 )
-                            )
-                        });
+                            });
 
-                    let mut playground = arc_playground.lock()
-                        .unwrap_or_else(|_| {
-                            panic!(
-                                concat!(
-                                    "Failed to lock playground state ",
-                                    "for command execution"
+                        execute_playground_command(
+                            &command,
+                            &mut playground,
+                            variant,
+                        );
+                    }
+                    CommandTarget::Game(arc) => {
+                        let mut state = arc.lock()
+                            .unwrap_or_else(|_| {
+                                panic!(
+                                    concat!(
+                                        "Failed to lock game state ",
+                                        "for command execution"
+                                    )
                                 )
-                            )
-                        });
+                            });
 
-                    execute_command(
-                        &command,
-                        &mut state,
-                        if main_tab == 2 {
-                            Some(&mut playground)
-                        } else {
-                            None
-                        },
-                        variant,
-                        dict.as_ref(),
-                        Arc::new(table),
-                        Arc::new(qtable),
-                        threads,
-                    );
+                        execute_command(
+                            &command,
+                            &mut state,
+                            variant,
+                            dict.as_ref(),
+                            Arc::new(TTable::default()),
+                            Arc::new(QTable::default()),
+                            threads,
+                        );
 
-                    emit(EngineEvent::Unlock);
+                        emit(EngineEvent::Unlock);
+                    }
                 }
             });
 
@@ -3345,25 +3370,21 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 app.input.clear();
 
                 move || {
-                    let conf_exists = EMBEDDED_CONFIGS
-                        .get_file(&filename).is_some();
+                    match load_variant(&filename) {
+                        Ok(state) => {
+                            let board_state = BoardState::from_state(
+                                &state, dict.as_ref()
+                            );
 
-                    if conf_exists {
-                        let state = parse_config_file(&filename);
+                            emit(EngineEvent::StateInit(
+                                Arc::new(Mutex::new(state)),
+                            ));
 
-                        let board_state = BoardState::from_state(
-                            &state, dict.as_ref()
-                        );
+                            emit(EngineEvent::Board(board_state));
 
-                        emit(EngineEvent::StateInit(
-                            Arc::new(Mutex::new(state)),
-                        ));
-
-                        emit(EngineEvent::Board(board_state));
-
-                        emit(EngineEvent::Unlock);
-                    } else {
-                        log_2!("Config not found: {}", filename);
+                            emit(EngineEvent::Unlock);
+                        }
+                        Err(diagnostic) => log_2!("{}", diagnostic),
                     }
                 }
             });

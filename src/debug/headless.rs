@@ -65,57 +65,6 @@ fn headless_usage() -> String {
     .concat()
 }
 
-/// parse_number
-///
-/// Parses one optional positional value with a supplied default.
-/// Reports invalid values using the supplied diagnostic field name.
-///
-/// Params:
-/// - values : &[String] -> positional values
-/// - index  : usize     -> value index
-/// - default: T         -> fallback when absent
-/// - name   : &str      -> field name for diagnostics
-///
-/// Return:
-/// Result<T, String>    -> parsed/default value or diagnostic
-fn parse_number<T>(
-    values: &[String],
-    index: usize,
-    default: T,
-    name: &str,
-) -> Result<T, String>
-where
-    T: std::str::FromStr,
-{
-    values
-        .get(index)
-        .map(|value| {
-            value
-                .parse::<T>()
-                .map_err(|_| format!("Invalid {}: {}", name, value))
-        })
-        .unwrap_or(Ok(default))
-}
-
-/// load_variant
-///
-/// Loads one embedded variant through the normal configuration pipeline.
-/// Returns a diagnostic when its configuration cannot be found.
-///
-/// Params:
-/// - variant: &str       -> embedded configuration stem
-///
-/// Return:
-/// Result<State, String> -> loaded state or unknown-variant diagnostic
-fn load_variant(variant: &str) -> Result<State, String> {
-    let config_name = format!("{}.conf", variant);
-    if EMBEDDED_CONFIGS.get_file(&config_name).is_none() {
-        return Err(format!("Unknown variant: {}", variant));
-    }
-
-    Ok(parse_config_file(&config_name))
-}
-
 /// parse_position_arguments
 ///
 /// Parses variant, command values, protocol, quoted FEN, move list, and perft
@@ -439,7 +388,7 @@ fn run_search_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
     let depth = parse_number(&position.values, 0, 4usize, "depth")?;
-    let threads = parse_number(&position.values, 1, 1usize, "threads")?;
+    let threads = parse_number(&position.values,1, 1usize, "threads")?;
     if depth == 0 {
         return Err("search depth must be positive".to_string());
     }

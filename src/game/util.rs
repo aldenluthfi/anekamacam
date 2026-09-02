@@ -13,6 +13,59 @@ use crate::*;
 
 const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";
 
+/// parse_number
+///
+/// Parses one optional positional value with a supplied default.
+/// Reports invalid values using the supplied diagnostic field name.
+///
+/// Params:
+/// - values : &[S]    -> positional values
+/// - index  : usize   -> value index
+/// - default: T       -> fallback when absent
+/// - name   : &str    -> field name for diagnostics
+///
+/// Return:
+/// Result<T, String> -> parsed/default value or diagnostic
+pub fn parse_number<T, S>(
+    values: &[S],
+    index: usize,
+    default: T,
+    name: &str,
+) -> Result<T, String>
+where
+    T: std::str::FromStr,
+    S: AsRef<str>,
+{
+    values
+        .get(index)
+        .map(|value| {
+            let value = value.as_ref();
+            value
+                .parse::<T>()
+                .map_err(|_| format!("Invalid {}: {}", name, value))
+        })
+        .unwrap_or(Ok(default))
+}
+
+/// load_variant
+///
+/// Loads one embedded variant through the normal configuration pipeline.
+/// Returns a diagnostic when its configuration cannot be found.
+///
+/// Params:
+/// - variant: &str       -> embedded configuration stem
+///
+/// Return:
+/// Result<State, String> -> loaded state or unknown-variant diagnostic
+pub fn load_variant(variant: &str) -> Result<State, String> {
+    let config_name = format!("{}.conf", variant);
+    if EMBEDDED_CONFIGS.get_file(&config_name).is_none() {
+        return Err(format!("Unknown variant: {}", variant));
+    }
+
+    Ok(parse_config_file(&config_name))
+}
+
 /// exe_tag
 ///
 /// Short identity of the running binary, taken from the invoking path

@@ -88,7 +88,7 @@ pub use crate::game::search::{
 pub use crate::game::util::{
     adjudicate_no_move, benchmark_headless_perft, benchmark_perft,
     benchmark_search, exe_tag, format_time, game_result_score,
-    parse_perft_content, perft,
+    load_variant, parse_perft_content, parse_number, perft,
     play_search_game, prune_backups, random_u128, refresh_eval_state,
     roll_latest, run_derive_headless, square_distance, verify_game_state,
 };
