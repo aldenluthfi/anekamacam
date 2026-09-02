@@ -388,7 +388,7 @@ fn run_search_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
     let depth = parse_number(&position.values, 0, 4usize, "depth")?;
-    let threads = parse_number(&position.values,1, 1usize, "threads")?;
+    let threads = parse_number(&position.values, 1, 1usize, "threads")?;
     if depth == 0 {
         return Err("search depth must be positive".to_string());
     }
