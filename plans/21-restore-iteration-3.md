@@ -2,7 +2,7 @@
 
 ## Status
 
-Drafted 2026-09-02. R1 and R2 have landed; R3 is next.
+Drafted 2026-09-02. R1, R2, and R3 have landed; R4 is next.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -234,10 +234,63 @@ nodes to 828,784 at −10.3% time, xiangqi 493,122 to 478,259 at −4.6%,
 crazyhouse 788,390 to 867,645 at +4.8%. Standard is node-identical, which
 is not a null result but a blind instrument — see Measurement.
 
-### R3. Zone-attack king danger and open shield
+### R3. Zone-attack king danger and open shield — landed
 
 Restore `king_danger!` and `open_shield!` with `king_danger_scale` and
 `open_shield_penalty` derived.
+
+`king_danger!` reads a precomputed zone-attack table. For every triple of
+royal square, piece, and origin, `derive_danger_parameters` asks
+`derive_vector_chance` under `OPENING_OCCUPANCY` for the expected number
+of that piece's vectors landing on the royal square or any square of its
+ring — R2's `ring_squares` is the adjacency source, so the two stages
+share one notion of "beside the royal". The expectation is stored as
+`ZONE_ATTACK_UNIT`ths of a landing in a `u8`, and reduced over the origin
+axis into `zone_attack_best` for pieces held in hand.
+
+Evaluation sums those units over every enemy piece that is neither royal
+nor shield-like, and, where the rules drop, adds `zone_attack_best` once
+per copy in hand. A hand is the whole attacking reserve of a drop
+variant; leaving it out makes a hand of two queens as harmless as an
+empty one. Drop legality is not checked, since over-stating a held
+attacker errs toward caution. The total is charged as its square so one
+attacker barely registers and several compound, capped where a further
+attacker would say more than winning the dearest piece outright.
+
+`open_shield!` charges a royal with nothing of its own anywhere ahead of
+it on its own file or either neighbour. Shelter prices the squares
+immediately in front and guard the ring; neither can say the ground ahead
+is empty all the way out, which is the file an enemy rook or lance
+arrives on. The test is geometric — file distance and the sign of the
+rank difference against `forward_steps` — so it needs no pawn mask, and
+only shield-like pieces count as cover, since a piece that can walk back
+the way it came is not holding a file. `pawn_board` and the pawn masks
+stay unbuilt for R4.
+
+Derived from the dearest non-royal piece: `DANGER_RATIO` 600,
+`DANGER_CAP_RATIO` 1000, `OPEN_SHIELD_RATIO` 33 with `OPEN_SHIELD_FLOOR`
+12. Standard derives king danger worth 559 at sixteen landings, capped at
+933, and an uncovered royal at 30.
+
+Evaluation was restructured here for speed, not for score. It used to
+compute both halves eagerly and then pick one, so every endgame node paid
+for the whole safety family it never reads; the endgame-only standard
+bench measured that as −8.4% nps against R2 on identical nodes. Splitting
+the halves into `opening_score!` and `endgame_score!` and computing each
+inside its own phase arm is arithmetically the same expression and left
+every probe score unchanged, and standard now runs 3,979,603 nps against
+R2's 3,711,460, +7.2%.
+
+Behaviour: a queen approaching a bare royal raises danger monotonically
+(a1 1144, h5 1156, e5 1186, d6 1176); an uncovered royal reads ±51
+mirrored on full back ranks; a crazyhouse hand of two queens is worth
+about 233 cp over the material it already counts.
+
+Result: 38/38 endgame fixtures, and 32 of 38 signature rows move. Speed
+suite versus R2, nodes then time: shogi 1,152,189 to 1,084,801 at +0.3%,
+xiangqi 597,643 to 583,595 at +1.4%, crazyhouse 1,471,929 to 1,349,333 at
+−7.1%, grand 1,112,355 to 1,274,326 at +16.9%, standard node-identical at
+−6.7%. Grand's time is its node count, not its nps, which moved −2%.
 
 ### R4. Pawn structure
 

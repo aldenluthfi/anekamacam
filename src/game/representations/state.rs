@@ -684,10 +684,17 @@ pub struct StaticState {
     pub ring_squares: Vec<Square>,                                              /* every local square, colour-blind   */
     pub ring_counts: Vec<u8>,                                                   /* squares stored per origin above    */
     pub local_stride: usize,                                                    /* slots each origin owns             */
+    pub forward_steps: [i32; 2],                                                /* rank step each colour advances by  */
     pub shelter_value: i32,                                                     /* worth of one sheltering piece      */
     pub guard_value: i32,                                                       /* worth of one piece beside a royal  */
     pub castled_value: i32,                                                     /* worth of having castled already    */
     pub castling_right_value: i32,                                              /* worth of still being able to       */
+
+    pub zone_attack: Vec<u8>,                                                   /* royal, piece, origin to pressure   */
+    pub zone_attack_best: Vec<u8>,                                              /* pressure from its dearest origin   */
+    pub king_danger_scale: i32,                                                 /* worth of a fully pressed zone      */
+    pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
+    pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
 
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
@@ -891,10 +898,16 @@ impl State {
             ring_squares: Vec::new(),
             ring_counts: Vec::new(),
             local_stride: 0,
+            forward_steps: [1, -1],
             shelter_value: 0,
             guard_value: 0,
             castled_value: 0,
             castling_right_value: 0,
+            zone_attack: Vec::new(),
+            zone_attack_best: Vec::new(),
+            king_danger_scale: 0,
+            king_danger_cap: 0,
+            open_shield_penalty: 0,
 
             draw_contempt: 0,
             draw_span: 1,                                                       /* a divisor before derivation runs   */

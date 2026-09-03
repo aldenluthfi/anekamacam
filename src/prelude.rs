@@ -77,10 +77,10 @@ pub use crate::game::position::{
 pub use crate::game::search::{
     parallel::ThreadPool,
     parameters::{
-        derive_base_pst, derive_eval_parameters, derive_eval_products,
-        derive_parameters, derive_search_capabilities,
-        derive_search_parameters, derive_shelter_parameters,
-        reduction_surface,
+        derive_base_pst, derive_danger_parameters, derive_eval_parameters,
+        derive_eval_products, derive_parameters,
+        derive_search_capabilities, derive_search_parameters,
+        derive_shelter_parameters, reduction_surface,
     },
     transposition::{QTable, QTEntry, TTEntry, TTable},
 };
@@ -533,6 +533,8 @@ pub const FUTILITY_DEPTH: u32 = 6;
 pub const LMP_DEPTH: u32 = 12;
 pub const SEE_PRUNE_DEPTH: u32 = 5;
 pub const SHELTER_CAP: u32 = 3;
+pub const ZONE_ATTACK_UNIT: i32 = 16;
+pub const ZONE_ATTACK_FULL: i32 = 16;
 pub const SEARCH_REPETITION_CAP: usize = 64;
 pub const REPETITION_CYCLE: u8 = 2;
 

@@ -141,6 +141,26 @@ const GUARD_FLOOR: u32 = 2;
 const CASTLED_RATIO: u32 = 40;
 const CASTLING_RIGHT_RATIO: u32 = 20;
 
+/// What a pressed royal zone costs the side standing in it. Pressure is
+/// counted in expected enemy landings on the royal's square or its ring,
+/// and charged as its square, so one attacker barely registers while
+/// several compound: `RATIO` of the dearest non-royal piece is charged at
+/// `ZONE_ATTACK_FULL` landings, a quarter of it at half that many. The
+/// same quadratic runs away on a board that lets a whole army bear down
+/// at once, so `CAP_RATIO` bounds the charge at the piece it is priced
+/// off: an attack is never worth more than winning the dearest piece
+/// outright, and the search should read it as pressure, not as a mate.
+const DANGER_RATIO: u32 = 600;
+const DANGER_CAP_RATIO: u32 = 1000;
+
+/// What it costs a royal to stand with nothing of its own ahead of it, on
+/// its file or either neighbouring one. Shelter prices the pieces that are
+/// there; this prices their total absence, which no count of nearby
+/// pieces can express. Held against `COEFFICIENT_SCALE` and never below
+/// `FLOOR` in raw units.
+const OPEN_SHIELD_RATIO: u32 = 33;
+const OPEN_SHIELD_FLOOR: u32 = 12;
+
 /// Share of the board a royal must be able to stand on before shelter is
 /// worth pricing at all. A royal walled into a palace by its own forbidden
 /// zones cannot be sheltered in the sense this term means: it never left
@@ -887,8 +907,9 @@ fn resolve_setup_army(state: &State) -> Vec<u32> {
 ///
 /// Startup entry point for the whole derivation pass: computes the
 /// evaluation parameters, then the search margins and the royal shelter
-/// tables built on top of them, then the capabilities the rules permit, and
-/// finally refreshes the incremental eval caches.
+/// tables built on top of them, then the zone-attack tables built on the
+/// shelter's own ring, then the capabilities the rules permit, and finally
+/// refreshes the incremental eval caches.
 ///
 /// Params:
 /// - state: &mut State -> freshly precomputed variant state
@@ -896,6 +917,7 @@ pub fn derive_parameters(state: &mut State) {
     derive_eval_parameters(state);
     derive_search_parameters(state);
     derive_shelter_parameters(state);
+    derive_danger_parameters(state);
     derive_search_capabilities(state);
     refresh_eval_state(state);
 }
@@ -934,6 +956,28 @@ where
     table
 }
 
+/// dearest_piece_value
+///
+/// Opening value of the most valuable non-royal piece one colour deploys,
+/// the unit every derived margin and safety value is a share of. Normalized
+/// values pin the cheapest piece at the same number in every variant, so
+/// only the top of the range says anything about the units a variant plays
+/// in. Black twins carry the white values, so reading one colour reads all.
+///
+/// Params:
+/// - state: &State -> variant whose piece values are read
+///
+/// Return:
+/// u64             -> the dearest value, or zero for a royal-only army
+fn dearest_piece_value(state: &State) -> u64 {
+    state.statics.pieces
+        .iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_ovalue!(piece) as u64)
+        .max()
+        .unwrap_or(0)
+}
+
 /// derive_search_parameters
 ///
 /// Drives the search half of derivation: rebuilds all four late-move
@@ -959,14 +1003,7 @@ where
 /// Params:
 /// - state: &mut State -> variant whose derived search values are rebuilt
 pub fn derive_search_parameters(state: &mut State) {
-    let statics = &state.statics;
-
-    let dearest = statics.pieces
-        .iter()
-        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
-        .map(|piece| p_ovalue!(piece) as u64)
-        .max()
-        .unwrap_or(0);
+    let dearest = dearest_piece_value(state);
 
     let delta = dearest * ASPIRATION_RATIO as u64
         / COEFFICIENT_SCALE as u64;
@@ -1613,12 +1650,7 @@ pub fn derive_shelter_parameters(state: &mut State) {
         }
     }
 
-    let dearest = state.statics.pieces
-        .iter()
-        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
-        .map(|piece| p_ovalue!(piece) as u64)
-        .max()
-        .unwrap_or(0);
+    let dearest = dearest_piece_value(state);
 
     let shelter_value = (dearest * SHELTER_RATIO as u64
         / COEFFICIENT_SCALE as u64).max(SHELTER_FLOOR as u64);
@@ -1655,8 +1687,126 @@ pub fn derive_shelter_parameters(state: &mut State) {
     statics.ring_squares = ring_squares;
     statics.ring_counts = ring_counts;
     statics.local_stride = stride;
+    statics.forward_steps = forward;
     statics.shelter_value = shelter_value as i32;
     statics.guard_value = guard_value as i32;
     statics.castled_value = castled_value as i32;
     statics.castling_right_value = castling_right_value as i32;
+}
+
+/// derive_danger_parameters
+///
+/// Builds the zone-attack tables `king_danger!` reads and prices what they
+/// and `open_shield!` charge. For every piece, every origin it could stand
+/// on, and every square a royal could stand on, the table holds how many of
+/// that piece's vectors are expected to land on the royal's square or on
+/// its ring, under the same opening-occupancy model piece values are
+/// derived from. Storing the answer per triple keeps evaluation from
+/// walking a single vector: it sums bytes over the enemy pieces actually on
+/// the board, and squares that sum.
+///
+/// Entries are `ZONE_ATTACK_UNIT`ths of an expected landing, saturating at
+/// a byte, so a piece attacking the zone through open lines scores a full
+/// unit per landing square and one attacking through a line that has to be
+/// empty, or hopping one that has to be occupied, scores its odds of it.
+/// The same pass reduces the table over its origin axis into
+/// `zone_attack_best`, the pressure a piece would exert from the origin it
+/// would pick. A piece held in hand stands on no square, so that reduction
+/// is the only pressure a hand can be read at, and deriving both here makes
+/// it impossible for one to exist without the other.
+///
+/// The ring this reads is the one `derive_shelter_parameters` already
+/// built, so that pass must run first.
+///
+/// Params:
+/// - state: &mut State -> variant whose danger tables are rebuilt
+pub fn derive_danger_parameters(state: &mut State) {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let piece_count = state.statics.pieces.len();
+    let stride = state.statics.local_stride;
+    let occupancy = OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
+
+    let mut table = vec![0u8; board_size * piece_count * board_size];
+
+    for piece_index in 0..piece_count {
+        for from in 0..board_size {
+            let mut pressure = vec![0.0f64; board_size];
+            let vectors = &state.statics.relevant_moves
+                [piece_index * board_size + from];
+
+            for vector in vectors {
+                let Some((chance, file_delta, rank_delta)) =
+                    derive_vector_chance(vector, occupancy)
+                else {
+                    continue;
+                };
+
+                let file = from as i32 % files + file_delta;
+                let rank = from as i32 / files + rank_delta;
+
+                if file < 0 || file >= files || rank < 0 || rank >= ranks {
+                    continue;
+                }
+
+                let landing = (rank * files + file) as usize;
+
+                pressure[landing] += chance;
+
+                for slot in 0..state.statics.ring_counts[landing] as usize {
+                    let ring = state.statics.ring_squares[
+                        landing * stride + slot
+                    ] as usize;
+
+                    pressure[ring] += chance;
+                }
+            }
+
+            for (royal, chance) in pressure.iter().enumerate() {
+                table[
+                    (royal * piece_count + piece_index) * board_size + from
+                ] = (chance * ZONE_ATTACK_UNIT as f64)
+                    .round()
+                    .min(u8::MAX as f64) as u8;
+            }
+        }
+    }
+
+    let mut best = vec![0u8; board_size * piece_count];
+
+    for (entry, pressure) in best.iter_mut().enumerate() {
+        *pressure = *table[entry * board_size..(entry + 1) * board_size]
+            .iter()
+            .max()
+            .unwrap_or(&0);
+    }
+
+    let dearest = dearest_piece_value(state);
+
+    let king_danger_scale = dearest * DANGER_RATIO as u64
+        / COEFFICIENT_SCALE as u64;
+    let king_danger_cap = dearest * DANGER_CAP_RATIO as u64
+        / COEFFICIENT_SCALE as u64;
+    let open_shield_penalty = (dearest * OPEN_SHIELD_RATIO as u64
+        / COEFFICIENT_SCALE as u64).max(OPEN_SHIELD_FLOOR as u64);
+
+    log_3!(
+        concat!(
+            "Derived king danger worth {} at {} landings, capped at {}, ",
+            "and an uncovered royal at {}"
+        ),
+        king_danger_scale,
+        ZONE_ATTACK_FULL,
+        king_danger_cap,
+        open_shield_penalty
+    );
+
+    let statics = state.static_mut();
+
+    statics.zone_attack = table;
+    statics.zone_attack_best = best;
+    statics.king_danger_scale = king_danger_scale as i32;
+    statics.king_danger_cap = king_danger_cap as i32;
+    statics.open_shield_penalty = open_shield_penalty as i32;
 }
