@@ -684,6 +684,9 @@ pub struct StaticState {
     pub local_stride: usize,                                                    /* slots each origin owns             */
     pub shelter_value: i32,                                                     /* worth of one sheltering piece      */
 
+    pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
+    pub draw_span: i32,                                                         /* lead at which that cost saturates  */
+
 /*----------------------------------------------------------------------------*\
                                  SEARCH FIELDS
 \*----------------------------------------------------------------------------*/
@@ -880,6 +883,9 @@ impl State {
             shelter_counts: [Vec::new(), Vec::new()],
             local_stride: 0,
             shelter_value: 0,
+
+            draw_contempt: 0,
+            draw_span: 1,                                                       /* a divisor before derivation runs   */
 
             reduction_quiet: Vec::new(),
             reduction_quiet_check: Vec::new(),

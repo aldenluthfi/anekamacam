@@ -29,6 +29,18 @@ const ROLE_MAJOR_SPLIT: u32 = 200;
 /// endgame, measured in pieces of average deployed value.
 const ENDGAME_ARMY_SIZE: u32 = 5;
 
+/// What a draw is worth to a side that is not level on material. A draw
+/// agreed by the side already ahead gives up the lead it holds, so it is
+/// scored below zero for that side and above zero for the other. The cost
+/// rises with the lead and saturates once the lead reaches `SPAN` pieces
+/// of average deployed value, where it is worth `RATIO` of one such piece
+/// held against `COEFFICIENT_SCALE`. Both read the deployed mean rather
+/// than the dearest piece, because a lead is an army's and not a single
+/// exchange's, and both are shares of this variant's own material so a
+/// variant playing in small units is not handed a large contempt.
+const DRAW_CONTEMPT_RATIO: u32 = 125;
+const DRAW_CONTEMPT_SPAN: u32 = 2;
+
 /// Late-move reduction curves, one per class of move. Each surface is
 /// `base + shape(depth, moves) / divisor`. Which terms a curve mixes is fixed
 /// by class because a quiet move buried in a long list and a capture answering
@@ -1306,8 +1318,8 @@ pub fn derive_eval_parameters(state: &mut State) {
 
 /// derive_eval_products
 ///
-/// Rebuilds roles, phase thresholds, dynamic role counts, and rule-derived PST
-/// bases after final material values have loaded.
+/// Rebuilds roles, phase thresholds, draw contempt, dynamic role counts, and
+/// rule-derived PST bases after final material values have loaded.
 ///
 /// Params:
 /// - state: &mut State -> variant whose loaded-material products are rebuilt
@@ -1356,8 +1368,14 @@ pub fn derive_eval_products(state: &mut State) {
         (mean_value * ENDGAME_ARMY_SIZE as u64)
             .min(opening_score - 1);
 
+    let draw_span = (mean_value * DRAW_CONTEMPT_SPAN as u64).max(1);            /* a span of nothing still divides    */
+    let draw_contempt = mean_value * DRAW_CONTEMPT_RATIO as u64
+        / COEFFICIENT_SCALE as u64;
+
     state.static_mut().opening_score = opening_score as u32;
     state.static_mut().endgame_score = endgame_score as u32;
+    state.static_mut().draw_span = draw_span as i32;
+    state.static_mut().draw_contempt = draw_contempt as i32;
 
     let (pst_opening, pst_endgame) = derive_base_pst(state);
     state.static_mut().pst_opening = pst_opening;
@@ -1367,6 +1385,10 @@ pub fn derive_eval_products(state: &mut State) {
 
     log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
+    log_3!(
+        "Derived Draw Contempt: {} at a lead of {}",
+        state.statics.draw_contempt, state.statics.draw_span
+    );
 }
 
 /// derive_forward_directions

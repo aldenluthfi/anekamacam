@@ -2,7 +2,7 @@
 
 ## Status
 
-Drafted 2026-09-02. No stage has landed.
+Drafted 2026-09-02. R1 has landed; R2 is next.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -152,12 +152,12 @@ stage of its own. A stage adding a table no term reads yet is dead weight
 and separates each term from the state it needs, so `adjacency_mask`,
 `royal_shield_mask`, `royal_front_mask`, `zone_attack`,
 `zone_attack_best`, the `pawn_*` masks, `pawn_hash`, `pawn_board`,
-`pair_score`, `has_castled`, `draw_bias`, and the `PTable` and `PTEntry`
+`pair_score`, `has_castled`, `draw_contempt`, and the `PTable` and `PTEntry`
 pair each appear in the stage below that first uses them. The pawn hash
 joins the identity separation from P4 rather than reusing the canonical
 key.
 
-### R1. Draw scoring and material draw bias
+### R1. Draw scoring and material draw bias — landed
 
 Restore `draw_score!` and route `terminal_score!` and every repetition and
 perpetual path through it, with `draw_bias` derived. Iteration 3's largest
@@ -165,6 +165,31 @@ single result, +48.
 
 Acceptance: signature moves only where a draw is scored; a drawn endgame
 that is winning on material no longer evaluates to zero.
+
+Landed as two halves, because contempt on its own moved no node count at
+depth 6 in any of the 38 configs. Iteration 3 scored a repeated position
+from the first closed cycle, not from the occurrence count the rule names,
+and that is what the search was missing.
+
+The bias is `draw_contempt` and `draw_span`, both derived in
+`derive_eval_products` from the mean deployed piece value:
+`DRAW_CONTEMPT_RATIO` of one such piece, saturating at a lead of
+`DRAW_CONTEMPT_SPAN` of them. Standard derives 34 at a span of 548. A
+stalemate a queen up scores +34 for the stalemated side and −34 mirrored,
+against 0 before.
+
+The cycle cut is gated on whether the variant's perpetual rule names an
+offender. Where none does, one closed cycle is enough. Where one does, the
+search waits for the rule's own count, since which side is at fault is not
+settled until the rule fires: `tools/run_endgame_fixtures.sh` pins exactly
+this with `xiangqi perpetual one cycle short: the chariot mates the checked
+side`, which an ungated cut turns from `mate -2` into `mate 1`.
+
+Result: 38/38 endgame fixtures; two signature rows move, node counts only,
+same move and score (newzealand 4643→4636, pocketknight 30319→30315).
+Speed suite versus the pre-R1 build: standard 133695→131470 nodes at
++3.4% NPS, crazyhouse 777281→788390 at −2.1%, and shogi and xiangqi node
+identical, their time deltas 0.2% either way.
 
 ### R2. Royal back-rank PST, pawn shield, castling incentive
 

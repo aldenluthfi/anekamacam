@@ -534,6 +534,7 @@ pub const LMP_DEPTH: u32 = 12;
 pub const SEE_PRUNE_DEPTH: u32 = 5;
 pub const SHELTER_CAP: u32 = 3;
 pub const SEARCH_REPETITION_CAP: usize = 64;
+pub const REPETITION_CYCLE: u8 = 2;
 
 /// Shared protocol, storage, and debug constants.
 pub const DATA_DIR: &str = "res/data";

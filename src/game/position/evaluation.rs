@@ -5,16 +5,58 @@
 //! Material values and piece-square tables are derived from variant rules at
 //! startup and maintained incrementally by make/undo. Opening and endgame
 //! totals are blended by current material phase, with no additional positional
-//! terms.
+//! terms. Terminal positions are scored here too, and a drawn one is priced by
+//! the material lead standing on the board rather than at a flat zero.
 //!
 //! Created: 19/04/2026
 //! Author : Alden Luthfi
+
+/// draw_score!
+///
+/// What a draw is worth to the side to move, in place of a plain zero. A side
+/// holding more material than its opponent has something to lose by agreeing
+/// the game, so the lead is read back as a cost: ahead scores the draw below
+/// zero and behind scores it above. The lead is measured in the material the
+/// current phase prices, clamped to the derived `draw_span`, and paid at
+/// `draw_contempt` for a full span.
+///
+/// Both halves are shares of this variant's own mean deployed piece, so a
+/// variant playing in small units is not handed a large contempt, and no rule
+/// is asked about beyond the material already on the board. A level position
+/// scores zero, and the score a colour reads is the negation of what its
+/// opponent reads from the same position.
+///
+/// Params:
+/// - state: &State -> position whose draw value is computed
+///
+/// Return:
+/// i32             -> draw value from side-to-move perspective
+#[macro_export]
+macro_rules! draw_score {
+    ($state:expr) => {{
+        let moving = $state.playing as usize;
+        let waiting = ($state.playing ^ 1) as usize;
+
+        let lead = if $state.game_phase == ENDGAME {
+            $state.endgame_material[moving] as i32
+                - $state.endgame_material[waiting] as i32
+        } else {
+            $state.opening_material[moving] as i32
+                - $state.opening_material[waiting] as i32
+        };
+
+        let span = $state.statics.draw_span;
+
+        -lead.clamp(-span, span) * $state.statics.draw_contempt / span
+    }};
+}
 
 /// terminal_score!
 ///
 /// Scores a terminal position from side-to-move perspective. A decisive result
 /// uses mate-scaled scores so shorter wins and longer losses are preferred.
-/// Draws score zero.
+/// A draw is worth what [`draw_score!`] says the material on the board makes
+/// it worth.
 ///
 /// Params:
 /// - state: &State -> position whose terminal value is computed
@@ -38,7 +80,7 @@ macro_rules! terminal_score {
         } else if stm_loses {
             -INF + $state.search_ply as i32
         } else {
-            0
+            draw_score!($state)
         }
     }};
 }

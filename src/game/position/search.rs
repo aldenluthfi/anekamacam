@@ -647,11 +647,15 @@ fn quiescence_search(
 /// already entered on a narrow window scouts at no extra cost, since its
 /// scout window is the window it was given.
 ///
-/// A repeated position scores only the outcome its own variant declares, and
-/// only once the occurrence count that variant names has been reached. Below
-/// that count the position is ordinary and stays searchable: a rule wanting
-/// three occurrences has not fired on the second, and a variant that punishes
-/// whoever sustained the cycle would lose that verdict to a neutral score.
+/// A repeated position scores the outcome its own variant declares, and where
+/// no rule names an offender it is scored from the first closed cycle rather
+/// than from the occurrence count the rule states. A position standing for the
+/// second time can be walked back to a third by whichever side wants it, so
+/// the search reads the cycle's result as the result of the line, several
+/// plies before the rule itself would fire. A variant whose perpetual rule
+/// blames whoever sustained the cycle waits for that count instead, since
+/// which side is at fault is not settled until the rule fires, and a line one
+/// cycle short of it can still be won outright by either colour.
 ///
 /// Every shortcut that answers without searching -- standing on a static
 /// score, giving up the move, skipping a capture priced as losing, dropping a
@@ -704,16 +708,21 @@ pub fn alpha_beta(
     let declared = state.termination.repetition
         .as_ref().map(|repetition| repetition.occurrences);
 
-    if ply > 0
-    && let Some(occurrences) = declared
-    && repeats >= occurrences
-    {
-        return match repetition_outcome(
-            state, occurrences, SEARCH_REPETITION_CAP,
-        ) {
-            Some((outcome, _)) => outcome_score!(state, outcome),
-            None => 0,
+    if ply > 0 && let Some(occurrences) = declared {
+        let enough = if state.termination.perpetual.is_some() {                 /* a rule naming an offender fires on */
+            occurrences                                                         /* its own count and not before; one  */
+        } else {                                                                /* closed cycle answers all the rest  */
+            REPETITION_CYCLE
         };
+
+        if repeats >= enough {
+            return match repetition_outcome(
+                state, enough, SEARCH_REPETITION_CAP,
+            ) {
+                Some((outcome, _)) => outcome_score!(state, outcome),
+                None => draw_score!(state),
+            };
+        }
     }
 
     if state.search_ply >= MAX_DEPTH as u32 {
