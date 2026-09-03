@@ -161,6 +161,42 @@ const DANGER_CAP_RATIO: u32 = 1000;
 const OPEN_SHIELD_RATIO: u32 = 33;
 const OPEN_SHIELD_FLOOR: u32 = 12;
 
+/// What having the move is worth. Every other term prices what stands on
+/// the board, which both sides read the same way; this is the one thing
+/// only the side to move owns, and without it a search reads a position
+/// and its mirror as the same position. Held as a small share of the
+/// dearest non-royal piece, since a move buys more in a variant with a
+/// fierce army than in a quiet one, and never below `FLOOR`, so that
+/// having the move is always worth something.
+const TEMPO_RATIO: u32 = 24;
+const TEMPO_FLOOR: u32 = 5;
+
+/// What standing a piece ahead is worth beyond that piece's own value.
+/// Material already says what each piece is; these say that the pieces are
+/// not evenly matched, which is a fact about the position rather than
+/// about any one of them. A side up a heavy piece is harder to trade back
+/// to level than a side up a light one, so the heavy count is priced at
+/// twice the light one. Both are shares of the dearest non-royal piece,
+/// floored so a variant whose values sit close together still reads a
+/// difference between the two counts.
+const IMBALANCE_MAJOR_RATIO: u32 = 20;
+const IMBALANCE_MAJOR_FLOOR: u32 = 3;
+const IMBALANCE_MINOR_RATIO: u32 = 10;
+const IMBALANCE_MINOR_FLOOR: u32 = 1;
+
+/// What holding two of a piece that can only ever reach half the board is
+/// worth. Such a piece covers nothing of the half it is bound away from,
+/// and a second one covers exactly what the first cannot, so the two
+/// together are worth more than twice one of them. The test is geometric
+/// rather than by name: mean reach within `SLACK` of half the board, which
+/// no piece free of the board meets and no piece confined to a corner of
+/// it comes near. Royals are asked separately, a variant being free to
+/// field two of them and forbid trading either.
+const PAIR_RATIO: u32 = 60;
+const PAIR_FLOOR: u32 = 10;
+const PAIR_REACH: f64 = 0.5;
+const PAIR_REACH_SLACK: f64 = 0.02;
+
 /// How many copies of a piece the opening army must field before it can be
 /// this variant's pawn. The other conditions are geometric -- never a step
 /// or a capture backward, always a quiet single step forward, nothing
@@ -960,6 +996,7 @@ pub fn derive_parameters(state: &mut State) {
     derive_shelter_parameters(state);
     derive_danger_parameters(state);
     derive_pawn_parameters(state);
+    derive_advantage_parameters(state);
     derive_search_capabilities(state);
     refresh_eval_state(state);
 }
@@ -2442,4 +2479,70 @@ pub fn derive_pawn_parameters(state: &mut State) {
     statics.pawn_doubled_penalty = doubled;
     statics.pawn_isolated_penalty = isolated;
     statics.pawn_backward_penalty = backward_penalty;
+}
+
+/*----------------------------------------------------------------------------*\
+                              ADVANTAGE DERIVATION
+\*----------------------------------------------------------------------------*/
+
+/// derive_advantage_parameters
+///
+/// Prices the three advantages a material count does not already carry:
+/// holding the move, holding more pieces than the other side rather than
+/// dearer ones, and holding both copies of a piece that is worth more in
+/// pairs than singly.
+///
+/// The first two are scalars read straight off the dearest non-royal
+/// piece. The third needs to know which pieces earn it, which is asked of
+/// the rules rather than of a name: a piece bound to half the board covers
+/// nothing of the other half, so a second copy is worth more than the
+/// first was. Royals are skipped, a variant being free to field two of
+/// them and forbid trading either. Both colours of a qualifying piece are
+/// recorded, so evaluation reads the list without consulting the swap map.
+///
+/// Params:
+/// - state: &mut State -> variant whose advantage scalars are filled
+pub fn derive_advantage_parameters(state: &mut State) {
+    let dearest = dearest_piece_value(state);
+
+    let tempo = (dearest * TEMPO_RATIO as u64
+        / COEFFICIENT_SCALE as u64).max(TEMPO_FLOOR as u64);
+    let major = (dearest * IMBALANCE_MAJOR_RATIO as u64
+        / COEFFICIENT_SCALE as u64).max(IMBALANCE_MAJOR_FLOOR as u64);
+    let minor = (dearest * IMBALANCE_MINOR_RATIO as u64
+        / COEFFICIENT_SCALE as u64).max(IMBALANCE_MINOR_FLOOR as u64);
+    let pair = (dearest * PAIR_RATIO as u64
+        / COEFFICIENT_SCALE as u64).max(PAIR_FLOOR as u64);
+
+    let bound: Vec<usize> = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE)
+        .filter(|piece| !p_is_royal!(piece))
+        .filter(|piece|
+            (derive_piece_reach(state, piece) - PAIR_REACH).abs()
+                < PAIR_REACH_SLACK
+        )
+        .map(|piece| p_index!(piece) as usize)
+        .collect();
+
+    let pair_pieces: Vec<usize> = bound.iter()
+        .flat_map(|index| [
+            *index, state.statics.piece_swap_map[*index] as usize
+        ])
+        .collect();
+
+    log_3!(
+        "Derived tempo {}, imbalance {} then {}, pair {} for {:?}",
+        tempo, major, minor, pair,
+        bound.iter()
+            .map(|index| state.statics.pieces[*index].char)
+            .collect::<Vec<char>>()
+    );
+
+    let statics = state.static_mut();
+
+    statics.tempo_bonus = tempo as i32;
+    statics.imbalance_major = major as i32;
+    statics.imbalance_minor = minor as i32;
+    statics.pair_pieces = pair_pieces;
+    statics.pair_bonus = pair as i32;
 }

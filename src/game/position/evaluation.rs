@@ -580,6 +580,52 @@ macro_rules! endgame_score {
     }};
 }
 
+/// material_advantage!
+///
+/// White-minus-black worth of the ways one side's material can be better
+/// than the other's without being worth more. Two of them are counts: a
+/// side holding more heavy or more light pieces than its opponent is
+/// harder to trade back to level, whatever those pieces are individually
+/// worth. The third is the pair, paid to a side holding two of a piece
+/// bound to half the board, since the second copy covers exactly the half
+/// the first cannot.
+///
+/// Read by both halves of the evaluation and so added once, outside the
+/// blend: a term worth the same at either end of the taper blends to
+/// itself.
+///
+/// Params:
+/// - state: &State -> position whose material counts are read
+///
+/// Return:
+/// i32             -> worth of the imbalance, white minus black
+#[macro_export]
+macro_rules! material_advantage {
+    ($state:expr) => {{
+        let statics = &$state.statics;
+        let white = WHITE as usize;
+        let black = BLACK as usize;
+
+        let major = $state.major_pieces[white] as i32
+            - $state.major_pieces[black] as i32;
+        let minor = $state.minor_pieces[white] as i32
+            - $state.minor_pieces[black] as i32;
+
+        let mut pairs = 0;
+
+        for index in &statics.pair_pieces {
+            let color = p_color!(&statics.pieces[*index]) as i32;
+
+            pairs += (-2 * color + 1)
+                * ($state.piece_count[*index] >= 2) as i32;
+        }
+
+        major * statics.imbalance_major
+            + minor * statics.imbalance_minor
+            + pairs * statics.pair_bonus
+    }};
+}
+
 /// evaluate_position!
 ///
 /// Evaluates current position from side-to-move perspective using cached
@@ -594,6 +640,10 @@ macro_rules! endgame_score {
 /// walk rather than hide. Pawn structure is the one positional family both
 /// halves price, since a passer is worth most exactly where safety is worth
 /// nothing, and it is computed once per node whichever phase reads it.
+/// Two things sit outside the blend entirely: the material imbalance, worth
+/// the same at either end of the taper, and the tempo, added after the
+/// score is turned to face the side to move, since holding the move is the
+/// one advantage that belongs to whoever is about to spend it.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -631,7 +681,8 @@ macro_rules! evaluate_position {
                 _ => panic!("Invalid game phase {}", $state.game_phase),
             };
 
-            score * side_sign
+            (score + material_advantage!($state)) * side_sign
+                + $state.statics.tempo_bonus
         })
     };
 }

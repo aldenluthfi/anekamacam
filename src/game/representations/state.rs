@@ -712,6 +712,12 @@ pub struct StaticState {
     pub pawn_isolated_penalty: Vec<i32>,                                        /* slot to cost of standing alone     */
     pub pawn_backward_penalty: Vec<i32>,                                        /* slot to cost of a contested stop   */
 
+    pub tempo_bonus: i32,                                                       /* worth of holding the move          */
+    pub imbalance_major: i32,                                                   /* worth of a heavy piece in hand     */
+    pub imbalance_minor: i32,                                                   /* worth of a light piece in hand     */
+    pub pair_pieces: Vec<usize>,                                                /* pieces a second copy completes     */
+    pub pair_bonus: i32,                                                        /* worth of completing such a pair    */
+
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
 
@@ -940,6 +946,12 @@ impl State {
             pawn_doubled_penalty: Vec::new(),
             pawn_isolated_penalty: Vec::new(),
             pawn_backward_penalty: Vec::new(),
+
+            tempo_bonus: 0,
+            imbalance_major: 0,
+            imbalance_minor: 0,
+            pair_pieces: Vec::new(),
+            pair_bonus: 0,
 
             draw_contempt: 0,
             draw_span: 1,                                                       /* a divisor before derivation runs   */

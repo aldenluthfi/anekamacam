@@ -2,7 +2,7 @@
 
 ## Status
 
-Drafted 2026-09-02. R1 through R4 have landed; R5 is next.
+Drafted 2026-09-02. R1 through R5 have landed; R6 is next.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -344,6 +344,52 @@ at +0.3%, crazyhouse 1,349,333 to 619,809 at −51%, grand 1,274,326 to
 ### R5. Tempo, imbalance, pair bonus
 
 Restore the three remaining scalar terms, derived.
+
+All three are shares of the dearest non-royal piece: tempo 24 with a
+floor of 5, the heavy-piece imbalance 20 with a floor of 3, the light one
+10 with a floor of 1, and the pair 60 with a floor of 10. For standard
+these give 22, 18, 9, and 55, the first of which reproduces iteration
+3's `avg / 20` exactly. Imbalance and the pair are worth the same at
+either end of the taper and so are added once outside the blend rather
+than into both halves; tempo is added after the score turns to face the
+side to move.
+
+Iteration 3's pair test asked for a piece that is neither royal nor big
+and whose mean reach is within 0.02 of half the board. The big test made
+the term dead: `derive_piece_roles` calls everything above the cheapest
+tenth big, so a bishop never qualified and 36 of 38 variants derived an
+empty pair list. The reach test already carries the whole intent -- a
+piece free of the board reaches 1.0 and a piece confined to a corner of
+it reaches far less than half -- so the big filter is dropped. The list
+is now bishops in the chess-like variants, the shatranj ferz, the makruk
+met, the crazyhouse promoted bishop, and tjatoer's bishop, camel,
+bishop-camel, and short diagonal slider. Shogi, xiangqi, and janggi
+field no colour-bound piece and derive nothing, correctly.
+
+Result: every term hand-checked by evaluation delta on standard --
+startpos reads exactly the tempo either side to move, an extra rook +31
+(tempo, one light count, the rook being minor here since only the queen
+is in the top fifth), an extra bishop +86 (tempo, one light count, the
+pair the other side just lost), both sides down a bishop +22 with the
+pair cancelling, and the same figures again in the endgame phase, where
+imbalance and pair still read.
+
+37 of 38 endgame fixtures pass; xiangqi's `perpetual one cycle short`
+needs depth 7 where it wanted 6, and all 38 pass at `GO_DEPTH=7`. The
+mate is still found, one ply later.
+
+Speed suite versus R4, nodes: standard 115,323 to 199,129, shogi 873,348
+to 1,129,608, xiangqi 572,743 to 386,294, crazyhouse 619,809 to
+1,112,901, grand 1,428,999 to 1,448,720. Nodes per second rose in every
+variant, the terms costing three array reads and a short loop.
+
+Standard's node count is tempo alone: with tempo zeroed it reads 113,670
+and with only imbalance and the pair zeroed it reads 198,751. Futility
+and razoring prune on the static evaluation against alpha, and tempo
+lifts that evaluation at every node, so fewer quiet moves fall under the
+margin. The effect is real and is the price of the term rather than a
+defect in it, but R5 is the first stage whose node cost is not obviously
+repaid by what it buys, and it is the stage to put under SPRT first.
 
 ### R6. Continuation history
 
