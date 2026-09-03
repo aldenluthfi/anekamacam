@@ -2,7 +2,7 @@
 
 ## Status
 
-Drafted 2026-09-02. R1 through R5 have landed; R6 is next.
+Drafted 2026-09-02. R1 through R6 have landed; R7 is next.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -396,6 +396,45 @@ repaid by what it buys, and it is the stage to put under SPRT first.
 Restore 1-ply and 2-ply continuation history, the best of A-L at +14.
 Iteration 2 measured its removal at +26% nodes on correction history and
 kept continuation; both are load-bearing.
+
+The table is `CONTINUATION_PLIES * move_keys * move_keys` cells of `i16`
+with `move_keys = pieces * board_size`, the same key the butterfly table
+uses, and it lives on `SearchInfo` beside it. Iteration 3 kept it on
+`State`, where every worker paid to clone it; nothing here clones. A row
+is addressed by the move played `plies_back` before this node, and reads
+`usize::MAX` when that ply does not exist or held a null move, which is
+the one case where no move was answered. Quiescence passes no rows at
+all: its only quiet moves are evasions, which answer a capture rather
+than a line worth learning a reply to.
+
+The score bands had to widen. A quiet move now sums `HISTORY_TABLES`
+cells rather than one, so the quiet band is three bounds wide either
+side of its centre and killers move to seven bounds above `1_000_000` to
+stay clear of it. Both constants are expressed in `HISTORY_TABLES` so
+the layout follows the table count rather than being restated.
+
+The history-shaved LMR of iteration 3 is deliberately not restored:
+reductions come from `reduction_surface`, which is derived per variant,
+and shaving a derived surface by a history score is a separate claim
+that belongs in its own probe.
+
+Result: 37 of 38 endgame fixtures, the same xiangqi `perpetual one cycle
+short` case R5 left needing depth 7, and 38/38 at `GO_DEPTH=7`.
+
+Speed suite versus R5, nodes: standard 199,129 to 190,760 at −4.2%,
+shogi 1,129,608 to 1,391,464 at +23.2%, xiangqi 386,294 to 369,526 at
+−4.3%, crazyhouse 1,112,901 to 1,009,750 at −9.3%, grand 1,448,720 to
+1,432,374 at −1.1%. Node counts are deterministic under the pinned seed
+and shogi's figure repeated exactly, so it is not noise. Nodes per
+second moved +1.6, −9.0, −5.0, 0.0 and +3.0%; shogi's loss is its table,
+which at 28 piece types on 81 squares is 20.6 MB against standard's 2.4.
+
+One ply alone was probed and is worse: standard +21%, xiangqi +16% and
+grand +10% against the two-ply table, with shogi −8% and crazyhouse
+−10%. The second ply is load-bearing on three of five variants and on
+the two largest margins, so both plies stay. If shogi is the variant
+that fails under SPRT, the size of its table is the first thing to
+attack, not the second ply.
 
 ### R7. Correction history
 

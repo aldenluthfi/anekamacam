@@ -238,8 +238,14 @@ macro_rules! see {
 /// score_move!
 ///
 /// Returns one ordering score. Priority: table move, winning capture,
-/// killers, butterfly history, losing capture, then a capture the exchange
-/// simulation could not make.
+/// killers, history, losing capture, then a capture the exchange simulation
+/// could not make.
+///
+/// A quiet move's history is the butterfly cell plus one continuation cell
+/// per ply this node has a move to answer. The butterfly cell says the move
+/// worked somewhere; a continuation cell says it worked as the reply to the
+/// move actually on the board, which is the narrower claim and the one worth
+/// ordering by when the node has one.
 ///
 /// A capture is priced by the exchange simulation only where the variant's
 /// rules leave that simulation meaning what it says: the swing has to be the
@@ -254,12 +260,19 @@ macro_rules! see {
 /// - info      : &SearchInfo         -> killer and history tables
 /// - mv        : &Move               -> move to score
 /// - table_move: &Option<PseudoMove> -> stored table move for this node
+/// - cont_bases: &[usize]            -> continuation rows for this node
 ///
 /// Return:
 /// usize -> ordering score, larger searched earlier
 #[macro_export]
 macro_rules! score_move {
-    ($state:expr, $info:expr, $mv:expr, $table_move:expr) => {{
+    (
+        $state:expr,
+        $info:expr,
+        $mv:expr,
+        $table_move:expr,
+        $cont_bases:expr
+    ) => {{
         let scored_move: &Move = $mv;
 
         if $table_move.as_ref().is_some_and(
@@ -279,7 +292,14 @@ macro_rules! score_move {
                 let end = end!(scored_move) as usize;
                 let board_size = $state.statics.board_size;
                 let index = piece * board_size + end;
-                let history = $info.search_hist[index] as i32;
+
+                let continuation: i32 = $cont_bases.iter()
+                    .filter(|&&base| base != usize::MAX)
+                    .map(|&base| $info.cont_hist[base + index] as i32)
+                    .sum();
+
+                let history =
+                    $info.search_hist[index] as i32 + continuation;
 
                 (QUIET_MOVE_SCORE + history) as usize
             }
@@ -318,6 +338,7 @@ macro_rules! score_move {
 /// - scores    : &mut Vec<usize>     -> lazily filled score cache
 /// - index     : usize               -> slot receiving best remaining move
 /// - table_move: &Option<PseudoMove> -> stored table move for this node
+/// - cont_bases: &[usize]            -> continuation rows for this node
 #[macro_export]
 macro_rules! pick_by_score {
     (
@@ -326,7 +347,8 @@ macro_rules! pick_by_score {
         $moves:expr,
         $scores:expr,
         $index:expr,
-        $table_move:expr
+        $table_move:expr,
+        $cont_bases:expr
     ) => {
         hotpath::measure_block!("order::pick", {
         let moves: &mut Vec<Move> = $moves;
@@ -347,7 +369,7 @@ macro_rules! pick_by_score {
 
         if scores[index] == usize::MAX {
             scores[index] = score_move!(
-                $state, $info, &moves[index], $table_move
+                $state, $info, &moves[index], $table_move, $cont_bases
             );
         }
 
@@ -358,7 +380,8 @@ macro_rules! pick_by_score {
             for candidate in (index + 1)..moves.len() {
                 if scores[candidate] == usize::MAX {
                     scores[candidate] = score_move!(
-                        $state, $info, &moves[candidate], $table_move
+                        $state, $info, &moves[candidate], $table_move,
+                        $cont_bases
                     );
                 }
 

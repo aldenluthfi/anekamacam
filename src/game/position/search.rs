@@ -40,6 +40,7 @@ pub struct SearchInfo {
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
     pub search_hist: Vec<i16>,                                                  /* [piece * board_size + end]         */
+    pub cont_hist: Vec<i16>,                                                    /* [plies back][reply key][move key]  */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 
     pub eval_stack: Vec<i32>,                                                   /* static score standing at each ply  */
@@ -50,6 +51,13 @@ pub struct SearchInfo {
 /// king is already attacked, so a ply reading one two below it and finding
 /// this reads no trend at all. `INF` is outside every real evaluation.
 const EVAL_NONE: i32 = INF;
+
+/// How far back a move is credited to what it answers. Continuation history
+/// asks which reply worked after a given move, so one table follows the move
+/// just played and another the side's own previous move. Both were measured
+/// as load-bearing; a third table back never was.
+const CONTINUATION_PLIES: usize = 2;
+
 const REDUCTION_MINIMUM_DEPTH: u32 = 3;
 const REDUCTION_MOVE_BASE: u32 = 2;
 const REDUCTION_MOVE_WIDE: u32 = 2;
@@ -138,7 +146,10 @@ pub fn clear_search(
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
 
-    info.search_hist = vec![0i16; piece_count * board_size];
+    let move_keys = piece_count * board_size;
+
+    info.search_hist = vec![0i16; move_keys];
+    info.cont_hist = vec![0i16; CONTINUATION_PLIES * move_keys * move_keys];
     info.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
     info.pv_line = vec![null_move(); MAX_DEPTH];
@@ -565,8 +576,9 @@ fn quiescence_search(
 
     for index in 0..moves.len() {
         pick_by_score!(
-            state, info, &mut moves, &mut scores, index, &table_move
-        );
+            state, info, &mut moves, &mut scores, index, &table_move,
+            &[usize::MAX; CONTINUATION_PLIES]                                   /* evasions answer a capture, not a   */
+        );                                                                      /* line worth learning a reply to     */
 
         if recapture_order!(state)
         && static_movement!(state)
@@ -827,6 +839,7 @@ pub fn alpha_beta(
 
     let board_size = state.statics.board_size;
     let history_bonus = (depth * depth) as i32;
+    let cont_bases = continuation_bases(state);
 
     let minimum_depth = REDUCTION_MINIMUM_DEPTH as usize;
     let move_base = REDUCTION_MOVE_BASE as usize;
@@ -854,7 +867,8 @@ pub fn alpha_beta(
 
     for index in 0..moves.len() {
         pick_by_score!(
-            state, info, &mut moves, &mut scores, index, &table_move
+            state, info, &mut moves, &mut scores, index, &table_move,
+            &cont_bases
         );
 
         let mv = &moves[index];
@@ -1013,9 +1027,8 @@ pub fn alpha_beta(
                             info.killer_hist[ply][0] = best_move.clone();
                         }
 
-                        update_history(
-                            &mut info.search_hist[history_index],
-                            history_bonus,
+                        update_histories(
+                            info, &cont_bases, history_index, history_bonus,
                         );
                     }
 
@@ -1028,9 +1041,8 @@ pub fn alpha_beta(
                 }
 
                 if is_quiet {
-                    update_history(
-                        &mut info.search_hist[history_index],
-                        history_bonus,
+                    update_histories(
+                        info, &cont_bases, history_index, history_bonus,
                     );
                 }
 
@@ -1051,9 +1063,8 @@ pub fn alpha_beta(
                 }
             }
         } else if is_quiet {
-            update_history(
-                &mut info.search_hist[history_index],
-                -history_bonus,
+            update_histories(
+                info, &cont_bases, history_index, -history_bonus,
             );
         }
     }
@@ -1100,4 +1111,69 @@ pub fn alpha_beta(
 fn update_history(entry: &mut i16, bonus: i32) {
     *entry = (*entry as i32 + bonus)
         .clamp(-HISTORY_BOUND, HISTORY_BOUND) as i16;
+}
+
+/// continuation_bases
+///
+/// Offsets of the continuation rows a reply at this node is credited to.
+///
+/// One row follows the move just played and one the mover's own previous
+/// move. A slot reads `usize::MAX` when the ply it would follow does not
+/// exist or held a null move, which is the case where no move was answered
+/// and nothing about a reply to it can be learned.
+///
+/// Params:
+/// - state: &State -> position whose most recent plies are read
+///
+/// Return:
+/// [usize; CONTINUATION_PLIES] -> row offsets, `usize::MAX` where unset
+fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
+    let board_size = state.statics.board_size;
+    let move_keys = state.statics.pieces.len() * board_size;
+    let played = state.history.len();
+
+    let mut bases = [usize::MAX; CONTINUATION_PLIES];
+
+    for plies_back in 0..CONTINUATION_PLIES {
+        if played <= plies_back {
+            break;
+        }
+
+        let previous = &state.history[played - 1 - plies_back].move_ply;
+
+        if previous.0 == u128::MAX {
+            continue;
+        }
+
+        let key = piece!(previous) as usize * board_size
+            + end!(previous) as usize;
+
+        bases[plies_back] = (plies_back * move_keys + key) * move_keys;
+    }
+
+    bases
+}
+
+/// update_histories
+///
+/// Applies one signed change to the butterfly cell of a move and to every
+/// continuation cell that has a move to answer.
+///
+/// Params:
+/// - info : &mut SearchInfo -> worker whose tables are updated
+/// - bases: &[usize]        -> continuation rows, `usize::MAX` unset
+/// - index: usize           -> piece and target cell of this move
+/// - bonus: i32             -> signed bonus or malus
+#[inline(always)]
+fn update_histories(
+    info: &mut SearchInfo,
+    bases: &[usize],
+    index: usize,
+    bonus: i32,
+) {
+    update_history(&mut info.search_hist[index], bonus);
+
+    for base in bases.iter().filter(|&&base| base != usize::MAX) {
+        update_history(&mut info.cont_hist[base + index], bonus);
+    }
 }

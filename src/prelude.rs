@@ -543,15 +543,22 @@ pub const BLACK_WIN: u8 = 2;
 pub const WHITE_WIN: u8 = 3;
 
 /// Shared search score bands and transposition bound tags.
+///
+/// A quiet move is scored by summing `HISTORY_TABLES` cells, each clamped to
+/// `HISTORY_BOUND`, so the quiet band has to be that many bounds wide on both
+/// sides of its centre. Killers sit one bound above the widest quiet score and
+/// losing captures one bound below the narrowest, which keeps the bands apart
+/// however full the tables are.
 pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 
 pub const HISTORY_BOUND: i32 = i16::MAX as i32 / 2;
+pub const HISTORY_TABLES: i32 = 3;
 pub const TABLE_MOVE_SCORE: usize = 5_000_000;
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000 + HISTORY_BOUND;
 pub const KILLER_MOVE_SCORE: usize =
-    1_000_000 + 3 * HISTORY_BOUND as usize;
-pub const QUIET_MOVE_SCORE: i32 = 1_000_000 + HISTORY_BOUND;
+    (1_000_000 + (2 * HISTORY_TABLES + 1) * HISTORY_BOUND) as usize;
+pub const QUIET_MOVE_SCORE: i32 = 1_000_000 + HISTORY_TABLES * HISTORY_BOUND;
 pub const LOSING_CAPTURE_SCORE: i32 = 1_000_000 - HISTORY_BOUND;
 pub const UNMAKEABLE_CAPTURE_SCORE: usize = 0;
 
