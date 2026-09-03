@@ -161,6 +161,47 @@ const DANGER_CAP_RATIO: u32 = 1000;
 const OPEN_SHIELD_RATIO: u32 = 33;
 const OPEN_SHIELD_FLOOR: u32 = 12;
 
+/// How many copies of a piece the opening army must field before it can be
+/// this variant's pawn. The other conditions are geometric -- never a step
+/// or a capture backward, always a quiet single step forward, nothing
+/// further than one square once the first move is spent -- and those alone
+/// would also catch a lone forward stepper such as the minishogi pawn or
+/// the pair of minixiangqi soldiers. Structure is a statement about a rank
+/// of pawns holding each other up, so a variant that fields too few of them
+/// has no structure to price and scores none.
+const PAWN_MIN_START_COUNT: usize = 5;
+
+/// What a pawn's own structure is worth, as shares of that pawn's value
+/// held against `COEFFICIENT_SCALE`. Every other derived value is priced
+/// off the dearest non-royal piece, which is what says the units a variant
+/// plays in; these are priced off the pawn instead, because each one is a
+/// correction to what that single pawn is worth. A defect in a pawn costs
+/// some part of a pawn whatever else stands on the board, and pricing it
+/// off the dearest piece would charge a variant with a wide value range
+/// several times over for the same structural fault.
+///
+/// Being defended is worth more once the board empties and the pawn is
+/// closer to being the game, so connection is priced twice. The three
+/// faults are priced once and read by both halves: doubled and isolated
+/// cost near a quarter of the pawn, and a backward pawn less, since it is
+/// only a pawn whose advance is watched rather than one already spent.
+const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
+const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
+const PAWN_DOUBLED_RATIO: u32 = 250;
+const PAWN_ISOLATED_RATIO: u32 = 250;
+const PAWN_BACKWARD_RATIO: u32 = 175;
+
+/// What a passed pawn is worth, as a share of what promoting it would gain
+/// -- the dearest piece it could become, less what it is worth now -- held
+/// against `COEFFICIENT_SCALE` and scaled by how far along it already is.
+/// A passer is a promise rather than a piece, so the opening pays a tenth
+/// of the promise while the endgame, where there is little left to stop it,
+/// pays a third. A pawn that cannot promote at all is priced off its own
+/// value instead, since advancing it wins ground and nothing more.
+const PASSED_OPENING_RATIO: u32 = 100;
+const PASSED_ENDGAME_RATIO: u32 = 350;
+const PASSED_UNPROMOTED_RATIO: u32 = 400;
+
 /// Share of the board a royal must be able to stand on before shelter is
 /// worth pricing at all. A royal walled into a palace by its own forbidden
 /// zones cannot be sheltered in the sense this term means: it never left
@@ -918,6 +959,7 @@ pub fn derive_parameters(state: &mut State) {
     derive_search_parameters(state);
     derive_shelter_parameters(state);
     derive_danger_parameters(state);
+    derive_pawn_parameters(state);
     derive_search_capabilities(state);
     refresh_eval_state(state);
 }
@@ -1809,4 +1851,595 @@ pub fn derive_danger_parameters(state: &mut State) {
     statics.king_danger_scale = king_danger_scale as i32;
     statics.king_danger_cap = king_danger_cap as i32;
     statics.open_shield_penalty = open_shield_penalty as i32;
+}
+
+/// derive_pawn_slots
+///
+/// Picks out the piece types whose structure is worth pricing and gives
+/// each one a slot in the pawn tables. A piece is this variant's pawn when
+/// it never steps or captures backward, always keeps a quiet single step
+/// forward available, never ranges further than one square once its first
+/// move is spent, and stands in the opening army at least
+/// `PAWN_MIN_START_COUNT` times over.
+///
+/// Those four conditions are geometric and count-based, and between them
+/// they name the pawn of every variant without naming a variant: the
+/// single-step rule rejects leapers like the shogi knight and forward
+/// sliders like the lance, the no-retreat rule rejects the gold, silver,
+/// advisor and elephant, and the count rejects a variant's lone forward
+/// stepper. A longer opening push is exempt from the one-square bound,
+/// which is what lets a FIDE pawn keep its double step.
+///
+/// White is classified and its colour twin takes the same answer, so a
+/// slot exists for both colours of every pawn. Slots are handed out in
+/// piece order and the tables are sized by their count, not by the piece
+/// count: most variants have exactly two, so the masks below stay small
+/// even on a board that fields thirty piece types.
+///
+/// Params:
+/// - state: &State -> variant whose pieces are classified
+///
+/// Return:
+/// (Vec<usize>, Vec<usize>) -> piece index to slot, and slot to piece index
+fn derive_pawn_slots(state: &State) -> (Vec<usize>, Vec<usize>) {
+    let board_size = state.statics.board_size;
+    let piece_count = state.statics.pieces.len();
+
+    let mut slots = vec![NO_PAWN; piece_count];
+    let mut pieces = Vec::new();
+
+    for piece in state.statics.pieces.iter() {
+        if p_color!(piece) != WHITE || p_is_royal!(piece) {
+            continue;
+        }
+
+        let index = p_index!(piece) as usize;
+        let color = p_color!(piece) as usize;
+        let mut steps_backward = false;
+        let mut steps_forward = false;
+        let mut ranges_far = false;
+
+        for square in 0..board_size {
+            let vectors =
+                &state.statics.relevant_moves[index * board_size + square];
+
+            for vector in vectors {
+                let (file_offset, rank_offset) = vector_offset!(vector);
+                let quiet = vector_moves_quietly!(vector);
+
+                steps_backward |= rank_offset < 0;
+                steps_forward |=
+                    quiet && rank_offset == 1 && file_offset.abs() <= 1;
+                ranges_far |= quiet
+                    && !vector_is_initial!(vector)
+                    && (rank_offset > 1 || file_offset.abs() > 1);
+            }
+        }
+
+        let fielded = count_bits!(state.statics.initial_setup[index]) as usize
+            + state.piece_in_hand[color][index] as usize;
+
+        if steps_backward
+            || !steps_forward
+            || ranges_far
+            || fielded < PAWN_MIN_START_COUNT {
+            continue;
+        }
+
+        for side in [index, state.statics.piece_swap_map[index] as usize] {
+            if side == NO_PIECE as usize || slots[side] != NO_PAWN {
+                continue;
+            }
+
+            slots[side] = pieces.len();
+            pieces.push(side);
+        }
+    }
+
+    (slots, pieces)
+}
+
+/// derive_pawn_path
+///
+/// Every square a pawn can still advance onto from `square`, walked as the
+/// closure of its quiet moves. A friendly pawn standing anywhere on this
+/// set blocks the advance, which is what the doubled penalty charges, and
+/// it is also the ground an enemy has to hold to stop a passer.
+///
+/// A straight mover traces its own file, a diagonal one fans out across
+/// files, so the walk follows the piece's own move geometry rather than
+/// assuming a file.
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │    │ ## │    │    │   ## = a square still ahead of the pawn
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ ## │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ ## │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ PP │    │    │   PP = the pawn, pushing straight
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state : &State -> precomputed relevant-move tables
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
+///
+/// Return:
+/// Board            -> squares on the pawn's forward path
+fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
+
+    let mut path = board!(state.statics.files, state.statics.ranks);
+    let mut pending = VecDeque::new();
+    pending.push_back(square);
+
+    while let Some(current) = pending.pop_front() {
+        let vectors =
+            &state.statics.relevant_moves[index * board_size + current];
+
+        for vector in vectors {
+            if !vector_moves_quietly!(vector) {
+                continue;
+            }
+
+            let (file_offset, rank_offset) = vector_offset!(vector);
+            let file = current as i32 % files + file_offset * sign;
+            let rank = current as i32 / files + rank_offset * sign;
+
+            if file < 0 || file >= files || rank < 0 || rank >= ranks {
+                continue;
+            }
+
+            let next = (rank * files + file) as usize;
+
+            if !get!(path, next as u32) {
+                set!(path, next as u32);
+                pending.push_back(next);
+            }
+        }
+    }
+
+    path
+}
+
+/// derive_pawn_stop
+///
+/// The square or squares a pawn reaches in one ordinary step: quiet, not
+/// restricted to its first move, and strictly forward. Opening pushes of
+/// two or more are left out so a pawn on its starting rank is read at the
+/// same one-square frame as every other, and sideways steps are left out
+/// since they win no ground.
+///
+/// A straight mover has one stop, a diagonal mover two. These are the
+/// squares a friendly pawn defends to connect this one, and the squares an
+/// enemy pawn watches to hold it back.
+///
+/// ```text
+/// ┌────┬────┬────┐          ┌────┬────┬────┐
+/// │    │ ** │    │          │ ** │    │ ** │
+/// ├────┼────┼────┤          ├────┼────┼────┤
+/// │    │ PP │    │          │    │ PP │    │
+/// └────┴────┴────┘          └────┴────┴────┘
+///    straight mover            diagonal mover
+/// ```
+///
+/// Params:
+/// - state : &State -> precomputed relevant-move tables
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
+///
+/// Return:
+/// Board            -> the pawn's immediate forward stop squares
+fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
+
+    let mut stop = board!(state.statics.files, state.statics.ranks);
+    let vectors = &state.statics.relevant_moves[index * board_size + square];
+
+    for vector in vectors {
+        if !vector_moves_quietly!(vector) || vector_is_initial!(vector) {
+            continue;
+        }
+
+        let (file_offset, rank_offset) = vector_offset!(vector);
+
+        if rank_offset < 1 {
+            continue;
+        }
+
+        let file = square as i32 % files + file_offset * sign;
+        let rank = square as i32 / files + rank_offset * sign;
+
+        if file < 0 || file >= files || rank < 0 || rank >= ranks {
+            continue;
+        }
+
+        set!(stop, (rank * files + file) as u32);
+    }
+
+    stop
+}
+
+/// derive_pawn_captures
+///
+/// Every square a pawn of `color` could capture onto one of `targets`
+/// from. Capture legs are stored in the mover's own frame, so each net
+/// offset is turned by the colour sign before it is applied.
+///
+/// Asked of the friendly colour with the pawn's own square and its stops
+/// as targets, this is the set of squares that connect the pawn; asked of
+/// the enemy colour with only the stops, it is the set that holds it back.
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │    │ TT │    │    │   TT = a requested target
+/// ├────┼────┼────┼────┼────┤
+/// │    │ SS │    │ SS │    │   SS = a square that captures onto it
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state  : &State -> precomputed relevant-capture tables
+/// - color  : u8     -> colour whose pawn captures are gathered
+/// - targets: &Board -> squares a capture has to land on
+///
+/// Return:
+/// Board             -> squares such a capture could come from
+fn derive_pawn_captures(state: &State, color: u8, targets: &Board) -> Board {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let sign = -2 * color as i32 + 1;
+
+    let mut sources = board!(state.statics.files, state.statics.ranks);
+
+    for index in 0..state.statics.pieces.len() {
+        if state.statics.pawn_slots[index] == NO_PAWN
+            || p_color!(&state.statics.pieces[index]) != color {
+            continue;
+        }
+
+        for source in 0..board_size {
+            let vectors = &state.statics.relevant_captures
+                [index * board_size + source];
+
+            for vector in vectors {
+                let (file_offset, rank_offset) = vector_offset!(vector);
+                let file = source as i32 % files + file_offset * sign;
+                let rank = source as i32 / files + rank_offset * sign;
+
+                if file < 0 || file >= files || rank < 0 || rank >= ranks {
+                    continue;
+                }
+
+                if get!(targets, (rank * files + file) as u32) {
+                    set!(sources, source as u32);
+                }
+            }
+        }
+    }
+
+    sources
+}
+
+/// derive_pawn_interference
+///
+/// Every enemy square from which a pawn's advance could be stopped: the
+/// path itself, where an enemy pawn stands in the way, and every square an
+/// enemy pawn could capture from onto the path or onto the pawn. A pawn
+/// none of whose interference squares is occupied is passed.
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │ xx │ ## │ xx │    │   ## = a blocker standing on the path
+/// ├────┼────┼────┼────┼────┤
+/// │    │ xx │ ## │ xx │    │   xx = a capture into the path
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ PP │    │    │   PP = the pawn
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state : &State -> precomputed relevant-capture tables
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
+/// - path  : &Board -> the pawn's forward path
+///
+/// Return:
+/// Board            -> enemy squares that stop the passer
+fn derive_pawn_interference(
+    state: &State, index: usize, square: usize, path: &Board
+) -> Board {
+    let enemy = 1 - p_color!(&state.statics.pieces[index]);
+
+    let mut reached = *path;
+    set!(reached, square as u32);
+
+    let mut mask = derive_pawn_captures(state, enemy, &reached);
+    or!(mask, path);
+
+    mask
+}
+
+/// derive_pawn_support_files
+///
+/// The file offsets, relative to a pawn, at which a friendly pawn could
+/// ever defend it or the square it advances to. A pawn with no friendly
+/// pawn on any of these files, at any rank at all, is isolated -- which is
+/// a weaker statement than being undefended right now, and the reason the
+/// two are priced apart.
+///
+/// Each capture leg gives the offset a defender sits at directly behind,
+/// and each capture leg combined with each forward step gives the offset a
+/// defender sits at beside, guarding the stop rather than the pawn. FIDE
+/// yields {-1, +1}, Berolina {-1, 0, +1}, and a shogi soldier {0}: a piece
+/// that captures the way it moves is only ever defended from its own file.
+///
+/// ```text
+///       FIDE               Berolina               Shogi
+/// ┌────┬────┬────┐     ┌────┬────┬────┐     ┌────┬────┬────┐
+/// │ oo │    │ oo │     │ oo │ oo │ oo │     │    │ oo │    │
+/// ├────┼────┼────┤     ├────┼────┼────┤     ├────┼────┼────┤
+/// │    │ PP │    │     │    │ PP │    │     │    │ PP │    │
+/// └────┴────┴────┘     └────┴────┴────┘     └────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state: &State -> precomputed relevant move and capture tables
+/// - index: usize  -> pawn-like piece index
+///
+/// Return:
+/// Vec<i32>        -> sorted, de-duplicated supporting file offsets
+fn derive_pawn_support_files(state: &State, index: usize) -> Vec<i32> {
+    let board_size = state.statics.board_size;
+    let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
+
+    let mut capture_files: Vec<i32> = Vec::new();
+    let mut step_files: Vec<i32> = Vec::new();
+
+    for square in 0..board_size {
+        let captures =
+            &state.statics.relevant_captures[index * board_size + square];
+
+        for vector in captures {
+            let capture_file = vector_offset!(vector).0;
+
+            if !capture_files.contains(&capture_file) {
+                capture_files.push(capture_file);
+            }
+        }
+
+        let moves =
+            &state.statics.relevant_moves[index * board_size + square];
+
+        for vector in moves {
+            if !vector_moves_quietly!(vector) || vector_is_initial!(vector) {
+                continue;
+            }
+
+            let (step_file, rank_offset) = vector_offset!(vector);
+
+            if rank_offset < 1 || step_files.contains(&step_file) {
+                continue;
+            }
+
+            step_files.push(step_file);
+        }
+    }
+
+    let mut offsets: Vec<i32> = Vec::new();
+
+    for capture_file in capture_files.iter() {
+        for offset in step_files.iter()
+            .map(|step_file| (step_file - capture_file) * sign)
+            .chain([-capture_file * sign]) {
+            if !offsets.contains(&offset) {
+                offsets.push(offset);
+            }
+        }
+    }
+
+    offsets.sort();
+    offsets
+}
+
+/// derive_pawn_advancement
+///
+/// How far along toward promoting a pawn on `square` already is, squared
+/// and held in 256ths, so the last ranks are worth far more than the
+/// first. This is the same gradient the promotion half of the piece-square
+/// tables lays down, read here to scale what a passer is worth rather than
+/// what standing there is worth. A pawn with no promotion zone falls back
+/// to its distance from the far edge in its own forward direction.
+///
+/// Params:
+/// - state : &State -> board geometry and promotion zones
+/// - index : usize  -> pawn-like piece index
+/// - square: usize  -> square the pawn stands on
+///
+/// Return:
+/// i32              -> advancement in 256ths, squared
+fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let closest =
+        derive_closest_promotion(state, index as PieceIndex, square);
+
+    let advancement = if closest.is_finite() {
+        (1.0 - closest / ranks as f64).max(0.0)
+    } else {
+        let edge = (ranks - 1)
+            * (p_color!(&state.statics.pieces[index]) == WHITE) as i32;
+        let span = (ranks - 1).max(1);
+
+        (1.0 - (edge - square as i32 / files).abs() as f64 / span as f64)
+            .max(0.0)
+    };
+
+    (advancement * advancement * 256.0) as i32
+}
+
+/// derive_pawn_parameters
+///
+/// Builds everything `pawn_structure!` reads: which pieces are pawns, the
+/// four masks each of them tests from every square it could stand on, what
+/// a passer on each of those squares is worth, and the flat worth of being
+/// connected and the flat cost of being doubled, isolated, or backward.
+///
+/// Every mask is a full board, so the evaluation is bounded by how many
+/// pawns are on the board rather than by how wide the board is, and every
+/// test it runs is a single bit read. The tables are indexed by pawn slot
+/// rather than piece index, so a variant fielding thirty piece types and
+/// two pawns pays for two.
+///
+/// A passer is priced off what promoting it would gain -- the dearest
+/// piece it could become, less what it is worth standing there -- scaled
+/// by how far along it already is, so a passer one square from promoting
+/// is worth most of a piece and one still at home is worth nearly
+/// nothing. A pawn its rules never promote is priced off its own value
+/// instead. The structure terms are shares of the pawn itself, since each
+/// is a correction to that pawn's worth and not a statement about the
+/// army standing behind it.
+///
+/// Params:
+/// - state: &mut State -> variant whose pawn tables are rebuilt
+pub fn derive_pawn_parameters(state: &mut State) {
+    let board_size = state.statics.board_size;
+
+    let (slots, pieces) = derive_pawn_slots(state);
+    let stride = board_size * (!pieces.is_empty()) as usize;
+
+    state.static_mut().pawn_slots = slots;
+    state.static_mut().pawn_pieces = pieces.clone();
+    state.static_mut().pawn_stride = stride;
+
+    let empty = board!(state.statics.files, state.statics.ranks);
+    let mut path = vec![empty; pieces.len() * stride];
+    let mut interference = vec![empty; pieces.len() * stride];
+    let mut support = vec![empty; pieces.len() * stride];
+    let mut backward = vec![empty; pieces.len() * stride];
+    let mut support_files = vec![Vec::new(); pieces.len()];
+    let mut passed_opening = vec![0i32; pieces.len() * stride];
+    let mut passed_endgame = vec![0i32; pieces.len() * stride];
+
+    let promoted_opening = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_ovalue!(piece) as i32)
+        .max()
+        .unwrap_or(0);
+    let promoted_endgame = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .map(|piece| p_evalue!(piece) as i32)
+        .max()
+        .unwrap_or(0);
+
+    for (slot, index) in pieces.iter().copied().enumerate() {
+        let piece = &state.statics.pieces[index];
+        let enemy = 1 - p_color!(piece);
+        let opening_value = p_ovalue!(piece) as i32;
+        let endgame_value = p_evalue!(piece) as i32;
+        let promotes = p_can_promote!(piece);
+
+        let (opening_gain, opening_ratio) = match promotes {
+            true => (promoted_opening - opening_value, PASSED_OPENING_RATIO),
+            false => (opening_value, PASSED_UNPROMOTED_RATIO),
+        };
+        let (endgame_gain, endgame_ratio) = match promotes {
+            true => (promoted_endgame - endgame_value, PASSED_ENDGAME_RATIO),
+            false => (endgame_value, PASSED_UNPROMOTED_RATIO),
+        };
+
+        support_files[slot] = derive_pawn_support_files(state, index);
+
+        for square in 0..board_size {
+            let entry = slot * stride + square;
+            let stop = derive_pawn_stop(state, index, square);
+            let advancement =
+                derive_pawn_advancement(state, index, square) as i64;
+
+            let mut defended = stop;
+            set!(defended, square as u32);
+
+            path[entry] = derive_pawn_path(state, index, square);
+            interference[entry] =
+                derive_pawn_interference(state, index, square, &path[entry]);
+            support[entry] =
+                derive_pawn_captures(state, p_color!(piece), &defended);
+            backward[entry] = derive_pawn_captures(state, enemy, &stop);
+
+            passed_opening[entry] = (opening_gain.max(0) as i64
+                * opening_ratio as i64 * advancement
+                / (COEFFICIENT_SCALE as i64 * 256)) as i32;
+            passed_endgame[entry] = (endgame_gain.max(0) as i64
+                * endgame_ratio as i64 * advancement
+                / (COEFFICIENT_SCALE as i64 * 256)) as i32;
+        }
+    }
+
+    let share = |value: i32, ratio: u32| -> i32 {
+        (value as i64 * ratio as i64 / COEFFICIENT_SCALE as i64) as i32
+    };
+
+    let opening_values: Vec<i32> = pieces.iter()
+        .map(|index| p_ovalue!(&state.statics.pieces[*index]) as i32)
+        .collect();
+    let endgame_values: Vec<i32> = pieces.iter()
+        .map(|index| p_evalue!(&state.statics.pieces[*index]) as i32)
+        .collect();
+
+    let connected_opening: Vec<i32> = opening_values.iter()
+        .map(|value| share(*value, PAWN_CONNECTED_OPENING_RATIO))
+        .collect();
+    let connected_endgame: Vec<i32> = endgame_values.iter()
+        .map(|value| share(*value, PAWN_CONNECTED_ENDGAME_RATIO))
+        .collect();
+    let doubled: Vec<i32> = opening_values.iter()
+        .map(|value| share(*value, PAWN_DOUBLED_RATIO))
+        .collect();
+    let isolated: Vec<i32> = opening_values.iter()
+        .map(|value| share(*value, PAWN_ISOLATED_RATIO))
+        .collect();
+    let backward_penalty: Vec<i32> = opening_values.iter()
+        .map(|value| share(*value, PAWN_BACKWARD_RATIO))
+        .collect();
+
+    log_3!(
+        concat!(
+            "Derived {} pawn types {:?}, connected {:?} then {:?}, ",
+            "doubled {:?}, isolated {:?}, backward {:?}"
+        ),
+        pieces.len(),
+        pieces.iter()
+            .map(|index| state.statics.pieces[*index].char)
+            .collect::<Vec<char>>(),
+        connected_opening,
+        connected_endgame,
+        doubled,
+        isolated,
+        backward_penalty
+    );
+
+    let statics = state.static_mut();
+
+    statics.pawn_path = path;
+    statics.pawn_interference = interference;
+    statics.pawn_support = support;
+    statics.pawn_backward = backward;
+    statics.pawn_support_files = support_files;
+    statics.pawn_passed_opening = passed_opening;
+    statics.pawn_passed_endgame = passed_endgame;
+    statics.pawn_connected_opening = connected_opening;
+    statics.pawn_connected_endgame = connected_endgame;
+    statics.pawn_doubled_penalty = doubled;
+    statics.pawn_isolated_penalty = isolated;
+    statics.pawn_backward_penalty = backward_penalty;
 }

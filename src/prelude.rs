@@ -78,11 +78,11 @@ pub use crate::game::search::{
     parallel::ThreadPool,
     parameters::{
         derive_base_pst, derive_danger_parameters, derive_eval_parameters,
-        derive_eval_products, derive_parameters,
+        derive_eval_products, derive_parameters, derive_pawn_parameters,
         derive_search_capabilities, derive_search_parameters,
         derive_shelter_parameters, reduction_surface,
     },
-    transposition::{QTable, QTEntry, TTEntry, TTable},
+    transposition::{PTable, PTEntry, QTable, QTEntry, TTEntry, TTable},
 };
 
 pub use crate::game::util::{
@@ -236,6 +236,7 @@ pub const BK_CASTLE: u8 = 0b0100;
 pub const BQ_CASTLE: u8 = 0b1000;
 
 pub const NO_PIECE: PieceIndex = PieceIndex::MAX;
+pub const NO_PAWN: usize = usize::MAX;
 pub const NO_SQUARE: Square = Square::MAX;
 pub const NO_EN_PASSANT: u32 = u32::MAX;
 
@@ -317,6 +318,38 @@ thread_local! {
     /// depth, nodes, or table size.
     pub static SEE_BUFFERS: RefCell<(Vec<Move>, Vec<u64>)> =
         RefCell::new((Vec::with_capacity(64), Vec::with_capacity(32)));
+
+    /// Pawn-roster scratch, one pair of rosters per search thread.
+    ///
+    /// `pawn_structure!` refills these on every call and reads nothing across
+    /// calls. Each entry is one pawn on the board as its table slot, the
+    /// square it stands on, the file it stands on, and whether the first
+    /// sweep found it passed, so the scoring sweep answers every question
+    /// from this roster instead of walking the piece lists again or
+    /// allocating a `Board` per colour to mark passers on.
+    ///
+    /// Worst case retained per worker is
+    /// `2 * 32 * size_of::<(usize, Square, i32, bool)>()` bytes, reached the
+    /// first time a side fields that many pawns and never growing with
+    /// depth, nodes, or table size.
+    pub static PAWN_BUFFERS: RefCell<[Vec<(usize, Square, i32, bool)>; 2]> =
+        RefCell::new([
+            Vec::with_capacity(32), Vec::with_capacity(32),
+        ]);
+
+    /// Pawn-structure cache, one private table per search thread.
+    ///
+    /// Pawn structure is the one evaluation family whose answer survives
+    /// almost every move made in a search, so the roster sweep is run once
+    /// per distinct arrangement and read back from here on every node that
+    /// repeats it. The key is folded from the roster itself rather than
+    /// maintained across make and undo, so nothing can drift out of step
+    /// with the board.
+    ///
+    /// Held per thread rather than shared, so it needs no seqlock and no
+    /// parity word. `PAWN_TABLE_ENTRIES * size_of::<PTEntry>()` bytes per
+    /// worker, fixed for the life of the thread.
+    pub static PAWN_TABLE: RefCell<PTable> = RefCell::new(PTable::default());
 }
 
 /*----------------------------------------------------------------------------*\
@@ -542,6 +575,7 @@ pub const REPETITION_CYCLE: u8 = 2;
 pub const DATA_DIR: &str = "res/data";
 pub const OPT_THREADS: &str = "Threads";
 pub const HASH_DEFAULT_MB: usize = 256;
+pub const PAWN_TABLE_ENTRIES: usize = 1 << 13;
 pub const OPENING_RANDOM_PLIES: usize = 8;
 
 pub static EMBEDDED_CONFIGS: Dir<'static> =

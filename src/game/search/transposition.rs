@@ -642,6 +642,83 @@ macro_rules! fill_pv_line {
 }
 
 /*----------------------------------------------------------------------------*\
+                    PAWN TABLE REPRESENTATION & PROBE
+\*----------------------------------------------------------------------------*/
+
+/// PTEntry
+///
+/// One cached pawn-structure verdict: the key the roster hashed to and the
+/// opening and endgame worth that roster is due. There is no bound, no
+/// depth, and no move, because the answer is a pure function of where the
+/// pawns stand — two positions sharing a pawn roster share this score
+/// whatever else differs about them, and a stored entry never goes stale.
+///
+/// An untouched slot has a zero key, which no real roster can collide with
+/// short of a 128-bit accident, so emptiness needs no separate flag.
+#[derive(Clone, Default)]
+pub struct PTEntry {
+    pub key: u128,                                                              /* Zobrist fold of the pawn roster    */
+    pub opening: i32,                                                           /* cached opening worth               */
+    pub endgame: i32,                                                           /* cached endgame worth               */
+}
+
+/// PTable
+///
+/// A search thread's private pawn-structure cache. Unlike [`TTable`] and
+/// [`QTable`] this one is never shared, so it carries no seqlock, no parity
+/// word, and no atomics: one thread writes it and the same thread reads it.
+/// A shared table would have to protect a 24-byte payload with the same
+/// machinery that protects a 48-byte one, and pay it on a term evaluated at
+/// nearly every node.
+///
+/// Replacement is unconditional. Every entry is equally true, so the only
+/// thing a policy could preserve is the entry more likely to be asked for
+/// again, and the most recent roster is exactly that during a search that
+/// moves one pawn at a time.
+pub struct PTable {
+    pub table: Vec<PTEntry>,                                                    /* slot count is a power of two       */
+}
+
+impl Default for PTable {
+    fn default() -> Self {
+        Self::with_entries(PAWN_TABLE_ENTRIES)
+    }
+}
+
+impl PTable {
+    /// PTable method cluster.
+    ///
+    /// `with_entries` builds a zeroed table whose slot count is floored to a
+    /// power of two for mask indexing, and `len` reports it.
+    ///
+    /// with_entries
+    ///
+    ///   Params:
+    ///   - entries: usize -> requested slot count
+    ///
+    ///   Return:
+    ///   Self             -> zeroed table with that many slots
+    ///
+    /// len
+    ///
+    ///   Return:
+    ///   usize -> slot count
+    pub fn with_entries(entries: usize) -> Self {
+        Self {
+            table: vec![PTEntry::default(); 1 << entries.max(1).ilog2()],
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.table.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.table.iter().all(|entry| entry.key == 0)
+    }
+}
+
+/*----------------------------------------------------------------------------*\
               QSEARCH TT ENTRY REPRESENTATION & CONSTANTS
 \*----------------------------------------------------------------------------*/
 

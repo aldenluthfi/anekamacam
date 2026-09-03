@@ -2,7 +2,7 @@
 
 ## Status
 
-Drafted 2026-09-02. R1, R2, and R3 have landed; R4 is next.
+Drafted 2026-09-02. R1 through R4 have landed; R5 is next.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -298,6 +298,48 @@ Restore `pawn_structure!` and its seven sub-terms, with connected,
 doubled, isolated, backward, and passed scalars from
 `derive_pawn_parameters`. This is the stage that introduces the pawn
 masks, `pawn_board`, `pawn_hash`, and the `PTable` and `PTEntry` pair.
+
+`derive_pawn_slots` calls a piece a pawn on the same four conditions
+iteration 3 used: it never steps or captures backward, it has a quiet
+single forward step, it has no non-initial quiet move reaching further
+than one square, and at least `PAWN_MIN_START_COUNT` of it stand on the
+opening board. Its colour twin takes the same answer. Three variants
+therefore derive no pawn at all — judkins and minishogi field one pawn
+each, below the floor, and sittuyin's `Pp` line carries a multi-leg
+promotion chain whose `sW` legs read as backward steps. Iteration 3
+excluded exactly the same three, so this is the term declining to speak
+about a variant rather than a regression.
+
+The nine scalars are shares against `COEFFICIENT_SCALE`, replacing
+iteration 3's hand-written divisors: connected 200 opening and 350
+endgame, doubled 250, isolated 250, backward 175, passer 100 opening and
+350 endgame, and 400 for a pawn that promotes to nothing. Advancement
+is `adv² * 256`, unchanged. The protected and connected passer bonuses
+are folded into one `2 + connected + chained` multiplier over halves
+rather than the two extra tables iteration 3 carried, which prices a
+plain passer at 1×, a protected one at 1.5×, and a connected one at 2×,
+as before.
+
+`pawn_board` and a make-and-undo `pawn_hash` were not added. The key is
+folded from the pawn piece lists at the point of use, which costs one
+exclusive or per pawn, cannot desynchronise from the board, and does not
+introduce a fourth hash identity alongside the canonical, search, and
+qsearch keys. Only a probe miss pays to gather the roster. An
+incremental hash was measured against this and the difference sat inside
+the machine's ±6% run-to-run noise, so the cheaper thing to reason about
+wins.
+
+Result: 38/38 endgame fixtures, and every sub-term hand-checked by
+evaluation delta — a lone passer on e2 reads −2 (+23 passer, −25
+isolated) and on e6 reads +183, a doubled pawn −25, a connected d2 and
+e2 pair +164 (46 passer, 72 connected, 46 chained), an isolated a2 and
+h2 pair −4, and a blocked pawn 0. Uncached the term cost 5 to 32% of
+nps; with the table, nodes are bit-identical to uncached and the cost is
+2.2% standard, 4.0% shogi, 2.1% xiangqi, 5.7% crazyhouse, 10.5% grand.
+Speed suite versus R3, nodes then time: standard 131,470 to 115,323 at
+−10.3%, shogi 1,084,801 to 873,348 at −16.2%, xiangqi 583,595 to 572,743
+at +0.3%, crazyhouse 1,349,333 to 619,809 at −51%, grand 1,274,326 to
+1,428,999 at +25%. Grand's time is again its node count.
 
 ### R5. Tempo, imbalance, pair bonus
 

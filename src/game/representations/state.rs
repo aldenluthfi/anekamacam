@@ -696,6 +696,22 @@ pub struct StaticState {
     pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
     pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
 
+    pub pawn_slots: Vec<usize>,                                                 /* piece index to pawn slot, or NONE  */
+    pub pawn_pieces: Vec<usize>,                                                /* pawn slot to piece index           */
+    pub pawn_stride: usize,                                                     /* squares each pawn slot owns        */
+    pub pawn_path: Vec<Board>,                                                  /* slot, square to advance squares    */
+    pub pawn_interference: Vec<Board>,                                          /* slot, square to passer stoppers    */
+    pub pawn_support: Vec<Board>,                                               /* slot, square to defending squares  */
+    pub pawn_backward: Vec<Board>,                                              /* slot, square to stop attackers     */
+    pub pawn_support_files: Vec<Vec<i32>>,                                      /* slot to supporting file offsets    */
+    pub pawn_passed_opening: Vec<i32>,                                          /* slot, square to passer worth       */
+    pub pawn_passed_endgame: Vec<i32>,
+    pub pawn_connected_opening: Vec<i32>,                                       /* slot to worth of being defended    */
+    pub pawn_connected_endgame: Vec<i32>,
+    pub pawn_doubled_penalty: Vec<i32>,                                         /* slot to cost of blocking itself    */
+    pub pawn_isolated_penalty: Vec<i32>,                                        /* slot to cost of standing alone     */
+    pub pawn_backward_penalty: Vec<i32>,                                        /* slot to cost of a contested stop   */
+
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
 
@@ -908,6 +924,22 @@ impl State {
             king_danger_scale: 0,
             king_danger_cap: 0,
             open_shield_penalty: 0,
+
+            pawn_slots: Vec::new(),
+            pawn_pieces: Vec::new(),
+            pawn_stride: 0,
+            pawn_path: Vec::new(),
+            pawn_interference: Vec::new(),
+            pawn_support: Vec::new(),
+            pawn_backward: Vec::new(),
+            pawn_support_files: Vec::new(),
+            pawn_passed_opening: Vec::new(),
+            pawn_passed_endgame: Vec::new(),
+            pawn_connected_opening: Vec::new(),
+            pawn_connected_endgame: Vec::new(),
+            pawn_doubled_penalty: Vec::new(),
+            pawn_isolated_penalty: Vec::new(),
+            pawn_backward_penalty: Vec::new(),
 
             draw_contempt: 0,
             draw_span: 1,                                                       /* a divisor before derivation runs   */

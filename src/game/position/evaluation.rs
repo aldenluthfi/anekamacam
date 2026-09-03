@@ -325,6 +325,200 @@ macro_rules! castling_bonus {
     }};
 }
 
+/// pawn_structure!
+///
+/// White-minus-black worth of how each side's pawns stand relative to one
+/// another, returned as an opening and an endgame figure at once because a
+/// passer is worth little while the board is full and a great deal once it
+/// is empty. Seven statements are made about every pawn, each of them a bit
+/// read against a precomputed mask:
+///
+/// - passed, when no enemy pawn stands on any square that could block or
+///   capture its way forward, worth what promoting it would gain scaled by
+///   how far along it already is
+/// - protected passed, a passer another pawn defends, worth half again
+/// - connected passed, a passer defended by a passer, worth half again once
+///   more, since neither can be stopped by taking the other
+/// - connected, a pawn another pawn defends
+/// - doubled, a pawn standing on its own advance path and blocking it
+/// - isolated, a pawn with no friendly pawn on any file that could ever
+///   defend it or the square it steps to
+/// - backward, a pawn that has a neighbour but no defender, whose stop
+///   square an enemy pawn watches
+///
+/// Both sweeps read one roster gathered from the piece lists, so the cost is
+/// the pawns on the board squared and not the width of the board. A variant
+/// whose rules field no pawn returns at once.
+///
+/// The verdict depends on nothing but where the pawns stand, and most moves
+/// a search makes move no pawn, so the pawn lists are folded into a key and
+/// the answer is read back from this thread's [`PTable`] whenever that
+/// arrangement has been seen before. Only a miss pays for the roster. Folding
+/// the key from the piece lists rather than maintaining it across make and
+/// undo costs one exclusive or per pawn and makes it impossible for the key
+/// to disagree with the board it is supposed to describe.
+///
+/// Params:
+/// - state: &State -> position whose pawns are read
+///
+/// Return:
+/// (i32, i32)      -> opening and endgame worth, white minus black
+#[macro_export]
+macro_rules! pawn_structure {
+    ($state:expr) => {
+        hotpath::measure_block!("eval::pawn_structure", {
+            let statics = &$state.statics;
+            let stride = statics.pawn_stride;
+            let files = statics.files as i32;
+
+            if stride == 0 {
+                (0, 0)
+            } else {
+                let mut key = 0u128;
+
+                for &index in &statics.pawn_pieces {
+                    for square in piece_squares!($state, index) {
+                        key ^= PIECE_HASHES[index][*square as usize];
+                    }
+                }
+
+                let cached = PAWN_TABLE.with(|table| {
+                    let table = table.borrow();
+                    let entry =
+                        &table.table[key as usize & (table.len() - 1)];
+
+                    match entry.key == key {
+                        true => Some((entry.opening, entry.endgame)),
+                        false => None,
+                    }
+                });
+
+                PAWN_BUFFERS.with(|buffers| {
+                    if let Some(scores) = cached {
+                        return scores;
+                    }
+
+                    let mut pawns = buffers.borrow_mut();
+
+                    pawns[WHITE as usize].clear();
+                    pawns[BLACK as usize].clear();
+
+                    for &index in &statics.pawn_pieces {
+                        let slot = statics.pawn_slots[index];
+                        let color =
+                            p_color!(&statics.pieces[index]) as usize;
+
+                        for square in piece_squares!($state, index) {
+                            pawns[color].push((
+                                slot, *square, *square as i32 % files, false
+                            ));
+                        }
+                    }
+
+                    for color in [WHITE as usize, BLACK as usize] {
+                        for entry in 0..pawns[color].len() {
+                            let (slot, square, ..) = pawns[color][entry];
+                            let mask = &statics.pawn_interference[
+                                slot * stride + square as usize
+                            ];
+
+                            let stopped = pawns[color ^ 1].iter().any(
+                                |other| get!(mask, other.1 as u32)
+                            );
+
+                            pawns[color][entry].3 = !stopped;
+                        }
+                    }
+
+                    let mut opening = 0;
+                    let mut endgame = 0;
+
+                    for color in [WHITE as usize, BLACK as usize] {
+                        let sign = -2 * color as i32 + 1;
+
+                        for entry in 0..pawns[color].len() {
+                            let (slot, square, file, passed) =
+                                pawns[color][entry];
+                            let index = slot * stride + square as usize;
+                            let support = &statics.pawn_support[index];
+                            let path = &statics.pawn_path[index];
+                            let stop = &statics.pawn_backward[index];
+                            let neighbours =
+                                &statics.pawn_support_files[slot];
+
+                            let connected = pawns[color].iter().any(|other|
+                                other.1 != square
+                                    && get!(support, other.1 as u32)
+                            );
+                            let chained = connected && pawns[color].iter()
+                                .any(|other| other.1 != square
+                                    && other.3
+                                    && get!(support, other.1 as u32)
+                            );
+                            let doubled = pawns[color].iter().any(|other|
+                                other.1 != square
+                                    && get!(path, other.1 as u32)
+                            );
+                            let neighboured = pawns[color].iter().any(|other|
+                                other.1 != square
+                                    && neighbours.contains(&(other.2 - file))
+                            );
+                            let contested = !connected && neighboured
+                                && pawns[color ^ 1].iter().any(
+                                    |other| get!(stop, other.1 as u32)
+                                );
+
+                            let passer_opening =
+                                statics.pawn_passed_opening[index]
+                                    * passed as i32;
+                            let passer_endgame =
+                                statics.pawn_passed_endgame[index]
+                                    * passed as i32;
+                            let bonus =
+                                2 + connected as i32 + chained as i32;
+
+                            opening += sign * (
+                                passer_opening * bonus / 2
+                                    + statics.pawn_connected_opening[slot]
+                                        * connected as i32
+                                    - statics.pawn_doubled_penalty[slot]
+                                        * doubled as i32
+                                    - statics.pawn_isolated_penalty[slot]
+                                        * !neighboured as i32
+                                    - statics.pawn_backward_penalty[slot]
+                                        * contested as i32
+                            );
+                            endgame += sign * (
+                                passer_endgame * bonus / 2
+                                    + statics.pawn_connected_endgame[slot]
+                                        * connected as i32
+                                    - statics.pawn_doubled_penalty[slot]
+                                        * doubled as i32
+                                    - statics.pawn_isolated_penalty[slot]
+                                        * !neighboured as i32
+                                    - statics.pawn_backward_penalty[slot]
+                                        * contested as i32
+                            );
+                        }
+                    }
+
+                    PAWN_TABLE.with(|table| {
+                        let mut table = table.borrow_mut();
+                        let index = key as usize & (table.len() - 1);
+                        let entry = &mut table.table[index];
+
+                        entry.key = key;
+                        entry.opening = opening;
+                        entry.endgame = endgame;
+                    });
+
+                    (opening, endgame)
+                })
+            }
+        })
+    };
+}
+
 /// opening_score!
 ///
 /// White-minus-black opening score: cached material and piece-square totals
@@ -392,11 +586,14 @@ macro_rules! endgame_score {
 /// material and piece-square-table totals plus the safety each side's royals
 /// stand in: the shelter ahead of them, the guard around them, what each side
 /// holds of its variant's castling, the enemy pressure bearing on their zone,
-/// and whether anything covers the ground in front of them at all. Opening and
-/// setup use opening values, endgame uses endgame values, and middlegame
-/// linearly blends both. Every safety term is carried by the opening half
-/// alone, so they fade out as the board empties and are gone by the endgame,
-/// where a royal wants to walk rather than hide.
+/// and whether anything covers the ground in front of them at all, plus how
+/// each side's pawns stand relative to one another. Opening and setup use
+/// opening values, endgame uses endgame values, and middlegame linearly blends
+/// both. Every safety term is carried by the opening half alone, so they fade
+/// out as the board empties and are gone by the endgame, where a royal wants to
+/// walk rather than hide. Pawn structure is the one positional family both
+/// halves price, since a passer is worth most exactly where safety is worth
+/// nothing, and it is computed once per node whichever phase reads it.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -410,11 +607,17 @@ macro_rules! evaluate_position {
             let side_sign = -2 * $state.playing as i32 + 1;
 
             let score = match $state.game_phase {
-                OPENING | SETUP => opening_score!($state),
-                ENDGAME => endgame_score!($state),
+                OPENING | SETUP => {
+                    opening_score!($state) + pawn_structure!($state).0
+                }
+                ENDGAME => {
+                    endgame_score!($state) + pawn_structure!($state).1
+                }
                 MIDDLEGAME => {
-                    let opening = opening_score!($state);
-                    let endgame = endgame_score!($state);
+                    let (pawn_opening, pawn_endgame) =
+                        pawn_structure!($state);
+                    let opening = opening_score!($state) + pawn_opening;
+                    let endgame = endgame_score!($state) + pawn_endgame;
 
                     let opening_bound = $state.statics.opening_score as i32;
                     let endgame_bound = $state.statics.endgame_score as i32;
