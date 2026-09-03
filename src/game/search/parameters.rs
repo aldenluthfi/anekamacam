@@ -121,6 +121,26 @@ const SHELTER_RADIUS: u32 = 1;
 const SHELTER_RATIO: u32 = 12;
 const SHELTER_FLOOR: u32 = 4;
 
+/// What any friendly piece standing on that same ring is worth, whichever
+/// side of the royal it stands on and whatever it is. A piece beside a
+/// royal blocks a line into it, so it is priced like shelter but at half
+/// the share, since a piece behind or beside the royal covers fewer of
+/// the squares an attack arrives from than one in front of it. Uncapped:
+/// the ring itself bounds the count.
+const GUARD_RATIO: u32 = 6;
+const GUARD_FLOOR: u32 = 2;
+
+/// What castling is worth, for the variants whose rules offer it. Having
+/// castled is priced as a full shelter, since it is what a side spends a
+/// move to buy: the royal off the file it started on and a rook facing
+/// the middle. Still holding a right is worth half of that, the same gain
+/// still available but not yet taken. Both are shares of the dearest
+/// non-royal piece against `COEFFICIENT_SCALE`, like every other term
+/// standing beside them. A side that spent its rights without castling is
+/// worth neither, which is what makes castling the move it prefers.
+const CASTLED_RATIO: u32 = 40;
+const CASTLING_RIGHT_RATIO: u32 = 20;
+
 /// Share of the board a royal must be able to stand on before shelter is
 /// worth pricing at all. A royal walled into a palace by its own forbidden
 /// zones cannot be sheltered in the sense this term means: it never left
@@ -1518,13 +1538,17 @@ fn derive_royal_confinement(state: &State) -> [bool; 2] {
 
 /// derive_shelter_parameters
 ///
-/// Builds everything the royal shelter term reads. One flat square list per
-/// colour holds squares inside the royal's local ring that lie forward of its
-/// origin. A count per origin records how many slots survive board edges, so
+/// Builds everything the royal shelter, guard, and castling terms read. One
+/// flat square list per colour holds squares inside the royal's local ring
+/// that lie forward of its origin, and one colour-blind list holds the whole
+/// ring. A count per origin records how many slots survive board edges, so
 /// evaluation needs no bounds arithmetic.
 ///
-/// Shelter is priced off the dearest non-royal piece, the same piece search
-/// margins use, so a variant whose army is cheap pays a proportionate value.
+/// All four values are priced off the dearest non-royal piece, the same piece
+/// search margins use, so a variant whose army is cheap pays a proportionate
+/// value. The confinement gate applies to shelter alone: a walled royal has no
+/// forward ground to hold, but the pieces standing beside it still block the
+/// lines an attack would arrive on.
 ///
 /// Params:
 /// - state: &mut State -> variant whose shelter tables are rebuilt
@@ -1543,6 +1567,8 @@ pub fn derive_shelter_parameters(state: &mut State) {
         vec![0 as Square; board_size * stride]
     ];
     let mut shelter_counts = [vec![0u8; board_size], vec![0u8; board_size]];
+    let mut ring_squares = vec![0 as Square; board_size * stride];
+    let mut ring_counts = vec![0u8; board_size];
 
     for square in 0..board_size {
         let file = square as i32 % files;
@@ -1560,6 +1586,10 @@ pub fn derive_shelter_parameters(state: &mut State) {
                 }
 
                 let local = (local_rank * files + local_file) as Square;
+                let ring_slot = ring_counts[square] as usize;
+
+                ring_squares[square * stride + ring_slot] = local;
+                ring_counts[square] += 1;
 
                 for color in [WHITE as usize, BLACK as usize] {
                     if rank_offset * forward[color] <= 0 {
@@ -1592,16 +1622,29 @@ pub fn derive_shelter_parameters(state: &mut State) {
 
     let shelter_value = (dearest * SHELTER_RATIO as u64
         / COEFFICIENT_SCALE as u64).max(SHELTER_FLOOR as u64);
+    let guard_value = (dearest * GUARD_RATIO as u64
+        / COEFFICIENT_SCALE as u64).max(GUARD_FLOOR as u64);
+    let castled_value = dearest * CASTLED_RATIO as u64
+        / COEFFICIENT_SCALE as u64;
+    let castling_right_value = dearest * CASTLING_RIGHT_RATIO as u64
+        / COEFFICIENT_SCALE as u64;
 
     log_3!(
         concat!(
-            "Derived shelter worth {} per piece, {} of {} piece types ",
-            "shield-like, royals confined {:?}"
+            "Derived shelter worth {} per piece and {} per guard, {} of ",
+            "{} piece types shield-like, royals confined {:?}"
         ),
         shelter_value,
+        guard_value,
         shield_pieces.iter().filter(|shield| **shield).count(),
         shield_pieces.len(),
         confined
+    );
+
+    log_3!(
+        "Derived Castling Worth: {} castled, {} holding the right",
+        castled_value,
+        castling_right_value,
     );
 
     let statics = state.static_mut();
@@ -1609,6 +1652,11 @@ pub fn derive_shelter_parameters(state: &mut State) {
     statics.shield_pieces = shield_pieces;
     statics.shelter_squares = shelter_squares;
     statics.shelter_counts = shelter_counts;
+    statics.ring_squares = ring_squares;
+    statics.ring_counts = ring_counts;
     statics.local_stride = stride;
     statics.shelter_value = shelter_value as i32;
+    statics.guard_value = guard_value as i32;
+    statics.castled_value = castled_value as i32;
+    statics.castling_right_value = castling_right_value as i32;
 }

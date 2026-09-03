@@ -2,7 +2,7 @@
 
 ## Status
 
-Drafted 2026-09-02. R1 has landed; R2 is next.
+Drafted 2026-09-02. R1 and R2 have landed; R3 is next.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -191,12 +191,48 @@ Speed suite versus the pre-R1 build: standard 133695→131470 nodes at
 +3.4% NPS, crazyhouse 777281→788390 at −2.1%, and shogi and xiangqi node
 identical, their time deltas 0.2% either way.
 
-### R2. Royal back-rank PST, pawn shield, castling incentive
+### R2. Royal back-rank PST, pawn shield, castling incentive — landed
 
 Restore `king_shelter!`, `pawn_shield!`, and `castling_bonus!`, folding
 the existing `royal_shelter!` into them rather than running both. Scalars
 `king_shelter_bonus`, `pawn_shield_bonus`, `castled_bonus`, and
 `castling_rights_bonus` are derived from mean non-royal piece value.
+
+Two of the three named terms were already here, which the plan's own
+inventory got wrong. `derive_pst` already lays iteration 3's royal
+back-rank opening gradient, unchanged, and `royal_shelter!` already is
+iteration 3's `pawn_shield!` — same three forward squares, same cap of
+three — with an extra gate for royals their rules confine. Restoring
+either would have run the term twice. R2 therefore restores only what was
+missing: the ring term and the castling incentive.
+
+`royal_guard!` prices every friendly piece on the ring around a royal,
+whichever side of it stands on, since each one blocks a line into the
+royal's square. It reads a precomputed colour-blind `ring_squares` list
+with `ring_counts`, built in the square loop `derive_shelter_parameters`
+already walks. Iteration 3 held per-square adjacency as `Vec<Board>`;
+`Board` is 514 bytes here, so one copy per royal per evaluation would have
+cost the speed half of this plan's goal. The ring bounds the count itself
+and needs no cap, and it is priced below shelter.
+
+`castling_bonus!` ranks having castled above holding a right above having
+spent both for nothing, on `has_castled` maintained by make and undo.
+Castling spends the rights, so a side reaches that branch at most once and
+no snapshot field is needed. Carried over from iteration 3: a position
+entered by FEN cannot know a side has already castled, and reads as
+rights-spent.
+
+Derived from the dearest non-royal piece: `GUARD_RATIO` 6 with a floor of
+2, `CASTLED_RATIO` 40, `CASTLING_RIGHT_RATIO` 20. Standard derives 5 per
+guard against 11 per shelter, and 37 castled against 18 holding the right.
+After `e2e4 e7e5 g1f3 b8c6 f1c4 g8f6`, castling scores −40 cp against +32
+cp for `e1f1`, a 72 cp preference.
+
+Result: 38/38 endgame fixtures, and the depth-6 signature moves broadly,
+as a new evaluation term should. Speed suite versus R1: shogi 1,007,941
+nodes to 828,784 at −10.3% time, xiangqi 493,122 to 478,259 at −4.6%,
+crazyhouse 788,390 to 867,645 at +4.8%. Standard is node-identical, which
+is not a null result but a blind instrument — see Measurement.
 
 ### R3. Zone-attack king danger and open shield
 
@@ -264,3 +300,13 @@ Per stage: release build with no warnings, the 38-config depth-6 signature
 from plan 18, and the 16-position bench. Games only where a stage claims
 Elo, and always reported as raw W/L/D. The `sprt` verdict string reports
 from `bin-a`'s view; state which binary is `bin-a` whenever it is quoted.
+
+The standard bench is blind to every opening-half term. `bench` takes the
+first `limit` perft cases whose node counts are non-zero, and in
+`res/perft/standard.perft` those are sixteen bare endings — a king and one
+or two pieces each, all of them ENDGAME phase, where the opening half of
+`evaluate_position!` is never read. A stage touching shelter, guard,
+castling, king danger, or pawn structure will read node-identical there
+however large its effect, and R2 did. Read the other variants' benches and
+the signature for those stages, and do not quote standard's bench as
+evidence that an opening term changed nothing.

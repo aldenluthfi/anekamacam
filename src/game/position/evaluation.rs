@@ -129,14 +129,90 @@ macro_rules! royal_shelter {
     }};
 }
 
+/// royal_guard!
+///
+/// Worth of the friendly pieces standing on the ring around one colour's
+/// royals, whatever they are and whichever side of the royal they stand on.
+/// Each such piece blocks one line into the square its royal occupies, which
+/// is worth having even from a piece that shelters nothing, so this is priced
+/// below [`royal_shelter!`] and counted over the whole ring rather than its
+/// forward half. The ring bounds the count on its own and needs no cap.
+///
+/// Params:
+/// - state: &State -> position whose royal neighbours are read
+/// - color: usize  -> colour whose guard is scored
+///
+/// Return:
+/// i32             -> guard worth, always non-negative
+#[macro_export]
+macro_rules! royal_guard {
+    ($state:expr, $color:expr) => {{
+        let statics = &$state.statics;
+        let stride = statics.local_stride;
+        let mut guards = 0;
+
+        for royal_square in &$state.royal_list[$color] {
+            let royal = *royal_square as usize;
+
+            for slot in 0..statics.ring_counts[royal] as usize {
+                let square = statics.ring_squares[royal * stride + slot];
+
+                guards += get!(
+                    $state.pieces_board[$color], square as u32
+                ) as i32;
+            }
+        }
+
+        statics.guard_value * guards
+    }};
+}
+
+/// castling_bonus!
+///
+/// One colour's standing in the castling its variant offers: having castled
+/// is worth the full derived value, still holding a right is worth the part
+/// of it not yet taken, and having spent both rights without castling is
+/// worth nothing. Ordered that way, the score prefers castling to sitting on
+/// the right, and prefers sitting on it to losing it for nothing.
+///
+/// A variant whose rules never castle scores zero here, and one whose royal
+/// has already castled keeps the value after the rights it spent are gone.
+///
+/// Params:
+/// - state: &State -> position whose castling standing is read
+/// - color: usize  -> colour whose standing is scored
+///
+/// Return:
+/// i32             -> castling worth, always non-negative
+#[macro_export]
+macro_rules! castling_bonus {
+    ($state:expr, $color:expr) => {{
+        let rights = [
+            WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE
+        ][$color];
+
+        if !castling!($state) {
+            0
+        } else if $state.has_castled[$color] {
+            $state.statics.castled_value
+        } else if $state.castling_state & rights != 0 {
+            $state.statics.castling_right_value
+        } else {
+            0
+        }
+    }};
+}
+
 /// evaluate_position!
 ///
 /// Evaluates current position from side-to-move perspective using cached
-/// material and piece-square-table totals plus the royal shelter each side
-/// stands in. Opening and setup use opening values, endgame uses endgame
-/// values, and middlegame linearly blends both. Shelter is carried by the
-/// opening half alone, so it fades out as the board empties and is gone by
-/// the endgame, where a royal wants to walk rather than hide.
+/// material and piece-square-table totals plus the safety each side's royals
+/// stand in: the shelter ahead of them, the guard around them, and what each
+/// side holds of its variant's castling. Opening and setup use opening values,
+/// endgame uses endgame values, and middlegame linearly blends both. All three
+/// safety terms are carried by the opening half alone, so they fade out as the
+/// board empties and are gone by the endgame, where a royal wants to walk
+/// rather than hide.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -156,7 +232,11 @@ macro_rules! evaluate_position {
                 + $state.opening_pst_bonus[white]
                 - $state.opening_pst_bonus[black]
                 + royal_shelter!($state, white)
-                - royal_shelter!($state, black);
+                - royal_shelter!($state, black)
+                + royal_guard!($state, white)
+                - royal_guard!($state, black)
+                + castling_bonus!($state, white)
+                - castling_bonus!($state, black);
             let endgame = $state.endgame_material[white] as i32
                 - $state.endgame_material[black] as i32
                 + $state.endgame_pst_bonus[white]
