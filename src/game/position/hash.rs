@@ -50,7 +50,7 @@ pub fn hash_position(state: &State) -> u128 {
         hash ^= &*SIDE_HASHES;
     }
 
-    hash ^= &CASTLING_HASHES[state.castling_state as usize];
+    hash ^= &CASTLING_HASHES[(state.castling_state & CASTLE_RIGHTS) as usize];
 
     if state.en_passant_square != NO_EN_PASSANT {
         hash ^=
@@ -270,10 +270,14 @@ pub fn qsearch_key(state: &State, repeats: u8, in_check: bool) -> u128 {
 ///
 /// hash_update_castling!
 ///
+///   Both states are masked to `CASTLE_RIGHTS` first: the castled marks
+///   riding in the upper bits are eval-only and are not keyed on, so a move
+///   that sets one without spending a right leaves the key alone.
+///
 ///   Params:
 ///   - state             : &mut State -> position whose key is updated
-///   - old_castling_state: u8         -> rights bits before the move
-///   - new_castling_state: u8         -> rights bits after the move
+///   - old_castling_state: u8         -> castling byte before the move
+///   - new_castling_state: u8         -> castling byte after the move
 ///
 /// hash_update_en_passant!
 ///
@@ -316,14 +320,15 @@ macro_rules! hash_toggle_side {
 
 #[macro_export]
 macro_rules! hash_update_castling {
-    ($state:expr, $old_castling_state:expr, $new_castling_state:expr) => {
-        if $old_castling_state != $new_castling_state {
-            $state.position_hash ^=
-                &CASTLING_HASHES[$old_castling_state as usize];
-            $state.position_hash ^=
-                &CASTLING_HASHES[$new_castling_state as usize];
+    ($state:expr, $old_castling_state:expr, $new_castling_state:expr) => {{
+        let old_rights = $old_castling_state & CASTLE_RIGHTS;
+        let new_rights = $new_castling_state & CASTLE_RIGHTS;
+
+        if old_rights != new_rights {
+            $state.position_hash ^= &CASTLING_HASHES[old_rights as usize];
+            $state.position_hash ^= &CASTLING_HASHES[new_rights as usize];
         }
-    };
+    }};
 }
 
 #[macro_export]

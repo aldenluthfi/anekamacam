@@ -608,7 +608,8 @@ pub fn verify_game_state(state: &State) {
         temp_hash ^= &*SIDE_HASHES;
     }
 
-    temp_hash ^= &CASTLING_HASHES[state.castling_state as usize];
+    temp_hash ^=
+        &CASTLING_HASHES[(state.castling_state & CASTLE_RIGHTS) as usize];
 
     if state.en_passant_square != NO_EN_PASSANT {
         temp_hash ^=

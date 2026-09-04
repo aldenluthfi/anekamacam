@@ -49,7 +49,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D8    | `move_parse` small dedupe                  | −6      | done   |
 | D9    | fold single-caller helpers, `game/`        | −105    | done   |
 | D10   | fold single-caller helpers, `io/`+`debug/` | −181    | done   |
-| D11   | fold `has_castled` into `castling_state`   | −5      | todo   |
+| D11   | fold `has_castled` into `castling_state`   | +4      | done   |
 | D12   | group `StaticState` eval/search fields     | −25     | todo   |
 | D13   | move param structs out of `state.rs`       | +1      | todo   |
 | D14   | three `thread_local!`s onto `SearchInfo`   | −10     | todo   |
@@ -568,6 +568,105 @@ move — leaves the session state and the two diagnostics exactly as
 before. `extract_fen_components` feeds capability flags that drive
 movegen, so seven identical perft suites across seven configs is the real
 gate on that fold.
+
+## D11 — fold `has_castled` into `castling_state` · done
+
+`State.has_castled: [bool; 2]` is gone. The castled mark now rides in
+`castling_state` two bits above the rights it outlives:
+
+```
+bit  3210
+     KQkq        CASTLE_RIGHTS  = 0b0000_1111
+    ^            CASTLED << WHITE
+   ^             CASTLED << BLACK   (CASTLED = 0b0001_0000)
+```
+
+`CASTLE_RIGHTS` and `CASTLED` join the four `*_CASTLE` bits in
+`prelude.rs`, so the whole layout reads in one place.
+
+Four sites moved. `make_move!` sets `castling_state |= CASTLED <<
+piece_color` where it wrote the array. The paired `undo_move!` clear was
+deleted outright rather than translated: `Snapshot.castling_state` is
+captured before any modification (`move_list.rs:1555`, stored at `:2778`)
+and restored as the whole byte at `:2846`, which runs before the
+move-type dispatch the clear lived in — so the line was already dead
+weight, undoing something the byte restore had undone one statement
+earlier. That plus the set are the two `move_list.rs` lines this pass
+sanctions.
+
+`castling_bonus!` became the branchless form, which is what actually
+paid here:
+
+```rust
+        castling!($state) as i32 * [
+            $state.statics.castling_right_value * holds as i32,
+            $state.statics.castled_value,
+        ][castled as usize]
+```
+
+Two indexed picks over two bit tests, replacing a four-arm chain.
+
+### The masking, which was wider than planned
+
+`CASTLING_HASHES` is `[u128; 16]`, and growing it would re-draw every
+later Zobrist value from the seeded `StdRng`. So the new bits are masked
+off at every index: `hash.rs:53`, `util.rs:632`, and both indexes inside
+`hash_update_castling!`.
+
+The plan named three index sites. It missed the fourth thing that needs
+masking — the **comparison**. `hash_update_castling!` early-outs on
+`old != new`; unmasked, a move that sets a castled mark without spending
+a right reads as a rights change and XORs `CASTLING_HASHES[r]` twice
+against itself. Value-identical by luck, but only because the two
+indexes would have been equal after masking; with one masked and one not
+it is an out-of-bounds read. Masking all three turned the macro from an
+expression into a block so the two mask results are named once.
+
+`util.rs:673` iterates all 16 entries and needs no change once the
+indexes are masked.
+
+### The two risks the plan flagged, both discharged
+
+All six rights-clearing writes in `move_list.rs` (`:1722`, `:1910`,
+`:1946`, `:2272`, `:2319`, `:2685`) are `&= !{...}` of a `u8` literal,
+whose high bits are set — the new marks survive every one. No write uses
+`= 0` except `game_io.rs:2045` in `parse_fen`, which is bit-identical
+because every `parse_fen` call site is immediately preceded by `reset()`
+(`protocol.rs:272`, `:341`, `:465`, `:787`, `:877`; `headless.rs:192`;
+`state.rs:1110` inside `load_fen`), and `reset()` already cleared
+`has_castled`.
+
+### Gates
+
+Warning-free build; all seven bench node counts reproduce exactly; all
+seven perft suites pass; endgame fixtures 37/38 with the pre-existing
+xiangqi `perpetual one cycle short` failure.
+
+None of that proves the bit works. The standard bench is sixteen bare
+endings with no castling term in reach, and the perft suites do not call
+eval at all — a build that never set `CASTLED` would pass every gate
+above. The real gate is a two-position eval comparison over an identical
+board:
+
+```
+debug-headless evaluate standard --protocol uci \
+  --moves e2e4 e7e5 g1f3 g8f6 f1c4 f8c5 e1g1          -> -28 cp
+debug-headless evaluate standard --protocol uci --fen \
+  "rnbqk2r/pppp1ppp/5n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 5 4"
+                                                       ->   9 cp
+```
+
+Same placement, same rights, same phase; the FEN load has no castling
+history. The 37 cp swing toward the side that castled is
+`castled_value`, and `castled_value` is exactly twice
+`castling_right_value` — so 18 would have meant the mark was misread as
+a right and 0 would have meant it was never written. Only one side
+castles in the test on purpose: with both castled the term cancels and
+the comparison proves nothing.
+
+Delta is **+4**, not the −5 the plan guessed: the mask fix costs more
+lines than the field saves. The stage buys the hash-index invariant and
+one fewer field beside `Snapshot`, which is what it was for.
 
 ## Deferred, not resolved in this ladder
 

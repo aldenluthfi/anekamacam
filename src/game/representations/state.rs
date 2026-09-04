@@ -766,8 +766,8 @@ pub struct State {
     pub pieces_board: [Board; 2],                                               /* per-color occupancy bitboards      */
     pub virgin_board: Board,                                                    /* squares whose piece is unmoved     */
 
-    pub castling_state: u8,                                                     /* 4 bits for representing KQkq       */
-    pub has_castled: [bool; 2],                                                 /* color to castled once already      */
+    pub castling_state: u8,                                                     /* KQkq rights, then a castled mark   */
+                                                                                /* per colour in the two bits above   */
     pub en_passant_square: EnPassantSquare,                                     /* active en passant square           */
 
     pub position_hash: u128,                                                    /* canonical incremental key          */
@@ -807,7 +807,6 @@ impl Clone for State {
             virgin_board: self.virgin_board,
 
             castling_state: self.castling_state,
-            has_castled: self.has_castled,
             en_passant_square: self.en_passant_square,
 
             position_hash: self.position_hash,
@@ -1009,7 +1008,6 @@ impl State {
             virgin_board: board!(files, ranks),
 
             castling_state: 0,
-            has_castled: [false; 2],
             en_passant_square: NO_EN_PASSANT,
 
             position_hash: u128::default(),
@@ -1071,7 +1069,6 @@ impl State {
         );
 
         self.castling_state = 0;
-        self.has_castled = [false; 2];
         self.en_passant_square = NO_EN_PASSANT;
 
         self.position_hash = u128::default();

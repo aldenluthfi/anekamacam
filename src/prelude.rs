@@ -233,6 +233,10 @@ pub const WK_CASTLE: u8 = 0b0001;
 pub const WQ_CASTLE: u8 = 0b0010;
 pub const BK_CASTLE: u8 = 0b0100;
 pub const BQ_CASTLE: u8 = 0b1000;
+pub const CASTLE_RIGHTS: u8 = 0b0000_1111;                                      /* the four bits CASTLING_HASHES is   */
+pub const CASTLED: u8 = 0b0001_0000;                                            /* keyed on; the two above them mark  */
+                                                                                /* a side that has already castled,   */
+                                                                                /* shifted left by its colour         */
 
 pub const NO_PIECE: PieceIndex = PieceIndex::MAX;
 pub const NO_PAWN: usize = usize::MAX;

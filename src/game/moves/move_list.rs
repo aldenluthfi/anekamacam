@@ -2686,7 +2686,7 @@ macro_rules! make_move {
                     WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE
                 ][piece_color as usize];
 
-                $state.has_castled[piece_color as usize] = true;
+                $state.castling_state |= CASTLED << piece_color;
 
                 hash_update_castling!(
                     $state, last_castling_state,
@@ -3461,8 +3461,6 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
-            $state.has_castled[piece_color as usize] = false;                   /* rights are spent by castling, so   */
-                                                                                /* a side reaches here once at most   */
             if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);

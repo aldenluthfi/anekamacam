@@ -298,7 +298,9 @@ macro_rules! open_shield {
 /// the right, and prefers sitting on it to losing it for nothing.
 ///
 /// A variant whose rules never castle scores zero here, and one whose royal
-/// has already castled keeps the value after the rights it spent are gone.
+/// has already castled keeps the value after the rights it spent are gone —
+/// the castled mark rides in `castling_state` two bits above the rights it
+/// outlives.
 ///
 /// Params:
 /// - state: &State -> position whose castling standing is read
@@ -312,16 +314,13 @@ macro_rules! castling_bonus {
         let rights = [
             WK_CASTLE | WQ_CASTLE, BK_CASTLE | BQ_CASTLE
         ][$color];
+        let castled = $state.castling_state & (CASTLED << $color) != 0;
+        let holds = $state.castling_state & rights != 0;
 
-        if !castling!($state) {
-            0
-        } else if $state.has_castled[$color] {
-            $state.statics.castled_value
-        } else if $state.castling_state & rights != 0 {
-            $state.statics.castling_right_value
-        } else {
-            0
-        }
+        castling!($state) as i32 * [
+            $state.statics.castling_right_value * holds as i32,
+            $state.statics.castled_value,
+        ][castled as usize]
     }};
 }
 
