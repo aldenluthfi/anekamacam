@@ -986,35 +986,6 @@ pub fn benchmark_perft(
     (successful_cases, total_cases)
 }
 
-/// benchmark_search
-///
-/// Runs a fixed-depth search benchmark from the current position.
-/// Reports the current position, executes search, and logs total nodes, elapsed
-/// wall time, and aggregate nodes-per-second.
-///
-/// Params:
-/// - state     : &mut State          -> position searched
-/// - ttable    : Arc<TTable>         -> shared transposition table
-/// - qtable    : Arc<QTable>         -> shared quiescence table
-/// - depth     : usize               -> fixed search depth
-/// - thread_num: usize               -> number of worker threads
-/// - dict      : Option<&Translator> -> translator for printed move names
-pub fn benchmark_search(
-    state: &mut State, ttable: Arc<TTable>, qtable: Arc<QTable>,
-    depth: usize, thread_num: usize,
-    dict: Option<&Translator>,
-) {
-    log_3!("Search benchmark started with depth {}...", depth);
-
-    let mut info = SearchInfo { set_depth: depth, ..Default::default() };
-
-    search_position(
-        state, Arc::clone(&ttable), Arc::clone(&qtable),
-        &mut info, thread_num, dict
-    );
-    log_table_stats(&ttable, &qtable);
-}
-
 /// perft
 ///
 /// Counts legal move tree nodes from the current state up to `depth`.

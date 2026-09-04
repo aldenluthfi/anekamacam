@@ -289,9 +289,8 @@ macro_rules! m_signature {
 /// Move predicate macros.
 ///
 /// `m_matches!` tests a `Move` against a stored `PseudoMove` without
-/// touching the captures list pointer; `m_capture!` and `m_pseudocapture!`
-/// detect real captures (from the captures list or from the precomputed
-/// signature bit, respectively); `m_drop!`, `m_promotion!`, and `m_quiet!`
+/// touching the captures list pointer; `m_capture!` detects a real capture
+/// from the captures list; `m_drop!`, `m_promotion!`, and `m_quiet!`
 /// classify moves for ordering and pruning decisions during search.
 ///
 /// m_matches!
@@ -314,16 +313,6 @@ macro_rules! m_signature {
 ///
 ///   bool
 ///   whether any real capture exists (unloads excluded)
-///
-/// m_pseudocapture!
-///
-///   Params:
-///   - mv    : &PseudoMove -> stored move word + signature
-///
-///   Return:
-///
-///   bool
-///   whether the signature's bit 34 records a real capture
 ///
 /// m_drop!
 ///
@@ -363,14 +352,6 @@ macro_rules! m_capture {
         m_captures!($mv).iter().any(
             |&capture| !multi_move_is_unload!(capture)
         )
-    };
-}
-
-#[macro_export]
-macro_rules! m_pseudocapture {
-    ($mv:expr) => {
-        move_type!($mv) == SINGLE_CAPTURE_MOVE && !is_unload!($mv) ||
-        move_type!($mv) == MULTI_CAPTURE_MOVE && ($mv.1 >> 34) & 1 == 1
     };
 }
 
@@ -483,15 +464,16 @@ macro_rules! m_quiet {
 ///   Params:
 ///   - val        : u128 -> captured square, masked into bits 99..110
 ///
-/// enc_captured_unmoved!
-///
-///   Params:
-///   - val        : u128 -> captured-was-unmoved flag, masked into bit 111
-///
 /// enc_capture_part!
 ///
 ///   Params:
 ///   - taken_piece: u128 -> whole 34-bit capture payload, bits 78..111
+///
+/// Notes:
+/// `enc_capture_part!` is how a single capture gets its bit 111. Move
+/// generation builds every capture as a multi-capture payload word, so
+/// the payload's bit 33 becomes bit 111 under the shift; there is no
+/// separate encoder for the captured-was-unmoved flag.
 #[macro_export]
 macro_rules! enc_move_type {
     ($mv:expr, $val:expr) => {
@@ -580,13 +562,6 @@ macro_rules! enc_captured_piece {
 macro_rules! enc_captured_square {
     ($mv:expr, $val:expr) => {
         $mv.0 |= ($val & 0xFFF) << 99;
-    };
-}
-
-#[macro_export]
-macro_rules! enc_captured_unmoved {
-    ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 111;
     };
 }
 

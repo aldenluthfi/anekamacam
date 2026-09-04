@@ -123,12 +123,6 @@ pub type Board = (u8, u8, BoardBits);
 ///   - board : &mut Board -> board mutated
 ///   - index : u32        -> square index whose bit is cleared
 ///
-/// toggle!
-///
-///   Params:
-///   - board : &mut Board -> board mutated
-///   - index : u32        -> square index whose bit is flipped
-///
 /// or!
 ///
 ///   Params:
@@ -140,17 +134,6 @@ pub type Board = (u8, u8, BoardBits);
 ///   Params:
 ///   - board1: &mut Board -> destination, intersected in place
 ///   - board2: &Board     -> source supplying the bits
-///
-/// xor!
-///
-///   Params:
-///   - board1: &mut Board -> destination, toggled in place
-///   - board2: &Board     -> source supplying the bits
-///
-/// not!
-///
-///   Params:
-///   - board : &mut Board -> board whose every bit is inverted
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {
@@ -194,13 +177,6 @@ macro_rules! clear {
 }
 
 #[macro_export]
-macro_rules! toggle {
-    ($board:expr, $index:expr) => {
-        $board.2.set_bit($index, !$board.2.bit($index));
-    };
-}
-
-#[macro_export]
 macro_rules! or {
     ($board1:expr, $board2:expr) => {
         $board1.2 |= &$board2.2
@@ -211,20 +187,6 @@ macro_rules! or {
 macro_rules! and {
     ($board1:expr, $board2:expr) => {
         $board1.2 &= &$board2.2
-    };
-}
-
-#[macro_export]
-macro_rules! xor {
-    ($board1:expr, $board2:expr) => {
-        $board1.2 ^= &$board2.2
-    };
-}
-
-#[macro_export]
-macro_rules! not {
-    ($board:expr) => {
-        $board.2 = !$board.2
     };
 }
 

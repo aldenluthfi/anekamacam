@@ -56,8 +56,8 @@ pub use crate::game::moves::move_list::{
 };
 pub use crate::game::representations::termination::{
     adjudicate_outcome, count_repetitions, counting_limit, counting_progress,
-    game_outcome, has_repetition, position_terminal, repetition_outcome,
-    side_is_bare, terminal_reason,
+    game_outcome, position_terminal, repetition_outcome, side_is_bare,
+    terminal_reason,
 };
 pub use crate::game::moves::move_parse::generate_move_vectors;
 
@@ -88,7 +88,7 @@ pub use crate::game::search::{
 
 pub use crate::game::util::{
     adjudicate_no_move, benchmark_headless_perft, benchmark_perft,
-    benchmark_search, exe_tag, format_time, game_result_score,
+    exe_tag, format_time, game_result_score,
     load_variant, parse_perft_content, parse_number, perft,
     play_search_game, prune_backups, random_u128, refresh_eval_state,
     roll_latest, run_derive_headless, square_distance, verify_game_state,
@@ -111,8 +111,7 @@ pub use crate::io::game_io::{
     parse_config_preview, parse_fen, parse_tuned_parameters
 };
 pub use crate::io::logger::{
-    configured_log_level, configured_verbosity_level, dec_verbosity,
-    inc_verbosity, init_logging,
+    configured_verbosity_level, dec_verbosity, inc_verbosity, init_logging,
 };
 pub use crate::io::move_io::{format_move, parse_move, format_move_history};
 pub use crate::io::piece_io::{

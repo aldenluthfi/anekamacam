@@ -695,9 +695,9 @@ impl LegVector {
     /// Packed-field accessors.
     ///
     /// `get_atomic` / `get_modifiers` read the two halves of the packed
-    /// word (atomic displacement low, modifier bits high), `set_atomic`
-    /// overwrites the displacement half, `as_tuple` returns both halves,
-    /// and `add_modifier` ORs extra modifier letters into the current set.
+    /// word (atomic displacement low, modifier bits high), `as_tuple`
+    /// returns both halves, and `add_modifier` ORs extra modifier letters
+    /// into the current set.
     ///
     /// get_atomic
     ///
@@ -708,11 +708,6 @@ impl LegVector {
     ///
     ///   Return:
     ///   u16 -> modifier bits (bits 32..47)
-    ///
-    /// set_atomic
-    ///
-    ///   Params:
-    ///   - atomic  : AtomicVector -> displacement written into bits 0..31
     ///
     /// as_tuple
     ///
@@ -729,10 +724,6 @@ impl LegVector {
 
     pub fn get_modifiers(&self) -> u16 {
         (self.0 >> 32) as u16
-    }
-
-    pub fn set_atomic(&mut self, atomic: AtomicVector) {
-        self.0 = (self.0 & !0xFFFF_FFFFu64) | (atomic.0 as u64);
     }
 
     pub fn as_tuple(&self) -> (AtomicVector, u16) {
@@ -860,8 +851,8 @@ impl AtomicVector {
     ///
     /// `new` / `from_tuple` pack a (whole, last) displacement pair into the
     /// byte layout documented on [`AtomicVector`]; `whole`, `last`, and
-    /// `as_tuple` unpack it; `set`, `set_whole`, and `set_last` overwrite
-    /// components in place. `origin(rotation)` builds the zero displacement
+    /// `as_tuple` unpack it; `set` and `set_last` overwrite components in
+    /// place. `origin(rotation)` builds the zero displacement
     /// whose `last` field carries the cardinal unit vector of `rotation`,
     /// seeding direction-relative expression expansion.
     ///
@@ -901,11 +892,6 @@ impl AtomicVector {
     ///
     ///   Params:
     ///   - last: (i8, i8) -> final-step displacement written to bytes 2-3
-    ///
-    /// set_whole
-    ///
-    ///   Params:
-    ///   - whole: (i8, i8) -> full displacement written to bytes 0-1
     ///
     /// as_tuple
     ///
@@ -953,13 +939,6 @@ impl AtomicVector {
         let y2 = (last.1 as u8) as u32;
 
         self.0 = (self.0 & 0x0000FFFF) | (x2 << 16) | (y2 << 24);
-    }
-
-    pub fn set_whole(&mut self, whole: (i8, i8)) {
-        let x1 = (whole.0 as u8) as u32;
-        let y1 = (whole.1 as u8) as u32;
-
-        self.0 = (self.0 & 0xFFFF0000) | x1 | (y1 << 8);
     }
 
     pub fn as_tuple(&self) -> [(i8, i8); 2] {

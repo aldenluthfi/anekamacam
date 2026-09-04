@@ -822,45 +822,16 @@ fn repetition_scan_bound(state: &State, cap: usize) -> usize {
     reversible.min(length).min(cap)
 }
 
-/// has_repetition
-///
-/// Whether the current position occurred before, by scanning the pre-move
-/// hashes history stores backward within `repetition_scan_bound`. False when
-/// no `repetition` rule is declared.
-///
-/// The scan stops at the newest null move. A null is a search device, not a
-/// ply anyone played, and a pair of them restores the side to move without
-/// touching the board, so a position across one repeats nothing.
-///
-/// Params:
-/// - state: &State -> current position
-/// - cap  : usize  -> scan budget for this repetition probe
-///
-/// Return:
-/// bool            -> true when the position occurred at least once before
-pub fn has_repetition(state: &State, cap: usize) -> bool {
-    if state.termination.repetition.is_none() {
-        return false;
-    }
-
-    let bound = repetition_scan_bound(state, cap);
-    let start = state.history.len() - bound;
-    let null = null_move();
-
-    state.history[start..]
-        .iter()
-        .rev()
-        .take_while(|snapshot| snapshot.move_ply != null)
-        .any(|snapshot| snapshot.position_hash == state.position_hash)
-}
-
 /// count_repetitions
 ///
 /// How many times the current position has occurred, the current occurrence
 /// included, within `repetition_scan_bound`. Zero when no `repetition` rule
 /// is declared. The scan counts the root position too, which the old
-/// per-move occurrence map missed, and stops at the newest null move for the
-/// reason [`has_repetition`] gives.
+/// per-move occurrence map missed.
+///
+/// The scan stops at the newest null move. A null is a search device, not a
+/// ply anyone played, and a pair of them restores the side to move without
+/// touching the board, so a position across one repeats nothing.
 ///
 /// Params:
 /// - state: &State -> current position

@@ -19,23 +19,14 @@ const LOG_HISTORY_KEEP: usize = 32;
 /// TUI log-forwarding macros.
 ///
 /// `push_log_message!` mirrors a formatted log line into the shared
-/// message queue rendered by the debug TUI (only while the TUI's debug
-/// flag is set), and `verbosity_enabled!` tests whether a numeric level
-/// is currently visible so callers can skip expensive formatting.
+/// message queue rendered by the debug TUI, only while the TUI's debug
+/// flag is set.
 ///
 /// push_log_message!
 ///
 ///   Params:
 ///   - level  : u8     -> numeric verbosity level stamped on the line
 ///   - message: String -> already-formatted log line to mirror
-///
-/// verbosity_enabled!
-///
-///   Params:
-///   - level  : u8 -> numeric level to test
-///
-///   Return:
-///   bool          -> whether lines at that level are currently visible
 #[macro_export]
 macro_rules! push_log_message {
     ($level:expr, $message:expr) => {
@@ -48,13 +39,6 @@ macro_rules! push_log_message {
 
             queue.push_back(formatted.clone());
         }
-    };
-}
-
-#[macro_export]
-macro_rules! verbosity_enabled {
-    ($level:expr) => {
-        configured_verbosity_level() >= $level
     };
 }
 
@@ -131,10 +115,9 @@ macro_rules! log_5 {
 /// Verbosity plumbing helpers.
 ///
 /// `level_to_verbosity` maps `log` crate levels onto the numeric 1-5
-/// scale used in log lines; `configured_log_level` translates the
-/// runtime verbosity back into a `log` filter; and the remaining three
-/// read or step the shared `RUNTIME_VERBOSITY` atomic, clamped to 1-5
-/// (used by the TUI's live verbosity keys).
+/// scale used in log lines; the remaining three read or step the shared
+/// `RUNTIME_VERBOSITY` atomic, clamped to 1-5 (used by the TUI's live
+/// verbosity keys).
 ///
 /// level_to_verbosity
 ///
@@ -143,11 +126,6 @@ macro_rules! log_5 {
 ///
 ///   Return:
 ///   u8                  -> numeric verbosity 1-5
-///
-/// configured_log_level
-///
-///   Return:
-///   log::LevelFilter -> filter matching the runtime verbosity
 ///
 /// configured_verbosity_level
 ///
@@ -164,17 +142,6 @@ fn level_to_verbosity(level: log::Level) -> u8 {
         log::Level::Info => 3,
         log::Level::Debug => 4,
         log::Level::Trace => 5,
-    }
-}
-
-pub fn configured_log_level() -> log::LevelFilter {
-    match RUNTIME_VERBOSITY.load(Ordering::Relaxed) {
-        1 => log::LevelFilter::Error,
-        2 => log::LevelFilter::Warn,
-        3 => log::LevelFilter::Info,
-        4 => log::LevelFilter::Debug,
-        5 => log::LevelFilter::Trace,
-        _ => log::LevelFilter::Debug,
     }
 }
 
