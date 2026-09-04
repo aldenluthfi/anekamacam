@@ -26,7 +26,7 @@ pub use crate::game::representations::{
         PieceSet,
     },
     piece::{Piece, PieceIndex},
-    state::{EnPassantSquare, Snapshot, Square, State},
+    state::{EnPassantSquare, PawnEntry, Scratch, Snapshot, Square, State},
     vector::{
         AtomicElement::{self, AtomicEval, AtomicExpr, AtomicTerm},
         AtomicGroup, AtomicVector, Leg, LegVector, MoveSet, MoveVector,
@@ -189,7 +189,7 @@ pub use rayon::iter::{
 };
 pub use regex::Regex;
 pub use std::{
-    array, cell::RefCell, cmp, env,
+    array, cmp, env,
     collections::VecDeque,
     fmt::{Debug, Display, Formatter as FmtFormatter, Result as FmtResult},
     fs::{self, OpenOptions},
@@ -305,54 +305,6 @@ lazy_static! {
     pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(false);
     pub static ref ENGINE_SINK: Mutex<Option<Sender<EngineEvent>>> =
         Mutex::new(None);
-}
-
-thread_local! {
-    /// Exchange-simulation scratch, one pair per search thread.
-    ///
-    /// `see!` refills these on every call and reads nothing across calls, so
-    /// they carry no state between exchanges and only exist to stop the
-    /// allocator being asked for the same two vectors on every scored
-    /// capture. Cleared by `lva!` on entry.
-    ///
-    /// Worst case retained per worker is
-    /// `64 * size_of::<Move>() + 32 * size_of::<u64>()` bytes, reached the
-    /// first time a square has that many attackers and never growing with
-    /// depth, nodes, or table size.
-    pub static SEE_BUFFERS: RefCell<(Vec<Move>, Vec<u64>)> =
-        RefCell::new((Vec::with_capacity(64), Vec::with_capacity(32)));
-
-    /// Pawn-roster scratch, one pair of rosters per search thread.
-    ///
-    /// `pawn_structure!` refills these on every call and reads nothing across
-    /// calls. Each entry is one pawn on the board as its table slot, the
-    /// square it stands on, the file it stands on, and whether the first
-    /// sweep found it passed, so the scoring sweep answers every question
-    /// from this roster instead of walking the piece lists again or
-    /// allocating a `Board` per colour to mark passers on.
-    ///
-    /// Worst case retained per worker is
-    /// `2 * 32 * size_of::<(usize, Square, i32, bool)>()` bytes, reached the
-    /// first time a side fields that many pawns and never growing with
-    /// depth, nodes, or table size.
-    pub static PAWN_BUFFERS: RefCell<[Vec<(usize, Square, i32, bool)>; 2]> =
-        RefCell::new([
-            Vec::with_capacity(32), Vec::with_capacity(32),
-        ]);
-
-    /// Pawn-structure cache, one private table per search thread.
-    ///
-    /// Pawn structure is the one evaluation family whose answer survives
-    /// almost every move made in a search, so the roster sweep is run once
-    /// per distinct arrangement and read back from here on every node that
-    /// repeats it. The key is folded from the roster itself rather than
-    /// maintained across make and undo, so nothing can drift out of step
-    /// with the board.
-    ///
-    /// Held per thread rather than shared, so it needs no seqlock and no
-    /// parity word. `PAWN_TABLE_ENTRIES * size_of::<PTEntry>()` bytes per
-    /// worker, fixed for the life of the thread.
-    pub static PAWN_TABLE: RefCell<PTable> = RefCell::new(PTable::default());
 }
 
 /*----------------------------------------------------------------------------*\

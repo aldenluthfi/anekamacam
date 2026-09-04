@@ -318,13 +318,14 @@ fn run_movegen_command(
 /// Return:
 /// Result<(), String>           -> success or argument diagnostic
 fn run_evaluate_command(
-    position: HeadlessPosition,
+    mut position: HeadlessPosition,
 ) -> Result<(), String> {
     if !position.values.is_empty() {
         return Err("evaluate accepts no positional values".to_string());
     }
 
-    let score = evaluate_position!(&position.state);
+    let state = &mut position.state;
+    let score = evaluate_position!(state);
 
     emit(EngineEvent::Print(format!(
         "Variant: {}\nPhase: {}\nEvaluation: {} cp\n",

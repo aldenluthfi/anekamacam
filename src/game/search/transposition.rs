@@ -700,9 +700,11 @@ pub struct PTEntry {
 
 /// PTable
 ///
-/// A search thread's private pawn-structure cache. Unlike [`TTable`] and
-/// [`QTable`] this one is never shared, so it carries no seqlock, no parity
-/// word, and no atomics: one thread writes it and the same thread reads it.
+/// One position's private pawn-structure cache, held on its [`State`].
+/// Unlike [`TTable`] and [`QTable`] this one is never shared, so it carries
+/// no seqlock, no parity word, and no atomics: whoever owns the state it
+/// hangs off both writes it and reads it, and a thread searching a copy is
+/// filling a copy.
 /// A shared table would have to protect a 24-byte payload with the same
 /// machinery that protects a 48-byte one, and pay it on a term evaluated at
 /// nearly every node.
@@ -711,6 +713,7 @@ pub struct PTEntry {
 /// thing a policy could preserve is the entry more likely to be asked for
 /// again, and the most recent roster is exactly that during a search that
 /// moves one pawn at a time.
+#[derive(Clone)]
 pub struct PTable {
     pub table: Vec<PTEntry>,                                                    /* slot count is a power of two       */
 }

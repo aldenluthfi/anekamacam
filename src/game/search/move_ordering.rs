@@ -134,11 +134,17 @@ macro_rules! lva {
 /// Evaluates a capture sequence on one target square. Positive scores win
 /// material; negative scores lose material. Position is restored on return.
 ///
-/// The candidate list and its multi-capture payload come from
-/// [`SEE_BUFFERS`] rather than from a fresh allocation. Every scored capture
-/// runs this once, so the pair was being asked of the allocator and handed
+/// The candidate list and its multi-capture payload are the state's own
+/// [`Scratch`] rather than a fresh allocation. Every scored capture runs
+/// this once, so the pair was being asked of the allocator and handed
 /// straight back hundreds of thousands of times a search, for two vectors
 /// that carry nothing between calls.
+///
+/// The two are taken out and put back because the body makes and unmakes
+/// moves on the same state, and a field borrow held across `make_move!` is
+/// a borrow of the entire position. Only the vectors move, never the whole
+/// [`Scratch`]: its `Default` allocates a pawn table, which a take would
+/// build and drop once per scored capture.
 ///
 /// Params:
 /// - state: &mut State -> position simulated and restored
@@ -150,10 +156,10 @@ macro_rules! lva {
 macro_rules! see {
     ($state:expr, $mv:expr) => {
         hotpath::measure_block!("order::see", {
-        SEE_BUFFERS.with(|buffers| {
-        let borrowed = &mut *buffers.borrow_mut();
-        let (moves, scratch) = (&mut borrowed.0, &mut borrowed.1);
         let state: &mut State = $state;
+        let mut held_moves = mem::take(&mut state.scratch.see_moves);
+        let mut held_payload = mem::take(&mut state.scratch.see_scratch);
+        let (moves, scratch) = (&mut held_moves, &mut held_payload);
         let seen_move: &Move = $mv;
         let initial_attackee = victim_value!(seen_move, state);
         let mut gain = [0i32; 32];
@@ -162,7 +168,7 @@ macro_rules! see {
         gain[gain_length] = initial_attackee;                                   /* it leaves at this ply's phase     */
         gain_length += 1;
 
-        if !make_move!(state, seen_move.clone()) {
+        let exchange = if !make_move!(state, seen_move.clone()) {
             -INF
         } else {
             let initial_attacker = attack_value!(seen_move, state);             /* it leaves at the next one         */
@@ -225,8 +231,12 @@ macro_rules! see {
             }
 
             gain[0]
-        }
-        })
+        };
+
+        state.scratch.see_moves = held_moves;
+        state.scratch.see_scratch = held_payload;
+
+        exchange
         })
     };
 }

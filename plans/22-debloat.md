@@ -52,7 +52,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D11   | fold `has_castled` into `castling_state`   | +4      | done   |
 | D12   | group `StaticState` eval/search fields     | −23     | done   |
 | D13   | move param structs out of `state.rs`       | 0       | done   |
-| D14   | three `thread_local!`s onto `SearchInfo`   | −10     | todo   |
+| D14   | three `thread_local!`s into `State`         | −13     | done   |
 | D15   | `move_parse` atomic/multi_leg unification  | −500    | needs  |
 |       |                                            |         | go-ahead |
 
@@ -780,14 +780,100 @@ No eval-side gate beyond the benches: the move is textual, the field
 paths at every read and write site are byte-identical, and nothing in
 `State::new` changed.
 
+## D14 — the three `thread_local!`s into `State::scratch` · −13
+
+`SEE_BUFFERS`, `PAWN_BUFFERS` and `PAWN_TABLE` become `see_moves`,
+`see_scratch`, `pawn_rosters` and `pawn_table` on a new `Scratch` struct,
+held as the single field `State::scratch`. The whole `thread_local!` block
+goes, and with it the last one in the tree; the `cell::RefCell` import in
+`prelude.rs` goes with it. The roster tuple gets a name, `PawnEntry`,
+because a field declaration wants one where a `thread_local!` initializer
+did not.
+
+`Scratch` rather than four loose fields, because the four are not what the
+position *is*: `State`'s own doc has to draw that line once instead of
+four times, and every construction site collapses to one
+`Scratch::default()`. `State::clone` keeps only `pawn_table` and takes the
+rest from `Scratch::default()`; `State::reset` clears the pawn table,
+which is where `ucinewgame` reaches it.
+
+`see!`, `pawn_structure!` and `evaluate_position!` lose the `$info`
+argument instead of gaining one, and the three debug call sites lose the
+`SearchInfo::default()` they would otherwise have had to fabricate.
+`headless.rs`'s `evaluate` takes `mut position` and binds
+`let state = &mut position.state;` first, because `$state` expands inside
+a loop and a fresh `&mut position.state` per expansion is a second borrow
+across iterations.
+
+### Borrowing it back out
+
+`pawn_structure!` borrows in place. It makes no move, and `scratch` is a
+different field from the `statics` and the piece lists its sweeps read, so
+the roster and the cache borrow independently of everything around them.
+
+`see!` cannot: `lva!` binds `let state: &State = $state`, a whole-struct
+shared borrow, and the exchange loop calls `make_move!`, which wants the
+whole struct mutably. So the two vectors are `mem::take`n at entry and put
+back at exit — three words each way, against one allocation per scored
+capture.
+
+Only the two vectors, never the whole `Scratch`: `mem::take` fills the
+hole with `Default::default()`, and `Scratch`'s `Default` allocates a
+`PAWN_TABLE_ENTRIES` pawn table. Taking the struct built and dropped a
+196 KB table per scored capture, which cost 30% of nps on standard and
+grand before it was caught. Node counts never moved, so only the nps
+comparison found it.
+
+### The allocation is unchanged, the lifetime is not
+
+Each of the four was already one per worker; they are still one per
+worker, because a worker searches its own `State` clone. What changed is
+that they die with the position that owns them instead of with the
+thread, which is the point: the pawn table now answers `ucinewgame` and a
+new `setoption Hash` like every other table a search owns, because there
+is nothing left for it to outlive.
+
+Node counts cannot move: the table is a transparent cache keyed on a full
+128-bit fold of the piece lists with an exact compare, so a changed
+hit-and-miss pattern changes which nodes pay for the sweep and never what
+the sweep returns.
+
+### Gates
+
+Warning-free build with no reference to any of the three names left; all
+seven bench node counts reproduce exactly (190760 / 1391464 / 369526 /
+1009750 / 1432374 / 12027791 / 301548). `State::clone`, `from_statics`
+and `reset` all change, so the `sittuyin`/`janggi` suite gap applies and
+all seven perft suites were run: 20256 / 12 / 33 / 12 / 3 / 12 / 21.
+
+The benches never build the debug `SearchInfo`, so both `headless.rs`
+commands were run directly: `evaluate` reproduces all seven per-variant
+static scores recorded in D12 (22 / 20 / 18 / 17 / 12 / 22 / 26), and
+`see` was run on a one-recapture exchange (`e4d5`, 0) and a
+three-attacker one (`f3e5`, -218), proving `lva!` refills the vectors
+across iterations and the undo chain unwinds. `graphics.rs`'s `see` is
+the same one-line change and is covered by the TUI smoke run still owed
+from D7.
+
+nps is not a gate here and was not treated as one: an A/B of the two
+binaries back to back put standard at 2.94M vs 2.61M on one pair of runs
+and 3.63M vs 3.50M on the next, with grand crossing the other way both
+times. The spread between repeats of the same binary is wider than the
+spread between binaries, so the honest reading is no measurable change.
+
 ## Deferred, not resolved in this ladder
 
 - PST-residual / param-schema question — stays in plan 21.
 - `game_phase` ratchet-vs-refresh divergence (`move_list.rs:2732-2741`
   ratchets with `cmp::max`, `util.rs:260-268` recomputes without it) —
   real bug, own `[SEMANTIC]` commit.
-- Pawn table ignoring `setoption Hash` and surviving `ucinewgame` — the
-  fix moves node counts, so it follows D14 as `[SEMANTIC]`.
+- Pawn table sized at a fixed `PAWN_TABLE_ENTRIES` regardless of
+  `setoption Hash`. The `surviving ucinewgame` half of this item is gone:
+  D14 gave the table the lifetime of the position that owns it. The sizing
+  half remains, and the claim recorded here that fixing it moves node
+  counts was wrong — the table is a transparent cache with an exact key
+  compare, so sizing changes what a node costs and never what it scores.
+  It is an ordinary change, not a `[SEMANTIC]` one.
 - Endgame fixture `xiangqi / perpetual one cycle short` fails on
   `85b4637` and every commit this ladder has touched, expecting
   `score mate -2` and getting `score cp -950`. Pre-dates the debloat

@@ -351,17 +351,21 @@ macro_rules! castling_bonus {
 ///
 /// The verdict depends on nothing but where the pawns stand, and most moves
 /// a search makes move no pawn, so the pawn lists are folded into a key and
-/// the answer is read back from this thread's [`PTable`] whenever that
+/// the answer is read back from the position's own [`Scratch`] whenever that
 /// arrangement has been seen before. Only a miss pays for the roster. Folding
 /// the key from the piece lists rather than maintaining it across make and
 /// undo costs one exclusive or per pawn and makes it impossible for the key
 /// to disagree with the board it is supposed to describe.
 ///
+/// Nothing here makes a move, so the roster and the cache are borrowed in
+/// place: `scratch` is a different field from the `statics` and the piece
+/// lists the sweeps read, and disjoint fields borrow independently.
+///
 /// Params:
-/// - state: &State -> position whose pawns are read
+/// - state: &mut State -> position whose pawns are read
 ///
 /// Return:
-/// (i32, i32)      -> opening and endgame worth, white minus black
+/// (i32, i32)          -> opening and endgame worth, white minus black
 #[macro_export]
 macro_rules! pawn_structure {
     ($state:expr) => {
@@ -381,8 +385,8 @@ macro_rules! pawn_structure {
                     }
                 }
 
-                let cached = PAWN_TABLE.with(|table| {
-                    let table = table.borrow();
+                let cached = {
+                    let table = &$state.scratch.pawn_table;
                     let entry =
                         &table.table[key as usize & (table.len() - 1)];
 
@@ -390,14 +394,12 @@ macro_rules! pawn_structure {
                         true => Some((entry.opening, entry.endgame)),
                         false => None,
                     }
-                });
+                };
 
-                PAWN_BUFFERS.with(|buffers| {
-                    if let Some(scores) = cached {
-                        return scores;
-                    }
-
-                    let mut pawns = buffers.borrow_mut();
+                if let Some(scores) = cached {
+                    scores
+                } else {
+                    let pawns = &mut $state.scratch.pawn_rosters;
 
                     pawns[WHITE as usize].clear();
                     pawns[BLACK as usize].clear();
@@ -501,18 +503,16 @@ macro_rules! pawn_structure {
                         }
                     }
 
-                    PAWN_TABLE.with(|table| {
-                        let mut table = table.borrow_mut();
-                        let index = key as usize & (table.len() - 1);
-                        let entry = &mut table.table[index];
+                    let table = &mut $state.scratch.pawn_table;
+                    let index = key as usize & (table.len() - 1);
+                    let entry = &mut table.table[index];
 
-                        entry.key = key;
-                        entry.opening = opening;
-                        entry.endgame = endgame;
-                    });
+                    entry.key = key;
+                    entry.opening = opening;
+                    entry.endgame = endgame;
 
                     (opening, endgame)
-                })
+                }
             }
         })
     };
@@ -645,10 +645,10 @@ macro_rules! material_advantage {
 /// one advantage that belongs to whoever is about to spend it.
 ///
 /// Params:
-/// - state: &State -> position to evaluate
+/// - state: &mut State -> position to evaluate
 ///
 /// Return:
-/// i32             -> score from side-to-move perspective
+/// i32                 -> score from side-to-move perspective
 #[macro_export]
 macro_rules! evaluate_position {
     ($state:expr) => {
@@ -657,10 +657,12 @@ macro_rules! evaluate_position {
 
             let score = match $state.game_phase {
                 OPENING | SETUP => {
-                    opening_score!($state) + pawn_structure!($state).0
+                    opening_score!($state)
+                        + pawn_structure!($state).0
                 }
                 ENDGAME => {
-                    endgame_score!($state) + pawn_structure!($state).1
+                    endgame_score!($state)
+                        + pawn_structure!($state).1
                 }
                 MIDDLEGAME => {
                     let (pawn_opening, pawn_endgame) =

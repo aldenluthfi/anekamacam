@@ -692,6 +692,12 @@ pub struct StaticState {
 /// Static configuration lives in `statics: Arc<StaticState>`, shared
 /// cheaply across threads. `State::clone()` calls `Arc::clone` for the
 /// statics and deep-copies only the dynamic fields.
+///
+/// `scratch` is what reading this position costs rather than what it is,
+/// kept in its own [`Scratch`] so the two are never confused. It sits here
+/// because the macros that fill it already hold the state and nothing else,
+/// so a copy gets its own and no borrow has to be threaded through
+/// evaluation to reach it.
 pub struct State {
 
     pub statics: Arc<StaticState>,
@@ -733,6 +739,51 @@ pub struct State {
     pub piece_count: Vec<u32>,                                                  /* piece index to count               */
     pub piece_list: Vec<Square>,                                                /* board_size slots per piece, packed */
     pub piece_in_hand: [Vec<u16>; 2],                                           /* color to pieces in hand list       */
+
+    pub scratch: Scratch,                                                       /* what reading this position costs   */
+}
+
+/// Scratch
+///
+/// The working room evaluation and move ordering need and nothing else: the
+/// two vectors `see!` refills per exchange, the two rosters
+/// `pawn_structure!` refills per sweep, and the cache that sweep fills.
+/// Both macros take the whole struct out of the [`State`] they are handed
+/// and put it back on the way out, because a field borrow held across
+/// `make_move!` would be a borrow of the entire position.
+///
+/// Nothing here survives the call that fills it, so a cloned position is
+/// given the room and never the contents — except `pawn_table`, whose
+/// answers are true of any board they are keyed on, and which `State::reset`
+/// clears because a new game is a new board.
+pub struct Scratch {
+
+    pub see_moves: Vec<Move>,                                                   /* attackers of one square, popped    */
+    pub see_scratch: Vec<u64>,                                                  /* least valuable first               */
+    pub pawn_rosters: [Vec<PawnEntry>; 2],                                      /* colour to its pawns, one sweep old */
+    pub pawn_table: PTable,                                                     /* arrangement to its two scores      */
+}
+
+/// PawnEntry
+///
+/// One pawn as the two sweeps of `pawn_structure!` want it: its table slot,
+/// the square it stands on, the file it stands on, and whether the first
+/// sweep found it passed. Gathering this once lets the scoring sweep answer
+/// every question from the roster instead of walking the piece lists again
+/// or allocating a `Board` per colour to mark passers on.
+pub type PawnEntry = (usize, Square, i32, bool);
+
+impl Default for Scratch {
+    fn default() -> Self {
+        Scratch {
+            see_moves: Vec::with_capacity(64),                                  /* one square's worth of attackers    */
+            see_scratch: Vec::with_capacity(32),                                /* and their multi-capture payload    */
+            pawn_rosters: [
+                Vec::with_capacity(32), Vec::with_capacity(32),
+            ],
+            pawn_table: PTable::default(),
+        }
+    }
 }
 
 impl Clone for State {
@@ -772,6 +823,11 @@ impl Clone for State {
             piece_count: self.piece_count.clone(),
             piece_list: self.piece_list.clone(),
             piece_in_hand: self.piece_in_hand.clone(),
+
+            scratch: Scratch {
+                pawn_table: self.scratch.pawn_table.clone(),                    /* the one part true of any board     */
+                ..Scratch::default()
+            },
         }
     }
 }
@@ -927,6 +983,8 @@ impl State {
             piece_count: vec![0u32; piece_count],
             piece_list: vec![NO_SQUARE; piece_count * board_size],
             piece_in_hand: [vec![0; piece_count], vec![0; piece_count]],
+
+            scratch: Scratch::default(),
         }
     }
 
@@ -991,6 +1049,8 @@ impl State {
         self.piece_count = vec![0u32; piece_count];
         self.piece_list = vec![NO_SQUARE; piece_count * board_size];
         self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
+
+        self.scratch.pawn_table = PTable::default();                            /* a new game answers for no old one  */
     }
 
     /// State::load_fen
