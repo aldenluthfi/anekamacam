@@ -41,7 +41,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 |-------|--------------------------------------------|---------|--------|
 | D1    | delete unreachable code                    | −170    | done   |
 | D2    | unify const families, inline trivia        | −5      | done   |
-| D3    | collapse five `populate_relevant_*`        | −80     | todo   |
+| D3    | collapse five `populate_relevant_*`        | −86     | done   |
 | D4    | io dedupe                                  | −230    | todo   |
 | D5    | TT/QT unification                          | −200    | todo   |
 | D6    | search dedupe                              | −25     | todo   |
@@ -146,6 +146,30 @@ The plan wanted `TABLE_MOVE_SCORE`, `KILLER_MOVE_SCORE`, and
 - The win is six casts on existing lines and **zero deleted lines**.
 
 Bad trade against a bit-identical gate. Skipped.
+
+## D3 — collapse the five `populate_relevant_*` · done
+
+The five bodies were identical modulo set type, generator, and target
+field, and all four generators already share one signature:
+
+    fn(&Piece, u32, &State, &[Vec<T>]) -> Vec<T>
+
+so a generic `populate_relevant<T: Clone>` taking the generator as a
+`fn` pointer replaces all five, with `precompute` naming the static it
+fills. A macro was unnecessary. `MoveSet`, `DropSet`, and `PatternSet`
+are all `Vec<_>` aliases, so `vec![Vec::new(); n]` is the same
+initializer the five wrote out by hand.
+
+`populate_relevant_attacks` folded into `precompute` at the same time —
+three lines, one call site, and it sat inside the same doc region.
+
+128 deletions, 42 insertions in `state.rs`.
+
+Gates: the five bench variants plus `sittuyin` (12027791 nodes) and
+`janggi` (301548) — new numbers, since neither had a prior baseline —
+and `perft <variant> 3 --suite` across all seven, which is what actually
+proves the tables: sittuyin 12/12, janggi 21/21, crazyhouse 12/12,
+shogi 12/12, xiangqi 33/33, grand 3/3, standard 20256/20256.
 
 ## Deferred, not resolved in this ladder
 

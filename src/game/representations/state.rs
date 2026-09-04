@@ -1227,142 +1227,42 @@ impl State {
         ).collect::<Vec<PatternSet>>()
     }
 
-    /// State::populate_relevant_moves / _captures / _drops / _setup /
-    /// _stand_offs
+    /// State::populate_relevant
     ///
-    /// Precompute-time table fillers. Each walks every (piece, square) pair
-    /// and stores, at `piece * board_size + square`, the compiled entries that
-    /// stay on the board when played from that square, turning the per-piece
-    /// sets from the `generate_piece_*` helpers into flat, square-indexed
-    /// lookup tables the generator reads at runtime. None return a value;
-    /// each writes its static table through `static_mut`.
+    /// Precompute-time table filler. Walks every (piece, square) pair and
+    /// stores, at `piece * board_size + square`, the compiled entries that
+    /// stay on the board when played from that square, turning the
+    /// per-piece sets from the `generate_piece_*` helpers into a flat,
+    /// square-indexed lookup table the generator reads at runtime.
     ///
-    /// populate_relevant_moves
+    /// Every `generate_relevant_*` function shares one signature, so moves,
+    /// captures, drops, setup drops, and stand-offs all fill through here;
+    /// the caller decides which static table receives the result.
     ///
-    ///   Params:
+    /// Params:
+    /// - source   : &[Vec<T>]           -> compiled set, one per piece
+    /// - generator: fn(..) -> Vec<T>    -> per-square filter applied to it
     ///
-    ///   - piece_moves: &[MoveSet]
-    ///     compiled move sets, one per piece; fills `relevant_moves`
-    ///
-    /// populate_relevant_captures
-    ///
-    ///   Params:
-    ///
-    ///   - piece_moves: &[MoveSet]
-    ///     compiled move sets, one per piece; fills `relevant_captures`
-    ///
-    /// populate_relevant_drops
-    ///
-    ///   Params:
-    ///
-    ///   - piece_setup_drops: &[DropSet]
-    ///     compiled drop sets, one per piece; fills `relevant_drops`
-    ///
-    /// populate_relevant_setup
-    ///
-    ///   Params:
-    ///
-    ///   - piece_setup_drops: &[DropSet]
-    ///     compiled setup drops, one per piece; fills `relevant_setup`
-    ///
-    /// populate_relevant_stand_offs
-    ///
-    ///   Params:
-    ///
-    ///   - piece_stand_off: &[PatternSet]
-    ///     compiled patterns, one per piece; fills `relevant_stand_offs`
-    fn populate_relevant_moves(&mut self, piece_moves: &[MoveSet]) {
+    /// Return:
+    /// Vec<Vec<T>>                      -> table of `pieces * board_size`
+    fn populate_relevant<T: Clone>(
+        &self,
+        source: &[Vec<T>],
+        generator: fn(&Piece, u32, &State, &[Vec<T>]) -> Vec<T>,
+    ) -> Vec<Vec<T>> {
         let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
 
-        let mut results = vec![MoveSet::new(); piece_count * board_size];
+        let mut results = vec![Vec::new(); piece_count * board_size];
+
         for (index, piece) in self.statics.pieces.iter().enumerate() {
             for square in 0..board_size {
                 results[index * board_size + square] =
-                    generate_relevant_moves(
-                        piece, square as u32, self, piece_moves
-                    );
+                    generator(piece, square as u32, self, source);
             }
         }
-        self.static_mut().relevant_moves = results;
-    }
 
-    fn populate_relevant_captures(&mut self, piece_moves: &[MoveSet]) {
-        let board_size = self.statics.board_size;
-        let piece_count = self.statics.pieces.len();
-
-        let mut results = vec![MoveSet::new(); piece_count * board_size];
-        for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..board_size {
-                results[index * board_size + square] =
-                    generate_relevant_captures(
-                        piece, square as u32, self, piece_moves
-                    );
-            }
-        }
-        self.static_mut().relevant_captures = results;
-    }
-
-    fn populate_relevant_drops(&mut self, piece_setup_drops: &[DropSet]) {
-        let board_size = self.statics.board_size;
-        let piece_count = self.statics.pieces.len();
-
-        let mut results = vec![DropSet::new(); piece_count * board_size];
-        for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..board_size {
-                results[index * board_size + square] =
-                    generate_relevant_drops(
-                        piece, square as u32, self, piece_setup_drops
-                    );
-            }
-        }
-        self.static_mut().relevant_drops = results;
-    }
-
-    fn populate_relevant_setup(&mut self, piece_setup_drops: &[DropSet]) {
-        let board_size = self.statics.board_size;
-        let piece_count = self.statics.pieces.len();
-
-        let mut results = vec![DropSet::new(); piece_count * board_size];
-        for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..board_size {
-                results[index * board_size + square] =
-                    generate_relevant_drops(
-                        piece, square as u32, self, piece_setup_drops
-                    );
-            }
-        }
-        self.static_mut().relevant_setup = results;
-    }
-
-    fn populate_relevant_stand_offs(
-        &mut self, piece_stand_off: &[PatternSet]
-    ) {
-        let board_size = self.statics.board_size;
-        let piece_count = self.statics.pieces.len();
-
-        let mut results = vec![PatternSet::new(); piece_count * board_size];
-        for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..board_size {
-                results[index * board_size + square] =
-                    generate_relevant_stand_offs(
-                        piece, square as u32, self, piece_stand_off
-                    );
-            }
-        }
-        self.static_mut().relevant_stand_offs = results;
-    }
-
-    /// State::populate_relevant_attacks
-    ///
-    /// Fills the reverse attack tables: for every square, records which
-    /// (piece, origin, vector) triples could attack it, split by color.
-    /// Check detection uses these to scan only plausible attackers rather
-    /// than every enemy piece on the board.
-    fn populate_relevant_attacks(&mut self) {
-        for square in 0..self.statics.board_size {
-            generate_attack_masks(square as Square, self);
-        }
+        results
     }
 
     /// State::precompute
@@ -1403,21 +1303,35 @@ impl State {
             piece_stand_off = self.generate_piece_stand_off(stand_off_expr_set);
         }
 
-        self.populate_relevant_moves(&piece_moves);
-        self.populate_relevant_captures(&piece_moves);
+        let moves =
+            self.populate_relevant(&piece_moves, generate_relevant_moves);
+        self.static_mut().relevant_moves = moves;
+
+        let captures =
+            self.populate_relevant(&piece_moves, generate_relevant_captures);
+        self.static_mut().relevant_captures = captures;
 
         if drops!(self) {
-            self.populate_relevant_drops(&piece_drops);
+            let drops =
+                self.populate_relevant(&piece_drops, generate_relevant_drops);
+            self.static_mut().relevant_drops = drops;
         }
 
         if setup_phase!(self) {
-            self.populate_relevant_setup(&piece_setup);
+            let setup =
+                self.populate_relevant(&piece_setup, generate_relevant_drops);
+            self.static_mut().relevant_setup = setup;
         }
 
         if stand_offs!(self) {
-            self.populate_relevant_stand_offs(&piece_stand_off);
+            let stand_offs = self.populate_relevant(
+                &piece_stand_off, generate_relevant_stand_offs
+            );
+            self.static_mut().relevant_stand_offs = stand_offs;
         }
 
-        self.populate_relevant_attacks();
+        for square in 0..self.statics.board_size {
+            generate_attack_masks(square as Square, self);
+        }
     }
 }
