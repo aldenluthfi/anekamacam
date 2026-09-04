@@ -45,9 +45,9 @@ macro_rules! draw_score {
                 - $state.opening_material[waiting] as i32
         };
 
-        let span = $state.statics.draw_span;
+        let span = $state.statics.eval.draw_span;
 
-        -lead.clamp(-span, span) * $state.statics.draw_contempt / span
+        -lead.clamp(-span, span) * $state.statics.eval.draw_contempt / span
     }};
 }
 
@@ -101,7 +101,7 @@ macro_rules! terminal_score {
 macro_rules! royal_shelter {
     ($state:expr, $color:expr) => {{
         let statics = &$state.statics;
-        let stride = statics.local_stride;
+        let stride = statics.eval.local_stride;
         let cap = SHELTER_CAP as i32;
         let mut worth = 0;
 
@@ -109,20 +109,20 @@ macro_rules! royal_shelter {
             let royal = *royal_square as usize;
             let mut shelter = 0;
 
-            for slot in 0..statics.shelter_counts[$color][royal] as usize {
-                let square = statics.shelter_squares[$color]
+            for slot in 0..statics.eval.shelter_counts[$color][royal] as usize {
+                let square = statics.eval.shelter_squares[$color]
                     [royal * stride + slot] as usize;
                 let piece = $state.main_board[square];
 
                 if piece != NO_PIECE
-                    && statics.shield_pieces[piece as usize]
+                    && statics.eval.shield_pieces[piece as usize]
                     && p_color!(&statics.pieces[piece as usize]) as usize
                         == $color {
                     shelter += 1;
                 }
             }
 
-            worth += statics.shelter_value * shelter.min(cap);
+            worth += statics.eval.shelter_value * shelter.min(cap);
         }
 
         worth
@@ -148,14 +148,14 @@ macro_rules! royal_shelter {
 macro_rules! royal_guard {
     ($state:expr, $color:expr) => {{
         let statics = &$state.statics;
-        let stride = statics.local_stride;
+        let stride = statics.eval.local_stride;
         let mut guards = 0;
 
         for royal_square in &$state.royal_list[$color] {
             let royal = *royal_square as usize;
 
-            for slot in 0..statics.ring_counts[royal] as usize {
-                let square = statics.ring_squares[royal * stride + slot];
+            for slot in 0..statics.eval.ring_counts[royal] as usize {
+                let square = statics.eval.ring_squares[royal * stride + slot];
 
                 guards += get!(
                     $state.pieces_board[$color], square as u32
@@ -163,7 +163,7 @@ macro_rules! royal_guard {
             }
         }
 
-        statics.guard_value * guards
+        statics.eval.guard_value * guards
     }};
 }
 
@@ -202,18 +202,18 @@ macro_rules! king_danger {
 
         for royal_square in &$state.royal_list[$color] {
             let royal = *royal_square as usize;
-            let zone = &statics.zone_attack[
+            let zone = &statics.eval.zone_attack[
                 royal * piece_count * board_size
                     ..(royal + 1) * piece_count * board_size
             ];
-            let best = &statics.zone_attack_best[
+            let best = &statics.eval.zone_attack_best[
                 royal * piece_count..(royal + 1) * piece_count
             ];
 
             for (piece_index, piece) in statics.pieces.iter().enumerate() {
                 if p_color!(piece) as usize == $color
                     || p_is_royal!(piece)
-                    || statics.shield_pieces[piece_index] {
+                    || statics.eval.shield_pieces[piece_index] {
                     continue;
                 }
 
@@ -232,8 +232,8 @@ macro_rules! king_danger {
 
         let full = (ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL) as i64;
 
-        (units * units * statics.king_danger_scale as i64 / (full * full))
-            .min(statics.king_danger_cap as i64) as i32
+        (units * units * statics.eval.king_danger_scale as i64 / (full * full))
+            .min(statics.eval.king_danger_cap as i64) as i32
     }};
 }
 
@@ -259,7 +259,7 @@ macro_rules! open_shield {
     ($state:expr, $color:expr) => {{
         let statics = &$state.statics;
         let files = statics.files as i32;
-        let forward = statics.forward_steps[$color];
+        let forward = statics.eval.forward_steps[$color];
         let mut penalty = 0;
 
         for royal_square in &$state.royal_list[$color] {
@@ -268,7 +268,7 @@ macro_rules! open_shield {
             let mut covered = false;
 
             for (piece_index, piece) in statics.pieces.iter().enumerate() {
-                if !statics.shield_pieces[piece_index]
+                if !statics.eval.shield_pieces[piece_index]
                     || p_color!(piece) as usize != $color {
                     continue;
                 }
@@ -282,7 +282,7 @@ macro_rules! open_shield {
                 }
             }
 
-            penalty += statics.open_shield_penalty * !covered as i32;
+            penalty += statics.eval.open_shield_penalty * !covered as i32;
         }
 
         penalty
@@ -318,8 +318,8 @@ macro_rules! castling_bonus {
         let holds = $state.castling_state & rights != 0;
 
         castling!($state) as i32 * [
-            $state.statics.castling_right_value * holds as i32,
-            $state.statics.castled_value,
+            $state.statics.eval.castling_right_value * holds as i32,
+            $state.statics.eval.castled_value,
         ][castled as usize]
     }};
 }
@@ -367,7 +367,7 @@ macro_rules! pawn_structure {
     ($state:expr) => {
         hotpath::measure_block!("eval::pawn_structure", {
             let statics = &$state.statics;
-            let stride = statics.pawn_stride;
+            let stride = statics.eval.pawn_stride;
             let files = statics.files as i32;
 
             if stride == 0 {
@@ -375,7 +375,7 @@ macro_rules! pawn_structure {
             } else {
                 let mut key = 0u128;
 
-                for &index in &statics.pawn_pieces {
+                for &index in &statics.eval.pawn_pieces {
                     for square in piece_squares!($state, index) {
                         key ^= PIECE_HASHES[index][*square as usize];
                     }
@@ -402,8 +402,8 @@ macro_rules! pawn_structure {
                     pawns[WHITE as usize].clear();
                     pawns[BLACK as usize].clear();
 
-                    for &index in &statics.pawn_pieces {
-                        let slot = statics.pawn_slots[index];
+                    for &index in &statics.eval.pawn_pieces {
+                        let slot = statics.eval.pawn_slots[index];
                         let color =
                             p_color!(&statics.pieces[index]) as usize;
 
@@ -417,7 +417,7 @@ macro_rules! pawn_structure {
                     for color in [WHITE as usize, BLACK as usize] {
                         for entry in 0..pawns[color].len() {
                             let (slot, square, ..) = pawns[color][entry];
-                            let mask = &statics.pawn_interference[
+                            let mask = &statics.eval.pawn_interference[
                                 slot * stride + square as usize
                             ];
 
@@ -439,11 +439,11 @@ macro_rules! pawn_structure {
                             let (slot, square, file, passed) =
                                 pawns[color][entry];
                             let index = slot * stride + square as usize;
-                            let support = &statics.pawn_support[index];
-                            let path = &statics.pawn_path[index];
-                            let stop = &statics.pawn_backward[index];
+                            let support = &statics.eval.pawn_support[index];
+                            let path = &statics.eval.pawn_path[index];
+                            let stop = &statics.eval.pawn_backward[index];
                             let neighbours =
-                                &statics.pawn_support_files[slot];
+                                &statics.eval.pawn_support_files[slot];
 
                             let connected = pawns[color].iter().any(|other|
                                 other.1 != square
@@ -468,34 +468,34 @@ macro_rules! pawn_structure {
                                 );
 
                             let passer_opening =
-                                statics.pawn_passed_opening[index]
+                                statics.eval.pawn_passed_opening[index]
                                     * passed as i32;
                             let passer_endgame =
-                                statics.pawn_passed_endgame[index]
+                                statics.eval.pawn_passed_endgame[index]
                                     * passed as i32;
                             let bonus =
                                 2 + connected as i32 + chained as i32;
 
                             opening += sign * (
                                 passer_opening * bonus / 2
-                                    + statics.pawn_connected_opening[slot]
+                                    + statics.eval.pawn_connected_opening[slot]
                                         * connected as i32
-                                    - statics.pawn_doubled_penalty[slot]
+                                    - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
-                                    - statics.pawn_isolated_penalty[slot]
+                                    - statics.eval.pawn_isolated_penalty[slot]
                                         * !neighboured as i32
-                                    - statics.pawn_backward_penalty[slot]
+                                    - statics.eval.pawn_backward_penalty[slot]
                                         * contested as i32
                             );
                             endgame += sign * (
                                 passer_endgame * bonus / 2
-                                    + statics.pawn_connected_endgame[slot]
+                                    + statics.eval.pawn_connected_endgame[slot]
                                         * connected as i32
-                                    - statics.pawn_doubled_penalty[slot]
+                                    - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
-                                    - statics.pawn_isolated_penalty[slot]
+                                    - statics.eval.pawn_isolated_penalty[slot]
                                         * !neighboured as i32
-                                    - statics.pawn_backward_penalty[slot]
+                                    - statics.eval.pawn_backward_penalty[slot]
                                         * contested as i32
                             );
                         }
@@ -612,16 +612,16 @@ macro_rules! material_advantage {
 
         let mut pairs = 0;
 
-        for index in &statics.pair_pieces {
+        for index in &statics.eval.pair_pieces {
             let color = p_color!(&statics.pieces[*index]) as i32;
 
             pairs += (-2 * color + 1)
                 * ($state.piece_count[*index] >= 2) as i32;
         }
 
-        major * statics.imbalance_major
-            + minor * statics.imbalance_minor
-            + pairs * statics.pair_bonus
+        major * statics.eval.imbalance_major
+            + minor * statics.eval.imbalance_minor
+            + pairs * statics.eval.pair_bonus
     }};
 }
 
@@ -681,7 +681,7 @@ macro_rules! evaluate_position {
             };
 
             (score + material_advantage!($state)) * side_sign
-                + $state.statics.tempo_bonus
+                + $state.statics.eval.tempo_bonus
         })
     };
 }

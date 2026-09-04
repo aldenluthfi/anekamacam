@@ -317,7 +317,7 @@ pub fn iterative_deepening(
 
     let scale = COEFFICIENT_SCALE as i64;
     let start_depth = ASPIRATION_START_DEPTH as usize;
-    let opening_delta = state.statics.aspiration_delta as i64;
+    let opening_delta = state.statics.search.aspiration_delta as i64;
     let widen = ASPIRATION_WIDEN as i64;
     let widest = opening_delta * ASPIRATION_CLAMP as i64 / scale;
 
@@ -596,7 +596,7 @@ fn quiescence_search(
 
     scores.resize(moves.len(), usize::MAX);
 
-    let delta = state.statics.qsearch_delta;
+    let delta = state.statics.search.qsearch_delta;
     let delta_prunable = !in_check && state.game_phase != ENDGAME;              /* a thin board plays for one capture */
 
     for index in 0..moves.len() {
@@ -821,7 +821,7 @@ pub fn alpha_beta(
     && depth <= deepest
     && beta - alpha == 1
     && beta.abs() < MATE_SCORE
-    && static_eval - state.statics.rfp_margin[row + depth] >= beta
+    && static_eval - state.statics.search.rfp_margin[row + depth] >= beta
     {
         return beta;
     }
@@ -907,7 +907,7 @@ pub fn alpha_beta(
 
         if prunable && !is_capture && !is_promotion && !is_drop {
             if quiet_pruning!(state)
-            && legal_moves >= state.statics.lmp_count[lmp_row + lmp_slot]
+            && legal_moves >= state.statics.search.lmp_count[lmp_row + lmp_slot]
             {
                 continue;
             }
@@ -915,7 +915,7 @@ pub fn alpha_beta(
             if forward_pruning!(state)
             && depth <= futility_deepest
             && static_eval
-                + state.statics.futility_margin[futility_row + depth]
+                + state.statics.search.futility_margin[futility_row + depth]
                 <= alpha
             {
                 continue;
@@ -933,7 +933,7 @@ pub fn alpha_beta(
         && scores[index] != UNMAKEABLE_CAPTURE_SCORE
         && scores[index] < LOSING_CAPTURE_SCORE as usize
         && scores[index] as i32 - LOSING_CAPTURE_SCORE
-            < -state.statics.see_allowance[depth]
+            < -state.statics.search.see_allowance[depth]
         {
             continue;
         }
@@ -953,10 +953,10 @@ pub fn alpha_beta(
             let surface = match (
                 is_capture || is_promotion || is_drop, in_check
             ) {
-                (false, false) => &state.statics.reduction_quiet,
-                (false, true) => &state.statics.reduction_quiet_check,
-                (true, false) => &state.statics.reduction_tactical,
-                (true, true) => &state.statics.reduction_tactical_check,
+                (false, false) => &state.statics.search.reduction_quiet,
+                (false, true) => &state.statics.search.reduction_quiet_check,
+                (true, false) => &state.statics.search.reduction_tactical,
+                (true, true) => &state.statics.search.reduction_tactical_check,
             };
 
             let depth_slot = depth.min(MAX_DEPTH - 1);

@@ -50,7 +50,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D9    | fold single-caller helpers, `game/`        | −105    | done   |
 | D10   | fold single-caller helpers, `io/`+`debug/` | −181    | done   |
 | D11   | fold `has_castled` into `castling_state`   | +4      | done   |
-| D12   | group `StaticState` eval/search fields     | −25     | todo   |
+| D12   | group `StaticState` eval/search fields     | −23     | done   |
 | D13   | move param structs out of `state.rs`       | +1      | todo   |
 | D14   | three `thread_local!`s onto `SearchInfo`   | −10     | todo   |
 | D15   | `move_parse` atomic/multi_leg unification  | −500    | needs  |
@@ -667,6 +667,75 @@ the comparison proves nothing.
 Delta is **+4**, not the −5 the plan guessed: the mask fix costs more
 lines than the field saves. The stage buys the hash-index invariant and
 one fewer field beside `Snapshot`, which is what it was for.
+
+## D12 — group `StaticState` eval/search fields · done
+
+`StaticState`'s 76 flat fields become 28 plus two grouped ones. The
+`EVALUATION FIELDS` banner group minus its hot four is now
+`EvalParams`; the `SEARCH FIELDS` group is now `SearchParams`. Both
+`#[derive(Default)]`, both declared directly under `StaticState` so the
+reader meets the type right where the field names it.
+
+`pst_opening`, `pst_endgame`, `opening_score` and `endgame_score` stay
+flat, and that choice is what kept the stage cheap. Those four are the
+only members of either group the incremental make/undo path reads —
+`move_list.rs` touches `statics.pst_opening` 34 times,
+`statics.pst_endgame` 34 times, and the two thresholds once each, and
+nothing else from either group. Leaving them at the top level means
+`move_list.rs` is not in this diff at all.
+
+The line win is `State::new`, exactly as forecast: 48 zeroing
+initializers become seven, because only three fields are not `Default`
+at rest.
+
+```rust
+            eval: EvalParams {
+                shield_pieces: vec![false; piece_count],
+                forward_steps: [1, -1],
+                draw_span: 1,
+                ..Default::default()
+            },
+            search: SearchParams::default(),
+```
+
+`shield_pieces` keeps its explicit `vec![false; piece_count]` rather
+than defaulting to empty — the derivation passes index it before they
+fill it, so an empty vector is a different program, not a shorter one.
+
+### The rename
+
+91 field accesses across three files: `evaluation.rs` 45,
+`parameters.rs` 48, `search.rs` 10. Zero elsewhere — no `io/`, no
+`debug/`, no `move_list.rs`. Five of the `parameters.rs` sites write
+through `state.static_mut().<field>` with no `statics.` binding in the
+text and so were invisible to the access grep; the compiler found all
+five at once.
+
+Two 80-column casualties, both in `parameters.rs`:
+
+- `for slot in 0..state.statics.ring_counts[landing] as usize {` was 76
+  chars and does not survive `.eval`. The count is hoisted to a local,
+  which is what the same function already does with `local_stride`.
+- `aspiration_delta`'s trailing comment needed re-padding after the
+  code grew by `.search.`.
+
+Everything else fit, which the pre-edit length sweep predicted: the
+sites are short because the field names are long.
+
+No hot-path cost. Both groups are inline struct fields behind the same
+`Arc`, so the offset resolves at compile time and the allocation is
+unchanged.
+
+### Gates
+
+Warning-free build; all seven bench node counts reproduce exactly; all
+seven perft suites pass (20256/12/33/12/3/12/21). Because this stage
+rewrites `State::new` and the derivation writers, the plan's suite gap
+applies and `sittuyin` and `janggi` were run alongside the five.
+
+The benches are endgame-only and cannot see most of what moved, so the
+D11 eval pair was re-run as the eval-side gate — `-28 cp` and `9 cp`,
+unchanged — plus a static eval per variant, all non-zero and stable.
 
 ## Deferred, not resolved in this ladder
 

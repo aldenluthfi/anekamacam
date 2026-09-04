@@ -1135,17 +1135,17 @@ pub fn derive_search_parameters(state: &mut State) {
 
     let statics = state.static_mut();
 
-    statics.reduction_quiet = quiet;
-    statics.reduction_quiet_check = quiet_check;
-    statics.reduction_tactical = tactical;
-    statics.reduction_tactical_check = tactical_check;
+    statics.search.reduction_quiet = quiet;
+    statics.search.reduction_quiet_check = quiet_check;
+    statics.search.reduction_tactical = tactical;
+    statics.search.reduction_tactical_check = tactical_check;
 
-    statics.aspiration_delta = (delta as u32).max(1);                           /* a window has to hold two scores    */
-    statics.rfp_margin = margins;
-    statics.futility_margin = futility;
-    statics.lmp_count = counts;
-    statics.see_allowance = allowance;
-    statics.qsearch_delta = qsearch_delta as i32;
+    statics.search.aspiration_delta = (delta as u32).max(1);                    /* a window has to hold two scores    */
+    statics.search.rfp_margin = margins;
+    statics.search.futility_margin = futility;
+    statics.search.lmp_count = counts;
+    statics.search.see_allowance = allowance;
+    statics.search.qsearch_delta = qsearch_delta as i32;
 }
 
 /// derive_search_capabilities
@@ -1461,8 +1461,8 @@ pub fn derive_eval_products(state: &mut State) {
 
     state.static_mut().opening_score = opening_score as u32;
     state.static_mut().endgame_score = endgame_score as u32;
-    state.static_mut().draw_span = draw_span as i32;
-    state.static_mut().draw_contempt = draw_contempt as i32;
+    state.static_mut().eval.draw_span = draw_span as i32;
+    state.static_mut().eval.draw_contempt = draw_contempt as i32;
 
     let (pst_opening, pst_endgame) = derive_base_pst(state);
     state.static_mut().pst_opening = pst_opening;
@@ -1474,7 +1474,7 @@ pub fn derive_eval_products(state: &mut State) {
     log_3!("Derived Endgame Score Threshold: {}", state.statics.endgame_score);
     log_3!(
         "Derived Draw Contempt: {} at a lead of {}",
-        state.statics.draw_contempt, state.statics.draw_span
+        state.statics.eval.draw_contempt, state.statics.eval.draw_span
     );
 }
 
@@ -1711,17 +1711,17 @@ pub fn derive_shelter_parameters(state: &mut State) {
 
     let statics = state.static_mut();
 
-    statics.shield_pieces = shield_pieces;
-    statics.shelter_squares = shelter_squares;
-    statics.shelter_counts = shelter_counts;
-    statics.ring_squares = ring_squares;
-    statics.ring_counts = ring_counts;
-    statics.local_stride = stride;
-    statics.forward_steps = forward;
-    statics.shelter_value = shelter_value as i32;
-    statics.guard_value = guard_value as i32;
-    statics.castled_value = castled_value as i32;
-    statics.castling_right_value = castling_right_value as i32;
+    statics.eval.shield_pieces = shield_pieces;
+    statics.eval.shelter_squares = shelter_squares;
+    statics.eval.shelter_counts = shelter_counts;
+    statics.eval.ring_squares = ring_squares;
+    statics.eval.ring_counts = ring_counts;
+    statics.eval.local_stride = stride;
+    statics.eval.forward_steps = forward;
+    statics.eval.shelter_value = shelter_value as i32;
+    statics.eval.guard_value = guard_value as i32;
+    statics.eval.castled_value = castled_value as i32;
+    statics.eval.castling_right_value = castling_right_value as i32;
 }
 
 /// derive_danger_parameters
@@ -1755,7 +1755,7 @@ pub fn derive_danger_parameters(state: &mut State) {
     let ranks = state.statics.ranks as i32;
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
-    let stride = state.statics.local_stride;
+    let stride = state.statics.eval.local_stride;
     let occupancy = OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
 
     let mut table = vec![0u8; board_size * piece_count * board_size];
@@ -1784,8 +1784,10 @@ pub fn derive_danger_parameters(state: &mut State) {
 
                 pressure[landing] += chance;
 
-                for slot in 0..state.statics.ring_counts[landing] as usize {
-                    let ring = state.statics.ring_squares[
+                let ring_count = state.statics.eval.ring_counts[landing];
+
+                for slot in 0..ring_count as usize {
+                    let ring = state.statics.eval.ring_squares[
                         landing * stride + slot
                     ] as usize;
 
@@ -1834,11 +1836,11 @@ pub fn derive_danger_parameters(state: &mut State) {
 
     let statics = state.static_mut();
 
-    statics.zone_attack = table;
-    statics.zone_attack_best = best;
-    statics.king_danger_scale = king_danger_scale as i32;
-    statics.king_danger_cap = king_danger_cap as i32;
-    statics.open_shield_penalty = open_shield_penalty as i32;
+    statics.eval.zone_attack = table;
+    statics.eval.zone_attack_best = best;
+    statics.eval.king_danger_scale = king_danger_scale as i32;
+    statics.eval.king_danger_cap = king_danger_cap as i32;
+    statics.eval.open_shield_penalty = open_shield_penalty as i32;
 }
 
 /// derive_pawn_slots
@@ -2091,7 +2093,7 @@ fn derive_pawn_captures(state: &State, color: u8, targets: &Board) -> Board {
     let mut sources = board!(state.statics.files, state.statics.ranks);
 
     for index in 0..state.statics.pieces.len() {
-        if state.statics.pawn_slots[index] == NO_PAWN
+        if state.statics.eval.pawn_slots[index] == NO_PAWN
             || p_color!(&state.statics.pieces[index]) != color {
             continue;
         }
@@ -2306,9 +2308,9 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let (slots, pieces) = derive_pawn_slots(state);
     let stride = board_size * (!pieces.is_empty()) as usize;
 
-    state.static_mut().pawn_slots = slots;
-    state.static_mut().pawn_pieces = pieces.clone();
-    state.static_mut().pawn_stride = stride;
+    state.static_mut().eval.pawn_slots = slots;
+    state.static_mut().eval.pawn_pieces = pieces.clone();
+    state.static_mut().eval.pawn_stride = stride;
 
     let empty = board!(state.statics.files, state.statics.ranks);
     let mut path = vec![empty; pieces.len() * stride];
@@ -2418,18 +2420,18 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
     let statics = state.static_mut();
 
-    statics.pawn_path = path;
-    statics.pawn_interference = interference;
-    statics.pawn_support = support;
-    statics.pawn_backward = backward;
-    statics.pawn_support_files = support_files;
-    statics.pawn_passed_opening = passed_opening;
-    statics.pawn_passed_endgame = passed_endgame;
-    statics.pawn_connected_opening = connected_opening;
-    statics.pawn_connected_endgame = connected_endgame;
-    statics.pawn_doubled_penalty = doubled;
-    statics.pawn_isolated_penalty = isolated;
-    statics.pawn_backward_penalty = backward_penalty;
+    statics.eval.pawn_path = path;
+    statics.eval.pawn_interference = interference;
+    statics.eval.pawn_support = support;
+    statics.eval.pawn_backward = backward;
+    statics.eval.pawn_support_files = support_files;
+    statics.eval.pawn_passed_opening = passed_opening;
+    statics.eval.pawn_passed_endgame = passed_endgame;
+    statics.eval.pawn_connected_opening = connected_opening;
+    statics.eval.pawn_connected_endgame = connected_endgame;
+    statics.eval.pawn_doubled_penalty = doubled;
+    statics.eval.pawn_isolated_penalty = isolated;
+    statics.eval.pawn_backward_penalty = backward_penalty;
 }
 
 /*----------------------------------------------------------------------------*\
@@ -2491,9 +2493,9 @@ pub fn derive_advantage_parameters(state: &mut State) {
 
     let statics = state.static_mut();
 
-    statics.tempo_bonus = tempo as i32;
-    statics.imbalance_major = major as i32;
-    statics.imbalance_minor = minor as i32;
-    statics.pair_pieces = pair_pieces;
-    statics.pair_bonus = pair as i32;
+    statics.eval.tempo_bonus = tempo as i32;
+    statics.eval.imbalance_major = major as i32;
+    statics.eval.imbalance_minor = minor as i32;
+    statics.eval.pair_pieces = pair_pieces;
+    statics.eval.pair_bonus = pair as i32;
 }

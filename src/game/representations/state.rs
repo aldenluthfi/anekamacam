@@ -678,6 +678,23 @@ pub struct StaticState {
     pub pst_opening: Vec<Vec<i32>>,                                             /* piece index to opening/middlegame  */
     pub pst_endgame: Vec<Vec<i32>>,                                             /* piece index to endgame PST         */
 
+    pub eval: EvalParams,                                                       /* everything else eval reads         */
+    pub search: SearchParams,                                                   /* everything search reads            */
+}
+
+/// EvalParams
+///
+/// The static half of evaluation: the shelter, danger, pawn, imbalance and
+/// contempt tables `parameters.rs` derives once per variant and
+/// `evaluation.rs` reads once per leaf. Every field is `Default` at rest,
+/// so a fresh variant costs one literal rather than one line per table.
+///
+/// The four tables the make/undo path touches incrementally —
+/// `pst_opening`, `pst_endgame`, `opening_score`, `endgame_score` — stay
+/// on [`StaticState`] beside this, so the hot set is one hop shallower and
+/// `move_list.rs` never spells this type.
+#[derive(Default)]
+pub struct EvalParams {
     pub shield_pieces: Vec<bool>,                                               /* piece index to shield-like role    */
     pub shelter_squares: [Vec<Square>; 2],                                      /* color to forward local squares     */
     pub shelter_counts: [Vec<u8>; 2],                                           /* squares stored per origin above    */
@@ -720,11 +737,15 @@ pub struct StaticState {
 
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
+}
 
-/*----------------------------------------------------------------------------*\
-                                 SEARCH FIELDS
-\*----------------------------------------------------------------------------*/
-
+/// SearchParams
+///
+/// The static half of search: the reduction surfaces and pruning margins
+/// `parameters.rs` derives per variant and `search.rs` reads per node.
+/// Every field is `Default` at rest.
+#[derive(Default)]
+pub struct SearchParams {
     pub reduction_quiet: Vec<u8>,                                               /* plies given up, depth major, one   */
     pub reduction_quiet_check: Vec<u8>,                                         /* surface per class of move: quiet   */
     pub reduction_tactical: Vec<u8>,                                            /* or tactical, in check or not       */
@@ -913,59 +934,13 @@ impl State {
             pst_opening: vec![vec![0; board_size]; piece_count],
             pst_endgame: vec![vec![0; board_size]; piece_count],
 
-            shield_pieces: vec![false; piece_count],
-            shelter_squares: [Vec::new(), Vec::new()],
-            shelter_counts: [Vec::new(), Vec::new()],
-            ring_squares: Vec::new(),
-            ring_counts: Vec::new(),
-            local_stride: 0,
-            forward_steps: [1, -1],
-            shelter_value: 0,
-            guard_value: 0,
-            castled_value: 0,
-            castling_right_value: 0,
-            zone_attack: Vec::new(),
-            zone_attack_best: Vec::new(),
-            king_danger_scale: 0,
-            king_danger_cap: 0,
-            open_shield_penalty: 0,
-
-            pawn_slots: Vec::new(),
-            pawn_pieces: Vec::new(),
-            pawn_stride: 0,
-            pawn_path: Vec::new(),
-            pawn_interference: Vec::new(),
-            pawn_support: Vec::new(),
-            pawn_backward: Vec::new(),
-            pawn_support_files: Vec::new(),
-            pawn_passed_opening: Vec::new(),
-            pawn_passed_endgame: Vec::new(),
-            pawn_connected_opening: Vec::new(),
-            pawn_connected_endgame: Vec::new(),
-            pawn_doubled_penalty: Vec::new(),
-            pawn_isolated_penalty: Vec::new(),
-            pawn_backward_penalty: Vec::new(),
-
-            tempo_bonus: 0,
-            imbalance_major: 0,
-            imbalance_minor: 0,
-            pair_pieces: Vec::new(),
-            pair_bonus: 0,
-
-            draw_contempt: 0,
-            draw_span: 1,                                                       /* a divisor before derivation runs   */
-
-            reduction_quiet: Vec::new(),
-            reduction_quiet_check: Vec::new(),
-            reduction_tactical: Vec::new(),
-            reduction_tactical_check: Vec::new(),
-
-            aspiration_delta: 0,
-            rfp_margin: Vec::new(),
-            futility_margin: Vec::new(),
-            lmp_count: Vec::new(),
-            see_allowance: Vec::new(),
-            qsearch_delta: 0,
+            eval: EvalParams {
+                shield_pieces: vec![false; piece_count],
+                forward_steps: [1, -1],                                         /* a rank each way before derivation  */
+                draw_span: 1,                                                   /* a divisor before derivation runs   */
+                ..Default::default()
+            },
+            search: SearchParams::default(),
         });
 
         Self::from_statics(statics)
