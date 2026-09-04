@@ -1690,7 +1690,8 @@ pub fn parse_config_file(path: &str) -> State {
         export_tuned_parameters_file(&result, variant);
     }
 
-    hash_position(&result);
+    result.position_hash = hash_position(&result);
+    result.pawn_hash = hash_pawns(&result);
 
     result
 }
@@ -2207,6 +2208,7 @@ pub fn parse_fen(
 
     state.position_hash = hash_position(state);
     state.virgin_hash = hash_virgin_board(state);
+    state.pawn_hash = hash_pawns(state);
 
     if let Some((color, outcome, _)) = position_terminal(state) {
         state.termination.game_result = resolve_outcome!(color, outcome);       /* a loaded position can already be   */

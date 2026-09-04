@@ -18,8 +18,9 @@ use crate::*;
 ///
 /// Everything one search worker owns: limits, node count, stop flags, and the
 /// principal variation, killer, and history tables it orders moves with.
-/// These tables are search scratch, not game state, so a worker allocates
-/// them once in `clear_search` and no `State` clone ever carries them.
+/// Correction history learns the structural error in static evaluation beside
+/// the ordering histories. These tables belong to one search worker, not game
+/// state, so `clear_search` allocates them and no `State` clone carries them.
 #[derive(Default)]
 pub struct SearchInfo {
     pub start_time: u128,                                                       /* start time since engine launch     */
@@ -41,6 +42,7 @@ pub struct SearchInfo {
 
     pub search_hist: Vec<i16>,                                                  /* [move key]                         */
     pub cont_hist: Vec<i16>,                                                    /* [plies back][reply key][move key]  */
+    pub corr_hist: Vec<i16>,                                                    /* [side][pawn hash] eval correction  */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 
     pub eval_stack: Vec<i32>,                                                   /* static score standing at each ply  */
@@ -82,6 +84,12 @@ const EVAL_NONE: i32 = INF;
 /// just played and another the side's own previous move. Both were measured
 /// as load-bearing; a third table back never was.
 const CONTINUATION_PLIES: usize = 2;
+
+const CORR_HIST_SIZE: usize = 1 << 14;
+const CORR_HIST_GRAIN: i32 = 64;
+const CORR_HIST_SCALE: i32 = 256;
+const CORR_HIST_MAX_WEIGHT: i32 = 16;
+const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 
 const REDUCTION_MINIMUM_DEPTH: u32 = 3;
 const REDUCTION_MOVE_BASE: u32 = 2;
@@ -175,6 +183,7 @@ pub fn clear_search(
 
     info.search_hist = vec![0i16; move_keys];
     info.cont_hist = vec![0i16; CONTINUATION_PLIES * move_keys * move_keys];
+    info.corr_hist = vec![0i16; 2 * CORR_HIST_SIZE];
     info.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
     info.pv_line = vec![null_move(); MAX_DEPTH];
@@ -712,6 +721,12 @@ fn quiescence_search(
 /// large the table is, which is not a property of the position. The stored
 /// move is still read at every node, since ordering is what it was for.
 ///
+/// Correction history learns, per side and pawn placement, how far raw static
+/// evaluation trails searched scores. Its correction feeds only fail-high
+/// pruning (reverse futility and null move); fail-low futility keeps the raw
+/// score, since corrected fail-low pruning was measured to explode drop-game
+/// trees. Every searched bound can teach the table, not only a fail-high.
+///
 /// Params:
 /// - state          : &mut State      -> position searched, restored on return
 /// - ttable         : &TTable         -> main table probed and updated
@@ -814,6 +829,11 @@ pub fn alpha_beta(
 
     info.eval_stack[ply] = static_eval;
 
+    let corr_index = correction_index(state);
+    let correction = info.corr_hist[corr_index] as i32
+        / CORR_HIST_GRAIN * !in_check as i32;
+    let prune_eval = static_eval + correction;
+
     let improving = static_eval != EVAL_NONE
         && ply >= 2
         && info.eval_stack[ply - 2] != EVAL_NONE
@@ -828,7 +848,7 @@ pub fn alpha_beta(
     && depth <= deepest
     && beta - alpha == 1
     && beta.abs() < MATE_SCORE
-    && static_eval - state.statics.search.rfp_margin[row + depth] >= beta
+    && prune_eval - state.statics.search.rfp_margin[row + depth] >= beta
     {
         return beta;
     }
@@ -840,7 +860,7 @@ pub fn alpha_beta(
     && ply > 0
     && state.game_phase != ENDGAME
     && state.big_pieces[state.playing as usize] > 0
-    && static_eval >= beta
+    && prune_eval >= beta
     {
         let reduction = (4 + depth / 4).min(depth);
 
@@ -1059,6 +1079,10 @@ pub fn alpha_beta(
                         );
                     }
 
+                    update_correction(
+                        &mut info.corr_hist[corr_index],
+                        static_eval, beta, depth, FBETA, is_capture,
+                    );
                     hash_tt_entry!(
                         moves[index], beta, FBETA, depth,
                         state, table_key, ttable
@@ -1109,10 +1133,18 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     if alpha != alpha_start {
+        update_correction(
+            &mut info.corr_hist[corr_index],
+            static_eval, best_score, depth, FEXACT, m_capture!(&best_move),
+        );
         hash_tt_entry!(
             best_move, best_score, FEXACT, depth, state, table_key, ttable
         );
     } else {
+        update_correction(
+            &mut info.corr_hist[corr_index],
+            static_eval, alpha, depth, FALPHA, m_capture!(&best_move),
+        );
         hash_tt_entry!(
             best_move, alpha, FALPHA, depth, state, table_key, ttable
         );
@@ -1132,6 +1164,63 @@ pub fn alpha_beta(
 fn update_history(entry: &mut i16, bonus: i32) {
     *entry = (*entry as i32 + bonus)
         .clamp(-HISTORY_BOUND, HISTORY_BOUND) as i16;
+}
+
+/// correction_index
+///
+/// Maps side to move and incremental pawn placement onto one worker-local
+/// correction-history cell. Collisions deliberately share a correction.
+///
+/// Params:
+/// - state: &State -> position providing side and pawn key
+///
+/// Return:
+/// usize           -> index into `SearchInfo::corr_hist`
+#[inline(always)]
+fn correction_index(state: &State) -> usize {
+    state.playing as usize * CORR_HIST_SIZE
+        + (state.pawn_hash as usize & (CORR_HIST_SIZE - 1))
+}
+
+/// update_correction
+///
+/// Blends one search-to-evaluation gap into correction history. Quiet best
+/// moves use depth-weighted evidence; captures use weight one because their
+/// gap is mostly tactical, not a structural evaluation error. Mate scores,
+/// checked nodes, and bounds that do not tighten the evaluation teach nothing.
+///
+/// Params:
+/// - entry  : &mut i16 -> correction-history cell updated in place
+/// - eval   : i32      -> raw static evaluation at this node
+/// - score  : i32      -> score returned by search
+/// - depth  : usize    -> remaining depth, weights quiet evidence
+/// - flag   : u8       -> score bound, `FEXACT`, `FBETA`, or `FALPHA`
+/// - capture: bool     -> whether best move captures
+#[inline(always)]
+fn update_correction(
+    entry: &mut i16,
+    eval: i32,
+    score: i32,
+    depth: usize,
+    flag: u8,
+    capture: bool,
+) {
+    if eval != EVAL_NONE
+    && score.abs() < MATE_SCORE
+    && match flag {
+        FBETA => score > eval,
+        FALPHA => score < eval,
+        _ => true,
+    } {
+        let gap = (score - eval) * CORR_HIST_GRAIN;
+        let weight = (1 + depth as i32 * !capture as i32)
+            .min(CORR_HIST_MAX_WEIGHT);
+        let mixed = (
+            *entry as i32 * (CORR_HIST_SCALE - weight) + gap * weight
+        ) / CORR_HIST_SCALE;
+
+        *entry = mixed.clamp(-CORR_HIST_LIMIT, CORR_HIST_LIMIT) as i16;
+    }
 }
 
 /// continuation_bases

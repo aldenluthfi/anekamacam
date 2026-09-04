@@ -445,6 +445,7 @@ pub struct Snapshot {
 
     pub position_hash: u128,                                                    /* canonical hash before move         */
     pub virgin_hash: u128,                                                      /* virgin-state hash before move      */
+    pub pawn_hash: u128,                                                        /* pawn placement before move         */
 }
 
 impl Default for Snapshot {
@@ -464,6 +465,7 @@ impl Default for Snapshot {
             phase_score: 0,
             position_hash: u128::default(),
             virgin_hash: u128::default(),
+            pawn_hash: u128::default(),
         }
     }
 }
@@ -722,6 +724,7 @@ pub struct State {
 
     pub position_hash: u128,                                                    /* canonical incremental key          */
     pub virgin_hash: u128,                                                      /* virgin-state incremental key       */
+    pub pawn_hash: u128,                                                        /* pawn-placement incremental key     */
     pub history: Vec<Snapshot>,                                                 /* undo stack of snapshots            */
 
     pub search_ply: u32,                                                        /* the number of plies in the search  */
@@ -833,6 +836,7 @@ impl Clone for State {
 
             position_hash: self.position_hash,
             virgin_hash: self.virgin_hash,
+            pawn_hash: self.pawn_hash,
             history: self.history.clone(),
 
             search_ply: self.search_ply,
@@ -942,6 +946,7 @@ impl State {
 
             eval: EvalParams {
                 shield_pieces: vec![false; piece_count],
+                pawn_slots: vec![NO_PAWN; piece_count],
                 forward_steps: [1, -1],                                         /* a rank each way before derivation  */
                 draw_span: 1,                                                   /* a divisor before derivation runs   */
                 ..Default::default()
@@ -993,6 +998,7 @@ impl State {
 
             position_hash: u128::default(),
             virgin_hash: u128::default(),
+            pawn_hash: u128::default(),
             history: Vec::with_capacity(8192),
 
             search_ply: 0,
@@ -1056,6 +1062,7 @@ impl State {
 
         self.position_hash = u128::default();
         self.virgin_hash = u128::default();
+        self.pawn_hash = u128::default();
         self.history = Vec::with_capacity(8192);
 
         self.search_ply = 0;

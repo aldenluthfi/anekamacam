@@ -1555,6 +1555,7 @@ macro_rules! make_move {
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_virgin_hash = $state.virgin_hash;
+            let last_pawn_hash = $state.pawn_hash;
             let last_game_result = $state.termination.game_result;
             let last_check_count = $state.termination.checks
                 .as_ref().map_or([0; 2], |checks| checks.delivered);
@@ -2786,6 +2787,7 @@ macro_rules! make_move {
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
                 virgin_hash: last_virgin_hash,
+                pawn_hash: last_pawn_hash,
             };
 
             $state.history.push(snapshot);
@@ -2861,6 +2863,7 @@ macro_rules! undo_move {
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
         $state.virgin_hash = snapshot.virgin_hash;
+        $state.pawn_hash = snapshot.pawn_hash;
         $state.termination.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;
@@ -3565,6 +3568,7 @@ macro_rules! make_null_move {
             let last_castling_state = $state.castling_state;
             let last_position_hash = $state.position_hash;
             let last_virgin_hash = $state.virgin_hash;
+            let last_pawn_hash = $state.pawn_hash;
             let last_game_result = $state.termination.game_result;
             let last_check_count = $state.termination.checks
                 .as_ref().map_or([0; 2], |checks| checks.delivered);
@@ -3607,6 +3611,7 @@ macro_rules! make_null_move {
                 phase_score: last_phase_score,
                 position_hash: last_position_hash,
                 virgin_hash: last_virgin_hash,
+                pawn_hash: last_pawn_hash,
             };
 
             $state.history.push(snapshot);
@@ -3658,6 +3663,7 @@ macro_rules! undo_null_move {
         $state.en_passant_square = snapshot.en_passant_square;
         $state.position_hash = snapshot.position_hash;
         $state.virgin_hash = snapshot.virgin_hash;
+        $state.pawn_hash = snapshot.pawn_hash;
         $state.termination.game_result = snapshot.game_result;
         $state.game_phase = snapshot.game_phase;
         $state.phase_score = snapshot.phase_score;

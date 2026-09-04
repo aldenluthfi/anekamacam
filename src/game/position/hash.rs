@@ -19,6 +19,29 @@ use crate::*;
 /// where 64-bit keys would start to saturate.
 pub type PositionHash = u128;
 
+/// hash_pawns
+///
+/// Folds every derived pawn piece on the board into one placement key. This
+/// initializes `State::pawn_hash` after a FEN load; moves maintain it
+/// incrementally afterward.
+///
+/// Params:
+/// - state: &State -> position whose pawns are hashed
+///
+/// Return:
+/// u128            -> pawn-placement Zobrist key
+pub fn hash_pawns(state: &State) -> u128 {
+    let mut hash = u128::default();
+
+    for &index in &state.statics.eval.pawn_pieces {
+        for &square in piece_squares!(state, index) {
+            hash ^= PIECE_HASHES[index][square as usize];
+        }
+    }
+
+    hash
+}
+
 /// hash_position
 ///
 /// Computes the full Zobrist hash for one state from scratch.
@@ -253,8 +276,9 @@ pub fn qsearch_key(state: &State, repeats: u8, in_check: bool) -> u128 {
 /// Incremental Zobrist hash update helpers.
 ///
 /// These macros keep `state.position_hash` in sync with mutable state updates
-/// during make/undo flow without recomputing from scratch. None return a
-/// value; each XORs its component in or out of the running key.
+/// during make/undo flow without recomputing from scratch. Piece changes also
+/// keep `state.pawn_hash` in step, masking non-pawns out without a branch.
+/// None return a value; each XORs its component in or out of the running key.
 ///
 /// hash_in_or_out_piece!
 ///
@@ -305,10 +329,16 @@ pub fn qsearch_key(state: &State, repeats: u8, in_check: bool) -> u128 {
 ///   - square_index: Square     -> square whose unmoved mark changes
 #[macro_export]
 macro_rules! hash_in_or_out_piece {
-    ($state:expr, $piece_index:expr, $square_index:expr) => {
-        $state.position_hash ^=
-            &PIECE_HASHES[$piece_index][$square_index as usize];
-    };
+    ($state:expr, $piece_index:expr, $square_index:expr) => {{
+        let piece_index = $piece_index;
+        let piece_hash = PIECE_HASHES[piece_index][$square_index as usize];
+        let pawn_mask = (0u128).wrapping_sub(
+            ($state.statics.eval.pawn_slots[piece_index] != usize::MAX) as u128
+        );
+
+        $state.position_hash ^= piece_hash;
+        $state.pawn_hash ^= piece_hash & pawn_mask;
+    }};
 }
 
 #[macro_export]

@@ -2,7 +2,8 @@
 
 ## Status
 
-Drafted 2026-09-02. R1 through R6 have landed; R7 is next.
+Drafted 2026-09-02. R1 through R7 have landed; R8 is next. Stop after
+R9 per the user's 2026-09-04 instruction; R10 and R11 stay deferred.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -436,11 +437,58 @@ the two largest margins, so both plies stay. If shogi is the variant
 that fails under SPRT, the size of its table is the first thing to
 attack, not the second ply.
 
-### R7. Correction history
+### R7. Correction history — landed
 
-Restore pawn-hash correction history, +9, and the all-node malus update
-rule. Do not standardise updates to fail-high-only: that was measured at
-+19 to +47% nodes.
+Restored the worker-local correction table, keyed by side to move and pawn
+placement. It lives on `SearchInfo` beside butterfly and continuation
+history rather than on `State`: every lazy-SMP worker learns independently,
+`clear_search` gives each one zeroed cells, and no position clone carries a
+64 KiB learning table.
+
+R4 deliberately folded the pawn-table key from the piece lists because the
+PTable alone did not repay an incremental field. R7 creates a second hot
+consumer, so that decision changes here: `State::pawn_hash` is maintained by
+the same piece-hash update macro as `position_hash`, with non-pawns masked
+out branchlessly. `Snapshot` carries it through ordinary and null undo;
+`hash_pawns` initializes it after FEN and config loading. Pawn structure now
+reads the same field instead of walking every pawn once per evaluation.
+`verify_game_state` still recomputes `temp_pawn_hash` independently, using
+`pawn_pieces` while the update macro uses `pawn_slots`, so it can expose both
+a stale key and disagreement between the two derived views. `pawn_slots`
+starts as an all-`NO_PAWN` vector because derive-time move simulations run
+before pawn roles exist; the finished config recomputes the key after roles
+are derived.
+
+The correction is the table entry divided by 64, clamped to ±64 cp, and is
+added only to the score read by reverse futility and null-move pruning.
+Futility keeps the raw static evaluation: feeding corrected values to
+fail-low pruning was the shogi/drop-tree explosion fixed after iteration 3
+Stage I. Every searched bound can teach the table — beta cut, exact result,
+and fail-low — rather than a fail-high-only update. Capture-best nodes use
+weight one; quiet-best nodes use `min(depth + 1, 16)`. The branchless spelling
+is `1 + depth * !capture`. Do not copy `e56980f`'s `depth + capture`: commit
+`4953239` changed that meaning during a style pass even though its doc still
+said captures use the minimum weight, and the original capture blend is the
+one later measured and kept.
+
+Versus R6, deterministic nodes: standard 190760 to 191525 (+0.4%), shogi
+1391464 to 1158816 (−16.7%), xiangqi 369526 to 312804 (−15.3%), crazyhouse
+1009750 to 1133316 (+12.2%), grand 1432374 to 1415089 (−1.2%), sittuyin
+12027791 to 10646371 (−11.5%), janggi 301548 to 272617 (−9.6%). One paired
+speed pass reads 4.79M to 4.76M nps standard, 1.66M to 1.66M shogi, 1.26M to
+1.29M xiangqi, 1.15M to 1.26M crazyhouse, and 1.15M to 1.16M grand. The
+incremental key pays most or all of the correction lookup cost; speed signs
+inside a single pass remain advisory.
+
+Depth-6 signatures keep all 38 best moves. Twenty-nine node counts move,
+and only tjatoer's score moves, 51 to 50 cp. All seven
+perft suites pass; all seven static evaluations and both SEE checks stay
+exact. Debug searches exercise make, null move, and both undo paths with the
+independent pawn-hash assertion. Endgame fixtures remain the known 37/38 at
+depth 6 — `xiangqi / perpetual one cycle short` still needs one more ply —
+and pass 38/38 at `GO_DEPTH=7`. R9's checked-frontier extension is the next
+stage with a mechanism that may recover that mate at depth 6; the fixture is
+not weakened to hide the horizon.
 
 ### R8. TT static-eval cache
 

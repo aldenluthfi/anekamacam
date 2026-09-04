@@ -68,7 +68,7 @@ pub use crate::game::moves::pattern_parse::{
 };
 pub use crate::game::position::{
     hash::{
-        hash_position, hash_virgin_board, qsearch_key, search_key,
+        hash_pawns, hash_position, hash_virgin_board, qsearch_key, search_key,
         PositionHash,
     },
     search::{

@@ -350,12 +350,11 @@ macro_rules! castling_bonus {
 /// whose rules field no pawn returns at once.
 ///
 /// The verdict depends on nothing but where the pawns stand, and most moves
-/// a search makes move no pawn, so the pawn lists are folded into a key and
-/// the answer is read back from the position's own [`Scratch`] whenever that
-/// arrangement has been seen before. Only a miss pays for the roster. Folding
-/// the key from the piece lists rather than maintaining it across make and
-/// undo costs one exclusive or per pawn and makes it impossible for the key
-/// to disagree with the board it is supposed to describe.
+/// a search makes move no pawn, so the incremental pawn key reads the answer
+/// back from the position's own [`Scratch`] whenever that arrangement has been
+/// seen before. Only a miss pays for the roster. Correction history reads the
+/// same key, so make and undo maintain it once for both consumers rather than
+/// either one walking the pawn lists at every node.
 ///
 /// Nothing here makes a move, so the roster and the cache are borrowed in
 /// place: `scratch` is a different field from the `statics` and the piece
@@ -377,13 +376,7 @@ macro_rules! pawn_structure {
             if stride == 0 {
                 (0, 0)
             } else {
-                let mut key = 0u128;
-
-                for &index in &statics.eval.pawn_pieces {
-                    for square in piece_squares!($state, index) {
-                        key ^= PIECE_HASHES[index][*square as usize];
-                    }
-                }
+                let key = $state.pawn_hash;
 
                 let cached = {
                     let table = &$state.scratch.pawn_table;

@@ -412,8 +412,8 @@ pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
 ///
 /// Recomputes derived state and asserts it matches the stored caches.
 /// Debug integrity check for boards, piece lists, material counts, royal
-/// lists, and the incremental Zobrist and unmoved-piece keys. On mismatch it
-/// also attempts to pinpoint the source before panicking.
+/// lists, and the incremental Zobrist, pawn-placement, and unmoved-piece keys.
+/// On mismatch it also attempts to pinpoint the source before panicking.
 ///
 /// Params:
 /// - state: &State -> position whose incremental caches are validated
@@ -603,6 +603,7 @@ pub fn verify_game_state(state: &State) {
     );
 
     let mut temp_hash = u128::default();
+    let mut temp_pawn_hash = u128::default();
 
     if state.playing == WHITE {
         temp_hash ^= &*SIDE_HASHES;
@@ -620,7 +621,12 @@ pub fn verify_game_state(state: &State) {
         let i = p_index!(piece) as usize;
 
         for &index in piece_squares!(state, i) {
-            temp_hash ^= PIECE_HASHES[i][index as usize];
+            let piece_hash = PIECE_HASHES[i][index as usize];
+
+            temp_hash ^= piece_hash;
+            if state.statics.eval.pawn_pieces.contains(&i) {
+                temp_pawn_hash ^= piece_hash;
+            }
         }
     }
 
@@ -678,6 +684,10 @@ pub fn verify_game_state(state: &State) {
     assert_eq!(
         temp_hash, state.position_hash,
         "Computed hash doesn't match state position hash"
+    );
+    assert_eq!(
+        temp_pawn_hash, state.pawn_hash,
+        "Computed pawn hash doesn't match state pawn hash"
     );
 
     let temp_virgin_hash = hash_virgin_board(state);
