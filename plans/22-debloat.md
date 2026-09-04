@@ -42,7 +42,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D1    | delete unreachable code                    | −170    | done   |
 | D2    | unify const families, inline trivia        | −5      | done   |
 | D3    | collapse five `populate_relevant_*`        | −86     | done   |
-| D4    | io dedupe                                  | −230    | todo   |
+| D4    | io dedupe                                  | −278    | done   |
 | D5    | TT/QT unification                          | −200    | todo   |
 | D6    | search dedupe                              | −25     | todo   |
 | D7    | `graphics.rs` idiom dedupe                 | −350    | todo   |
@@ -170,6 +170,43 @@ Gates: the five bench variants plus `sittuyin` (12027791 nodes) and
 and `perft <variant> 3 --suite` across all seven, which is what actually
 proves the tables: sittuyin 12/12, janggi 21/21, crazyhouse 12/12,
 shogi 12/12, xiangqi 33/33, grand 3/3, standard 20256/20256.
+
+## D4 — io dedupe · done
+
+Two helpers absorb eleven copies.
+
+`split_sections(&str) -> HashMap<String, Vec<String>>` in `game_io.rs`,
+prelude-exported. The plan named three copies; there are **four** —
+`protocol.rs:127-150` (`list_variants`) is a fourth, differing only in
+local names and `str::trim` vs a closure. `util.rs:737`
+(`parse_perft_content`) shares only the `COMMENT_PATTERN` strip, has no
+section grammar, and stays as it is.
+
+`config_text(&str) -> String` replaces `embedded_config`, which had two
+call sites both wrapping it in the same seven-line disk fallback. The
+fallback moves into the helper and both parsers open with one line:
+
+    let sections = split_sections(&config_text(path));
+
+`piece_indices(&str, &HashMap<char, usize>) -> Vec<usize>` replaces the
+eight piece-char lookup blocks, each a 20-30 line `len() == 2` /
+`len() == 1` / `else panic!` chain that resolved one or two characters
+and then did the same thing per index. `.len()` is kept as the length
+test rather than `chars().count()` so a multi-byte key still panics
+exactly where it did; every shipped `.conf` is ASCII.
+
+Two orderings were preserved deliberately: the promotions block resolves
+its piece key *before* walking promotion characters, so a config bad in
+both places still panics on the piece character; and the zone blocks call
+`parse_bit_fen` once per index, as the unrolled pairs did, not once
+hoisted out.
+
+398 deletions, 120 insertions across four files.
+
+Gates: all seven bench variants node-identical, all seven perft suites at
+depth 3, and a `uci` handshake — the 39-variant list is built by
+`list_variants`, one of the deduped copies, and the janggi board after
+`position startpos` proves the dictionary translator's copy too.
 
 ## Deferred, not resolved in this ladder
 

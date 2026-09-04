@@ -387,37 +387,7 @@ pub fn export_tuned_parameters_file(
 /// Return:
 /// (String, String) -> (variant title, rendered start board)
 pub fn parse_config_preview(path: &str) -> (String, String) {
-    let file_str = embedded_config(path)
-        .map(str::to_string)
-        .unwrap_or_else(|| {
-            fs::read_to_string(path)
-                .expect("Failed to read configuration file")
-        });
-
-    let uncommented_str = COMMENT_PATTERN.replace_all(&file_str, "");
-    let cleaned = uncommented_str
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let section_titles = SECTION_PATTERN
-        .captures_iter(&cleaned);
-    let section_contents = SECTION_PATTERN
-        .split(&cleaned)
-        .filter(|content| !content.trim().is_empty());
-
-    let mut sections = HashMap::new();
-
-    for (title, content) in section_titles.zip(section_contents) {
-        let section_name = title[1].trim().to_string();
-        let section_body = content
-            .lines()
-            .map(str::to_string)
-            .filter(|line| !line.trim().is_empty())
-            .collect::<Vec<String>>();
-        sections.insert(section_name, section_body);
-    }
+    let sections = split_sections(&config_text(path));
 
     let mandatory_sections = [
         "general",
@@ -538,19 +508,102 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
     (title, board_str)
  }
 
-/// embedded_config
+/// config_text
 ///
-/// Looks a config file up in the binary's embedded resources by name,
-/// so variants ship inside the executable with no filesystem layout.
+/// Reads a config file, preferring the copy embedded in the binary so
+/// variants ship inside the executable with no filesystem layout, and
+/// falling back to the working directory when the name is not embedded.
 ///
 /// Params:
-/// - path: &str         -> config filename, e.g. "standard.conf"
+/// - path: &str -> config filename, e.g. "standard.conf"
 ///
 /// Return:
-/// Option<&'static str> -> the file's text, or None if not embedded
-fn embedded_config(path: &str) -> Option<&'static str> {
-    let filename = Path::new(path).file_name()?.to_str()?;
-    EMBEDDED_CONFIGS.get_file(filename)?.contents_utf8()
+/// String       -> the file's text
+fn config_text(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        .and_then(|filename| EMBEDDED_CONFIGS.get_file(filename))
+        .and_then(|file| file.contents_utf8())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            fs::read_to_string(path)
+                .expect("Failed to read configuration file")
+        })
+}
+
+/// split_sections
+///
+/// Splits `= section =` delimited text into a section table: comments
+/// are stripped, blank lines dropped, and each title paired with its
+/// body's lines. Shared by the two config parsers, the protocol variant
+/// scan, and the dictionary translator — `.conf` and `.dict` share this
+/// section grammar even though their bodies differ.
+///
+/// Params:
+/// - content: &str              -> raw `.conf` or `.dict` file text
+///
+/// Return:
+/// HashMap<String, Vec<String>> -> section title to its body lines
+pub fn split_sections(content: &str) -> HashMap<String, Vec<String>> {
+    let uncommented = COMMENT_PATTERN.replace_all(content, "");
+    let cleaned = uncommented
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let titles = SECTION_PATTERN.captures_iter(&cleaned);
+    let bodies = SECTION_PATTERN
+        .split(&cleaned)
+        .filter(|body| !body.trim().is_empty());
+
+    titles
+        .zip(bodies)
+        .map(|(title, body)| {
+            let lines = body
+                .lines()
+                .map(str::to_string)
+                .filter(|line| !line.trim().is_empty())
+                .collect();
+
+            (title[1].trim().to_string(), lines)
+        })
+        .collect()
+}
+
+/// piece_indices
+///
+/// Resolves the piece-character key of a config row into the piece
+/// indices it names: one character for a rule written once, two for the
+/// white and black halves of a pair. Every per-piece section — moves,
+/// promotions, zones, drops, setup, stand-offs — keys its rows this way.
+///
+/// Params:
+/// - piece_chars  : &str                  -> the row's key characters
+/// - char_to_index: &HashMap<char, usize> -> piece char to piece index
+///
+/// Return:
+/// Vec<usize>                             -> one index per character
+fn piece_indices(
+    piece_chars: &str,
+    char_to_index: &HashMap<char, usize>,
+) -> Vec<usize> {
+    assert!(
+        piece_chars.len() == 1 || piece_chars.len() == 2,
+        "Invalid piece character(s): {}",
+        piece_chars
+    );
+
+    piece_chars
+        .chars()
+        .map(|piece_char| {
+            char_to_index.get(&piece_char).copied().unwrap_or_else(|| {
+                panic!("Unknown piece character: {}", piece_char)
+            })
+        })
+        .collect()
 }
 
 /// parse_config_file
@@ -587,37 +640,7 @@ fn embedded_config(path: &str) -> Option<&'static str> {
 /// Return:
 /// State        -> the fully initialized variant state
 pub fn parse_config_file(path: &str) -> State {
-    let file_str = embedded_config(path)
-        .map(str::to_string)
-        .unwrap_or_else(|| {
-            fs::read_to_string(path)
-                .expect("Failed to read configuration file")
-        });
-
-    let uncommented_str = COMMENT_PATTERN.replace_all(&file_str, "");
-    let cleaned = uncommented_str
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-    let section_titles = SECTION_PATTERN
-        .captures_iter(&cleaned);
-    let section_contents = SECTION_PATTERN
-        .split(&cleaned)
-        .filter(|content| !content.trim().is_empty());
-
-    let mut sections = HashMap::new();
-
-    for (title, content) in section_titles.zip(section_contents) {
-        let section_name = title[1].trim().to_string();
-        let section_body = content
-            .lines()
-            .map(str::to_string)
-            .filter(|line| !line.trim().is_empty())
-            .collect::<Vec<String>>();
-        sections.insert(section_name, section_body);
-    }
+    let sections = split_sections(&config_text(path));
 
     let mandatory_sections = [
         "general",
@@ -908,34 +931,10 @@ pub fn parse_config_file(path: &str) -> State {
             piece_moves
         );
 
-        let piece_chars = parts[0];
         let move_pattern = parts[1].to_string();
 
-        if piece_chars.len() == 2 {
-            let white_char = piece_chars.chars().next().unwrap();
-            let black_char = piece_chars.chars().nth(1).unwrap();
-
-            if let Some(&white_index) = char_to_index.get(&white_char) {
-                pieces_moves[white_index] = move_pattern.clone();
-            } else {
-                panic!("Unknown piece character: {}", white_char);
-            }
-
-            if let Some(&black_index) = char_to_index.get(&black_char) {
-                pieces_moves[black_index] = move_pattern.clone();
-            } else {
-                panic!("Unknown piece character: {}", black_char);
-            }
-        } else if piece_chars.len() == 1 {
-            let piece_char = piece_chars.chars().next().unwrap();
-
-            if let Some(&index) = char_to_index.get(&piece_char) {
-                pieces_moves[index] = move_pattern.clone();
-            } else {
-                panic!("Unknown piece character: {}", piece_char);
-            }
-        } else {
-            panic!("Invalid piece character(s): {}", piece_chars);
+        for index in piece_indices(parts[0], &char_to_index) {
+            pieces_moves[index] = move_pattern.clone();
         }
     }
 
@@ -950,57 +949,16 @@ pub fn parse_config_file(path: &str) -> State {
                 piece_promotion
             );
 
-            let piece_chars = parts[0];
+            let indices = piece_indices(parts[0], &char_to_index);
 
-            if piece_chars.len() == 2 {
-                let white_char = piece_chars.chars().next().unwrap();
-                let black_char = piece_chars.chars().nth(1).unwrap();
+            for promo_char in parts[1].chars() {
+                let Some(&promo_index) = char_to_index.get(&promo_char) else {
+                    panic!("Unknown promotion piece character: {}", promo_char);
+                };
 
-                let white_index =
-                    char_to_index.get(&white_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", white_char),
-                    );
-
-                let black_index =
-                    char_to_index.get(&black_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", black_char),
-                    );
-
-                let promotions_str = parts[1];
-
-                for promo_char in promotions_str.chars() {
-                    if let Some(&promo_index) = char_to_index.get(&promo_char) {
-                        pieces[white_index].2.push(promo_index as PieceIndex);
-                        pieces[black_index].2.push(promo_index as PieceIndex);
-                    } else {
-                        panic!(
-                            "Unknown promotion piece character: {}",
-                            promo_char
-                        );
-                    }
+                for &index in &indices {
+                    pieces[index].2.push(promo_index as PieceIndex);
                 }
-            } else if piece_chars.len() == 1 {
-                let piece_char = piece_chars.chars().next().unwrap();
-
-                let piece_index =
-                    char_to_index.get(&piece_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", piece_char),
-                    );
-
-                let promotions_str = parts[1];
-
-                for promo_char in promotions_str.chars() {
-                    if let Some(&promo_index) = char_to_index.get(&promo_char) {
-                        pieces[piece_index].2.push(promo_index as PieceIndex);
-                    } else {
-                        panic!(
-                            "Unknown promotion piece character: {}",
-                            promo_char
-                        );
-                    }
-                }
-            } else {
-                panic!("Invalid piece character(s): {}", piece_chars);
             }
         }
     }
@@ -1305,49 +1263,9 @@ pub fn parse_config_file(path: &str) -> State {
                     mandatory
                 );
 
-                let piece_chars = parts[0];
-
-                if piece_chars.len() == 2 {
-                    let white_char = piece_chars.chars().next().unwrap();
-                    let black_char = piece_chars.chars().nth(1).unwrap();
-
-                    let white_index = char_to_index
-                        .get(&white_char)
-                        .copied()
-                        .unwrap_or_else(|| {
-                            panic!("Unknown piece character: {}", white_char)
-                        });
-
-                    let black_index = char_to_index
-                        .get(&black_char)
-                        .copied()
-                        .unwrap_or_else(|| {
-                            panic!("Unknown piece character: {}", black_char)
-                        });
-
-                    let zone_str = parts[1];
-
-                    result.static_mut().promotion_zones_mandatory[white_index] =
-                        parse_bit_fen(Some(zone_str), &result);
-
-                    result.static_mut().promotion_zones_mandatory[black_index] =
-                        parse_bit_fen(Some(zone_str), &result);
-                } else if piece_chars.len() == 1 {
-                    let piece_char = piece_chars.chars().next().unwrap();
-
-                    let piece_index = char_to_index
-                        .get(&piece_char)
-                        .copied()
-                        .unwrap_or_else(|| {
-                            panic!("Unknown piece character: {}", piece_char)
-                        });
-
-                    let zone_str = parts[1];
-
-                    result.static_mut().promotion_zones_mandatory[piece_index] =
-                        parse_bit_fen(Some(zone_str), &result);
-                } else {
-                    panic!("Invalid piece character(s): {}", piece_chars);
+                for index in piece_indices(parts[0], &char_to_index) {
+                    result.static_mut().promotion_zones_mandatory[index] =
+                        parse_bit_fen(Some(parts[1]), &result);
                 }
             }
         }
@@ -1363,49 +1281,9 @@ pub fn parse_config_file(path: &str) -> State {
                     optional
                 );
 
-                let piece_chars = parts[0];
-
-                if piece_chars.len() == 2 {
-                    let white_char = piece_chars.chars().next().unwrap();
-                    let black_char = piece_chars.chars().nth(1).unwrap();
-
-                    let white_index = char_to_index
-                        .get(&white_char)
-                        .copied()
-                        .unwrap_or_else(|| {
-                            panic!("Unknown piece character: {}", white_char)
-                        });
-
-                    let black_index = char_to_index
-                        .get(&black_char)
-                        .copied()
-                        .unwrap_or_else(|| {
-                            panic!("Unknown piece character: {}", black_char)
-                        });
-
-                    let zone_str = parts[1];
-
-                    result.static_mut().promotion_zones_optional[white_index] =
-                        parse_bit_fen(Some(zone_str), &result);
-
-                    result.static_mut().promotion_zones_optional[black_index] =
-                        parse_bit_fen(Some(zone_str), &result);
-                } else if piece_chars.len() == 1 {
-                    let piece_char = piece_chars.chars().next().unwrap();
-
-                    let piece_index = char_to_index
-                        .get(&piece_char)
-                        .copied()
-                        .unwrap_or_else(|| {
-                            panic!("Unknown piece character: {}", piece_char)
-                        });
-
-                    let zone_str = parts[1];
-
-                    result.static_mut().promotion_zones_optional[piece_index] =
-                        parse_bit_fen(Some(zone_str), &result);
-                } else {
-                    panic!("Invalid piece character(s): {}", piece_chars);
+                for index in piece_indices(parts[0], &char_to_index) {
+                    result.static_mut().promotion_zones_optional[index] =
+                        parse_bit_fen(Some(parts[1]), &result);
                 }
             }
         }
@@ -1424,34 +1302,10 @@ pub fn parse_config_file(path: &str) -> State {
 
             assert!(parts.len() == 2, "Invalid drop definition: {}", drop);
 
-            let piece_chars = parts[0];
             let drop_pattern = parts[1].to_string();
 
-            if piece_chars.len() == 2 {
-                let white_char = piece_chars.chars().next().unwrap();
-                let black_char = piece_chars.chars().nth(1).unwrap();
-
-                if let Some(&white_index) = char_to_index.get(&white_char) {
-                    pieces_drops[white_index] = drop_pattern.clone();
-                } else {
-                    panic!("Unknown piece character: {}", white_char);
-                }
-
-                if let Some(&black_index) = char_to_index.get(&black_char) {
-                    pieces_drops[black_index] = drop_pattern.clone();
-                } else {
-                    panic!("Unknown piece character: {}", black_char);
-                }
-            } else if piece_chars.len() == 1 {
-                let piece_char = piece_chars.chars().next().unwrap();
-
-                if let Some(&index) = char_to_index.get(&piece_char) {
-                    pieces_drops[index] = drop_pattern.clone();
-                } else {
-                    panic!("Unknown piece character: {}", piece_char);
-                }
-            } else {
-                panic!("Invalid piece character(s): {}", piece_chars);
+            for index in piece_indices(parts[0], &char_to_index) {
+                pieces_drops[index] = drop_pattern.clone();
             }
         }
     }
@@ -1471,43 +1325,9 @@ pub fn parse_config_file(path: &str) -> State {
                 forbidden
             );
 
-            let piece_chars = parts[0];
-
-            if piece_chars.len() == 2 {
-                let white_char = piece_chars.chars().next().unwrap();
-                let black_char = piece_chars.chars().nth(1).unwrap();
-
-                let white_index =
-                    char_to_index.get(&white_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", white_char),
-                    );
-
-                let black_index =
-                    char_to_index.get(&black_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", black_char),
-                    );
-
-                let zone_str = parts[1];
-
-                result.static_mut().forbidden_zones[white_index] =
-                    parse_bit_fen(Some(zone_str), &result);
-
-                result.static_mut().forbidden_zones[black_index] =
-                    parse_bit_fen(Some(zone_str), &result);
-            } else if piece_chars.len() == 1 {
-                let piece_char = piece_chars.chars().next().unwrap();
-
-                let piece_index =
-                    char_to_index.get(&piece_char).copied().unwrap_or_else(
-                        || panic!("Unknown piece character: {}", piece_char),
-                    );
-
-                let zone_str = parts[1];
-
-                result.static_mut().forbidden_zones[piece_index] =
-                    parse_bit_fen(Some(zone_str), &result);
-            } else {
-                panic!("Invalid piece character(s): {}", piece_chars);
+            for index in piece_indices(parts[0], &char_to_index) {
+                result.static_mut().forbidden_zones[index] =
+                    parse_bit_fen(Some(parts[1]), &result);
             }
         }
     }
@@ -1529,34 +1349,10 @@ pub fn parse_config_file(path: &str) -> State {
                 setup
             );
 
-            let piece_chars = parts[0];
             let setup_pattern = parts[1].to_string();
 
-            if piece_chars.len() == 2 {
-                let white_char = piece_chars.chars().next().unwrap();
-                let black_char = piece_chars.chars().nth(1).unwrap();
-
-                if let Some(&white_index) = char_to_index.get(&white_char) {
-                    pieces_setup[white_index] = setup_pattern.clone();
-                } else {
-                    panic!("Unknown piece character: {}", white_char);
-                }
-
-                if let Some(&black_index) = char_to_index.get(&black_char) {
-                    pieces_setup[black_index] = setup_pattern.clone();
-                } else {
-                    panic!("Unknown piece character: {}", black_char);
-                }
-            } else if piece_chars.len() == 1 {
-                let piece_char = piece_chars.chars().next().unwrap();
-
-                if let Some(&index) = char_to_index.get(&piece_char) {
-                    pieces_setup[index] = setup_pattern.clone();
-                } else {
-                    panic!("Unknown piece character: {}", piece_char);
-                }
-            } else {
-                panic!("Invalid piece character(s): {}", piece_chars);
+            for index in piece_indices(parts[0], &char_to_index) {
+                pieces_setup[index] = setup_pattern.clone();
             }
         }
     }
@@ -1577,36 +1373,10 @@ pub fn parse_config_file(path: &str) -> State {
                 pattern
             );
 
-            let piece_chars = parts[0];
             let stand_off_patterns = parts[1].to_string();
 
-            if piece_chars.len() == 2 {
-                let white_char = piece_chars.chars().next().unwrap();
-                let black_char = piece_chars.chars().nth(1).unwrap();
-
-                if let Some(&white_index) = char_to_index.get(&white_char) {
-                    pieces_stand_off[white_index] =
-                        stand_off_patterns.clone();
-                } else {
-                    panic!("Unknown piece character: {}", white_char);
-                }
-
-                if let Some(&black_index) = char_to_index.get(&black_char) {
-                    pieces_stand_off[black_index] =
-                        stand_off_patterns.clone();
-                } else {
-                    panic!("Unknown piece character: {}", black_char);
-                }
-            } else if piece_chars.len() == 1 {
-                let piece_char = piece_chars.chars().next().unwrap();
-
-                if let Some(&index) = char_to_index.get(&piece_char) {
-                    pieces_stand_off[index] = stand_off_patterns.clone();
-                } else {
-                    panic!("Unknown piece character: {}", piece_char);
-                }
-            } else {
-                panic!("Invalid piece character(s): {}", piece_chars);
+            for index in piece_indices(parts[0], &char_to_index) {
+                pieces_stand_off[index] = stand_off_patterns.clone();
             }
         }
     }

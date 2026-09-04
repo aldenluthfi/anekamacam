@@ -108,7 +108,7 @@ pub use crate::io::game_io::{
     format_game_state, format_hand, format_position_hash,
     format_search_keys, format_special_rules,
     parse_config_file,
-    parse_config_preview, parse_fen, parse_tuned_parameters
+    parse_config_preview, parse_fen, parse_tuned_parameters, split_sections
 };
 pub use crate::io::logger::{
     configured_verbosity_level, dec_verbosity, inc_verbosity, init_logging,

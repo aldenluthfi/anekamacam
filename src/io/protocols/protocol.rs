@@ -124,31 +124,7 @@ fn list_variants(protocol: &str) -> Vec<String> {
             continue;
         };
 
-        let uncommented = COMMENT_PATTERN.replace_all(content, "");
-        let cleaned = uncommented
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let section_titles = SECTION_PATTERN.captures_iter(&cleaned);
-        let section_contents = SECTION_PATTERN
-            .split(&cleaned)
-            .filter(|c| !c.trim().is_empty());
-
-
-        let mut sections: HashMap<String, Vec<String>> = HashMap::new();
-
-        for (title, body) in section_titles.zip(section_contents) {
-            let name = title[1].trim().to_string();
-            let lines = body
-                .lines()
-                .map(str::to_string)
-                .filter(|l| !l.trim().is_empty())
-                .collect();
-            sections.insert(name, lines);
-        }
+        let sections = split_sections(content);
 
         let has_protocol = sections
             .get("protocols")

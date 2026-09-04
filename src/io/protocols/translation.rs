@@ -76,31 +76,7 @@ impl Translator {
     /// Return:
     /// Self                    -> the compiled translator
     pub fn from_content(content: &str, target_protocol: &str) -> Self {
-        let uncommented_str = COMMENT_PATTERN.replace_all(content, "");
-        let cleaned = uncommented_str
-            .lines()
-            .map(|line| line.trim())
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let section_titles = SECTION_PATTERN
-            .captures_iter(&cleaned);
-        let section_contents = SECTION_PATTERN
-            .split(&cleaned)
-            .filter(|content| !content.trim().is_empty());
-
-        let mut sections = HashMap::new();
-
-        for (title, content) in section_titles.zip(section_contents) {
-            let section_name = title[1].trim().to_string();
-            let section_body = content
-                .lines()
-                .map(str::to_string)
-                .filter(|line| !line.trim().is_empty())
-                .collect::<Vec<String>>();
-            sections.insert(section_name, section_body);
-        }
-
+        let sections = split_sections(content);
 
         let fen_section = format!("{} fen", target_protocol);
         let move_section = format!("{} moves", target_protocol);
