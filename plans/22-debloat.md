@@ -51,7 +51,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D10   | fold single-caller helpers, `io/`+`debug/` | −181    | done   |
 | D11   | fold `has_castled` into `castling_state`   | +4      | done   |
 | D12   | group `StaticState` eval/search fields     | −23     | done   |
-| D13   | move param structs out of `state.rs`       | +1      | todo   |
+| D13   | move param structs out of `state.rs`       | 0       | done   |
 | D14   | three `thread_local!`s onto `SearchInfo`   | −10     | todo   |
 | D15   | `move_parse` atomic/multi_leg unification  | −500    | needs  |
 |       |                                            |         | go-ahead |
@@ -736,6 +736,49 @@ applies and `sittuyin` and `janggi` were run alongside the five.
 The benches are endgame-only and cannot see most of what moved, so the
 D11 eval pair was re-run as the eval-side gate — `-28 cp` and `9 cp`,
 unchanged — plus a static eval per variant, all non-zero and stable.
+
+## D13 — move the param structs out of `state.rs` · 0
+
+`EvalParams` and `SearchParams` move verbatim from `state.rs` into
+`parameters.rs`, the only file that writes them, and `prelude.rs` gains
+them at the end of its existing `parameters::{...}` re-export block —
+after `reduction_surface`, matching the block convention of functions
+first, types last. `state.rs` sheds 77 lines and drops to 1237.
+
+### Deviation from the plan text
+
+The plan predicted `+1: one mod line in main.rs and one pub use in
+prelude.rs`, which assumes a new module file. No new file was made. A
+new file costs a `//!` header, a `mod` line, and a directory decision —
+and the only honest home for it would be `representations/`, where a
+derived-coefficient table does not belong. Putting the structs in
+`parameters.rs` costs nothing but the one `pub use` and keeps each
+coefficient's declaration in the same file as the code that computes it
+and documents what it means.
+
+The net is 0, not +1: 77 lines out of `state.rs`, 77 into
+`parameters.rs`, and the `pub use` edit rewrites a line rather than
+adding one.
+
+### The one text change
+
+`EvalParams`'s doc said the four excepted tables "stay on
+[`StaticState`] beside this". `StaticState` is not re-exported through
+prelude, so the intra-doc link would resolve to nothing from
+`parameters.rs`; it becomes plain `` `StaticState` in `state.rs` ``, and
+"beside this" becomes "flat on", which is now true. Both docs also drop
+"`parameters.rs` derives" for "this file derives".
+
+### Gates
+
+Warning-free build; all seven bench node counts reproduce exactly; all
+seven perft suites pass (20256/12/33/12/3/12/21). The stage moves the
+`State::new` initializer targets, so the plan's suite gap applies and
+`sittuyin` and `janggi` were run alongside the five.
+
+No eval-side gate beyond the benches: the move is textual, the field
+paths at every read and write site are byte-identical, and nothing in
+`State::new` changed.
 
 ## Deferred, not resolved in this ladder
 

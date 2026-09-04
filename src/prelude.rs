@@ -80,7 +80,7 @@ pub use crate::game::search::{
         derive_eval_parameters, derive_eval_products, derive_parameters,
         derive_pawn_parameters, derive_search_capabilities,
         derive_search_parameters, derive_shelter_parameters,
-        reduction_surface,
+        reduction_surface, EvalParams, SearchParams,
     },
     transposition::{HashEntry, HashTable, PTable, PTEntry, QTable, TTable},
 };
