@@ -100,34 +100,16 @@ pub fn random_u128() -> u128 {
     u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
 }
 
-/// archive_stamp
-///
-/// Formats the archival timestamp for a file being rolled: its creation
-/// time when available, otherwise its modification time, otherwise the
-/// current local time. Rendered with `ARCHIVE_STAMP_FMT` so the resulting
-/// backup name sorts chronologically under a plain lexicographic ordering.
-///
-/// Params:
-/// - path: &Path -> the file whose timestamp names its backup
-///
-/// Return:
-/// String -> the formatted `%Y-%m-%d_%H-%M-%S` stamp
-fn archive_stamp(path: &Path) -> String {
-    let moment: chrono::DateTime<chrono::Local> = fs::metadata(path)
-        .and_then(|meta| meta.created().or_else(|_| meta.modified()))
-        .map(Into::into)
-        .unwrap_or_else(|_| chrono::Local::now());
-
-    moment.format(ARCHIVE_STAMP_FMT).to_string()
-}
-
 /// roll_latest
 ///
 /// Rolls a directory's `{prefix}latest.{extension}` file to a timestamped
 /// backup, so a fresh export, log, or result never overwrites or appends to
-/// the previous one. Reads the current file's timestamp (see
-/// `archive_stamp`), renames it to `{prefix}{stamp}.{extension}`, and does
-/// nothing when there is no current file to roll. On a same-second name
+/// the previous one. Stamps the backup with the current file's creation
+/// time, or its modification time, or the current local time — whichever
+/// is first available — rendered with `ARCHIVE_STAMP_FMT` so backup names
+/// sort chronologically under a plain lexicographic ordering. Renames the
+/// current file to `{prefix}{stamp}.{extension}`, and does nothing when
+/// there is no current file to roll. On a same-second name
 /// collision a `-2`, `-3`, ... discriminator is appended so no history is
 /// lost. `prefix` is empty for the log/param/data/result files and set to an
 /// engine label (e.g. `engine-a_`) when the SPRT parent harvests a child
@@ -145,7 +127,12 @@ pub fn roll_latest(dir: &str, prefix: &str, extension: &str) {
         return;
     }
 
-    let stamp = archive_stamp(Path::new(&current));
+    let moment: chrono::DateTime<chrono::Local> = fs::metadata(&current)
+        .and_then(|meta| meta.created().or_else(|_| meta.modified()))
+        .map(Into::into)
+        .unwrap_or_else(|_| chrono::Local::now());
+
+    let stamp = moment.format(ARCHIVE_STAMP_FMT).to_string();
 
     let mut archive = format!("{}/{}{}.{}", dir, prefix, stamp, extension);
     let mut discriminator = 2usize;

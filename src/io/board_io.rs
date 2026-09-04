@@ -88,35 +88,6 @@ pub fn parse_square(square_str: &str, state: &State) -> Option<u16> {
     None
 }
 
-/// format_bitboard
-///
-/// Renders the raw bits of a bitboard as a plain 0/1 grid, top rank
-/// first — the unstyled core that `format_board` decorates.
-///
-/// Params:
-/// - board: &BoardBits -> raw bit storage to render
-/// - files: u8     -> board width
-/// - ranks: u8     -> board height
-///
-/// Return:
-/// String          -> newline-separated 0/1 grid
-fn format_bitboard(board: &BoardBits, files: u8, ranks: u8) -> String {
-    let mut result = String::new();
-
-    for row in (0..ranks).rev() {
-        for col in 0..files {
-            let index: u32 = row as u32 * files as u32 + col as u32;
-            if board.bit(index) {
-                result.push_str("1  ");
-            } else {
-                result.push_str("0  ");
-            }
-        }
-        result.push('\n');
-    }
-    result
-}
-
 /// format_board
 ///
 /// Pretty-prints one bitboard as a box-drawn grid with rank numbers and
@@ -132,7 +103,17 @@ fn format_bitboard(board: &BoardBits, files: u8, ranks: u8) -> String {
 pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     let ranks = ranks!(board);
     let files = files!(board);
-    let mut bitboard_str = format_bitboard(&board.2, files, ranks);
+    let mut bitboard_str = String::new();
+
+    for row in (0..ranks).rev() {
+        for col in 0..files {
+            let index: u32 = row as u32 * files as u32 + col as u32;
+            bitboard_str.push_str(
+                ["0  ", "1  "][board.2.bit(index) as usize]
+            );
+        }
+        bitboard_str.push('\n');
+    }
 
     if let Some(piece) = piece_char {
         bitboard_str = bitboard_str.replace('1', &piece.to_string());

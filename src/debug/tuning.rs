@@ -174,33 +174,14 @@ fn phase_weights(state: &State) -> (f64, f64) {
     }
 }
 
-/// mirror_square
-///
-/// Maps a square to its horizontal-axis mirror (same file, flipped
-/// rank), the transform relating a Black piece's square to the White PST
-/// parameter it reads, since Black PSTs are the mirror of White's.
-///
-/// Params:
-/// - square: Square -> the square to mirror
-/// - files : usize  -> board width
-/// - ranks : usize  -> board height
-///
-/// Return:
-/// usize            -> the mirrored square index
-fn mirror_square(square: Square, files: usize, ranks: usize) -> usize {
-    let index = square as usize;
-    let file = index % files;
-    let rank = index / files;
-    (ranks - 1 - rank) * files + file
-}
-
 /// extract_sample
 ///
 /// Reduces one position to a tuning `Sample`. It accumulates the sparse
 /// White-view partial derivatives of the tapered material-and-PST score:
 /// material types contribute their phase-weighted net count, White
 /// pieces add their phase-weighted PST square, and Black pieces subtract
-/// theirs at the mirrored square. These derivatives are the whole
+/// theirs at the mirrored square — same file, flipped rank, since Black
+/// PSTs are the mirror of White's. These derivatives are the whole
 /// evaluation, so the sample carries no residual term.
 ///
 /// Params:
@@ -260,8 +241,9 @@ fn extract_sample(
         }
 
         for &square in piece_squares!(state, *black_index) {
-            let mirror =
-                mirror_square(square, shape.files, shape.ranks);
+            let index = square as usize;
+            let mirror = (shape.ranks - 1 - index / shape.files)
+                * shape.files + index % shape.files;
             let offset = type_index * board_size + mirror;
             if opening_weight != 0.0 {
                 features.push((
@@ -283,15 +265,6 @@ fn extract_sample(
 ///
 /// A tight family of pure numeric helpers over the linear model.
 /// `mean_squared_error` parallelises across the dataset with rayon.
-///
-/// dot
-///
-///   Params:
-///   - features: &[(usize, f64)] -> sparse coefficients
-///   - theta   : &[f64]          -> parameter vector
-///
-///   Return:
-///   f64                         -> sparse features · θ
 ///
 /// sigmoid
 ///
@@ -319,16 +292,13 @@ fn extract_sample(
 ///
 ///   Return:
 ///   f64                  -> average `(label − sigmoid(K·score/400))²`
-fn dot(features: &[(usize, f64)], theta: &[f64]) -> f64 {
-    features.iter().map(|(index, coeff)| theta[*index] * coeff).sum()
-}
-
 fn sigmoid(value: f64) -> f64 {
     1.0 / (1.0 + 10f64.powf(-value))
 }
 
 fn model_score(sample: &Sample, theta: &[f64]) -> f64 {
-    dot(&sample.features, theta)
+    sample.features.iter()
+        .map(|(index, coeff)| theta[*index] * coeff).sum()
 }
 
 fn mean_squared_error(samples: &[Sample], theta: &[f64], scaling: f64) -> f64 {
@@ -440,25 +410,6 @@ fn compute_gradient(
 
     let count = samples.len() as f64;
     summed.iter().map(|value| value / count).collect()
-}
-
-/// clamp_material
-///
-/// Clamps the opening and endgame material entries of the parameter
-/// vector into the 14-bit range the parameter parser requires, leaving
-/// the unbounded PST entries untouched. Applied after each Adam step so
-/// the tuned vector always exports cleanly.
-///
-/// Params:
-/// - theta: &mut [f64] -> parameter vector to constrain in place
-/// - shape: &TuneShape -> block offsets identifying material entries
-fn clamp_material(theta: &mut [f64], shape: &TuneShape) {
-    for type_index in 0..shape.piece_types {
-        let opening = shape.opening_material_base + type_index;
-        let endgame = shape.endgame_material_base + type_index;
-        theta[opening] = theta[opening].clamp(0.0, 0x3FFF as f64);
-        theta[endgame] = theta[endgame].clamp(0.0, 0x3FFF as f64);
-    }
 }
 
 /// load_dataset
@@ -685,9 +636,12 @@ fn export_theta(
 ///
 /// Debug-tool entry point for `tune`. Loads the selected
 /// variant's game-disjoint dataset, fits scaling on training samples, then
-/// runs Adam while tracking validation error. Training stops after sustained
-/// validation stagnation, and the best validation epoch is exported through
-/// the startup parameter pipeline.
+/// runs Adam while tracking validation error. Every step is followed by a
+/// projection of the material entries — but not the unbounded PST entries —
+/// back into the 14-bit range the parameter parser requires, so the vector
+/// always exports cleanly. Training stops after sustained validation
+/// stagnation, and the best validation epoch is exported through the startup
+/// parameter pipeline.
 ///
 /// Params:
 /// - state        : &mut State -> loaded variant, tuned and exported
@@ -752,7 +706,13 @@ pub fn run_tuning(
                 / (corrected_second.sqrt() + ADAM_EPSILON);
         }
 
-        clamp_material(&mut theta, &shape);
+        for type_index in 0..shape.piece_types {
+            let opening = shape.opening_material_base + type_index;
+            let endgame = shape.endgame_material_base + type_index;
+
+            theta[opening] = theta[opening].clamp(0.0, 0x3FFF as f64);
+            theta[endgame] = theta[endgame].clamp(0.0, 0x3FFF as f64);
+        }
 
         let training_error = mean_squared_error(
             &dataset.training, &theta, scaling

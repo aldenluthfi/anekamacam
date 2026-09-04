@@ -48,7 +48,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D7    | `graphics.rs` idiom dedupe                 | −308    | done   |
 | D8    | `move_parse` small dedupe                  | −6      | done   |
 | D9    | fold single-caller helpers, `game/`        | −105    | done   |
-| D10   | fold single-caller helpers, `io/`+`debug/` | −180    | todo   |
+| D10   | fold single-caller helpers, `io/`+`debug/` | −181    | done   |
 | D11   | fold `has_castled` into `castling_state`   | −5      | todo   |
 | D12   | group `StaticState` eval/search fields     | −25     | todo   |
 | D13   | move param structs out of `state.rs`       | +1      | todo   |
@@ -491,6 +491,83 @@ Gates: warning-free build; all seven perft suites pass; all seven bench
 node counts reproduce exactly. `parameters.rs` is derive-time and the
 bench reads stored params, so the three folds there are proven by
 construction (same operands, same order), not by the node gate.
+
+## D10 — fold single-caller helpers, `io/` + `debug/` · done
+
+−181, against a −180 estimate — the first stage in the ladder to land on
+its number. It should not be read as the estimate getting better: the
+folds here happen to sit on the doc-tax rule's good side, where every
+deleted helper takes an 11-to-18-line `///` block with it and the body
+moves across as-is.
+
+Folded, ten:
+
+- `extract_fen_components` into `parse_config_file`. Three capability
+  flags set from one `split_whitespace().skip(2)` pass; the early `break`
+  once all three are set is preserved.
+- `format_bitboard` into `format_board`, the only caller. The set/clear
+  cell picks branchlessly out of `["0  ", "1  "]` rather than through an
+  `if/else`, which is both the house idiom and two lines shorter.
+- `archive_stamp` into `roll_latest`, with its created-else-modified-else-
+  now fallback chain spelled as one `and_then`/`or_else`. `roll_latest`'s
+  own doc absorbed the explanation, since the reason the stamp exists is
+  that backups must sort chronologically under a lexicographic ordering.
+- `level_to_verbosity` into the `init_logging` format closure. The
+  five-arm `match` stays a `match`, not `record.level() as u8`: the cast
+  would couple the on-disk log format silently to the `log` crate's
+  discriminant values.
+- `terminal_reason` into `game_outcome`, and out of the prelude — the
+  re-export had no user outside `termination.rs`.
+- `replay_moves` into `handle_position`. The two `Err(String)` returns
+  become the caller's own `log_2!` + `position_valid = false` + `return`,
+  so the diagnostic strings are byte-identical and the `Result` round trip
+  disappears. Needs a `let replayed = &mut scratch;` binding: `make_move!`
+  names `$state` many times, so substituting the expression `&mut scratch`
+  takes a fresh mutable borrow at each use and does not compile.
+- `compute_budget` into `start_search` as an `if / else if / else` block
+  expression. The two early returns map onto the first two arms, so the
+  arithmetic and its saturation are unchanged; the policy sentence moved
+  into `start_search`'s doc.
+- `mirror_square` into `extract_sample`. The one-line "same file, flipped
+  rank" clause moved into `extract_sample`'s doc, which already explains
+  that Black pieces subtract their PST at the mirrored square.
+- `dot` into `model_score`, its only caller — and, as the cluster doc
+  said, the whole of the linear model. The "Tuning math primitives"
+  cluster keeps its three remaining members.
+- `clamp_material` into the Adam epoch loop, where it sits as a flat
+  sibling loop at the same nesting depth. The 14-bit-export rationale
+  moved into `run_tuning`'s doc.
+- `opening_line` into the `'pairs:` loop in `run_sprt`. The reason it is
+  captured once per pair — both games open the same way from opposite
+  colours — is a fact about the call site, so it became a col-81 comment
+  there rather than a doc block somewhere else.
+
+Not folded, five, all by the family-symmetry rule:
+
+- `format_en_passant_square` and `format_search_keys` (`game_io.rs`) are
+  two of a seven-strong, prelude-exported display-helper family under one
+  doc cluster. Folding one makes the cluster lie.
+- `elo_from_score` and `log_likelihood_ratio` (`sprt.rs`) are named
+  statistical formulas sharing a cluster with `expected_score`; folding
+  puts the math inline in a `format!` argument and a loop body.
+- `stop_search` (`protocol.rs`) is one of the `handle_*` command handlers
+  the dispatch `match` calls uniformly. Its arm would stop looking like
+  its neighbours.
+
+`run_derive_headless` (`util.rs`) is single-caller but stays: folding it
+into the `"derive" =>` arm makes that arm about five times the length of
+its `run_*_command` siblings. Moving and renaming it into `headless.rs`
+was considered and dropped — churn, no lines. `benchmark_headless_perft`
+correctly stays in `util.rs`; `graphics.rs:2842` is a second caller.
+
+Gates: warning-free build; all seven perft suites pass; all seven bench
+node counts reproduce exactly; endgame fixtures 37/38, the one failure
+being the pre-existing xiangqi `perpetual one cycle short`. UCI smoke on
+the rewritten replay path — a good line, a garbage token, and a repeated
+move — leaves the session state and the two diagnostics exactly as
+before. `extract_fen_components` feeds capability flags that drive
+movegen, so seven identical perft suites across seven configs is the real
+gate on that fold.
 
 ## Deferred, not resolved in this ladder
 

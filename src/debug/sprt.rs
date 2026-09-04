@@ -514,25 +514,6 @@ impl Drop for SPRTChild {
     }
 }
 
-/// opening_line
-///
-/// Forks a throwaway referee, walks a short random legal line on it, and
-/// returns that line as moves — captured once per pair so both games of
-/// the pair play the identical opening from opposite colours. The moves
-/// come straight from the fork's own history.
-///
-/// Params:
-/// - template: &State -> loaded variant to open from
-/// - plies   : usize  -> number of random plies to play
-///
-/// Return:
-/// Vec<Move>          -> the shared opening line, in play order
-fn opening_line(template: &State, plies: usize) -> Vec<Move> {
-    let mut state = template.fork();
-    state.play_random_opening(plies);
-    state.history.iter().map(|snap| snap.move_ply.clone()).collect()
-}
-
 /// SPRTGameOutcome
 ///
 /// Referee result for one game. Normal results carry only score; a single
@@ -1069,7 +1050,11 @@ pub fn run_sprt(
             break;
         }
 
-        let opening = opening_line(template, OPENING_RANDOM_PLIES);
+        let mut opening_state = template.fork();                                /* one throwaway referee per pair, so */
+        opening_state.play_random_opening(OPENING_RANDOM_PLIES);                /* both games of the pair open the    */
+                                                                                /* same way from opposite colours     */
+        let opening: Vec<Move> = opening_state.history
+            .iter().map(|snapshot| snapshot.move_ply.clone()).collect();
 
         if let Err(error) = manager.reset_to(template, &opening) {
             verdict = format!("aborted during game setup: {}", error);

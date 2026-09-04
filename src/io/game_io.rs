@@ -30,35 +30,6 @@ lazy_static! {
     static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
 }
 
-/// extract_fen_components
-///
-/// Sniffs which optional CFEN fields a FEN string carries by pattern-
-/// matching the fields after position and side, so the parser knows
-/// whether castling, en passant, and in-hand sections are present.
-///
-/// Params:
-/// - fen: &str        -> the full FEN string being inspected
-///
-/// Return:
-/// (bool, bool, bool) -> (has castling, has en passant, has hands)
-fn extract_fen_components(fen: &str) -> (bool, bool, bool) {
-    let mut castling = false;
-    let mut en_passant = false;
-    let mut in_hand = false;
-
-    for part in fen.split_whitespace().skip(2) {
-        castling |= CASTLING_PATTERN.is_match(part);
-        en_passant |= ENP_PATTERN.is_match(part);
-        in_hand |= HAND_PATTERN.is_match(part);
-
-        if castling && en_passant && in_hand {
-            break;
-        }
-    }
-
-    (castling, en_passant, in_hand)
-}
-
 /// validate_castling
 ///
 /// Tests whether a loaded position preserves the configured starting pieces
@@ -686,8 +657,19 @@ pub fn parse_config_file(path: &str) -> State {
     let setup_phase = sections["rules"].contains(&"setup phase".to_string());
     let stand_offs = sections["rules"].contains(&"stand-offs".to_string());
 
-    let (fen_castling, fen_en_passant, fen_in_hand) =
-        extract_fen_components(initial_position);
+    let mut fen_castling = false;
+    let mut fen_en_passant = false;
+    let mut fen_in_hand = false;
+
+    for part in initial_position.split_whitespace().skip(2) {
+        fen_castling |= CASTLING_PATTERN.is_match(part);
+        fen_en_passant |= ENP_PATTERN.is_match(part);
+        fen_in_hand |= HAND_PATTERN.is_match(part);
+
+        if fen_castling && fen_en_passant && fen_in_hand {
+            break;
+        }
+    }
 
     if castling {
         assert!(fen_castling, "No castling rights found in FEN");

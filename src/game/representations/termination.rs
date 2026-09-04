@@ -945,30 +945,14 @@ pub fn repetition_outcome(
     Some((seen, perpetual))
 }
 
-/// terminal_reason
-///
-/// The name of the eager rule that ended the current position, recomputed so no
-/// reason need be stored. `None` when no eager rule applies (e.g. a
-/// search-injected mate) or the rule is unnamed.
-///
-/// Params:
-/// - state: &State -> position after the ending move
-///
-/// Return:
-/// Option<String>  -> the fired rule's name, if any
-pub fn terminal_reason(state: &State) -> Option<String> {
-    position_terminal(state)
-        .map(|(_, _, name)| name)
-        .filter(|name| !name.is_empty())
-        .map(str::to_string)
-}
-
 /// game_outcome
 ///
 /// The single game-truth oracle for reporting and self-play paths: the eager,
 /// position-local `game_result` when set, else the on-demand repetition /
 /// perpetual verdict. Also reports the reason name of whichever rule decided
-/// it. Search does not use this; it keeps the cheap `is_terminal!` read.
+/// it, recomputed so no reason need be stored and left `None` when the rule
+/// is unnamed. Search does not use this; it keeps the cheap `is_terminal!`
+/// read.
 ///
 /// Params:
 /// - state: &mut State  -> current position (restored if a walk runs)
@@ -977,7 +961,13 @@ pub fn terminal_reason(state: &State) -> Option<String> {
 /// (u8, Option<String>) -> (result, reason name) with result ONGOING when live
 pub fn game_outcome(state: &mut State) -> (u8, Option<String>) {
     if state.termination.game_result != ONGOING {
-        return (state.termination.game_result, terminal_reason(state));
+        return (
+            state.termination.game_result,
+            position_terminal(state)
+                .map(|(_, _, name)| name)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string),
+        );
     }
 
     let Some(occurrences) = state.termination.repetition

@@ -111,18 +111,9 @@ macro_rules! log_5 {
 
 /// Verbosity plumbing helpers.
 ///
-/// `level_to_verbosity` maps `log` crate levels onto the numeric 1-5
-/// scale used in log lines; the remaining three read or step the shared
-/// `RUNTIME_VERBOSITY` atomic, clamped to 1-5 (used by the TUI's live
-/// verbosity keys).
-///
-/// level_to_verbosity
-///
-///   Params:
-///   - level: log::Level -> `log` crate level to translate
-///
-///   Return:
-///   u8                  -> numeric verbosity 1-5
+/// All three read or step the shared `RUNTIME_VERBOSITY` atomic, clamped
+/// to the same 1-5 scale log lines are stamped with, and back the TUI's
+/// live verbosity keys.
 ///
 /// configured_verbosity_level
 ///
@@ -132,16 +123,6 @@ macro_rules! log_5 {
 /// inc_verbosity / dec_verbosity
 ///   step the runtime verbosity up or down one level, clamped to 1-5;
 ///   no parameters, no return value
-fn level_to_verbosity(level: log::Level) -> u8 {
-    match level {
-        log::Level::Error => 1,
-        log::Level::Warn => 2,
-        log::Level::Info => 3,
-        log::Level::Debug => 4,
-        log::Level::Trace => 5,
-    }
-}
-
 pub fn configured_verbosity_level() -> u8 {
     RUNTIME_VERBOSITY.load(Ordering::Acquire)
 }
@@ -215,7 +196,13 @@ pub fn init_logging() {
                 .line()
                 .map_or("?".to_string(), |line_num| line_num.to_string());
 
-            let level = level_to_verbosity(record.level());
+            let level = match record.level() {
+                log::Level::Error => 1,
+                log::Level::Warn => 2,
+                log::Level::Info => 3,
+                log::Level::Debug => 4,
+                log::Level::Trace => 5,
+            };
 
             writeln!(
                 buf,

@@ -370,45 +370,10 @@ fn spawn_hash_tables(
     )
 }
 
-/// replay_moves
-///
-/// Replays move tokens onto `state`, stopping at first parse or legality
-/// failure.
-///
-/// Params:
-/// - state : &mut State          -> position replayed into
-/// - tokens: &[&str]             -> move tokens without `moves`
-/// - dict  : Option<&Translator> -> translator for notation lookup
-///
-/// Return:
-/// Result<(), String>            -> success or first failing ply diagnostic
-fn replay_moves(
-    state: &mut State,
-    tokens: &[&str],
-    dict: Option<&Translator>,
-) -> Result<(), String> {
-    for (ply, &move_str) in tokens.iter().enumerate() {
-        let Some(mv) = parse_move(move_str, state, dict) else {
-            return Err(format!(
-                "ply {} \"{}\" parse failed", ply + 1, move_str
-            ));
-        };
-
-        if !make_move!(state, mv) {
-            return Err(format!(
-                "ply {} \"{}\" illegal", ply + 1, move_str
-            ));
-        }
-    }
-
-    Ok(())
-}
-
 /// Session command handlers
 ///
-/// Each applies one command's side effects to the session.
-/// `compute_budget` and `spawn_search` interleave below as internal
-/// helpers and keep their own docs.
+/// Each applies one command's side effects to the session. `spawn_search`
+/// interleaves below as an internal helper and keeps its own docs.
 ///
 /// handle_position
 ///
@@ -520,14 +485,23 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
             return;
         }
 
-        if let Err(error) = replay_moves(
-            &mut scratch,
-            &tokens[index + 1..],
-            dict.as_ref(),
-        ) {
-            log_2!("position: {}", error);
-            session.position_valid = false;
-            return;
+        let replayed = &mut scratch;
+
+        for (ply, &token) in tokens[index + 1..].iter().enumerate() {
+            let Some(mv) = parse_move(token, replayed, dict.as_ref())
+            else {
+                log_2!(
+                    "position: ply {} \"{}\" parse failed", ply + 1, token
+                );
+                session.position_valid = false;
+                return;
+            };
+
+            if !make_move!(replayed, mv) {
+                log_2!("position: ply {} \"{}\" illegal", ply + 1, token);
+                session.position_valid = false;
+                return;
+            }
         }
     }
 
@@ -541,7 +515,10 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 /// clauses (USI `byoyomi`, UCCI `time`/`increment`) are normalized to the
 /// standard depth/nodes/movetime/clock tokens by the protocol before they
 /// reach here, so the shared parse -- and the engine core -- never sees a
-/// dialect token.
+/// dialect token. `movetime` spends its requested duration after overhead;
+/// a clock search divides the remaining time by `movestogo`, or 20 when
+/// absent, then adds the increment, never exceeding the remaining clock
+/// and never falling below one millisecond.
 ///
 /// Params:
 /// - session: &mut Session -> session the `go` runs in
@@ -627,9 +604,18 @@ pub fn start_search(session: &mut Session, tokens: &[&str]) {
         (btime_ms, binc_ms)
     };
 
-    let budget_ns = compute_budget(
-        movetime_ms, time_ms, inc_ms, movestogo, session.overhead_ms,
-    );
+    let budget_ns = if movetime_ms > 0 {
+        movetime_ms.saturating_sub(session.overhead_ms).max(1) * 1_000_000
+    } else if time_ms == 0 {
+        0
+    } else {
+        let remaining =
+            time_ms.saturating_sub(session.overhead_ms).max(1);
+        let moves = if movestogo > 0 { movestogo as u128 } else { 20 };
+
+        (remaining / moves).saturating_add(inc_ms)
+            .clamp(1, remaining) * 1_000_000
+    };
 
     let deadline = if infinite || budget_ns == 0 {
         0
@@ -646,44 +632,6 @@ pub fn start_search(session: &mut Session, tokens: &[&str]) {
         deadline,
         ponderhit_budget_ns: budget_ns,
     });
-}
-
-/// compute_budget
-///
-/// Derives one time budget in nanoseconds. `movetime` uses its requested
-/// duration after overhead. Clock searches divide remaining time by
-/// `movestogo`, or 20 when absent, then add the increment. Budget never
-/// exceeds the remaining clock and never falls below one millisecond.
-///
-/// Params:
-/// - movetime_ms: u128  -> fixed time per move (0 = unset)
-/// - time_ms    : u128  -> remaining clock for side to move
-/// - inc_ms     : u128  -> increment per move
-/// - movestogo  : usize -> moves to next control (0 = unset)
-/// - overhead_ms: u128  -> per-move lag allowance
-///
-/// Return:
-/// u128 -> budget in nanoseconds, 0 when untimed
-fn compute_budget(
-    movetime_ms: u128,
-    time_ms: u128,
-    inc_ms: u128,
-    movestogo: usize,
-    overhead_ms: u128,
-) -> u128 {
-    if movetime_ms > 0 {
-        return movetime_ms.saturating_sub(overhead_ms).max(1) * 1_000_000;
-    }
-
-    if time_ms == 0 {
-        return 0;
-    }
-
-    let remaining = time_ms.saturating_sub(overhead_ms).max(1);
-    let moves = if movestogo > 0 { movestogo as u128 } else { 20 };
-    let budget = (remaining / moves).saturating_add(inc_ms);
-
-    budget.clamp(1, remaining) * 1_000_000
 }
 
 /// spawn_search
