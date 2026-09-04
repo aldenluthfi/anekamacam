@@ -13,9 +13,6 @@
 
 use crate::*;
 
-const LOG_DIR: &str = "logs";
-const LOG_HISTORY_KEEP: usize = 32;
-
 /// TUI log-forwarding macros.
 ///
 /// `push_log_message!` mirrors a formatted log line into the shared
@@ -163,8 +160,8 @@ pub fn dec_verbosity() {
 /// init_logging
 ///
 /// Initializes file logging: rolls any previous `logs/latest.log` to a
-/// timestamped backup via `roll_latest`, prunes old backups to
-/// `LOG_HISTORY_KEEP`, opens a fresh `logs/latest.log`, and installs a
+/// timestamped backup via `roll_latest`, prunes the backups down to the
+/// most recent 32, opens a fresh `logs/latest.log`, and installs a
 /// formatter that stamps each line with its numeric verbosity level,
 /// timestamp, and source location. Called once at startup from `main`.
 ///
@@ -188,7 +185,7 @@ pub fn init_logging() {
 
     let log_path = format!("{}/latest.log", LOG_DIR);
     roll_latest(LOG_DIR, "", "log");
-    prune_backups(LOG_DIR, "", "log", LOG_HISTORY_KEEP);
+    prune_backups(LOG_DIR, "", "log", 32);
 
     let file = OpenOptions::new()
         .create(true)

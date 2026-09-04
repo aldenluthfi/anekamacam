@@ -40,7 +40,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | Stage | What                                       | Δ lines | Status |
 |-------|--------------------------------------------|---------|--------|
 | D1    | delete unreachable code                    | −170    | done   |
-| D2    | unify const families, inline trivia        | −40     | todo   |
+| D2    | unify const families, inline trivia        | −5      | done   |
 | D3    | collapse five `populate_relevant_*`        | −80     | todo   |
 | D4    | io dedupe                                  | −230    | todo   |
 | D5    | TT/QT unification                          | −200    | todo   |
@@ -104,6 +104,48 @@ stated in the `enc_capture_part!` doc block.
 
 `legal_moves!` at `move_list.rs:317-318` is the castling builder and
 needs no flag: castling undo (`:3501`) restores virgin unconditionally.
+
+## D2 — unify split const families, inline trivia · done
+
+Moved into the `prelude.rs` shared block so no family straddles the
+prelude/module boundary:
+
+- `*_DIR`: `PARAMS_DIR` (`game_io.rs`), `LOG_DIR` (`logger.rs`), joining
+  `DATA_DIR`
+- `EMBEDDED_*`: `EMBEDDED_PARAMS` (`game_io.rs`), joining the other three
+- `OPT_*`: the five in `protocol.rs`, joining `OPT_THREADS`
+- `HASH_*`: `HASH_MAX_MB` (`protocol.rs`), joining `HASH_DEFAULT_MB`
+
+Inlined and deleted: `DEFAULT_PROTOCOL` and `LOG_HISTORY_KEEP`, one use
+each. `DEFAULT_DROP` was on the list and is **kept** — it has two use
+sites (`game_io.rs:1419`, `:1520`), so inlining would duplicate a magic
+string. `SPRT_DIR` stays local: it belongs to `sprt.rs`'s cohesive
+eight-const debug block, not to the runtime `*_DIR` family.
+
+Only −5 lines. Moving a const does not delete it; this stage buys
+coherence, and the ladder's line budget should not have counted it.
+
+### Score-band retype: dropped, not deferred
+
+The plan wanted `TABLE_MOVE_SCORE`, `KILLER_MOVE_SCORE`, and
+`UNMAKEABLE_CAPTURE_SCORE` (`usize`) unified with
+`WINNING_CAPTURE_SCORE`, `QUIET_MOVE_SCORE`, and `LOSING_CAPTURE_SCORE`
+(`i32`), dropping the casts in `score_move!`. Not worth doing:
+
+- The cast is not incidental. `score_move!` computes
+  `(LOSING_CAPTURE_SCORE + see_score) as usize` with `see_score`
+  negative, and correctness rests on the sum never going negative —
+  `LOSING_CAPTURE_SCORE` is 983_617 and the `see_score == -INF` case is
+  caught by the `UNMAKEABLE_CAPTURE_SCORE` branch above it. Under `i32`
+  a negative sum would sort last; under `usize` it wraps and sorts
+  first. Whether that is reachable depends on derived piece values, so
+  the bound cannot be settled by inspection.
+- `search.rs:917` does `scores[index] as i32 - LOSING_CAPTURE_SCORE` —
+  a subtraction recovering the signed SEE score, which is exactly the
+  "not a plain compare" case the plan said to split out.
+- The win is six casts on existing lines and **zero deleted lines**.
+
+Bad trade against a bit-identical gate. Skipped.
 
 ## Deferred, not resolved in this ladder
 

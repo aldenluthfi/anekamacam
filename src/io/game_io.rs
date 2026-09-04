@@ -12,11 +12,7 @@
 //! Author : Alden Luthfi
 use crate::*;
 
-const PARAMS_DIR: &str = "res/param";
 const DEFAULT_DROP: &str = "@#~?@";
-
-static EMBEDDED_PARAMS: Dir<'static> =
-    include_dir!("$CARGO_MANIFEST_DIR/../res/param");
 
 lazy_static! {
     /// CFEN field regexes.

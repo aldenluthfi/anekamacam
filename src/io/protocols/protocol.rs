@@ -16,18 +16,8 @@ use crate::*;
 
 /// Session constants.
 ///
-/// The dialect and hash ceiling a fresh session starts from, the option
-/// names the `setoption` dispatcher matches, and the default and maximum
-/// transmission overhead subtracted from timed searches.
-const DEFAULT_PROTOCOL: &str = "uci";
-const HASH_MAX_MB: usize = 65536;
-
-const OPT_PROTOCOL: &str = "Protocol";
-const OPT_PONDER: &str = "Ponder";
-const OPT_HASH: &str = "Hash";
-const OPT_CLEAR_HASH: &str = "Clear Hash";
-const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
-
+/// The default and maximum transmission overhead subtracted from timed
+/// searches.
 const TIME_OVERHEAD_MS: u128 = 50;
 const MAX_OVERHEAD_MS: u128 = 1000;
 
@@ -1051,7 +1041,7 @@ pub fn run() -> IoResult<()> {
         "AnekaMacam {} by Alden Luthfi\n", env!("CARGO_PKG_VERSION"),
     )));
 
-    let mut session = Session::new(DEFAULT_PROTOCOL);
+    let mut session = Session::new("uci");
 
     for line in stdin().lock().lines().map_while(Result::ok) {
         let trimmed = line.trim();

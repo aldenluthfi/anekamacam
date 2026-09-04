@@ -579,9 +579,23 @@ pub const SEARCH_REPETITION_CAP: usize = 64;
 pub const REPETITION_CYCLE: u8 = 2;
 
 /// Shared protocol, storage, and debug constants.
+///
+/// `*_DIR` are working-directory paths written to at runtime; `EMBEDDED_*`
+/// are the same resources baked in at compile time, read when the
+/// directory is absent. `OPT_*` are the names `setoption` matches.
 pub const DATA_DIR: &str = "res/data";
+pub const PARAMS_DIR: &str = "res/param";
+pub const LOG_DIR: &str = "logs";
+
 pub const OPT_THREADS: &str = "Threads";
+pub const OPT_PROTOCOL: &str = "Protocol";
+pub const OPT_PONDER: &str = "Ponder";
+pub const OPT_HASH: &str = "Hash";
+pub const OPT_CLEAR_HASH: &str = "Clear Hash";
+pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
+
 pub const HASH_DEFAULT_MB: usize = 256;
+pub const HASH_MAX_MB: usize = 65536;
 pub const PAWN_TABLE_ENTRIES: usize = 1 << 13;
 pub const OPENING_RANDOM_PLIES: usize = 8;
 
@@ -591,3 +605,5 @@ pub static EMBEDDED_DICTS: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../res/dicts");
 pub static EMBEDDED_PERFT: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../res/perft");
+pub static EMBEDDED_PARAMS: Dir<'static> =
+    include_dir!("$CARGO_MANIFEST_DIR/../res/param");
