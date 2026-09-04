@@ -83,7 +83,7 @@ pub use crate::game::search::{
         derive_search_parameters, derive_shelter_parameters,
         reduction_surface,
     },
-    transposition::{PTable, PTEntry, QTable, QTEntry, TTEntry, TTable},
+    transposition::{HashEntry, HashTable, PTable, PTEntry, QTable, TTable},
 };
 
 pub use crate::game::util::{

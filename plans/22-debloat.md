@@ -43,7 +43,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D2    | unify const families, inline trivia        | −5      | done   |
 | D3    | collapse five `populate_relevant_*`        | −86     | done   |
 | D4    | io dedupe                                  | −278    | done   |
-| D5    | TT/QT unification                          | −200    | todo   |
+| D5    | TT/QT unification                          | −139    | done   |
 | D6    | search dedupe                              | −25     | todo   |
 | D7    | `graphics.rs` idiom dedupe                 | −350    | todo   |
 | D8    | `move_parse` small dedupe                  | −25     | todo   |
@@ -207,6 +207,67 @@ Gates: all seven bench variants node-identical, all seven perft suites at
 depth 3, and a `uci` handshake — the 39-variant list is built by
 `list_variants`, one of the deduped copies, and the janggi board after
 `position startpos` proves the dictionary translator's copy too.
+
+## D5 — TT/QT unification · done
+
+`TTEntry` and `QTEntry` were the same 64-byte struct twice (`[u128; 3]`
++ `u64` + `AtomicU64`), so one `HashEntry` replaces both. `TTable` and
+`QTable` become aliases of
+
+    pub struct HashTable<const NUM: usize, const DEN: usize>
+
+with `type TTable = HashTable<2, 3>` and `type QTable = HashTable<1, 3>`,
+so the two `Default` budgets survive as `HASH_DEFAULT_MB * NUM / DEN`
+(170 MB and 85 MB, as before) and **no call site changed** — every use is
+`Arc<TTable>`, `&TTable`, or `TTable::with_mb(n)`. Unused const generic
+parameters are legal; only unused *type* and lifetime parameters need a
+`PhantomData`.
+
+Entry size is what the gate actually rests on: `with_mb` divides by
+`size_of::<HashEntry>()`, so a layout change would resize both tables and
+move every node count. Both old structs had identical fields, so 64 bytes
+is preserved by construction, and the five node-identical benches confirm
+it end to end.
+
+Three more macros were shared out rather than left mirrored:
+
+- `table_index!` replaces `tt_index!` and `qt_index!` — byte-identical
+  bodies.
+- `probe_hash_slot!` holds the seqlock/parity front half of all three
+  probes (`probe_tt_entry!`, `probe_pv_move!`, `probe_qt_entry!`). The
+  caller names the two payload words and supplies the miss value:
+
+      probe_hash_slot!($table, $key, None, |move_slot, data_slot| { .. })
+
+  Passing the names as `ident` fragments rather than binding them inside
+  the macro is what makes this work — a macro-internal `let` is in the
+  macro's hygiene context and the caller's body cannot see it, whereas an
+  ident taken from the call site resolves at the call site. A closure
+  would have worked too, but this keeps the bodies plain expressions.
+- `commit_hash_entry!` holds the store tail: replacement counter, then
+  the seqlock write with the parity word last before `age`.
+
+The two `should_write` predicates stay written out. They differ by the
+`old_depth <= $depth` term, and folding that into a shared macro would
+have cost more lines in parameters than the one line it saves.
+
+Also deleted: `is_empty` on all three tables — no call site anywhere, and
+the only surviving `is_empty()` in the tree is on a `Vec` in
+`graphics.rs`. `HashTable::with_entries` folded into `with_mb`, its only
+caller. `PTable::with_entries` is left alone: D14 would need it back.
+
+The two bit-layout ASCII diagrams document the *packing*, not the
+container, so they moved onto the `tt_*` and `qt_*` packing macro
+clusters rather than dying with the structs.
+
+428 deletions, 289 insertions across two files — **−139, not the −200 the
+ladder budgeted.** The QT container was ~180 duplicated lines, but the
+three shared macros cost ~90 in body and doc to buy them back. The
+estimate was too optimistic about how much a shared macro is free.
+
+Gates: `cargo build --release` warning-free and the five bench variants
+node-identical. D5 touches no derivation path, so sittuyin and janggi
+were not required.
 
 ## Deferred, not resolved in this ladder
 

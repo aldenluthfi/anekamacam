@@ -14,18 +14,250 @@
 use crate::*;
 
 /*----------------------------------------------------------------------------*\
-                     TRANSPOSITION TABLE ENTRY REPRESENTATION
+                        SHARED HASH TABLE REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
-/// TTEntry
+/// HashEntry
 ///
-/// TT entry with a 3×u128 XOR-parity slot and a seqlock version counter.
+/// One slot of a shared search table. Three `u128` words carry the
+/// payload, the last being the XOR parity of the other two against the
+/// position hash; `age` records the search generation and sits outside
+/// the parity; `version` is the seqlock counter, odd while a write is in
+/// flight.
 ///
 /// Layout:
 /// - slot[0] = move.0 (128-bit, raw)
-/// - slot[1] = packed search payload (bit 0 = LSB):
+/// - slot[1] = packed payload — the packing is the table's, not the
+///   slot's, and is drawn on each table's packing macro cluster
+/// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
 ///
-///   Field widths are proportional; every row represents 32 bits.
+/// Write order: version++ → slot[0] → slot[1] → slot[2] → age → version++
+///
+/// Validation:
+///   (1) slot[0] ^ slot[1] ^ slot[2] == position_hash  →  parity intact
+///   (2) version unchanged across read                 →  no torn write
+#[derive(Default)]
+pub struct HashEntry {
+    pub slot: [u128; 3],                                                        /* [key, data1, data2]                */
+    pub age: u64,                                                               /* search age for replacement policy  */
+    pub version: AtomicU64,                                                     /* seqlock: odd = writing, even = ok  */
+}
+
+impl Clone for HashEntry {
+    fn clone(&self) -> Self {
+        HashEntry {
+            slot: self.slot,
+            age: self.age,
+            version: AtomicU64::new(self.version.load(Ordering::Relaxed)),
+        }
+    }
+}
+
+/// HashTable
+///
+/// Shared search table using seqlock+parity for lock-free thread safety.
+/// Readers check version parity before and after the slot load and retry
+/// on mismatch; the XOR parity across `slot[0..2]` catches cross-entry
+/// corruption. Age is bumped each search for replacement.
+///
+/// `NUM / DEN` is the table's share of the `Hash` option, and is the only
+/// thing that separates the main table from the quiescence one — the two
+/// differ in what they pack into a slot, never in how slots are stored —
+/// so both are aliases of this type and no call site names it.
+pub struct HashTable<const NUM: usize, const DEN: usize> {
+    pub table: SyncUnsafeCell<Vec<HashEntry>>,                                  /* shared mutable access              */
+    pub age: AtomicU64,                                                         /* search age; bump per search        */
+    pub new_write: AtomicU64,                                                   /* writes to empty slots              */
+    pub over_write: AtomicU64,                                                  /* writes replacing existing entries  */
+    pub hit: AtomicU64,                                                         /* probes where hash matched          */
+    pub valid: AtomicU64,                                                       /* probes where XOR decode succeeded  */
+}
+
+pub type TTable = HashTable<2, 3>;
+pub type QTable = HashTable<1, 3>;
+
+unsafe impl<const NUM: usize, const DEN: usize> Sync for HashTable<NUM, DEN> {}
+unsafe impl<const NUM: usize, const DEN: usize> Send for HashTable<NUM, DEN> {}
+
+impl<const NUM: usize, const DEN: usize> Default for HashTable<NUM, DEN> {
+    fn default() -> Self {
+        Self::with_mb(HASH_DEFAULT_MB * NUM / DEN)
+    }
+}
+
+impl<const NUM: usize, const DEN: usize> HashTable<NUM, DEN> {
+    /// HashTable method cluster.
+    ///
+    /// `with_mb` sizes the table to a memory budget in megabytes — this
+    /// table's `NUM / DEN` share of the UCI Hash option — flooring the
+    /// slot count to a power of two so the index macro can mask instead
+    /// of taking a modulo; `len` reports the count it masks against.
+    ///
+    /// with_mb
+    ///
+    ///   Params:
+    ///   - mb: usize -> memory budget in megabytes
+    ///
+    ///   Return:
+    ///   Self        -> zeroed table sized to the budget
+    ///
+    /// len
+    ///
+    ///   Return:
+    ///   usize -> slot count
+    pub fn with_mb(mb: usize) -> Self {
+        let entries = (mb * 1024 * 1024 / size_of::<HashEntry>()).max(1);
+
+        Self {
+            table: SyncUnsafeCell::new(
+                vec![HashEntry::default(); 1 << entries.ilog2()]
+            ),
+            age: AtomicU64::new(0),
+            new_write: AtomicU64::new(0),
+            over_write: AtomicU64::new(0),
+            hit: AtomicU64::new(0),
+            valid: AtomicU64::new(0),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        unsafe { &*self.table.get() }.len()
+    }
+}
+
+/*----------------------------------------------------------------------------*\
+                        SHARED HASH TABLE PROBE / STORE
+\*----------------------------------------------------------------------------*/
+
+/// Shared slot access macros.
+///
+/// Everything a probe or a store does before and after it looks at the
+/// packed payload is the same for both tables, so it lives here once.
+///
+/// table_index!
+///
+///   Params:
+///   - hash: PositionHash -> Zobrist key of the probed position
+///   - size: usize        -> table slot count (power of two)
+///
+///   Return:
+///   usize                -> slot index, `hash & (size - 1)`
+///
+/// probe_hash_slot!
+///
+///   Locates the slot, rejects a write in flight, checks the XOR parity
+///   against the key, and confirms the seqlock did not move across the
+///   read, bumping `hit` and `valid` as it goes. The caller names the two
+///   payload words it wants bound and supplies the value every rejecting
+///   path yields.
+///
+///   Params:
+///   - table    : &HashTable -> table probed, whose counters are bumped
+///   - hash     : u128       -> search key this node is filed under
+///   - miss     : expr       -> value yielded by every rejecting path
+///   - move_slot: ident      -> name bound to slot[0] inside the body
+///   - data_slot: ident      -> name bound to slot[1] inside the body
+///   - body     : block      -> reads the two words, yields the result
+///
+///   Return:
+///   the body's value, or `miss`
+///
+/// commit_hash_entry!
+///
+///   Writes the slot under the seqlock, parity word last before `age`,
+///   and bumps whichever replacement counter applies.
+///
+///   Params:
+///   - table    : &HashTable   -> table whose counters are bumped
+///   - entry    : &mut HashEntry -> slot being replaced
+///   - hash     : u128         -> key the parity word is folded against
+///   - empty    : bool         -> whether the slot was never written
+///   - move_slot: u128         -> slot[0]
+///   - data_slot: u128         -> slot[1]
+///   - age      : u64          -> generation stamped on the slot
+#[macro_export]
+macro_rules! table_index {
+    ($hash:expr, $size:expr) => {{
+        ($hash as usize) & ($size - 1)
+    }};
+}
+
+#[macro_export]
+macro_rules! probe_hash_slot {
+    (
+        $table:expr,
+        $hash:expr,
+        $miss:expr,
+        |$move_slot:ident, $data_slot:ident| $body:block
+    ) => {{
+        let hash = $hash;
+        let index = table_index!(hash, $table.len());
+        let entry = &mut unsafe { &mut *($table.table.get()) }[index];
+
+        let first_version = entry.version.load(Ordering::Acquire);
+
+        if first_version & 1 != 0 {                                             /* write in progress: skip            */
+            $miss
+        } else {
+            let $move_slot = entry.slot[0];
+            let $data_slot = entry.slot[1];
+            let parity_slot = entry.slot[2];
+
+            if $move_slot ^ $data_slot ^ parity_slot != hash {                  /* parity check: all slots covered    */
+                $miss
+            } else {
+                $table.hit.fetch_add(1, Ordering::Relaxed);                     /* parity matched                     */
+                let second_version = entry.version.load(Ordering::Acquire);
+
+                if first_version != second_version {                            /* seqlock: torn read detected        */
+                    $miss
+                } else {
+                    $table.valid.fetch_add(1, Ordering::Relaxed);               /* consistent read confirmed          */
+                    $body
+                }
+            }
+        }
+    }};
+}
+
+#[macro_export]
+macro_rules! commit_hash_entry {
+    (
+        $table:expr,
+        $entry:expr,
+        $hash:expr,
+        $empty:expr,
+        $move_slot:expr,
+        $data_slot:expr,
+        $age:expr
+    ) => {{
+        let move_slot = $move_slot;
+        let data_slot = $data_slot;
+
+        if $empty {
+            $table.new_write.fetch_add(1, Ordering::Relaxed);
+        } else {
+            $table.over_write.fetch_add(1, Ordering::Relaxed);
+        }
+
+        $entry.version.fetch_add(1, Ordering::Release);
+        $entry.slot[0] = move_slot;
+        $entry.slot[1] = data_slot;
+        $entry.slot[2] = move_slot ^ data_slot ^ $hash;
+        $entry.age = $age;
+        $entry.version.fetch_add(1, Ordering::Release);
+    }};
+}
+
+/*----------------------------------------------------------------------------*\
+                       TRANSPOSITION TABLE PACKING HELPERS
+\*----------------------------------------------------------------------------*/
+
+/// Main-table packing macros.
+///
+/// The writers pack bound flags (bits 0-1), clamped depth (bits 2-8), and
+/// score (bits 9-40) into `slot[1]`; the readers extract those fields
+/// again. Field widths below are proportional; every row is 32 bits.
 ///
 ///   Bits 0..31:
 ///
@@ -57,146 +289,11 @@ use crate::*;
 ///   └─────────────────┴──────────────────────────────────────────────┘
 /// ```
 ///
-///
-///   - flag       : bound type (FEXACT / FALPHA / FBETA)
-///   - depth      : clamped search depth
-///   - score      : ply-adjusted node score (32-bit)
-///   - signature  : MoveSignature of the stored best move
+///   - flag         : bound type (FEXACT / FALPHA / FBETA)
+///   - depth        : clamped search depth
+///   - score        : ply-adjusted node score (32-bit)
+///   - signature    : MoveSignature of the stored best move
 ///   - bits 105..127: unused
-///
-/// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
-/// - age     = plain u64, excluded from parity
-/// - version = seqlock counter (odd = write in progress, even = readable)
-///
-/// Write order: version++ → slot[0] → slot[1] → slot[2] → age → version++
-///
-/// Validation:
-///   (1) slot[0] ^ slot[1] ^ slot[2] == position_hash  →  parity intact
-///   (2) version unchanged across read                 →  no torn write
-#[derive(Default)]
-pub struct TTEntry {
-    pub slot: [u128; 3],                                                        /* [key, data1, data2]                */
-    pub age: u64,                                                               /* search age for replacement policy  */
-    pub version: AtomicU64,                                                     /* seqlock: odd = writing, even = ok  */
-}
-
-impl Clone for TTEntry {
-    fn clone(&self) -> Self {
-        TTEntry {
-            slot: self.slot,
-            age: self.age,
-            version: AtomicU64::new(self.version.load(Ordering::Relaxed)),
-        }
-    }
-}
-
-/// TTable
-///
-/// Shared transposition table using seqlock+parity for lock-free thread safety.
-/// Entries are read with a seqlock: readers check version parity before and
-/// after the slot load and retry on mismatch. The XOR parity across slot[0..2]
-/// catches cross-entry corruption. Age is bumped each search for replacement.
-pub struct TTable {
-    pub table: SyncUnsafeCell<Vec<TTEntry>>,                                    /* shared mutable access              */
-    pub age: AtomicU64,                                                         /* search age; bump per search        */
-    pub new_write: AtomicU64,                                                   /* writes to empty slots              */
-    pub over_write: AtomicU64,                                                  /* writes replacing existing entries  */
-    pub hit: AtomicU64,                                                         /* probes where hash matched          */
-    pub valid: AtomicU64,                                                       /* probes where XOR decode succeeded  */
-}
-
-unsafe impl Sync for TTable {}
-unsafe impl Send for TTable {}
-
-impl Default for TTable {
-    fn default() -> Self {
-        Self::with_mb(HASH_DEFAULT_MB * 2 / 3)
-    }
-}
-
-impl TTable {
-    /// TTable method cluster.
-    ///
-    /// `with_mb` sizes the table to a memory budget in megabytes (the UCI
-    /// Hash option), `len` reports the slot count, and `is_empty` scans
-    /// for any written entry; the latter two exist mainly for tests and
-    /// diagnostics. Slot counts are floored to a power of two so index
-    /// macros can mask instead of taking a modulo.
-    ///
-    /// with_mb
-    ///
-    ///   Params:
-    ///   - mb: usize -> memory budget in megabytes
-    ///
-    ///   Return:
-    ///   Self        -> zeroed table sized to the budget
-    ///
-    /// with_entries
-    ///
-    ///   Params:
-    ///
-    ///   - entries: usize
-    ///     requested slot count, floored to a power of two
-    ///
-    ///   Return:
-    ///   Self -> zeroed table with that many slots
-    ///
-    /// len
-    ///
-    ///   Return:
-    ///   usize -> slot count
-    ///
-    /// is_empty
-    ///
-    ///   Return:
-    ///   bool -> whether no slot has ever been written
-    pub fn with_mb(mb: usize) -> Self {
-        let size = (mb * 1024 * 1024 / size_of::<TTEntry>()).max(1);
-        Self::with_entries(size)
-    }
-
-    pub fn with_entries(entries: usize) -> Self {
-        Self {
-            table: SyncUnsafeCell::new(
-                vec![TTEntry::default(); 1 << entries.max(1).ilog2()]
-            ),
-            age: AtomicU64::new(0),
-            new_write: AtomicU64::new(0),
-            over_write: AtomicU64::new(0),
-            hit: AtomicU64::new(0),
-            valid: AtomicU64::new(0),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        unsafe { &*self.table.get() }.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        unsafe { &*self.table.get() }.iter().all(|entry| {
-            entry.slot[0] == 0 && entry.slot[1] == 0 && entry.slot[2] == 0
-        })
-    }
-}
-
-/*----------------------------------------------------------------------------*\
-                       TRANSPOSITION TABLE PACKING HELPERS
-\*----------------------------------------------------------------------------*/
-
-/// Main-table packing macros.
-///
-/// `tt_index!` masks a Zobrist hash onto a power-of-two table slot. The
-/// writers pack bound flags (bits 0-1), clamped depth (bits 2-8), and score
-/// (bits 9-40) into `slot[1]`; the readers extract those fields again.
-///
-/// tt_index!
-///
-///   Params:
-///   - hash   : PositionHash -> Zobrist key of the probed position
-///   - size   : usize        -> table slot count (power of two)
-///
-///   Return:
-///   usize                   -> slot index, `hash & (size - 1)`
 ///
 /// The writers OR into place and return nothing:
 ///
@@ -218,13 +315,6 @@ impl TTable {
 ///   - encoded: &mut u128 -> slot[1] word being built
 ///   - val    : i32       -> score, masked into bits 9-40
 ///
-#[macro_export]
-macro_rules! tt_index {
-    ($hash:expr, $size:expr) => {{
-        ($hash as usize) & ($size - 1)
-    }};
-}
-
 #[macro_export]
 macro_rules! tt_enc_flags {
     ($encoded:expr, $val:expr) => {{
@@ -300,71 +390,51 @@ macro_rules! probe_tt_entry {
         $depth:expr
     ) => {
         hotpath::measure_block!("tt::probe", {
-        let hash = $key;
-        let index = tt_index!(hash, $table.len());
-        let entry = &mut unsafe { &mut *($table.table.get()) }[index];
+        probe_hash_slot!(
+            $table,
+            $key,
+            (false, i32::MIN, null_pseudo_move()),
+            |move_slot, data_slot| {
+                let encoded = (data_slot & 0x1FF) as u32;
+                let signature = (data_slot >> 41) as u64;
+                let pseudo_move = (move_slot, signature);
+                let entry_depth = tt_depth!(encoded);
+                let entry_flags = tt_flags!(encoded);
+                let mut entry_score = tt_score!(data_slot);
 
-        let first_version = entry.version.load(Ordering::Acquire);
+                if entry_score > MATE_SCORE {
+                    entry_score -= $state.search_ply as i32;
+                } else if entry_score < -MATE_SCORE {
+                    entry_score += $state.search_ply as i32;
+                }
 
-        if first_version & 1 != 0 {
-            (false, i32::MIN, null_pseudo_move())
-        } else {
-            let move_slot = entry.slot[0];
-            let data_slot = entry.slot[1];
-            let parity_slot = entry.slot[2];
-
-            if move_slot ^ data_slot ^ parity_slot != hash {
-                (false, i32::MIN, null_pseudo_move())
-            } else {
-                $table.hit.fetch_add(1, Ordering::Relaxed);
-                let second_version = entry.version.load(Ordering::Acquire);
-
-                if first_version != second_version {
-                    (false, i32::MIN, null_pseudo_move())
+                if entry_depth < $depth {
+                    (false, i32::MIN, pseudo_move)
                 } else {
-                    $table.valid.fetch_add(1, Ordering::Relaxed);
+                    let mut valid_cutoff = false;
+                    let mut cutoff_score = entry_score;
 
-                    let encoded = (data_slot & 0x1FF) as u32;
-                    let signature = (data_slot >> 41) as u64;
-                    let pseudo_move = (move_slot, signature);
-                    let entry_depth = tt_depth!(encoded);
-                    let entry_flags = tt_flags!(encoded);
-                    let mut entry_score = tt_score!(data_slot);
-
-                    if entry_score > MATE_SCORE {
-                        entry_score -= $state.search_ply as i32;
-                    } else if entry_score < -MATE_SCORE {
-                        entry_score += $state.search_ply as i32;
-                    }
-
-                    if entry_depth < $depth {
-                        (false, i32::MIN, pseudo_move)
-                    } else {
-                        let mut valid_cutoff = false;
-                        let mut cutoff_score = entry_score;
-
-                        match entry_flags {
-                            FALPHA => {
-                                if cutoff_score <= $alpha {
-                                    cutoff_score = $alpha;
-                                    valid_cutoff = true;
-                                }
+                    match entry_flags {
+                        FALPHA => {
+                            if cutoff_score <= $alpha {
+                                cutoff_score = $alpha;
+                                valid_cutoff = true;
                             }
-                            FBETA => {
-                                if cutoff_score >= $beta {
-                                    cutoff_score = $beta;
-                                    valid_cutoff = true;
-                                }
-                            }
-                            FEXACT => valid_cutoff = true,
-                            _ => unreachable!(),
                         }
-
-                        (valid_cutoff, cutoff_score, pseudo_move)
+                        FBETA => {
+                            if cutoff_score >= $beta {
+                                cutoff_score = $beta;
+                                valid_cutoff = true;
+                            }
+                        }
+                        FEXACT => valid_cutoff = true,
+                        _ => unreachable!(),
                     }
+
+                    (valid_cutoff, cutoff_score, pseudo_move)
                 }
             }
-        }
+        )
         })
     };
 }
@@ -384,41 +454,16 @@ macro_rules! probe_tt_entry {
 #[macro_export]
 macro_rules! probe_pv_move {
     ($key:expr, $table:expr) => {{
-        let hash = $key;
-        let index = tt_index!(hash, $table.len());
-        let entry = &mut unsafe { &mut *($table.table.get()) }[index];
+        probe_hash_slot!($table, $key, None, |move_slot, data_slot| {
+            let signature = (data_slot >> 41) as u64;                           /* bits 41-104 = MoveSignature        */
+            let pseudo_move: PseudoMove = (move_slot, signature);
 
-        let v1 = entry.version.load(Ordering::Acquire);
-        if v1 & 1 != 0 {                                                        /* write in progress: skip            */
-            None
-        } else {
-            let s0 = entry.slot[0];
-            let s1 = entry.slot[1];
-            let s2 = entry.slot[2];
-
-            if s0 ^ s1 ^ s2 != hash {                                           /* parity check: all slots covered    */
+            if pseudo_move == null_pseudo_move() {
                 None
             } else {
-                $table.hit.fetch_add(1, Ordering::Relaxed);                     /* parity matched                     */
-                let v2 = entry.version.load(Ordering::Acquire);
-
-                if v1 != v2 {                                                   /* seqlock: torn read detected        */
-                    None
-                } else {
-                    $table.valid.fetch_add(1, Ordering::Relaxed);               /* consistent read confirmed          */
-
-                    let a_prime = s0;                                           /* a = slot[0] (direct)               */
-                    let b_prime = s1;                                           /* b = slot[1] (direct)               */
-                    let sig = (b_prime >> 41) as u64;                           /* bits 41-104 = MoveSignature        */
-                    let pseudo_mv: PseudoMove = (a_prime, sig);
-                    if pseudo_mv == null_pseudo_move() {
-                        None
-                    } else {
-                        Some(pseudo_mv)
-                    }
-                }
+                Some(pseudo_move)
             }
-        }
+        })
     }};
 }
 
@@ -447,8 +492,8 @@ macro_rules! hash_tt_entry {
     ) => {
         hotpath::measure_block!("tt::store", {
         let hash = $key;
-        let index = tt_index!(hash, $table.len());
-        let table_vec: &mut Vec<TTEntry> =
+        let index = table_index!(hash, $table.len());
+        let table_vec: &mut Vec<HashEntry> =
             unsafe { &mut *($table.table.get()) };
         let entry = &mut table_vec[index];
 
@@ -492,18 +537,9 @@ macro_rules! hash_tt_entry {
             || old_flags != FEXACT && $flags == FEXACT;
 
         if should_write {
-            if empty {
-                $table.new_write.fetch_add(1, Ordering::Relaxed);
-            } else {
-                $table.over_write.fetch_add(1, Ordering::Relaxed);
-            }
-
-            entry.version.fetch_add(1, Ordering::Release);
-            entry.slot[0] = move_slot;
-            entry.slot[1] = data_slot;
-            entry.slot[2] = move_slot ^ data_slot ^ hash;
-            entry.age = age;
-            entry.version.fetch_add(1, Ordering::Release);
+            commit_hash_entry!(
+                $table, entry, hash, empty, move_slot, data_slot, age
+            );
         }
         })
     };
@@ -712,25 +748,22 @@ impl PTable {
     pub fn len(&self) -> usize {
         self.table.len()
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.table.iter().all(|entry| entry.key == 0)
-    }
 }
 
 /*----------------------------------------------------------------------------*\
-              QSEARCH TT ENTRY REPRESENTATION & CONSTANTS
+                     QSEARCH TT PACKING / UNPACKING MACROS
 \*----------------------------------------------------------------------------*/
 
-/// QTEntry
+/// Qsearch-table packing macros.
 ///
-/// QSearch TT entry — 3×u128 XOR-parity slot with seqlock.
+/// Counterparts of the `tt_*` packing family for the smaller qsearch
+/// payload: `qt_enc_score!` packs a sign-extended 16-bit score,
+/// `qt_enc_flags!` packs the bound type into bits 16-17, and `qt_score!`
+/// / `qt_flags!` read them back. Unlike the `tt_enc_*` writers these
+/// encoders return their packed value instead of mutating in place.
 ///
-/// Layout:
-/// - slot[0] = move.0 (128-bit, raw)
-/// - slot[1] = sig << 32 | encoded (128-bit, raw)
-///
-///   Field widths are proportional; every row represents 32 bits.
+/// `slot[0]` holds `move.0` raw and `slot[1]` holds `sig << 32 | encoded`.
+/// Field widths below are proportional; every row is 32 bits.
 ///
 ///   Bits 0..31:
 ///
@@ -774,141 +807,6 @@ impl PTable {
 ///   - bits 32..95 : `MoveSignature`
 ///   - bits 96..127: unused
 ///
-/// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
-/// - age     = plain u64 (excluded from parity)
-/// - version = seqlock counter (odd = writing, even = readable)
-///
-/// Write order: version++ → slot[0] → slot[1] → slot[2] → age → version++
-///
-/// Validation:
-///   (1) slot[0] ^ slot[1] ^ slot[2] == position_hash  →  parity intact
-///   (2) version unchanged across read                  →  no torn write
-#[derive(Default)]
-pub struct QTEntry {
-    pub slot:   [u128; 3],                                                      /* [key, data1, data2]                */
-    pub age:     u64,                                                           /* search age for staleness eviction  */
-    pub version: AtomicU64,                                                     /* seqlock: odd = writing, even = ok  */
-}
-
-impl Clone for QTEntry {
-    fn clone(&self) -> Self {
-        QTEntry {
-            slot: self.slot,
-            age: self.age,
-            version: AtomicU64::new(self.version.load(Ordering::Relaxed)),
-        }
-    }
-}
-
-/// QTable
-///
-/// Quiescence-search transposition table; same seqlock+parity scheme as
-/// TTable. Uses QTEntry slots instead of TTEntry; otherwise identical
-/// thread-safety invariants and age-based replacement policy apply.
-pub struct QTable {
-    pub table: SyncUnsafeCell<Vec<QTEntry>>,                                    /* shared mutable access              */
-    pub age: AtomicU64,                                                         /* search age; bump per search        */
-    pub new_write: AtomicU64,                                                   /* writes to empty slots              */
-    pub over_write: AtomicU64,                                                  /* writes replacing existing entries  */
-    pub hit: AtomicU64,                                                         /* probes where slot matched          */
-    pub valid: AtomicU64,                                                       /* probes where read was consistent   */
-}
-
-unsafe impl Sync for QTable {}
-unsafe impl Send for QTable {}
-
-impl Default for QTable {
-    fn default() -> Self {
-        Self::with_mb(HASH_DEFAULT_MB / 3)
-    }
-}
-
-impl QTable {
-    /// QTable method cluster.
-    ///
-    /// Mirror of the `TTable` methods: `with_mb` sizes the table to a
-    /// megabyte budget, `len` reports slot count, and `is_empty` scans
-    /// for any written entry. Slot counts are floored to a power of two
-    /// for mask indexing.
-    ///
-    /// with_mb
-    ///
-    ///   Params:
-    ///   - mb: usize -> memory budget in megabytes
-    ///
-    ///   Return:
-    ///   Self        -> zeroed table sized to the budget
-    ///
-    /// with_entries
-    ///
-    ///   Params:
-    ///
-    ///   - entries: usize
-    ///     requested slot count, floored to a power of two
-    ///
-    ///   Return:
-    ///   Self -> zeroed table with that many slots
-    ///
-    /// len
-    ///
-    ///   Return:
-    ///   usize -> slot count
-    ///
-    /// is_empty
-    ///
-    ///   Return:
-    ///   bool -> whether no slot has ever been written
-    pub fn with_mb(mb: usize) -> Self {
-        let size = (mb * 1024 * 1024 / size_of::<QTEntry>()).max(1);
-        Self::with_entries(size)
-    }
-
-    pub fn with_entries(entries: usize) -> Self {
-        Self {
-            table: SyncUnsafeCell::new(
-                vec![QTEntry::default(); 1 << entries.max(1).ilog2()]
-            ),
-            age: AtomicU64::new(0),
-            new_write: AtomicU64::new(0),
-            over_write: AtomicU64::new(0),
-            hit: AtomicU64::new(0),
-            valid: AtomicU64::new(0),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        unsafe { &*self.table.get() }.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        unsafe { &*self.table.get() }.iter().all(|entry| {
-            entry.slot[0] == 0 && entry.slot[1] == 0 && entry.slot[2] == 0
-        })
-    }
-}
-
-/*----------------------------------------------------------------------------*\
-                     QSEARCH TT PACKING / UNPACKING MACROS
-\*----------------------------------------------------------------------------*/
-
-/// Qsearch-table packing macros.
-///
-/// Counterparts of the `tt_*` packing family for the smaller qsearch
-/// entry: `qt_index!` masks a hash onto a power-of-two slot,
-/// `qt_enc_score!` packs a sign-extended 16-bit score, `qt_enc_flags!`
-/// packs the bound type into bits 16-17, and `qt_score!` / `qt_flags!`
-/// read them back. Unlike the `tt_enc_*` writers these encoders return
-/// their packed value instead of mutating in place.
-///
-/// qt_index!
-///
-///   Params:
-///   - hash   : PositionHash -> Zobrist key of the probed position
-///   - size   : usize        -> table slot count (power of two)
-///
-///   Return:
-///   usize                   -> slot index, `hash & (size - 1)`
-///
 /// qt_enc_score!
 ///
 ///   Params:
@@ -940,13 +838,6 @@ impl QTable {
 ///
 ///   Return:
 ///   u8             -> bound flag (bits 16-17)
-#[macro_export]
-macro_rules! qt_index {
-    ($hash:expr, $size:expr) => {{
-        ($hash as usize) & ($size - 1)
-    }};
-}
-
 #[macro_export]
 macro_rules! qt_enc_score {
     ($score:expr) => {{
@@ -1002,62 +893,43 @@ macro_rules! qt_flags {
 macro_rules! probe_qt_entry {
     ($state:expr, $key:expr, $qtable:expr, $alpha:expr, $beta:expr) => {
         hotpath::measure_block!("qt::probe", {
-        let hash = $key;
-        let index = qt_index!(hash, $qtable.len());
-        let entry = &mut unsafe { &mut *($qtable.table.get()) }[index];
+        probe_hash_slot!(
+            $qtable,
+            $key,
+            (false, i32::MIN, null_pseudo_move()),
+            |move_slot, data_slot| {
+                let encoded = (data_slot & 0xFFFF_FFFF) as u32;                 /* bits  0–31 = score+flags           */
+                let signature = (data_slot >> 32) as u64;                       /* bits 32-95 = MoveSignature         */
+                let pseudo_move: PseudoMove = (move_slot, signature);
 
-        let v1 = entry.version.load(Ordering::Acquire);
-        if v1 & 1 != 0 {
-            (false, i32::MIN, null_pseudo_move())                               /* write in progress                  */
-        } else {
-            let s0 = entry.slot[0];
-            let s1 = entry.slot[1];
-            let s2 = entry.slot[2];
+                let entry_flags = qt_flags!(encoded);
+                let mut entry_score = qt_score!(encoded);
 
-            if s0 ^ s1 ^ s2 != hash {                                           /* parity check: all slots covered    */
-                (false, i32::MIN, null_pseudo_move())
-            } else {
-                $qtable.hit.fetch_add(1, Ordering::Relaxed);                    /* parity matched                     */
-                let v2 = entry.version.load(Ordering::Acquire);
-
-                if v1 != v2 {                                                   /* seqlock: torn read detected        */
-                    (false, i32::MIN, null_pseudo_move())
-                } else {
-                    $qtable.valid.fetch_add(1, Ordering::Relaxed);
-                    let move_0  = s0;                                           /* move.0 raw                         */
-                    let encoded = (s1 & 0xFFFF_FFFF) as u32;                    /* bits  0–31 = score+flags           */
-                    let sig     = (s1 >> 32) as u64;                            /* bits 32-95 = MoveSignature         */
-                    let pseudo_mv: PseudoMove = (move_0, sig);
-
-                    let entry_flags   = qt_flags!(encoded);
-                    let mut entry_score = qt_score!(encoded);
-
-                    if entry_score > MATE_SCORE {
-                        entry_score -= $state.search_ply as i32;
-                    } else if entry_score < -MATE_SCORE {
-                        entry_score += $state.search_ply as i32;
-                    }
-
-                    let mut valid_cutoff = false;
-                    match entry_flags {
-                        FBETA => {
-                            if entry_score >= $beta {
-                                entry_score = $beta;
-                                valid_cutoff = true;
-                            }
-                        }
-                        FEXACT => valid_cutoff = true,
-                        _ => unreachable!(),
-                    }
-
-                    if pseudo_mv == null_pseudo_move() {
-                        valid_cutoff = false;
-                    }
-
-                    (valid_cutoff, entry_score, pseudo_mv)
+                if entry_score > MATE_SCORE {
+                    entry_score -= $state.search_ply as i32;
+                } else if entry_score < -MATE_SCORE {
+                    entry_score += $state.search_ply as i32;
                 }
+
+                let mut valid_cutoff = false;
+                match entry_flags {
+                    FBETA => {
+                        if entry_score >= $beta {
+                            entry_score = $beta;
+                            valid_cutoff = true;
+                        }
+                    }
+                    FEXACT => valid_cutoff = true,
+                    _ => unreachable!(),
+                }
+
+                if pseudo_move == null_pseudo_move() {
+                    valid_cutoff = false;
+                }
+
+                (valid_cutoff, entry_score, pseudo_move)
             }
-        }
+        )
         })
     };
 }
@@ -1088,8 +960,8 @@ macro_rules! hash_qt_entry {
     ) => {
         hotpath::measure_block!("qt::store", {
         let hash = $key;
-        let index = qt_index!(hash, $qtable.len());
-        let table_vec: &mut Vec<QTEntry> =
+        let index = table_index!(hash, $qtable.len());
+        let table_vec: &mut Vec<HashEntry> =
             unsafe { &mut *($qtable.table.get()) };
         let entry = &mut table_vec[index];
 
@@ -1125,18 +997,7 @@ macro_rules! hash_qt_entry {
             || old_flags != FEXACT && $flags == FEXACT;
 
         if should_write {
-            if empty {
-                $qtable.new_write.fetch_add(1, Ordering::Relaxed);
-            } else {
-                $qtable.over_write.fetch_add(1, Ordering::Relaxed);
-            }
-
-            entry.version.fetch_add(1, Ordering::Release);
-            entry.slot[0] = a;
-            entry.slot[1] = b;
-            entry.slot[2] = a ^ b ^ hash;
-            entry.age = age;
-            entry.version.fetch_add(1, Ordering::Release);
+            commit_hash_entry!($qtable, entry, hash, empty, a, b, age);
         }
         })
     };
