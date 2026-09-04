@@ -53,6 +53,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D12   | group `StaticState` eval/search fields     | −23     | done   |
 | D13   | move param structs out of `state.rs`       | 0       | done   |
 | D14   | three `thread_local!`s into `State`         | −13     | done   |
+| D16   | per-ply node buffers into `Scratch`        | +42     | done   |
 | D15   | `move_parse` atomic/multi_leg unification  | −500    | needs  |
 |       |                                            |         | go-ahead |
 
@@ -860,6 +861,58 @@ binaries back to back put standard at 2.94M vs 2.61M on one pair of runs
 and 3.63M vs 3.50M on the next, with grand crossing the other way both
 times. The spread between repeats of the same binary is wider than the
 spread between binaries, so the honest reading is no measurable change.
+
+## D16 — the per-node move buffers into `Scratch` · +42
+
+D14 asked what else was being allocated per node and answered it for
+`see!` only. The larger site was the search itself: `quiescence_search`
+and `alpha_beta` each opened with three `Vec::with_capacity` — the move
+list, the parallel score cache, and the multi-capture payload — so every
+one of the millions of nodes a search visits asked the allocator for
+three vectors and handed them straight back.
+
+They cannot be one set the way `see!`'s two can. A node holds all three
+from generation until it returns, and its children run in between, so a
+single set would be overwritten underneath the parent. `Scratch` keeps
+one `NodeLists` per ply instead, `MAX_DEPTH + 1` of them, indexed by
+`search_ply`. Both depth guards return before their function claims a
+set, so the index is always in range; `alpha_beta` hands off to
+`quiescence_search` before claiming its own, so the two never hold the
+same slot. Each set keeps whatever room the deepest visit to that ply
+needed, so a search allocates here once per ply and then never again.
+
+The set is taken out with `mem::take` and put back on every exit, for
+the same reason `see!` does it: the loop makes and unmakes moves, and a
+field borrow held across `make_move!` borrows the whole position. Unlike
+`see!` the take is cheap — `NodeLists::default()` is three empty vectors,
+no `PTable`.
+
+**The one real trap, and it cost a full bench cycle.** `scores` was
+sized with `resize(moves.len(), usize::MAX)`, and `Vec::resize` fills
+only the slots it *adds*. With a fresh vector per node that always
+produced an all-`usize::MAX` array, which is exactly what
+`pick_by_score!` reads as "not yet scored". Reusing the vector left the
+previous node's scores in the first `min(old, new)` slots, so the picker
+took stale orderings as its own and every count moved: standard 289136
+against 190760, shogi 8790254 against 1391464. One `scores.clear()`
+before the resize restored all seven exactly. `moves` needed nothing —
+both generators `clear()` their `out` on entry — and neither did
+`payload`, which `process_multi_leg_vector!` clears before each use.
+
+Gates: all seven bench node counts exact, all seven perft suites, all
+seven `evaluate` scores, both `see` checks, both style gates.
+
+This is the one stage that measurably moves nps, and unlike D14 the A/B
+is clean. Six paired standard runs, `HEAD` binary against this one:
+4.46/4.48/4.44/4.40/4.36/4.41M against 4.48/4.82/4.82/4.77/4.73/4.81M.
+Five of the six beat every `HEAD` run; shogi is 1.57M against 1.61M.
+Roughly +8% on standard, +3% on shogi.
+
+It adds lines rather than cutting them — a struct, its doc, and a restore
+at each early exit. The ladder's currency is red diff, and this stage
+pays in the other direction on purpose: it is the answer to the question
+D14 raised, and the allocator traffic it removes is the largest single
+source left in the search.
 
 ## Deferred, not resolved in this ladder
 

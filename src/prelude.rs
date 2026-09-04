@@ -26,7 +26,10 @@ pub use crate::game::representations::{
         PieceSet,
     },
     piece::{Piece, PieceIndex},
-    state::{EnPassantSquare, PawnEntry, Scratch, Snapshot, Square, State},
+    state::{
+        EnPassantSquare, NodeLists, PawnEntry, Scratch, Snapshot, Square,
+        State,
+    },
     vector::{
         AtomicElement::{self, AtomicEval, AtomicExpr, AtomicTerm},
         AtomicGroup, AtomicVector, Leg, LegVector, MoveSet, MoveVector,

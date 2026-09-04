@@ -745,12 +745,16 @@ pub struct State {
 
 /// Scratch
 ///
-/// The working room evaluation and move ordering need and nothing else: the
-/// two vectors `see!` refills per exchange, the two rosters
-/// `pawn_structure!` refills per sweep, and the cache that sweep fills.
-/// Both macros take the whole struct out of the [`State`] they are handed
-/// and put it back on the way out, because a field borrow held across
-/// `make_move!` would be a borrow of the entire position.
+/// The working room search and evaluation need and nothing else: one set of
+/// lists per ply for the nodes, the two vectors `see!` refills per exchange,
+/// the two rosters `pawn_structure!` refills per sweep, and the cache that
+/// sweep fills.
+///
+/// Whatever holds one of these across a `make_move!` takes it out of the
+/// [`State`] and puts it back on the way out, because a field borrow held
+/// across a move is a borrow of the entire position. What makes no move —
+/// `pawn_structure!` — borrows in place, `scratch` being a different field
+/// from the statics and the piece lists its sweeps read.
 ///
 /// Nothing here survives the call that fills it, so a cloned position is
 /// given the room and never the contents — except `pawn_table`, whose
@@ -758,10 +762,31 @@ pub struct State {
 /// clears because a new game is a new board.
 pub struct Scratch {
 
+    pub node_lists: Vec<NodeLists>,                                             /* one set per ply, MAX_DEPTH deep    */
     pub see_moves: Vec<Move>,                                                   /* attackers of one square, popped    */
     pub see_scratch: Vec<u64>,                                                  /* least valuable first               */
     pub pawn_rosters: [Vec<PawnEntry>; 2],                                      /* colour to its pawns, one sweep old */
     pub pawn_table: PTable,                                                     /* arrangement to its two scores      */
+}
+
+/// NodeLists
+///
+/// One node's working room: the moves it generated, the ordering score
+/// cached beside each, and the payload the multi-capture generators write
+/// their records through. A node holds all three from generation until it
+/// returns, so [`Scratch`] keeps one set per ply and not one set: a node
+/// is still reading its own while its children fill theirs.
+///
+/// The depth guards in `alpha_beta` and `quiescence_search` return before
+/// a node claims its set, so the ply that indexes this is always at most
+/// `MAX_DEPTH`. Each set keeps whatever room the deepest visit to that ply
+/// needed, so a search allocates here once per ply and then never again.
+#[derive(Default)]
+pub struct NodeLists {
+
+    pub moves: Vec<Move>,                                                       /* this node's pseudo-legal moves     */
+    pub scores: Vec<usize>,                                                     /* ordering score, filled lazily      */
+    pub payload: Vec<u64>,                                                      /* multi-capture records under them   */
 }
 
 /// PawnEntry
@@ -776,6 +801,8 @@ pub type PawnEntry = (usize, Square, i32, bool);
 impl Default for Scratch {
     fn default() -> Self {
         Scratch {
+            node_lists: (0..=MAX_DEPTH)
+                .map(|_| NodeLists::default()).collect(),
             see_moves: Vec::with_capacity(64),                                  /* one square's worth of attackers    */
             see_scratch: Vec::with_capacity(32),                                /* and their multi-capture payload    */
             pawn_rosters: [

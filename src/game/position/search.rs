@@ -584,16 +584,17 @@ fn quiescence_search(
     let mut best_move = null_move();
     let alpha_start = alpha;
     let mut legal_moves = 0;
-    let mut moves = Vec::with_capacity(64);
-    let mut scores = Vec::with_capacity(64);
-    let mut scratch = Vec::with_capacity(32);
+    let ply = state.search_ply as usize;
+    let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
+    let NodeLists { moves, scores, payload } = &mut lists;
 
     if in_check {
-        generate_all_moves_and_drops(state, &mut moves, &mut scratch);
+        generate_all_moves_and_drops(state, moves, payload);
     } else {
-        generate_all_captures(state, &mut moves, &mut scratch);
+        generate_all_captures(state, moves, payload);
     }
 
+    scores.clear();                                                             /* last node's scores answer for it   */
     scores.resize(moves.len(), usize::MAX);
 
     let delta = state.statics.search.qsearch_delta;
@@ -601,7 +602,7 @@ fn quiescence_search(
 
     for index in 0..moves.len() {
         pick_by_score!(
-            state, info, &mut moves, &mut scores, index, &table_move,
+            state, info, moves, scores, index, &table_move,
             &[usize::MAX; CONTINUATION_PLIES]                                   /* evasions answer a capture, not a   */
         );                                                                      /* line worth learning a reply to     */
 
@@ -632,6 +633,8 @@ fn quiescence_search(
         undo_move!(state);
 
         if info.interrupt {
+            state.scratch.node_lists[ply] = lists;
+
             return alpha;
         }
 
@@ -640,6 +643,8 @@ fn quiescence_search(
                 hash_qt_entry!(
                     moves[index], beta, FBETA, state, qtable_key, qtable
                 );
+                state.scratch.node_lists[ply] = lists;
+
                 return beta;
             }
 
@@ -647,6 +652,8 @@ fn quiescence_search(
             alpha = score;
         }
     }
+
+    state.scratch.node_lists[ply] = lists;
 
     if in_check && legal_moves == 0 {
         let (outcome, inverted) = no_move_verdict!(state, in_check);
@@ -873,11 +880,11 @@ pub fn alpha_beta(
     let lmp_row = improving as usize * (lmp_deepest + 1);
     let lmp_slot = depth.min(lmp_deepest);                                      /* deeper nodes reuse the last row    */
 
-    let mut moves = Vec::with_capacity(64);
-    let mut scores = Vec::with_capacity(64);
-    let mut scratch = Vec::with_capacity(32);
+    let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
+    let NodeLists { moves, scores, payload } = &mut lists;
 
-    generate_all_moves_and_drops(state, &mut moves, &mut scratch);
+    generate_all_moves_and_drops(state, moves, payload);
+    scores.clear();                                                             /* last node's scores answer for it   */
     scores.resize(moves.len(), usize::MAX);
 
     let mut best_move = null_move();
@@ -887,7 +894,7 @@ pub fn alpha_beta(
 
     for index in 0..moves.len() {
         pick_by_score!(
-            state, info, &mut moves, &mut scores, index, &table_move,
+            state, info, moves, scores, index, &table_move,
             &cont_bases
         );
 
@@ -1029,6 +1036,8 @@ pub fn alpha_beta(
         undo_move!(state);
 
         if info.interrupt {
+            state.scratch.node_lists[ply] = lists;
+
             return 0;
         }
 
@@ -1054,6 +1063,7 @@ pub fn alpha_beta(
                         moves[index], beta, FBETA, depth,
                         state, table_key, ttable
                     );
+                    state.scratch.node_lists[ply] = lists;
 
                     return beta;
                 }
@@ -1086,6 +1096,8 @@ pub fn alpha_beta(
             );
         }
     }
+
+    state.scratch.node_lists[ply] = lists;
 
     if legal_moves == 0 {
         let (outcome, inverted) = no_move_verdict!(state, in_check);
