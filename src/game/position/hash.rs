@@ -151,32 +151,6 @@ fn wide_context(slot: usize, value: u16) -> u128 {
         ^ CONTEXT_HASHES[slot + 1][(value >> 8) as usize]
 }
 
-/// pass_class
-///
-/// The pass and stand-off progress a position carries, as the three facts
-/// `position_terminal` reads off history: the last ply passed, the ply before
-/// it passed, and the last ply left an accepted stand-off. Two boards alike
-/// in everything else still end differently when these differ.
-///
-/// Params:
-/// - state: &State -> position to classify
-///
-/// Return:
-/// u8              -> pass and stand-off bits of the position
-fn pass_class(state: &State) -> u8 {
-    let Some(last) = state.history.last() else {
-        return 0;
-    };
-
-    let passed = pass_snapshot!(last);
-    let twice = passed
-        && state.history.len() >= 2
-        && pass_snapshot!(state.history[state.history.len() - 2]);
-    let stand_off = passed && last.in_stand_off == Some(true);
-
-    passed as u8 | (twice as u8) << 1 | (stand_off as u8) << 2
-}
-
 /// search_key
 ///
 /// The transposition identity of a node: the canonical position hash plus
@@ -196,6 +170,12 @@ fn pass_class(state: &State) -> u8 {
 ///     ^ repetition occurrences   (while a repetition rule is declared)
 ///     ^ pass and stand-off bits  (always)
 /// ```
+///
+/// The pass and stand-off bits are the three facts `position_terminal` reads
+/// off history — the last ply passed, the ply before it passed, and the last
+/// ply left an accepted stand-off. A position with no history folds in the
+/// zero class rather than skipping the term, so a fresh board and a board
+/// that has passed nothing still agree.
 ///
 /// Params:
 /// - state  : &State -> position whose search identity is wanted
@@ -230,7 +210,17 @@ pub fn search_key(state: &State, repeats: u8) -> u128 {
         key ^= &CONTEXT_HASHES[REPETITION_COUNT][repeats as usize];
     }
 
-    key ^= &CONTEXT_HASHES[PASS_CLASS][pass_class(state) as usize];
+    let pass_class = state.history.last().map_or(0, |last| {
+        let passed = pass_snapshot!(last);
+        let twice = passed
+            && state.history.len() >= 2
+            && pass_snapshot!(state.history[state.history.len() - 2]);
+        let stand_off = passed && last.in_stand_off == Some(true);
+
+        passed as u8 | (twice as u8) << 1 | (stand_off as u8) << 2
+    });
+
+    key ^= &CONTEXT_HASHES[PASS_CLASS][pass_class as usize];
 
     key
 }

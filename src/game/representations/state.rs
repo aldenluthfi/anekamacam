@@ -1194,7 +1194,8 @@ impl State {
     ///   - expr_set: Vec<String> -> one stand-off expression per piece
     ///
     ///   Return:
-    ///   Vec<PatternSet>         -> patterns, via `generate_stand_off_patterns`
+    ///   Vec<PatternSet>         -> one compiled pattern per `|` branch, or
+    ///                              none where the expression is empty
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
         let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
         for expr in expr_set {
@@ -1222,9 +1223,13 @@ impl State {
     fn generate_piece_stand_off(
         &self, expr_set: Vec<String>
     ) -> Vec<PatternSet> {
-        expr_set.iter().map(
-            |expr| generate_stand_off_patterns(expr, self)
-        ).collect::<Vec<PatternSet>>()
+        expr_set.iter().map(|expr| if expr.is_empty() {
+            PatternSet::new()
+        } else {
+            expr.split('|').map(
+                |branch| parse_pattern(branch, self)
+            ).collect::<PatternSet>()
+        }).collect::<Vec<PatternSet>>()
     }
 
     /// State::populate_relevant

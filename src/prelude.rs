@@ -62,7 +62,7 @@ pub use crate::game::representations::termination::{
 pub use crate::game::moves::move_parse::generate_move_vectors;
 
 pub use crate::game::moves::pattern_parse::{
-    generate_relevant_stand_offs, generate_stand_off_patterns, parse_pattern,
+    generate_relevant_stand_offs, parse_pattern,
 };
 pub use crate::game::position::{
     hash::{

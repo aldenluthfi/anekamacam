@@ -47,7 +47,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D6    | search dedupe                              | +27     | done   |
 | D7    | `graphics.rs` idiom dedupe                 | −308    | done   |
 | D8    | `move_parse` small dedupe                  | −6      | done   |
-| D9    | fold single-caller helpers, `game/`        | −200    | todo   |
+| D9    | fold single-caller helpers, `game/`        | −105    | done   |
 | D10   | fold single-caller helpers, `io/`+`debug/` | −180    | todo   |
 | D11   | fold `has_castled` into `castling_state`   | −5      | todo   |
 | D12   | group `StaticState` eval/search fields     | −25     | todo   |
@@ -440,6 +440,57 @@ fewer double-blank lines than `HEAD`.
 
 Not attempted: the 14 mirrored `atomic`/`multi_leg` function pairs. That
 is D15 and still needs an explicit go-ahead.
+
+## D9 — fold single-caller helpers, `game/` · done
+
+−105. The stage's own list named sixteen helpers, but eight of them live
+in `io/` or `debug/`, not `game/` — `compute_budget`, `stop_search`,
+`replay_moves`, `format_search_keys`, `clamp_material`, `mirror_square`,
+`opening_line`, `dot`. Splitting the ladder by directory and then listing
+across it was the plan's error, not a discovery; those eight move to D10
+so each commit reverts one area.
+
+Folded, seven:
+
+- `expand_wildcard` into `parse_pattern`. Two `replace` calls; the caller
+  already documented that `*` means the whole piece alphabet.
+- `generate_stand_off_patterns` into `State::generate_piece_stand_off`,
+  and out of the prelude. The empty-expression case has to stay an
+  explicit `PatternSet::new()` rather than a `filter` on the split: an
+  empty branch inside a non-empty expression is malformed config and must
+  keep reaching `parse_pattern`, which panics on it.
+- `pass_class` into `search_key`. Every other context slot in that
+  function is already computed inline, so the helper was the odd one out.
+  Kept as `map_or(0, ..)`, not an `if let`: a position with no history
+  still folds the zero class in, and skipping the XOR would change the
+  key.
+- `derive_piece_maneuverability` into `derive_piece_value`. The only
+  member of the `derive_piece_*` family with a single call site — the
+  other four are shared, which is what earns them their names.
+- `setup_census_key` into `walk_setup_endings`. The census is now built
+  before the cap checks instead of inside the third `||` term; the
+  short-circuit on `visited.insert` is unchanged, only the key
+  construction became unconditional.
+- `derive_square_score` into `derive_pst`, which also hoists the phase
+  occupancy and the two weights out of the per-square closure. Same
+  operands in the same order, so the sum is bit-identical.
+- `AtomicVector::from_tuple` into the one `From` impl that called it.
+
+Not folded, by judgement: `derive_pawn_interference`. Its call sits in a
+column of six same-shaped `[entry] = derive_pawn_*(..)` assignments, and
+its doc carries an ASCII diagram of the interference mask that has
+nowhere better to live.
+
+A crude single-caller scan over `game/` turned up ~50 more, and almost
+all of them are `move_parse.rs` (D15) or the `derive_*`/`termination.rs`
+families, where the sibling name is the documentation and the bodies are
+20-200 lines. `continuation_bases` (`search.rs:1139`) is single-caller
+and stays: folding a 20-line loop into the hot search buys nothing.
+
+Gates: warning-free build; all seven perft suites pass; all seven bench
+node counts reproduce exactly. `parameters.rs` is derive-time and the
+bench reads stored params, so the three folds there are proven by
+construction (same operands, same order), not by the node gate.
 
 ## Deferred, not resolved in this ladder
 

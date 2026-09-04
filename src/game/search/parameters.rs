@@ -438,36 +438,6 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
     offsets
 }
 
-/// derive_piece_maneuverability
-///
-/// Fraction of a piece's distinct move offsets whose reverse offset is also a
-/// move offset. Symmetric movers (knight, rook, bishop, queen) score 1.0;
-/// one-directional movers (pawn, shogi lance) score near 0.0, capturing the
-/// value penalty of being unable to retreat.
-///
-/// Params:
-/// - state: &State -> precomputed relevant-move tables
-/// - piece: &Piece -> piece whose offsets are examined
-///
-/// Return:
-/// f64             -> reversible-offset fraction, in [0, 1]
-fn derive_piece_maneuverability(state: &State, piece: &Piece) -> f64 {
-    let offsets = derive_piece_offsets(state, piece);
-
-    if offsets.is_empty() {
-        return 1.0;
-    }
-
-    let reversible = offsets
-        .iter()
-        .filter(|(file_offset, rank_offset)| {
-            offsets.contains(&(-file_offset, -rank_offset))
-        })
-        .count();
-
-    reversible as f64 / offsets.len() as f64
-}
-
 /// derive_piece_value
 ///
 /// Derives a piece's phase value from its movement geometry:
@@ -510,7 +480,18 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
     let piece_index = p_index!(piece);
 
     let reach = derive_piece_reach(state, piece);
-    let maneuverability = derive_piece_maneuverability(state, piece);
+    let offsets = derive_piece_offsets(state, piece);
+    let reversible = offsets
+        .iter()
+        .filter(|(file_offset, rank_offset)| {
+            offsets.contains(&(-file_offset, -rank_offset))
+        })
+        .count();
+    let maneuverability = if offsets.is_empty() {
+        1.0
+    } else {
+        reversible as f64 / offsets.len() as f64
+    };
 
     let empty_mobility = (0..board_size).into_par_iter().map(|square| {
         derive_piece_mobility(state, piece_index, square, 0.0)
@@ -697,42 +678,6 @@ fn derive_closest_promotion(
     closest_optional.min(closest_mandatory)
 }
 
-/// derive_square_score
-///
-/// Raw positional desirability of one square for one piece: mobility
-/// from the square minus its distance from the center, with the weights
-/// shifted by phase (mobility matters more in the opening, centrality
-/// more in the endgame).
-///
-/// Params:
-/// - state      : &State     -> precomputed relevant-move tables
-/// - piece_index: PieceIndex -> piece being placed
-/// - square     : usize      -> square being scored
-/// - is_endgame : bool       -> selects phase occupancy and weights
-///
-/// Return:
-///
-/// f64
-/// unnormalized square score, later scaled into the PST
-fn derive_square_score(
-    state: &State, piece_index: PieceIndex, square: usize, is_endgame: bool
-) -> f64 {
-    let occupancy = if is_endgame {
-        ENDGAME_OCCUPANCY
-    } else {
-        OPENING_OCCUPANCY
-    } as f64 / COEFFICIENT_SCALE;
-
-    let mobility =
-        derive_piece_mobility(state, piece_index, square, occupancy);
-    let distance_from_center = derive_distance_from_center(state, square);
-
-    let mobility_weight = if is_endgame { 0.25 } else { 0.5 };
-    let center_weight = if is_endgame { 1.75 } else { 1.25 };
-
-    mobility_weight * mobility - center_weight * distance_from_center
-}
-
 /// derive_promotion_bonus
 ///
 /// Advancement bonus for a promotable piece: a linear gradient toward the
@@ -778,10 +723,13 @@ fn derive_promotion_bonus(
 
 /// derive_pst
 ///
-/// Builds one piece-square table: raw square scores are centered on
-/// their mean and normalized to a fixed amplitude, then the promotion
-/// gradient is added. For a compact board the positional part comes out
-/// center-positive and edge-negative, e.g.:
+/// Builds one piece-square table. A square's raw score is its mobility
+/// from that square minus its distance from the center, with the weights
+/// shifted by phase — mobility matters more in the opening, centrality
+/// more in the endgame. Those scores are centered on their mean and
+/// normalized to a fixed amplitude, then the promotion gradient is added.
+/// For a compact board the positional part comes out center-positive and
+/// edge-negative, e.g.:
 ///
 /// ```text
 /// ┌────┬────┬────┬────┐
@@ -820,11 +768,23 @@ fn derive_pst(
         p_ovalue!(piece) as f64
     };
 
+    let occupancy = if is_endgame {
+        ENDGAME_OCCUPANCY
+    } else {
+        OPENING_OCCUPANCY
+    } as f64 / COEFFICIENT_SCALE;
+
+    let mobility_weight = if is_endgame { 0.25 } else { 0.5 };
+    let center_weight = if is_endgame { 1.75 } else { 1.25 };
+
     let scores: Vec<f64> = if !is_endgame && p_is_royal!(piece) {
         (0..board_size).map(|square| -((square / files) as f64)).collect()
     } else {
         (0..board_size).into_par_iter().map(|square| {
-            derive_square_score(state, index, square, is_endgame)
+            mobility_weight
+                * derive_piece_mobility(state, index, square, occupancy)
+                - center_weight
+                * derive_distance_from_center(state, square)
         }).collect()
     };
 
@@ -847,30 +807,6 @@ fn derive_pst(
     }).collect()
 }
 
-/// setup_census_key
-///
-/// Builds the identity the setup walk memoizes on: the board census, both
-/// hands, and the side to place. Two part-built setups differing only in
-/// where equal pieces stand share a key, which is what keeps the walk
-/// bounded on a variant whose placements are largely interchangeable.
-///
-/// Params:
-/// - state: &State -> position part-way through its placement phase
-///
-/// Return:
-/// Vec<u32>        -> census, both hands, and side to place, flattened
-fn setup_census_key(state: &State) -> Vec<u32> {
-    let mut key = state.piece_count.clone();
-
-    for side in [WHITE as usize, BLACK as usize] {
-        key.extend(state.piece_in_hand[side].iter().map(|held| *held as u32));
-    }
-
-    key.push(state.playing as u32);
-
-    key
-}
-
 /// walk_setup_endings
 ///
 /// Depth-first walk of the placement phase over one scratch position,
@@ -878,6 +814,11 @@ fn setup_census_key(state: &State) -> Vec<u32> {
 /// SETUP. Placements are made and unmade in place, so the walk costs one
 /// position rather than one per node, and it never asks what ends a setup
 /// -- it plays until the position says it has.
+///
+/// The walk memoizes on the board census, both hands, and the side to
+/// place. Two part-built setups differing only in where equal pieces stand
+/// share that identity, which is what keeps the walk bounded on a variant
+/// whose placements are largely interchangeable.
 ///
 /// Params:
 /// - probe  : &mut State             -> scratch position, restored on return
@@ -888,9 +829,19 @@ fn walk_setup_endings(
     visited: &mut HashSet<Vec<u32>>,
     endings: &mut Vec<Vec<u32>>,
 ) {
+    let mut census = probe.piece_count.clone();
+
+    for side in [WHITE as usize, BLACK as usize] {
+        census.extend(
+            probe.piece_in_hand[side].iter().map(|held| *held as u32)
+        );
+    }
+
+    census.push(probe.playing as u32);
+
     if endings.len() >= SETUP_ENDING_CAP
     || visited.len() >= SETUP_STATE_CAP
-    || !visited.insert(setup_census_key(probe))
+    || !visited.insert(census)
     {
         return;
     }

@@ -849,8 +849,8 @@ pub struct AtomicVector(u32);
 impl AtomicVector {
     /// AtomicVector constructors and accessors.
     ///
-    /// `new` / `from_tuple` pack a (whole, last) displacement pair into the
-    /// byte layout documented on [`AtomicVector`]; `whole`, `last`, and
+    /// `new` packs a (whole, last) displacement pair into the byte layout
+    /// documented on [`AtomicVector`]; `whole`, `last`, and
     /// `as_tuple` unpack it; `set` and `set_last` overwrite components in
     /// place. `origin(rotation)` builds the zero displacement
     /// whose `last` field carries the cardinal unit vector of `rotation`,
@@ -897,14 +897,6 @@ impl AtomicVector {
     ///
     ///   Return:
     ///   [(i8, i8); 2] -> [whole, last] displacement pair
-    ///
-    /// from_tuple
-    ///
-    ///   Params:
-    ///   - vectors: [(i8, i8); 2] -> [whole, last] pair to pack
-    ///
-    ///   Return:
-    ///   Self                     -> the packed displacement pair
     pub fn new(whole: (i8, i8), last: (i8, i8)) -> Self {
         let x1 = (whole.0 as u8) as u32;
         let y1 = (whole.1 as u8) as u32;
@@ -943,10 +935,6 @@ impl AtomicVector {
 
     pub fn as_tuple(&self) -> [(i8, i8); 2] {
         [self.whole(), self.last()]
-    }
-
-    pub fn from_tuple(vectors: [(i8, i8); 2]) -> Self {
-        AtomicVector::new(vectors[0], vectors[1])
     }
 
     /// AtomicVector::add
@@ -1004,7 +992,7 @@ impl AtomicVector {
 
 impl From<[(i8, i8); 2]> for AtomicVector {
     fn from(vectors: [(i8, i8); 2]) -> Self {
-        AtomicVector::from_tuple(vectors)
+        AtomicVector::new(vectors[0], vectors[1])
     }
 }
 

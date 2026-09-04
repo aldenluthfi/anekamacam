@@ -26,26 +26,6 @@ lazy_static! {
         });
 }
 
-/// expand_wildcard
-///
-/// Replaces each `*` piece wildcard with this variant's piece alphabet.
-///
-/// Later parsing therefore works only with concrete piece characters.
-///
-/// Params:
-/// - expr : &str   -> raw CPMN pattern expression
-/// - state: &State -> supplies the variant's piece characters
-///
-/// Return:
-/// String          -> the expression with wildcards spelled out
-fn expand_wildcard(expr: &str, state: &State) -> String {
-    let all_pieces = state.statics.pieces.iter()
-        .map(|p| p.char).collect::<String>();
-
-    let expr = expr.replace("~*", &format!("~{}", all_pieces));
-    expr.replace("-*", &format!("-{}", all_pieces))
-}
-
 /// parse_pattern
 ///
 /// Compiles one Cheesy Pattern Match Notation (CPMN) expression.
@@ -61,7 +41,9 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
 /// pattern matches when all allowers hold and no stopper holds.
 ///
 /// Piece lists name the pieces relevant to allowers and stoppers. `*` means
-/// every real piece; `?` means the empty-square sentinel.
+/// every real piece and is spelled out into the variant's piece alphabet
+/// before anything else runs, so every later stage sees only concrete piece
+/// characters; `?` means the empty-square sentinel.
 ///
 /// Params:
 /// - expr : &str   -> one CPMN pattern expression
@@ -70,7 +52,10 @@ fn expand_wildcard(expr: &str, state: &State) -> String {
 /// Return:
 /// Pattern         -> compiled (allower, stopper) offset lists with piece sets
 pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
-    let expr = &expand_wildcard(expr, state);
+    let all_pieces = state.statics.pieces.iter()
+        .map(|piece| piece.char).collect::<String>();
+    let expr = &expr.replace("~*", &format!("~{}", all_pieces))
+        .replace("-*", &format!("-{}", all_pieces));
     let captures = PATTERN_PATTERN
         .captures(expr)
         .unwrap_or_else(|| panic!("Invalid pattern format {}", expr));
@@ -187,31 +172,6 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     log_4!("Encoded stoppers: {:?}", stopper_result);
 
     (allower_result, stopper_result)
-}
-
-/// generate_stand_off_patterns
-///
-/// Parses a `|`-separated stand-off expression into executable patterns.
-/// Each branch is parsed independently via `parse_pattern` and collected into a
-/// single vector.
-/// Empty expressions produce no patterns.
-///
-/// Params:
-/// - expr : &str   -> `|`-separated stand-off expression from the config
-/// - state: &State -> piece dictionary and board dimensions
-///
-/// Return:
-/// Vec<Pattern>    -> one compiled pattern per branch
-pub fn generate_stand_off_patterns(
-    expr: &str,
-    state: &State,
-) -> Vec<Pattern> {
-    if expr.is_empty() {
-        return Vec::new();
-    }
-
-    let parts = expr.split('|').collect::<Vec<&str>>();
-    parts.into_iter().map(|part| parse_pattern(part, state)).collect()
 }
 
 /// generate_relevant_stand_offs
