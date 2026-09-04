@@ -44,7 +44,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D3    | collapse five `populate_relevant_*`        | −86     | done   |
 | D4    | io dedupe                                  | −278    | done   |
 | D5    | TT/QT unification                          | −139    | done   |
-| D6    | search dedupe                              | −25     | todo   |
+| D6    | search dedupe                              | +27     | done   |
 | D7    | `graphics.rs` idiom dedupe                 | −350    | todo   |
 | D8    | `move_parse` small dedupe                  | −25     | todo   |
 | D9    | fold single-caller helpers, `game/`        | −200    | todo   |
@@ -269,6 +269,62 @@ Gates: `cargo build --release` warning-free and the five bench variants
 node-identical. D5 touches no derivation path, so sittuyin and janggi
 were not required.
 
+## D6 — search dedupe · done
+
+Two of the four planned items landed; two were dropped, and the stage
+came out **line-positive**. That is the finding, not the failure.
+
+`no_move_verdict!` (`termination.rs`, beside `outcome_score!`) reads the
+variant's verdict on a side with no moves — checkmate outcome in check,
+stalemate outcome otherwise — and returns it with a flag for whether the
+verdict is inverted, which it is when a drop barred from mating delivered
+the mate. Three readers now share it: `util.rs adjudicate_no_move`, the
+quiescence leaf, and the negamax leaf. They had drifted: the quiescence
+leaf hardcoded `state.termination.checkmate` instead of selecting on
+`in_check`. That reads the same today only because its guard is
+`in_check && legal_moves == 0`; a variant whose stalemate rule ever
+reached that leaf would have read the wrong field. The three sites cannot
+drift again.
+
+Both search leaves take the branchless form, which is where the line win
+in `search.rs` came from:
+
+    return outcome_score!(state, outcome) * (1 - 2 * inverted as i32);
+
+and `adjudicate_no_move` picks the losing side the same way — exact,
+because `WHITE == 0` and `BLACK == 1`:
+
+    let subject = state.playing ^ inverted as u8;
+
+`move_key!` (`search.rs`, after `SearchInfo`) names `piece * board_size +
+end`, the cell every history table is indexed by. Four sites built it and
+called it three different things — `history_index`, `key`, `index`. The
+`search_hist` field comment now says `[move key]` to match. `board_size`
+stays a macro parameter rather than a `statics` read: the scoring loops
+hoist it, and `state` is `&mut` through `pick_by_score!`, so LLVM cannot
+hoist the dereference itself.
+
+**Dropped, both symmetric rather than inconsistent:** the TT and QT
+halves of `log_table_stats`, and the eight-line counter reset at
+`search.rs:189-197`. `HashTable<2, 3>` and `HashTable<1, 3>` are distinct
+types, so no array covers them; a method or generic function costs about
+as many doc lines as it deletes body lines.
+
+Which is the stage's real lesson. **At this codebase's doc density a
+two-site dedupe loses lines; only three sites and up pay.** Every shared
+macro owes ~10-14 lines of `///` block before its first line of body. D6
+budgeted −25 and delivered 66 added against 39 removed — **+27 lines
+total, −9 of actual code**, the rest doc. D5 undershot for the same
+reason. The remaining estimates in the ladder are built on raw duplicate
+counts and should be read as upper bounds.
+
+Gates: warning-free release build, five bench variants node-identical,
+and `run_endgame_fixtures.sh` at 37/38. That one failure — xiangqi,
+`perpetual one cycle short`, expecting `mate -2` and getting `cp -950` —
+**is pre-existing**, confirmed by stashing the stage and re-running
+against `85b4637`, which fails identically. It is not a no-move-leaf
+path: the position has legal moves. Logged below.
+
 ## Deferred, not resolved in this ladder
 
 - PST-residual / param-schema question — stays in plan 21.
@@ -277,3 +333,9 @@ were not required.
   real bug, own `[SEMANTIC]` commit.
 - Pawn table ignoring `setoption Hash` and surviving `ucinewgame` — the
   fix moves node counts, so it follows D14 as `[SEMANTIC]`.
+- Endgame fixture `xiangqi / perpetual one cycle short` fails on
+  `85b4637` and every commit this ladder has touched, expecting
+  `score mate -2` and getting `score cp -950`. Pre-dates the debloat
+  pass; the position is not at a no-move leaf, so it is a perpetual
+  adjudication or search-horizon question, not a refactor artefact. Own
+  `[SEMANTIC]` investigation, outside this ladder.

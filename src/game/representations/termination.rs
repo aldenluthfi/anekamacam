@@ -310,6 +310,40 @@ macro_rules! outcome_score {
     };
 }
 
+/// no_move_verdict!
+///
+/// Reads the variant's verdict on a side that has run out of moves: its
+/// configured checkmate outcome when in check and its stalemate outcome
+/// otherwise, plus whether the verdict lands on the wrong side. It does
+/// when a drop barred from mating delivered the mate — the dropper loses
+/// for breaking the rule, not the mated side for being mated.
+///
+/// Every reader of that rule goes through here — the two search leaves
+/// negate a score by it and adjudication flips a colour by it — so the
+/// three cannot drift apart as rules are added.
+///
+/// Params:
+/// - state   : &mut State -> position whose side to move cannot move
+/// - in_check: bool       -> whether that side stands in check
+///
+/// Return:
+/// (Outcome, bool)        -> the outcome, and whether it is inverted
+#[macro_export]
+macro_rules! no_move_verdict {
+    ($state:expr, $in_check:expr) => {{
+        let outcome = if $in_check {
+            $state.termination.checkmate
+        } else {
+            $state.termination.stalemate
+        };
+
+        let inverted = outcome == Outcome::Loss
+            && illegal_mating_drop!($state);
+
+        (outcome, inverted)
+    }};
+}
+
 /*----------------------------------------------------------------------------*\
                                    DETECTORS
 \*----------------------------------------------------------------------------*/

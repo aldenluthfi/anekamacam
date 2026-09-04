@@ -279,19 +279,11 @@ pub fn refresh_eval_state(state: &mut State) {
 /// Return:
 /// u8                -> absolute game result
 pub fn adjudicate_no_move(state: &mut State) -> u8 {
-    let outcome = if is_in_check!(state.playing, state) {
-        state.termination.checkmate
-    } else {
-        state.termination.stalemate
-    };
-    let subject = if outcome == Outcome::Loss
-        && illegal_mating_drop!(state)
-    {
-        1 - state.playing                                                       /* a drop barred from mating loses    */
-    } else {                                                                    /* for the dropper, not the mated     */
-        state.playing
-    };
+    let in_check = is_in_check!(state.playing, state);
+    let (outcome, inverted) = no_move_verdict!(state, in_check);
+    let subject = state.playing ^ inverted as u8;                               /* the barred dropper loses instead   */
     let result = resolve_outcome!(subject, outcome);
+
     state.termination.game_result = result;
     result
 }

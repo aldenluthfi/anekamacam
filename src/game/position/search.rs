@@ -39,11 +39,36 @@ pub struct SearchInfo {
     pub pv_table: Vec<Move>,                                                    /* flat triangular PV table           */
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
-    pub search_hist: Vec<i16>,                                                  /* [piece * board_size + end]         */
+    pub search_hist: Vec<i16>,                                                  /* [move key]                         */
     pub cont_hist: Vec<i16>,                                                    /* [plies back][reply key][move key]  */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 
     pub eval_stack: Vec<i32>,                                                   /* static score standing at each ply  */
+}
+
+/// move_key!
+///
+/// The cell a move occupies in every history table: `piece * board_size +
+/// end`, which is what "move key" means everywhere in this file. Both
+/// history tables are flat vectors indexed this way, and continuation
+/// history nests two of these keys, so the four sites that build one had
+/// better build it identically.
+///
+/// `board_size` is passed rather than read from the state because the
+/// scoring loops hoist it out, and one `statics` dereference per move is
+/// not free on this path.
+///
+/// Params:
+/// - mv        : &Move -> move whose history cell is wanted
+/// - board_size: usize -> squares on the board, the key's stride
+///
+/// Return:
+/// usize               -> flat index into a history table
+#[macro_export]
+macro_rules! move_key {
+    ($mv:expr, $board_size:expr) => {{
+        piece!($mv) as usize * $board_size + end!($mv) as usize
+    }};
 }
 
 /// What a ply holds before anything has been evaluated at it, and what a
@@ -624,14 +649,9 @@ fn quiescence_search(
     }
 
     if in_check && legal_moves == 0 {
-        let outcome = state.termination.checkmate;
-        let score = outcome_score!(state, outcome);
+        let (outcome, inverted) = no_move_verdict!(state, in_check);
 
-        return if outcome == Outcome::Loss && illegal_mating_drop!(state) {
-            -score
-        } else {
-            score
-        };
+        return outcome_score!(state, outcome) * (1 - 2 * inverted as i32);
     }
 
     #[cfg(debug_assertions)]
@@ -872,9 +892,7 @@ pub fn alpha_beta(
         );
 
         let mv = &moves[index];
-        let piece = piece!(mv) as usize;
-        let end = end!(mv) as usize;
-        let history_index = piece * board_size + end;
+        let history_index = move_key!(mv, board_size);
 
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
@@ -1070,18 +1088,9 @@ pub fn alpha_beta(
     }
 
     if legal_moves == 0 {
-        let outcome = if in_check {
-            state.termination.checkmate
-        } else {
-            state.termination.stalemate
-        };
-        let score = outcome_score!(state, outcome);
+        let (outcome, inverted) = no_move_verdict!(state, in_check);
 
-        return if outcome == Outcome::Loss && illegal_mating_drop!(state) {
-            -score
-        } else {
-            score
-        };
+        return outcome_score!(state, outcome) * (1 - 2 * inverted as i32);
     }
 
     #[cfg(debug_assertions)]
@@ -1145,8 +1154,7 @@ fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
             continue;
         }
 
-        let key = piece!(previous) as usize * board_size
-            + end!(previous) as usize;
+        let key = move_key!(previous, board_size);
 
         bases[plies_back] = (plies_back * move_keys + key) * move_keys;
     }
