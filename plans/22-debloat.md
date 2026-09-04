@@ -378,12 +378,19 @@ or two uses.
 
 Gates: `cargo build --release` warning-free, and `standard 11 --limit 16`
 still at 190760 nodes — which proves only that the binary is intact, not
-that the interface draws right. **The TUI smoke run is outstanding and is
-the user's to make**: launch, cycle every tab, open the help popup,
-scroll both ends of a scrollable pane, quit. Scripting the ratatui
-console is not something this engine supports. Line-length and
-comment-column checks pass; the 20 lines over 80 columns are the
-pre-existing help-text literals at `:723-780`, byte-identical to `HEAD`.
+that the interface draws right. The first TUI smoke run exposed a
+pre-existing picker regression from `9ad12f8`: the picker stores
+`standard.conf`, while D10's shared `load_variant` accepts a stem and
+appends `.conf`, so Enter looked for `standard.conf.conf` and reported
+`Unknown variant`. The follow-up fix strips the suffix once, stores that
+stem in `app.variant`, and passes the same stem to `load_variant`.
+
+**The rest of the TUI smoke run is still the user's to make**: cycle
+every tab, open the help popup, scroll both ends of a scrollable pane,
+quit. Scripting the ratatui console is not something this engine
+supports. Line-length and comment-column checks pass; the 20 lines over
+80 columns are the pre-existing help-text literals at `:723-780`,
+byte-identical to `HEAD`.
 
 ## D8 — `move_parse` small dedupe · done
 

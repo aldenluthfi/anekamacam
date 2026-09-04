@@ -3046,23 +3046,22 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
         },
         (TUI_NORMAL_MODE, KeyCode::Enter) if app.tab == SENTINEL_TAB => {
             let input_trimmed = app.input.trim();
-            app.variant = Some(
-                input_trimmed.strip_suffix(".conf")
-                    .unwrap_or(input_trimmed)
-                    .to_string()
-            );
+            let variant = input_trimmed.strip_suffix(".conf")                   /* the picker offers file names       */
+                .unwrap_or(input_trimmed)
+                .to_string();
+
+            app.variant = Some(variant.clone());
             app.locked = true;
             app.focus = 0;
             app.tab = 0;
 
             thread::spawn({
-                let filename = app.input.clone();
                 let dict = app.translator.clone();
 
                 app.input.clear();
 
                 move || {
-                    match load_variant(&filename) {
+                    match load_variant(&variant) {
                         Ok(state) => {
                             let board_state = BoardState::from_state(
                                 &state, dict.as_ref()
