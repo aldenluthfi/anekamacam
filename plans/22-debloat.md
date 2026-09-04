@@ -45,7 +45,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D4    | io dedupe                                  | −278    | done   |
 | D5    | TT/QT unification                          | −139    | done   |
 | D6    | search dedupe                              | +27     | done   |
-| D7    | `graphics.rs` idiom dedupe                 | −350    | todo   |
+| D7    | `graphics.rs` idiom dedupe                 | −308    | done   |
 | D8    | `move_parse` small dedupe                  | −25     | todo   |
 | D9    | fold single-caller helpers, `game/`        | −200    | todo   |
 | D10   | fold single-caller helpers, `io/`+`debug/` | −180    | todo   |
@@ -324,6 +324,65 @@ and `run_endgame_fixtures.sh` at 37/38. That one failure — xiangqi,
 **is pre-existing**, confirmed by stashing the stage and re-running
 against `85b4637`, which fails identically. It is not a no-move-leaf
 path: the position has legal moves. Logged below.
+
+## D7 — `graphics.rs` idiom dedupe · done
+
+3512 lines to 3204. 573 deletions against 265 insertions, of which 70 are
+doc — **−308 total, −238 of actual code**, and the first stage where the
+doc tax did not eat the win, because the sites number in the dozens
+rather than in twos.
+
+Three file-private macros, one grouped doc cluster, no `#[macro_export]`
+— nothing outside the debug interface builds ratatui widgets, so none of
+this belongs in the prelude.
+
+- `split_area!` — the four-call `Layout::default()` builder chain, 34
+  sites. The constraint list stays a plain expression, so the four sites
+  that choose their list with an `if` still fit in one invocation. The
+  `overlap` arm carries `Spacing::Overlap(1)`, which is what makes
+  adjacent panes share a border line.
+- `padded_block!` — full border plus one column of inside padding, 13
+  sites, with `style` and `merge` arms for the focus border and the
+  merged-border form. Builder-call order differed across those 13
+  (`.padding` before `.borders`, `.border_style` in the middle); each
+  call writes a distinct field, so the unified order is value-identical.
+  Panes deliberately drawn frameless keep their explicit `Borders::NONE`
+  and were not converted.
+- `guide_label!` — the help overlay's 20 layout-guide labels, which were
+  each a `Paragraph::new(vec![Line::from(vec![Span::from(..)])])` inside
+  a merged-border box. `Paragraph::new(&str)` renders identically: `&str`
+  into `Text` is one line, one span, no style, and no label contains a
+  newline. The `center` arm is the board pane, drawn bare so its box is
+  not mistaken for the board's own. Its box form is now one line of
+  `padded_block!(merge)`.
+
+`clamp_scroll` was a 16-line non-capturing closure written out twice
+(`draw_game_tab`, `draw_playground_tab`); it is now one file-private
+function. Its four-arm chain collapsed to three: the pinned-at-`u16::MAX`
+arm and the sitting-at-the-end arm both end up writing the sentinel, and
+they can share because **`current` is always `scroll_map[key]`** — every
+caller reads it from there one line above — so re-pinning a pane already
+at the sentinel writes the value it already had. That precondition is now
+in the doc block, since it is the only thing holding the merge up.
+
+The three `TAB_FOCUS_*` were function-local consts declared twice, three
+in `draw_game_tab` and one in `draw_playground_tab`. Hoisted to file
+scope beside the other TUI layout constants.
+
+Not converted: the 51 `Style::default()` sites. They are one line each
+already and share no shape worth naming. The `Block::default()` sites
+with `Borders::NONE`, or with a border style but no padding, are also
+left alone — folding them in would have meant arms for shapes with one
+or two uses.
+
+Gates: `cargo build --release` warning-free, and `standard 11 --limit 16`
+still at 190760 nodes — which proves only that the binary is intact, not
+that the interface draws right. **The TUI smoke run is outstanding and is
+the user's to make**: launch, cycle every tab, open the help popup,
+scroll both ends of a scrollable pane, quit. Scripting the ratatui
+console is not something this engine supports. Line-length and
+comment-column checks pass; the 20 lines over 80 columns are the
+pre-existing help-text literals at `:723-780`, byte-identical to `HEAD`.
 
 ## Deferred, not resolved in this ladder
 

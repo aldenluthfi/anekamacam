@@ -23,6 +23,7 @@ const MAX_LOGS_LEN: usize = u16::MAX as usize;
 /// - `TAB_FOCUSABLES` gives each tab's focusable pane count.
 /// - `SENTINEL_TAB` marks the game-selection screen.
 /// - `PICKER_SCROLL_KEY` / `HELP_SCROLL_KEY` are its reserved scroll slots.
+/// - `TAB_FOCUS_*` name the focusable panes a tab scrolls independently.
 const TUI_INPUT_MODE: u8 = 0;
 const TUI_NORMAL_MODE: u8 = 1;
 
@@ -33,6 +34,97 @@ const SENTINEL_TAB: usize = 100usize;
 
 const PICKER_SCROLL_KEY: (usize, usize) = (SENTINEL_TAB, 100usize);
 const HELP_SCROLL_KEY: (usize, usize) = (SENTINEL_TAB, 50usize);
+
+const TAB_FOCUS_MOVES: usize = 0;
+const TAB_FOCUS_FEN: usize = 1;
+const TAB_FOCUS_LOGS: usize = 2;
+
+/// TUI construction macros.
+///
+/// The three shapes this file drew over and over. All file-private:
+/// nothing outside the debug interface builds ratatui widgets.
+///
+/// split_area!
+///
+///   Divides one rect. Thirty-four sites wrote the same four-call builder
+///   chain; the constraint list stays a plain expression so the four that
+///   choose their list with an `if` still fit. The `overlap` form adds the
+///   one-cell overlap that makes adjacent panes share a border line.
+///
+///   Params:
+///   - direction  : ident -> `Horizontal` or `Vertical`
+///   - area       : Rect  -> rect being divided
+///   - constraints: expr  -> constraint array, one entry per part
+///
+///   Return:
+///   Rects -> the parts, in constraint order
+///
+/// padded_block!
+///
+///   The frame every pane in this interface is drawn in: a full border
+///   with one column of breathing room inside it. Thirteen sites spelled
+///   the same two or three builder calls; the `style` form colours the
+///   border to mark focus, and the `merge` form lets adjacent frames
+///   share their border line. Panes deliberately drawn without a frame
+///   keep their explicit `Borders::NONE` and are not this macro.
+///
+///   Params:
+///   - style: expr -> border style, `style` form only
+///
+///   Return:
+///   Block<'_> -> the frame, ready to hand to `.block()`
+///
+/// guide_label!
+///
+///   Names one pane in the help overlay's layout guide: a paragraph of a
+///   single span inside a padded box whose borders merge with its
+///   neighbours', so the guide reads as one grid rather than as separate
+///   boxes. The `center` form is the board pane, which is drawn bare and
+///   centred because a box there would be mistaken for the board's own.
+///
+///   Params:
+///   - text: expr -> the pane's name
+///
+///   Return:
+///   Paragraph<'_> -> the label, boxed or centred
+macro_rules! split_area {
+    ($direction:ident, $area:expr, $constraints:expr) => {
+        Layout::default()
+            .direction(Direction::$direction)
+            .constraints($constraints)
+            .split($area)
+    };
+    (overlap $direction:ident, $area:expr, $constraints:expr) => {
+        Layout::default()
+            .direction(Direction::$direction)
+            .spacing(Spacing::Overlap(1))
+            .constraints($constraints)
+            .split($area)
+    };
+}
+
+macro_rules! padded_block {
+    () => {
+        Block::default()
+            .borders(Borders::ALL)
+            .padding(Padding::horizontal(1))
+    };
+    (style $style:expr) => {
+        padded_block!().border_style($style)
+    };
+    (merge) => {
+        padded_block!().merge_borders(MergeStrategy::Exact)
+    };
+}
+
+macro_rules! guide_label {
+    ($text:expr) => {
+        Paragraph::new($text).block(padded_block!(merge))
+    };
+    (center $text:expr) => {
+        Paragraph::new($text).alignment(Alignment::Center)
+    };
+}
 
 /// help_open!
 ///
@@ -70,6 +162,45 @@ fn peel_help(mut tab: usize) -> (usize, usize) {
     }
 
     (tab, layers.max(1) - 1)
+}
+
+/// clamp_scroll
+///
+/// Fits one pane's stored scroll offset to the pane's current maximum and
+/// writes the fit back. `u16::MAX` is the pinned-to-bottom sentinel: a
+/// pane parked there follows the tail as content grows, so a pane already
+/// at its end is re-pinned rather than frozen at today's last line, and a
+/// pane parked past a shrinking end keeps its distance from the tail.
+///
+/// `current` must be what `scroll_map` holds at `key` — every caller
+/// reads it from there one line earlier — which is what lets the pinned
+/// and at-the-end cases share an arm: re-pinning a pane whose offset is
+/// already the sentinel writes the value it already had.
+///
+/// Params:
+/// - current   : u16            -> stored offset, also `scroll_map[key]`
+/// - max       : u16            -> largest offset the pane can show
+/// - scroll_map: &mut HashMap   -> offsets by (tab, focus), written back
+/// - key       : (usize, usize) -> the pane's entry in that map
+///
+/// Return:
+/// u16                          -> offset to render this frame with
+fn clamp_scroll(
+    current: u16,
+    max: u16,
+    scroll_map: &mut HashMap<(usize, usize), u16>,
+    key: (usize, usize)
+) -> u16 {
+    if current > max && current < u16::MAX {
+        let clamped = max.saturating_sub(u16::MAX - current);
+        scroll_map.insert(key, clamped);
+        clamped
+    } else if current >= max {
+        scroll_map.insert(key, u16::MAX);
+        max
+    } else {
+        current
+    }
 }
 
 /// Tui
@@ -763,13 +894,8 @@ fn draw_game_selection(
     frame: &mut Frame<'_>, area: Rect, app: &mut Tui
 ) -> Option<Arc<Mutex<State>>> {
 
-    let layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(25),
-            Constraint::Fill(1),
-        ])
-        .split(area);
+    let layout = split_area!(Horizontal, area,
+        [Constraint::Percentage(25), Constraint::Fill(1)]);
 
     let mut config_files: Vec<String> = EMBEDDED_CONFIGS
         .files()
@@ -809,11 +935,7 @@ fn draw_game_selection(
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     )
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .padding(Padding::horizontal(1))
-    );
+    .block(padded_block!());
 
     if !config_files.is_empty() {
         if selected >= config_files.len() as u16 {
@@ -853,13 +975,8 @@ fn draw_game_selection(
 fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
     let level = configured_verbosity_level();
 
-    let tab_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(21),
-        ])
-        .split(area);
+    let tab_layout = split_area!(Horizontal, area,
+        [Constraint::Min(0), Constraint::Length(21)]);
 
     let tab_titles: Vec<Line> = TAB_TITLES
         .iter()
@@ -897,13 +1014,8 @@ fn draw_tabs(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
 }
 
 fn draw_input(frame: &mut Frame<'_>, area: Rect, app: &Tui) {
-    let input_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(13),
-        ])
-        .split(area);
+    let input_layout = split_area!(Horizontal, area,
+        [Constraint::Min(0), Constraint::Length(13)]);
     let prompt = if app.mode == TUI_INPUT_MODE {
         Line::from(vec![
             Span::styled(" $> ", Style::default().fg(Color::Yellow)),
@@ -1075,39 +1187,26 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             Constraint::Length(41)
         );
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow))
-        .padding(Padding::horizontal(1))
+    let block = padded_block!(style Style::default().fg(Color::Yellow))
         .style(Style::default().fg(Color::White));
 
     frame.render_widget(Clear, popup_area);
     let popup_inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(0)])
-        .split(popup_inner);
+    let layout = split_area!(Vertical, popup_inner,
+        [Constraint::Length(2), Constraint::Min(0)]);
 
     frame.render_widget(help_tabs, layout[0]);
 
-    let content_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(if help_tab == 0 {
-            [
-                Constraint::Min(0),
-                Constraint::Min(0),
-                Constraint::Length(2)
-            ]
+    let content_layout = split_area!(Vertical, layout[1],
+        if help_tab == 0 {
+            [Constraint::Min(0), Constraint::Min(0),
+                Constraint::Length(2)]
         } else {
-            [
-                Constraint::Min(0),
-                Constraint::Max(0),
-                Constraint::Length(2)
-            ]
-        })
-        .split(layout[1]);
+            [Constraint::Min(0), Constraint::Max(0),
+                Constraint::Length(2)]
+        });
 
     let content_height = content_layout[0].height as usize;
     let total_lines = if help_tab == 0 {
@@ -1261,54 +1360,19 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             Constraint::Length(18)
         );
 
-    let view_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .spacing(Spacing::Overlap(1))
-        .constraints(if main_tab == SENTINEL_TAB {
-            [
-                Constraint::Max(0),
-                Constraint::Fill(1),
-                Constraint::Max(0)
-            ]
+    let view_layout = split_area!(overlap Vertical, view_guide,
+        if main_tab == SENTINEL_TAB {
+            [Constraint::Max(0), Constraint::Fill(1),
+                Constraint::Max(0)]
         } else {
-            [
-                Constraint::Length(3),
-                Constraint::Fill(1),
-                Constraint::Length(3)
-            ]
-        })
-        .split(view_guide);
+            [Constraint::Length(3), Constraint::Fill(1),
+                Constraint::Length(3)]
+        });
 
-    let tab_guide_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .spacing(Spacing::Overlap(1))
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(13)
-        ])
-        .split(view_layout[0]);
-    let tab_guide = Paragraph::new(vec![
-        Line::from(vec![
-            Span::from("Tab Bar"),
-        ]),
-    ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .padding(Padding::horizontal(1))
-            .merge_borders(MergeStrategy::Exact)
-    );
-    let log_guide = Paragraph::new(vec![
-        Line::from(vec![
-            Span::from("Verbosity"),
-        ]),
-    ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .padding(Padding::horizontal(1))
-            .merge_borders(MergeStrategy::Exact)
-    );
+    let tab_guide_layout = split_area!(overlap Horizontal, view_layout[0],
+        [Constraint::Min(0), Constraint::Length(13)]);
+    let tab_guide = guide_label!("Tab Bar");
+    let log_guide = guide_label!("Verbosity");
 
     if main_tab != SENTINEL_TAB {
         frame.render_widget(tab_guide, tab_guide_layout[0]);
@@ -1321,94 +1385,31 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 .map(|s| !s.move_history.trim().is_empty())
                 .unwrap_or(false);
 
-            let game_log_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Fill(1),
-                    Constraint::Length(5),
-                ])
-                .split(view_layout[1]);
+            let game_log_layout = split_area!(overlap Vertical,
+                view_layout[1],
+                [Constraint::Fill(1), Constraint::Length(5)]);
 
-            let game_log_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Game Log"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
-
-            let board_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Board View"),
-                ]),
-            ])
-            .alignment(Alignment::Center);
-
-            let field_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Details"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
-
-            let fen_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("FEN"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
+            let game_log_guide = guide_label!("Game Log");
+            let board_guide = guide_label!(center "Board View");
+            let field_guide = guide_label!("Details");
+            let fen_guide = guide_label!("FEN");
 
             frame.render_widget(game_log_guide, game_log_layout[1]);
 
             if has_moves {
-                let game_guide_layout = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .spacing(Spacing::Overlap(1))
-                    .constraints([
-                        Constraint::Fill(4),
-                        Constraint::Fill(1),
-                        Constraint::Fill(2),
-                    ])
-                    .split(game_log_layout[0]);
+                let game_guide_layout = split_area!(overlap Horizontal,
+                    game_log_layout[0],
+                    [Constraint::Fill(4), Constraint::Fill(1),
+                        Constraint::Fill(2)]);
 
                 let board_center = game_guide_layout[0]
                     .centered_vertically(Constraint::Length(1));
 
-                let moves_guide = Paragraph::new(vec![
-                    Line::from(vec![
-                        Span::from("Moves"),
-                    ]),
-                ])
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .padding(Padding::horizontal(1))
-                        .merge_borders(MergeStrategy::Exact)
-                );
+                let moves_guide = guide_label!("Moves");
 
-                let right_layout = Layout::default()
-                    .direction(Direction::Vertical)
-                    .spacing(Spacing::Overlap(1))
-                    .constraints([
-                        Constraint::Min(0),
-                        Constraint::Length(3)
-                    ])
-                    .split(game_guide_layout[2]);
+                let right_layout = split_area!(overlap Vertical,
+                    game_guide_layout[2],
+                    [Constraint::Min(0), Constraint::Length(3)]);
 
                 frame.render_widget(board_guide, board_center);
                 frame.render_widget(
@@ -1417,26 +1418,16 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 frame.render_widget(field_guide, right_layout[0]);
                 frame.render_widget(fen_guide, right_layout[1]);
             } else {
-                let game_guide_layout = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .spacing(Spacing::Overlap(1))
-                    .constraints([
-                        Constraint::Fill(5),
-                        Constraint::Fill(2),
-                    ])
-                    .split(game_log_layout[0]);
+                let game_guide_layout = split_area!(overlap Horizontal,
+                    game_log_layout[0],
+                    [Constraint::Fill(5), Constraint::Fill(2)]);
 
                 let board_center = game_guide_layout[0]
                     .centered_vertically(Constraint::Length(1));
 
-                let right_layout = Layout::default()
-                    .direction(Direction::Vertical)
-                    .spacing(Spacing::Overlap(1))
-                    .constraints([
-                        Constraint::Min(0),
-                        Constraint::Length(3)
-                    ])
-                    .split(game_guide_layout[1]);
+                let right_layout = split_area!(overlap Vertical,
+                    game_guide_layout[1],
+                    [Constraint::Min(0), Constraint::Length(3)]);
 
                 frame.render_widget(board_guide, board_center);
                 frame.render_widget(field_guide, right_layout[0]);
@@ -1445,90 +1436,28 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
         },
         1 => {
-            let chunks_layout = Layout::default()
-                .direction(Direction::Horizontal)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Percentage(25),
-                    Constraint::Fill(1),
-                ])
-                .split(view_layout[1]);
+            let chunks_layout = split_area!(overlap Horizontal,
+                view_layout[1],
+                [Constraint::Percentage(25), Constraint::Fill(1)]);
 
-            let left_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Percentage(40),
-                    Constraint::Fill(1),
-                ])
-                .split(chunks_layout[0]);
+            let left_layout = split_area!(overlap Vertical,
+                chunks_layout[0],
+                [Constraint::Percentage(40), Constraint::Fill(1)]);
 
-            let field_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Configs")
-                ])
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
+            let field_guide = guide_label!("Configs");
+            let piece_guide = guide_label!("Pieces");
 
-            let piece_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Pieces"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
+            let right_layout = split_area!(overlap Vertical,
+                chunks_layout[1],
+                [Constraint::Length(3), Constraint::Min(0),
+                    Constraint::Length(3)]);
 
-            let right_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Length(3),
-                    Constraint::Min(0),
-                    Constraint::Length(3)
-                ])
-                .split(chunks_layout[1]);
-
-            let tables_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Tables"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
-
-            let board_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Board View"),
-                ]),
-            ])
-            .alignment(Alignment::Center);
+            let tables_guide = guide_label!("Tables");
+            let board_guide = guide_label!(center "Board View");
             let board_center = right_layout[1]
                 .centered_vertically(Constraint::Length(1));
 
-            let piece_detail_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Piece Details"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
+            let piece_detail_guide = guide_label!("Piece Details");
 
             frame.render_widget(field_guide, left_layout[0]);
             frame.render_widget(piece_guide, left_layout[1]);
@@ -1547,54 +1476,19 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                     })
                 });
 
-            let pg_log_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Fill(1),
-                    Constraint::Length(5),
-                ])
-                .split(view_layout[1]);
+            let pg_log_layout = split_area!(overlap Vertical,
+                view_layout[1],
+                [Constraint::Fill(1), Constraint::Length(5)]);
 
-            let log_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Game Log"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
+            let log_guide = guide_label!("Game Log");
 
-            let chunks_layout = Layout::default()
-                .direction(Direction::Horizontal)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Fill(5),
-                    Constraint::Fill(2),
-                ])
-                .split(pg_log_layout[0]);
+            let chunks_layout = split_area!(overlap Horizontal,
+                pg_log_layout[0],
+                [Constraint::Fill(5), Constraint::Fill(2)]);
 
-            let piece_list_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Pieces")
-                ])
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
+            let piece_list_guide = guide_label!("Pieces");
 
-            let board_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Board View"),
-                ]),
-            ])
-            .alignment(Alignment::Center);
+            let board_guide = guide_label!(center "Board View");
             let board_center = chunks_layout[0]
                 .centered_vertically(Constraint::Length(1));
 
@@ -1602,26 +1496,11 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             frame.render_widget(board_guide, board_center);
 
             if piece_selected {
-                let left_layout = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .spacing(Spacing::Overlap(1))
-                    .constraints([
-                        Constraint::Percentage(50),
-                        Constraint::Fill(1),
-                    ])
-                    .split(chunks_layout[1]);
+                let left_layout = split_area!(overlap Horizontal,
+                    chunks_layout[1],
+                    [Constraint::Percentage(50), Constraint::Fill(1)]);
 
-                let move_list_guide = Paragraph::new(vec![
-                    Line::from(vec![
-                        Span::from("Moves"),
-                    ]),
-                ])
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .padding(Padding::horizontal(1))
-                        .merge_borders(MergeStrategy::Exact)
-                );
+                let move_list_guide = guide_label!("Moves");
 
                 frame.render_widget(piece_list_guide, left_layout[0]);
                 frame.render_widget(move_list_guide, left_layout[1]);
@@ -1632,33 +1511,13 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             }
         },
         SENTINEL_TAB => {
-            let selection_layout = Layout::default()
-                .direction(Direction::Horizontal)
-                .spacing(Spacing::Overlap(1))
-                .constraints([
-                    Constraint::Percentage(25),
-                    Constraint::Fill(1),
-                ])
-                .split(view_layout[1]);
+            let selection_layout = split_area!(overlap Horizontal,
+                view_layout[1],
+                [Constraint::Percentage(25), Constraint::Fill(1)]);
 
-            let selection_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Variants"),
-                ]),
-            ])
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .padding(Padding::horizontal(1))
-                    .merge_borders(MergeStrategy::Exact)
-            );
+            let selection_guide = guide_label!("Variants");
 
-            let board_guide = Paragraph::new(vec![
-                Line::from(vec![
-                    Span::from("Board View"),
-                ]),
-            ])
-            .alignment(Alignment::Center);
+            let board_guide = guide_label!(center "Board View");
             let board_center = selection_layout[1]
                 .centered_vertically(Constraint::Length(1));
 
@@ -1668,37 +1527,11 @@ fn draw_help_popup(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         _ => {}
     }
 
-    let input_guide_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .spacing(Spacing::Overlap(1))
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(11)
-        ])
-        .split(view_layout[2]);
+    let input_guide_layout = split_area!(overlap Horizontal, view_layout[2],
+        [Constraint::Min(0), Constraint::Length(11)]);
 
-    let command_guide = Paragraph::new(vec![
-        Line::from(vec![
-            Span::from("Input Bar"),
-        ]),
-    ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .padding(Padding::horizontal(1))
-            .merge_borders(MergeStrategy::Exact)
-    );
-    let threads_guide = Paragraph::new(vec![
-        Line::from(vec![
-            Span::from("Threads"),
-        ]),
-    ])
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .padding(Padding::horizontal(1))
-            .merge_borders(MergeStrategy::Exact)
-    );
+    let command_guide = guide_label!("Input Bar");
+    let threads_guide = guide_label!("Threads");
 
     if main_tab != SENTINEL_TAB {
         frame.render_widget(command_guide, input_guide_layout[0]);
@@ -1710,21 +1543,12 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
     let (main_tab, _) = peel_help(app.tab);
 
-    const TAB_FOCUS_MOVES: usize = 0;
-    const TAB_FOCUS_FEN: usize = 1;
-    const TAB_FOCUS_LOGS: usize = 2;
-
     let board = app.board_state.as_ref()
         .map(|state| state.board.clone())
         .unwrap_or_else(|| "Loading...".to_string());
 
-    let main_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(75),
-            Constraint::Percentage(25),
-        ])
-        .split(area);
+    let main_layout = split_area!(Vertical, area,
+        [Constraint::Percentage(75), Constraint::Percentage(25)]);
 
     let top_rect = main_layout[0];
 
@@ -1742,14 +1566,9 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let fen_area;
 
     if has_moves {
-        let top_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Fill(4),
-                Constraint::Fill(1),
-                Constraint::Fill(2),
-            ])
-            .split(top_rect);
+        let top_layout = split_area!(Horizontal, top_rect,
+            [Constraint::Fill(4), Constraint::Fill(1),
+                Constraint::Fill(2)]);
         board_area = top_layout[0].centered(
             Constraint::Length(
                 board
@@ -1759,24 +1578,13 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             Constraint::Length(board.lines().count() as u16)
         );
         moves_area = top_layout[1];
-        let right_most_rect = Layout::default()
-            .direction(Direction::Vertical)
-            .spacing(Spacing::Overlap(1))
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(3)
-            ])
-            .split(top_layout[2]);
+        let right_most_rect = split_area!(overlap Vertical, top_layout[2],
+            [Constraint::Min(0), Constraint::Length(3)]);
         details_area = right_most_rect[0];
         fen_area = right_most_rect[1];
     } else {
-        let top_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Fill(5),
-                Constraint::Fill(2),
-            ])
-            .split(top_rect);
+        let top_layout = split_area!(Horizontal, top_rect,
+            [Constraint::Fill(5), Constraint::Fill(2)]);
         board_area = top_layout[0].centered(
             Constraint::Length(
                 board
@@ -1786,34 +1594,18 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             Constraint::Length(board.lines().count() as u16)
         );
         moves_area = Rect::default();
-        let right_most_rect = Layout::default()
-            .direction(Direction::Vertical)
-            .spacing(Spacing::Overlap(1))
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(3)
-            ])
-            .split(top_layout[1]);
+        let right_most_rect = split_area!(overlap Vertical, top_layout[1],
+            [Constraint::Min(0), Constraint::Length(3)]);
         details_area = right_most_rect[0];
         fen_area = right_most_rect[1];
     }
 
     let board_block = Block::default()
         .borders(Borders::NONE);
-    let mut moves_block = Block::default()
-        .padding(Padding::horizontal(1))
-        .borders(Borders::ALL);
-    let details_block = Block::default()
-        .merge_borders(MergeStrategy::Exact)
-        .padding(Padding::horizontal(1))
-        .borders(Borders::ALL);
-    let mut fen_block = Block::default()
-        .merge_borders(MergeStrategy::Exact)
-        .padding(Padding::horizontal(1))
-        .borders(Borders::ALL);
-    let mut logs_block = Block::default()
-        .padding(Padding::horizontal(1))
-        .borders(Borders::ALL);
+    let mut moves_block = padded_block!();
+    let details_block = padded_block!(merge);
+    let mut fen_block = padded_block!(merge);
+    let mut logs_block = padded_block!();
 
     let logs_area = main_layout[1];
 
@@ -1978,23 +1770,6 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         }
     );
 
-    let clamp_scroll = |current: u16, max: u16,
-        scroll_map: &mut HashMap<(usize, usize), u16>,
-        key: (usize, usize)| -> u16 {
-        if current > max && current < u16::MAX {
-            let clamped = max.saturating_sub(u16::MAX - current);
-            scroll_map.insert(key, clamped);
-            clamped
-        } else if current > max {
-            max
-        } else if current == max {
-            scroll_map.insert(key, u16::MAX);
-            max
-        } else {
-            current
-        }
-    };
-
     let final_moves_scroll = clamp_scroll(
         current_moves_scroll, max_moves_scroll,
         &mut app.scroll_map, (main_tab, TAB_FOCUS_MOVES)
@@ -2032,21 +1807,11 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         pieces: Vec::new(),
     };
 
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(25),
-            Constraint::Fill(1),
-        ])
-        .split(area);
+    let chunks = split_area!(Horizontal, area,
+        [Constraint::Percentage(25), Constraint::Fill(1)]);
 
-    let left_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(40),
-            Constraint::Percentage(60),
-        ])
-        .split(chunks[0]);
+    let left_chunks = split_area!(Vertical, chunks[0],
+        [Constraint::Percentage(40), Constraint::Percentage(60)]);
 
     let configs_table = Table::new(
         app.overview_state.as_ref().unwrap_or(
@@ -2073,7 +1838,7 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 )
     )
     .block(
-        Block::default().borders(Borders::ALL).padding(Padding::horizontal(1))
+        padded_block!()
     );
 
     let pieces = &app.overview_state.as_ref().unwrap_or(
@@ -2107,18 +1872,12 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             List::new(vec![
                 Span::from("Loading...")
             ]).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(style)
-                    .padding(Padding::horizontal(1))
+                padded_block!(style style)
             )
     } else {
         List::new(items)
             .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(style)
-                    .padding(Padding::horizontal(1))
+                padded_block!(style style)
             )
             .highlight_style(
                 Style::default()
@@ -2128,13 +1887,8 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     };
 
     if let Some(piece) = pieces.get(selected as usize) {
-        let right_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(6),
-            ])
-            .split(chunks[1]);
+        let right_chunks = split_area!(Vertical, chunks[1],
+            [Constraint::Min(0), Constraint::Length(6)]);
 
         let info_ref = piece.info.as_ref();
 
@@ -2189,9 +1943,7 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
             ]
         )
         .block(
-            Block::default()
-            .padding(Padding::horizontal(1))
-            .borders(Borders::ALL)
+            padded_block!()
         );
 
         frame.render_widget(info_table, right_chunks[1]);
@@ -2243,13 +1995,8 @@ fn draw_overview_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                         .add_modifier(Modifier::BOLD),
                 );
 
-            let table_view_layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),
-                    Constraint::Min(0),
-                ])
-                .split(right_chunks[0]);
+            let table_view_layout = split_area!(Vertical, right_chunks[0],
+                [Constraint::Length(3), Constraint::Min(0)]);
 
             frame.render_widget(tabs, table_view_layout[0]);
 
@@ -2277,23 +2024,11 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
     let (main_tab, _) = peel_help(app.tab);
 
-    const TAB_FOCUS_LOGS: usize = 2;
+    let main_layout = split_area!(Vertical, area,
+        [Constraint::Percentage(75), Constraint::Percentage(25)]);
 
-    let main_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(75),
-            Constraint::Percentage(25),
-        ])
-        .split(area);
-
-    let layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Fill(5),
-            Constraint::Fill(2)
-        ])
-        .split(main_layout[0]);
+    let layout = split_area!(Horizontal, main_layout[0],
+        [Constraint::Fill(5), Constraint::Fill(2)]);
 
     let logs_area = main_layout[1];
 
@@ -2374,10 +2109,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
         piece_list = List::new(pieces)
             .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(piece_style)
-                    .padding(Padding::horizontal(1))
+                padded_block!(style piece_style)
             )
             .highlight_style(
                 Style::default()
@@ -2447,10 +2179,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
                 move_list_opt = Some(
                     List::new(move_items)
                         .block(
-                            Block::default()
-                                .borders(Borders::ALL)
-                                .border_style(move_style)
-                                .padding(Padding::horizontal(1))
+                            padded_block!(style move_style)
                         )
                         .highlight_style(
                             Style::default()
@@ -2535,9 +2264,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         piece_list = List::new(vec![
             Span::from("Loading...")
         ]).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .padding(Padding::horizontal(1))
+            padded_block!()
         );
         board_str = "Loading...".to_string();
         move_list_opt = None;
@@ -2546,13 +2273,8 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     }
 
     if let Some(move_list) = move_list_opt {
-        let left_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(50),
-                Constraint::Percentage(50),
-            ])
-            .split(layout[1]);
+        let left_layout = split_area!(Horizontal, layout[1],
+            [Constraint::Percentage(50), Constraint::Percentage(50)]);
         frame.render_stateful_widget(
             piece_list, left_layout[0], &mut piece_list_state
         );
@@ -2572,9 +2294,7 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         )
     );
 
-    let mut logs_block = Block::default()
-        .padding(Padding::horizontal(1))
-        .borders(Borders::ALL);
+    let mut logs_block = padded_block!();
     if app.focus == TAB_FOCUS_LOGS && app.mode == TUI_NORMAL_MODE {
         logs_block = logs_block.border_style(
             Style::default().fg(Color::Yellow)
@@ -2639,23 +2359,6 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
     let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
         .block(logs_block);
 
-    let clamp_scroll = |current: u16, max: u16,
-        scroll_map: &mut HashMap<(usize, usize), u16>,
-        key: (usize, usize)| -> u16 {
-        if current > max && current < u16::MAX {
-            let clamped = max.saturating_sub(u16::MAX - current);
-            scroll_map.insert(key, clamped);
-            clamped
-        } else if current > max {
-            max
-        } else if current == max {
-            scroll_map.insert(key, u16::MAX);
-            max
-        } else {
-            current
-        }
-    };
-
     let max_logs_scroll =
         (logs_paragraph.line_count(logs_area.width) as u16)
             .saturating_sub(logs_area.height);
@@ -2680,25 +2383,14 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
     let root = frame.area();
 
     if !app.locked && app.game_state.is_none() {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(0),
-                Constraint::Length(1),
-            ])
-            .split(root);
+        let chunks = split_area!(Vertical, root,
+            [Constraint::Min(0), Constraint::Length(1)]);
         app.game_state = draw_game_selection(frame, chunks[0], app);
         draw_help_bar(frame, chunks[1], app);
     } else {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(0),
-                Constraint::Length(3),
-                Constraint::Length(1),
-            ])
-            .split(root);
+        let chunks = split_area!(Vertical, root,
+            [Constraint::Length(3), Constraint::Min(0),
+                Constraint::Length(3), Constraint::Length(1)]);
 
         draw_tabs(frame, chunks[0], app);
 
