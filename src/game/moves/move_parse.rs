@@ -708,12 +708,17 @@ fn parse_move_string(expr: &str) -> String {
 /// - (2, 2) has equal magnitude, influencing the next atomic as "ne", or
 ///   (1, 1)
 ///
+/// The name is one of eight string literals held in a static map, so it
+/// outlives the vector it was read from. Saying so in the signature is what
+/// lets a caller pass a temporary — every one of them wants the heading of
+/// a displacement it computed on the spot, not of one it holds.
+///
 /// Params:
 /// - vector: &(i8, i8) -> displacement whose heading is classified
 ///
 /// Return:
-/// &str                -> dominant cardinal direction name ("n", "ne", ...)
-fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
+/// &'static str        -> dominant cardinal direction name ("n", "ne", ...)
+fn irregular_vector_direction(vector: &(i8, i8)) -> &'static str {
     let abs_x = vector.0.saturating_abs();
     let abs_y = vector.1.saturating_abs();
 
@@ -729,7 +734,7 @@ fn irregular_vector_direction(vector: &(i8, i8)) -> &str {
         .get(&direction_vector)
         .unwrap_or_else(|| panic!("Invalid direction vector: {:?}", vector));
 
-    CARDINAL_INDEX_TO_STR.get(&index).unwrap_or_else(|| {
+    *CARDINAL_INDEX_TO_STR.get(&index).unwrap_or_else(|| {
         panic!("Invalid index for inverse cardinal map: {}", index)
     })
 }
@@ -858,6 +863,81 @@ fn quadrant_function(
         "se" => |x: i8, y: i8| (x - y > 0, x + y < 0, x - y < 0, x + y > 0),
         _ => panic!("Invalid rotation direction: {}", direction),
     }
+}
+
+/// Repetition-token macros.
+///
+/// The two repetition forms — `{i..j}`, which repeats the atom it follows,
+/// and `:{i..j}`, which re-evaluates the element it follows — match against
+/// different regexes but are written the same way, so all four of their
+/// handlers read the bounds out identically. File-private: nothing outside
+/// the parser reads Betza notation.
+///
+/// range_bounds!
+///
+///   Matches a repetition token and returns its bounds as numbers. An open
+///   end reads as `i8::MAX`, which the callers walk until a round adds no
+///   new vectors. `label` names the form in both messages, so neither form
+///   can end up reporting the other's name.
+///
+///   Params:
+///   - regex: expr    -> the compiled token regex
+///   - label: literal -> the form's name, as it appears in messages
+///   - token: &str    -> the token being expanded
+///
+///   Return:
+///   (Option<i8>, Option<i8>) -> start bound, end bound
+///
+/// colon_range_head!
+///
+///   Rejects a `:{i..j}` with nothing repeatable in front of it, then reads
+///   its bounds. The variant name is a parameter because the atomic and
+///   multi-leg element enums are distinct types; nothing else about the
+///   check differs. `element` is named three times, so pass a binding.
+///
+///   Params:
+///   - token  : &str            -> the `:{i..j}` being expanded
+///   - element: Option<Element> -> element the token repeats
+///   - eval   : ident           -> that enum's evaluated-expr variant
+///
+///   Return:
+///   (Element, Option<i8>, Option<i8>) -> element, start bound, end bound
+macro_rules! range_bounds {
+    ($regex:expr, $label:literal, $token:expr) => {{
+        let captures = $regex.captures($token).unwrap();
+
+        log_4!(concat!($label, " token captures: {:?}"), captures);
+
+        (
+            captures.get(1).map(|start| start.as_str().parse::<i8>()
+                .expect(concat!("Invalid start ", $label, " token."))),
+            captures.get(2).map(|end| end.as_str()
+                .parse::<i8>().unwrap_or(i8::MAX)),
+        )
+    }};
+}
+
+macro_rules! colon_range_head {
+    ($token:expr, $element:expr, $eval:ident) => {{
+        if $element.is_none() {
+            panic!(
+                "Colon-range token must be preceded by an atomic element: {:?}",
+                $token
+            );
+        }
+
+        if let Some($eval(_)) = $element {
+            panic!(
+                "Colon-range token cant be preceded by an evaluated expr: {:?}",
+                $token
+            );
+        }
+
+        let (start, end) =
+            range_bounds!(COLON_RANGE_TOKEN, "colon-range", $token);
+
+        ($element.unwrap(), start, end)
+    }};
 }
 
 /*----------------------------------------------------------------------------*\
@@ -1031,20 +1111,10 @@ fn process_atomic_range_token(
     token: &str,
     state: &State,
 ) -> Vec<AtomicVector> {
-    let captures = RANGE_TOKEN.captures(token).unwrap();
-
-
-    log_4!("range token captures: {:?}", captures);
-
-    let start = captures.get(1);
-    let end = captures.get(2);
+    let (start, end) = range_bounds!(RANGE_TOKEN, "range", token);
 
     match (start, end) {
-        (Some(s), Some(e)) => {
-            let start_count: i8 =
-                s.as_str().parse().expect("Invalid start range token.");
-            let end_count: i8 = e.as_str().parse().unwrap_or(i8::MAX);
-
+        (Some(start_count), Some(end_count)) => {
             let mut all_updated_vectors: Vec<AtomicVector> = Vec::new();
 
             for count in start_count..=end_count {
@@ -1070,10 +1140,7 @@ fn process_atomic_range_token(
             filter_atomic_out_of_bounds(&mut result, state);
             result
         }
-        (Some(s), None) => {
-            let count: i8 =
-                s.as_str().parse().expect("Invalid start range token.");
-
+        (Some(count), None) => {
             let mut updated_vectors: Vec<AtomicVector> = vector_set
                 .into_iter()
                 .map(|vector| {
@@ -1117,36 +1184,12 @@ fn process_atomic_colon_range_token(
     modifiers: &(Option<Token>, Option<Token>),
     state: &State,
 ) -> Vec<AtomicVector> {
-    if element.is_none() {
-        panic!(
-            "Colon-range token must be preceded by an atomic element: {:?}",
-            token
-        );
-    }
-
-    if let Some(AtomicEval(_)) = element {
-        panic!(
-            "Colon-range token cant be preceded by an evaluated expr: {:?}",
-            token
-        );
-    }
-
-    let element = element.unwrap();
+    let (element, start, end) =
+        colon_range_head!(token, element, AtomicEval);
     let mut result: Vec<AtomicVector> = Vec::new();
 
-    let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
-
-
-    log_4!("colon-range token captures: {:?}", captures);
-
-    let start = captures.get(1);
-    let end = captures.get(2);
-
     match (start, end) {
-        (Some(s), Some(e)) => {
-            let start_count: i8 =
-                s.as_str().parse().expect("Invalid start colon-range token.");
-            let end_count: i8 = e.as_str().parse().unwrap_or(i8::MAX);
+        (Some(start_count), Some(end_count)) => {
             let mut prev_len = 0;
 
             for count in start_count..=end_count {
@@ -1179,10 +1222,7 @@ fn process_atomic_colon_range_token(
             filter_atomic_out_of_bounds(&mut result, state);
             result
         }
-        (Some(s), None) => {
-            let count: i8 =
-                s.as_str().parse().expect("Invalid start colon-range token.");
-
+        (Some(count), None) => {
             let multiplied_expr = VecDeque::from(vec![element; count as usize]);
 
             for branch_vector in &vector_set {
@@ -1290,8 +1330,7 @@ fn evaluate_atomic_term(
 
     let mut new_result: Vec<AtomicVector> = Vec::new();
     for branch_vector in &result {
-        let rotation_vector = &branch_vector.last();
-        let rotation = irregular_vector_direction(rotation_vector);
+        let rotation = irregular_vector_direction(&branch_vector.last());
 
         let mut extension = Vec::new();
         let mut eval = chained_atomic_to_vector(&atomic, rotation);
@@ -1329,9 +1368,8 @@ fn evaluate_atomic_subexpression(
 ) -> Vec<AtomicVector> {
     let mut new_result: Vec<AtomicVector> = Vec::new();
     for branch_vector in &result {
-        let rotation_vector = &branch_vector.last();
-
-        let branch_rotation = irregular_vector_direction(rotation_vector);
+        let branch_rotation =
+            irregular_vector_direction(&branch_vector.last());
 
         let mut extension = Vec::new();
         let eval_result = evaluate_atomic_expression(
@@ -2397,20 +2435,10 @@ fn process_multi_leg_range_token(
     token: &str,
     state: &State,
 ) -> Vec<MultiLegVector> {
-    let captures = RANGE_TOKEN.captures(token).unwrap();
-
-
-    log_4!("range token captures: {:?}", captures);
-
-    let start = captures.get(1);
-    let end = captures.get(2);
+    let (start, end) = range_bounds!(RANGE_TOKEN, "range", token);
 
     match (start, end) {
-        (Some(s), Some(e)) => {
-            let start_count: i8 =
-                s.as_str().parse().expect("Invalid start range token.");
-            let end_count: i8 = e.as_str().parse().unwrap_or(i8::MAX);
-
+        (Some(start_count), Some(end_count)) => {
             let mut all_updated_vectors: Vec<MultiLegVector> = Vec::new();
 
             for count in start_count..=end_count {
@@ -2442,10 +2470,7 @@ fn process_multi_leg_range_token(
             filter_multi_leg_out_of_bounds(&mut result, state);
             result
         }
-        (Some(s), None) => {
-            let count: i8 =
-                s.as_str().parse().expect("Invalid start range token.");
-
+        (Some(count), None) => {
             let mut updated_vectors: Vec<MultiLegVector> = vector_set
                 .into_iter()
                 .map(|mut vector| {
@@ -2493,36 +2518,12 @@ fn process_multi_leg_colon_range_token(
     rotation: &str,
     state: &State,
 ) -> Vec<MultiLegVector> {
-    if element.is_none() {
-        panic!(
-            "Colon-range token must be preceded by an atomic element: {:?}",
-            token
-        );
-    }
-
-    if let Some(MultiLegEval(_)) = element {
-        panic!(
-            "Colon-range token cant be preceded by an evaluated expr: {:?}",
-            token
-        );
-    }
-
-    let element = element.unwrap();
+    let (element, start, end) =
+        colon_range_head!(token, element, MultiLegEval);
     let mut result: Vec<MultiLegVector> = Vec::new();
 
-    let captures = COLON_RANGE_TOKEN.captures(token).unwrap();
-
-
-    log_4!("colon-range token captures: {:?}", captures);
-
-    let start = captures.get(1);
-    let end = captures.get(2);
-
     match (start, end) {
-        (Some(s), Some(e)) => {
-            let start_count: i8 =
-                s.as_str().parse().expect("Invalid start colon-range token.");
-            let end_count: i8 = e.as_str().parse().unwrap_or(i8::MAX);
+        (Some(start_count), Some(end_count)) => {
             let mut prev_len = 0;
 
             for count in start_count..=end_count {
@@ -2544,9 +2545,8 @@ fn process_multi_leg_colon_range_token(
                         let branch_vector = branch_leg_vector.last().expect(
                             "Expected at least one vector in branch leg vector."
                         ).get_atomic();
-                        let rotation_vector = &branch_vector.last();
                         let branch_rotation =
-                            irregular_vector_direction(rotation_vector);
+                            irregular_vector_direction(&branch_vector.last());
 
                         let mut extension: Vec<MultiLegVector> = Vec::new();
                         let eval = evaluate_multi_leg_subexpression(
@@ -2577,10 +2577,7 @@ fn process_multi_leg_colon_range_token(
             filter_multi_leg_out_of_bounds(&mut result, state);
             result
         }
-        (Some(s), None) => {
-            let count: i8 =
-                s.as_str().parse().expect("Invalid start colon-range token.");
-
+        (Some(count), None) => {
             let multiplied_expr = VecDeque::from(vec![element; count as usize]);
 
             if vector_set.is_empty() {
@@ -2598,9 +2595,8 @@ fn process_multi_leg_colon_range_token(
                     let branch_vector = branch_leg_vector.last().expect(
                         "Expected at least one vector in branch leg vector."
                     ).get_atomic();
-                    let rotation_vector = &branch_vector.last();
                     let branch_rotation =
-                        irregular_vector_direction(rotation_vector);
+                        irregular_vector_direction(&branch_vector.last());
 
                     let mut extension: Vec<MultiLegVector> = Vec::new();
                     let eval = evaluate_multi_leg_subexpression(
@@ -2741,12 +2737,11 @@ fn evaluate_multi_leg_term_leg(
 
     let mut new_result: Vec<MultiLegVector> = Vec::new();
     for branch_leg_vector in &result {
-        let branch_vector = branch_leg_vector
-            .last()
-            .expect("Expected at least one vector in branch leg vector.")
-            .get_atomic();
-        let rotation_vector = &branch_vector.last();
-        let branch_rotation = irregular_vector_direction(rotation_vector);
+        let branch_vector = branch_leg_vector.last().expect(
+            "Expected at least one vector in branch leg vector."
+        ).get_atomic();
+        let branch_rotation =
+            irregular_vector_direction(&branch_vector.last());
 
         let mut extension: Vec<MultiLegVector> = Vec::new();
         let mut eval = leg_to_vector(&atomic, branch_rotation, state);
@@ -2847,12 +2842,11 @@ fn evaluate_multi_leg_subexpression(
 
     let mut new_result: Vec<MultiLegVector> = Vec::new();
     for branch_leg_vector in &result {
-        let branch_vector = branch_leg_vector
-            .last()
-            .expect("Expected at least one vector in branch leg vector.")
-            .get_atomic();
-        let rotation_vector = &branch_vector.last();
-        let branch_rotation = irregular_vector_direction(rotation_vector);
+        let branch_vector = branch_leg_vector.last().expect(
+            "Expected at least one vector in branch leg vector."
+        ).get_atomic();
+        let branch_rotation =
+            irregular_vector_direction(&branch_vector.last());
 
         let mut extension: Vec<MultiLegVector> = Vec::new();
         let eval_result = evaluate_multi_leg_expression(

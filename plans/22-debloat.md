@@ -46,7 +46,7 @@ D12, D13 — additionally run `sittuyin 9 --limit 8` and
 | D5    | TT/QT unification                          | −139    | done   |
 | D6    | search dedupe                              | +27     | done   |
 | D7    | `graphics.rs` idiom dedupe                 | −308    | done   |
-| D8    | `move_parse` small dedupe                  | −25     | todo   |
+| D8    | `move_parse` small dedupe                  | −6      | done   |
 | D9    | fold single-caller helpers, `game/`        | −200    | todo   |
 | D10   | fold single-caller helpers, `io/`+`debug/` | −180    | todo   |
 | D11   | fold `has_castled` into `castling_state`   | −5      | todo   |
@@ -383,6 +383,63 @@ scroll both ends of a scrollable pane, quit. Scripting the ratatui
 console is not something this engine supports. Line-length and
 comment-column checks pass; the 20 lines over 80 columns are the
 pre-existing help-text literals at `:723-780`, byte-identical to `HEAD`.
+
+## D8 — `move_parse` small dedupe · done
+
+Estimated −25, landed **−6** (112 insertions, 118 deletions). Third stage
+running to roughly net zero for the same reason, and the reason is now
+worth stating as a rule rather than a surprise: **at this codebase's doc
+density a shared macro or function owes 10-21 lines of `///` before its
+first body line, so a two-site dedupe loses lines. Only three sites and
+up pay.** Every remaining estimate built on a raw duplicate count is an
+upper bound; D9 and D10 should be read that way.
+
+Three changes, all four-site or eight-site, all bit-identical.
+
+**`irregular_vector_direction` returns `&'static str`.** The name comes
+out of `CARDINAL_INDEX_TO_STR` (`:168`), a `lazy_static` map of string
+literals, so the data always outlived the vector it was read from — but
+the elided lifetime in `-> &str` tied it to the argument, and every one
+of the eight callers therefore had to bind the displacement to a local
+first. Saying `&'static str` and dereferencing the map hit lets all eight
+pass the temporary directly. Two atomic sites collapse to one line each;
+the four multi-leg sites drop their `rotation_vector` binding, and the
+two at shallow indentation also fit their `.expect()` chain onto fewer
+lines. A dedicated `trailing_rotation` helper for those four blocks was
+measured and rejected — net zero after doc tax.
+
+**`range_bounds!`, four sites.** `{i..j}` and `:{i..j}` are matched by
+different regexes but read their bounds identically, and all four
+handlers — `process_atomic_range_token`, `process_multi_leg_range_token`,
+and the two `*_colon_range_token` — had the same 13-line preamble:
+capture, log, `.get(1)`, `.get(2)`, then a parse in each match arm. One
+macro parameterised on `(regex, label, token)` replaces it with a single
+line and lets both `(Some, Some)` arms bind `start_count`/`end_count`
+directly and both `(Some, None)` arms bind `count`. `label` is a literal
+spliced through `concat!` into both the log line and the panic message,
+so the two forms cannot report each other's name — which the hand-written
+copies were one careless paste away from doing.
+
+**`colon_range_head!`, two sites**, on top of `range_bounds!`. Rejects a
+colon-range with nothing repeatable in front of it and returns the
+element with the bounds. Two sites is below the threshold above and would
+have lost lines alone; it earns its place only by delegating the bounds
+read to the four-site macro. The evaluated-expr variant is an `ident`
+parameter because the atomic and multi-leg element enums are distinct
+types — passing the name as `ident` resolves it at the call site.
+
+Gates: warning-free `cargo build --release`; all seven perft suites pass
+(standard 20256, shogi 12, xiangqi 33, crazyhouse 12, grand 3, sittuyin
+12, janggi 21); all seven bench node counts reproduce exactly. Perft
+across all seven variants is the strong gate here — the parser derives
+every piece's vectors from Betza strings at load time, so a changed
+expansion moves movegen immediately. The 184 lines over 80 columns are
+byte-identical to `HEAD`: box-drawing doc diagrams that `awk length`
+measures in bytes. Comment-column check clean, and the file carries four
+fewer double-blank lines than `HEAD`.
+
+Not attempted: the 14 mirrored `atomic`/`multi_leg` function pairs. That
+is D15 and still needs an explicit go-ahead.
 
 ## Deferred, not resolved in this ladder
 
