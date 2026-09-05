@@ -5,28 +5,58 @@
 //! A variant-agnostic engine cannot ship hand-tuned material values or
 //! piece-square tables: it meets each army for the first time at load. This
 //! file closes that gap, turning a piece's movement geometry into the numbers
-//! evaluation needs -- a value from its board reach and mobility, a role from
-//! where that value ranks in the army, and opening/endgame PSTs shaped to the
-//! variant's board -- so every variant is scored on its own terms.
+//! evaluation needs — a value from its board reach and mobility, a role from
+//! where that value ranks in the army, and opening and endgame tables shaped
+//! to the variant's board — so every variant is scored on its own terms.
+//!
+//! Everything here runs once, at load. What comes out is read on every node
+//! of every search and never recomputed, so the cost of deriving carefully is
+//! paid once and the saving is taken for the rest of the game.
 //!
 //! Created: 08/05/2026
 //! Author : Alden Luthfi
 
 use crate::*;
 
+/*----------------------------------------------------------------------------*\
+                              DERIVATION CONSTANTS
+\*----------------------------------------------------------------------------*/
+
 /// Board occupancy assumed when valuing a piece: the fraction of squares
 /// a slider expects to find blocked in each phase, which is what makes an
 /// opening value differ from an endgame one.
+///
+/// ```text
+/// opening   36% blocked   a slider is stopped early, reach is worth less
+/// endgame   12% blocked   the lines open and the same piece runs further
+/// ```
 const OPENING_OCCUPANCY: u32 = 360;
 const ENDGAME_OCCUPANCY: u32 = 120;
 
 /// Where the ranked non-royal army is cut into roles: the cheapest share
 /// that is not big, and the dearest share that is major.
+///
+/// ```text
+/// non-big         minor             major
+/// ├───│───────────────────────────│──────┤
+///    10%                         80%   100%
+/// ```
+///
+/// A royal is asked for none of this: it is never traded, so where its
+/// value would rank says nothing about what it does.
 const ROLE_NON_BIG_SPLIT: u32 = 100;
 const ROLE_MAJOR_SPLIT: u32 = 200;
 
 /// How small the big non-royal army has to get before play counts as an
-/// endgame, measured in pieces of average deployed value.
+/// endgame, measured in pieces of average deployed value. The two ends of
+/// the phase taper are set from this and from the opening army, so a
+/// variant fielding a few heavy pieces and one fielding dozens both run
+/// their taper over the material they actually have.
+///
+/// ```text
+/// opening   every big piece the setup deploys, at average value
+/// endgame   this many of them left, or one below opening if fewer
+/// ```
 const ENDGAME_ARMY_SIZE: u32 = 5;
 
 /// What a draw is worth to a side that is not level on material. A draw
@@ -34,7 +64,16 @@ const ENDGAME_ARMY_SIZE: u32 = 5;
 /// scored below zero for that side and above zero for the other. The cost
 /// rises with the lead and saturates once the lead reaches `SPAN` pieces
 /// of average deployed value, where it is worth `RATIO` of one such piece
-/// held against `COEFFICIENT_SCALE`. Both read the deployed mean rather
+/// held against `COEFFICIENT_SCALE`.
+///
+/// ```text
+/// lead 0 pieces   nothing was given up, so a draw is worth zero
+/// lead 1 piece    half the cost, half the lead handed back
+/// lead 2 pieces   the full cost, 12.5% of an average piece
+/// lead beyond     the same again, the charge saturates there
+/// ```
+///
+/// Both read the deployed mean rather
 /// than the dearest piece, because a lead is an army's and not a single
 /// exchange's, and both are shares of this variant's own material so a
 /// variant playing in small units is not handed a large contempt.
@@ -46,6 +85,24 @@ const DRAW_CONTEMPT_SPAN: u32 = 2;
 /// by class because a quiet move buried in a long list and a capture answering
 /// check do not respond to the same variable. Base and divisor are held against
 /// `COEFFICIENT_SCALE`.
+///
+/// ```text
+/// class            base   shape                       divisor
+/// quiet             750   ln(depth) * ln(moves)          2250
+/// quiet check      1000   sqrt(depth) * ln(moves)        4000
+/// tactical         1000   ln(depth) * sqrt(moves)        4000
+/// tactical check      0   ln(depth) * ln(moves)          4500
+/// ```
+///
+/// A quiet move is read off both logs, since being late in a long list and
+/// having a lot of depth left both say the same thing about it. A quiet move
+/// that gives check takes the root of the depth instead, so depth weighs
+/// heavier and a deep line is not cut short on a forcing move. A capture
+/// takes the root of the move count, being priced by the exchange
+/// simulation already and so trusted on its own count rather than on where
+/// ordering put it. A capture that gives check starts from no base at all:
+/// at low depth it is searched in full, and only a long list and a deep
+/// remainder together reduce it.
 const REDUCTION_QUIET_BASE: u32 = 750;
 const REDUCTION_QUIET_DIVISOR: u32 = 2250;
 const REDUCTION_QUIET_CHECK_BASE: u32 = 1000;
@@ -70,6 +127,11 @@ const ASPIRATION_RATIO: u32 = 30;
 /// A side already standing better than it did two plies ago is believed
 /// on less, so its row is the flat one scaled by `IMPROVING`. Both are
 /// held against `COEFFICIENT_SCALE`.
+///
+/// ```text
+/// not improving   11% of the dearest piece per ply still to search
+/// improving       75% of that row, a rising side is believed sooner
+/// ```
 const RFP_RATIO: u32 = 110;
 const RFP_IMPROVING: u32 = 750;
 
@@ -80,6 +142,11 @@ const RFP_IMPROVING: u32 = 750;
 /// side whose evaluation has not risen is believed least and so is given
 /// the smaller margin, the risen side's row scaled by `IMPROVING`. All
 /// three are held against `COEFFICIENT_SCALE`.
+///
+/// ```text
+/// improving       10% of the dearest piece, plus 13% per ply left
+/// not improving   70% of that row, the sinking side gives up first
+/// ```
 const FUTILITY_FLOOR: u32 = 100;
 const FUTILITY_RATIO: u32 = 130;
 const FUTILITY_IMPROVING: u32 = 700;
@@ -90,6 +157,11 @@ const FUTILITY_IMPROVING: u32 = 700;
 /// scaled by `IMPROVING`, so the side already doing worse gives up on its
 /// quiets first. `RATIO` and `IMPROVING` are held against
 /// `COEFFICIENT_SCALE`.
+///
+/// ```text
+/// improving       3 moves, plus the square of the depth left
+/// not improving   55% of that row, and never below one move
+/// ```
 const LMP_BASE: u32 = 3;
 const LMP_RATIO: u32 = 1000;
 const LMP_IMPROVING: u32 = 550;
@@ -111,9 +183,17 @@ const SEE_PRUNE_RATIO: u32 = 250;
 const QSEARCH_DELTA_RATIO: u32 = 100;
 
 /// The ring a royal calls its own ground: every square within `RADIUS`
-/// steps on both axes. Squares of that ring lying ahead of the royal are
+/// steps on both axes.
+///
+/// ```text
+/// s s s     s   ahead: a shielding piece here is shelter, and a guard
+/// g K g     g   beside or behind: any friendly piece here is a guard
+/// g g g     K   the royal, radius 1 giving it eight ring squares
+/// ```
+///
+/// Squares of that ring lying ahead of the royal are
 /// its shelter, held by pieces that only ever advance. `CAP` is how many
-/// sheltering pieces are still worth counting -- past it a royal is as
+/// sheltering pieces are still worth counting — past it a royal is as
 /// walled in as this term can say, and the next piece belongs elsewhere.
 /// Shelter is priced as `RATIO` of the dearest non-royal piece, held
 /// against `COEFFICIENT_SCALE` and never below `FLOOR` in raw units.
@@ -138,6 +218,12 @@ const GUARD_FLOOR: u32 = 2;
 /// non-royal piece against `COEFFICIENT_SCALE`, like every other term
 /// standing beside them. A side that spent its rights without castling is
 /// worth neither, which is what makes castling the move it prefers.
+///
+/// ```text
+/// castled              4% of the dearest piece, a whole shelter's worth
+/// still holds a right  2% of it, the same gain still on offer
+/// spent, never castled nothing at all
+/// ```
 const CASTLED_RATIO: u32 = 40;
 const CASTLING_RIGHT_RATIO: u32 = 20;
 
@@ -145,8 +231,16 @@ const CASTLING_RIGHT_RATIO: u32 = 20;
 /// counted in expected enemy landings on the royal's square or its ring,
 /// and charged as its square, so one attacker barely registers while
 /// several compound: `RATIO` of the dearest non-royal piece is charged at
-/// `ZONE_ATTACK_FULL` landings, a quarter of it at half that many. The
-/// same quadratic runs away on a board that lets a whole army bear down
+/// `ZONE_ATTACK_FULL` landings, a quarter of it at half that many.
+///
+/// ```text
+/// 4 landings    a sixteenth of the charge, barely a nudge
+/// 8 landings    a quarter of it, the zone is genuinely watched
+/// 16 landings   the whole charge, 60% of the dearest piece
+/// beyond that   the cap, and never past the dearest piece itself
+/// ```
+///
+/// The same quadratic runs away on a board that lets a whole army bear down
 /// at once, so `CAP_RATIO` bounds the charge at the piece it is priced
 /// off: an attack is never worth more than winning the dearest piece
 /// outright, and the search should read it as pressure, not as a mate.
@@ -158,6 +252,11 @@ const DANGER_CAP_RATIO: u32 = 1000;
 /// there; this prices their total absence, which no count of nearby
 /// pieces can express. Held against `COEFFICIENT_SCALE` and never below
 /// `FLOOR` in raw units.
+///
+/// ```text
+/// covered     one shielding piece anywhere ahead on those three files
+/// uncovered   3.3% of the dearest piece, or 12 units if that is more
+/// ```
 const OPEN_SHIELD_RATIO: u32 = 33;
 const OPEN_SHIELD_FLOOR: u32 = 12;
 
@@ -179,6 +278,11 @@ const TEMPO_FLOOR: u32 = 5;
 /// twice the light one. Both are shares of the dearest non-royal piece,
 /// floored so a variant whose values sit close together still reads a
 /// difference between the two counts.
+///
+/// ```text
+/// major   2% of the dearest piece per heavy piece of surplus
+/// minor   1% of it per light one, and never less than a unit
+/// ```
 const IMBALANCE_MAJOR_RATIO: u32 = 20;
 const IMBALANCE_MAJOR_FLOOR: u32 = 3;
 const IMBALANCE_MINOR_RATIO: u32 = 10;
@@ -190,17 +294,26 @@ const IMBALANCE_MINOR_FLOOR: u32 = 1;
 /// together are worth more than twice one of them. The test is geometric
 /// rather than by name: mean reach within `SLACK` of half the board, which
 /// no piece free of the board meets and no piece confined to a corner of
-/// it comes near. Royals are asked separately, a variant being free to
-/// field two of them and forbid trading either.
+/// it comes near.
+///
+/// ```text
+/// mean reach 0.48 to 0.52   bound to a half, and paid 6% of the dearest
+/// reach above that band     free of the board, no half left to cover
+/// reach below it            confined already, a second copy adds little
+/// ```
+///
+/// Royals are left out of the test entirely: a variant is free to field two
+/// of them and forbid trading either, so holding both says nothing about
+/// what they cover between them.
 const PAIR_RATIO: u32 = 60;
 const PAIR_FLOOR: u32 = 10;
 const PAIR_REACH: f64 = 0.5;
 const PAIR_REACH_SLACK: f64 = 0.02;
 
 /// How many copies of a piece the opening army must field before it can be
-/// this variant's pawn. The other conditions are geometric -- never a step
+/// this variant's pawn. The other conditions are geometric — never a step
 /// or a capture backward, always a quiet single step forward, nothing
-/// further than one square once the first move is spent -- and those alone
+/// further than one square once the first move is spent — and those alone
 /// would also catch a lone forward stepper such as the minishogi pawn or
 /// the pair of minixiangqi soldiers. Structure is a statement about a rank
 /// of pawns holding each other up, so a variant that fields too few of them
@@ -221,6 +334,13 @@ const PAWN_MIN_START_COUNT: usize = 5;
 /// faults are priced once and read by both halves: doubled and isolated
 /// cost near a quarter of the pawn, and a backward pawn less, since it is
 /// only a pawn whose advance is watched rather than one already spent.
+///
+/// ```text
+/// connected   +20% of the opening pawn, +35% of the endgame one
+/// doubled     -25% of the opening value, read at both ends
+/// isolated    -25% of the opening value, read at both ends
+/// backward    -17.5% of it, an advance watched, not one spent
+/// ```
 const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
 const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
 const PAWN_DOUBLED_RATIO: u32 = 250;
@@ -228,8 +348,15 @@ const PAWN_ISOLATED_RATIO: u32 = 250;
 const PAWN_BACKWARD_RATIO: u32 = 175;
 
 /// What a passed pawn is worth, as a share of what promoting it would gain
-/// -- the dearest piece it could become, less what it is worth now -- held
+/// — the dearest piece it could become, less what it is worth now — held
 /// against `COEFFICIENT_SCALE` and scaled by how far along it already is.
+///
+/// ```text
+/// promotes, opening   10% of the promise, most of the board still ahead
+/// promotes, endgame   35% of it, with little left standing in the way
+/// cannot promote      40% of the pawn's own value, ground and no more
+/// ```
+///
 /// A passer is a promise rather than a piece, so the opening pays a tenth
 /// of the promise while the endgame, where there is little left to stop it,
 /// pays a third. A pawn that cannot promote at all is priced off its own
@@ -243,8 +370,9 @@ const PASSED_UNPROMOTED_RATIO: u32 = 400;
 /// zones cannot be sheltered in the sense this term means: it never left
 /// its own camp, its guards are pinned to it by their own move rules, and
 /// the only way it can gather friendly pieces in front of itself is to
-/// walk forward, which is exactly the move such variants punish. Below
-/// this share the term is switched off for that colour.
+/// walk forward, which is exactly the move such variants punish. A royal
+/// reaching a quarter of the board or less is taken for walled in, and the
+/// term is switched off for that colour.
 const SHELTER_CONFINEMENT_DIVISOR: usize = 4;
 
 /// Bounds on the derive-time setup walk: how many distinct censuses may
@@ -253,6 +381,10 @@ const SHELTER_CONFINEMENT_DIVISOR: usize = 4;
 /// already reached rather than being explored to exhaustion.
 const SETUP_STATE_CAP: usize = 4096;
 const SETUP_ENDING_CAP: usize = 256;
+
+/*----------------------------------------------------------------------------*\
+                            DERIVED PARAMETER TABLES
+\*----------------------------------------------------------------------------*/
 
 /// PieceRoles
 ///
@@ -308,8 +440,8 @@ pub struct EvalParams {
     pub pawn_backward_penalty: Vec<i32>,                                        /* slot to cost of a contested stop   */
 
     pub tempo_bonus: i32,                                                       /* worth of holding the move          */
-    pub imbalance_major: i32,                                                   /* worth of a heavy piece in hand     */
-    pub imbalance_minor: i32,                                                   /* worth of a light piece in hand     */
+    pub imbalance_major: i32,                                                   /* worth of one heavy piece of extra  */
+    pub imbalance_minor: i32,                                                   /* worth of one light piece of extra  */
     pub pair_pieces: Vec<usize>,                                                /* pieces a second copy completes     */
     pub pair_bonus: i32,                                                        /* worth of completing such a pair    */
 
@@ -338,6 +470,10 @@ pub struct SearchParams {
     pub see_allowance: Vec<i32>,                                                /* loss a capture may show, by depth  */
     pub qsearch_delta: i32,                                                     /* gain a leaf capture must promise   */
 }
+
+/*----------------------------------------------------------------------------*\
+                           PIECE GEOMETRY AND VALUES
+\*----------------------------------------------------------------------------*/
 
 /// derive_piece_roles
 ///
@@ -407,8 +543,16 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 /// origin square, flood-fills through the symmetric closure of the piece's
 /// move offsets (each offset is also applied reversed, so one-directional
 /// movers are not punished twice) and averages the reached fraction.
-/// Color-bound pieces like bishops or confined pieces like the xiangqi
-/// elephant score well below 1.0.
+///
+/// ```text
+/// rook       every square, given moves enough, so a reach of one
+/// bishop     half of them, the colour it began on, so about a half
+/// elephant   the seven points of its own bank, well under a tenth
+/// ```
+///
+/// Reach is what a piece can eventually see rather than what it sees now,
+/// so a knight scores the same as a rook: both go anywhere, and only the
+/// mobility term says which one takes longer about it.
 ///
 /// Params:
 /// - state: &State -> precomputed relevant-move tables
@@ -416,6 +560,13 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 ///
 /// Return:
 /// f64             -> mean reachable fraction of the board, in (0, 1]
+///
+/// Notes:
+/// An origin the piece cannot leave at all is dropped from the mean rather
+/// than counted as reaching the one square it stands on, so a piece is
+/// measured over the ground it can actually use. The offsets are closed
+/// under negation before the fill, which is why a pawn is not read as
+/// covering only the squares ahead of where it happens to start.
 fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
     let board_size = state.statics.board_size;
     let files = state.statics.files as i32;
@@ -484,8 +635,8 @@ fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
 /// directions.
 ///
 /// Params:
-/// - state: &State -> precomputed relevant-move tables
-/// - piece: &Piece -> piece whose offsets are gathered
+/// - state: &State     -> precomputed relevant-move tables
+/// - piece: &Piece     -> piece whose offsets are gathered
 ///
 /// Return:
 /// HashSet<(i32, i32)> -> file and rank displacements, origin excluded
@@ -519,29 +670,28 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
 
 /// derive_piece_value
 ///
-/// Derives a piece's phase value from its movement geometry:
+/// Prices one piece for one phase out of its movement geometry alone. Four
+/// measurements are taken and folded into a single number:
 ///
-/// - reach:
-///   fraction of the board covered by the symmetric closure of the piece's
-///   moves, capturing colour-boundedness and confinement.
+/// ```text
+/// empty mobility      moves per square with nothing in the way
+/// occupied mobility   the same count under the phase's fill model
+/// reach               share of the board it can eventually cover
+/// maneuverability     share of its offsets it can also reverse
+/// ```
 ///
-/// - maneuverability:
-///   fraction of move offsets whose reverse is also a move, penalising
-///   one-directional pieces (pawns) that cannot retreat.
+/// The two mobilities are blended seven parts occupied to three parts
+/// empty, so a long slider keeps some of what an open board would give it
+/// without being priced as though the board were always open. The blend is
+/// then scaled by the other two, each read as a floor plus what it
+/// measures: coverage never falls below 0.6 and maneuver never below 0.5,
+/// so a colour-bound piece or a one-way piece is discounted rather than
+/// erased. The product is multiplied out to the units the rest of the
+/// engine works in and returned.
 ///
-/// - mobility:
-///   mean per-square move count under a board occupancy model.
-///
-/// - empty_mobility:
-///   assumes an empty board, rewarding long-range sliders.
-///
-/// - occupied_mobility:
-///   weights each vector by the odds every per-leg stop requirement is met,
-///   distinguishing sliders and hoppers from leapers.
-///
-/// The value blends the two mobilities, then scales by coverage and
-/// maneuverability. A larger `occupancy` (sparse board) yields endgame values,
-/// letting sliders gain relative to leapers.
+/// A higher `occupancy` means a fuller board, so the opening value is the
+/// one taken at the higher fill. Sliders are stopped early there and gain
+/// on leapers as the same piece is priced again for the endgame.
 ///
 /// Params:
 /// - state    : &State -> precomputed relevant-move tables
@@ -549,9 +699,7 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
 /// - occupancy: f64    -> assumed board fill ratio for the phase
 ///
 /// Return:
-///
-/// f64
-/// raw phase value, later offset-normalized across the army
+/// f64                 -> raw value, offset-normalized across the army later
 fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
     log_4!("Deriving base value for piece '{}'", piece.char);
 
@@ -607,9 +755,7 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
 /// - occupancy  : f64        -> assumed board fill ratio
 ///
 /// Return:
-///
-/// f64
-/// expected number of playable vectors from the square
+/// f64                       -> playable vectors expected from the square
 fn derive_piece_mobility(
     state: &State, piece_index: PieceIndex, square: usize, occupancy: f64
 ) -> f64 {
@@ -629,21 +775,33 @@ fn derive_piece_mobility(
 ///
 /// Walks one multi-leg vector under the random-fill occupancy model and
 /// returns the odds every per-leg stop requirement is met together with
-/// the vector's total displacement. Pass legs (may move) need an empty
-/// stop and weigh `1 - occupancy`, screen legs (capture-only
-/// intermediates, the hopper jump) need an occupied stop and weigh
-/// `occupancy`, and a hopping vector whose final leg is capture-only
-/// also needs a target there, weighing `occupancy` once more.
-/// Zero-displacement marker legs contribute no weight.
+/// the vector's total displacement.
+///
+/// ```text
+/// pass leg     wants an empty stop        1 - occupancy
+/// screen leg   wants an occupied stop     occupancy
+/// final leg    capture-only after a hop   occupancy once more
+/// marker leg   no displacement at all     nothing, it is skipped
+/// ```
+///
+/// The odds are the product, so a long slide decays geometrically with
+/// each square it has to find empty, a leaper answers 1 whatever the board
+/// holds, and a hopper's capture is worth nothing at all on an empty one:
+/// it needs both a screen to jump and a target to land on.
 ///
 /// Params:
-/// - multi_leg_vector: &[Leg] -> the vector's legs, final leg last
-/// - occupancy       : f64    -> assumed board fill ratio
+///
+///     multi_leg_vector: &[Leg]
+///     the vector's legs, final leg last
+///
+///     occupancy: f64
+///     assumed board fill ratio
 ///
 /// Return:
 ///
-/// Option<(f64, i32, i32)>
-/// (chance, file delta, rank delta), or None for an empty vector
+///     Option<(f64, i32, i32)>
+///     the odds paired with the file and rank the vector displaces by,
+///     or None for a vector with no legs at all
 fn derive_vector_chance(
     multi_leg_vector: &[Leg], occupancy: f64
 ) -> Option<(f64, i32, i32)> {
@@ -732,9 +890,7 @@ fn derive_distance_from_center(state: &State, square: usize) -> f64 {
 /// - square     : usize      -> square whose distance is measured
 ///
 /// Return:
-///
-/// f64
-/// distance in square units, infinity when no zone exists
+/// f64                       -> square units, or infinity with no zone
 fn derive_closest_promotion(
     state: &State, piece_index: PieceIndex, square: usize
 ) -> f64 {
@@ -759,9 +915,18 @@ fn derive_closest_promotion(
 
 /// derive_promotion_bonus
 ///
-/// Advancement bonus for a promotable piece: a linear gradient toward the
-/// promotion zone, scaled by the value it would gain on promotion. This is
-/// where an advanced passed pawn earns most of its endgame worth.
+/// Advancement bonus for a promotable piece: a gradient toward the nearest
+/// promotion square, scaled by the value promoting would gain.
+///
+/// ```text
+/// opening    6% of that gain, times how far along the piece already is
+/// endgame   40% of it, a promotion being most of what is left to play
+/// ```
+///
+/// Advancement is squared, so the gradient is flat where the piece starts
+/// and steep where it is nearly home: a piece one square short of the zone
+/// is worth far more than one halfway, which is the shape a passed pawn
+/// actually has. A piece with no promotion zone is worth nothing here.
 ///
 /// Params:
 /// - state         : &State     -> board dimensions and promotion zones
@@ -772,9 +937,7 @@ fn derive_closest_promotion(
 /// - promoted_value: f64        -> best value reachable by promotion
 ///
 /// Return:
-///
-/// f64
-/// bonus added on top of the positional square score
+/// f64                          -> bonus added to the square's own score
 fn derive_promotion_bonus(
     state: &State, piece_index: PieceIndex, square: usize,
     is_endgame: bool, piece_value: f64, promoted_value: f64
@@ -803,12 +966,20 @@ fn derive_promotion_bonus(
 /// derive_pst
 ///
 /// Builds one piece-square table. A square's raw score is its mobility
-/// from that square minus its distance from the center, with the weights
-/// shifted by phase — mobility matters more in the opening, centrality
-/// more in the endgame. Those scores are centered on their mean and
-/// normalized to a fixed amplitude, then the promotion gradient is added.
-/// For a compact board the positional part comes out center-positive and
-/// edge-negative, e.g.:
+/// from that square minus its distance from the center, weighted by phase:
+///
+/// ```text
+/// opening   mobility 0.50, centrality 1.25, on a board 36% full
+/// endgame   mobility 0.25, centrality 1.75, on one 12% full
+/// ```
+///
+/// Those scores are centered on their mean and normalized to a fixed
+/// amplitude, so every piece's table swings over the same range whatever
+/// the raw numbers were, and material alone says which piece is worth
+/// more. The promotion gradient is added afterwards, outside that
+/// normalization, since it is a claim about the piece and not about the
+/// square. For a compact board the positional part comes out
+/// center-positive and edge-negative, e.g.:
 ///
 /// ```text
 /// ┌────┬────┬────┬────┐
@@ -821,10 +992,21 @@ fn derive_promotion_bonus(
 /// ```
 ///
 /// Royal pieces get a back-rank gradient in the opening instead of the
-/// mobility-and-centrality score (the king should hide behind its own
-/// lines, not march): every square scores the negated rank index in the
-/// white frame, so rank 0 is best and each step forward is monotonically
-/// worse. The endgame royal table keeps the centralizing score.
+/// mobility-and-centrality score, a royal being a piece that should sit
+/// behind its own lines rather than march up the board:
+///
+/// ```text
+/// rank 3   -3  -3  -3  -3
+/// rank 2   -2  -2  -2  -2
+/// rank 1   -1  -1  -1  -1
+/// rank 0    0   0   0   0   the rank it started on, and the best one
+/// ```
+///
+/// Every square scores the negated rank index in the white frame, so each
+/// step forward is worse than the last and no file is preferred over
+/// another: where along the back rank a royal sits is what shelter and
+/// castling are for. The endgame table keeps the centralizing score, since
+/// by then the royal is a piece that has to work.
 ///
 /// Params:
 /// - index         : PieceIndex -> piece the table is built for
@@ -892,17 +1074,30 @@ fn derive_pst(
 /// recording the board census every time the variant's own rules end
 /// SETUP. Placements are made and unmade in place, so the walk costs one
 /// position rather than one per node, and it never asks what ends a setup
-/// -- it plays until the position says it has.
+/// — it plays until the position says it has.
 ///
-/// The walk memoizes on the board census, both hands, and the side to
-/// place. Two part-built setups differing only in where equal pieces stand
-/// share that identity, which is what keeps the walk bounded on a variant
-/// whose placements are largely interchangeable.
+/// The walk memoizes on what a census is made of rather than on the board:
+///
+/// ```text
+/// piece_count      how many of each piece type stand on the board
+/// piece_in_hand    what is left to place, White's hand then Black's
+/// playing          whose turn it is to place the next one
+/// ```
+///
+/// Two part-built setups differing only in where equal pieces stand share
+/// that identity, which is what keeps the walk bounded on a variant whose
+/// placements are largely interchangeable.
 ///
 /// Params:
 /// - probe  : &mut State             -> scratch position, restored on return
 /// - visited: &mut HashSet<Vec<u32>> -> censuses already expanded
 /// - endings: &mut Vec<Vec<u32>>     -> censuses of completed setups
+///
+/// Notes:
+/// Both caps are checked on entry, so a walk that has already gathered
+/// enough endings stops descending rather than finishing the branch it is
+/// on, and the loop breaks on the ending cap as well so a wide node does
+/// not keep placing after the walk is done.
 fn walk_setup_endings(
     probe: &mut State,
     visited: &mut HashSet<Vec<u32>>,
@@ -955,9 +1150,15 @@ fn walk_setup_endings(
 /// already stand theirs on the board, so their live census answers
 /// directly. A variant with a placement phase does not: what it starts
 /// with is whatever that phase leaves behind, and a hand there is a menu
-/// of what may be placed rather than a promise that all of it will be --
+/// of what may be placed rather than a promise that all of it will be —
 /// a variant offering a choice of armies holds every one of them and
 /// deploys exactly one.
+///
+/// ```text
+/// on the board   census answers directly, no walk at all
+/// in SETUP       play placements out, average the endings reached
+/// nothing found  the live census again, the walk having proved nothing
+/// ```
 ///
 /// So the walk plays legal placements until the rules end SETUP and
 /// averages the census over the completed setups it reaches, leaving a
@@ -1010,13 +1211,28 @@ fn resolve_setup_army(state: &State) -> Vec<u32> {
         .collect()
 }
 
+/*----------------------------------------------------------------------------*\
+                             DERIVATION ENTRY POINT
+\*----------------------------------------------------------------------------*/
+
 /// derive_parameters
 ///
-/// Startup entry point for the whole derivation pass: computes the
-/// evaluation parameters, then the search margins and the royal shelter
-/// tables built on top of them, then the zone-attack tables built on the
-/// shelter's own ring, then the capabilities the rules permit, and finally
-/// refreshes the incremental eval caches.
+/// Startup entry point for the whole derivation pass. The order is a
+/// dependency order, each stage reading what the ones above it wrote:
+///
+/// ```text
+/// eval          piece values and roles, everything else is a share of them
+/// search        margins and reductions, priced off the dearest piece
+/// shelter       the royal ring, and whether the term is worth pricing
+/// danger        zone attacks, over the ring shelter just built
+/// pawn          fault and passer terms, over the pawn-like pieces found
+/// advantage     imbalance and contempt, over the values and the roles
+/// capabilities  which prunings the variant's own rules leave meaningful
+/// refresh       the incremental caches, rebuilt against all of the above
+/// ```
+///
+/// It runs once per variant load, so nothing here is on a search path and
+/// nothing here is asked to be cheap.
 ///
 /// Params:
 /// - state: &mut State -> freshly precomputed variant state
@@ -1031,11 +1247,26 @@ pub fn derive_parameters(state: &mut State) {
     refresh_eval_state(state);
 }
 
+/*----------------------------------------------------------------------------*\
+                               SEARCH DERIVATION
+\*----------------------------------------------------------------------------*/
+
 /// reduction_surface
 ///
 /// Builds one late-move reduction table: for every remaining depth and
 /// every move number, how many plies a move of that class gives up on its
-/// first search. Depth zero and move zero index nothing the search ever
+/// first search.
+///
+/// ```text
+/// quiet surface   move 1   move 8   move 32   move 63
+/// depth 2              0        1         1         2
+/// depth 8              0        2         3         4
+/// depth 32             0        3         6         7
+/// ```
+///
+/// The table is read rather than computed because a logarithm per node is
+/// a logarithm the search cannot afford, and every cell it could ask for
+/// fits in a byte. Depth zero and move zero index nothing the search ever
 /// reduces, so they hold zero rather than the logarithm of it.
 ///
 /// Params:
@@ -1044,7 +1275,7 @@ pub fn derive_parameters(state: &mut State) {
 /// - shape  : F   -> the depth and move terms this curve mixes
 ///
 /// Return:
-/// Vec<u8> -> `MAX_DEPTH * REDUCTION_MOVE_CAP` plies, depth major
+/// Vec<u8>        -> `MAX_DEPTH * REDUCTION_MOVE_CAP` plies, depth major
 pub fn reduction_surface<F>(base: u32, divisor: u32, shape: F) -> Vec<u8>
 where
     F: Fn(f64, f64) -> f64,
@@ -1093,6 +1324,17 @@ fn dearest_piece_value(state: &State) -> u64 {
 /// reduction surfaces, margins, move counts, and root aspiration width from
 /// universal coefficients and loaded material.
 ///
+/// ```text
+/// aspiration           dearest   half the root window, before it widens
+/// reverse futility     dearest   a step per depth, two rows
+/// razoring             mean      four depths, a whole swing not one piece
+/// probcut              mean      the same swing, one number
+/// futility             dearest   a floor plus a step per depth, two rows
+/// late-move count      none      depth squared, no material in a count
+/// exchange allowance   dearest   a step per depth, one row
+/// qsearch delta        dearest   the swing a quiet node may still hope for
+/// ```
+///
 /// The window is priced off the dearest non-royal piece rather than the
 /// cheapest, which normalization pins at 100 in every variant and so says
 /// nothing: a flat value range moves the score less per capture and earns
@@ -1111,8 +1353,24 @@ fn dearest_piece_value(state: &State) -> u64 {
 /// risen first. The row a node reads is always its improving flag, so the
 /// choice lives here rather than at every use.
 ///
+/// Every two-row table is one flat vector, the flag choosing the half:
+///
+/// ```text
+/// improving clear   [ 0  d1  d2  ...  dn ]   read at depth
+/// improving set     [ 0  d1  d2  ...  dn ]   read at deepest + 1 + depth
+/// ```
+///
 /// Params:
 /// - state: &mut State -> variant whose derived search values are rebuilt
+///
+/// Notes:
+/// Each table is asserted to rise with the depth left to search before it
+/// is stored. A margin that fell would prune a deeper node harder than a
+/// shallow one, which no coefficient is meant to express, so a ratio
+/// mistyped into an inversion fails at load rather than quietly costing
+/// depth. The aspiration width is floored at one, a window of zero holding
+/// no score at all, and the late-move count at one, so the ordering always
+/// gets to try its first quiet move.
 pub fn derive_search_parameters(state: &mut State) {
     let dearest = dearest_piece_value(state);
     let (value_sum, value_count) = state.statics.pieces.iter()
@@ -1247,28 +1505,49 @@ pub fn derive_search_parameters(state: &mut State) {
 /// Decides once, before any game starts, which of the search's shortcuts this
 /// rule set still permits, and records them in `capabilities` for the readers
 /// documented on [`StaticState`]. Each shortcut rests on a claim about the
-/// game rather than about a position -- that material is the currency, that a
+/// game rather than about a position — that material is the currency, that a
 /// static score bounds a subtree, that giving up the move concedes something,
-/// that a late quiet move is a bad one -- and a variant that never makes the
+/// that a late quiet move is a bad one — and a variant that never makes the
 /// claim leaves the bit clear and has the position played out instead.
+///
+/// Every bit is granted unless something in the rules takes it away:
+///
+/// ```text
+/// see valid          royal capture, multi capture, misere, extinction,
+///                    promotion into what was taken
+/// see pruning        recycled captures, check count, counting, goal
+/// forward pruning    misere, extinction, goal, check count
+/// null pruning       misere, goal, check count, counting, a pass the
+///                    rules already offer, stand-offs, a setup phase, a
+///                    piece with no quiet move at all
+/// recapture order    multi capture, recycled captures, check count, goal
+/// quiet pruning      misere, goal, check count
+/// static movement    a screened leg anywhere in the rules
+/// ```
 ///
 /// Two kinds of fact answer the questions. Movement facts come from the
 /// generated vectors: a leg that unloads what it destroyed needs a second
 /// piece standing where it stands, a leg that may take a royal is not trading
 /// material, a vector that destroys twice wins more than its victim, a vector
 /// that ends where it started having taken nothing is a pass the variant
-/// already offers -- a lion returning home over a corpse is not one, which is
+/// already offers — a lion returning home over a corpse is not one, which is
 /// why the destroy flag disqualifies the shape rather than the displacement
-/// alone -- and a piece with no quiet vector cannot give up a tempo at all.
-/// Terminal facts
-/// come from the declared rules: counting pieces, holding a zone, or tallying
-/// checks all pay in a currency material does not convert to.
+/// alone — and a piece with no quiet vector cannot give up a tempo at all.
+/// Terminal facts come from the declared rules: counting pieces, holding a
+/// zone, or tallying checks all pay in a currency material does not convert
+/// to.
 ///
 /// Nothing here reads a variant's name, and nothing asks whether a rule is
 /// familiar. A rule set written tomorrow is judged by the same questions.
 ///
 /// Params:
 /// - state: &mut State -> variant whose capability mask is derived
+///
+/// Notes:
+/// The movement scan reads every piece on every square rather than the
+/// piece's own template, since a leg that only appears near an edge is
+/// still a leg the rules contain. It runs once at load, so the sweep costs
+/// nothing a search will ever wait on.
 pub fn derive_search_capabilities(state: &mut State) {
     let statics = &state.statics;
     let board_size = statics.board_size;
@@ -1372,17 +1651,41 @@ pub fn derive_search_capabilities(state: &mut State) {
     log_3!("Derived Search Capabilities: {:07b}", capabilities);
 }
 
+/*----------------------------------------------------------------------------*\
+                             EVALUATION DERIVATION
+\*----------------------------------------------------------------------------*/
+
 /// derive_base_pst
 ///
-/// Builds rule-derived opening and endgame PST bases for every piece. Loaded
-/// material must be final because promotion gradients use it. Black rows mirror
-/// their White twins across the horizontal axis.
+/// Builds rule-derived opening and endgame PST bases for every piece, one
+/// pair of rows per piece index. Loaded material has to be final before this
+/// runs, since the promotion gradient inside a table is priced against the
+/// value a promotion reaches.
+///
+/// A Black piece is not derived in its own orientation. It is derived on its
+/// White twin's index, so the square scores are built once for a board seen
+/// the same way up, and the finished rows are turned around afterwards:
+///
+/// ```text
+/// swap      look the piece up under its White twin's index
+/// derive    mobility, distance from centre, promotion gradient
+/// mirror    flip the rows across the horizontal axis
+/// swap      store them back under the piece's own index
+/// ```
+///
+/// The promotion ceiling handed to each phase is the dearest non-royal value
+/// of that phase, so how far a promotion is worth walking towards is measured
+/// against the best a promotion could possibly reach.
 ///
 /// Params:
-/// - state: &State -> variant whose rule-derived PST bases are built
+///
+///     state: &State
+///     variant whose rule-derived PST bases are built
 ///
 /// Return:
-/// (Vec<Vec<i32>>, Vec<Vec<i32>>) -> opening and endgame rows by piece index
+///
+///     (Vec<Vec<i32>>, Vec<Vec<i32>>)
+///     opening and endgame rows by piece index, White then its mirror
 pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
     let promoted_opening = state.statics.pieces.iter()
         .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
@@ -1439,8 +1742,23 @@ pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
 
 /// derive_material_values
 ///
-/// Derives opening and endgame material from movement rules. Role flags stay
-/// clear until the loaded-value post-pass ranks the finished material table.
+/// Derives opening and endgame material from movement rules alone, each
+/// piece priced twice against the board fill its phase assumes, and then
+/// shifts the whole table so the cheapest piece in the variant lands on 100.
+///
+/// ```text
+/// derive     every White piece, once at each occupancy
+/// offset     the cheapest opening value, less 100
+/// subtract   the offset from both values of every piece
+/// ```
+///
+/// The shift is what makes two variants comparable: only the width of the
+/// range says anything about a variant, its floor being an artefact of how
+/// generous the mobility model happened to be. Black is never derived, its
+/// twin being handed the White values through the swap map.
+///
+/// Role flags stay clear here. Big and major are a ranking over the finished
+/// table, so they cannot be assigned while it is still being written.
 ///
 /// Params:
 /// - state: &mut State -> variant whose material values are derived
@@ -1490,6 +1808,11 @@ fn derive_material_values(state: &mut State) {
 /// Derives material from rules, then rebuilds every material-dependent
 /// evaluation product through the same post-load path used by payloads.
 ///
+/// The split is what lets a tuned payload replace the derived values
+/// without replacing anything built on them: a payload writes the material
+/// table and calls the second half alone, and the roles, thresholds,
+/// contempt and PST bases are rebuilt from whatever the table now says.
+///
 /// Params:
 /// - state: &mut State -> variant whose evaluation parameters are derived
 pub fn derive_eval_parameters(state: &mut State) {
@@ -1499,11 +1822,33 @@ pub fn derive_eval_parameters(state: &mut State) {
 
 /// derive_eval_products
 ///
-/// Rebuilds roles, phase thresholds, draw contempt, dynamic role counts, and
-/// rule-derived PST bases after final material values have loaded.
+/// Rebuilds roles, phase thresholds, draw contempt, and rule-derived PST
+/// bases after final material values have loaded, whether they were derived
+/// from the rules or read out of a tuned payload.
+///
+/// Everything here is a share of one number: the mean value of a non-royal
+/// piece in the army the variant actually begins play with. Royals are left
+/// out of that mean, a side never being able to trade one.
+///
+/// ```text
+/// opening   the mean, once per big piece the army deploys
+/// endgame   the mean, ENDGAME_ARMY_SIZE times, kept under the opening
+/// span      the mean twice over, the lead contempt is measured against
+/// contempt  an eighth of the mean, what a draw costs when level
+/// ```
+///
+/// The endgame end is clamped a point below the opening end rather than
+/// trusted to fall there: a variant deploying almost no big pieces would
+/// otherwise leave the two ends crossed, and the taper divides by their
+/// difference.
 ///
 /// Params:
 /// - state: &mut State -> variant whose loaded-material products are rebuilt
+///
+/// Notes:
+/// Roles are assigned before the army is resolved, because the setup walk
+/// plays real moves on a copy of the position and the copy's evaluation
+/// caches count pieces by the roles they carry.
 pub fn derive_eval_products(state: &mut State) {
     log_3!("Deriving dynamic evaluation parameters...");
 
@@ -1561,7 +1906,6 @@ pub fn derive_eval_products(state: &mut State) {
     let (pst_opening, pst_endgame) = derive_base_pst(state);
     state.static_mut().pst_opening = pst_opening;
     state.static_mut().pst_endgame = pst_endgame;
-
     refresh_eval_state(state);
 
     log_3!("Derived Opening Score Threshold: {}", state.statics.opening_score);
@@ -1572,6 +1916,10 @@ pub fn derive_eval_products(state: &mut State) {
     );
 }
 
+/*----------------------------------------------------------------------------*\
+                            ROYAL SAFETY DERIVATION
+\*----------------------------------------------------------------------------*/
+
 /// derive_forward_directions
 ///
 /// Rank step each colour advances by, read from the army the variant
@@ -1580,11 +1928,16 @@ pub fn derive_eval_products(state: &mut State) {
 /// colours around the same rank, still has to name a direction and sends
 /// white up.
 ///
+/// ```text
+/// black's mean rank below white's   black steps up, white steps down
+/// anything else, ties included      white steps up, black steps down
+/// ```
+///
 /// Params:
 /// - state: &State -> variant whose initial deployment is read
 ///
 /// Return:
-/// [i32; 2] -> colour to rank step, either 1 or -1
+/// [i32; 2]        -> colour to rank step, either 1 or -1
 fn derive_forward_directions(state: &State) -> [i32; 2] {
     let files = state.statics.files as usize;
     let board_size = state.statics.board_size;
@@ -1627,6 +1980,13 @@ fn derive_forward_directions(state: &State) -> [i32; 2] {
 /// straight step out of the deployment rank is allowed past the radius,
 /// and a piece with no forward lean is not standing in front of anything.
 ///
+/// ```text
+/// inside the radius      a step of any kind, the piece stays near home
+/// one past it, no file   a straight double step off the deployment rank
+/// anything further       a leap over the neighbourhood it should hold
+/// rank offsets summed    positive, or the piece faces nowhere useful
+/// ```
+///
 /// Move vectors are stored in the mover's own frame, with the colour sign
 /// applied only when a move is walked, so a rank offset is forward for
 /// whichever colour owns the piece and needs no board direction here.
@@ -1636,7 +1996,7 @@ fn derive_forward_directions(state: &State) -> [i32; 2] {
 /// - radius: i32    -> radius the local square lists are built at
 ///
 /// Return:
-/// Vec<bool> -> piece index to shield-like role
+/// Vec<bool>        -> piece index to shield-like role
 fn derive_shield_pieces(state: &State, radius: i32) -> Vec<bool> {
     state.statics.pieces.iter().map(|piece| {
         if p_is_royal!(piece) {
@@ -1671,6 +2031,14 @@ fn derive_shield_pieces(state: &State, radius: i32) -> Vec<bool> {
 /// bitboard rather than walked, since a zone already states every square
 /// the piece may ever stand on.
 ///
+/// ```text
+/// a quarter of the board or less   confined, shelter is switched off
+/// more than that                   free, the term is priced as usual
+/// ```
+///
+/// A colour is confined if any of its royals is, a variant fielding two of
+/// them and walling one having walled the term the shelter table prices.
+///
 /// Params:
 /// - state: &State -> variant whose royal zones are read
 ///
@@ -1704,6 +2072,21 @@ fn derive_royal_confinement(state: &State) -> [bool; 2] {
 /// that lie forward of its origin, and one colour-blind list holds the whole
 /// ring. A count per origin records how many slots survive board edges, so
 /// evaluation needs no bounds arithmetic.
+///
+/// Each list is a flat table of `stride` slots per origin square, `stride`
+/// being the ring's full size and the count saying how much of it is real:
+///
+/// ```text
+/// centre   s s s   eight ring squares, and the count reads eight
+///          s K s
+///          s s s
+/// corner   s s     three of them land on the board, the count reads
+///          K s     three, and the rest of the row is never touched
+/// ```
+///
+/// The origin is skipped while the ring is built, a royal not standing in
+/// front of itself, which is why the stride is one short of the square of
+/// the ring's width.
 ///
 /// All four values are priced off the dearest non-royal piece, the same piece
 /// search margins use, so a variant whose army is cheap pays a proportionate
@@ -1829,6 +2212,17 @@ pub fn derive_shelter_parameters(state: &mut State) {
 /// walking a single vector: it sums bytes over the enemy pieces actually on
 /// the board, and squares that sum.
 ///
+/// ```text
+/// landing square   charged what the vector's odds of arriving are
+/// its whole ring   every ring square charged that same amount again
+/// index            (royal * pieces + piece) * squares + origin
+/// best             the largest over that origin axis, what a hand reads
+/// ```
+///
+/// A vector is charged onto the ring as well as onto the square it lands
+/// on because a royal is in danger from what surrounds it, not only from
+/// what is aimed at it, and the ring is where its shelter has to stand.
+///
 /// Entries are `ZONE_ATTACK_UNIT`ths of an expected landing, saturating at
 /// a byte, so a piece attacking the zone through open lines scores a full
 /// unit per landing square and one attacking through a line that has to be
@@ -1937,6 +2331,10 @@ pub fn derive_danger_parameters(state: &mut State) {
     statics.eval.open_shield_penalty = open_shield_penalty as i32;
 }
 
+/*----------------------------------------------------------------------------*\
+                           PAWN STRUCTURE DERIVATION
+\*----------------------------------------------------------------------------*/
+
 /// derive_pawn_slots
 ///
 /// Picks out the piece types whose structure is worth pricing and gives
@@ -1945,6 +2343,13 @@ pub fn derive_danger_parameters(state: &mut State) {
 /// forward available, never ranges further than one square once its first
 /// move is spent, and stands in the opening army at least
 /// `PAWN_MIN_START_COUNT` times over.
+///
+/// ```text
+/// never steps backward    no vector of it carries a negative rank
+/// keeps a step forward    a quiet one-rank push, file within one
+/// never ranges past one   once the opening push has been spent
+/// fielded often enough    on the board or in hand, both counted
+/// ```
 ///
 /// Those four conditions are geometric and count-based, and between them
 /// they name the pawn of every variant without naming a variant: the
@@ -1961,7 +2366,7 @@ pub fn derive_danger_parameters(state: &mut State) {
 /// even on a board that fields thirty piece types.
 ///
 /// Params:
-/// - state: &State -> variant whose pieces are classified
+/// - state: &State          -> variant whose pieces are classified
 ///
 /// Return:
 /// (Vec<usize>, Vec<usize>) -> piece index to slot, and slot to piece index
@@ -2258,7 +2663,7 @@ fn derive_pawn_interference(
 ///
 /// The file offsets, relative to a pawn, at which a friendly pawn could
 /// ever defend it or the square it advances to. A pawn with no friendly
-/// pawn on any of these files, at any rank at all, is isolated -- which is
+/// pawn on any of these files, at any rank at all, is isolated — which is
 /// a weaker statement than being undefended right now, and the reason the
 /// two are priced apart.
 ///
@@ -2345,6 +2750,14 @@ fn derive_pawn_support_files(state: &State, index: usize) -> Vec<i32> {
 /// what standing there is worth. A pawn with no promotion zone falls back
 /// to its distance from the far edge in its own forward direction.
 ///
+/// ```text
+/// steps to promote    8    6    4    2    1
+/// advancement         0   16   64  144  196
+/// ```
+///
+/// The row above is an eight-rank board, and the squaring is what bends it:
+/// the first half of the walk is worth a quarter of the second.
+///
 /// Params:
 /// - state : &State -> board geometry and promotion zones
 /// - index : usize  -> pawn-like piece index
@@ -2379,20 +2792,39 @@ fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
 /// a passer on each of those squares is worth, and the flat worth of being
 /// connected and the flat cost of being doubled, isolated, or backward.
 ///
+/// ```text
+/// path           squares still ahead, where a doubled pawn stands
+/// interference   enemy squares that stop it, none held means passed
+/// support        friendly squares that connect it or guard its stop
+/// backward       enemy squares watching its stop, holding it back
+/// ```
+///
 /// Every mask is a full board, so the evaluation is bounded by how many
 /// pawns are on the board rather than by how wide the board is, and every
 /// test it runs is a single bit read. The tables are indexed by pawn slot
 /// rather than piece index, so a variant fielding thirty piece types and
 /// two pawns pays for two.
 ///
-/// A passer is priced off what promoting it would gain -- the dearest
-/// piece it could become, less what it is worth standing there -- scaled
+/// A passer is priced off what promoting it would gain — the dearest
+/// piece it could become, less what it is worth standing there — scaled
 /// by how far along it already is, so a passer one square from promoting
 /// is worth most of a piece and one still at home is worth nearly
 /// nothing. A pawn its rules never promote is priced off its own value
 /// instead. The structure terms are shares of the pawn itself, since each
 /// is a correction to that pawn's worth and not a statement about the
 /// army standing behind it.
+///
+/// ```text
+/// passer      the promotion gain, by ratio, by advancement
+/// connected   a share of the pawn, the two phases priced apart
+/// doubled     a share of its opening value, both phases alike
+/// isolated    the same share, taken over the support files
+/// backward    the same share, taken over the watched stop
+/// ```
+///
+/// Only the connected term reads the endgame value. A fault is a fault at
+/// either end of the taper, and pricing it twice would say a doubled pawn
+/// matters less once the board empties, which is the opposite of true.
 ///
 /// Params:
 /// - state: &mut State -> variant whose pawn tables are rebuilt
@@ -2538,6 +2970,12 @@ pub fn derive_pawn_parameters(state: &mut State) {
 /// holding the move, holding more pieces than the other side rather than
 /// dearer ones, and holding both copies of a piece that is worth more in
 /// pairs than singly.
+///
+/// ```text
+/// tempo       a small share of the dearest piece, never below its floor
+/// imbalance   one share for a heavy piece of surplus, one for a light
+/// pair        a share again, but only for pieces bound to half the board
+/// ```
 ///
 /// The first two are scalars read straight off the dearest non-royal
 /// piece. The third needs to know which pieces earn it, which is asked of

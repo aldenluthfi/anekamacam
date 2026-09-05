@@ -2,20 +2,35 @@
 //!
 //! Static exchange evaluation and move scoring for search-time ordering.
 //!
-//! Captures use full exchange simulation (SEE). Quiet moves use killer and
-//! butterfly history scores. Incremental selection defers unused tail work.
+//! Alpha-beta is paid for in move order: the move that cuts should be tried
+//! first, and everything behind it should be cheap to reject. This file says
+//! what a move is worth before it is searched — a capture by playing the
+//! whole exchange out on the board, a quiet move by what the killer and
+//! history tables remember of it — and hands the search one move at a time,
+//! since most nodes never ask for the rest of the list.
 //!
 //! Created: 19/04/2026
 //! Author : Alden Luthfi
 
 /*----------------------------------------------------------------------------*\
-                          STATIC EXCHANGE EVALUATION
+                           STATIC EXCHANGE EVALUATION
 \*----------------------------------------------------------------------------*/
 
-/// SEE helper macros.
+/// SEE helper macros
 ///
-/// `attack_value!` prices the moving piece, `victim_value!` prices captured
-/// material, and `lva!` regenerates captures onto one target square.
+/// The three things an exchange simulation needs: what the mover is worth,
+/// what it takes, and who else can reach the square.
+///
+/// ```text
+/// attack_value!   the moving piece, or what it promotes into
+/// victim_value!   everything the move captures, unloads not counted
+/// lva!            every legal capture onto one square, cheapest last
+/// ```
+///
+/// A move may take more than one piece, so the victim side is a sum rather
+/// than a lookup, and a piece a move merely puts down is not a piece it took.
+/// `lva!` sorts descending and the caller pops from the back, which is what
+/// makes the least valuable attacker the next one to try.
 ///
 /// attack_value!
 ///
@@ -134,6 +149,27 @@ macro_rules! lva {
 /// Evaluates a capture sequence on one target square. Positive scores win
 /// material; negative scores lose material. Position is restored on return.
 ///
+/// The square is fought over until neither side has an attacker left, each
+/// ply taking with its cheapest one, and the running balance is written down
+/// from the side that moved at that ply:
+///
+/// ```text
+/// gain[0]   what the first capture takes
+/// gain[1]   the attacker it left there, less gain[0]
+/// gain[n]   the same again, one ply deeper each time
+///
+/// backward  gain[i - 1] = -max(-gain[i - 1], gain[i])
+/// ```
+///
+/// The backward pass is where declining enters. A side is never obliged to
+/// recapture, so reading from the last ply to the first keeps, at each step,
+/// the better of taking and standing still, and `gain[0]` comes out as what
+/// the exchange is worth to whoever started it against best play.
+///
+/// The sequence is capped at the array's length. A square fought over by
+/// more than that many pieces is scored on the part that fit, which orders
+/// no worse than a position nobody will reach in a real game.
+///
 /// The candidate list and its multi-capture payload are the state's own
 /// [`Scratch`] rather than a fresh allocation. Every scored capture runs
 /// this once, so the pair was being asked of the allocator and handed
@@ -152,6 +188,13 @@ macro_rules! lva {
 ///
 /// Return:
 /// i32 -> net material gain for moving side
+///
+/// Notes:
+/// A move that cannot legally be made at all returns `-INF` rather than a
+/// number, which the scorer turns into the lowest band there is. The
+/// simulation makes and unmakes real moves, so illegality is discovered the
+/// same way the search discovers it, and the position is left exactly as it
+/// was however early the sequence ended.
 #[macro_export]
 macro_rules! see {
     ($state:expr, $mv:expr) => {
@@ -247,9 +290,20 @@ macro_rules! see {
 
 /// score_move!
 ///
-/// Returns one ordering score. Priority: table move, winning capture,
-/// killers, history, losing capture, then a capture the exchange simulation
-/// could not make.
+/// Returns one ordering score, larger meaning searched sooner.
+///
+/// ```text
+/// table move           the move that already worked here
+/// winning capture      by the exchange simulation, or by the plain swing
+/// killer               two quiet moves that cut at this ply before
+/// quiet                centre score plus what the history tables say
+/// losing capture       still played, but after every quiet move
+/// unmakeable capture   the simulation could not even make it
+/// ```
+///
+/// The bands themselves live in the prelude, spaced so that the widest
+/// history score a quiet move can reach still lands under the lowest killer,
+/// which is what keeps a band from bleeding into its neighbour.
 ///
 /// A quiet move's history is the butterfly cell plus one continuation cell
 /// per ply this node has a move to answer. The butterfly cell says the move
@@ -336,8 +390,24 @@ macro_rules! score_move {
 
 /// pick_by_score!
 ///
-/// Selects the best-scoring move in `moves[index..]` and swaps it into
-/// `index`. Scores are filled lazily and cached in the parallel vector.
+/// Brings the best remaining move to `index`, one selection pass per move
+/// the search actually asks for. Sorting the list would price every move in
+/// it; a node that cuts on its second move should pay for two.
+///
+/// ```text
+/// index 0   [ . . . . . . ]  score them all, swap the best to the front
+/// index 1   [x . . . . . ]   score the rest, swap the best to slot one
+/// cut here  [x x . . . . ]   the tail is never scored, let alone searched
+/// ```
+///
+/// Scores live in a vector beside the moves, `usize::MAX` marking a slot not
+/// yet priced, so a move that survives several passes is priced once. That
+/// matters most for captures, where a price means running the whole exchange
+/// simulation over the board.
+///
+/// The table move short-circuits both halves. It is swapped to the front on
+/// the first call and given the band above everything else, so while it holds
+/// the slot no other move is scored at all.
 ///
 /// Params:
 /// - state     : &mut State          -> position used for scoring

@@ -13,12 +13,26 @@
 
 use crate::*;
 
+/*----------------------------------------------------------------------------*\
+                              LAZY SMP WORKER POOL
+\*----------------------------------------------------------------------------*/
+
 /// ThreadPool
 ///
-/// Runs independent iterative-deepening workers with shared lock-free tables.
+/// Independent searchers over one position, sharing the tables and nothing
+/// else. Each worker clones the root, runs its own iterative deepening, and
+/// meets the others only in the two shared tables.
 ///
-/// Every worker owns a state clone. The pool synchronizes
-/// only launch and join, then returns the highest-scoring completed result.
+/// ```text
+/// worker 0   own state, own tables, own counters  ┐
+/// worker 1   own state, own tables, own counters  ├─ shared main table
+/// worker n   own state, own tables, own counters  ┘  shared qsearch table
+/// ```
+///
+/// Workers drift apart within a few nodes, since each writes what it finds
+/// and reads what the others left, and that drift is the point: the same tree
+/// searched in a different order finds cut moves at different times, and the
+/// table hands every discovery to everyone.
 pub struct ThreadPool {
     pub main_state: State,                                                      /* root position, cloned per worker   */
     pub tt: Arc<TTable>,                                                        /* shared main transposition table    */
@@ -31,7 +45,9 @@ impl ThreadPool {
     /// ThreadPool::with_threads
     ///
     /// Prepares a pool over a snapshot of the root position; nothing is
-    /// spawned until `run` is called.
+    /// spawned until `run` is called. The snapshot is what every worker is
+    /// cloned from, so the pool answers for the position as it stood when it
+    /// was built and not as the caller's state may go on to stand.
     ///
     /// Params:
     /// - root : &State      -> root position, cloned per worker
@@ -60,18 +76,25 @@ impl ThreadPool {
     /// (deep recursion) while sharing the lock-free tables. All workers
     /// inherit the caller's depth, node, and deadline limits.
     ///
-    /// After all workers join, the worker that finished the most iterations
-    /// wins, and worker zero wins a tie. Score decides nothing: a worker cut
-    /// off inside an iteration can be holding a high number no window ever
-    /// confirmed, and picking on score lets that number outrank a shallower
-    /// but finished answer. Depth is a fact about how much work was completed,
-    /// and the lowest index breaks ties the same way on every run, so two runs
-    /// of the same position return the same move. Choosing among the deepest
-    /// by anything richer than an index is voting, and voting is S-5.
+    /// ```text
+    /// depth    the worker that finished the most iterations wins
+    /// index    the lowest one breaks a tie, the same way every run
+    /// score    decides nothing at all
+    /// nodes    summed over every worker, the whole search's cost
+    /// time     the longest a worker ran, since they ran together
+    /// ```
     ///
-    /// Nodes are summed across every worker and elapsed time is the longest
-    /// any of them ran, since they run concurrently. Reporting the winner's
-    /// own counters would be reporting one worker's share as the whole.
+    /// Score is left out because a worker cut off inside an iteration holds a
+    /// number no window ever confirmed, and picking on score lets it outrank
+    /// a shallower answer that was actually proved. Depth is a fact about how
+    /// much work finished, and breaking ties by index keeps two runs of one
+    /// position on the same move rather than on whichever thread was quicker
+    /// that time.
+    ///
+    /// Counters are the search's, not the winner's: reporting the winning
+    /// worker's own nodes would report one share as the whole, and summing
+    /// elapsed time across workers would count the same wall clock once per
+    /// thread.
     ///
     /// Params:
     /// - info: &SearchInfo         -> limits shared by every worker
@@ -79,6 +102,15 @@ impl ThreadPool {
     ///
     /// Return:
     /// SearchResult                -> the deepest finished result
+    ///
+    /// Notes:
+    /// Threads are named after the executable and their index, so a profiler
+    /// or a debugger attached mid-search can tell one worker from another,
+    /// and each is given a stack far larger than the default: the search
+    /// recurses a frame per ply and a deep line would otherwise land on the
+    /// guard page. A worker that fails to spawn or panics takes the process
+    /// with it, since a search missing a worker is no longer the search the
+    /// caller asked for.
     pub fn run(
         self,
         info: &SearchInfo,
