@@ -27,6 +27,10 @@
 
 use crate::*;
 
+/*----------------------------------------------------------------------------*\
+                              SEARCH WORKER STATE
+\*----------------------------------------------------------------------------*/
+
 /// SearchInfo
 ///
 /// Everything one search worker owns: its limits, its node count, its stop
@@ -205,6 +209,10 @@ const ASPIRATION_CLAMP: u32 = 16000;
 const ASPIRATION_WIDEN: u32 = 2000;
 const ASPIRATION_START_DEPTH: u32 = 4;
 
+/*----------------------------------------------------------------------------*\
+                            SEARCH SETUP AND CONTROL
+\*----------------------------------------------------------------------------*/
+
 /// SearchResult
 ///
 /// Packaged outcome of one root search.
@@ -224,10 +232,25 @@ pub struct SearchResult {
 
 /// check_interrupt
 ///
-/// Polls stop conditions and updates search interrupt state.
+/// Asks the three things that end a search early and raises the flag every
+/// node reads. Both search loops call this once every 2048 nodes, often
+/// enough that a stop lands in milliseconds and rarely enough that the clock
+/// reading behind it costs nothing measurable.
+///
+/// ```text
+/// system interrupt   a signal arrived, and the stop is logged
+/// node limit         the search was given a node budget and spent it
+/// deadline           the clock the time manager set has run out
+/// ```
 ///
 /// Params:
 /// - info: &mut SearchInfo -> search whose interrupt flag is updated
+///
+/// Notes:
+/// The checks stand in cost order, and a limit left at zero means unlimited
+/// rather than immediately exceeded. A flag already raised returns at once:
+/// the search unwinds through many nodes after a stop, and none of them
+/// should pay for a clock reading whose answer cannot change.
 #[inline(always)]
 pub fn check_interrupt(info: &mut SearchInfo) {
     if info.interrupt {
@@ -266,7 +289,24 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// clear_search
 ///
 /// Resets node state and allocates this worker's ordering tables and principal
-/// variation storage at the sizes the position calls for.
+/// variation storage at the sizes the position calls for. Nothing here is
+/// sized by a constant alone: a move key is `pieces * squares` wide, so a
+/// variant decides how much a worker remembers.
+///
+/// ```text
+/// search_hist   keys                cont_hist    plies * keys * keys
+/// corr_hist     2 * 16384 cells     killer_hist  one move pair per ply
+/// pv_table      stride squared      pv_length    one length per ply
+/// eval_stack    one score per ply, and one past the deepest
+/// ```
+///
+/// Continuation history squares the key count, which is what makes it the
+/// one table a large board pays real memory for, and why the ply count it
+/// nests is kept at what was measured to earn its size.
+///
+/// The transposition tables are not cleared, only aged: what the last search
+/// learned is still worth reading, and a generation older is enough for
+/// replacement to prefer overwriting it.
 ///
 /// Params:
 /// - state : &mut State      -> position the tables are sized from
@@ -307,7 +347,19 @@ pub fn clear_search(
 
 /// search_position
 ///
-/// Runs one single-threaded search or dispatches lazy-SMP workers.
+/// The door every protocol reaches search through. It zeroes the counters a
+/// search reports on, answers a root that is already over without searching
+/// it, and then runs one worker here or hands the position to a pool.
+///
+/// ```text
+/// terminal root   its terminal score, no move, and depth zero
+/// one worker      iterative deepening runs in the calling thread
+/// many workers    a pool, sharing the two tables and nothing besides
+/// ```
+///
+/// A finished root reports `null_move` rather than a legal-looking move. It
+/// has nothing legal to play and nothing to search, and a caller asking a
+/// finished game for a move is better answered plainly than invented at.
 ///
 /// Params:
 /// - state     : &mut State          -> root position to search
@@ -367,7 +419,19 @@ pub fn search_position(
 
 /// log_table_stats
 ///
-/// Logs main and quiescence table counters after a search.
+/// Reports what both tables did over one search, a line each. The four
+/// counters read as two pairs: what was written, and what came back.
+///
+/// ```text
+/// new    a key landed in a slot that held nothing
+/// over   a key replaced an entry that was already there
+/// hit    a probe matched the key it was looking for
+/// valid  that hit survived the consistency check and was used
+/// ```
+///
+/// Hits above valid mean entries are being torn by other workers writing the
+/// same slot, and overwrites far above new mean the table is too small for
+/// the search it was asked to hold.
 ///
 /// Params:
 /// - table : &TTable -> main table whose counters are reported
@@ -391,13 +455,32 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
 }
 
 /*----------------------------------------------------------------------------*\
-                         ITERATIVE DEEPENING
+                              ITERATIVE DEEPENING
 \*----------------------------------------------------------------------------*/
 
 /// iterative_deepening
 ///
-/// Searches depths 1 through the requested limit with a full alpha-beta window.
-/// Thread zero reports protocol output; helper threads search silently.
+/// Searches the root again and again, one ply deeper each time, until the
+/// depth limit or the clock ends it. Re-searching is cheaper than it sounds:
+/// each pass leaves the tables full of what it learned, and the pass after it
+/// spends most of its time confirming that order rather than finding it.
+///
+/// ```text
+/// depth 1     opens at the full bounds and keeps the score
+/// depth 2     the same, its order already improved by depth 1
+/// depth 3     the same, and the score is now worth aspiring around
+/// depth 4     opens narrow around the last score, widening on a fail
+/// ...         until the depth limit, or the clock, ends the loop
+/// ```
+///
+/// An iteration the clock cuts through is thrown away whole. Its root move
+/// was searched under a window that never closed, so the answer it holds is
+/// unproven, and the previous depth's move is the one that gets played.
+///
+/// The line is refilled from the table after every iteration, and the second
+/// move of it is offered as the ponder move, but only when the first is still
+/// the move being played: a table that has moved on since would otherwise
+/// hand back a reply to something else entirely.
 ///
 /// Params:
 /// - state     : &mut State          -> root position to search
@@ -409,6 +492,13 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
 ///
 /// Return:
 /// SearchResult -> best move, score, ponder move, nodes, and elapsed time
+///
+/// Notes:
+/// Only worker zero emits protocol information. The rest search the same root
+/// under their own tables and report nothing, their whole contribution being
+/// what they leave in the shared transposition tables for worker zero to
+/// find. Logging is not so restricted: every worker logs its own depths, the
+/// thread number leading the line.
 pub fn iterative_deepening(
     state: &mut State,
     ttable: &TTable,
@@ -608,18 +698,26 @@ pub fn iterative_deepening(
 }
 
 /*----------------------------------------------------------------------------*\
-                         QUIESCENCE SEARCH
+                               QUIESCENCE SEARCH
 \*----------------------------------------------------------------------------*/
 
 /// quiescence_search
 ///
-/// Capture-only negamax leaf search. Checked positions search every evasion;
-/// other positions may stand pat and search captures only. A position not
-/// in check stops at the first capture ordering prices as losing, since
-/// every capture behind it is priced no better, and skips a capture whose
-/// victim plus a margin still stands under alpha. The margin is not
-/// applied to a promotion, nor in an endgame, where a single capture is
-/// most of what is left to play for.
+/// The leaf search. Evaluation of a board mid-exchange is worth little, so
+/// the leaves play the exchanges out and evaluate what is left standing.
+///
+/// ```text
+/// in check     every evasion, drops among them, and no standing pat
+/// otherwise    stand pat first, then captures while they price as won
+/// ```
+///
+/// Standing pat is the claim that doing nothing is already worth at least
+/// what the captures on offer are, which a checked side cannot make: it has
+/// no option to do nothing. A position not in check stops at the first
+/// capture ordering prices as losing, since every capture behind it is priced
+/// no better, and skips a capture whose victim plus a margin still stands
+/// under alpha. The margin is not applied to a promotion, nor in an endgame,
+/// where a single capture is most of what is left to play for.
 ///
 /// Stopping early is a claim that the ordering is monotone, and a variant
 /// where a capture also fills a hand, counts toward a check tally, or takes
@@ -637,6 +735,16 @@ pub fn iterative_deepening(
 ///
 /// Return:
 /// i32 -> stand-pat or best capture score within the window
+///
+/// Notes:
+/// Both tables are read here and only one is written. The quiescence table
+/// answers for these nodes and stores their results; the main table is asked
+/// for a move worth trying first and nothing else, since a bound proved over
+/// captures alone would be a lie at any real depth.
+///
+/// A checked node that finds no legal move is over, and the verdict comes
+/// from the variant rather than from here: what checkmate is worth, and to
+/// whom, is a rule and not an assumption this file gets to make.
 #[hotpath::measure]
 fn quiescence_search(
     state: &mut State,
@@ -790,17 +898,35 @@ fn quiescence_search(
 }
 
 /*----------------------------------------------------------------------------*\
-                           ALPHA-BETA SEARCH
+                               ALPHA-BETA SEARCH
 \*----------------------------------------------------------------------------*/
 
 /// alpha_beta
 ///
-/// Principal variation search with TT/QT, NMP, LMP, killers, and history.
-/// The first legal move takes the full window and later moves take the
-/// scout window `(-alpha - 1, -alpha)`, which either confirms the first
-/// move is best or fails high and costs a full-window re-search. A node
-/// already entered on a narrow window scouts at no extra cost, since its
-/// scout window is the window it was given.
+/// The tree proper: principal variation search over a window, every node
+/// above the leaves. The first legal move is searched on the whole window;
+/// every move after it is asked one question instead, on a window one point
+/// wide, and only a move that answers yes is searched properly.
+///
+/// ```text
+/// move 1        alpha ├────────────────────┤ beta   the window in full
+/// move 2 on           alpha ├┤ alpha + 1            can it beat move 1
+/// it could      alpha ├────────────────────┤ beta   so it is asked again
+/// ```
+///
+/// A node handed a narrow window scouts for nothing, its scout window being
+/// the window it already has, which is why the scouting spreads downward.
+///
+/// What a node does, in the order it does it:
+///
+/// ```text
+/// terminal, repetition, ply cap   answered before a node is spent at all
+/// table probe                     a bound to cut on, a move to try first
+/// static evaluation               taken once, corrected, kept for the ply
+/// razoring, futility, null move   the shortcuts, each asking the rules
+/// ProbCut                         a few captures against a raised beta
+/// move loop                       ordered, reduced, and re-searched
+/// ```
 ///
 /// Razoring asks quiescence to rescue a shallow fail-low before the full node;
 /// ProbCut asks at most three winning captures to prove a surplus above beta;
@@ -817,12 +943,12 @@ fn quiescence_search(
 /// which side is at fault is not settled until the rule fires, and a line one
 /// cycle short of it can still be won outright by either colour.
 ///
-/// Every shortcut that answers without full search -- standing on a static
+/// Every shortcut that answers without full search — standing on a static
 /// score, giving up the move, proving beta through selected captures, reducing
 /// a node with no table move, skipping a losing capture, dropping a late quiet
-/// move -- asks the capability mask first. Each is an argument
-/// about the game rather than about the position, and a variant that never
-/// makes the argument has its moves searched instead. The late-move reduction
+/// move — asks the capability mask first. Each is an argument about the game
+/// rather than about the position, and a variant that never makes the
+/// argument has its moves searched instead. The late-move reduction
 /// below is not among them: a reduced search that beats alpha is repeated at
 /// full depth, so it reorders work without ever dropping a move, and no rule
 /// can make that unsound.
@@ -1390,13 +1516,27 @@ pub fn alpha_beta(
     alpha
 }
 
+/*----------------------------------------------------------------------------*\
+                         HISTORY AND CORRECTION UPDATES
+\*----------------------------------------------------------------------------*/
+
 /// update_history
 ///
-/// Applies one signed depth-squared change to a history cell.
+/// Adds one signed change to a history cell and holds it inside the bound
+/// every ordering score is read against. The caller sizes the change by depth
+/// squared, so a deep node's verdict outweighs a shallow node's guess, and
+/// the sign says which verdict it was: the quiet move that cut earns the
+/// bonus, and every quiet move tried and beaten earns the same as a malus.
 ///
 /// Params:
 /// - entry: &mut i16 -> history cell updated in place
 /// - bonus: i32      -> signed bonus or malus
+///
+/// Notes:
+/// Saturating at the bound is what lets a cell forget. A move pinned at the
+/// ceiling gains nothing more from working again, while it still has the
+/// whole range to fall through once it stops, so a move that has gone stale
+/// sinks back down without any decay pass sweeping the table.
 #[inline(always)]
 fn update_history(entry: &mut i16, bonus: i32) {
     *entry = (*entry as i32 + bonus)
@@ -1405,8 +1545,17 @@ fn update_history(entry: &mut i16, bonus: i32) {
 
 /// correction_index
 ///
-/// Maps side to move and incremental pawn placement onto one worker-local
-/// correction-history cell. Collisions deliberately share a correction.
+/// Maps side to move and pawn placement onto one worker-local correction
+/// cell, the pawn key masked down to a row and the side choosing the half.
+///
+/// ```text
+/// index = side * 16384 + (pawn key & 16383)
+/// ```
+///
+/// Collisions are left to share a cell. Two skeletons landing on one row
+/// average their corrections, and the correction is bounded and outvoted by
+/// whichever position visits more, so the cost of a collision is a slightly
+/// worse guess rather than a wrong score.
 ///
 /// Params:
 /// - state: &State -> position providing side and pawn key
@@ -1421,10 +1570,25 @@ fn correction_index(state: &State) -> usize {
 
 /// update_correction
 ///
-/// Blends one search-to-evaluation gap into correction history. Quiet best
-/// moves use depth-weighted evidence; captures use weight one because their
-/// gap is mostly tactical, not a structural evaluation error. Mate scores,
-/// checked nodes, and bounds that do not tighten the evaluation teach nothing.
+/// Blends one gap between static evaluation and searched score into the cell
+/// this pawn skeleton files under, weighted by how much the search behind it
+/// is worth believing.
+///
+/// ```text
+/// gap     (score - eval), kept in grain units
+/// weight  1 + depth for a quiet best move, 1 for a capture, 16 at most
+/// cell    (cell * (256 - weight) + gap * weight) / 256
+/// ```
+///
+/// A capture weighs one whatever its depth: the gap it opened is tactical,
+/// something evaluation was never going to see, and teaching the skeleton
+/// about it would blame the pawns for a hanging piece.
+///
+/// The bound decides whether a node teaches at all. A fail-high proves the
+/// score is at least what it says, so it teaches only when it came out above
+/// the evaluation; a fail-low proves the reverse and teaches only below it.
+/// An exact score always teaches. Mate scores never do, being a distance to
+/// the end of the game rather than a judgement of the position.
 ///
 /// Params:
 /// - entry  : &mut i16 -> correction-history cell updated in place
@@ -1433,6 +1597,11 @@ fn correction_index(state: &State) -> usize {
 /// - depth  : usize    -> remaining depth, weights quiet evidence
 /// - flag   : u8       -> score bound, `FEXACT`, `FBETA`, or `FALPHA`
 /// - capture: bool     -> whether best move captures
+///
+/// Notes:
+/// A checked node still teaches, but is never taught: the read side zeroes
+/// the correction while in check, since what the evaluation is missing there
+/// is the check itself and not anything the pawn skeleton knows.
 #[inline(always)]
 fn update_correction(
     entry: &mut i16,
@@ -1465,9 +1634,20 @@ fn update_correction(
 /// Offsets of the continuation rows a reply at this node is credited to.
 ///
 /// One row follows the move just played and one the mover's own previous
-/// move. A slot reads `usize::MAX` when the ply it would follow does not
-/// exist or held a null move, which is the case where no move was answered
-/// and nothing about a reply to it can be learned.
+/// move, which are the two questions worth asking about a reply: what it
+/// answers, and what it continues.
+///
+/// ```text
+/// slot 0   one ply back    the opponent's move, the one being answered
+/// slot 1   two plies back  this side's own move, the one being followed
+///
+/// base = (slot * keys + key of that move) * keys
+/// cell = base + key of the reply being credited
+/// ```
+///
+/// A slot reads `usize::MAX` when the ply it would follow does not exist or
+/// held a null move, which is the case where no move was answered and nothing
+/// about a reply to it can be learned.
 ///
 /// Params:
 /// - state: &State -> position whose most recent plies are read
@@ -1502,8 +1682,18 @@ fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
 
 /// update_histories
 ///
-/// Applies one signed change to the butterfly cell of a move and to every
-/// continuation cell that has a move to answer.
+/// Applies one signed change everywhere a quiet move is remembered, so that
+/// what worked here is credited both as a move and as a reply.
+///
+/// ```text
+/// search_hist[move]         always, whatever the node was answering
+/// cont_hist[base + move]    once per row the node had a move to follow
+/// ```
+///
+/// Every table takes the same change, unscaled: the node's verdict is one
+/// verdict, and it is filed once as a move and once for each move it
+/// answered. Rows the node has nothing to follow are skipped rather than
+/// credited to a move that was never played.
 ///
 /// Params:
 /// - info : &mut SearchInfo -> worker whose tables are updated

@@ -11,6 +11,10 @@
 //! Created: 19/04/2026
 //! Author : Alden Luthfi
 
+/*----------------------------------------------------------------------------*\
+                           TERMINAL AND DRAW SCORING
+\*----------------------------------------------------------------------------*/
+
 /// draw_score!
 ///
 /// What a draw is worth to the side to move, in place of a plain zero. A side
@@ -18,7 +22,12 @@
 /// the game, so the lead is read back as a cost: ahead scores the draw below
 /// zero and behind scores it above. The lead is measured in the material the
 /// current phase prices, clamped to the derived `draw_span`, and paid at
-/// `draw_contempt` for a full span.
+/// `draw_contempt` for a full span:
+///
+/// ```text
+/// lead        -span ─────────── 0 ─────────── +span
+/// draw worth  +contempt         0        -contempt
+/// ```
 ///
 /// Both halves are shares of this variant's own mean deployed piece, so a
 /// variant playing in small units is not handed a large contempt, and no rule
@@ -53,16 +62,34 @@ macro_rules! draw_score {
 
 /// terminal_score!
 ///
-/// Scores a terminal position from side-to-move perspective. A decisive result
-/// uses mate-scaled scores so shorter wins and longer losses are preferred.
-/// A draw is worth what [`draw_score!`] says the material on the board makes
-/// it worth.
+/// What a finished position is worth to the side to move. A decisive result
+/// is priced at the extreme and stepped back by how deep the search stands,
+/// so a win found sooner beats the same win found later and a loss put off
+/// beats one taken at once:
+///
+/// ```text
+/// win at ply 0   INF        loss at ply 0   -INF
+/// win at ply 6   INF - 6    loss at ply 6   -INF + 6
+/// ```
+///
+/// A draw is not a plain zero. [`draw_score!`] prices it by the material lead
+/// left standing, a side that is ahead having something to lose by agreeing.
+///
+/// Which of the three applies is read off `termination.game_result`, so every
+/// way a variant can end — mate, a bare king, a goal square, a repetition —
+/// arrives here already reduced to a result and is priced the same way.
 ///
 /// Params:
 /// - state: &State -> position whose terminal value is computed
 ///
 /// Return:
 /// i32             -> terminal score from side-to-move perspective
+///
+/// Notes:
+/// Only a win for one side or the other takes a decisive price; `ONGOING`
+/// reads as the draw score like `DRAW` does. Callers ask this of positions a
+/// terminal check has already answered for, so the distinction never arises
+/// on the search path.
 #[macro_export]
 macro_rules! terminal_score {
     ($state:expr) => {{
@@ -85,11 +112,32 @@ macro_rules! terminal_score {
     }};
 }
 
+/*----------------------------------------------------------------------------*\
+                               ROYAL SAFETY TERMS
+\*----------------------------------------------------------------------------*/
+
 /// royal_shelter!
 ///
-/// Worth of shield-like friendly pieces standing ahead of one colour's royals.
-/// Each royal reads one precomputed forward-square list. Count is capped, so a
-/// royal buried in its own army stops earning once its shelter is full.
+/// Worth of the shield-like friendly pieces standing ahead of one colour's
+/// royals — the ground an attack has to come through:
+///
+/// ```text
+/// ┌───┬───┬───┐
+/// │ ● │ ● │ ● │   the squares this reads, forward being up for white
+/// ├───┼───┼───┤
+/// │   │ K │   │
+/// ├───┼───┼───┤
+/// │   │   │   │
+/// └───┴───┴───┘
+/// ```
+///
+/// The list is precomputed per royal square and per colour, so a royal near
+/// an edge simply reads fewer squares and no bounds arithmetic is spent here.
+/// Which pieces count as shielding is derived from the rules, not assumed:
+/// a piece that can walk back the way it came holds nothing.
+///
+/// The count is capped, so a royal buried in its own army stops earning once
+/// its cover is full.
 ///
 /// Params:
 /// - state: &State -> position whose royals are read
@@ -97,6 +145,11 @@ macro_rules! terminal_score {
 ///
 /// Return:
 /// i32             -> shelter worth, always non-negative
+///
+/// Notes:
+/// A variant that walls its royal into a palace reads an empty list for that
+/// colour and scores zero: there is no forward ground for it to hold. Every
+/// royal on the board is read, a variant with two of them earning for both.
 #[macro_export]
 macro_rules! royal_shelter {
     ($state:expr, $color:expr) => {{
@@ -132,11 +185,25 @@ macro_rules! royal_shelter {
 /// royal_guard!
 ///
 /// Worth of the friendly pieces standing on the ring around one colour's
-/// royals, whatever they are and whichever side of the royal they stand on.
+/// royals, whatever they are and whichever side of the royal they stand on:
+///
+/// ```text
+/// ┌───┬───┬───┐
+/// │ ● │ ● │ ● │
+/// ├───┼───┼───┤
+/// │ ● │ K │ ● │   the squares this reads, colour making no difference
+/// ├───┼───┼───┤
+/// │ ● │ ● │ ● │
+/// └───┴───┴───┘
+/// ```
+///
 /// Each such piece blocks one line into the square its royal occupies, which
 /// is worth having even from a piece that shelters nothing, so this is priced
 /// below [`royal_shelter!`] and counted over the whole ring rather than its
 /// forward half. The ring bounds the count on its own and needs no cap.
+///
+/// The occupancy is read straight off the colour's own bitboard rather than
+/// piece by piece, the term caring only that something friendly stands there.
 ///
 /// Params:
 /// - state: &State -> position whose royal neighbours are read
@@ -180,9 +247,18 @@ macro_rules! royal_guard {
 /// caution.
 ///
 /// The total is charged as its square, so one attacker barely registers and
-/// several compound, and the charge is capped where a further attacker
-/// would say more than winning the dearest piece outright says. The caller
-/// subtracts this from the side standing under it.
+/// several compound:
+///
+/// ```text
+/// pressure   1    2    3    4      what the zone has gathered
+/// charge     1    4    9   16      what it costs, before the cap
+/// ```
+///
+/// That is the shape of an attack: two pieces bearing on a royal are worth
+/// far more than twice one, since neither has to be answered alone. The
+/// charge is capped where a further attacker would say more than winning the
+/// dearest piece outright says. The caller subtracts this from the side
+/// standing under it.
 ///
 /// Params:
 /// - state: &State -> position whose royal zones are read
@@ -240,13 +316,25 @@ macro_rules! king_danger {
 /// open_shield!
 ///
 /// What it costs a royal to have nothing of its own standing anywhere ahead
-/// of it, on its own file or either neighbouring one. Shelter prices the
-/// pieces immediately in front of a royal and guard the ones beside it;
-/// neither can say that the ground ahead is empty all the way out, which is
-/// the file an enemy rook or lance arrives on. Only shield-like pieces
-/// count as cover, the same pieces shelter reads, since a piece that can
-/// walk back the way it came is not holding a file. The caller subtracts
-/// this from the side standing on it.
+/// of it, on its own file or either neighbouring one:
+///
+/// ```text
+/// ┌───┬───┬───┐
+/// │   │   │   │   every rank ahead of the royal, out to the far edge
+/// │   │   │   │
+/// ├───┼───┼───┤
+/// │   │ K │   │   the royal's own file and the two beside it
+/// └───┴───┴───┘
+/// ```
+///
+/// Shelter prices the pieces immediately in front of a royal and guard the
+/// ones beside it; neither can say that the ground ahead is empty all the way
+/// out, which is the file an enemy rook or lance arrives on. Only shield-like
+/// pieces count as cover, the same pieces shelter reads, since a piece that
+/// can walk back the way it came is not holding a file. The charge is flat:
+/// one royal is either covered or it is not, and how thin the cover is has
+/// already been priced by the two terms above. The caller subtracts this from
+/// the side standing on it.
 ///
 /// Params:
 /// - state: &State -> position whose royal cover is read
@@ -291,11 +379,16 @@ macro_rules! open_shield {
 
 /// castling_bonus!
 ///
-/// One colour's standing in the castling its variant offers: having castled
-/// is worth the full derived value, still holding a right is worth the part
-/// of it not yet taken, and having spent both rights without castling is
-/// worth nothing. Ordered that way, the score prefers castling to sitting on
-/// the right, and prefers sitting on it to losing it for nothing.
+/// One colour's standing in the castling its variant offers:
+///
+/// ```text
+/// has castled                  the full derived value
+/// still holds a right          the part of it not yet taken
+/// spent both without castling  nothing
+/// ```
+///
+/// Ordered that way, the score prefers castling to sitting on the right, and
+/// prefers sitting on it to losing it for nothing.
 ///
 /// A variant whose rules never castle scores zero here, and one whose royal
 /// has already castled keeps the value after the rights it spent are gone —
@@ -324,6 +417,10 @@ macro_rules! castling_bonus {
     }};
 }
 
+/*----------------------------------------------------------------------------*\
+                                 PAWN STRUCTURE
+\*----------------------------------------------------------------------------*/
+
 /// pawn_structure!
 ///
 /// White-minus-black worth of how each side's pawns stand relative to one
@@ -344,6 +441,18 @@ macro_rules! castling_bonus {
 ///   defend it or the square it steps to
 /// - backward, a pawn that has a neighbour but no defender, whose stop
 ///   square an enemy pawn watches
+///
+/// No geometry is assumed here. Each mask was derived from what this pawn
+/// actually does, so a variant whose pawn captures straight ahead, or steps
+/// sideways, or has no diagonal at all is asked the same four questions from
+/// its own rules:
+///
+/// ```text
+/// pawn_path          the squares it must walk through to promote
+/// pawn_interference  where an enemy pawn would stop that walk
+/// pawn_support       where a friendly pawn would be defending it
+/// pawn_backward      where an enemy pawn watches the square it steps to
+/// ```
 ///
 /// Both sweeps read one roster gathered from the piece lists, so the cost is
 /// the pawns on the board squared and not the width of the board. A variant
@@ -511,6 +620,10 @@ macro_rules! pawn_structure {
     };
 }
 
+/*----------------------------------------------------------------------------*\
+                             PHASE SCORE COMPONENTS
+\*----------------------------------------------------------------------------*/
+
 /// opening_score!
 ///
 /// White-minus-black opening score: cached material and piece-square totals
@@ -618,30 +731,63 @@ macro_rules! material_advantage {
     }};
 }
 
+/*----------------------------------------------------------------------------*\
+                              POSITION EVALUATION
+\*----------------------------------------------------------------------------*/
+
 /// evaluate_position!
 ///
-/// Evaluates current position from side-to-move perspective using cached
-/// material and piece-square-table totals plus the safety each side's royals
-/// stand in: the shelter ahead of them, the guard around them, what each side
-/// holds of its variant's castling, the enemy pressure bearing on their zone,
-/// and whether anything covers the ground in front of them at all, plus how
-/// each side's pawns stand relative to one another. Opening and setup use
-/// opening values, endgame uses endgame values, and middlegame linearly blends
-/// both. Every safety term is carried by the opening half alone, so they fade
-/// out as the board empties and are gone by the endgame, where a royal wants to
-/// walk rather than hide. Pawn structure is the one positional family both
-/// halves price, since a passer is worth most exactly where safety is worth
-/// nothing, and it is computed once per node whichever phase reads it.
-/// Two things sit outside the blend entirely: the material imbalance, worth
-/// the same at either end of the taper, and the tempo, added after the
-/// score is turned to face the side to move, since holding the move is the
-/// one advantage that belongs to whoever is about to spend it.
+/// The whole static verdict on a position, read from the side to move's own
+/// point of view. Which halves are asked depends on the phase the board has
+/// reached:
+///
+/// ```text
+/// OPENING, SETUP   opening score, with the opening pawn figure
+/// MIDDLEGAME       both, mixed in proportion to the material standing
+/// ENDGAME          endgame score, with the endgame pawn figure
+/// ```
+///
+/// The middlegame mix is linear in the position's own `phase_score` between
+/// the two bounds the variant derived for itself, so a board one capture from
+/// the endgame reads almost entirely as one:
+///
+/// ```text
+/// opening_bound ├──────────── current ────────────┤ endgame_bound
+///   full board        weight of the opening          bare board
+///                     half falls to the right
+/// ```
+///
+/// Where each family is priced follows from what it means:
+///
+/// ```text
+/// material, piece-square   both halves, each with its own figures
+/// royal safety            the opening half alone
+/// pawn structure          both halves, one figure computed for each
+/// material imbalance      outside the mix, added once
+/// tempo                   outside, after the flip to the mover
+/// ```
+///
+/// Safety is opening-only because it fades with the army that threatens the
+/// royal: by the endgame a royal wants to walk toward the fight rather than
+/// hide behind cover, which the endgame piece-square tables already say. Pawn
+/// structure is the one positional family both halves price, a passer being
+/// worth most exactly where safety is worth nothing. It is computed once per
+/// node whichever phase reads it.
+///
+/// The imbalance sits outside the mix because a term worth the same at either
+/// end blends to itself. The tempo sits outside because it belongs to whoever
+/// is about to spend the move, which is only known once the score has been
+/// turned to face them.
 ///
 /// Params:
 /// - state: &mut State -> position to evaluate
 ///
 /// Return:
 /// i32                 -> score from side-to-move perspective
+///
+/// Notes:
+/// A phase outside the four panics rather than picking a half, the field
+/// being maintained by make and undo and never read off a position.
 #[macro_export]
 macro_rules! evaluate_position {
     ($state:expr) => {
