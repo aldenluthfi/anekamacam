@@ -508,6 +508,7 @@ pub const WHITE_WIN: u8 = 3;
 /// however full the tables are.
 pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
+pub const EVAL_NONE: i32 = INF;
 
 pub const HISTORY_BOUND: i32 = i16::MAX as i32 / 2;
 pub const HISTORY_TABLES: i32 = 3;

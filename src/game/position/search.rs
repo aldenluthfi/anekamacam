@@ -73,12 +73,6 @@ macro_rules! move_key {
     }};
 }
 
-/// What a ply holds before anything has been evaluated at it, and what a
-/// node in check leaves there: no static score describes a position whose
-/// king is already attacked, so a ply reading one two below it and finding
-/// this reads no trend at all. `INF` is outside every real evaluation.
-const EVAL_NONE: i32 = INF;
-
 /// How far back a move is credited to what it answers. Continuation history
 /// asks which reply worked after a given move, so one table follows the move
 /// just played and another the side's own previous move. Both were measured
@@ -721,6 +715,11 @@ fn quiescence_search(
 /// large the table is, which is not a property of the position. The stored
 /// move is still read at every node, since ordering is what it was for.
 ///
+/// Every valid table hit also carries the raw static evaluation, even when its
+/// searched depth is too shallow for a cutoff. Its bound sharpens a separate
+/// pruning score; the improving test keeps the raw evaluation, so a prior
+/// search result never pretends the position itself got better.
+///
 /// Correction history learns, per side and pawn placement, how far raw static
 /// evaluation trails searched scores. Its correction feeds only fail-high
 /// pruning (reverse futility and null move); fail-low futility keeps the raw
@@ -823,6 +822,8 @@ pub fn alpha_beta(
 
     let static_eval = if in_check {                                             /* a checked king is worth no score  */
         EVAL_NONE
+    } else if table_entry.3 != EVAL_NONE {
+        table_entry.3
     } else {
         evaluate_position!(state)
     };
@@ -832,7 +833,12 @@ pub fn alpha_beta(
     let corr_index = correction_index(state);
     let correction = info.corr_hist[corr_index] as i32
         / CORR_HIST_GRAIN * !in_check as i32;
-    let prune_eval = static_eval + correction;
+    let plain_eval = if table_entry.4 != EVAL_NONE {
+        table_entry.4
+    } else {
+        static_eval
+    };
+    let prune_eval = plain_eval + correction;
 
     let improving = static_eval != EVAL_NONE
         && ply >= 2
@@ -941,7 +947,7 @@ pub fn alpha_beta(
 
             if forward_pruning!(state)
             && depth <= futility_deepest
-            && static_eval
+            && plain_eval
                 + state.statics.search.futility_margin[futility_row + depth]
                 <= alpha
             {
@@ -1084,7 +1090,7 @@ pub fn alpha_beta(
                         static_eval, beta, depth, FBETA, is_capture,
                     );
                     hash_tt_entry!(
-                        moves[index], beta, FBETA, depth,
+                        moves[index], beta, FBETA, depth, static_eval,
                         state, table_key, ttable
                     );
                     state.scratch.node_lists[ply] = lists;
@@ -1138,7 +1144,8 @@ pub fn alpha_beta(
             static_eval, best_score, depth, FEXACT, m_capture!(&best_move),
         );
         hash_tt_entry!(
-            best_move, best_score, FEXACT, depth, state, table_key, ttable
+            best_move, best_score, FEXACT, depth, static_eval,
+            state, table_key, ttable
         );
     } else {
         update_correction(
@@ -1146,7 +1153,8 @@ pub fn alpha_beta(
             static_eval, alpha, depth, FALPHA, m_capture!(&best_move),
         );
         hash_tt_entry!(
-            best_move, alpha, FALPHA, depth, state, table_key, ttable
+            best_move, alpha, FALPHA, depth, static_eval,
+            state, table_key, ttable
         );
     }
 

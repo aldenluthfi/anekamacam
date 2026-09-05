@@ -4,8 +4,8 @@
 //!
 //! Positions are keyed by Zobrist hash. A cache hit at sufficient depth returns
 //! the stored score directly, skipping the subtree. Entries record a bound
-//! type (exact, alpha, beta), depth, best move, and age for replacement
-//! policy. Thread safety uses a seqlock with parity verification across the
+//! type (exact, alpha, beta), depth, best move, static evaluation, and age for
+//! replacement policy. Thread safety uses a seqlock with parity across the
 //! 3×u128 slot layout.
 //!
 //! Created: 29/01/2026
@@ -28,7 +28,7 @@ use crate::*;
 /// Layout:
 /// - slot[0] = move.0 (128-bit, raw)
 /// - slot[1] = packed payload — the packing is the table's, not the
-///   slot's, and is drawn on each table's packing macro cluster
+///   slot's, and is drawn on each table's packing cluster
 /// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
 ///
 /// Write order: version++ → slot[0] → slot[1] → slot[2] → age → version++
@@ -255,13 +255,14 @@ macro_rules! commit_hash_entry {
 
 /// Main-table packing macros.
 ///
-/// The writers pack bound flags (bits 0-1), clamped depth (bits 2-8), and
-/// score (bits 9-40) into `slot[1]`; the readers extract those fields
-/// again. Field widths below are proportional; every row is 32 bits.
-///
-///   Bits 0..31:
+/// The writers pack bound flags (bits 0-1), clamped depth (bits 2-8), score
+/// (bits 9-40), move signature (bits 41-104), and signed static evaluation
+/// (bits 105-127) into `slot[1]`; the readers extract those fields again.
+/// Field widths below are proportional; every row is 32 bits.
 ///
 /// ```text
+///   Bits 0..31:
+///
 ///   0   2             9                                             31
 ///   ┌───┬─────────────┬──────────────────────────────────────────────┐
 ///   │flg│    depth    │                   score →                    │
@@ -285,7 +286,7 @@ macro_rules! commit_hash_entry {
 ///
 ///   96                105                                          127
 ///   ┌─────────────────┬──────────────────────────────────────────────┐
-///   │   ← signature   │                   unused                     │
+///   │   ← signature   │              static evaluation               │
 ///   └─────────────────┴──────────────────────────────────────────────┘
 /// ```
 ///
@@ -293,7 +294,7 @@ macro_rules! commit_hash_entry {
 ///   - depth        : clamped search depth
 ///   - score        : ply-adjusted node score (32-bit)
 ///   - signature    : MoveSignature of the stored best move
-///   - bits 105..127: unused
+///   - static eval  : signed 23-bit raw evaluation, `EVAL_NONE` in check
 ///
 /// The writers OR into place and return nothing:
 ///
@@ -366,8 +367,9 @@ macro_rules! tt_score {
 /// probe_tt_entry!
 ///
 /// Probes the main table with parity and seqlock validation. Stored depth and
-/// bound flags decide whether the score can cut; the stored move is returned
-/// on every valid hash match for move ordering.
+/// bound flags decide whether the score can cut; every valid hash match still
+/// returns its move, raw static evaluation, and evaluation sharpened by the
+/// stored bound. Mate-range scores never sharpen an evaluation.
 ///
 /// Params:
 /// - state: &State  -> position the stored mate scores are relative to
@@ -378,7 +380,8 @@ macro_rules! tt_score {
 /// - depth: usize   -> minimum stored depth for a cutoff
 ///
 /// Return:
-/// (bool, i32, PseudoMove) -> cutoff validity, score, and stored move
+/// (bool, i32, PseudoMove, i32, i32) -> cutoff, score, move, raw evaluation,
+///                                      and bound-refined evaluation
 #[macro_export]
 macro_rules! probe_tt_entry {
     (
@@ -393,7 +396,7 @@ macro_rules! probe_tt_entry {
         probe_hash_slot!(
             $table,
             $key,
-            (false, i32::MIN, null_pseudo_move()),
+            (false, i32::MIN, null_pseudo_move(), EVAL_NONE, EVAL_NONE),
             |move_slot, data_slot| {
                 let encoded = (data_slot & 0x1FF) as u32;
                 let signature = (data_slot >> 41) as u64;
@@ -401,6 +404,9 @@ macro_rules! probe_tt_entry {
                 let entry_depth = tt_depth!(encoded);
                 let entry_flags = tt_flags!(encoded);
                 let mut entry_score = tt_score!(data_slot);
+                let entry_eval = (
+                    (((data_slot >> 105) as u32) << 9) as i32
+                ) >> 9;
 
                 if entry_score > MATE_SCORE {
                     entry_score -= $state.search_ply as i32;
@@ -408,8 +414,23 @@ macro_rules! probe_tt_entry {
                     entry_score += $state.search_ply as i32;
                 }
 
+                let mut bound_eval = entry_eval;
+
+                if entry_eval != EVAL_NONE
+                && entry_score.abs() < MATE_SCORE
+                {
+                    bound_eval = match entry_flags {
+                        FALPHA => entry_eval.min(entry_score),
+                        FBETA => entry_eval.max(entry_score),
+                        FEXACT => entry_score,
+                        _ => unreachable!(),
+                    };
+                }
+
                 if entry_depth < $depth {
-                    (false, i32::MIN, pseudo_move)
+                    (
+                        false, i32::MIN, pseudo_move, entry_eval, bound_eval
+                    )
                 } else {
                     let mut valid_cutoff = false;
                     let mut cutoff_score = entry_score;
@@ -431,7 +452,10 @@ macro_rules! probe_tt_entry {
                         _ => unreachable!(),
                     }
 
-                    (valid_cutoff, cutoff_score, pseudo_move)
+                    (
+                        valid_cutoff, cutoff_score, pseudo_move,
+                        entry_eval, bound_eval,
+                    )
                 }
             }
         )
@@ -476,6 +500,7 @@ macro_rules! probe_pv_move {
 /// - score  : i32     -> score to store
 /// - flags  : u8      -> FEXACT, FALPHA, or FBETA
 /// - depth  : usize   -> search depth the score is valid for
+/// - eval   : i32     -> raw static evaluation, `EVAL_NONE` in check
 /// - state  : &State  -> position the stored mate scores are relative to
 /// - key    : u128    -> search key this node is filed under
 /// - table  : &TTable -> shared transposition table
@@ -486,6 +511,7 @@ macro_rules! hash_tt_entry {
         $score:expr,
         $flags:expr,
         $depth:expr,
+        $eval:expr,
         $state:expr,
         $key:expr,
         $table:expr
@@ -511,6 +537,7 @@ macro_rules! hash_tt_entry {
 
         let mut encoded = flags_depth as u128;
         tt_enc_score!(encoded, store_score);
+        encoded |= (($eval as u32 as u128) & 0x7F_FFFF) << 105;
 
         let signature = m_signature!($tt_move);
         let age = $table.age.load(Ordering::Relaxed);

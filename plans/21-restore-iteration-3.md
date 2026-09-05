@@ -2,8 +2,8 @@
 
 ## Status
 
-Drafted 2026-09-02. R1 through R7 have landed; R8 is next. Stop after
-R9 per the user's 2026-09-04 instruction; R10 and R11 stay deferred.
+Drafted 2026-09-02. R1 through R8 have landed; R9 is next and last. R10
+and R11 stay deferred per the user's 2026-09-04 instruction.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -490,10 +490,45 @@ and pass 38/38 at `GO_DEPTH=7`. R9's checked-frontier extension is the next
 stage with a mechanism that may recover that mate at depth 6; the fixture is
 not weakened to hide the horizon.
 
-### R8. TT static-eval cache
+### R8. TT static-eval cache — landed
 
-Restore `tt_enc_eval!` and `tt_eval!` and the cached static evaluation in
-the main transposition payload, +9.
+Restored the raw static evaluation in the 23 unused high bits of the main
+TT payload: signed bits 105-127, above the 64-bit move signature. No slot or
+entry grows — `HashEntry` remains 64 bytes — and the parity word already
+covers every payload bit. `EVAL_NONE` moves beside `INF` in the prelude
+because search and TT packing now share the sentinel; its value, 2,000,000,
+fits the signed 23-bit field.
+
+The plan named `tt_enc_eval!` and `tt_eval!`, but the debloat pass changed the
+right answer: one store expression and one read expression do not earn two
+exported macros and their doc blocks. Packing and sign extension stay inline
+at their only sites. Power-of-two masking was already present from D5, so R8
+does not pretend to buy that part of iteration 3's combined Stage F again.
+
+Every valid TT hit returns the raw evaluation even when its searched depth is
+too shallow for a score cutoff. The stored search bound also sharpens a
+second evaluation: an exact score replaces it, a beta bound can only raise
+it, and an alpha bound can only lower it; mate-range scores never sharpen.
+Search reuses the raw value instead of calling `evaluate_position!`, keeps it
+for the improving comparison and correction-history update, and reads the
+bound-refined value for pruning. R7's split remains intact: correction is
+added only for reverse futility and null move, while move-loop futility gets
+the bound-refined value without correction. All three TT stores write the
+raw evaluation, including `EVAL_NONE` at checked nodes.
+
+Versus R7, deterministic nodes: standard 191525 to 186264 (−2.7%), shogi
+1158816 to 1210223 (+4.4%), xiangqi 312804 to 304943 (−2.5%), crazyhouse
+1133316 to 895573 (−21.0%), grand 1415089 to 1438362 (+1.6%), sittuyin
+10646371 to 10624972 (−0.2%), janggi 272617 to 251880 (−7.6%). Paired nps
+is flat for standard, xiangqi, and crazyhouse in the observed runs; shogi
+reads roughly −15% and grand −4.5%, though changed node mixes make those
+per-node rates advisory rather than a direct cache-cost measurement.
+
+Depth-6 signatures keep 37 of 38 best moves and scores. Euroshogi alone
+moves from `c3:c4`, +29 to `d1:c2`, +20; 28 node counts change. All seven
+perft suites pass; all seven static evaluations and both SEE checks stay
+exact. Endgame fixtures remain 37/38 at depth 6 and pass 38/38 at depth 7,
+with the same xiangqi horizon case.
 
 ### R9. Gated search family
 
