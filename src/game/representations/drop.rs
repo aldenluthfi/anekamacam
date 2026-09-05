@@ -21,8 +21,19 @@ use crate::*;
 
 /// Encoding helpers for drop-specific flags in packed moves.
 ///
-/// These macros set bitfields in `DropMove` words used by drop generation and
-/// execution paths.
+/// A drop's placement rules are known before the game starts, so they are
+/// compiled into the precomputed [`DropMove`] table and only copied onto
+/// the executable move as it is generated. The flag therefore changes both
+/// its home and its polarity on the way across:
+///
+/// - [`DropMove`] bit 20 is the ban the config declares, one flag per
+///   template slot: this drop may not deliver mate
+/// - [`Move`] bit 112 is its negation, written as the move is generated:
+///   this drop may deliver mate
+///
+/// Storing the ban and generating the permission keeps the table reading
+/// the way the variant is written, while the search reads the question it
+/// actually asks.
 ///
 /// enc_can_checkmate!
 ///
@@ -64,15 +75,15 @@ macro_rules! drop_can_checkmate {
 /// Whether the move that reached this position was a drop the variant forbids
 /// from delivering mate. The side to move having no legal move is then not a
 /// loss for it but a loss for the dropper, so every caller that turns "no legal
-/// move" into a result has to ask this -- search when it scores a mate, and
+/// move" into a result has to ask this — search when it scores a mate, and
 /// `adjudicate_no_move` when it decides one. Reading the same flag from one
 /// place is what keeps the two from disagreeing.
 ///
-///   Params:
-///   - state: &State -> position whose last move is inspected
+/// Params:
+/// - state: &State -> position whose last move is inspected
 ///
-///   Return:
-///   bool            -> true when the mating move was a banned drop
+/// Return:
+/// bool            -> true when the mating move was a banned drop
 #[macro_export]
 macro_rules! illegal_mating_drop {
     ($state:expr) => {

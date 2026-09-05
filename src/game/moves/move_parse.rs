@@ -53,11 +53,14 @@ lazy_static! {
     /// - LEG_TOKENS             : token alphabet of multi-leg expressions
     /// - MODIFIERS              : bare modifier-letter run
     ///
-    /// - INDEX_TO_CARDINAL_VECTORS: cardinal index 0-7 to unit vector
-    /// - CARDINAL_VECTORS_TO_INDEX: unit (x, y) vector back to index 0-7
+    /// - CARDINAL_VECTORS_TO_INDEX: unit (x, y) vector to index 0-7
     /// - DIRECTION_VECTOR_SETS    : direction letter to unit vector set
     /// - CARDINAL_STR_TO_INDEX    : cardinal name ("n".."nw") to index
     /// - CARDINAL_INDEX_TO_STR    : index 0-7 back to cardinal name
+    ///
+    /// The index all three cardinal maps agree on is the one the prelude's
+    /// cardinal vector table counts from: north is 0 and the rest run
+    /// clockwise, so a rotation is an addition and a reflection a negation.
     static ref NORMALIZE_PATTERN: Regex =
         Regex::new(r"[^(^|]\(|\)[^()^|]").unwrap_or_else(|e| {
             panic!("Failed to compile NORMALIZE_PATTERN regex: {e}")
@@ -181,9 +184,14 @@ lazy_static! {
 
 /// apply_operator
 ///
-/// Applies the operator to the two operands and returns the result:
-/// `^` concatenates (distributing over any `|` branches) and `|` joins two
-/// alternatives into one branched expression.
+/// Joins two expressions with one operator. `|` sets them side by side as
+/// alternatives; `^` concatenates them, and since either side may already
+/// carry alternatives of its own, concatenation multiplies out, every branch
+/// on the left against every branch on the right.
+///
+/// `#` is the empty expression, and concatenating with it gives back the
+/// other side unchanged. That is how a stage with nothing to contribute stays
+/// out of the result rather than leaving a hole in it.
 ///
 /// Params:
 /// - op: char -> operator to apply, `^` (concat) or `|` (alternation)
@@ -239,10 +247,37 @@ fn precedence(op: char) -> usize {
 
 /// betza_atoms
 ///
-/// Maps a Betza atom symbol to its Cheesy King Notation (CKN) expansion.
-/// This helper converts legacy single-character Betza atoms into equivalent
-/// normalized CKN fragments so later parsing stages can treat them uniformly.
-/// Unknown symbols are passed through unchanged so custom atoms are preserved.
+/// Rewrites a Betza atom as the Cheesy King Notation that means the same
+/// thing, so every later stage sees king steps and nothing else. Betza names
+/// a piece by the square it lands on; CKN names it by the route taken to get
+/// there, and the digits in a route pick headings off the cardinal circle,
+/// counting clockwise from wherever the route already points. An atom
+/// standing first points north, so there 1 is north, the odd digits are
+/// orthogonal and the even ones diagonal; behind a diagonal step the whole
+/// ring turns with it, which is what makes `N` below a knight rather than a
+/// doubled ferz:
+///
+/// ```text
+/// ┌───┬──────────────────────┬───────────────────────────────────┐
+/// │ W │ <[1357]K>            │ wazir, one step orthogonally      │
+/// │ F │ <[2468]K>            │ ferz, one step diagonally         │
+/// │ A │ <[2468]K.>           │ alfil, the ferz step doubled      │
+/// │ D │ <[1357]K.>           │ dabbabah, the wazir step doubled  │
+/// │ S │ <K.>                 │ alibaba, either of them doubled   │
+/// │ N │ <[2468]Kn[2468]K>    │ knight                            │
+/// │ C │ <[2468]Kn<[2468]K>.> │ camel                             │
+/// │ Z │ <[2468]K.n[2468]K>   │ zebra                             │
+/// │ G │ <[2468]K..>          │ griffin, the ferz step tripled    │
+/// │ H │ <[1357]K..>          │ hawk, the wazir step tripled      │
+/// │ T │ <K..>                │ grawk, either of them tripled     │
+/// │ B │ <[2468]K-*>          │ bishop, the ferz step repeated    │
+/// │ R │ <[1357]K-*>          │ rook, the wazir step repeated     │
+/// │ Q │ <K-*>                │ queen, either of them repeated    │
+/// └───┴──────────────────────┴───────────────────────────────────┘
+/// ```
+///
+/// Anything else is handed back untouched, which is what lets a variant write
+/// its own atoms in CKN directly and pass them through here unharmed.
 ///
 /// Params:
 /// - piece: char -> Betza atom symbol, e.g. 'N', 'R', 'Q'
@@ -271,15 +306,23 @@ fn betza_atoms(piece: char) -> String {
 
 /// evaluate
 ///
-/// Flattens a normalized move expression into `|`-separated branches,
-/// applying the `^`/`|` operators with a shunting-yard stack so nested
-/// parentheses are eliminated.
+/// Flattens a normalized expression into plain `|`-separated branches. Two
+/// stacks do the work, one holding operands and one holding operators, and an
+/// operator is applied as soon as something of at least its own precedence
+/// arrives, which is what leaves the parentheses with nothing left to say by
+/// the time the walk reaches the end.
 ///
 /// Params:
 /// - expr: &str -> normalized expression with explicit `^` operators
 ///
 /// Return:
 /// String       -> flat `|`-separated form with parentheses eliminated
+///
+/// Notes:
+/// An expression that runs out of operands, or ends with none at all, panics
+/// naming the expression. Movement notation is config text compiled once at
+/// load time, so a malformed one is a broken variant and not something a
+/// position can produce.
 fn evaluate(expr: &str) -> String {
     let mut operands: Vec<String> = Vec::new();
     let mut operators: Vec<char> = Vec::new();
@@ -376,9 +419,13 @@ fn evaluate(expr: &str) -> String {
 
 /// normalize
 ///
-/// Normalizes the expression by removing unnecessary parentheses and
-/// ensuring that the expression is in a canonical form. It also adds `^`
-/// between implicit concatenations.
+/// Puts a raw expression into the shape the evaluator expects. Writing one
+/// thing after another is how the notation says "and then", so every implied
+/// concatenation around a parenthesis is spelled out as `^` and the result is
+/// evaluated down to plain `|`-separated branches.
+///
+/// An expression with no parenthesis to read that way is already canonical
+/// and comes back as it arrived.
 ///
 /// Params:
 /// - expr: &str   -> raw move expression from the config
@@ -409,8 +456,14 @@ fn normalize(expr: &str) -> Option<String> {
 
 /// atomize
 ///
-/// Rewrites every legacy Betza letter in a sanitized branch into its CKN
-/// expansion via `betza_atoms`, leaving all other characters untouched.
+/// Walks a branch one character at a time through [`betza_atoms`], so every
+/// Betza letter becomes the CKN route that means the same thing while
+/// everything around it comes through as it was written.
+///
+/// The map reads a character without regard for what surrounds it, which is
+/// what lets a branch already written in CKN pass unharmed: a route spells
+/// itself with `K`, lower-case headings and punctuation, and none of those is
+/// the name of an atom.
 ///
 /// Params:
 /// - expr: &str   -> single sanitized branch (no `|` alternation)
@@ -432,8 +485,10 @@ fn atomize(expr: &str) -> Option<String> {
 
 /// expand_directions
 ///
-/// Expands a direction filter into the explicit list of directions it
-/// denotes. The accepted forms are:
+/// Writes out every direction filter in a branch as the explicit set of
+/// directions it stands for. The digits count the cardinal circle clockwise
+/// from north, `..` spans a run of them and `$` takes some of the run back
+/// out:
 ///
 /// - `[1..8]`      : full range `[12345678]`
 /// - `[..5]`       : open low end `[12345]`
@@ -441,11 +496,20 @@ fn atomize(expr: &str) -> Option<String> {
 /// - `[1..7$25]`   : range minus exclusions `[13467]`
 /// - `[1235678$2]` : explicit set minus exclusions `[135678]`
 ///
+/// An open end is filled in from the circle and not from the atom it
+/// qualifies: `[..]` always means all eight, and a direction the atom cannot
+/// take is discarded later, where the filter meets that atom's own vectors.
+///
 /// Params:
 /// - expr: &str   -> single sanitized branch (no `|` alternation)
 ///
 /// Return:
 /// Option<String> -> branch with every direction filter fully listed
+///
+/// Notes:
+/// One filter is rewritten per turn and the loop re-reads what it wrote. It
+/// still ends, a bare list of digits carrying neither `..` nor `$` and so
+/// matching nothing the pattern looks for.
 fn expand_directions(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -513,6 +577,12 @@ fn expand_directions(expr: &str) -> Option<String> {
 ///
 /// Return:
 /// Option<String> -> branch with every range written in explicit form
+///
+/// Notes:
+/// The open upper bound is written as `&` while the rewriting runs and turned
+/// back into `*` at the end. `*` is itself one of the forms being matched, so
+/// writing it straight back in would leave the loop expanding what it had
+/// just expanded.
 fn expand_ranges(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
 
@@ -549,12 +619,22 @@ fn expand_ranges(expr: &str) -> Option<String> {
 
 /// expand_cardinals
 ///
-/// Expands a `+`-joined cardinal set into `|`-separated alternatives, one
-/// branch per cardinal. The accepted forms are:
+/// Splits the `+`-joined cardinal sums in one branch into branches of their
+/// own, leaving every term with a single heading for the stages that follow.
 ///
-/// - `n+s+e+w` : `n|s|e|w`
-/// - `n+e`     : `n|e`
-/// - `n+e+s`   : `n|e|s`
+/// ```text
+/// n+eK      →  nK    eK
+/// n+e+sK    →  nK    eK    sK
+/// n+eKs+wK  →  nKsK  nKwK  eKsK  eKwK
+/// ```
+///
+/// The split runs as a worklist rather than as a single pass. One sum is
+/// rewritten per turn and every half goes back onto the stack, so a term
+/// carrying two sums comes apart into their full cross product, and a
+/// three-way sum comes apart over two turns, the pattern gripping one `+` at
+/// a time. The branches come out in the order the stack drains rather than
+/// the order they were written, which costs nothing when they are
+/// alternatives, and repeats are dropped before the join.
 ///
 /// Params:
 /// - expr: &str   -> single sanitized branch (no `|` alternation)
@@ -610,10 +690,14 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 
 /// split_and_process
 ///
-/// Splits an expression on `|` and applies `f` to each branch independently.
-/// This helper keeps branch handling consistent for every parse pipeline stage
-/// and returns one optional result per branch in input order.
-/// It is written to support parallel-friendly processing semantics.
+/// Runs one pipeline stage over each `|` branch of an expression separately.
+/// Every stage rewrites a single branch and asserts that it was handed one, so
+/// this is the only place alternation is taken apart, and the trimmed branch
+/// text is what each stage actually reads.
+///
+/// A branch the stage rejects comes back as `None` in the slot the branch
+/// occupied, leaving the caller a list it can still read positionally rather
+/// than a shorter one it cannot.
 ///
 /// Params:
 /// - expr: &str                       -> expression containing `|` branches
@@ -621,6 +705,11 @@ fn expand_cardinals(expr: &str) -> Option<String> {
 ///
 /// Return:
 /// Vec<Option<T>>                     -> one result per branch, in input order
+///
+/// Notes:
+/// The stage and its result are bound `Sync` and `Send` though the walk is
+/// sequential. Branches never read one another, so the bounds are what keep a
+/// parallel walk a change to this one line rather than to every caller.
 fn split_and_process<T>(
     expr: &str,
     f: impl Fn(&str) -> Option<T> + Sync,
@@ -635,8 +724,20 @@ where
 
 /// parse_move_string
 ///
-/// Ensures move strings are suitable for processing by the functions
-/// below:
+/// Puts one raw move expression through the whole text pipeline, so what comes
+/// back is a `|`-separated list of branches spelling out every atom,
+/// direction, range and heading the expression only implied:
+///
+/// ```text
+/// normalize → atomize → expand_directions → expand_ranges → expand_cardinals
+/// ```
+///
+/// `normalize` reads the expression whole, alternation being the thing it
+/// produces. Each of the four stages behind it reads one branch and may answer
+/// with several, so every stage runs per branch and the pieces are rejoined
+/// with `|` before the next stage starts.
+///
+/// What comes out is what the vector compilers read:
 ///
 /// - `atomic_to_vector`
 /// - `chained_atomic_to_vector`
@@ -648,6 +749,11 @@ where
 ///
 /// Return:
 /// String       -> fully normalized and expanded `|`-separated expression
+///
+/// Notes:
+/// The fold flattens, so a stage answering `None` would take its branch out of
+/// the expression rather than stop the parse. None of the four does: each
+/// answers `Some` for every branch it is handed.
 fn parse_move_string(expr: &str) -> String {
 
     log_4!("Starting parse_move_string with expression: {}", expr);
@@ -741,10 +847,10 @@ fn irregular_vector_direction(vector: &(i8, i8)) -> &'static str {
 
 /// sort_atomic_clockwise
 ///
-/// Sorts the eight cardinal atomic vectors into a stable clockwise order so
-/// directional filters can index them by number. Angles are taken with
-/// `atan2`, which orders them NE, E, SE, S, SW, W, NW, N, clockwise, with
-/// north last. The input must contain exactly eight cardinal directions.
+/// Puts the eight cardinal outcomes into one fixed clockwise order, which is
+/// what lets a direction filter name them by number. The key is each vector's
+/// angle taken with `atan2`, and it lands them NE, E, SE, S, SW, W, NW, N:
+/// clockwise from the first diagonal, with north last.
 ///
 /// Index of each direction, on a 9x9 field around the origin `O`
 /// (NE=0, E=1, SE=2, S=3, SW=4, W=5, NW=6, N=7):
@@ -775,9 +881,14 @@ fn irregular_vector_direction(vector: &(i8, i8)) -> &'static str {
 /// - vectors: Vec<AtomicVector> -> the eight cardinal outcomes to sort
 ///
 /// Return:
+/// Vec<AtomicVector>            -> the eight vectors in clockwise order
 ///
-/// Vec<AtomicVector>
-/// the eight vectors in canonical clockwise order
+/// Notes:
+/// A filter digit is one more than the index it selects, so `[1]` reaching a
+/// group through here picks north-east. The same `[1]` written straight onto
+/// a `K` never arrives: [`atomic_to_vector`] reads it against the prelude's
+/// cardinal table, which counts north first. Anything other than the full
+/// circle of eight panics, an order over part of a circle saying nothing.
 fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
     assert_eq!(
         vectors.len(),
@@ -804,12 +915,12 @@ fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
 
 /// quadrant_function
 ///
-/// Returns a function that computes four directional half-plane checks.
-/// The returned function produces a tuple of four booleans indicating
-/// whether a point lies north, east, south, and west of the perpendicular
-/// axes after rotation.
+/// Hands back the four half-plane tests of one rotated frame, so that a
+/// direction filter written as `n` asks about north of the frame the
+/// expression was turned into rather than north of the board.
 ///
-/// For diagonal frames the half-planes fold onto the rotated diagonals:
+/// An orthogonal frame tests the axes themselves, a diagonal frame tests the
+/// two diagonals in their place:
 ///
 /// - ne : "up" is right of the line x=-y, so x + y > 0
 /// - se : "right" is left of the line x=-y, so x + y < 0
@@ -817,7 +928,8 @@ fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
 /// - sw : "right" is right of the line x=y, so x - y > 0
 ///
 /// The `ne` frame on a 9x9 field: `n` counts as north (x + y > 0), `s` as
-/// south, and the blank anti-diagonal through `O` is the fold line:
+/// south, and the blank anti-diagonal through `O` is the fold line, where
+/// both tests answer no and a vector lying on it belongs to neither side:
 ///
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
@@ -846,9 +958,14 @@ fn sort_atomic_clockwise(mut vectors: Vec<AtomicVector>) -> Vec<AtomicVector> {
 ///
 /// Return:
 ///
-/// impl Fn(i8, i8)   -> (bool, bool, bool, bool)
-/// per-point classifier yielding north, east, south, and west checks in that
-/// frame
+///     impl Fn(i8, i8) -> (bool, bool, bool, bool)
+///     the north, east, south and west tests of that frame, answered for one
+///     point at a time
+///
+/// Notes:
+/// A quadrant is asked for as two of the four, `ne` being north and east
+/// together, so the four tests cover every filter the notation can write. A
+/// name outside the eight panics, the frame being config text compiled once.
 fn quadrant_function(
     direction: &str,
 ) -> impl Fn(i8, i8) -> (bool, bool, bool, bool) {
@@ -946,8 +1063,13 @@ macro_rules! colon_range_head {
 
 /// filter_atomic_by_index
 ///
-/// Keeps only the vectors at the given clockwise indices, after sorting the
-/// eight cardinal outcomes into canonical clockwise order.
+/// Keeps the vectors a direction filter names, reading its numbers against
+/// the clockwise order [`sort_atomic_clockwise`] imposes here. The order is
+/// imposed rather than assumed, so a caller may hand its working set over
+/// however that set happened to be built.
+///
+/// The numbers arrive already turned into indices: the filter is written from
+/// one and counted from zero, and the caller does the subtracting.
 ///
 /// Params:
 /// - vectors: Vec<AtomicVector> -> the eight cardinal candidates
@@ -955,6 +1077,11 @@ macro_rules! colon_range_head {
 ///
 /// Return:
 /// Vec<AtomicVector>            -> the selected vectors, in index order
+///
+/// Notes:
+/// A repeated number is honoured twice, that being what the filter asked for,
+/// and a `[9]` indexes past the circle and panics there. A working set that is
+/// not the full circle of eight panics before either can happen.
 fn filter_atomic_by_index(
     mut vectors: Vec<AtomicVector>,
     index: Vec<usize>,
@@ -984,8 +1111,14 @@ fn filter_atomic_by_index(
 
 /// filter_atomic_by_cardinal_direction
 ///
-/// Keeps only the vectors lying in the half-plane or quadrant named by
-/// `direction`, evaluated relative to the current point of view `pov`.
+/// Keeps the vectors falling in the half-plane or quadrant `direction` names,
+/// judged inside the frame `pov` turned the expression into. Each branch is
+/// placed by its net displacement, so a route that wanders on the way is
+/// judged by where it arrives rather than by where it went.
+///
+/// A quadrant asks for two half-planes at once, which is what leaves a vector
+/// lying on a fold line out of every quadrant touching it: it is neither north
+/// nor south of a line it sits on.
 ///
 /// Params:
 /// - vectors  : Vec<AtomicVector> -> working set of candidates
@@ -1028,8 +1161,14 @@ fn filter_atomic_by_cardinal_direction(
 
 /// filter_atomic_out_of_bounds
 ///
-/// Drops displacements whose magnitude cannot fit on the board from any
-/// square, so later stages never consider impossible legs.
+/// Drops displacements too large to land on this board from anywhere, which
+/// is also what stops an unbounded repetition growing for ever: a slide is
+/// walked until the clip leaves nothing new behind it.
+///
+/// The bound is the board's own width and height, a square looser than the
+/// longest displacement that could ever land. Which square a vector starts
+/// from is unknown here, so this is the strictest bound the stage can honestly
+/// apply, and the exact judging waits for the origin to be known.
 ///
 /// Params:
 /// - vector: &mut Vec<AtomicVector> -> working set, pruned in place
@@ -1047,8 +1186,15 @@ fn filter_atomic_out_of_bounds(
 
 /// remove_duplicates_in_place
 ///
-/// Deduplicates a vector while preserving first-seen order, used after
-/// expansion steps that can produce identical displacement branches.
+/// Drops repeats from a working set, keeping the copy that arrived first.
+/// Expansion lands on the same displacement by more than one route often
+/// enough — two branches of a range meeting at the board edge, two headings of
+/// a chain folding together — and a repeat left in becomes a second identical
+/// move at generation time.
+///
+/// Keeping first-seen order is what lets the repetition loops read saturation
+/// off the length alone: a round that adds nothing new leaves the set exactly
+/// as long as it found it.
 ///
 /// Params:
 /// - vectors: &mut Vec<Element> -> collection deduplicated in place
@@ -1062,8 +1208,17 @@ where
 
 /// process_atomic_dots_token
 ///
-/// Extends every branch along its own last direction once per dot in the
-/// token, then clips out-of-bounds results and de-duplicates.
+/// Carries every branch on along its own last heading, one square for each dot
+/// in the token. Branches spread rather than shift: each grows out of where it
+/// already points, so a single token lengthens all eight headings at once.
+///
+/// Going east out of `S`, the same wazir step with more dots behind it:
+///
+/// ```text
+/// ┌─────┬─────┬─────┬─────┐
+/// │  S  │  K  │ K.  │ K.. │
+/// └─────┴─────┴─────┴─────┘
+/// ```
 ///
 /// Params:
 /// - vector_set: Vec<AtomicVector> -> branches accumulated so far
@@ -1072,6 +1227,10 @@ where
 ///
 /// Return:
 /// Vec<AtomicVector>               -> the extended, clipped working set
+///
+/// Notes:
+/// A branch reaching past the board is dropped whole rather than shortened,
+/// and two branches landing on one square come back as one.
 fn process_atomic_dots_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -1095,9 +1254,22 @@ fn process_atomic_dots_token(
 
 /// process_atomic_range_token
 ///
-/// Branches each vector into every repetition count in the range `{i..j}`,
-/// stopping early once saturation adds nothing new, then clips and
-/// de-duplicates.
+/// Repeats the atom in front of the token as many times as the range names.
+/// A count is the number of steps in total, so `{1}` is the atom as written
+/// and every count above it adds one more step of the last heading:
+///
+/// ```text
+/// {1}  is  K      {2}  is  K.      {3}  is  K..
+/// ```
+///
+/// A lone count answers with one branch per input, a spanned count with the
+/// union over the span, which is how a slide arrives as every square it could
+/// stop on rather than only the far one.
+///
+/// An open upper end is walked until the arithmetic stops moving. Steps are
+/// added into a byte, which saturates, and a round that adds nothing new ends
+/// the walk. The board clip runs once afterwards and takes out everything that
+/// could never land.
 ///
 /// Params:
 /// - vector_set: Vec<AtomicVector> -> branches accumulated so far
@@ -1106,6 +1278,11 @@ fn process_atomic_dots_token(
 ///
 /// Return:
 /// Vec<AtomicVector>               -> the branched, clipped working set
+///
+/// Notes:
+/// A token carrying no lower bound panics. [`expand_ranges`] writes one into
+/// every form the notation allows, so a token arriving without one never went
+/// through the pipeline.
 fn process_atomic_range_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -1162,9 +1339,19 @@ fn process_atomic_range_token(
 
 /// process_atomic_colon_range_token
 ///
-/// Re-evaluates the preceding element once per count in the `:{i..j}` range,
-/// so each repetition is re-rotated by the branch it extends, then clips
-/// out-of-bounds results.
+/// Repeats the element standing in front of the token, evaluating it again
+/// for every count in the range and adding what comes back onto each branch
+/// in hand.
+///
+/// This is where the two repetition forms part company. `{i..j}` lengthens a
+/// branch along the step it last took, so the heading is fixed at the first
+/// one; `:{i..j}` runs the element itself again, so whatever filters and
+/// rotation the element carries are answered once per repetition. A repeated
+/// route may therefore turn where a repeated step never can.
+///
+/// A spanned count accumulates, every count in the span contributing its own
+/// branches, and the walk ends on the first count that adds nothing new. A
+/// lone count contributes only itself.
 ///
 /// Params:
 /// - vector_set: Vec<AtomicVector>               -> branches so far
@@ -1174,9 +1361,12 @@ fn process_atomic_range_token(
 /// - state     : &State                          -> board dimensions
 ///
 /// Return:
+/// Vec<AtomicVector>                             -> the repeated, clipped set
 ///
-/// Vec<AtomicVector>
-/// the repeated, clipped working set
+/// Notes:
+/// The token wants something repeatable in front of it: standing first in an
+/// expression, or behind a bracket group already evaluated, it panics in
+/// [`colon_range_head!`]. A count with no lower bound panics here.
 fn process_atomic_colon_range_token(
     vector_set: Vec<AtomicVector>,
     token: &str,
@@ -1253,9 +1443,16 @@ fn process_atomic_colon_range_token(
 
 /// process_atomic_modifiers
 ///
-/// Applies the pending cardinal and index filters to the working set: a
-/// cardinal token keeps one directional half-plane, an index filter keeps
-/// selected clockwise positions.
+/// Answers whichever filters were written in front of the element now being
+/// evaluated. A cardinal token keeps the half-plane or quadrant it names,
+/// an index filter keeps the clockwise positions its digits name, and an
+/// element written with neither comes back whole.
+///
+/// Written together, the cardinal is answered first. The index filter counts
+/// through a full circle of eight and asserts as much, so a pair where the
+/// cardinal has already taken vectors away stops there rather than counting
+/// through part of a circle. Digits become indices on the way, one subtracted
+/// from each, and a character that is not a digit is passed over.
 ///
 /// Params:
 /// - vector_set: Vec<AtomicVector>               -> working set to filter
@@ -1302,9 +1499,14 @@ fn process_atomic_modifiers(
 
 /// evaluate_atomic_term
 ///
-/// Expands one atom relative to every branch's current direction, applies
-/// the pending cardinal/index modifiers, and adds each result onto the
-/// branch it extends.
+/// Runs one atom token against every branch in hand and grows each branch by
+/// what comes back. The frame the atom is read in is that branch's own last
+/// heading, so an atom standing behind something else is written relative to
+/// where the route is already going rather than to the board.
+///
+/// The pending filters are answered inside that same frame, which is what
+/// lets an `n` behind a diagonal step mean north of the step and not north of
+/// the board.
 ///
 /// Params:
 /// - result   : Vec<AtomicVector>               -> branches so far
@@ -1313,6 +1515,11 @@ fn process_atomic_modifiers(
 ///
 /// Return:
 /// Vec<AtomicVector>                            -> the extended working set
+///
+/// Notes:
+/// Only an atom token belongs here and anything else panics, the caller having
+/// sorted its tokens by kind already. Branches meeting on one square come back
+/// as one.
 fn evaluate_atomic_term(
     result: Vec<AtomicVector>,
     term: Token,
@@ -1349,8 +1556,13 @@ fn evaluate_atomic_term(
 
 /// evaluate_atomic_subexpression
 ///
-/// Recurses into a `<...>` subexpression group; the net displacement of the
-/// group then steers the atom that follows it.
+/// Evaluates a `<...>` group once for every branch in hand, inside that
+/// branch's own frame, and adds what comes back onto it.
+///
+/// The heading a group hands on is its net displacement and not the step it
+/// ended with, so what follows a group is steered by where the group went as
+/// a whole. That is what the brackets buy: a bare chain hands on only its
+/// last step, and a bracketed one hands on the shape.
 ///
 /// Params:
 /// - result   : Vec<AtomicVector>               -> branches so far
@@ -1360,6 +1572,11 @@ fn evaluate_atomic_term(
 ///
 /// Return:
 /// Vec<AtomicVector>                            -> the extended working set
+///
+/// Notes:
+/// The group has to answer with vectors; an element of any other kind panics
+/// here rather than being carried further. Branches meeting on one square
+/// come back as one.
 fn evaluate_atomic_subexpression(
     result: Vec<AtomicVector>,
     subexpr: AtomicGroup,
@@ -1402,8 +1619,15 @@ fn evaluate_atomic_subexpression(
 
 /// evaluate_atomic_expression
 ///
-/// Walks a token group left to right, threading a working vector set through
-/// the term and suffix handlers, and returns the fully evaluated branch set.
+/// Walks a token group from left to right, carrying one working set of
+/// branches through it. The set begins as a single branch of no length already
+/// pointing at `rotation`, so the first atom is read in the frame the whole
+/// expression was turned into.
+///
+/// A filter is not answered where it is written but where it is spent: a
+/// cardinal or index token is remembered, handed to the next atom or group,
+/// and forgotten once handed over. A colon-range behind that atom takes it
+/// first, which is why each atom is read together with the token after it.
 ///
 /// Params:
 /// - expr    : AtomicGroup -> the token group to evaluate
@@ -1412,6 +1636,13 @@ fn evaluate_atomic_subexpression(
 ///
 /// Return:
 /// AtomicElement           -> an `AtomicEval` wrapping the evaluated branches
+///
+/// Notes:
+/// A filter spent by a colon-range is handed over without being forgotten, so
+/// the atom after the repetition is filtered by it a second time. Every clip
+/// here judges the net displacement, so a route is asked where it lands and
+/// never where it passed. Whether the squares in between exist is settled at
+/// generation time, the origin being known only there.
 fn evaluate_atomic_expression(
     expr: AtomicGroup,
     rotation: &str,
@@ -1519,14 +1750,30 @@ fn evaluate_atomic_expression(
 
 /// process_closing_bracket
 ///
-/// Generic bracket reducer shared by the atomic and multi-leg parsers:
-/// pops stack terms until the matching opening bracket is found and
-/// pushes the collected group back as a single wrapped element.
+/// Closes the innermost bracket sitting on a parser stack. Terms come off the
+/// back until the opening mark is met and go onto the front of a second queue,
+/// so the group is rebuilt in the order it was written, and what comes out is
+/// wrapped once and pushed back as a single term.
+///
+/// ```text
+/// before   …  (  A  B  C      the closing mark arrives
+/// after    …  (A B C)
+/// ```
+///
+/// Both parsers stack their terms this way and differ only in what an opening
+/// mark looks like and what a group is called, so each hands those two answers
+/// in and shares everything else.
 ///
 /// Params:
 /// - stack      : &mut VecDeque<Term> -> parser stack holding pending terms
 /// - is_bracket : IsBracket           -> predicate matching the opening bracket
 /// - wrap_result: WrapResult          -> constructor wrapping the popped group
+///
+/// Notes:
+/// A closing mark with no opening one empties the stack and wraps all of it,
+/// the walk ending on an empty stack rather than on a mark. Nothing refuses it
+/// here, an unbalanced expression arriving further down as one oversized group
+/// instead of as an error.
 fn process_closing_bracket<Term, IsBracket, WrapResult>(
     stack: &mut VecDeque<Term>,
     is_bracket: IsBracket,
@@ -1550,126 +1797,45 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 
 /// atomic_to_vector
 ///
-/// Returns a vector of (x, y) tuples representing the directions of an atomic
-/// with respect to the given rotation.
+/// Reads one atom — an optional cardinal filter, an optional list of digits,
+/// and the `K` that closes it — and answers with the unit steps it selects,
+/// every one of them read in the frame `rotation` names.
 ///
-/// Direction numbering:
-///
-/// Directions are numbered 1-8 in clockwise order starting from north:
+/// The eight steps around a square are numbered clockwise from wherever the
+/// frame points, so 1 is the frame's own heading and the ring turns with it.
+/// Unrotated, that heading is north:
 ///
 /// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 08 │ 01 │ 02 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 07 │    │ 03 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 06 │ 05 │ 04 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
+/// ┌────┬────┬────┐
+/// │ 08 │ 01 │ 02 │      1  n   ( 0,  1)     5  s   ( 0, -1)
+/// ├────┼────┼────┤      2  ne  ( 1,  1)     6  sw  (-1, -1)
+/// │ 07 │    │ 03 │      3  e   ( 1,  0)     7  w   (-1,  0)
+/// ├────┼────┼────┤      4  se  ( 1, -1)     8  nw  (-1,  1)
+/// │ 06 │ 05 │ 04 │
+/// └────┴────┴────┘
 /// ```
 ///
-/// Mapping:
-///
-/// - 1: n  (north)      - vector (0, 1)
-/// - 2: ne (northeast)  - vector (1, 1)
-/// - 3: e  (east)       - vector (1, 0)
-/// - 4: se (southeast)  - vector (1, -1)
-/// - 5: s  (south)      - vector (0, -1)
-/// - 6: sw (southwest)  - vector (-1, -1)
-/// - 7: w  (west)       - vector (-1, 0)
-/// - 8: nw (northwest)  - vector (-1, 1)
-///
+/// Written without digits an atom takes the whole ring. A cardinal in front
+/// keeps only the steps leaning that way, itself turned by the frame first, so
+/// an `n` there asks for the frame's north and not the board's.
 ///
 /// Examples:
 ///
-/// `K` with no rotation selects all eight directions:
+/// `K` takes the ring whole and `nK` keeps the three steps leaning north. In
+/// `n[2468]K` turned toward north-east the digits pick out the four
+/// orthogonals of that frame, and the `n` — north there pointing north-east —
+/// keeps two of them:
 ///
 /// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 08 │ 01 │ 02 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 07 │    │ 03 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 06 │ 05 │ 04 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
+/// K             nK            n[2468]K, ne
+/// ┌───┬───┬───┐ ┌───┬───┬───┐ ┌───┬───┬───┐
+/// │ ● │ ● │ ● │ │ ● │ ● │ ● │ │   │ ● │   │
+/// ├───┼───┼───┤ ├───┼───┼───┤ ├───┼───┼───┤
+/// │ ● │   │ ● │ │   │   │   │ │   │   │ ● │
+/// ├───┼───┼───┤ ├───┼───┼───┤ ├───┼───┼───┤
+/// │ ● │ ● │ ● │ │   │   │   │ │   │   │   │
+/// └───┴───┴───┘ └───┴───┴───┘ └───┴───┴───┘
 /// ```
-///
-/// `nK` with no rotation selects only (0, 1), (1, 1), (-1, 1):
-///
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 08 │ 01 │ 02 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-///
-/// `n[2468]K` rotated toward "ne" selects (0, 1), (1, 0):
-///
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ 08 │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │ 02 │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-///
-/// An atomic is defined as having only one optional cardinal direction, an
-/// optional range, and ending with K.
-///
-/// All inputs are sanitized by `parse_move_string` before being passed
-/// here.
 ///
 /// Params:
 /// - expr    : &str -> single atomic expression, e.g. `n[26]K`
@@ -1677,6 +1843,14 @@ fn process_closing_bracket<Term, IsBracket, WrapResult>(
 ///
 /// Return:
 /// Vec<(i8, i8)>    -> unit displacement vectors selected by the atomic
+///
+/// Notes:
+/// A digit past 8 comes back round the ring, 9 selecting what 1 selects, and a
+/// direction named twice is kept once. A 0 counts below the first index and
+/// underflows instead of wrapping, the ring having no zeroth step to name.
+/// Expressions arrive here already normalized by [`parse_move_string`]; one
+/// the atom pattern cannot read panics, as does a rotation outside the eight
+/// cardinal names.
 fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 
     log_4!(
@@ -1742,238 +1916,49 @@ fn atomic_to_vector(expr: &str, rotation: &str) -> Vec<(i8, i8)> {
 
 /// chained_atomic_to_vector
 ///
-/// Returns a vector containing a list of 2 tuples:
+/// Walks a run of atoms from left to right, each one read in the frame the
+/// atom before it ended in. One branch goes in and as many come out as that
+/// atom selects steps, every branch carrying both where it has arrived and
+/// the step it arrived by.
 ///
-/// - The first tuple represents the whole vector of the move.
-/// - The second tuple represents the last applied vector of the move.
+/// The frame comes off that last step alone, so a chain hands on nothing but
+/// its final heading. Brackets are what change this: a `<...>` group hands on
+/// its net displacement instead, and that is [`evaluate_atomic_subexpression`].
 ///
-/// A chained atomic is defined as multiple atomics (see
-/// `atomic_to_vector` for atomic definition) concatenated together
-/// each atomic is influenced by the last vector that was produced by the
-/// previous atomic.
-///
-/// Example:
-///
-/// - `N → FnF → [2468]Kn[2468]K`, starting from the `S` square
-///
-/// 1. Start with a Ferz (`F -> [2468]K`) move which produces these vectors:
-///
-///     - (1, 1)
-///     - (1, -1)
-///     - (-1, -1)
-///     - (-1, 1)
+/// A knight is a chain of two atoms. `N` normalizes to `[2468]Kn[2468]K`: the
+/// first atom steps diagonally, and the second is read in the frame that step
+/// left behind, where the digits fall on the four orthogonals and the `n`
+/// keeps the two of them leaning the way the branch already points.
 ///
 /// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ \\ │    │ // │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S  │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ // │    │ \\ │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
+///  [2468]K        one branch      [2468]Kn[2468]K
+/// ┌───┬───┬───┐  ┌───┬───┬───┐   ┌───┬───┬───┬───┬───┐
+/// │ ● │   │ ● │  │   │ ● │   │   │   │ ● │   │ ● │   │
+/// ├───┼───┼───┤  ├───┼───┼───┤   ├───┼───┼───┼───┼───┤
+/// │   │ S │   │  │   │ ↗ │ ● │   │ ● │   │   │   │ ● │
+/// ├───┼───┼───┤  ├───┼───┼───┤   ├───┼───┼───┼───┼───┤
+/// │ ● │   │ ● │  │ S │   │   │   │   │   │ S │   │   │
+/// └───┴───┴───┘  └───┴───┴───┘   ├───┼───┼───┼───┼───┤
+///                                │ ● │   │   │   │ ● │
+///                                ├───┼───┼───┼───┼───┤
+///                                │   │ ● │   │ ● │   │
+///                                └───┴───┴───┴───┴───┘
 /// ```
-///
-/// 2. For each vector, apply `nF -> n[2468]K` relative to its last vector:
-///
-///    - for (1, 1), direction is ne, so `n[2468]K` rotated by ne produces
-///      (0, 1)
-///      and (1, 0)
-///
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ || │    │ || │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │ == │ S' │    │ S' │ == │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S  │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │ == │ S' │    │ S' │ == │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ || │    │ || │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-/// so the end result is
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ oo │    │ oo │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │ oo │    │    │    │ oo │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ NN │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │ oo │    │    │    │ oo │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ oo │    │ oo │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-///
-/// A chained atomic can also end in three ways:
-///
-/// - one or more dots (.) means to repeat last vector regardless of direction
-///   for each dot.
-/// - a range {i..j} or {i} is a shorthand for writing dots.
-/// - a colon-range :{i..j} or :{i} means to repeat the last atomic,
-///   influenced by the last vector.
-///
-/// Example 1:
-///
-/// W. means W followed by repeating the last vector of W move once more
-/// 1. First do a W move
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ == │ S  │ == │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-/// 2. Then for each vector produced by W, repeat the last vector once more (.)
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S' │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │ == │ S' │ S  │ S' │ == │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S' │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-/// so the final result is
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │ oo │    │ W. │    │ oo │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-///
-/// Example 2:
-///
-/// The {range} does not have to be a range; it could just be a number and the
-/// numbers mean "amount of dots + 1", so W{1} is W, W{2} is W., W{3} is W..,
-/// etc.
-///
-/// Example 3:
-///
-/// W{1..4} will branch into three paths for each dot, so we need to return
-/// results from W, W., W.., and W... (W{1}, W{2}, W{3}, W{4} respectively)
-/// say W{1..4} = S
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │ oo │ oo │ oo │ oo │ S  │ oo │ oo │ oo │ oo │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ oo │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-/// Note that this can jump to the target square by definition, hopping over
-/// pieces, since the notation hasn't defined "successful" checks yet.
-///
-/// Example 4:
-/// W:{1} means W, W:{2} means WW, W:{3} means WWW, etc.
-/// W:{1..3} means the combined results from W, WW, and WWW.
-///
-/// A compound atomic can also end with dots (.) or range {i..j} or {i} and
-/// colon-range :{i..j} or :{i} just like chained atomics but it applies to the
-/// whole atomic group, not just an atomic.
-///
-/// We differentiate chained and compound atomics by the presence of `<...>`.
-/// If there is no `<...>`, it is treated as a chained atomic, so only the
-/// last atomic influences the next atomic.
-///
-/// Example:
-///
-/// - <FnF>. means moving N followed by repeating the last vector of N once more
-///   but N. will expand to FnF. so the final result is equivalent to N followed
-///   by the last F move.
 ///
 /// Params:
 /// - expr    : &str -> chained atomic expression, e.g. `[2468]Kn[2468]K`
 /// - rotation: &str -> cardinal direction the chain is rotated toward
 ///
 /// Return:
+/// Vec<AtomicVector> -> one (whole, last) pair per branch the chain reaches
 ///
-/// Vec<AtomicVector>
-/// every (whole, last) displacement the chain produces, one per branch
+/// Notes:
+/// A `#` is the null step: it adds nothing and hands the frame on untouched,
+/// which is how a leg that only turns is written. Displacement is added by
+/// saturating byte arithmetic, so a chain long enough to run past the byte
+/// stops growing rather than wrapping around it. Dots and ranges are not read
+/// here — they suffix a chain and are answered by the token handlers. An
+/// expression holding no atom at all asserts.
 fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 
     log_4!(
@@ -2024,129 +2009,41 @@ fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 
 /// compound_atomic_to_vector
 ///
-/// Returns a vector containing a list of 2 tuples:
+/// Compiles one whole atomic expression. Tokens are read off in order and
+/// stacked, `<` marking where a group opens and `>` folding everything back
+/// to that mark into a single nested term, so groups written inside groups
+/// come out nested the same way. What the stack holds at the end is handed to
+/// [`evaluate_atomic_expression`], which walks it and answers with branches.
 ///
-/// - The first tuple represents the whole vector of the move.
-/// - The second tuple represents the last applied vector of the move.
+/// Each token is placed by the first pattern that claims it, an atom being
+/// what is left when none of the others do:
 ///
-/// A compound atomic is defined as multiple chained atomics (see
-/// `chained_atomic_to_vector` for chained atomic definition).
-/// These chained atomics can be grouped by enclosing them in `<...>`.
-/// If `<...>` is used, it is treated as one vector set, so it influences
-/// the direction of the next chained atomic.
-///
-/// For non-cardinal vectors, direction influence follows the greatest
-/// magnitude vector among the compound atomics. If tied, the direction
-/// is diagonal. For example:
-///
-/// - (2, 1) has +x as the greatest magnitude so it will influence the next
-///   atomic as "e" or (1, 0).
-/// - (1, 2) has +y as the greatest magnitude so it will influence the next
-///   atomic as "n" or (0, 1).
-/// - (2, 2) has the same magnitude so it will influence the next atomic
-///   as "ne" or (1, 1).
-///
-/// More examples:
-///
-/// nW<nWnF>nW (following only one branch, starting from S)
-///
-/// 1. Move like a nW, for example (0, 1)
 /// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S  │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
+/// <  >          a group opens, and folds shut
+/// n … sw        cardinal filter
+/// [1357]        index filter
+/// .  ..  {i}    repetition of the last step
+/// :{i}          repetition of the last atom
+/// K  nK  N      an atom
 /// ```
 ///
-/// 2. Process `nWnF` inside `<...>` as one vector set, so it will
-///    influence the next atomic as a whole. so we need to recursively process
-///    nWnF first. So the move after processing nWnF (starting from S'):
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ \\ │    │ // │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S  │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-/// Note that even though nWnF ends with diagonal vectors (-1, 1) and (1, 1). it
-/// is enclosed by <...> so it will influence the next atomic as a whole so
-/// since as a whole it creates vector (-1, 2) and (1, 2) the greatest
-/// magnitude is +y so it will influence the next atomic as "n" or (0, 1).
+/// Grouping is what a chain cannot say. In `nW<nWnF>nW` the bracketed pair
+/// arrives at (±1, 2) as a whole, and it is that displacement the last `nW`
+/// is read against — heading north by [`irregular_vector_direction`], even
+/// though the step the group ended on was diagonal:
 ///
-/// 3. Finally apply nW (with respect to "n" from the previous step):
-///    Final squares of the move (F Squares):
 /// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │ \\ │    │    │    │ // │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ \\ │    │ // │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S  │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
-///
-/// thus the end result is
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │ oo │    │    │    │ oo │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │ S  │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
+/// ┌───┬───┬───┐
+/// │ ● │   │ ● │   the last nW, read in the group's heading
+/// ├───┼───┼───┤
+/// │ ↖ │   │ ↗ │   where <nWnF> arrives, (±1, 2) from where it began
+/// ├───┼───┼───┤
+/// │   │ ↑ │   │
+/// ├───┼───┼───┤
+/// │   │ ↑ │   │   the first nW
+/// ├───┼───┼───┤
+/// │   │ S │   │
+/// └───┴───┴───┘
 /// ```
 ///
 /// Params:
@@ -2155,9 +2052,13 @@ fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 /// - state   : &State -> board dimensions for bounds clipping
 ///
 /// Return:
+/// Vec<AtomicVector>  -> one (whole, last) pair per branch of the expression
 ///
-/// Vec<AtomicVector>
-/// every (whole, last) displacement the compound produces, one per branch
+/// Notes:
+/// A `>` arriving with no `<` behind it wraps everything stacked so far, so
+/// an unbalanced expression compiles to one oversized group rather than to an
+/// error. The walk answering with anything but branches panics, no other kind
+/// being reachable from a token stack.
 fn compound_atomic_to_vector(
     expr: &str,
     rotation: &str,
@@ -2223,14 +2124,20 @@ fn compound_atomic_to_vector(
 
 /// sum_multi_leg_vectors
 ///
-/// Reduces a multi-leg branch to its net displacement by summing the
-/// whole vectors of every leg with saturation.
+/// Collapses a branch to the one square it ends on. Each leg already carries
+/// the net displacement of the atom it was built from, so adding those up is
+/// adding up the route: what every filter downstream asks a branch is where it
+/// arrives, never which way it went there.
 ///
 /// Params:
-/// - vectors: &MultiLegVector -> the legs of one branch
+/// - vectors: &MultiLegVector -> legs of one branch, in the order walked
 ///
 /// Return:
-/// (i8, i8)                   -> net (x, y) displacement of the branch
+/// (i8, i8)                   -> net (x, y) the branch lands on
+///
+/// Notes:
+/// The running sum saturates instead of wrapping, a long repetition otherwise
+/// folding a far landing back around next to the origin.
 fn sum_multi_leg_vectors(vectors: &MultiLegVector) -> (i8, i8) {
     let mut sum: (i8, i8) = (0, 0);
 
@@ -2246,18 +2153,27 @@ fn sum_multi_leg_vectors(vectors: &MultiLegVector) -> (i8, i8) {
 
 /// sort_multi_leg_clockwise
 ///
-/// Sorts the eight cardinal multi-leg vectors clockwise from the `+y` axis.
-/// Each entry is reduced to its net displacement and ordered by `atan2` so
-/// directional filters can use deterministic index-based selection.
-/// The input must contain exactly eight cardinal-direction outcomes.
+/// Lays the eight rotations of a multi-leg expression out in a circle, so an
+/// index filter behind them selects by position rather than by the order they
+/// happened to be evaluated in. The circle is the one drawn in
+/// [`sort_atomic_clockwise`], read the same way and starting at the same
+/// place.
+///
+/// A branch is placed by the square it lands on, not by the frame it was
+/// rotated into. The two agree for a `K` and part company as soon as the
+/// expression bends: a leg pair heading north-east that ends due east sits
+/// with east, which is where a reader following the piece would look for it.
 ///
 /// Params:
-/// - vectors: Vec<MultiLegVector> -> the eight cardinal outcomes to sort
+/// - vectors: Vec<MultiLegVector> -> the eight rotations to lay out
 ///
 /// Return:
+/// Vec<MultiLegVector>            -> the same eight, clockwise from north
 ///
-/// Vec<MultiLegVector>
-/// branches ordered clockwise starting from north
+/// Notes:
+/// Anything other than the full circle of eight panics, an order over part of
+/// a circle saying nothing. Two rotations landing on the same square keep
+/// whichever order they arrived in, the sort being stable.
 fn sort_multi_leg_clockwise(
     mut vectors: Vec<MultiLegVector>,
 ) -> Vec<MultiLegVector> {
@@ -2282,15 +2198,26 @@ fn sort_multi_leg_clockwise(
 
 /// filter_multi_leg_by_index
 ///
-/// Keeps only the branches at the given clockwise indices, after reducing
-/// each to its net displacement and sorting into canonical clockwise order.
+/// Keeps the branches a direction filter names, reading its numbers against
+/// the clockwise order [`sort_multi_leg_clockwise`] imposes here. The order is
+/// imposed rather than assumed, so a caller may hand its working set over
+/// however that set happened to be built.
+///
+/// The numbers arrive already turned into indices: the filter is written from
+/// one and counted from zero, and the caller does the subtracting.
 ///
 /// Params:
-/// - vectors: Vec<MultiLegVector> -> the eight cardinal branches
+/// - vectors: Vec<MultiLegVector> -> the eight rotations to choose from
 /// - index  : Vec<usize>          -> clockwise indices to keep
 ///
 /// Return:
 /// Vec<MultiLegVector>            -> the selected branches, in index order
+///
+/// Notes:
+/// A repeated number is honoured twice, that being what the filter asked for,
+/// and a number past the circle indexes out of range and panics there. The
+/// sort behind this wants the whole circle of eight, so a set a cardinal
+/// filter has already thinned cannot be indexed after it.
 fn filter_multi_leg_by_index(
     mut vectors: Vec<MultiLegVector>,
     index: Vec<usize>,
@@ -2317,8 +2244,14 @@ fn filter_multi_leg_by_index(
 
 /// filter_multi_leg_by_cardinal_direction
 ///
-/// Keeps only the branches whose net displacement lies in the half-plane or
-/// quadrant named by `direction`, relative to the point of view `pov`.
+/// Keeps the branches falling in the half-plane or quadrant `direction` names,
+/// judged inside the frame `pov` turned the expression into. A branch is placed
+/// by the square it ends on, so one that wanders on the way is judged by where
+/// it arrives and not by any leg it took to get there.
+///
+/// A quadrant asks for two half-planes at once, which is what leaves a branch
+/// landing on a fold line out of every quadrant touching it: it is neither
+/// north nor south of a line it sits on.
 ///
 /// Params:
 /// - vectors  : Vec<MultiLegVector> -> working set of branches
@@ -2327,6 +2260,10 @@ fn filter_multi_leg_by_index(
 ///
 /// Return:
 /// Vec<MultiLegVector>              -> branches passing the directional test
+///
+/// Notes:
+/// A direction outside the eight panics, the name having come from config text
+/// that is compiled once and read many times.
 fn filter_multi_leg_by_cardinal_direction(
     mut vectors: Vec<MultiLegVector>,
     direction: &str,
@@ -2361,8 +2298,15 @@ fn filter_multi_leg_by_cardinal_direction(
 
 /// filter_multi_leg_out_of_bounds
 ///
-/// Drops branches whose net displacement cannot fit on the board from any
-/// square, pruning the working set in place.
+/// Drops branches landing too far away to fit on this board from anywhere,
+/// which is also what stops an unbounded repetition growing for ever: a leg is
+/// repeated until the clip leaves nothing new behind it.
+///
+/// Only the landing square is measured, the same bound the atomic stage
+/// applies in [`filter_atomic_out_of_bounds`]. A branch is therefore kept on
+/// the strength of where it ends even when a leg in the middle reaches further
+/// out, and whether that middle square exists is settled at generation time,
+/// where the origin is finally known.
 ///
 /// Params:
 /// - vectors: &mut Vec<MultiLegVector> -> working set, pruned in place
@@ -2380,9 +2324,11 @@ fn filter_multi_leg_out_of_bounds(
 
 /// process_multi_leg_dots_token
 ///
-/// Repeats the final leg of every branch once per dot in the token, so each
-/// repetition stays a separate runtime leg, then clips out-of-bounds
-/// branches and de-duplicates.
+/// Walks every branch on along the leg it last took, once for each dot in the
+/// token. Where the atomic stage folds a repeat into the displacement it is
+/// already carrying, a repeat here is pushed on as a leg of its own: a leg is
+/// what the runtime steps through, and only keeping them apart leaves it the
+/// squares in between to find a blocker standing on.
 ///
 /// Params:
 /// - vector_set: Vec<MultiLegVector> -> branches accumulated so far
@@ -2391,6 +2337,13 @@ fn filter_multi_leg_out_of_bounds(
 ///
 /// Return:
 /// Vec<MultiLegVector>               -> the extended, clipped working set
+///
+/// Notes:
+/// A leading `-` says where the leg begins rather than that it repeats, so it
+/// is taken off before the dots are counted. A branch landing past the board is
+/// dropped whole rather than shortened, and branches are compared leg by leg,
+/// so two that reach one square by different routes are two moves and both
+/// stay.
 fn process_multi_leg_dots_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2419,9 +2372,22 @@ fn process_multi_leg_dots_token(
 
 /// process_multi_leg_range_token
 ///
-/// Branches each vector into every repetition count in the range `{i..j}`,
-/// appending that many copies of the final leg, then clips and
-/// de-duplicates.
+/// Repeats the leg a branch last took as many times as the range names. A
+/// count is the number of legs in total, so `{1}` is the branch as written and
+/// every count above it lays one more copy of that leg behind it:
+///
+/// ```text
+/// nW-{1}  is  nW      nW-{2}  is  nW-nW      nW-{3}  is  nW-nW-nW
+/// ```
+///
+/// A lone count answers with one branch per input, a spanned count with the
+/// union over the span, which is how a slide arrives as every square it could
+/// stop on rather than only the far one.
+///
+/// An open upper end is walked until the arithmetic stops moving. Legs add into
+/// a byte, which saturates, and a round that adds nothing new ends the walk.
+/// The board clip runs once afterwards and takes out every branch that could
+/// never land.
 ///
 /// Params:
 /// - vector_set: Vec<MultiLegVector> -> branches accumulated so far
@@ -2430,6 +2396,11 @@ fn process_multi_leg_dots_token(
 ///
 /// Return:
 /// Vec<MultiLegVector>               -> the branched, clipped working set
+///
+/// Notes:
+/// A token carrying no lower bound panics. [`expand_ranges`] writes one into
+/// every form the notation allows, so a token arriving without one never went
+/// through the pipeline.
 fn process_multi_leg_range_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2497,8 +2468,24 @@ fn process_multi_leg_range_token(
 
 /// process_multi_leg_colon_range_token
 ///
-/// Re-evaluates the preceding element once per count in the `:{i..j}` range,
-/// with per-branch rotation, then clips out-of-bounds branches.
+/// Repeats the element standing in front of the token, evaluating it again for
+/// every count in the range and hanging what comes back off each branch in
+/// hand.
+///
+/// This is where the two repetition forms part company. `{i..j}` lengthens a
+/// branch along the leg it last took, so the heading is fixed at the first one;
+/// `:{i..j}` runs the element itself again, and does so in the heading the
+/// branch has reached by then, so a repeated route may turn where a repeated
+/// leg never can.
+///
+/// The repetitions go over as a slash group, which is what keeps that heading
+/// honest: the legs of the group are left standing as they were walked, so the
+/// next repetition reads the last of them rather than the straight line the
+/// group happens to add up to.
+///
+/// A spanned count accumulates, every count in the span contributing its own
+/// branches, and the walk ends on the first count that adds nothing new. A lone
+/// count contributes only itself.
 ///
 /// Params:
 /// - vector_set: Vec<MultiLegVector>     -> branches accumulated so far
@@ -2510,6 +2497,12 @@ fn process_multi_leg_range_token(
 ///
 /// Return:
 /// Vec<MultiLegVector>                   -> the repeated, clipped working set
+///
+/// Notes:
+/// The token wants something repeatable in front of it: standing first in an
+/// expression, or behind a bracket group already evaluated, it panics in
+/// [`colon_range_head!`]. With no branches in hand yet the repetitions are read
+/// against `rotation`, that being the only heading there is to read them in.
 fn process_multi_leg_colon_range_token(
     vector_set: Vec<MultiLegVector>,
     token: &str,
@@ -2629,8 +2622,23 @@ fn process_multi_leg_colon_range_token(
 
 /// process_multi_leg_modifiers
 ///
-/// Applies the pending cardinal and index filters plus any move-modifier
-/// letters onto each branch's final leg.
+/// Answers whichever of the three modifiers were written in front of the
+/// element now being evaluated. Two of them thin the working set, the third
+/// changes what a branch that survived is allowed to do:
+///
+/// - a cardinal keeps the half-plane or quadrant it names
+/// - an index keeps the clockwise positions its digits name
+/// - a move modifier is written onto the last leg of every branch left
+///
+/// The move modifier lands on the last leg alone because that is the leg a
+/// move is played on: a letter saying capture or quiet is about the square the
+/// piece ends on, the legs before it having only carried it there.
+///
+/// Written together, the cardinal is answered first. The index filter counts
+/// through a full circle of eight and asserts as much, so a pair where the
+/// cardinal has already taken branches away stops there rather than counting
+/// through part of a circle. Digits become indices on the way, one subtracted
+/// from each, and a character that is not a digit is passed over.
 ///
 /// Params:
 /// - vector_set: Vec<MultiLegVector> -> working set to filter
@@ -2639,6 +2647,10 @@ fn process_multi_leg_colon_range_token(
 ///
 /// Return:
 /// Vec<MultiLegVector>               -> the filtered working set
+///
+/// Notes:
+/// A branch with no legs at all cannot be written on and panics, every route
+/// reaching here having been grown from at least one atom.
 fn process_multi_leg_modifiers(
     mut vector_set: Vec<MultiLegVector>,
     modifiers: &[Option<Token>; 3],
@@ -2678,9 +2690,16 @@ fn process_multi_leg_modifiers(
 
 /// evaluate_multi_leg_term_leg
 ///
-/// Expands one leg term relative to the direction of every branch it
-/// extends, applies the pending modifiers, and appends the result as a new
-/// runtime leg.
+/// Grows every branch in hand by one leg. The leg is read in that branch's own
+/// heading, so a leg standing behind another is written relative to where the
+/// route is already going rather than to the board, and the filters waiting in
+/// front of it are answered in that same frame.
+///
+/// What the leg leaves behind is one leap. However many steps the term expanded
+/// into, the leg's last step is set to the whole leg's displacement, so the leg
+/// after it takes its heading from where this one arrived and not from the
+/// small step it happened to end on. A slash group is how the other reading is
+/// asked for, [`evaluate_multi_leg_subexpression`] leaving those legs alone.
 ///
 /// Params:
 /// - result   : Vec<MultiLegVector> -> branches accumulated so far
@@ -2691,6 +2710,12 @@ fn process_multi_leg_modifiers(
 ///
 /// Return:
 /// Vec<MultiLegVector>              -> the extended working set
+///
+/// Notes:
+/// Only a leg token belongs here and anything else panics, the caller having
+/// sorted its tokens by kind already. With nothing in hand yet the leg is read
+/// against `rotation`, that being the only heading there is, and branches that
+/// walked the very same legs come back as one.
 fn evaluate_multi_leg_term_leg(
     result: Vec<MultiLegVector>,
     term: Token,
@@ -2773,9 +2798,25 @@ fn evaluate_multi_leg_term_leg(
 
 /// evaluate_multi_leg_subexpression
 ///
-/// Recurses into a bracketed subexpression: `<...>` steers the following
-/// direction as a whole, `</.../>` leaves per-leg directions intact, and
-/// `@expr` exclusion removes matching outcomes from the working set.
+/// Evaluates a bracketed group against every branch in hand and hangs what
+/// comes back off the end of each. The group is read in that branch's own
+/// heading, exactly as a bare leg is, so a group written behind a step turns
+/// with the route instead of pointing back at the board.
+///
+/// The two bracket forms are evaluated alike and part company only in what
+/// they leave behind for the next element to read:
+///
+/// ```text
+/// <  >     the group ends pointed the way it went as a whole
+/// </  />   the group ends pointed the way its last leg went
+/// ```
+///
+/// A group `<nWnF>` arrives at (±1, 2), which reads as north, while the leg it
+/// ended on went diagonally. The plain form hands north to whatever follows,
+/// the slash form hands over the diagonal. A route that bends needs the second
+/// reading: each repetition carries on from the leg it actually ended on, which
+/// is how a crooked slider keeps turning instead of straightening out after the
+/// first group.
 ///
 /// Params:
 /// - result   : Vec<MultiLegVector> -> branches accumulated so far
@@ -2786,6 +2827,11 @@ fn evaluate_multi_leg_term_leg(
 ///
 /// Return:
 /// Vec<MultiLegVector>              -> the extended working set
+///
+/// Notes:
+/// Only the two bracket forms belong here and anything else panics, as does an
+/// inner group that comes back unevaluated. With nothing in hand yet the group
+/// is read against `rotation` and becomes the working set itself.
 fn evaluate_multi_leg_subexpression(
     result: Vec<MultiLegVector>,
     expr: MultiLegElement,
@@ -2892,8 +2938,21 @@ fn evaluate_multi_leg_subexpression(
 
 /// evaluate_multi_leg_expression
 ///
-/// Walks a multi-leg token group left to right, threading the working set of
-/// branches through the term, subexpression, and suffix handlers.
+/// Walks a token group from left to right, carrying one working set of branches
+/// through it. The set begins empty rather than at an origin, a multi-leg route
+/// having no length until its first leg is read, and every leg and group after
+/// that hangs off the branches already in hand.
+///
+/// A filter is not answered where it is written but where it is spent: a
+/// cardinal, an index or a move modifier is remembered, handed to the next leg
+/// or group, and cleared once handed over. A colon-range behind that element
+/// takes it first, which is why each element is read together with the token
+/// after it.
+///
+/// A group met by a colon-range goes over in its slash form whichever way it
+/// was written, so the repetitions follow the leg the group ended on. An `@`
+/// exclusion is evaluated on its own and subtracted at the end, and the last
+/// one written is the one that counts.
 ///
 /// Params:
 /// - expr    : MultiLegGroup -> the token group to evaluate
@@ -2901,9 +2960,14 @@ fn evaluate_multi_leg_subexpression(
 /// - state   : &State        -> board dimensions for bounds clipping
 ///
 /// Return:
+/// MultiLegElement           -> a `MultiLegEval` wrapping the branches
 ///
-/// MultiLegElement
-/// a `MultiLegEval` wrapping the evaluated branches
+/// Notes:
+/// A filter spent by a colon-range is handed over without being cleared, so the
+/// element after the repetition is filtered by it a second time. The board clip
+/// runs once at the end over whole branches, so a route is asked where it lands
+/// and never where it passed. Whether the squares in between exist is settled
+/// at generation time, the origin being known only there.
 fn evaluate_multi_leg_expression(
     expr: MultiLegGroup,
     rotation: &str,
@@ -3051,16 +3115,37 @@ fn evaluate_multi_leg_expression(
 
 /// tokenize_multi_leg_expression
 ///
-/// Splits a leg-separated expression into parse tokens, then repeatedly
-/// glues fragments back together so that bracketed groups with no leg
-/// separators inside them travel as single leg tokens. The fixpoint loop
-/// exists because each gluing pass can expose new adjacent fragments.
+/// Cuts one branch into the tokens the stack parser reads, then glues back
+/// together what only looked like several. A bracket group with no leg boundary
+/// inside it is one compound atomic, and the parser wants it as one word rather
+/// than as the letters it was cut into:
+///
+/// ```text
+/// m<[1357]K>-c<[2468]K>.
+/// m  <  [1357]K  >  -  c  <  [2468]K  >  .    cut on the alphabet
+/// m  <[1357]K>      -  c  <[2468]K>      .    groups closed up
+/// m  <[1357]K>      -  c  <[2468]K>.          suffix rejoined
+/// ```
+///
+/// What keeps a group open is whatever makes it more than a compound atomic: a
+/// leg boundary inside it, a slash bracket, or a run of move modifiers, each of
+/// which the parser has to see for itself. Closing runs to a fixpoint, since
+/// closing one group can leave two fragments adjacent that were not before.
+///
+/// The last pass is where a `-` earns its keep. A suffix written straight onto
+/// a group joins it and repeats a step inside that leg; the same suffix written
+/// behind a `-` stays a token of its own and repeats the whole leg.
 ///
 /// Params:
 /// - expr: &str -> one sanitized multi-leg branch
 ///
 /// Return:
 /// Vec<String>  -> tokens ready for the multi-leg stack parser
+///
+/// Notes:
+/// An expression the alphabet matches nowhere panics. Text between two matches
+/// is kept as a token of its own, so a stray character travels on to the parser
+/// and is refused there rather than here.
 fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
     let token_matches: Vec<_> = LEG_TOKENS.find_iter(expr).collect();
     assert!(
@@ -3170,11 +3255,24 @@ fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
 
 /// leg_to_vector
 ///
-/// Converts one leg expression into concrete multi-leg vectors.
+/// Reads one leg into branches. A leg is written in three parts, and each part
+/// is optional except the middle one:
 ///
-/// A leg is defined as a compound atomic with optional move modifiers applied,
-/// and may include exclusions that remove matching displacement outcomes.
-/// The result keeps exactly one `LegVector` per produced branch.
+/// ```text
+/// mc     [26]K            @nK
+/// what   where it goes    where it may not end
+/// ```
+///
+/// The exclusion is answered on landings alone: `mc[26]K@nK` is that step
+/// everywhere except where it would arrive on the square `nK` reaches. How
+/// either of them got there does not enter into it, only that the two agree on
+/// a square, and both are read in the same rotation.
+///
+/// What comes back is one branch per surviving displacement, each holding the
+/// single leg, and each leg carrying the modifier letters written in front of
+/// it. The letters are copied as text and read at generation time, so a leg
+/// says what it is allowed to do without this stage knowing what any of the
+/// letters mean.
 ///
 /// Params:
 /// - expr    : &str    -> one leg expression, e.g. `mc[26]K@nK`
@@ -3183,6 +3281,10 @@ fn tokenize_multi_leg_expression(expr: &str) -> Vec<String> {
 ///
 /// Return:
 /// Vec<MultiLegVector> -> single-leg branches, one per displacement
+///
+/// Notes:
+/// A leg the grammar does not fit panics naming it, and so does one with no
+/// compound atomic in it, nothing being left to say where the piece goes.
 fn leg_to_vector(
     expr: &str,
     rotation: &str,
@@ -3226,26 +3328,38 @@ fn leg_to_vector(
 
 /// multi_leg_to_vector
 ///
-/// Converts a full multi-leg expression (legs separated by `-`) into
-/// concrete branches. Each leg is expanded relative to the direction of
-/// the branch built so far and appended as its own runtime leg, so one
-/// branch of a two-leg move visits an intermediate stop:
+/// Compiles one whole branch of a movement expression, legs and all. Tokens are
+/// read off in order and stacked, `<` and `</` marking where a group opens and
+/// `>` and `/>` folding everything back to that mark into a single nested term,
+/// and the stack that comes out is handed on to be evaluated:
 ///
 /// ```text
-/// ┌────┬────┬────┬────┬────┐
-/// │    │    │    │    │ L2 │
-/// ├────┼────┼────┼────┼────┤
-/// │    │    │    │    │ || │
-/// ├────┼────┼────┼────┼────┤
-/// │ S  │ == │ == │ == │ L1 │
-/// └────┴────┴────┴────┴────┘
+/// <  >  </  />   a group opens, and folds shut
+/// n … sw         cardinal filter
+/// [1357]         index filter
+/// -.  -..        repetition of the last leg
+/// -{i}           the same, counted
+/// -:{i}          repetition of the last leg or group, re-read each time
+/// @expr          landings to leave out
+/// mcd … !        what the leg may do
+/// -              a leg boundary
 /// ```
 ///
-/// `S -> L1` is the first leg, `L1 -> L2` the second; move generation
-/// later validates each leg's own modifiers at its stop squares.
-/// Expressions without `-` short-circuit to `leg_to_vector`; everything
-/// else is tokenized, stack-parsed into bracket groups, and handed to
-/// `evaluate_multi_leg_expression`.
+/// A leg keeps its own stop square, which is what an expression of one leg
+/// cannot say. In `eK-{4}-nK` the piece walks four squares east and turns north
+/// for a fifth, and each of those stops is a square where the leg's modifiers
+/// are answered at generation time:
+///
+/// ```text
+/// ┌───┬───┬───┬───┬───┐
+/// │   │   │   │   │ ● │
+/// ├───┼───┼───┼───┼───┤
+/// │ S │ → │ → │ → │ ↑ │
+/// └───┴───┴───┴───┴───┘
+/// ```
+///
+/// A branch with no `-` in it is one leg and goes straight to
+/// [`leg_to_vector`], the stack having nothing to fold.
 ///
 /// Params:
 /// - expr    : &str    -> one sanitized multi-leg branch
@@ -3254,6 +3368,14 @@ fn leg_to_vector(
 ///
 /// Return:
 /// Vec<MultiLegVector> -> every concrete branch of the expression
+///
+/// Notes:
+/// A closing mark arriving with no opening one wraps everything stacked so far,
+/// [`process_closing_bracket`] ending on an empty stack rather than refusing.
+/// The `-` itself is dropped once the tokens are cut, having said all it had to
+/// say by keeping the legs apart. Anything the classification does not
+/// recognise is taken for a leg, and a leg the grammar refuses panics further
+/// down in [`leg_to_vector`].
 fn multi_leg_to_vector(
     expr: &str,
     rotation: &str,
@@ -3346,11 +3468,22 @@ fn multi_leg_to_vector(
 
 /// generate_move_vectors
 ///
-/// Generates all legal move-vector branches from a move expression.
+/// Turns one movement expression from a config into every route it names. This
+/// is the way in to the whole file: what a variant wrote goes in as text and
+/// what comes out is the piece's movement, compiled once at load time.
 ///
-/// The expression is first normalized and expanded by the parsing pipeline,
-/// then each branch is converted to concrete multi-leg vectors.
-/// Duplicate outcomes are removed before returning the final vector set.
+/// Two halves do the work. [`parse_move_string`] rewrites the expression until
+/// nothing is left but plain branches divided by `|`, and each of those is
+/// compiled on its own by [`multi_leg_to_vector`]:
+///
+/// ```text
+/// text  →  normalized  →  branch  →  legs  →  displacements
+/// ```
+///
+/// Every branch is read in the north frame, that being the direction a piece is
+/// taken to face. Which way north lies for the side to move is settled at
+/// generation time, where the offsets are mirrored by colour, so one compiled
+/// set of routes serves both players.
 ///
 /// Params:
 /// - expr : &str       -> raw move expression from the config
@@ -3358,6 +3491,11 @@ fn multi_leg_to_vector(
 ///
 /// Return:
 /// Vec<MultiLegVector> -> deduplicated branches for the whole expression
+///
+/// Notes:
+/// Two branches that walked the very same legs come back as one, which is what
+/// keeps an expression naming a route twice from generating it twice. Branches
+/// reaching one square by different legs are different moves and both stay.
 pub fn generate_move_vectors(
     expr: &str,
     state: &State,

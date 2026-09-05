@@ -16,26 +16,42 @@ use crate::*;
 lazy_static! {
     /// DROP_PATTERN
     ///
-    /// Regex splitting a drop expression into its flag prefix and CPMN
-    /// body: `[kf]*` captures the optional flags, and the `@`-delimited
-    /// remainder captures the neighbourhood pattern compiled by
-    /// `parse_pattern`.
+    /// Regex splitting one drop branch at its first `@`:
+    ///
+    /// - group 1 -> flag prefix, any run of `k` and `f`
+    /// - group 2 -> CPMN body, compiled by `parse_pattern`
+    ///
+    /// The body is required to carry an `@` of its own, which is what keeps
+    /// the split unambiguous: the first `@` ends the flags, the second is
+    /// the one CPMN puts between its allower and stopper halves.
     static ref DROP_PATTERN: Regex =
         Regex::new(r"^([kf]*)@(.*@.*)$").unwrap_or_else(|e| {
             panic!("Failed to compile DROP_PATTERN regex: {e}")
         });
 }
 
+/*----------------------------------------------------------------------------*\
+                          DROP EXPRESSION COMPILATION
+\*----------------------------------------------------------------------------*/
+
 /// generate_drop_vectors
 ///
-/// Compiles a piece's drop expressions into packed drop templates. Each
-/// expression has the form:
+/// Compiles a piece's drop expressions into packed drop templates, one per
+/// `|` branch. Each branch has the form:
 ///
-///     [modifiers]@[CPMN]
+/// ```text
+/// [modifiers]@[CPMN]
+/// ```
 ///
-/// The CPMN body is the neighborhood pattern; modifiers tune drop legality:
+/// The CPMN body is the neighbourhood the target square must present, and
+/// the modifier prefix carries what a neighbourhood cannot say:
 ///
-/// - k: if set, this drop cannot deliver checkmate; otherwise it can.
+/// - k -> this drop may not be the move that delivers checkmate
+///
+/// Each branch leaves a [`DropMove`] carrying the piece index and that flag,
+/// paired with its compiled pattern. The square half of the word stays zero:
+/// a template is compiled once for the piece, and `generate_relevant_drops`
+/// stamps a square into every copy it keeps.
 ///
 /// Params:
 /// - piece   : &Piece    -> piece type whose drop expression is compiled
@@ -44,6 +60,12 @@ lazy_static! {
 ///
 /// Return:
 /// DropSet               -> one packed (drop, pattern) pair per `|` branch
+///
+/// Notes:
+/// The prefix also admits an `f` that nothing reads, so a variant spelling
+/// it gets the drop it would have got without it. A branch that does not
+/// match [`DROP_PATTERN`] panics, drop rules being config text compiled once
+/// at load time rather than anything a position can produce.
 pub fn generate_drop_vectors(
     piece: &Piece,
     state: &State,

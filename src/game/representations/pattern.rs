@@ -21,10 +21,16 @@ use crate::*;
 
 /// PieceSet
 ///
-/// Represents a compressed set of allowed or stopper pieces.
-/// This structure provides O(1) membership checks to eliminate dynamic
-/// mapping overhead during pattern matching. Memory overhead is strictly
-/// bounded to 256 booleans, naturally fitting the maximum piece limit.
+/// The set of pieces one pattern offset accepts, stored as one flag per
+/// possible [`PieceIndex`]. Membership is an array read rather than a hash
+/// lookup, which matters because matching runs this test once per offset
+/// per candidate square, and the whole set is 256 booleans — exactly the
+/// range a `u8` index can name, so it can never be too small.
+///
+/// `NO_PIECE` is an ordinary member. A pattern that requires an empty
+/// square says so by admitting that index, which is what lets one
+/// mechanism express both "a friendly piece must stand here" and "this
+/// square must be clear" without a second kind of test.
 #[derive(Clone)]
 pub struct PieceSet([bool; 256]);
 
@@ -85,10 +91,25 @@ impl Debug for PieceSet {
 
 /// PatternUnit
 ///
-/// Represents one relative pattern offset with its allowed piece set.
-/// The `u16` packs `(x, y)` displacement, and the `PieceSet` stores piece
-/// indices accepted at that offset during drop/stand-off matching.
-/// This compact unit is shared by allower and stopper pattern lists.
+/// One relative offset from the square being tested, paired with the set of
+/// pieces that offset accepts. The same unit serves both halves of a
+/// pattern: in an allower the set is what must be there, in a stopper it is
+/// what must not.
+///
+/// The `u16` is the offset packed as two signed bytes, file in the low byte
+/// and rank in the high one, so the [`x!`] and [`y!`] accessors that read a
+/// move vector read a pattern offset unchanged:
+///
+/// ```text
+///   15                8 7                 0
+///   ┌──────────────────┬──────────────────┐
+///   │    rank, i8      │    file, i8      │
+///   └──────────────────┴──────────────────┘
+/// ```
+///
+/// Both bytes are signed because an offset points in every direction, and
+/// matching negates the pair for black, so one compiled pattern serves both
+/// sides of a board no variant is required to make symmetric.
 pub type PatternUnit = (u16, PieceSet);
 
 /// Pattern list types.

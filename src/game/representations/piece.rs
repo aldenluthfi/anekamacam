@@ -256,7 +256,7 @@ macro_rules! p_evalue {
 /// ```text
 ///   0 1 2                           16                          30  31
 ///   ┌─┬─┬───────────────────────────┬───────────────────────────┬────┐
-///   │b│m│          opening          │          endgame          │ -- │
+///   │b│m│          opening          │          endgame          │ ·· │
 ///   └─┴─┴───────────────────────────┴───────────────────────────┴────┘
 /// ```
 ///
@@ -296,9 +296,12 @@ impl Piece {
     /// - rank      : u8              -> variant-defined capture rank
     ///
     /// Return:
+    /// Self                          -> piece with its static word packed
     ///
-    /// Self
-    /// the piece with static attributes encoded
+    /// Notes:
+    /// There is no promotion parameter. A piece can promote exactly when it
+    /// was given somewhere to promote to, so bit 9 is set from `promotions`
+    /// being non-empty and cannot disagree with the list it stands for.
     pub fn new(
         name: String,
         char: char,

@@ -24,7 +24,7 @@ use crate::*;
 /// the rule, not to this type**: each rule's own doc names its subject, and
 /// `position_terminal` returns that colour alongside the outcome. There is no
 /// convention covering all of them, because three rules name a colour computed
-/// from the position rather than read off the turn order -- `extinct` names
+/// from the position rather than read off the turn order — `extinct` names
 /// whichever colour ran out, `adjudicate` the points winner, `perpetual` the
 /// sole offender.
 ///
@@ -67,7 +67,7 @@ pub struct Counter {
 /// fully-matched winning; a requirement is a piece set and the minimum number
 /// the material side must own. `default` applies when no row matches.
 ///
-/// Subject: the material side, i.e. the colour that is not bare -- the one
+/// Subject: the material side, i.e. the colour that is not bare — the one
 /// that failed to mate inside the budget. Not the mover, whose identity at the
 /// expiring ply is only parity.
 #[derive(Clone)]
@@ -85,7 +85,7 @@ pub struct Counting {
 /// falls to `threshold` or below, that colour receives `outcome`. `set[i]`
 /// marks the counted piece indices, matched per colour.
 ///
-/// Subject: the colour that ran out, which need not be the mover -- a capture
+/// Subject: the colour that ran out, which need not be the mover — a capture
 /// empties the opponent's set, a promotion can empty your own. A rule meant to
 /// end the game for the other side is the same rule with `win` and `loss`
 /// swapped, so no opponent-facing flag is carried.
@@ -140,7 +140,7 @@ pub struct Adjudicate {
 /// both sides offend the repetition result stands.
 ///
 /// Subject: the sole offender. Each offence carries its own `Outcome`, and
-/// declaring one at all is what enables that offence -- `check draw` leaves
+/// declaring one at all is what enables that offence — `check draw` leaves
 /// the cycle drawn rather than losing it for the checker.
 #[derive(Clone)]
 pub struct Perpetual {
@@ -193,6 +193,20 @@ pub struct Checks {
 /// position. `checkmate` and `stalemate` name no-legal-move outcomes; remaining
 /// rule fields are `Some` only when declared by the variant. Runtime result and
 /// progress reset between games while configured rules remain intact.
+///
+/// The fields group by when they are asked rather than by what they mean,
+/// and three readers take a disjoint part of the table each:
+///
+/// - `no_move_verdict!` reads `checkmate` and `stalemate`, and only when a
+///   side has no legal move at all
+/// - `position_terminal` reads `checks`, `goal`, `extinct`, `adjudicate`,
+///   `counting` and `counter` after every move, in that order
+/// - `game_outcome` reads `repetition` and `perpetual` on request, scanning
+///   history rather than any stored progress
+///
+/// That middle list is a priority order, not a set. A variant may declare
+/// several of those rules and never has to say which it meant when two could
+/// fire on one move, because the first to match is the one that answers.
 #[derive(Clone)]
 pub struct Termination {
     pub game_result: u8,                                                        /* eager position-local result        */
@@ -361,7 +375,7 @@ macro_rules! no_move_verdict {
 /// none promotes to a royal letter. `janggi.conf` is the only config naming
 /// two royal letters a side, but `K` and `Q` are the two forms of one general
 /// that `K:Q` and `Q:K` convert between, so a janggi colour still holds
-/// exactly one royal -- and janggi adjudicates on points instead of counting.
+/// exactly one royal — and janggi adjudicates on points instead of counting.
 ///
 /// Params:
 /// - state: &State -> position to inspect
@@ -572,10 +586,10 @@ pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
 /// Each rule names its own subject, documented on the rule: `checks` and
 /// `goal` name the mover, `extinct` the colour that ran out, `adjudicate` the
 /// points winner, `counting` the material side, `counter` the mover whose move
-/// reached the limit. The side to move is never a subject here -- it has not
+/// reached the limit. The side to move is never a subject here — it has not
 /// moved, so it cannot have set off a rule the last move triggered.
 ///
-/// A position with no move behind it -- one just parsed from a FEN -- is still
+/// A position with no move behind it — one just parsed from a FEN — is still
 /// tested for the rules that read the position alone: `goal`, `extinct`,
 /// `counting` and `counter`. `checks`, the double pass and the accepted
 /// stand-off stay history-dependent and simply do not fire, because "the Nth
@@ -637,6 +651,10 @@ pub fn position_terminal(state: &State) -> Option<(u8, Outcome, &str)> {
         None
     }
 }
+
+/*----------------------------------------------------------------------------*\
+                            REPETITION AND PERPETUAL
+\*----------------------------------------------------------------------------*/
 
 /// offence_set
 ///
@@ -898,9 +916,9 @@ pub fn count_repetitions(state: &State, cap: usize) -> u8 {
 /// position has occurred at least `min_count` times. The bool is true when a
 /// perpetual offender decided it (for reason reporting).
 ///
-/// Both results are declared against the player who triggered them -- the
+/// Both results are declared against the player who triggered them — the
 /// mover who closed the repetition, or the sole offender who sustained the
-/// cycle -- and are mirrored here into the side to move's view, which is the
+/// cycle — and are mirrored here into the side to move's view, which is the
 /// footing `outcome_score!` and `game_outcome` both read them on. A draw
 /// mirrors onto itself, so every shipped variant lands on the same result
 /// either way.

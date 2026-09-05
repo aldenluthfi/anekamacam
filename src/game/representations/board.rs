@@ -15,8 +15,16 @@ use crate::*;
 
 /// BoardBits
 ///
-/// The 4096-bit bitset backing every [`Board`]. Its width caps the playable
-/// board area and sets the per-board copy cost.
+/// The 4096-bit bitset backing every [`Board`], and the single knob that
+/// sets what a board copy costs: every occupancy set, every attack mask,
+/// and every snapshot pays this width whether the variant fills it or not.
+/// It is deliberately wider than any board the engine will be handed, since
+/// a bitset one square short of a variant's board cannot represent it at
+/// all, while a wide one only costs time.
+///
+/// The bitset is not the effective limit on board area. Zobrist tables are
+/// `MAX_SQUARES` entries long, so that constant, not this width, is the
+/// square count a variant must stay inside.
 pub type BoardBits = U4096;
 
 /// Board

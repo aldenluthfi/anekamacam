@@ -27,60 +27,34 @@ pub type Square = u16;
 
 /// Special-rules bitmask accessor/encoder macros.
 ///
-/// The `special_rules` field in [`State`] uses one bit per optional rule.
-/// Each pair contains a reader, `rule_name!(state)`, and a writer,
-/// `enc_rule_name!(rules)`, for the same bit.
+/// The `special_rules` byte on [`StaticState`] spends one bit on each rule a
+/// variant may or may not have, so the hot paths skip whole mechanisms with
+/// a mask rather than discovering there is nothing to do. Every rule gets a
+/// pair: a reader `rule_name!(state)` and a writer `enc_rule_name!(rules)`
+/// standing on the same bit.
 ///
-/// Reader params (every reader):
+/// Every reader takes the position and answers `bool`:
 ///
 /// - state: &State -> position whose rule flags are read
 ///
-/// castling!
+/// - castling!            -> the variant has castling, bit 0
+/// - en_passant!          -> the variant has en passant, bit 1
+/// - promotions!          -> pieces can promote, bit 2
+/// - drops!               -> captured pieces re-enter from hand, bit 3
+/// - forbidden_zones!     -> squares can be closed to pieces, bit 4
+/// - promote_to_captured! -> promote only into what the enemy took, bit 5
+/// - setup_phase!         -> the game opens with a setup phase, bit 6
+/// - stand_offs!          -> a move can create a stand-off, bit 7
 ///
-///   Return:
-///   bool -> castling enabled (bit 0)
+/// The sixth reads oddly enough to spell out: a promotion is paid for out of
+/// the enemy's hand, so a piece may promote to a target only while the enemy
+/// is holding a captured copy of it, and making the promotion spends that
+/// copy rather than leaving it there.
 ///
-/// en_passant!
+/// Every writer, `enc_castling!` through `enc_stand_offs!`, sets the bit its
+/// reader tests and takes only the byte under construction:
 ///
-///   Return:
-///   bool -> en passant enabled (bit 1)
-///
-/// promotions!
-///
-///   Return:
-///   bool -> promotions enabled (bit 2)
-///
-/// drops!
-///
-///   Return:
-///   bool -> drops enabled (bit 3)
-///
-/// forbidden_zones!
-///
-///   Return:
-///   bool -> forbidden zones enabled (bit 4)
-///
-/// promote_to_captured!
-///
-///   Return:
-///   bool -> captures promote the capturer's pool piece (bit 5)
-///
-/// setup_phase!
-///
-///   Return:
-///   bool -> game starts with a setup phase (bit 6)
-///
-/// stand_offs!
-///
-///   Return:
-///   bool -> a move may create a stand-off (bit 7)
-///
-/// enc_castling! .. enc_stand_offs!
-///
-///   Params:
-///
-///   - rules: &mut u8
-///     rules byte being built; each writer sets the bit its reader tests
+/// - rules: &mut u8 -> rules byte being assembled at load time
 #[macro_export]
 macro_rules! castling {
     ($state:expr) => {
@@ -210,51 +184,22 @@ macro_rules! enc_stand_offs {
 /// Each pair contains a reader, `capability!(state)`, and a writer,
 /// `enc_capability!(mask)`, for the same bit.
 ///
-/// Reader params (every reader):
+/// Every reader takes the position and answers `bool`:
 ///
 /// - state: &State -> position whose capability flags are read
 ///
-/// see_valid!
+/// - see_valid!       -> an exchange is worth its material swing, bit 0
+/// - see_pruning!     -> a capture priced as losing may be skipped, bit 1
+/// - forward_pruning! -> a static score may stand in for a search, bit 2
+/// - null_pruning!    -> giving up the move concedes something, bit 3
+/// - recapture_order! -> capture order is monotone enough to cut, bit 4
+/// - quiet_pruning!   -> a late quiet move may go unsearched, bit 5
+/// - static_movement! -> reach never depends on other pieces, bit 6
 ///
-///   Return:
-///   bool -> an exchange on one square is worth its material swing (bit 0)
+/// Every writer, `enc_see_valid!` through `enc_static_movement!`, sets the
+/// bit its reader tests and takes only the mask under construction:
 ///
-/// see_pruning!
-///
-///   Return:
-///   bool -> a capture priced as losing may be skipped outright (bit 1)
-///
-/// forward_pruning!
-///
-///   Return:
-///   bool -> a static evaluation may stand in for a search (bit 2)
-///
-/// null_pruning!
-///
-///   Return:
-///   bool -> giving up the move is a concession worth measuring (bit 3)
-///
-/// recapture_order!
-///
-///   Return:
-///   bool -> capture ordering is monotone enough to stop early (bit 4)
-///
-/// quiet_pruning!
-///
-///   Return:
-///   bool -> a late quiet move may be dropped unsearched (bit 5)
-///
-/// static_movement!
-///
-///   Return:
-///   bool -> a piece's reach never needs another piece present (bit 6)
-///
-/// enc_see_valid! .. enc_static_movement!
-///
-///   Params:
-///
-///   - mask: &mut u16
-///     capability mask being built; each writer sets the bit its reader tests
+/// - mask: &mut u16 -> capability mask being assembled at derive time
 #[macro_export]
 macro_rules! see_valid {
     ($state:expr) => {
@@ -373,28 +318,24 @@ macro_rules! enc_static_movement {
 /// - Bits 0..11  : capture target square
 /// - Bits 12..23 : square of the capturable piece
 /// - Bits 24..31 : captured piece index
+///
+/// All three are stored because none of them implies the others. The square
+/// a capturer moves to is the one the passing piece vacated, the victim
+/// stands wherever its move ended, and the distance between the two is
+/// whatever the leg carrying the `p` modifier spans — one square in FIDE
+/// chess, and nothing the engine may assume anywhere else.
 pub type EnPassantSquare = u32;
 
 /// En passant packed-field accessor macros.
 ///
-/// Every accessor takes the same single parameter:
+/// Every accessor takes the same single parameter and reads one field as a
+/// `u32`:
 ///
 /// - en_passant: EnPassantSquare -> packed descriptor read
 ///
-/// enp_square!
-///
-///   Return:
-///   u32 -> capture target square (bits 0-11)
-///
-/// enp_captured!
-///
-///   Return:
-///   u32 -> square of the capturable piece (bits 12-23)
-///
-/// enp_piece!
-///
-///   Return:
-///   u32 -> captured piece index (bits 24-31)
+/// - enp_square!   -> capture target square, bits 0..11
+/// - enp_captured! -> square of the capturable piece, bits 12..23
+/// - enp_piece!    -> captured piece index, bits 24..31
 #[macro_export]
 macro_rules! enp_square {
     ($en_passant:expr) => {
@@ -426,6 +367,18 @@ macro_rules! enp_piece {
 /// Each snapshot stores move payload and dynamic counters/flags so `undo_move!`
 /// can restore the exact pre-move position, including hash-dependent state.
 /// It is appended to `State::history` during move execution.
+///
+/// Every field but the move itself holds the value from *before* the move,
+/// because undoing has to be a copy rather than a derivation. A clock that
+/// reset, a right that was spent, a phase that advanced: none of them can be
+/// recovered by looking at the board they left behind, and a variant is free
+/// to make any of them depend on rules the engine cannot invert.
+///
+/// The two `Option` flags are answers to questions only some variants ask.
+/// `in_check` is filled in when the variant declares a check-count rule and
+/// `in_stand_off` when it allows stand-offs, so `None` means the rule does
+/// not exist here — never that the answer is unknown. Costing the check test
+/// only to the variants that charge for it is the point.
 #[derive(Clone)]
 pub struct Snapshot {
     pub move_ply: Move,                                                         /* the move that was played           */
@@ -638,6 +591,10 @@ macro_rules! is_terminal {
 /// - bit 6      : game begins with a setup phase
 /// - bit 7      : a move may create a stand-off
 ///
+/// `capabilities` is the second such mask, seven bits wide in a `u16`,
+/// recording which search shortcuts these rules still permit. It is derived
+/// rather than configured, so its bits are documented where they are
+/// decided: on the `see_valid!` accessor cluster above.
 pub struct StaticState {
     pub title: String,
     pub startpos: String,
@@ -746,6 +703,10 @@ pub struct State {
     pub scratch: Scratch,                                                       /* what reading this position costs   */
 }
 
+/*----------------------------------------------------------------------------*\
+                             SCRATCH REPRESENTATION
+\*----------------------------------------------------------------------------*/
+
 /// Scratch
 ///
 /// The working room search and evaluation need and nothing else: one set of
@@ -760,9 +721,10 @@ pub struct State {
 /// from the statics and the piece lists its sweeps read.
 ///
 /// Nothing here survives the call that fills it, so a cloned position is
-/// given the room and never the contents — except `pawn_table`, whose
-/// answers are true of any board they are keyed on, and which `State::reset`
-/// clears because a new game is a new board.
+/// given the room and never the contents — except `pawn_table`, which is
+/// keyed on the pawn hash and so answers for whichever position asks. It is
+/// carried across a clone for that reason and dropped by `State::reset`
+/// anyway, a game being the unit this engine accounts for.
 pub struct Scratch {
 
     pub node_lists: Vec<NodeLists>,                                             /* one set per ply, MAX_DEPTH deep    */
@@ -802,6 +764,20 @@ pub struct NodeLists {
 pub type PawnEntry = (usize, Square, i32, bool);
 
 impl Default for Scratch {
+    /// Scratch::default
+    ///
+    /// Hands back the room and none of the contents: one empty set of node
+    /// lists for every ply the search may reach, the two exchange vectors
+    /// and the two pawn rosters, and an empty pawn cache. A state is born
+    /// with this and given it again whenever it is cloned or reset.
+    ///
+    /// Return:
+    /// Self -> empty working room at its starting capacities
+    ///
+    /// Notes:
+    /// The capacities are opening bids, not limits. Every vector here grows
+    /// on demand, and the numbers exist only so the first search does not
+    /// pay for the reallocations the rest of the game would not need.
     fn default() -> Self {
         Scratch {
             node_lists: (0..=MAX_DEPTH)
@@ -817,6 +793,21 @@ impl Default for Scratch {
 }
 
 impl Clone for State {
+    /// State::clone
+    ///
+    /// Copies everything that says where the game stands — boards, hashes,
+    /// piece lists, hands, history and running evaluation totals — and
+    /// shares the static configuration through its `Arc` instead of
+    /// duplicating it, nothing in a game being allowed to write there.
+    ///
+    /// Return:
+    /// Self -> an independent position over the same configuration
+    ///
+    /// Notes:
+    /// [`Scratch`] is handed over empty apart from `pawn_table`. Its
+    /// contents belong to the call that filled them, so a copy has nothing
+    /// to inherit; the pawn cache is keyed on the arrangement of pawns
+    /// alone and stays true of whichever position looks it up.
     fn clone(&self) -> Self {
         State {
             statics: Arc::clone(&self.statics),
@@ -863,6 +854,10 @@ impl Clone for State {
     }
 }
 
+/*----------------------------------------------------------------------------*\
+                       STATE CONSTRUCTION AND PRECOMPUTE
+\*----------------------------------------------------------------------------*/
+
 impl State {
     /// State::new
     ///
@@ -873,17 +868,29 @@ impl State {
     /// derives the relevant-move caches.
     ///
     /// Params:
-    /// - title        : String     -> display name of the variant
-    /// - startpos     : String     -> FEN of the variant's starting position
-    /// - files        : u8         -> number of board files
-    /// - ranks        : u8         -> number of board ranks
-    /// - pieces       : Vec<Piece> -> piece definitions, indexed by PieceIndex
-    /// - special_rules: u8         -> special-rules bitmask (see [`State`])
+    ///
+    ///     title: String
+    ///     display name of the variant
+    ///
+    ///     startpos: String
+    ///     FEN of the variant's starting position
+    ///
+    ///     files: u8
+    ///     number of board files
+    ///
+    ///     ranks: u8
+    ///     number of board ranks
+    ///
+    ///     pieces: Vec<Piece>
+    ///     piece definitions, in the order that fixes every PieceIndex
+    ///
+    ///     special_rules: u8
+    ///     special-rules bitmask, in the layout documented on StaticState
     ///
     /// Return:
     ///
-    /// Self
-    /// a fresh state with empty boards and zeroed search tables
+    ///     Self
+    ///     fresh state with empty boards and zeroed search tables
     pub fn new(
         title: String,
         startpos: String,
@@ -968,12 +975,14 @@ impl State {
     /// history or search tables.
     ///
     /// Params:
-    /// - statics: Arc<StaticState> -> precomputed configuration to share
+    ///
+    ///     statics: Arc<StaticState>
+    ///     precomputed configuration to share
     ///
     /// Return:
     ///
-    /// State
-    /// an empty-board state over the shared configuration
+    ///     State
+    ///     empty-board state over the shared configuration
     fn from_statics(statics: Arc<StaticState>) -> State {
         let piece_count = statics.pieces.len();
         let board_size = statics.board_size;
@@ -1024,7 +1033,9 @@ impl State {
     /// State::static_mut
     ///
     /// Grants mutable access to the shared static configuration during the
-    /// single-threaded setup phase (config parsing and precomputation).
+    /// single-threaded setup phase, where the config parser and `precompute`
+    /// are still writing the tables everything later only reads. Once a game
+    /// starts, the `Arc` is what makes those tables free to share.
     ///
     /// Return:
     /// &mut StaticState -> exclusive reference into the statics Arc
@@ -1043,6 +1054,12 @@ impl State {
     /// Returns every dynamic field to its empty-board default while leaving
     /// the shared static configuration untouched, so a new game or FEN can
     /// be loaded without re-deriving the precomputed tables.
+    ///
+    /// The two things that outlive an ordinary move go with them. The
+    /// termination counters measure progress inside one game and have
+    /// nothing to say about the next. The pawn cache is keyed on the pawn
+    /// hash, so its answers would survive a new game; it is dropped anyway,
+    /// a game being the unit this engine accounts for.
     pub fn reset(&mut self) {
         let piece_count = self.statics.pieces.len();
         let board_size = self.statics.board_size;
@@ -1090,11 +1107,19 @@ impl State {
     /// State::load_fen
     ///
     /// Resets the dynamic state and repopulates it from a FEN string,
-    /// optionally translating piece letters through a variant dictionary.
+    /// optionally translating piece letters through a variant dictionary
+    /// on the way in. The static configuration is untouched, so this is
+    /// how one loaded variant walks from position to position.
     ///
     /// Params:
     /// - fen : &str                -> FEN string to load
     /// - dict: Option<&Translator> -> optional piece-letter translator
+    ///
+    /// Notes:
+    /// A FEN that does not parse panics rather than returning. Positions
+    /// reach this from a protocol, a fixture file or the engine's own
+    /// round-trip, and every one of those is a caller that has no answer
+    /// to a half-loaded board.
     pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
         self.reset();
         parse_fen(self, fen, dict)
@@ -1183,8 +1208,7 @@ impl State {
     ///   - expr_set: Vec<String> -> one stand-off expression per piece
     ///
     ///   Return:
-    ///   Vec<PatternSet>         -> one compiled pattern per `|` branch, or
-    ///                              none where the expression is empty
+    ///   Vec<PatternSet>         -> one pattern per `|` branch, none if empty
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
         let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
         for expr in expr_set {
@@ -1234,11 +1258,17 @@ impl State {
     /// the caller decides which static table receives the result.
     ///
     /// Params:
-    /// - source   : &[Vec<T>]           -> compiled set, one per piece
-    /// - generator: fn(..) -> Vec<T>    -> per-square filter applied to it
+    ///
+    ///     source: &[Vec<T>]
+    ///     compiled set for each piece, indexed by PieceIndex
+    ///
+    ///     generator: fn(&Piece, u32, &State, &[Vec<T>]) -> Vec<T>
+    ///     per-square filter, keeping what stays on the board from there
     ///
     /// Return:
-    /// Vec<Vec<T>>                      -> table of `pieces * board_size`
+    ///
+    ///     Vec<Vec<T>>
+    ///     one entry per piece and square, at piece * board_size + square
     fn populate_relevant<T: Clone>(
         &self,
         source: &[Vec<T>],
@@ -1266,6 +1296,12 @@ impl State {
     /// drops, setup drops, stand-offs, and reverse attack masks. Runs once
     /// after config parsing and before any search thread is spawned;
     /// optional tables are skipped when their special rule is disabled.
+    ///
+    /// The pass runs one way and then back. Expressions compile into one set
+    /// per piece, those sets are spread across the board by
+    /// `populate_relevant`, and the finished tables are read in reverse by
+    /// `generate_attack_masks`, which files each candidate under the square
+    /// it can reach instead of the square it moves from.
     ///
     /// Params:
     /// - moves_expr_set    : Vec<String> -> per-piece move expressions

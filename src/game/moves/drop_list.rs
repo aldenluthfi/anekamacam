@@ -15,10 +15,21 @@ use crate::*;
 
 /// generate_relevant_drops
 ///
-/// Relocates the compiled drop patterns for one target square.
+/// Anchors a piece's compiled drop templates on one target square, stamping
+/// that square into each packed word and re-reading every pattern offset from
+/// where it now points. Offsets are mirrored by the dropped piece's colour
+/// first, so the pattern is judged in the orientation it will be matched in.
 ///
-/// It rejects forbidden or out-of-bounds placements and mirrors offsets for
-/// the dropped piece's color.
+/// The two halves of a pattern fall off the board differently, and the
+/// difference is not a shortcut but the meaning of each half:
+///
+/// - an allower that points off the board asks for a piece on a square that
+///   does not exist, so the drop can never be legal here and is dropped
+/// - a stopper that points off the board vetoes on a square that does not
+///   exist, so it can never fire and is dropped while the drop survives
+///
+/// A square in the piece's forbidden zone returns nothing at all, no pattern
+/// being consulted about a placement the variant has already refused.
 ///
 /// Params:
 /// - piece            : &Piece     -> piece type the drops belong to
@@ -27,10 +38,7 @@ use crate::*;
 /// - piece_setup_drops: &[DropSet] -> compiled drops, one set per piece
 ///
 /// Return:
-///
-/// DropSet
-/// drops playable onto this square, with square encoded and out-of-board
-/// stoppers pruned
+/// DropSet                         -> drops playable onto this square
 pub fn generate_relevant_drops(
     piece: &Piece,
     square_index: u32,
@@ -94,18 +102,38 @@ pub fn generate_relevant_drops(
         .collect()
 }
 
+/*----------------------------------------------------------------------------*\
+                              DROP MOVE GENERATION
+\*----------------------------------------------------------------------------*/
+
 /// generate_drop_list!
 ///
-/// Generates every legal drop move for one held piece.
+/// Generates every drop of one held piece the position allows. A drop has no
+/// origin to walk from, so this sweeps target squares instead of legs, and at
+/// each one reads the templates `generate_relevant_drops` already anchored
+/// there. A square with no template left is a square this piece can never be
+/// dropped on, whatever stands around it.
 ///
-/// It enforces hand ownership, count limits, drop flags, and CPMN constraints.
-/// Unlike movement-vector generation, it starts from a precomputed placement
-/// template rather than an on-board piece and directional legs.
+/// Which table is read depends on the phase: a variant with a setup phase
+/// places its army out of `relevant_setup` and drops captures out of
+/// `relevant_drops` afterwards, the same mechanism answering both.
+///
+/// The checkmate ban is inverted on the way onto the move. The table stores
+/// what the variant wrote — this drop may not mate — and the generated move
+/// carries the permission the search asks for, so `illegal_mating_drop!` can
+/// read a move without knowing which table it came from.
 ///
 /// Params:
 /// - piece: &Piece         -> piece type to drop from hand
 /// - state: &State         -> current position providing hand and occupancy
 /// - out  : &mut Vec<Move> -> output list receiving encoded drop moves
+///
+/// Notes:
+/// The pattern scan is spelled out here rather than delegated to
+/// [`match_pattern!`], which takes a `&Pattern` and would have to be handed
+/// the halves this loop already holds. Both walks mirror by colour and index
+/// unchecked for the same reason: precomputation kept only the offsets that
+/// land on the board from this square.
 #[macro_export]
 macro_rules! generate_drop_list {
     ($piece:expr, $state:expr, $out:expr) => {{

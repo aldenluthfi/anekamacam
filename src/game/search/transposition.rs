@@ -372,16 +372,30 @@ macro_rules! tt_score {
 /// stored bound. Mate-range scores never sharpen an evaluation.
 ///
 /// Params:
-/// - state: &State  -> position the stored mate scores are relative to
-/// - key  : u128    -> search key this node is filed under
-/// - table: &TTable -> shared transposition table
-/// - alpha: i32     -> lower search bound
-/// - beta : i32     -> upper search bound
-/// - depth: usize   -> minimum stored depth for a cutoff
+///
+///     state: &State
+///     position the stored mate scores are relative to
+///
+///     key: u128
+///     search key this node is filed under
+///
+///     table: &TTable
+///     shared transposition table
+///
+///     alpha: i32
+///     lower search bound
+///
+///     beta: i32
+///     upper search bound
+///
+///     depth: usize
+///     minimum stored depth for a cutoff
 ///
 /// Return:
-/// (bool, i32, PseudoMove, i32, i32) -> cutoff, score, move, raw evaluation,
-///                                      and bound-refined evaluation
+///
+///     (bool, i32, PseudoMove, i32, i32)
+///     whether the stored score cuts, that score, the stored move, the raw
+///     static evaluation, and the evaluation sharpened by the stored bound
 #[macro_export]
 macro_rules! probe_tt_entry {
     (

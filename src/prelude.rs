@@ -220,7 +220,34 @@ pub use std::{
 ///
 /// Board and search bounds, colour and castling codes, and representation
 /// sentinels shared across otherwise independent subsystems. `MAX_SQUARES`
-/// tracks [`BoardBits`] and sizes its Zobrist tables.
+/// sizes every Zobrist table and is therefore the real bound on a variant's
+/// board area, which [`BoardBits`] is chosen wider than; `MAX_DEPTH` bounds
+/// every per-ply array, and `PV_STRIDE` is one wider so a principal
+/// variation collected at the deepest ply still has a row to be copied
+/// into.
+///
+/// The castling codes are one byte holding two different things: the four
+/// rights a position still has, and, above them, whether a side has already
+/// castled — a fact evaluation wants long after the rights are gone.
+///
+/// ```text
+///     7    6    5    4    3    2    1    0
+///   ┌────┬────┬────┬────┬────┬────┬────┬────┐
+///   │ ·  │ ·  │ B  │ W  │ BQ │ BK │ WQ │ WK │
+///   └────┴────┴────┴────┴────┴────┴────┴────┘
+///             └─CASTLED┘└── CASTLE_RIGHTS ──┘
+/// ```
+///
+/// `CASTLED` is written shifted left by the castling side's colour, so one
+/// constant serves both sides. Only the low four bits key
+/// `CASTLING_HASHES`; the marks above them are read by evaluation alone, so
+/// castling changes the key by the right it spends and never by the mark it
+/// leaves behind.
+///
+/// The sentinels are each the maximum of their own type rather than a
+/// shared magic number, so `NO_PIECE`, `NO_PAWN`, `NO_SQUARE`, and
+/// `NO_EN_PASSANT` stay out of the way of any real index a variant with a
+/// larger board or a longer piece list can produce.
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_DEPTH: usize = 128;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
@@ -477,18 +504,68 @@ pub fn null_pseudo_move() -> PseudoMove {
 }
 
 /// Shared move-format tags.
+///
+/// The low three bits of [`Move`]`.0` select which packed layout the rest of
+/// the word uses, and these are the five values that field can hold. They
+/// live here rather than beside the encoding because generation, ordering,
+/// make/undo, and every protocol formatter all branch on them; `moves.rs`
+/// carries the bit layout each one implies.
 pub const QUIET_MOVE: u128 = 0;
 pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 pub const CASTLING_MOVE: u128 = 4;
 
+/// Cardinal unit vectors, ordered clockwise from north.
+///
+/// Move patterns name their directions by cardinal letter, and every
+/// rotation the parser applies is an index shift modulo eight, so this
+/// ordering is what lets a rotation be arithmetic instead of a table of
+/// special cases. Each entry is `(file, rank)` with east and north positive,
+/// read from the first player's side of the board.
+///
+/// ```text
+///   ┌───────────┬───────────┬───────────┐
+///   │  7  nw    │  0  n     │  1  ne    │
+///   │  (-1, 1)  │  ( 0, 1)  │  ( 1, 1)  │
+///   ├───────────┼───────────┼───────────┤
+///   │  6  w     │           │  2  e     │
+///   │  (-1, 0)  │  origin   │  ( 1, 0)  │
+///   ├───────────┼───────────┼───────────┤
+///   │  5  sw    │  4  s     │  3  se    │
+///   │  (-1,-1)  │  ( 0,-1)  │  ( 1,-1)  │
+///   └───────────┴───────────┴───────────┘
+/// ```
+///
+/// Adding `k` to an index modulo eight turns the vector 45·k degrees
+/// clockwise, which is how a variant reorients a piece's entire move set
+/// without restating any of it.
 pub const INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] = [
     (0, 1), (1, 1), (1, 0), (1, -1),
     (0, -1), (-1, -1), (-1, 0), (-1, 1),
 ];
 
 /// Shared game-phase and result tags.
+///
+/// The phase tags ascend in the order a game passes through them, and that
+/// numeric order is load-bearing: making a move raises the phase with
+/// `cmp::max`, so a position can never fall back to an earlier phase after a
+/// trade is undone by a promotion or a drop. `SETUP` is entered when a
+/// variant that places its own army starts with an unplaced royal and is
+/// left, once and for good, on the move that empties both hands. The three
+/// remaining phases are decided by comparing the material-derived phase
+/// score against the variant's own two thresholds, so a variant with no
+/// endgame worth naming simply never crosses them.
+///
+/// ```text
+///   SETUP ── hands emptied ──→ OPENING ──→ MIDDLEGAME ──→ ENDGAME
+///     0                          1             2             3
+///
+///   ←── never decreases; a phase reached is a phase kept ──────────
+/// ```
+///
+/// The result tags are absolute rather than side-relative, so a stored
+/// result means the same thing whichever side is to move when it is read.
 pub const SETUP: u8 = 0;
 pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
@@ -501,11 +578,33 @@ pub const WHITE_WIN: u8 = 3;
 
 /// Shared search score bands and transposition bound tags.
 ///
-/// A quiet move is scored by summing `HISTORY_TABLES` cells, each clamped to
-/// `HISTORY_BOUND`, so the quiet band has to be that many bounds wide on both
-/// sides of its centre. Killers sit one bound above the widest quiet score and
-/// losing captures one bound below the narrowest, which keeps the bands apart
-/// however full the tables are.
+/// `INF` sits outside every score the engine can produce, so `MATE_SCORE`
+/// can stand a full `MAX_DEPTH` below it and still leave every mate room to
+/// carry its distance in plies. `EVAL_NONE` reuses that same value as the
+/// "no static score describes this node" sentinel: a node in check writes
+/// it, and every reader of a stored evaluation tests for it before trusting
+/// what it read.
+///
+/// Move ordering compares one integer, so each class of move owns a band
+/// that no member of a neighbouring class can reach into. A quiet move sums
+/// `HISTORY_TABLES` cells, each clamped to `HISTORY_BOUND`, so the quiet
+/// band has to be that many bounds wide on both sides of its centre.
+/// Killers sit one bound above the widest quiet score and losing captures
+/// one bound below the narrowest, which keeps the bands apart however full
+/// the tables are.
+///
+/// ```text
+///   5_000_000            table move
+///   4_000_000 + b        winning capture
+///   1_000_000 + 7b       killer
+///   1_000_000 + 6b   ┐
+///   1_000_000        ┘   quiet move, centre plus its history sum
+///   1_000_000 - b        losing capture
+///           0            capture that cannot be made
+/// ```
+///
+/// where `b` is `HISTORY_BOUND` and `7b` is `2 * HISTORY_TABLES + 1` bounds,
+/// one clear of the widest quiet score the three tables can reach.
 pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 pub const EVAL_NONE: i32 = INF;
@@ -525,6 +624,32 @@ pub const FBETA: u8 = 1;
 pub const FEXACT: u8 = 2;
 
 /// Derivation and search constants read by multiple files.
+///
+/// Every one of these is shared because a table is shaped from it in
+/// `parameters.rs` and then indexed by it in `search.rs` or
+/// `evaluation.rs`. Holding one copy is what stops the two sides drifting
+/// apart, which would read past a margin table or silently stop pruning:
+///
+/// - `COEFFICIENT_SCALE`     : denominator every derived coefficient is
+///                             held against, so real-valued derivation
+///                             lands in integers the hot path can use
+/// - `REDUCTION_MOVE_CAP`    : width of the reduction surface's move axis;
+///                             a later move saturates at the last column
+/// - `RFP_DEPTH`             : deepest depth reverse futility may prune at
+/// - `FUTILITY_DEPTH`        : deepest depth plain futility may prune at
+/// - `LMP_DEPTH`             : deepest depth late-move pruning may skip at
+/// - `SEE_PRUNE_DEPTH`       : deepest depth an exchange verdict may prune
+/// - `SHELTER_CAP`           : shelter units counted per royal before the
+///                             term stops paying, so a wall of pieces is
+///                             not worth more than a wall
+/// - `ZONE_ATTACK_UNIT`      : fraction of an expected landing one danger
+///                             entry counts in
+/// - `ZONE_ATTACK_FULL`      : landings that count as a fully attacked
+///                             royal zone; with the unit above it forms
+///                             the divisor the danger sum is normalized by
+/// - `SEARCH_REPETITION_CAP` : plies the repetition scan walks back
+/// - `REPETITION_CYCLE`      : occurrences that close one cycle, used when
+///                             no perpetual rule names an offender
 pub const COEFFICIENT_SCALE: f64 = 1000.0;
 pub const REDUCTION_MOVE_CAP: usize = 64;
 pub const RFP_DEPTH: u32 = 6;
@@ -541,7 +666,15 @@ pub const REPETITION_CYCLE: u8 = 2;
 ///
 /// `*_DIR` are working-directory paths written to at runtime; `EMBEDDED_*`
 /// are the same resources baked in at compile time, read when the
-/// directory is absent. `OPT_*` are the names `setoption` matches.
+/// directory is absent, which is what lets a copied binary play every
+/// variant with no tree around it. `OPT_*` are the names `setoption`
+/// matches, and `HASH_DEFAULT_MB` / `HASH_MAX_MB` are the two ends of the
+/// range the `Hash` option is clamped into before a table is built from it.
+///
+/// `PAWN_TABLE_ENTRIES` sizes each worker's pawn cache and is a power of
+/// two so the index is a mask. `OPENING_RANDOM_PLIES` is how many plies a
+/// self-play game is randomized for before real play starts, which is what
+/// keeps datagen and both halves of an SPRT pair off one single line.
 pub const DATA_DIR: &str = "res/data";
 pub const PARAMS_DIR: &str = "res/param";
 pub const LOG_DIR: &str = "logs";

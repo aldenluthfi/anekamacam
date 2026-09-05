@@ -20,9 +20,7 @@ use crate::*;
 
 /// Leg encoding/decoding helper macros used by move generation.
 ///
-/// A `Leg` is a packed `u32` where:
-///
-/// Bits 0..31:
+/// A `Leg` is a packed `u32`:
 ///
 /// ```text
 ///   0               8               16                              31
@@ -34,6 +32,23 @@ use crate::*;
 /// - Bits 0..7     : signed file displacement
 /// - Bits 8..15    : signed rank displacement
 /// - Bits 16..31   : movement and capture modifiers
+///
+/// The modifier half is [`LegVector`]'s modifier word moved down by 16
+/// bits, so a compiled leg keeps every rule the notation gave it while
+/// leaving the parse tree behind. Eleven of those bits assert a property
+/// and five deny one, each capital denying the lowercase of its letter:
+///
+/// ```text
+///   16  18  20  22  24  26  28  30
+///     17  19  21  23  25  27  29  31
+///   ┌─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┬─┐
+///   │m│c│d│u│k│v│g│t│i│p│r│K│V│G│I│R│
+///   └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
+/// ```
+///
+/// `t` and `p` have no negated bit because they grant a capability rather
+/// than constrain one: leaving them clear already says the leg cannot
+/// capture en passant, or does not create an en-passant square.
 ///
 /// `leg!` packs a parsed `LegVector` into the compact `Leg`; the rest read
 /// one field each; [`LegVector`] documents all modifier meanings.
@@ -48,97 +63,36 @@ use crate::*;
 ///
 /// Reader params (every reader):
 ///
-/// - leg_word: Leg -> packed leg word read
+/// - l: Leg -> packed leg word read
 ///
 /// x!
 ///
 ///   Return:
-///   i8 -> signed `x` delta (bits 0-7)
+///   i8 -> signed file delta (bits 0-7)
 ///
 /// y!
 ///
 ///   Return:
-///   i8 -> signed `y` delta (bits 8-15)
+///   i8 -> signed rank delta (bits 8-15)
 ///
-/// m!
+/// Every remaining reader returns `bool` for the single modifier bit its
+/// name spells, in the order the table above lays them out:
 ///
-///   Return:
-///   bool -> may move on this leg (bit 16)
+/// - m! -> the leg may move
+/// - c! -> the leg may capture
+/// - d! -> the leg may destroy a friendly piece
+/// - u! -> the leg may unload a held piece
+/// - k! -> what it captures must be royal
+/// - v! -> what it captures must be virgin
+/// - g! -> what it captures must be of greater rank
+/// - t! -> the leg may capture en passant
+/// - p! -> the leg's start square becomes an en-passant square
+/// - i! -> the leg must be the piece's initial move
+/// - r! -> the leg must be used to promote
 ///
-/// c!
-///
-///   Return:
-///   bool -> may capture on this leg (bit 17)
-///
-/// d!
-///
-///   Return:
-///   bool -> may destroy (capture a friendly piece) on this leg (bit 18)
-///
-/// u!
-///
-///   Return:
-///   bool -> may unload on this leg (bit 19)
-///
-/// k!
-///
-///   Return:
-///   bool -> capture must be royal (bit 20)
-///
-/// v!
-///
-///   Return:
-///   bool -> capture must be virgin (unmoved) (bit 21)
-///
-/// g!
-///
-///   Return:
-///   bool -> capture must be of greater rank (bit 22)
-///
-/// t!
-///
-///   Return:
-///   bool -> may capture en passant (bit 23)
-///
-/// i!
-///
-///   Return:
-///   bool -> must be an initial move (bit 24)
-///
-/// p!
-///
-///   Return:
-///   bool -> start square creates an en passant square (bit 25)
-///
-/// r!
-///
-///   Return:
-///   bool -> this leg must be used to promote (bit 26)
-///
-/// not_k!
-///
-///   Return:
-///   bool -> capture must not be royal (bit 27)
-///
-/// not_v!
-///
-///   Return:
-///   bool -> capture must not be virgin (bit 28)
-///
-/// not_g!
-///
-///   Return:
-///   bool -> capture must not be of greater rank (bit 29)
-///
-/// not_i!
-///
-///   Return:
-///   bool -> must not be an initial move (bit 30)
-///
-/// not_r!
-///
-///   Return:
-///   bool -> this leg must not be used to promote (bit 31)
+/// The five remaining readers, `not_k!`, `not_v!`, `not_g!`, `not_i!` and
+/// `not_r!`, ask the same questions of the denial bits: each is true when
+/// the leg forbids what its lowercase demands.
 #[macro_export]
 macro_rules! leg {
     ($l:expr) => {
@@ -422,142 +376,68 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - Bit 47     : `R`, meaning `!r`
 /// - Bits 48..63: unused
 ///
-/// The 16 active modifier bits are grouped as follows:
+/// Main modifiers say what the leg may do:
 ///
-/// - main                      : m, c, d, u
-/// - capture/destroy modifiers : k, v, g, t
-/// - miscellaneous modifiers   : i, p, r
-/// - negated capture modifiers : !k, !v, !g
-/// - negated misc modifiers    : !i, !r
+/// - `m` : move to the leg's end square
+/// - `c` : capture an enemy piece standing there
+/// - `d` : destroy, which is capturing a friendly piece standing there
+/// - `u` : unload, placing the last captured piece back on the board at
+///         the leg's start square
 ///
-/// Main modifiers:
+/// Capture constraints say what the captured piece must be:
 ///
-/// - (m)ove:
-///   can move with this leg.
-/// - (c)apture:
-///   can capture with this leg.
-/// - (d)estroy:
-///   can destroy with this leg. Destroying is capturing a friendly piece.
-/// - (u)nload:
-///   can unload with this leg. Unloading is placing the last captured piece
-///   back on the board to the start square of this leg.
+/// - `k` : royal
+/// - `v` : virgin, having never moved
+/// - `g` : of greater rank than the capturing piece
 ///
-/// Capture/destroy modifiers:
+/// Leg constraints say when the leg may be used at all:
 ///
-/// - (k) royal target:
-///     - k:
-///       requires the captured piece to be royal.
-///     - !k:
-///       requires the captured piece to be non-royal.
+/// - `i` : only as the piece's initial move
+/// - `r` : only to promote, so the leg is valid only while its own start
+///         or end square lies in a promotion zone, and using it forces
+///         the completed move to be a promotion
 ///
-/// Usage of (k, !k):
+/// Two capabilities have no opposite to state:
 ///
-/// - (false, false) : this capture can be royal or not royal, regular capture.
-/// - (false, true)  : this capture must not be royal.
-/// - (true, false)  : this capture must be royal.
-/// - (true, true)   : special modifier k!k (explained below).
+/// - `t` : this leg may capture en passant
+/// - `p` : this leg's start square creates an en-passant square
 ///
-/// - (v)irgin:
-///     - v:
-///       indicates the capture must be virgin (not moved yet).
-///     - !v:
-///       indicates the capture must not be virgin (has moved).
+/// Each of `k`, `v`, `g`, `i`, and `r` also has a denial bit, and all five
+/// pairs are read the same way:
 ///
-/// Usage of (v, !v):
+/// ```text
+///   ┌───────┬────────┬──────────────────────────────────────────┐
+///   │   x   │   !x   │                 meaning                  │
+///   ├───────┼────────┼──────────────────────────────────────────┤
+///   │   0   │   0    │ unconstrained, the ordinary leg          │
+///   │   0   │   1    │ the property must be absent              │
+///   │   1   │   0    │ the property must be present             │
+///   │   1   │   1    │ special combination, described below     │
+///   └───────┴────────┴──────────────────────────────────────────┘
+/// ```
 ///
-/// - (false, false) : this capture can be virgin or not (regular capture).
-/// - (false, true)  : this capture must not be virgin.
-/// - (true, false)  : this capture must be virgin.
-/// - (true, true)   : special modifier v!v (explained below).
+/// Rank is whatever the variant declares it to be; with no rank definition
+/// at all every piece has rank 0. The `g` pair compares with `>` and `<=`
+/// rather than `>=` and `<`, which keeps equal-rank captures legal by
+/// default while still letting a variant forbid capturing upward.
 ///
-/// - (g)reater:
-///     - g:
-///       indicates the capture must be of greater rank than the capturing
-///       piece (captured > capturing).
-///     - !g:
-///       indicates the capture must not be of greater rank than the capturing
-///       piece (captured <= capturing).
+/// Setting both halves of a pair is defined for exactly one of them:
 ///
-/// Design note:
-/// The pair uses (> and <=) instead of (>= and <). This keeps equal-rank
-/// captures enabled by default while allowing a variant to forbid captures
-/// of higher-rank pieces.
-///
-/// Rank is an arbitrary variant rule. Without a rank definition, every piece
-/// has rank 0.
-///
-/// Usage of (g, !g):
-///
-/// - (false, false) : this capture can be of any rank (regular capture).
-/// - (false, true)  : this capture must not be of greater rank.
-/// - (true, false)  : this capture must be of greater rank.
-/// - (true, true)   : special modifier g!g (explained below).
-///
-/// - en-passan(t):
-///    - t : means this leg can capture en passant.
-///
-/// Usage of (t):
-///
-/// - (true)  : this leg can capture en passant.
-/// - (false) : this leg cannot capture en passant.
-///
-/// Miscellaneous modifiers:
-///
-/// - (i)nitial:
-///     - i:
-///       indicates this leg must be used as an initial move of the piece.
-///     - !i:
-///       indicates this leg must not be used as an initial move of the piece.
-///
-/// Usage of (i, !i):
-///
-/// - (false, false) : this leg can be used as initial or not (regular leg).
-/// - (false, true)  : this leg must not be used as initial.
-/// - (true, false)  : this leg must be used as initial.
-/// - (true, true)   : special modifier i!i (explained below).
-///
-/// - (p)assant:
-///     - p:
-///       indicates this leg's start square creates an en passant square.
-///
-/// Usage of (p):
-///
-/// - (true)  : this leg's start square creates an en passant square.
-/// - (false) : this leg's start square does not create an en passant square.
-///
-/// - (r) promote:
-///     - r:
-///       indicates this leg must be used to promote. The leg is only valid
-///       when its own start or end square lies in a promotion zone, and a
-///       valid r leg forces the completed move to be a promotion.
-///     - !r:
-///       indicates this leg must not be used to promote. The leg is invalid
-///       when its own end square lies in a mandatory promotion zone.
-///
-/// Usage of (r, !r):
-///
-/// - (false, false) : promotion follows the piece's zones (regular leg).
-/// - (false, true)  : this leg must not be used to promote.
-/// - (true, false)  : this leg must be used to promote.
-/// - (true, true)   : special modifier r!r (explained below).
-///
-/// Combined positive and negative modifiers:
-///
-/// - v!v : this leg bypasses forbidden zones.
-/// - i!i, k!k, g!g, and r!r : no special behavior is defined. Do not use
-///   these combinations in variant movement definitions.
+/// - `v!v`                      -> this leg bypasses forbidden zones
+/// - `k!k`, `g!g`, `i!i`, `r!r` -> undefined
 ///
 /// Defaults:
 ///
-/// - by default each leg has m (can move) set, except for the last leg,
-///   which has mc (can move and capture) set by default.
+/// A leg written with no modifier letters carries `m`, except the last leg
+/// of a vector, which carries `mc`: a piece that reaches the square it was
+/// aiming at is assumed to be able to take whatever stands on it.
 ///
 /// Final notes:
 ///
-/// - capture/destroy modifiers must be used if the leg has c or d set
-/// - combined negation like `mc!kvg` is a move/capture leg that must not be
-///   royal, must be moved, must be of lesser or equal rank, and cannot
-///   capture en passant
+/// - the capture constraints are only consulted on a leg that captures or
+///   destroys something, so putting them on a quiet leg says nothing
+/// - `mc!kvg` is a move/capture leg whose target must not be royal, must
+///   already have moved, and must not outrank the capturing piece
 /// - because capturing a royal piece is not legal, legs with the k flag are
 ///   skipped during move-list generation but used when checking whether a
 ///   square is attacked
@@ -781,6 +661,40 @@ impl Debug for AtomicElement {
 /// Lexical categories shared by the atomic and multi-leg tokenizers. Each
 /// variant wraps the raw source fragment so evaluation stages and Debug
 /// output can echo the original expression text unchanged.
+///
+/// Grouping:
+///
+/// - `BracketToken`      : `<` and `>`, a group whose net displacement
+///                         becomes the direction later legs continue in
+/// - `SlashBracketToken` : `</` and `/>`, the same grouping without that
+///                         rewrite, so later legs follow the group's own
+///                         final step
+///
+/// Modifiers, held pending until the term they qualify arrives:
+///
+/// - `MoveModifierToken` : a run of `mcdukvgtipr!` letters, added to the
+///                         branch's final leg
+/// - `CardinalToken`     : one of the eight compass names, keeping only
+///                         the branches that point that way
+/// - `FilterToken`       : `[n]`, keeping only the branches at those
+///                         1-based indices
+///
+/// Bodies:
+///
+/// - `LegToken`          : one leg of a multi-leg expression
+/// - `AtomicToken`       : one run of `K` atoms inside an atomic
+///                         expression
+///
+/// Repetition and set arithmetic:
+///
+/// - `DotsToken`         : `...`, repeating the final leg once per dot,
+///                         each repetition its own runtime leg
+/// - `RangeToken`        : `{i..j}`, branching into every repetition
+///                         count the range allows
+/// - `ColonToken`        : `:{i..j}`, the same over the whole preceding
+///                         element rather than its final leg
+/// - `ExclusionToken`    : `@expr`, dropping every vector `expr`
+///                         produces from the result
 #[derive(Clone)]
 pub enum Token {
     BracketToken(String),
@@ -822,15 +736,9 @@ impl Debug for Token {
 
 /// AtomicVector
 ///
-/// A 32-bit vector representation for atomic move vectors.
-///
-/// - each vector is represented as [(x1, y1), (x2, y2)]
-/// - (x1, y1) is the whole vector
-/// - (x2, y2) is the last vector applied
-///
-/// Each byte in the `u32` carries one signed component.
-///
-/// Bits 0..31:
+/// One displacement in the movement-notation compiler, packed into four
+/// signed bytes of a `u32`: `whole` is the total offset from the piece's
+/// origin, and `last` is the step that got it there.
 ///
 /// ```text
 ///   0               8               16              24              31
@@ -843,6 +751,12 @@ impl Debug for Token {
 /// - Bits 8..15  : `whole.y`
 /// - Bits 16..23 : `last.x`
 /// - Bits 24..31 : `last.y`
+///
+/// Carrying `last` is what lets repetition be expressed without the
+/// notation that produced the vector: `{2..5}` repeats a step the compiler
+/// no longer holds, and `add_last` recovers it from the vector itself.
+/// `origin` seeds the same field with a cardinal unit vector, so a
+/// direction-relative expression begins already pointing somewhere.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtomicVector(u32);
 
