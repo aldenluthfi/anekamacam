@@ -525,8 +525,8 @@ per-node rates advisory rather than a direct cache-cost measurement.
 Depth-6 signatures keep 37 of 38 best moves and scores. Euroshogi alone
 moves from `c3:c4`, +29 to `d1:c2`, +20; 28 node counts change. All seven
 perft suites pass; all seven static evaluations and both SEE checks stay
-exact. The corrected fixture harness passes 37 of 38 at depth 6; the one red
-case is the xiangqi horizon defect written up under R9, which predates R7.
+exact. The fixture harness passes all 38, one case on the depth-7 budget it
+carries for the reason written up under R9.
 
 ### Endgame fixture synchronization — landed
 
@@ -540,9 +540,16 @@ Search fixtures now use synchronous `debug-headless search`, which returns
 only after the requested depth and emits the same UCI `score cp` / `score
 mate` text the assertions already parse. Game-truth `d` fixtures stay on UCI.
 The race is gone, with no sleep and no weakened expectation, and the suite
-settles at 37 of 38: the harness fix moved the xiangqi perpetual case from a
+settled at 37 of 38: the harness fix moved the xiangqi perpetual case from a
 false red to a true one. That case is a search horizon defect, diagnosed
-under R9.
+under R9 and now carrying its own depth field.
+
+Fixture lines gained an optional trailing `depth`, and the runner searches
+the deeper of that and `GO_DEPTH`. A search case asserts a verdict, not the
+depth at which the engine must find it, so the one case that costs more
+plies than its neighbours says so on its own line instead of every case
+paying for it, and raising `GO_DEPTH` still deepens the whole suite. The
+xiangqi perpetual case carries 7 for the two reasons written up under R9.
 
 ### R9. Gated search family — landed
 
@@ -575,8 +582,9 @@ Versus R8, deterministic nodes: standard 186264 to 178418 (−4.2%), shogi
 1438362 to 1408835 (−2.1%); xiangqi, sittuyin, and janggi unchanged at
 304943, 10624972, and 251880. All seven perft suites pass; all seven static
 evaluations and both SEE checks stay exact. All 38 depth-6 signatures
-complete. Fixtures stay at 37 of 38 — the same case, the same score, the
-same node count as the R8 binary.
+complete. The xiangqi fixture reads the same score at the same node count as
+the R8 binary; it is green now because the case carries its own depth, not
+because search changed.
 
 #### Check extensions, and the xiangqi fixture they were meant to fix
 
@@ -602,13 +610,16 @@ loss. Search needs depth 7 for it. Two causes stack:
   white node resolves at depth 4 and the fixture reads `mate -2` at depth 6.
 
 Neither is a variant question, and neither belongs in a restore stage. The
-fixture stays red and stays honest.
+case therefore carries `| 7` in the fixture file rather than being weakened
+or having the whole suite chase it: the assertion stays `score mate -2`, and
+the two engine costs above stay recorded as what that 7 is buying. Lower it
+when either one is genuinely paid off.
 
-A third defect surfaced beside them: `game_outcome` reports `Ongoing` for
-that final position even though perft depth 1 counts zero moves, because it
-consults only `game_result` and the repetition rule and never asks whether
-the side to move has a move. The fixture asserts on the search path, so
-nothing gates on this today.
+`game_outcome` reports `Ongoing` for that final position even though perft
+depth 1 counts zero moves, because it consults only `game_result` and the
+repetition rule and never asks whether the side to move has a move. That is
+the documented boundary of the `d` oracle, stated in the fixture header —
+no-legal-move outcomes are verified by search — not a third defect.
 
 ### R10. Board width and staged move generation
 

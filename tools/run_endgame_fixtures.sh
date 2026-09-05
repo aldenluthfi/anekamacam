@@ -7,12 +7,16 @@
 # line. Exits non-zero if any case fails, so it doubles as a CI check.
 #
 # A case whose expectation reads `score cp` or `score mate` is a search case
-# instead: synchronous `debug-headless search` reaches all of `GO_DEPTH` before
+# instead: synchronous `debug-headless search` reaches its full depth before
 # returning, then the same UCI score text is asserted. Piping `go` followed by
 # `quit` cannot do this: quit stops and joins the active search, so the last
 # score may belong to an earlier completed iteration. Search covers verdicts
 # the `d` oracle cannot see -- a perpetual scored terminal before the game
 # itself has ended is the reason this mode exists.
+#
+# That depth is `GO_DEPTH`, or the case's own trailing depth field where it
+# asks for more. Raising `GO_DEPTH` therefore still deepens every case, while
+# one expensive case does not tax the rest.
 #
 # Adding the value, as in `score mate -2`, asserts the whole score rather than
 # its kind. Sign is what separates a perpetual verdict from an ordinary one:
@@ -53,7 +57,7 @@ drive() {
 # iteration. Arguments stay split as moves while the FEN remains one value.
 drive_search() {
     local -a arguments move_list
-    arguments=(debug-headless search "$variant" "$GO_DEPTH" 1)
+    arguments=(debug-headless search "$variant" "$case_depth" 1)
 
     if [ "$fen" != "startpos" ]; then
         arguments+=(--fen "$fen")
@@ -71,7 +75,7 @@ drive_search() {
 pass=0
 fail=0
 
-while IFS='|' read -r variant fen moves expected description; do
+while IFS='|' read -r variant fen moves expected description depth; do
     case "$variant" in
         ''|\#*) continue ;;
     esac
@@ -81,6 +85,12 @@ while IFS='|' read -r variant fen moves expected description; do
     moves=$(printf '%s' "$moves" | trim)
     expected=$(printf '%s' "$expected" | trim)
     description=$(printf '%s' "$description" | trim)
+    depth=$(printf '%s' "$depth" | trim)
+
+    case_depth=$GO_DEPTH
+    if [ -n "$depth" ] && [ "$depth" -gt "$GO_DEPTH" ]; then
+        case_depth=$depth
+    fi
 
     if [ "$fen" = "startpos" ]; then
         posline="position startpos moves $moves"

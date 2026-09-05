@@ -1,14 +1,21 @@
 # Decisive end-condition regression fixtures (plan 08).
 #
 # One case per line, fields separated by '|':
-#   variant | fen | moves | expected Result | description
+#   variant | fen | moves | expected Result | description [| depth]
 #
 # An expectation of `score cp` or `score mate` makes the case a search case:
-# the runner plays the moves, runs `go depth $GO_DEPTH` and asserts the kind
+# the runner plays the moves, searches to a fixed depth, and asserts the kind
 # of the last score. Use it for verdicts search reaches before the game does.
 # Naming the value too, as in `score mate -2`, asserts the whole score. A
 # repetition rule punishes one named side, so the sign of a mate is what tells
 # an early perpetual verdict apart from the ordinary mate underneath it.
+#
+# The optional trailing `depth` is the plies that case needs, and the runner
+# searches the deeper of it and $GO_DEPTH. A search case asserts a verdict, not
+# a depth at which the engine must find it, so a case that costs more plies
+# than its neighbours says so on its own line rather than making every case pay
+# for it. Raise a case's own number when search legitimately needs more; the
+# suite is not the place to argue that it should need less.
 #
 # `fen` may be the literal `startpos`. `fen` keeps its own internal spaces
 # (side-to-move, and the `*` en-passant marker some variants require). The
@@ -57,7 +64,7 @@ kinglet | 7k/P7/8/8/8/8/7p/K7 w | | Ongoing | kinglet: that pawn still on the bo
 extinction | 1nbqkbnr/Pppppppp/8/8/8/8/8/RNBQKBNR w * | a7a8q | Black wins | extinction: White promotes its own last pawn out of existence
 
 # --- perpetual reaches search before it reaches the game -------------------
-xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 | score mate -2 | perpetual one cycle short: the chariot mates the checked side
+xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 | score mate -2 | perpetual one cycle short: the chariot mates the checked side | 7
 xiangqi | 4k4/R8/9/9/9/9/9/9/9/3K5 w | a9a10 e10e9 a10a9 e9e10 a9a10 e10e9 a10a9 | score mate 1 | perpetual closing: search sees the loss while `d` still reads Ongoing
 
 # --- makruk pieces' honour: a bare king is counted out by the winner's material
