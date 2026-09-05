@@ -3,7 +3,7 @@
 //! The Universal Shogi Interface (USI) dialect.
 //!
 //! USI is the shared session engine with two differences the common
-//! dispatcher already absorbs -- the `usi`/`usiok` handshake and the `sfen`
+//! dispatcher already absorbs — the `usi`/`usiok` handshake and the `sfen`
 //! position keyword both fall out of the protocol name and the `fen`/`sfen`
 //! acceptance in `execute_common`. The one clause it must translate is the
 //! `byoyomi` time control, mapped to a fixed per-move budget so no shogi
@@ -11,7 +11,12 @@
 //!
 //! Created: 19/07/2026
 //! Author : Alden Luthfi
+
 use crate::*;
+
+/*----------------------------------------------------------------------------*\
+                                  USI DIALECT
+\*----------------------------------------------------------------------------*/
 
 /// Usi
 ///
@@ -22,6 +27,10 @@ pub struct Usi;
 impl Protocol for Usi {
     /// Usi::name
     ///
+    /// Names the dialect. The common dispatcher builds `usi`/`usiok` and
+    /// picks the dictionary section from this string, so the whole handshake
+    /// and the shogi notation follow from the one word.
+    ///
     /// Return:
     /// &str -> the protocol name, "usi"
     fn name(&self) -> &str {
@@ -30,10 +39,20 @@ impl Protocol for Usi {
 
     /// Usi::execute
     ///
-    /// Handles the lines the universal loop defers after the handshake step:
-    /// `usinewgame` and `go`. The `go` renames USI's `byoyomi` clause to the
-    /// engine's standard `movetime`, so the per-move Japanese overtime
-    /// becomes a fixed budget the shared parser understands.
+    /// Handles the lines the universal loop defers after the handshake step.
+    /// USI's one dialect clause is renamed on the way past, so the engine
+    /// core never learns a shogi word.
+    ///
+    /// ```text
+    /// usinewgame        reset the session for a fresh game
+    /// go ... byoyomi n  →  go ... movetime n, then the shared search
+    /// ```
+    ///
+    /// Byoyomi is a per-move allowance that resets every move, which is what
+    /// a fixed move time already is, so the rename loses nothing. The rewrite
+    /// is a token-for-token map over the whole line rather than a search for
+    /// the clause, since a token that spells `byoyomi` anywhere on a `go`
+    /// line means the same thing wherever it sits.
     ///
     /// Params:
     /// - session: &mut Session -> the session the line acts on

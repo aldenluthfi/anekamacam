@@ -6,30 +6,44 @@
 //! The engine names squares, pieces, and moves in its own internal terms, but
 //! every protocol it speaks to uses a different dialect. This file is the seam
 //! between the two, so the quirks of any one protocol never leak inward: it
-//! maps the two things that actually cross the boundary -- board states as
-//! FEN, and moves as protocol notation -- in both directions.
+//! maps the two things that actually cross the boundary — board states as
+//! FEN, and moves as protocol notation — in both directions.
 //!
 //! Created: 23/05/2026
 //! Author : Alden Luthfi
+
 use crate::*;
+
+/*----------------------------------------------------------------------------*\
+                             TRANSLATION RULE SETS
+\*----------------------------------------------------------------------------*/
 
 /// TranslatorGroup
 ///
-/// A group of translators for different protocols, loaded from a single
-/// dictionary file. Each entry is one protocol's compiled rule set, so a
-/// variant's whole dictionary is held as one addressable collection.
+/// Every protocol a variant speaks, compiled from that variant's single
+/// dictionary file. One `.dict` describes all of them, so the group is what
+/// a whole dictionary becomes once it has been read.
 pub struct TranslatorGroup {
     pub list: Vec<Translator>,                                                  /* one translator per protocol        */
 }
 
 /// Translator
 ///
-/// One protocol's translation rules for a variant.
-/// Holds ordered regex/replacement rule lists parsed from a `.dict`
-/// file: `fen` rewrites internal FENs into the protocol's dialect,
-/// `inverse_fen` rewrites them back, and `moves` rewrites move text.
-/// External GUIs often expect different piece letters or coordinate
-/// styles than the engine's internal notation; these rules bridge that.
+/// One protocol's translation rules for one variant: ordered lists of regex
+/// and replacement, compiled out of that variant's `.dict` file. A GUI that
+/// wants different piece letters or a different coordinate style than the
+/// engine uses internally is accommodated here and nowhere else.
+///
+/// ```text
+/// fen           internal FEN        →  the protocol's dialect
+/// inverse_fen   the protocol's FEN  →  internal, in reverse order
+/// moves         internal move text  →  the protocol's notation
+/// ```
+///
+/// Rules are ordered because they are applied in sequence and an earlier
+/// rewrite changes what a later pattern sees. Moves travel one way only: a
+/// move coming back in is resolved by generating and rendering candidates
+/// rather than by rewriting text, so no inverse list is needed for it.
 #[derive(Clone)]
 pub struct Translator {
     pub protocol: String,                                                       /* protocol name, e.g. uci            */
@@ -38,20 +52,24 @@ pub struct Translator {
     pub moves: Vec<(Regex, String)>,                                            /* move-text rewrite rules            */
 }
 
+/*----------------------------------------------------------------------------*\
+                             DICTIONARY COMPILATION
+\*----------------------------------------------------------------------------*/
+
 impl Translator {
     /// Translator::find
     ///
-    /// Looks up the embedded dictionary for a variant and builds the
-    /// translator for one protocol from it.
+    /// Looks up the embedded dictionary for a variant and compiles one
+    /// protocol's rules out of it. Dictionaries ship inside the binary, so
+    /// this is a lookup rather than a file read and a variant either has a
+    /// dictionary at build time or never will.
     ///
     /// Params:
     /// - variant        : &str -> variant name, matches `<name>.dict`
     /// - target_protocol: &str -> protocol section to load, e.g. "uci"
     ///
     /// Return:
-    ///
-    /// Option<Self>
-    /// the translator, or None if no dictionary exists
+    /// Option<Self>            -> the translator, or None if no dictionary
     pub fn find(variant: &str, target_protocol: &str) -> Option<Self> {
         let filename = format!("{}.dict", variant);
         let content = EMBEDDED_DICTS
@@ -62,12 +80,30 @@ impl Translator {
 
     /// Translator::from_content
     ///
-    /// Parses dictionary text into a translator: comments are stripped,
-    /// the file is split into `[section]` bodies, the protocol's fen and
-    /// moves sections are compiled into ordered regex/replacement rule
-    /// lists, and inverse FEN rules are derived by swapping each rule's
-    /// sides. Panics on missing mandatory sections or malformed rules,
-    /// since dictionaries ship embedded and must be valid.
+    /// Compiles dictionary text into a translator. Three sections must be
+    /// present for the named protocol, and every one of its rules must be a
+    /// well-formed line, or the build is wrong rather than the input.
+    ///
+    /// ```text
+    /// [protocols]      the protocol must name itself here to be loadable
+    /// [<name> fen]     board-state rules, in either or both directions
+    /// [<name> moves]   move-text rules, forward only
+    /// ```
+    ///
+    /// A fen rule says which way it travels, and a two-way rule compiles
+    /// into one entry in each list:
+    ///
+    /// ```text
+    /// internal -> protocol    outbound only, nothing reads it back
+    /// internal <- protocol    inbound only, nothing writes it out
+    /// internal <-> protocol   both, the same pattern serving each way
+    /// ```
+    ///
+    /// The two-way form is tested for first, since it contains both of the
+    /// one-way forms and would otherwise be read as one of them. The inverse
+    /// list is reversed once at the end: undoing an ordered sequence of
+    /// rewrites means applying the undo steps back to front, and a dictionary
+    /// whose rules overlap gives a different board otherwise.
     ///
     /// Params:
     /// - content        : &str -> raw `.dict` file text

@@ -9,16 +9,26 @@
 //!
 //! Created: 24/05/2026
 //! Author : Alden Luthfi
+
 use crate::*;
+
+/*----------------------------------------------------------------------------*\
+                                  UCI DIALECT
+\*----------------------------------------------------------------------------*/
 
 /// Uci
 ///
-/// The UCI dialect marker. Carries no state: the whole session lives in the
-/// shared `Session`.
+/// The UCI dialect marker. Carries no state at all: the session lives in the
+/// shared `Session`, and this type exists only to name the dialect and to be
+/// asked what it does with a line the common dispatcher passed on.
 pub struct Uci;
 
 impl Protocol for Uci {
     /// Uci::name
+    ///
+    /// Names the dialect. The name is load-bearing rather than cosmetic: the
+    /// common dispatcher builds the handshake words and picks the dictionary
+    /// section from it, so "uci" is what makes `uci`/`uciok` work.
     ///
     /// Return:
     /// &str -> the protocol name, "uci"
@@ -28,8 +38,18 @@ impl Protocol for Uci {
 
     /// Uci::execute
     ///
-    /// Handles the lines the universal loop defers after the handshake step:
-    /// `ucinewgame` and the standard `go`.
+    /// Handles the lines the universal loop defers after the handshake step.
+    /// UCI is the dialect the shared parser was written against, so there is
+    /// nothing to translate and both lines go straight to the shared helpers.
+    ///
+    /// ```text
+    /// ucinewgame   reset the session for a fresh game
+    /// go           search under the standard clock tokens, unchanged
+    /// ```
+    ///
+    /// Anything else is silently ignored rather than reported, because the
+    /// common dispatcher has already handled every line this engine answers
+    /// and an unknown word reaching here was never ours to complain about.
     ///
     /// Params:
     /// - session: &mut Session -> the session the line acts on

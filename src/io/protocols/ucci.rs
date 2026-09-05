@@ -11,7 +11,12 @@
 //!
 //! Created: 19/07/2026
 //! Author : Alden Luthfi
+
 use crate::*;
+
+/*----------------------------------------------------------------------------*\
+                                  UCCI DIALECT
+\*----------------------------------------------------------------------------*/
 
 /// Ucci
 ///
@@ -22,6 +27,10 @@ pub struct Ucci;
 impl Protocol for Ucci {
     /// Ucci::name
     ///
+    /// Names the dialect. The common dispatcher builds `ucci`/`ucciok` and
+    /// picks the dictionary section from this string, so the handshake and
+    /// the xiangqi notation both follow from the one word.
+    ///
     /// Return:
     /// &str -> the protocol name, "ucci"
     fn name(&self) -> &str {
@@ -30,13 +39,26 @@ impl Protocol for Ucci {
 
     /// Ucci::execute
     ///
-    /// Handles the lines the universal loop defers after the handshake step:
-    /// `go` (UCCI has no new-game command). The `go` rewrites UCCI's
-    /// side-relative clock into the engine's standard tokens: `time t`
-    /// becomes `wtime t btime t` and `increment i` becomes `winc i binc i`,
-    /// so `start_search` picks the clock for whichever side is to move.
-    /// Opponent-clock and advisory clauses (`opptime`, `draw`, `mate`, ...)
-    /// are dropped.
+    /// Handles the one line the universal loop defers to UCCI: `go`, there
+    /// being no new-game command in the dialect. UCCI states only the moving
+    /// side's clock, so the rewrite hands the same figure to both colours and
+    /// lets `start_search` pick whichever one it was going to read.
+    ///
+    /// ```text
+    /// time t        →  wtime t btime t
+    /// increment i   →  winc i binc i
+    /// movestogo     →  kept, and so are depth, nodes, movetime
+    /// ponder        →  kept, and so is infinite, neither taking a value
+    /// opptime       →  dropped with its value, as are oppincrement,
+    ///                  oppmovestogo, and mate
+    /// draw          →  dropped, along with any other bare advisory flag
+    /// ```
+    ///
+    /// Giving both colours the same clock is safe precisely because only one
+    /// of the two is ever consulted, and the opponent's figures are dropped
+    /// rather than filled in for the same reason. The walk steps by two over
+    /// value-bearing words and by one over flags, so a dropped clause takes
+    /// its value with it instead of leaving a stray number behind.
     ///
     /// Params:
     /// - session: &mut Session -> the session the line acts on

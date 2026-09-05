@@ -13,17 +13,32 @@
 
 use crate::*;
 
-/// TUI log-forwarding macros.
-///
-/// `push_log_message!` mirrors a formatted log line into the shared
-/// message queue rendered by the debug TUI, only while the TUI's debug
-/// flag is set.
-///
+/*----------------------------------------------------------------------------*\
+                             LOG MESSAGE MIRRORING
+\*----------------------------------------------------------------------------*/
+
 /// push_log_message!
 ///
-///   Params:
-///   - level  : u8     -> numeric verbosity level stamped on the line
-///   - message: String -> already-formatted log line to mirror
+/// Mirrors an already-formatted log line into the shared queue the debug TUI
+/// renders. The log file is written by the logging backend regardless; this
+/// is the second copy, and it exists only because a TUI cannot tail a file it
+/// is busy drawing over.
+///
+/// ```text
+/// [3] search depth 7 complete
+///  ^  ^
+///  |  the message, exactly as the log file receives it
+///  the level, so the TUI can filter without re-reading the line
+/// ```
+///
+/// Nothing is formatted, locked, or pushed while the debug flag is clear, so
+/// a headless run pays only the flag read. A poisoned queue is recovered from
+/// rather than propagated: losing the whole log display over one panicked
+/// thread would hide the very output being used to find that panic.
+///
+/// Params:
+/// - level  : u8     -> numeric verbosity level stamped on the line
+/// - message: String -> already-formatted log line to mirror
 #[macro_export]
 macro_rules! push_log_message {
     ($level:expr, $message:expr) => {
@@ -39,21 +54,32 @@ macro_rules! push_log_message {
     };
 }
 
+/*----------------------------------------------------------------------------*\
+                                 LOGGING MACROS
+\*----------------------------------------------------------------------------*/
+
 /// Numeric logging macros, `log_1!` through `log_5!`.
 ///
-/// Each takes `format!`-style arguments, mirrors the line into the TUI
-/// queue at its numeric level, and forwards to the matching `log` crate
-/// macro: 1 = error (critical results), 2 = warn (user-facing output),
-/// 3 = info (engine telemetry), 4 = debug (parsing/search internals),
-/// 5 = trace (deepest call traces). See `init_logging` for the full
-/// level semantics.
+/// Every diagnostic in the engine goes out through one of these five. Callers
+/// name a level and nothing else, so how urgent a line is stays a property of
+/// the line, never of where it happens to be written from.
 ///
-/// log_1! .. log_5!
+/// ```text
+/// log_1!   error   critical results, game over, aborted operations
+/// log_2!   warn    command results, interrupts, invalid input
+/// log_3!   info    engine telemetry, thread lifecycle, per-depth output
+/// log_4!   debug   parsing internals, search diagnostics, derivation
+/// log_5!   trace   deepest call traces, per-node output
+/// ```
 ///
-///   Params:
+/// Each mirrors the line into the TUI queue at its numeric level and forwards
+/// to the matching `log` crate macro; `init_logging` documents what belongs at
+/// each level in full. The arguments are formatted twice, once per
+/// destination, so an expression with a side effect passed to one of these
+/// runs twice.
 ///
-///   - args: format! arguments
-///     format string plus its interpolated values; no return value
+/// Params:
+/// - args: format! arguments -> format string plus interpolated values
 #[macro_export]
 macro_rules! log_1 {
     ($($arg:tt)*) => {
@@ -109,11 +135,27 @@ macro_rules! log_5 {
     };
 }
 
+/*----------------------------------------------------------------------------*\
+                               VERBOSITY CONTROL
+\*----------------------------------------------------------------------------*/
+
 /// Verbosity plumbing helpers.
 ///
-/// All three read or step the shared `RUNTIME_VERBOSITY` atomic, clamped
-/// to the same 1-5 scale log lines are stamped with, and back the TUI's
-/// live verbosity keys.
+/// All three read or step the shared `RUNTIME_VERBOSITY` atomic, on the same
+/// 1-5 scale log lines are stamped with, and back the TUI's live verbosity
+/// keys. The atomic is what makes them live: a running search raises or lowers
+/// its own output without being stopped and restarted.
+///
+/// ```text
+/// 1 quietest                                              5 loudest
+/// │────────────────────────────────────────────────────────────────│
+///   inc_verbosity steps right, dec_verbosity steps left
+/// ```
+///
+/// Both steps clamp on the far side of the arithmetic rather than testing
+/// first, since a test and a step are two operations and another thread can
+/// land between them. `inc_verbosity` also clamps before adding, so a level
+/// that somehow arrived above the top comes back down instead of climbing.
 ///
 /// configured_verbosity_level
 ///
@@ -121,8 +163,9 @@ macro_rules! log_5 {
 ///   u8 -> current runtime verbosity 1-5
 ///
 /// inc_verbosity / dec_verbosity
-///   step the runtime verbosity up or down one level, clamped to 1-5;
-///   no parameters, no return value
+///
+///   step the runtime verbosity one level toward 5 or toward 1, taking no
+///   parameters and returning nothing
 pub fn configured_verbosity_level() -> u8 {
     RUNTIME_VERBOSITY.load(Ordering::Acquire)
 }
@@ -138,26 +181,47 @@ pub fn dec_verbosity() {
     RUNTIME_VERBOSITY.fetch_max(1, Ordering::Release);
 }
 
+/*----------------------------------------------------------------------------*\
+                             LOGGER INITIALIZATION
+\*----------------------------------------------------------------------------*/
+
 /// init_logging
 ///
-/// Initializes file logging: rolls any previous `logs/latest.log` to a
-/// timestamped backup via `roll_latest`, prunes the backups down to the
-/// most recent 32, opens a fresh `logs/latest.log`, and installs a
-/// formatter that stamps each line with its numeric verbosity level,
-/// timestamp, and source location. Called once at startup from `main`.
+/// Sets up file logging, once, at startup from `main`. Every run gets its own
+/// log at a fixed path, and the run before it is kept rather than overwritten,
+/// which is what makes it possible to compare a failing run against the last
+/// one that worked.
+///
+/// ```text
+/// roll     logs/latest.log aside under a timestamp, if one was there
+/// prune    the timestamped backups down to the 32 most recent
+/// open     a fresh logs/latest.log, truncated
+/// format   each line with its level, time, and source location
+/// ```
+///
+/// ```text
+/// [3]-[2026-09-06 14:02:11.418Z search.rs:214] depth 7 complete
+/// ```
+///
+/// The backend filter is left wide open at trace and the numeric level is
+/// written into the line instead, so a log holds everything the run produced
+/// and any level can be read back out of a finished file after the fact.
 ///
 /// Notes:
 /// The engine uses 5 numeric verbosity levels, stamped on every line:
-/// - log_1: critical — benchmark/suite results, game-over states,
-///   state-change failures that abort an operation.
-/// - log_2: user-facing results — command results, per-case perft output,
-///   interrupts (SIGINT), invalid-command feedback, TUI state messages.
-/// - log_3: engine telemetry — TT/QT stats, thread lifecycle, perft/suite
-///   summaries, parameter-derivation progress, per-depth search output.
-/// - log_4: debug — parsing internals, token captures, filter results,
-///   search diagnostics, perft case pass/fail, piece-value derivation.
-/// - log_5: trace — deepest call traces, atomic/coordinate evaluation
-///   entry points, perft depth-0 node output.
+///
+/// ```text
+/// log_1   critical      benchmark and suite results, game-over states,
+///                       state-change failures that abort an operation
+/// log_2   user-facing   command results, per-case perft output, SIGINT,
+///                       invalid-command feedback, TUI state messages
+/// log_3   telemetry     table stats, thread lifecycle, perft and suite
+///                       summaries, derivation progress, per-depth output
+/// log_4   debug         parsing internals, token captures, filter results,
+///                       search diagnostics, case pass/fail, piece values
+/// log_5   trace         deepest call traces, atomic and coordinate
+///                       evaluation entry points, perft depth-0 nodes
+/// ```
 pub fn init_logging() {
 
     if !Path::new(LOG_DIR).exists() {

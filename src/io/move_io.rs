@@ -23,26 +23,43 @@ use crate::*;
 /// protocol translation when a dictionary is supplied. The resulting string
 /// is used for user-facing display and as the matching key for `parse_move`.
 ///
-/// Cheesy Move Notation (CMN):
-/// - `[drop_piece]@`      : optional drop prefix
-/// - `[start]`            : always present
-/// - `:[end]`             : for quiet and multi-capture moves
-/// - `*[capture_square]`  : for capture segments (single or repeated)
-/// - `@[unload_square]`   : for unloads (optional, after captures)
-/// - `=[promotion_piece]` : for promotions
+/// Cheesy Move Notation names every part of a move a variant might have,
+/// and prints only the parts this move actually used:
 ///
-/// Effective shape:
-/// `[drop]@[start]:[end]*[capt_1]@[unload_1]...*[capt_n]=[promotion]`
+/// ```text
+/// [piece]@    the piece a drop places, dropped moves only
+/// [start]     the square the move begins on, always printed
+/// :[end]      where the mover lands, when that is not where it took
+/// *[square]   a square something was taken on, once per victim
+/// @[square]   where the taken piece was set back down, if it was
+/// =[piece]    the piece the mover became
+/// ```
+///
+/// ```text
+/// [piece]@[start]:[end]*[taken]@[unloaded]...*[taken]=[piece]
+/// ```
+///
+/// A plain capture prints no `:[end]` at all, the mover having landed on
+/// the square it took, so `e4*d5` and `e4:e5*d5` are different moves rather
+/// than two spellings of one. A variant taking a piece without moving onto
+/// it needs the longer form, and one where the two always coincide never
+/// prints it.
 ///
 /// Params:
-/// - mv   : &Move               -> move to render
-/// - state: &State              -> board geometry for square names
-/// - dict : Option<&Translator> -> protocol translator, or None for raw CMN
+///
+///     mv: &Move
+///     move to render
+///
+///     state: &State
+///     board geometry for square names
+///
+///     dict: Option<&Translator>
+///     protocol translator, or None for raw CMN
 ///
 /// Return:
 ///
-/// String
-/// the move's CMN (or translated) text, "null" for a null move
+///     String
+///     the move's CMN or translated text, "(none)" for a null move
 pub fn format_move(
     mv: &Move, state: &State, dict: Option<&Translator>
 ) -> String {
@@ -134,25 +151,38 @@ pub fn format_move(
 
 /// parse_move
 ///
-/// Parses a textual move by matching against pseudo-legal move candidates
-/// generated for the position. The input is compared to `format_move`
-/// output for each candidate and the first exact match (after trimming
-/// whitespace) is returned.
+/// Resolves typed move text against the position by generating every move
+/// the position offers, rendering each one, and returning the first whose
+/// text matches. Parsing this way rather than by reading the string apart
+/// means the notation is defined in exactly one place: whatever `format_move`
+/// prints is what this accepts, translation included.
+///
+/// ```text
+/// generate   every pseudo-legal move and drop the position offers
+/// render     each of them through format_move, dictionary and all
+/// match      the first whose text equals the input, both trimmed
+/// ```
+///
+/// Params:
+///
+///     move_str: &str
+///     user move text to resolve
+///
+///     state: &State
+///     position whose candidates are generated
+///
+///     dict: Option<&Translator>
+///     translator applied to each candidate
+///
+/// Return:
+///
+///     Option<Move>
+///     the matching pseudo-legal move, or None if none matches
 ///
 /// Notes:
 /// Candidates are pseudo-legal: the returned `Move` may leave the moving
 /// side's royal pieces in check. Callers must validate with `make_move!`
 /// and treat a false return as an illegal move.
-///
-/// Params:
-/// - move_str: &str                -> user move text to resolve
-/// - state   : &State              -> position whose candidates are generated
-/// - dict    : Option<&Translator> -> translator applied to each candidate
-///
-/// Return:
-///
-/// Option<Move>
-/// the matching pseudo-legal move, or None if none matches
 pub fn parse_move(
     move_str: &str, state: &State, dict: Option<&Translator>
 ) -> Option<Move> {
@@ -167,8 +197,17 @@ pub fn parse_move(
 
 /// format_move_history
 ///
-/// Renders the game's move history as numbered move pairs ("1. e4 e5"),
-/// one full move per line, using `format_move` for each entry.
+/// Renders the game's move history as numbered move pairs, one full move
+/// per line, using `format_move` for each entry.
+///
+/// ```text
+/// 1. e2:e4 e7:e5
+/// 2. g1:f3 b8:c6
+/// ```
+///
+/// The number is the full move rather than the ply, so a history of odd
+/// length ends on a half-finished line, which is what a reader expects to
+/// see when it is the other side's turn.
 ///
 /// Params:
 /// - state: &State              -> position whose history is printed
