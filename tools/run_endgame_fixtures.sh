@@ -3,14 +3,16 @@
 # Run the decisive end-condition regression fixtures.
 #
 # Reads tools/endgame_fixtures.txt (see its header for the format), drives the
-# release engine over UCI for each case, and asserts the `d` Result line. Exits
-# non-zero if any case fails, so it doubles as a CI check.
+# release engine over UCI for each game-truth case, and asserts the `d` Result
+# line. Exits non-zero if any case fails, so it doubles as a CI check.
 #
 # A case whose expectation reads `score cp` or `score mate` is a search case
-# instead: it runs `go depth $GO_DEPTH` and asserts the kind of the last score
-# reported. That covers the verdicts search reaches on its own, which the `d`
-# oracle cannot see -- a perpetual scored terminal before the game itself has
-# ended is the reason this mode exists.
+# instead: synchronous `debug-headless search` reaches all of `GO_DEPTH` before
+# returning, then the same UCI score text is asserted. Piping `go` followed by
+# `quit` cannot do this: quit stops and joins the active search, so the last
+# score may belong to an earlier completed iteration. Search covers verdicts
+# the `d` oracle cannot see -- a perpetual scored terminal before the game
+# itself has ended is the reason this mode exists.
 #
 # Adding the value, as in `score mate -2`, asserts the whole score rather than
 # its kind. Sign is what separates a perpetual verdict from an ordinary one:
@@ -47,6 +49,25 @@ drive() {
         "$variant" "$posline" "$1" | "$BIN" 2>/dev/null
 }
 
+# Runs a fixed-depth search synchronously, so EOF cannot interrupt its last
+# iteration. Arguments stay split as moves while the FEN remains one value.
+drive_search() {
+    local -a arguments move_list
+    arguments=(debug-headless search "$variant" "$GO_DEPTH" 1)
+
+    if [ "$fen" != "startpos" ]; then
+        arguments+=(--fen "$fen")
+    fi
+    arguments+=(--protocol uci)
+
+    if [ -n "$moves" ]; then
+        read -r -a move_list <<< "$moves"
+        arguments+=(--moves "${move_list[@]}")
+    fi
+
+    "$BIN" "${arguments[@]}" 2>/dev/null
+}
+
 pass=0
 fail=0
 
@@ -69,7 +90,7 @@ while IFS='|' read -r variant fen moves expected description; do
 
     case "$expected" in
         score\ *)
-            got=$(drive "go depth $GO_DEPTH" \
+            got=$(drive_search \
                   | grep -o 'score [a-z]* -\{0,1\}[0-9]\{1,\}' | tail -1)
             case "$expected" in
                 score\ *\ *) ;;

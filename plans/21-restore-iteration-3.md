@@ -484,11 +484,9 @@ Depth-6 signatures keep all 38 best moves. Twenty-nine node counts move,
 and only tjatoer's score moves, 51 to 50 cp. All seven
 perft suites pass; all seven static evaluations and both SEE checks stay
 exact. Debug searches exercise make, null move, and both undo paths with the
-independent pawn-hash assertion. Endgame fixtures remain the known 37/38 at
-depth 6 — `xiangqi / perpetual one cycle short` still needs one more ply —
-and pass 38/38 at `GO_DEPTH=7`. R9's checked-frontier extension is the next
-stage with a mechanism that may recover that mate at depth 6; the fixture is
-not weakened to hide the horizon.
+independent pawn-hash assertion. The old UCI-driven fixture command reported
+37/38 at depth 6; the harness correction below proves all 38 at the requested
+depth. The apparent xiangqi horizon was an interrupted iteration, not search.
 
 ### R8. TT static-eval cache — landed
 
@@ -527,8 +525,21 @@ per-node rates advisory rather than a direct cache-cost measurement.
 Depth-6 signatures keep 37 of 38 best moves and scores. Euroshogi alone
 moves from `c3:c4`, +29 to `d1:c2`, +20; 28 node counts change. All seven
 perft suites pass; all seven static evaluations and both SEE checks stay
-exact. Endgame fixtures remain 37/38 at depth 6 and pass 38/38 at depth 7,
-with the same xiangqi horizon case.
+exact. The corrected fixture harness passes all 38 at depth 6.
+
+### Endgame fixture synchronization — landed
+
+The one red fixture was not a horizon defect. Search cases piped `go depth 6`
+and then `quit`; protocol exit deliberately interrupts and joins an active
+search, so the xiangqi case returned its last completed depth-5 score. Asking
+for depth 7 appeared to fix it only because depth 6 finished before quit won
+the race.
+
+Search fixtures now use synchronous `debug-headless search`, which returns
+only after the requested depth and emits the same UCI `score cp` / `score
+mate` text the assertions already parse. Game-truth `d` fixtures stay on UCI.
+The suite passes 38/38 at its default depth 6, with no sleep and no weakened
+expectation.
 
 ### R9. Gated search family
 
