@@ -331,6 +331,8 @@ pub struct SearchParams {
 
     pub aspiration_delta: u32,                                                  /* half-width the root opens at       */
     pub rfp_margin: Vec<i32>,                                                   /* cushion, improving major, by depth */
+    pub razor_margin: [i32; 4],                                                 /* qsearch rescue gap, by depth       */
+    pub probcut_margin: i32,                                                    /* surplus a tactical cut must prove  */
     pub futility_margin: Vec<i32>,                                              /* alpha cushion, improving major     */
     pub lmp_count: Vec<usize>,                                                  /* moves ordered, improving major     */
     pub see_allowance: Vec<i32>,                                                /* loss a capture may show, by depth  */
@@ -1099,7 +1101,9 @@ fn dearest_piece_value(state: &State) -> u64 {
 /// side whose evaluation has risen, indexed by the depth left to search.
 /// The futility margin and the exchange allowance are drawn against that
 /// same piece, and the late-move count against depth alone, having no
-/// material in it to price.
+/// material in it to price. Razoring and ProbCut retain their iteration 3
+/// anchor, the mean non-royal value: both compare a whole tactical swing,
+/// not the top of the range one move may spend.
 ///
 /// Every improving multiplier names the row that prunes harder, which is
 /// not the same row throughout: a cut against beta believes a risen side
@@ -1111,6 +1115,12 @@ fn dearest_piece_value(state: &State) -> u64 {
 /// - state: &mut State -> variant whose derived search values are rebuilt
 pub fn derive_search_parameters(state: &mut State) {
     let dearest = dearest_piece_value(state);
+    let (value_sum, value_count) = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .fold((0u64, 0u64), |(sum, count), piece| {
+            (sum + p_ovalue!(piece) as u64, count + 1)
+        });
+    let mean = value_sum.checked_div(value_count).unwrap_or(0) as i32;
 
     let delta = dearest * ASPIRATION_RATIO as u64
         / COEFFICIENT_SCALE as u64;
@@ -1127,6 +1137,11 @@ pub fn derive_search_parameters(state: &mut State) {
             * RFP_IMPROVING as u64
             / COEFFICIENT_SCALE as u64) as i32;
     }
+
+    let razor = [
+        0, mean / 3 + 100, mean / 2 + 200, mean + 300,
+    ];
+    let probcut = (mean / 4).max(100);
 
     let futility_deepest = FUTILITY_DEPTH as usize;
     let futility_floor = dearest * FUTILITY_FLOOR as u64
@@ -1219,6 +1234,8 @@ pub fn derive_search_parameters(state: &mut State) {
 
     statics.search.aspiration_delta = (delta as u32).max(1);                    /* a window has to hold two scores    */
     statics.search.rfp_margin = margins;
+    statics.search.razor_margin = razor;
+    statics.search.probcut_margin = probcut;
     statics.search.futility_margin = futility;
     statics.search.lmp_count = counts;
     statics.search.see_allowance = allowance;

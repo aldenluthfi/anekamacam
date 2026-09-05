@@ -2,8 +2,8 @@
 
 ## Status
 
-Drafted 2026-09-02. R1 through R8 have landed; R9 is next and last. R10
-and R11 stay deferred per the user's 2026-09-04 instruction.
+Drafted 2026-09-02. R1 through R9 have landed, and R9 was the last stage.
+R10 and R11 stay deferred per the user's 2026-09-04 instruction.
 
 Two preparatory commits are already in: `316861a` ports the exchange
 phase-pricing fix onto this line, and `224d167` is a whitespace fix. The
@@ -525,7 +525,8 @@ per-node rates advisory rather than a direct cache-cost measurement.
 Depth-6 signatures keep 37 of 38 best moves and scores. Euroshogi alone
 moves from `c3:c4`, +29 to `d1:c2`, +20; 28 node counts change. All seven
 perft suites pass; all seven static evaluations and both SEE checks stay
-exact. The corrected fixture harness passes all 38 at depth 6.
+exact. The corrected fixture harness passes 37 of 38 at depth 6; the one red
+case is the xiangqi horizon defect written up under R9, which predates R7.
 
 ### Endgame fixture synchronization — landed
 
@@ -538,15 +539,76 @@ the race.
 Search fixtures now use synchronous `debug-headless search`, which returns
 only after the requested depth and emits the same UCI `score cp` / `score
 mate` text the assertions already parse. Game-truth `d` fixtures stay on UCI.
-The suite passes 38/38 at its default depth 6, with no sleep and no weakened
-expectation.
+The race is gone, with no sleep and no weakened expectation, and the suite
+settles at 37 of 38: the harness fix moved the xiangqi perpetual case from a
+false red to a true one. That case is a search horizon defect, diagnosed
+under R9.
 
-### R9. Gated search family
+### R9. Gated search family — landed
 
-Restore PVS, razoring, ProbCut, IIR, mate-distance pruning, and check
-extensions, each gated on `capabilities`. This family netted about zero in
-iteration 3 applied unconditionally; the hypothesis under test is that the
-gate is what was missing, not the mechanisms.
+Restored razoring, ProbCut, and internal iterative reduction, each behind
+`forward_pruning!` and `static_movement!` on top of whatever capability its
+own mechanism needs. PVS and mate-distance pruning were already present and
+needed nothing. Check extensions were dropped, for reasons below.
+
+Both margins derive from the mean non-royal piece value rather than from
+constants: razoring uses `[0, mean/3 + 100, mean/2 + 200, mean + 300]` indexed
+by depth, and ProbCut uses `max(mean/4, 100)`. A variant whose pieces are
+worth a third of a chess piece gets a third of the margin without anyone
+naming the variant.
+
+Razoring asks quiescence to confirm a shallow fail-low before paying for the
+node. ProbCut asks at most three winning captures to prove a surplus of
+`beta + margin`, first in quiescence and then at `depth - 4`; it is near
+neutral in nodes and is kept for the bound it proves, not for the nodes it
+saves. Internal iterative reduction gives up one ply when no table move
+exists — move-loop futility keeps reading the pre-reduction depth, so the
+reduction changes what is searched and not what is pruned.
+
+`static_movement!` is what makes the family safe: a screened variant's
+evaluation cannot price a blocker-dependent attack, so none of the three
+runs for xiangqi, janggi, or sittuyin, whose node counts are unchanged from
+R8 by construction.
+
+Versus R8, deterministic nodes: standard 186264 to 178418 (−4.2%), shogi
+1210223 to 761185 (−37.1%), crazyhouse 895573 to 773768 (−13.6%), grand
+1438362 to 1408835 (−2.1%); xiangqi, sittuyin, and janggi unchanged at
+304943, 10624972, and 251880. All seven perft suites pass; all seven static
+evaluations and both SEE checks stay exact. All 38 depth-6 signatures
+complete. Fixtures stay at 37 of 38 — the same case, the same score, the
+same node count as the R8 binary.
+
+#### Check extensions, and the xiangqi fixture they were meant to fix
+
+Not restored. Applied unconditionally the cost is +77% nodes on standard;
+five narrower gates were measured and every one either cost more than it
+returned or failed to recover the mate it was aimed at. The last of them
+keyed on the root standing in a declared perpetual cycle, which is a rule
+token inside search and not something this engine is allowed to read, so the
+mechanism leaves the ladder entirely.
+
+The fixture it was aimed at is a genuine defect and predates the whole
+restore ladder: the R8 binary returns the same `score cp -950` at the same
+943 nodes. The mate is `e10e9 a10f10 e9e8 f10f9`, three plies from the white
+node, ending in a position with no legal move, which xiangqi scores as a
+loss. Search needs depth 7 for it. Two causes stack:
+
+- Quiescence never generates legal moves, so a terminal position one ply past
+  the horizon is invisible. Worth exactly one ply: the mate-in-1 node needs
+  depth 2 and the mate-in-2 node needs depth 3.
+- Late move reduction reduces the quiet mating move `a10f10`. Its reduced
+  search returns roughly +944, which does not beat alpha, so the re-search
+  never fires. Worth two more plies: with the reduction forced to zero the
+  white node resolves at depth 4 and the fixture reads `mate -2` at depth 6.
+
+Neither is a variant question, and neither belongs in a restore stage. The
+fixture stays red and stays honest.
+
+A third defect surfaced beside them: `game_outcome` reports `Ongoing` for
+that final position even though perft depth 1 counts zero moves, because it
+consults only `game_result` and the repetition rule and never asks whether
+the side to move has a move. The fixture asserts on the search path, so
+nothing gates on this today.
 
 ### R10. Board width and staged move generation
 

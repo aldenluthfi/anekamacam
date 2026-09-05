@@ -2,12 +2,25 @@
 //!
 //! Iterative deepening, alpha-beta search, and quiescence.
 //!
-//! Search uses two transposition tables, null-move pruning, one static
-//! evaluation per ply cutting against either bound, move-count and
-//! exchange pruning, SEE move ordering, killer moves, and history.
-//! Quiescence drops captures the exchange simulation already prices as
-//! losing and captures too small to reach alpha. SearchInfo carries
-//! limits, counters, and stop state.
+//! One search is three nested loops, each asking less of the one below it:
+//!
+//! ```text
+//! iterative_deepening   depth 1, 2, 3 ... each under an aspiration window
+//!   alpha_beta          the tree proper: pruning, reductions, extensions
+//!     quiescence_search the leaves: captures until nothing is hanging
+//! ```
+//!
+//! What a node spends is decided by what the position has already said. Two
+//! transposition tables answer for positions met before, one for the tree and
+//! one for the leaves. One static evaluation is taken per ply and reused,
+//! cutting against either bound. Null moves, move counts, and the exchange
+//! simulation drop what cannot repay its depth, and that same simulation with
+//! the history tables orders whatever is left. Quiescence drops captures the
+//! simulation prices as losing and captures too small to reach alpha.
+//!
+//! [`SearchInfo`] holds the limits, counters, stop state, and every ordering
+//! table one worker owns alone, so lazy-SMP workers share the transposition
+//! tables and nothing else.
 //!
 //! Created: 22/03/2026
 //! Author : Alden Luthfi
@@ -16,11 +29,25 @@ use crate::*;
 
 /// SearchInfo
 ///
-/// Everything one search worker owns: limits, node count, stop flags, and the
-/// principal variation, killer, and history tables it orders moves with.
-/// Correction history learns the structural error in static evaluation beside
-/// the ordering histories. These tables belong to one search worker, not game
-/// state, so `clear_search` allocates them and no `State` clone carries them.
+/// Everything one search worker owns: its limits, its node count, its stop
+/// flags, and the tables it remembers the tree with. Four of those tables are
+/// what the worker has learned, each answering a different question:
+///
+/// ```text
+/// search_hist  [move key]                     what has worked anywhere
+/// cont_hist    [plies back][reply][move key]  what has worked as a reply
+/// corr_hist    [side][pawn key]               how wrong evaluation was here
+/// killer_hist  [ply]                          two quiet moves that cut here
+/// ```
+///
+/// The first three carry scores that decay toward whatever the search keeps
+/// seeing; the last is a pair of moves per ply and nothing more. Correction
+/// history is the odd one out in what it corrects: it adjusts the static
+/// evaluation rather than the move order.
+///
+/// None of this belongs to the position. `clear_search` allocates the tables
+/// at the sizes the variant calls for, and a cloned [`State`] carries none of
+/// them, which is what lets lazy-SMP workers keep their own.
 #[derive(Default)]
 pub struct SearchInfo {
     pub start_time: u128,                                                       /* start time since engine launch     */
@@ -79,15 +106,101 @@ macro_rules! move_key {
 /// as load-bearing; a third table back never was.
 const CONTINUATION_PLIES: usize = 2;
 
+/// Correction history sizing
+///
+/// Correction history files how far static evaluation stood from what search
+/// answered under the pawn key, and shifts the next evaluation of that pawn
+/// skeleton by the running average of its own past error.
+///
+/// ```text
+/// SIZE        16384  cells a side, the pawn key masked down to a row
+/// GRAIN       64     stored units per point, divided out on read
+/// SCALE       256    denominator of the blend, a weight out of this
+/// MAX_WEIGHT  16     the most one deep quiet result may pull a cell
+/// LIMIT       64     points the correction is ever allowed to reach
+/// ```
+///
+/// The grain buys resolution the average would otherwise round off: a blend
+/// that moves a cell by a fraction of a point keeps that fraction until
+/// enough of them add up to one. `LIMIT` is written in grain units so the
+/// ceiling reads in points, and the widest cell still fits its `i16`.
+///
+/// Two sides share no rows because the same pawn skeleton is worth opposite
+/// things to them, and collisions inside a side are left alone: a wrong
+/// correction is bounded and decays, while a bigger table would not.
 const CORR_HIST_SIZE: usize = 1 << 14;
 const CORR_HIST_GRAIN: i32 = 64;
 const CORR_HIST_SCALE: i32 = 256;
 const CORR_HIST_MAX_WEIGHT: i32 = 16;
 const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 
+/// Late move reduction gate
+///
+/// How much a reduced move loses is read off a derived surface; these three
+/// decide which moves get to consult it at all. A shallow node reduces
+/// nothing, having too little depth left to give away, and the first moves of
+/// every node are searched whole because ordering believes in them.
+///
+/// ```text
+/// depth < 3      nothing here reduces
+/// move 1, 2      searched whole                   (zero window)
+/// move 1 to 4    searched whole                   (wide window)
+/// beyond that    surface[depth][move number], never below one ply
+/// ```
+///
+/// A wide window means a principal variation node, where a reduction that
+/// hides the better move costs the whole line rather than one bound, so twice
+/// as many moves are searched whole before the surface is asked.
 const REDUCTION_MINIMUM_DEPTH: u32 = 3;
 const REDUCTION_MOVE_BASE: u32 = 2;
 const REDUCTION_MOVE_WIDE: u32 = 2;
+/// ProbCut probe
+///
+/// A node standing well above beta is usually about to fail high, and a
+/// winning capture is the cheapest way to show it. A few are tried against a
+/// beta raised by the derived margin, and one that survives that raised bound
+/// at a fraction of the depth stands in for the search the node was owed.
+///
+/// ```text
+/// depth >= 5    shallower than this the probe costs as much as the node
+/// 3 captures    the most tried, and only while they price as winning
+/// depth - 4     what a surviving capture is searched to, quiescence first
+/// ```
+///
+/// The probe stays cheap by giving up early: the capture list is walked in
+/// score order and abandoned at the first move that is not winning, so a node
+/// with nothing to show pays for one pick and nothing else.
+const MIN_PROBCUT_DEPTH: usize = 5;
+const PROBCUT_DEPTH_REDUCTION: usize = 4;
+const PROBCUT_MAX_CAPTURES: usize = 3;
+/// Shallowest node reduced for having no table move
+///
+/// A node this deep with nothing in the table has never been searched, so its
+/// move order rests on history alone and the first move is a guess. Paying
+/// full depth for a guessed order is the expensive way to find the right one;
+/// the node gives up a ply instead and leaves a table move behind, which the
+/// next visit orders on for less than the ply was worth.
+const MIN_IIR_DEPTH: usize = 4;
+
+/// Aspiration window widening
+///
+/// Past the start depth an iteration opens around the previous score rather
+/// than at the full bounds, so most of the tree is cut against a window a few
+/// points wide. A score outside it is not wrong, only unproven: the failing
+/// side widens and the iteration is searched again.
+///
+/// ```text
+/// depth < 4    -INF ├──────────────────────────────────┤ +INF
+/// depth >= 4         previous - delta ├───┤ previous + delta
+/// each fail          delta doubles, the failing side reopening from there
+/// past 16 delta      that side gives up and opens to infinity
+/// ```
+///
+/// Both ratios are read against `COEFFICIENT_SCALE`, the widen as a factor
+/// and the clamp as a multiple of the opening half-width, which is itself
+/// derived per variant. A previous score already in mate range skips the
+/// window outright: mate scores step by a ply at a time and would fail every
+/// window on the way in.
 const ASPIRATION_CLAMP: u32 = 16000;
 const ASPIRATION_WIDEN: u32 = 2000;
 const ASPIRATION_START_DEPTH: u32 = 4;
@@ -689,6 +802,11 @@ fn quiescence_search(
 /// already entered on a narrow window scouts at no extra cost, since its
 /// scout window is the window it was given.
 ///
+/// Razoring asks quiescence to rescue a shallow fail-low before the full node;
+/// ProbCut asks at most three winning captures to prove a surplus above beta;
+/// internal iterative reduction gives up one ply when no table move exists.
+/// All three skip work and use the capability claims below.
+///
 /// A repeated position scores the outcome its own variant declares, and where
 /// no rule names an offender it is scored from the first closed cycle rather
 /// than from the occurrence count the rule states. A position standing for the
@@ -699,9 +817,10 @@ fn quiescence_search(
 /// which side is at fault is not settled until the rule fires, and a line one
 /// cycle short of it can still be won outright by either colour.
 ///
-/// Every shortcut that answers without searching -- standing on a static
-/// score, giving up the move, skipping a capture priced as losing, dropping a
-/// late quiet move -- asks the capability mask first. Each is an argument
+/// Every shortcut that answers without full search -- standing on a static
+/// score, giving up the move, proving beta through selected captures, reducing
+/// a node with no table move, skipping a losing capture, dropping a late quiet
+/// move -- asks the capability mask first. Each is an argument
 /// about the game rather than about the position, and a variant that never
 /// makes the argument has its moves searched instead. The late-move reduction
 /// below is not among them: a reduced search that beats alpha is repeated at
@@ -798,6 +917,7 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     let in_check = is_in_check!(state.playing, state);
+    let mut depth = depth;
 
     if depth == 0 {
         return quiescence_search(
@@ -859,6 +979,24 @@ pub fn alpha_beta(
         return beta;
     }
 
+    if forward_pruning!(state)
+    && static_movement!(state)
+    && !in_check
+    && depth < state.statics.search.razor_margin.len()
+    && beta - alpha == 1
+    && alpha.abs() < MATE_SCORE
+    && state.game_phase != ENDGAME
+    && plain_eval + state.statics.search.razor_margin[depth] < alpha
+    {
+        let score = quiescence_search(
+            state, ttable, qtable, alpha, alpha + 1, info,
+        );
+
+        if score <= alpha {
+            return alpha;
+        }
+    }
+
     if null_pruning!(state)
     && allow_null_move
     && !in_check
@@ -888,6 +1026,95 @@ pub fn alpha_beta(
         if score >= beta {
             return beta;
         }
+    }
+
+    let probcut_beta = beta.saturating_add(
+        state.statics.search.probcut_margin
+    ).min(INF);
+
+    if forward_pruning!(state)
+    && see_pruning!(state)
+    && see_valid!(state)
+    && static_movement!(state)
+    && !in_check
+    && depth >= MIN_PROBCUT_DEPTH
+    && beta - alpha == 1
+    && beta.abs() < MATE_SCORE
+    && prune_eval >= beta
+    {
+        let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
+        let NodeLists { moves, scores, payload } = &mut lists;
+
+        generate_all_captures(state, moves, payload);
+        scores.clear();
+        scores.resize(moves.len(), usize::MAX);
+
+        let mut tried = 0;
+
+        for index in 0..moves.len() {
+            if tried >= PROBCUT_MAX_CAPTURES {
+                break;
+            }
+
+            pick_by_score!(
+                state, info, moves, scores, index, &table_move,
+                &[usize::MAX; CONTINUATION_PLIES]
+            );
+
+            if scores[index] < WINNING_CAPTURE_SCORE as usize {
+                break;
+            }
+
+            if !make_move!(state, moves[index].clone()) {
+                continue;
+            }
+
+            tried += 1;
+
+            let mut score = -quiescence_search(
+                state, ttable, qtable,
+                -probcut_beta, -probcut_beta + 1, info,
+            );
+
+            if score >= probcut_beta {
+                score = -alpha_beta(
+                    state,
+                    ttable,
+                    qtable,
+                    depth - PROBCUT_DEPTH_REDUCTION,
+                    -probcut_beta,
+                    -probcut_beta + 1,
+                    info,
+                    true,
+                );
+            }
+
+            undo_move!(state);
+
+            if info.interrupt {
+                state.scratch.node_lists[ply] = lists;
+
+                return alpha;
+            }
+
+            if score >= probcut_beta {
+                state.scratch.node_lists[ply] = lists;
+
+                return probcut_beta;
+            }
+        }
+
+        state.scratch.node_lists[ply] = lists;
+    }
+
+    let futility_depth = depth;
+
+    if forward_pruning!(state)
+    && static_movement!(state)
+    && table_move.is_none()
+    && depth >= MIN_IIR_DEPTH
+    {
+        depth -= 1;
     }
 
     let board_size = state.statics.board_size;
@@ -946,9 +1173,11 @@ pub fn alpha_beta(
             }
 
             if forward_pruning!(state)
-            && depth <= futility_deepest
+            && futility_depth <= futility_deepest
             && plain_eval
-                + state.statics.search.futility_margin[futility_row + depth]
+                + state.statics.search.futility_margin[
+                    futility_row + futility_depth
+                ]
                 <= alpha
             {
                 continue;
