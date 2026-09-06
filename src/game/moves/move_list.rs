@@ -15,27 +15,16 @@
 
 use crate::*;
 
-/*----------------------------------------------------------------------------*\
-                          ATTACK QUERY REPRESENTATIONS
-\*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*\
+                        ATTACK QUERY REPRESENTATIONS
+\*---------------------------------------------------------------------------*/
 
 /// is_square_attacked!
 ///
-/// Reports whether anything currently attacks `$square`. The candidates come
-/// from `relevant_attacks[attacked_side][square]`, which precomputation filed
-/// under the square that can be reached rather than the square a piece moves
-/// from, so the whole question is one table row long. Each candidate names an
-/// attacker and an origin; the origin is checked against the board first,
-/// since the table says what could stand there and only the position says
-/// what does, and the survivors are walked by `validate_attack_vector!`.
-///
-/// What the target is counts as much as where it is, because a variant may
-/// let a piece capture only what is royal, unmoved, or of lower rank. Those
-/// properties are passed in rather than read off the board, which is what
-/// lets the question be asked about a square the piece has not reached yet —
-/// castling asks it of every square its king crosses — or asked as though the
-/// occupant were other than it is, the way chase detection asks with royalty
-/// denied to find a piece that is merely hounded rather than checked.
+/// Reports whether at least one precomputed attack mask can currently
+/// realize an attack on `$square` against the given side, applying the
+/// directional, occupancy, and modifier constraints via
+/// `validate_attack_vector!`.
 ///
 /// Params:
 /// - square          : Square -> target square being tested
@@ -78,15 +67,10 @@ macro_rules! is_square_attacked {
 
 /// is_in_check!
 ///
-/// Reports whether `$side` stands in check, by asking `is_square_attacked!`
-/// of every square one of its royal pieces occupies. A side with several
-/// royals is in check only when all of them are attacked at once: the piece
-/// that must be saved is whichever one is not yet lost, so a variant handing
-/// a player two kings has handed them a spare rather than a second liability.
-///
-/// A side with no royal piece is never in check, there being nothing the
-/// rule can be about, and neither is anyone during the setup phase, where
-/// the armies are still being placed and no capture is on offer.
+/// Reports whether `$side`'s position is in check: each royal piece's
+/// square is tested with `is_square_attacked!`, so a side with multiple
+/// royals is in check only when all of them are attacked. Always false
+/// during the setup phase or when the side has no royal piece.
 ///
 /// Params:
 /// - side : u8     -> side whose royal pieces are tested
@@ -153,10 +137,6 @@ macro_rules! legal_moves {
     }};
 }
 
-/*----------------------------------------------------------------------------*\
-                             MOVE TABLE PRECOMPUTE
-\*----------------------------------------------------------------------------*/
-
 /// generate_relevant_castling
 ///
 /// Compiles the config's castling descriptions into precomputed castling
@@ -183,12 +163,6 @@ macro_rules! legal_moves {
 ///
 /// Return:
 /// Vec<Move>             -> one precomputed castling move per layout pair
-///
-/// Notes:
-/// A layout naming a character no piece answers to, or a piece the variant
-/// never listed as a castling participant, panics. Layouts are config text
-/// compiled once at load time, so a bad one is a broken variant rather than
-/// a position the engine could be asked to play.
 pub fn generate_relevant_castling(
     start: &Vec<String>, end: &Vec<String>, state: &State
 ) -> Vec<Move> {
@@ -372,15 +346,9 @@ pub fn generate_relevant_castling(
 /// └────┴────┴────┴────┘
 /// ```
 ///
-/// Occupancy is deliberately ignored, being the one thing about a square
-/// that changes between visits, so what remains is a static per-(piece,
-/// square) table entry. Vectors are sorted longest first, so the deepest
-/// line out of a square is walked before the short ones sharing its
-/// opening legs.
-///
-/// A leg written with both `v` and `!v` is the one pairing that means
-/// something other than a contradiction: it bypasses forbidden zones, so
-/// only the edge of the board can discard it.
+/// Occupancy is deliberately ignored — that is checked at generation time
+/// — so the result is a static per-(piece, square) table entry. Vectors
+/// are sorted longest-first so deeper lines are probed before short ones.
 ///
 /// Params:
 /// - piece       : &Piece     -> piece type whose vectors are filtered
@@ -389,7 +357,9 @@ pub fn generate_relevant_castling(
 /// - piece_moves : &[MoveSet] -> compiled vector sets, one per piece
 ///
 /// Return:
-/// MoveSet                    -> vectors playable here, longest first
+///
+/// MoveSet
+/// vectors playable from this square, longest first
 pub fn generate_relevant_moves(
     piece: &Piece,
     square_index: u32,
@@ -441,19 +411,18 @@ pub fn generate_relevant_moves(
 
 /// generate_relevant_captures
 ///
-/// The same filter as [`generate_relevant_moves`], run again over the same
-/// vectors and keeping only those that can take something. A vector earns
-/// its place on the strength of any one leg:
+/// Precomputes vector candidates that can produce at least one capture/destroy
+/// action for a given piece and origin square.
+/// This mirrors `generate_relevant_moves` in structure (same bounds and
+/// forbidden-zone checks), but keeps only multi-leg vectors containing a leg
+/// with effective capture semantics:
 ///
-/// - a leg marked `c`, which takes an enemy piece
-/// - a leg marked `d`, which destroys whatever stands there, friendly
-///   pieces included
-/// - a closing leg that cannot move quietly, so arriving is taking
+/// - explicit capture (`c`)
+/// - destroy (`d`)
+/// - implicit last-leg capture
 ///
-/// Quiescence searches read this table instead of generating everything and
-/// throwing the quiet moves away, and it costs a second table rather than a
-/// second pipeline: what comes out are ordinary vectors, built into moves by
-/// the same code that builds the rest.
+/// Capture-only generation can therefore reuse the full move-construction
+/// pipeline while starting from a narrower prefiltered vector set.
 ///
 /// Params:
 /// - piece       : &Piece     -> piece type whose vectors are filtered
@@ -462,7 +431,9 @@ pub fn generate_relevant_moves(
 /// - piece_moves : &[MoveSet] -> compiled vector sets, one per piece
 ///
 /// Return:
-/// MoveSet                    -> capture-capable vectors playable here
+///
+/// MoveSet
+/// capture-capable vectors playable from this square
 pub fn generate_relevant_captures(
     piece: &Piece,
     square_index: u32,
@@ -527,37 +498,16 @@ pub fn generate_relevant_captures(
 
 /// generate_attack_masks
 ///
-/// Files the reverse attack table for everything leaving one origin square.
-/// Move tables answer where a piece can go; the question the search asks far
-/// more often is the opposite one, who can reach here. Both are the same
-/// walk read from different ends, so precomputation walks the vectors once
-/// and files each under the square it arrives at:
+/// Populates `relevant_attacks` entries originating from one start square.
+/// For each prefiltered move vector, this records whether each traversed
+/// target is attacked as enemy capture (`c`) and/or friendly destroy (`d`).
 ///
-/// ```text
-/// relevant_moves  [piece][origin] → vectors leaving that origin
-/// relevant_attacks[side][target]  → vectors arriving at that target
-/// ```
-///
-/// An entry names the attacking piece, the origin it sets out from and the
-/// vector itself, which is everything `validate_attack_vector!` needs to walk
-/// the line again against a real position. Every leg contributes, not only
-/// the last, so a square a slider merely passes over is listed as well: the
-/// table says what can be reached from where, and only the position says what
-/// actually is.
-///
-/// Which side's row an entry joins follows the harm the leg does. A capturing
-/// leg threatens the other colour and is filed under it; a destroying leg
-/// takes whatever stands on the square, friendly pieces included, and is
-/// filed under the mover's own. A leg doing both is filed under each.
+/// Two-phase: collect pending writes while holding only shared borrows, then
+/// apply via Arc::get_mut after all borrows expire.
 ///
 /// Params:
 /// - square_index: u16        -> origin square of the outgoing attacks
 /// - state       : &mut State -> engine state receiving reverse attack table
-///
-/// Notes:
-/// Every write is gathered before any is applied. The walk reads the static
-/// tables through a shared borrow while `Arc::get_mut` needs to be the only
-/// reference alive to hand them back mutably, so the two cannot overlap.
 pub fn generate_attack_masks(square_index: u16, state: &mut State) {
     let board_size = state.statics.board_size;
     let files = state.statics.files;
@@ -618,49 +568,31 @@ pub fn generate_attack_masks(square_index: u16, state: &mut State) {
     }
 }
 
-/*----------------------------------------------------------------------------*\
-                            ATTACK VECTOR VALIDATION
-\*----------------------------------------------------------------------------*/
-
 /// validate_attack_vector!
 ///
-/// Walks one candidate out of `relevant_attacks` against the position and
-/// answers whether it really does attack the square asked about. The table
-/// knows geometry and nothing else, so everything a position decides — what
-/// stands in the way, what is being taken, whether the piece has moved before
-/// — is settled here, leg by leg, under the same modifier rules that generate
-/// moves.
-///
-/// The target is described by arguments rather than read off the board, which
-/// is what lets the question be asked about a square nothing stands on. The
-/// leg arriving at `attacked_square` counts as a capture regardless of what
-/// occupies it, and `k`, `g` and `v` are judged against the royalty, rank and
-/// virginity handed in: castling asks about the empty squares its king crosses
-/// and chase detection asks with royalty denied, both through this one path.
-///
-/// The legs either side of that one are walked in full. A line blocked before
-/// the target attacks nothing, and a vector that cannot finish the legs beyond
-/// it never arrives at all.
+/// Validates whether an attack vector can legally reach a target square.
+/// This macro executes the full per-leg simulation with movement/capture/
+/// destroy/unload semantics, occupancy checks, rank/royalty/virgin filters,
+/// and special modifier combinations. It is used as the runtime validator for
+/// precomputed attack candidates gathered in `relevant_attacks`.
 ///
 /// Params:
-/// - multi_leg_vector: &MoveVector -> candidate attack vector to walk
+/// - multi_leg_vector: &MoveVector -> candidate attack vector to simulate
 /// - square_index    : Square      -> origin square of the attacking piece
 /// - attacking_piece : &Piece      -> piece attempting the attack
-/// - attacked_unmoved: bool        -> virginity to judge `v` legs against
-/// - attacked_royal  : bool        -> royalty to judge `k` legs against
-/// - attacked_rank   : u8          -> rank to judge `g` legs against
-/// - attacked_square : Square      -> square the attack has to reach
+/// - attacked_unmoved: bool        -> target virgin status
+/// - attacked_royal  : bool        -> target royal status
+/// - attacked_rank   : u8          -> target capture rank
+/// - attacked_square : Square      -> square reached by a capture leg
 /// - state           : &State      -> current position for occupancy checks
 ///
 /// Return:
 /// bool                            -> true when the vector realizes the attack
 ///
 /// Notes:
-/// Offsets scale by the attacking piece's colour, reversing both axes for the
-/// opposite side, so one precomputed vector answers for either orientation
-/// without a second table. A leg marked `t` may arrive by en passant, and an
-/// unload leg is refused where it would hand the piece just taken straight
-/// back, an attack that undoes itself being no attack.
+/// Direction offsets scale by the attacking piece's color, reversing both
+/// axes for the opposite side. One precomputed vector can therefore validate
+/// attacks for either orientation without duplicate tables.
 #[macro_export]
 macro_rules! validate_attack_vector {
     (
@@ -898,47 +830,41 @@ macro_rules! validate_attack_vector {
     }};
 }
 
-/*----------------------------------------------------------------------------*\
-                               MOVE CONSTRUCTION
-\*----------------------------------------------------------------------------*/
-
 /// process_multi_leg_vector!
 ///
-/// The move-construction core. One compiled vector is walked leg by leg
-/// against the position, and where every leg holds up, the move it makes is
-/// encoded and pushed. What the walk collects decides what comes out: taken
-/// pieces pile into `scratch`, and an empty pile leaves a quiet move, one
-/// record a single capture, more than one a multi-capture carrying its
-/// records beside the word. A leg that cannot be played, blocked or refused
-/// by its own modifiers, abandons the vector with nothing emitted.
+/// The move-construction core: simulates one compiled vector leg by leg
+/// against current occupancy and, when every leg is satisfiable, emits
+/// the encoded `Move`(s) it produces — including capture and multi-
+/// capture payloads, unloads, en passant creation/consumption, castling-
+/// rights effects, and promotion branching (one move per legal target).
+/// Illegal combinations (blocked legs, violated capture modifiers,
+/// initial-move constraints) abort without emitting.
 ///
-/// Each leg starts where the last one ended, so a vector is a route rather
-/// than an offset. `S` is the origin, `1` and `2` the landings between, `T`
-/// the square the move is finally emitted for; occupancy and modifiers are
-/// asked at every one of them and not only at the last:
+/// Each leg starts where the last ended; `S` is the origin, `1`/`2` the
+/// intermediate leg endpoints, and `T` the final target a move is emitted
+/// for (occupancy and modifiers are checked at every endpoint):
 ///
 /// ```text
-/// ┌────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │ T  │
-/// ├────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┤
-/// │    │ 1  │    │    │    │ 2  │
-/// ├────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┤
-/// │ S  │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┘
+/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │ T  │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │ 1  │    │    │ 2  │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │ S  │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
 /// ```
-///
-/// Promotion zones are read as the walk crosses them. Touching an optional
-/// zone puts one move per promotion target beside the plain move; touching a
-/// mandatory one, or using a leg marked `r`, emits the promotions alone, the
-/// piece having no way left to stay as it is. Where the variant promotes only
-/// into what the enemy has taken, a target the enemy holds no copy of is left
-/// out of that fan.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
@@ -949,10 +875,9 @@ macro_rules! validate_attack_vector {
 /// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
 ///
 /// Notes:
-/// Offsets scale by the piece's colour, reversing both axes for the opposite
-/// side. `scratch` is cleared before the walk and moved into the encoded move
-/// only where more than one record survives it; an unload leg takes the last
-/// record back out and re-files it as a placement on that leg's start square.
+/// Direction offsets scale by piece color, reversing both axes for the
+/// opposite side. `scratch` is cleared before simulation and transferred into
+/// an emitted multi-capture move only when its extra capture records remain.
 #[macro_export]
 macro_rules! process_multi_leg_vector {
     (
@@ -1291,13 +1216,18 @@ macro_rules! process_multi_leg_vector {
 
 /// generate_move_list_from_vectors!
 ///
-/// Runs [`process_multi_leg_vector!`] over a whole set of vectors, which is
-/// the only thing between one move and every move a piece has from a square.
-/// Which set arrives is the caller's business, and it is also the whole
-/// difference between generating everything and generating captures alone:
+/// Generates all pseudo-legal encoded moves for `$piece` from `$square_index`.
+/// Resolves multi-leg constraints, captures/unloads, en-passant flags, castling
+/// side conditions, and promotion branching for all vectors in `$vector_set`.
+/// Shared move constructor used by `generate_move_list!` and
+/// `generate_capture_list!`, which select the appropriate precomputed source:
 ///
-/// - `relevant_moves`    -> every vector playable from the square
-/// - `relevant_captures` -> only those able to take something
+/// - `relevant_moves`    -> full pseudo-legal move list
+/// - `relevant_captures` -> capture-focused pseudo-legal list
+///
+/// Unlike `validate_attack_vector!`, which only answers whether a single
+/// vector realizes an attack, this macro builds complete `Move` objects
+/// for all vectors in the set.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
@@ -1323,10 +1253,10 @@ macro_rules! generate_move_list_from_vectors {
 
 /// generate_move_list!
 ///
-/// Every pseudo-legal move one piece has from one square, appended to `$out`.
-/// The lookup into `relevant_moves` is all this adds: the vectors that survive
-/// it are handed to [`generate_move_list_from_vectors!`], which turns each
-/// into whatever moves the position allows it to make.
+/// Generates all pseudo-legal encoded moves for `$piece` from
+/// `$square_index`, appending them to `$out`. Resolves multi-leg
+/// constraints, captures/unloads, en-passant flags, castling conditions,
+/// and promotion branching from the piece's `relevant_moves` vectors.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
@@ -1353,11 +1283,10 @@ macro_rules! generate_move_list {
 
 /// generate_capture_list!
 ///
-/// The capturing half of the same generation, taken from the narrower
-/// `relevant_captures` table so that nothing about the pipeline changes. A
-/// capture-capable vector can still come out quiet, the square it aimed at
-/// being empty when it arrives, so what the walk produced is filtered
-/// afterwards rather than trusted.
+/// Generates only the pseudo-legal capture moves for `$piece` from
+/// `$square_index`. Uses precomputed `relevant_captures` so generation
+/// follows the same pipeline as normal move generation, then drops any
+/// non-capturing moves it produced.
 ///
 /// The surviving captures keep the order they were generated in, which is
 /// the order `generate_move_list!` would have produced them: both vector
@@ -1420,29 +1349,16 @@ macro_rules! retain_captures {
 
 /// generate_castling_list!
 ///
-/// Emits the castling moves the position currently allows the side to move.
-/// A wing's rights bit is asked first, and behind it stand the moves already
-/// compiled from the variant's layouts, so all that remains is whether the
-/// board still looks the way its layout described:
-///
-/// - the royal stands on its start square and the partner on its own
-/// - both destination squares are empty
-/// - every square the layout marked `+` or `*` is empty
-/// - the start square, the destination, and every `*` square are unattacked
-///
-/// That last line is why castling has to ask about squares nobody stands on,
-/// and why [`is_square_attacked!`] takes the target's properties as arguments:
-/// each empty square is judged as though the royal already stood on it, which
-/// is exactly the question a king walking through them asks.
+/// Emits the currently legal castling moves for the side to move. Each
+/// precomputed castling move is validated against live state: both
+/// participants must stand unmoved on their start squares, destination
+/// and path squares must be empty, and every `*`-marked square (packed in
+/// the move's auxiliary list) must not be attacked. Castling rights bits
+/// gate the whole check per side and wing.
 ///
 /// Params:
 /// - state: &State         -> current position providing rights and occupancy
 /// - out  : &mut Vec<Move> -> output list receiving castling moves
-///
-/// Notes:
-/// Both wings run the same check against different table slots, spelled out
-/// twice rather than looped over, the rights bit and the table index being
-/// the only things that differ.
 #[macro_export]
 macro_rules! generate_castling_list {
     (
@@ -1585,43 +1501,27 @@ macro_rules! generate_castling_list {
     }};
 }
 
-/*----------------------------------------------------------------------------*\
-                          MOVE STATE TRANSITION MACROS
-\*----------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------*\
+                           MOVE STATE TRANSITION MACROS
+\*---------------------------------------------------------------------------*/
 
 /// make_move!
 ///
-/// Plays a move and every consequence it has, then asks whether it was
-/// allowed. Generation hands over pseudo-legal moves, so the answer cannot be
-/// known before the board has changed: a move that turns out to leave its own
-/// royal attacked takes itself back and reports false, and a caller therefore
-/// only ever sees a position that has either advanced legally or not moved at
-/// all.
+/// Applies a move to the game state with full incremental bookkeeping.
+/// This macro performs a complete state transition:
+///
+/// - advances ply counters
+/// - updates board occupancy, piece lists, virgin flags, castling/en-passant
+/// - handles quiet, capture, multi-capture, unload, promotion, and drop flows
+/// - updates material/piece-class counters and in-hand inventories
+/// - updates Zobrist hash and declared rule-progress counters
+/// - pushes a reversible [`Snapshot`] and rejects illegal self-check outcomes
 ///
 /// ```text
-/// save reversible fields → apply → push snapshot → legal?
-///                                                  ├ yes: record a terminal
-///                                                  │      result if any
-///                                                  └ no : undo, return false
+/// save before-state -> apply -> push Snapshot -> legal?
+///                                                | yes: pass
+///                                                | no : undo move
 /// ```
-///
-/// The fields saved first are the ones no amount of replaying could recover:
-/// castling rights, the en-passant square, the position, virgin and pawn
-/// hashes, the halfmove, repetition and counting clocks, the game phase and
-/// its score, the delivered-check tallies and the standing result. Everything
-/// else about the position is rebuilt by undoing what was done.
-///
-/// Applying itself branches by move type — quiet, single capture, multi
-/// capture, castling, drop — and each branch carries the whole position
-/// forward as it goes: occupancy boards, royal lists, virgin flags, hands,
-/// phase score, and the hashes, all updated by difference rather than
-/// recomputed, since a search that recomputed them would spend its time here.
-///
-/// Legality is a single expression saying two things. The ordinary one is
-/// that a move leaving the mover's own royal attacked is no move. The other
-/// belongs to variants with stand-offs: standing in one and leaving it
-/// standing is refused, entering a fresh one is fine, and passing while in one
-/// is legal whatever else holds, that pass being how such a game is ended.
 ///
 /// Params:
 /// - state: &mut State -> position the move is applied to
@@ -1632,10 +1532,7 @@ macro_rules! generate_castling_list {
 ///
 /// Notes:
 /// Call `undo_move!` only after a true return. A false return has already
-/// restored the position and removed its temporary snapshot. Debug builds
-/// check the whole state for internal agreement on the way in and on the way
-/// out, so a bookkeeping slip surfaces at the move that caused it rather than
-/// wherever the corruption is first read.
+/// restored the position and removed its temporary snapshot.
 #[macro_export]
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
@@ -2833,16 +2730,7 @@ macro_rules! make_move {
                 }
             }
 
-            $state.game_phase =
-                if $state.game_phase == SETUP {
-                    SETUP
-                } else if $state.phase_score > $state.statics.opening_score {
-                    cmp::max(OPENING, $state.game_phase)
-                } else if $state.phase_score < $state.statics.endgame_score {
-                    cmp::max(ENDGAME, $state.game_phase)
-                } else {
-                    cmp::max(MIDDLEGAME, $state.game_phase)
-                };
+            $state.game_phase = game_phase!($state);
 
             let this_player = $state.playing;
             let next_player = 1 - this_player;
@@ -2922,23 +2810,17 @@ macro_rules! make_move {
 
 /// undo_move!
 ///
-/// Puts the position back the way `make_move!` found it. The fields it saved
-/// come straight off the snapshot, which is the reason they were saved at all;
-/// everything else is undone by running the move backwards. The piece returns
-/// to its start square, anything taken is put back where it stood with the
-/// virginity it had, a promotion is demoted to what promoted, a drop goes back
-/// into the hand it came out of, and an unloaded piece is picked up again.
-///
-/// The snapshot is popped as it is read, so make and undo are a stack: one
-/// undo per successful make, in the order they were made.
+/// Reverts the last applied move using the most recent [`Snapshot`].
+/// This macro restores all dynamic state fields and reverses side effects made
+/// by `make_move!`, including board occupancy, piece lists, and rule-progress
+/// counters.
 ///
 /// Params:
 /// - state: &mut State -> position whose most recent move is reverted
 ///
 /// Notes:
-/// Call only after a successful `make_move!`; a rejected move has already
-/// removed its own snapshot. Undoing with nothing left to undo panics rather
-/// than rewinding into a position that never occurred.
+/// Call only after a successful `make_move!`. Rejected moves remove their
+/// temporary snapshot before returning false.
 #[macro_export]
 macro_rules! undo_move {
     ($state:expr) => {
@@ -3642,29 +3524,20 @@ macro_rules! undo_move {
 
 /// make_null_move!
 ///
-/// Hands the turn over without moving anything. The search plays one to ask
-/// what happens when a side does nothing at all: a position that still fails
-/// high after the opponent has been given a free move is good enough to stop
-/// looking at, so the board, the piece lists and the hands are left exactly
-/// as they stand.
+/// Applies a null move for the side to move.
+/// A null move:
 ///
-/// What does change is what passing changes. The en-passant square goes away,
-/// the capture it offered having belonged to a move nobody made, and the side
-/// to move flips, both written into the hash as they happen. The halfmove
-/// clock is left alone, no move having been played for it to count, while the
-/// repetition clock advances, a null move being as quiet as a ply can be.
+/// - Advances `search_ply` and `ply_counter`.
+/// - Clears en-passant state and updates hash before the side toggle.
+/// - Flips `playing` and updates side-to-move hash.
+/// - Pushes a `Snapshot` containing reversible state to history.
+/// - Does not alter the halfmove clock.
 ///
-/// The snapshot goes onto the same history stack real moves use, carrying a
-/// null ply, so undoing is the same operation and plies are counted the same
-/// way whether or not anything was played.
+/// This is used by null-move pruning in search and does not modify board
+/// occupancy or piece lists.
 ///
 /// Params:
 /// - state: &mut State -> position whose turn is passed to the opponent
-///
-/// Notes:
-/// Legality is not asked here. Passing out of check is not something to prune
-/// with, and keeping that judgement at the call site is what lets this stay a
-/// bookkeeping macro.
 #[macro_export]
 macro_rules! make_null_move {
     ($state:expr) => {
@@ -3742,19 +3615,15 @@ macro_rules! make_null_move {
 
 /// undo_null_move!
 ///
-/// Takes the turn back. Nothing was moved, so nothing has to be unmoved: the
-/// saved fields are copied back off the snapshot, the side flips again, and
-/// the position is the one the search was looking at before it asked its
-/// question.
-///
-/// The snapshot is popped from the stack `undo_move!` reads, so a null move
-/// has to be undone in its turn like any other ply.
+/// Reverts the most recent null move.
+/// This restores the `Snapshot` saved by `make_null_move!`, including turn,
+/// clocks, castling/en-passant data, phase flags, and position hash.
 ///
 /// Params:
 /// - state: &mut State -> position whose most recent null move is reverted
 ///
 /// Notes:
-/// Panics when there is no snapshot left to pop.
+/// Panics if no history snapshot exists to undo.
 #[macro_export]
 macro_rules! undo_null_move {
     ($state:expr) => {{
@@ -3795,26 +3664,13 @@ macro_rules! undo_null_move {
     }};
 }
 
-/*----------------------------------------------------------------------------*\
-                              FULL MOVE GENERATION
-\*----------------------------------------------------------------------------*/
-
 /// generate_all_moves_and_drops
 ///
-/// Every pseudo-legal move the side to move has, board moves and drops alike.
-/// Three sources feed the list, and which of them contribute depends on the
-/// variant and on where the game is:
-///
-/// - board moves, one sweep per piece standing on a square, unless the game
-///   is still in its setup phase and the board is being filled rather than
-///   played on
-/// - drops, wherever the variant has them, and during setup regardless, the
-///   same mechanism placing an army that elsewhere returns a capture
-/// - castling, wherever the variant has it
-///
-/// A terminal position generates nothing at all, which is what leaves
-/// [`legal_moves!`] empty at the end of a game rather than full of moves
-/// nobody is allowed to play.
+/// Generates all pseudo-legal moves for the side to move, including drops.
+/// Normal moves are skipped during setup phase; drop generation may use
+/// either own-hand or enemy-hand inventory depending on drop flags.
+/// Returns immediately with an empty list when the position is terminal,
+/// so legal_moves! is always empty at terminal positions.
 ///
 /// Params:
 /// - state  : &State         -> position to generate for
@@ -3859,13 +3715,10 @@ pub fn generate_all_moves_and_drops(
 
 /// generate_all_captures
 ///
-/// The capture-only counterpart, read by quiescence search where only forcing
-/// moves are worth looking at. It walks the narrower `relevant_captures`
-/// tables, so the quiet moves cost nothing to leave out: they were never
-/// generated. Drops and castling take nothing and are not asked for at all.
-///
-/// Nothing comes out of a terminal position, and nothing out of the setup
-/// phase either, where the moves on offer are placements rather than captures.
+/// Capture-only counterpart of `generate_all_moves_and_drops`, used by
+/// quiescence search. Walks the narrower `relevant_captures` tables and keeps
+/// only moves that
+/// actually capture; quiet moves, drops, and castling are never generated.
 ///
 /// Params:
 /// - state  : &State         -> position to generate for

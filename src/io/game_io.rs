@@ -10,19 +10,53 @@
 //!
 //! Created: 25/01/2026
 //! Author : Alden Luthfi
+
 use crate::*;
 
+/*----------------------------------------------------------------------------*\
+                             PATTERNS AND DEFAULTS
+\*----------------------------------------------------------------------------*/
+
+/// DEFAULT_DROP
+///
+/// The drop expression a piece falls back to when the variant enables drops
+/// or a setup phase but names no rule for that piece. Read as a drop
+/// expression wrapped around a CPMN pattern, it asks for one thing and
+/// forbids nothing:
+///
+/// ```text
+/// @  #  ~  ?  @
+/// ^  ^     ^  ^
+/// |  |     |  no stoppers, so no neighbour can refuse the square
+/// |  |     the empty-square sentinel
+/// |  the target square itself, at no offset from it
+/// no modifiers, so the drop carries no flags
+/// ```
+///
+/// Which says: any empty square will do. A variant that wants less than
+/// that — no two pawns on a file, no drop that mates — spells the rule out
+/// in its `= drop rules =` or `= setup rules =` section instead.
 const DEFAULT_DROP: &str = "@#~?@";
 
 lazy_static! {
-    /// CFEN field regexes.
+    /// CFEN field patterns
     ///
-    /// Shared patterns used to detect and validate the optional CFEN
-    /// fields:
+    /// The three optional CFEN fields, each anchored so a field is either
+    /// well-formed whole or rejected outright. They are read at two moments:
+    /// once when a config is loaded, to check that the variant's declared
+    /// rules and its starting position agree on which fields exist, and once
+    /// per position loaded, to validate a field before it is decoded.
     ///
-    /// - CASTLING_PATTERN : KQkq rights, or `-`
-    /// - ENP_PATTERN      : packed en passant square, or `*`
-    /// - HAND_PATTERN     : the `white/black` in-hand split
+    /// ```text
+    /// KQkq      CASTLING_PATTERN   any run of the four rights, or -
+    /// 034044P   ENP_PATTERN        square, captured square, piece, or *
+    /// PNN/-     HAND_PATTERN       white's hand, /, black's hand
+    /// ```
+    ///
+    /// Both en passant halves are three hex digits wide, so every board up
+    /// to 4096 squares packs into the same fixed-width field, and the hand
+    /// split is deliberately loose: the two halves are checked against the
+    /// variant's piece alphabet once they are read, not by the pattern.
     static ref CASTLING_PATTERN: Regex =
         Regex::new(r"^([KQkq]+)$|^-$").unwrap();
     static ref ENP_PATTERN: Regex =
@@ -30,20 +64,38 @@ lazy_static! {
     static ref HAND_PATTERN: Regex = Regex::new(r"^(.*)/(.*)$").unwrap();
 }
 
+/*----------------------------------------------------------------------------*\
+                           CASTLING LAYOUT VALIDATION
+\*----------------------------------------------------------------------------*/
+
 /// validate_castling
 ///
-/// Tests whether a loaded position preserves the configured starting pieces
-/// required for castling rights to remain meaningful in this variant.
+/// Tests one castling layout against the variant's own starting position. A
+/// config lists every layout its family of variants admits, and this is what
+/// narrows that list to the ones this variant can actually reach: a layout is
+/// kept only when every square it names a piece on is occupied at the start.
 ///
-/// A castling right is valid only when every occupied loaded-start square also
-/// contains a piece on the configured starting board.
+/// ```text
+/// startpos   R N B Q K B N R    standard's own first rank
+/// layout     R + * * K . . .    the queen-side pair names a1 and e1
+///            ^       ^          both occupied at the start, so kept
+///
+/// startpos   . N B Q K B N R    a variant starting without that rook
+/// layout     R + * * K . . .    the same layout, offered by the same
+///            ^                  family, now names an empty a1: dropped
+/// ```
+///
+/// Only occupancy is compared, never which piece stands where. The layout is
+/// written in the board grammar `parse_bit_fen` reads, and the `*` and `+`
+/// markers there stand for squares the king passes over or that merely have
+/// to be empty, so they step past a square without naming a piece on it.
 ///
 /// Params:
-/// - fen  : &str   -> position being loaded
-/// - state: &State -> variant whose startpos is compared against
+/// - fen  : &str   -> the castling layout being tested, as a board
+/// - state: &State -> variant whose starting position it is tested against
 ///
 /// Return:
-/// bool            -> true if castling rights can be honored from this position
+/// bool            -> true when every named square starts out occupied
 fn validate_castling(fen: &str, state: &State) -> bool {
     let startpos = &state.statics.startpos
         .split_whitespace()
@@ -142,40 +194,74 @@ fn validate_castling(fen: &str, state: &State) -> bool {
     valid
 }
 
+/*----------------------------------------------------------------------------*\
+                             TUNED PARAMETER FILES
+\*----------------------------------------------------------------------------*/
+
 /// parse_tuned_parameters
 ///
-/// Parses one material-and-PST-residual payload. Material loads first, then
-/// roles, phase thresholds, search parameters, shelter, and rule-derived PST
-/// bases are rebuilt. Residual rows are added only after their bases exist.
+/// Loads a variant's evaluation parameters from one flat run of integers.
+/// The payload carries no names and no separators, so its length is what
+/// identifies it: `T` piece types on `S` squares must give exactly
+/// `2·T + 2·T·S + 11` tokens, and any other count means a payload written
+/// for some other variant rather than a payload worth repairing.
 ///
-/// Token order:
+/// ```text
+/// │ material │ piece-square tables │ scalars │
+///     2·T             2·T·S            11
+/// ```
 ///
-/// 1. opening material values, one per piece type,
-/// 2. endgame material values, one per piece type,
-/// 3. per piece type, its White opening PST residual row then its White
-///    endgame PST residual row, each `board_size` long.
+/// Material arrives as one whole column each way round, and the tables then
+/// arrive one piece type at a time:
 ///
-/// Black final PST rows mirror White final rows across the horizontal axis.
-/// One exact payload shape is accepted; stale shapes fail by token count.
+/// ```text
+/// material   every type's opening value, then every type's endgame value
+/// tables     type 0 opening, type 0 endgame, type 1 opening, and so on
+/// ```
+///
+/// Only White is written down. Black's tables are the mirror of White's
+/// across the ranks, which is what makes a table mean the same thing to
+/// whichever side is reading it. The eleven scalars close the payload in a
+/// fixed order:
+///
+/// ```text
+/// 1  tempo bonus        5  shelter value     9   king danger scale
+/// 2  major imbalance    6  guard value       10  king danger cap
+/// 3  minor imbalance    7  castled value     11  open shield penalty
+/// 4  pair bonus         8  castling right
+/// ```
 ///
 /// Params:
 /// - state  : &mut State -> variant whose parameters are loaded
 /// - content: &str       -> flat space-separated parameter payload
+///
+/// Notes:
+/// Installation is ordered, because each stage is read by the next: the
+/// derived products are built out of material, and the derived families are
+/// built out of tables that have to be in place first.
+///
+/// ```text
+/// 1  material     every piece type's opening and endgame value
+/// 2  products     derived from that material before anything reads it
+/// 3  tables       White as loaded, Black mirrored across the ranks
+/// 4  derivation   search, shelter, danger, pawn, advantage, capability
+/// 5  scalars      installed last, the pawn cache emptied behind them
+/// ```
+///
+/// Every value is bounded to ±0x3FFF, the width the packed piece word and
+/// the evaluation accumulators leave for it. A payload out of that range is
+/// a corrupt file rather than an unusual variant, so it panics.
 pub fn parse_tuned_parameters(state: &mut State, content: &str) {
-    let tokens: Vec<i32> = content
-        .split_whitespace()
-        .map(|token| {
-            token.parse::<i32>().unwrap_or_else(|_| {
-                panic!("Invalid parameter value: {}", token)
-            })
-        })
-        .collect();
-
     let piece_type_pairs = collect_piece_type_pairs(state);
     let piece_type_count = piece_type_pairs.len();
     let board_size = state.statics.board_size;
+    let tokens: Vec<i32> = content.split_whitespace().map(|token| {
+        token.parse::<i32>().unwrap_or_else(|_| {
+            panic!("Invalid parameter value: {}", token)
+        })
+    }).collect();
     let expected_count = 2 * piece_type_count
-        + 2 * piece_type_count * board_size;
+        + 2 * piece_type_count * board_size + 11;
 
     assert_eq!(
         tokens.len(), expected_count,
@@ -191,7 +277,7 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     cursor += piece_type_count;
     let endgame_values = &tokens[cursor..cursor + piece_type_count];
     cursor += piece_type_count;
-    let mut residuals = Vec::with_capacity(piece_type_count);
+    let mut rows = Vec::with_capacity(piece_type_count);
 
     for piece_type_index in 0..piece_type_count {
         let opening_value = opening_values[piece_type_index];
@@ -216,7 +302,7 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
         cursor += board_size;
         let endgame = tokens[cursor..cursor + board_size].to_vec();
         cursor += board_size;
-        residuals.push((opening, endgame));
+        rows.push((opening, endgame));
 
         let (white_index, black_index) = piece_type_pairs[piece_type_index];
 
@@ -241,17 +327,10 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     for (piece_type_index, (white_index, black_index)) in
         piece_type_pairs.iter().copied().enumerate()
     {
-        let (opening_residual, endgame_residual) = &residuals[piece_type_index];
-        let opening = state.statics.pst_opening[white_index]
-            .iter()
-            .zip(opening_residual)
-            .map(|(base, residual)| base + residual)
-            .collect::<Vec<_>>();
-        let endgame = state.statics.pst_endgame[white_index]
-            .iter()
-            .zip(endgame_residual)
-            .map(|(base, residual)| base + residual)
-            .collect::<Vec<_>>();
+        let (opening, endgame) = &rows[piece_type_index];
+        assert!(opening.iter().chain(endgame.iter())
+            .all(|value| (-0x3FFF..=0x3FFF).contains(value)),
+            "Piece-square value out of range");
 
         state.static_mut().pst_opening[white_index] = opening.clone();
         state.static_mut().pst_opening[black_index] =
@@ -275,17 +354,49 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     derive_pawn_parameters(state);
     derive_advantage_parameters(state);
     derive_search_capabilities(state);
+
+    let values = &tokens[cursor..];
+
+    assert!(
+        values.iter().all(|value| (-0x3FFF..=0x3FFF).contains(value)),
+        "Evaluation scalar out of range"
+    );
+
+    let eval = &mut state.static_mut().eval;
+    [
+        eval.tempo_bonus, eval.imbalance_major,
+        eval.imbalance_minor, eval.pair_bonus,
+        eval.shelter_value, eval.guard_value,
+        eval.castled_value, eval.castling_right_value,
+        eval.king_danger_scale, eval.king_danger_cap,
+        eval.open_shield_penalty,
+    ] = values.try_into().unwrap();
+
+    state.scratch.pawn_table.table.fill(PTEntry::default());
     refresh_eval_state(state);
 }
 
 /// export_tuned_parameters_file
 ///
-/// Exports material and final-PST residuals to
-/// `res/param/{variant}/latest.param`, first rolling any current payload to a
-/// timestamped backup through `roll_latest`.
+/// Writes a variant's evaluation parameters out in exactly the order
+/// `parse_tuned_parameters` reads them back, so a file written here loads
+/// into the state it was written from. Only White's tables are written:
+/// Black's are the mirror of them and are rebuilt on load rather than
+/// stored, which is also what keeps the payload's length predictable.
+///
+/// ```text
+/// res/param/<variant>/2026-09-06_14-02-11.param   what stood there before
+/// res/param/<variant>/latest.param                the payload just written
+/// ```
+///
+/// The directory is created if it is missing, and whatever already stood as
+/// `latest.param` is rolled aside under the time it was written first, so a
+/// derivation that turns out worse than the one before it can be undone by
+/// hand rather than re-derived.
 ///
 /// Params:
-/// - state: &State -> variant whose parameters are serialized
+/// - state  : &State -> variant whose parameters are serialized
+/// - variant: &str   -> variant name, naming the directory written into
 pub fn export_tuned_parameters_file(
     state: &State,
     variant: &str,
@@ -293,7 +404,6 @@ pub fn export_tuned_parameters_file(
     assert!(!variant.trim().is_empty(), "Variant name cannot be empty");
 
     let piece_type_pairs = collect_piece_type_pairs(state);
-    let (base_opening, base_endgame) = derive_base_pst(state);
     let mut output_tokens = Vec::new();
 
     for (white_index, _) in &piece_type_pairs {
@@ -311,18 +421,26 @@ pub fn export_tuned_parameters_file(
     for (white_index, _) in &piece_type_pairs {
         for square in 0..state.statics.board_size {
             output_tokens.push(
-                (state.statics.pst_opening[*white_index][square]
-                    - base_opening[*white_index][square]).to_string()
+                state.statics.pst_opening[*white_index][square].to_string()
             );
         }
 
         for square in 0..state.statics.board_size {
             output_tokens.push(
-                (state.statics.pst_endgame[*white_index][square]
-                    - base_endgame[*white_index][square]).to_string()
+                state.statics.pst_endgame[*white_index][square].to_string()
             );
         }
     }
+
+    let eval = &state.statics.eval;
+    output_tokens.extend([
+        eval.tempo_bonus, eval.imbalance_major,
+        eval.imbalance_minor, eval.pair_bonus,
+        eval.shelter_value, eval.guard_value,
+        eval.castled_value, eval.castling_right_value,
+        eval.king_danger_scale, eval.king_danger_cap,
+        eval.open_shield_penalty,
+    ].iter().map(ToString::to_string));
 
     let dir_path = format!("{}/{}", PARAMS_DIR, variant);
 
@@ -341,22 +459,45 @@ pub fn export_tuned_parameters_file(
     });
 }
 
+/*----------------------------------------------------------------------------*\
+                             CONFIGURATION PARSING
+\*----------------------------------------------------------------------------*/
+
 /// parse_config_preview
 ///
-/// Parses a game configuration file for previewing purposes, without fully
-/// populating the `State` struct. Only parsing the:
+/// Reads just enough of a config to show a variant before it is chosen.
+/// Building a whole `State` means compiling every move expression, deriving
+/// every parameter, and precomputing every table, which is far more than a
+/// list the user is scrolling through can afford, so this reads three lines
+/// and renders the starting position out of those alone.
 ///
-/// - title
-/// - initial position
-/// - piece chars
+/// ```text
+/// = general =       the title, and the starting position under it
+/// = piece order =   the piece alphabet, in index order
+/// ```
 ///
-/// Returns (title, board) to be shown in the TUI
+/// One bitboard per piece character is filled from the position, and the
+/// boards are then overlaid into a single diagram, the same way
+/// `format_game_state` composes one for a live position:
+///
+/// ```text
+///    ╔═══╤═══╗       ╔═══╤═══╗       ╔═══╤═══╗
+///  2 ║ k │   ║       ║   │   ║       ║ k │   ║
+///    ╟───┼───╢   +   ╟───┼───╢   =   ╟───┼───╢
+///  1 ║   │   ║       ║   │ K ║       ║   │ K ║
+///    ╚═══╧═══╝       ╚═══╧═══╝       ╚═══╧═══╝
+///      a   b           a   b           a   b
+/// ```
+///
+/// The position is still checked against the dimensions it implies — every
+/// rank present, every rank the same width — since a config whose board does
+/// not add up is broken however little of it is being read.
 ///
 /// Params:
 /// - path: &str     -> config filename inside the embedded configs
 ///
 /// Return:
-/// (String, String) -> (variant title, rendered start board)
+/// (String, String) -> the variant's title, and its starting board rendered
 pub fn parse_config_preview(path: &str) -> (String, String) {
     let sections = split_sections(&config_text(path));
 
@@ -481,15 +622,26 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
 
 /// config_text
 ///
-/// Reads a config file, preferring the copy embedded in the binary so
-/// variants ship inside the executable with no filesystem layout, and
-/// falling back to the working directory when the name is not embedded.
+/// Reads a config, preferring the copy compiled into the binary. Every
+/// shipped variant is embedded, so a released engine needs no `configs`
+/// directory beside it and cannot be started against a half-installed one.
+///
+/// ```text
+/// path      configs/standard.conf, or plain standard.conf
+/// lookup    the file name alone, standard.conf, among the embedded set
+/// found     read out of the binary, whatever is on disk
+/// missing   read from the path as given, off the filesystem
+/// ```
+///
+/// Any leading directory is dropped before the lookup, so naming a file in
+/// a directory still finds the embedded copy, and the fallback is what lets
+/// a config that is not embedded yet be tried without a rebuild.
 ///
 /// Params:
 /// - path: &str -> config filename, e.g. "standard.conf"
 ///
 /// Return:
-/// String       -> the file's text
+/// String       -> the config's text
 fn config_text(path: &str) -> String {
     Path::new(path)
         .file_name()
@@ -505,17 +657,38 @@ fn config_text(path: &str) -> String {
 
 /// split_sections
 ///
-/// Splits `= section =` delimited text into a section table: comments
-/// are stripped, blank lines dropped, and each title paired with its
-/// body's lines. Shared by the two config parsers, the protocol variant
-/// scan, and the dictionary translator — `.conf` and `.dict` share this
-/// section grammar even though their bodies differ.
+/// Turns `= section =` delimited text into a table of titles and bodies.
+/// Both file formats the engine reads are written this way — a `.conf`
+/// describes a variant and a `.dict` describes a protocol's notation — so
+/// the grammar is shared even though nothing about their bodies is.
+///
+/// ```text
+/// // the standard game       stripped, wherever the // starts
+/// = general =                a title
+/// Standard Chess             its body, blank lines dropped
+///
+/// = piece order =            the next title ends the previous body
+/// PRNBQKprnbqk
+/// ```
+///
+/// leaving the caller a table it can index by name:
+///
+/// ```text
+/// "general"       ["Standard Chess", "rnbqkbnr/... w KQkq * 1"]
+/// "piece order"   ["PRNBQKprnbqk"]
+/// ```
 ///
 /// Params:
 /// - content: &str              -> raw `.conf` or `.dict` file text
 ///
 /// Return:
-/// HashMap<String, Vec<String>> -> section title to its body lines
+/// HashMap<String, Vec<String>> -> each section title to its body lines
+///
+/// Notes:
+/// Titles and bodies are collected separately and paired by position, so
+/// text standing before the first title would be read as the first
+/// section's body. Comments are stripped before the split, which is what
+/// keeps the commented preamble every config opens with out of the way.
 pub fn split_sections(content: &str) -> HashMap<String, Vec<String>> {
     let uncommented = COMMENT_PATTERN.replace_all(content, "");
     let cleaned = uncommented
@@ -546,10 +719,18 @@ pub fn split_sections(content: &str) -> HashMap<String, Vec<String>> {
 
 /// piece_indices
 ///
-/// Resolves the piece-character key of a config row into the piece
-/// indices it names: one character for a rule written once, two for the
-/// white and black halves of a pair. Every per-piece section — moves,
-/// promotions, zones, drops, setup, stand-offs — keys its rows this way.
+/// Resolves the piece-character key of a config row into the piece indices
+/// it names. Every per-piece section — moves, promotions, zones, drops,
+/// setup, stand-offs — keys its rows this way, and the key's length is what
+/// says whether the rule is written once for both colours or once for one:
+///
+/// ```text
+/// Pp:mnW|im<nW-pnW>   two characters, so both pawns take the rule
+/// P:RBNQ              one character, so only White's pawn does
+/// ```
+///
+/// A key of any other length is a malformed config rather than an unusual
+/// variant, so it panics, as does a character the piece list never named.
 ///
 /// Params:
 /// - piece_chars  : &str                  -> the row's key characters
@@ -579,37 +760,68 @@ fn piece_indices(
 
 /// parse_config_file
 ///
-/// Parses a game configuration file and initializes a game state.
-/// See `example.conf` for the expected format of the configuration file.
+/// Builds a playable variant out of one config file. Everything the engine
+/// knows about a game arrives here and nowhere else: its board, its pieces,
+/// how they move, and what ends the game. `example.conf` documents the
+/// grammar section by section, and is the reference for what may appear.
 ///
-/// Pieces are first parsed into a tuple of:
-/// (string, char, Vec<u8>, u8, u8, bool, bool, bool, u16, u16, u8)
+/// Pieces are gathered into a tuple before they become `Piece` values,
+/// because no one section says enough to build one — the alphabet names it,
+/// the order fixes its index, the roles say whether it is royal:
 ///
-/// where the fields are:
-/// [0] string: the name of the piece
-/// [1] char: the character representing the piece on the board
-/// [2] Vec<u8>: the vector of pieces this piece can promote to
-/// [3] u8: the piece index (0-255, with 255 reserved for "no piece")
-/// [4] u8: the piece color (0 for white, 1 for black)
-/// [5] bool: whether the piece is royal
-/// [6] u8: the piece rank
+/// ```text
+/// 0  name         "Pawn", shared by both halves of the pair
+/// 1  char         'P', the letter the piece is written with
+/// 2  promotions   what it may become, from = promotions =
+/// 3  index        its place in = piece order =
+/// 4  color        WHITE or BLACK, one per half of the pair
+/// 5  royal        whether losing it can end the game
+/// 6  rank         its rank class, from = piece ranks =
+/// ```
 ///
-/// Which are then converted into `Piece` structs and stored in the `State`
-/// struct.
+/// Pieces are declared in pairs and indexed apart. Each `= pieces =` line
+/// pushes two entries, White then Black, and `= piece order =` then
+/// reorders them into the indices the rest of the engine addresses them by:
 ///
-/// After the pieces, the section-by-section walk fills in board zones
-/// (forbidden, promotion), castling layouts, special rules, termination,
-/// and move / drop / setup / stand-off expressions, then runs `precompute`
-/// and loads parameters — the embedded `latest.param` first so binaries
-/// are self-contained, a `res/param` file on disk next, and full
-/// derivation (plus export) when neither exists — returning a fully
-/// playable state.
+/// ```text
+/// = pieces =        Pp:Pawn        two entries, one per colour
+/// = piece order =   PRNBQKprnbqk   the index each of them lands on
+/// ```
+///
+/// The rest of the file is walked section by section, each one filling in
+/// its own part of the state:
+///
+/// ```text
+/// general       the title, the starting position, and the board it implies
+/// rules         which special rules this variant plays with at all
+/// pieces        the alphabet, the order, the roles, and the rank classes
+/// castling      the layouts, narrowed down by validate_castling
+/// promotions    what promotes into what, and the zones it happens in
+/// drops         where a held piece may re-enter the board
+/// forbidden     squares a piece may never stand on
+/// setup         where a piece may be placed before play begins
+/// stand-offs    the neighbourhoods a position may not present
+/// termination   what ends the game, and in whose favour
+/// ```
+///
+/// The declared rules and the starting position are cross-checked before
+/// any of that is built. A variant that declares castling must show rights
+/// in its FEN and carry a `= castling =` section; one that does not must
+/// show neither, so a rule can never be half-declared.
+///
+/// Parameters come last, and from whichever source is nearest to hand:
+///
+/// ```text
+/// embedded   res/param/<variant>/latest.param, compiled into the binary
+/// on disk    the same path, read off the filesystem
+/// neither    derived from the rules alone, and exported for next time
+/// ```
 ///
 /// Params:
 /// - path: &str -> config filename inside the embedded configs
 ///
 /// Return:
-/// State        -> the fully initialized variant state
+/// State        -> the fully initialized variant, ready to be played
 pub fn parse_config_file(path: &str) -> State {
     let sections = split_sections(&config_text(path));
 
@@ -634,7 +846,7 @@ pub fn parse_config_file(path: &str) -> State {
     );
 
     /*-----------------------------------------------------------------------*\
-                                 PARSE GENERAL SECTION
+                             PARSE GENERAL SECTION
     \*-----------------------------------------------------------------------*/
 
     let title = sections["general"][0].trim();
@@ -643,7 +855,7 @@ pub fn parse_config_file(path: &str) -> State {
     let (files, ranks) = determine_board_dimensions(initial_board);
 
     /*-----------------------------------------------------------------------*\
-                                  PARSE RULES SECTION
+                              PARSE RULES SECTION
     \*-----------------------------------------------------------------------*/
 
     let castling = sections["rules"].contains(&"castling".to_string());
@@ -973,7 +1185,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                                 POPULATE STATIC FIELDS
+                             POPULATE STATIC FIELDS
     \*-----------------------------------------------------------------------*/
 
     let mut result = State::new(
@@ -1086,7 +1298,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                                   PARSE CASTLING
+                                 PARSE CASTLING
     \*-----------------------------------------------------------------------*/
 
     if castling {
@@ -1230,7 +1442,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                                  PARSE PROMOTIONS
+                                PARSE PROMOTIONS
     \*-----------------------------------------------------------------------*/
 
     if promotions {
@@ -1272,7 +1484,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                                     PARSE DROPS
+                                  PARSE DROPS
     \*-----------------------------------------------------------------------*/
 
     pieces_drops = vec![
@@ -1293,7 +1505,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                              PARSE FORBIDDEN ZONES
+                             PARSE FORBIDDEN ZONES
     \*-----------------------------------------------------------------------*/
 
     if forbidden_zones {
@@ -1315,7 +1527,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                                  PARSE SETUP PHASE
+                               PARSE SETUP PHASE
     \*-----------------------------------------------------------------------*/
 
     pieces_setup = vec![
@@ -1364,7 +1576,7 @@ pub fn parse_config_file(path: &str) -> State {
     }
 
     /*-----------------------------------------------------------------------*\
-                                PARSE END CONDITIONS
+                               PARSE TERMINATION
     \*-----------------------------------------------------------------------*/
 
     let parse_outcome = |token: &str| -> Outcome {
@@ -1659,7 +1871,7 @@ pub fn parse_config_file(path: &str) -> State {
     result.termination = termination;
 
     /*-----------------------------------------------------------------------*\
-                               POST-PARSING COMPUTE
+                              POST-PARSING COMPUTE
     \*-----------------------------------------------------------------------*/
 
     result.precompute(
@@ -1696,19 +1908,49 @@ pub fn parse_config_file(path: &str) -> State {
     result
 }
 
+/*----------------------------------------------------------------------------*\
+                           ZONE AND POSITION LOADING
+\*----------------------------------------------------------------------------*/
+
 /// parse_bit_fen
 ///
-/// Parses a FEN-shaped zone description into a bitboard: any piece
-/// letter marks its square as set, digits skip squares, `/` breaks
-/// ranks. Used for forbidden zones, promotion zones, and similar
-/// per-square masks in config files.
+/// Reads a board-shaped description into a bitboard. It is the board half of
+/// a FEN read for squares rather than for pieces: which letter stands on a
+/// square never matters, only whether one does. Promotion zones, forbidden
+/// zones, castling layouts, and per-piece setup masks are all written so.
+///
+/// ```text
+/// XXXXXXXX/8/8/8/8/8/8/8   a promotion zone, the whole eighth rank
+/// 8/8/8/8/8/8/8/4XOOX      a castling layout, e1 and h1 but not f1 or g1
+/// ```
+///
+/// Each character is one square, unless it is a digit, which is as many:
+///
+/// ```text
+/// digit   skip that many squares, leaving them as they were
+/// /       end the rank and drop to the one below it
+/// O       clear the square
+/// other   set the square, whatever letter it happens to be
+/// ```
+///
+/// `O` is the odd one out because masks are written by rewriting a real
+/// position rather than from nothing: `parse_config_file` turns the starting
+/// FEN into one mask per piece by writing `X` where that piece stands and
+/// `O` wherever another one does, so `O` has to mean "some other piece" and
+/// not "an empty square".
 ///
 /// Params:
-/// - fen  : Option<&str> -> the zone description, None for an empty mask
+/// - fen  : Option<&str> -> the board description, None for an empty mask
 /// - state: &State       -> supplies the board dimensions
 ///
 /// Return:
-/// Board                 -> bitboard with the described squares set
+/// Board                 -> a bitboard with the described squares set
+///
+/// Notes:
+/// The description is checked against the board it is read onto — every
+/// rank present, every rank the full width — and panics otherwise. Masks
+/// are config text compiled once at load time, so one that does not fit the
+/// board is a broken variant rather than a position to reject.
 fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     if fen.is_none() {
         return board!(state.statics.files, state.statics.ranks);
@@ -1802,38 +2044,52 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 
 /// parse_fen
 ///
-/// Parses a FEN string and updates the game state accordingly. Applies
-/// protocol translation if needed and reports malformed external input
-/// without panicking.
+/// Loads a position written in Cheesy Forsyth-Edwards Notation (CFEN) and
+/// rebuilds the state around it. Unlike the rest of this file, the input is
+/// external — a GUI or a harness wrote it — so a malformed field comes back
+/// as a diagnostic rather than as a panic.
 ///
-/// Cheesy Forsyth-Edwards Notation (CFEN)
+/// CFEN is FEN with the fields a variant has no use for left out entirely
+/// rather than filled with placeholders, so how many fields to expect
+/// follows from the variant's own rules and is known before reading:
 ///
-/// The dimensions of the board are determined by the number of ranks and files
-/// in this section.
+/// ```text
+/// position     as in FEN, and the board's shape is read back out of it
+/// side         w or b
+/// castling     KQkq or -, only when the variant castles at all
+/// en passant   ssseeez or *, only when the variant has the rule
+/// in hand      white/black, only when pieces can be held at all
+/// halfmove     optional, and only read where a counter rule exists
+/// fullmove     optional, counted from one
+/// ```
 ///
-/// The format is similar to FEN depending on the ruleset there is 2-5 parts,
-/// the order is as follows:
+/// The en passant field names the whole capture rather than just a square,
+/// since a variant may capture a piece that is nowhere near the square the
+/// capturing piece lands on:
 ///
-/// (position) (side) (castling rights) (en passant square) (in hand pieces)
+/// ```text
+/// 034 044 P
+/// ^   ^   ^
+/// |   |   the piece standing there, so the capture knows what it takes
+/// |   the square that piece stands on, in hex
+/// the square a capturing piece would land on, in hex
+/// ```
 ///
-/// 1. position           : Same as normal FEN
-/// 2. side               : Same as normal FEN
-/// 3. castling rights    : Same as normal FEN
-/// 4. en passant square  : Formatted 'ssseeez'*
-/// 5. in hand pieces     : Formatted '(w)/(b)'**
+/// and the hand field is two piece runs, one per side:
 ///
-/// Optional:
+/// ```text
+/// PNN/-   White holds a pawn and two knights, Black holds nothing
+/// -/-     neither side holds anything
+/// ```
 ///
-/// 6. Halfmove clock     : number of halfmoves towards the halfmove-clock rule
-/// 7. Fullmove number    : starting at 1 and incremented after
+/// The two clock fields are told apart by how many trail the last required
+/// field, not by which rules the variant declares:
 ///
-/// *: s is the en passant square index itself in hex, e is the square index
-///   of the piece that can be captured en passant in hex, and z is the char
-///   of the piece that can be captured en passant. "*" if no en passant square.
-///
-/// **: where each w and b is formatted with the pieces in hand. e.g. PNN means
-///   a pawn and two knights in hand. "-" if no pieces in hand for that color
-///   so an empty hand for both is -/-.
+/// ```text
+/// two trailing   the halfmove clock, then the fullmove number
+/// one trailing   the fullmove number alone
+/// neither        the counters keep whatever they already held
+/// ```
 ///
 /// Params:
 /// - state: &mut State          -> position rebuilt from the FEN
@@ -1842,6 +2098,14 @@ fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
 ///
 /// Return:
 /// Result<(), String>           -> success or first malformed-field diagnostic
+///
+/// Notes:
+/// A dictionary, when given, rewrites the input into internal terms before
+/// anything is read, so the dialect a GUI speaks never reaches the parser.
+///
+/// The loaded position is tested for termination on the way out. Ordinarily
+/// only `make_move!` can end a game, but a position can arrive already over,
+/// and nothing later would notice.
 pub fn parse_fen(
     state: &mut State, fen: &str, dict: Option<&Translator>
 ) -> Result<(), String> {
@@ -2217,76 +2481,46 @@ pub fn parse_fen(
     Ok(())
 }
 
+/*----------------------------------------------------------------------------*\
+                                STATE RENDERING
+\*----------------------------------------------------------------------------*/
+
 /// combine_board_strings
 ///
-/// Combines two board string representations by overlaying
-/// non-whitespace characters from the first board onto the second board.
+/// Overlays one rendered board onto another, character by character.
+/// `format_board` can only mark the squares of a single bitboard, so a whole
+/// position is drawn one piece type at a time and the renderings are then
+/// laid over each other:
 ///
-/// This function is used to merge multiple piece-specific board visualizations
-/// into a single composite board display. It performs a character-by-character
-/// merge rules:
-/// - If both characters are identical, use that character
-/// - If the first board has whitespace, use the character from the second board
-/// - Otherwise, use the character from the first board
+/// ```text
+///    ╔═══╤═══╗       ╔═══╤═══╗       ╔═══╤═══╗
+///  2 ║ k │   ║       ║   │   ║       ║ k │   ║
+///    ╟───┼───╢   +   ╟───┼───╢   =   ╟───┼───╢
+///  1 ║   │   ║       ║   │ K ║       ║   │ K ║
+///    ╚═══╧═══╝       ╚═══╧═══╝       ╚═══╧═══╝
+///      a   b           a   b           a   b
+/// ```
+///
+/// Both renderings share a geometry, so the merge is positional and reads
+/// nothing:
+///
+/// ```text
+/// both agree    keep it, which is every border and every label
+/// first blank   take the second's, which is how a piece shows through
+/// otherwise     keep the first's
+/// ```
 ///
 /// Params:
-/// - board1: &str -> the first board string
-/// - board2: &str -> the second board string
+/// - board1: &str -> the board laid on top
+/// - board2: &str -> the board laid underneath
 ///
 /// Return:
+/// String         -> the two merged, borders and labels intact
 ///
-/// String
-/// combined board with both boards' pieces merged together while preserving the
-/// ASCII art borders and structure
-///
-/// # Examples
-///
-/// Before: two separate board strings (white pieces and black pieces)
-///
-/// ```text
-/// Board 1 (White pieces):        Board 2 (Black pieces):
-///    ╔═══╤═══╤═══╤═══╗              ╔═══╤═══╤═══╤═══╗
-/// 08 ║   │   │   │   ║           08 ║ r │ n │ b │ k ║
-///    ╟───┼───┼───┼───╢              ╟───┼───┼───┼───╢
-/// 07 ║   │   │   │   ║           07 ║ p │ p │ p │ p ║
-///    ╟───┼───┼───┼───╢              ╟───┼───┼───┼───╢
-/// 06 ║   │   │   │   ║           06 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢              ╟───┼───┼───┼───╢
-/// 05 ║   │   │   │   ║           05 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢              ╟───┼───┼───┼───╢
-/// 04 ║   │   │   │   ║           04 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢              ╟───┼───┼───┼───╢
-/// 03 ║   │   │   │   ║           03 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢              ╟───┼───┼───┼───╢
-/// 02 ║ P │ P │ P │ P ║           02 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢              ╟───┼───┼───┼───╢
-/// 01 ║ R │ N │ B │ K ║           01 ║   │   │   │   ║
-///    ╚═══╧═══╧═══╧═══╝              ╚═══╧═══╧═══╧═══╝
-///      a   b   c   d                  a   b   c   d
-/// ```
-///
-/// After: combined result
-///
-/// ```text
-///    ╔═══╤═══╤═══╤═══╗
-/// 08 ║ r │ n │ b │ k ║
-///    ╟───┼───┼───┼───╢
-/// 07 ║ p │ p │ p │ p ║
-///    ╟───┼───┼───┼───╢
-/// 06 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢
-/// 05 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢
-/// 04 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢
-/// 03 ║   │   │   │   ║
-///    ╟───┼───┼───┼───╢
-/// 02 ║ P │ P │ P │ P ║
-///    ╟───┼───┼───┼───╢
-/// 01 ║ R │ N │ B │ K ║
-///    ╚═══╧═══╧═══╧═══╝
-///      a   b   c   d
-/// ```
+/// Notes:
+/// The walk ends with the shorter of the two, so mismatched boards would
+/// merge into a truncated diagram rather than be rejected. Every caller
+/// renders from one variant's dimensions, so the two always agree.
 pub fn combine_board_strings(board1: &str, board2: &str) -> String {
     let mut result = String::new();
 
@@ -2303,15 +2537,24 @@ pub fn combine_board_strings(board1: &str, board2: &str) -> String {
 
 /// format_game_state
 ///
-/// Renders the complete position for humans: every piece type's board
-/// overlaid into one composite diagram (via `combine_board_strings`),
-/// followed by the state lines produced by the `format_*` helpers below.
+/// Renders a position as one board diagram. The board is stored as a piece
+/// index per square, but a diagram is drawn one bitboard at a time, so the
+/// position is taken apart and put back together:
+///
+/// ```text
+/// scatter   one bitboard per piece type, set where that type stands
+/// render    one diagram per bitboard, marked with that type's letter
+/// overlay   the diagrams merged in piece-index order, into one
+/// ```
+///
+/// The state's other fields — rights, hands, phase, result — are rendered
+/// by the formatters below and joined to this by whoever is displaying it.
 ///
 /// Params:
 /// - state: &State -> position to display
 ///
 /// Return:
-/// String          -> multi-line board diagram plus state summary
+/// String          -> the position as a single board diagram
 pub fn format_game_state(state: &State) -> String {
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
@@ -2340,17 +2583,35 @@ pub fn format_game_state(state: &State) -> String {
 
 /// format_fen
 ///
-/// Serializes the current position back into a CFEN string — the exact
-/// inverse of `parse_fen`, emitting only the fields the variant's rules
-/// enable and applying inverse protocol translation when a dictionary
-/// is given.
+/// Writes a position back out as CFEN, the inverse of `parse_fen`: the same
+/// fields in the same order, and only the ones the variant's rules call for.
+///
+/// ```text
+/// position     ranks from the top down, empty squares counted together
+/// side         w or b
+/// castling     only where the variant castles
+/// en passant   only where the variant has the rule
+/// in hand      only where pieces can be held at all
+/// halfmove     only where a counter rule keeps one
+/// fullmove     always, counted from one
+/// ```
+///
+/// The en passant field is not copied straight out of the state. Captures
+/// are generated first and the square is written only if some move really
+/// does take that piece, a `*` going out otherwise. Two positions that play
+/// the same then read the same, which is what a GUI comparing positions, or
+/// a book keyed by them, relies on.
+///
+/// A dictionary, when given, rewrites the finished string into the dialect
+/// that protocol speaks, which is the last thing to happen so every rule
+/// sees a complete FEN rather than a half-built one.
 ///
 /// Params:
 /// - state: &State              -> position to serialize
-/// - dict : Option<&Translator> -> optional inverse protocol translation
+/// - dict : Option<&Translator> -> the dialect to write out in, if any
 ///
 /// Return:
-/// String                       -> the position's CFEN
+/// String                       -> the position as CFEN
 pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
     let mut fen = String::new();
 
@@ -2455,48 +2716,45 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
 
 /// State field formatters
 ///
-/// Small display helpers, each rendering one field of the state as a string
-/// for FEN output and debug graphics. Every member takes the same first
-/// parameter and returns the rendered field as a `String`:
-/// - state: &State -> position whose field is rendered
+/// Small display helpers, one field each, shared between CFEN output and the
+/// debug board. Every one of them renders and nothing else: where a field
+/// goes, and whether it goes anywhere at all, is the caller's business.
 ///
-/// format_castling_rights
+/// ```text
+/// format_castling_rights     KQkq, or - when none are left
+/// format_en_passant_square   ssseeez, or * when there is no square
+/// format_hand                a run of piece letters, or - when empty
+/// format_position_hash       the position hash, in hexadecimal
+/// format_search_keys         the search and quiescence keys, likewise
+/// format_game_result         the result in words, Ongoing while it is
+/// format_game_phase          the phase by name, Game Over once it is
+/// format_special_rules       the enabled rules by name, comma-separated
+/// ```
 ///
-///   Return:
-///   String -> castling rights as KQkq letters, `-` if none
+/// All but `format_game_result` render out of the position itself:
 ///
-/// format_en_passant_square
+/// Params:
 ///
-///   Return:
-///   String -> en passant square in packed CFEN, `*` if none
+///     state: &State
+///     position whose field is rendered
 ///
-/// format_hand
+/// Return:
 ///
-///   Params:
-///   - color: u8 -> side whose hand is rendered
+///     String
+///     that one field, rendered
 ///
-///   Return:
-///   String      -> that side's pieces in hand as piece letters, `-` if empty
+/// Two of them take something more. `format_hand` needs the side whose hand
+/// it is rendering, there being one per colour, and `format_game_result`
+/// takes a result in place of a state, since a caller naming the outcome of
+/// a finished game often has the result and nothing else:
 ///
-/// format_position_hash
+/// Params:
 ///
-///   Return:
-///   String -> the Zobrist hash in hexadecimal
+///     color: u8
+///     side whose hand is rendered, for format_hand
 ///
-/// format_search_keys
-///
-///   Return:
-///   String -> the search and quiescence keys in hexadecimal
-///
-/// format_game_phase
-///
-///   Return:
-///   String -> the game phase by name (or `Game Over`)
-///
-/// format_special_rules
-///
-///   Return:
-///   String -> enabled special rules as a comma-separated list
+///     result: u8
+///     the result to name, for format_game_result
 pub fn format_castling_rights(state: &State) -> String {
     let mut rights = String::new();
 

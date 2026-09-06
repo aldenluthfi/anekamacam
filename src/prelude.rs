@@ -73,7 +73,8 @@ pub use crate::game::position::{
     },
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
-        log_table_stats, search_position, SearchInfo, SearchResult,
+        log_table_stats, quiescence_search, search_position,
+        SearchInfo, SearchResult,
     },
 };
 pub use crate::game::search::{
@@ -547,21 +548,23 @@ pub const INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] = [
 
 /// Shared game-phase and result tags.
 ///
-/// The phase tags ascend in the order a game passes through them, and that
-/// numeric order is load-bearing: making a move raises the phase with
-/// `cmp::max`, so a position can never fall back to an earlier phase after a
-/// trade is undone by a promotion or a drop. `SETUP` is entered when a
-/// variant that places its own army starts with an unplaced royal and is
-/// left, once and for good, on the move that empties both hands. The three
-/// remaining phases are decided by comparing the material-derived phase
-/// score against the variant's own two thresholds, so a variant with no
-/// endgame worth naming simply never crosses them.
+/// The phase tags ascend in the order a game usually passes through them, but
+/// only `SETUP` is sticky: it is entered when a variant that places its own
+/// army starts with an unplaced royal, and is left, once and for good, on the
+/// move that empties both hands. The three remaining phases are a function of
+/// the position alone, decided by comparing the material-derived phase score
+/// against the variant's own two thresholds, so a variant with no endgame
+/// worth naming simply never crosses them.
+///
+/// A phase reached is not a phase kept. A promotion or a drop puts material
+/// back on the board and walks the phase back with it, which is what keeps
+/// the tag equal for equal positions: two orders of the same moves must not
+/// disagree about a board they both reach, because the transposition key
+/// carries no phase term and the evaluation branches on one.
 ///
 /// ```text
-///   SETUP ── hands emptied ──→ OPENING ──→ MIDDLEGAME ──→ ENDGAME
-///     0                          1             2             3
-///
-///   ←── never decreases; a phase reached is a phase kept ──────────
+///   SETUP -- empty --> OPENING <--> MIDDLEGAME <--> ENDGAME
+///     0                  1              2              3
 /// ```
 ///
 /// The result tags are absolute rather than side-relative, so a stored
@@ -671,8 +674,9 @@ pub const REPETITION_CYCLE: u8 = 2;
 /// matches, and `HASH_DEFAULT_MB` / `HASH_MAX_MB` are the two ends of the
 /// range the `Hash` option is clamped into before a table is built from it.
 ///
-/// `PAWN_TABLE_ENTRIES` sizes each worker's pawn cache and is a power of
-/// two so the index is a mask. `OPENING_RANDOM_PLIES` is how many plies a
+/// `PAWN_TABLE_ENTRIES` is each worker's pawn-cache size at default Hash;
+/// other Hash values scale from it, then floor to a power of two for mask
+/// indexing. `OPENING_RANDOM_PLIES` is how many plies a
 /// self-play game is randomized for before real play starts, which is what
 /// keeps datagen and both halves of an SPRT pair off one single line.
 pub const DATA_DIR: &str = "res/data";

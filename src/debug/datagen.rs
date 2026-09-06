@@ -13,23 +13,44 @@
 
 use crate::*;
 
+/*----------------------------------------------------------------------------*\
+                                SELF-PLAY GAMES
+\*----------------------------------------------------------------------------*/
+
 /// GeneratedGame
 ///
-/// One completed self-play result and every quiet position collected during
-/// its search.
+/// One finished game, cut down to what a tuner has any use for: the quiet
+/// positions it went through, and how it ended. Every position in a game
+/// carries that one result, which is what makes a game the unit here
+/// rather than a position.
 struct GeneratedGame {
-    positions: Vec<String>,
-    result: f64,
+    positions: Vec<String>,                                                     /* the quiet ones, in order           */
+    result: f64,                                                                /* 1.0, 0.5, or 0.0, White's view     */
 }
 
 /// play_one_game
 ///
-/// Plays a single self-play game to completion and collects the FEN of
-/// every quiet position it passed through. A position is quiet when the
-/// side to move is not in check and the move the engine chose there is
-/// not a capture, keeping the static evaluation a faithful label target.
-/// Completed mate and draw-rule results use White's perspective (1.0 win,
-/// 0.5 draw, 0.0 loss); interrupted or invalid games return None.
+/// Plays one game out against itself and keeps the positions worth
+/// learning from. It opens on a few random plies, so that a thousand games
+/// are not one game played a thousand times.
+///
+/// A position is kept when it is quiet: nobody in check, and the move the
+/// engine picked there taking nothing. The rest are positions whose worth
+/// hangs on an exchange that has not happened yet, and an evaluation
+/// fitted against those is being taught to guess at tactics.
+///
+/// ```text
+/// the rules ended it            kept, scored by the result
+/// no move, and no interrupt     kept, scored by adjudication
+/// interrupted mid-search        dropped, the game is unfinished
+/// a move that would not make    dropped, the same way
+/// ```
+///
+/// A dropped game is dropped whole. A position labelled with a result
+/// nobody ever reached is worse than a position nobody recorded.
+///
+/// Every move made is announced, so an interface watching along can show
+/// the game being played rather than only its count.
 ///
 /// Params:
 /// - template   : &State              -> loaded variant to start games from
@@ -112,15 +133,34 @@ fn play_one_game(
     }
 }
 
+/*----------------------------------------------------------------------------*\
+                                 DATASET OUTPUT
+\*----------------------------------------------------------------------------*/
+
 /// run_datagen
 ///
-/// Debug-tool entry point for `datagen`. Plays `games`
-/// self-play games on the loaded variant and writes each game's quiet
-/// positions, labelled with its White-view result, to a fresh
-/// `res/data/{variant}/latest.data` — any dataset from a previous run is
-/// first rolled to a timestamped backup, mirroring the parameter export.
-/// Completed games write `game;FEN;result` rows atomically from their buffered
-/// positions; interrupted or invalid games write nothing.
+/// Plays the games and writes them down, a row to a position:
+///
+/// ```text
+/// 12;8/8/4k3/8/4K3/8/8/8 w - - 0 1;0.5
+/// ^  ^                             ^
+/// |  |                             how the game ended
+/// |  the position, as a FEN
+/// which game it came out of
+/// ```
+///
+/// The game number is what keeps the tuning honest. It lets the tuner
+/// hold out whole games rather than scattered positions, so that a
+/// position and the position after it never sit on opposite sides of the
+/// split, telling the validation set what the training set already knows.
+///
+/// Each run writes `res/data/{variant}/latest.data`, rolling whatever was
+/// there to a timestamped name first, the same way exported parameters
+/// are kept. A game's rows are written once it has finished, so a run cut
+/// short leaves whole games behind it rather than half of one.
+///
+/// The file is flushed and the count logged every ten games, which is
+/// often enough to watch a long run and rarely enough not to slow it.
 ///
 /// Params:
 /// - template   : &State              -> loaded variant to generate games from

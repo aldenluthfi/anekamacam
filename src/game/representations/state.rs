@@ -542,6 +542,34 @@ macro_rules! game_phase_score {
     }};
 }
 
+/// game_phase!
+///
+/// Places a position in its phase by comparing `phase_score` against the
+/// variant's two thresholds. Every phase but `SETUP` is a plain function of
+/// the score, so a promotion or a drop that puts material back on the board
+/// carries the phase back with it. `SETUP` is absorbing here and is cleared
+/// by the move that empties both hands, not by a threshold.
+///
+/// Params:
+/// - state: &State -> position whose phase is wanted
+///
+/// Return:
+/// u8              -> SETUP, OPENING, MIDDLEGAME, or ENDGAME
+#[macro_export]
+macro_rules! game_phase {
+    ($state:expr) => {
+        if $state.game_phase == SETUP {
+            SETUP
+        } else if $state.phase_score > $state.statics.opening_score {
+            OPENING
+        } else if $state.phase_score < $state.statics.endgame_score {
+            ENDGAME
+        } else {
+            MIDDLEGAME
+        }
+    };
+}
+
 /// is_terminal!
 ///
 /// Tests whether an eager, position-local terminal result has been stored.
@@ -1058,8 +1086,8 @@ impl State {
     /// The two things that outlive an ordinary move go with them. The
     /// termination counters measure progress inside one game and have
     /// nothing to say about the next. The pawn cache is keyed on the pawn
-    /// hash, so its answers would survive a new game; it is dropped anyway,
-    /// a game being the unit this engine accounts for.
+    /// hash, so its answers would survive a new game; its entries are cleared
+    /// anyway while its configured Hash size is kept.
     pub fn reset(&mut self) {
         let piece_count = self.statics.pieces.len();
         let board_size = self.statics.board_size;
@@ -1101,7 +1129,7 @@ impl State {
         self.piece_list = vec![NO_SQUARE; piece_count * board_size];
         self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
 
-        self.scratch.pawn_table = PTable::default();                            /* a new game answers for no old one  */
+        self.scratch.pawn_table.table.fill(PTEntry::default());                 /* keep Hash size, clear old answers  */
     }
 
     /// State::load_fen
@@ -1138,11 +1166,16 @@ impl State {
     /// State -> a fresh, ready-to-play state at the start position
     ///
     /// Notes:
+    /// The pawn cache starts empty but keeps the template's configured size.
     /// The start FEN is parsed with no translator: it is the engine's own
     /// internal notation, and a protocol dictionary can corrupt an internal
     /// FEN round-trip.
     pub fn fork(&self) -> State {
         let mut state = State::from_statics(Arc::clone(&self.statics));
+        state.scratch.pawn_table.table.resize(
+            self.scratch.pawn_table.len(), PTEntry::default(),
+        );
+        state.scratch.pawn_table.table.shrink_to_fit();
         state.termination = self.termination.clone();
         state.load_fen(&self.statics.startpos, None);
         refresh_eval_state(&mut state);

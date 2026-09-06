@@ -372,30 +372,16 @@ macro_rules! tt_score {
 /// stored bound. Mate-range scores never sharpen an evaluation.
 ///
 /// Params:
-///
-///     state: &State
-///     position the stored mate scores are relative to
-///
-///     key: u128
-///     search key this node is filed under
-///
-///     table: &TTable
-///     shared transposition table
-///
-///     alpha: i32
-///     lower search bound
-///
-///     beta: i32
-///     upper search bound
-///
-///     depth: usize
-///     minimum stored depth for a cutoff
+/// - state: &State  -> position the stored mate scores are relative to
+/// - key  : u128    -> search key this node is filed under
+/// - table: &TTable -> shared transposition table
+/// - alpha: i32     -> lower search bound
+/// - beta : i32     -> upper search bound
+/// - depth: usize   -> minimum stored depth for a cutoff
 ///
 /// Return:
-///
-///     (bool, i32, PseudoMove, i32, i32)
-///     whether the stored score cuts, that score, the stored move, the raw
-///     static evaluation, and the evaluation sharpened by the stored bound
+/// (bool, i32, PseudoMove, i32, i32) -> cutoff, score, move, raw evaluation,
+///                                      and bound-refined evaluation
 #[macro_export]
 macro_rules! probe_tt_entry {
     (
@@ -761,15 +747,24 @@ pub struct PTable {
 
 impl Default for PTable {
     fn default() -> Self {
-        Self::with_entries(PAWN_TABLE_ENTRIES)
+        Self::with_hash_mb(HASH_DEFAULT_MB)
     }
 }
 
 impl PTable {
     /// PTable method cluster.
     ///
+    /// `with_hash_mb` scales the default entry count with the UCI Hash budget.
     /// `with_entries` builds a zeroed table whose slot count is floored to a
     /// power of two for mask indexing, and `len` reports it.
+    ///
+    /// with_hash_mb
+    ///
+    ///   Params:
+    ///   - hash_mb: usize -> configured UCI Hash budget
+    ///
+    ///   Return:
+    ///   Self             -> zeroed table scaled from the default budget
     ///
     /// with_entries
     ///
@@ -783,6 +778,13 @@ impl PTable {
     ///
     ///   Return:
     ///   usize -> slot count
+    pub fn with_hash_mb(hash_mb: usize) -> Self {
+        let entries = hash_mb.saturating_mul(PAWN_TABLE_ENTRIES)
+            / HASH_DEFAULT_MB;
+
+        Self::with_entries(entries.max(1))
+    }
+
     pub fn with_entries(entries: usize) -> Self {
         Self {
             table: vec![PTEntry::default(); 1 << entries.max(1).ilog2()],

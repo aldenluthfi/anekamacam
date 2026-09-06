@@ -1,31 +1,55 @@
 //! util.rs
 //!
-//! Cross-cutting engine utilities that belong to no single subsystem.
+//! Cross-cutting helpers that belong to no one subsystem.
 //!
-//! The file groups randomness for Zobrist seeding, state integrity helpers,
-//! shared game-driving rules, perft/search benchmarks, and rolling a
-//! `latest.*` output file to a timestamped backup.
+//! What collects here is what several parts of the engine need and none of
+//! them owns: reading a tool's arguments, loading a variant by name, rolling
+//! an output file aside before writing over it, rebuilding the caches a
+//! position carries, playing a game out to its end, counting a move tree,
+//! and checking that everything the engine updates as it goes still agrees
+//! with the board it is standing on.
 //!
 //! Created: 25/01/2025
 //! Author : Alden Luthfi
 
 use crate::*;
 
+/// ARCHIVE_STAMP_FMT
+///
+/// The timestamp a rolled-aside file is renamed with. Big-endian and
+/// zero-padded, so plain alphabetical order over the names is chronological
+/// order over the history, and nothing has to parse a date to sort it.
 const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";
+
+/*----------------------------------------------------------------------------*\
+                             ARGUMENTS AND STARTUP
+\*----------------------------------------------------------------------------*/
 
 /// parse_number
 ///
-/// Parses one optional positional value with a supplied default.
-/// Reports invalid values using the supplied diagnostic field name.
+/// Reads one optional positional argument, or hands back the default when
+/// the caller left it off. Every debug tool takes its arguments the same
+/// shape — a variant, then a short tail of numbers most of which have a
+/// sensible value when omitted — so the absent case is not an error here.
+///
+/// ```text
+/// ["standard", "64"]   index 1, default 1    Ok(64)
+/// ["standard"]         index 1, default 1    Ok(1)
+/// ["standard", "x"]    index 1, name "mb"    Err("Invalid mb: x")
+/// ```
+///
+/// The name is carried in only so the message can say which argument was
+/// unreadable. A tool taking four numbers would otherwise report the same
+/// sentence four ways over.
 ///
 /// Params:
-/// - values : &[S]    -> positional values
-/// - index  : usize   -> value index
-/// - default: T       -> fallback when absent
-/// - name   : &str    -> field name for diagnostics
+/// - values : &[S]   -> the positional arguments as given
+/// - index  : usize  -> which of them to read
+/// - default: T      -> the value to use when it is absent
+/// - name   : &str   -> what to call it in the diagnostic
 ///
 /// Return:
-/// Result<T, String> -> parsed/default value or diagnostic
+/// Result<T, String> -> the parsed or default value, or the diagnostic
 pub fn parse_number<T, S>(
     values: &[S],
     index: usize,
@@ -49,8 +73,13 @@ where
 
 /// load_variant
 ///
-/// Loads one embedded variant through the normal configuration pipeline.
-/// Returns a diagnostic when its configuration cannot be found.
+/// Loads a variant by name through the same configuration path a real
+/// session uses, so a debug tool and a played game start from state that
+/// was built the same way.
+///
+/// Only embedded configurations are reachable. A name with no `.conf`
+/// shipped beside it is a name this build cannot play, and saying so beats
+/// starting the tool on whatever an empty board would have been.
 ///
 /// Params:
 /// - variant: &str       -> embedded configuration stem
@@ -68,14 +97,21 @@ pub fn load_variant(variant: &str) -> Result<State, String> {
 
 /// exe_tag
 ///
-/// Short identity of the running binary, taken from the invoking path
-/// (argv[0]) reduced to its file name. Used to label search threads so a
-/// panic that names a thread also names which engine binary raised it —
-/// essential when the SPRT runner drives two different builds through one
-/// terminal and both would otherwise spawn a thread called `search`.
+/// The running binary's file name, taken from the path it was invoked
+/// through. Every search thread is named with it, so a panic that names a
+/// thread also names the build that raised it:
+///
+/// ```text
+/// search:engine-a          the protocol thread of that build
+/// searcher:engine-a:3      its fourth worker
+/// ```
+///
+/// This is what makes an SPRT crash readable. Two builds play each other
+/// through one terminal, and threads called plainly `search` would leave a
+/// backtrace that fits either of them equally well.
 ///
 /// Return:
-/// String -> the executable's file name, or "?" if it cannot be read
+/// String -> the executable's file name, or "?" when the path is unreadable
 pub fn exe_tag() -> String {
     env::args()
         .next()
@@ -87,12 +123,17 @@ pub fn exe_tag() -> String {
 
 /// random_u128
 ///
-/// Draws a full-width random number from the engine's shared seeded RNG
-/// by concatenating two 64-bit draws. Used to seed the Zobrist hash
-/// tables at startup.
+/// Draws a full-width value out of the one seeded generator the process
+/// shares, as two sixty-four-bit draws laid end to end, that being as wide
+/// as a single draw comes.
+///
+/// Every Zobrist table in the engine is filled from here, and that is the
+/// reason the draws all come from one generator rather than from several.
+/// With `ANEKAMACAM_SEED` pinned, two runs hash the same position to the
+/// same key, and a table hit in one is a table hit in the other.
 ///
 /// Return:
-/// u128 -> uniformly random 128-bit value
+/// u128 -> a uniformly random value from the shared seeded generator
 pub fn random_u128() -> u128 {
     let mut rng = RNG.lock().unwrap_or_else(|e| {
         panic!("Failed to lock RNG mutex for random_u128: {e}")
@@ -100,21 +141,39 @@ pub fn random_u128() -> u128 {
     u128::from(rng.next_u64()) << 64 | u128::from(rng.next_u64())
 }
 
+/*----------------------------------------------------------------------------*\
+                                 ROLLING FILES
+\*----------------------------------------------------------------------------*/
+
 /// roll_latest
 ///
-/// Rolls a directory's `{prefix}latest.{extension}` file to a timestamped
-/// backup, so a fresh export, log, or result never overwrites or appends to
-/// the previous one. Stamps the backup with the current file's creation
-/// time, or its modification time, or the current local time — whichever
-/// is first available — rendered with `ARCHIVE_STAMP_FMT` so backup names
-/// sort chronologically under a plain lexicographic ordering. Renames the
-/// current file to `{prefix}{stamp}.{extension}`, and does nothing when
-/// there is no current file to roll. On a same-second name
-/// collision a `-2`, `-3`, ... discriminator is appended so no history is
-/// lost. `prefix` is empty for the log/param/data/result files and set to an
-/// engine label (e.g. `engine-a_`) when the SPRT parent harvests a child
-/// engine's log into the result directory. Shared by every rolling-file
-/// system in the engine.
+/// Moves the current `latest` file aside so the next one can be written
+/// without overwriting or appending to it. Every rolling output in the
+/// engine — logs, exported parameters, datasets, match results — comes
+/// through here, which is why they all keep history the same shape:
+///
+/// ```text
+/// before    latest.param    2026-08-04_11-20-07.param
+/// after                     2026-08-04_11-20-07.param
+///                           2026-09-06_14-02-51.param
+/// ```
+///
+/// The stamp comes off the file itself, its creation time or failing that
+/// its modification time, and only falls back to the clock when neither can
+/// be read. A backup is named for when its run happened, not for when some
+/// later run happened to push it aside.
+///
+/// Two files rolled inside one second would want the same name, so a `-2`,
+/// `-3`, and onward is appended until one is free. Losing a run's output
+/// to a second run finishing in the same second is not a trade worth
+/// making for a tidier name.
+///
+/// Nothing happens when there is no current file. A first run has nothing
+/// to roll, and should not have to know that it is the first.
+///
+/// The prefix is empty everywhere but SPRT, where the parent harvests both
+/// children's logs into one result directory and needs the two histories
+/// kept apart as `engine-a_` and `engine-b_`.
 ///
 /// Params:
 /// - dir      : &str -> directory holding the current file and backups
@@ -150,12 +209,22 @@ pub fn roll_latest(dir: &str, prefix: &str, extension: &str) {
 
 /// prune_backups
 ///
-/// Caps a rolling-file directory's history by keeping only the newest `keep`
-/// timestamped backups of a given `{prefix}`/`{extension}` family and
-/// deleting the rest. The active `{prefix}latest.{extension}` is never a
-/// candidate. Names are compared lexicographically, which matches
-/// chronological order because `ARCHIVE_STAMP_FMT` is zero-padded and
-/// big-endian. A `keep` of zero clears all history.
+/// Caps how far back one family of rolled files is kept. The newest `keep`
+/// of them survive and the rest are deleted; the live `latest` file is
+/// never a candidate, being the file about to be read rather than part of
+/// the history behind it. A `keep` of zero clears the history outright.
+///
+/// Newest is decided by sorting the names, which is chronological only
+/// because `ARCHIVE_STAMP_FMT` writes its largest unit first and pads every
+/// field. That is the whole reason the format looks the way it does.
+///
+/// Membership is by prefix and extension alone, so anything else parked in
+/// the directory under that shape of name is treated as history and will
+/// eventually be deleted with it.
+///
+/// A directory that cannot be read, or a file that cannot be removed, is
+/// passed over in silence. Pruning is housekeeping, and a run that could
+/// not tidy up is still a run that finished.
 ///
 /// Params:
 /// - dir      : &str  -> directory whose backups are pruned
@@ -244,15 +313,7 @@ pub fn refresh_eval_state(state: &mut State) {
 
     state.phase_score = game_phase_score!(state);
 
-    state.game_phase = if state.game_phase == SETUP {
-        SETUP
-    } else if state.phase_score > state.statics.opening_score {
-        OPENING
-    } else if state.phase_score < state.statics.endgame_score {
-        ENDGAME
-    } else {
-        MIDDLEGAME
-    };
+    state.game_phase = game_phase!(state);
 }
 
 /// adjudicate_no_move

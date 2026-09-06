@@ -14,9 +14,9 @@ content, `951eda0`, is the fix `316861a` carries.
 The iteration 6 batch at `9d633d8` is deliberately abandoned. It was built
 on the ablated `b971865`, not on this line, and it holds no ref.
 
-One stage was attempted and reverted before the ladder below was fixed:
-dropping the PST residual region from the param format. It is recorded as
-a deferred open question, not as a stage.
+The deferred PST-schema question was resolved after the ladder on 2026-09-05:
+parameter files now store full PST values and eleven evaluation weights, and
+tuning uses quiescence scores. That work remains uncommitted.
 
 ## Goal
 
@@ -34,10 +34,11 @@ abandoned:
 - `916cc16` (search) conflicts in 8 sources.
 - `8586adf` (board width) conflicts in `src/prelude.rs`.
 
-The param conflicts are not incidental. Iteration 3 stored absolute values
-plus a 19-token scalar tail; this line stores material and PST residuals
-against derived values. A revert would drag the old schema back and undo a
-keeper. Every stage below is therefore written by hand against `e56980f`
+The param conflicts were not incidental. Iteration 3 stored absolute values
+plus a 19-token scalar tail; when this ladder was written, this line stored
+material and PST residuals against derived values. A revert would have dragged
+the old schema back wholesale. Every stage below was therefore written by hand
+against `e56980f`
 as reference, not applied as a patch.
 
 ## Kept from iterations 4 and 5
@@ -58,40 +59,33 @@ These are preserved by every stage; a stage that would remove one is wrong.
   target square (`532ef34`).
 - Variant-declared repetition and perpetual outcomes, deepest-worker SMP
   selection, and the wide-window bound fix.
-Restored evaluation scalars are **derived**, via `derive_eval_scalars` and
-`derive_pawn_parameters`, so no param file gains a scalar region and
-iteration 3's 19-token tail does not come back.
+Derived weights seed the parameter files. Eleven are then loaded and tuned
+beside material and PSTs: shelter, guard, castling, danger, open shield,
+tempo, and the three imbalance weights.
 
-## Open question, deferred: the PST residual region
+## Full PST and scalar parameters — implemented, uncommitted
 
-The param schema is not on the keeper list. Its shape was measured, not
-assumed: `res/param/standard/latest.param` is 780 tokens, 12 absolute
-material values then 768 zeros, and every token past the material prefix
-is zero in all 38 files. The region has one writer, `export_theta` in
-`src/debug/tuning.rs`, which stores each final target minus its
-rule-derived base. No tuning run has happened since the schema changed, so
-every PST in use is the derived one.
+The old correction rows were all zero, so they stored 768 zeroes for
+standard while the engine derived the actual PSTs on every load. Parameter
+files now store those full values directly. The flat format has one shape:
+opening material, endgame material, full White opening/endgame PST rows,
+then the eleven weights. No version tag, old parser, or permanent conversion
+command remains.
 
-Storing the derived numbers in place of the zeros does not fix the
-redundancy. It is the same 768 numbers per file, and it costs the one
-property the residual encoding buys: the derivation stays live. Change
-`derive_base_pst` and all 38 variants pick the change up, keeping whatever
-tuning added on top. Absolutes freeze it — a stale file silently overrides
-an improved derivation with the old one, and nothing distinguishes a
-square tuning touched from a square that is derivation output copied down.
-Determinism is the argument for not storing the output at all, not for
-storing it verbatim.
+All 38 files were converted through their effective loaded state, preserving
+material and evaluation. Start-position phase and evaluation match the
+pre-conversion binary on every variant. The parser still rebuilds geometry,
+search parameters, and evaluation products before installing full PSTs and
+the eleven tuned weights.
 
-Removing the region was attempted and reverted, because it is not
-independent of the tuner. `compute_gradient` optimises material and every
-per-square PST value, and `export_theta`
-(`src/debug/tuning.rs:663-678`) writes those residuals back through
-`parse_tuned_parameters`, whose stricter token count then rejects its own
-tuner's output: `tune` panics at export. A material-only format therefore
-requires first deciding what `tune` optimises — material alone, or PSTs
-into a region that has to keep existing. Deferred at the user's
-instruction. No stage below reads a PST residual, so the ladder is
-unaffected either way.
+Tuning now runs quiescence on every loaded dataset position. Each sample's
+fixed offset is its White-view quiescence score minus its tunable terms, so
+unresolved captures no longer make the initial model equal a static root
+evaluation and untuned evaluation terms remain present. Adam changes the
+same full values the runtime loads and the exporter writes. A five-game
+scratch dataset and one epoch completed and wrote the expected 791-token
+standard payload. Its training error fell, but its one-game validation error
+rose, so validation correctly selected epoch 0 and exported unchanged values.
 
 ## Deliberately not restored
 

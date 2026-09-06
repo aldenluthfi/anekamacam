@@ -921,22 +921,53 @@ pays in the other direction on purpose: it is the answer to the question
 D14 raised, and the allocator traffic it removes is the largest single
 source left in the search.
 
-## Deferred, not resolved in this ladder
+## Post-ladder phase correction — implemented, uncommitted
 
-- PST-residual / param-schema question — stays in plan 21.
-- `game_phase` ratchet-vs-refresh divergence (`move_list.rs:2732-2741`
-  ratchets with `cmp::max`, `util.rs:260-268` recomputes without it) —
-  real bug, own `[SEMANTIC]` commit.
-- Pawn table sized at a fixed `PAWN_TABLE_ENTRIES` regardless of
-  `setoption Hash`. The `surviving ucinewgame` half of this item is gone:
-  D14 gave the table the lifetime of the position that owns it. The sizing
-  half remains, and the claim recorded here that fixing it moves node
-  counts was wrong — the table is a transparent cache with an exact key
-  compare, so sizing changes what a node costs and never what it scores.
-  It is an ordinary change, not a `[SEMANTIC]` one.
-- Endgame fixture `xiangqi / perpetual one cycle short` fails on
-  `85b4637` and every commit this ladder has touched, expecting
-  `score mate -2` and getting `score cp -950`. Pre-dates the debloat
-  pass; the position is not at a no-move leaf, so it is a perpetual
-  adjudication or search-horizon question, not a refactor artefact. Own
-  `[SEMANTIC]` investigation, outside this ladder.
+2026-09-05: removed the `cmp::max` phase ratchet at the user's request.
+`make_move!` and `refresh_eval_state` now share `game_phase!`, so ordinary
+phases follow the current material score in both directions. `SETUP` keeps
+its existing exit rule. Updated the phase-tag documentation to match.
+
+Verification: release build succeeded without warnings; all 38 endgame
+fixtures pass. In standard, `7k/P7/8/8/8/8/8/K5R1 w - - 0 1` starts in
+Endgame; playing `a7a8q` changes it to Middlegame. Loading the resulting FEN
+`Q6k/8/8/8/8/8/8/K5R1 b - - 0 1` gives the same phase and evaluation
+(-1826 cp). The seven-suite perft attempt timed out after ten minutes
+inside standard; it did not complete and is not a passing gate.
+
+This is a semantic correction, not a node-identical debloat stage. Changes
+remain uncommitted alongside unrelated working-tree edits.
+
+## Post-ladder parameter format and tuning — implemented, uncommitted
+
+2026-09-05: replaced PST correction rows with full PST values, added eleven
+evaluation weights to the same flat payload, and converted all 38
+`latest.param` files without changing their effective start-position scores.
+No legacy parser, version marker, or conversion command remains.
+
+The tuner now starts from and exports those same values. Dataset positions
+are scored by quiescence first; its White-view score outside the tunable
+terms becomes the sample offset. Five scratch games and one training epoch
+completed, producing the expected 791-token standard file. Training improved
+while one-game validation worsened, so epoch 0 correctly remained the export.
+Plan 21 holds the detailed record.
+
+## Post-ladder pawn-table sizing — implemented, uncommitted
+
+2026-09-05: the private `PTable` remains a plain `Vec<PTEntry>` and now
+scales from its old default: `Hash * 8192 / 256`, floored to a power of two.
+That gives 32 entries at 1 MB, 8192 at 256 MB, and 16384 at 512 MB. LLDB
+confirmed all three, `Clear Hash` rebuilt 16384 at the current 512 MB, and
+a variant switch built its default table then resized it back to 16384.
+
+`State::reset` now clears entries in place, preserving the selected size
+through `ucinewgame` and FEN loads. `State::fork` keeps the source entry count,
+so datagen, SPRT, and search workers do not silently return to the default.
+The main and quiescence tables keep their existing shared concurrent layout;
+the pawn table gains none of their atomics, parity, or replacement machinery.
+
+Default-Hash node counts match the pre-change binary on all five benches:
+178884 / 797121 / 304943 / 773768 / 1408835. All 38 endgame fixtures pass.
+Short start-position perft passes at standard 4 (197281), crazyhouse 3
+(8902), sittuyin 2 (7744), and janggi 2 (25). Release and debug builds are
+warning-free.

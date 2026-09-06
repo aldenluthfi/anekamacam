@@ -746,7 +746,7 @@ pub fn iterative_deepening(
 /// from the variant rather than from here: what checkmate is worth, and to
 /// whom, is a rule and not an assumption this file gets to make.
 #[hotpath::measure]
-fn quiescence_search(
+pub fn quiescence_search(
     state: &mut State,
     ttable: &TTable,
     qtable: &QTable,
