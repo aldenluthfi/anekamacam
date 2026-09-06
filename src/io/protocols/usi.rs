@@ -43,10 +43,8 @@ impl Protocol for Usi {
     /// USI's one dialect clause is renamed on the way past, so the engine
     /// core never learns a shogi word.
     ///
-    /// ```text
-    /// usinewgame        reset the session for a fresh game
-    /// go ... byoyomi n  →  go ... movetime n, then the shared search
-    /// ```
+    /// - `usinewgame`       : reset the session for a fresh game
+    /// - `go ... byoyomi n` : `go ... movetime n`, then the shared search
     ///
     /// Byoyomi is a per-move allowance that resets every move, which is what
     /// a fixed move time already is, so the rename loses nothing. The rewrite

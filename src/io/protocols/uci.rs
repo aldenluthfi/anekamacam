@@ -42,10 +42,8 @@ impl Protocol for Uci {
     /// UCI is the dialect the shared parser was written against, so there is
     /// nothing to translate and both lines go straight to the shared helpers.
     ///
-    /// ```text
-    /// ucinewgame   reset the session for a fresh game
-    /// go           search under the standard clock tokens, unchanged
-    /// ```
+    /// - `ucinewgame` : reset the session for a fresh game
+    /// - `go`         : search under the standard clock tokens, unchanged
     ///
     /// Anything else is silently ignored rather than reported, because the
     /// common dispatcher has already handled every line this engine answers

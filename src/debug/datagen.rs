@@ -39,12 +39,11 @@ struct GeneratedGame {
 /// hangs on an exchange that has not happened yet, and an evaluation
 /// fitted against those is being taught to guess at tactics.
 ///
-/// ```text
-/// the rules ended it            kept, scored by the result
-/// no move, and no interrupt     kept, scored by adjudication
-/// interrupted mid-search        dropped, the game is unfinished
-/// a move that would not make    dropped, the same way
-/// ```
+/// A game the rules ended is kept, scored by that result, and a game that
+/// ran out of moves without being interrupted is kept too, scored by
+/// adjudication. A game interrupted mid-search is dropped, as is one whose
+/// search came back with a move that would not make, since neither has an
+/// ending to label its positions with.
 ///
 /// A dropped game is dropped whole. A position labelled with a result
 /// nobody ever reached is worse than a position nobody recorded.

@@ -22,11 +22,9 @@ use crate::*;
 /// variant. Adam's three are its published defaults, and the rest are
 /// decisions about how hard to look and when to stop looking.
 ///
-/// ```text
-/// ADAM_BETA_ONE  0.9     decay on the running mean of the gradient
-/// ADAM_BETA_TWO  0.999   decay on the running mean of its square
-/// ADAM_EPSILON   1e-8    floor under the divisor, against a zero step
-/// ```
+/// - `ADAM_BETA_ONE` : 0.9, decays the running mean of the gradient
+/// - `ADAM_BETA_TWO` : 0.999, decays the running mean of its square
+/// - `ADAM_EPSILON`  : 1e-8, floors the divisor against a zero step
 ///
 /// K is what turns a score into a win probability, and it is searched for
 /// rather than assumed. A variant whose pieces are written down ten times
@@ -35,21 +33,19 @@ use crate::*;
 /// the parameters. Thirty-two golden-section steps cut the range below a
 /// millionth of its width, finer than any dataset can tell apart.
 ///
-/// ```text
-/// TEXEL_K_MIN         0.01   flattest sigmoid the search will consider
-/// TEXEL_K_MAX         3.0    steepest, past anything a fit has wanted
-/// TEXEL_K_ITERATIONS  32     golden-section steps taken between them
-/// ```
+/// - `TEXEL_K_MIN`        : 0.01, the flattest sigmoid considered
+/// - `TEXEL_K_MAX`        : 3.0, the steepest, past anything a fit
+///                          has wanted
+/// - `TEXEL_K_ITERATIONS` : 32, how many steps are taken between them
 ///
 /// One game in five is held out, whole. Positions from one game are very
 /// nearly the same position, so holding out positions would let the
 /// validation set grade an answer it had already been shown. Ten epochs
 /// with no new best is taken as the fit having finished.
 ///
-/// ```text
-/// TUNING_VALIDATION_MODULUS    5    game IDs divisible by it are held out
-/// TUNING_VALIDATION_PATIENCE   10   epochs without a better one, then stop
-/// ```
+/// - `TUNING_VALIDATION_MODULUS`  : 5, holds out game IDs divisible by it
+/// - `TUNING_VALIDATION_PATIENCE` : 10, how many epochs may pass without
+///                                  a better one before the fit stops
 const ADAM_BETA_ONE: f64 = 0.9;
 const ADAM_BETA_TWO: f64 = 0.999;
 const ADAM_EPSILON: f64 = 1e-8;
@@ -72,13 +68,11 @@ const TUNING_VALIDATION_PATIENCE: usize = 10;
 /// loaded variant rather than assumed, since the piece-type count T and the
 /// board size S are different in every variant.
 ///
-/// ```text
-/// [0,               T)   opening material, one per White piece type
-/// [T,              2T)   endgame material, in that same order
-/// [2T,         2T+T·S)   opening PST, T tables of S squares
-/// [2T+T·S,   2T+2·T·S)   endgame PST, the same again
-/// [2T+2·T·S,        D)   the eleven evaluation scalars
-/// ```
+/// - `[0, T)`             : opening material, one per White piece type
+/// - `[T, 2T)`            : endgame material, in that same order
+/// - `[2T, 2T+T·S)`       : the opening PST, T tables of S squares
+/// - `[2T+T·S, 2T+2·T·S)` : the endgame PST, the same again
+/// - `[2T+2·T·S, D)`      : the eleven evaluation scalars
 ///
 /// Only White's piece types are counted. Black's parameters are not free to
 /// move on their own: a Black piece is tuned through the White piece it is
@@ -195,14 +189,17 @@ fn build_shape(state: &State) -> TuneShape {
 /// The scalars are read in this order, and every later index into the
 /// scalar block counts from the same list:
 ///
-/// ```text
-/// +0  tempo_bonus           +6  castled_value
-/// +1  imbalance_major       +7  castling_right_value
-/// +2  imbalance_minor       +8  king_danger_scale
-/// +3  pair_bonus            +9  king_danger_cap
-/// +4  shelter_value        +10  open_shield_penalty
-/// +5  guard_value
-/// ```
+/// - `+0`  : tempo_bonus
+/// - `+1`  : imbalance_major
+/// - `+2`  : imbalance_minor
+/// - `+3`  : pair_bonus
+/// - `+4`  : shelter_value
+/// - `+5`  : guard_value
+/// - `+6`  : castled_value
+/// - `+7`  : castling_right_value
+/// - `+8`  : king_danger_scale
+/// - `+9`  : king_danger_cap
+/// - `+10` : open_shield_penalty
 ///
 /// Params:
 /// - state: &State     -> loaded variant supplying current parameters
@@ -255,11 +252,10 @@ fn initial_theta(state: &State, shape: &TuneShape) -> Vec<f64> {
 /// split is the one `evaluate_position!` already makes, repeated here
 /// because the tuner needs it as a pair of numbers rather than as a score:
 ///
-/// ```text
-/// setup, opening   (1, 0)        the opening term, whole
-/// middlegame       (w, 1 − w)    w = (phase − endgame) / (opening − endgame)
-/// endgame          (0, 1)        the endgame term, whole
-/// ```
+/// - setup, opening : `(1, 0)`, the opening term whole
+/// - middlegame     : `(w, 1 − w)`, for a weight `w` of
+///                    `(phase − endgame) / (opening − endgame)`
+/// - endgame        : `(0, 1)`, the endgame term whole
 ///
 /// A variant whose opening and endgame phase scores are the same number
 /// has no scale to interpolate along, and is split evenly rather than
@@ -304,11 +300,9 @@ fn phase_weights(state: &State) -> (f64, f64) {
 /// score is linear in those parameters, so the coefficients are read off
 /// the position rather than estimated from it:
 ///
-/// ```text
-/// material   the net count of that type, times the phase weight
-/// PST        the phase weight, at the square the piece stands on
-/// scalars    the count the term was built from, opening-weighted
-/// ```
+/// - material : the net count of that type, times the phase weight
+/// - PST      : the phase weight, at the square the piece stands on
+/// - scalar   : the count its term was built from, opening-weighted
 ///
 /// Pieces in hand are counted as material. A variant that drops them has
 /// them worth something while they wait, and a tuner that ignored the
@@ -317,10 +311,9 @@ fn phase_weights(state: &State) -> (f64, f64) {
 /// Black is not tuned separately. Its pieces enter their White partner's
 /// entry with the sign flipped, on the square mirrored across the ranks:
 ///
-/// ```text
-/// White piece on square 1       PST[1] gets +weight
-/// Black piece on square 57      PST[1] gets −weight   (8 files, rank 7)
-/// ```
+/// - White on square 1  : gives `PST[1]` a coefficient of `+weight`
+/// - Black on square 57 : that same file on rank 7, on eight files, so
+///                        `PST[1]` is given `−weight`
 ///
 /// A scalar's count is recovered by dividing the score that term produced
 /// by the parameter that produced it. King danger is the one term that is
@@ -624,12 +617,12 @@ fn fit_scaling(samples: &[Sample], theta: &[f64]) -> f64 {
 ///
 /// ```text
 /// ∂E/∂θᵢ = 2(E − r) · E(1 − E) · (K·ln10/400) · fᵢ
-///
-/// 2(E − r)      how wrong the prediction was, and on which side
-/// E(1 − E)      how much the sigmoid can still move here at all
-/// K·ln10/400    the constant the score was squeezed through
-/// fᵢ            what this position said that parameter is worth
 /// ```
+///
+/// - `2(E − r)`   : how wrong the prediction was, and on which side
+/// - `E(1 − E)`   : how much the sigmoid can still move here at all
+/// - `K·ln10/400` : the constant the score was squeezed through
+/// - `fᵢ`         : what this position said that parameter is worth
 ///
 /// The middle factor is why a position the fit is already sure about
 /// pulls almost nothing: a prediction near zero or one has run out of
@@ -879,12 +872,11 @@ fn load_dataset(
 /// The written order is not θ's order. Material leads, both phases of it,
 /// and after that each piece type's two tables are kept together:
 ///
-/// ```text
-/// T tokens    opening material, one per piece type
-/// T tokens    endgame material, the same order
-/// per type    S opening squares, then that type's S endgame squares
-/// 11 tokens   the evaluation scalars
-/// ```
+/// - T tokens of opening material, one per piece type
+/// - T tokens of endgame material, in that same order
+/// - then per piece type, its S opening squares followed by its S
+///   endgame squares
+/// - 11 tokens for the evaluation scalars
 ///
 /// Values are clamped to what the parameter parser will accept, fourteen
 /// bits either side of zero, and material to fourteen bits above it —
@@ -984,12 +976,11 @@ fn export_theta(
 /// in force, the dataset is read and split, K is fitted once, and then the
 /// same four things happen every epoch:
 ///
-/// ```text
-/// 1   the gradient, over the training half only
-/// 2   an Adam step, both moments corrected for their cold start
-/// 3   clamp back into the range the parameter parser accepts
-/// 4   score both halves, and keep this θ if validation improved
-/// ```
+/// - the gradient is taken, over the training half only
+/// - an Adam step is applied, both moments corrected for their cold start
+/// - the vector is clamped back into the range the parameter parser
+///   accepts
+/// - both halves are scored, and this θ is kept if validation improved
 ///
 /// Clamping inside the loop rather than at the end is what keeps the run
 /// honest: a parameter left free to wander outside the range would go on

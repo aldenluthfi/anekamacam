@@ -21,11 +21,9 @@
 /// The three things an exchange simulation needs: what the mover is worth,
 /// what it takes, and who else can reach the square.
 ///
-/// ```text
-/// attack_value!   the moving piece, or what it promotes into
-/// victim_value!   everything the move captures, unloads not counted
-/// lva!            every legal capture onto one square, cheapest last
-/// ```
+/// - attack_value! : the moving piece, or what it promotes into
+/// - victim_value! : everything the move captures, unloads not counted
+/// - lva!          : every legal capture onto one square, cheapest last
 ///
 /// A move may take more than one piece, so the victim side is a sum rather
 /// than a lookup, and a piece a move merely puts down is not a piece it took.
@@ -153,11 +151,11 @@ macro_rules! lva {
 /// ply taking with its cheapest one, and the running balance is written down
 /// from the side that moved at that ply:
 ///
-/// ```text
-/// gain[0]   what the first capture takes
-/// gain[1]   the attacker it left there, less gain[0]
-/// gain[n]   the same again, one ply deeper each time
+/// - `gain[0]` : what the first capture takes
+/// - `gain[1]` : the attacker it left there, less `gain[0]`
+/// - `gain[n]` : the same again, one ply deeper each time
 ///
+/// ```text
 /// backward  gain[i - 1] = -max(-gain[i - 1], gain[i])
 /// ```
 ///
@@ -292,14 +290,12 @@ macro_rules! see {
 ///
 /// Returns one ordering score, larger meaning searched sooner.
 ///
-/// ```text
-/// table move           the move that already worked here
-/// winning capture      by the exchange simulation, or by the plain swing
-/// killer               two quiet moves that cut at this ply before
-/// quiet                centre score plus what the history tables say
-/// losing capture       still played, but after every quiet move
-/// unmakeable capture   the simulation could not even make it
-/// ```
+/// - table move         : the move that already worked here
+/// - winning capture    : by the exchange simulation, or by the plain swing
+/// - killer             : two quiet moves that cut at this ply before
+/// - quiet              : centre score plus what the history tables say
+/// - losing capture     : still played, but after every quiet move
+/// - unmakeable capture : the simulation could not even make it
 ///
 /// The bands themselves live in the prelude, spaced so that the widest
 /// history score a quiet move can reach still lands under the lowest killer,

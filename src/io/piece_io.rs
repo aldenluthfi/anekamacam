@@ -22,10 +22,8 @@ use crate::*;
 /// map. Derivation runs over white pieces alone and copies every answer onto
 /// the twin, so a variant is priced once and read by both sides.
 ///
-/// ```text
-/// white index   the piece derivation actually looks at
-/// black index   the swap map's answer for it, asserted to be black
-/// ```
+/// - white index : the piece derivation actually looks at
+/// - black index : the swap map's answer for it, asserted to be black
 ///
 /// The colour assertion is not a sanity check on this walk but on the map:
 /// a swap entry pointing at the wrong colour would have derivation write
@@ -71,10 +69,8 @@ pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
 /// through here, whether the value was derived from the rules or read out of
 /// a tuned payload, so the packing is written down exactly once.
 ///
-/// ```text
-/// rewritten   bits 0 to 29, both role flags and both material values
-/// preserved   bits 30 and up, whatever the word already carried
-/// ```
+/// - rewritten : bits 0 to 29, both role flags and both material values
+/// - preserved : bits 30 and up, whatever the word already carried
 ///
 /// A value wider than fourteen bits panics rather than truncating. A silently
 /// wrapped material value would leave a piece cheaper than a pawn while every

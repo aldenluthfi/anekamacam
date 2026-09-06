@@ -37,12 +37,11 @@ use crate::*;
 /// flags, and the tables it remembers the tree with. Four of those tables are
 /// what the worker has learned, each answering a different question:
 ///
-/// ```text
-/// search_hist  [move key]                     what has worked anywhere
-/// cont_hist    [plies back][reply][move key]  what has worked as a reply
-/// corr_hist    [side][pawn key]               how wrong evaluation was here
-/// killer_hist  [ply]                          two quiet moves that cut here
-/// ```
+/// - search_hist : `[move key]`, what has worked anywhere
+/// - cont_hist   : `[plies back][reply][move key]`, what has worked as a
+///                 reply
+/// - corr_hist   : `[side][pawn key]`, how wrong evaluation was here
+/// - killer_hist : `[ply]`, two quiet moves that cut here
 ///
 /// The first three carry scores that decay toward whatever the search keeps
 /// seeing; the last is a pair of moves per ply and nothing more. Correction
@@ -116,13 +115,11 @@ const CONTINUATION_PLIES: usize = 2;
 /// answered under the pawn key, and shifts the next evaluation of that pawn
 /// skeleton by the running average of its own past error.
 ///
-/// ```text
-/// SIZE        16384  cells a side, the pawn key masked down to a row
-/// GRAIN       64     stored units per point, divided out on read
-/// SCALE       256    denominator of the blend, a weight out of this
-/// MAX_WEIGHT  16     the most one deep quiet result may pull a cell
-/// LIMIT       64     points the correction is ever allowed to reach
-/// ```
+/// - SIZE       : 16384, cells a side, the pawn key masked down to a row
+/// - GRAIN      : 64, stored units per point, divided out on read
+/// - SCALE      : 256, denominator of the blend, a weight out of this
+/// - MAX_WEIGHT : 16, the most one deep quiet result may pull a cell
+/// - LIMIT      : 64, points the correction is ever allowed to reach
 ///
 /// The grain buys resolution the average would otherwise round off: a blend
 /// that moves a cell by a fraction of a point keeps that fraction until
@@ -145,12 +142,10 @@ const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 /// nothing, having too little depth left to give away, and the first moves of
 /// every node are searched whole because ordering believes in them.
 ///
-/// ```text
-/// depth < 3      nothing here reduces
-/// move 1, 2      searched whole                   (zero window)
-/// move 1 to 4    searched whole                   (wide window)
-/// beyond that    surface[depth][move number], never below one ply
-/// ```
+/// - depth < 3   : nothing here reduces
+/// - move 1, 2   : searched whole, at a zero window
+/// - move 1 to 4 : searched whole, at a wide window
+/// - beyond that : `surface[depth][move number]`, never below one ply
 ///
 /// A wide window means a principal variation node, where a reduction that
 /// hides the better move costs the whole line rather than one bound, so twice
@@ -165,11 +160,10 @@ const REDUCTION_MOVE_WIDE: u32 = 2;
 /// beta raised by the derived margin, and one that survives that raised bound
 /// at a fraction of the depth stands in for the search the node was owed.
 ///
-/// ```text
-/// depth >= 5    shallower than this the probe costs as much as the node
-/// 3 captures    the most tried, and only while they price as winning
-/// depth - 4     what a surviving capture is searched to, quiescence first
-/// ```
+/// - depth ≥ 5  : shallower than this the probe costs as much as the node
+/// - 3 captures : the most tried, and only while they price as winning
+/// - depth − 4  : what a surviving capture is searched to, quiescence
+///                first
 ///
 /// The probe stays cheap by giving up early: the capture list is walked in
 /// score order and abandoned at the first move that is not winning, so a node
@@ -237,11 +231,9 @@ pub struct SearchResult {
 /// enough that a stop lands in milliseconds and rarely enough that the clock
 /// reading behind it costs nothing measurable.
 ///
-/// ```text
-/// system interrupt   a signal arrived, and the stop is logged
-/// node limit         the search was given a node budget and spent it
-/// deadline           the clock the time manager set has run out
-/// ```
+/// - system interrupt : a signal arrived, and the stop is logged
+/// - node limit       : the search was given a node budget and spent it
+/// - deadline         : the clock the time manager set has run out
 ///
 /// Params:
 /// - info: &mut SearchInfo -> search whose interrupt flag is updated
@@ -293,12 +285,13 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// sized by a constant alone: a move key is `pieces * squares` wide, so a
 /// variant decides how much a worker remembers.
 ///
-/// ```text
-/// search_hist   keys                cont_hist    plies * keys * keys
-/// corr_hist     2 * 16384 cells     killer_hist  one move pair per ply
-/// pv_table      stride squared      pv_length    one length per ply
-/// eval_stack    one score per ply, and one past the deepest
-/// ```
+/// - search_hist : one cell per key
+/// - cont_hist   : plies × keys × keys
+/// - corr_hist   : 2 × 16384 cells
+/// - killer_hist : one move pair per ply
+/// - pv_table    : stride squared
+/// - pv_length   : one length per ply
+/// - eval_stack  : one score per ply, and one past the deepest
 ///
 /// Continuation history squares the key count, which is what makes it the
 /// one table a large board pays real memory for, and why the ply count it
@@ -351,11 +344,9 @@ pub fn clear_search(
 /// search reports on, answers a root that is already over without searching
 /// it, and then runs one worker here or hands the position to a pool.
 ///
-/// ```text
-/// terminal root   its terminal score, no move, and depth zero
-/// one worker      iterative deepening runs in the calling thread
-/// many workers    a pool, sharing the two tables and nothing besides
-/// ```
+/// - terminal root : its terminal score, no move, and depth zero
+/// - one worker    : iterative deepening runs in the calling thread
+/// - many workers  : a pool, sharing the two tables and nothing besides
 ///
 /// A finished root reports `null_move` rather than a legal-looking move. It
 /// has nothing legal to play and nothing to search, and a caller asking a
@@ -422,12 +413,10 @@ pub fn search_position(
 /// Reports what both tables did over one search, a line each. The four
 /// counters read as two pairs: what was written, and what came back.
 ///
-/// ```text
-/// new    a key landed in a slot that held nothing
-/// over   a key replaced an entry that was already there
-/// hit    a probe matched the key it was looking for
-/// valid  that hit survived the consistency check and was used
-/// ```
+/// - new   : a key landed in a slot that held nothing
+/// - over  : a key replaced an entry that was already there
+/// - hit   : a probe matched the key it was looking for
+/// - valid : that hit survived the consistency check and was used
 ///
 /// Hits above valid mean entries are being torn by other workers writing the
 /// same slot, and overwrites far above new mean the table is too small for
@@ -465,13 +454,11 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
 /// each pass leaves the tables full of what it learned, and the pass after it
 /// spends most of its time confirming that order rather than finding it.
 ///
-/// ```text
-/// depth 1     opens at the full bounds and keeps the score
-/// depth 2     the same, its order already improved by depth 1
-/// depth 3     the same, and the score is now worth aspiring around
-/// depth 4     opens narrow around the last score, widening on a fail
-/// ...         until the depth limit, or the clock, ends the loop
-/// ```
+/// - depth 1 : opens at the full bounds and keeps the score
+/// - depth 2 : the same, its order already improved by depth 1
+/// - depth 3 : the same, and the score is now worth aspiring around
+/// - depth 4 : opens narrow around the last score, widening on a fail
+/// - onward  : until the depth limit, or the clock, ends the loop
 ///
 /// An iteration the clock cuts through is thrown away whole. Its root move
 /// was searched under a window that never closed, so the answer it holds is
@@ -706,10 +693,8 @@ pub fn iterative_deepening(
 /// The leaf search. Evaluation of a board mid-exchange is worth little, so
 /// the leaves play the exchanges out and evaluate what is left standing.
 ///
-/// ```text
-/// in check     every evasion, drops among them, and no standing pat
-/// otherwise    stand pat first, then captures while they price as won
-/// ```
+/// - in check  : every evasion, drops among them, and no standing pat
+/// - otherwise : stand pat first, then captures while they price as won
 ///
 /// Standing pat is the claim that doing nothing is already worth at least
 /// what the captures on offer are, which a checked side cannot make: it has
@@ -919,14 +904,15 @@ pub fn quiescence_search(
 ///
 /// What a node does, in the order it does it:
 ///
-/// ```text
-/// terminal, repetition, ply cap   answered before a node is spent at all
-/// table probe                     a bound to cut on, a move to try first
-/// static evaluation               taken once, corrected, kept for the ply
-/// razoring, futility, null move   the shortcuts, each asking the rules
-/// ProbCut                         a few captures against a raised beta
-/// move loop                       ordered, reduced, and re-searched
-/// ```
+/// - terminal, repetition, ply cap : answered before a node is spent at
+///                                   all
+/// - table probe                   : a bound to cut on, a move to try
+///                                   first
+/// - static evaluation             : taken once, corrected, kept for the
+///                                   ply
+/// - razoring, futility, null move : the shortcuts, each asking the rules
+/// - ProbCut                       : a few captures against a raised beta
+/// - move loop                     : ordered, reduced, and re-searched
 ///
 /// Razoring asks quiescence to rescue a shallow fail-low before the full node;
 /// ProbCut asks at most three winning captures to prove a surplus above beta;
@@ -1574,11 +1560,10 @@ fn correction_index(state: &State) -> usize {
 /// this pawn skeleton files under, weighted by how much the search behind it
 /// is worth believing.
 ///
-/// ```text
-/// gap     (score - eval), kept in grain units
-/// weight  1 + depth for a quiet best move, 1 for a capture, 16 at most
-/// cell    (cell * (256 - weight) + gap * weight) / 256
-/// ```
+/// - gap    : `(score - eval)`, kept in grain units
+/// - weight : 1 + depth for a quiet best move, 1 for a capture, 16 at
+///            most
+/// - cell   : `(cell * (256 - weight) + gap * weight) / 256`
 ///
 /// A capture weighs one whatever its depth: the gap it opened is tactical,
 /// something evaluation was never going to see, and teaching the skeleton
@@ -1637,10 +1622,10 @@ fn update_correction(
 /// move, which are the two questions worth asking about a reply: what it
 /// answers, and what it continues.
 ///
-/// ```text
-/// slot 0   one ply back    the opponent's move, the one being answered
-/// slot 1   two plies back  this side's own move, the one being followed
+/// - slot 0 : one ply back, the opponent's move, the one being answered
+/// - slot 1 : two plies back, this side's own move, the one followed
 ///
+/// ```text
 /// base = (slot * keys + key of that move) * keys
 /// cell = base + key of the reply being credited
 /// ```
@@ -1685,10 +1670,9 @@ fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
 /// Applies one signed change everywhere a quiet move is remembered, so that
 /// what worked here is credited both as a move and as a reply.
 ///
-/// ```text
-/// search_hist[move]         always, whatever the node was answering
-/// cont_hist[base + move]    once per row the node had a move to follow
-/// ```
+/// - `search_hist[move]`      : always, whatever the node was answering
+/// - `cont_hist[base + move]` : once per row the node had a move to
+///                              follow
 ///
 /// Every table takes the same change, unscaled: the node's verdict is one
 /// verdict, and it is filed once as a move and once for each move it

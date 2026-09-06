@@ -76,13 +76,11 @@ impl ThreadPool {
     /// (deep recursion) while sharing the lock-free tables. All workers
     /// inherit the caller's depth, node, and deadline limits.
     ///
-    /// ```text
-    /// depth    the worker that finished the most iterations wins
-    /// index    the lowest one breaks a tie, the same way every run
-    /// score    decides nothing at all
-    /// nodes    summed over every worker, the whole search's cost
-    /// time     the longest a worker ran, since they ran together
-    /// ```
+    /// - depth : the worker that finished the most iterations wins
+    /// - index : the lowest one breaks a tie, the same way every run
+    /// - score : decides nothing at all
+    /// - nodes : summed over every worker, the whole search's cost
+    /// - time  : the longest a worker ran, since they ran together
     ///
     /// Score is left out because a worker cut off inside an iteration holds a
     /// number no window ever confirmed, and picking on score lets it outrank

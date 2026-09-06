@@ -44,15 +44,13 @@ impl Protocol for Ucci {
     /// side's clock, so the rewrite hands the same figure to both colours and
     /// lets `start_search` pick whichever one it was going to read.
     ///
-    /// ```text
-    /// time t        →  wtime t btime t
-    /// increment i   →  winc i binc i
-    /// movestogo     →  kept, and so are depth, nodes, movetime
-    /// ponder        →  kept, and so is infinite, neither taking a value
-    /// opptime       →  dropped with its value, as are oppincrement,
-    ///                  oppmovestogo, and mate
-    /// draw          →  dropped, along with any other bare advisory flag
-    /// ```
+    /// - `time t`      : `wtime t btime t`
+    /// - `increment i` : `winc i binc i`
+    /// - `movestogo`   : kept, and so are depth, nodes, movetime
+    /// - `ponder`      : kept, and so is infinite, neither taking a value
+    /// - `opptime`     : dropped with its value, as are oppincrement,
+    ///                   oppmovestogo, and mate
+    /// - `draw`        : dropped, along with any other bare advisory flag
     ///
     /// Giving both colours the same clock is safe precisely because only one
     /// of the two is ever consulted, and the opponent's figures are dropped

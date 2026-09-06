@@ -392,13 +392,16 @@ pub enum EngineEvent {
 /// care whether anyone is listening.
 ///
 /// set_sink
+///
 ///   Params:
 ///   - sender: Sender<EngineEvent> -> the frontend's receiving channel
 ///
 /// clear_sink
-///   no parameters, no return value
+///
+///   takes no parameters and returns nothing, the sink simply going away
 ///
 /// emit
+///
 ///   Params:
 ///   - event : EngineEvent         -> the state to broadcast
 pub fn set_sink(sender: Sender<EngineEvent>) {
@@ -608,6 +611,13 @@ pub const WHITE_WIN: u8 = 3;
 ///
 /// where `b` is `HISTORY_BOUND` and `7b` is `2 * HISTORY_TABLES + 1` bounds,
 /// one clear of the widest quiet score the three tables can reach.
+///
+/// The bound tags record how a stored score stood to the window it came out
+/// of, which is what decides whether a later probe may cut on it at all:
+///
+/// - `FALPHA` : an upper bound, no move here beat alpha
+/// - `FBETA`  : a lower bound, a move cut the node off before the rest
+/// - `FEXACT` : the value itself, the search having finished in the window
 pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 pub const EVAL_NONE: i32 = INF;

@@ -32,13 +32,13 @@ const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";
 /// shape — a variant, then a short tail of numbers most of which have a
 /// sensible value when omitted — so the absent case is not an error here.
 ///
-/// ```text
-/// ["standard", "64"]   index 1, default 1    Ok(64)
-/// ["standard"]         index 1, default 1    Ok(1)
-/// ["standard", "x"]    index 1, name "mb"    Err("Invalid mb: x")
-/// ```
+/// Reading index 1 of a tool's arguments, with a default of 1:
 ///
-/// The name is carried in only so the message can say which argument was
+/// - `["standard", "64"]` : parses, and gives 64
+/// - `["standard"]`       : has nothing there, and gives the default
+/// - `["standard", "x"]`  : fails as `Invalid mb: x`
+///
+/// The name is carried in only so that message can say which argument was
 /// unreadable. A tool taking four numbers would otherwise report the same
 /// sentence four ways over.
 ///
@@ -101,10 +101,8 @@ pub fn load_variant(variant: &str) -> Result<State, String> {
 /// through. Every search thread is named with it, so a panic that names a
 /// thread also names the build that raised it:
 ///
-/// ```text
-/// search:engine-a          the protocol thread of that build
-/// searcher:engine-a:3      its fourth worker
-/// ```
+/// - `search:engine-a`     : that build's protocol thread
+/// - `searcher:engine-a:3` : its fourth worker
 ///
 /// This is what makes an SPRT crash readable. Two builds play each other
 /// through one terminal, and threads called plainly `search` would leave a
@@ -150,13 +148,10 @@ pub fn random_u128() -> u128 {
 /// Moves the current `latest` file aside so the next one can be written
 /// without overwriting or appending to it. Every rolling output in the
 /// engine — logs, exported parameters, datasets, match results — comes
-/// through here, which is why they all keep history the same shape:
-///
-/// ```text
-/// before    latest.param    2026-08-04_11-20-07.param
-/// after                     2026-08-04_11-20-07.param
-///                           2026-09-06_14-02-51.param
-/// ```
+/// through here, which is why they all keep history the same shape: a
+/// directory holding `latest.param` beside one timestamped backup comes
+/// out of this holding two timestamped backups and no `latest.param`, and
+/// the caller then writes a new one.
 ///
 /// The stamp comes off the file itself, its creation time or failing that
 /// its modification time, and only falls back to the clock when neither can
@@ -258,12 +253,33 @@ pub fn prune_backups(dir: &str, prefix: &str, extension: &str, keep: usize) {
     }
 }
 
+/*----------------------------------------------------------------------------*\
+                               DERIVED EVAL STATE
+\*----------------------------------------------------------------------------*/
+
 /// refresh_eval_state
 ///
-/// Recomputes every board-derived eval cache and the current game phase.
-/// Used after position-level changes (load, tune import, make/undo move) to
-/// keep material, PST bonus, role counts, phase score, and phase
-/// classification in sync with `piece_list` and PST tables.
+/// Rebuilds from the board everything the evaluation would rather not count
+/// twice. A move keeps these current a piece at a time; this is the version
+/// that recomputes them outright, for a position that arrived whole:
+///
+/// - material : an opening and an endgame total per colour
+/// - bonus    : the piece-square pair, summed over occupied squares
+/// - roles    : the big, major, and minor piece counts
+/// - phase    : the phase score, and the phase it falls into
+///
+/// A position loaded from a FEN has no history to have been updated along,
+/// and a fresh set of tuned parameters changes what the same board is
+/// worth without moving a piece. Both land here.
+///
+/// Pieces in hand are counted as material in a variant that drops them, and
+/// during setup, where a piece waiting to be placed is a piece its side
+/// already owns. Elsewhere the pocket is empty and the loop is skipped
+/// rather than summed to zero.
+///
+/// The phase is taken last, and from the board rather than from the totals
+/// above it: it counts big non-royal material only, which is a different
+/// question from what the position is worth.
 ///
 /// Params:
 /// - state: &mut State -> position whose eval caches are rebuilt
@@ -780,8 +796,9 @@ pub fn verify_game_state(state: &State) {
 ///
 /// Return:
 ///
-/// Vec<(String, u64, ...)>
-/// FEN plus expected node counts for depths 1-6, one tuple per suite line
+///     Vec<(String, u64, ...)>
+///     FEN plus expected node counts for depths 1-6, one tuple per suite
+///     line
 pub fn parse_perft_content(                                                     /* until perft 6                      */
     content: &str,
 ) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {

@@ -26,14 +26,12 @@ use crate::*;
 /// Cheesy Move Notation names every part of a move a variant might have,
 /// and prints only the parts this move actually used:
 ///
-/// ```text
-/// [piece]@    the piece a drop places, dropped moves only
-/// [start]     the square the move begins on, always printed
-/// :[end]      where the mover lands, when that is not where it took
-/// *[square]   a square something was taken on, once per victim
-/// @[square]   where the taken piece was set back down, if it was
-/// =[piece]    the piece the mover became
-/// ```
+/// - `[piece]@`  : the piece a drop places, dropped moves only
+/// - `[start]`   : the square the move begins on, always printed
+/// - `:[end]`    : where the mover lands, when that is not where it took
+/// - `*[square]` : a square something was taken on, once per victim
+/// - `@[square]` : where the taken piece was set back down, if it was
+/// - `=[piece]`  : the piece the mover became
 ///
 /// ```text
 /// [piece]@[start]:[end]*[taken]@[unloaded]...*[taken]=[piece]
@@ -157,11 +155,9 @@ pub fn format_move(
 /// means the notation is defined in exactly one place: whatever `format_move`
 /// prints is what this accepts, translation included.
 ///
-/// ```text
-/// generate   every pseudo-legal move and drop the position offers
-/// render     each of them through format_move, dictionary and all
-/// match      the first whose text equals the input, both trimmed
-/// ```
+/// 1. generate every pseudo-legal move and drop the position offers
+/// 2. render each of them through `format_move`, dictionary and all
+/// 3. match the first whose text equals the input, both trimmed
 ///
 /// Params:
 ///

@@ -34,11 +34,9 @@ pub struct TranslatorGroup {
 /// wants different piece letters or a different coordinate style than the
 /// engine uses internally is accommodated here and nowhere else.
 ///
-/// ```text
-/// fen           internal FEN        →  the protocol's dialect
-/// inverse_fen   the protocol's FEN  →  internal, in reverse order
-/// moves         internal move text  →  the protocol's notation
-/// ```
+/// - fen         : internal FEN → the protocol's dialect
+/// - inverse_fen : the protocol's FEN → internal, in reverse order
+/// - moves       : internal move text → the protocol's notation
 ///
 /// Rules are ordered because they are applied in sequence and an earlier
 /// rewrite changes what a later pattern sees. Moves travel one way only: a
@@ -84,20 +82,17 @@ impl Translator {
     /// present for the named protocol, and every one of its rules must be a
     /// well-formed line, or the build is wrong rather than the input.
     ///
-    /// ```text
-    /// [protocols]      the protocol must name itself here to be loadable
-    /// [<name> fen]     board-state rules, in either or both directions
-    /// [<name> moves]   move-text rules, forward only
-    /// ```
+    /// - `[protocols]`    : the protocol must name itself here to be
+    ///                      loadable
+    /// - `[<name> fen]`   : board-state rules, in either or both directions
+    /// - `[<name> moves]` : move-text rules, forward only
     ///
     /// A fen rule says which way it travels, and a two-way rule compiles
     /// into one entry in each list:
     ///
-    /// ```text
-    /// internal -> protocol    outbound only, nothing reads it back
-    /// internal <- protocol    inbound only, nothing writes it out
-    /// internal <-> protocol   both, the same pattern serving each way
-    /// ```
+    /// - `internal -> protocol`  : outbound only, nothing reads it back
+    /// - `internal <- protocol`  : inbound only, nothing writes it out
+    /// - `internal <-> protocol` : both, the same pattern serving each way
     ///
     /// The two-way form is tested for first, since it contains both of the
     /// one-way forms and would otherwise be read as one of them. The inverse

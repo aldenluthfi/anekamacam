@@ -21,14 +21,12 @@ use prelude::*;
 /// moves are worth, and which one to play. Nothing under here knows about a
 /// terminal or a protocol, and nothing under here is written for one variant.
 ///
-/// ```text
-/// representations   boards, pieces, moves, drops, patterns, termination
-/// moves             generating moves and drops, and parsing what defines
-///                   them: the pattern, drop, and move-notation grammars
-/// search            move ordering, threads, tuned parameters, the table
-/// position          hashing, evaluating, and searching a single position
-/// util              the small helpers the rest of the engine leans on
-/// ```
+/// - representations : boards, pieces, moves, drops, patterns, termination
+/// - moves           : generating moves and drops, and parsing what defines
+///                     them: the pattern, drop, and move-notation grammars
+/// - search          : move ordering, threads, tuned parameters, the table
+/// - position        : hashing, evaluating, and searching a single position
+/// - util            : the small helpers the rest of the engine leans on
 pub mod game {
     pub mod representations {
         pub mod board;
@@ -76,15 +74,13 @@ pub mod game {
 /// state. Each reader has a writer beside it, so a value that went out one
 /// way comes back in the same way.
 ///
-/// ```text
-/// board_io    boards, squares, and the diagrams they are drawn as
-/// piece_io    piece letters and the names behind them
-/// game_io     configuration files, tuned parameters, CFEN, state display
-/// move_io     moves and drops, in notation and back
-/// protocols   the session loop, the dialects that drive it, and the
-///             dictionaries that let one engine answer in three notations
-/// logger      levelled output, shared by every mode below
-/// ```
+/// - board_io  : boards, squares, and the diagrams they are drawn as
+/// - piece_io  : piece letters and the names behind them
+/// - game_io   : configuration files, tuned parameters, CFEN, state display
+/// - move_io   : moves and drops, in notation and back
+/// - protocols : the session loop, the dialects that drive it, and the
+///               dictionaries that let one engine answer in three notations
+/// - logger    : levelled output, shared by every mode below
 pub mod io {
     pub mod board_io;
     pub mod piece_io;
@@ -109,13 +105,11 @@ pub mod io {
 /// by hand, and three long-running jobs that produce and test the numbers it
 /// plays with.
 ///
-/// ```text
-/// graphics   the ratatui frontend, a board and its diagnostics
-/// headless   the same command set with no screen, one line at a time
-/// datagen    self-play games written out as training positions
-/// sprt       two builds played against each other until one is better
-/// tuning     fitting the evaluation's parameters to those positions
-/// ```
+/// - graphics : the ratatui frontend, a board and its diagnostics
+/// - headless : the same command set with no screen, one line at a time
+/// - datagen  : self-play games written out as training positions
+/// - sprt     : two builds played against each other until one is better
+/// - tuning   : fitting the evaluation's parameters to those positions
 pub mod debug {
     pub mod graphics;
     pub mod headless;
@@ -142,14 +136,12 @@ pub mod prelude;
 /// Logging is started before the argument is even read, so whichever mode
 /// takes over has somewhere to write from its opening line onward.
 ///
-/// ```text
-/// debug-graphics   the interactive board, with the debug flag set so the
-///                  engine reports what it is doing while it does it
-/// debug-headless   the same tooling with no screen, the rest of the line
-///                  passed on as the command
-/// anything else    the text protocol loop, and no argument at all lands
-///                  here too, that being how the engine is normally run
-/// ```
+/// - `debug-graphics` : the interactive board, with the debug flag set so
+///                      the engine reports what it is doing while it does it
+/// - `debug-headless` : the same tooling with no screen, the rest of the
+///                      line passed on as the command
+/// - anything else    : the text protocol loop, and no argument at all lands
+///                      here too, that being how the engine is normally run
 ///
 /// Notes:
 ///

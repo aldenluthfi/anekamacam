@@ -64,13 +64,12 @@ macro_rules! push_log_message {
 /// name a level and nothing else, so how urgent a line is stays a property of
 /// the line, never of where it happens to be written from.
 ///
-/// ```text
-/// log_1!   error   critical results, game over, aborted operations
-/// log_2!   warn    command results, interrupts, invalid input
-/// log_3!   info    engine telemetry, thread lifecycle, per-depth output
-/// log_4!   debug   parsing internals, search diagnostics, derivation
-/// log_5!   trace   deepest call traces, per-node output
-/// ```
+/// - `log_1!` : error, critical results, game over, aborted operations
+/// - `log_2!` : warn, command results, interrupts, invalid input
+/// - `log_3!` : info, engine telemetry, thread lifecycle, per-depth
+///              output
+/// - `log_4!` : debug, parsing internals, search diagnostics, derivation
+/// - `log_5!` : trace, deepest call traces, per-node output
 ///
 /// Each mirrors the line into the TUI queue at its numeric level and forwards
 /// to the matching `log` crate macro; `init_logging` documents what belongs at
@@ -192,12 +191,11 @@ pub fn dec_verbosity() {
 /// which is what makes it possible to compare a failing run against the last
 /// one that worked.
 ///
-/// ```text
-/// roll     logs/latest.log aside under a timestamp, if one was there
-/// prune    the timestamped backups down to the 32 most recent
-/// open     a fresh logs/latest.log, truncated
-/// format   each line with its level, time, and source location
-/// ```
+/// - roll   : `logs/latest.log` aside under a timestamp, if one was
+///            there
+/// - prune  : the timestamped backups down to the 32 most recent
+/// - open   : a fresh `logs/latest.log`, truncated
+/// - format : each line with its level, time, and source location
 ///
 /// ```text
 /// [3]-[2026-09-06 14:02:11.418Z search.rs:214] depth 7 complete
@@ -210,18 +208,16 @@ pub fn dec_verbosity() {
 /// Notes:
 /// The engine uses 5 numeric verbosity levels, stamped on every line:
 ///
-/// ```text
-/// log_1   critical      benchmark and suite results, game-over states,
-///                       state-change failures that abort an operation
-/// log_2   user-facing   command results, per-case perft output, SIGINT,
-///                       invalid-command feedback, TUI state messages
-/// log_3   telemetry     table stats, thread lifecycle, perft and suite
-///                       summaries, derivation progress, per-depth output
-/// log_4   debug         parsing internals, token captures, filter results,
-///                       search diagnostics, case pass/fail, piece values
-/// log_5   trace         deepest call traces, atomic and coordinate
-///                       evaluation entry points, perft depth-0 nodes
-/// ```
+/// - log_1 : critical, benchmark and suite results, game-over states,
+///           state-change failures that abort an operation
+/// - log_2 : user-facing, command results, per-case perft output,
+///           SIGINT, invalid-command feedback, TUI state messages
+/// - log_3 : telemetry, table stats, thread lifecycle, perft and suite
+///           summaries, derivation progress, per-depth output
+/// - log_4 : debug, parsing internals, token captures, filter results,
+///           search diagnostics, case pass/fail, piece values
+/// - log_5 : trace, deepest call traces, atomic and coordinate
+///           evaluation entry points, perft depth-0 nodes
 pub fn init_logging() {
 
     if !Path::new(LOG_DIR).exists() {

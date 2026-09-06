@@ -622,11 +622,9 @@ fn expand_ranges(expr: &str) -> Option<String> {
 /// Splits the `+`-joined cardinal sums in one branch into branches of their
 /// own, leaving every term with a single heading for the stages that follow.
 ///
-/// ```text
-/// n+eK      →  nK    eK
-/// n+e+sK    →  nK    eK    sK
-/// n+eKs+wK  →  nKsK  nKwK  eKsK  eKwK
-/// ```
+/// - `n+eK`     : `nK`, `eK`
+/// - `n+e+sK`   : `nK`, `eK`, `sK`
+/// - `n+eKs+wK` : `nKsK`, `nKwK`, `eKsK`, `eKwK`
 ///
 /// The split runs as a worklist rather than as a single pass. One sum is
 /// rewritten per turn and every half goes back onto the stack, so a term
@@ -1258,9 +1256,9 @@ fn process_atomic_dots_token(
 /// A count is the number of steps in total, so `{1}` is the atom as written
 /// and every count above it adds one more step of the last heading:
 ///
-/// ```text
-/// {1}  is  K      {2}  is  K.      {3}  is  K..
-/// ```
+/// - `{1}` : `K`
+/// - `{2}` : `K.`
+/// - `{3}` : `K..`
 ///
 /// A lone count answers with one branch per input, a spanned count with the
 /// union over the span, which is how a slide arrives as every square it could
@@ -1755,10 +1753,8 @@ fn evaluate_atomic_expression(
 /// so the group is rebuilt in the order it was written, and what comes out is
 /// wrapped once and pushed back as a single term.
 ///
-/// ```text
-/// before   …  (  A  B  C      the closing mark arrives
-/// after    …  (A B C)
-/// ```
+/// - before : `…  (  A  B  C`, the closing mark arriving
+/// - after  : `…  (A B C)`, the group rebuilt and pushed back
 ///
 /// Both parsers stack their terms this way and differ only in what an opening
 /// mark looks like and what a group is called, so each hands those two answers
@@ -2018,14 +2014,12 @@ fn chained_atomic_to_vector(expr: &str, rotation: &str) -> Vec<AtomicVector> {
 /// Each token is placed by the first pattern that claims it, an atom being
 /// what is left when none of the others do:
 ///
-/// ```text
-/// <  >          a group opens, and folds shut
-/// n … sw        cardinal filter
-/// [1357]        index filter
-/// .  ..  {i}    repetition of the last step
-/// :{i}          repetition of the last atom
-/// K  nK  N      an atom
-/// ```
+/// - `<  >`       : a group opens, and folds shut
+/// - `n … sw`     : cardinal filter
+/// - `[1357]`     : index filter
+/// - `.  ..  {i}` : repetition of the last step
+/// - `:{i}`       : repetition of the last atom
+/// - `K  nK  N`   : an atom
 ///
 /// Grouping is what a chain cannot say. In `nW<nWnF>nW` the bracketed pair
 /// arrives at (±1, 2) as a whole, and it is that displacement the last `nW`
@@ -2376,9 +2370,9 @@ fn process_multi_leg_dots_token(
 /// count is the number of legs in total, so `{1}` is the branch as written and
 /// every count above it lays one more copy of that leg behind it:
 ///
-/// ```text
-/// nW-{1}  is  nW      nW-{2}  is  nW-nW      nW-{3}  is  nW-nW-nW
-/// ```
+/// - `nW-{1}` : `nW`
+/// - `nW-{2}` : `nW-nW`
+/// - `nW-{3}` : `nW-nW-nW`
 ///
 /// A lone count answers with one branch per input, a spanned count with the
 /// union over the span, which is how a slide arrives as every square it could
@@ -2806,10 +2800,8 @@ fn evaluate_multi_leg_term_leg(
 /// The two bracket forms are evaluated alike and part company only in what
 /// they leave behind for the next element to read:
 ///
-/// ```text
-/// <  >     the group ends pointed the way it went as a whole
-/// </  />   the group ends pointed the way its last leg went
-/// ```
+/// - `<  >`   : ends pointed the way the group went as a whole
+/// - `</  />` : ends pointed the way its last leg went
 ///
 /// A group `<nWnF>` arrives at (±1, 2), which reads as north, while the leg it
 /// ended on went diagonally. The plain form hands north to whatever follows,
@@ -3333,17 +3325,15 @@ fn leg_to_vector(
 /// `>` and `/>` folding everything back to that mark into a single nested term,
 /// and the stack that comes out is handed on to be evaluated:
 ///
-/// ```text
-/// <  >  </  />   a group opens, and folds shut
-/// n … sw         cardinal filter
-/// [1357]         index filter
-/// -.  -..        repetition of the last leg
-/// -{i}           the same, counted
-/// -:{i}          repetition of the last leg or group, re-read each time
-/// @expr          landings to leave out
-/// mcd … !        what the leg may do
-/// -              a leg boundary
-/// ```
+/// - `<  >  </  />` : a group opens, and folds shut
+/// - `n … sw`       : cardinal filter
+/// - `[1357]`       : index filter
+/// - `-.  -..`      : repetition of the last leg
+/// - `-{i}`         : the same, counted
+/// - `-:{i}`        : the last leg or group, re-read each time
+/// - `@expr`        : landings to leave out
+/// - `mcd … !`      : what the leg may do
+/// - `-`            : a leg boundary
 ///
 /// A leg keeps its own stop square, which is what an expression of one leg
 /// cannot say. In `eK-{4}-nK` the piece walks four squares east and turns north

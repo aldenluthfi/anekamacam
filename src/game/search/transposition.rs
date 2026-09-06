@@ -43,6 +43,23 @@ pub struct HashEntry {
     pub version: AtomicU64,                                                     /* seqlock: odd = writing, even = ok  */
 }
 
+/// Clone for HashEntry
+///
+/// Written by hand because `version` is an atomic, and an atomic is not
+/// `Clone`. The counter is read relaxed and handed to a fresh atomic, so
+/// the copy starts life with whatever parity the original had rather than
+/// at zero.
+///
+/// The only caller is the `vec![HashEntry::default(); n]` that allocates a
+/// table, where the source is a default entry and no thread is yet reading
+/// it; cloning a slot out of a live table would race the seqlock and is
+/// never done.
+///
+/// Params:
+/// - self: &HashEntry -> slot to copy
+///
+/// Return:
+/// - Self             -> copy, its seqlock counter snapshotted relaxed
 impl Clone for HashEntry {
     fn clone(&self) -> Self {
         HashEntry {
@@ -79,6 +96,15 @@ pub type QTable = HashTable<1, 3>;
 unsafe impl<const NUM: usize, const DEN: usize> Sync for HashTable<NUM, DEN> {}
 unsafe impl<const NUM: usize, const DEN: usize> Send for HashTable<NUM, DEN> {}
 
+/// Default for HashTable
+///
+/// Sizes a table nobody asked a size for: the compiled-in `Hash` default,
+/// cut to this table's `NUM / DEN` share of it. A session that later sets
+/// `Hash` throws these away and rebuilds at the size it was given, so this
+/// only ever covers the window before a GUI speaks.
+///
+/// Return:
+/// - Self -> zeroed table at this table's share of the default budget
 impl<const NUM: usize, const DEN: usize> Default for HashTable<NUM, DEN> {
     fn default() -> Self {
         Self::with_mb(HASH_DEFAULT_MB * NUM / DEN)
@@ -745,6 +771,16 @@ pub struct PTable {
     pub table: Vec<PTEntry>,                                                    /* slot count is a power of two       */
 }
 
+/// Default for PTable
+///
+/// Hands the whole default `Hash` budget to `with_hash_mb`, which reads it
+/// as a scale rather than an allocation: this cache is sized in entries,
+/// and the budget only says how far to scale `PAWN_TABLE_ENTRIES` from it.
+/// So the pawn table takes no share away from the shared tables — it is a
+/// per-state cache, and every state carries its own.
+///
+/// Return:
+/// - Self -> zeroed cache at the default entry count
 impl Default for PTable {
     fn default() -> Self {
         Self::with_hash_mb(HASH_DEFAULT_MB)

@@ -166,14 +166,18 @@ pub fn hash_virgin_board(state: &State) -> u128 {
 /// are 16 bits wide and spend the row after theirs on the high byte, which is
 /// why the numbering skips over 3 and 5 without naming them.
 ///
-/// ```text
-///  0  counter clock          6  checks made by white
-///  1  counter limit          7  checks made by black
-///  2  counting count, low    8  checks required to win
-///  3  counting count, high   9  repetition occurrences
-///  4  counting limit, low   10  pass and stand-off class
-///  5  counting limit, high  11  quiescence move-set class
-/// ```
+/// -  0 : counter clock
+/// -  1 : counter limit
+/// -  2 : counting count, low
+/// -  3 : counting count, high
+/// -  4 : counting limit, low
+/// -  5 : counting limit, high
+/// -  6 : checks made by white
+/// -  7 : checks made by black
+/// -  8 : checks required to win
+/// -  9 : repetition occurrences
+/// - 10 : pass and stand-off class
+/// - 11 : quiescence move-set class
 ///
 /// `CONTEXT_SLOTS` closes the list rather than naming a slot: it is how many
 /// rows the table is built with.
@@ -327,10 +331,8 @@ pub fn search_key(state: &State, repeats: u8) -> u128 {
 /// an unchecked one searches captures alone, and delta pruning stands down
 /// once the board thins to an endgame, so the classes must not share entries.
 ///
-/// ```text
-/// bit 0   the side to move stands in check
-/// bit 1   the position has reached its endgame phase
-/// ```
+/// - bit 0 : the side to move stands in check
+/// - bit 1 : the position has reached its endgame phase
 ///
 /// Params:
 /// - state   : &State -> position whose quiescence identity is wanted
@@ -357,14 +359,12 @@ pub fn qsearch_key(state: &State, repeats: u8, in_check: bool) -> u128 {
 /// a handful of XORs. Making a move spends them. Undoing one does not: the
 /// keys come back off the snapshot the move saved, one assignment each.
 ///
-/// ```text
-/// hash_in_or_out_piece!     position_hash, pawn_hash
-/// hash_toggle_side!         position_hash
-/// hash_update_castling!     position_hash
-/// hash_update_en_passant!   position_hash
-/// hash_update_in_hand!      position_hash
-/// set_virgin! clear_virgin! virgin_board, virgin_hash
-/// ```
+/// - hash_in_or_out_piece!     : position_hash, pawn_hash
+/// - hash_toggle_side!         : position_hash
+/// - hash_update_castling!     : position_hash
+/// - hash_update_en_passant!   : position_hash
+/// - hash_update_in_hand!      : position_hash
+/// - set_virgin! clear_virgin! : virgin_board, virgin_hash
 ///
 /// Nothing here returns a value. A piece change keeps the pawn key in step
 /// through a mask rather than a branch, a non-pawn folding a zero into it.

@@ -23,10 +23,9 @@ use crate::*;
 /// is used is decided by the board and never by the caller, so one variant
 /// always spells a square one way.
 ///
-/// ```text
-/// 26 files or fewer   a lettered file and a rank, "e4"
-/// anything wider      both halves two digits, the same square as "0504"
-/// ```
+/// - 26 files or fewer : a lettered file and a rank, `e4`
+/// - anything wider    : both halves as two digits, `0504` for that
+///                       same square
 ///
 /// Both displayed components are one-indexed, the flat index they come from
 /// is not, and the letters run out at 26 — which is where the numeric form
@@ -55,10 +54,9 @@ pub fn format_square(index: u16, state: &State) -> String {
 /// back into a flat index. The form is chosen by board width exactly as the
 /// formatter chooses it, so a name this engine printed is a name it reads.
 ///
-/// ```text
-/// "e4"     file 'e' minus 'a', rank 4 minus 1, then rank × files + file
-/// "0504"   the same square, both halves parsed and both decremented
-/// ```
+/// - `e4`   : `'e'` minus `'a'` as the file, 4 minus 1 as the rank,
+///            read back as `rank × files + file`
+/// - `0504` : that same square, both halves parsed and both decremented
 ///
 /// A file letter below `'a'` wraps to a huge number instead of going
 /// negative, which the width comparison then rejects, so the bound check

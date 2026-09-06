@@ -358,8 +358,8 @@ pub fn generate_relevant_castling(
 ///
 /// Return:
 ///
-/// MoveSet
-/// vectors playable from this square, longest first
+///     MoveSet
+///     vectors playable from this square, longest first
 pub fn generate_relevant_moves(
     piece: &Piece,
     square_index: u32,
@@ -432,8 +432,8 @@ pub fn generate_relevant_moves(
 ///
 /// Return:
 ///
-/// MoveSet
-/// capture-capable vectors playable from this square
+///     MoveSet
+///     capture-capable vectors playable from this square
 pub fn generate_relevant_captures(
     piece: &Piece,
     square_index: u32,

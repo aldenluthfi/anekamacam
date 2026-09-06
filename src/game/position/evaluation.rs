@@ -67,10 +67,10 @@ macro_rules! draw_score {
 /// so a win found sooner beats the same win found later and a loss put off
 /// beats one taken at once:
 ///
-/// ```text
-/// win at ply 0   INF        loss at ply 0   -INF
-/// win at ply 6   INF - 6    loss at ply 6   -INF + 6
-/// ```
+/// - win at ply 0  : `INF`
+/// - win at ply 6  : `INF - 6`
+/// - loss at ply 0 : `-INF`
+/// - loss at ply 6 : `-INF + 6`
 ///
 /// A draw is not a plain zero. [`draw_score!`] prices it by the material lead
 /// left standing, a side that is ahead having something to lose by agreeing.
@@ -249,10 +249,8 @@ macro_rules! royal_guard {
 /// The total is charged as its square, so one attacker barely registers and
 /// several compound:
 ///
-/// ```text
-/// pressure   1    2    3    4      what the zone has gathered
-/// charge     1    4    9   16      what it costs, before the cap
-/// ```
+/// - pressure : 1, 2, 3, 4, what the zone has gathered
+/// - charge   : 1, 4, 9, 16, what it costs, before the cap
 ///
 /// That is the shape of an attack: two pieces bearing on a royal are worth
 /// far more than twice one, since neither has to be answered alone. The
@@ -381,11 +379,9 @@ macro_rules! open_shield {
 ///
 /// One colour's standing in the castling its variant offers:
 ///
-/// ```text
-/// has castled                  the full derived value
-/// still holds a right          the part of it not yet taken
-/// spent both without castling  nothing
-/// ```
+/// - has castled                 : the full derived value
+/// - still holds a right         : the part of it not yet taken
+/// - spent both without castling : nothing
 ///
 /// Ordered that way, the score prefers castling to sitting on the right, and
 /// prefers sitting on it to losing it for nothing.
@@ -447,12 +443,11 @@ macro_rules! castling_bonus {
 /// sideways, or has no diagonal at all is asked the same four questions from
 /// its own rules:
 ///
-/// ```text
-/// pawn_path          the squares it must walk through to promote
-/// pawn_interference  where an enemy pawn would stop that walk
-/// pawn_support       where a friendly pawn would be defending it
-/// pawn_backward      where an enemy pawn watches the square it steps to
-/// ```
+/// - pawn_path         : the squares it must walk through to promote
+/// - pawn_interference : where an enemy pawn would stop that walk
+/// - pawn_support      : where a friendly pawn would be defending it
+/// - pawn_backward     : where an enemy pawn watches the square it steps
+///                       to
 ///
 /// Both sweeps read one roster gathered from the piece lists, so the cost is
 /// the pawns on the board squared and not the width of the board. A variant
@@ -741,11 +736,9 @@ macro_rules! material_advantage {
 /// point of view. Which halves are asked depends on the phase the board has
 /// reached:
 ///
-/// ```text
-/// OPENING, SETUP   opening score, with the opening pawn figure
-/// MIDDLEGAME       both, mixed in proportion to the material standing
-/// ENDGAME          endgame score, with the endgame pawn figure
-/// ```
+/// - OPENING, SETUP : opening score, with the opening pawn figure
+/// - MIDDLEGAME     : both, mixed in proportion to the material standing
+/// - ENDGAME        : endgame score, with the endgame pawn figure
 ///
 /// The middlegame mix is linear in the position's own `phase_score` between
 /// the two bounds the variant derived for itself, so a board one capture from
@@ -759,13 +752,11 @@ macro_rules! material_advantage {
 ///
 /// Where each family is priced follows from what it means:
 ///
-/// ```text
-/// material, piece-square   both halves, each with its own figures
-/// royal safety            the opening half alone
-/// pawn structure          both halves, one figure computed for each
-/// material imbalance      outside the mix, added once
-/// tempo                   outside, after the flip to the mover
-/// ```
+/// - material, piece-square : both halves, each with its own figures
+/// - royal safety           : the opening half alone
+/// - pawn structure         : both halves, one figure computed for each
+/// - material imbalance     : outside the mix, added once
+/// - tempo                  : outside, after the flip to the mover
 ///
 /// Safety is opening-only because it fades with the army that threatens the
 /// royal: by the endgame a royal wants to walk toward the fight rather than
