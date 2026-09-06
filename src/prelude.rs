@@ -245,6 +245,16 @@ pub use std::{
 /// castling changes the key by the right it spends and never by the mark it
 /// leaves behind.
 ///
+/// The four rights are spelled twice, once as positions and once as bits,
+/// because both readings are wanted and neither converts cheaply in a hot
+/// path:
+///
+/// - `WHITE`, `BLACK`          : the colour codes, and the distance
+///                               `CASTLED` shifts by
+/// - `WK_INDEX` .. `BQ_INDEX`  : which right a slot holds, for whatever
+///                               stores one entry per right
+/// - `WK_CASTLE` .. `BQ_CASTLE`: those same four as the bits drawn above
+///
 /// The sentinels are each the maximum of their own type rather than a
 /// shared magic number, so `NO_PIECE`, `NO_PAWN`, `NO_SQUARE`, and
 /// `NO_EN_PASSANT` stay out of the way of any real index a variant with a
@@ -514,6 +524,12 @@ pub fn null_pseudo_move() -> PseudoMove {
 /// live here rather than beside the encoding because generation, ordering,
 /// make/undo, and every protocol formatter all branch on them; `moves.rs`
 /// carries the bit layout each one implies.
+///
+/// - `QUIET_MOVE`          : a piece moves, and nothing else happens
+/// - `SINGLE_CAPTURE_MOVE` : one victim, on the square landed on or beside
+/// - `MULTI_CAPTURE_MOVE`  : several, each with its own square and fate
+/// - `DROP_MOVE`           : a piece comes off a hand instead of a square
+/// - `CASTLING_MOVE`       : two pieces move, to squares the rule names
 pub const QUIET_MOVE: u128 = 0;
 pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
@@ -571,7 +587,12 @@ pub const INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] = [
 /// ```
 ///
 /// The result tags are absolute rather than side-relative, so a stored
-/// result means the same thing whichever side is to move when it is read.
+/// result means the same thing whichever side is to move when it is read:
+///
+/// - `ONGOING`   : 0, nothing has ended the game yet
+/// - `DRAW`      : 1, however the rules spell one
+/// - `BLACK_WIN` : 2
+/// - `WHITE_WIN` : 3
 pub const SETUP: u8 = 0;
 pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
@@ -683,6 +704,14 @@ pub const REPETITION_CYCLE: u8 = 2;
 /// variant with no tree around it. `OPT_*` are the names `setoption`
 /// matches, and `HASH_DEFAULT_MB` / `HASH_MAX_MB` are the two ends of the
 /// range the `Hash` option is clamped into before a table is built from it.
+///
+/// - `DATA_DIR`         : self-play positions, per variant, for tuning
+/// - `PARAMS_DIR`       : what tuning wrote back, per variant
+/// - `LOG_DIR`          : this run's log, and the runs kept before it
+/// - `EMBEDDED_CONFIGS` : the rules of every variant the binary ships
+/// - `EMBEDDED_DICTS`   : their notation, one section per protocol
+/// - `EMBEDDED_PERFT`   : their move-count suites
+/// - `EMBEDDED_PARAMS`  : their tuned payloads, as shipped
 ///
 /// `PAWN_TABLE_ENTRIES` is each worker's pawn-cache size at default Hash;
 /// other Hash values scale from it, then floor to a power of two for mask
