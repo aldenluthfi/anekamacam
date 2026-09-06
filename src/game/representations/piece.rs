@@ -21,7 +21,7 @@
 pub type PieceIndex = u8;
 
 /*----------------------------------------------------------------------------*\
-                               UTILITY PIECE MACROS
+                              UTILITY PIECE MACROS
 \*----------------------------------------------------------------------------*/
 
 /// p_value!
@@ -64,7 +64,7 @@ macro_rules! p_value {
 }
 
 /*----------------------------------------------------------------------------*\
-                        PIECE BITFIELD REPRESENTATIONS
+                         PIECE BITFIELD REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
 /// Piece bitfield accessor macros.

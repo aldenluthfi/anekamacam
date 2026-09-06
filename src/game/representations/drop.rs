@@ -120,7 +120,7 @@ pub type Drops = (DropMove, Pattern);
 pub type DropSet = Vec<Drops>;
 
 /*----------------------------------------------------------------------------*\
-                        DROP MODIFIER REPRESENTATIONS
+                         DROP MODIFIER REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
 /// Accessors for modifier bits carried by [`DropMove`] entries.

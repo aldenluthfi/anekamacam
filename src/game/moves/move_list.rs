@@ -16,7 +16,7 @@
 use crate::*;
 
 /*---------------------------------------------------------------------------*\
-                        ATTACK QUERY REPRESENTATIONS
+                          ATTACK QUERY REPRESENTATIONS
 \*---------------------------------------------------------------------------*/
 
 /// is_square_attacked!
@@ -1502,7 +1502,7 @@ macro_rules! generate_castling_list {
 }
 
 /*---------------------------------------------------------------------------*\
-                           MOVE STATE TRANSITION MACROS
+                          MOVE STATE TRANSITION MACROS
 \*---------------------------------------------------------------------------*/
 
 /// make_move!

@@ -47,7 +47,7 @@ pub use crate::game::representations::{
 };
 
 /*----------------------------------------------------------------------------*\
-                                GAME LOGIC API
+                                 GAME LOGIC API
 \*----------------------------------------------------------------------------*/
 pub use crate::game::moves::drop_list::generate_relevant_drops;
 pub use crate::game::moves::drop_parse::generate_drop_vectors;
@@ -98,7 +98,7 @@ pub use crate::game::util::{
 };
 
 /*----------------------------------------------------------------------------*\
-                                   IO API
+                                     IO API
 \*----------------------------------------------------------------------------*/
 pub use crate::io::board_io::{
     determine_board_dimensions, format_board, format_numeric_board,
@@ -214,7 +214,7 @@ pub use std::{
 };
 
 /*----------------------------------------------------------------------------*\
-                                  CONSTANTS
+                                   CONSTANTS
 \*----------------------------------------------------------------------------*/
 
 /// Engine-wide constants.

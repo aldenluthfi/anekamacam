@@ -22,7 +22,7 @@ use crate::*;
 pub type Square = u16;
 
 /*----------------------------------------------------------------------------*\
-                          SPECIAL RULES REPRESENTATIONS
+                         SPECIAL RULES REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
 /// Special-rules bitmask accessor/encoder macros.
@@ -299,7 +299,7 @@ macro_rules! enc_static_movement {
 }
 
 /*----------------------------------------------------------------------------*\
-                            EN PASSANT REPRESENTATION
+                           EN PASSANT REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
 /// EnPassantSquare
@@ -358,7 +358,7 @@ macro_rules! enp_piece {
 }
 
 /*----------------------------------------------------------------------------*\
-                              SNAPSHOT REPRESENTATION
+                            SNAPSHOT REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
 /// Snapshot
@@ -589,7 +589,7 @@ macro_rules! is_terminal {
 }
 
 /*----------------------------------------------------------------------------*\
-                            GAME STATE REPRESENTATION
+                           GAME STATE REPRESENTATION
 \*----------------------------------------------------------------------------*/
 
 /// StaticState

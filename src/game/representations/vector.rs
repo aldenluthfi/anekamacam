@@ -297,7 +297,7 @@ macro_rules! vector_is_initial {
 }
 
 /*----------------------------------------------------------------------------*\
-                            MOVE PARSE REPRESENTATIONS
+                           MOVE PARSE REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
 /// Multi-leg parse-tree types.

@@ -261,7 +261,7 @@ pub type PseudoMove = (u128, MoveSignature);
 pub struct Move(pub u128, pub Option<Arc<Vec<u64>>>);
 
 /*----------------------------------------------------------------------------*\
-                               UTILITY MOVE MACROS
+                              UTILITY MOVE MACROS
 \*----------------------------------------------------------------------------*/
 
 /// m_captures!
@@ -663,7 +663,7 @@ macro_rules! captured_unmoved {
 }
 
 /*----------------------------------------------------------------------------*\
-                        MOVE LIST REPRESENTATION DECODING
+                       MOVE LIST REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
 
 /// Decoders for auxiliary multi-capture entries (`u64`) stored in `Move.1`.
@@ -721,7 +721,7 @@ macro_rules! multi_move_captured_unmoved {
 }
 
 /*----------------------------------------------------------------------------*\
-                      MOVE LIST REPRESENTATION ENCODING
+                       MOVE LIST REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
 /// Encoders for auxiliary multi-capture entries (`u64`) stored in `Move.1`.

@@ -276,7 +276,7 @@ macro_rules! commit_hash_entry {
 }
 
 /*----------------------------------------------------------------------------*\
-                       TRANSPOSITION TABLE PACKING HELPERS
+                      TRANSPOSITION TABLE PACKING HELPERS
 \*----------------------------------------------------------------------------*/
 
 /// Main-table packing macros.
@@ -387,7 +387,7 @@ macro_rules! tt_score {
 
 
 /*----------------------------------------------------------------------------*\
-                        TRANSPOSITION TABLE STORE / PROBE
+                       TRANSPOSITION TABLE STORE / PROBE
 \*----------------------------------------------------------------------------*/
 
 /// probe_tt_entry!
@@ -731,7 +731,7 @@ macro_rules! fill_pv_line {
 }
 
 /*----------------------------------------------------------------------------*\
-                    PAWN TABLE REPRESENTATION & PROBE
+                       PAWN TABLE REPRESENTATION & PROBE
 \*----------------------------------------------------------------------------*/
 
 /// PTEntry
@@ -949,7 +949,7 @@ macro_rules! qt_flags {
 }
 
 /*----------------------------------------------------------------------------*\
-                     QSEARCH TT PROBE & STORE MACROS
+                        QSEARCH TT PROBE & STORE MACROS
 \*----------------------------------------------------------------------------*/
 
 /// probe_qt_entry!
