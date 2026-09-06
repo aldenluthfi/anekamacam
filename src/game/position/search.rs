@@ -115,11 +115,16 @@ const CONTINUATION_PLIES: usize = 2;
 /// answered under the pawn key, and shifts the next evaluation of that pawn
 /// skeleton by the running average of its own past error.
 ///
-/// - SIZE       : 16384, cells a side, the pawn key masked down to a row
-/// - GRAIN      : 64, stored units per point, divided out on read
-/// - SCALE      : 256, denominator of the blend, a weight out of this
-/// - MAX_WEIGHT : 16, the most one deep quiet result may pull a cell
-/// - LIMIT      : 64, points the correction is ever allowed to reach
+/// - `CORR_HIST_SIZE`       : 16384, cells a side, the pawn key masked
+///                            down to a row
+/// - `CORR_HIST_GRAIN`      : 64, stored units per point, divided out on
+///                            read
+/// - `CORR_HIST_SCALE`      : 256, denominator of the blend, a weight out
+///                            of this
+/// - `CORR_HIST_MAX_WEIGHT` : 16, the most one deep quiet result may pull
+///                            a cell
+/// - `CORR_HIST_LIMIT`      : 64, points the correction is ever allowed
+///                            to reach
 ///
 /// The grain buys resolution the average would otherwise round off: a blend
 /// that moves a cell by a fraction of a point keeps that fraction until
@@ -150,9 +155,14 @@ const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 /// A wide window means a principal variation node, where a reduction that
 /// hides the better move costs the whole line rather than one bound, so twice
 /// as many moves are searched whole before the surface is asked.
+///
+/// `REDUCTION_MINIMUM_DEPTH` is the depth nothing reduces under,
+/// `REDUCTION_MOVE_BASE` the moves searched whole at a zero window, and
+/// `REDUCTION_MOVE_WIDE` the moves a wide window adds to that.
 const REDUCTION_MINIMUM_DEPTH: u32 = 3;
 const REDUCTION_MOVE_BASE: u32 = 2;
 const REDUCTION_MOVE_WIDE: u32 = 2;
+
 /// ProbCut probe
 ///
 /// A node standing well above beta is usually about to fail high, and a
@@ -168,9 +178,14 @@ const REDUCTION_MOVE_WIDE: u32 = 2;
 /// The probe stays cheap by giving up early: the capture list is walked in
 /// score order and abandoned at the first move that is not winning, so a node
 /// with nothing to show pays for one pick and nothing else.
+///
+/// `MIN_PROBCUT_DEPTH` is the depth it starts at, `PROBCUT_MAX_CAPTURES` the
+/// captures it will try, and `PROBCUT_DEPTH_REDUCTION` the plies taken off
+/// the node's own depth to search one of them.
 const MIN_PROBCUT_DEPTH: usize = 5;
 const PROBCUT_DEPTH_REDUCTION: usize = 4;
 const PROBCUT_MAX_CAPTURES: usize = 3;
+
 /// Shallowest node reduced for having no table move
 ///
 /// A node this deep with nothing in the table has never been searched, so its
@@ -194,11 +209,14 @@ const MIN_IIR_DEPTH: usize = 4;
 /// past 16 delta      that side gives up and opens to infinity
 /// ```
 ///
-/// Both ratios are read against `COEFFICIENT_SCALE`, the widen as a factor
-/// and the clamp as a multiple of the opening half-width, which is itself
-/// derived per variant. A previous score already in mate range skips the
-/// window outright: mate scores step by a ply at a time and would fail every
-/// window on the way in.
+/// Both ratios are read against `COEFFICIENT_SCALE`, `ASPIRATION_WIDEN` as
+/// the factor the delta grows by and `ASPIRATION_CLAMP` as the multiple of
+/// the opening half-width it gives up at, that half-width being itself
+/// derived per variant. `ASPIRATION_START_DEPTH` is the first iteration
+/// opened around a previous score at all.
+///
+/// A previous score already in mate range skips the window outright: mate
+/// scores step by a ply at a time and would fail every window on the way in.
 const ASPIRATION_CLAMP: u32 = 16000;
 const ASPIRATION_WIDEN: u32 = 2000;
 const ASPIRATION_START_DEPTH: u32 = 4;

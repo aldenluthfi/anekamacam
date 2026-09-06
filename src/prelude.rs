@@ -621,13 +621,14 @@ pub const WHITE_WIN: u8 = 3;
 /// the tables are.
 ///
 /// ```text
-///   5_000_000            table move
-///   4_000_000 + b        winning capture
-///   1_000_000 + 7b       killer
+///   5_000_000            TABLE_MOVE_SCORE          table move
+///   4_000_000 + b        WINNING_CAPTURE_SCORE     winning capture
+///   1_000_000 + 7b       KILLER_MOVE_SCORE         killer
 ///   1_000_000 + 6b   ┐
-///   1_000_000        ┘   quiet move, centre plus its history sum
-///   1_000_000 - b        losing capture
-///           0            capture that cannot be made
+///   1_000_000 + 3b   ┤   QUIET_MOVE_SCORE          centre, plus history
+///   1_000_000        ┘
+///   1_000_000 - b        LOSING_CAPTURE_SCORE      losing capture
+///           0            UNMAKEABLE_CAPTURE_SCORE  cannot be made at all
 /// ```
 ///
 /// where `b` is `HISTORY_BOUND` and `7b` is `2 * HISTORY_TABLES + 1` bounds,
@@ -712,6 +713,14 @@ pub const REPETITION_CYCLE: u8 = 2;
 /// - `EMBEDDED_DICTS`   : their notation, one section per protocol
 /// - `EMBEDDED_PERFT`   : their move-count suites
 /// - `EMBEDDED_PARAMS`  : their tuned payloads, as shipped
+///
+/// - `OPT_THREADS`       : how many workers a search is given
+/// - `OPT_PROTOCOL`      : which dialect the session answers in
+/// - `OPT_PONDER`        : offered so a GUI may set it, acted on nowhere
+/// - `OPT_HASH`          : the shared tables' size in megabytes
+/// - `OPT_CLEAR_HASH`    : takes no value, and rebuilds them at that size
+/// - `OPT_MOVE_OVERHEAD` : milliseconds held back from every clock, for
+///                         whatever sits between engine and GUI
 ///
 /// `PAWN_TABLE_ENTRIES` is each worker's pawn-cache size at default Hash;
 /// other Hash values scale from it, then floor to a power of two for mask

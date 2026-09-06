@@ -166,18 +166,18 @@ pub fn hash_virgin_board(state: &State) -> u128 {
 /// are 16 bits wide and spend the row after theirs on the high byte, which is
 /// why the numbering skips over 3 and 5 without naming them.
 ///
-/// -  0 : counter clock
-/// -  1 : counter limit
-/// -  2 : counting count, low
-/// -  3 : counting count, high
-/// -  4 : counting limit, low
-/// -  5 : counting limit, high
-/// -  6 : checks made by white
-/// -  7 : checks made by black
-/// -  8 : checks required to win
-/// -  9 : repetition occurrences
-/// - 10 : pass and stand-off class
-/// - 11 : quiescence move-set class
+/// -  0 : `COUNTER_CLOCK`, the counter's clock
+/// -  1 : `COUNTER_LIMIT`, the limit it counts up to
+/// -  2 : `COUNTING_COUNT`, low byte
+/// -  3 : that same count, high byte
+/// -  4 : `COUNTING_LIMIT`, low byte
+/// -  5 : that same limit, high byte
+/// -  6 : `CHECKS_WHITE`, checks made by white
+/// -  7 : `CHECKS_BLACK`, checks made by black
+/// -  8 : `CHECKS_COUNT`, checks required to win
+/// -  9 : `REPETITION_COUNT`, repetition occurrences
+/// - 10 : `PASS_CLASS`, pass and stand-off class
+/// - 11 : `QSEARCH_CLASS`, quiescence move-set class
 ///
 /// `CONTEXT_SLOTS` closes the list rather than naming a slot: it is how many
 /// rows the table is built with.
