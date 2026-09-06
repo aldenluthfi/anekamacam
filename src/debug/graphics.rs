@@ -893,10 +893,11 @@ impl BoardState {
 ///
 ///   Params:
 ///
-///   - state: &mut State
-///     playground position; loads an empty FEN oriented for the piece's colour
+///     state: &mut State
+///     playground position, loaded with an empty FEN oriented for the
+///     piece's own colour
 ///
-///   - index: PieceIndex
+///     index: PieceIndex
 ///     piece the empty board is prepared for
 ///
 /// set_playground_piece
@@ -1021,18 +1022,20 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
 /// └────────────────────────────────┴─────────────┘
 /// ```
 ///
-/// Every member takes the same parameters (except `render`, which takes
-/// only `frame` and `app` and computes its own areas):
+/// Every member takes the same parameters, except `render`, which takes
+/// only `frame` and `app` and computes its own areas:
 ///
-/// - frame: &mut Frame<'_>
-///   ratatui frame drawn into
+/// Params:
 ///
-/// - area : Rect
-///   region of the frame allotted
+///     frame: &mut Frame<'_>
+///     ratatui frame drawn into
 ///
-/// - app  : &Tui / &mut Tui
-///   interface state read; mutable only where scroll offsets or picks
-///   are updated
+///     area: Rect
+///     region of the frame allotted
+///
+///     app: &Tui / &mut Tui
+///     interface state read, mutable only where scroll offsets or picks
+///     are updated
 ///
 /// draw_game_selection
 ///
@@ -1043,8 +1046,8 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
 ///
 ///   Return:
 ///
-///   Option<Arc<Mutex<State>>>
-///   the chosen game once a variant is picked, None until then
+///     Option<Arc<Mutex<State>>>
+///     the chosen game once a variant is picked, None until then
 ///
 /// draw_tabs
 ///   the tab bar, and the log verbosity beside it as five numbers,
