@@ -194,13 +194,13 @@ impl<const NUM: usize, const DEN: usize> HashTable<NUM, DEN> {
 ///   and bumps whichever replacement counter applies.
 ///
 ///   Params:
-///   - table    : &HashTable   -> table whose counters are bumped
+///   - table    : &HashTable     -> table whose counters are bumped
 ///   - entry    : &mut HashEntry -> slot being replaced
-///   - hash     : u128         -> key the parity word is folded against
-///   - empty    : bool         -> whether the slot was never written
-///   - move_slot: u128         -> slot[0]
-///   - data_slot: u128         -> slot[1]
-///   - age      : u64          -> generation stamped on the slot
+///   - hash     : u128           -> key the parity word is folded against
+///   - empty    : bool           -> whether the slot was never written
+///   - move_slot: u128           -> slot[0]
+///   - data_slot: u128           -> slot[1]
+///   - age      : u64            -> generation stamped on the slot
 #[macro_export]
 macro_rules! table_index {
     ($hash:expr, $size:expr) => {{

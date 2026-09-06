@@ -51,11 +51,11 @@
 /// lva!
 ///
 ///   Params:
-///   - state  : &State        -> position providing attacks and board
-///   - target : Square        -> exchange target square
-///   - color  : u8            -> side owning the target piece
+///   - state  : &State         -> position providing attacks and board
+///   - target : Square         -> exchange target square
+///   - color  : u8             -> side owning the target piece
 ///   - out    : &mut Vec<Move> -> generated candidate captures
-///   - scratch: &mut Vec<u64> -> multi-capture payload scratch
+///   - scratch: &mut Vec<u64>  -> multi-capture payload scratch
 #[macro_export]
 macro_rules! attack_value {
     ($mv:expr, $state:expr) => {{
