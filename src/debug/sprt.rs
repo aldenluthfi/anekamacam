@@ -15,14 +15,38 @@
 
 use crate::*;
 
-/// SPRT harness constants.
+/*----------------------------------------------------------------------------*\
+                                HARNESS SETTINGS
+\*----------------------------------------------------------------------------*/
+
+/// SPRT harness settings
 ///
-/// Fixed knobs for the match runner: `SPRT_DIR` and `SPRT_HISTORY_KEEP`
-/// place and cap the rolled result files, `SPRT_PROTOCOL` is the dialect
-/// spoken to both engine subprocesses, `SPRT_ALPHA` / `SPRT_BETA` are the
-/// type-one and type-two error rates that set the log-likelihood
-/// acceptance bounds, and the three `*_TIMEOUT_MS` / `*_GRACE_MS` values
-/// bound handshake, reply, and shutdown waits on those subprocesses.
+/// The fixed knobs of the match runner. Nothing here is per-run: the time
+/// control, the Elo bounds, and the game budget all arrive as arguments,
+/// while these stay the same from one test to the next.
+///
+/// ```text
+/// SPRT_DIR                    where results land, one folder per variant
+/// SPRT_HISTORY_KEEP           how many rolled results a folder keeps
+/// SPRT_PROTOCOL               the dialect both children are spoken to in
+/// SPRT_ALPHA                  odds of calling a patch good when it is not
+/// SPRT_BETA                   odds of calling it not good when it is
+/// SPRT_HANDSHAKE_TIMEOUT_MS   how long a child has to finish setting up
+/// SPRT_RESPONSE_GRACE_MS      slack over the clock before a reply is late
+/// SPRT_SHUTDOWN_TIMEOUT_MS    how long a child has to quit before it is
+///                             killed instead
+/// ```
+///
+/// The two error rates set the stopping bounds, which follow from them and
+/// from nothing else, and are symmetric while the two rates are equal:
+///
+/// ```text
+/// upper = ln((1 - beta) / alpha)   = +2.944 at 0.05 and 0.05
+/// lower = ln(beta / (1 - alpha))   = -2.944 at 0.05 and 0.05
+/// ```
+///
+/// The test runs until the ratio leaves that band, and reports the run as
+/// inconclusive if the game budget runs out while it is still inside.
 const SPRT_DIR: &str = "res/sprt";
 const SPRT_HISTORY_KEEP: usize = 64;                                        /* rolled sprt files kept per family  */
 const SPRT_PROTOCOL: &str = "uci";                                          /* dialect the sprt harness speaks    */
@@ -34,17 +58,30 @@ const SPRT_SHUTDOWN_TIMEOUT_MS: u64 = 1_000;
 
 /// engine_sandbox
 ///
-/// Maps an engine binary to its private working directory under the
-/// system temp dir. Children run there so each binary resolves
-/// `res/param` against its own exports or embedded defaults instead of
-/// sharing the repository's parameter files, keeping param-changing
-/// patches measurable.
+/// Names the private working directory one engine binary runs in. Each child
+/// is started with this as its current directory, so it resolves `res/param`
+/// against its own exports, or against its embedded defaults where it has no
+/// exports, rather than against the repository's. Sharing those files would
+/// hand both engines the same numbers and make a parameter-changing patch
+/// unmeasurable, which is the one thing the harness exists to measure.
+///
+/// ```text
+/// /tmp/anekamacam-sprt/_Users_me_build_release_main
+///      ^               ^
+///      |               the binary's own path with every separator turned
+///      |               into an underscore, so two builds never collide
+///      one folder for the whole harness
+/// ```
 ///
 /// Params:
-/// - binary: &str          -> path to the engine executable
+///
+///     binary: &str
+///     path to the engine executable
 ///
 /// Return:
-/// Result<PathBuf, String> -> sandbox path or path-resolution error
+///
+///     Result<PathBuf, String>
+///     the sandbox path, or why the binary's own path could not be resolved
 fn engine_sandbox(binary: &str) -> Result<PathBuf, String> {
     let executable = fs::canonicalize(binary).map_err(|error| {
         format!("Failed to resolve engine {}: {}", binary, error)
@@ -54,14 +91,30 @@ fn engine_sandbox(binary: &str) -> Result<PathBuf, String> {
     Ok(env::temp_dir().join("anekamacam-sprt").join(name))
 }
 
+/*----------------------------------------------------------------------------*\
+                                  TIME CONTROL
+\*----------------------------------------------------------------------------*/
+
 /// SPRTTimeControl
 ///
-/// Per-move time budget for SPRT games: `MoveTime` searches every move
-/// at a fixed wall-clock budget, while `Clock` gives each side a base
-/// bank plus a per-move increment driven through `wtime`/`btime`/
-/// `winc`/`binc`, so the engines' own time management decides how to
-/// spend it. The referee tracks the clocks and scores an overstep as a
-/// loss for the side that flagged.
+/// How much time a game gives each side. The choice decides which `go` line
+/// the referee sends, and whether it has to keep clocks at all.
+///
+/// ```text
+/// MoveTime(1000)
+///     go movetime 1000
+///     every move gets the same budget, and there is no clock to keep
+///     because there is nothing that can run out
+///
+/// Clock { base_ms: 8000, inc_ms: 80 }
+///     go wtime 8000 btime 8000 winc 80 binc 80
+///     each side's own time management decides how to spend the bank, and
+///     the referee scores an overstep as a loss for whoever flagged
+/// ```
+///
+/// The second form is the one that measures time management, which is why
+/// it exists at all: a fixed movetime hides every decision about when to
+/// think longer, and a patch to that logic would test as no change.
 #[derive(Clone, Copy)]
 pub enum SPRTTimeControl {
     MoveTime(u128),                                                             /* fixed milliseconds per move        */
@@ -70,14 +123,19 @@ pub enum SPRTTimeControl {
 
 /// parse_sprt_time_control
 ///
-/// Parses fixed movetime or base-plus-increment notation. Every value is in
-/// milliseconds.
+/// Reads a time control off the command line. A `+` is what tells the two
+/// forms apart, and every figure is in milliseconds either way.
+///
+/// ```text
+/// 1000      a fixed second a move
+/// 8000+80   an eight-second bank, with eighty milliseconds added a move
+/// ```
 ///
 /// Params:
-/// - value: &str                   -> fixed or base-plus-increment milliseconds
+/// - value: &str                   -> fixed movetime, or base and increment
 ///
 /// Return:
-/// Result<SPRTTimeControl, String> -> parsed control or diagnostic
+/// Result<SPRTTimeControl, String> -> the control, or the offending text
 pub fn parse_sprt_time_control(
     value: &str,
 ) -> Result<SPRTTimeControl, String> {
@@ -98,6 +156,22 @@ pub fn parse_sprt_time_control(
         .map_err(|_| format!("Invalid time control: {}", value))
 }
 
+/// SPRTTimeControl::fmt
+///
+/// Names the control for the run's result file, so a saved test says what
+/// it was played at. The wording is for a reader rather than for the parser
+/// above, which never reads a result file back.
+///
+/// ```text
+/// MoveTime(1000)                        movetime 1000ms
+/// Clock { base_ms: 8000, inc_ms: 80 }   clock 8000+80ms
+/// ```
+///
+/// Params:
+/// - formatter: &mut FmtFormatter<'_> -> the sink being written into
+///
+/// Return:
+/// FmtResult                          -> whatever the sink reported
 impl Display for SPRTTimeControl {
     fn fmt(&self, formatter: &mut FmtFormatter<'_>) -> FmtResult {
         match self {
@@ -111,18 +185,52 @@ impl Display for SPRTTimeControl {
     }
 }
 
+/*----------------------------------------------------------------------------*\
+                               ENGINE SUBPROCESS
+\*----------------------------------------------------------------------------*/
+
 /// SPRTChildError
 ///
-/// Structured subprocess failure with enough context to identify the engine,
-/// failed operation, process state, and emitted diagnostics.
+/// Everything known about a subprocess that failed, gathered at the moment
+/// it did. A child can go wrong in ways an exit status alone cannot explain,
+/// so the error carries the engine, what was being asked of it, what went
+/// wrong, whether it is even still alive, and whatever it said on the way.
+///
+/// ```text
+/// binary   which of the two engines it was
+/// action   what was being asked: spawn, write, read, protocol wait
+/// detail   the failure itself, in the words of whatever reported it
+/// status   running, or the exit status if it is not
+/// stderr   the child's own diagnostics, drained once it has exited
+/// ```
+///
+/// The stderr is drained only from a child that has actually exited: reading
+/// a live one's pipe to end of file would block until it does.
 struct SPRTChildError {
-    binary: String,
-    action: String,
-    detail: String,
-    status: String,
-    stderr: String,
+    binary: String,                                                             /* which engine, for the report       */
+    action: String,                                                             /* what was being asked of it         */
+    detail: String,                                                             /* what went wrong doing it           */
+    status: String,                                                             /* running, or how it exited          */
+    stderr: String,                                                             /* what it said, if it can be read    */
 }
 
+/// SPRTChildError::fmt
+///
+/// Lays the five fields out as the one message the run logs, and saves as
+/// its verdict where the failure ended the test.
+///
+/// ```text
+/// engine ./main failed during bestmove wait: timed out before bestmove
+/// (status: running)
+/// stderr:
+/// <engine still running; stderr not drained>
+/// ```
+///
+/// Params:
+/// - formatter: &mut FmtFormatter<'_> -> the sink being written into
+///
+/// Return:
+/// FmtResult                          -> whatever that sink reported
 impl Display for SPRTChildError {
     fn fmt(&self, formatter: &mut FmtFormatter<'_>) -> FmtResult {
         write!(
@@ -135,11 +243,21 @@ impl Display for SPRTChildError {
 
 /// SPRTChild
 ///
-/// A running engine subprocess spoken to over UCI.
-/// Owns the child process and the piped handles used to send commands
-/// and read replies; the driver methods keep the protocol handshake and
-/// per-move exchange in one place, and the `Drop` impl sends `quit` and
-/// reaps the process so no child is left behind.
+/// One running engine, and the three pipes that reach it. Neither side of a
+/// test is linked in as a library: both are real binaries driven over UCI,
+/// so what is measured is the engine as it will actually be shipped.
+///
+/// ```text
+/// input    harness → engine   commands, written and flushed at once
+/// output   harness ← engine   replies, handed over by a reader thread
+/// errors   harness ← engine   diagnostics, read only once it has exited
+/// ```
+///
+/// The reply pipe is never read straight. A `BufReader` offers no timed
+/// read, so a hung engine would hang the harness with it; instead a thread
+/// reads lines and passes them down a channel the driver can wait on with a
+/// deadline, and a child that stops answering costs one game rather than
+/// the whole run.
 struct SPRTChild {
     binary: String,                                                             /* executable path for diagnostics    */
     process: Child,                                                             /* the running engine subprocess      */
@@ -148,72 +266,133 @@ struct SPRTChild {
     errors: ChildStderr,                                                        /* pipe of its stderr diagnostics     */
 }
 
-/// SPRTChild protocol driver.
+/// SPRTChild protocol driver
 ///
-/// A tight family of methods that own one subprocess engine's UCI
-/// conversation.
+/// The whole of one engine's side of the conversation, from starting it up
+/// to asking it for a move. The methods fall into three groups: the ones
+/// that build an error, the ones that start a child, and the ones that talk
+/// to a child already running.
 ///
-/// `spawn` configures the engine for the variant with a single thread and
-/// runs it inside its `engine_sandbox` so each binary sees only its own
-/// parameter files. Protocol and process failures return structured errors;
-/// the referee scores an in-game child failure as a loss and stops cleanly.
+/// ```text
+/// setup_error     an error about a child that never started at all
+/// failure         an error about a running one, its state attached
+/// exited_error    an error only if the child has quietly died
+///
+/// output_reader   the thread that turns the reply pipe into a channel
+/// spawn           start a binary, set the variant, wait for readyok
+///
+/// send            write one line and flush it
+/// drain_errors    everything the child has written to stderr
+/// read_line       take the next reply, or give up at a deadline
+/// wait_for        read past everything until a line opens with a token
+/// new_game        reset between games, then wait until that has landed
+/// bestmove        set the position, send `go`, return the move
+/// ```
+///
+/// `spawn` runs each child in its own `engine_sandbox` on a single thread.
+/// One thread apiece stops the two from competing for cores, which would
+/// otherwise measure how loaded the machine was rather than the patch.
+///
+/// Every failure below is reported rather than raised: a child that breaks
+/// mid-game loses that game and is restarted, and only a failure of both at
+/// once ends the run, there being no honest way to score a game that way.
+///
+/// setup_error
+///
+///   Params:
+///   - binary: &str   -> path of the engine that never started
+///   - action: &str   -> what was being attempted when it did not
+///   - detail: String -> the failure, in the words of whoever reported it
+///
+///   Return:
+///   SPRTChildError   -> that failure, with no process state to attach
+///
+/// output_reader
+///
+///   Params:
+///   - output: ChildStdout                     -> the child's reply pipe
+///
+///   Return:
+///   Receiver<Result<Option<String>, String>>  -> lines as they arrive,
+///                                                `None` at end of pipe
 ///
 /// spawn
 ///
 ///   Params:
 ///   - binary : &str                   -> path to the engine executable
-///   - variant: &str                   -> UCI variant name to select
+///   - variant: &str                   -> variant name to select over UCI
 ///
 ///   Return:
-///   Result<SPRTChild, SPRTChildError> -> handshaken child or setup failure
+///   Result<SPRTChild, SPRTChildError> -> a child that answered `readyok`,
+///                                        or what stopped it from doing so
+///
+/// failure
+///
+///   Params:
+///   - action: &str   -> what was being asked when it went wrong
+///   - detail: String -> the failure, in the words of whoever reported it
+///
+///   Return:
+///   SPRTChildError   -> that failure, with the child's state attached
+///
+/// exited_error
+///
+///   Params:
+///   - action: &str          -> what the check is being made on behalf of
+///
+///   Return:
+///   Option<SPRTChildError>  -> an error if the child has already exited,
+///                              nothing at all while it is still running
 ///
 /// send
 ///
 ///   Params:
-///   - command: &str            -> the command line to write and flush
+///   - command: &str            -> the line to write and flush
 ///
 ///   Return:
-///   Result<(), SPRTChildError> -> success or command-write failure
-///
-/// read_line
-///
-///   Params:
-///   - timeout: Duration                    -> maximum wait for one reply line
-///
-///   Return:
-///   Result<Option<String>, SPRTChildError> -> reply, EOF, or read failure
-///
-/// wait_for
-///
-///   Params:
-///   - token  : &str            -> leading token that ends the wait
-///   - timeout: Duration        -> absolute protocol deadline
-///
-///   Return:
-///   Result<(), SPRTChildError> -> success or protocol failure
-///
-/// new_game
-///
-///   Resets the engine between games.
-///
-///   Return:
-///   Result<(), SPRTChildError> -> success or protocol failure
-///
-/// bestmove
-///
-///   Params:
-///   - startpos  : &str                     -> the variant start-position FEN
-///   - moves     : &[String]                -> played moves in UCI notation
-///   - go_command: &str                     -> `go` line with time control
-///   - timeout   : Duration                 -> absolute response deadline
-///
-///   Return:
-///   Result<Option<String>, SPRTChildError> -> move, missing move, or failure
+///   Result<(), SPRTChildError> -> success, or a write that did not land
 ///
 /// drain_errors
 ///
 ///   Return:
-///   String -> the child's collected stderr, for crash diagnostics
+///   String -> the child's stderr, or a note that it wrote none
+///
+/// read_line
+///
+///   Params:
+///   - timeout: Duration                    -> how long one line may take
+///
+///   Return:
+///   Result<Option<String>, SPRTChildError> -> a reply, `None` at end of
+///                                             pipe, or the read failure
+///
+/// wait_for
+///
+///   Params:
+///   - token  : &str            -> the opening word that ends the wait
+///   - timeout: Duration        -> the deadline for the whole wait, not
+///                                 for each line inside it
+///
+///   Return:
+///   Result<(), SPRTChildError> -> the token arrived, or it never did
+///
+/// new_game
+///
+///   Return:
+///   Result<(), SPRTChildError> -> the reset landed, or it never did
+///
+/// bestmove
+///
+///   Params:
+///   - startpos  : &str                     -> the variant's start position
+///   - moves     : &[String]                -> the game so far, in notation
+///   - go_command: &str                     -> the `go` line, clocks and all
+///   - timeout   : Duration                 -> the deadline for a reply
+///
+///   Return:
+///   Result<Option<String>, SPRTChildError> -> the move, `None` where the
+///                                             engine named none, or the
+///                                             failure that came instead
 impl SPRTChild {
     fn setup_error(
         binary: &str,
@@ -490,6 +669,14 @@ impl SPRTChild {
     }
 }
 
+/// SPRTChild::drop
+///
+/// Shuts a child down and makes sure it is gone. `quit` is asked for first
+/// and the process given `SPRT_SHUTDOWN_TIMEOUT_MS` to take it; one that is
+/// wedged, or that has stopped reading its input at all, is killed instead.
+/// The wait happens here rather than being left to the operating system
+/// because a run plays hundreds of games, and children that were only asked
+/// to leave would pile up behind it.
 impl Drop for SPRTChild {
     fn drop(&mut self) {
         let _ = writeln!(self.input, "quit");
@@ -514,90 +701,138 @@ impl Drop for SPRTChild {
     }
 }
 
+/*----------------------------------------------------------------------------*\
+                                  GAME REFEREE
+\*----------------------------------------------------------------------------*/
+
 /// SPRTGameOutcome
 ///
-/// Referee result for one game. Normal results carry only score; a single
-/// subprocess failure carries scored loss and diagnostics; failure of both
-/// children aborts without inventing a winner.
+/// How one game ended. Every score is from White's side of the board, and
+/// since `WHITE` is 0 and `BLACK` is 1, a side that loses on its own account
+/// scores exactly its own colour.
+///
+/// ```text
+/// Score(1.0)     White won, by rule or because Black could not answer
+/// Score(0.5)     drawn, by whichever of the variant's rules said so
+/// Score(0.0)     Black won
+///
+/// EngineLoss     one child broke, which is a loss for it and a restart
+///                before the next game, the error carried along to log
+///
+/// Aborted        both children broke at once, which is not a game and is
+///                not scored as one; the run stops here instead
+/// ```
 enum SPRTGameOutcome {
-    Score(f64),
+    Score(f64),                                                                 /* a played game, White's view        */
     EngineLoss {
-        score: f64,
-        side: u8,
-        error: SPRTChildError,
+        score: f64,                                                             /* the loss, still White's view       */
+        side: u8,                                                               /* which child has to be restarted    */
+        error: SPRTChildError,                                                  /* why it needs restarting            */
     },
-    Aborted(String),
+    Aborted(String),                                                            /* both gone; nothing to score        */
 }
 
 /// GameManager
 ///
-/// One refereed match slot between two subprocess engines. Owns the
-/// neutral in-process `State` — whose move history *is* the game, so the
-/// UCI move list handed to each engine is derived from it rather than
-/// tracked in parallel — together with the two engine children. `white`
-/// and `black` name the side each child is currently playing, and
-/// `swap_colors` exchanges them between the two games of a pair so each
-/// engine gets White once. The `State` is also the snapshot streamed to
-/// the TUI so the live game is visible in the board view.
+/// One refereed match slot: two children, and the neutral board that decides
+/// between them. That board is the engine's own `State`, forked from the
+/// loaded variant, and its move history is the game itself. The move list
+/// handed to each child every ply is rebuilt from that history rather than
+/// kept beside it, so there is no second copy that could fall out of step
+/// with the position being refereed.
+///
+/// `white` and `black` say which child is playing which colour now, not
+/// which it started as. The two games of a pair share one random opening and
+/// swap the children between them, so a lucky opening helps both equally:
+///
+/// ```text
+/// game 1   A as White, B as Black   scored from White's side
+/// game 2   B as White, A as Black   scored, then flipped back to A's
+/// ```
+///
+/// The referee's `State` is also what is streamed to the board view, so a
+/// running match can be watched rather than only counted.
 struct GameManager {
     state: State,                                                               /* neutral referee; history is game   */
     white: SPRTChild,                                                           /* child currently playing White      */
     black: SPRTChild,                                                           /* child currently playing Black      */
 }
 
-/// GameManager driver.
+/// GameManager driver
 ///
-/// A tight family that runs one refereed match slot.
+/// Setting up a match slot, and playing one game in it.
 ///
-/// `play` rebuilds each engine's move list from the referee's own history
-/// every ply (with `format_move`), so no parallel move-string list is
-/// kept; a missing, unparsable, or illegal reply loses for that side,
-/// while mate and the draw rules are adjudicated by the referee.
+/// ```text
+/// new           spawn both children and fork the referee's board
+/// swap_colors   exchange which child is playing which colour
+/// restart       replace one child that broke, on the same binary
+/// reset_to      fork the board again and replay the pair's opening
+/// play          play one game out and say how it ended
+/// ```
+///
+/// `play` is the referee, and every way a game can end passes through it:
+///
+/// ```text
+/// the rules       game_outcome, or adjudicate_no_move where a side has
+///                 no legal move at all, both by the variant's own rules
+/// no move named   a child that answers `bestmove (none)`, or nothing,
+///                 loses; so does one whose move will not parse or is
+///                 not legal in the position being refereed
+/// the flag        under a clock, the wall time the harness measured is
+///                 charged to the mover, so it pays for its own I/O too,
+///                 and overstepping it loses
+/// a broken child  a loss for that child, unless the other has died as
+///                 well, in which case the game is not scored at all
+/// an interrupt    scored where it stands: against the side to move if
+///                 that side is in check or the variant loses on having
+///                 no move, and drawn otherwise
+/// ```
 ///
 /// new
 ///
 ///   Params:
-///   - template: &State                  -> variant forked as referee
-///   - binary_a: &str                    -> child starting as White
-///   - binary_b: &str                    -> child starting as Black
-///   - variant : &str                    -> UCI variant for both children
+///   - template: &State                  -> the variant to fork as referee
+///   - binary_a: &str                    -> the child starting as White
+///   - binary_b: &str                    -> the child starting as Black
+///   - variant : &str                    -> the variant both are set to
 ///
 ///   Return:
-///   Result<GameManager, SPRTChildError> -> manager or setup failure
+///   Result<GameManager, SPRTChildError> -> the slot, or why it could not
+///                                          be set up
 ///
 /// swap_colors
-///   exchanges which child plays which colour; no parameters, no
-///   return value
+///
+///   Takes no parameters and returns nothing: it exchanges the two
+///   children, and which colour each is playing follows from that.
 ///
 /// restart
 ///
 ///   Params:
-///   - side   : u8              -> child side to restart
-///   - variant: &str            -> UCI variant used for setup
+///   - side   : u8              -> the colour whose child is replaced
+///   - variant: &str            -> the variant the new one is set to
 ///
 ///   Return:
-///   Result<(), SPRTChildError> -> success or setup failure
+///   Result<(), SPRTChildError> -> the replacement is ready, or why not
 ///
 /// reset_to
 ///
 ///   Params:
-///   - template: &State  -> loaded variant to fork the referee from
-///   - opening : &[Move] -> shared opening line to replay
+///   - template: &State  -> the variant to fork the board from again
+///   - opening : &[Move] -> the pair's shared opening, replayed onto it
 ///
 ///   Return:
-///   Result<(), String>  -> success or one/both child reset failures
+///   Result<(), String>  -> both children reset, or which of them failed
 ///
 /// play
 ///
 ///   Params:
-///   - dict        : Option<&Translator> -> UCI translator for move I/O
-///   - startpos    : &str                -> the variant start FEN
-///   - time_control: SPRTTimeControl     -> per-move budget or clock bank
+///   - dict        : Option<&Translator> -> the notation both ends read
+///   - startpos    : &str                -> the variant's start position
+///   - time_control: SPRTTimeControl     -> the budget or bank per move
 ///
 ///   Return:
-///
-///   SPRTGameOutcome
-///   White-perspective score, scored child loss, or unscored match abort
+///   SPRTGameOutcome                     -> how the game ended, in the
+///                                          terms above
 impl GameManager {
     fn new(
         template: &State,
@@ -781,40 +1016,72 @@ impl GameManager {
     }
 }
 
-/// SPRT statistics.
+/*----------------------------------------------------------------------------*\
+                       SEQUENTIAL PROBABILITY RATIO TEST
+\*----------------------------------------------------------------------------*/
+
+/// SPRT statistics
 ///
-/// A tight family of pure functions for the normalised pentanomial test.
-/// The LLR uses the pair sample mean and population variance, so a pair's
-/// variance reduction sharpens the test relative to counting single
-/// games; it returns zero until the sample shows any variance.
+/// The test itself: three pure functions with nothing kept between them.
+/// Two convert between an Elo gap and the score that gap is worth, and the
+/// third weighs the evidence gathered so far.
+///
+/// ```text
+/// expected_score         1 / (1 + 10 ^ (-elo / 400))
+/// elo_from_score         -400 · log10(1 / score - 1)
+/// log_likelihood_ratio   everything seen so far, as one number
+/// ```
+///
+/// The two hypotheses are given in Elo but the ratio is worked in scores,
+/// so `expected_score` converts them once before the first game is played.
+///
+/// The ratio is the normalised form, taken over pairs of games rather than
+/// single games:
+///
+/// ```text
+///          pairs · (mu_1 - mu_0) · (2 · mean - mu_0 - mu_1)
+///   LLR =  ───────────────────────────────────────────────
+///                          2 · variance
+/// ```
+///
+/// Working in pairs is what makes the test cheap. Both games of a pair are
+/// played from one opening with the colours swapped, so how good that
+/// opening was cancels out of the pair's score instead of counting as
+/// evidence about the engines. The variance falls with it, and a smaller
+/// variance is a larger ratio for the same number of games played.
+///
+/// Zero comes back while the sample has no variance at all, every pair so
+/// far having scored alike: the denominator would be zero, and the honest
+/// reading of an unvarying sample is that it says nothing either way yet.
 ///
 /// expected_score
 ///
 ///   Params:
-///   - elo     : f64 -> the Elo advantage to convert
+///   - elo: f64 -> the Elo advantage to convert
 ///
 ///   Return:
-///   f64             -> the logistic expected score for that Elo gap
+///   f64        -> what that advantage is worth per game, from 0 to 1
 ///
 /// elo_from_score
 ///
 ///   Params:
-///   - score   : f64 -> the observed per-game score
+///   - score: f64 -> an observed score per game
 ///
 ///   Return:
-///   f64             -> the Elo estimate implied by the score
+///   f64          -> the Elo gap it implies, clamped just short of the
+///                   ends, a perfect score having no finite answer
 ///
 /// log_likelihood_ratio
 ///
 ///   Params:
-///   - pairs   : f64 -> number of game pairs played
-///   - mean    : f64 -> mean normalised pair score
-///   - variance: f64 -> population variance of pair scores
-///   - mu_zero : f64 -> expected score under the null hypothesis
-///   - mu_one  : f64 -> expected score under the alternative hypothesis
+///   - pairs   : f64 -> how many pairs have been played
+///   - mean    : f64 -> the mean of their scores
+///   - variance: f64 -> the population variance of those scores
+///   - mu_zero : f64 -> the score expected if the patch changed nothing
+///   - mu_one  : f64 -> the score expected if it gained what was claimed
 ///
 ///   Return:
-///   f64             -> the GSPRT log-likelihood ratio
+///   f64             -> the ratio, or zero while there is no variance
 fn expected_score(elo: f64) -> f64 {
     1.0 / (1.0 + 10f64.powf(-elo / 400.0))
 }
@@ -841,15 +1108,25 @@ fn log_likelihood_ratio(
 
 /// game_score_bucket
 ///
-/// Buckets a White-perspective game score into a win/draw/loss increment
-/// for the running tally, tolerating tiny float noise in the fixed
-/// {0, 0.5, 1} outcomes.
+/// Turns one game's score into something the running tally can add. The
+/// ratio above works in scores, but the line the run logs and the file it
+/// saves are counted in games, so the two are kept side by side.
+///
+/// ```text
+/// score > 0.75    (1, 0, 0)   a win
+/// 0.25 .. 0.75    (0, 1, 0)   a draw
+/// score < 0.25    (0, 0, 1)   a loss
+/// ```
+///
+/// The bands are wide where the values are only ever 0, 0.5, and 1 because
+/// those values have been through a divide and a subtraction on the way
+/// here, and an exact comparison would eventually miss one.
 ///
 /// Params:
-/// - score: f64    -> a single game's score for the counted engine
+/// - score: f64    -> one game's score, from the counted engine's side
 ///
 /// Return:
-/// (u32, u32, u32) -> a (win, draw, loss) increment to add
+/// (u32, u32, u32) -> what to add to the win, draw, and loss counts
 fn game_score_bucket(score: f64) -> (u32, u32, u32) {
     if score > 0.75 {
         (1, 0, 0)
@@ -860,26 +1137,54 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
     }
 }
 
+/*----------------------------------------------------------------------------*\
+                                  RESULT FILES
+\*----------------------------------------------------------------------------*/
+
 /// write_result_file
 ///
-/// Writes the latest one-run summary to `res/sprt/{variant}/latest.sprt`,
-/// first rolling any previous result to a timestamped backup and pruning
-/// old results to `SPRT_HISTORY_KEEP`. Records the two binaries, the time
-/// control and Elo bounds, the final win/draw/loss tally, the log-likelihood
-/// ratio, and the verdict, so completed tests leave a durable record.
+/// Saves the run so it outlives the terminal it was run in. Any previous
+/// result is rolled to a timestamped name first and the folder trimmed to
+/// `SPRT_HISTORY_KEEP`, so a variant keeps its recent history without the
+/// folder growing forever:
+///
+/// ```text
+/// res/sprt/standard/latest.sprt
+/// res/sprt/standard/2026-09-06_14-02-11.sprt
+/// res/sprt/standard/2026-09-05_09-31-40.sprt
+/// ```
+///
+/// What lands in it is everything needed to read the verdict back later
+/// without the command line that produced it:
+///
+/// ```text
+/// engine A: ./old
+/// engine B: ./new
+/// variant: standard
+/// time control: clock 8000+80ms
+/// elo bounds: [0, 5]  alpha: 0.05  beta: 0.05
+/// every figure below is from engine A's view
+/// result (A): 118W 96L 214D
+/// LLR: 2.951
+/// verdict: H1 accepted (./old is stronger)
+/// ```
+///
+/// A file is written even where no game was ever played: a run that died in
+/// setup is as much a result as one that reached a bound, and saying so is
+/// better than leaving the last run's file standing as the current answer.
 ///
 /// Params:
-/// - variant     : &str            -> variant, selects the output dir
+/// - variant     : &str            -> the variant, which picks the folder
 /// - binary_a    : &str            -> path of the first engine
 /// - binary_b    : &str            -> path of the second engine
-/// - time_control: SPRTTimeControl -> per-move time control used
-/// - h0          : f64             -> null-hypothesis Elo bound
-/// - h1          : f64             -> alternative-hypothesis Elo bound
-/// - wins        : u32             -> wins from engine A's view
-/// - draws       : u32             -> draws from engine A's view
-/// - losses      : u32             -> losses from engine A's view
-/// - llr         : f64             -> the final log-likelihood ratio
-/// - verdict     : &str            -> the test outcome text
+/// - time_control: SPRTTimeControl -> what the games were played at
+/// - h0          : f64             -> the Elo gap the test can rule out
+/// - h1          : f64             -> the Elo gap it can confirm
+/// - wins        : u32             -> wins, from engine A's view
+/// - draws       : u32             -> draws, likewise
+/// - losses      : u32             -> losses, likewise
+/// - llr         : f64             -> where the ratio finished
+/// - verdict     : &str            -> why it stopped where it did
 fn write_result_file(
     variant: &str,
     binary_a: &str,
@@ -921,20 +1226,30 @@ fn write_result_file(
 
 /// harvest_child_logs
 ///
-/// Copies each SPRT child engine's own `logs/latest.log` out of its temp
-/// sandbox into the variant's result directory, keyed by engine label, so a
-/// match's per-engine telemetry survives the next run's sandbox wipe. Reuses
-/// the shared rolling scheme: the previous `{label}_latest.log` is first
-/// rolled to a timestamped backup, then pruned to `SPRT_HISTORY_KEEP`. A
-/// binary whose sandbox log is missing — never started, or `A == B` sharing
-/// one sandbox — is skipped. Runs after the children stop so their logs are
-/// fully flushed; the engine logging core stays generic (children always
-/// write plain `logs/latest.log`, unaware of the harness label).
+/// Copies each child's own log out of its sandbox before the next run wipes
+/// it. A child writes plain `logs/latest.log` and knows nothing about the
+/// harness that started it, so which engine it was is attached here, on the
+/// way out, rather than being taught to the logger:
+///
+/// ```text
+/// /tmp/anekamacam-sprt/_home_me_old/logs/latest.log
+///     → res/sprt/standard/engine-a_latest.log
+///
+/// /tmp/anekamacam-sprt/_home_me_new/logs/latest.log
+///     → res/sprt/standard/engine-b_latest.log
+/// ```
+///
+/// The rolling is the result file's, one history per label. A sandbox with
+/// no log in it is skipped: that engine either never started, or both sides
+/// named the same binary and so shared the one sandbox between them.
+///
+/// This runs only once both children have stopped, since a log still being
+/// written to would be copied half-flushed.
 ///
 /// Params:
-/// - variant : &str -> variant name, selects the result directory
-/// - binary_a: &str -> first engine binary (labelled `engine-a`)
-/// - binary_b: &str -> second engine binary (labelled `engine-b`)
+/// - variant : &str -> the variant, which picks the folder
+/// - binary_a: &str -> the first engine, filed as `engine-a`
+/// - binary_b: &str -> the second, filed as `engine-b`
 fn harvest_child_logs(variant: &str, binary_a: &str, binary_b: &str) {
     let dir = format!("{}/{}", SPRT_DIR, variant);
 
@@ -959,28 +1274,43 @@ fn harvest_child_logs(variant: &str, binary_a: &str, binary_b: &str) {
     }
 }
 
+/*----------------------------------------------------------------------------*\
+                                  MATCH RUNNER
+\*----------------------------------------------------------------------------*/
+
 /// run_sprt
 ///
-/// Debug-tool entry point for `sprt`. Spawns both engine
-/// binaries on the loaded variant — each in a freshly cleared
-/// `engine_sandbox` so their parameter files stay isolated — plays
-/// paired random openings (each engine gets White once), folds every
-/// pair into the normalised pentanomial LLR, and stops as soon as the
-/// LLR crosses an acceptance bound or the game budget is spent.
-/// Progress is logged and the outcome is saved. Works for every
-/// variant: the referee formats moves with the same translator the
-/// subprocess uses — the UCI dictionary when one exists, the engine's
-/// internal notation otherwise — so both ends always agree.
+/// Plays the whole test, from clearing the sandboxes to saving the verdict.
+///
+/// ```text
+/// 1  clear    both sandboxes, so neither engine inherits old parameters
+/// 2  spawn    both children, on the loaded variant, one thread apiece
+/// 3  open     one random opening a pair, played on a throwaway board
+/// 4  play     the pair, the children swapping colours between its games
+/// 5  fold     that pair's score into the running mean and variance
+/// 6  decide   stop at either bound, or open the next pair
+/// ```
+///
+/// The referee formats moves with the same translator the children were
+/// given, so what it sends them is by construction what they read back. A
+/// variant with no dictionary of its own is refused rather than played in
+/// the engine's internal notation, there being nothing to say the children
+/// would read that notation the same way.
+///
+/// No path out of here goes unreported. A failure during setup, both
+/// children dying at once, an interrupt, and the budget running out each
+/// name themselves in the verdict and are written out exactly as a decided
+/// test is, so a result file is never the previous run's answer.
 ///
 /// Params:
-/// - template    : &State          -> loaded variant, refereed and named
-/// - variant     : &str            -> variant name, for UCI setup and output
+/// - template    : &State          -> the loaded variant, forked as referee
+/// - variant     : &str            -> its name, for setup and for output
 /// - binary_a    : &str            -> path to the first engine binary
 /// - binary_b    : &str            -> path to the second engine binary
-/// - time_control: SPRTTimeControl -> fixed movetime or clock per move
-/// - max_games   : usize           -> maximum games before inconclusive
-/// - h0          : f64             -> null-hypothesis Elo bound
-/// - h1          : f64             -> alternative-hypothesis Elo bound
+/// - time_control: SPRTTimeControl -> what each game is played at
+/// - max_games   : usize           -> how many games before giving up
+/// - h0          : f64             -> the Elo gap the test can rule out
+/// - h1          : f64             -> the Elo gap it can confirm
 pub fn run_sprt(
     template: &State,
     variant: &str,
