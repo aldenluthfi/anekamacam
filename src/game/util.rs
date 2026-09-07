@@ -791,12 +791,21 @@ pub fn verify_game_state(state: &State) {
 /// a FEN followed by the expected node counts for depths one through six,
 /// comma-separated.
 ///
+/// ```text
+/// <FEN>,<depth 1>,<depth 2>,<depth 3>,<depth 4>,<depth 5>,<depth 6>
+/// ```
+///
+/// Comments are stripped and blank lines dropped before the split, so a
+/// suite may annotate its positions freely. Every column is mandatory: a
+/// line missing one, or holding something that is not a count, panics
+/// naming the column it stopped at rather than testing a short suite.
+///
 /// Params:
 /// - content: &str -> raw text of the .perft suite file
 ///
 /// Return:
 ///
-///     Vec<(String, u64, ...)>
+///     Vec<(String, u64, u64, u64, u64, u64, u64)>
 ///     FEN plus expected node counts for depths 1-6, one tuple per suite
 ///     line
 pub fn parse_perft_content(                                                     /* until perft 6                      */
