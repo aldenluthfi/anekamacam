@@ -333,9 +333,7 @@ impl Tui {
     ///   - receiver: Receiver<EngineEvent> -> engine-to-TUI event channel
     ///
     ///   Return:
-    ///
-    ///   Self
-    ///   interface on the game-selection screen
+    ///   Self -> the interface on the game-selection screen
     ///
     /// reset
     ///
