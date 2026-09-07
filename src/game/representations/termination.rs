@@ -230,6 +230,9 @@ impl Default for Termination {
     /// The behaviour every variant starts from before its `= termination =`
     /// section is read: a no-move position is a loss when in check (checkmate)
     /// and a draw otherwise (stalemate), with no repetition or counter rule.
+    ///
+    /// Return:
+    /// Self -> the default table, every optional rule left unset
     fn default() -> Self {
         Termination {
             game_result: ONGOING,

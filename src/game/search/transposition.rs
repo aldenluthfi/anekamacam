@@ -55,11 +55,8 @@ pub struct HashEntry {
 /// it; cloning a slot out of a live table would race the seqlock and is
 /// never done.
 ///
-/// Params:
-/// - self: &HashEntry -> slot to copy
-///
 /// Return:
-/// - Self             -> copy, its seqlock counter snapshotted relaxed
+/// Self -> copy, its seqlock counter snapshotted relaxed
 impl Clone for HashEntry {
     fn clone(&self) -> Self {
         HashEntry {
@@ -104,7 +101,7 @@ unsafe impl<const NUM: usize, const DEN: usize> Send for HashTable<NUM, DEN> {}
 /// only ever covers the window before a GUI speaks.
 ///
 /// Return:
-/// - Self -> zeroed table at this table's share of the default budget
+/// Self -> zeroed table at this table's share of the default budget
 impl<const NUM: usize, const DEN: usize> Default for HashTable<NUM, DEN> {
     fn default() -> Self {
         Self::with_mb(HASH_DEFAULT_MB * NUM / DEN)
@@ -780,7 +777,7 @@ pub struct PTable {
 /// per-state cache, and every state carries its own.
 ///
 /// Return:
-/// - Self -> zeroed cache at the default entry count
+/// Self -> zeroed cache at the default entry count
 impl Default for PTable {
     fn default() -> Self {
         Self::with_hash_mb(HASH_DEFAULT_MB)
