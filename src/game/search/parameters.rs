@@ -26,10 +26,10 @@ use crate::*;
 /// a slider expects to find blocked in each phase, which is what makes an
 /// opening value differ from an endgame one.
 ///
-/// - opening : 36% blocked, a slider is stopped early and reach is worth
-///             less
-/// - endgame : 12% blocked, the lines open and the same piece runs
-///             further
+/// - `OPENING_OCCUPANCY` : 36% blocked, a slider is stopped early and
+///                         reach is worth less
+/// - `ENDGAME_OCCUPANCY` : 12% blocked, the lines open and the same piece
+///                         runs further
 const OPENING_OCCUPANCY: u32 = 360;
 const ENDGAME_OCCUPANCY: u32 = 120;
 
@@ -41,6 +41,10 @@ const ENDGAME_OCCUPANCY: u32 = 120;
 /// ├───│───────────────────────────│──────┤
 ///    10%                         80%   100%
 /// ```
+///
+/// `ROLE_NON_BIG_SPLIT` is that cheapest share and `ROLE_MAJOR_SPLIT` the
+/// dearest one, counted back from the top of the ranking; both are shares
+/// of the ranked army, held against `COEFFICIENT_SCALE`.
 ///
 /// A royal is asked for none of this: it is never traded, so where its
 /// value would rank says nothing about what it does.
@@ -60,9 +64,10 @@ const ENDGAME_ARMY_SIZE: u32 = 5;
 /// What a draw is worth to a side that is not level on material. A draw
 /// agreed by the side already ahead gives up the lead it holds, so it is
 /// scored below zero for that side and above zero for the other. The cost
-/// rises with the lead and saturates once the lead reaches `SPAN` pieces
-/// of average deployed value, where it is worth `RATIO` of one such piece
-/// held against `COEFFICIENT_SCALE`.
+/// rises with the lead and saturates once the lead reaches
+/// `DRAW_CONTEMPT_SPAN` pieces of average deployed value, where it is
+/// worth `DRAW_CONTEMPT_RATIO` of one such piece held against
+/// `COEFFICIENT_SCALE`.
 ///
 /// - no lead   : nothing was given up, so a draw is worth zero
 /// - one piece : half of it, half the lead handed back
@@ -90,6 +95,11 @@ const DRAW_CONTEMPT_SPAN: u32 = 2;
 /// tactical check      0   ln(depth) * ln(moves)          4500
 /// ```
 ///
+/// A row's two numbers are `REDUCTION_QUIET_BASE` and
+/// `REDUCTION_QUIET_DIVISOR`, and the same pair spelled
+/// `REDUCTION_QUIET_CHECK_*`, `REDUCTION_TACTICAL_*`, and
+/// `REDUCTION_TACTICAL_CHECK_*` for the three rows under it.
+///
 /// A quiet move is read off both logs, since being late in a long list and
 /// having a lot of depth left both say the same thing about it. A quiet move
 /// that gives check takes the root of the depth instead, so depth weighs
@@ -111,18 +121,19 @@ const REDUCTION_TACTICAL_CHECK_DIVISOR: u32 = 4500;
 /// The window the root reopens around the previous completed score: a
 /// fraction of the dearest piece, that being the top of this variant's
 /// score range and so the scale one iteration's swing away from the last
-/// is drawn against. Only the side that failed widens, by `WIDEN` each
-/// time, until it passes `CLAMP` times the width it opened at; past that
-/// the root reopens fully instead of widening again. Every one of the
-/// three is held against `COEFFICIENT_SCALE`.
+/// is drawn against. Only the side that failed widens, by
+/// `ASPIRATION_WIDEN` each time, until it passes `ASPIRATION_CLAMP` times
+/// the width it opened at; past that the root reopens fully instead of
+/// widening again. Every one of the three is held against
+/// `COEFFICIENT_SCALE`.
 const ASPIRATION_RATIO: u32 = 30;
 
 /// The cushion a node has to clear before its static evaluation alone is
-/// trusted to beat beta: `RATIO` of the dearest non-royal piece per ply
-/// still to search, the same anchor the aspiration window is priced off.
-/// A side already standing better than it did two plies ago is believed
-/// on less, so its row is the flat one scaled by `IMPROVING`. Both are
-/// held against `COEFFICIENT_SCALE`.
+/// trusted to beat beta: `RFP_RATIO` of the dearest non-royal piece per
+/// ply still to search, the same anchor the aspiration window is priced
+/// off. A side already standing better than it did two plies ago is
+/// believed on less, so its row is the flat one scaled by
+/// `RFP_IMPROVING`. Both are held against `COEFFICIENT_SCALE`.
 ///
 /// - not improving : clears 11% of the dearest piece per ply still to
 ///                   search
@@ -132,12 +143,13 @@ const RFP_RATIO: u32 = 110;
 const RFP_IMPROVING: u32 = 750;
 
 /// How far under alpha a node may stand and still search its late quiet
-/// moves: `FLOOR` of the dearest non-royal piece, plus `RATIO` of it for
-/// every ply still to search. A quiet move promises nothing immediate, so
-/// a node further under alpha than that has none left worth ordering. The
-/// side whose evaluation has not risen is believed least and so is given
-/// the smaller margin, the risen side's row scaled by `IMPROVING`. All
-/// three are held against `COEFFICIENT_SCALE`.
+/// moves: `FUTILITY_FLOOR` of the dearest non-royal piece, plus
+/// `FUTILITY_RATIO` of it for every ply still to search. A quiet move
+/// promises nothing immediate, so a node further under alpha than that
+/// has none left worth ordering. The side whose evaluation has not risen
+/// is believed least and so is given the smaller margin, the risen side's
+/// row scaled by `FUTILITY_IMPROVING`. All three are held against
+/// `COEFFICIENT_SCALE`.
 ///
 /// - improving     : 10% of the dearest piece, plus 13% of it per ply
 ///                   still to search
@@ -148,11 +160,11 @@ const FUTILITY_RATIO: u32 = 130;
 const FUTILITY_IMPROVING: u32 = 700;
 
 /// How many moves a node orders before the quiets after them are taken
-/// for noise: `BASE`, plus `RATIO` of the square of the depth left. The
-/// row for a side whose evaluation has not risen is the risen side's
-/// scaled by `IMPROVING`, so the side already doing worse gives up on its
-/// quiets first. `RATIO` and `IMPROVING` are held against
-/// `COEFFICIENT_SCALE`.
+/// for noise: `LMP_BASE`, plus `LMP_RATIO` of the square of the depth
+/// left. The row for a side whose evaluation has not risen is the risen
+/// side's scaled by `LMP_IMPROVING`, so the side already doing worse
+/// gives up on its quiets first. `LMP_RATIO` and `LMP_IMPROVING` are held
+/// against `COEFFICIENT_SCALE`.
 ///
 /// - improving     : 3 moves, plus the square of the depth left
 /// - not improving : 55% of that row, and never fewer than one move
@@ -161,23 +173,23 @@ const LMP_RATIO: u32 = 1000;
 const LMP_IMPROVING: u32 = 550;
 
 /// How much material a capture may already be seen to lose and still be
-/// searched: `RATIO` of the dearest non-royal piece per ply still to
-/// search, held against `COEFFICIENT_SCALE`. Ordering has priced every
-/// capture by exchange simulation before the first is searched, so this
-/// reads that price back rather than paying for it twice.
+/// searched: `SEE_PRUNE_RATIO` of the dearest non-royal piece per ply
+/// still to search, held against `COEFFICIENT_SCALE`. Ordering has priced
+/// every capture by exchange simulation before the first is searched, so
+/// this reads that price back rather than paying for it twice.
 const SEE_PRUNE_RATIO: u32 = 250;
 
 /// How much a capture has to promise at a quiet leaf before it is
-/// searched: what it takes, plus `RATIO` of the dearest non-royal piece
-/// held against `COEFFICIENT_SCALE`. A capture that cannot reach alpha
-/// even at the full price of the piece it takes says nothing the score
-/// already standing at that leaf does not. An endgame position is thin
-/// enough that a single capture is most of what is left to play for, so
-/// the margin is not applied there.
+/// searched: what it takes, plus `QSEARCH_DELTA_RATIO` of the dearest
+/// non-royal piece held against `COEFFICIENT_SCALE`. A capture that
+/// cannot reach alpha even at the full price of the piece it takes says
+/// nothing the score already standing at that leaf does not. An endgame
+/// position is thin enough that a single capture is most of what is left
+/// to play for, so the margin is not applied there.
 const QSEARCH_DELTA_RATIO: u32 = 100;
 
-/// The ring a royal calls its own ground: every square within `RADIUS`
-/// steps on both axes.
+/// The ring a royal calls its own ground: every square within
+/// `SHELTER_RADIUS` steps on both axes.
 ///
 /// ```text
 /// s s s     s   ahead: a shielding piece here is shelter, and a guard
@@ -185,12 +197,12 @@ const QSEARCH_DELTA_RATIO: u32 = 100;
 /// g g g     K   the royal, radius 1 giving it eight ring squares
 /// ```
 ///
-/// Squares of that ring lying ahead of the royal are
-/// its shelter, held by pieces that only ever advance. `CAP` is how many
-/// sheltering pieces are still worth counting — past it a royal is as
-/// walled in as this term can say, and the next piece belongs elsewhere.
-/// Shelter is priced as `RATIO` of the dearest non-royal piece, held
-/// against `COEFFICIENT_SCALE` and never below `FLOOR` in raw units.
+/// Squares of that ring lying ahead of the royal are its shelter, held by
+/// pieces that only ever advance. `SHELTER_CAP` is how many sheltering
+/// pieces are still worth counting — past it a royal is as walled in as
+/// this term can say, and the next piece belongs elsewhere. Shelter is
+/// priced as `SHELTER_RATIO` of the dearest non-royal piece, held against
+/// `COEFFICIENT_SCALE` and never below `SHELTER_FLOOR` in raw units.
 const SHELTER_RADIUS: u32 = 1;
 const SHELTER_RATIO: u32 = 12;
 const SHELTER_FLOOR: u32 = 4;
@@ -199,8 +211,9 @@ const SHELTER_FLOOR: u32 = 4;
 /// side of the royal it stands on and whatever it is. A piece beside a
 /// royal blocks a line into it, so it is priced like shelter but at half
 /// the share, since a piece behind or beside the royal covers fewer of
-/// the squares an attack arrives from than one in front of it. Uncapped:
-/// the ring itself bounds the count.
+/// the squares an attack arrives from than one in front of it.
+/// `GUARD_RATIO` is that half share and `GUARD_FLOOR` the raw units it
+/// never falls under. Uncapped: the ring itself bounds the count.
 const GUARD_RATIO: u32 = 6;
 const GUARD_FLOOR: u32 = 2;
 
@@ -213,35 +226,38 @@ const GUARD_FLOOR: u32 = 2;
 /// standing beside them. A side that spent its rights without castling is
 /// worth neither, which is what makes castling the move it prefers.
 ///
-/// - castled : 4% of the dearest piece, a whole shelter's worth
-/// - right   : 2% of it, the same gain still on offer
-/// - spent   : nothing at all, having bought neither
+/// - `CASTLED_RATIO`        : 4% of the dearest piece, a whole shelter's
+///                            worth
+/// - `CASTLING_RIGHT_RATIO` : 2% of it, the same gain still on offer
+/// - spent                  : nothing at all, having bought neither
 const CASTLED_RATIO: u32 = 40;
 const CASTLING_RIGHT_RATIO: u32 = 20;
 
 /// What a pressed royal zone costs the side standing in it. Pressure is
 /// counted in expected enemy landings on the royal's square or its ring,
 /// and charged as its square, so one attacker barely registers while
-/// several compound: `RATIO` of the dearest non-royal piece is charged at
-/// `ZONE_ATTACK_FULL` landings, a quarter of it at half that many.
+/// several compound: `DANGER_RATIO` of the dearest non-royal piece is
+/// charged at `ZONE_ATTACK_FULL` landings, a quarter of it at half that
+/// many.
 ///
 /// - 4 landings  : a sixteenth of the charge, barely a nudge
 /// - 8 landings  : a quarter of it, the zone being genuinely watched
 /// - 16 landings : the whole charge, 60% of the dearest piece
 /// - beyond      : the cap, never past the dearest piece itself
 ///
-/// The same quadratic runs away on a board that lets a whole army bear down
-/// at once, so `CAP_RATIO` bounds the charge at the piece it is priced
-/// off: an attack is never worth more than winning the dearest piece
-/// outright, and the search should read it as pressure, not as a mate.
+/// The same quadratic runs away on a board that lets a whole army bear
+/// down at once, so `DANGER_CAP_RATIO` bounds the charge at the piece it
+/// is priced off: an attack is never worth more than winning the dearest
+/// piece outright, and the search should read it as pressure, not as a
+/// mate.
 const DANGER_RATIO: u32 = 600;
 const DANGER_CAP_RATIO: u32 = 1000;
 
 /// What it costs a royal to stand with nothing of its own ahead of it, on
 /// its file or either neighbouring one. Shelter prices the pieces that are
 /// there; this prices their total absence, which no count of nearby
-/// pieces can express. Held against `COEFFICIENT_SCALE` and never below
-/// `FLOOR` in raw units.
+/// pieces can express. `OPEN_SHIELD_RATIO` is that cost, held against
+/// `COEFFICIENT_SCALE` and never below `OPEN_SHIELD_FLOOR` in raw units.
 ///
 /// - covered   : one shielding piece anywhere ahead of it on those
 ///               three files, and it costs nothing
@@ -253,10 +269,11 @@ const OPEN_SHIELD_FLOOR: u32 = 12;
 /// What having the move is worth. Every other term prices what stands on
 /// the board, which both sides read the same way; this is the one thing
 /// only the side to move owns, and without it a search reads a position
-/// and its mirror as the same position. Held as a small share of the
-/// dearest non-royal piece, since a move buys more in a variant with a
-/// fierce army than in a quiet one, and never below `FLOOR`, so that
-/// having the move is always worth something.
+/// and its mirror as the same position. `TEMPO_RATIO` holds it as a small
+/// share of the dearest non-royal piece, since a move buys more in a
+/// variant with a fierce army than in a quiet one, and `TEMPO_FLOOR` is
+/// the raw units it never falls under, so that having the move is always
+/// worth something.
 const TEMPO_RATIO: u32 = 24;
 const TEMPO_FLOOR: u32 = 5;
 
@@ -269,8 +286,10 @@ const TEMPO_FLOOR: u32 = 5;
 /// floored so a variant whose values sit close together still reads a
 /// difference between the two counts.
 ///
-/// - major : 2% of the dearest piece per heavy piece of surplus
-/// - minor : 1% of it per light one, and never less than a unit
+/// - `IMBALANCE_MAJOR_RATIO` : 2% of the dearest piece per heavy piece of
+///                             surplus, floored at `IMBALANCE_MAJOR_FLOOR`
+/// - `IMBALANCE_MINOR_RATIO` : 1% of it per light one, floored at
+///                             `IMBALANCE_MINOR_FLOOR`, a unit
 const IMBALANCE_MAJOR_RATIO: u32 = 20;
 const IMBALANCE_MAJOR_FLOOR: u32 = 3;
 const IMBALANCE_MINOR_RATIO: u32 = 10;
@@ -280,12 +299,12 @@ const IMBALANCE_MINOR_FLOOR: u32 = 1;
 /// worth. Such a piece covers nothing of the half it is bound away from,
 /// and a second one covers exactly what the first cannot, so the two
 /// together are worth more than twice one of them. The test is geometric
-/// rather than by name: mean reach within `SLACK` of half the board, which
-/// no piece free of the board meets and no piece confined to a corner of
-/// it comes near.
+/// rather than by name: mean reach within `PAIR_REACH_SLACK` of
+/// `PAIR_REACH`, half the board, which no piece free of the board meets
+/// and no piece confined to a corner of it comes near.
 ///
-/// - 0.48 to 0.52 : bound to a half, and the pair is paid 6% of the
-///                  dearest piece
+/// - 0.48 to 0.52 : bound to a half, and the pair is paid `PAIR_RATIO`,
+///                  6% of the dearest piece, never under `PAIR_FLOOR`
 /// - above        : free of the board, with no half left for a second
 ///                  copy to cover
 /// - below        : confined already, and a second copy adds little
@@ -323,10 +342,14 @@ const PAWN_MIN_START_COUNT: usize = 5;
 /// cost near a quarter of the pawn, and a backward pawn less, since it is
 /// only a pawn whose advance is watched rather than one already spent.
 ///
-/// - connected : +20% of the opening pawn, +35% of the endgame one
-/// - doubled   : -25% of the opening value, read at both ends
-/// - isolated  : -25% of it, read at both ends as well
-/// - backward  : -17.5%, an advance watched rather than one spent
+/// - `PAWN_CONNECTED_OPENING_RATIO` : +20% of the opening pawn
+/// - `PAWN_CONNECTED_ENDGAME_RATIO` : +35% of the endgame one
+/// - `PAWN_DOUBLED_RATIO`           : -25% of the value, read at both
+///                                    ends
+/// - `PAWN_ISOLATED_RATIO`          : -25% of it, read at both ends as
+///                                    well
+/// - `PAWN_BACKWARD_RATIO`          : -17.5%, an advance watched rather
+///                                    than one spent
 const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
 const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
 const PAWN_DOUBLED_RATIO: u32 = 250;
@@ -337,10 +360,12 @@ const PAWN_BACKWARD_RATIO: u32 = 175;
 /// — the dearest piece it could become, less what it is worth now — held
 /// against `COEFFICIENT_SCALE` and scaled by how far along it already is.
 ///
-/// - opening    : 10% of the promise, most of the board still ahead
-/// - endgame    : 35% of it, with little left standing in the way
-/// - no promise : 40% of the pawn's own value, that being ground and
-///                no more
+/// - `PASSED_OPENING_RATIO`    : 10% of the promise, most of the board
+///                               still ahead
+/// - `PASSED_ENDGAME_RATIO`    : 35% of it, with little left standing in
+///                               the way
+/// - `PASSED_UNPROMOTED_RATIO` : 40% of the pawn's own value, that being
+///                               ground and no more
 ///
 /// A passer is a promise rather than a piece, so the opening pays a tenth
 /// of the promise while the endgame, where there is little left to stop it,
@@ -356,14 +381,16 @@ const PASSED_UNPROMOTED_RATIO: u32 = 400;
 /// its own camp, its guards are pinned to it by their own move rules, and
 /// the only way it can gather friendly pieces in front of itself is to
 /// walk forward, which is exactly the move such variants punish. A royal
-/// reaching a quarter of the board or less is taken for walled in, and the
-/// term is switched off for that colour.
+/// reaching a `SHELTER_CONFINEMENT_DIVISOR` share of the board or less, a
+/// quarter of it, is taken for walled in, and the term is switched off
+/// for that colour.
 const SHELTER_CONFINEMENT_DIVISOR: usize = 4;
 
-/// Bounds on the derive-time setup walk: how many distinct censuses may
-/// be expanded, and how many completed setups are averaged. A placement
-/// tree that outgrows either bound is referenced against the endings
-/// already reached rather than being explored to exhaustion.
+/// Bounds on the derive-time setup walk: `SETUP_STATE_CAP` distinct
+/// censuses may be expanded, and `SETUP_ENDING_CAP` completed setups are
+/// averaged. A placement tree that outgrows either bound is referenced
+/// against the endings already reached rather than being explored to
+/// exhaustion.
 const SETUP_STATE_CAP: usize = 4096;
 const SETUP_ENDING_CAP: usize = 256;
 
