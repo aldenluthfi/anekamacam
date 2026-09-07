@@ -624,11 +624,11 @@ macro_rules! is_terminal {
 /// rather than configured, so its bits are documented where they are
 /// decided: on the `see_valid!` accessor cluster above.
 pub struct StaticState {
-    pub title: String,
-    pub startpos: String,
+    pub title: String,                                                          /* name the variant is shown as       */
+    pub startpos: String,                                                       /* FEN the game begins from           */
 
     pub pieces: Vec<Piece>,
-    pub special_rules: u8,
+    pub special_rules: u8,                                                      /* declared rule bits                 */
     pub capabilities: u16,                                                      /* search shortcuts the rules allow   */
 
     pub initial_setup: Vec<Board>,                                              /* piece index to board               */
@@ -640,16 +640,16 @@ pub struct StaticState {
 
     pub castling_pieces: Vec<bool>,                                             /* moving/capturing voids rights      */
 
-    pub files: u8,
-    pub ranks: u8,
-    pub board_size: usize,
+    pub files: u8,                                                              /* squares across the board           */
+    pub ranks: u8,                                                              /* squares up the board               */
+    pub board_size: usize,                                                      /* files * ranks                      */
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
     pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
-    pub relevant_setup: Vec<DropSet>,
+    pub relevant_setup: Vec<DropSet>,                                           /* setup-phase army placement         */
     pub relevant_stand_offs: Vec<PatternSet>,                                   /* facing-config veto patterns        */
-    pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],
+    pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],                            /* [side][square] to its attackers    */
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */

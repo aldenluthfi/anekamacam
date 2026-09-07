@@ -445,10 +445,10 @@ pub struct EvalParams {
     pub pawn_support: Vec<Board>,                                               /* slot, square to defending squares  */
     pub pawn_backward: Vec<Board>,                                              /* slot, square to stop attackers     */
     pub pawn_support_files: Vec<Vec<i32>>,                                      /* slot to supporting file offsets    */
-    pub pawn_passed_opening: Vec<i32>,                                          /* slot, square to passer worth       */
-    pub pawn_passed_endgame: Vec<i32>,
-    pub pawn_connected_opening: Vec<i32>,                                       /* slot to worth of being defended    */
-    pub pawn_connected_endgame: Vec<i32>,
+    pub pawn_passed_opening: Vec<i32>,                                          /* slot, square to passer worth,      */
+    pub pawn_passed_endgame: Vec<i32>,                                          /* opening then ending                */
+    pub pawn_connected_opening: Vec<i32>,                                       /* slot to worth of being defended,   */
+    pub pawn_connected_endgame: Vec<i32>,                                       /* opening then ending                */
     pub pawn_doubled_penalty: Vec<i32>,                                         /* slot to cost of blocking itself    */
     pub pawn_isolated_penalty: Vec<i32>,                                        /* slot to cost of standing alone     */
     pub pawn_backward_penalty: Vec<i32>,                                        /* slot to cost of a contested stop   */
@@ -472,8 +472,8 @@ pub struct EvalParams {
 pub struct SearchParams {
     pub reduction_quiet: Vec<u8>,                                               /* plies given up, depth major, one   */
     pub reduction_quiet_check: Vec<u8>,                                         /* surface per class of move: quiet   */
-    pub reduction_tactical: Vec<u8>,                                            /* or tactical, in check or not       */
-    pub reduction_tactical_check: Vec<u8>,
+    pub reduction_tactical: Vec<u8>,                                            /* or tactical, and each of those     */
+    pub reduction_tactical_check: Vec<u8>,                                      /* either in check or not             */
 
     pub aspiration_delta: u32,                                                  /* half-width the root opens at       */
     pub rfp_margin: Vec<i32>,                                                   /* cushion, improving major, by depth */

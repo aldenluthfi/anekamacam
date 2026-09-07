@@ -311,10 +311,10 @@ pub type MultiLegGroup = VecDeque<MultiLegElement>;
 
 #[derive(Clone)]
 pub enum MultiLegElement {
-    MultiLegTerm(Token),
-    MultiLegExpr(MultiLegGroup),
-    MultiLegSlashExpr(MultiLegGroup),
-    MultiLegEval(Vec<MultiLegVector>),
+    MultiLegTerm(Token),                                                        /* an unparsed token                  */
+    MultiLegExpr(MultiLegGroup),                                                /* a bracketed subexpression          */
+    MultiLegSlashExpr(MultiLegGroup),                                           /* its slash-form counterpart         */
+    MultiLegEval(Vec<MultiLegVector>),                                          /* resolved move options              */
 }
 
 impl Debug for MultiLegElement {
@@ -641,9 +641,9 @@ pub type AtomicGroup = VecDeque<AtomicElement>;
 
 #[derive(Clone)]
 pub enum AtomicElement {
-    AtomicTerm(Token),
-    AtomicExpr(AtomicGroup),
-    AtomicEval(Vec<AtomicVector>),
+    AtomicTerm(Token),                                                          /* an unparsed token                  */
+    AtomicExpr(AtomicGroup),                                                    /* a bracketed subexpression          */
+    AtomicEval(Vec<AtomicVector>),                                              /* resolved atomic vectors            */
 }
 
 impl Debug for AtomicElement {
