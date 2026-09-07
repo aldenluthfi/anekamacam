@@ -758,11 +758,11 @@ fn piece_indices(
 ///
 /// - name       : "Pawn", shared by both halves of the pair
 /// - char       : 'P', the letter the piece is written with
-/// - promotions : what it may become, from = promotions =
-/// - index      : its place in = piece order =
+/// - promotions : what it may become, from `= promotions =`
+/// - index      : its place in `= piece order =`
 /// - color      : WHITE or BLACK, one per half of the pair
 /// - royal      : whether losing it can end the game
-/// - rank       : its rank class, from = piece ranks =
+/// - rank       : its rank class, from `= piece ranks =`
 ///
 /// Pieces are declared in pairs and indexed apart. Each `= pieces =` line
 /// pushes two entries, White then Black, and `= piece order =` then
