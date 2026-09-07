@@ -28,6 +28,28 @@ use crate::*;
 /// - a stopper that points off the board vetoes on a square that does not
 ///   exist, so it can never fire and is dropped while the drop survives
 ///
+/// One template anchored on the top rank, its offsets already mirrored for
+/// the dropping colour:
+///
+/// - DD : the target square being precomputed
+/// - aa : an allower, a square that has to hold a piece
+/// - ss : a stopper, a square whose piece vetoes the drop
+/// - .. : a square the board does not have
+///
+/// ```text
+///   ..   aa   ..
+/// ┌────┬────┬────┐
+/// │    │ DD │    │
+/// ├────┼────┼────┤
+/// │    │ ss │    │
+/// └────┴────┴────┘
+/// ```
+///
+/// The allower asks after a square beyond the edge, so this whole template
+/// goes and the piece has one placement fewer here. Put a stopper up there
+/// instead and only the stopper goes: nothing can ever stand on it, so the
+/// veto it carries is one the position can never raise.
+///
 /// A square in the piece's forbidden zone returns nothing at all, no pattern
 /// being consulted about a placement the variant has already refused.
 ///
