@@ -56,13 +56,14 @@ pub trait Protocol {
     /// name
     ///
     /// The protocol's identifier, and the only string a dialect declares.
-    /// Four separate things are spelled out of this one word, which is what
+    /// Five separate things are spelled out of this one word, which is what
     /// keeps a dialect from half-renaming itself.
     ///
-    /// - `uci`             : the handshake command a GUI sends
-    /// - `uciok`           : the reply that ends the handshake
-    /// - `UCI_Variant`     : the combo option naming the variant
-    /// - `[uci fen|moves]` : the sections `Translator::find` reads
+    /// - `uci`           : the handshake command a GUI sends
+    /// - `uciok`         : the reply that ends the handshake
+    /// - `UCI_Variant`   : the combo option naming the variant
+    /// - `= uci fen =`   : the dictionary section for board states
+    /// - `= uci moves =` : the dictionary section for move text
     ///
     /// Return:
     /// &str -> the protocol name, e.g. "uci"
@@ -130,9 +131,9 @@ pub fn find_protocol(name: &str) -> Option<&'static dyn Protocol> {
 /// combo option because its own files say it can be spoken, so shipping a new
 /// variant is shipping two files and nothing else.
 ///
-/// - `<name>.dict` : must be embedded, and must not be the example
-/// - `<name>.conf` : must be embedded beside it, or the rules are gone
-/// - `[protocols]` : must name this protocol among its lines
+/// - `<name>.dict`   : must be embedded, and must not be the example
+/// - `<name>.conf`   : must be embedded beside it, or the rules are gone
+/// - `= protocols =` : must name this protocol among its lines
 ///
 /// All three are required together. A dictionary without a config would offer
 /// a variant the engine cannot set up, and a config without a dictionary

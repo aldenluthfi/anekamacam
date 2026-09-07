@@ -82,10 +82,11 @@ impl Translator {
     /// present for the named protocol, and every one of its rules must be a
     /// well-formed line, or the build is wrong rather than the input.
     ///
-    /// - `[protocols]`    : the protocol must name itself here to be
-    ///                      loadable
-    /// - `[<name> fen]`   : board-state rules, in either or both directions
-    /// - `[<name> moves]` : move-text rules, forward only
+    /// - `= protocols =`    : the protocol must name itself here to be
+    ///                        loadable
+    /// - `= <name> fen =`   : board-state rules, in either or both
+    ///                        directions
+    /// - `= <name> moves =` : move-text rules, forward only
     ///
     /// A fen rule says which way it travels, and a two-way rule compiles
     /// into one entry in each list:
@@ -93,6 +94,21 @@ impl Translator {
     /// - `internal -> protocol`  : outbound only, nothing reads it back
     /// - `internal <- protocol`  : inbound only, nothing writes it out
     /// - `internal <-> protocol` : both, the same pattern serving each way
+    ///
+    /// A dictionary spells all of that out as plain sections, the engine's
+    /// own text on the left of every rule and the protocol's on the right:
+    ///
+    /// ```text
+    /// = protocols =
+    /// uci
+    ///
+    /// = uci fen =
+    /// 010018P <-> a3
+    /// \* -> -
+    ///
+    /// = uci moves =
+    /// \*[a-z][0-9]+@[a-z][0-9]+ ->
+    /// ```
     ///
     /// The two-way form is tested for first, since it contains both of the
     /// one-way forms and would otherwise be read as one of them. The inverse
