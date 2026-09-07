@@ -449,6 +449,70 @@ macro_rules! castling_bonus {
 /// - pawn_backward     : where an enemy pawn watches the square it steps
 ///                       to
 ///
+/// The overlays below stand one pawn mid-board and draw what its own rules
+/// derived around it:
+///
+/// - PP : the pawn being scored
+/// - pp : its path, a friendly pawn here is doubled and blocks the advance
+/// - ii : interference past that path, an enemy pawn here stops the passer
+/// - ss : support, a friendly pawn here connects it
+///
+/// Every path square is interference as well, and the backward mask is the
+/// slice of interference watching the stop square alone, so neither is drawn
+/// a second time.
+///
+/// A FIDE pawn steps straight and captures diagonally, so its path runs up
+/// its own file and its supporters sit diagonally behind and beside it:
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │ ii │ pp │ ii │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ ii │ pp │ ii │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ ss │ PP │ ss │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ ss │    │ ss │    │
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// A shogi soldier steps and captures the same way, straight ahead, so every
+/// mask collapses onto its own file and only the pawn directly behind it can
+/// defend it:
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │    │    │ pp │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ pp │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ PP │    │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ ss │    │    │
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// A Berolina pawn steps diagonally and captures straight, so its path fans
+/// out across files while its supporters sit straight behind and beside:
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┐
+/// │ pp │ ii │ pp │ ii │ pp │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ pp │ ii │ pp │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │ ss │ PP │ ss │    │
+/// ├────┼────┼────┼────┼────┤
+/// │    │    │ ss │    │    │
+/// └────┴────┴────┴────┴────┘
+/// ```
+///
+/// Support is one mask holding two kinds of defender: a friend capturing
+/// onto the pawn itself, which stands behind it, and one capturing onto the
+/// square it steps to, which stands beside it. The square beside exists only
+/// where a pawn captures in a direction it does not step in, which is why
+/// the soldier is defended from its own file and nowhere else.
+///
 /// Both sweeps read one roster gathered from the piece lists, so the cost is
 /// the pawns on the board squared and not the width of the board. A variant
 /// whose rules field no pawn returns at once.
