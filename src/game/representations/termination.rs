@@ -740,6 +740,16 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 /// an offence none is sole. The walk uses undo/redo and restores the position
 /// exactly, including `game_result` and `search_ply`.
 ///
+/// The history is read backwards from the closing move. `cap` floors how far
+/// that reach goes, and the newest snapshot above the floor carrying this
+/// position's hash is where the cycle opens:
+///
+/// ```text
+///   0              floor              start           plies
+///   ├──── unread ────┼──── searched ────┼──── cycle ────┤
+///                                       └ same position, one occurrence ago
+/// ```
+///
 /// `search_ply` needs restoring by hand because `undo_move!` saturates it at
 /// zero while `make_move!` counts up without a floor: a cycle reaching back
 /// past the search root would otherwise leave the counter inflated by however
