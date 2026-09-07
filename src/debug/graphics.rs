@@ -3171,7 +3171,7 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
                 app.playground_state.clone().map(CommandTarget::Playground)
             } else if app.locked {
                 log_2!("Command execution in progress, please wait...");
-                return false;                                                   /* the line stays for a retry        */
+                return false;                                                   /* the line stays for a retry         */
             } else {
                 app.game_state.clone().map(CommandTarget::Game)
             };

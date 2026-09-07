@@ -49,7 +49,7 @@ pub enum Outcome {
 /// this matters only to a variant declaring a non-draw outcome.
 #[derive(Clone)]
 pub struct Counter {
-    pub clock: u8,                                                              /* current reversible halfmove count */
+    pub clock: u8,                                                              /* current reversible halfmove count  */
     pub limit: u8,                                                              /* halfmoves before the outcome fires */
     pub reset_pieces: Vec<bool>,                                                /* moving these resets the counter    */
     pub outcome: Outcome,                                                       /* result once the limit is reached   */

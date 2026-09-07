@@ -1038,8 +1038,8 @@ pub fn alpha_beta(
         check_interrupt(info);
     }
 
-    alpha = alpha.max(-INF + ply as i32);                                       /* mated here bounds this node below */
-    let beta = beta.min(INF - ply as i32);                                      /* and mating here bounds it above   */
+    alpha = alpha.max(-INF + ply as i32);                                       /* mated here bounds this node below  */
+    let beta = beta.min(INF - ply as i32);                                      /* and mating here bounds it above    */
 
     if alpha >= beta {
         return alpha;
@@ -1057,7 +1057,7 @@ pub fn alpha_beta(
         );
     }
 
-    let pv_node = beta - alpha > 1;                                             /* a window this wide wants a move   */
+    let pv_node = beta - alpha > 1;                                             /* a window this wide wants a move    */
 
     let table_key = search_key(state, repeats);
     let table_entry =
@@ -1072,7 +1072,7 @@ pub fn alpha_beta(
         return table_entry.1;
     }
 
-    let static_eval = if in_check {                                             /* a checked king is worth no score  */
+    let static_eval = if in_check {                                             /* a checked king is worth no score   */
         EVAL_NONE
     } else if table_entry.3 != EVAL_NONE {
         table_entry.3
@@ -1098,7 +1098,7 @@ pub fn alpha_beta(
         && static_eval > info.eval_stack[ply - 2];
 
     let deepest = RFP_DEPTH as usize;
-    let row = improving as usize * (deepest + 1);                               /* the rising side asks for less     */
+    let row = improving as usize * (deepest + 1);                               /* the rising side asks for less      */
 
     if forward_pruning!(state)
     && !in_check

@@ -1588,7 +1588,7 @@ pub fn derive_search_capabilities(state: &mut State) {
 
                 multi_capture |= destroyed > 1;
                 may_pass |= moves_quietly && !destroys
-                    && files_crossed == 0 && ranks_crossed == 0;                /* nothing moved and nothing taken   */
+                    && files_crossed == 0 && ranks_crossed == 0;                /* nothing moved and nothing taken    */
                 vectors += 1;
                 quiet_vectors += moves_quietly as usize;
             }

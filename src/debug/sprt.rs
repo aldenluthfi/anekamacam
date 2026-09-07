@@ -49,8 +49,8 @@ use crate::*;
 /// The test runs until the ratio leaves that band, and reports the run as
 /// inconclusive if the game budget runs out while it is still inside.
 const SPRT_DIR: &str = "res/sprt";
-const SPRT_HISTORY_KEEP: usize = 64;                                        /* rolled sprt files kept per family  */
-const SPRT_PROTOCOL: &str = "uci";                                          /* dialect the sprt harness speaks    */
+const SPRT_HISTORY_KEEP: usize = 64;                                            /* rolled sprt files kept per family  */
+const SPRT_PROTOCOL: &str = "uci";                                              /* dialect the sprt harness speaks    */
 const SPRT_ALPHA: f64 = 0.05;
 const SPRT_BETA: f64 = 0.05;
 const SPRT_HANDSHAKE_TIMEOUT_MS: u64 = 10_000;

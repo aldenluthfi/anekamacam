@@ -206,13 +206,13 @@ macro_rules! see {
         let mut gain = [0i32; 32];
         let mut gain_length = 0usize;
 
-        gain[gain_length] = initial_attackee;                                   /* it leaves at this ply's phase     */
+        gain[gain_length] = initial_attackee;                                   /* it leaves at this ply's phase      */
         gain_length += 1;
 
         let exchange = if !make_move!(state, seen_move.clone()) {
             -INF
         } else {
-            let initial_attacker = attack_value!(seen_move, state);             /* it leaves at the next one         */
+            let initial_attacker = attack_value!(seen_move, state);             /* it leaves at the next one          */
 
             gain[gain_length] = initial_attacker - initial_attackee;
             gain_length += 1;
@@ -245,7 +245,7 @@ macro_rules! see {
                     };
                 }
 
-                let attacker_value = p_value!(attacker_piece, state) as i32;    /* priced once its capture is made   */
+                let attacker_value = p_value!(attacker_piece, state) as i32;    /* priced once its capture is made    */
 
                 gain[gain_length] =
                     attacker_value - gain[gain_length - 1];
