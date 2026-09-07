@@ -58,7 +58,8 @@ const ROLE_MAJOR_SPLIT: u32 = 200;
 /// their taper over the material they actually have.
 ///
 /// - opening : every big piece the setup deploys, at average value
-/// - endgame : this many of them left, or one below opening if fewer
+/// - endgame : `ENDGAME_ARMY_SIZE` of them left, or one below opening if
+///             fewer
 const ENDGAME_ARMY_SIZE: u32 = 5;
 
 /// What a draw is worth to a side that is not level on material. A draw
@@ -118,10 +119,10 @@ const REDUCTION_TACTICAL_DIVISOR: u32 = 4000;
 const REDUCTION_TACTICAL_CHECK_BASE: u32 = 0;
 const REDUCTION_TACTICAL_CHECK_DIVISOR: u32 = 4500;
 
-/// The window the root reopens around the previous completed score: a
-/// fraction of the dearest piece, that being the top of this variant's
-/// score range and so the scale one iteration's swing away from the last
-/// is drawn against. Only the side that failed widens, by
+/// The window the root reopens around the previous completed score:
+/// `ASPIRATION_RATIO` of the dearest piece, that being the top of this
+/// variant's score range and so the scale one iteration's swing away from
+/// the last is drawn against. Only the side that failed widens, by
 /// `ASPIRATION_WIDEN` each time, until it passes `ASPIRATION_CLAMP` times
 /// the width it opened at; past that the root reopens fully instead of
 /// widening again. Every one of the three is held against
@@ -318,13 +319,14 @@ const PAIR_REACH: f64 = 0.5;
 const PAIR_REACH_SLACK: f64 = 0.02;
 
 /// How many copies of a piece the opening army must field before it can be
-/// this variant's pawn. The other conditions are geometric — never a step
-/// or a capture backward, always a quiet single step forward, nothing
-/// further than one square once the first move is spent — and those alone
-/// would also catch a lone forward stepper such as the minishogi pawn or
-/// the pair of minixiangqi soldiers. Structure is a statement about a rank
-/// of pawns holding each other up, so a variant that fields too few of them
-/// has no structure to price and scores none.
+/// this variant's pawn, `PAWN_MIN_START_COUNT` of them at the least. The
+/// other conditions are geometric — never a step or a capture backward,
+/// always a quiet single step forward, nothing further than one square once
+/// the first move is spent — and those alone would also catch a lone
+/// forward stepper such as the minishogi pawn or the pair of minixiangqi
+/// soldiers. Structure is a statement about a rank of pawns holding each
+/// other up, so a variant that fields too few of them has no structure to
+/// price and scores none.
 const PAWN_MIN_START_COUNT: usize = 5;
 
 /// What a pawn's own structure is worth, as shares of that pawn's value

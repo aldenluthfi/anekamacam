@@ -77,7 +77,8 @@ impl Clone for HashEntry {
 /// `NUM / DEN` is the table's share of the `Hash` option, and is the only
 /// thing that separates the main table from the quiescence one — the two
 /// differ in what they pack into a slot, never in how slots are stored —
-/// so both are aliases of this type and no call site names it.
+/// so both are aliases of this type and no call site names it: `TTable`
+/// takes two thirds of the option and `QTable` the third that is left.
 pub struct HashTable<const NUM: usize, const DEN: usize> {
     pub table: SyncUnsafeCell<Vec<HashEntry>>,                                  /* shared mutable access              */
     pub age: AtomicU64,                                                         /* search age; bump per search        */
@@ -338,6 +339,34 @@ macro_rules! commit_hash_entry {
 ///   Params:
 ///   - encoded: &mut u128 -> slot[1] word being built
 ///   - val    : i32       -> score, masked into bits 9-40
+///
+/// The readers take a word back apart and return the one field, so the
+/// flags/depth pair reads out of the low word the writers built and the
+/// score out of slot[1] whole:
+///
+/// tt_flags!
+///
+///   Params:
+///   - encoded: u32 -> flags/depth word being read
+///
+///   Return:
+///   u8 -> bound flag held in bits 0-1
+///
+/// tt_depth!
+///
+///   Params:
+///   - encoded: u32 -> flags/depth word being read
+///
+///   Return:
+///   usize -> clamped depth held in bits 2-8
+///
+/// tt_score!
+///
+///   Params:
+///   - b_prime: u128 -> slot[1] word being read
+///
+///   Return:
+///   i32 -> score held in bits 9-40
 ///
 #[macro_export]
 macro_rules! tt_enc_flags {

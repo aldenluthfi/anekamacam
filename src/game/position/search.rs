@@ -105,8 +105,9 @@ macro_rules! move_key {
 
 /// How far back a move is credited to what it answers. Continuation history
 /// asks which reply worked after a given move, so one table follows the move
-/// just played and another the side's own previous move. Both were measured
-/// as load-bearing; a third table back never was.
+/// just played and another the side's own previous move. `CONTINUATION_PLIES`
+/// is how many such tables there are: both were measured as load-bearing, and
+/// a third table back never was.
 const CONTINUATION_PLIES: usize = 2;
 
 /// Correction history sizing
@@ -192,7 +193,8 @@ const PROBCUT_MAX_CAPTURES: usize = 3;
 /// move order rests on history alone and the first move is a guess. Paying
 /// full depth for a guessed order is the expensive way to find the right one;
 /// the node gives up a ply instead and leaves a table move behind, which the
-/// next visit orders on for less than the ply was worth.
+/// next visit orders on for less than the ply was worth. `MIN_IIR_DEPTH` is
+/// the shallowest depth that trade is made at.
 const MIN_IIR_DEPTH: usize = 4;
 
 /// Aspiration window widening
