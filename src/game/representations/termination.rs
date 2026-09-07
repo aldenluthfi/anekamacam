@@ -755,7 +755,8 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 /// and being declared at all is what enables it.
 ///
 /// Params:
-/// - state: &mut State  -> position after the cycle-closing move (restored)
+/// - state: &mut State -> position after the cycle-closing move (restored)
+/// - cap  : usize      -> scan budget (`usize::MAX` for game truth)
 ///
 /// Return:
 /// Option<(u8, Outcome)> -> sole offender and its declared result, if any
@@ -935,6 +936,7 @@ pub fn count_repetitions(state: &State, cap: usize) -> u8 {
 /// Params:
 /// - state    : &mut State -> current position (restored if a walk runs)
 /// - min_count: u8         -> occurrences required before it fires
+/// - cap      : usize      -> scan budget (`usize::MAX` for game truth)
 ///
 /// Return:
 /// Option<(Outcome, bool)> -> (outcome, perpetual decided it) when it fires
