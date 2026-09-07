@@ -547,6 +547,19 @@ macro_rules! probe_pv_move {
 ///
 /// Stores one main-search result with seqlock write protection and parity.
 ///
+/// The score is filed the way this node sees it: a mate found some plies
+/// below the root is stored as the distance from here, `search_ply` added
+/// back on, so a later node reading the slot re-anchors it against its own
+/// ply. Everything else goes through the `tt_enc_*` writers, with the move
+/// signature and the raw static evaluation laid in beside them.
+///
+/// The slot is only overwritten when the new result is worth more than what
+/// sits in it: when it is empty, when it holds another position, when it was
+/// filed in an older search, when this depth reaches the stored one, when
+/// this score is no worse, or when this is the first exact bound the slot
+/// has held. `commit_hash_entry!` does the write itself, keeping the parity
+/// word and the order it is published in to one place.
+///
 /// Params:
 /// - tt_move: &Move   -> best move found at this node
 /// - score  : i32     -> score to store
