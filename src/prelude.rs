@@ -280,6 +280,13 @@ pub const MAX_PIECE_VALUE: u16 = 0x3FFF;
 pub const MAX_DEPTH: usize = 256;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
 
+/// How many log lines the TUI's mirror queue keeps before dropping its
+/// oldest. The file on disk keeps everything; this is the copy held in
+/// memory for a pane to draw, and it needs an end. Loading taikyoku shogi
+/// writes some 78000 lines, none of which a reader will scroll back to,
+/// and every one of them would otherwise be held for the session.
+pub const MAX_LOG_HISTORY: usize = 1 << 16;
+
 pub const WHITE: u8 = 0;
 pub const BLACK: u8 = 1;
 

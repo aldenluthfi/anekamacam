@@ -18,13 +18,15 @@ use crate::*;
                                 LAYOUT CONSTANTS
 \*----------------------------------------------------------------------------*/
 
-/// MAX_LOGS_LEN
+/// MAX_LOGS_SCROLL
 ///
-/// How many of the newest log lines a log pane draws. The cut is not for
-/// memory, which the logger owns: a ratatui scroll offset is a `u16`, so a
-/// line past the sixty-five thousandth could be drawn but never scrolled
-/// to, and a pane that cannot reach its own end is worse than a short one.
-const MAX_LOGS_LEN: usize = u16::MAX as usize;
+/// How far back a log pane can be scrolled. A ratatui scroll offset is a
+/// `u16`, so a line past the sixty-five thousandth could be drawn but never
+/// scrolled to, and a pane that cannot reach its own end is worse than a
+/// short one. `u16::MAX` itself is spoken for: `clamp_scroll` stores it to
+/// mean "stay at the newest line", so the deepest reachable offset is one
+/// below it.
+const MAX_LOGS_SCROLL: u16 = u16::MAX - 1;
 
 /// Interface constants
 ///
@@ -264,6 +266,113 @@ fn clamp_scroll(
     }
 }
 
+/// log_level
+///
+/// Reads back the level `push_log_message!` stamped on the front of a line.
+/// Anything without one is treated as the noisiest level, so a malformed
+/// entry hides at a quiet verbosity rather than stopping the render.
+///
+/// Params:
+/// - line: &str -> queued log line, `[n] message`
+///
+/// Return:
+/// u8           -> the stamped level, or 5
+fn log_level(line: &str) -> u8 {
+    match line.as_bytes() {
+        [b'[', digit @ b'1'..=b'5', b']', ..] => digit - b'0',
+        _ => 5,
+    }
+}
+
+/// colour_log_line
+///
+/// Splits a queued line into its level stamp and its message, colouring the
+/// stamp by how loud it is: red for the critical end, magenta for the trace
+/// end, and the message left plain.
+///
+/// Params:
+/// - line: &str       -> queued log line, `[n] message`
+///
+/// Return:
+/// Line<'static>      -> the styled row
+fn colour_log_line(line: &str) -> Line<'static> {
+    let level_color = match log_level(line) {
+        1 => Color::LightRed,
+        2 => Color::Yellow,
+        3 => Color::LightGreen,
+        4 => Color::LightBlue,
+        _ => Color::Magenta,
+    };
+
+    if line.starts_with('[') && let Some(end_idx) = line.find(']') {
+        let (level, rest) = line.split_at(end_idx + 1);
+
+        return Line::from(vec![
+            Span::styled(level.to_string(), Style::default().fg(level_color)),
+            Span::raw(rest.to_string()),
+        ]);
+    }
+
+    Line::from(Span::raw(line.to_string()))
+}
+
+/// visible_log_lines
+///
+/// The rows a log pane should draw: filtered by verbosity, clamped, and cut
+/// to what fits on screen. The caller renders them at scroll zero, the
+/// windowing having already happened here.
+///
+/// Three things went wrong while a pane handed the whole queue to a
+/// paragraph and let the paragraph scroll it:
+///
+/// - taking the newest lines *before* filtering by level returns a window
+///   that can be filtered away to nothing, so a loud run read at a quiet
+///   verbosity shows an empty pane
+/// - counting rendered rows into a `u16` wraps past 65535, and taikyoku
+///   logs some 78000 lines loading, so the ceiling came out a few thousand
+///   instead of tens of thousands: the pane refuses to scroll and will not
+///   sit at the newest line
+/// - building a `Line` for every entry costs two allocations per entry per
+///   frame, however few of them are on screen
+///
+/// Filtering first, measuring in `usize`, and cutting to the viewport
+/// answers all three.
+///
+/// Params:
+/// - height    : u16            -> rows the pane can show
+/// - scroll_map: &mut HashMap   -> offsets by (tab, focus), written back
+/// - key       : (usize, usize) -> which pane's offset to read and clamp
+///
+/// Return:
+/// Vec<Line<'static>>           -> exactly the rows to draw, newest last
+fn visible_log_lines(
+    height: u16,
+    scroll_map: &mut HashMap<(usize, usize), u16>,
+    key: (usize, usize)
+) -> Vec<Line<'static>> {
+    let verbosity = configured_verbosity_level();
+    let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| e.into_inner());
+
+    let shown = logs                                                            /* counted, not collected: the queue  */
+        .iter()                                                                 /* runs to tens of thousands of lines */
+        .filter(|line| log_level(line) <= verbosity)
+        .count();
+
+    let max_scroll = shown
+        .saturating_sub(height as usize)
+        .min(MAX_LOGS_SCROLL as usize) as u16;                                  /* u16::MAX is the pinned sentinel    */
+
+    let current = scroll_map.get(&key).copied().unwrap_or(0);
+    let offset = clamp_scroll(current, max_scroll, scroll_map, key) as usize;
+
+    logs.iter()
+        .filter(|line| log_level(line) <= verbosity)
+        .skip(offset)
+        .take(height as usize)
+        .map(|line| colour_log_line(line))
+        .collect()
+}
+
 /*----------------------------------------------------------------------------*\
                                 INTERFACE STATE
 \*----------------------------------------------------------------------------*/
@@ -351,7 +460,12 @@ impl Tui {
             TAB_FOCUSABLES.iter().enumerate().take(TAB_TITLES.len())
         {
             for focus in 0..*focusables as usize {
-                scroll_map.insert((tab, focus), 0);
+                let start = match focus {
+                    TAB_FOCUS_LOGS => u16::MAX,                                 /* logs open on the newest line       */
+                    _ => 0,
+                };
+
+                scroll_map.insert((tab, focus), start);
             }
         }
 
@@ -1830,59 +1944,10 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         });
     }
 
-    let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| {
-        e.into_inner()
-    });
-    let log_lines = logs
-        .iter()
-        .rev()
-        .take(MAX_LOGS_LEN)
-        .rev()
-        .filter(|line| {
-            let level = if line.starts_with("[1]") {
-                1
-            } else if line.starts_with("[2]") {
-                2
-            } else if line.starts_with("[3]") {
-                3
-            } else if line.starts_with("[4]") {
-                4
-            } else if line.starts_with("[5]") {
-                5
-            } else {
-                unreachable!()
-            };
-
-            level <= configured_verbosity_level()
-        })
-        .map(|line| {
-            let level_color = if line.starts_with("[1]") {
-                Color::LightRed
-            } else if line.starts_with("[2]") {
-                Color::Yellow
-            } else if line.starts_with("[3]") {
-                Color::LightGreen
-            } else if line.starts_with("[4]") {
-                Color::LightBlue
-            } else if line.starts_with("[5]") {
-                Color::Magenta
-            } else {
-                Color::Gray
-            };
-
-            if line.starts_with('[') && let Some(end_idx) = line.find(']') {
-                let (level, rest) = line.split_at(end_idx + 1);
-                return Line::from(vec![
-                    Span::styled(
-                        level.to_string(), Style::default().fg(level_color)
-                    ),
-                    Span::raw(rest.to_string()),
-                ]);
-            }
-
-            Line::from(Span::raw(line.clone()))
-        })
-        .collect::<Vec<_>>();
+    let log_lines = visible_log_lines(
+        logs_block.inner(logs_area).height,                                     /* rows left once the border is drawn */
+        &mut app.scroll_map, (main_tab, TAB_FOCUS_LOGS)
+    );
 
     let board_paragraph = Paragraph::new(board)
         .alignment(Alignment::Center)
@@ -1916,15 +1981,13 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         .map(|state| state.fen.clone())
         .unwrap_or_else(|| "Loading...".to_string())
     ).block(fen_block);
-    let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
+    let logs_paragraph = Paragraph::new(Text::from(log_lines))                  /* already windowed, so no scrolling  */
         .block(logs_block);
 
     let max_moves_scroll = (moves_paragraph.line_count(moves_area.width) as u16)
         .saturating_sub(moves_area.height);
     let max_fen_scroll = (fen_paragraph.line_width() as u16)
         .saturating_sub(fen_area.width);
-    let max_logs_scroll = (logs_paragraph.line_count(logs_area.width) as u16)
-        .saturating_sub(logs_area.height);
 
     let current_moves_scroll = app.scroll_map.get(&(main_tab, TAB_FOCUS_MOVES))
         .copied()
@@ -1948,17 +2011,6 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         }
     );
 
-    let current_logs_scroll = app.scroll_map.get(&(main_tab, TAB_FOCUS_LOGS))
-        .copied()
-        .unwrap_or_else(
-        || {
-            panic!(
-                "Scroll value missing for tab {}, focus {}",
-                main_tab, TAB_FOCUS_LOGS
-            )
-        }
-    );
-
     let final_moves_scroll = clamp_scroll(
         current_moves_scroll, max_moves_scroll,
         &mut app.scroll_map, (main_tab, TAB_FOCUS_MOVES)
@@ -1967,14 +2019,9 @@ fn draw_game_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         current_fen_scroll, max_fen_scroll,
         &mut app.scroll_map, (main_tab, TAB_FOCUS_FEN)
     );
-    let final_logs_scroll = clamp_scroll(
-        current_logs_scroll, max_logs_scroll,
-        &mut app.scroll_map, (main_tab, TAB_FOCUS_LOGS)
-    );
 
     moves_paragraph = moves_paragraph.scroll((final_moves_scroll, 0));
     fen_paragraph = fen_paragraph.scroll((0, final_fen_scroll));
-    logs_paragraph = logs_paragraph.scroll((final_logs_scroll, 0));
 
     frame.render_widget(board_paragraph, board_area);
     if has_moves {
@@ -2490,81 +2537,14 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
         );
     }
 
-    let logs = LOG_MESSAGES.lock().unwrap_or_else(|e| {
-        e.into_inner()
-    });
-    let log_lines = logs
-        .iter()
-        .rev()
-        .take(MAX_LOGS_LEN)
-        .rev()
-        .filter(|line| {
-            let level = if line.starts_with("[1]") {
-                1
-            } else if line.starts_with("[2]") {
-                2
-            } else if line.starts_with("[3]") {
-                3
-            } else if line.starts_with("[4]") {
-                4
-            } else if line.starts_with("[5]") {
-                5
-            } else {
-                unreachable!()
-            };
-
-            level <= configured_verbosity_level()
-        })
-        .map(|line| {
-            let level_color = if line.starts_with("[1]") {
-                Color::LightRed
-            } else if line.starts_with("[2]") {
-                Color::Yellow
-            } else if line.starts_with("[3]") {
-                Color::LightGreen
-            } else if line.starts_with("[4]") {
-                Color::LightBlue
-            } else if line.starts_with("[5]") {
-                Color::Magenta
-            } else {
-                Color::Gray
-            };
-
-            if line.starts_with('[') && let Some(end_idx) = line.find(']') {
-                let (level_str, rest) = line.split_at(end_idx + 1);
-                return Line::from(vec![
-                    Span::styled(
-                        level_str.to_string(),
-                        Style::default().fg(level_color)
-                    ),
-                    Span::raw(rest.to_string()),
-                ]);
-            }
-
-            Line::from(Span::raw(line.clone()))
-        })
-        .collect::<Vec<_>>();
-
-    let mut logs_paragraph = Paragraph::new(Text::from(log_lines))
-        .block(logs_block);
-
-    let max_logs_scroll =
-        (logs_paragraph.line_count(logs_area.width) as u16)
-            .saturating_sub(logs_area.height);
-    let current_logs_scroll = app.scroll_map
-        .get(&(main_tab, TAB_FOCUS_LOGS))
-        .copied()
-        .unwrap_or_else(|| {
-            panic!(
-                "Scroll value missing for tab 0, focus {}",
-                TAB_FOCUS_LOGS
-            )
-        });
-    let final_logs_scroll = clamp_scroll(
-        current_logs_scroll, max_logs_scroll,
+    let log_lines = visible_log_lines(
+        logs_block.inner(logs_area).height,                                     /* rows left once the border is drawn */
         &mut app.scroll_map, (main_tab, TAB_FOCUS_LOGS)
     );
-    logs_paragraph = logs_paragraph.scroll((final_logs_scroll, 0));
+
+    let logs_paragraph = Paragraph::new(Text::from(log_lines))                  /* already windowed, so no scrolling  */
+        .block(logs_block);
+
     frame.render_widget(logs_paragraph, logs_area);
 }
 

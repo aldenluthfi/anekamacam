@@ -36,6 +36,9 @@ use crate::*;
 /// rather than propagated: losing the whole log display over one panicked
 /// thread would hide the very output being used to find that panic.
 ///
+/// The queue is capped at `MAX_LOG_HISTORY` and sheds its oldest line to stay
+/// there. Only this mirror is trimmed; the log file keeps every line.
+///
 /// Params:
 /// - level  : u8     -> numeric verbosity level stamped on the line
 /// - message: String -> already-formatted log line to mirror
@@ -50,6 +53,10 @@ macro_rules! push_log_message {
             });
 
             queue.push_back(formatted.clone());
+
+            while queue.len() > MAX_LOG_HISTORY {                               /* the file keeps the rest            */
+                queue.pop_front();
+            }
         }
     };
 }
