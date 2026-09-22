@@ -614,10 +614,10 @@ pub fn parse_config_preview(path: &str) -> (String, String) {
 /// config_text
 ///
 /// Reads a config, preferring the copy compiled into the binary. Every
-/// shipped variant is embedded, so a released engine needs no `configs`
+/// shipped variant is embedded, so a released engine needs no `res/config`
 /// directory beside it and cannot be started against a half-installed one.
 ///
-/// - path    : configs/standard.conf, or plain standard.conf
+/// - path    : res/config/standard.conf, or plain standard.conf
 /// - lookup  : the file name alone, standard.conf, among the embedded set
 /// - found   : read out of the binary, whatever is on disk
 /// - missing : read from the path as given, off the filesystem
@@ -729,8 +729,10 @@ fn piece_indices(
     piece_chars: &str,
     char_to_index: &HashMap<char, usize>,
 ) -> Vec<usize> {
+    let key_length = piece_chars.chars().count();
+
     assert!(
-        piece_chars.len() == 1 || piece_chars.len() == 2,
+        key_length == 1 || key_length == 2,
         "Invalid piece character(s): {}",
         piece_chars
     );
@@ -779,7 +781,8 @@ fn piece_indices(
 /// - rules       : which special rules this variant plays with at all
 /// - pieces      : the alphabet, the order, the roles, the rank classes
 /// - castling    : the layouts, narrowed down by validate_castling
-/// - promotions  : what promotes into what, and the zones it happens in
+/// - promotions  : what promotes into what, the zones it happens in, and
+///                 the triggers that say which moves reach them
 /// - drops       : where a held piece may re-enter the board
 /// - forbidden   : squares a piece may never stand on
 /// - setup       : where a piece may be placed before play begins
@@ -1194,7 +1197,7 @@ pub fn parse_config_file(path: &str) -> State {
     let bit_fens: Vec<String> = result.statics.pieces.iter().map(|piece| {
         template_bit_fen.chars().map(|c| {
             if c == piece.char { 'X' }
-            else if c.is_ascii_alphabetic() { 'O' }
+            else if char_to_index.contains_key(&c) { 'O' }
             else { c }
         }).collect::<String>()
     }).collect();
@@ -1461,6 +1464,23 @@ pub fn parse_config_file(path: &str) -> State {
                 }
             }
         }
+
+        let mut triggers = 0u8;
+
+        if let Some(names) = sections.get("promotion triggers") {
+            for name in names {
+                match name.trim() {
+                    "entry" => { enc_promote_on_entry!(triggers); }
+                    "exit" => { enc_promote_on_exit!(triggers); }
+                    other => panic!("Unknown promotion trigger: {}", other),
+                }
+            }
+        } else {
+            enc_promote_on_entry!(triggers);                                    /* what every variant written before  */
+            enc_promote_on_exit!(triggers);                                     /* the section existed already meant  */
+        }
+
+        result.static_mut().promotion_triggers = triggers;
     }
 
     /*-----------------------------------------------------------------------*\
@@ -1571,10 +1591,12 @@ pub fn parse_config_file(path: &str) -> State {
     let set_piece_count = result.statics.pieces.len();
     let parse_set = |set_str: &str| -> Vec<bool> {
         let mut set = vec![false; set_piece_count];
-        if set_str == "*" {
+        let listed = set_str.strip_prefix('!').unwrap_or(set_str);              /* `!` names the complement instead   */
+
+        if listed == "*" {
             set.iter_mut().for_each(|flag| *flag = true);
         } else {
-            for piece_char in set_str.chars() {
+            for piece_char in listed.chars() {
                 let index = char_to_index.get(&piece_char).copied()
                     .unwrap_or_else(|| panic!(
                         "Unknown piece character in end condition: {}",
@@ -1583,6 +1605,11 @@ pub fn parse_config_file(path: &str) -> State {
                 set[index] = true;
             }
         }
+
+        if listed.len() != set_str.len() {
+            set.iter_mut().for_each(|flag| *flag = !*flag);
+        }
+
         set
     };
 
@@ -2357,7 +2384,7 @@ pub fn parse_fen(
                     format!("Unknown piece character: {}", piece_text)
                 })? as u32;
 
-            square_index | (captured_index << 12) | piece_index << 24
+            square_index | (captured_index << 11) | piece_index << 22
         };
     }
 

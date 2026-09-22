@@ -6,7 +6,7 @@
 //!
 //! ```text
 //! iterative_deepening   depth 1, 2, 3 ... each under an aspiration window
-//!   alpha_beta          the tree proper: pruning, reductions, extensions
+//!   alpha_beta          the tree proper: pruning, reductions
 //!     quiescence_search the leaves: captures until nothing is hanging
 //! ```
 //!

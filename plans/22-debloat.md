@@ -1,7 +1,8 @@
 # Plan 22 — debloat pass
 
 Goal: large red diff, same behaviour, one revertible commit per stage.
-Plan 21's restore ladder stays paused at R6 until this lands.
+Plan 21's restore ladder was paused at R6 during this pass; R7-R9 have since
+landed. R10 and R11 remain deferred. D15 still needs separate authorization.
 
 ## Scope decisions
 
@@ -921,7 +922,7 @@ pays in the other direction on purpose: it is the answer to the question
 D14 raised, and the allocator traffic it removes is the largest single
 source left in the search.
 
-## Post-ladder phase correction — implemented, uncommitted
+## Post-ladder phase correction — committed as `6f61857`
 
 2026-09-05: removed the `cmp::max` phase ratchet at the user's request.
 `make_move!` and `refresh_eval_state` now share `game_phase!`, so ordinary
@@ -935,10 +936,10 @@ Endgame; playing `a7a8q` changes it to Middlegame. Loading the resulting FEN
 (-1826 cp). The seven-suite perft attempt timed out after ten minutes
 inside standard; it did not complete and is not a passing gate.
 
-This is a semantic correction, not a node-identical debloat stage. Changes
-remain uncommitted alongside unrelated working-tree edits.
+This is a semantic correction, not a node-identical debloat stage. It was
+committed in `6f61857` on 2026-09-06 with the parameter and sizing changes.
 
-## Post-ladder parameter format and tuning — implemented, uncommitted
+## Post-ladder parameter format and tuning — committed as `6f61857`
 
 2026-09-05: replaced PST correction rows with full PST values, added eleven
 evaluation weights to the same flat payload, and converted all 38
@@ -952,7 +953,7 @@ completed, producing the expected 791-token standard file. Training improved
 while one-game validation worsened, so epoch 0 correctly remained the export.
 Plan 21 holds the detailed record.
 
-## Post-ladder pawn-table sizing — implemented, uncommitted
+## Post-ladder pawn-table sizing — committed as `6f61857`
 
 2026-09-05: the private `PTable` remains a plain `Vec<PTEntry>` and now
 scales from its old default: `Hash * 8192 / 256`, floored to a power of two.

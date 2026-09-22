@@ -65,7 +65,7 @@ pieces with their CKN move patterns. Supported rule flags:
 ├─────────────────────┼──────────────────────────────────────────────────────────┤
 │ castling            │ Enables castling; rights are read from the CFEN          │
 │ en passant          │ Enables en passant; target square read from the CFEN     │
-│ promotions          │ Pieces may promote on reaching a promotion zone          │
+│ promotions          │ Pieces may promote; triggers say which moves earn it     │
 │ drops               │ Pieces held in hand may be dropped instead of moving     │
 │ forbidden zones     │ Marks squares no piece may enter (move/promo/drop)       │
 │ promote to captured │ A promoting piece must be one the opponent captured      │
@@ -121,6 +121,10 @@ Variants bundled in res/config/ (the names double as their config files):
 │ janggi        │ Janggi (Korean chess)             │
 │ shogi         │ Shogi (Japanese chess)            │
 │ minishogi     │ Mini Shogi (5×5)                  │
+│ chushogi      │ Chu Shogi (12×12, no drops)       │
+│ daishogi      │ Dai Shogi (15×15, no drops)       │
+│ daidaishogi   │ Dai Dai Shogi (17×17, no drops)   │
+│ taikyokushogi │ Taikyoku Shogi (36×36, no drops)  │
 │ makruk        │ Makruk (Thai chess)               │
 │ sittuyin      │ Sittuyin (Burmese chess)          │
 │ ouk-chaktrang │ Ouk Chaktrang (Cambodian chess)   │
@@ -131,6 +135,22 @@ Variants bundled in res/config/ (the names double as their config files):
 │ kinglet       │ Kinglet (capture all enemy pawns) │
 │ extinction    │ Extinction Chess                  │
 │ horde         │ Horde (pawn army vs full side)    │
+│ almost        │ Almost Chess                      │
+│ amazon        │ Amazon Chess                      │
+│ chancellor    │ Chancellor Chess                  │
+│ chigorin      │ Chigorin Chess                    │
+│ embassy       │ Embassy Chess                     │
+│ gothic        │ Gothic Chess                      │
+│ janus         │ Janus Chess                       │
+│ modern        │ Modern Chess                      │
+│ knightmate    │ Knightmate                        │
+│ hoppelpoppel  │ Hoppel-Poppel                     │
+│ newzealand    │ New Zealand Chess                 │
+│ pocketknight  │ Pocket Knight                     │
+│ asean         │ ASEAN Chess                       │
+│ ai-wok        │ Ai-Wok                            │
+│ euroshogi     │ EuroShogi                         │
+│ judkins       │ Judkins Shogi                     │
 └───────────────┴───────────────────────────────────┘
 
 example.conf is the documented template you copy when authoring a new variant.

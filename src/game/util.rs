@@ -674,8 +674,16 @@ pub fn verify_game_state(state: &State) {
         }
     }
 
+    let mut computed = temp_royal_list;
+    let mut tracked = state.royal_list.clone();
+
+    for side in 0..2 {                                                          /* order is not part of the meaning   */
+        computed[side].sort_unstable();                                         /* here: promoting into royalty       */
+        tracked[side].sort_unstable();                                          /* appends where a rebuild inserts    */
+    }
+
     assert_eq!(
-        &temp_royal_list, &state.royal_list,
+        &computed, &tracked,
         "Computed royal list doesn't match state royal list"
     );
 

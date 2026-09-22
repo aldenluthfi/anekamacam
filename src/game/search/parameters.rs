@@ -33,6 +33,27 @@ use crate::*;
 const OPENING_OCCUPANCY: u32 = 360;
 const ENDGAME_OCCUPANCY: u32 = 120;
 
+/// How wide a piece-square table is allowed to swing between its best and
+/// worst square, as a share of what the piece is worth.
+///
+/// A flat figure cannot serve both ends of a variant list this wide. Held
+/// at 24 either way, the same band is over a tenth of a pawn's worth and
+/// under a three-hundredth of a taikyoku great general's, so the piece that
+/// most needs telling one square from another is the one told least. Tying
+/// the band to the piece keeps the two comparable.
+///
+/// - `PST_AMPLITUDE_RATIO` : 2.6% of the piece's value in this phase,
+///                           which is about the share a standard queen
+///                           already had
+/// - `PST_AMPLITUDE_FLOOR` : never narrower than the flat band was, so no
+///                           piece loses ground it used to hold
+///
+/// The floor binds below a value of about 923, which is most pieces in most
+/// variants: only the dearest few move at all, and a piece worth less than
+/// a standard queen keeps exactly the table it had.
+const PST_AMPLITUDE_RATIO: u32 = 26;
+const PST_AMPLITUDE_FLOOR: f64 = 24.0;
+
 /// Where the ranked non-royal army is cut into roles: the cheapest share
 /// that is not big, and the dearest share that is major.
 ///
@@ -101,15 +122,13 @@ const DRAW_CONTEMPT_SPAN: u32 = 2;
 /// `REDUCTION_QUIET_CHECK_*`, `REDUCTION_TACTICAL_*`, and
 /// `REDUCTION_TACTICAL_CHECK_*` for the three rows under it.
 ///
-/// A quiet move is read off both logs, since being late in a long list and
-/// having a lot of depth left both say the same thing about it. A quiet move
-/// that gives check takes the root of the depth instead, so depth weighs
-/// heavier and a deep line is not cut short on a forcing move. A capture
-/// takes the root of the move count, being priced by the exchange
-/// simulation already and so trusted on its own count rather than on where
-/// ordering put it. A capture that gives check starts from no base at all:
-/// at low depth it is searched in full, and only a long list and a deep
-/// remainder together reduce it.
+/// Quiet moves use both logarithms outside check; at checked parents they
+/// use the square root of depth instead. Captures, promotions and drops use
+/// logarithmic depth and square-root move count outside check. At checked
+/// parents they use both logarithms and start from zero base. Check status
+/// belongs to the parent node; whether the selected move gives check is not
+/// consulted. These four shapes and their coefficients are fixed across
+/// configurations, not derived from their movement geometry.
 const REDUCTION_QUIET_BASE: u32 = 750;
 const REDUCTION_QUIET_DIVISOR: u32 = 2250;
 const REDUCTION_QUIET_CHECK_BASE: u32 = 1000;
@@ -466,8 +485,9 @@ pub struct EvalParams {
 /// SearchParams
 ///
 /// The static half of search: the reduction surfaces and pruning margins
-/// this file derives per variant and `search.rs` reads per node. Every
-/// field is `Default` at rest.
+/// this file builds and `search.rs` reads per node. Margins use configured
+/// piece values; reduction curves remain common across configurations.
+/// Every field is `Default` at rest.
 #[derive(Default)]
 pub struct SearchParams {
     pub reduction_quiet: Vec<u8>,                                               /* plies given up, depth major, one   */
@@ -886,39 +906,69 @@ fn derive_distance_from_center(state: &State, square: usize) -> f64 {
         )
 }
 
-/// derive_closest_promotion
+/// derive_promotion_field
 ///
-/// Measures the distance to the nearest square of the piece's promotion
-/// zones, mandatory or optional, returning infinity when the piece has
-/// none.
+/// Distance to the nearest square of the piece's promotion zones, mandatory
+/// or optional, from every square at once, and infinity where the piece has
+/// no zone at all.
+///
+/// Both callers want the whole board, so the zone is read once and the board
+/// swept against it. Asking a square at a time instead rescans the zone
+/// `board_size` times over, which a piece whose zone is the whole board pays
+/// squared.
 ///
 /// Params:
 /// - state      : &State     -> board dimensions and promotion zones
-/// - piece_index: PieceIndex -> piece whose promotion zones are queried
-/// - square     : usize      -> square whose distance is measured
+/// - piece_index: PieceIndex -> piece whose zones are read
 ///
 /// Return:
-/// f64                       -> square units, or infinity with no zone
-fn derive_closest_promotion(
-    state: &State, piece_index: PieceIndex, square: usize
-) -> f64 {
-    let closest_mandatory = set_indices!(
+/// Vec<f64>                  -> per-square distance, infinite on a square
+///                              with no promotion square to reach
+fn derive_promotion_field(state: &State, piece_index: PieceIndex) -> Vec<f64> {
+    let zone: Vec<usize> = set_indices!(
         state.statics.promotion_zones_mandatory[piece_index as usize]
     )
-    .iter()
-    .map(|&index| square_distance(state, square as Square, index as Square))
-    .min_by(|a, b| a.partial_cmp(b).unwrap())
-    .unwrap_or(f64::INFINITY);
-
-    let closest_optional = set_indices!(
+    .into_iter()
+    .chain(set_indices!(
         state.statics.promotion_zones_optional[piece_index as usize]
-    )
-    .iter()
-    .map(|&index| square_distance(state, square as Square, index as Square))
-    .min_by(|a, b| a.partial_cmp(b).unwrap())
-    .unwrap_or(f64::INFINITY);
+    ))
+    .collect();
 
-    closest_optional.min(closest_mandatory)
+    (0..state.statics.board_size).into_par_iter().map(|square| {
+        zone.iter()
+            .map(|&index|
+                square_distance(state, square as Square, index as Square)
+            )
+            .fold(f64::INFINITY, f64::min)
+    }).collect()
+}
+
+/// derive_promotion_span
+///
+/// How much the promotion distance varies across the board for one piece.
+/// The bonus below is a gradient, and a gradient needs somewhere to point:
+/// where every square is equally close to promoting there is no progress to
+/// price, and the honest contribution is nothing rather than everything.
+///
+/// A zone covering the whole board is the case that matters. It puts every
+/// square at distance zero, which the old reading scored as "already home"
+/// everywhere, turning a positional gradient into a flat surcharge on the
+/// piece -- a second material value, hidden in the table.
+///
+/// Params:
+/// - field: &[f64] -> per-square promotion distance
+///
+/// Return:
+/// f64             -> spread of the finite distances, 0 if there is none
+fn derive_promotion_span(field: &[f64]) -> f64 {
+    let finite = field.iter().copied().filter(|d| d.is_finite());
+
+    let (low, high) = finite.fold(
+        (f64::INFINITY, f64::NEG_INFINITY),
+        |(low, high), d| (low.min(d), high.max(d))
+    );
+
+    if low.is_finite() && high > low { high - low } else { 0.0 }
 }
 
 /// derive_promotion_bonus
@@ -933,12 +983,14 @@ fn derive_closest_promotion(
 /// Advancement is squared, so the gradient is flat where the piece starts
 /// and steep where it is nearly home: a piece one square short of the zone
 /// is worth far more than one halfway, which is the shape a passed pawn
-/// actually has. A piece with no promotion zone is worth nothing here.
+/// actually has. A piece with no promotion zone is worth nothing here, and
+/// so is one whose zone reaches everywhere, there being no advancing to do.
 ///
 /// Params:
 /// - state         : &State     -> board dimensions and promotion zones
 /// - piece_index   : PieceIndex -> piece being placed
-/// - square        : usize      -> square being scored
+/// - closest       : f64        -> distance to promotion from this square
+/// - span          : f64        -> spread of that distance board-wide
 /// - is_endgame    : bool       -> selects the phase's bonus fraction
 /// - piece_value   : f64        -> the piece's current phase value
 /// - promoted_value: f64        -> best value reachable by promotion
@@ -946,19 +998,17 @@ fn derive_closest_promotion(
 /// Return:
 /// f64                          -> bonus added to the square's own score
 fn derive_promotion_bonus(
-    state: &State, piece_index: PieceIndex, square: usize,
+    state: &State, piece_index: PieceIndex, closest: f64, span: f64,
     is_endgame: bool, piece_value: f64, promoted_value: f64
 ) -> f64 {
     let piece = &state.statics.pieces[piece_index as usize];
 
-    if !p_can_promote!(piece) {
+    if !p_can_promote!(piece) || span <= 0.0 {                             /* no zone, or one that is everywhere */
         return 0.0;
     }
 
-    let closest_promotion =
-        derive_closest_promotion(state, piece_index, square);
     let advancement =
-        (1.0 - closest_promotion / state.statics.ranks as f64).max(0.0);
+        (1.0 - closest / state.statics.ranks as f64).max(0.0);
 
     let fraction = if is_endgame {
         0.40
@@ -978,13 +1028,14 @@ fn derive_promotion_bonus(
 /// - opening : mobility 0.50 and centrality 1.25, on a board 36% full
 /// - endgame : mobility 0.25 and centrality 1.75, on one 12% full
 ///
-/// Those scores are centered on their mean and normalized to a fixed
-/// amplitude, so every piece's table swings over the same range whatever
-/// the raw numbers were, and material alone says which piece is worth
-/// more. The promotion gradient is added afterwards, outside that
-/// normalization, since it is a claim about the piece and not about the
-/// square. For a compact board the positional part comes out
-/// center-positive and edge-negative, e.g.:
+/// Those scores are centered on their mean and normalized to an amplitude
+/// set by what the piece is worth, so the raw numbers never decide the
+/// range but the piece's own value does: a dearer piece swings wider,
+/// because a square is worth more to it. Below a standard queen the floor
+/// holds and the band is the flat one it always was. The promotion
+/// gradient is added afterwards, outside that normalization, since it is a
+/// claim about the piece and not about the square. For a compact board the
+/// positional part comes out center-positive and edge-negative, e.g.:
 ///
 /// ```text
 /// ┌────┬────┬────┬────┐
@@ -1060,13 +1111,18 @@ fn derive_pst(
         .map(|score| (score - mean).abs())
         .fold(0.0_f64, f64::max)
         .max(1.0);
-    let amplitude = 24.0;
+    let amplitude = (piece_value * PST_AMPLITUDE_RATIO as f64                  /* a dearer piece earns a wider band, */
+        / COEFFICIENT_SCALE).max(PST_AMPLITUDE_FLOOR);                         /* never a narrower one than before   */
+
+    let promotion_field = derive_promotion_field(state, index);                /* read the zone once, not per square */
+    let promotion_span = derive_promotion_span(&promotion_field);
 
     (0..board_size).map(|square| {
         let positional =
             (scores[square] - mean) / max_deviation * amplitude;
         let promotion = derive_promotion_bonus(
-            state, index, square, is_endgame, piece_value, promoted_value
+            state, index, promotion_field[square], promotion_span,
+            is_endgame, piece_value, promoted_value
         );
 
         (positional + promotion).round() as i32
@@ -1753,6 +1809,9 @@ pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
 /// - every White piece is derived, once at each occupancy
 /// - the offset is taken as the cheapest opening value, less 100
 /// - that offset is subtracted from both values of every piece
+/// - a table whose dearest piece would overflow the record's fourteen-bit
+///   field is squeezed toward the floor until it fits, which only ever
+///   happens on a board wide enough to price a slider that far
 ///
 /// The shift is what makes two variants comparable: only the width of the
 /// range says anything about a variant, its floor being an artefact of how
@@ -1788,11 +1847,24 @@ fn derive_material_values(state: &mut State) {
         .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
+    let peak = values
+        .iter()
+        .map(|(_, opening, endgame)| opening.max(*endgame))
+        .fold(f64::NEG_INFINITY, f64::max) - offset;
+
+    let squeeze = if peak > MAX_PIECE_VALUE as f64 {                            /* a board wide enough prices a piece */
+        (MAX_PIECE_VALUE as f64 - 100.0) / (peak - 100.0)                       /* past the field it has to land in   */
+    } else {
+        1.0
+    };
+
     for (index, opening, endgame) in values {
         let black_index = state.statics.piece_swap_map[index] as usize;
         let white_index = index;
-        let ovalue = (opening - offset).round() as u16;
-        let evalue = (endgame - offset).round() as u16;
+        let ovalue =
+            (100.0 + (opening - offset - 100.0) * squeeze).round() as u16;
+        let evalue =
+            (100.0 + (endgame - offset - 100.0) * squeeze).round() as u16;
 
         set_piece_dynamic_parameters(
             &mut state.static_mut().pieces[black_index],
@@ -2757,20 +2829,27 @@ fn derive_pawn_support_files(state: &State, index: usize) -> Vec<i32> {
 /// The row above is an eight-rank board, and the squaring is what bends it:
 /// the first half of the walk is worth a quarter of the second.
 ///
+/// A zone that reaches every square grades nothing -- it puts the pawn at
+/// distance zero wherever it stands -- so it takes the same fallback the
+/// zoneless case does, which is the geometry that still carries a direction.
+///
 /// Params:
-/// - state : &State -> board geometry and promotion zones
-/// - index : usize  -> pawn-like piece index
-/// - square: usize  -> square the pawn stands on
+/// - state         : &State -> board geometry and promotion zones
+/// - index         : usize  -> pawn-like piece index
+/// - square        : usize  -> square the pawn stands on
+/// - closest       : f64    -> distance to promotion from this square
+/// - promotion_span: f64    -> spread of that distance board-wide
 ///
 /// Return:
-/// i32              -> advancement in 256ths, squared
-fn derive_pawn_advancement(state: &State, index: usize, square: usize) -> i32 {
+/// i32                      -> advancement in 256ths, squared
+fn derive_pawn_advancement(
+    state: &State, index: usize, square: usize, closest: f64,
+    promotion_span: f64
+) -> i32 {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
-    let closest =
-        derive_closest_promotion(state, index as PieceIndex, square);
 
-    let advancement = if closest.is_finite() {
+    let advancement = if closest.is_finite() && promotion_span > 0.0 {
         (1.0 - closest / ranks as f64).max(0.0)
     } else {
         let edge = (ranks - 1)
@@ -2874,11 +2953,16 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
         support_files[slot] = derive_pawn_support_files(state, index);
 
+        let promotion_field =                                                  /* read the zone once, not per square */
+            derive_promotion_field(state, index as PieceIndex);
+        let promotion_span = derive_promotion_span(&promotion_field);
+
         for square in 0..board_size {
             let entry = slot * stride + square;
             let stop = derive_pawn_stop(state, index, square);
-            let advancement =
-                derive_pawn_advancement(state, index, square) as i64;
+            let advancement = derive_pawn_advancement(
+                state, index, square, promotion_field[square], promotion_span
+            ) as i64;
 
             let mut defended = stop;
             set!(defended, square as u32);

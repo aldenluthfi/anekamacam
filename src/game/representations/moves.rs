@@ -100,57 +100,59 @@ pub type PseudoMove = (u128, MoveSignature);
 /// Bits 0..31:
 ///
 /// ```text
-///   0     3               11                      23                31
-///   ┌─────┬───────────────┬───────────────────────┬──────────────────┐
-///   │type │     piece     │         start         │      end →       │
-///   └─────┴───────────────┴───────────────────────┴──────────────────┘
+///   0     3                  13                     24              31
+///   ┌─────┬──────────────────┬──────────────────────┬────────────────┐
+///   │type │       piece      │        start         │     end →      │
+///   └─────┴──────────────────┴──────────────────────┴────────────────┘
 /// ```
 ///
 /// Bits 32..63:
 ///
 /// ```text
-///   32    35  37                46                                  63
-///           36  38
-///   ┌─────┬─┬─┬─┬───────────────┬────────────────────────────────────┐
-///   │← end│i│p│e│   promoted    │            created ep →            │
-///   └─────┴─┴─┴─┴───────────────┴────────────────────────────────────┘
+///   32      35  37             48                                   63
+///             36  38
+///   ┌───────┬─┬─┬─┬────────────────┬─────────────────────────────────┐
+///   │← end  │i│p│e│   promoted     │          created ep →           │
+///   └───────┴─┴─┴─┴────────────────┴─────────────────────────────────┘
 /// ```
 ///
 /// Bits 64..95:
 ///
 /// ```text
-///   64                          78                        91        95
-///                                 79
-///   ┌───────────────────────────┬─┬───────────────────────┬──────────┐
-///   │       ← created ep        │u│       unload sq       │capt pc → │
-///   └───────────────────────────┴─┴───────────────────────┴──────────┘
+///   64                            80                      92        95
+///                                   81
+///   ┌─────────────────────────────┬─┬─────────────────────┬──────────┐
+///   │        ← created ep         │u│      unload sq      │capt pc → │
+///   └─────────────────────────────┴─┴─────────────────────┴──────────┘
 /// ```
-///
-/// Bits 96..127:
 ///
 /// ```text
-///   96    99                      111                              127
-///                                   112
-///   ┌─────┬───────────────────────┬─┬────────────────────────────────┐
-///   │← cap│        capt sq        │m│             unused             │
-///   └─────┴───────────────────────┴─┴────────────────────────────────┘
+///   96      102                   113                              127
+///   ┌───────┬─────────────────────┬─┬────────────────────────────────┐
+///   │← cap  │       capt sq       │m│             unused             │
+///   └───────┴─────────────────────┴─┴────────────────────────────────┘
 /// ```
 ///
-/// - bits 0..2    (`type`)      : packed move format
-/// - bits 3..10   (`piece`)     : moving piece index
-/// - bits 11..22  (`start`)     : origin square
-/// - bits 23..34  (`end`)       : target square
-/// - bit 35       (`i`)         : move must be initial for the piece
-/// - bit 36       (`p`)         : the move is a promotion
-/// - bit 37       (`e`)         : the move creates an en-passant square
-/// - bits 38..45  (`promoted`)  : promoted piece index when `p` is set
-/// - bits 46..77  (`created ep`): created en-passant square
-/// - bit 78       (`u`)         : unload the last capture, not a capture
-/// - bits 79..90  (`unload sq`) : unload square
-/// - bits 91..98  (`capt pc`)   : captured piece index
-/// - bits 99..110 (`capt sq`)   : captured square
-/// - bit 111      (`m`)         : captured piece was unmoved
-/// - bits 112..127              : unused
+/// - bits 0..2     (`type`)      : packed move format
+/// - bits 3..12    (`piece`)     : moving piece index
+/// - bits 13..23   (`start`)     : origin square
+/// - bits 24..34   (`end`)       : target square
+/// - bit 35        (`i`)         : move must be initial for the piece
+/// - bit 36        (`p`)         : the move is a promotion
+/// - bit 37        (`e`)         : the move creates an en-passant square
+/// - bits 38..47   (`promoted`)  : promoted piece index when `p` is set
+/// - bits 48..79   (`created ep`): created en-passant square
+/// - bit 80        (`u`)         : unload the last capture, not a capture
+/// - bits 81..91   (`unload sq`) : unload square
+/// - bits 92..101  (`capt pc`)   : captured piece index
+/// - bits 102..112 (`capt sq`)   : captured square
+/// - bit 113       (`m`)         : captured piece was unmoved
+/// - bits 114..127               : unused
+///
+/// A piece index spends ten bits and a square eleven, which is the whole of
+/// `MAX_SQUARES`. The two are neighbours everywhere they appear, so the bit
+/// a square gives up is the bit the index beside it takes, and the three
+/// flags between `end` and `promoted` keep the places they have always had.
 ///
 /// A multi-capture (`010`) keeps its first capture above. Each further
 /// capture is one 34-bit record in a `u64` stored in `Move.1`:
@@ -158,10 +160,10 @@ pub type PseudoMove = (u128, MoveSignature);
 /// Bits 0..31:
 ///
 /// ```text
-///   0 1                       13              21                    31
-///   ┌─┬───────────────────────┬───────────────┬──────────────────────┐
-///   │u│       unload sq       │    capt pc    │      capt sq →       │
-///   └─┴───────────────────────┴───────────────┴──────────────────────┘
+///   0 1                     12                  22                  31
+///   ┌─┬─────────────────────┬───────────────────┬────────────────────┐
+///   │u│      unload sq      │      capt pc      │     capt sq →      │
+///   └─┴─────────────────────┴───────────────────┴────────────────────┘
 /// ```
 ///
 /// Bits 32..63:
@@ -175,11 +177,16 @@ pub type PseudoMove = (u128, MoveSignature);
 /// ```
 ///
 /// - bit 0       (`u`): unload flag
-/// - bits 1..12       : unload square
-/// - bits 13..20      : captured piece index
-/// - bits 21..32      : captured square
+/// - bits 1..11       : unload square
+/// - bits 12..21      : captured piece index
+/// - bits 22..32      : captured square
 /// - bit 33      (`m`): captured piece was unmoved
 /// - bits 34..63      : unused
+///
+/// The record is 34 bits and its `m` flag sits on bit 33. `enc_capture_part!`
+/// shifts the whole of it to bit 80, which lands every field exactly where
+/// the primary word reads it, so the first capture needs no separate
+/// spelling from the rest.
 ///
 /// A drop (`011`) has no origin square, so it repeats the placement square in
 /// both `start` and `end`. Make/undo reads `start`, while every target-indexed
@@ -189,19 +196,19 @@ pub type PseudoMove = (u128, MoveSignature);
 /// Bits 0..31:
 ///
 /// ```text
-///   0     3               11                      23                31
-///   ┌─────┬───────────────┬───────────────────────┬──────────────────┐
-///   │type │     piece     │        drop sq        │    drop sq →     │
-///   └─────┴───────────────┴───────────────────────┴──────────────────┘
+///   0     3                  13                     24              31
+///   ┌─────┬──────────────────┬──────────────────────┬────────────────┐
+///   │type │       piece      │       drop sq        │   drop sq →    │
+///   └─────┴──────────────────┴──────────────────────┴────────────────┘
 /// ```
 ///
 /// Bits 32..63:
 ///
 /// ```text
-///   32    35                                                        63
-///   ┌─────┬──────────────────────────────────────────────────────────┐
-///   │← sq │                        unused →                          │
-///   └─────┴──────────────────────────────────────────────────────────┘
+///   32      35                                                      63
+///   ┌───────┬────────────────────────────────────────────────────────┐
+///   │← sq   │                     unused →                           │
+///   └───────┴────────────────────────────────────────────────────────┘
 /// ```
 ///
 /// Bits 64..95:
@@ -223,9 +230,9 @@ pub type PseudoMove = (u128, MoveSignature);
 /// ```
 ///
 /// - bits 0..2    (`type`) : drop format tag
-/// - bits 3..10   (`piece`): dropped piece index
-/// - bits 11..22  (`start`): target square
-/// - bits 23..34  (`end`)  : target square, repeated
+/// - bits 3..12   (`piece`): dropped piece index
+/// - bits 13..23  (`start`): target square
+/// - bits 24..34  (`end`)  : target square, repeated
 /// - bits 35..111          : unused
 /// - bit 112      (`c`)    : whether the drop may deliver checkmate
 /// - bits 113..127         : unused
@@ -239,10 +246,10 @@ pub type PseudoMove = (u128, MoveSignature);
 /// Bits 0..31:
 ///
 /// ```text
-///   0 1                       13                                    31
-///   ┌─┬───────────────────────┬──────────────────────────────────────┐
-///   │u│        square         │               unused →               │
-///   └─┴───────────────────────┴──────────────────────────────────────┘
+///   0 1                     12                                      31
+///   ┌─┬─────────────────────┬────────────────────────────────────────┐
+///   │u│       square        │                unused →                │
+///   └─┴─────────────────────┴────────────────────────────────────────┘
 /// ```
 ///
 /// Bits 32..63:
@@ -255,8 +262,8 @@ pub type PseudoMove = (u128, MoveSignature);
 /// ```
 ///
 /// - bit 0 (`u`): the square must be unattacked
-/// - bits 1..12 : square index
-/// - bits 13..63: unused
+/// - bits 1..11 : square index
+/// - bits 12..63: unused
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Move(pub u128, pub Option<Arc<Vec<u64>>>);
 
@@ -394,28 +401,28 @@ macro_rules! m_quiet {
 /// its name spells:
 ///
 /// - enc_move_type!       -> format tag, bits 0..2
-/// - enc_piece!           -> moving piece index, bits 3..10
-/// - enc_start!           -> origin square, bits 11..22
-/// - enc_end!             -> target square, bits 23..34
+/// - enc_piece!           -> moving piece index, bits 3..12
+/// - enc_start!           -> origin square, bits 13..23
+/// - enc_end!             -> target square, bits 24..34
 /// - enc_is_initial!      -> initial-move flag, bit 35
 /// - enc_promotion!       -> promotion flag, bit 36
 /// - enc_creates_enp!     -> creates-en-passant flag, bit 37
-/// - enc_promoted!        -> promoted piece index, bits 38..45
-/// - enc_created_enp!     -> created en-passant square, bits 46..77
-/// - enc_is_unload!       -> unload flag, bit 78
-/// - enc_unload_square!   -> unload square, bits 79..90
-/// - enc_captured_piece!  -> captured piece index, bits 91..98
-/// - enc_captured_square! -> captured square, bits 99..110
+/// - enc_promoted!        -> promoted piece index, bits 38..47
+/// - enc_created_enp!     -> created en-passant square, bits 48..79
+/// - enc_is_unload!       -> unload flag, bit 80
+/// - enc_unload_square!   -> unload square, bits 81..91
+/// - enc_captured_piece!  -> captured piece index, bits 92..101
+/// - enc_captured_square! -> captured square, bits 102..112
 ///
 /// enc_capture_part!
 ///
 ///   Params:
-///   - taken_piece: u128 -> whole 34-bit capture payload, bits 78..111
+///   - taken_piece: u128 -> whole 34-bit capture payload, bits 80..113
 ///
 /// Notes:
-/// `enc_capture_part!` is how a single capture gets its bit 111. Move
+/// `enc_capture_part!` is how a single capture gets its bit 113. Move
 /// generation builds every capture as a multi-capture payload word, so
-/// the payload's bit 33 becomes bit 111 under the shift; there is no
+/// the payload's bit 33 becomes bit 113 under the shift; there is no
 /// separate encoder for the captured-was-unmoved flag.
 #[macro_export]
 macro_rules! enc_move_type {
@@ -427,21 +434,21 @@ macro_rules! enc_move_type {
 #[macro_export]
 macro_rules! enc_piece {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFF) << 3;
+        $mv.0 |= ($val & 0x3FF) << 3;
     };
 }
 
 #[macro_export]
 macro_rules! enc_start {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFFF) << 11;
+        $mv.0 |= ($val & 0x7FF) << 13;
     };
 }
 
 #[macro_export]
 macro_rules! enc_end {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFFF) << 23;
+        $mv.0 |= ($val & 0x7FF) << 24;
     };
 }
 
@@ -469,49 +476,49 @@ macro_rules! enc_creates_enp {
 #[macro_export]
 macro_rules! enc_promoted {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFF) << 38;
+        $mv.0 |= ($val & 0x3FF) << 38;
     };
 }
 
 #[macro_export]
 macro_rules! enc_created_enp {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFFFFFFFF) << 46;
+        $mv.0 |= ($val & 0xFFFFFFFF) << 48;
     };
 }
 
 #[macro_export]
 macro_rules! enc_is_unload {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 1) << 78;
+        $mv.0 |= ($val & 1) << 80;
     };
 }
 
 #[macro_export]
 macro_rules! enc_unload_square {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFFF) << 79;
+        $mv.0 |= ($val & 0x7FF) << 81;
     };
 }
 
 #[macro_export]
 macro_rules! enc_captured_piece {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFF) << 91;
+        $mv.0 |= ($val & 0x3FF) << 92;
     };
 }
 
 #[macro_export]
 macro_rules! enc_captured_square {
     ($mv:expr, $val:expr) => {
-        $mv.0 |= ($val & 0xFFF) << 99;
+        $mv.0 |= ($val & 0x7FF) << 102;
     };
 }
 
 #[macro_export]
 macro_rules! enc_capture_part {
     ($mv:expr, $taken_piece:expr) => {
-        $mv.0 |= ($taken_piece & 0x3_FFFF_FFFF) << 78;
+        $mv.0 |= ($taken_piece & 0x3_FFFF_FFFF) << 80;
     };
 }
 
@@ -531,22 +538,22 @@ macro_rules! enc_capture_part {
 /// Ten of them hand back the field their name spells, as `u128`:
 ///
 /// - move_type!       -> format tag, bits 0..2
-/// - piece!           -> moving piece index, bits 3..10
-/// - start!           -> origin square, bits 11..22
-/// - end!             -> target square, bits 23..34
+/// - piece!           -> moving piece index, bits 3..12
+/// - start!           -> origin square, bits 13..23
+/// - end!             -> target square, bits 24..34
 /// - is_initial!      -> initial-move flag as 0 or 1, bit 35
-/// - promoted!        -> promoted piece index, bits 38..45
-/// - created_enp!     -> created en-passant square, bits 46..77
-/// - unload_square!   -> unload square, bits 79..90
-/// - captured_piece!  -> captured piece index, bits 91..98
-/// - captured_square! -> captured square, bits 99..110
+/// - promoted!        -> promoted piece index, bits 38..47
+/// - created_enp!     -> created en-passant square, bits 48..79
+/// - unload_square!   -> unload square, bits 81..91
+/// - captured_piece!  -> captured piece index, bits 92..101
+/// - captured_square! -> captured square, bits 102..112
 ///
 /// Four answer a yes-or-no question with `bool`:
 ///
 /// - promotion!        -> the move promotes, bit 36
 /// - creates_enp!      -> the move leaves an en-passant square, bit 37
-/// - is_unload!        -> the payload drops a piece, takes none, bit 78
-/// - captured_unmoved! -> the captured piece had never moved, bit 111
+/// - is_unload!        -> the payload drops a piece, takes none, bit 80
+/// - captured_unmoved! -> the captured piece had never moved, bit 113
 ///
 /// `is_pass!` reads no field of its own. It recognises the shape a variant
 /// that allows passing produces — a quiet move whose start and end squares
@@ -574,21 +581,21 @@ macro_rules! move_type {
 #[macro_export]
 macro_rules! piece {
     ($mv:expr) => {
-        ($mv.0 >> 3) & 0xFF
+        ($mv.0 >> 3) & 0x3FF
     };
 }
 
 #[macro_export]
 macro_rules! start {
     ($mv:expr) => {
-        ($mv.0 >> 11) & 0xFFF
+        ($mv.0 >> 13) & 0x7FF
     };
 }
 
 #[macro_export]
 macro_rules! end {
     ($mv:expr) => {
-        ($mv.0 >> 23) & 0xFFF
+        ($mv.0 >> 24) & 0x7FF
     };
 }
 
@@ -616,49 +623,49 @@ macro_rules! creates_enp {
 #[macro_export]
 macro_rules! promoted {
     ($mv:expr) => {
-        ($mv.0 >> 38) & 0xFF
+        ($mv.0 >> 38) & 0x3FF
     };
 }
 
 #[macro_export]
 macro_rules! created_enp {
     ($mv:expr) => {
-        ($mv.0 >> 46) & 0xFFFFFFFF
+        ($mv.0 >> 48) & 0xFFFFFFFF
     };
 }
 
 #[macro_export]
 macro_rules! is_unload {
     ($mv:expr) => {
-        ($mv.0 >> 78) & 1 == 1
+        ($mv.0 >> 80) & 1 == 1
     };
 }
 
 #[macro_export]
 macro_rules! unload_square {
     ($mv:expr) => {
-        ($mv.0 >> 79) & 0xFFF
+        ($mv.0 >> 81) & 0x7FF
     };
 }
 
 #[macro_export]
 macro_rules! captured_piece {
     ($mv:expr) => {
-        ($mv.0 >> 91) & 0xFF
+        ($mv.0 >> 92) & 0x3FF
     };
 }
 
 #[macro_export]
 macro_rules! captured_square {
     ($mv:expr) => {
-        ($mv.0 >> 99) & 0xFFF
+        ($mv.0 >> 102) & 0x7FF
     };
 }
 
 #[macro_export]
 macro_rules! captured_unmoved {
     ($mv:expr) => {
-        ($mv.0 >> 111) & 1 == 1
+        ($mv.0 >> 113) & 1 == 1
     };
 }
 
@@ -677,9 +684,9 @@ macro_rules! captured_unmoved {
 ///
 /// Three read a field as `u64`, in the layout diagrammed on [`Move`]:
 ///
-/// - multi_move_unload_square!   -> unload square, bits 1..12
-/// - multi_move_captured_piece!  -> captured piece index, bits 13..20
-/// - multi_move_captured_square! -> captured square, bits 21..32
+/// - multi_move_unload_square!   -> unload square, bits 1..11
+/// - multi_move_captured_piece!  -> captured piece index, bits 12..21
+/// - multi_move_captured_square! -> captured square, bits 22..32
 ///
 /// Two read a flag as `bool`:
 ///
@@ -695,21 +702,21 @@ macro_rules! multi_move_is_unload {
 #[macro_export]
 macro_rules! multi_move_unload_square {
     ($mv:expr) => {
-        ($mv >> 1) & 0xFFF
+        ($mv >> 1) & 0x7FF
     };
 }
 
 #[macro_export]
 macro_rules! multi_move_captured_piece {
     ($mv:expr) => {
-        ($mv >> 13) & 0xFF
+        ($mv >> 12) & 0x3FF
     };
 }
 
 #[macro_export]
 macro_rules! multi_move_captured_square {
     ($mv:expr) => {
-        ($mv >> 21) & 0xFFF
+        ($mv >> 22) & 0x7FF
     };
 }
 
@@ -737,9 +744,9 @@ macro_rules! multi_move_captured_unmoved {
 /// name spells:
 ///
 /// - enc_multi_move_is_unload!        -> unload flag, bit 0
-/// - enc_multi_move_unload_square!    -> unload square, bits 1..12
-/// - enc_multi_move_captured_piece!   -> captured piece index, bits 13..20
-/// - enc_multi_move_captured_square!  -> captured square, bits 21..32
+/// - enc_multi_move_unload_square!    -> unload square, bits 1..11
+/// - enc_multi_move_captured_piece!   -> captured piece index, bits 12..21
+/// - enc_multi_move_captured_square!  -> captured square, bits 22..32
 /// - enc_multi_move_captured_unmoved! -> captured-was-unmoved flag, bit 33
 #[macro_export]
 macro_rules! enc_multi_move_is_unload {
@@ -751,21 +758,21 @@ macro_rules! enc_multi_move_is_unload {
 #[macro_export]
 macro_rules! enc_multi_move_unload_square {
     ($mv:expr, $val:expr) => {
-        $mv |= ($val & 0xFFF) << 1;
+        $mv |= ($val & 0x7FF) << 1;
     };
 }
 
 #[macro_export]
 macro_rules! enc_multi_move_captured_piece {
     ($mv:expr, $val:expr) => {
-        $mv |= ($val & 0xFF) << 13;
+        $mv |= ($val & 0x3FF) << 12;
     };
 }
 
 #[macro_export]
 macro_rules! enc_multi_move_captured_square {
     ($mv:expr, $val:expr) => {
-        $mv |= ($val & 0xFFF) << 21;
+        $mv |= ($val & 0x7FF) << 22;
     };
 }
 

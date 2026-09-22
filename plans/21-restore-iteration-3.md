@@ -16,7 +16,14 @@ on the ablated `b971865`, not on this line, and it holds no ref.
 
 The deferred PST-schema question was resolved after the ladder on 2026-09-05:
 parameter files now store full PST values and eleven evaluation weights, and
-tuning uses quiescence scores. That work remains uncommitted.
+tuning uses quiescence scores. Committed as `6f61857` on 2026-09-06.
+
+Current correction, 2026-09-08: the reduction surfaces retained below are
+load-built, not rule-derived. All variants receive the same four curves,
+indexed by depth and legal-move ordinal. Tactical class and parent check
+state select the curve. The R6
+account also calls them derived per variant; that description was incorrect.
+Plan 23 now governs the frequency gate before any schedule change.
 
 ## Goal
 
@@ -63,7 +70,7 @@ Derived weights seed the parameter files. Eleven are then loaded and tuned
 beside material and PSTs: shelter, guard, castling, danger, open shield,
 tempo, and the three imbalance weights.
 
-## Full PST and scalar parameters — implemented, uncommitted
+## Full PST and scalar parameters — committed as `6f61857`
 
 The old correction rows were all zero, so they stored 768 zeroes for
 standard while the engine derived the actual PSTs on every load. Parameter
@@ -95,10 +102,11 @@ ablations.
 - Capture history: -11 Elo, and its iteration 2 removal cost nothing.
 - Singular extension with multicut: -19 Elo, the worst stage of A-L.
 
-## What is actually missing
+## Missing at the ladder's start, 2026-09-02
 
-Measured against the current tree, not against plan 20's narrative, which
-describes the abandoned `9d633d8` lineage.
+Historical inventory before the stages below, not current status. It was
+measured against that tree rather than plan 20's narrative, which describes
+the abandoned `9d633d8` lineage.
 
 Evaluation. `src/game/position/evaluation.rs` is 142 lines against
 iteration 3's 700. Present: `terminal_score!`, `royal_shelter!`,

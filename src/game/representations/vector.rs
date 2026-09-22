@@ -449,6 +449,14 @@ pub type MultiLegVector = Vec<LegVector>;
 ///   moving as a rook (non-hopping)
 /// - Xiangqi "King" (`W|kcnR`): move as a wazir, or capture/destroy a royal
 ///   piece as a rook (the flying-generals rule)
+/// - Chu shogi "Rook" (`mR|rcR|c!rR`): the `r` pair is how a variant says a
+///   capture earns the promotion. One capture leg may only be played as a
+///   promotion and one only without, and since `r` is legal solely where
+///   the leg touches a zone, the two together mean "in the camp it is your
+///   choice, outside it never happens" — with no trigger of its own
+/// - Taikyoku shogi "Great general" (`<mcd!g[1357]K-*>`): a repeated
+///   capturing leg takes everything along the ray, and `!g` stops it at the
+///   first piece that outranks the mover, which is range capture
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
 

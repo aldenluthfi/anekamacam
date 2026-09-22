@@ -167,6 +167,67 @@ macro_rules! enc_stand_offs {
     };
 }
 
+/// Promotion-trigger bitmask accessor/encoder macros.
+///
+/// `promotions!` says a variant promotes at all; these say what earns the
+/// offer. The `promotion_triggers` byte on [`StaticState`] carries one bit
+/// per trigger, and a variant naming neither is read as both, which is the
+/// shogi rule and what every variant written before this byte existed meant.
+///
+/// Every reader takes the position and answers `bool`:
+///
+/// - state: &State -> position whose triggers are read
+///
+/// - promote_on_entry! -> the move finished in the zone having begun
+///                        outside it, bit 0
+/// - promote_on_exit!  -> the move began in the zone, whether it left the
+///                        zone or stayed inside it, bit 1
+///
+/// The second is the asymmetric one, and it is asymmetric on purpose: a move
+/// that begins and ends inside the zone has to belong to one trigger or the
+/// other, and putting it with `exit` is what lets `entry` mean strictly
+/// crossing in. Shogi wants both bits and gets every case; chu shogi wants
+/// `entry` alone and gets exactly the crossing it allows.
+///
+/// Nothing here speaks about captures. A variant where a capture is what
+/// earns the promotion writes that on the piece instead, splitting its
+/// movement into a quiet leg, an `r` capture leg that may only promote, and
+/// a `!r` capture leg that may not -- which is the same `r` pair every other
+/// promotion-shaped movement rule is already written with.
+///
+/// Every writer, `enc_promote_on_entry!` and `enc_promote_on_exit!`, sets the
+/// bit its reader tests and takes only the byte under construction:
+///
+/// - triggers: &mut u8 -> trigger byte being assembled at load time
+#[macro_export]
+macro_rules! promote_on_entry {
+    ($state:expr) => {
+        ($state.statics.promotion_triggers & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_promote_on_entry {
+    ($triggers:expr) => {
+        $triggers |= 1;
+    };
+}
+
+#[macro_export]
+macro_rules! promote_on_exit {
+    ($state:expr) => {
+        ($state.statics.promotion_triggers >> 1 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_promote_on_exit {
+    ($triggers:expr) => {
+        $triggers |= 1 << 1;
+    };
+}
+
+
 /*----------------------------------------------------------------------------*\
                        SEARCH CAPABILITY REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
@@ -309,15 +370,22 @@ macro_rules! enc_static_movement {
 /// en-passant opportunity.
 ///
 /// ```text
-///   0                       12                      24              31
-///   ┌───────────────────────┬───────────────────────┬────────────────┐
-///   │     target square     │    captured square    │     piece      │
-///   └───────────────────────┴───────────────────────┴────────────────┘
+///   0                     11                      22                31
+///   ┌─────────────────────┬─────────────────────┬────────────────────┐
+///   │    target square    │   captured square   │        piece       │
+///   └─────────────────────┴─────────────────────┴────────────────────┘
 /// ```
 ///
-/// - Bits 0..11  : capture target square
-/// - Bits 12..23 : square of the capturable piece
-/// - Bits 24..31 : captured piece index
+/// - Bits 0..10  : capture target square
+/// - Bits 11..21 : square of the capturable piece
+/// - Bits 22..31 : captured piece index
+///
+/// Eleven bits is the whole of `MAX_SQUARES` and ten the whole of
+/// `MAX_PIECES`, both of which a config is asserted against at load, so
+/// neither field can be made to overflow by a variant the engine agreed to
+/// set up. The three fill the word exactly. `NO_EN_PASSANT` is still
+/// unambiguous, though by those asserts rather than by a spare bit: the
+/// piece assert reserves the top index, so no real descriptor is all ones.
 ///
 /// All three are stored because none of them implies the others. The square
 /// a capturer moves to is the one the passing piece vacated, the victim
@@ -333,27 +401,27 @@ pub type EnPassantSquare = u32;
 ///
 /// - en_passant: EnPassantSquare -> packed descriptor read
 ///
-/// - enp_square!   -> capture target square, bits 0..11
-/// - enp_captured! -> square of the capturable piece, bits 12..23
-/// - enp_piece!    -> captured piece index, bits 24..31
+/// - enp_square!   -> capture target square, bits 0..10
+/// - enp_captured! -> square of the capturable piece, bits 11..21
+/// - enp_piece!    -> captured piece index, bits 22..31
 #[macro_export]
 macro_rules! enp_square {
     ($en_passant:expr) => {
-        $en_passant & 0xFFF
+        $en_passant & 0x7FF
     };
 }
 
 #[macro_export]
 macro_rules! enp_captured {
     ($en_passant:expr) => {
-        ($en_passant >> 12) & 0xFFF
+        ($en_passant >> 11) & 0x7FF
     };
 }
 
 #[macro_export]
 macro_rules! enp_piece {
     ($en_passant:expr) => {
-        ($en_passant >> 24) & 0xFF
+        ($en_passant >> 22) & 0x3FF
     };
 }
 
@@ -599,7 +667,7 @@ macro_rules! is_terminal {
 /// this via `Arc::clone` instead of deep-copying.
 ///
 /// The special rules field is a bitmask representing enabled special rules.
-/// (read configs/example.conf for more information)
+/// (read res/config/example.conf for more information)
 ///
 /// ```text
 ///   0               7
@@ -636,6 +704,7 @@ pub struct StaticState {
     pub forbidden_zones: Vec<Board>,                                            /* piece to forbidden zone bitboard   */
     pub promotion_zones_optional: Vec<Board>,                                   /* piece to promotion zone bitboard   */
     pub promotion_zones_mandatory: Vec<Board>,                                  /* piece to promotion zone bitboard   */
+    pub promotion_triggers: u8,                                                 /* what earns a promotion offer       */
     pub critical_castling: [Board; 4],                                          /* KQkq critical squares for each     */
 
     pub castling_pieces: Vec<bool>,                                             /* moving/capturing voids rights      */
@@ -698,7 +767,7 @@ pub struct State {
     pub phase_score: u32,                                                       /* game phase score for transition    */
 
     pub playing: u8,                                                            /* side to move (WHITE / BLACK)       */
-    pub main_board: Vec<u8>,                                                    /* standard mailbox approach          */
+    pub main_board: Vec<PieceIndex>,                                            /* standard mailbox approach          */
 
     pub pieces_board: [Board; 2],                                               /* per-color occupancy bitboards      */
     pub virgin_board: Board,                                                    /* squares whose piece is unmoved     */
@@ -937,6 +1006,12 @@ impl State {
             files, ranks, board_size, MAX_SQUARES
         );
 
+        assert!(
+            piece_count < MAX_PIECES,                                           /* the last index is `NO_PIECE`, so a */
+            "Variant declares {} piece entries, but this build caps at {}",     /* full field is one entry short of   */
+            piece_count, MAX_PIECES - 1                                         /* what the field could name          */
+        );
+
         let statics = Arc::new(StaticState {
             title,
             startpos,
@@ -949,6 +1024,7 @@ impl State {
             forbidden_zones: vec![board!(files, ranks); piece_count],
             promotion_zones_optional: vec![board!(files, ranks); piece_count],
             promotion_zones_mandatory: vec![board!(files, ranks); piece_count],
+            promotion_triggers: 0b11,                                           /* entry and exit, the shogi rule     */
             critical_castling: [board!(files, ranks); 4],
 
             castling_pieces: vec![false; piece_count],

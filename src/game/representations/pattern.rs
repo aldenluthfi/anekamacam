@@ -24,19 +24,24 @@ use crate::*;
 /// The set of pieces one pattern offset accepts, stored as one flag per
 /// possible [`PieceIndex`]. Membership is an array read rather than a hash
 /// lookup, which matters because matching runs this test once per offset
-/// per candidate square, and the whole set is 256 booleans — exactly the
-/// range a `u8` index can name, so it can never be too small.
+/// per candidate square.
 ///
 /// `NO_PIECE` is an ordinary member. A pattern that requires an empty
 /// square says so by admitting that index, which is what lets one
 /// mechanism express both "a friendly piece must stand here" and "this
 /// square must be clear" without a second kind of test.
+///
+/// That membership is why the array is one longer than `MAX_PIECES`. A
+/// piece index is bounded by what a config may declare, but the absence
+/// marker is the top of [`PieceIndex`] rather than the top of that range,
+/// so it is folded onto the extra slot on the end instead of being given a
+/// seat among the real pieces.
 #[derive(Clone)]
-pub struct PieceSet([bool; 256]);
+pub struct PieceSet([bool; MAX_PIECES + 1]);
 
 impl Default for PieceSet {
     fn default() -> Self {
-        Self([false; 256])
+        Self([false; MAX_PIECES + 1])
     }
 }
 
@@ -55,34 +60,48 @@ impl PieceSet {
     /// insert
     ///
     ///   Params:
-    ///   - piece: u8 -> piece index marked as member
+    ///   - piece: PieceIndex -> piece index marked as member
     ///
     /// contains
     ///
     ///   Params:
-    ///   - piece: u8 -> piece index tested
+    ///   - piece: PieceIndex -> piece index tested
     ///
     ///   Return:
-    ///   bool        -> whether the index is a member
+    ///   bool                -> whether the index is a member
+    ///
+    /// slot
+    ///
+    ///   Params:
+    ///   - piece: PieceIndex -> index to place
+    ///
+    ///   Return:
+    ///   usize               -> its row, `NO_PIECE` folded onto the last
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn insert(&mut self, piece: u8) {
-        self.0[piece as usize] = true;
+    fn slot(piece: PieceIndex) -> usize {
+        if piece == NO_PIECE { MAX_PIECES } else { piece as usize }
     }
 
-    pub fn contains(&self, piece: u8) -> bool {
-        self.0[piece as usize]
+    pub fn insert(&mut self, piece: PieceIndex) {
+        self.0[Self::slot(piece)] = true;
+    }
+
+    pub fn contains(&self, piece: PieceIndex) -> bool {
+        self.0[Self::slot(piece)]
     }
 }
 
 impl Debug for PieceSet {
     fn fmt(&self, f: &mut FmtFormatter<'_>) -> FmtResult {
         let mut pieces = Vec::new();
-        for i in 0..256 {
+        for i in 0..=MAX_PIECES {
             if self.0[i] {
-                pieces.push(i as PieceIndex);
+                pieces.push(
+                    if i == MAX_PIECES { NO_PIECE } else { i as PieceIndex }
+                );
             }
         }
         write!(f, "PieceSet({:?})", pieces)

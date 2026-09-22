@@ -258,9 +258,26 @@ pub use std::{
 /// The sentinels are each the maximum of their own type rather than a
 /// shared magic number, so `NO_PIECE`, `NO_PAWN`, `NO_SQUARE`, and
 /// `NO_EN_PASSANT` stay out of the way of any real index a variant with a
-/// larger board or a longer piece list can produce.
+/// larger board or a longer piece list can produce. Both `NO_PIECE` and
+/// `NO_SQUARE` sit outside the packed fields that carry their values, and
+/// neither has to fit: a mailbox and a piece list are plain vectors, and
+/// nothing ever writes an absence into a bitfield to read it back.
+///
+/// `MAX_PIECE_VALUE` is the widest material value the piece record's
+/// fourteen-bit field can hold. Derivation prices a piece by how far it
+/// reaches, so a board wide enough eventually prices one past that; the
+/// table is squeezed to fit rather than overflowing, and every variant whose
+/// range already fits is left exactly as it was.
+///
+/// `MAX_PIECES` is the ten-bit piece field's width, and so both the most
+/// entries a variant may declare and the length of every table keyed by
+/// piece index. A variant spends two entries per type, one per colour. The
+/// Zobrist tables are cut to this length rather than to the piece list in
+/// front of them, so they cost the same whatever is loaded.
 pub const MAX_SQUARES: usize = 2048;
-pub const MAX_DEPTH: usize = 128;
+pub const MAX_PIECES: usize = 1024;
+pub const MAX_PIECE_VALUE: u16 = 0x3FFF;
+pub const MAX_DEPTH: usize = 256;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
 
 pub const WHITE: u8 = 0;
@@ -311,9 +328,10 @@ lazy_static! {
     pub static ref EN_PASSANT_HASHES: [u128; MAX_SQUARES] =
         array::from_fn(|_| random_u128());
     pub static ref IN_HAND_HASHES: Vec<[u128; MAX_SQUARES]> = {
-        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
+        let mut result: Vec<[u128; MAX_SQUARES]> =
+            Vec::with_capacity(MAX_PIECES);
 
-        for _ in 0..256 {
+        for _ in 0..MAX_PIECES {
             let drop_hashes = array::from_fn(|_| random_u128());
             result.push(drop_hashes);
         }
@@ -323,9 +341,10 @@ lazy_static! {
     pub static ref LOG_MESSAGES: Mutex<VecDeque<String>> =
         Mutex::new(VecDeque::new());
     pub static ref PIECE_HASHES: Vec<[u128; MAX_SQUARES]> = {
-        let mut result: Vec<[u128; MAX_SQUARES]> = Vec::with_capacity(256);
+        let mut result: Vec<[u128; MAX_SQUARES]> =
+            Vec::with_capacity(MAX_PIECES);
 
-        for _ in 0..256 {
+        for _ in 0..MAX_PIECES {
             let piece_hashes = array::from_fn(|_| random_u128());
             result.push(piece_hashes);
         }

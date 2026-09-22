@@ -532,8 +532,8 @@ pub fn generate_attack_masks(square_index: u16, state: &mut State) {
                 let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
                 let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
-                accumulated_index += (rank_offset * (files as i8)
-                    + file_offset) as i16;
+                accumulated_index += rank_offset as i16 * files as i16          /* widened: a leg reaching four ranks */
+                    + file_offset as i16;                                       /* on a wide board overflows a byte   */
 
                 let c = c!(leg) || (last_leg && !m!(leg));
                 let d = d!(leg);
@@ -629,9 +629,8 @@ macro_rules! validate_attack_vector {
             let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
             let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
-            accumulated_index += (
-                rank_offset * ($state.statics.files as i8) + file_offset
-            ) as i16;
+            accumulated_index += rank_offset as i16                             /* widened: a leg reaching four       */
+                * ($state.statics.files as i16) + file_offset as i16;           /* ranks on a wide board overflows    */
 
             let end_square = accumulated_index as u32;
 
@@ -904,6 +903,15 @@ macro_rules! process_multi_leg_vector {
 
         let promotable = promotions!($state) && p_can_promote!($piece);
 
+        let origin_mandatory = promotable && get!(                              /* the square the whole move left,    */
+            $state.statics.promotion_zones_mandatory[piece_index as usize],     /* which is what tells crossing into  */
+            $square_index as u32                                                /* the zone from starting inside it   */
+        );
+        let origin_optional = promotable && get!(
+            $state.statics.promotion_zones_optional[piece_index as usize],
+            $square_index as u32
+        );
+
         let mut mandatory = false;
         let mut optionals = false;
 
@@ -916,9 +924,8 @@ macro_rules! process_multi_leg_vector {
             let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
             let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
-            accumulated_index += (
-                rank_offset * ($state.statics.files as i8) + file_offset
-            ) as i16;
+            accumulated_index += rank_offset as i16                             /* widened: a leg reaching four       */
+                * ($state.statics.files as i16) + file_offset as i16;           /* ranks on a wide board overflows    */
 
             let end_square = accumulated_index as u32;
 
@@ -981,12 +988,21 @@ macro_rules! process_multi_leg_vector {
                     break;
                 }
 
-                if start_mandatory || end_mandatory
-                || start_optional  || end_optional {
+                let entry_mandatory = promote_on_entry!($state)
+                    && end_mandatory && !origin_mandatory;
+                let entry_optional = promote_on_entry!($state)
+                    && end_optional && !origin_optional;
+                let exit_mandatory =
+                    promote_on_exit!($state) && origin_mandatory;
+                let exit_optional =
+                    promote_on_exit!($state) && origin_optional;
+
+                if entry_mandatory || entry_optional
+                || exit_mandatory  || exit_optional {
                     optionals = !not_r;
                 }
 
-                if r || start_mandatory || end_mandatory {
+                if r || entry_mandatory || exit_mandatory {
                     mandatory = true;
                 }
             }
@@ -1159,9 +1175,9 @@ macro_rules! process_multi_leg_vector {
                 encoded_move,
                 p as u128
                     * (
-                        (start_square as u128 & 0xFFF) |
-                        (accumulated_index as u128) << 12 |
-                        (piece_index as u128) << 24
+                        (start_square as u128 & 0x7FF) |
+                        (accumulated_index as u128) << 11 |
+                        (piece_index as u128) << 22
                     )
             );
         }
@@ -1600,6 +1616,11 @@ macro_rules! make_move {
                     $state.royal_list[piece_color as usize].retain(
                         |&sq| sq as u32 != start_square
                     );
+                }
+
+                if p_is_royal!($state.statics.pieces[                           /* the piece that lands is the one    */
+                    if is_promotion { promoted_piece } else { piece_index }     /* the list must name, and promoting  */
+                ]) {                                                            /* into royalty makes the two differ  */
                     $state.royal_list[piece_color as usize]
                         .push(end_square as Square);
                 }
@@ -1788,6 +1809,11 @@ macro_rules! make_move {
                     $state.royal_list[piece_color as usize].retain(
                         |&sq| sq as u32 != start_square
                     );
+                }
+
+                if p_is_royal!($state.statics.pieces[                           /* the piece that lands is the one    */
+                    if is_promotion { promoted_piece } else { piece_index }     /* the list must name, and promoting  */
+                ]) {                                                            /* into royalty makes the two differ  */
                     $state.royal_list[piece_color as usize]
                         .push(end_square as Square);
                 }
@@ -2150,6 +2176,11 @@ macro_rules! make_move {
                     $state.royal_list[piece_color as usize].retain(
                         |&sq| sq as u32 != start_square
                     );
+                }
+
+                if p_is_royal!($state.statics.pieces[                           /* the piece that lands is the one    */
+                    if is_promotion { promoted_piece } else { piece_index }     /* the list must name, and promoting  */
+                ]) {                                                            /* into royalty makes the two differ  */
                     $state.royal_list[piece_color as usize]
                         .push(end_square as Square);
                 }
@@ -2591,7 +2622,7 @@ macro_rules! make_move {
                     $state.pieces_board[piece_color as usize], end_square
                 );
 
-                if p_is_royal!($state.statics.pieces[piece_index]) {
+                if p_is_royal!($state.statics.pieces[piece_index]) {            /* castling never promotes            */
                     $state.royal_list[piece_color as usize].retain(
                         |&sq| sq as u32 != start_square
                     );
@@ -2875,9 +2906,14 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
-            if p_is_royal!($state.statics.pieces[piece_index]) {
+            if p_is_royal!($state.statics.pieces[                               /* undo drops the piece that landed   */
+                if is_promotion { promoted_piece } else { piece_index }         /* and restores the one that left, so */
+            ]) {                                                                /* each end reads its own piece       */
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);
+            }
+
+            if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .push(start_square as Square);
             }
@@ -2981,9 +3017,14 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
-            if p_is_royal!($state.statics.pieces[piece_index]) {
+            if p_is_royal!($state.statics.pieces[                               /* undo drops the piece that landed   */
+                if is_promotion { promoted_piece } else { piece_index }         /* and restores the one that left, so */
+            ]) {                                                                /* each end reads its own piece       */
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);
+            }
+
+            if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .push(start_square as Square);
             }
@@ -3192,9 +3233,14 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
-            if p_is_royal!($state.statics.pieces[piece_index]) {
+            if p_is_royal!($state.statics.pieces[                               /* undo drops the piece that landed   */
+                if is_promotion { promoted_piece } else { piece_index }         /* and restores the one that left, so */
+            ]) {                                                                /* each end reads its own piece       */
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);
+            }
+
+            if p_is_royal!($state.statics.pieces[piece_index]) {
                 $state.royal_list[piece_color as usize]
                     .push(start_square as Square);
             }
@@ -3455,7 +3501,7 @@ macro_rules! undo_move {
             clear!($state.pieces_board[piece_color as usize], end_square);
             set!($state.pieces_board[piece_color as usize], start_square);
 
-            if p_is_royal!($state.statics.pieces[piece_index]) {
+            if p_is_royal!($state.statics.pieces[piece_index]) {                /* castling never promotes            */
                 $state.royal_list[piece_color as usize]
                     .retain(|&sq| sq as u32 != end_square);
                 $state.royal_list[piece_color as usize]

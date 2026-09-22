@@ -521,7 +521,7 @@ fn run_search_command(
 /// - depth     : how deep each move is searched
 /// - time      : seconds a move; zero means depth is the only limit
 /// - threads   : how many threads to search with, one by default
-/// - max-plies : where to stop and leave it unfinished, 512 by default
+/// - max-plies : where to stop and leave it unfinished, 2048 by default
 ///
 /// The ply cap is nobody's rule. It is there because two copies of one
 /// engine will shuffle forever in a variant that counts nothing, and the
@@ -546,7 +546,7 @@ fn run_play_command(
     let max_plies = parse_number(
         &position.values,
         3,
-        512usize,
+        2048usize,
         "max plies",
     )?;
     if depth == 0 {

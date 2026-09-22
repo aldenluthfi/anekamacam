@@ -16,9 +16,15 @@
 /// PieceIndex
 ///
 /// Index of a piece type in the variant's piece list, the engine's sole
-/// runtime identity for a piece. The value 255 (`NO_PIECE`) is reserved
+/// runtime identity for a piece. The top value (`NO_PIECE`) is reserved
 /// for "no piece" in mailbox boards and mapping tables.
-pub type PieceIndex = u8;
+///
+/// The type is wider than the ten bits a packed word spends on an index,
+/// there being no ten-bit integer to name. Nothing needs the two to agree:
+/// an absence is only ever held in a mailbox or a mapping table, both plain
+/// vectors, so `NO_PIECE` never has to survive a trip through a bitfield.
+/// `MAX_PIECES` bounds what a config may declare, not what the type holds.
+pub type PieceIndex = u16;
 
 /*----------------------------------------------------------------------------*\
                               UTILITY PIECE MACROS
@@ -83,7 +89,7 @@ macro_rules! p_value {
 ///   - piece: &Piece -> piece record read
 ///
 ///   Return:
-///   PieceIndex      -> piece type index (bits 0-7)
+///   PieceIndex      -> piece type index (bits 0-9)
 ///
 /// p_color!
 ///
@@ -91,7 +97,7 @@ macro_rules! p_value {
 ///   - piece: &Piece -> piece record read
 ///
 ///   Return:
-///   u8              -> owning side, 0 white / 1 black (bit 8)
+///   u8              -> owning side, 0 white / 1 black (bit 10)
 ///
 /// p_can_promote!
 ///
@@ -99,7 +105,7 @@ macro_rules! p_value {
 ///   - piece: &Piece -> piece record read
 ///
 ///   Return:
-///   bool            -> whether the piece can promote (bit 9)
+///   bool            -> whether the piece can promote (bit 11)
 ///
 /// p_is_royal!
 ///
@@ -107,7 +113,7 @@ macro_rules! p_value {
 ///   - piece: &Piece -> piece record read
 ///
 ///   Return:
-///   bool            -> whether the piece must be mated (bit 10)
+///   bool            -> whether the piece must be mated (bit 12)
 ///
 /// p_rank!
 ///
@@ -115,7 +121,7 @@ macro_rules! p_value {
 ///   - piece: &Piece -> piece record read
 ///
 ///   Return:
-///   u8              -> variant-defined capture rank (bits 11-18)
+///   u8              -> variant-defined capture rank (bits 13-20)
 ///
 /// Dynamic accessors (encoded_dynamic):
 ///
@@ -161,35 +167,35 @@ macro_rules! p_value {
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
-        ($piece.encoded_static & 0xFF) as PieceIndex
+        ($piece.encoded_static & 0x3FF) as PieceIndex
     };
 }
 
 #[macro_export]
 macro_rules! p_color {
     ($piece:expr) => {
-        (($piece.encoded_static >> 8) & 1) as u8
+        (($piece.encoded_static >> 10) & 1) as u8
     };
 }
 
 #[macro_export]
 macro_rules! p_can_promote {
     ($piece:expr) => {
-        ($piece.encoded_static & (1 << 9)) != 0
+        ($piece.encoded_static & (1 << 11)) != 0
     };
 }
 
 #[macro_export]
 macro_rules! p_is_royal {
     ($piece:expr) => {
-        ($piece.encoded_static & (1 << 10)) != 0
+        ($piece.encoded_static & (1 << 12)) != 0
     };
 }
 
 #[macro_export]
 macro_rules! p_rank {
     ($piece:expr) => {
-        (($piece.encoded_static >> 11) & 0xFF) as u8
+        (($piece.encoded_static >> 13) & 0xFF) as u8
     };
 }
 
@@ -232,24 +238,25 @@ macro_rules! p_evalue {
 ///
 /// One configured piece type and its derived evaluation attributes.
 ///
-/// Piece indices range from 0 through 254; 255 is reserved as `NO_PIECE`.
+/// Piece indices range from 0 through 1022; a variant may declare no more
+/// than `MAX_PIECES` entries, which the piece list is asserted against.
 ///
 /// Static data (`encoded_static`) is encoded in 32 bits:
 ///
 /// ```text
-///   0               8 9 10                19                       31
-///                         11
-///   ┌───────────────┬─┬─┬─┬───────────────┬─────────────────────────┐
-///   │     index     │c│p│r│     rank      │         unused          │
-///   └───────────────┴─┴─┴─┴───────────────┴─────────────────────────┘
+///   0                  10 11 13              21                    31
+///                         12
+///   ┌──────────────────┬─┬─┬─┬───────────────┬────────────────────────┐
+///   │       index      │c│p│r│     rank      │         unused         │
+///   └──────────────────┴─┴─┴─┴───────────────┴────────────────────────┘
 /// ```
 ///
-/// - Bits 0..7     : piece index
-/// - Bit 8         : color, 0 = White and 1 = Black
-/// - Bit 9         : promotion capability
-/// - Bit 10        : royal status
-/// - Bits 11..18   : variant-defined rank
-/// - Bits 19..31   : unused
+/// - Bits 0..9     : piece index
+/// - Bit 10        : color, 0 = White and 1 = Black
+/// - Bit 11        : promotion capability
+/// - Bit 12        : royal status
+/// - Bits 13..20   : variant-defined rank
+/// - Bits 21..31   : unused
 ///
 /// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
 ///
@@ -300,29 +307,29 @@ impl Piece {
     ///
     /// Notes:
     /// There is no promotion parameter. A piece can promote exactly when it
-    /// was given somewhere to promote to, so bit 9 is set from `promotions`
+    /// was given somewhere to promote to, so bit 11 is set from `promotions`
     /// being non-empty and cannot disagree with the list it stands for.
     pub fn new(
         name: String,
         char: char,
         promotions: Vec<PieceIndex>,
-        index: u8,
+        index: PieceIndex,
         color: u8,
         is_royal: bool,
         rank: u8,
     ) -> Self {
         let mut encoded_static = index as u32;
-        encoded_static |= (color as u32) << 8;
+        encoded_static |= (color as u32) << 10;
 
         if !promotions.is_empty() {
-            encoded_static |= 1 << 9;
+            encoded_static |= 1 << 11;
         }
 
         if is_royal {
-            encoded_static |= 1 << 10;
+            encoded_static |= 1 << 12;
         }
 
-        encoded_static |= (rank as u32) << 11;
+        encoded_static |= (rank as u32) << 13;
 
         let encoded_dynamic = 0u32;
 
