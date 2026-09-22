@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # A copied binary that merely differs from the previous copy proves nothing,
 # so every build writes a sidecar record naming the commit it was built from,
-# the configs and dicts that were embedded into it, and the hash of the file
+# the config and dict files embedded into it, and the hash of the file
 # itself. `verify` rebuilds that commit and compares the result.
 #
 # Two builds of one commit are not byte-identical. Mach-O derives LC_UUID from
@@ -121,7 +121,7 @@ record_one() {
 
 	subject=$(git log -1 --format=%s "$commit")
 	dirty=no
-	if [[ -n "$(git status --porcelain -- configs res/dicts)" ]]; then
+	if [[ -n "$(git status --porcelain -- res/config res/dicts)" ]]; then
 		dirty=yes
 	fi
 
@@ -140,7 +140,7 @@ record_one() {
 		echo "branch      $(git rev-parse --abbrev-ref HEAD)"
 		echo "target      ${CARGO_TARGET_DIR:-target}"
 		echo "features    ${CARGO_FEATURES:-default}"
-		echo "configs_md5 $(hash_tree configs)"
+		echo "configs_md5 $(hash_tree res/config)"
 		echo "dicts_md5   $(hash_tree res/dicts)"
 		echo "resources   $dirty"
 		echo "uci_id      $(
@@ -193,7 +193,7 @@ verify_one() {
 		return 1
 	fi
 
-	if [[ "$(hash_tree configs)" != "$(field "$record" configs_md5)" ]] ||
+	if [[ "$(hash_tree res/config)" != "$(field "$record" configs_md5)" ]] ||
 		[[ "$(hash_tree res/dicts)" != "$(field "$record" dicts_md5)" ]]; then
 		echo "FAIL $binary: embedded resources changed since the build"
 		return 1
@@ -203,9 +203,9 @@ verify_one() {
 	worktree="$build_root/worktree"
 
 	git worktree add --detach "$worktree" "$commit" >/dev/null
-	mkdir -p "$worktree/res/dicts" "$worktree/configs"
+	mkdir -p "$worktree/res/dicts" "$worktree/res/config"
 	cp res/dicts/* "$worktree/res/dicts/"
-	cp configs/* "$worktree/configs/"
+	cp res/config/* "$worktree/res/config/"
 
 	(
 		cd "$worktree"

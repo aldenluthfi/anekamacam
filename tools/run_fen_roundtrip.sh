@@ -80,7 +80,7 @@ canonical() {
         "$tail"
 }
 
-for config in "$ROOT"/configs/*.conf; do
+for config in "$ROOT"/res/config/*.conf; do
     variant=$(basename "$config" .conf)
     [ "$variant" = "example" ] && continue
 

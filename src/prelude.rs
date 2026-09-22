@@ -744,7 +744,7 @@ pub const PAWN_TABLE_ENTRIES: usize = 1 << 13;
 pub const OPENING_RANDOM_PLIES: usize = 8;
 
 pub static EMBEDDED_CONFIGS: Dir<'static> =
-    include_dir!("$CARGO_MANIFEST_DIR/../configs");
+    include_dir!("$CARGO_MANIFEST_DIR/../res/config");
 pub static EMBEDDED_DICTS: Dir<'static> =
     include_dir!("$CARGO_MANIFEST_DIR/../res/dicts");
 pub static EMBEDDED_PERFT: Dir<'static> =

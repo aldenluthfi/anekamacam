@@ -56,7 +56,7 @@ Drops and stand-offs are matched with CPMN; per-piece drop rules use CDN.
 
 [ VARIANT CONFIGURATION ]
 
-A variant lives in a single configs/&lt;name&gt;.conf file. It declares, in
+A variant lives in a single res/config/&lt;name&gt;.conf file. It declares, in
 labelled sections, the title, the starting CFEN, the enabled rules, and the
 pieces with their CKN move patterns. Supported rule flags:
 
@@ -97,14 +97,14 @@ Each covers a family of variants rather than a single named mode:
 
 Each rule, when enabled, requires its matching section (e.g. castling geometry,
 promotion zones, drop rules) and a correctly-formatted CFEN — the parser
-validates this and errors out otherwise. See <a href="configs/example.conf">configs/example.conf</a>
+validates this and errors out otherwise. See <a href="res/config/example.conf">res/config/example.conf</a>
 for a fully commented reference of every section. Protocol translation is
 configured per variant in res/dicts/&lt;name&gt;.dict; evaluation parameters
 live in res/param/.
 
 [ SUPPORTED VARIANTS ]
 
-Variants bundled in configs/ (the names double as their config files):
+Variants bundled in res/config/ (the names double as their config files):
 
 ┌───────────────┬───────────────────────────────────┐
 │ Config        │ Variant                           │
@@ -196,8 +196,8 @@ runs standalone.
         ├── datagen.rs           # self-play dataset generation
         ├── tuning.rs            # Texel parameter tuning
         └── sprt.rs              # engine match runner
-    configs/                     # per-variant .conf files
     res/
+    ├── config/                  # per-variant .conf files
     ├── dicts/                   # protocol translation dictionaries
     ├── param/                   # evaluation parameter sets
     └── perft/                   # perft test suites

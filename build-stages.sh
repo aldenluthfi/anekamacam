@@ -11,7 +11,7 @@ set -euo pipefail
 # not. Any letter can be re-parented with PHASE_<LETTER>_PARENT, which is how
 # a rejected phase is skipped without renaming everything after it.
 #
-# Current configs/ and res/dicts/ are copied into every build worktree, so all
+# Current res/config/ and res/dicts/ are copied into every build worktree, so all
 # ladder binaries expose identical protocol variants no matter which commit
 # they are built from. That makes the working tree part of what a binary is,
 # so each build writes a bin/<name>.provenance record naming its commit and
@@ -179,9 +179,9 @@ for name in "${NAMES[@]}"; do
 	git worktree remove --force "$WT" 2>/dev/null || true
 	git worktree add --detach "$WT" "$build_ref" >/dev/null
 
-	mkdir -p "$WT/res/dicts" "$WT/configs"
+	mkdir -p "$WT/res/dicts" "$WT/res/config"
 	cp res/dicts/* "$WT/res/dicts/"
-	cp configs/* "$WT/configs/"
+	cp res/config/* "$WT/res/config/"
 
 	(cd "$WT" && cargo build --release)
 	cp "$CARGO_TARGET_DIR/release/anekamacam" "bin/$name"
