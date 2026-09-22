@@ -189,7 +189,7 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
         let file_label = if files < 26 {
             ((b'a' + col) as char).to_string()
         } else {
-            format!("{:02}", col)
+            format!("{:>2}", col)
         };
         if col < files - 1 {
             result.push_str(&format!("{:3} ", file_label));
