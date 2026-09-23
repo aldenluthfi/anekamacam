@@ -61,7 +61,7 @@ pub use crate::game::representations::termination::{
     game_outcome, position_terminal, repetition_outcome, side_is_bare,
 };
 pub use crate::game::moves::move_parse::{
-    generate_move_set, generate_move_vectors,
+    generate_move_set, generate_move_vectors, strip_move_conditions,
 };
 
 pub use crate::game::moves::pattern_parse::{

@@ -2,7 +2,7 @@
 
 ## Status
 
-Opened 2026-09-23. Plan approved. Stages 1 to 5 done.
+Opened 2026-09-23. Plan approved. Stages 1 to 6 done.
 
 Baseline binary: `bin/base-cpmn`, built from `22d4aa6`. Gate signature:
 `debug-headless bench <v> 8 --limit 16` total nodes and
@@ -154,6 +154,24 @@ One commit each. Record outcomes here as they land.
    from a primary source first (king copying, promoted-piece copying,
    drops). `touch src/prelude.rs`. Verify with perft divide on hand-built
    positions (FSF has no annan) and a selfplay smoke run.
+   Done. Rules from lishogi's shogiops (`src/position/rules/annanshogi.ts`):
+   every piece, the king too, moves as the friendly piece directly behind
+   it and loses its own moves. Promotion is never forced, there are no
+   forbidden squares, and doubled pawns can stand but nifu and uchifuzume
+   stay for drops. Start `lnsgkgsnl/1r5b1/p1ppppp1p/1p5p1/9/1P5P1/
+   P1PPPPP1P/1B5R1/LNSGKGSNL`. Move keys are one or two letters, so the
+   gold-like pieces have one line each.
+   New blast radius item: `game_io.rs` scans the raw move text for the `p`
+   and `t` modifiers, and a black pawn `p` in a condition tripped it.
+   `strip_move_conditions` removes conditions before that test.
+   Oracle: npm `shogiops` as a perft reference, with a strict legality
+   filter added. Its pin shortcut accepts a move that uncovers an attack by
+   changing the piece behind an enemy (after `4b3d` the 3c bishop loses its
+   silver and checks). Startpos perft 1..4 = 28, 784, 22726, 658600, all
+   equal. 694 random positions at depth 2: equal, except 4 where the engine
+   counts a pawn-drop mate. That is the engine convention:
+   `illegal_mating_drop!` adjudicates it, perft does not prune it. A
+   200-ply self-play game at depth 6 ran without error.
 7. Hiashatar: `hiashatar.conf` and `.dict` (10x10). Confirm the rules first
    (guard movement, whether a piece that starts adjacent can leave, king
    exemption). Split colour lines for each slider: one branch per direction

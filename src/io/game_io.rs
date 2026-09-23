@@ -1193,16 +1193,23 @@ pub fn parse_config_file(path: &str) -> State {
         result.static_mut().piece_swap_map[i as usize] = j;
     }
 
+    let move_notations = pieces_moves
+        .iter()
+        .map(|mv| strip_move_conditions(mv))
+        .collect::<Vec<String>>();
+
     if en_passant {
         assert!(
-            pieces_moves.iter().any(|mv| mv.contains('p') || mv.contains('t')),
+            move_notations
+                .iter()
+                .any(|mv| mv.contains('p') || mv.contains('t')),
             "No en passant movement found in piece definitions"
         );
     }
 
     if !en_passant {
         assert!(
-            pieces_moves
+            move_notations
                 .iter()
                 .all(|mv| !mv.contains('p') || !mv.contains('t')),
             "En passant movement found in piece definitions"

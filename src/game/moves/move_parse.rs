@@ -3411,6 +3411,26 @@ fn split_move_condition(branch: &str) -> (&str, Option<&str>) {
     (branch, None)
 }
 
+/// strip_move_conditions
+///
+/// Removes the CPMN condition of each top-level branch. A condition has
+/// piece letters, and a test that reads modifier letters must not see
+/// them. For example, a black pawn `p` is not the en passant modifier.
+///
+/// Params:
+/// - expr: &str -> raw move expression from the config
+///
+/// Return:
+/// String       -> the same branches, move notation only
+///
+pub fn strip_move_conditions(expr: &str) -> String {
+    split_top_level_branches(expr)
+        .into_iter()
+        .map(|branch| split_move_condition(branch).0)
+        .collect::<Vec<&str>>()
+        .join("|")
+}
+
 /// generate_move_set
 ///
 /// Compiles the full move expression of a piece into packed move vectors
