@@ -349,7 +349,9 @@ macro_rules! score_move {
 
                 let continuation: i32 = $cont_bases.iter()
                     .filter(|&&base| base != usize::MAX)
-                    .map(|&base| $info.cont_hist[base + index] as i32)
+                    .map(|&base| {
+                        $info.cont_hist[cont_cell!($info, base + index)] as i32
+                    })
                     .sum();
 
                 let history =

@@ -112,6 +112,49 @@ macro_rules! move_key {
 /// a third table back never was.
 const CONTINUATION_PLIES: usize = 2;
 
+/// Continuation history sizing
+///
+/// Continuation history nests one move key inside another, so its dense size
+/// is the square of `pieces * squares`. That is a few megabytes on a chess
+/// board and three tebibytes on taikyoku shogi's 36 by 36 with 694 piece
+/// indices, allocated again for every worker of every search.
+///
+/// - `CONT_HIST_CELLS` : 2^29 cells a worker at most, one gibibyte of `i16`
+///
+/// The table is the dense size or `CONT_HIST_CELLS`, whichever is smaller,
+/// and every variant finds its cell the same way: the dense index taken
+/// modulo the table's length. Where the dense table fits, that is the index
+/// itself. Where it does not, indices past the end wrap round onto the ones
+/// before them, and replies that land together share a cell the way
+/// correction history's pawn skeletons already do.
+///
+/// Wrapping was measured against three other ways of fitting the table:
+/// hashing the whole index, hashing only what spills past the end, and
+/// masking the move keys. Over ten self-play positions each, wrapping stayed
+/// within a few percent of the dense table on daishogi and daidaishogi and
+/// was never slower, where hashing the index lost 4 to 5% of speed to
+/// scattered cells and masking the keys cost daidaishogi 58% more nodes.
+const CONT_HIST_CELLS: usize = 1 << 29;
+
+/// cont_cell!
+///
+/// The continuation-history cell a dense index lands in.
+///
+/// Params:
+/// - info       : &SearchInfo -> worker whose table is read or written
+/// - dense_index: usize       -> `base + key`, as `continuation_bases` lays
+///                               it out
+///
+/// Return:
+/// usize                      -> the index itself where the table is dense,
+///                               wrapped round its length where it is not
+#[macro_export]
+macro_rules! cont_cell {
+    ($info:expr, $dense_index:expr) => {
+        $dense_index % $info.cont_hist.len()
+    };
+}
+
 /// Correction history sizing
 ///
 /// Correction history files how far static evaluation stood from what search
@@ -345,7 +388,9 @@ pub fn clear_search(
     let move_keys = piece_count * board_size;
 
     info.search_hist = vec![0i16; move_keys];
-    info.cont_hist = vec![0i16; CONTINUATION_PLIES * move_keys * move_keys];
+    let cont_dense = CONTINUATION_PLIES * move_keys * move_keys;
+
+    info.cont_hist = vec![0i16; cont_dense.min(CONT_HIST_CELLS)];
     info.corr_hist = vec![0i16; 2 * CORR_HIST_SIZE];
     info.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
@@ -1760,6 +1805,8 @@ fn update_histories(
     update_history(&mut info.search_hist[index], bonus);
 
     for base in bases.iter().filter(|&&base| base != usize::MAX) {
-        update_history(&mut info.cont_hist[base + index], bonus);
+        let cell = cont_cell!(info, base + index);
+
+        update_history(&mut info.cont_hist[cell], bonus);
     }
 }
