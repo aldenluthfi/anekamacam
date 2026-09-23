@@ -1573,7 +1573,8 @@ pub fn derive_search_parameters(state: &mut State) {
 ///
 /// Every bit is granted unless something in the rules takes it away:
 ///
-/// - exchange simulation : a royal capture, a multi capture, misere,
+/// - exchange simulation : a royal capture, a vector that destroys more
+///                         than one of the mover's own, misere,
 ///                         extinction, or promotion into what was taken
 /// - pruning on it       : recycled captures, a check count, counting,
 ///                         or a goal
@@ -1581,22 +1582,30 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - null pruning        : misere, a goal, a check count, counting, a
 ///                         pass the rules already offer, stand-offs, a
 ///                         setup phase, or a piece with no quiet move
-/// - recapture ordering  : a multi capture, recycled captures, a check
-///                         count, or a goal
+/// - recapture ordering  : recycled captures, a check count, or a goal
 /// - quiet pruning       : misere, a goal, or a check count
 /// - static movement     : a screened leg anywhere in the rules
 ///
 /// Two kinds of fact answer the questions. Movement facts come from the
 /// generated vectors: a leg that unloads what it destroyed needs a second
 /// piece standing where it stands, a leg that may take a royal is not trading
-/// material, a vector that destroys twice wins more than its victim, a vector
-/// that ends where it started having taken nothing is a pass the variant
-/// already offers — a lion returning home over a corpse is not one, which is
-/// why the destroy flag disqualifies the shape rather than the displacement
-/// alone — and a piece with no quiet vector cannot give up a tempo at all.
-/// Terminal facts come from the declared rules: counting pieces, holding a
-/// zone, or tallying checks all pay in a currency material does not convert
-/// to.
+/// material, a vector that destroys more than one of the mover's own pieces
+/// wins and loses on the same move, a vector that ends where it started
+/// having taken nothing is a pass the variant already offers — a lion
+/// returning home over a corpse is not one, which is why the destroy flag
+/// disqualifies the shape rather than the displacement alone — and a piece
+/// with no quiet vector cannot give up a tempo at all. Terminal facts come
+/// from the declared rules: counting pieces, holding a zone, or tallying
+/// checks all pay in a currency material does not convert to.
+///
+/// Recapture ordering used to fall to the same self-destroying vector, on
+/// the grounds that such a move wins more than the one victim the exchange
+/// prices. It no longer does. The quiescence break that bit gates reads a
+/// score band, not an exchange, and a capture's band is now the sum of what
+/// it takes less what it destroys of its own, so a sweep that burns its own
+/// army sorts below every quiet move exactly as it should. The exchange
+/// simulation keeps the veto, because what it models past the first ply is
+/// one recapture on one square.
 ///
 /// Nothing here reads a variant's name, and nothing asks whether a rule is
 /// familiar. A rule set written tomorrow is judged by the same questions.
@@ -1615,7 +1624,7 @@ pub fn derive_search_capabilities(state: &mut State) {
 
     let mut screened = false;
     let mut royal_capture = false;
-    let mut multi_capture = false;
+    let mut multi_destroy = false;
     let mut capture_only = false;
     let mut may_pass = false;
 
@@ -1642,7 +1651,7 @@ pub fn derive_search_capabilities(state: &mut State) {
                 let (files_crossed, ranks_crossed) = vector_offset!(vector);
                 let moves_quietly = vector_moves_quietly!(vector);
 
-                multi_capture |= destroyed > 1;
+                multi_destroy |= destroyed > 1;
                 may_pass |= moves_quietly && !destroys
                     && files_crossed == 0 && ranks_crossed == 0;                /* nothing moved and nothing taken    */
                 vectors += 1;
@@ -1671,7 +1680,7 @@ pub fn derive_search_capabilities(state: &mut State) {
 
     let mut capabilities = 0u16;
 
-    if !royal_capture && !multi_capture && !misere
+    if !royal_capture && !multi_destroy && !misere
     && !counts_pieces && !promote_to_captured!(state)
     {
         enc_see_valid!(capabilities);
@@ -1693,9 +1702,7 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_null_pruning!(capabilities);
     }
 
-    if !multi_capture && !recycles_captures
-    && !counts_checks && !holds_zone
-    {
+    if !recycles_captures && !counts_checks && !holds_zone {
         enc_recapture_order!(capabilities);
     }
 
