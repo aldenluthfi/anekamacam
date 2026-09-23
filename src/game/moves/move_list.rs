@@ -341,7 +341,8 @@ pub fn generate_relevant_castling(
 /// ```
 ///
 /// The function ignores occupancy, because move generation tests it. Thus
-/// the result is a static table entry. The vectors are sorted longest
+/// the result is a static table entry. [`clip_move_vector`] fits the CPMN
+/// condition of each vector to the square. The vectors are sorted longest
 /// first.
 ///
 /// Params:
@@ -396,7 +397,9 @@ pub fn generate_relevant_moves(
             }
         }
 
-        result.push(multi_leg_vector.clone());
+        result.extend(clip_move_vector(
+            multi_leg_vector, square_index, piece_color, state
+        ));
     }
 
     result.sort_by_key(|v| -(v.legs.len() as isize));
@@ -479,7 +482,9 @@ pub fn generate_relevant_captures(
         }
 
         if has_capture_leg {
-            result.push(multi_leg_vector.clone());
+            result.extend(clip_move_vector(
+                multi_leg_vector, square_index, piece_color, state
+            ));
         }
     }
 

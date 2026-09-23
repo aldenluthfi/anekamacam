@@ -1269,7 +1269,7 @@ impl State {
     ///   - expr_set: &Vec<String> -> one move expression for each piece
     ///
     ///   Return:
-    ///   Vec<MoveSet>             -> move sets from `generate_move_vectors`
+    ///   Vec<MoveSet>             -> move sets from `generate_move_set`
     ///
     /// generate_piece_drops
     ///
@@ -1289,18 +1289,7 @@ impl State {
     ///
     #[hotpath::measure]
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
-        expr_set.par_iter().map(|expr| {
-            generate_move_vectors(expr, self)
-                .iter()
-                .map(|multi_leg_vector: &Vec<LegVector>| MoveVector {
-                    legs: multi_leg_vector
-                        .iter()
-                        .map(|leg_vector| leg!(leg_vector))
-                        .collect(),
-                    pattern: None,
-                })
-                .collect::<MoveSet>()
-        }).collect()
+        expr_set.par_iter().map(|expr| generate_move_set(expr, self)).collect()
     }
 
     fn generate_piece_drops(&self, expr_set: &[String]) -> Vec<DropSet> {

@@ -15,8 +15,8 @@ use crate::*;
 /// generate_relevant_drops
 ///
 /// Puts the compiled drop templates of a piece on one target square. The
-/// function writes the square into each drop word. Then it tests each
-/// pattern offset, mirrored for the colour of the piece.
+/// function writes the square into each drop word. Then [`clip_pattern`]
+/// tests each pattern offset, mirrored for the colour of the piece.
 ///
 /// - allower off the board : the drop is never legal, remove the template
 /// - stopper off the board : the stopper never matches, remove the stopper
@@ -59,7 +59,7 @@ pub fn generate_relevant_drops(
     piece_setup_drops: &[DropSet],
 ) -> DropSet {
     let piece_index = p_index!(piece) as usize;
-    let piece_color = p_color!(piece) as usize;
+    let piece_color = p_color!(piece);
     let drops = &piece_setup_drops[piece_index];
 
     if get!(state.statics.forbidden_zones[piece_index], square_index) {
@@ -70,47 +70,10 @@ pub fn generate_relevant_drops(
         .iter()
         .filter_map(|drop| {
             let new_drop_move = drop.0 | (square_index << 8);
-            let mut new_drop_stoppers = Vec::new();
-            let mut new_drop_allowers = Vec::new();
+            let pattern =
+                clip_pattern(&drop.1, square_index, piece_color, state)?;
 
-            let file = square_index as i32 % state.statics.files as i32;
-            let rank = square_index as i32 / state.statics.files as i32;
-
-            for allower in drop.1.0.iter() {
-                let x = x!(allower.0) * (-2 * piece_color as i8 + 1);
-                let y = y!(allower.0) * (-2 * piece_color as i8 + 1);
-
-                let check_x = file + x as i32;
-                let check_y = rank + y as i32;
-
-                if check_x < 0
-                    || check_x >= state.statics.files as i32
-                    || check_y < 0
-                    || check_y >= state.statics.ranks as i32
-                {
-                    return None;
-                }
-
-                new_drop_allowers.push(allower.clone());
-            }
-
-            for stopper in drop.1.1.iter() {
-                let x = x!(stopper.0) * (-2 * piece_color as i8 + 1);
-                let y = y!(stopper.0) * (-2 * piece_color as i8 + 1);
-
-                let check_x = file + x as i32;
-                let check_y = rank + y as i32;
-
-                if check_x >= 0
-                    && check_x < state.statics.files as i32
-                    && check_y >= 0
-                    && check_y < state.statics.ranks as i32
-                {
-                    new_drop_stoppers.push(stopper.clone());
-                }
-            }
-
-            Some((new_drop_move, (new_drop_allowers, new_drop_stoppers)))
+            Some((new_drop_move, pattern))
         })
         .collect()
 }

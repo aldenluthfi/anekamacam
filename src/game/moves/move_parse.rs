@@ -26,6 +26,9 @@
 //!  atomic / chained / compound / leg conversion into vectors
 //! ```
 //!
+//! A top-level branch can end with a CPMN condition. `generate_move_set`
+//! removes it before the pipeline and attaches it to the vectors.
+//!
 //! Created: 18/02/2024
 //! Author : Alden Luthfi
 
@@ -3322,4 +3325,150 @@ pub fn generate_move_vectors(
 
     remove_duplicates_in_place(&mut result);
     result
+}
+
+/*----------------------------------------------------------------------------*\
+                                MOVE CONDITIONS
+\*----------------------------------------------------------------------------*/
+
+/// split_top_level_branches
+///
+/// Splits a move expression at each `|` outside of all brackets. A
+/// bracketed `|` stays in its branch, because it is part of a group:
+///
+/// ```text
+/// mnW|(nR|nB)@@sW~Q@   ->   mnW   (nR|nB)@@sW~Q@
+/// ```
+///
+/// Params:
+/// - expr: &str -> raw move expression from the config
+///
+/// Return:
+/// Vec<&str>    -> the top-level branches, in order
+///
+fn split_top_level_branches(expr: &str) -> Vec<&str> {
+    let mut branches = Vec::new();
+    let mut depth = 0;
+    let mut branch_start = 0;
+
+    for (index, character) in expr.char_indices() {
+        match character {
+            '(' | '<' => depth += 1,
+            ')' | '>' => depth -= 1,
+            '|' if depth == 0 => {
+                branches.push(expr[branch_start..index].trim());
+                branch_start = index + 1;
+            }
+            _ => {}
+        }
+    }
+
+    branches.push(expr[branch_start..].trim());
+    branches
+}
+
+/// split_move_condition
+///
+/// Splits one top-level branch into its move notation and its CPMN
+/// condition. The exclusion slot of a leg is positional. Thus the `@` after
+/// the exclusion opens the condition:
+///
+/// ```text
+/// nR          no exclusion, no condition
+/// nR@nW       exclusion nW, no condition
+/// nR@@P       empty exclusion, condition P
+/// nR@nW@P     exclusion nW, condition P
+/// ```
+///
+/// The condition starts after the first `@` that follows another `@` with
+/// no `-` between them. An exclusion has no `-`, so an exclusion of an
+/// earlier leg does not open a condition.
+///
+/// Params:
+/// - branch: &str       -> one top-level branch
+///
+/// Return:
+/// (&str, Option<&str>) -> move notation and condition, if there is one
+///
+fn split_move_condition(branch: &str) -> (&str, Option<&str>) {
+    let mut in_exclusion = false;
+
+    for (index, character) in branch.char_indices() {
+        match character {
+            '-' => in_exclusion = false,
+            '@' if in_exclusion => {
+                let move_expr = &branch[..index];
+                let move_expr =
+                    move_expr.strip_suffix('@').unwrap_or(move_expr);
+
+                return (move_expr, Some(&branch[index + 1..]));
+            }
+            '@' => in_exclusion = true,
+            _ => {}
+        }
+    }
+
+    (branch, None)
+}
+
+/// generate_move_set
+///
+/// Compiles the full move expression of a piece into packed move vectors
+/// with their CPMN conditions. Each top-level branch goes through
+/// [`generate_move_vectors`], and its condition through [`parse_pattern`].
+///
+/// Two branches can give equal legs. They become one vector, and their
+/// conditions join as alternatives:
+///
+/// - two conditions        : the vector keeps the two patterns
+/// - one without condition : the vector has no condition
+///
+/// Thus move generation never makes one move two times.
+///
+/// Params:
+/// - expr : &str   -> raw move expression from the config
+/// - state: &State -> piece dictionary and board dimensions
+///
+/// Return:
+/// MoveSet         -> the vectors of the expression, first copy order
+///
+pub fn generate_move_set(expr: &str, state: &State) -> MoveSet {
+    let mut move_options: Vec<(Arc<[Leg]>, Option<PatternSet>)> = Vec::new();
+    let mut option_slots: HashMap<Arc<[Leg]>, usize> = HashMap::new();
+
+    for branch in split_top_level_branches(expr) {
+        let (move_expr, condition_expr) = split_move_condition(branch);
+        let condition =
+            condition_expr.map(|pattern| parse_pattern(pattern, state));
+
+        for multi_leg_vector in generate_move_vectors(move_expr, state) {
+            let legs = multi_leg_vector
+                .iter()
+                .map(|leg_vector| leg!(leg_vector))
+                .collect::<Arc<[Leg]>>();
+
+            let Some(&slot) = option_slots.get(&legs) else {
+                option_slots.insert(legs.clone(), move_options.len());
+                move_options.push(
+                    (legs, condition.clone().map(|pattern| vec![pattern]))
+                );
+                continue;
+            };
+
+            match (&mut move_options[slot].1, &condition) {
+                (Some(patterns), Some(pattern)) => {
+                    patterns.push(pattern.clone());
+                }
+                (patterns, _) => *patterns = None,
+            }
+        }
+    }
+
+    move_options
+        .into_iter()
+        .map(|(legs, patterns)| MoveVector {
+            legs,
+            pattern: patterns.map(Arc::new),
+        })
+        .collect()
 }

@@ -2,7 +2,7 @@
 
 ## Status
 
-Opened 2026-09-23. Plan approved. Stages 1 and 2 done.
+Opened 2026-09-23. Plan approved. Stages 1 to 3 done.
 
 Baseline binary: `bin/base-cpmn`, built from `22d4aa6`. Gate signature:
 `debug-headless bench <v> 8 --limit 16` total nodes and
@@ -119,6 +119,10 @@ One commit each. Record outcomes here as they land.
    optional allower half, per-branch pattern, OR-merge dedupe, shared clip,
    `example.conf` `= piece moves =` doc with an example. Gate: existing
    variants give identical vectors (same perft).
+   Done. `generate_move_set` (`move_parse.rs`) owns the split and the
+   merge. `clip_pattern` and `clip_move_vector` (`pattern_parse.rs`) serve
+   drops and moves. Gate identical on all 8 variants, and perft 2 equal to
+   the baseline on every variant.
 4. Match: `match_pattern_set!` in `process_multi_leg_vector!` and
    `validate_attack_vector!`. Drops use `match_pattern!`. Gate: node counts
    identical on existing variants. Hand-checked

@@ -2,9 +2,10 @@
 //!
 //! Defines the types for CPMN pattern matching.
 //!
-//! Drop rules and stand-off rules test the pieces on squares near one
-//! square. This file defines the piece sets for each offset and the
-//! allower and stopper lists. Precomputation compiles these lists once.
+//! Drop rules, stand-off rules and move conditions test the pieces on
+//! squares near one square. This file defines the piece sets for each
+//! offset and the allower and stopper lists. Precomputation compiles these
+//! lists once.
 //!
 //! Created: 24/02/2026
 //! Author : Alden Luthfi
@@ -124,7 +125,8 @@ pub type PatternUnit = (u16, PieceSet);
 /// - PatternAllower : offsets that must have a piece from their set
 /// - PatternStopper : offsets that must not have a piece from their set
 /// - Pattern        : an (allower, stopper) pair
-/// - PatternSet     : all patterns of one (piece, square) table slot
+/// - PatternSet     : all patterns of one (piece, square) table slot, or
+///                    the alternatives of one move condition
 ///
 pub type PatternAllower = Vec<PatternUnit>;
 pub type PatternStopper = Vec<PatternUnit>;

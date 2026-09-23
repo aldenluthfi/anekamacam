@@ -5,7 +5,7 @@
 //! A CPMN rule has two halves. The allowers must match and the stoppers
 //! must not match. Each half has offsets and piece sets. This file compiles
 //! the text into the lists that the matcher reads. It also expands the `*`
-//! wildcard into all piece letters.
+//! wildcard into all piece letters, and fits the lists to each square.
 //!
 //! Created: 24/02/2026
 //! Author : Alden Luthfi
@@ -18,16 +18,16 @@ lazy_static! {
     /// Regex that splits a CPMN expression at the `@` into the allower and
     /// stopper halves. A `~` splits each half into offsets and piece groups.
     ///
-    /// - group 1 -> allower offsets
-    /// - group 2 -> allower piece groups
+    /// - group 1 -> allower offsets, absent when there are no allowers
+    /// - group 2 -> allower piece groups, absent when there are no allowers
     /// - group 3 -> stopper offsets, absent when there are no stoppers
     /// - group 4 -> stopper piece groups, absent when there are no stoppers
     ///
     /// Notes:
-    /// The `@` is mandatory, also when the stopper half is empty.
+    /// The `@` is mandatory, also when one half is empty.
     ///
     static ref PATTERN_PATTERN: Regex =
-        Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap_or_else(|e| {
+        Regex::new("^(?:(.+)~(.+))?@(?:(.+)~(.+))?$").unwrap_or_else(|e| {
             panic!("Failed to compile PATTERN_PATTERN regex: {e}")
         });
 }
@@ -44,7 +44,8 @@ lazy_static! {
 /// Each half has a `-` separated list of offsets and a `-` separated list
 /// of piece groups. The lists pair by position. The offsets use the move
 /// notation. For example, `nW{2}~Kk@nW{..1}~*` means: a king is two steps
-/// up, and the square between is empty.
+/// up, and the square between is empty. Each half can be empty, thus
+/// `@sW~G` has only a stopper.
 ///
 /// - `*` : all pieces of the variant, expanded before the parse
 /// - `?` : an empty square
@@ -182,6 +183,96 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     log_4!("Encoded stoppers: {:?}", stopper_result);
 
     (allower_result, stopper_result)
+}
+
+/*----------------------------------------------------------------------------*\
+                             PATTERN BOARD CLIPPING
+\*----------------------------------------------------------------------------*/
+
+/// clip_pattern
+///
+/// Fits one pattern to one square for one colour. The offsets are mirrored
+/// for the colour:
+///
+/// - allower off the board : the pattern never matches, give `None`
+/// - stopper off the board : the stopper never matches, remove it
+///
+/// Thus [`match_pattern!`] needs no bounds check on the result.
+///
+/// Params:
+/// - pattern: &Pattern -> compiled pattern to fit
+/// - square : u32      -> square at the origin of the pattern
+/// - color  : u8       -> colour that sets the offset direction
+/// - state  : &State   -> board dimensions
+///
+/// Return:
+/// Option<Pattern>     -> the fitted pattern, `None` when it cannot match
+///
+pub fn clip_pattern(
+    pattern: &Pattern,
+    square: u32,
+    color: u8,
+    state: &State,
+) -> Option<Pattern> {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let direction = -2 * color as i32 + 1;
+
+    let on_board = |unit: &&PatternUnit| {
+        let file = square as i32 % files + x!(unit.0) as i32 * direction;
+        let rank = square as i32 / files + y!(unit.0) as i32 * direction;
+
+        file >= 0 && file < files && rank >= 0 && rank < ranks
+    };
+
+    let (allowers, stoppers) = pattern;
+
+    if !allowers.iter().all(|allower| on_board(&allower)) {
+        return None;
+    }
+
+    let stoppers_on_board = stoppers.iter().filter(on_board).cloned();
+
+    Some((allowers.clone(), stoppers_on_board.collect()))
+}
+
+/// clip_move_vector
+///
+/// Fits the condition of one move vector to its origin square with
+/// [`clip_pattern`]. A vector without a condition stays the same.
+///
+/// Params:
+/// - vector: &MoveVector -> move vector to fit
+/// - square: u32         -> origin square of the vector
+/// - color : u8          -> colour of the moving piece
+/// - state : &State      -> board dimensions
+///
+/// Return:
+/// Option<MoveVector>    -> the fitted vector, `None` when no pattern fits
+///
+pub fn clip_move_vector(
+    vector: &MoveVector,
+    square: u32,
+    color: u8,
+    state: &State,
+) -> Option<MoveVector> {
+    let Some(patterns) = &vector.pattern else {
+        return Some(vector.clone());
+    };
+
+    let clipped = patterns
+        .iter()
+        .filter_map(|pattern| clip_pattern(pattern, square, color, state))
+        .collect::<PatternSet>();
+
+    if clipped.is_empty() {
+        return None;
+    }
+
+    Some(MoveVector {
+        legs: vector.legs.clone(),
+        pattern: Some(Arc::new(clipped)),
+    })
 }
 
 /*----------------------------------------------------------------------------*\

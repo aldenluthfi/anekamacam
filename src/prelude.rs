@@ -60,10 +60,13 @@ pub use crate::game::representations::termination::{
     adjudicate_outcome, count_repetitions, counting_limit, counting_progress,
     game_outcome, position_terminal, repetition_outcome, side_is_bare,
 };
-pub use crate::game::moves::move_parse::generate_move_vectors;
+pub use crate::game::moves::move_parse::{
+    generate_move_set, generate_move_vectors,
+};
 
 pub use crate::game::moves::pattern_parse::{
-    generate_relevant_stand_offs, parse_pattern,
+    clip_move_vector, clip_pattern, generate_relevant_stand_offs,
+    parse_pattern,
 };
 pub use crate::game::position::{
     hash::{
