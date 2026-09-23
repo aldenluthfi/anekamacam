@@ -2,7 +2,7 @@
 
 ## Status
 
-Opened 2026-09-23. Plan approved. Stages 1 to 6 done.
+Opened 2026-09-23. Plan approved. Stages 1 to 7 done.
 
 Baseline binary: `bin/base-cpmn`, built from `22d4aa6`. Gate signature:
 `debug-headless bench <v> 8 --limit 16` total nodes and
@@ -177,6 +177,29 @@ One commit each. Record outcomes here as they land.
    exemption). Split colour lines for each slider: one branch per direction
    and length, stopper half over the 3-wide band next to path squares
    1..k-1 against the enemy guard letter. Verify as in stage 6.
+   Done. Rules from Wikipedia and Mats Winther's page (chessvariants.com
+   refused the fetch): 10x10, `rnbgkqgbnr` on both back ranks. The guard
+   `G` moves as a queen for one or two squares, and cannot capture or check
+   a king (`!k`). An enemy piece next to a guard moves one square only. An
+   enemy slider stops on the first square next to a guard. Knights leap
+   past it. Pawns step one to three squares on the first move, with en
+   passant, and promote to queen only. No castling.
+   Encoding: an exact slide of k squares is `nW-{k}` (probed: `-{k}` is a
+   blocked slide, `{k}` a leap). Its stopper band is `K` (next to the
+   origin) plus `nW{1..k-1}nK` (next to each passed square). For diagonals
+   it is `K` plus `neF{1..k-1}K`. Lines come from a throwaway generator:
+   queen 65 branches, rook and bishop 33, guard 9.
+   Assumption: the engine keeps one en passant square, so the triple step
+   marks the square behind its landing square and the double step marks
+   the passed square. The dict maps both.
+   Checks: startpos perft 1..4 = 34, 1156, 42150, 1535305 (1 and 2 are
+   34 and 34^2 by hand). By hand: a rook stops on the first zone square, a
+   rook in the zone moves one square, a queen diagonal stops at the zone,
+   a king can step next to a guard (no check), a pawn's two and three
+   steps are cut, and a knight in the zone keeps 8 moves. A 200-ply
+   self-play ran without error. There is no oracle (FSF has no hiashatar).
+   Derived guard value 618/689 against rook 604/820: the value reads only
+   the guard's own moves, not its zone.
 
 ## Follow-ups (not in scope)
 
