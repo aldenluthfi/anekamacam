@@ -599,56 +599,80 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 /// measured over the ground it can actually use. The offsets are closed
 /// under negation before the fill, which is why a pawn is not read as
 /// covering only the squares ahead of where it happens to start.
+///
+/// The one-step landings of every square are gathered once, before any fill
+/// runs, rather than re-summed from the legs at each square a fill arrives
+/// at. Every origin walks the same board, so summing the legs inside the
+/// fill did that work once per origin that reached the square instead of
+/// once per square. The fills are unchanged by it: a fill still starts from
+/// every origin separately, because a step is not always answered by a step
+/// back and the component a square belongs to is not the ground it can
+/// reach.
 fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
     let board_size = state.statics.board_size;
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
     let piece_index = p_index!(piece) as usize;
 
-    let reach_values: Vec<i32> = (0..board_size).into_par_iter().map(|square| {
-        let mut reached_squares: HashSet<usize> = HashSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(square);
-        reached_squares.insert(square);
+    let steps: Vec<Vec<usize>> = (0..board_size).map(|square| {
+        let start_file = square as i32 % files;
+        let start_rank = square as i32 / files;
 
-        while let Some(current) = queue.pop_front() {
-            let start_file = current as i32 % files;
-            let start_rank = current as i32 / files;
+        let relevant_moves = &state.statics.relevant_moves
+            [piece_index * board_size + square];
 
-            let relevant_moves = &state.statics.relevant_moves
-                [piece_index * board_size + current];
+        let mut landings: Vec<usize> = Vec::new();
 
-            for multi_leg_vector in relevant_moves {
-                let mut file_offset = 0;
-                let mut rank_offset = 0;
+        for multi_leg_vector in relevant_moves {
+            let mut file_offset = 0;
+            let mut rank_offset = 0;
 
-                for leg in multi_leg_vector {
-                    file_offset += x!(leg) as i32;
-                    rank_offset += y!(leg) as i32;
-                }
+            for leg in multi_leg_vector.iter() {
+                file_offset += x!(leg) as i32;
+                rank_offset += y!(leg) as i32;
+            }
 
-                for (offset_file, offset_rank) in
-                    [(file_offset, rank_offset), (-file_offset, -rank_offset)]
-                {
-                    let next_file = start_file + offset_file;
-                    let next_rank = start_rank + offset_rank;
+            for (offset_file, offset_rank) in
+                [(file_offset, rank_offset), (-file_offset, -rank_offset)]
+            {
+                let next_file = start_file + offset_file;
+                let next_rank = start_rank + offset_rank;
 
-                    if next_file >= 0 && next_file < files
-                    && next_rank >= 0 && next_rank < ranks {
-                        let next = (next_rank * files + next_file) as usize;
-
-                        if reached_squares.insert(next) {
-                            queue.push_back(next);
-                        }
-                    }
+                if next_file >= 0 && next_file < files
+                && next_rank >= 0 && next_rank < ranks {
+                    landings.push((next_rank * files + next_file) as usize);
                 }
             }
         }
 
-        if reached_squares.len() == 1 {
+        landings.sort_unstable();
+        landings.dedup();
+
+        landings
+    }).collect();
+
+    let reach_values: Vec<i32> = (0..board_size).into_par_iter().map(|square| {
+        let mut reached_squares = vec![false; board_size];
+        let mut queue = VecDeque::new();
+        let mut reached_count = 1;
+
+        queue.push_back(square);
+        reached_squares[square] = true;
+
+        while let Some(current) = queue.pop_front() {
+            for &next in &steps[current] {
+                if !reached_squares[next] {
+                    reached_squares[next] = true;
+                    reached_count += 1;
+                    queue.push_back(next);
+                }
+            }
+        }
+
+        if reached_count == 1 {
             0
         } else {
-            reached_squares.len() as i32
+            reached_count
         }
     }).collect();
 
