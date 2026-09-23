@@ -1,13 +1,10 @@
 //! util.rs
 //!
-//! Cross-cutting helpers that belong to no one subsystem.
+//! Shared helpers that do not belong to one subsystem.
 //!
-//! What collects here is what several parts of the engine need and none of
-//! them owns: reading a tool's arguments, loading a variant by name, rolling
-//! an output file aside before writing over it, rebuilding the caches a
-//! position carries, playing a game out to its end, counting a move tree,
-//! and checking that everything the engine updates as it goes still agrees
-//! with the board it is standing on.
+//! This file reads tool arguments, loads variants, rolls output files and
+//! rebuilds position caches. It also plays full games, counts move trees
+//! with perft, and tests that the incremental state agrees with the board.
 //!
 //! Created: 25/01/2025
 //! Author : Alden Luthfi
@@ -16,9 +13,9 @@ use crate::*;
 
 /// ARCHIVE_STAMP_FMT
 ///
-/// The timestamp a rolled-aside file is renamed with. Big-endian and
-/// zero-padded, so plain alphabetical order over the names is chronological
-/// order over the history, and nothing has to parse a date to sort it.
+/// The timestamp format of a rolled file. The largest unit is first and
+/// each field has zeros, so the alphabetical order is the time order.
+///
 const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";
 
 /*----------------------------------------------------------------------------*\
@@ -27,29 +24,22 @@ const ARCHIVE_STAMP_FMT: &str = "%Y-%m-%d_%H-%M-%S";
 
 /// parse_number
 ///
-/// Reads one optional positional argument, or hands back the default when
-/// the caller left it off. Every debug tool takes its arguments the same
-/// shape — a variant, then a short tail of numbers most of which have a
-/// sensible value when omitted — so the absent case is not an error here.
+/// Reads one optional positional argument. If it is absent, the function
+/// gives the default. For index 1 with the name `mb` and default 1:
 ///
-/// Reading index 1 of a tool's arguments, with a default of 1:
-///
-/// - `["standard", "64"]` : parses, and gives 64
-/// - `["standard"]`       : has nothing there, and gives the default
-/// - `["standard", "x"]`  : fails as `Invalid mb: x`
-///
-/// The name is carried in only so that message can say which argument was
-/// unreadable. A tool taking four numbers would otherwise report the same
-/// sentence four ways over.
+/// - `["standard", "64"]` : gives 64
+/// - `["standard"]`       : gives the default
+/// - `["standard", "x"]`  : error `Invalid mb: x`
 ///
 /// Params:
-/// - values : &[S]   -> the positional arguments as given
-/// - index  : usize  -> which of them to read
-/// - default: T      -> the value to use when it is absent
-/// - name   : &str   -> what to call it in the diagnostic
+/// - values : &[S]   -> the positional arguments
+/// - index  : usize  -> index of the argument to read
+/// - default: T      -> value when the argument is absent
+/// - name   : &str   -> argument name for the error message
 ///
 /// Return:
-/// Result<T, String> -> the parsed or default value, or the diagnostic
+/// Result<T, String> -> the parsed or default value, or the error
+///
 pub fn parse_number<T, S>(
     values: &[S],
     index: usize,
@@ -73,19 +63,16 @@ where
 
 /// load_variant
 ///
-/// Loads a variant by name through the same configuration path a real
-/// session uses, so a debug tool and a played game start from state that
-/// was built the same way.
-///
-/// Only embedded configurations are reachable. A name with no `.conf`
-/// shipped beside it is a name this build cannot play, and saying so beats
-/// starting the tool on whatever an empty board would have been.
+/// Loads a variant by name with the same configuration path as a session.
+/// Only embedded configurations are available. An unknown name is an
+/// error.
 ///
 /// Params:
-/// - variant: &str       -> embedded configuration stem
+/// - variant: &str       -> embedded configuration name
 ///
 /// Return:
-/// Result<State, String> -> loaded state or unknown-variant diagnostic
+/// Result<State, String> -> loaded state, or an unknown variant error
+///
 #[hotpath::measure]
 pub fn load_variant(variant: &str) -> Result<State, String> {
     let config_name = format!("{}.conf", variant);
@@ -98,19 +85,15 @@ pub fn load_variant(variant: &str) -> Result<State, String> {
 
 /// exe_tag
 ///
-/// The running binary's file name, taken from the path it was invoked
-/// through. Every search thread is named with it, so a panic that names a
-/// thread also names the build that raised it:
+/// Gives the file name of the running binary. Each search thread has it in
+/// its name, so a panic in an SPRT match tells which build failed:
 ///
-/// - `search:engine-a`     : that build's protocol thread
+/// - `search:engine-a`     : protocol thread of that build
 /// - `searcher:engine-a:3` : its fourth worker
 ///
-/// This is what makes an SPRT crash readable. Two builds play each other
-/// through one terminal, and threads called plainly `search` would leave a
-/// backtrace that fits either of them equally well.
-///
 /// Return:
-/// String -> the executable's file name, or "?" when the path is unreadable
+/// String -> file name of the binary, or "?" if the path is not readable
+///
 pub fn exe_tag() -> String {
     env::args()
         .next()
@@ -122,17 +105,13 @@ pub fn exe_tag() -> String {
 
 /// random_u128
 ///
-/// Draws a full-width value out of the one seeded generator the process
-/// shares, as two sixty-four-bit draws laid end to end, that being as wide
-/// as a single draw comes.
-///
-/// Every Zobrist table in the engine is filled from here, and that is the
-/// reason the draws all come from one generator rather than from several.
-/// With `ANEKAMACAM_SEED` pinned, two runs hash the same position to the
-/// same key, and a table hit in one is a table hit in the other.
+/// Gives a random 128-bit value from the shared seeded generator, as two
+/// 64-bit draws. All Zobrist tables use it. With `ANEKAMACAM_SEED` set,
+/// two runs give the same key to the same position.
 ///
 /// Return:
-/// u128 -> a uniformly random value from the shared seeded generator
+/// u128 -> uniform random value from the shared generator
+///
 pub fn random_u128() -> u128 {
     let mut rng = RNG.lock().unwrap_or_else(|e| {
         panic!("Failed to lock RNG mutex for random_u128: {e}")
@@ -146,35 +125,23 @@ pub fn random_u128() -> u128 {
 
 /// roll_latest
 ///
-/// Moves the current `latest` file aside so the next one can be written
-/// without overwriting or appending to it. Every rolling output in the
-/// engine — logs, exported parameters, datasets, match results — comes
-/// through here, which is why they all keep history the same shape: a
-/// directory holding `latest.param` beside one timestamped backup comes
-/// out of this holding two timestamped backups and no `latest.param`, and
-/// the caller then writes a new one.
+/// Renames the current `latest` file with a timestamp, so the caller can
+/// write a new one. All rolling outputs use it: logs, parameters, datasets
+/// and match results.
 ///
-/// The stamp comes off the file itself, its creation time or failing that
-/// its modification time, and only falls back to the clock when neither can
-/// be read. A backup is named for when its run happened, not for when some
-/// later run happened to push it aside.
-///
-/// Two files rolled inside one second would want the same name, so a `-2`,
-/// `-3`, and onward is appended until one is free. Losing a run's output
-/// to a second run finishing in the same second is not a trade worth
-/// making for a tidier name.
-///
-/// Nothing happens when there is no current file. A first run has nothing
-/// to roll, and should not have to know that it is the first.
-///
-/// The prefix is empty everywhere but SPRT, where the parent harvests both
-/// children's logs into one result directory and needs the two histories
-/// kept apart as `engine-a_` and `engine-b_`.
+/// - timestamp : file creation time, else modification time, else now
+/// - same name : add `-2`, `-3` and so on until the name is free
+/// - no file   : do nothing
 ///
 /// Params:
-/// - dir      : &str -> directory holding the current file and backups
-/// - prefix   : &str -> name prefix before `latest`/the timestamp
-/// - extension: &str -> file extension without the dot (e.g. "param")
+/// - dir      : &str -> directory with the current file and backups
+/// - prefix   : &str -> name prefix before `latest` or the timestamp
+/// - extension: &str -> file extension without the dot, e.g. "param"
+///
+/// Notes:
+/// The prefix is empty except in SPRT. There the logs of the two engines
+/// go to one directory, as `engine-a_` and `engine-b_`.
+///
 pub fn roll_latest(dir: &str, prefix: &str, extension: &str) {
     let current = format!("{}/{}latest.{}", dir, prefix, extension);
 
@@ -205,28 +172,20 @@ pub fn roll_latest(dir: &str, prefix: &str, extension: &str) {
 
 /// prune_backups
 ///
-/// Caps how far back one family of rolled files is kept. The newest `keep`
-/// of them survive and the rest are deleted; the live `latest` file is
-/// never a candidate, being the file about to be read rather than part of
-/// the history behind it. A `keep` of zero clears the history outright.
-///
-/// Newest is decided by sorting the names, which is chronological only
-/// because `ARCHIVE_STAMP_FMT` writes its largest unit first and pads every
-/// field. That is the whole reason the format looks the way it does.
-///
-/// Membership is by prefix and extension alone, so anything else parked in
-/// the directory under that shape of name is treated as history and will
-/// eventually be deleted with it.
-///
-/// A directory that cannot be read, or a file that cannot be removed, is
-/// passed over in silence. Pruning is housekeeping, and a run that could
-/// not tidy up is still a run that finished.
+/// Keeps only the `keep` newest rolled files of one family and deletes the
+/// others. It never deletes the `latest` file. A `keep` of zero deletes all
+/// backups. The name sort gives the age, because of `ARCHIVE_STAMP_FMT`.
 ///
 /// Params:
-/// - dir      : &str  -> directory whose backups are pruned
-/// - prefix   : &str  -> name prefix identifying the backup family
+/// - dir      : &str  -> directory with the backups
+/// - prefix   : &str  -> name prefix of the backup family
 /// - extension: &str  -> file extension without the dot
-/// - keep     : usize -> number of newest backups to retain
+/// - keep     : usize -> number of newest backups to keep
+///
+/// Notes:
+/// Each file with the prefix and extension is part of the family, also
+/// other files. The function ignores read and delete errors.
+///
 pub fn prune_backups(dir: &str, prefix: &str, extension: &str, keep: usize) {
     let latest = format!("{}latest.{}", prefix, extension);
     let suffix = format!(".{}", extension);
@@ -260,30 +219,21 @@ pub fn prune_backups(dir: &str, prefix: &str, extension: &str, keep: usize) {
 
 /// refresh_eval_state
 ///
-/// Rebuilds from the board everything the evaluation would rather not count
-/// twice. A move keeps these current a piece at a time; this is the version
-/// that recomputes them outright, for a position that arrived whole:
+/// Calculates the evaluation caches from the board. A move updates them
+/// one piece at a time. A FEN load or new parameters need a full rebuild:
 ///
-/// - material : an opening and an endgame total per colour
+/// - material : opening and endgame totals for each colour
 /// - bonus    : the piece-square pair, summed over occupied squares
-/// - roles    : the big, major, and minor piece counts
-/// - phase    : the phase score, and the phase it falls into
-///
-/// A position loaded from a FEN has no history to have been updated along,
-/// and a fresh set of tuned parameters changes what the same board is
-/// worth without moving a piece. Both land here.
-///
-/// Pieces in hand are counted as material in a variant that drops them, and
-/// during setup, where a piece waiting to be placed is a piece its side
-/// already owns. Elsewhere the pocket is empty and the loop is skipped
-/// rather than summed to zero.
-///
-/// The phase is taken last, and from the board rather than from the totals
-/// above it: it counts big non-royal material only, which is a different
-/// question from what the position is worth.
+/// - roles    : big, major and minor piece counts
+/// - phase    : the phase score and its phase
 ///
 /// Params:
-/// - state: &mut State -> position whose eval caches are rebuilt
+/// - state: &mut State -> position with the caches to rebuild
+///
+/// Notes:
+/// Pieces in hand count as material in drop variants and in the setup
+/// phase. The phase is last. It counts only big pieces that are not royal.
+///
 pub fn refresh_eval_state(state: &mut State) {
     state.opening_material = [0; 2];
     state.endgame_material = [0; 2];
@@ -335,14 +285,15 @@ pub fn refresh_eval_state(state: &mut State) {
 
 /// adjudicate_no_move
 ///
-/// Resolves a position with no legal moves through the variant's configured
-/// checkmate or stalemate outcome. Stores and returns the absolute result.
+/// Decides a position without legal moves with the checkmate or stalemate
+/// outcome of the variant. It stores and returns the game result.
 ///
 /// Params:
-/// - state: &mut State -> position whose side to move has no legal move
+/// - state: &mut State -> position where the side to move has no move
 ///
 /// Return:
-/// u8                -> absolute game result
+/// u8                  -> game result
+///
 pub fn adjudicate_no_move(state: &mut State) -> u8 {
     let in_check = is_in_check!(state.playing, state);
     let (outcome, inverted) = no_move_verdict!(state, in_check);
@@ -355,14 +306,15 @@ pub fn adjudicate_no_move(state: &mut State) -> u8 {
 
 /// game_result_score
 ///
-/// Maps an absolute game result to White's score for generated games and
-/// engine matches.
+/// Converts a game result into the score of White, for datagen and engine
+/// matches.
 ///
 /// Params:
-/// - result: u8 -> absolute game result
+/// - result: u8 -> game result
 ///
 /// Return:
-/// f64          -> 1.0 White win, 0.0 Black win, otherwise 0.5
+/// f64          -> 1.0 White win, 0.0 Black win, else 0.5
+///
 pub fn game_result_score(result: u8) -> f64 {
     match result {
         WHITE_WIN => 1.0,
@@ -373,25 +325,45 @@ pub fn game_result_score(result: u8) -> f64 {
 
 /// play_search_game
 ///
-/// Plays both sides with fixed depth and per-move wall-clock budget until a
-/// configured terminal result, no legal move, interrupt, or ply cap. Search
-/// transposition tables are reused for every turn. `on_move` receives the
-/// post-move state and move text after each successful move.
+/// Plays the two sides with a fixed depth and time for each move. The game
+/// stops at a game end, no legal move, an interrupt or the ply limit. The
+/// tables stay for all moves. `on_move` gets the state and the move text
+/// after each move.
 ///
 /// Params:
-/// - state        : &mut State          -> live game position
-/// - ttable       : Arc<TTable>         -> shared main table
-/// - qtable       : Arc<QTable>         -> shared quiescence table
-/// - depth        : usize               -> fixed search depth
-/// - time_limit_ns: u128                -> wall-clock budget per move
-/// - threads      : usize               -> search worker count
-/// - max_plies    : usize               -> maximum moves to play
-/// - dict         : Option<&Translator> -> move translator
-/// - on_move      : F                   -> callback after each played move
+///
+///     state: &mut State
+///     current game position
+///
+///     ttable: Arc<TTable>
+///     shared main table
+///
+///     qtable: Arc<QTable>
+///     shared quiescence table
+///
+///     depth: usize
+///     fixed search depth
+///
+///     time_limit_ns: u128
+///     time limit for each move, in nanoseconds
+///
+///     threads: usize
+///     number of search workers
+///
+///     max_plies: usize
+///     maximum number of plies to play
+///
+///     dict: Option<&Translator>
+///     move translator
+///
+///     on_move: F
+///     callback after each move
 ///
 /// Return:
-/// Result<(u8, Option<String>), String>
-/// Absolute result/reason, or illegal search-move diagnostic
+///
+///     Result<(u8, Option<String>), String>
+///     game result and reason, or an error for an illegal search move
+///
 pub fn play_search_game<F>(
     state: &mut State,
     ttable: Arc<TTable>,
@@ -464,16 +436,17 @@ where
 
 /// square_distance
 ///
-/// Calculates the euclidean distance between two squares on the board,
-/// treating file and rank deltas as cartesian coordinates.
+/// Calculates the Euclidean distance between two squares. The file and
+/// rank deltas are Cartesian coordinates.
 ///
 /// Params:
-/// - state: &State -> supplies the board width for index decomposition
+/// - state: &State -> position with the board width
 /// - sq1  : Square -> first square
 /// - sq2  : Square -> second square
 ///
 /// Return:
-/// f64             -> euclidean distance in square units
+/// f64             -> Euclidean distance in squares
+///
 pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
     let file1 = sq1 % state.statics.files as Square;
     let rank1 = sq1 / state.statics.files as Square;
@@ -488,13 +461,14 @@ pub fn square_distance(state: &State, sq1: Square, sq2: Square) -> f64 {
 
 /// verify_game_state
 ///
-/// Recomputes derived state and asserts it matches the stored caches.
-/// Debug integrity check for boards, piece lists, material counts, royal
-/// lists, and the incremental Zobrist, pawn-placement, and unmoved-piece keys.
-/// On mismatch it also attempts to pinpoint the source before panicking.
+/// Calculates the derived state again and asserts that it is equal to the
+/// stored caches. It is a debug test of the boards, piece lists, material
+/// counts, royal lists and the position, pawn and unmoved piece keys. On a
+/// difference, it tries to find the cause before the panic.
 ///
 /// Params:
-/// - state: &State -> position whose incremental caches are validated
+/// - state: &State -> position with the caches to test
+///
 pub fn verify_game_state(state: &State) {
 
     assert_eq!(
@@ -796,27 +770,27 @@ pub fn verify_game_state(state: &State) {
 
 /// parse_perft_content
 ///
-/// Parses a perft suite file into test cases: each non-comment line holds
-/// a FEN followed by the expected node counts for depths one through six,
-/// comma-separated.
+/// Parses a perft suite file into test cases. Each line has a FEN and the
+/// node counts for depths 1 to 6, separated by commas:
 ///
 /// ```text
 /// <FEN>,<depth 1>,<depth 2>,<depth 3>,<depth 4>,<depth 5>,<depth 6>
 /// ```
 ///
-/// Comments are stripped and blank lines dropped before the split, so a
-/// suite may annotate its positions freely. Every column is mandatory: a
-/// line missing one, or holding something that is not a count, panics
-/// naming the column it stopped at rather than testing a short suite.
-///
 /// Params:
-/// - content: &str -> raw text of the .perft suite file
+///
+///     content: &str
+///     raw text of the .perft suite file
 ///
 /// Return:
 ///
 ///     Vec<(String, u64, u64, u64, u64, u64, u64)>
-///     FEN plus expected node counts for depths 1-6, one tuple per suite
-///     line
+///     FEN and node counts for depths 1-6, one tuple for each line
+///
+/// Notes:
+/// The parser removes comments and empty lines first. All columns are
+/// mandatory. A missing or bad column causes a panic with its name.
+///
 pub fn parse_perft_content(                                                     /* until perft 6                      */
     content: &str,
 ) -> Vec<(String, u64, u64, u64, u64, u64, u64)> {
@@ -879,14 +853,15 @@ pub fn parse_perft_content(                                                     
 
 /// format_time
 ///
-/// Renders a nanosecond duration using the largest unit that keeps the
-/// value readable, from raw nanoseconds up to seconds.
+/// Writes a duration in nanoseconds with the largest unit that keeps the
+/// value readable, from nanoseconds to seconds.
 ///
 /// Params:
 /// - nanos: u128 -> duration in nanoseconds
 ///
 /// Return:
-/// String        -> human-readable duration such as "1.234 ms"
+/// String        -> readable duration, for example "1.234 ms"
+///
 pub fn format_time(nanos: u128) -> String {
     if nanos < 1_000 {
         format!("{} ns", nanos)
@@ -901,15 +876,15 @@ pub fn format_time(nanos: u128) -> String {
 
 /// benchmark_headless_perft
 ///
-/// Runs a perft test without a truth suite, reporting total nodes and elapsed
-/// time for a given depth. For quick sanity checks and performance profiling
-/// without needing a full suite of expected results.
+/// Runs perft without expected counts and prints the total nodes and the
+/// time. Use it for quick tests and profiling.
 ///
 /// Params:
-/// - state : &mut State          -> starting position, mutated during walk
-/// - depth : u8                  -> maximum perft depth to run
-/// - branch: i8                  -> diagnostic branch-printing depth
-/// - dict  : Option<&Translator> -> translator for printed move names
+/// - state : &mut State          -> start position, changed during the walk
+/// - depth : u8                  -> maximum perft depth
+/// - branch: i8                  -> depth of the branch output
+/// - dict  : Option<&Translator> -> translator for the move text
+///
 pub fn benchmark_headless_perft(
     state: &mut State, depth: u8, branch: i8, dict: Option<&Translator>
 ) {
@@ -955,21 +930,21 @@ pub fn benchmark_headless_perft(
 
 /// benchmark_perft
 ///
-/// Runs a perft suite loaded from `content` and reports pass/fail per depth.
-/// Cases are shuffled, capped by `limit`, and each position is tested from
-/// depth 1 up to `depth`. `branch` controls diagnostic line printing when
-/// passed through to `perft`.
+/// Runs a perft suite from `content` and prints pass or fail for each
+/// depth. The cases are shuffled and limited to `limit`. Each position is
+/// tested from depth 1 to `depth`.
 ///
 /// Params:
-/// - state  : &mut State          -> reused for every loaded FEN
+/// - state  : &mut State          -> state for each loaded FEN
 /// - content: &str                -> raw perft suite text
-/// - depth  : u8                  -> maximum depth tested per position
-/// - branch : i8                  -> diagnostic branch-printing depth
-/// - limit  : usize               -> maximum number of positions to test
-/// - dict   : Option<&Translator> -> translator for printed move names
+/// - depth  : u8                  -> maximum depth for each position
+/// - branch : i8                  -> depth of the branch output
+/// - limit  : usize               -> maximum number of positions
+/// - dict   : Option<&Translator> -> translator for the move text
 ///
 /// Return:
 /// (usize, usize)                 -> (passed cases, total cases)
+///
 pub fn benchmark_perft(
     state: &mut State,
     content: &str,
@@ -1074,19 +1049,19 @@ pub fn benchmark_perft(
 
 /// perft
 ///
-/// Counts legal move tree nodes from the current state up to `depth`.
-/// When `branch >= 0`, prints the explored move prefixes for the first levels
-/// to help inspect branching behavior.
+/// Counts the legal move tree nodes from the current state to `depth`.
+/// When `branch >= 0`, it prints the move prefixes of the first levels.
 ///
 /// Params:
-/// - state : &mut State          -> position explored, restored on return
-/// - depth : u8                  -> remaining depth to expand
-/// - branch: i8                  -> levels of move-prefix printing left
-/// - prefix: &str                -> accumulated move prefix for diagnostics
-/// - dict  : Option<&Translator> -> translator for printed move names
+/// - state : &mut State          -> position, restored at the end
+/// - depth : u8                  -> remaining depth
+/// - branch: i8                  -> remaining levels of prefix output
+/// - prefix: &str                -> move prefix for the output
+/// - dict  : Option<&Translator> -> translator for the move text
 ///
 /// Return:
-/// u64                           -> number of leaf nodes at the requested depth
+/// u64                           -> number of leaf nodes at the depth
+///
 pub fn perft(
     state: &mut State, depth: u8, branch: i8, prefix: &str,
     dict: Option<&Translator>,
@@ -1144,15 +1119,14 @@ pub fn perft(
 
 /// run_derive_headless
 ///
-/// Loads every embedded variant config in turn through the same
-/// embedded-first parameter path the engine uses at startup. Variants
-/// without a parameter payload derive one and export it to
-/// `res/param/{variant}/latest.param`, so a delete-then-derive cycle
-/// regenerates every shipped file without debug graphics.
+/// Loads each embedded variant config with the startup parameter path. A
+/// variant without parameters derives them and exports them to
+/// `res/param/{variant}/latest.param`. Thus delete and derive makes all
+/// shipped files again.
 ///
-/// Each line also carries the search capabilities the variant's rules allow,
-/// in the bit order documented on [`StaticState`], so one run is the record
-/// of what every shipped config permits.
+/// Each output line also has the search capabilities of the variant, in
+/// the bit order on [`StaticState`].
+///
 pub fn run_derive_headless() {
     for config in EMBEDDED_CONFIGS.files() {
         let Some(filename) = config.path().to_str() else {

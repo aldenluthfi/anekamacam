@@ -1,14 +1,12 @@
 //! move_list.rs
 //!
-//! Generates legal moves and attack data for pieces in the current position.
+//! Generates moves and attack data for the current position.
 //!
-//! This is the runtime half of move generation: the parse modules compile
-//! move expressions into displacement vectors once, and this file walks
-//! those vectors against live board occupancy to produce encoded `Move`s,
-//! answer attack queries, and apply/undo moves with full incremental
-//! bookkeeping (hashes, material counters, castling and en passant state).
-//! Everything here sits on the search hot path, hence the macro-heavy
-//! style that keeps the leg-walking loops monomorphized and inlined.
+//! This is the runtime part of move generation. The parse modules compile
+//! the move expressions into vectors once. This file walks those vectors on
+//! the current board to make `Move`s, test attacks, and make and undo
+//! moves with all incremental updates. All of it is on the search hot
+//! path, so the leg loops are macros.
 //!
 //! Created: 01/02/2026
 //! Author : Alden Luthfi
@@ -21,21 +19,21 @@ use crate::*;
 
 /// is_square_attacked!
 ///
-/// Reports whether at least one precomputed attack mask can currently
-/// realize an attack on `$square` against the given side, applying the
-/// directional, occupancy, and modifier constraints via
+/// Tells if one precomputed attack mask can attack `$square` now. It tests
+/// the direction, occupancy and modifier rules with
 /// `validate_attack_vector!`.
 ///
 /// Params:
-/// - square          : Square -> target square being tested
-/// - attacked_side   : u8     -> side whose piece stands on the square
-/// - attacked_unmoved: bool   -> whether that piece is unmoved (virgin)
-/// - attacked_royal  : bool   -> whether the target counts as royal
-/// - attacked_rank   : u8     -> capture rank of the target piece
-/// - state           : &State -> current position providing attack tables
+/// - square          : Square -> target square to test
+/// - attacked_side   : u8     -> side of the piece on the square
+/// - attacked_unmoved: bool   -> true when that piece is unmoved
+/// - attacked_royal  : bool   -> true when the target is royal
+/// - attacked_rank   : u8     -> rank of the target piece
+/// - state           : &State -> current position with the attack tables
 ///
 /// Return:
-/// bool                       -> true if any legal attack reaches the square
+/// bool                       -> true when a legal attack reaches the square
+///
 #[macro_export]
 macro_rules! is_square_attacked {
     (
@@ -67,17 +65,17 @@ macro_rules! is_square_attacked {
 
 /// is_in_check!
 ///
-/// Reports whether `$side`'s position is in check: each royal piece's
-/// square is tested with `is_square_attacked!`, so a side with multiple
-/// royals is in check only when all of them are attacked. Always false
-/// during the setup phase or when the side has no royal piece.
+/// Tells if `$side` is in check. It tests each royal square with
+/// `is_square_attacked!`. A side with many royals is in check only when all
+/// are attacked. In the setup phase or without a royal, it is false.
 ///
 /// Params:
-/// - side : u8     -> side whose royal pieces are tested
-/// - state: &State -> current position providing royal list and attack tables
+/// - side : u8     -> side of the royal pieces
+/// - state: &State -> current position with the royal list and tables
 ///
 /// Return:
-/// bool            -> true if the side is in check
+/// bool            -> true when the side is in check
+///
 #[macro_export]
 macro_rules! is_in_check {
     ($side:expr, $state:expr) => {
@@ -106,19 +104,16 @@ macro_rules! is_in_check {
 
 /// legal_moves!
 ///
-/// Collects every fully legal move in the position: it generates the
-/// pseudo-legal moves and drops, then keeps only those that survive a
-/// make/undo legality probe, so no move that leaves its own royal exposed
-/// ever reaches the caller. The position is restored before the vector is
-/// yielded, so callers can enumerate legality without disturbing state.
-/// Always empty when the position is terminal, because
-/// generate_all_moves_and_drops returns immediately in that case.
+/// Collects all legal moves of the position. It generates the pseudo-legal
+/// moves and drops and keeps each move that `make_move!` accepts. Then it
+/// undoes the move, so the position does not change.
 ///
 /// Params:
-/// - state: &mut State -> position to enumerate; unchanged after expansion
+/// - state: &mut State -> position to examine, restored at the end
 ///
 /// Return:
 /// Vec<Move>           -> the legal moves, empty in a terminal position
+///
 #[macro_export]
 macro_rules! legal_moves {
     ($state:expr) => {{
@@ -139,11 +134,10 @@ macro_rules! legal_moves {
 
 /// generate_relevant_castling
 ///
-/// Compiles the config's castling descriptions into precomputed castling
-/// `Move`s. Each castling option is given as a pair of board layouts: the
-/// start layout places the participating pieces and marks the squares
-/// that must be empty (`+`) or empty and unattacked (`*`), and the end
-/// layout places the same pieces on their destination squares.
+/// Compiles the config castling layouts into precomputed castling `Move`s.
+/// Each option is a pair of layouts. The start layout has the pieces and
+/// the squares that must be empty (`+`) or empty and not attacked (`*`).
+/// The end layout has the same pieces on their end squares:
 ///
 /// ```text
 /// start                            end
@@ -152,17 +146,18 @@ macro_rules! legal_moves {
 /// └────┴────┴────┴────┴────┘      └────┴────┴────┴────┴────┘
 /// ```
 ///
-/// The royal piece is stored in the move's primary slot and the partner
-/// piece in the capture/unload slot; the `+`/`*` squares are packed into
-/// the move's auxiliary list for runtime validation.
+/// The royal piece is in the main slot of the move, and the partner in the
+/// capture and unload slots. The `+` and `*` squares go into the move list
+/// for the runtime test.
 ///
 /// Params:
-/// - start: &Vec<String> -> start layouts, one per castling option
-/// - end  : &Vec<String> -> matching destination layouts
+/// - start: &Vec<String> -> start layouts, one for each castling option
+/// - end  : &Vec<String> -> matching end layouts
 /// - state: &State       -> piece dictionary and board dimensions
 ///
 /// Return:
-/// Vec<Move>             -> one precomputed castling move per layout pair
+/// Vec<Move>             -> one castling move for each layout pair
+///
 pub fn generate_relevant_castling(
     start: &Vec<String>, end: &Vec<String>, state: &State
 ) -> Vec<Move> {
@@ -330,11 +325,10 @@ pub fn generate_relevant_castling(
 
 /// generate_relevant_moves
 ///
-/// Precomputes which of a piece's compiled move vectors can physically be
-/// played from one origin square: each vector is walked leg by leg (with
-/// offsets mirrored for black) and discarded as soon as any leg steps off
-/// the board or into the piece's forbidden zone. From a corner square,
-/// for example, only the on-board subset of a piece's vectors survives:
+/// Finds the compiled move vectors of a piece that can go from one origin
+/// square. It walks each vector leg by leg, mirrored for Black. A leg off
+/// the board or into the forbidden zone removes the vector. From a corner,
+/// only the vectors on the board stay:
 ///
 /// ```text
 /// ┌────┬────┬────┬────┐
@@ -346,20 +340,19 @@ pub fn generate_relevant_castling(
 /// └────┴────┴────┴────┘
 /// ```
 ///
-/// Occupancy is deliberately ignored — that is checked at generation time
-/// — so the result is a static per-(piece, square) table entry. Vectors
-/// are sorted longest-first so deeper lines are probed before short ones.
+/// The function ignores occupancy, because move generation tests it. Thus
+/// the result is a static table entry. The vectors are sorted longest
+/// first.
 ///
 /// Params:
-/// - piece       : &Piece     -> piece type whose vectors are filtered
-/// - square_index: u32        -> origin square being precomputed
+/// - piece       : &Piece     -> piece type of the vectors
+/// - square_index: u32        -> origin square
 /// - state       : &State     -> board dimensions and forbidden zones
-/// - piece_moves : &[MoveSet] -> compiled vector sets, one per piece
+/// - piece_moves : &[MoveSet] -> compiled vector sets, one for each piece
 ///
 /// Return:
+/// MoveSet                    -> playable vectors, longest first
 ///
-///     MoveSet
-///     vectors playable from this square, longest first
 #[hotpath::measure]
 pub fn generate_relevant_moves(
     piece: &Piece,
@@ -412,29 +405,25 @@ pub fn generate_relevant_moves(
 
 /// generate_relevant_captures
 ///
-/// Precomputes vector candidates that can produce at least one capture/destroy
-/// action for a given piece and origin square.
-/// This mirrors `generate_relevant_moves` in structure (same bounds and
-/// forbidden-zone checks), but keeps only multi-leg vectors containing a leg
-/// with effective capture semantics:
+/// Finds the vectors of a piece from one origin that can capture or
+/// destroy. It uses the same bounds and zone tests as
+/// `generate_relevant_moves`, and keeps a vector only if a leg has:
 ///
 /// - explicit capture (`c`)
 /// - destroy (`d`)
-/// - implicit last-leg capture
+/// - implicit last leg capture
 ///
-/// Capture-only generation can therefore reuse the full move-construction
-/// pipeline while starting from a narrower prefiltered vector set.
+/// Thus capture generation uses the full move pipeline on a smaller set.
 ///
 /// Params:
-/// - piece       : &Piece     -> piece type whose vectors are filtered
-/// - square_index: u32        -> origin square being precomputed
+/// - piece       : &Piece     -> piece type of the vectors
+/// - square_index: u32        -> origin square
 /// - state       : &State     -> board dimensions and forbidden zones
-/// - piece_moves : &[MoveSet] -> compiled vector sets, one per piece
+/// - piece_moves : &[MoveSet] -> compiled vector sets, one for each piece
 ///
 /// Return:
+/// MoveSet                    -> playable capture vectors
 ///
-///     MoveSet
-///     capture-capable vectors playable from this square
 #[hotpath::measure]
 pub fn generate_relevant_captures(
     piece: &Piece,
@@ -500,22 +489,23 @@ pub fn generate_relevant_captures(
 
 /// generate_attack_masks
 ///
-/// Collects the `relevant_attacks` entries originating from one start
-/// square. For each prefiltered move vector, this records whether each
-/// traversed target is attacked as enemy capture (`c`) and/or friendly
-/// destroy (`d`).
-///
-/// It only reads the position and hands the entries back, so every square
-/// can be collected at once on its own thread. The caller files them in
-/// square order afterwards, which keeps each square's list of attackers in
-/// the order a serial pass would have built it.
+/// Collects the `relevant_attacks` entries from one origin square. For
+/// each move vector, it records if each target is attacked by capture (`c`)
+/// or destroy (`d`).
 ///
 /// Params:
-/// - square_index: u16    -> origin square of the outgoing attacks
-/// - state       : &State -> engine state holding the relevant-move tables
+/// - square_index: u16    -> origin square of the attacks
+/// - state       : &State -> engine state with the move tables
 ///
 /// Return:
-/// Vec<(usize, usize, AttackMask)> -> (side attacked, square, entry) writes
+///
+///     Vec<(usize, usize, AttackMask)>
+///     entries to write, as (attacked side, square, entry)
+///
+/// Notes:
+/// The function only reads, so each square can run on its own thread. The
+/// caller stores the entries in square order, as a serial pass would.
+///
 #[hotpath::measure]
 pub fn generate_attack_masks(
     square_index: u16,
@@ -578,29 +568,28 @@ pub fn generate_attack_masks(
 
 /// validate_attack_vector!
 ///
-/// Validates whether an attack vector can legally reach a target square.
-/// This macro executes the full per-leg simulation with movement/capture/
-/// destroy/unload semantics, occupancy checks, rank/royalty/virgin filters,
-/// and special modifier combinations. It is used as the runtime validator for
-/// precomputed attack candidates gathered in `relevant_attacks`.
+/// Tells if an attack vector can legally reach a target square. It
+/// simulates each leg: move, capture, destroy and unload rules, occupancy,
+/// rank, royal and unmoved filters, and the special modifier pairs. It
+/// tests the attack candidates of `relevant_attacks`.
 ///
 /// Params:
-/// - multi_leg_vector: &MoveVector -> candidate attack vector to simulate
-/// - square_index    : Square      -> origin square of the attacking piece
-/// - attacking_piece : &Piece      -> piece attempting the attack
-/// - attacked_unmoved: bool        -> target virgin status
-/// - attacked_royal  : bool        -> target royal status
-/// - attacked_rank   : u8          -> target capture rank
-/// - attacked_square : Square      -> square reached by a capture leg
-/// - state           : &State      -> current position for occupancy checks
+/// - multi_leg_vector: &MoveVector -> attack vector to simulate
+/// - square_index    : Square      -> origin square of the attacker
+/// - attacking_piece : &Piece      -> attacking piece
+/// - attacked_unmoved: bool        -> true when the target is unmoved
+/// - attacked_royal  : bool        -> true when the target is royal
+/// - attacked_rank   : u8          -> rank of the target
+/// - attacked_square : Square      -> square of the capture leg
+/// - state           : &State      -> current position
 ///
 /// Return:
-/// bool                            -> true when the vector realizes the attack
+/// bool                            -> true when the vector attacks the square
 ///
 /// Notes:
-/// Direction offsets scale by the attacking piece's color, reversing both
-/// axes for the opposite side. One precomputed vector can therefore validate
-/// attacks for either orientation without duplicate tables.
+/// The colour of the attacker scales the offsets, so one vector works for
+/// the two sides.
+///
 #[macro_export]
 macro_rules! validate_attack_vector {
     (
@@ -839,17 +828,15 @@ macro_rules! validate_attack_vector {
 
 /// process_multi_leg_vector!
 ///
-/// The move-construction core: simulates one compiled vector leg by leg
-/// against current occupancy and, when every leg is satisfiable, emits
-/// the encoded `Move`(s) it produces — including capture and multi-
-/// capture payloads, unloads, en passant creation/consumption, castling-
-/// rights effects, and promotion branching (one move per legal target).
-/// Illegal combinations (blocked legs, violated capture modifiers,
-/// initial-move constraints) abort without emitting.
+/// The core of move construction. It simulates one vector leg by leg on
+/// the current board. If all legs are legal, it adds the encoded moves:
+/// captures, multi-captures, unloads, en passant, castling right changes
+/// and one move for each legal promotion. A blocked leg, a failed capture
+/// rule or a first move rule stops it without a move.
 ///
-/// Each leg starts where the last ended; `S` is the origin, `1`/`2` the
-/// intermediate leg endpoints, and `T` the final target a move is emitted
-/// for (occupancy and modifiers are checked at every endpoint):
+/// Each leg starts at the end of the last leg. `S` is the origin, `1` and
+/// `2` are leg ends, and `T` is the target. The macro tests occupancy and
+/// modifiers at each leg end:
 ///
 /// ```text
 /// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
@@ -876,15 +863,15 @@ macro_rules! validate_attack_vector {
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
 /// - piece       : &Piece         -> moving piece type
-/// - vector      : &MoveVector    -> compiled multi-leg vector to simulate
-/// - state       : &State         -> current position for rule checks
-/// - out         : &mut Vec<Move> -> output list receiving encoded moves
-/// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
+/// - vector      : &MoveVector    -> compiled vector to simulate
+/// - state       : &State         -> current position
+/// - out         : &mut Vec<Move> -> list that gets the moves
+/// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
 ///
 /// Notes:
-/// Direction offsets scale by piece color, reversing both axes for the
-/// opposite side. `scratch` is cleared before simulation and transferred into
-/// an emitted multi-capture move only when its extra capture records remain.
+/// The piece colour scales the offsets. The macro clears `scratch` first and
+/// moves it into a multi-capture move only if it has extra records.
+///
 #[macro_export]
 macro_rules! process_multi_leg_vector {
     (
@@ -1245,26 +1232,21 @@ macro_rules! process_multi_leg_vector {
 
 /// generate_move_list_from_vectors!
 ///
-/// Generates all pseudo-legal encoded moves for `$piece` from `$square_index`.
-/// Resolves multi-leg constraints, captures/unloads, en-passant flags, castling
-/// side conditions, and promotion branching for all vectors in `$vector_set`.
-/// Shared move constructor used by `generate_move_list!` and
-/// `generate_capture_list!`, which select the appropriate precomputed source:
+/// Generates all pseudo-legal moves of `$piece` from `$square_index` for
+/// each vector of `$vector_set`, with `process_multi_leg_vector!`. The
+/// two list macros give the source table:
 ///
-/// - `relevant_moves`    -> full pseudo-legal move list
-/// - `relevant_captures` -> capture-focused pseudo-legal list
-///
-/// Unlike `validate_attack_vector!`, which only answers whether a single
-/// vector realizes an attack, this macro builds complete `Move` objects
-/// for all vectors in the set.
+/// - `relevant_moves`    : full pseudo-legal move list
+/// - `relevant_captures` : capture list
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
 /// - piece       : &Piece         -> moving piece type
 /// - vector_set  : &MoveSet       -> compiled vectors to expand
-/// - state       : &State         -> current position providing occupancy
-/// - out         : &mut Vec<Move> -> output list receiving encoded moves
-/// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
+/// - state       : &State         -> current position
+/// - out         : &mut Vec<Move> -> list that gets the moves
+/// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
+///
 #[macro_export]
 macro_rules! generate_move_list_from_vectors {
     (
@@ -1282,17 +1264,16 @@ macro_rules! generate_move_list_from_vectors {
 
 /// generate_move_list!
 ///
-/// Generates all pseudo-legal encoded moves for `$piece` from
-/// `$square_index`, appending them to `$out`. Resolves multi-leg
-/// constraints, captures/unloads, en-passant flags, castling conditions,
-/// and promotion branching from the piece's `relevant_moves` vectors.
+/// Generates all pseudo-legal moves of `$piece` from `$square_index`, from
+/// its `relevant_moves` vectors, and adds them to `$out`.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
 /// - piece       : &Piece         -> moving piece type
-/// - state       : &State         -> current position providing occupancy
-/// - out         : &mut Vec<Move> -> output list receiving encoded moves
-/// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
+/// - state       : &State         -> current position
+/// - out         : &mut Vec<Move> -> list that gets the moves
+/// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
+///
 #[macro_export]
 macro_rules! generate_move_list {
     (
@@ -1312,23 +1293,22 @@ macro_rules! generate_move_list {
 
 /// generate_capture_list!
 ///
-/// Generates only the pseudo-legal capture moves for `$piece` from
-/// `$square_index`. Uses precomputed `relevant_captures` so generation
-/// follows the same pipeline as normal move generation, then drops any
-/// non-capturing moves it produced.
-///
-/// The surviving captures keep the order they were generated in, which is
-/// the order `generate_move_list!` would have produced them: both vector
-/// tables filter one piece's vector set and then stable-sort it by the
-/// same key, so the captures are a subsequence of the full move list.
-/// Staged generation in `alpha_beta` relies on that correspondence.
+/// Generates only the pseudo-legal captures of `$piece` from
+/// `$square_index`. It uses `relevant_captures` and then removes the moves
+/// that do not capture.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
 /// - piece       : &Piece         -> moving piece type
-/// - state       : &State         -> current position providing occupancy
-/// - out         : &mut Vec<Move> -> output list receiving encoded captures
-/// - scratch     : &mut Vec<u64>  -> reusable multi-capture payload buffer
+/// - state       : &State         -> current position
+/// - out         : &mut Vec<Move> -> list that gets the captures
+/// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
+///
+/// Notes:
+/// The two tables use the same stable sort, so the captures have the same
+/// order as in `generate_move_list!`. The staged generation of `alpha_beta`
+/// needs this.
+///
 #[macro_export]
 macro_rules! generate_capture_list {
     (
@@ -1351,15 +1331,15 @@ macro_rules! generate_capture_list {
 
 /// retain_captures!
 ///
-/// Compacts `$out[$start..]` down to the moves whose capture status matches
-/// `$keep`, preserving their generated order. Used to split one generation
-/// pass into its capturing and quiet halves without disturbing move
-/// ordering.
+/// Keeps in `$out[$start..]` only the moves whose capture status is
+/// `$keep`, in their order. It splits one generation pass into captures
+/// and quiet moves.
 ///
 /// Params:
-/// - out  : &mut Vec<Move> -> list whose tail is compacted in place
-/// - start: usize          -> first index the filter applies to
+/// - out  : &mut Vec<Move> -> list with the tail to compact
+/// - start: usize          -> first index of the filter
 /// - keep : bool           -> true keeps captures, false keeps quiets
+///
 #[macro_export]
 macro_rules! retain_captures {
     ($out:expr, $start:expr, $keep:expr) => {{
@@ -1378,16 +1358,18 @@ macro_rules! retain_captures {
 
 /// generate_castling_list!
 ///
-/// Emits the currently legal castling moves for the side to move. Each
-/// precomputed castling move is validated against live state: both
-/// participants must stand unmoved on their start squares, destination
-/// and path squares must be empty, and every `*`-marked square (packed in
-/// the move's auxiliary list) must not be attacked. Castling rights bits
-/// gate the whole check per side and wing.
+/// Adds the legal castling moves of the side to move. Each precomputed
+/// castling move needs:
+///
+/// - the right of that side and wing
+/// - the two pieces unmoved on their start squares
+/// - empty end and path squares
+/// - no attack on each `*` square of the move list
 ///
 /// Params:
-/// - state: &State         -> current position providing rights and occupancy
-/// - out  : &mut Vec<Move> -> output list receiving castling moves
+/// - state: &State         -> current position with rights and occupancy
+/// - out  : &mut Vec<Move> -> list that gets the castling moves
+///
 #[macro_export]
 macro_rules! generate_castling_list {
     (
@@ -1536,15 +1518,14 @@ macro_rules! generate_castling_list {
 
 /// make_move!
 ///
-/// Applies a move to the game state with full incremental bookkeeping.
-/// This macro performs a complete state transition:
+/// Applies a move to the game state with all incremental updates:
 ///
-/// - advances ply counters
-/// - updates board occupancy, piece lists, virgin flags, castling/en-passant
-/// - handles quiet, capture, multi-capture, unload, promotion, and drop flows
-/// - updates material/piece-class counters and in-hand inventories
-/// - updates Zobrist hash and declared rule-progress counters
-/// - pushes a reversible [`Snapshot`] and rejects illegal self-check outcomes
+/// - increments the ply counters
+/// - updates occupancy, piece lists, unmoved flags, castling, en passant
+/// - handles quiet, capture, multi-capture, unload, promotion and drop
+/// - updates material, piece role counts and hands
+/// - updates the Zobrist keys and the end rule progress
+/// - pushes a [`Snapshot`] and rejects a move that leaves own check
 ///
 /// ```text
 /// save before-state -> apply -> push Snapshot -> legal?
@@ -1553,15 +1534,16 @@ macro_rules! generate_castling_list {
 /// ```
 ///
 /// Params:
-/// - state: &mut State -> position the move is applied to
+/// - state: &mut State -> position to change
 /// - mv   : Move       -> encoded move to play
 ///
 /// Return:
-/// bool                -> true if legal; false after self-check rollback
+/// bool                -> true if legal, false after the rollback
 ///
 /// Notes:
-/// Call `undo_move!` only after a true return. A false return has already
-/// restored the position and removed its temporary snapshot.
+/// Call `undo_move!` only after true. After false, the position is already
+/// restored and the snapshot is removed.
+///
 #[macro_export]
 macro_rules! make_move {
     ($state:expr, $mv:expr) => {
@@ -2854,17 +2836,17 @@ macro_rules! make_move {
 
 /// undo_move!
 ///
-/// Reverts the last applied move using the most recent [`Snapshot`].
-/// This macro restores all dynamic state fields and reverses side effects made
-/// by `make_move!`, including board occupancy, piece lists, and rule-progress
-/// counters.
+/// Undoes the last move with the last [`Snapshot`]. It restores all dynamic
+/// fields and reverses the changes of `make_move!`: occupancy, piece lists
+/// and end rule progress.
 ///
 /// Params:
-/// - state: &mut State -> position whose most recent move is reverted
+/// - state: &mut State -> position with the move to undo
 ///
 /// Notes:
-/// Call only after a successful `make_move!`. Rejected moves remove their
-/// temporary snapshot before returning false.
+/// Call it only after `make_move!` returns true. A rejected move already
+/// removed its snapshot.
+///
 #[macro_export]
 macro_rules! undo_move {
     ($state:expr) => {
@@ -3583,20 +3565,18 @@ macro_rules! undo_move {
 
 /// make_null_move!
 ///
-/// Applies a null move for the side to move.
-/// A null move:
+/// Plays a null move for the side to move, for null move pruning. It does
+/// not change occupancy or piece lists.
 ///
-/// - Advances `search_ply` and `ply_counter`.
-/// - Clears en-passant state and updates hash before the side toggle.
-/// - Flips `playing` and updates side-to-move hash.
-/// - Pushes a `Snapshot` containing reversible state to history.
-/// - Does not alter the halfmove clock.
-///
-/// This is used by null-move pruning in search and does not modify board
-/// occupancy or piece lists.
+/// - increments `search_ply` and `ply_counter`
+/// - clears en passant and updates the key
+/// - changes `playing` and the side key
+/// - pushes a `Snapshot` to the history
+/// - does not change the halfmove clock
 ///
 /// Params:
-/// - state: &mut State -> position whose turn is passed to the opponent
+/// - state: &mut State -> position that gives the turn to the opponent
+///
 #[macro_export]
 macro_rules! make_null_move {
     ($state:expr) => {
@@ -3674,15 +3654,15 @@ macro_rules! make_null_move {
 
 /// undo_null_move!
 ///
-/// Reverts the most recent null move.
-/// This restores the `Snapshot` saved by `make_null_move!`, including turn,
-/// clocks, castling/en-passant data, phase flags, and position hash.
+/// Undoes the last null move. It restores the `Snapshot` of
+/// `make_null_move!`: turn, clocks, castling, en passant, phase and key.
 ///
 /// Params:
-/// - state: &mut State -> position whose most recent null move is reverted
+/// - state: &mut State -> position with the null move to undo
 ///
 /// Notes:
-/// Panics if no history snapshot exists to undo.
+/// An empty history causes a panic.
+///
 #[macro_export]
 macro_rules! undo_null_move {
     ($state:expr) => {{
@@ -3725,16 +3705,20 @@ macro_rules! undo_null_move {
 
 /// generate_all_moves_and_drops
 ///
-/// Generates all pseudo-legal moves for the side to move, including drops.
-/// Normal moves are skipped during setup phase; drop generation may use
-/// either own-hand or enemy-hand inventory depending on drop flags.
-/// Returns immediately with an empty list when the position is terminal,
-/// so legal_moves! is always empty at terminal positions.
+/// Generates all pseudo-legal moves of the side to move:
+///
+/// - piece moves : not in the setup phase
+/// - drops       : with the drop rule or in the setup phase
+/// - castling    : with the castling rule
 ///
 /// Params:
-/// - state  : &State         -> position to generate for
+/// - state  : &State         -> position to examine
 /// - out    : &mut Vec<Move> -> cleared, then filled with the moves
-/// - scratch: &mut Vec<u64>  -> reusable multi-capture payload buffer
+/// - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+///
+/// Notes:
+/// A terminal position gives an empty list, so `legal_moves!` is empty too.
+///
 #[hotpath::measure]
 pub fn generate_all_moves_and_drops(
     state: &State,
@@ -3774,15 +3758,15 @@ pub fn generate_all_moves_and_drops(
 
 /// generate_all_captures
 ///
-/// Capture-only counterpart of `generate_all_moves_and_drops`, used by
-/// quiescence search. Walks the narrower `relevant_captures` tables and keeps
-/// only moves that
-/// actually capture; quiet moves, drops, and castling are never generated.
+/// The capture version of `generate_all_moves_and_drops`, for quiescence.
+/// It uses the `relevant_captures` tables and keeps only real captures. It
+/// never makes quiet moves, drops or castling.
 ///
 /// Params:
-/// - state  : &State         -> position to generate for
+/// - state  : &State         -> position to examine
 /// - out    : &mut Vec<Move> -> cleared, then filled with the captures
-/// - scratch: &mut Vec<u64>  -> reusable multi-capture payload buffer
+/// - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+///
 #[hotpath::measure]
 pub fn generate_all_captures(
     state: &State,

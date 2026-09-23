@@ -1,11 +1,10 @@
 //! piece_io.rs
 //!
-//! Utilities for reading and writing piece data during engine setup.
+//! Reads and writes piece data during engine setup.
 //!
-//! Derivation prices one colour and hands the answer to the other, so it needs
-//! to know which piece is whose twin and where a derived number goes once it
-//! has one. This file answers both: it walks the swap map into colour pairs,
-//! and it packs values and role flags into the word the evaluator reads.
+//! Derivation calculates values for white pieces and copies them to the
+//! black pieces. This file finds the white and black pair of each piece
+//! type. It also packs values and role flags into the piece word.
 //!
 //! Created: 26/05/2026
 //! Author : Alden Luthfi
@@ -18,22 +17,19 @@ use crate::*;
 
 /// collect_piece_type_pairs
 ///
-/// Pairs each white piece type with its black counterpart through the swap
-/// map. Derivation runs over white pieces alone and copies every answer onto
-/// the twin, so a variant is priced once and read by both sides.
-///
-/// - white index : the piece derivation actually looks at
-/// - black index : the swap map's answer for it, asserted to be black
-///
-/// The colour assertion is not a sanity check on this walk but on the map:
-/// a swap entry pointing at the wrong colour would have derivation write
-/// white's values over white's own, and no later stage would notice.
+/// Pairs each white piece type with its black piece type through the swap
+/// map. Derivation calculates the white piece and copies to the black one.
 ///
 /// Params:
-/// - state: &State     -> variant whose swap map is walked
+/// - state: &State     -> variant that has the swap map
 ///
 /// Return:
-/// Vec<(usize, usize)> -> (white index, black index) per piece type
+/// Vec<(usize, usize)> -> (white index, black index) for each piece type
+///
+/// Notes:
+/// The function asserts that each pair has a black piece. A bad swap entry
+/// would make derivation write over white values without an error.
+///
 pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
     let mut type_pairs = Vec::new();
 
@@ -64,18 +60,11 @@ pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
 
 /// set_piece_dynamic_parameters
 ///
-/// Packs derived evaluation attributes into a piece's dynamic word, using the
-/// layout documented on [`Piece`]. Every writer of a derived value goes
-/// through here, whether the value was derived from the rules or read out of
-/// a tuned payload, so the packing is written down exactly once.
+/// Packs derived evaluation values into the dynamic word of a piece. The
+/// layout is on [`Piece`]. All derived and tuned values use this function.
 ///
-/// - rewritten : bits 0 to 29, both role flags and both material values
-/// - preserved : bits 30 and up, whatever the word already carried
-///
-/// A value wider than fourteen bits panics rather than truncating. A silently
-/// wrapped material value would leave a piece cheaper than a pawn while every
-/// table built on top of it stayed perfectly consistent, which is the kind of
-/// fault that survives a whole tournament unnoticed.
+/// - bits 0 to 29 : written, the two role flags and two material values
+/// - bits 30 up   : kept as they are
 ///
 /// Params:
 /// - piece   : &mut Piece -> piece whose dynamic word is rewritten
@@ -83,6 +72,11 @@ pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
 /// - evalue  : u16        -> derived endgame value (14-bit)
 /// - is_big  : bool       -> big-piece role flag
 /// - is_major: bool       -> major-piece role flag
+///
+/// Notes:
+/// A value wider than 14 bits causes a panic. A truncated value would give
+/// a wrong material value without an error.
+///
 pub fn set_piece_dynamic_parameters(
     piece: &mut Piece,
     ovalue: u16,

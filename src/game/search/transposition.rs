@@ -1,12 +1,11 @@
 //! transposition.rs
 //!
-//! Transposition table for caching and reusing search results across the tree.
+//! Transposition tables that keep search results for later use.
 //!
-//! Positions are keyed by Zobrist hash. A cache hit at sufficient depth returns
-//! the stored score directly, skipping the subtree. Entries record a bound
-//! type (exact, alpha, beta), depth, best move, static evaluation, and age for
-//! replacement policy. Thread safety uses a seqlock with parity across the
-//! 3×u128 slot layout.
+//! The Zobrist key is the table index. A hit with enough depth gives the
+//! stored score, and the search skips the subtree. An entry has a bound
+//! type, a depth, the best move, the static evaluation and an age. A
+//! seqlock and a parity word over the three `u128` slots give thread safety.
 //!
 //! Created: 29/01/2026
 //! Author : Alden Luthfi
@@ -19,23 +18,19 @@ use crate::*;
 
 /// HashEntry
 ///
-/// One slot of a shared search table. Three `u128` words carry the
-/// payload, the last being the XOR parity of the other two against the
-/// position hash; `age` records the search generation and sits outside
-/// the parity; `version` is the seqlock counter, odd while a write is in
-/// flight.
+/// One slot of a shared search table. `age` is the search generation and
+/// is not in the parity. `version` is the seqlock counter, odd during a
+/// write.
 ///
-/// Layout:
-/// - slot[0] = move.0 (128-bit, raw)
-/// - slot[1] = packed payload — the packing is the table's, not the
-///   slot's, and is drawn on each table's packing cluster
-/// - slot[2] = slot[0] ^ slot[1] ^ hash (parity, written last)
+/// - slot[0] : move.0, raw 128 bits
+/// - slot[1] : packed data, the table macros give the layout
+/// - slot[2] : slot[0] ^ slot[1] ^ hash, the parity, written last
 ///
-/// Write order: version++ → slot[0] → slot[1] → slot[2] → age → version++
+/// ```text
+/// write : version++ → slot[0] → slot[1] → slot[2] → age → version++
+/// read  : slot[0] ^ slot[1] ^ slot[2] == hash, and version unchanged
+/// ```
 ///
-/// Validation:
-///   (1) slot[0] ^ slot[1] ^ slot[2] == position_hash  →  parity intact
-///   (2) version unchanged across read                 →  no torn write
 #[derive(Default)]
 pub struct HashEntry {
     pub slot: [u128; 3],                                                        /* [key, data1, data2]                */
@@ -45,18 +40,16 @@ pub struct HashEntry {
 
 /// Clone for HashEntry
 ///
-/// Written by hand because `version` is an atomic, and an atomic is not
-/// `Clone`. The counter is read relaxed and handed to a fresh atomic, so
-/// the copy starts life with whatever parity the original had rather than
-/// at zero.
-///
-/// The only caller is the `vec![HashEntry::default(); n]` that allocates a
-/// table, where the source is a default entry and no thread is yet reading
-/// it; cloning a slot out of a live table would race the seqlock and is
-/// never done.
+/// A manual clone, because an atomic is not `Clone`. The copy reads the
+/// counter relaxed and puts it in a new atomic.
 ///
 /// Return:
-/// Self -> copy, its seqlock counter snapshotted relaxed
+/// Self -> copy with the same seqlock counter
+///
+/// Notes:
+/// Only the table allocation `vec![HashEntry::default(); n]` uses it. A
+/// clone from a live table would race the seqlock.
+///
 impl Clone for HashEntry {
     fn clone(&self) -> Self {
         HashEntry {
@@ -69,16 +62,16 @@ impl Clone for HashEntry {
 
 /// HashTable
 ///
-/// Shared search table using seqlock+parity for lock-free thread safety.
-/// Readers check version parity before and after the slot load and retry
-/// on mismatch; the XOR parity across `slot[0..2]` catches cross-entry
-/// corruption. Age is bumped each search for replacement.
+/// Shared search table without locks. A reader compares the version before
+/// and after the slot read. The XOR parity finds mixed entries. The age
+/// increases with each search, for replacement.
 ///
-/// `NUM / DEN` is the table's share of the `Hash` option, and is the only
-/// thing that separates the main table from the quiescence one — the two
-/// differ in what they pack into a slot, never in how slots are stored —
-/// so both are aliases of this type and no call site names it: `TTable`
-/// takes two thirds of the option and `QTable` the third that is left.
+/// `NUM / DEN` is the share of the `Hash` option. The two tables differ
+/// only in their slot packing:
+///
+/// - `TTable` : main table, two thirds of `Hash`
+/// - `QTable` : quiescence table, one third of `Hash`
+///
 pub struct HashTable<const NUM: usize, const DEN: usize> {
     pub table: SyncUnsafeCell<Vec<HashEntry>>,                                  /* shared mutable access              */
     pub age: AtomicU64,                                                         /* search age; bump per search        */
@@ -96,13 +89,12 @@ unsafe impl<const NUM: usize, const DEN: usize> Send for HashTable<NUM, DEN> {}
 
 /// Default for HashTable
 ///
-/// Sizes a table nobody asked a size for: the compiled-in `Hash` default,
-/// cut to this table's `NUM / DEN` share of it. A session that later sets
-/// `Hash` throws these away and rebuilds at the size it was given, so this
-/// only ever covers the window before a GUI speaks.
+/// Makes a table with the `NUM / DEN` share of `HASH_DEFAULT_MB`. When the
+/// GUI sets `Hash`, the session makes new tables.
 ///
 /// Return:
-/// Self -> zeroed table at this table's share of the default budget
+/// Self -> zeroed table of the default size
+///
 impl<const NUM: usize, const DEN: usize> Default for HashTable<NUM, DEN> {
     fn default() -> Self {
         Self::with_mb(HASH_DEFAULT_MB * NUM / DEN)
@@ -110,25 +102,24 @@ impl<const NUM: usize, const DEN: usize> Default for HashTable<NUM, DEN> {
 }
 
 impl<const NUM: usize, const DEN: usize> HashTable<NUM, DEN> {
-    /// HashTable method cluster.
+    /// HashTable methods
     ///
-    /// `with_mb` sizes the table to a memory budget in megabytes — this
-    /// table's `NUM / DEN` share of the UCI Hash option — flooring the
-    /// slot count to a power of two so the index macro can mask instead
-    /// of taking a modulo; `len` reports the count it masks against.
+    /// Make a table for a memory size, or give its slot count. The slot
+    /// count rounds down to a power of two, so the index is a mask.
     ///
     /// with_mb
     ///
     ///   Params:
-    ///   - mb: usize -> memory budget in megabytes
+    ///   - mb: usize -> memory size in megabytes
     ///
     ///   Return:
-    ///   Self        -> zeroed table sized to the budget
+    ///   Self        -> zeroed table of that size
     ///
     /// len
     ///
     ///   Return:
-    ///   usize -> slot count
+    ///   usize       -> slot count
+    ///
     pub fn with_mb(mb: usize) -> Self {
         let entries = (mb * 1024 * 1024 / size_of::<HashEntry>()).max(1);
 
@@ -153,10 +144,10 @@ impl<const NUM: usize, const DEN: usize> HashTable<NUM, DEN> {
                         SHARED HASH TABLE PROBE / STORE
 \*----------------------------------------------------------------------------*/
 
-/// Shared slot access macros.
+/// Shared slot access macros
 ///
-/// Everything a probe or a store does before and after it looks at the
-/// packed payload is the same for both tables, so it lives here once.
+/// Slot access for the two tables. The steps before and after the packed
+/// data are the same for the two tables.
 ///
 /// table_index!
 ///
@@ -169,36 +160,35 @@ impl<const NUM: usize, const DEN: usize> HashTable<NUM, DEN> {
 ///
 /// probe_hash_slot!
 ///
-///   Locates the slot, rejects a write in flight, checks the XOR parity
-///   against the key, and confirms the seqlock did not move across the
-///   read, bumping `hit` and `valid` as it goes. The caller names the two
-///   payload words it wants bound and supplies the value every rejecting
-///   path yields.
+///   Finds the slot, rejects a slot during a write, tests the parity and
+///   tests that the version did not change. It increments `hit` and
+///   `valid`.
 ///
 ///   Params:
-///   - table    : &HashTable -> table probed, whose counters are bumped
-///   - hash     : u128       -> search key this node is filed under
-///   - miss     : expr       -> value yielded by every rejecting path
-///   - move_slot: ident      -> name bound to slot[0] inside the body
-///   - data_slot: ident      -> name bound to slot[1] inside the body
-///   - body     : block      -> reads the two words, yields the result
+///   - table    : &HashTable -> table to probe
+///   - hash     : u128       -> search key of the node
+///   - miss     : expr       -> result of each rejection
+///   - move_slot: ident      -> name of slot[0] in the body
+///   - data_slot: ident      -> name of slot[1] in the body
+///   - body     : block      -> reads the two words, gives the result
 ///
 ///   Return:
-///   the body's value, or `miss`
+///   the value of the body, or `miss`
 ///
 /// commit_hash_entry!
 ///
-///   Writes the slot under the seqlock, parity word last before `age`,
-///   and bumps whichever replacement counter applies.
+///   Writes the slot under the seqlock, the parity word last before `age`.
+///   It increments the new or the replace counter.
 ///
 ///   Params:
-///   - table    : &HashTable     -> table whose counters are bumped
-///   - entry    : &mut HashEntry -> slot being replaced
-///   - hash     : u128           -> key the parity word is folded against
-///   - empty    : bool           -> whether the slot was never written
+///   - table    : &HashTable     -> table with the counters
+///   - entry    : &mut HashEntry -> slot to write
+///   - hash     : u128           -> key for the parity word
+///   - empty    : bool           -> true when the slot was never written
 ///   - move_slot: u128           -> slot[0]
 ///   - data_slot: u128           -> slot[1]
-///   - age      : u64            -> generation stamped on the slot
+///   - age      : u64            -> generation of the slot
+///
 #[macro_export]
 macro_rules! table_index {
     ($hash:expr, $size:expr) => {{
@@ -277,12 +267,10 @@ macro_rules! commit_hash_entry {
                       TRANSPOSITION TABLE PACKING HELPERS
 \*----------------------------------------------------------------------------*/
 
-/// Main-table packing macros.
+/// Main table packing macros
 ///
-/// The writers pack bound flags (bits 0-1), clamped depth (bits 2-8), score
-/// (bits 9-40), move signature (bits 41-104), and signed static evaluation
-/// (bits 105-127) into `slot[1]`; the readers extract those fields again.
-/// Field widths below are proportional; every row is 32 bits.
+/// Write and read the `slot[1]` fields of the main table. Each row has 32
+/// bits, and the field widths are to scale.
 ///
 /// ```text
 ///   Bits 0..31:
@@ -314,59 +302,58 @@ macro_rules! commit_hash_entry {
 ///   └─────────────────┴──────────────────────────────────────────────┘
 /// ```
 ///
-///   - flag         : bound type (FEXACT / FALPHA / FBETA)
-///   - depth        : clamped search depth
-///   - score        : ply-adjusted node score (32-bit)
-///   - signature    : MoveSignature of the stored best move
-///   - static eval  : signed 23-bit raw evaluation, `EVAL_NONE` in check
+/// - flag        : bound type, FEXACT, FALPHA or FBETA
+/// - depth       : clamped search depth
+/// - score       : node score with ply correction, 32 bits
+/// - signature   : MoveSignature of the stored best move
+/// - static eval : signed 23-bit raw evaluation, `EVAL_NONE` in check
 ///
 /// The writers OR into place and return nothing:
 ///
 /// tt_enc_flags!
 ///
 ///   Params:
-///   - encoded: &mut u32 -> flags/depth word being built
+///   - encoded: &mut u32 -> flag and depth word to build
 ///   - val    : u8       -> bound flag, masked into bits 0-1
 ///
 /// tt_enc_depth!
 ///
 ///   Params:
-///   - encoded: &mut u32 -> flags/depth word being built
+///   - encoded: &mut u32 -> flag and depth word to build
 ///   - val    : usize    -> depth, clamped and masked into bits 2-8
 ///
 /// tt_enc_score!
 ///
 ///   Params:
-///   - encoded: &mut u128 -> slot[1] word being built
+///   - encoded: &mut u128 -> slot[1] word to build
 ///   - val    : i32       -> score, masked into bits 9-40
 ///
-/// The readers take a word back apart and return the one field, so the
-/// flags/depth pair reads out of the low word the writers built and the
-/// score out of slot[1] whole:
+/// The readers give one field. Flag and depth come from the low word, the
+/// score from the full slot[1]:
 ///
 /// tt_flags!
 ///
 ///   Params:
-///   - encoded: u32 -> flags/depth word being read
+///   - encoded: u32 -> flag and depth word to read
 ///
 ///   Return:
-///   u8 -> bound flag held in bits 0-1
+///   u8             -> bound flag in bits 0-1
 ///
 /// tt_depth!
 ///
 ///   Params:
-///   - encoded: u32 -> flags/depth word being read
+///   - encoded: u32 -> flag and depth word to read
 ///
 ///   Return:
-///   usize -> clamped depth held in bits 2-8
+///   usize          -> clamped depth in bits 2-8
 ///
 /// tt_score!
 ///
 ///   Params:
-///   - b_prime: u128 -> slot[1] word being read
+///   - b_prime: u128 -> slot[1] word to read
 ///
 ///   Return:
-///   i32 -> score held in bits 9-40
+///   i32             -> score in bits 9-40
 ///
 #[macro_export]
 macro_rules! tt_enc_flags {
@@ -418,22 +405,36 @@ macro_rules! tt_score {
 
 /// probe_tt_entry!
 ///
-/// Probes the main table with parity and seqlock validation. Stored depth and
-/// bound flags decide whether the score can cut; every valid hash match still
-/// returns its move, raw static evaluation, and evaluation sharpened by the
-/// stored bound. Mate-range scores never sharpen an evaluation.
+/// Probes the main table with the parity and seqlock tests. The stored
+/// depth and bound decide if the score can cut. Each valid hit also gives
+/// the move, the raw static evaluation and the evaluation refined by the
+/// bound. A mate score does not refine the evaluation.
 ///
 /// Params:
-/// - state: &State  -> position the stored mate scores are relative to
-/// - key  : u128    -> search key this node is filed under
-/// - table: &TTable -> shared transposition table
-/// - alpha: i32     -> lower search bound
-/// - beta : i32     -> upper search bound
-/// - depth: usize   -> minimum stored depth for a cutoff
+///
+///     state: &State
+///     position for the ply correction of mate scores
+///
+///     key: u128
+///     search key of the node
+///
+///     table: &TTable
+///     shared transposition table
+///
+///     alpha: i32
+///     lower search bound
+///
+///     beta: i32
+///     upper search bound
+///
+///     depth: usize
+///     minimum stored depth for a cutoff
 ///
 /// Return:
-/// (bool, i32, PseudoMove, i32, i32) -> cutoff, score, move, raw evaluation,
-///                                      and bound-refined evaluation
+///
+///     (bool, i32, PseudoMove, i32, i32)
+///     cutoff, score, move, raw evaluation and refined evaluation
+///
 #[macro_export]
 macro_rules! probe_tt_entry {
     (
@@ -517,16 +518,17 @@ macro_rules! probe_tt_entry {
 
 /// probe_pv_move!
 ///
-/// Reduced probe used when extending the printed principal variation:
-/// runs the same parity and seqlock validation as `probe_tt_entry!` but
-/// ignores depth and bounds, returning only the stored best move.
+/// A small probe that extends the printed principal variation. It does the
+/// same tests as `probe_tt_entry!`, but ignores depth and bounds and gives
+/// only the stored move.
 ///
 /// Params:
-/// - key  : u128      -> search key this node is filed under
-/// - table: &TTable   -> the shared transposition table
+/// - key  : u128      -> search key of the node
+/// - table: &TTable   -> shared transposition table
 ///
 /// Return:
-/// Option<PseudoMove> -> the stored move, or None on any miss
+/// Option<PseudoMove> -> the stored move, or None on a miss
+///
 #[macro_export]
 macro_rules! probe_pv_move {
     ($key:expr, $table:expr) => {{
@@ -545,30 +547,29 @@ macro_rules! probe_pv_move {
 
 /// hash_tt_entry!
 ///
-/// Stores one main-search result with seqlock write protection and parity.
+/// Stores one main search result with the seqlock and the parity. A mate
+/// score is stored as the distance from this node, `search_ply` added. A
+/// later probe subtracts its own ply.
 ///
-/// The score is filed the way this node sees it: a mate found some plies
-/// below the root is stored as the distance from here, `search_ply` added
-/// back on, so a later node reading the slot re-anchors it against its own
-/// ply. Everything else goes through the `tt_enc_*` writers, with the move
-/// signature and the raw static evaluation laid in beside them.
+/// The macro writes only if one of these is true:
 ///
-/// The slot is only overwritten when the new result is worth more than what
-/// sits in it: when it is empty, when it holds another position, when it was
-/// filed in an older search, when this depth reaches the stored one, when
-/// this score is no worse, or when this is the first exact bound the slot
-/// has held. `commit_hash_entry!` does the write itself, keeping the parity
-/// word and the order it is published in to one place.
+/// - the slot is empty
+/// - the slot has another position
+/// - the slot is from an older search
+/// - the new depth is equal or greater
+/// - the new score is not lower
+/// - the new bound is the first exact bound
 ///
 /// Params:
-/// - tt_move: &Move   -> best move found at this node
+/// - tt_move: &Move   -> best move of this node
 /// - score  : i32     -> score to store
-/// - flags  : u8      -> FEXACT, FALPHA, or FBETA
-/// - depth  : usize   -> search depth the score is valid for
+/// - flags  : u8      -> FEXACT, FALPHA or FBETA
+/// - depth  : usize   -> search depth of the score
 /// - eval   : i32     -> raw static evaluation, `EVAL_NONE` in check
-/// - state  : &State  -> position the stored mate scores are relative to
-/// - key    : u128    -> search key this node is filed under
+/// - state  : &State  -> position for the ply correction of mate scores
+/// - key    : u128    -> search key of the node
 /// - table  : &TTable -> shared transposition table
+///
 #[macro_export]
 macro_rules! hash_tt_entry {
     (
@@ -639,18 +640,15 @@ macro_rules! hash_tt_entry {
 
 /// fill_pv_line!
 ///
-/// Reconstructs the full principal variation for reporting: copies the
-/// triangular PV table into `pv_line`, then walks the line on the board
-/// and extends it move by move from TT probes until the table runs dry,
-/// a probed move proves illegal, or the target depth is reached. All
-/// moves are undone before returning, leaving the position unchanged.
+/// Makes the full principal variation for output. It copies the PV table
+/// into `pv_line` and plays the line on the board. Then it extends the line
+/// with table probes until a miss, an illegal move or the target depth. At
+/// the end it undoes all moves.
 ///
-/// `pv_table` is a flat `PV_STRIDE * PV_STRIDE` upper triangle: row
-/// `ply` starts at `ply * PV_STRIDE` and uses only the columns from its
-/// own ply onward. When a move improves alpha at `ply`, search writes it
-/// at `[ply][ply]` and copies the child row's tail up one row, so row 0
-/// always carries the complete line (`pv_length[ply]` is the absolute
-/// end column of row `ply`):
+/// `pv_table` is a flat `PV_STRIDE * PV_STRIDE` upper triangle. Row `ply`
+/// starts at `ply * PV_STRIDE`. When a move improves alpha at `ply`, the
+/// search writes it at `[ply][ply]` and copies the child row up. Thus row 0
+/// has the full line. `pv_length[ply]` is the end column of row `ply`:
 ///
 /// ```text
 ///          col 0  col 1  col 2  col 3
@@ -665,20 +663,17 @@ macro_rules! hash_tt_entry {
 ///                             └──────┘
 /// ```
 ///
-/// Every walked move — triangular or probed — is validated against the
-/// freshly generated move list before it is applied, so a stale
-/// triangular row or a collided TT move truncates the reported line
-/// instead of corrupting the position. A move that reaches a terminal
-/// result is included (it is the terminal move) but the PV is never
-/// extended past it: generate_all_moves_and_drops returns empty at a
-/// terminal, so the next iteration finds no match and stops. TT probes
-/// are also skipped once terminal to avoid extending past terminal state.
-///
 /// Params:
-/// - state: &mut State      -> position walked and restored
-/// - info : &mut SearchInfo -> worker holding the PV storage
-/// - table: &TTable         -> the shared transposition table
-/// - depth: usize           -> maximum PV length to reconstruct
+/// - state: &mut State      -> position to walk and restore
+/// - info : &mut SearchInfo -> worker with the PV storage
+/// - table: &TTable         -> shared transposition table
+/// - depth: usize           -> maximum PV length
+///
+/// Notes:
+/// The macro tests each move against the generated move list before it
+/// plays it. Thus an old row or a hash collision only shortens the line.
+/// The line includes a move that ends the game, but stops after it.
+///
 #[macro_export]
 macro_rules! fill_pv_line {
     ($state:expr, $info:expr, $table:expr, $depth:expr) => {{
@@ -775,14 +770,12 @@ macro_rules! fill_pv_line {
 
 /// PTEntry
 ///
-/// One cached pawn-structure verdict: the key the roster hashed to and the
-/// opening and endgame worth that roster is due. There is no bound, no
-/// depth, and no move, because the answer is a pure function of where the
-/// pawns stand — two positions sharing a pawn roster share this score
-/// whatever else differs about them, and a stored entry never goes stale.
+/// One cached pawn structure result: the pawn key and the opening and
+/// endgame values. The result depends only on the pawns, so there is no
+/// bound, depth or move, and an entry is always correct.
 ///
-/// An untouched slot has a zero key, which no real roster can collide with
-/// short of a 128-bit accident, so emptiness needs no separate flag.
+/// An empty slot has key zero, so there is no empty flag.
+///
 #[derive(Clone, Default)]
 pub struct PTEntry {
     pub key: u128,                                                              /* Zobrist fold of the pawn roster    */
@@ -792,19 +785,12 @@ pub struct PTEntry {
 
 /// PTable
 ///
-/// One position's private pawn-structure cache, held on its [`State`].
-/// Unlike [`TTable`] and [`QTable`] this one is never shared, so it carries
-/// no seqlock, no parity word, and no atomics: whoever owns the state it
-/// hangs off both writes it and reads it, and a thread searching a copy is
-/// filling a copy.
-/// A shared table would have to protect a 24-byte payload with the same
-/// machinery that protects a 48-byte one, and pay it on a term evaluated at
-/// nearly every node.
+/// The private pawn structure cache of one [`State`]. It is not shared,
+/// so it has no seqlock, parity or atomics. Each thread fills its own copy.
 ///
-/// Replacement is unconditional. Every entry is equally true, so the only
-/// thing a policy could preserve is the entry more likely to be asked for
-/// again, and the most recent roster is exactly that during a search that
-/// moves one pawn at a time.
+/// A write always replaces the slot. All entries are correct, and the most
+/// recent pawn structure is the most likely to come again.
+///
 #[derive(Clone)]
 pub struct PTable {
     pub table: Vec<PTEntry>,                                                    /* slot count is a power of two       */
@@ -812,14 +798,13 @@ pub struct PTable {
 
 /// Default for PTable
 ///
-/// Hands the whole default `Hash` budget to `with_hash_mb`, which reads it
-/// as a scale rather than an allocation: this cache is sized in entries,
-/// and the budget only says how far to scale `PAWN_TABLE_ENTRIES` from it.
-/// So the pawn table takes no share away from the shared tables — it is a
-/// per-state cache, and every state carries its own.
+/// Makes a cache with `with_hash_mb(HASH_DEFAULT_MB)`. The `Hash` value
+/// only scales `PAWN_TABLE_ENTRIES`. The pawn cache does not take a share
+/// from the shared tables.
 ///
 /// Return:
-/// Self -> zeroed cache at the default entry count
+/// Self -> zeroed cache with the default entry count
+///
 impl Default for PTable {
     fn default() -> Self {
         Self::with_hash_mb(HASH_DEFAULT_MB)
@@ -827,19 +812,18 @@ impl Default for PTable {
 }
 
 impl PTable {
-    /// PTable method cluster.
+    /// PTable methods
     ///
-    /// `with_hash_mb` scales the default entry count with the UCI Hash budget.
-    /// `with_entries` builds a zeroed table whose slot count is floored to a
-    /// power of two for mask indexing, and `len` reports it.
+    /// Make a pawn cache or give its size. The slot count rounds down to a
+    /// power of two, so the index is a mask.
     ///
     /// with_hash_mb
     ///
     ///   Params:
-    ///   - hash_mb: usize -> configured UCI Hash budget
+    ///   - hash_mb: usize -> the `Hash` option value
     ///
     ///   Return:
-    ///   Self             -> zeroed table scaled from the default budget
+    ///   Self             -> zeroed table, entries scaled by `Hash`
     ///
     /// with_entries
     ///
@@ -847,12 +831,13 @@ impl PTable {
     ///   - entries: usize -> requested slot count
     ///
     ///   Return:
-    ///   Self             -> zeroed table with that many slots
+    ///   Self             -> zeroed table with that slot count
     ///
     /// len
     ///
     ///   Return:
-    ///   usize -> slot count
+    ///   usize            -> slot count
+    ///
     pub fn with_hash_mb(hash_mb: usize) -> Self {
         let entries = hash_mb.saturating_mul(PAWN_TABLE_ENTRIES)
             / HASH_DEFAULT_MB;
@@ -875,58 +860,47 @@ impl PTable {
                      QSEARCH TT PACKING / UNPACKING MACROS
 \*----------------------------------------------------------------------------*/
 
-/// Qsearch-table packing macros.
+/// Quiescence table packing macros
 ///
-/// Counterparts of the `tt_*` packing family for the smaller qsearch
-/// payload: `qt_enc_score!` packs a sign-extended 16-bit score,
-/// `qt_enc_flags!` packs the bound type into bits 16-17, and `qt_score!`
-/// / `qt_flags!` read them back. Unlike the `tt_enc_*` writers these
-/// encoders return their packed value instead of mutating in place.
+/// Write and read the `slot[1]` fields of the quiescence table. Unlike
+/// `tt_enc_*`, the writers return the packed value. `slot[0]` has the raw
+/// `move.0`. Each row has 32 bits, and the field widths are to scale.
 ///
-/// `slot[0]` holds `move.0` raw and `slot[1]` holds `sig << 32 | encoded`.
-/// Field widths below are proportional; every row is 32 bits.
-///
+/// ```text
 ///   Bits 0..31:
 ///
 ///   0                               16  18                          31
-/// ```text
 ///   ┌───────────────────────────────┬───┬────────────────────────────┐
 ///   │             score             │flg│           unused           │
 ///   └───────────────────────────────┴───┴────────────────────────────┘
-/// ```
 ///
 ///   Bits 32..63:
 ///
 ///   32                                                              63
-/// ```text
 ///   ┌────────────────────────────────────────────────────────────────┐
 ///   │                          signature →                           │
 ///   └────────────────────────────────────────────────────────────────┘
-/// ```
 ///
 ///   Bits 64..95:
 ///
 ///   64                                                              95
-/// ```text
 ///   ┌────────────────────────────────────────────────────────────────┐
 ///   │                          ← signature                           │
 ///   └────────────────────────────────────────────────────────────────┘
-/// ```
 ///
 ///   Bits 96..127:
 ///
 ///   96                                                             127
-/// ```text
 ///   ┌────────────────────────────────────────────────────────────────┐
 ///   │                             unused                             │
 ///   └────────────────────────────────────────────────────────────────┘
 /// ```
 ///
-///   - bits 0..15  : sign-extended score
-///   - bits 16..17 : bound flags
-///   - bits 18..31 : unused
-///   - bits 32..95 : `MoveSignature`
-///   - bits 96..127: unused
+/// - bits 0..15   : sign-extended score
+/// - bits 16..17  : bound flag
+/// - bits 18..31  : unused
+/// - bits 32..95  : `MoveSignature`
+/// - bits 96..127 : unused
 ///
 /// qt_enc_score!
 ///
@@ -934,20 +908,20 @@ impl PTable {
 ///   - score  : i32 -> node score, truncated to i16
 ///
 ///   Return:
-///   u32            -> score bit pattern in bits 0-15
+///   u32            -> score bits in bits 0-15
 ///
 /// qt_enc_flags!
 ///
 ///   Params:
-///   - flags  : u8 -> bound type (FEXACT / FBETA)
+///   - flags  : u8  -> bound type, FEXACT or FBETA
 ///
 ///   Return:
-///   u32           -> flag bits shifted into bits 16-17
+///   u32            -> flag bits in bits 16-17
 ///
 /// qt_score!
 ///
 ///   Params:
-///   - encoded: u32 -> packed score/flags word
+///   - encoded: u32 -> packed score and flag word
 ///
 ///   Return:
 ///   i32            -> sign-extended stored score (bits 0-15)
@@ -955,10 +929,11 @@ impl PTable {
 /// qt_flags!
 ///
 ///   Params:
-///   - encoded: u32 -> packed score/flags word
+///   - encoded: u32 -> packed score and flag word
 ///
 ///   Return:
 ///   u8             -> bound flag (bits 16-17)
+///
 #[macro_export]
 macro_rules! qt_enc_score {
     ($score:expr) => {{
@@ -993,23 +968,22 @@ macro_rules! qt_flags {
 
 /// probe_qt_entry!
 ///
-/// Probes the qsearch TT with seqlock validation; returns (valid, score,
-/// pseudo_move).
+/// Probes the quiescence table with the parity and seqlock tests of
+/// `probe_hash_slot!`. An entry without a move never cuts.
 ///
-/// Validation:
-///   Step 1: version is even (no write in progress)
-///   Step 2: version unchanged after both reads (no torn write)
-///   Step 3: sig field matches the stored MoveSignature (anti-collision)
+/// - FBETA  : cuts when the score is at or above beta
+/// - FEXACT : always cuts
 ///
 /// Params:
-/// - state : &State        -> position the stored mate scores are relative to
-/// - key   : u128          -> qsearch key this node is filed under
-/// - qtable: &QTable       -> the shared qsearch table
-/// - alpha : i32           -> lower search bound at this node
-/// - beta  : i32           -> upper search bound at this node
+/// - state : &State        -> position for the ply correction of mates
+/// - key   : u128          -> quiescence key of the node
+/// - qtable: &QTable       -> shared quiescence table
+/// - alpha : i32           -> lower search bound
+/// - beta  : i32           -> upper search bound
 ///
 /// Return:
-/// (bool, i32, PseudoMove) -> (cutoff valid, score, stored best move)
+/// (bool, i32, PseudoMove) -> (cutoff, score, stored best move)
+///
 #[macro_export]
 macro_rules! probe_qt_entry {
     ($state:expr, $key:expr, $qtable:expr, $alpha:expr, $beta:expr) => {
@@ -1057,18 +1031,23 @@ macro_rules! probe_qt_entry {
 
 /// hash_qt_entry!
 ///
-/// Stores a qsearch result in the dedicated TT.
-/// Only capture/check/promotion moves are written; quiet moves are skipped.
-/// Replacement policy: empty slot → always write; occupied → write if
-/// entry is stale (age < cur_age - 1) or new entry is FEXACT.
+/// Stores one quiescence result. The macro writes only if one of these is
+/// true:
+///
+/// - the slot is empty
+/// - the slot has another position
+/// - the slot is from an older search
+/// - the new score is not lower
+/// - the new bound is the first exact bound
 ///
 /// Params:
-/// - tt_move: &Move   -> best move found at this qsearch node
-/// - score  : i32     -> score to store (mate scores are ply-adjusted)
-/// - flags  : u8      -> bound type: FEXACT or FBETA
-/// - state  : &State  -> position the stored mate scores are relative to
-/// - key    : u128    -> qsearch key this node is filed under
-/// - qtable : &QTable -> the shared qsearch table
+/// - tt_move: &Move   -> best move of this node
+/// - score  : i32     -> score to store, mates with ply correction
+/// - flags  : u8      -> bound type, FEXACT or FBETA
+/// - state  : &State  -> position for the ply correction of mates
+/// - key    : u128    -> quiescence key of the node
+/// - qtable : &QTable -> shared quiescence table
+///
 #[macro_export]
 macro_rules! hash_qt_entry {
     (

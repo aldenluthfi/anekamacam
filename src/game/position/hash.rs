@@ -1,12 +1,11 @@
 //! hash.rs
 //!
-//! Implements Zobrist hashing for game positions.
+//! Zobrist hashing of game positions.
 //!
-//! Search must recognise repeated and transposed positions in O(1), so every
-//! position has to collapse to a single integer key that updates incrementally
-//! as moves are made. This file owns that key: it seeds the random component
-//! tables and folds them together, giving repetition detection and the
-//! transposition tables a stable position identity.
+//! The search must find repeated and transposed positions in O(1). Thus
+//! each position has one integer key, and each move updates the key. This
+//! file calculates the keys from scratch and defines the update macros.
+//! Repetition detection and the hash tables use these keys.
 //!
 //! Created: 25/01/2026
 //! Author : Alden Luthfi
@@ -19,32 +18,30 @@ use crate::*;
 
 /// PositionHash
 ///
-/// Full-width Zobrist key of a position. 128 bits keeps the collision
-/// probability negligible even on large boards with many piece types,
-/// where 64-bit keys would start to saturate.
+/// The Zobrist key of a position. With 128 bits, collisions are very rare,
+/// also on large boards with many piece types.
+///
 pub type PositionHash = u128;
 
 /// hash_pawns
 ///
-/// Folds the placement of every pawn-like piece into one key, reusing the
-/// same random components the full position hash spends. Which pieces count
-/// is a variant's own answer: `eval.pawn_pieces` is derived from the rules at
-/// load time, so a variant whose pieces are nothing like pawns leaves an
-/// empty roster and a key of zero.
+/// Calculates the key of the pawn placement from scratch. It uses the same
+/// random values as the position key. Derivation finds the pawn pieces
+/// (`eval.pawn_pieces`) from the rules. A variant without pawns gets 0.
 ///
-/// Two consumers read the key. `pawn_structure!` caches its verdict under it,
-/// most moves in a search moving no pawn at all, and correction history files
-/// its evaluation error under it. Both want the same thing: an identity for
-/// the pawn skeleton alone, blind to where every other piece stands.
-///
-/// This is the from-scratch fold, spent on a FEN load. Afterwards moves keep
-/// the key in step, `hash_in_or_out_piece!` masking non-pawns out.
+/// - `pawn_structure!`    : caches its result under this key
+/// - correction history   : keeps its evaluation error under this key
 ///
 /// Params:
-/// - state: &State -> position whose pawns are hashed
+/// - state: &State -> position with the pawns to hash
 ///
 /// Return:
-/// u128            -> pawn-placement Zobrist key
+/// u128            -> pawn placement Zobrist key
+///
+/// Notes:
+/// A FEN load calls this function. After that, `hash_in_or_out_piece!`
+/// updates the key for each move.
+///
 pub fn hash_pawns(state: &State) -> u128 {
     let mut hash = u128::default();
 
@@ -59,12 +56,8 @@ pub fn hash_pawns(state: &State) -> u128 {
 
 /// hash_position
 ///
-/// Computes the full Zobrist hash for one state from scratch.
-///
-/// The key includes side to move, special-state fields, on-board placement,
-/// and every in-hand piece count. Repetition and transposition tables use it.
-///
-/// The key is one XOR fold of independent random components:
+/// Calculates the full Zobrist key of a position from scratch. The key is
+/// the XOR of independent random values:
 ///
 /// ```text
 /// hash = PIECE_HASHES[piece][sq]      (every occupied square)
@@ -74,24 +67,20 @@ pub fn hash_pawns(state: &State) -> u128 {
 ///      ^ IN_HAND_HASHES[piece][count] (every in-hand pool, both sides)
 /// ```
 ///
-/// XOR is self-inverse, so applying the same component twice removes it.
-/// That is what lets a move maintain the key rather than recompute it: the
-/// component of what left is folded out, the component of what arrived is
-/// folded in, and the rest of the board is never touched.
+/// A second XOR with the same value removes it. Thus a move updates the key
+/// with only the values that change.
 ///
 /// Params:
-/// - state: &State -> position to hash from scratch
+/// - state: &State -> position to hash
 ///
 /// Return:
-/// u128            -> the position's full Zobrist key
+/// u128            -> full Zobrist key of the position
 ///
 /// Notes:
-/// Every in-hand pool is folded, an empty one included, so the zero-count
-/// component is part of the key rather than absent from it. The incremental
-/// path agrees, folding the old count out before folding the new one in. Only
-/// the rights bits of the castling byte are keyed on: the castled marks in
-/// its upper bits are read by evaluation alone and two positions apart in
-/// nothing else are the same position.
+/// The key includes each hand count, also a count of zero. The update
+/// macros do the same. The key uses only the rights bits of the castling
+/// byte. The castled marks are for evaluation only.
+///
 pub fn hash_position(state: &State) -> u128 {
     let mut hash = u128::default();
 
@@ -125,26 +114,21 @@ pub fn hash_position(state: &State) -> u128 {
 
 /// hash_virgin_board
 ///
-/// Computes the unmoved-piece key for one state from scratch, folding one
-/// random component per square whose piece has yet to move. A piece's first
-/// move is frequently not its later ones, so two boards alike in placement
-/// but apart in unmoved pieces answer different questions.
-///
-/// The mark is per square rather than per piece, which is all the rules ever
-/// ask: what may move twice, castle, or drop is decided by whether the piece
-/// standing there has moved, never by which piece it is.
+/// Calculates the key of the unmoved pieces from scratch. It has one random
+/// value for each square with an unmoved piece. The first move of a piece
+/// can be different from its later moves, so the search must know it.
 ///
 /// Params:
-/// - state: &State -> position to hash from scratch
+/// - state: &State -> position to hash
 ///
 /// Return:
-/// u128            -> the position's unmoved-piece key
+/// u128            -> unmoved piece key of the position
 ///
 /// Notes:
-/// This key is kept out of `position_hash`. Repetition and perpetual matching
-/// compare that hash alone, and they mean it: a board reached twice repeats
-/// even when a rook has spent its first move in between. [`search_key`] folds
-/// this one in, so the tables still keep the two apart.
+/// This key is not in `position_hash`. Thus repetition compares only the
+/// board, also when a rook moved for the first time. [`search_key`] adds
+/// this key, so the hash tables keep the two positions separate.
+///
 pub fn hash_virgin_board(state: &State) -> u128 {
     let mut hash = u128::default();
 
@@ -161,26 +145,25 @@ pub fn hash_virgin_board(state: &State) -> u128 {
 
 /// Context byte slots
 ///
-/// One row of [`CONTEXT_HASHES`] each, a row keying one byte of live context.
-/// Most contexts fit a byte and are named directly. The two counting values
-/// are 16 bits wide and spend the row after theirs on the high byte, which is
-/// why the numbering skips over 3 and 5 without naming them.
+/// Row numbers of [`CONTEXT_HASHES`]. Each row keys one byte of search
+/// context. The two counting values have 16 bits, so they also use the
+/// next row for the high byte. Thus rows 3 and 5 have no name.
 ///
-/// -  0 : `COUNTER_CLOCK`, the counter's clock
-/// -  1 : `COUNTER_LIMIT`, the limit it counts up to
+/// -  0 : `COUNTER_CLOCK`, clock of the counter
+/// -  1 : `COUNTER_LIMIT`, limit of the counter
 /// -  2 : `COUNTING_COUNT`, low byte
-/// -  3 : that same count, high byte
+/// -  3 : the same count, high byte
 /// -  4 : `COUNTING_LIMIT`, low byte
-/// -  5 : that same limit, high byte
-/// -  6 : `CHECKS_WHITE`, checks made by white
-/// -  7 : `CHECKS_BLACK`, checks made by black
-/// -  8 : `CHECKS_COUNT`, checks required to win
-/// -  9 : `REPETITION_COUNT`, repetition occurrences
+/// -  5 : the same limit, high byte
+/// -  6 : `CHECKS_WHITE`, checks given by White
+/// -  7 : `CHECKS_BLACK`, checks given by Black
+/// -  8 : `CHECKS_COUNT`, checks necessary to win
+/// -  9 : `REPETITION_COUNT`, number of repetitions
 /// - 10 : `PASS_CLASS`, pass and stand-off class
-/// - 11 : `QSEARCH_CLASS`, quiescence move-set class
+/// - 11 : `QSEARCH_CLASS`, quiescence move set class
 ///
-/// `CONTEXT_SLOTS` closes the list rather than naming a slot: it is how many
-/// rows the table is built with.
+/// `CONTEXT_SLOTS` is the number of rows, not a row.
+///
 const COUNTER_CLOCK: usize = 0;
 const COUNTER_LIMIT: usize = 1;
 const COUNTING_COUNT: usize = 2;
@@ -196,13 +179,13 @@ const CONTEXT_SLOTS: usize = 12;
 lazy_static! {
     /// CONTEXT_HASHES
     ///
-    /// Search-context Zobrist rows, one 256-entry row per byte slot. Filled
-    /// once from the shared seeded RNG on first use and read-only after, so
-    /// a run started under the same seed keys every context identically.
+    /// Zobrist rows for the search context, one row of 256 values for each
+    /// byte slot. The seeded shared RNG fills them once, at first use.
     ///
-    /// Only [`search_key`] and [`qsearch_key`] read these rows. Whatever is
-    /// folded here reaches the transposition tables and nothing else: the
-    /// canonical position hash keeps meaning the board alone.
+    /// Notes:
+    /// Only [`search_key`] and [`qsearch_key`] read these rows. Thus the
+    /// position key stays a key of the board only.
+    ///
     static ref CONTEXT_HASHES: Vec<[u128; 256]> = {
         let mut result: Vec<[u128; 256]> = Vec::with_capacity(CONTEXT_SLOTS);
 
@@ -217,26 +200,25 @@ lazy_static! {
 
 /// wide_context
 ///
-/// Folds a 16-bit context value across two byte rows, low byte in `slot` and
-/// high byte in the row after it, so the whole range keys exactly and no
-/// value has to be clamped away.
+/// Keys a 16-bit context value with two byte rows. The low byte uses
+/// `slot` and the high byte uses the next row, so no value is clamped.
 ///
 /// ```text
 /// value 0xABCD    slot     reads 0xCD
 ///                 slot + 1 reads 0xAB
 /// ```
 ///
-/// Counting budgets are config text and the field holding them is 16 bits
-/// wide, so nothing bounds one to a byte. On a single row a count and the
-/// same count 256 further on would fold to one component, and a position
-/// about to run out of budget would share an entry with one that is not.
-///
 /// Params:
-/// - slot : usize -> first of the two rows the value spends
-/// - value: u16   -> context value to fold
+/// - slot : usize -> first of the two rows
+/// - value: u16   -> context value to key
 ///
 /// Return:
-/// u128           -> the value's combined context component
+/// u128           -> the combined context value
+///
+/// Notes:
+/// With one row, a count and the same count plus 256 would have the same
+/// key. The config can give counting limits above 255.
+///
 fn wide_context(slot: usize, value: u16) -> u128 {
     CONTEXT_HASHES[slot][(value & 0xFF) as usize]
         ^ CONTEXT_HASHES[slot + 1][(value >> 8) as usize]
@@ -244,13 +226,10 @@ fn wide_context(slot: usize, value: u16) -> u128 {
 
 /// search_key
 ///
-/// The transposition identity of a node: the canonical position hash plus
-/// every mutable context that changes which moves are legal from here, which
-/// terminal rule fires, or how a repetition reads. The canonical hash itself
-/// stays untouched, so repetition matching keeps comparing boards while two
-/// boards apart in progress never share a table entry.
-///
-/// The key is one XOR fold of the canonical hash and the live context:
+/// Gives the hash table key of a node. It is the position key plus each
+/// context that changes the legal moves, the game end or the repetition
+/// result. The position key does not change, so repetition still compares
+/// boards only. The key is this XOR:
 ///
 /// ```text
 /// key = position_hash            (placement, side, rights, hands)
@@ -262,26 +241,27 @@ fn wide_context(slot: usize, value: u16) -> u128 {
 ///     ^ pass and stand-off bits  (always)
 /// ```
 ///
-/// The pass and stand-off bits are the three facts `position_terminal` reads
-/// off history — the last ply passed, the ply before it passed, and the last
-/// ply left an accepted stand-off. A position with no history folds in the
-/// zero class rather than skipping the term, so a fresh board and a board
-/// that has passed nothing still agree.
+/// The pass and stand-off bits are the history data that
+/// `position_terminal` reads:
+///
+/// - bit 0 : the last ply was a pass
+/// - bit 1 : the ply before it was also a pass
+/// - bit 2 : the last pass left a stand-off
+///
+/// A position without history uses class 0.
 ///
 /// Params:
-/// - state  : &State -> position whose search identity is wanted
+/// - state  : &State -> position to key
 /// - repeats: u8     -> occurrences of this position on the search path
 ///
 /// Return:
-/// u128              -> the node's transposition key
+/// u128              -> hash table key of the node
 ///
 /// Notes:
-/// A context a variant never declares is left out of the fold rather than
-/// keyed as zero, which costs nothing: a rule that is not declared cannot
-/// tell two positions apart, and every node in that run agrees to skip the
-/// same terms. The repetition count comes in from the caller because it is a
-/// fact about the path walked to this node and not about the position, two
-/// searches reaching one board by different routes counting differently.
+/// A context that the variant does not declare is not in the key. The
+/// caller gives the repetition count, because it depends on the path to
+/// the node, not on the position.
+///
 pub fn search_key(state: &State, repeats: u8) -> u128 {
     let mut key = state.position_hash ^ state.virgin_hash;
 
@@ -326,21 +306,21 @@ pub fn search_key(state: &State, repeats: u8) -> u128 {
 
 /// qsearch_key
 ///
-/// The quiescence identity of a node: its search key plus the move-set class
-/// the leaf search answers under. A checked node searches every evasion while
-/// an unchecked one searches captures alone, and delta pruning stands down
-/// once the board thins to an endgame, so the classes must not share entries.
+/// Gives the quiescence table key of a node. It is the search key plus the
+/// move set class. In check, quiescence searches all evasions, else only
+/// captures. In the endgame, delta pruning is off.
 ///
-/// - bit 0 : the side to move stands in check
-/// - bit 1 : the position has reached its endgame phase
+/// - bit 0 : the side to move is in check
+/// - bit 1 : the position is in the endgame phase
 ///
 /// Params:
-/// - state   : &State -> position whose quiescence identity is wanted
+/// - state   : &State -> position to key
 /// - repeats : u8     -> occurrences of this position on the search path
-/// - in_check: bool   -> whether the side to move stands in check
+/// - in_check: bool   -> true when the side to move is in check
 ///
 /// Return:
-/// u128               -> the node's quiescence table key
+/// u128               -> quiescence table key of the node
+///
 pub fn qsearch_key(state: &State, repeats: u8, in_check: bool) -> u128 {
     let endgame = state.game_phase == ENDGAME;
     let class = (in_check as u8 | (endgame as u8) << 1) as usize;
@@ -352,12 +332,11 @@ pub fn qsearch_key(state: &State, repeats: u8, in_check: bool) -> u128 {
                         INCREMENTAL HASH UPDATE HELPERS
 \*----------------------------------------------------------------------------*/
 
-/// Incremental hash update helpers
+/// Incremental hash update macros
 ///
-/// These macros fold one changed fact into the running keys rather than
-/// hashing the board again, which is what keeps a node's bookkeeping down to
-/// a handful of XORs. Making a move spends them. Undoing one does not: the
-/// keys come back off the snapshot the move saved, one assignment each.
+/// Update the keys for one change, without a full hash of the board. Only
+/// `make_move!` uses them. `undo_move!` restores the keys from the snapshot.
+/// No macro returns a value.
 ///
 /// - hash_in_or_out_piece!     : position_hash, pawn_hash
 /// - hash_toggle_side!         : position_hash
@@ -366,56 +345,56 @@ pub fn qsearch_key(state: &State, repeats: u8, in_check: bool) -> u128 {
 /// - hash_update_in_hand!      : position_hash
 /// - set_virgin! clear_virgin! : virgin_board, virgin_hash
 ///
-/// Nothing here returns a value. A piece change keeps the pawn key in step
-/// through a mask rather than a branch, a non-pawn folding a zero into it.
-///
 /// hash_in_or_out_piece!
 ///
+///   Adds or removes one piece. A mask, not a branch, updates the pawn
+///   key. For a piece that is not a pawn, the mask is zero.
+///
 ///   Params:
-///   - state       : &mut State -> position whose key is updated
-///   - piece_index : usize      -> piece being placed or removed
-///   - square_index: Square     -> square the piece enters or leaves
+///   - state       : &mut State -> position to update
+///   - piece_index : usize      -> piece to add or remove
+///   - square_index: Square     -> square of the piece
 ///
 /// hash_toggle_side!
 ///
 ///   Params:
-///   - state: &mut State -> position whose side-to-move key flips
+///   - state: &mut State -> position to update
 ///
 /// hash_update_castling!
 ///
-///   Both states are masked to `CASTLE_RIGHTS` first: the castled marks
-///   riding in the upper bits are eval-only and are not keyed on, so a move
-///   that sets one without spending a right leaves the key alone.
+///   Uses only the `CASTLE_RIGHTS` bits. The castled marks are for
+///   evaluation only, so they do not change the key.
 ///
 ///   Params:
-///   - state             : &mut State -> position whose key is updated
+///   - state             : &mut State -> position to update
 ///   - old_castling_state: u8         -> castling byte before the move
 ///   - new_castling_state: u8         -> castling byte after the move
 ///
 /// hash_update_en_passant!
 ///
 ///   Params:
-///   - state        : &mut State      -> position whose key is updated
+///   - state        : &mut State      -> position to update
 ///   - old_ep_square: EnPassantSquare -> descriptor before the move
 ///   - new_ep_square: EnPassantSquare -> descriptor after the move
 ///
 /// hash_update_in_hand!
 ///
 ///   Params:
-///   - state      : &mut State -> position whose key is updated
-///   - piece_index: usize      -> piece whose pool count changed
-///   - old_count  : u16        -> in-hand count before the change
-///   - new_count  : u16        -> in-hand count after the change
+///   - state      : &mut State -> position to update
+///   - piece_index: usize      -> piece with the changed hand count
+///   - old_count  : u16        -> hand count before the change
+///   - new_count  : u16        -> hand count after the change
 ///
 /// set_virgin! / clear_virgin!
 ///
-///   Mark a square as holding an unmoved piece, or stop marking it, keeping
-///   `state.virgin_hash` in step. Each checks the bit first, so a call that
-///   changes nothing costs nothing and never desynchronises the key.
+///   Set or clear the unmoved mark of a square and update
+///   `state.virgin_hash`. Each macro tests the bit first, so the key
+///   stays correct.
 ///
 ///   Params:
-///   - state       : &mut State -> position whose board and key are updated
-///   - square_index: Square     -> square whose unmoved mark changes
+///   - state       : &mut State -> position to update
+///   - square_index: Square     -> square with the unmoved mark
+///
 #[macro_export]
 macro_rules! hash_in_or_out_piece {
     ($state:expr, $piece_index:expr, $square_index:expr) => {{

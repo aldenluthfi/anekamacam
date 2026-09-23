@@ -1,9 +1,9 @@
 //! main.rs
 //!
-//! Entry point for the anekamacam engine and the root of its module tree.
-//! Reads the first CLI argument to pick protocol, graphical debug, or nested
-//! headless debug tooling. Initializes logging before handing control to the
-//! selected frontend while protocol mode remains the default.
+//! Entry point of the anekamacam engine and root of the module tree.
+//! The first command line argument selects the protocol loop, the graphic
+//! debug console or the headless debug tools. The protocol loop is the
+//! default.
 //!
 //! Created: 01/02/2026
 //! Author : Alden Luthfi
@@ -17,16 +17,15 @@ use prelude::*;
 
 /// game
 ///
-/// The engine proper: what a position is, what moves it offers, what those
-/// moves are worth, and which one to play. Nothing under here knows about a
-/// terminal or a protocol, and nothing under here is written for one variant.
+/// The engine core: positions, moves, evaluation and search. No module
+/// here knows about a terminal, a protocol or one specific variant.
 ///
 /// - representations : boards, pieces, moves, drops, patterns, termination
-/// - moves           : generating moves and drops, and parsing what defines
-///                     them: the pattern, drop, and move-notation grammars
-/// - search          : move ordering, threads, tuned parameters, the table
-/// - position        : hashing, evaluating, and searching a single position
-/// - util            : the small helpers the rest of the engine leans on
+/// - moves           : move and drop generation, CPMN and drop parsers
+/// - search          : move ordering, threads, parameters, hash table
+/// - position        : hashing, evaluation and search of a position
+/// - util            : small helpers for the other modules
+///
 pub mod game {
     pub mod representations {
         pub mod board;
@@ -70,17 +69,16 @@ pub mod game {
 
 /// io
 ///
-/// Everything that turns engine state into text and text back into engine
-/// state. Each reader has a writer beside it, so a value that went out one
-/// way comes back in the same way.
+/// Converts engine state to text and text to engine state. Each reader
+/// has a related writer.
 ///
-/// - board_io  : boards, squares, and the diagrams they are drawn as
-/// - piece_io  : piece letters and the names behind them
-/// - game_io   : configuration files, tuned parameters, CFEN, state display
-/// - move_io   : moves and drops, in notation and back
-/// - protocols : the session loop, the dialects that drive it, and the
-///               dictionaries that let one engine answer in three notations
-/// - logger    : levelled output, shared by every mode below
+/// - board_io  : squares, boards and board diagrams
+/// - piece_io  : piece colour pairs and packed piece values
+/// - game_io   : configuration files, parameters, FEN, state display
+/// - move_io   : move and drop notation
+/// - protocols : session loop, protocol dialects and notation dictionaries
+/// - logger    : log output for all modes
+///
 pub mod io {
     pub mod board_io;
     pub mod piece_io;
@@ -101,15 +99,15 @@ pub mod io {
 
 /// debug
 ///
-/// Tooling that is not part of playing a game: two ways to drive the engine
-/// by hand, and three long-running jobs that produce and test the numbers it
-/// plays with.
+/// Tools that are not part of game play. Two tools let a person control
+/// the engine. Three tools make and test the engine parameters.
 ///
-/// - graphics : the ratatui frontend, a board and its diagnostics
-/// - headless : the same command set with no screen, one line at a time
-/// - datagen  : self-play games written out as training positions
-/// - sprt     : two builds played against each other until one is better
-/// - tuning   : fitting the evaluation's parameters to those positions
+/// - graphics : ratatui console with a board and diagnostics
+/// - headless : the same commands without a screen
+/// - datagen  : self-play games written as training positions
+/// - sprt     : match between two builds until one is better
+/// - tuning   : fit of evaluation parameters to training positions
+///
 pub mod debug {
     pub mod graphics;
     pub mod headless;
@@ -121,9 +119,9 @@ pub mod debug {
 
 /// prelude
 ///
-/// The one import every other file makes. It re-exports the whole module
-/// tree above along with the externals the engine leans on, so no file has
-/// to spell out a path that some other file has already spelled out.
+/// The common import of all other files. It exports the module tree and
+/// the external crates again, so no file writes the full paths.
+///
 pub mod prelude;
 
 /*----------------------------------------------------------------------------*\
@@ -132,24 +130,18 @@ pub mod prelude;
 
 /// main
 ///
-/// Picks a mode from the first command-line argument and hands control over.
-/// Logging is started before the argument is even read, so whichever mode
-/// takes over has somewhere to write from its opening line onward.
+/// Selects a mode from the first command line argument and runs it. The
+/// function starts logging first, so each mode can write output at once.
 ///
-/// - `debug-graphics` : the interactive board, with the debug flag set so
-///                      the engine reports what it is doing while it does it
-/// - `debug-headless` : the same tooling with no screen, the rest of the
-///                      line passed on as the command
-/// - anything else    : the text protocol loop, and no argument at all lands
-///                      here too, that being how the engine is normally run
+/// - `debug-graphics` : interactive console, with the debug flag set
+/// - `debug-headless` : the same tools without a screen, rest is a command
+/// - other or none    : protocol loop, the normal mode
 ///
 /// Notes:
+/// The headless tools write to the event sink, not to stdout. Thus the
+/// headless call runs in `with_stdout_sink`, which prints the events and
+/// flushes the last line at the end.
 ///
-/// The headless arm wraps its call in `with_stdout_sink` because the tools
-/// behind it speak through the engine's event sink rather than printing.
-/// Without a printer listening on the other end their output would go
-/// nowhere at all, so one is installed for the length of the call and joined
-/// afterwards to be sure the last line has been flushed.
 #[hotpath::main(functions_limit = 0)]
 fn main() {
     init_logging();

@@ -1,13 +1,11 @@
 //! moves.rs
 //!
-//! Implements compact move encoding for square-board variants.
+//! Defines the packed move encoding.
 //!
-//! Search generates and unmakes millions of moves, so a move must be small,
-//! copyable, and self-describing without touching the board. This file gives
-//! the engine that representation: a bit-packed word carrying everything
-//! make/undo needs — origin, target, and the capture, promotion, drop, and
-//! castling payloads — so the hot paths pass moves by value and decode them
-//! with cheap shifts.
+//! The search makes and undoes millions of moves. Thus a move must be small
+//! and must have all data that make and undo need, without the board. This
+//! file defines the packed move word and the macros that write and read its
+//! fields.
 //!
 //! Created: 26/01/2026
 //! Author : Alden Luthfi
@@ -20,33 +18,25 @@ use crate::*;
 
 /// AttackMask
 ///
-/// One attack candidate: `(attacking piece, its origin square, the movement
-/// vector that reaches out from it)`. The attacked square is not in the
-/// tuple because it is the index the candidate is filed under: a row of
-/// `relevant_attacks[side][square]` answers "who could be hitting this
-/// square", which is the direction check detection asks in.
+/// One attack candidate: `(attacking piece, origin square, move vector)`.
+/// The attacked square is the table index, `relevant_attacks[side][square]`.
 ///
-/// The vector is carried because arrival is not the whole question. A
-/// variant may let the same piece reach one square by several routes with
-/// different rules along them — one blockable, one hopping, one that may
-/// only capture what it outranks — so a candidate is confirmed by walking
-/// its own vector, not by a shared ray table.
+/// One piece can go to a square by different paths with different rules.
+/// Thus the check test walks the vector of the candidate.
 ///
-/// The vector is shared rather than owned. One vector is filed under every
-/// square it can take on, so a ray that takes along its whole length is
-/// filed once per leg, and owning a copy each time stored a 35-leg sweep 35
-/// times over. Every reader only walks it, so they all read one copy.
+/// Notes:
+/// The vector is shared, not owned. A ray is in the table once for each
+/// square it can capture on, so one copy saves much memory.
+///
 pub type AttackMask = (PieceIndex, Square, MoveVector);
 
 /// MoveSignature
 ///
-/// XOR of every `u64` entry in `Move.1`, folding a move's capture list into
-/// one integer. Used as a safe, pointer-free move identity token for
-/// transposition table storage, where holding a raw list pointer would dangle.
+/// The XOR of all `u64` entries in `Move.1`. The hash table stores it as a
+/// move identity without a pointer.
 ///
-/// The fold is lossy by construction — it is an identity check, not a
-/// reconstruction — so bit 35 rides above it as a second discriminator,
-/// separating a list that takes something from one that only unloads.
+/// The XOR loses data, so bit 35 is a second test. It separates a list
+/// with a capture from a list with only unloads.
 ///
 /// Bits 0..31:
 ///
@@ -67,40 +57,36 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 ///   └────┴─┴─────────────────────────────────────────────────────────┘
 /// ```
 ///
-/// - bits 0..34 (`XOR`): XOR-folded capture records
+/// - bits 0..34 (`XOR`): XOR of the capture records
 /// - bit 35     (`c`)  : at least one record is a real capture
 /// - bits 36..63       : unused
+///
 pub type MoveSignature = u64;
 
 /// PseudoMove
 ///
-/// Compact move descriptor stored in a transposition table.
+/// The move form in the hash table, `(Move.0, MoveSignature)`. It
+/// identifies a [`Move`] without its capture list.
 ///
-/// The fields are `(Move.0, MoveSignature)`. It identifies a live [`Move`]
-/// without retaining its auxiliary capture-list allocation.
 pub type PseudoMove = (u128, MoveSignature);
 
 /// Move
 ///
-/// One executable move with an inline primary word and optional extra payload.
+/// One move. `Move.0` is the packed main word. `Move.1` has the records of
+/// the multi-capture and castling formats. It is shared (`Arc`), because
+/// the search copies moves much and most moves have `None`.
 ///
-/// `Move.0` is the packed primary word. `Move.1` stores records needed only by
-/// multi-capture and castling formats. It is refcounted rather than owned
-/// because search copies moves far more often than it makes them — into
-/// ordered lists, principal variations, and killer slots — and almost every
-/// move leaves it `None`, so the rare payload is shared instead of cloned.
-///
-/// The low three bits select the packed format; the rest depend on it:
+/// The low three bits select the format:
 ///
 /// - `000`    : quiet move, no capture
 /// - `001`    : single capture or unload
-/// - `010`    : multi-capture (extra captures spill into `Move.1`)
+/// - `010`    : multi-capture, more captures in `Move.1`
 /// - `011`    : drop
 /// - `100`    : castling
 ///
-/// Formats `000`/`001`/`010` share this layout in `Move.0`.
-/// Capture fields apply only to `001` and the first capture of `010`.
-/// Field widths are proportional; every row represents 32 bits.
+/// Formats `000`, `001` and `010` use this layout. The capture fields are
+/// for `001` and for the first capture of `010`. Each row has 32 bits, and
+/// the field widths are to scale.
 ///
 /// Bits 0..31:
 ///
@@ -131,6 +117,8 @@ pub type PseudoMove = (u128, MoveSignature);
 ///   └─────────────────────────────┴─┴─────────────────────┴──────────┘
 /// ```
 ///
+/// Bits 96..127:
+///
 /// ```text
 ///   96      102                   113                              127
 ///                                   114
@@ -143,26 +131,24 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - bits 3..12    (`piece`)     : moving piece index
 /// - bits 13..23   (`start`)     : origin square
 /// - bits 24..34   (`end`)       : target square
-/// - bit 35        (`i`)         : move must be initial for the piece
+/// - bit 35        (`i`)         : the move is a first move of the piece
 /// - bit 36        (`p`)         : the move is a promotion
-/// - bit 37        (`e`)         : the move creates an en-passant square
-/// - bits 38..47   (`promoted`)  : promoted piece index when `p` is set
-/// - bits 48..79   (`created ep`): created en-passant square
+/// - bit 37        (`e`)         : the move makes an en passant square
+/// - bits 38..47   (`promoted`)  : promoted piece index, if `p` is set
+/// - bits 48..79   (`created ep`): en passant descriptor that the move makes
 /// - bit 80        (`u`)         : unload the last capture, not a capture
 /// - bits 81..91   (`unload sq`) : unload square
 /// - bits 92..101  (`capt pc`)   : captured piece index
 /// - bits 102..112 (`capt sq`)   : captured square
 /// - bit 113       (`m`)         : captured piece was unmoved
-/// - bit 114       (`o`)         : captured piece was the mover's own
+/// - bit 114       (`o`)         : captured piece was an own piece
 /// - bits 115..127               : unused
 ///
-/// A piece index spends ten bits and a square eleven, which is the whole of
-/// `MAX_SQUARES`. The two are neighbours everywhere they appear, so the bit
-/// a square gives up is the bit the index beside it takes, and the three
-/// flags between `end` and `promoted` keep the places they have always had.
+/// A piece index has 10 bits. A square has 11 bits, enough for
+/// `MAX_SQUARES`.
 ///
-/// A multi-capture (`010`) keeps its first capture above. Each further
-/// capture is one 35-bit record in a `u64` stored in `Move.1`:
+/// A multi-capture (`010`) keeps its first capture in the main word. Each
+/// other capture is one 35-bit record in a `u64` in `Move.1`:
 ///
 /// Bits 0..31:
 ///
@@ -188,24 +174,19 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - bits 12..21      : captured piece index
 /// - bits 22..32      : captured square
 /// - bit 33      (`m`): captured piece was unmoved
-/// - bit 34      (`o`): captured piece was the mover's own
+/// - bit 34      (`o`): captured piece was an own piece
 /// - bits 35..63      : unused
 ///
-/// The record is 35 bits and its `o` flag sits on bit 34. `enc_capture_part!`
-/// shifts the whole of it to bit 80, which lands every field exactly where
-/// the primary word reads it, so the first capture needs no separate
-/// spelling from the rest.
+/// `enc_capture_part!` shifts a full record to bit 80. Then each field is
+/// at its place in the main word, so the first capture uses the same
+/// record.
 ///
-/// The `o` flag is written where a destroying leg is resolved, which is the
-/// one place in the engine that already knows whose piece stood on the
-/// square. Recording it there keeps the question "did this move take
-/// anything from the other side" answerable from the move alone, without a
-/// piece table to read a colour out of.
+/// The move generator writes the `o` flag when it resolves a destroy leg.
+/// Thus the move alone tells if it takes an enemy piece.
 ///
-/// A drop (`011`) has no origin square, so it repeats the placement square in
-/// both `start` and `end`. Make/undo reads `start`, while every target-indexed
-/// consumer — history and ordering — reads `end`, so the two have to agree
-/// rather than leaving `end` unwritten:
+/// A drop (`011`) has no origin square, so `start` and `end` both have the
+/// target square. Make and undo read `start`. History and ordering read
+/// `end`:
 ///
 /// Bits 0..31:
 ///
@@ -246,16 +227,18 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - bits 0..2    (`type`) : drop format tag
 /// - bits 3..12   (`piece`): dropped piece index
 /// - bits 13..23  (`start`): target square
-/// - bits 24..34  (`end`)  : target square, repeated
+/// - bits 24..34  (`end`)  : target square, again
 /// - bits 35..111          : unused
-/// - bit 112      (`c`)    : whether the drop may deliver checkmate
+/// - bit 112      (`c`)    : the drop can give checkmate
 /// - bits 113..127         : unused
 ///
-/// Castling (`100`) keeps the primary castling piece's step in the base
-/// word's `start`/`end` squares. It packs the secondary castling piece's
-/// from-square in `captured square`, its to-square in `unload square`, and
-/// its piece type in `captured piece`. `Move.1` lists the primary piece's
-/// path as `u64` entries:
+/// Castling (`100`) uses the main word as follows. `Move.1` has the path
+/// of the main piece as `u64` entries:
+///
+/// - `start`, `end`   : squares of the main castling piece
+/// - `captured sq`    : start square of the second piece
+/// - `unload sq`      : end square of the second piece
+/// - `captured piece` : piece type of the second piece
 ///
 /// Bits 0..31:
 ///
@@ -275,9 +258,10 @@ pub type PseudoMove = (u128, MoveSignature);
 ///   └────────────────────────────────────────────────────────────────┘
 /// ```
 ///
-/// - bit 0 (`u`): the square must be unattacked
+/// - bit 0 (`u`): the square must not be attacked
 /// - bits 1..11 : square index
 /// - bits 12..63: unused
+///
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Move(pub u128, pub Option<Arc<Vec<u64>>>);
 
@@ -287,14 +271,15 @@ pub struct Move(pub u128, pub Option<Arc<Vec<u64>>>);
 
 /// m_captures!
 ///
-/// Borrows the capture/check list of a `Move` as a slice, yielding an empty
-/// slice for the common no-payload case.
+/// Borrows the record list of a `Move` as a slice. If `Move.1` is `None`,
+/// the slice is empty.
 ///
 /// Params:
-/// - mv: &Move -> move whose auxiliary list is borrowed
+/// - mv: &Move -> move with the list to borrow
 ///
 /// Return:
-/// &[u64]      -> packed multi-capture records, empty when `Move.1` is `None`
+/// &[u64]      -> packed records, empty when `Move.1` is `None`
+///
 #[macro_export]
 macro_rules! m_captures {
     ($mv:expr) => {
@@ -304,20 +289,18 @@ macro_rules! m_captures {
 
 /// m_signature!
 ///
-/// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
-/// `move.1`. The result is 0 for moves with no captures (empty list).
+/// Calculates the `MoveSignature` of a `Move`, the XOR of all records in
+/// `Move.1`. An empty list gives 0.
 ///
-/// Bit 35 is set when at least one record in the list is a real capture, so
-/// a list of nothing but unloads stays distinguishable from one that takes
-/// a piece even where the fold happens to agree. It sits one bit above the
-/// widest record rather than on a fixed number, so it never collides with
-/// a field the fold itself carries.
+/// Bit 35 is set when one record or more is a real capture. It is above
+/// the widest record, so it does not touch the XOR bits.
 ///
 /// Params:
-/// - mv: &Move   -> move whose auxiliary list is folded
+/// - mv: &Move   -> move with the list to fold
 ///
 /// Return:
-/// MoveSignature -> XOR of all records, capture flag in bit 34
+/// MoveSignature -> XOR of all records, capture flag in bit 35
+///
 #[macro_export]
 macro_rules! m_signature {
     ($mv:expr) => {
@@ -328,40 +311,40 @@ macro_rules! m_signature {
     };
 }
 
-/// Move predicate macros.
+/// Move predicate macros
 ///
-/// `m_matches!` tests a `Move` against a stored `PseudoMove` without
-/// touching the captures list pointer; `m_capture!` asks whether the move
-/// takes anything belonging to the other side; `m_drop!`, `m_promotion!`,
-/// and `m_quiet!` classify moves for ordering and pruning decisions during
-/// search.
-///
-/// Every member takes the move it judges as its first parameter:
-///
-/// - mv: &Move -> move under test
+/// Move tests for ordering and pruning. Each macro returns a `bool`.
 ///
 /// m_matches!
 ///
+///   Tests a `Move` against a stored `PseudoMove`, without the list
+///   pointer.
+///
 ///   Params:
-///   - pseudo: &PseudoMove -> stored word and signature to match against
+///   - mv    : &Move       -> move to test
+///   - pseudo: &PseudoMove -> stored word and signature
 ///
 ///   Return:
-///   bool                  -> whether this is the move it recorded
+///   bool                  -> true when it is the stored move
 ///
-/// The rest take no second parameter, and each answers one question about
-/// the move with a `bool`:
+/// m_capture! / m_drop! / m_promotion! / m_quiet!
 ///
-/// - m_capture!   -> the other side loses a piece, unloads excluded
-/// - m_drop!      -> the move places a piece from the hand
-/// - m_promotion! -> the move promotes
-/// - m_quiet!     -> the move is in quiet format and does not promote
+///   Params:
+///   - mv: &Move -> move to test
 ///
-/// A destroying leg removes a piece of the mover's own, and both kinds of
-/// victim are written into one list under one encoding, which is why each
-/// record carries the `o` flag saying which it was. A move that removes
-/// nothing but its own army takes no more than a quiet move walking into a
-/// loss does, and calling it a capture hands quiescence a position with no
-/// quiet horizon to reach.
+///   Return:
+///   bool        -> the answer to the test below
+///
+/// - m_capture!   : the other side loses a piece, unloads not included
+/// - m_drop!      : the move puts a piece from the hand on the board
+/// - m_promotion! : the move promotes
+/// - m_quiet!     : the move has the quiet format and does not promote
+///
+/// Notes:
+/// A destroy leg removes an own piece, with the `o` flag set. `m_capture!`
+/// does not count it. Else quiescence would search moves that only lose
+/// own pieces.
+///
 #[macro_export]
 macro_rules! m_matches {
     ($mv:expr, $pseudo:expr) => {
@@ -387,20 +370,17 @@ macro_rules! m_capture {
 
 /// m_takes_square!
 ///
-/// Whether the move removes a piece standing on one named square. A move may
-/// take several pieces, so this is a search of the list rather than a lookup,
-/// and a piece the move merely puts down is not one it took.
-///
-/// The exchange simulation asks it to collect the attackers of a square, and
-/// quiescence asks it to tell a reply from a new plan. Both want the same
-/// question answered, so both ask it here.
+/// Tells if the move captures the piece on one square. A move can capture
+/// many pieces, so the macro searches the list. An unload is not a capture.
+/// The exchange simulation and quiescence use it.
 ///
 /// Params:
-/// - mv    : &Move -> move under test
-/// - square: Square -> square whose occupant may be taken
+/// - mv    : &Move  -> move to test
+/// - square: Square -> square to test
 ///
 /// Return:
-/// bool            -> whether that square's piece is among the victims
+/// bool             -> true when the piece on the square is captured
+///
 #[macro_export]
 macro_rules! m_takes_square {
     ($mv:expr, $square:expr) => {
@@ -440,50 +420,44 @@ macro_rules! m_quiet {
                           MOVE REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
-/// Primary move-bitfield encoder macros.
+/// Primary move encoder macros
 ///
-/// These macros write individual fields into `Move.0` (`u128`) using the
-/// packed move layout described above the `Move` type.
+/// Write one field of `Move.0` with the layout on [`Move`]. Each macro ORs
+/// the masked value into place and returns nothing. A caller writes only
+/// the fields of the current format. The capture fields from bit 80 can
+/// be written one at a time or as one record with `enc_capture_part!`.
 ///
-/// They are intentionally low-level and composable: callers build a move in
-/// stages by applying only the fields relevant for the current move format.
-/// Capture payload bits (starting at bit 78) can be written either field-by-
-/// field (`enc_is_unload!`, `enc_captured_piece!`, ...) or as a single packed
-/// chunk using `enc_capture_part!`.
+/// enc_move_type! .. enc_captured_square!
 ///
-/// All OR the masked value into place and return nothing; every entry
-/// takes the same first parameter:
+///   Params:
+///   - mv : &mut Move -> move to write
+///   - val: u128      -> value for the field below
 ///
-/// - mv: &mut Move -> move whose packed word is written
-///
-/// Every entry but the last also takes `val: u128`, masked into the field
-/// its name spells:
-///
-/// - enc_move_type!       -> format tag, bits 0..2
-/// - enc_piece!           -> moving piece index, bits 3..12
-/// - enc_start!           -> origin square, bits 13..23
-/// - enc_end!             -> target square, bits 24..34
-/// - enc_is_initial!      -> initial-move flag, bit 35
-/// - enc_promotion!       -> promotion flag, bit 36
-/// - enc_creates_enp!     -> creates-en-passant flag, bit 37
-/// - enc_promoted!        -> promoted piece index, bits 38..47
-/// - enc_created_enp!     -> created en-passant square, bits 48..79
-/// - enc_is_unload!       -> unload flag, bit 80
-/// - enc_unload_square!   -> unload square, bits 81..91
-/// - enc_captured_piece!  -> captured piece index, bits 92..101
-/// - enc_captured_square! -> captured square, bits 102..112
+/// - enc_move_type!       : format tag, bits 0..2
+/// - enc_piece!           : moving piece index, bits 3..12
+/// - enc_start!           : origin square, bits 13..23
+/// - enc_end!             : target square, bits 24..34
+/// - enc_is_initial!      : first move flag, bit 35
+/// - enc_promotion!       : promotion flag, bit 36
+/// - enc_creates_enp!     : makes en passant flag, bit 37
+/// - enc_promoted!        : promoted piece index, bits 38..47
+/// - enc_created_enp!     : en passant descriptor, bits 48..79
+/// - enc_is_unload!       : unload flag, bit 80
+/// - enc_unload_square!   : unload square, bits 81..91
+/// - enc_captured_piece!  : captured piece index, bits 92..101
+/// - enc_captured_square! : captured square, bits 102..112
 ///
 /// enc_capture_part!
 ///
 ///   Params:
-///   - taken_piece: u128 -> whole 35-bit capture payload, bits 80..114
+///   - mv         : &mut Move -> move to write
+///   - taken_piece: u128      -> full 35-bit capture record, bits 80..114
 ///
 /// Notes:
-/// `enc_capture_part!` is how a single capture gets its bits 113 and 114.
-/// Move generation builds every capture as a multi-capture payload word, so
-/// the payload's bits 33 and 34 become those two under the shift; there is
-/// no separate encoder for the captured-was-unmoved or captured-was-own
-/// flags.
+/// There is no encoder for bits 113 and 114. The generator makes each
+/// capture as a record, and `enc_capture_part!` shifts the record bits 33
+/// and 34 to them.
+///
 #[macro_export]
 macro_rules! enc_move_type {
     ($mv:expr, $val:expr) => {
@@ -586,45 +560,45 @@ macro_rules! enc_capture_part {
                           MOVE REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
 
-/// Decoders for the primary packed `Move` representation.
+/// Primary move decoder macros
 ///
-/// These macros extract typed values and flags from `Move.0` for legality
-/// checks, make/undo logic, and IO serialization. Each takes the same
-/// single parameter (a `PseudoMove` also works wherever only `.0` is
-/// read, since its first field mirrors `Move.0`):
+/// Read one field of `Move.0`. A `PseudoMove` also works, because its
+/// first field is the same word.
 ///
-/// - mv: &Move -> move whose packed word is read
+/// move_type! .. captured_square!
 ///
-/// Ten of them hand back the field their name spells, as `u128`:
-///
-/// - move_type!       -> format tag, bits 0..2
-/// - piece!           -> moving piece index, bits 3..12
-/// - start!           -> origin square, bits 13..23
-/// - end!             -> target square, bits 24..34
-/// - is_initial!      -> initial-move flag as 0 or 1, bit 35
-/// - promoted!        -> promoted piece index, bits 38..47
-/// - created_enp!     -> created en-passant square, bits 48..79
-/// - unload_square!   -> unload square, bits 81..91
-/// - captured_piece!  -> captured piece index, bits 92..101
-/// - captured_square! -> captured square, bits 102..112
-///
-/// Five answer a yes-or-no question with `bool`:
-///
-/// - promotion!        -> the move promotes, bit 36
-/// - creates_enp!      -> the move leaves an en-passant square, bit 37
-/// - is_unload!        -> the payload drops a piece, takes none, bit 80
-/// - captured_unmoved! -> the captured piece had never moved, bit 113
-/// - captured_own!     -> the captured piece was the mover's, bit 114
-///
-/// `is_pass!` reads no field of its own. It recognises the shape a variant
-/// that allows passing produces — a quiet move whose start and end squares
-/// are the same — rather than spending a format tag on a move that does
-/// nothing but hand over the turn.
-///
-/// is_pass!
+///   Params:
+///   - mv: &Move -> move to read
 ///
 ///   Return:
-///   bool -> whether the move only surrenders the turn
+///   u128        -> the field below
+///
+/// - move_type!       : format tag, bits 0..2
+/// - piece!           : moving piece index, bits 3..12
+/// - start!           : origin square, bits 13..23
+/// - end!             : target square, bits 24..34
+/// - is_initial!      : first move flag as 0 or 1, bit 35
+/// - promoted!        : promoted piece index, bits 38..47
+/// - created_enp!     : en passant descriptor, bits 48..79
+/// - unload_square!   : unload square, bits 81..91
+/// - captured_piece!  : captured piece index, bits 92..101
+/// - captured_square! : captured square, bits 102..112
+///
+/// promotion! .. captured_own!, is_pass!
+///
+///   Params:
+///   - mv: &Move -> move to read
+///
+///   Return:
+///   bool        -> the flag below
+///
+/// - promotion!        : the move promotes, bit 36
+/// - creates_enp!      : the move makes an en passant square, bit 37
+/// - is_unload!        : the record puts a piece down, bit 80
+/// - captured_unmoved! : the captured piece was unmoved, bit 113
+/// - captured_own!     : the captured piece was an own piece, bit 114
+/// - is_pass!          : a quiet move with equal start and end squares
+///
 #[macro_export]
 macro_rules! is_pass {
     ($mv:expr) => {
@@ -741,26 +715,36 @@ macro_rules! captured_own {
                        MOVE LIST REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
 
-/// Decoders for auxiliary multi-capture entries (`u64`) stored in `Move.1`.
+/// Capture record decoder macros
 ///
-/// Multi-capture moves keep their first capture in `Move.0` and any remaining
-/// captures in `Move.1` as compact 34-bit packed records. These macros unpack
-/// those records during make/undo and move display logic. Each takes the
-/// same single parameter:
+/// Read one field of a 35-bit capture record in `Move.1`. The layout is on
+/// [`Move`]. Make, undo and move output use them.
 ///
-/// - entry: u64 -> packed multi-capture record read
+/// multi_move_unload_square! .. multi_move_captured_square!
 ///
-/// Three read a field as `u64`, in the layout diagrammed on [`Move`]:
+///   Params:
+///   - entry: u64 -> packed record to read
 ///
-/// - multi_move_unload_square!   -> unload square, bits 1..11
-/// - multi_move_captured_piece!  -> captured piece index, bits 12..21
-/// - multi_move_captured_square! -> captured square, bits 22..32
+///   Return:
+///   u64          -> the field below
 ///
-/// Three read a flag as `bool`:
+/// - multi_move_unload_square!   : unload square, bits 1..11
+/// - multi_move_captured_piece!  : captured piece index, bits 12..21
+/// - multi_move_captured_square! : captured square, bits 22..32
 ///
-/// - multi_move_is_unload!        -> the record drops a piece, bit 0
-/// - multi_move_captured_unmoved! -> the captured piece never moved, bit 33
-/// - multi_move_captured_own!     -> the piece was the mover's own, bit 34
+/// multi_move_is_unload!, multi_move_captured_unmoved!,
+/// multi_move_captured_own!
+///
+///   Params:
+///   - entry: u64 -> packed record to read
+///
+///   Return:
+///   bool         -> the flag below
+///
+/// - multi_move_is_unload!        : the record puts a piece down, bit 0
+/// - multi_move_captured_unmoved! : the captured piece was unmoved, bit 33
+/// - multi_move_captured_own!     : the captured piece was own, bit 34
+///
 #[macro_export]
 macro_rules! multi_move_is_unload {
     ($mv:expr) => {
@@ -807,24 +791,23 @@ macro_rules! multi_move_captured_own {
                        MOVE LIST REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
-/// Encoders for auxiliary multi-capture entries (`u64`) stored in `Move.1`.
+/// Capture record encoder macros
 ///
-/// These macros mirror the `multi_move_*` decoders and are used when building
-/// the variable-length captured-piece list for `MULTI_CAPTURE_MOVE`. All OR
-/// the masked value into place and return nothing; every entry takes the
-/// same first parameter:
+/// Write one field of a capture record for `Move.1`. They are the inverse
+/// of the `multi_move_*` readers. Each macro ORs the masked value into
+/// place and returns nothing.
 ///
-/// - entry: &mut u64 -> packed multi-capture record written
+/// Params:
+/// - entry: &mut u64 -> packed record to write
+/// - val  : u64      -> value for the field below
 ///
-/// The second parameter is always `val: u64`, masked into the field the
-/// name spells:
+/// - enc_multi_move_is_unload!        : unload flag, bit 0
+/// - enc_multi_move_unload_square!    : unload square, bits 1..11
+/// - enc_multi_move_captured_piece!   : captured piece index, bits 12..21
+/// - enc_multi_move_captured_square!  : captured square, bits 22..32
+/// - enc_multi_move_captured_unmoved! : captured unmoved flag, bit 33
+/// - enc_multi_move_captured_own!     : captured own flag, bit 34
 ///
-/// - enc_multi_move_is_unload!        -> unload flag, bit 0
-/// - enc_multi_move_unload_square!    -> unload square, bits 1..11
-/// - enc_multi_move_captured_piece!   -> captured piece index, bits 12..21
-/// - enc_multi_move_captured_square!  -> captured square, bits 22..32
-/// - enc_multi_move_captured_unmoved! -> captured-was-unmoved flag, bit 33
-/// - enc_multi_move_captured_own!     -> captured-was-own flag, bit 34
 #[macro_export]
 macro_rules! enc_multi_move_is_unload {
     ($mv:expr, $val:expr) => {

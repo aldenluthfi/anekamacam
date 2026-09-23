@@ -1,12 +1,10 @@
 //! board.rs
 //!
-//! Defines a board structure and operations for bitboard manipulation.
+//! Defines the board type and the bitboard macros.
 //!
-//! The engine must track occupancy on boards far larger than the 64 squares a
-//! `u64` can hold, since variants range up to very large grids. This file
-//! gives the rest of the engine one compact board value backed by a wide
-//! bitset, plus a vocabulary of cheap bit operations over it, so move
-//! generation, masks, and state updates never touch raw bit arithmetic.
+//! Some variants have boards with many more than 64 squares, so a `u64`
+//! is too small. This file defines one board type on a wide bitset and the
+//! bit operations on it. Other modules use these macros, not raw bits.
 //!
 //! Created: 18/02/2024
 //! Author : Alden Luthfi
@@ -15,36 +13,30 @@ use crate::*;
 
 /// BoardBits
 ///
-/// The 4096-bit bitset backing every [`Board`], and the single knob that
-/// sets what a board copy costs: every occupancy set, every attack mask,
-/// and every snapshot pays this width whether the variant fills it or not.
-/// It is deliberately wider than any board the engine will be handed, since
-/// a bitset one square short of a variant's board cannot represent it at
-/// all, while a wide one only costs time.
+/// The 4096-bit bitset of each [`Board`]. This width sets the cost of each
+/// board copy, for all variants. It is wider than all supported boards.
 ///
-/// The bitset is not the effective limit on board area. Zobrist tables are
-/// `MAX_SQUARES` entries long, so that constant, not this width, is the
-/// square count a variant must stay inside.
+/// Notes:
+/// The Zobrist tables have `MAX_SQUARES` entries. Thus `MAX_SQUARES`, not
+/// this width, is the limit on the board area.
+///
 pub type BoardBits = U4096;
 
 /// Board
 ///
-/// Compact board representation as a `(files, ranks, bits)` triple: the
-/// file count, the rank count, and a [`BoardBits`] bitboard whose bit at
-/// index `rank * files + file` marks occupancy of that square.
+/// A board as a `(files, ranks, bits)` triple. The bit at the index
+/// `rank * files + file` is set when that square is occupied.
+///
 pub type Board = (u8, u8, BoardBits);
 
 /*----------------------------------------------------------------------------*\
                         BITBOARD HELPER REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-/// Bitboard helper macros over the compact [`Board`] tuple.
+/// Bitboard helper macros
 ///
-/// All operate on the `(files, ranks, bits)` representation, where `bits`
-/// is a [`BoardBits`] bitset indexed by `rank * files + file`. They keep move
-/// generation and state updates free of raw bit twiddling.
-///
-/// The index is file-fastest, `rank * files + file`; on a 4x3 board:
+/// Bitboard macros for the [`Board`] triple. The bit index is
+/// `rank * files + file`, so the file changes fastest. On a 4x3 board:
 ///
 /// ```text
 /// ┌────┬────┬────┬────┐
@@ -88,10 +80,10 @@ pub type Board = (u8, u8, BoardBits);
 ///
 ///   Params:
 ///   - board : &Board -> board to read
-///   - index : u32    -> square index tested
+///   - index : u32    -> square index to test
 ///
 ///   Return:
-///   bool             -> whether the bit at the index is set
+///   bool             -> true when the bit at the index is set
 ///
 /// count_bits!
 ///
@@ -99,7 +91,7 @@ pub type Board = (u8, u8, BoardBits);
 ///   - board : &Board -> board to read
 ///
 ///   Return:
-///   u32              -> number of set bits (piece/occupancy popcount)
+///   u32              -> number of set bits
 ///
 /// set_indices!
 ///
@@ -107,7 +99,7 @@ pub type Board = (u8, u8, BoardBits);
 ///   - board : &Board -> board to read
 ///
 ///   Return:
-///   Vec<usize>       -> indices of every set bit, ascending
+///   Vec<usize>       -> indices of the set bits, in ascending order
 ///
 /// is_empty!
 ///
@@ -115,33 +107,34 @@ pub type Board = (u8, u8, BoardBits);
 ///   - board : &Board -> board to read
 ///
 ///   Return:
-///   bool             -> whether no bit is set
+///   bool             -> true when no bit is set
 ///
-/// Mutation (in place, no return value):
+/// Changes in place, no return value:
 ///
 /// set!
 ///
 ///   Params:
-///   - board : &mut Board -> board mutated
-///   - index : u32        -> square index whose bit is set
+///   - board : &mut Board -> board to change
+///   - index : u32        -> square index of the bit to set
 ///
 /// clear!
 ///
 ///   Params:
-///   - board : &mut Board -> board mutated
-///   - index : u32        -> square index whose bit is cleared
+///   - board : &mut Board -> board to change
+///   - index : u32        -> square index of the bit to clear
 ///
 /// or!
 ///
 ///   Params:
-///   - board1: &mut Board -> destination, unioned in place
-///   - board2: &Board     -> source supplying the bits
+///   - board1: &mut Board -> target, gets the union
+///   - board2: &Board     -> source of the bits
 ///
 /// and!
 ///
 ///   Params:
-///   - board1: &mut Board -> destination, intersected in place
-///   - board2: &Board     -> source supplying the bits
+///   - board1: &mut Board -> target, gets the intersection
+///   - board2: &Board     -> source of the bits
+///
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {

@@ -1,12 +1,11 @@
 //! termination.rs
 //!
-//! The terminal-rule table a variant declares, and the detectors that apply it.
+//! The game end rules of a variant, and the detectors that apply them.
 //!
-//! One flat `Termination` table holds every terminal rule as an `Option` that
-//! is `Some` only when the config declares it, so a variant pays only for the
-//! rules it uses. `position_terminal` checks the eager, position-local rules
-//! after a move; `game_outcome` adds the on-demand repetition and perpetual
-//! verdicts, computed from history rather than stored.
+//! One `Termination` table has all end rules. Each optional rule is `Some`
+//! only when the config declares it. `position_terminal` tests the rules of
+//! the position after each move. `game_outcome` adds the repetition and
+//! perpetual results, which it calculates from the history.
 //!
 //! Created: 26/07/2026
 //! Author : Alden Luthfi
@@ -19,18 +18,18 @@ use crate::*;
 
 /// Outcome
 ///
-/// The result an end condition produces when it fires, named from the
-/// perspective of the side that rule is about. **Which side that is belongs to
-/// the rule, not to this type**: each rule's own doc names its subject, and
-/// `position_terminal` returns that colour alongside the outcome. There is no
-/// convention covering all of them, because three rules name a colour computed
-/// from the position rather than read off the turn order — `extinct` names
-/// whichever colour ran out, `adjudicate` the points winner, `perpetual` the
-/// sole offender.
+/// The result of an end rule, for the side that the rule names. Each rule
+/// doc gives its subject, and `position_terminal` returns that colour with
+/// the outcome. Three rules calculate the colour from the position:
 ///
-/// `resolve_outcome!` maps an outcome plus its subject to an absolute
-/// `game_result`; `outcome_score!` maps an outcome already named against the
-/// side to move to a search score.
+/// - `extinct`    : the colour that has no pieces of the set left
+/// - `adjudicate` : the colour with more points
+/// - `perpetual`  : the only offender
+///
+/// `resolve_outcome!` converts an outcome and its subject into a
+/// `game_result`. `outcome_score!` converts an outcome for the side to
+/// move into a search score.
+///
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     Draw,                                                                       /* neither side wins                  */
@@ -40,13 +39,12 @@ pub enum Outcome {
 
 /// Counter
 ///
-/// A progress counter that resolves once it reaches `limit` halfmoves without a
-/// resetting move. `reset_pieces[i]` marks the piece indices whose quiet moves
-/// reset it; captures and drops always reset it. Its running value is
-/// `Counter::clock`.
+/// A progress counter. It fires after `limit` halfmoves without a reset.
+/// A capture or a drop always resets it. A quiet move of a piece with
+/// `reset_pieces[i]` set also resets it.
 ///
-/// Subject: the mover whose move reached the limit. The rule is symmetric, so
-/// this matters only to a variant declaring a non-draw outcome.
+/// Subject: the side that made the move at the limit.
+///
 #[derive(Clone)]
 pub struct Counter {
     pub clock: u8,                                                              /* current reversible halfmove count  */
@@ -58,18 +56,19 @@ pub struct Counter {
 
 /// Counting
 ///
-/// A material-scaled move budget for a bare-king endgame. When exactly one side
-/// is reduced to a lone royal, the side with material must mate within a limit
-/// set by its strongest material or the game resolves to `outcome`. The running
-/// value is a frozen `progress` clock: it starts at the piece count when the
-/// bare king arises and climbs by one per ply, never resetting on a capture.
-/// `table` is an ordered list of `(requirements, limit)` rows, the first
-/// fully-matched winning; a requirement is a piece set and the minimum number
-/// the material side must own. `default` applies when no row matches.
+/// A move limit for a bare king endgame. When one side has only a royal,
+/// the other side must give mate within a limit, else the game ends with
+/// `outcome`. Its material sets the limit.
 ///
-/// Subject: the material side, i.e. the colour that is not bare — the one
-/// that failed to mate inside the budget. Not the mover, whose identity at the
-/// expiring ply is only parity.
+/// - `progress` : count and limit, the count starts at the piece count
+/// - `table`    : ordered `(requirements, limit)` rows, first match wins
+/// - `default`  : limit when no row matches
+///
+/// A requirement is a piece set and the minimum number of those pieces.
+/// The count increases by one each ply and a capture does not reset it.
+///
+/// Subject: the side with material, not the side to move.
+///
 #[derive(Clone)]
 pub struct Counting {
     pub progress: Option<(u16, u16)>,                                           /* current count and frozen limit     */
@@ -81,14 +80,13 @@ pub struct Counting {
 
 /// Extinct
 ///
-/// A material-extinction rule: when a colour's count of the pieces in `set`
-/// falls to `threshold` or below, that colour receives `outcome`. `set[i]`
-/// marks the counted piece indices, matched per colour.
+/// A material extinction rule. When the count of `set` pieces of a colour
+/// is `threshold` or less, that colour gets `outcome`.
 ///
-/// Subject: the colour that ran out, which need not be the mover — a capture
-/// empties the opponent's set, a promotion can empty your own. A rule meant to
-/// end the game for the other side is the same rule with `win` and `loss`
-/// swapped, so no opponent-facing flag is carried.
+/// Subject: the colour with no pieces left. It is not always the side that
+/// moved. A capture removes enemy pieces, and a promotion can remove own
+/// pieces.
+///
 #[derive(Clone)]
 pub struct Extinct {
     pub set: Vec<bool>,                                                         /* piece indices the rule counts      */
@@ -99,11 +97,11 @@ pub struct Extinct {
 
 /// Goal
 ///
-/// A goal-zone rule: when a colour lands one of its `set` pieces on a square of
-/// `zone`, that colour receives `outcome`. The zone is one board shared by both
-/// colours.
+/// A goal zone rule. When a colour moves a `set` piece to a `zone` square,
+/// that colour gets `outcome`. The two colours share the zone.
 ///
-/// Subject: the colour whose piece stands in the zone.
+/// Subject: the colour with the piece in the zone.
+///
 #[derive(Clone)]
 pub struct Goal {
     pub set: Vec<bool>,                                                         /* piece indices that reach the zone  */
@@ -114,14 +112,13 @@ pub struct Goal {
 
 /// Adjudicate
 ///
-/// A points rule: when both sides pass in succession the position is decided by
-/// weighted material rather than drawn. `weights[i]` is a piece index's point
-/// value; each colour's counted pieces are summed, `handicap[colour]` added,
-/// and the greater sum wins (a tie draws). Weights and handicap come from a
-/// named `= adjudicate <name> =` config section.
+/// A points rule. When the two sides pass one after the other, the points
+/// decide the game. The points of a colour are the sum of `weights[i]` for
+/// its pieces, plus `handicap[colour]`. The larger sum wins, and equal
+/// sums draw. The config section `= adjudicate <name> =` gives the values.
 ///
-/// Subject: the colour with the greater sum, or the side to move on a tie,
-/// where the outcome is `Draw` and the subject cannot matter.
+/// Subject: the colour with the larger sum, or the side to move on a draw.
+///
 #[derive(Clone)]
 pub struct Adjudicate {
     pub weights: Vec<i32>,                                                      /* per piece index point value        */
@@ -131,17 +128,22 @@ pub struct Adjudicate {
 
 /// Perpetual
 ///
-/// A cycle-offence rule refining `repetition`: when a repetition closes, a sole
-/// aggressor sustaining it receives its offence's `Outcome` instead of the
-/// neutral repetition result. `check` is delivering a check on every one of the
-/// offender's cycle moves; `chase` is keeping the same enemy non-royal piece
-/// under an undefended capture threat on every one of them, with `chasers`
-/// marking the piece indices whose threats count. Check outranks chase; when
-/// both sides offend the repetition result stands.
+/// A cycle offence rule that changes `repetition`. When a repetition ends
+/// the game and one side is the only offender, that side gets the outcome
+/// of its offence:
 ///
-/// Subject: the sole offender. Each offence carries its own `Outcome`, and
-/// declaring one at all is what enables that offence — `check draw` leaves
-/// the cycle drawn rather than losing it for the checker.
+/// - `check` : each cycle move of the offender gives check
+/// - `chase` : each cycle move attacks the same undefended enemy piece
+///
+/// Only `chasers` pieces can chase, and the target is not royal. Check is
+/// before chase. If the two sides offend, the repetition result stays.
+///
+/// Subject: the only offender.
+///
+/// Notes:
+/// An offence applies only when the config declares it. `check draw` keeps
+/// the cycle a draw.
+///
 #[derive(Clone)]
 pub struct Perpetual {
     pub check: Option<Outcome>,                                                 /* sole perpetual checker's result    */
@@ -152,15 +154,16 @@ pub struct Perpetual {
 
 /// Repetition
 ///
-/// A repeated-position rule: the game resolves to `outcome` once the current
-/// position has occurred `occurrences` times. A `Perpetual` rule may override
-/// the result for a sole aggressor. Occurrences are counted on demand by
-/// scanning the pre-move hashes history already stores; `clock` bounds that
-/// scan in variants without drops (a capture, drop, promotion, or castling
-/// move makes every earlier position unreachable).
+/// A repetition rule. The game ends with `outcome` when the position occurs
+/// `occurrences` times. A `Perpetual` rule can change the result for one
+/// offender.
 ///
-/// Subject: the mover that closed the repetition. Symmetric like `counter`, so
-/// it matters only to a variant declaring a non-draw outcome.
+/// The count scans the hashes in the history when necessary. In variants
+/// without drops, `clock` limits the scan. A capture, drop, promotion or
+/// castling move makes all earlier positions unreachable.
+///
+/// Subject: the side that made the repeating move.
+///
 #[derive(Clone)]
 pub struct Repetition {
     pub occurrences: u8,                                                        /* occurrences that trigger the rule  */
@@ -171,10 +174,11 @@ pub struct Repetition {
 
 /// Checks
 ///
-/// An N-check rule: the side delivering its `count`-th check receives
-/// `outcome`, scored against that side.
+/// An N-check rule. The side that gives its `count`-th check gets
+/// `outcome`.
 ///
-/// Subject: the checking side, i.e. the mover.
+/// Subject: the checking side, the side that moved.
+///
 #[derive(Clone)]
 pub struct Checks {
     pub delivered: [u8; 2],                                                     /* checks delivered per colour        */
@@ -189,24 +193,21 @@ pub struct Checks {
 
 /// Termination
 ///
-/// The flat, directly-named terminal-rule table and mutable progress for one
-/// position. `checkmate` and `stalemate` name no-legal-move outcomes; remaining
-/// rule fields are `Some` only when declared by the variant. Runtime result and
-/// progress reset between games while configured rules remain intact.
+/// The end rule table and the rule progress of one position. `checkmate`
+/// and `stalemate` are the outcomes when a side has no legal move. The
+/// other rules are `Some` only when the variant declares them. A new game
+/// resets the result and progress, but not the rules.
 ///
-/// The fields group by when they are asked rather than by what they mean,
-/// and three readers take a disjoint part of the table each:
+/// Three readers each read a different part of the table:
 ///
-/// - `no_move_verdict!` reads `checkmate` and `stalemate`, and only when a
-///   side has no legal move at all
-/// - `position_terminal` reads `checks`, `goal`, `extinct`, `adjudicate`,
-///   `counting` and `counter` after every move, in that order
-/// - `game_outcome` reads `repetition` and `perpetual` on request, scanning
-///   history rather than any stored progress
+/// - `no_move_verdict!`  : `checkmate`, `stalemate`, when no legal move
+/// - `position_terminal` : `checks` .. `counter`, after each move
+/// - `game_outcome`      : `repetition`, `perpetual`, from the history
 ///
-/// That middle list is a priority order, not a set. A variant may declare
-/// several of those rules and never has to say which it meant when two could
-/// fire on one move, because the first to match is the one that answers.
+/// `position_terminal` tests `checks`, `goal`, `extinct`, `adjudicate`,
+/// `counting` and `counter` in this order. The first match gives the
+/// result.
+///
 #[derive(Clone)]
 pub struct Termination {
     pub game_result: u8,                                                        /* eager position-local result        */
@@ -227,12 +228,13 @@ pub struct Termination {
 impl Default for Termination {
     /// Termination::default
     ///
-    /// The behaviour every variant starts from before its `= termination =`
-    /// section is read: a no-move position is a loss when in check (checkmate)
-    /// and a draw otherwise (stalemate), with no repetition or counter rule.
+    /// Gives the rules before the `= termination =` section is read. With
+    /// no legal move, check is a loss and no check is a draw. There are no
+    /// optional rules.
     ///
     /// Return:
-    /// Self -> the default table, every optional rule left unset
+    /// Self -> the default table, no optional rule set
+    ///
     fn default() -> Self {
         Termination {
             game_result: ONGOING,
@@ -253,8 +255,9 @@ impl Default for Termination {
 impl Termination {
     /// Termination::reset_progress
     ///
-    /// Clears eager result and mutable rule progress while preserving every
-    /// configured rule, threshold, outcome, and reported name.
+    /// Clears the game result and the progress of each rule. The configured
+    /// rules, limits, outcomes and names do not change.
+    ///
     pub fn reset_progress(&mut self) {
         self.game_result = ONGOING;
 
@@ -278,16 +281,16 @@ impl Termination {
 
 /// resolve_outcome!
 ///
-/// Maps an [`Outcome`] named against a colour to an absolute `game_result`.
-/// Pass the colour the outcome is scored against (the side to move for a
-/// stalemate-style rule, or the mover for a check-count rule).
+/// Converts an [`Outcome`] for a colour into a `game_result`. Give the
+/// subject colour of the rule, for example the side to move for stalemate.
 ///
 /// Params:
-/// - color  : u8      -> the colour the outcome is named against
-/// - outcome: Outcome -> the result to resolve
+/// - color  : u8      -> subject colour of the outcome
+/// - outcome: Outcome -> the result to convert
 ///
 /// Return:
-/// u8                 -> DRAW / WHITE_WIN / BLACK_WIN
+/// u8                 -> DRAW, WHITE_WIN or BLACK_WIN
+///
 #[macro_export]
 macro_rules! resolve_outcome {
     ($color:expr, $outcome:expr) => {
@@ -305,17 +308,21 @@ macro_rules! resolve_outcome {
 
 /// outcome_score!
 ///
-/// Maps an [`Outcome`] to a side-to-move search score: a draw yields the
-/// material-priced [`draw_score!`], a win `+INF - ply`, and a loss
-/// `-INF + ply`, matching checkmate scale so shorter wins and longer losses
-/// are preferred.
+/// Converts an [`Outcome`] into a search score for the side to move. The
+/// scale is the same as checkmate, so faster wins and slower losses are
+/// better.
+///
+/// - draw : [`draw_score!`]
+/// - win  : `INF - ply`
+/// - loss : `-INF + ply`
 ///
 /// Params:
-/// - state  : &State  -> position whose ply and draw value are read
+/// - state  : &State  -> position with the ply and the draw value
 /// - outcome: Outcome -> the result to score
 ///
 /// Return:
-/// i32                -> terminal score from the side to move's perspective
+/// i32                -> terminal score for the side to move
+///
 #[macro_export]
 macro_rules! outcome_score {
     ($state:expr, $outcome:expr) => {
@@ -329,22 +336,22 @@ macro_rules! outcome_score {
 
 /// no_move_verdict!
 ///
-/// Reads the variant's verdict on a side that has run out of moves: its
-/// configured checkmate outcome when in check and its stalemate outcome
-/// otherwise, plus whether the verdict lands on the wrong side. It does
-/// when a drop barred from mating delivered the mate — the dropper loses
-/// for breaking the rule, not the mated side for being mated.
-///
-/// Every reader of that rule goes through here — the two search leaves
-/// negate a score by it and adjudication flips a colour by it — so the
-/// three cannot drift apart as rules are added.
+/// Gives the result for a side with no legal move. In check, it is the
+/// `checkmate` outcome, else the `stalemate` outcome. The result is
+/// inverted when a banned mating drop gave the mate. Then the side that
+/// dropped loses.
 ///
 /// Params:
-/// - state   : &mut State -> position whose side to move cannot move
-/// - in_check: bool       -> whether that side stands in check
+/// - state   : &mut State -> position where the side to move cannot move
+/// - in_check: bool       -> true when that side is in check
 ///
 /// Return:
-/// (Outcome, bool)        -> the outcome, and whether it is inverted
+/// (Outcome, bool)        -> the outcome, and true when it is inverted
+///
+/// Notes:
+/// The two search leaves and the adjudication all use this macro, so they
+/// agree.
+///
 #[macro_export]
 macro_rules! no_move_verdict {
     ($state:expr, $in_check:expr) => {{
@@ -367,25 +374,21 @@ macro_rules! no_move_verdict {
 
 /// side_is_bare
 ///
-/// Whether a colour has been reduced to a single royal piece. Existing major
-/// and minor counters jointly cover every non-royal piece class, and the royal
-/// count comes from `royal_list`, which make/undo maintain on every move type
-/// and `verify_game_state` recomputes.
-///
-/// The royal count stays pinned at exactly one, and no declared rule reaches
-/// this with more. Both callers sit behind a `counting` rule; only makruk,
-/// sittuyin and ouk-chaktrang declare one, all three declare `royal: Kk`, and
-/// none promotes to a royal letter. `janggi.conf` is the only config naming
-/// two royal letters a side, but `K` and `Q` are the two forms of one general
-/// that `K:Q` and `Q:K` convert between, so a janggi colour still holds
-/// exactly one royal — and janggi adjudicates on points instead of counting.
+/// Tells if a colour has only one royal piece left. The major and minor
+/// counts cover all pieces that are not royal. `royal_list` gives the
+/// royal count.
 ///
 /// Params:
-/// - state: &State -> position to inspect
-/// - side : u8     -> the colour tested
+/// - state: &State -> position to examine
+/// - side : u8     -> colour to test
 ///
 /// Return:
-/// bool            -> true when the colour has no non-royal pieces left
+/// bool            -> true when the colour has only one royal
+///
+/// Notes:
+/// The test needs exactly one royal. Only `counting` variants call it, and
+/// each of them has one royal for each side.
+///
 pub fn side_is_bare(state: &State, side: u8) -> bool {
     state.major_pieces[side as usize] == 0 &&
     state.minor_pieces[side as usize] == 0 &&
@@ -394,18 +397,18 @@ pub fn side_is_bare(state: &State, side: u8) -> bool {
 
 /// counting_limit
 ///
-/// The pieces'-honour move budget for the material side of a bare-king endgame:
-/// the first `Counting` table row whose requirements the `winner` meets, else
-/// the table default. A requirement is met when the winner owns at least its
-/// minimum number of the requirement's piece set. Returns 0 if the variant
-/// declares no counting rule (never reached, since the caller gates on it).
+/// Gives the move limit of the side with material in a bare king endgame.
+/// It is the limit of the first `Counting` row that the `winner` meets,
+/// else the default. A requirement is met when the winner has at least the
+/// minimum number of pieces from its set.
 ///
 /// Params:
-/// - state : &State -> position to inspect
-/// - winner: u8     -> the colour holding material (opponent of the bare king)
+/// - state : &State -> position to examine
+/// - winner: u8     -> colour with material, opponent of the bare king
 ///
 /// Return:
-/// u16              -> the frozen count limit for this material
+/// u16              -> count limit for this material, 0 without a rule
+///
 pub fn counting_limit(state: &State, winner: u8) -> u16 {
     let Some(counting) = state.termination.counting.as_ref() else {
         return 0;
@@ -430,24 +433,25 @@ pub fn counting_limit(state: &State, winner: u8) -> u16 {
 
 /// counting_progress
 ///
-/// The bare-king count after one ply: `None` while neither or both colours are
-/// bare, the previous count plus one while the situation holds, and a fresh
-/// `(piece total + 1, frozen limit)` when it first arises. The limit freezes at
-/// the material present when counting starts and does not move again while
-/// `last` keeps feeding back.
+/// Gives the bare king count after one ply. The limit does not change after
+/// the count starts.
 ///
-/// Only `make_move!` calls this, once per ply. A parsed FEN deliberately
-/// does not seed it: the *condition* that starts a count is a position fact,
-/// but how far the count has run is a history fact the FEN does not carry, so
-/// seeding one at load would invent a number. Counting therefore begins on the
-/// first move played from a loaded position, exactly as it did before.
+/// - no side or two sides bare : `None`
+/// - count already started     : last count plus one, same limit
+/// - count starts now          : `(piece total + 1, limit)`
 ///
 /// Params:
-/// - state: &State            -> position to inspect
-/// - last : Option<(u16,u16)> -> the previous ply's progress
+/// - state: &State            -> position to examine
+/// - last : Option<(u16,u16)> -> progress of the previous ply
 ///
 /// Return:
-/// Option<(u16, u16)>         -> (count, frozen limit) while counting applies
+/// Option<(u16, u16)>         -> (count, limit) while counting applies
+///
+/// Notes:
+/// Only `make_move!` calls it, once for each ply. A FEN load does not start
+/// a count, because the FEN has no count history. The count starts at the
+/// first move after the load.
+///
 pub fn counting_progress(
     state: &State, last: Option<(u16, u16)>,
 ) -> Option<(u16, u16)> {
@@ -470,26 +474,20 @@ pub fn counting_progress(
 
 /// extinct_outcome
 ///
-/// Detects a material-extinction terminal. For each colour it sums
-/// `piece_count` over the rule's set pieces of that colour and fires when the
-/// count is at or below the threshold, naming the extinct colour.
-///
-/// This reads the position alone. `position_terminal` decides when it is worth
-/// running: after a move that can drop a colour's count of a piece type, or at
-/// a position with no move behind it at all. Only two move kinds retype --
-/// a capture removes the piece outright, and a promotion retypes it, since
-/// `piece_list_push!` takes the promoted index while `piece_list_remove!` took
-/// the original. A drop only ever adds, and castling relocates two pieces of
-/// types it does not change.
-///
-/// A rule that ends the game for the other side is the same rule with `win`
-/// and `loss` swapped, so no opponent-facing flag is carried.
+/// Finds a material extinction end. For each colour, it adds the
+/// `piece_count` of the set pieces. The rule fires when the sum is at or
+/// below the threshold.
 ///
 /// Params:
 /// - state: &State             -> position to scan
 ///
 /// Return:
-/// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) when it fires
+/// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) if it fires
+///
+/// Notes:
+/// `position_terminal` calls it only after a capture or a promotion, or
+/// when there is no last move. Only these can decrease a piece count.
+///
 pub fn extinct_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
     for extinct in &state.termination.extinct {
         for color in [WHITE, BLACK] {
@@ -512,21 +510,21 @@ pub fn extinct_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
 
 /// goal_outcome
 ///
-/// Detects a goal-zone terminal: a colour whose goal-set piece stands on a zone
-/// square receives the rule's outcome. `mover` is scanned first so that when
-/// both colours somehow qualify the side that just moved is credited.
-///
-/// Scanning both colours rather than only the mover covers the two cases where
-/// a piece can be found on the zone without the last move having put it there:
-/// a position loaded from a FEN, which has no last move at all, and a capture
-/// whose unload or a castling partner relocates the *enemy* piece onto it.
+/// Finds a goal zone end. A colour with a goal piece on a zone square gets
+/// the outcome. The function scans `mover` first, so the side that moved
+/// wins when the two colours qualify.
 ///
 /// Params:
 /// - state: &State             -> position to scan
-/// - mover: u8                 -> the colour that just moved, scanned first
+/// - mover: u8                 -> colour that moved, scanned first
 ///
 /// Return:
-/// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) when reached
+/// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) if reached
+///
+/// Notes:
+/// It scans the two colours. A FEN load or an unload can put a piece in
+/// the zone without a move of that colour.
+///
 pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome, &str)> {
     let goal = state.termination.goal.as_ref()?;
 
@@ -547,17 +545,20 @@ pub fn goal_outcome(state: &State, mover: u8) -> Option<(u8, Outcome, &str)> {
 
 /// adjudicate_outcome
 ///
-/// Decides a passed-out position by weighted material. Each colour's counted
-/// pieces are multiplied by their configured point weight and summed with that
-/// colour's standing handicap; the greater sum wins and an equal sum draws.
-/// Returns None when the variant declares no `adjudicate` rule, so the caller
-/// keeps the neutral double-pass draw.
+/// Decides a position after two passes by points. The points of a colour
+/// are the weight sum of its pieces plus its handicap. The larger sum wins
+/// and equal sums draw.
 ///
 /// Params:
-/// - state: &State             -> position at the second successive pass
+/// - state: &State             -> position after the second pass
 ///
 /// Return:
-/// Option<(u8, Outcome, &str)> -> (winner, Win, name) / (mover, Draw, name)
+/// Option<(u8, Outcome, &str)> -> (winner, Win, name) or (mover, Draw, name)
+///
+/// Notes:
+/// Without an `adjudicate` rule it returns `None`, and the caller keeps the
+/// double pass draw.
+///
 pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
     let adjudicate = state.termination.adjudicate.as_ref()?;
 
@@ -580,30 +581,29 @@ pub fn adjudicate_outcome(state: &State) -> Option<(u8, Outcome, &str)> {
 
 /// position_terminal
 ///
-/// The eager, position-local terminal check for the last move in history: the
-/// first of accepted stand-off, N-check, goal, extinction, double-pass,
-/// counting, and counter rules to fire, with the name and subject colour.
-/// Repetition and perpetual are computed on demand by `game_outcome`. `None`
-/// when no move has been made.
+/// Tests the position rules after the last move. The first rule that fires
+/// gives the result, in this order:
 ///
-/// Each rule names its own subject, documented on the rule: `checks` and
-/// `goal` name the mover, `extinct` the colour that ran out, `adjudicate` the
-/// points winner, `counting` the material side, `counter` the mover whose move
-/// reached the limit. The side to move is never a subject here — it has not
-/// moved, so it cannot have set off a rule the last move triggered.
+/// 1. `checks`, the N-th check
+/// 2. `goal`
+/// 3. `extinct`
+/// 4. double pass or accepted stand-off, with `adjudicate` if declared
+/// 5. `counting`
+/// 6. `counter`
 ///
-/// A position with no move behind it — one just parsed from a FEN — is still
-/// tested for the rules that read the position alone: `goal`, `extinct`,
-/// `counting` and `counter`. `checks`, the double pass and the accepted
-/// stand-off stay history-dependent and simply do not fire, because "the Nth
-/// check was just delivered" and "both sides passed" are facts about moves and
-/// a FEN does not carry them.
+/// `game_outcome` calculates repetition and perpetual. The side to move is
+/// never the subject here, because it did not make the last move.
 ///
 /// Params:
-/// - state: &State             -> position after the ending move, if any
+/// - state: &State             -> position after the last move
 ///
 /// Return:
-/// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) when firing
+/// Option<(u8, Outcome, &str)> -> (subject colour, outcome, name) if it fires
+///
+/// Notes:
+/// After a FEN load there is no last move. Then only `goal`, `extinct`,
+/// `counting` and `counter` can fire. The other rules need move history.
+///
 pub fn position_terminal(state: &State) -> Option<(u8, Outcome, &str)> {
     let last = state.history.last();
     let accepted_stand_off = last.is_some_and(|snapshot| {
@@ -661,19 +661,21 @@ pub fn position_terminal(state: &State) -> Option<(u8, Outcome, &str)> {
 
 /// offence_set
 ///
-/// The per-ply offence the mover commits against the side to move: a check (the
-/// quarry's royal is attacked, full-board so discovered checks count) and the
-/// enemy non-royal pieces it chases (attacked by a non-exempt piece and left
-/// undefended). A check is the royal case of the same attacked-and-undefended
-/// predicate, so both come from one read-only pass. The chase board is empty
-/// unless a perpetual-chase rule is declared.
+/// Finds the offences of one ply by the side that moved:
+///
+/// - check : the royal of the side to move is attacked, also by discovery
+/// - chase : enemy pieces, not royal, attacked by a chaser and undefended
 ///
 /// Params:
-/// - state: &State -> position after the mover's ply (quarry is side to move)
-/// - mover: u8     -> the colour that just moved (the potential offender)
+/// - state: &State -> position after the ply, the target side to move
+/// - mover: u8     -> colour that moved, the possible offender
 ///
 /// Return:
-/// (bool, Board)   -> (mover gave check, undefended enemy chase squares)
+/// (bool, Board)   -> (mover gave check, undefended chased squares)
+///
+/// Notes:
+/// The chase board is empty without a perpetual chase rule.
+///
 pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
     let quarry = 1 - mover;                                                     /* side to move after the mover's ply */
     let did_check = is_in_check!(quarry, state);
@@ -730,19 +732,16 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 
 /// perpetual_offender
 ///
-/// Adjudicates a just-closed repetition cycle for a sole aggressor. Walks the
-/// plies from the previous occurrence of the current position to the closing
-/// move: a colour is a perpetual checker if it checked on all of its cycle
-/// moves, and a perpetual chaser if it kept the same enemy piece under an
-/// undefended chase on all of them. The chased piece is tracked by identity
-/// (its square remapped through each undone quiet move) since a cycle move is
-/// capture-free and drop-free. Check outranks chase; when both colours share
-/// an offence none is sole. The walk uses undo/redo and restores the position
-/// exactly, including `game_result` and `search_ply`.
+/// Finds the only offender of a repetition cycle that just closed. The
+/// function walks back from the last move to the previous occurrence of
+/// the position:
 ///
-/// The history is read backwards from the closing move. `cap` floors how far
-/// that reach goes, and the newest snapshot above the floor carrying this
-/// position's hash is where the cycle opens:
+/// - perpetual checker : gave check on all its cycle moves
+/// - perpetual chaser  : chased the same undefended piece on all of them
+///
+/// Check is before chase. If the two colours offend, there is no offender.
+/// A cycle move is not a capture or a drop, so the function follows the
+/// chased piece through each undone quiet move. `cap` limits the scan:
 ///
 /// ```text
 ///   0              floor              start           plies
@@ -750,26 +749,21 @@ pub fn offence_set(state: &State, mover: u8) -> (bool, Board) {
 ///                                       └ same position, one occurrence ago
 /// ```
 ///
-/// `search_ply` needs restoring by hand because `undo_move!` saturates it at
-/// zero while `make_move!` counts up without a floor: a cycle reaching back
-/// past the search root would otherwise leave the counter inflated by however
-/// many plies the walk clipped, and every node below would read its ply, and so
-/// its PV row, from the wrong slot.
-///
-/// A span holding a search null move is rejected outright: a passed turn is not
-/// a move a cycle can be made of, and its snapshot has nothing to undo.
-///
-/// The reported result is the one the offending rule declares, named against
-/// the offender: `perpetual: check loss` loses for the perpetual checker,
-/// `check draw` leaves the cycle drawn. Each offence carries its own result,
-/// and being declared at all is what enables it.
+/// The result is the outcome that the rule declares for the offender. For
+/// example, `check loss` makes the checker lose.
 ///
 /// Params:
-/// - state: &mut State -> position after the cycle-closing move (restored)
-/// - cap  : usize      -> scan budget (`usize::MAX` for game truth)
+/// - state: &mut State   -> position after the closing move, restored
+/// - cap  : usize        -> scan limit, `usize::MAX` for the real game
 ///
 /// Return:
-/// Option<(u8, Outcome)> -> sole offender and its declared result, if any
+/// Option<(u8, Outcome)> -> the only offender and its result, if any
+///
+/// Notes:
+/// The walk uses undo and redo. It restores `game_result` and `search_ply`
+/// by hand, because `undo_move!` stops `search_ply` at zero. A cycle with a
+/// null move gives `None`, because a null move is not a real move.
+///
 fn perpetual_offender(state: &mut State, cap: usize) -> Option<(u8, Outcome)> {
     let (check_outcome, chase_outcome) = {
         let perpetual = state.termination.perpetual.as_ref()?;
@@ -865,17 +859,19 @@ fn perpetual_offender(state: &mut State, cap: usize) -> Option<(u8, Outcome)> {
 
 /// repetition_scan_bound
 ///
-/// How many trailing history entries can hold the current position's hash: the
-/// full history in drop variants (a capture-to-hand followed by a drop can
-/// restore an identical position, hands included), else the repetition rule's
-/// reversible-ply clock. `cap` tightens the bound for per-node search probes.
+/// Gives the number of last history entries that can have the current
+/// hash. `cap` can make the number smaller.
+///
+/// - drop variant : the full history, a capture and a drop can repeat
+/// - other        : the reversible ply clock of the repetition rule
 ///
 /// Params:
-/// - state: &State -> position whose history is bounded
-/// - cap  : usize  -> caller's scan budget (`usize::MAX` for game truth)
+/// - state: &State -> position with the history
+/// - cap  : usize  -> scan limit, `usize::MAX` for the real game
 ///
 /// Return:
-/// usize           -> number of trailing history entries to scan
+/// usize           -> number of last history entries to scan
+///
 fn repetition_scan_bound(state: &State, cap: usize) -> usize {
     let length = state.history.len();
     let reversible = if drops!(state) {
@@ -890,21 +886,21 @@ fn repetition_scan_bound(state: &State, cap: usize) -> usize {
 
 /// count_repetitions
 ///
-/// How many times the current position has occurred, the current occurrence
-/// included, within `repetition_scan_bound`. Zero when no `repetition` rule
-/// is declared. The scan counts the root position too, which the old
-/// per-move occurrence map missed.
-///
-/// The scan stops at the newest null move. A null is a search device, not a
-/// ply anyone played, and a pair of them restores the side to move without
-/// touching the board, so a position across one repeats nothing.
+/// Counts the occurrences of the current position, the current one
+/// included, within `repetition_scan_bound`. Without a `repetition` rule,
+/// the count is zero.
 ///
 /// Params:
 /// - state: &State -> current position
-/// - cap  : usize  -> scan budget (`usize::MAX` for game truth)
+/// - cap  : usize  -> scan limit, `usize::MAX` for the real game
 ///
 /// Return:
-/// u8              -> occurrence count including the current position
+/// u8              -> occurrence count, current position included
+///
+/// Notes:
+/// The scan stops at the last null move. A null move is only a search
+/// tool, so a position before it is not a repetition.
+///
 pub fn count_repetitions(state: &State, cap: usize) -> u8 {
     if state.termination.repetition.is_none() {
         return 0;
@@ -925,31 +921,25 @@ pub fn count_repetitions(state: &State, cap: usize) -> u8 {
 
 /// repetition_outcome
 ///
-/// The on-demand repetition/perpetual terminal, computed rather than stored:
-/// `None` unless the variant declares a `repetition` rule and the current
-/// position has occurred at least `min_count` times. The bool is true when a
-/// perpetual offender decided it (for reason reporting).
+/// Calculates the repetition or perpetual result. It gives `None` without
+/// a `repetition` rule or with fewer than `min_count` occurrences.
 ///
-/// Both results are declared against the player who triggered them — the
-/// mover who closed the repetition, or the sole offender who sustained the
-/// cycle — and are mirrored here into the side to move's view, which is the
-/// footing `outcome_score!` and `game_outcome` both read them on. A draw
-/// mirrors onto itself, so every shipped variant lands on the same result
-/// either way.
-///
-/// Both game truth and search pass the rule's own `occurrences`, so a perpetual
-/// verdict lands on exactly the repetition the rule names and not a ply sooner.
-/// Below that count there is no verdict to report and search invents none: an
-/// offence the rule has not yet recognised is not a terminal, so the position
-/// stays ordinary rather than being scored as one.
+/// The rule result is for the side that caused it: the side that closed
+/// the repetition, or the only offender. The function converts it to the
+/// view of the side to move, as `outcome_score!` and `game_outcome` need.
 ///
 /// Params:
-/// - state    : &mut State -> current position (restored if a walk runs)
-/// - min_count: u8         -> occurrences required before it fires
-/// - cap      : usize      -> scan budget (`usize::MAX` for game truth)
+/// - state    : &mut State -> current position, restored after a walk
+/// - min_count: u8         -> occurrences necessary to fire
+/// - cap      : usize      -> scan limit, `usize::MAX` for the real game
 ///
 /// Return:
-/// Option<(Outcome, bool)> -> (outcome, perpetual decided it) when it fires
+/// Option<(Outcome, bool)> -> (outcome, true if perpetual) if it fires
+///
+/// Notes:
+/// The game and the search both give the `occurrences` of the rule. Thus a
+/// perpetual result comes at the same repetition as the rule, not before.
+///
 pub fn repetition_outcome(
     state: &mut State, min_count: u8, cap: usize,
 ) -> Option<(Outcome, bool)> {
@@ -980,18 +970,19 @@ pub fn repetition_outcome(
 
 /// game_outcome
 ///
-/// The single game-truth oracle for reporting and self-play paths: the eager,
-/// position-local `game_result` when set, else the on-demand repetition /
-/// perpetual verdict. Also reports the reason name of whichever rule decided
-/// it, recomputed so no reason need be stored and left `None` when the rule
-/// is unnamed. Search does not use this; it keeps the cheap `is_terminal!`
-/// read.
+/// Gives the real game result for output and self-play. It is
+/// `game_result` if set, else the repetition or perpetual result. It also
+/// gives the name of the rule, or `None` if the rule has no name.
 ///
 /// Params:
-/// - state: &mut State  -> current position (restored if a walk runs)
+/// - state: &mut State  -> current position, restored after a walk
 ///
 /// Return:
-/// (u8, Option<String>) -> (result, reason name) with result ONGOING when live
+/// (u8, Option<String>) -> (result, rule name), ONGOING if not ended
+///
+/// Notes:
+/// The search does not use it. The search reads `is_terminal!`.
+///
 pub fn game_outcome(state: &mut State) -> (u8, Option<String>) {
     if state.termination.game_result != ONGOING {
         return (

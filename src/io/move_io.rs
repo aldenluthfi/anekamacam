@@ -1,12 +1,10 @@
 //! move_io.rs
 //!
-//! Implements move formatting, move parsing, and interactive move debugging.
+//! Formats and parses moves.
 //!
-//! Moves live in the engine as opaque bit-packed words, but users and
-//! protocols speak text. This file is that translation point for a single
-//! move: it renders a move to the engine's canonical notation (optionally
-//! through a protocol dictionary) and resolves typed move text back to the
-//! one legal move it names.
+//! The engine keeps moves as packed bit words. Users and protocols use
+//! text. This file writes a move in the engine notation, with an optional
+//! protocol dictionary. It also finds the move that a text names.
 //!
 //! Created: 04/02/2026
 //! Author : Alden Luthfi
@@ -19,45 +17,32 @@ use crate::*;
 
 /// format_move
 ///
-/// Formats a move into the engine's canonical text representation, applying
-/// protocol translation when a dictionary is supplied. The resulting string
-/// is used for user-facing display and as the matching key for `parse_move`.
+/// Writes a move in Cheesy Move Notation (CMN). If a dictionary is given,
+/// the function translates the text. `parse_move` uses the same text.
 ///
-/// Cheesy Move Notation names every part of a move a variant might have,
-/// and prints only the parts this move actually used:
+/// CMN writes only the parts that the move has:
 ///
-/// - `[piece]@`  : the piece a drop places, dropped moves only
-/// - `[start]`   : the square the move begins on, always printed
-/// - `:[end]`    : where the mover lands, when that is not where it took
-/// - `*[square]` : a square something was taken on, once per victim
-/// - `@[square]` : where the taken piece was set back down, if it was
-/// - `=[piece]`  : the piece the mover became
+/// - `[piece]@`  : the dropped piece, only for drops
+/// - `[start]`   : the start square, always written
+/// - `:[end]`    : the end square, if it is not the capture square
+/// - `*[square]` : a capture square, one for each captured piece
+/// - `@[square]` : the square where a captured piece is put back
+/// - `=[piece]`  : the piece after promotion
 ///
 /// ```text
 /// [piece]@[start]:[end]*[taken]@[unloaded]...*[taken]=[piece]
 /// ```
 ///
-/// A plain capture prints no `:[end]` at all, the mover having landed on
-/// the square it took, so `e4*d5` and `e4:e5*d5` are different moves rather
-/// than two spellings of one. A variant taking a piece without moving onto
-/// it needs the longer form, and one where the two always coincide never
-/// prints it.
+/// Thus `e4*d5` and `e4:e5*d5` are two different moves.
 ///
 /// Params:
-///
-///     mv: &Move
-///     move to render
-///
-///     state: &State
-///     board geometry for square names
-///
-///     dict: Option<&Translator>
-///     protocol translator, or None for raw CMN
+/// - mv   : &Move               -> move to write
+/// - state: &State              -> board geometry for square names
+/// - dict : Option<&Translator> -> protocol translator, or None for CMN
 ///
 /// Return:
+/// String                       -> the move text, "(none)" for a null move
 ///
-///     String
-///     the move's CMN or translated text, "(none)" for a null move
 pub fn format_move(
     mv: &Move, state: &State, dict: Option<&Translator>
 ) -> String {
@@ -149,36 +134,25 @@ pub fn format_move(
 
 /// parse_move
 ///
-/// Resolves typed move text against the position by generating every move
-/// the position offers, rendering each one, and returning the first whose
-/// text matches. Parsing this way rather than by reading the string apart
-/// means the notation is defined in exactly one place: whatever `format_move`
-/// prints is what this accepts, translation included.
+/// Finds the move that a text names. Thus `format_move` is the only
+/// definition of the notation.
 ///
-/// 1. generate every pseudo-legal move and drop the position offers
-/// 2. render each of them through `format_move`, dictionary and all
-/// 3. match the first whose text equals the input, both trimmed
+/// 1. generate all pseudo-legal moves and drops of the position
+/// 2. write each move with `format_move` and the dictionary
+/// 3. return the first move whose text is equal to the input
 ///
 /// Params:
-///
-///     move_str: &str
-///     user move text to resolve
-///
-///     state: &State
-///     position whose candidates are generated
-///
-///     dict: Option<&Translator>
-///     translator applied to each candidate
+/// - move_str: &str                -> move text to find
+/// - state   : &State              -> position that gives the moves
+/// - dict    : Option<&Translator> -> translator for each move text
 ///
 /// Return:
-///
-///     Option<Move>
-///     the matching pseudo-legal move, or None if none matches
+/// Option<Move>                    -> the pseudo-legal move, or None
 ///
 /// Notes:
-/// Candidates are pseudo-legal: the returned `Move` may leave the moving
-/// side's royal pieces in check. Callers must validate with `make_move!`
-/// and treat a false return as an illegal move.
+/// The move can leave a royal piece in check. The caller must apply it with
+/// `make_move!` and treat a false result as an illegal move.
+///
 pub fn parse_move(
     move_str: &str, state: &State, dict: Option<&Translator>
 ) -> Option<Move> {
@@ -193,24 +167,21 @@ pub fn parse_move(
 
 /// format_move_history
 ///
-/// Renders the game's move history as numbered move pairs, one full move
-/// per line, using `format_move` for each entry.
+/// Writes the move history of the game as numbered move pairs. Each line
+/// has one full move. If the length is odd, the last line has one move.
 ///
 /// ```text
 /// 1. e2:e4 e7:e5
 /// 2. g1:f3 b8:c6
 /// ```
 ///
-/// The number is the full move rather than the ply, so a history of odd
-/// length ends on a half-finished line, which is what a reader expects to
-/// see when it is the other side's turn.
-///
 /// Params:
-/// - state: &State              -> position whose history is printed
-/// - dict : Option<&Translator> -> translator for printed move names
+/// - state: &State              -> position with the history to write
+/// - dict : Option<&Translator> -> translator for the move text
 ///
 /// Return:
-/// String                       -> the numbered, newline-separated history
+/// String                       -> the numbered history, one line per move
+///
 pub fn format_move_history(
     state: &State, dict: Option<&Translator>
 ) -> String {

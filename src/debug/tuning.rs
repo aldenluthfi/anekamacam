@@ -2,10 +2,10 @@
 //!
 //! Texel tuning of the evaluation parameters by gradient descent.
 //!
-//! Reads completed self-play games, splits them into game-disjoint training
-//! and validation sets, resolves each position through quiescence, then models
-//! changes to that score as a linear function of tunable parameters. Adam
-//! minimizes training error while validation selects the exported epoch.
+//! The tuner reads self-play games and puts full games in a training set or
+//! a validation set. It scores each position with quiescence and models the
+//! score as a linear function of the parameters. Adam decreases the training
+//! error, and the best validation epoch is exported.
 //!
 //! Created: 05/07/2026
 //! Author : Alden Luthfi
@@ -18,34 +18,23 @@ use crate::*;
 
 /// Tuning constants
 ///
-/// The numbers the fit itself is run with, none of which come from the
-/// variant. Adam's three are its published defaults, and the rest are
-/// decisions about how hard to look and when to stop looking.
+/// Constants of the fit. They do not depend on the variant. The Adam
+/// values are the published defaults.
 ///
-/// - `ADAM_BETA_ONE` : 0.9, decays the running mean of the gradient
-/// - `ADAM_BETA_TWO` : 0.999, decays the running mean of its square
-/// - `ADAM_EPSILON`  : 1e-8, floors the divisor against a zero step
+/// - `ADAM_BETA_ONE`              : 0.9, decay of the gradient mean
+/// - `ADAM_BETA_TWO`              : 0.999, decay of the squared mean
+/// - `ADAM_EPSILON`               : 1e-8, minimum of the divisor
+/// - `TEXEL_K_MIN`                : 0.01, flattest sigmoid to try
+/// - `TEXEL_K_MAX`                : 3.0, steepest sigmoid to try
+/// - `TEXEL_K_ITERATIONS`         : 32, golden-section steps for K
+/// - `TUNING_VALIDATION_MODULUS`  : 5, game IDs divisible by it validate
+/// - `TUNING_VALIDATION_PATIENCE` : 10, epochs without a better result
 ///
-/// K is what turns a score into a win probability, and it is searched for
-/// rather than assumed. A variant whose pieces are written down ten times
-/// larger than ours would otherwise read as ten times as decided, and the
-/// gradient would spend itself flattening the sigmoid instead of moving
-/// the parameters. Thirty-two golden-section steps cut the range below a
-/// millionth of its width, finer than any dataset can tell apart.
+/// Notes:
+/// The tuner searches K, because each variant has its own value scale. 32
+/// steps make the K range less than a millionth of its width. Full games
+/// go to validation, because the positions of one game are almost equal.
 ///
-/// - `TEXEL_K_MIN`        : 0.01, the flattest sigmoid considered
-/// - `TEXEL_K_MAX`        : 3.0, the steepest, past anything a fit
-///                          has wanted
-/// - `TEXEL_K_ITERATIONS` : 32, how many steps are taken between them
-///
-/// One game in five is held out, whole. Positions from one game are very
-/// nearly the same position, so holding out positions would let the
-/// validation set grade an answer it had already been shown. Ten epochs
-/// with no new best is taken as the fit having finished.
-///
-/// - `TUNING_VALIDATION_MODULUS`  : 5, holds out game IDs divisible by it
-/// - `TUNING_VALIDATION_PATIENCE` : 10, how many epochs may pass without
-///                                  a better one before the fit stops
 const ADAM_BETA_ONE: f64 = 0.9;
 const ADAM_BETA_TWO: f64 = 0.999;
 const ADAM_EPSILON: f64 = 1e-8;
@@ -62,21 +51,18 @@ const TUNING_VALIDATION_PATIENCE: usize = 10;
 
 /// TuneShape
 ///
-/// Where each tunable number lives in one long vector. The evaluation keeps
-/// its parameters as pieces, tables, and named scalars, while a gradient
-/// wants a single flat θ. This is the map between the two, measured off the
-/// loaded variant rather than assumed, since the piece-type count T and the
-/// board size S are different in every variant.
+/// The index map from the evaluation parameters to one flat vector θ. The
+/// piece type count T and the board size S come from the loaded variant.
 ///
-/// - `[0, T)`             : opening material, one per White piece type
-/// - `[T, 2T)`            : endgame material, in that same order
-/// - `[2T, 2T+T·S)`       : the opening PST, T tables of S squares
-/// - `[2T+T·S, 2T+2·T·S)` : the endgame PST, the same again
+/// - `[0, T)`             : opening material, one for each White piece type
+/// - `[T, 2T)`            : endgame material, in the same order
+/// - `[2T, 2T+T·S)`       : opening PST, T tables of S squares
+/// - `[2T+T·S, 2T+2·T·S)` : endgame PST, the same again
 /// - `[2T+2·T·S, D)`      : the eleven evaluation scalars
 ///
-/// Only White's piece types are counted. Black's parameters are not free to
-/// move on their own: a Black piece is tuned through the White piece it is
-/// paired with, on the White square mirrored across the ranks.
+/// Only White piece types have entries. A Black piece uses the entry of its
+/// White pair, on the square mirrored across the ranks.
+///
 struct TuneShape {
     pairs: Vec<(usize, usize)>,                                                 /* (white index, black index) per type*/
     piece_types: usize,                                                         /* number of White piece types (T)    */
@@ -93,28 +79,22 @@ struct TuneShape {
 
 /// Sample
 ///
-/// One dataset position, cut down to the only thing the fit reads: a
-/// straight line. Every tunable parameter enters the tapered score
-/// multiplied by something the position fixes — a net piece count, a phase
-/// weight, a plus or minus one — so the score is exact, not approximated:
+/// One dataset position as a linear function of θ. Each parameter adds to
+/// the tapered score times a value that the position fixes, for example a
+/// piece count or a phase weight. Thus the model is exact:
 ///
 /// ```text
 /// score(θ) = offset + Σ coefficient · θ[index]
 /// ```
 ///
-/// The offset is what quiescence said, less what the tunable terms are
-/// worth at the parameters it was said under. Everything the tuner has no
-/// parameter for stays inside it, along with whatever the captures that
-/// quiescence resolved were worth, so the fit is correcting an evaluation
-/// rather than writing one from nothing.
+/// The offset is the quiescence score minus the value of the tuned terms.
+/// It keeps all terms without a parameter and the quiescence captures.
 ///
 /// Notes:
+/// The coefficients use the phase at extraction and do not change. A step
+/// that changes the phase has no effect until the next run. This keeps the
+/// model linear, and an epoch is a dot product, not a search.
 ///
-/// The coefficients are taken once, at the phase the position was in, and
-/// never retaken. A step large enough to move a position from middlegame
-/// into endgame goes unnoticed until the next run. That is the price of
-/// the model staying linear, and of an epoch costing a dot product rather
-/// than a search.
 struct Sample {
     features: Vec<(usize, f64)>,                                                /* sparse ∂score/∂θ coefficients      */
     offset: f64,                                                                /* qsearch score outside tuned terms  */
@@ -123,14 +103,13 @@ struct Sample {
 
 /// TuneDataset
 ///
-/// The dataset after it has been split, and the split holds for the whole
-/// run. Training moves the parameters and fixes the scaling constant;
-/// validation only ever grades them, and is the reason a run can tell
-/// having learned something from having memorised the games it was given.
+/// The dataset after the split. The split does not change during the run.
 ///
-/// The two halves are separated by game, never by position, so no held-out
-/// position is graded by a set that has already been shown the position
-/// standing one move before it.
+/// - training   : changes the parameters and fits K
+/// - validation : only scores the parameters, finds overfitting
+///
+/// The split is by game, not by position.
+///
 struct TuneDataset {
     training: Vec<Sample>,                                                      /* four games in five                 */
     validation: Vec<Sample>,                                                    /* the fifth, kept whole              */
@@ -138,20 +117,16 @@ struct TuneDataset {
 
 /// build_shape
 ///
-/// Measures the loaded variant and lays the blocks out end to end. None of
-/// it is a constant of the engine: the piece types come from the variant's
-/// own pairing of White pieces with their Black counterparts, and the block
-/// sizes from the board it is played on, so a nine-by-ten board with seven
-/// piece types builds a vector nothing like standard chess's.
-///
-/// The eleven scalars are put last, where a twelfth could be added without
-/// moving anything already indexed.
+/// Measures the loaded variant and puts the blocks one after the other.
+/// The piece type pairs and the board size come from the variant. The
+/// eleven scalars are last, so a new scalar does not move other indices.
 ///
 /// Params:
-/// - state: &State -> loaded variant whose geometry is measured
+/// - state: &State -> loaded variant to measure
 ///
 /// Return:
-/// TuneShape       -> block offsets, dimensions, and the piece-type pairs
+/// TuneShape       -> block offsets, dimensions and piece type pairs
+///
 fn build_shape(state: &State) -> TuneShape {
     let pairs = collect_piece_type_pairs(state);
     let piece_types = pairs.len();
@@ -181,13 +156,8 @@ fn build_shape(state: &State) -> TuneShape {
 
 /// initial_theta
 ///
-/// Fills the vector with the parameters the engine is playing with right
-/// now, so a run picks up where the last one left off rather than at zero.
-/// From zero the fit would have to rediscover from game results alone that
-/// a queen outweighs a pawn, which no dataset this size can say.
-///
-/// The scalars are read in this order, and every later index into the
-/// scalar block counts from the same list:
+/// Fills the vector with the current engine parameters. Thus a run starts
+/// from the last result, not from zero. The scalar block has this order:
 ///
 /// - `+0`  : tempo_bonus
 /// - `+1`  : imbalance_major
@@ -202,11 +172,12 @@ fn build_shape(state: &State) -> TuneShape {
 /// - `+10` : open_shield_penalty
 ///
 /// Params:
-/// - state: &State     -> loaded variant supplying current parameters
+/// - state: &State     -> loaded variant with the current parameters
 /// - shape: &TuneShape -> vector geometry to fill
 ///
 /// Return:
-/// Vec<f64>            -> the starting parameter vector θ₀
+/// Vec<f64>            -> the start parameter vector θ₀
+///
 fn initial_theta(state: &State, shape: &TuneShape) -> Vec<f64> {
     let mut theta = vec![0.0f64; shape.dimension];
     let board_size = shape.board_size;
@@ -248,31 +219,23 @@ fn initial_theta(state: &State, shape: &TuneShape) -> Vec<f64> {
 
 /// phase_weights
 ///
-/// How much of each side of a tapered term this position is owed. The
-/// split is the one `evaluate_position!` already makes, repeated here
-/// because the tuner needs it as a pair of numbers rather than as a score:
+/// Gives the opening and endgame weights of a position. The split is the
+/// same as in `evaluate_position!`, but as two numbers:
 ///
-/// - setup, opening : `(1, 0)`, the opening term whole
-/// - middlegame     : `(w, 1 − w)`, for a weight `w` of
-///                    `(phase − endgame) / (opening − endgame)`
-/// - endgame        : `(0, 1)`, the endgame term whole
-///
-/// A variant whose opening and endgame phase scores are the same number
-/// has no scale to interpolate along, and is split evenly rather than
-/// divided by zero.
-///
-/// Notes:
-///
-/// The weights are read once, when the sample is extracted, and are not
-/// touched again. Tuning material changes what a position's phase score
-/// comes to, but the fit works with the weights it started with, which is
-/// what keeps the model linear.
+/// - setup, opening : `(1, 0)`
+/// - middlegame     : `(w, 1 - w)`, `w = (phase - end) / (open - end)`
+/// - endgame        : `(0, 1)`
 ///
 /// Params:
-/// - state: &State -> position whose phase determines the weights
+/// - state: &State -> position with the phase
 ///
 /// Return:
-/// (f64, f64)      -> (opening weight, endgame weight), summing to one
+/// (f64, f64)      -> (opening weight, endgame weight), sum is one
+///
+/// Notes:
+/// If the two phase bounds are equal, the split is even. The weights do
+/// not change after extraction, so the model stays linear.
+///
 fn phase_weights(state: &State) -> (f64, f64) {
     match state.game_phase {
         ENDGAME => (0.0, 1.0),
@@ -295,51 +258,38 @@ fn phase_weights(state: &State) -> (f64, f64) {
 
 /// extract_sample
 ///
-/// Turns one quiet position into the row of coefficients saying how its
-/// score would move if each parameter moved. The tapered material and PST
-/// score is linear in those parameters, so the coefficients are read off
-/// the position rather than estimated from it:
+/// Converts one quiet position into its coefficient row. The tapered score
+/// is linear in the parameters, so the position gives the coefficients:
 ///
-/// - material : the net count of that type, times the phase weight
-/// - PST      : the phase weight, at the square the piece stands on
-/// - scalar   : the count its term was built from, opening-weighted
+/// - material : net count of the type, times the phase weight
+/// - PST      : the phase weight, at the square of the piece
+/// - scalar   : the count of the term, times the opening weight
 ///
-/// Pieces in hand are counted as material. A variant that drops them has
-/// them worth something while they wait, and a tuner that ignored the
-/// pocket would price a crazyhouse capture as a piece disappearing.
+/// Pieces in hand count as material. A Black piece uses the entry of its
+/// White pair with the opposite sign, on the mirrored square:
 ///
-/// Black is not tuned separately. Its pieces enter their White partner's
-/// entry with the sign flipped, on the square mirrored across the ranks:
+/// - White on square 1  : `PST[1]` gets `+weight`
+/// - Black on square 57 : mirrored to square 1, `PST[1]` gets `-weight`
 ///
-/// - White on square 1  : gives `PST[1]` a coefficient of `+weight`
-/// - Black on square 57 : that same file on rank 7, on eight files, so
-///                        `PST[1]` is given `−weight`
-///
-/// A scalar's count is recovered by dividing the score that term produced
-/// by the parameter that produced it. King danger is the one term that is
-/// not a plain product: once it has hit its cap, moving the scale changes
-/// nothing, so the coefficient goes to the cap instead.
-///
-/// Finally the offset is set to what quiescence said less what these
-/// coefficients are worth at the current parameters, so the line passes
-/// exactly through the score the engine actually gives this position.
-///
-/// Notes:
-///
-/// A scalar standing at zero cannot be divided back out and reads as a
-/// count of zero. It then draws no gradient and stays at zero for the whole
-/// run, which is worth knowing before tuning a variant whose configuration
-/// has switched such a term off.
+/// The scalar count is the term score divided by its parameter. After its
+/// cap, king danger does not change with the scale, so its coefficient is
+/// the cap. The offset is the quiescence score minus the tuned terms, so
+/// the line goes through the real engine score.
 ///
 /// Params:
-/// - state: &State     -> quiet position to reduce
-/// - shape: &TuneShape -> vector geometry to index into
-/// - label: f64        -> White-view game result for this position
-/// - score: i32        -> White-view quiescence score
-/// - theta: &[f64]     -> current values used for the tunable score
+/// - state: &State     -> quiet position to convert
+/// - shape: &TuneShape -> vector geometry
+/// - label: f64        -> game result for White
+/// - score: i32        -> quiescence score for White
+/// - theta: &[f64]     -> current parameter values
 ///
 /// Return:
-/// Sample              -> sparse features, qsearch offset, and label
+/// Sample              -> sparse features, offset and label
+///
+/// Notes:
+/// A scalar at zero cannot be divided and gives a count of zero. It then
+/// gets no gradient and stays at zero for the full run.
+///
 fn extract_sample(
     state: &State,
     shape: &TuneShape,
@@ -484,23 +434,14 @@ fn extract_sample(
 
 /// Tuning math primitives
 ///
-/// The three steps between a sample and a number the fit can act on. The
-/// line is evaluated, bent into a win probability, and compared with how
-/// the game the position came from actually ended:
+/// The three math steps of the fit. The score becomes a win probability,
+/// and the error compares it with the game result:
 ///
 /// ```text
 /// score    = offset + f·θ
 /// expected = 1 / (1 + 10^(−K·score/400))
 /// error    = mean of (label − expected)² over the samples
 /// ```
-///
-/// The logistic is base ten over four hundred, which puts K near one when
-/// a pawn is worth about a hundred. That is a convenience rather than an
-/// assumption: K is fitted, so a variant that writes its values on a wholly
-/// different scale simply fits a different K.
-///
-/// Only the mean is spread across cores. It is the one call taking time
-/// here, and both the scaling search and every epoch go through it.
 ///
 /// sigmoid
 ///
@@ -517,17 +458,23 @@ fn extract_sample(
 ///   - theta : &[f64]  -> parameter vector
 ///
 ///   Return:
-///   f64               -> quiescence offset plus tunable score `o + f·θ`
+///   f64               -> offset plus tuned score, `o + f·θ`
 ///
 /// mean_squared_error
 ///
 ///   Params:
 ///   - samples: &[Sample] -> dataset
 ///   - theta  : &[f64]    -> parameter vector
-///   - scaling: f64       -> the sigmoid scaling constant K
+///   - scaling: f64       -> sigmoid scale K
 ///
 ///   Return:
-///   f64                  -> average `(label − sigmoid(K·score/400))²`
+///   f64                  -> mean of `(label − sigmoid(K·score/400))²`
+///
+/// Notes:
+/// With base ten over 400, K is near one when a pawn is about 100. The
+/// tuner fits K, so other value scales also work. Only the mean runs in
+/// parallel, because it is the slow step.
+///
 fn sigmoid(value: f64) -> f64 {
     1.0 / (1.0 + 10f64.powf(-value))
 }
@@ -553,16 +500,13 @@ fn mean_squared_error(samples: &[Sample], theta: &[f64], scaling: f64) -> f64 {
 
 /// fit_scaling
 ///
-/// Finds the K under which the current parameters look as right as they
-/// can, before a single step is taken. Left unfitted, the first epochs
-/// would go on scaling the whole evaluation up or down to meet a sigmoid
-/// that was never the thing worth arguing with.
+/// Finds the K with the smallest error for the current parameters, before
+/// the first step. Without it, the first epochs would only scale the full
+/// evaluation.
 ///
-/// Error against K falls towards one minimum and rises on both sides of
-/// it, which is all golden-section search asks for. Two interior probes are
-/// held, the half beyond the worse of them is dropped, and the better probe
-/// survives as one end of the next pair, so a step costs one pass over the
-/// training set instead of two:
+/// The error has one minimum in K, so the function uses golden-section
+/// search. It removes the part past the worse probe. The better probe
+/// stays for the next step, so each step needs one pass, not two:
 ///
 /// ```text
 /// low        left        right        high
@@ -570,16 +514,16 @@ fn mean_squared_error(samples: &[Sample], theta: &[f64], scaling: f64) -> f64 {
 ///             ^ lower error, so [right, high] goes
 /// ```
 ///
-/// Thirty-two of those leave an interval far narrower than the dataset
-/// could tell apart, and its midpoint is the answer. K is fitted on the
-/// training samples alone, like everything else the run learns.
+/// After 32 steps, the midpoint of the interval is the result. Only the
+/// training samples fit K.
 ///
 /// Params:
 /// - samples: &[Sample] -> dataset
-/// - theta  : &[f64]    -> parameter vector to evaluate against
+/// - theta  : &[f64]    -> parameter vector
 ///
 /// Return:
-/// f64                  -> the fitted scaling constant K
+/// f64                  -> the fitted scale K
+///
 fn fit_scaling(samples: &[Sample], theta: &[f64]) -> f64 {
     let ratio = (5f64.sqrt() - 1.0) / 2.0;
     let mut low = TEXEL_K_MIN;
@@ -611,35 +555,30 @@ fn fit_scaling(samples: &[Sample], theta: &[f64]) -> f64 {
 
 /// compute_gradient
 ///
-/// Says which way every parameter wants to move. Because the model is a
-/// line inside a logistic, the chain rule hands the answer over in closed
-/// form, with no finite differences and no second search:
+/// Calculates the gradient of the error. The model is a line in a
+/// logistic, so the chain rule gives an exact formula:
 ///
 /// ```text
 /// ∂E/∂θᵢ = 2(E − r) · E(1 − E) · (K·ln10/400) · fᵢ
 /// ```
 ///
-/// - `2(E − r)`   : how wrong the prediction was, and on which side
-/// - `E(1 − E)`   : how much the sigmoid can still move here at all
-/// - `K·ln10/400` : the constant the score was squeezed through
-/// - `fᵢ`         : what this position said that parameter is worth
-///
-/// The middle factor is why a position the fit is already sure about
-/// pulls almost nothing: a prediction near zero or one has run out of
-/// sigmoid to move, and the run stops arguing over settled positions.
-///
-/// Each thread keeps a full-length accumulator of its own and they are
-/// added at the end. The features are sparse, but two samples can name the
-/// same parameter, and a shared vector would need a lock per feature to
-/// say so.
+/// - `2(E − r)`   : prediction error, with its sign
+/// - `E(1 − E)`   : slope of the sigmoid, near 0 for sure predictions
+/// - `K·ln10/400` : constant of the scale
+/// - `fᵢ`         : coefficient of the parameter in this position
 ///
 /// Params:
 /// - samples: &[Sample] -> dataset
 /// - theta  : &[f64]    -> current parameters
-/// - scaling: f64       -> the sigmoid scaling constant K
+/// - scaling: f64       -> sigmoid scale K
 ///
 /// Return:
-/// Vec<f64>             -> the averaged gradient, one entry per parameter
+/// Vec<f64>             -> mean gradient, one entry for each parameter
+///
+/// Notes:
+/// Each thread has its own full accumulator, and the function adds them at
+/// the end. A shared vector would need a lock for each feature.
+///
 fn compute_gradient(
     samples: &[Sample],
     theta: &[f64],
@@ -687,42 +626,34 @@ fn compute_gradient(
 
 /// load_dataset
 ///
-/// Reads back what datagen wrote and turns each row into a sample. A row is
-/// three fields, and the first of them decides which half it lands in:
+/// Reads the datagen file and converts each row into a sample. The game
+/// number of a row selects its set:
 ///
 /// ```text
 /// 12;8/8/4k3/8/4K3/8/8/8 w - - 0 1;0.5
 /// ^  ^                             ^
-/// |  |                             how that game ended, White's view
+/// |  |                             game result for White
 /// |  the position, as a FEN
-/// the game, and every row sharing it goes the same way
+/// the game, all its rows go to the same set
 /// ```
 ///
-/// Each position is put through quiescence before it is measured. The rows
-/// are quiet already — nobody in check, nothing captured — but quiet is not
-/// the same as settled, and a score with a hanging piece still standing on
-/// the board is a score the parameters would be blamed for. The result is
-/// turned to White's view so that scores and labels agree on which way up
-/// they are.
-///
-/// A row that cannot be read stops the run and names its line, as does a
-/// game whose rows disagree about how it ended. A dataset half-read in
-/// silence would fit something, and would look like a fit that merely went
-/// badly. A dataset that is missing entirely is not fatal here: it logs and
-/// returns nothing, and the caller says so.
-///
-/// The split, the result counts, and the phase counts are all logged before
-/// any fitting starts. A dataset that is nine parts draws, or that never
-/// reached an endgame, will still tune — this is where that shows.
+/// Each position gets a quiescence score first. A quiet position can still
+/// have a hanging piece. The score is for White, as the label is.
 ///
 /// Params:
-/// - template: &State     -> loaded variant to clone scratch states
-/// - variant : &str       -> variant name, selects the dataset file
-/// - shape   : &TuneShape -> vector geometry for feature extraction
-/// - theta   : &[f64]     -> current parameters behind qsearch and features
+/// - template: &State     -> loaded variant, cloned for scratch states
+/// - variant : &str       -> variant name, selects the data file
+/// - shape   : &TuneShape -> vector geometry for the features
+/// - theta   : &[f64]     -> current parameters for quiescence and features
 ///
 /// Return:
-/// TuneDataset            -> game-disjoint training and validation samples
+/// TuneDataset            -> training and validation samples, split by game
+///
+/// Notes:
+/// A bad row, or a game with two different results, stops the run with the
+/// line number. A missing file only logs and gives an empty set. The split,
+/// result counts and phase counts go to the log before the fit.
+///
 fn load_dataset(
     template: &State,
     variant: &str,
@@ -864,35 +795,27 @@ fn load_dataset(
 
 /// export_theta
 ///
-/// Writes the fitted vector back out as the parameters the engine reads at
-/// startup. The floats become integers here, which is where the fit stops
-/// being exact: everything downstream of this is fixed point, and a piece
-/// worth 331.6 is a piece worth 332.
+/// Writes the fitted vector as the parameter file that the engine reads at
+/// startup. The values are rounded to integers. The file order is not the
+/// θ order:
 ///
-/// The written order is not θ's order. Material leads, both phases of it,
-/// and after that each piece type's two tables are kept together:
-///
-/// - T tokens of opening material, one per piece type
-/// - T tokens of endgame material, in that same order
-/// - then per piece type, its S opening squares followed by its S
-///   endgame squares
+/// - T tokens of opening material, one for each piece type
+/// - T tokens of endgame material, in the same order
+/// - for each piece type, S opening squares, then S endgame squares
 /// - 11 tokens for the evaluation scalars
 ///
-/// Values are clamped to what the parameter parser will accept, fourteen
-/// bits either side of zero, and material to fourteen bits above it —
-/// a piece worth less than nothing is a piece the side of the board wants
-/// captured, which is not a thing the tuner is allowed to conclude.
-///
-/// The tokens are then parsed straight back into the running state before
-/// the file is written. Reading its own output is what makes the exported
-/// file and the engine that produced it agree by construction, rather than
-/// by both being written carefully.
-///
 /// Params:
-/// - state  : &mut State -> loaded variant, updated with the tuned vector
+/// - state  : &mut State -> loaded variant, gets the tuned values
 /// - variant: &str       -> variant name, selects the output directory
-/// - shape  : &TuneShape -> vector geometry to serialise from
+/// - shape  : &TuneShape -> vector geometry
 /// - theta  : &[f64]     -> the tuned parameter vector
+///
+/// Notes:
+/// Values are clamped to the parser range, 14 bits on each side of zero.
+/// Material is clamped to 0 up to 14 bits. The function parses the tokens
+/// into the state before it writes the file, so the file and the engine
+/// agree.
+///
 fn export_theta(
     state: &mut State,
     variant: &str,
@@ -972,42 +895,29 @@ fn export_theta(
 
 /// run_tuning
 ///
-/// What `tune` runs. The vector is measured and filled from the parameters
-/// in force, the dataset is read and split, K is fitted once, and then the
-/// same four things happen every epoch:
+/// The `tune` command. It builds the vector from the current parameters,
+/// reads and splits the dataset and fits K once. Then each epoch does:
 ///
-/// - the gradient is taken, over the training half only
-/// - an Adam step is applied, both moments corrected for their cold start
-/// - the vector is clamped back into the range the parameter parser
-///   accepts
-/// - both halves are scored, and this θ is kept if validation improved
+/// 1. calculate the gradient on the training set only
+/// 2. apply an Adam step, with bias correction of the two moments
+/// 3. clamp the vector to the range of the parameter parser
+/// 4. score the two sets, keep θ if the validation error is better
 ///
-/// Clamping inside the loop rather than at the end is what keeps the run
-/// honest: a parameter left free to wander outside the range would go on
-/// earning gradient it could never spend, and the vector that was scored
-/// would not be the vector that could be written.
-///
-/// What gets exported is the best validation epoch, never the last one.
-/// Training error falls for as long as anyone is willing to watch it, and
-/// past some point it falls by learning the games rather than the game.
-/// Ten epochs without a new best is taken as that point.
-///
-/// A run stopped by hand still exports. It has a best epoch by then, and
-/// throwing that away because the run was cut short would only make the
-/// interrupt cost more than it saves.
-///
-/// Notes:
-///
-/// K is fitted once, against the starting parameters, and is not refitted
-/// as they move. Refitting each epoch would let the error fall by making
-/// the sigmoid flatter rather than by making the evaluation better, and
-/// the two halves' scores would no longer be comparable across epochs.
+/// The export is the best validation epoch, not the last. The run stops
+/// after `TUNING_VALIDATION_PATIENCE` epochs without a better result.
 ///
 /// Params:
 /// - state        : &mut State -> loaded variant, tuned and exported
-/// - variant      : &str       -> variant name, selects dataset/output
-/// - epochs       : usize      -> number of Adam passes to run
+/// - variant      : &str       -> variant name, selects data and output
+/// - epochs       : usize      -> number of Adam passes
 /// - learning_rate: f64        -> Adam step size
+///
+/// Notes:
+/// The clamp is in the loop, so the scored vector is the vector that can
+/// be written. An interrupted run still exports its best epoch. K does not
+/// change after the first fit. Else the error could decrease with a flatter
+/// sigmoid, not with a better evaluation.
+///
 pub fn run_tuning(
     state: &mut State,
     variant: &str,

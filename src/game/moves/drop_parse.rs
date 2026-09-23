@@ -1,12 +1,10 @@
 //! drop_parse.rs
 //!
-//! Parses drop expressions into internal drop vectors and modifiers.
+//! Parses drop expressions into packed drop templates.
 //!
-//! A drop expression pairs optional flags with the CPMN neighbourhood
-//! pattern that governs where a held piece may re-enter. This file compiles
-//! those expressions into the packed drop templates the generator consumes,
-//! splitting `|` branches and folding each flag into the drop word so the
-//! hot path never re-parses text.
+//! A drop expression has optional flags and a CPMN pattern. The pattern
+//! tells where a piece in hand can go on the board. This file compiles each
+//! `|` branch once at load time, so the move generator does not read text.
 //!
 //! Created: 29/01/2026
 //! Author : Alden Luthfi
@@ -16,14 +14,12 @@ use crate::*;
 lazy_static! {
     /// DROP_PATTERN
     ///
-    /// Regex splitting one drop branch at its first `@`:
+    /// Regex that splits one drop branch at its first `@`. The CPMN body
+    /// must also contain an `@`, between its allower and stopper halves.
     ///
-    /// - group 1 -> flag prefix, any run of `k` and `f`
+    /// - group 1 -> flag prefix, any sequence of `k` and `f`
     /// - group 2 -> CPMN body, compiled by `parse_pattern`
     ///
-    /// The body is required to carry an `@` of its own, which is what keeps
-    /// the split unambiguous: the first `@` ends the flags, the second is
-    /// the one CPMN puts between its allower and stopper halves.
     static ref DROP_PATTERN: Regex =
         Regex::new(r"^([kf]*)@(.*@.*)$").unwrap_or_else(|e| {
             panic!("Failed to compile DROP_PATTERN regex: {e}")
@@ -36,36 +32,33 @@ lazy_static! {
 
 /// generate_drop_vectors
 ///
-/// Compiles a piece's drop expressions into packed drop templates, one per
-/// `|` branch. Each branch has the form:
+/// Compiles the drop expression of a piece into packed drop templates, one
+/// for each `|` branch. Each branch has this form:
 ///
 /// ```text
 /// [modifiers]@[CPMN]
 /// ```
 ///
-/// The CPMN body is the neighbourhood the target square must present, and
-/// the modifier prefix carries what a neighbourhood cannot say:
+/// The CPMN body is the pattern that the target square must match. The
+/// modifiers give the rules that a pattern cannot give:
 ///
-/// - k -> this drop may not be the move that delivers checkmate
+/// - k -> the drop must not give checkmate
 ///
-/// Each branch leaves a [`DropMove`] carrying the piece index and that flag,
-/// paired with its compiled pattern. The square half of the word stays zero:
-/// a template is compiled once for the piece, and `generate_relevant_drops`
-/// stamps a square into every copy it keeps.
+/// Each template is a [`DropMove`] with the piece index and the flags. The
+/// square bits stay zero. `generate_relevant_drops` sets the square later.
 ///
 /// Params:
-/// - piece   : &Piece    -> piece type whose drop expression is compiled
+/// - piece   : &Piece    -> piece type to compile
 /// - state   : &State    -> piece dictionary and board dimensions
-/// - expr_set: &[String] -> drop expressions, one per piece
+/// - expr_set: &[String] -> drop expressions, one for each piece
 ///
 /// Return:
-/// DropSet               -> one packed (drop, pattern) pair per `|` branch
+/// DropSet               -> one (drop, pattern) pair for each `|` branch
 ///
 /// Notes:
-/// The prefix also admits an `f` that nothing reads, so a variant spelling
-/// it gets the drop it would have got without it. A branch that does not
-/// match [`DROP_PATTERN`] panics, drop rules being config text compiled once
-/// at load time rather than anything a position can produce.
+/// The parser accepts an `f` flag but ignores it. A branch that does not
+/// match [`DROP_PATTERN`] causes a panic at load time.
+///
 pub fn generate_drop_vectors(
     piece: &Piece,
     state: &State,

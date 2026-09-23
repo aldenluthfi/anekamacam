@@ -1,8 +1,10 @@
 //! headless.rs
 //!
-//! Non-graphical debug command dispatcher for engine inspection and tooling.
-//! Keeps perft, bench, search, evaluation, self-play, parameter work, dataset
-//! generation, tuning, and SPRT under one nested one-shot CLI frontend.
+//! Debug command dispatcher without graphics.
+//!
+//! One command line frontend runs perft, bench, search, evaluation,
+//! self-play, derivation, data generation, tuning and SPRT. Each call runs
+//! one command and exits.
 //!
 //! Created: 30/07/2026
 //! Author : Alden Luthfi
@@ -15,24 +17,20 @@ use crate::*;
 
 /// HeadlessPosition
 ///
-/// One command's board, and everything read off the line beside it. Eight of
-/// the commands want a position and all eight want it the same way, so the
-/// line is read once, here, rather than eight times over.
+/// The position of one command and the other arguments of its line. Eight
+/// commands need a position, so one parser reads the line for all.
 ///
-/// - state           : the board, already at the asked-for position
-/// - translator      : the notation to read and write in, where one was
-///                     named
-/// - variant         : its name, still wanted for suite and file lookups
-/// - values          : the positional arguments, in the order they came
-/// - custom_position : whether a FEN or a move list was given at all, as
-///                     against the variant's own start position
-/// - suite           : perft: run the embedded suite, not one position
-/// - limit           : perft and bench: how many cases to get through
-/// - branch          : perft: how many levels of the tree to name
+/// - state           : the board, at the requested position
+/// - translator      : the notation for input and output, if given
+/// - variant         : variant name, for suite and file lookups
+/// - values          : the positional arguments, in order
+/// - custom_position : true when a FEN or a move list was given
+/// - suite           : perft only, run the embedded suite
+/// - limit           : perft and bench only, number of cases
+/// - branch          : perft only, number of tree levels to show
 ///
-/// The last three belong to one command each and are meaningless to the
-/// rest, which is why they are options: `None` is not a default so much as
-/// a flag that was never offered on that command's line.
+/// The last three are `None` when the flag is not on the line.
+///
 struct HeadlessPosition {
     state: State,                                                               /* the board the command works on     */
     translator: Option<Translator>,                                             /* the notation both ends read        */
@@ -50,14 +48,13 @@ struct HeadlessPosition {
 
 /// headless_usage
 ///
-/// Builds the help text, which is printed on `help`, on no command at all,
-/// and after any error, so a mistyped line answers itself rather than only
-/// saying no. The three position options sit in their own group because
-/// they belong to eight commands at once and would be repeated eight times
-/// otherwise.
+/// Makes the help text. The frontend prints it for `help`, for an empty
+/// line and after each error. The three position options are in one group,
+/// because eight commands use them.
 ///
 /// Return:
-/// String -> every command, flag, and argument the frontend takes
+/// String -> all commands, flags and arguments of the frontend
+///
 fn headless_usage() -> String {
     [
         "Usage: anekamacam debug-headless <command> ...\n\n",
@@ -86,9 +83,8 @@ fn headless_usage() -> String {
 
 /// parse_position_arguments
 ///
-/// Reads one position command's line and hands back the board it names. The
-/// variant has to come first; everything after it may be written in any
-/// order at all, flags and values interleaved as the typist pleases.
+/// Reads the line of a position command and gives the board it names. The
+/// variant must be first. After it, flags and values can be in any order.
 ///
 /// ```text
 /// perft standard 5 --fen "8/8/8/8/8/8/8/K6k w" --limit 20
@@ -100,31 +96,25 @@ fn headless_usage() -> String {
 /// the command, taken off the line before this is called
 /// ```
 ///
-/// - `--protocol` : the dialect the FEN and the moves are written in
-/// - `--fen`      : the position to start from, in place of the
-///                  variant's own
-/// - `--moves`    : moves to play onto it, taking every word up to the
-///                  next flag, so a move list needs nothing to close it
-/// - `--suite`    : perft alone
-/// - `--limit`    : perft and bench
-/// - `--branch`   : perft alone
-///
-/// A flag belonging to some other command is not quietly dropped. The three
-/// narrow ones are guarded on the command name, so `--suite` written on a
-/// `bench` line falls past its own arm into the unknown-option arm and is
-/// named there, rather than being read and then never used.
-///
-/// The translator is put on the FEN only where a FEN was actually given.
-/// The variant's own start position is already in the engine's notation,
-/// and translating it as though it had come from the protocol would rewrite
-/// a board nobody asked to change.
+/// - `--protocol` : notation of the FEN and the moves
+/// - `--fen`      : start position, in place of the variant start
+/// - `--moves`    : moves to play, all words up to the next flag
+/// - `--suite`    : perft only
+/// - `--limit`    : perft and bench only
+/// - `--branch`   : perft only
 ///
 /// Params:
-/// - command  : &str                -> which command's line is being read
-/// - arguments: &[String]           -> everything after the command word
+/// - command  : &str                -> command of the line
+/// - arguments: &[String]           -> all words after the command
 ///
 /// Return:
-/// Result<HeadlessPosition, String> -> the loaded position, or the fault
+/// Result<HeadlessPosition, String> -> the loaded position, or the error
+///
+/// Notes:
+/// A flag of another command is an error, not ignored. The translator
+/// applies only to a given FEN, because the variant start position is
+/// already in engine notation.
+///
 #[hotpath::measure]
 fn parse_position_arguments(
     command: &str,
@@ -283,21 +273,21 @@ fn parse_position_arguments(
 
 /// run_state_command
 ///
-/// Prints everything the engine believes about one position, and nothing
-/// about what it would do with it.
+/// Prints the engine state of one position, without a search.
 ///
-/// - the board : drawn, with whatever the variant hangs off it
-/// - FEN       : the same position written back out
-/// - Hash      : the position hash, which repetition is judged on
-/// - Keys      : the search and quiescence keys, which index the tables
-/// - Result    : the outcome, Ongoing while it is
-/// - Reason    : the rule that ended it, printed only once one has
+/// - board  : the board diagram and the variant data
+/// - FEN    : the position as FEN
+/// - Hash   : the position hash, for repetition
+/// - Keys   : the search and quiescence keys of the tables
+/// - Result : the game result, Ongoing if not ended
+/// - Reason : the rule that ended the game, only after an end
 ///
 /// Params:
-/// - position: HeadlessPosition -> the position, and nothing besides
+/// - position: HeadlessPosition -> the position
 ///
 /// Return:
-/// Result<(), String>           -> printed, or the value it refused
+/// Result<(), String>           -> Ok, or the rejected value
+///
 #[hotpath::measure]
 fn run_state_command(
     mut position: HeadlessPosition,
@@ -325,17 +315,15 @@ fn run_state_command(
 
 /// run_movegen_command
 ///
-/// Prints the count of legal moves, then the moves themselves, one to a
-/// line. They are sorted by their written form rather than left in the
-/// order they were generated, so two builds can be compared line by line
-/// and a difference in generation order is not read as a difference in the
-/// moves that were found.
+/// Prints the number of legal moves, then one move on each line. The moves
+/// are sorted by their text, so two builds can be compared line by line.
 ///
 /// Params:
-/// - position: HeadlessPosition -> the position, and nothing besides
+/// - position: HeadlessPosition -> the position
 ///
 /// Return:
-/// Result<(), String>           -> printed, or the value it refused
+/// Result<(), String>           -> Ok, or the rejected value
+///
 fn run_movegen_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
@@ -369,15 +357,15 @@ fn run_movegen_command(
 
 /// run_evaluate_command
 ///
-/// Scores one position without searching it, from the side to move's point
-/// of view. The phase is printed alongside because so much of the score
-/// depends on it that the number is hard to read without it.
+/// Prints the static evaluation of one position for the side to move. It
+/// also prints the phase, because the score depends much on it.
 ///
 /// Params:
-/// - position: HeadlessPosition -> the position, and nothing besides
+/// - position: HeadlessPosition -> the position
 ///
 /// Return:
-/// Result<(), String>           -> printed, or the value it refused
+/// Result<(), String>           -> Ok, or the rejected value
+///
 fn run_evaluate_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
@@ -399,16 +387,16 @@ fn run_evaluate_command(
 
 /// run_see_command
 ///
-/// Plays one capture's whole exchange out statically and reports what it
-/// wins or loses. The move is required to be a capture rather than merely
-/// accepted as one: a quiet move has no exchange to evaluate, and reporting
-/// zero for it would read as a fair trade rather than as no trade at all.
+/// Prints the static exchange result of one capture. The move must be a
+/// capture. A quiet move has no exchange, and zero would look like an equal
+/// trade.
 ///
 /// Params:
-/// - position: HeadlessPosition -> the position, and the one capture
+/// - position: HeadlessPosition -> the position and the capture
 ///
 /// Return:
-/// Result<(), String>           -> printed, or why the move will not do
+/// Result<(), String>           -> Ok, or why the move is not accepted
+///
 fn run_see_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
@@ -441,27 +429,24 @@ fn run_see_command(
 
 /// run_search_command
 ///
-/// Searches one position to a fixed depth and says what it found.
+/// Searches one position to a fixed depth and prints the result. The
+/// defaults are depth 4 and one thread.
 ///
-/// - Best move : the move it settled on, or `(none)` where there was
-///               none
-/// - Score     : what that move is worth, from the side to move's view
-/// - Nodes     : how many positions it looked at getting there
-/// - Elapsed   : how long that took
-///
-/// The tables are built here, a megabyte apiece, and go away with the
-/// command. A search that inherited another run's table would report a
-/// different node count for the very same position, and the node count is
-/// most of what anyone runs this command to compare.
-///
-/// Both figures have defaults, depth four on one thread, small enough to
-/// answer at once and still deep enough to be a search.
+/// - Best move : the selected move, or `(none)`
+/// - Score     : the score for the side to move
+/// - Nodes     : number of searched positions
+/// - Elapsed   : search time
 ///
 /// Params:
-/// - position: HeadlessPosition -> the position, its depth and threads
+/// - position: HeadlessPosition -> the position, depth and threads
 ///
 /// Return:
-/// Result<(), String>           -> printed, or the limit it refused
+/// Result<(), String>           -> Ok, or the rejected limit
+///
+/// Notes:
+/// The command makes new 1 MB tables each time. Old table entries would
+/// change the node count of the same position.
+///
 fn run_search_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
@@ -516,29 +501,24 @@ fn run_search_command(
 
 /// run_play_command
 ///
-/// Plays the engine against itself from the position and prints the game as
-/// it goes, a move to a line, so a long one can be watched rather than only
-/// waited on. The result and the final position follow it.
+/// Plays a self-play game from the position. It prints each move on one
+/// line, then the result and the last position.
 ///
-/// - depth     : how deep each move is searched
-/// - time      : seconds a move; zero means depth is the only limit
-/// - threads   : how many threads to search with, one by default
-/// - max-plies : where to stop and leave it unfinished, 2048 by default
-///
-/// The ply cap is nobody's rule. It is there because two copies of one
-/// engine will shuffle forever in a variant that counts nothing, and the
-/// command has to end whether or not the game does.
-///
-/// The two tables are made once and used all game, unlike `bench` where
-/// each position gets its own. A self-play game is one game and its later
-/// positions follow from its earlier ones, so carrying the table forward is
-/// what an engine playing that game would actually do.
+/// - depth     : search depth for each move, must be positive
+/// - time      : seconds for each move, 0 means depth only
+/// - threads   : search threads, 1 by default
+/// - max-plies : ply limit of the game, 2048 by default
 ///
 /// Params:
-/// - position: HeadlessPosition -> the position, and the four limits
+/// - position: HeadlessPosition -> the position and the four limits
 ///
 /// Return:
-/// Result<(), String>           -> played, or the limit it refused
+/// Result<(), String>           -> Ok, or the rejected limit
+///
+/// Notes:
+/// The ply limit stops games in variants without a progress rule. The two
+/// tables stay for the full game, as in a real game.
+///
 fn run_play_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
@@ -602,30 +582,25 @@ fn run_play_command(
 
 /// run_perft_command
 ///
-/// Counts the legal move tree, either from the one position on the line or
-/// across the whole of the variant's embedded suite.
+/// Counts the legal move tree of one position or of the embedded suite of
+/// the variant.
 ///
-/// - `perft standard 5`                    : one position, divided at
-///                                           the root
-/// - `perft standard 5 --branch 2`         : the same, named two levels
-///                                           deep
-/// - `perft standard 5 --suite`            : every case in
-///                                           `standard.perft`
-/// - `perft standard 5 --suite --limit 20` : the first twenty of those
-///
-/// The suite takes neither a FEN nor a move list: its cases carry their own
-/// positions, and one given on the line would be thrown away by the first
-/// of them without a word. Its depths run one through six, which is as far
-/// as the embedded cases are counted.
-///
-/// `--limit` without `--suite` is refused rather than ignored, there being
-/// no list of cases to cut short when only one position is being counted.
+/// - `perft standard 5`                    : one position, divided at root
+/// - `perft standard 5 --branch 2`         : the same, two levels shown
+/// - `perft standard 5 --suite`            : all cases of `standard.perft`
+/// - `perft standard 5 --suite --limit 20` : the first 20 cases
 ///
 /// Params:
-/// - position: HeadlessPosition -> the position, and the perft options
+/// - position: HeadlessPosition -> the position and the perft options
 ///
 /// Return:
-/// Result<(), String>           -> counted, or the option it refused
+/// Result<(), String>           -> Ok, or the rejected option
+///
+/// Notes:
+/// The suite does not accept a FEN or moves, because each case has its own
+/// position. Suite depths are 1 to 6. `--limit` without `--suite` is an
+/// error.
+///
 fn run_perft_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
@@ -693,34 +668,26 @@ fn run_perft_command(
 
 /// bench_walk_fen
 ///
-/// Wanders a few moves out from the variant's start position and hands back
-/// where it landed. The bench wants more positions than most variants keep
-/// perft cases for, and these make up the difference.
+/// Plays some pseudo-random moves from the start position and gives the
+/// FEN of the result. The bench uses these walks when the perft suite has
+/// too few cases. The seed and the index fix each walk:
 ///
-/// Random here means fixed. Nothing about a walk comes from the clock or
-/// the machine, only from the seed and which walk it is:
-///
-/// - length : 6 + index mod 10 plies, so walks end at differing depths
-/// - mixing : seed xor index · 0x9E3779B97F4A7C15, then one linear
-///            congruential step per ply
-/// - choice : over the legal moves sorted by written form, and never in
-///            the order they were generated
-///
-/// That sort is what makes a walk mean the same thing twice. Two builds
-/// that find the same moves in a different order would otherwise wander to
-/// different positions, and their bench figures would be measuring two
-/// different searches rather than two different builds.
-///
-/// A walk stops short where the move it drew ends the game, backing that
-/// move out first: a terminal position has nothing left to search.
+/// - length : `6 + index mod 10` plies
+/// - mixing : `seed ^ index * 0x9E3779B97F4A7C15`, one LCG step per ply
+/// - choice : from the legal moves sorted by their text
 ///
 /// Params:
-/// - state: &mut State -> variant state, reused for every walk
-/// - seed : u64        -> mixing seed shared across compared binaries
-/// - index: usize      -> walk number driving ply count and mixing
+/// - state: &mut State -> variant state, used again for each walk
+/// - seed : u64        -> mixing seed, same for the compared binaries
+/// - index: usize      -> walk number, sets the length and the mixing
 ///
 /// Return:
-/// String              -> FEN of the reached non-terminal position
+/// String              -> FEN of the reached position, not terminal
+///
+/// Notes:
+/// The sort makes a walk the same for two builds with a different move
+/// order. If a move ends the game, the walk undoes it and stops.
+///
 fn bench_walk_fen(
     state: &mut State,
     seed: u64,
@@ -765,8 +732,8 @@ fn bench_walk_fen(
 
 /// run_bench_command
 ///
-/// Searches a fixed set of positions to a fixed depth and reports how fast
-/// it got through them. One line a position, then one line for the lot:
+/// Searches a fixed set of positions to a fixed depth and prints the speed.
+/// It prints one line for each position and one line for the total:
 ///
 /// ```text
 /// position 001 nodes       412988 time_ns      93214000 nps   4430536
@@ -774,23 +741,21 @@ fn bench_walk_fen(
 /// total nodes 1351102 time_ns 295094000 nps 4578549
 /// ```
 ///
-/// The positions come out of the variant's perft suite, skipping cases that
-/// count no nodes at all, and are made up to the limit with random walks
-/// where the suite is the shorter of the two. Sixteen by default.
-///
-/// Everything else is pinned so that two runs differ only where the builds
-/// do: one thread, the same depth, and a fresh transposition and quiescence
-/// table for every position. A position handed the last one's table would
-/// come out faster for a reason that has nothing to do with the build.
-///
-/// A FEN or a move list is refused. The point of the command is that
-/// everyone runs the same positions, and a given one would not be.
+/// The positions come from the perft suite of the variant, without cases
+/// of zero nodes. If the suite is too short, `bench_walk_fen` adds walks.
+/// The default limit is 16 positions.
 ///
 /// Params:
 /// - position: HeadlessPosition -> the depth and the case limit
 ///
 /// Return:
-/// Result<(), String>           -> benched, or the argument it refused
+/// Result<(), String>           -> Ok, or the rejected argument
+///
+/// Notes:
+/// All settings are fixed, so two runs differ only by the build: one
+/// thread, the same depth, and new tables for each position. A FEN or a
+/// move list is an error, because all runs must use the same positions.
+///
 fn run_bench_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
@@ -882,24 +847,22 @@ fn run_bench_command(
 
 /// run_datagen_command
 ///
-/// Reads the arguments for a run of self-play data generation and starts
-/// one. The generating is `run_datagen`'s work; the reading is all that
-/// happens here.
+/// Reads the data generation arguments and starts `run_datagen`.
 ///
-/// - variant  : which variant the games are played in
-/// - games    : how many to play, counted across every thread
-/// - movetime : milliseconds a move, the same for both sides
-/// - threads  : how many games are played at once, one by default
-///
-/// None of the three numbers may be zero. Zero of any of them describes a
-/// run that would produce nothing, and refusing it reads better than
-/// starting a job that finishes at once and writes an empty file.
+/// - variant  : variant of the games
+/// - games    : number of games, for all threads
+/// - movetime : milliseconds for each move
+/// - threads  : number of search threads, 1 by default
 ///
 /// Params:
 /// - arguments: &[String] -> the variant and the three limits
 ///
 /// Return:
-/// Result<(), String>     -> started, or the argument it refused
+/// Result<(), String>     -> Ok, or the rejected argument
+///
+/// Notes:
+/// A zero number is an error, because the run would make no data.
+///
 fn run_datagen_command(arguments: &[String]) -> Result<(), String> {
     if arguments.len() < 3 || arguments.len() > 4 {
         return Err(
@@ -933,22 +896,22 @@ fn run_datagen_command(arguments: &[String]) -> Result<(), String> {
 
 /// run_tune_command
 ///
-/// Reads the arguments for a tuning run and starts one over whatever data
-/// generation has already written for that variant.
+/// Reads the tuning arguments and starts a tuning run on the data of the
+/// variant.
 ///
-/// - variant       : whose parameters are being fitted
-/// - epochs        : how many passes over the data are made
-/// - learning rate : how far a pass may move them, 1.0 by default
-///
-/// Both numbers have to be above zero. No epochs is no fitting, and a rate
-/// of zero fits with steps of no length, which is the same thing said in a
-/// way that takes longer to say.
+/// - variant       : variant with the parameters to fit
+/// - epochs        : number of passes over the data
+/// - learning rate : step size, 1.0 by default
 ///
 /// Params:
-/// - arguments: &[String] -> the variant, the epochs, and the rate
+/// - arguments: &[String] -> the variant, the epochs and the rate
 ///
 /// Return:
-/// Result<(), String>     -> started, or the argument it refused
+/// Result<(), String>     -> Ok, or the rejected argument
+///
+/// Notes:
+/// The two numbers must be above zero, else the run fits nothing.
+///
 fn run_tune_command(arguments: &[String]) -> Result<(), String> {
     if arguments.len() < 2 || arguments.len() > 3 {
         return Err("tune requires variant and epochs".to_string());
@@ -975,27 +938,27 @@ fn run_tune_command(arguments: &[String]) -> Result<(), String> {
 
 /// run_sprt_command
 ///
-/// Reads the arguments for a match between two builds and starts it. The
-/// two binaries are named by path, and either may be the one that is
-/// running: the test is between whatever is at those two paths.
+/// Reads the arguments of a match between two builds and starts it. The
+/// arguments give the two binaries by path.
 ///
-/// - variant  : the variant both of them are made to play
-/// - binary a : the build under test
-/// - binary b : the build it is being measured against
-/// - control  : 1000 for a fixed movetime, 8000+80 for a clock
-/// - games    : where to give up if neither bound is reached, 2000
-/// - h0       : the Elo the test tries to reject, 0.0
-/// - h1       : the Elo it tries to accept, 5.0
-///
-/// Two games is the floor. The test plays colours in pairs so that a lucky
-/// opening cannot be handed to one side alone, and a single game is half a
-/// pair.
+/// - variant  : variant of the match
+/// - binary a : the build to test
+/// - binary b : the reference build
+/// - control  : 1000 for a fixed move time, 8000+80 for a clock
+/// - games    : game limit if no bound is reached, 2000 by default
+/// - h0       : Elo to reject, 0.0 by default
+/// - h1       : Elo to accept, 5.0 by default
 ///
 /// Params:
-/// - arguments: &[String] -> the pairing, the control, and the bounds
+/// - arguments: &[String] -> the pair, the control and the bounds
 ///
 /// Return:
-/// Result<(), String>     -> started, or the argument it refused
+/// Result<(), String>     -> Ok, or the rejected argument
+///
+/// Notes:
+/// The minimum is two games. The match plays each opening with the two
+/// colours.
+///
 fn run_sprt_command(arguments: &[String]) -> Result<(), String> {
     if arguments.len() < 4 || arguments.len() > 7 {
         return Err(
@@ -1032,29 +995,26 @@ fn run_sprt_command(arguments: &[String]) -> Result<(), String> {
 
 /// run_debug_headless
 ///
-/// The way in. Takes the rest of the command line, picks the command off
-/// the front of it, and hands the remainder to whoever owns that command.
+/// The entry point of the headless tools. It reads the command word and
+/// gives the rest of the line to that command.
 ///
-/// - `derive`             : no arguments at all
+/// - `derive`             : no arguments
 /// - datagen, tune, sprt  : read their own arguments
-/// - the eight positional : one shared read, by
-///                          `parse_position_arguments`
-/// - help, `--help`, `-h` : the usage text, and nothing else
+/// - position commands    : `parse_position_arguments` reads the line
+/// - help, `--help`, `-h` : print the usage text
 ///
-/// The eight positional commands are state, movegen, evaluate, see,
-/// search, play, perft, and bench.
-///
-/// Nothing raises here. Every command reports what went wrong by returning
-/// it, and the last thing this does is print that alongside the usage: a
-/// caller who got the line wrong wants to see the right line, not only that
-/// theirs was not it. A line with no command at all prints the same usage
-/// without calling it an error, since asking is not a mistake.
-///
-/// The interrupt flag is cleared on the way in. One command having been cut
-/// short by a signal is no reason for the next one to refuse to start.
+/// The position commands are state, movegen, evaluate, see, search, play,
+/// perft and bench.
 ///
 /// Params:
 /// - arguments: &[String] -> values after `debug-headless`
+///
+/// Notes:
+/// Each command returns its error. The function prints the error and the
+/// usage text. An empty line prints only the usage. The function clears
+/// the interrupt flag first, so an earlier signal does not stop the
+/// command.
+///
 #[hotpath::measure]
 pub fn run_debug_headless(arguments: &[String]) {
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);

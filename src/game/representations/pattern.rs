@@ -1,14 +1,10 @@
 //! pattern.rs
 //!
-//! Defines pattern representation types for CPMN pattern matching.
+//! Defines the types for CPMN pattern matching.
 //!
-//! Some variant rules are not about how a piece moves but about what the
-//! neighbourhood of a square must look like: drop restrictions and
-//! stand-off rules both accept or reject a square based on which pieces
-//! occupy relative offsets around it. This file defines the compact types
-//! those checks run on — per-offset allowed-piece sets, plus the allower
-//! and stopper pattern lists compiled once at precompute time so matching
-//! is a linear scan with O(1) membership tests.
+//! Drop rules and stand-off rules test the pieces on squares near one
+//! square. This file defines the piece sets for each offset and the
+//! allower and stopper lists. Precomputation compiles these lists once.
 //!
 //! Created: 24/02/2026
 //! Author : Alden Luthfi
@@ -21,21 +17,13 @@ use crate::*;
 
 /// PieceSet
 ///
-/// The set of pieces one pattern offset accepts, stored as one flag per
-/// possible [`PieceIndex`]. Membership is an array read rather than a hash
-/// lookup, which matters because matching runs this test once per offset
-/// per candidate square.
+/// The set of pieces that one pattern offset accepts. It has one flag for
+/// each [`PieceIndex`], so a membership test is one array read.
 ///
-/// `NO_PIECE` is an ordinary member. A pattern that requires an empty
-/// square says so by admitting that index, which is what lets one
-/// mechanism express both "a friendly piece must stand here" and "this
-/// square must be clear" without a second kind of test.
+/// `NO_PIECE` is a normal member. A pattern that needs an empty square
+/// accepts `NO_PIECE`. The array has one more slot than `MAX_PIECES` for
+/// this value, because `NO_PIECE` is not in the range of piece indices.
 ///
-/// That membership is why the array is one longer than `MAX_PIECES`. A
-/// piece index is bounded by what a config may declare, but the absence
-/// marker is the top of [`PieceIndex`] rather than the top of that range,
-/// so it is folded onto the extra slot on the end instead of being given a
-/// seat among the real pieces.
 #[derive(Clone)]
 pub struct PieceSet([bool; MAX_PIECES + 1]);
 
@@ -46,29 +34,28 @@ impl Default for PieceSet {
 }
 
 impl PieceSet {
-    /// PieceSet method cluster.
+    /// PieceSet methods
     ///
-    /// `new` builds an empty set, `insert` marks a piece index as member,
-    /// and `contains` tests membership — all direct array operations with
-    /// no hashing, keeping the pattern-matching inner loop branch-cheap.
+    /// Methods of the piece set. Each method is a direct array operation
+    /// without a hash.
     ///
     /// new
     ///
     ///   Return:
-    ///   Self -> empty set, every index absent
+    ///   Self -> empty set, no index is a member
     ///
     /// insert
     ///
     ///   Params:
-    ///   - piece: PieceIndex -> piece index marked as member
+    ///   - piece: PieceIndex -> piece index to add
     ///
     /// contains
     ///
     ///   Params:
-    ///   - piece: PieceIndex -> piece index tested
+    ///   - piece: PieceIndex -> piece index to test
     ///
     ///   Return:
-    ///   bool                -> whether the index is a member
+    ///   bool                -> true when the index is a member
     ///
     /// slot
     ///
@@ -76,7 +63,8 @@ impl PieceSet {
     ///   - piece: PieceIndex -> index to place
     ///
     ///   Return:
-    ///   usize               -> its row, `NO_PIECE` folded onto the last
+    ///   usize               -> its array slot, `NO_PIECE` is the last
+    ///
     pub fn new() -> Self {
         Self::default()
     }
@@ -110,14 +98,11 @@ impl Debug for PieceSet {
 
 /// PatternUnit
 ///
-/// One relative offset from the square being tested, paired with the set of
-/// pieces that offset accepts. The same unit serves both halves of a
-/// pattern: in an allower the set is what must be there, in a stopper it is
-/// what must not.
+/// One offset from the tested square and the set of pieces for it. In an
+/// allower, a piece from the set must be there. In a stopper, it must not.
 ///
-/// The `u16` is the offset packed as two signed bytes, file in the low byte
-/// and rank in the high one, so the [`x!`] and [`y!`] accessors that read a
-/// move vector read a pattern offset unchanged:
+/// The `u16` has two signed bytes, with the file in the low byte and the
+/// rank in the high byte. Thus [`x!`] and [`y!`] read it as a move vector:
 ///
 /// ```text
 ///   15                8 7                 0
@@ -126,18 +111,21 @@ impl Debug for PieceSet {
 ///   └──────────────────┴──────────────────┘
 /// ```
 ///
-/// Both bytes are signed because an offset points in every direction, and
-/// matching negates the pair for black, so one compiled pattern serves both
-/// sides of a board no variant is required to make symmetric.
+/// The matcher negates both bytes for Black, so one pattern is correct for
+/// the two colours.
+///
 pub type PatternUnit = (u16, PieceSet);
 
-/// Pattern list types.
+/// Pattern list types
 ///
-/// `PatternAllower` and `PatternStopper` are the two halves of a compiled
-/// CPMN pattern: allowers enumerate offsets that must hold an accepted
-/// piece, stoppers enumerate offsets that veto the match when occupied by
-/// one of theirs. A `Pattern` pairs both halves, and a `PatternSet` holds
-/// every pattern compiled for one (piece, square) table slot.
+/// The list types of a compiled CPMN pattern. A pattern matches when all
+/// allowers match and no stopper matches.
+///
+/// - PatternAllower : offsets that must have a piece from their set
+/// - PatternStopper : offsets that must not have a piece from their set
+/// - Pattern        : an (allower, stopper) pair
+/// - PatternSet     : all patterns of one (piece, square) table slot
+///
 pub type PatternAllower = Vec<PatternUnit>;
 pub type PatternStopper = Vec<PatternUnit>;
 pub type Pattern = (PatternAllower, PatternStopper);

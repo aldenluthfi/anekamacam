@@ -1,12 +1,11 @@
 //! pattern_parse.rs
 //!
-//! Parses CPMN pattern expressions into allower and stopper pattern lists.
+//! Parses CPMN pattern expressions into allower and stopper lists.
 //!
-//! CPMN encodes a neighbourhood rule as two multi-leg halves — allowers that
-//! must be satisfied and stoppers that must not — each paired with the piece
-//! set it applies to. This file compiles that text into the offset/piece-set
-//! lists the matcher scans, expanding wildcards so later stages only ever see
-//! concrete piece letters.
+//! A CPMN rule has two halves. The allowers must match and the stoppers
+//! must not match. Each half has offsets and piece sets. This file compiles
+//! the text into the lists that the matcher reads. It also expands the `*`
+//! wildcard into all piece letters.
 //!
 //! Created: 24/02/2026
 //! Author : Alden Luthfi
@@ -16,18 +15,17 @@ use crate::*;
 lazy_static! {
     /// PATTERN_PATTERN
     ///
-    /// Regex splitting a CPMN expression into its allower and stopper
-    /// halves, each half being offsets and piece groups either side of a
-    /// `~`, and the two halves either side of an `@`:
+    /// Regex that splits a CPMN expression at the `@` into the allower and
+    /// stopper halves. A `~` splits each half into offsets and piece groups.
     ///
     /// - group 1 -> allower offsets
     /// - group 2 -> allower piece groups
     /// - group 3 -> stopper offsets, absent when there are no stoppers
-    /// - group 4 -> stopper piece groups, absent with them
+    /// - group 4 -> stopper piece groups, absent when there are no stoppers
     ///
-    /// The `@` is not optional even where the stopper half is, so every
-    /// expression carries the separator and a pattern that vetoes nothing
-    /// still reads as one that could have.
+    /// Notes:
+    /// The `@` is mandatory, also when the stopper half is empty.
+    ///
     static ref PATTERN_PATTERN: Regex =
         Regex::new("(.+)~(.+)@(?:(.+)~(.+))?").unwrap_or_else(|e| {
             panic!("Failed to compile PATTERN_PATTERN regex: {e}")
@@ -36,24 +34,20 @@ lazy_static! {
 
 /// parse_pattern
 ///
-/// Compiles one Cheesy Pattern Match Notation (CPMN) expression.
-///
-/// CPMN has this shape:
+/// Compiles one Cheesy Pattern Match Notation (CPMN) expression into an
+/// allower list and a stopper list. CPMN has this shape:
 ///
 /// ```text
 /// [allower multi leg]~[pieces]@[stoppers multi leg]~[pieces]
 /// ```
 ///
-/// Each half is a `-` separated list of offsets beside a `-` separated list
-/// of piece groups, paired by position: the third offset answers to the
-/// third group. Offsets borrow move notation, so `nW{2}~Kk@nW{..1}~*` says a
-/// king stands two steps up and nothing stands on the square between. The
-/// pattern matches when all allowers hold and no stopper holds.
+/// Each half has a `-` separated list of offsets and a `-` separated list
+/// of piece groups. The lists pair by position. The offsets use the move
+/// notation. For example, `nW{2}~Kk@nW{..1}~*` means: a king is two steps
+/// up, and the square between is empty.
 ///
-/// Piece lists name the pieces relevant to allowers and stoppers. `*` means
-/// every real piece and is spelled out into the variant's piece alphabet
-/// before anything else runs, so every later stage sees only concrete piece
-/// characters; `?` means the empty-square sentinel.
+/// - `*` : all pieces of the variant, expanded before the parse
+/// - `?` : an empty square
 ///
 /// Params:
 /// - expr : &str   -> one CPMN pattern expression
@@ -63,15 +57,10 @@ lazy_static! {
 /// Pattern         -> allower and stopper [`PatternUnit`] lists
 ///
 /// Notes:
-/// Only the first leg of each compiled offset survives. The move compiler is
-/// borrowed for its notation, not for its walking: a pattern names a square
-/// relative to the anchor, so where a move would carry on through further
-/// legs, a pattern has already arrived.
+/// The function keeps only the first leg of each compiled offset, because
+/// a pattern names one square. A bad expression causes a panic at load
+/// time.
 ///
-/// An expression that does not match [`PATTERN_PATTERN`], or that pairs a
-/// list of offsets with no list of pieces, panics. Patterns come from a
-/// variant's config file and are compiled once at load time, so a malformed
-/// one is a broken variant rather than a position the engine can play on.
 pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
     let all_pieces = state.statics.pieces.iter()
         .map(|piece| piece.char).collect::<String>();
@@ -201,23 +190,21 @@ pub fn parse_pattern(expr: &str, state: &State) -> Pattern {
 
 /// generate_relevant_stand_offs
 ///
-/// Keeps, for one piece standing on one square, the stand-off patterns whose
-/// every offset still lands on the board from there. Offsets are mirrored by
-/// the piece's colour first, so a pattern is judged in the orientation it
-/// will be matched in rather than the one it was written in.
+/// Keeps the stand-off patterns of a piece on one square where all offsets
+/// stay on the board. The offsets are mirrored for the colour of the piece.
 ///
-/// A pattern is kept whole or dropped whole: a half-visible neighbourhood
-/// answers a different question than the one the variant asked. What survives
-/// is what [`match_pattern!`] may index without a bounds check of its own.
+/// If one offset goes off the board, the function removes the full pattern.
+/// Thus [`match_pattern!`] needs no bounds check.
 ///
 /// Params:
-/// - piece          : &Piece        -> piece the patterns belong to
-/// - square         : u32           -> origin square being precomputed
+/// - piece          : &Piece        -> piece type of the patterns
+/// - square         : u32           -> origin square
 /// - state          : &State        -> board dimensions
-/// - piece_stand_off: &[PatternSet] -> compiled patterns, one per piece
+/// - piece_stand_off: &[PatternSet] -> compiled patterns, one for each piece
 ///
 /// Return:
-/// PatternSet                       -> patterns that fit the board here
+/// PatternSet                       -> patterns that fit on the board
+///
 pub fn generate_relevant_stand_offs(
     piece: &Piece,
     square: u32,

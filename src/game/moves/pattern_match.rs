@@ -1,12 +1,10 @@
 //! pattern_match.rs
 //!
-//! Macros for evaluating CPMN patterns against board positions.
+//! Macros that test CPMN patterns on a board position.
 //!
-//! CPMN patterns express variant rules that read a square's neighbourhood
-//! rather than a piece's movement: drop restrictions and stand-off rules
-//! both accept or veto a square by which pieces occupy relative offsets
-//! around it. These macros run a compiled pattern against a live board,
-//! mirroring offsets by color and short-circuiting on the first failure.
+//! A CPMN pattern tests the pieces on squares near one square. Drop rules
+//! and stand-off rules use these patterns. The macros here test a compiled
+//! pattern on the current board and mirror the offsets for each colour.
 //!
 //! Created: 24/02/2026
 //! Author : Alden Luthfi
@@ -17,30 +15,26 @@
 
 /// match_pattern!
 ///
-/// Tests one compiled CPMN pattern at one square, read from one color's side
-/// of the board. A pattern is two lists of `(offset, piece set)` pairs: every
-/// allower must find one of its pieces on the square it points at, and no
-/// stopper may find one of its own. The square passes when both hold.
+/// Tests one compiled CPMN pattern at one square for one colour. A pattern
+/// has two lists of `(offset, piece set)` pairs. Each allower must find one
+/// of its pieces at its offset. No stopper can find one of its pieces.
 ///
-/// Offsets are stored as White sees them and mirrored for Black by negating
-/// both deltas, so one compiled pattern answers for either color. Stoppers
-/// are only looked at once the allowers have all been satisfied, there being
-/// nothing left to veto otherwise.
+/// The offsets are for White. For Black, the macro negates both deltas.
+/// The macro reads the stoppers only if all allowers match.
 ///
 /// Params:
 /// - pattern: &Pattern -> compiled (allower, stopper) pattern to test
-/// - square : u32      -> board square the pattern is anchored on
-/// - color  : u8       -> orientation color for offset mirroring
-/// - state  : &State   -> current position providing board occupancy
+/// - square : u32      -> board square at the origin of the pattern
+/// - color  : u8       -> colour that sets the offset direction
+/// - state  : &State   -> current position
 ///
 /// Return:
-/// bool                -> every allower holds and no stopper matches
+/// bool                -> true when all allowers match and no stopper does
 ///
 /// Notes:
-/// Neighbour squares are indexed with no bounds check of their own. What
-/// reaches here comes from `relevant_stand_offs`, and precomputation already
-/// threw out every pattern that would point off the board from this square,
-/// so the geometry has been settled before the position is ever asked.
+/// There is no bounds check. Precomputation removes each pattern that goes
+/// off the board from its square.
+///
 #[macro_export]
 macro_rules! match_pattern {
     ($pattern:expr, $square:expr, $color:expr, $state:expr) => {{
@@ -97,23 +91,21 @@ macro_rules! match_pattern {
 
 /// is_in_stand_off!
 ///
-/// Asks whether the position stands in a stand-off: some piece somewhere
-/// meets a pattern its variant declares as one. The scan walks every piece
-/// type, every square that type occupies, and the patterns precomputation
-/// left standing for that pairing, and stops at the first match.
+/// Tells if the position has a stand-off. The macro examines each piece
+/// type, each square of that type, and the stand-off patterns of that
+/// square. It stops at the first match.
 ///
-/// A stand-off is a property of the whole board rather than of a move, so
-/// nothing here is filed under a mover or a target. `make_move!` asks it of
-/// the position before and after, and legality falls out of the pair: a move
-/// that leaves a stand-off standing is illegal, one that walks into a fresh
-/// one is not, and a pass out of a standing one is both legal and the way a
-/// variant that ends on stand-offs ends.
+/// `make_move!` tests the position before and after the move:
+///
+/// - stand-off before and after : illegal, unless the move is a pass
+/// - stand-off only after       : legal
 ///
 /// Params:
-/// - state: &State -> current position to scan for stand-offs
+/// - state: &State -> current position
 ///
 /// Return:
-/// bool            -> whether any piece's stand-off pattern matches
+/// bool            -> true when a stand-off pattern matches
+///
 #[macro_export]
 macro_rules! is_in_stand_off {
     ($state:expr) => {{

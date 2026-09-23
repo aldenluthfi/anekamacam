@@ -1,14 +1,12 @@
 //! protocol.rs
 //!
-//! The shared engine loop behind every text protocol the engine speaks.
+//! The shared session loop of all text protocols.
 //!
-//! UCI, USI, and UCCI differ only in a handshake word, a few dialect `go`
-//! clauses, and the notation their dictionaries emit; everything else — the
-//! position, the variant list, the hash tables, the search threads, and the
-//! ponder plumbing — is identical. That common machinery lives here as the
-//! `Session` and the `execute_common` dispatcher. A protocol is a tiny
-//! `Protocol` implementor that intercepts only the lines that behave
-//! differently and defers the rest.
+//! UCI, USI and UCCI differ only in the handshake word, some `go` clauses
+//! and the dictionary notation. The position, variant list, hash tables,
+//! search threads and ponder logic are the same. This file has the shared
+//! `Session` and the `execute_common` dispatcher. Each protocol handles
+//! only the lines that are different.
 //!
 //! Created: 19/07/2026
 //! Author : Alden Luthfi
@@ -19,19 +17,18 @@ use crate::*;
                             SESSION TIMING CONSTANTS
 \*----------------------------------------------------------------------------*/
 
-/// Session constants.
+/// Session time constants
 ///
-/// Transmission overhead: how much of a timed search's budget is given up
-/// before it starts, to cover the trip out to the GUI and back. A move
-/// decided in time but delivered late is a loss on the clock, so the engine
-/// spends less than it was given rather than exactly what it was given.
+/// The time that a timed search keeps back for the transfer to the GUI. A
+/// move that arrives late loses on time.
 ///
-/// - TIME_OVERHEAD_MS : 50, the default, what a local pipe costs
-/// - MAX_OVERHEAD_MS  : 1000, the ceiling a GUI may raise it to
+/// - TIME_OVERHEAD_MS : 50, the default, for a local pipe
+/// - MAX_OVERHEAD_MS  : 1000, the maximum that a GUI can set
 ///
-/// The ceiling exists because the option is set from outside: a full second
-/// covers any real link, and anything past it would be a mistyped number
-/// silently costing the engine its whole clock.
+/// Notes:
+/// One second is enough for all real links. A larger value is probably a
+/// wrong input.
+///
 const TIME_OVERHEAD_MS: u128 = 50;
 const MAX_OVERHEAD_MS: u128 = 1000;
 
@@ -41,54 +38,49 @@ const MAX_OVERHEAD_MS: u128 = 1000;
 
 /// Protocol
 ///
-/// One text protocol the engine speaks. The trait is deliberately two methods
-/// wide: a dialect that had to declare its handshake, its option names, and
-/// its command table would be a table to keep in step with the code, whereas
-/// a dialect that only says its own name has nothing left to drift.
+/// One text protocol of the engine. The trait has only two methods, so a
+/// dialect has no tables to keep in step with the code. All other logic is
+/// shared.
 ///
-/// - name    : one word, from which the handshake and options derive
-/// - execute : only the lines that genuinely behave differently
+/// - name    : one word, the handshake and options come from it
+/// - execute : only the lines that are different in this dialect
 ///
-/// Everything else — the position, the variant list, the tables, the search
-/// threads, the ponder plumbing — is shared, so adding a dialect is writing
-/// a marker type and the clauses its `go` spells differently.
 pub trait Protocol {
     /// name
     ///
-    /// The protocol's identifier, and the only string a dialect declares.
-    /// Five separate things are spelled out of this one word, which is what
-    /// keeps a dialect from half-renaming itself.
+    /// Gives the protocol name, the only string that a dialect declares.
+    /// Five strings come from this one word:
     ///
-    /// - `uci`           : the handshake command a GUI sends
+    /// - `uci`           : the handshake command from the GUI
     /// - `uciok`         : the reply that ends the handshake
-    /// - `UCI_Variant`   : the combo option naming the variant
-    /// - `= uci fen =`   : the dictionary section for board states
-    /// - `= uci moves =` : the dictionary section for move text
+    /// - `UCI_Variant`   : the combo option of the variant
+    /// - `= uci fen =`   : the dictionary section for FEN
+    /// - `= uci moves =` : the dictionary section for moves
     ///
     /// Return:
     /// &str -> the protocol name, e.g. "uci"
+    ///
     fn name(&self) -> &str;
 
     /// execute
     ///
-    /// Handles one input line the universal dispatcher left unclaimed.
-    /// `execute_common` runs first and serves every protocol-independent
-    /// command, so this only ever sees the lines that genuinely differ
-    /// between dialects.
+    /// Handles one input line that `execute_common` did not handle. Thus it
+    /// gets only the lines that are different between dialects:
     ///
-    /// - new-game : the same reset under three different spellings
-    /// - `go`     : the clause each dialect words its own way
-    ///
-    /// An unrecognized line is ignored rather than reported: the protocols
-    /// require a GUI to be able to send a word this engine has never heard
-    /// of, and a complaint on stdout would be read as a reply to it.
+    /// - new game : the same reset with three different words
+    /// - `go`     : the time clauses of each dialect
     ///
     /// Params:
     /// - session: &mut Session -> the session the line acts on
-    /// - tokens : &[&str]      -> the whitespace-split input line
+    /// - tokens : &[&str]      -> the input line, split on whitespace
     ///
     /// Return:
-    /// bool                    -> true when the session should terminate
+    /// bool                    -> true when the session must stop
+    ///
+    /// Notes:
+    /// An unknown line is ignored. A GUI can send unknown words, and output
+    /// on stdout would look like a reply.
+    ///
     fn execute(
         &self,
         session: &mut Session,
@@ -98,52 +90,45 @@ pub trait Protocol {
 
 /// PROTOCOLS
 ///
-/// Every dialect the engine speaks, in the order the handshake lists them.
-/// The active one is chosen at runtime — by the handshake word a GUI sends
-/// or by the `Protocol` option — never by a launch flag, so one running
-/// process serves a UCI GUI, a shogi GUI, and a xiangqi GUI without being
-/// restarted, and a session can change its mind mid-game.
+/// All dialects of the engine, in the handshake order. The handshake word
+/// or the `Protocol` option selects the active dialect at runtime. Thus one
+/// process can serve chess, shogi and xiangqi GUIs, and change mid-game.
 ///
-/// The markers are zero-sized types, so the whole table is three `'static`
-/// trait objects and no allocation.
+/// The markers have zero size, so the table needs no allocation.
+///
 const PROTOCOLS: [&dyn Protocol; 3] = [&Uci, &Usi, &Ucci];
 
 /// find_protocol
 ///
-/// Resolves a name to its dialect by asking each marker what it is called.
-/// The handshake word, the `Protocol` option's value, and the dictionary
-/// section key are all the same string, so there is no second table of
-/// tokens that could disagree with the trait.
+/// Finds the dialect with a name. It compares the name with the `name` of
+/// each marker, so there is no second table of words.
 ///
 /// Params:
 /// - name: &str                  -> a protocol name, e.g. "usi"
 ///
 /// Return:
 /// Option<&'static dyn Protocol> -> the dialect, or None if unknown
+///
 pub fn find_protocol(name: &str) -> Option<&'static dyn Protocol> {
     PROTOCOLS.into_iter().find(|protocol| protocol.name() == name)
 }
 
 /// list_variants
 ///
-/// Discovers which variants can be served over one protocol by walking the
-/// embedded dictionaries. Nothing declares the list: a variant appears in the
-/// combo option because its own files say it can be spoken, so shipping a new
-/// variant is shipping two files and nothing else.
+/// Finds the variants of one protocol in the embedded dictionaries. No
+/// list declares them, so a new variant needs only its two files. A variant
+/// needs all three:
 ///
-/// - `<name>.dict`   : must be embedded, and must not be the example
-/// - `<name>.conf`   : must be embedded beside it, or the rules are gone
-/// - `= protocols =` : must name this protocol among its lines
-///
-/// All three are required together. A dictionary without a config would offer
-/// a variant the engine cannot set up, and a config without a dictionary
-/// would offer one whose moves the GUI could not spell.
+/// - `<name>.dict`   : embedded, and not the example
+/// - `<name>.conf`   : embedded, with the rules
+/// - `= protocols =` : a line with this protocol
 ///
 /// Params:
-/// - protocol: &str    -> the protocol name to match in `protocols`
+/// - protocol: &str    -> the protocol name to find in `protocols`
 ///
 /// Return:
-/// Vec<String>         -> sorted names of variants serving `protocol`
+/// Vec<String>         -> sorted variant names of `protocol`
+///
 fn list_variants(protocol: &str) -> Vec<String> {
     let mut variants = Vec::new();
 
@@ -192,24 +177,23 @@ fn list_variants(protocol: &str) -> Vec<String> {
 
 /// print_bestmove
 ///
-/// Emits the `bestmove` line that ends a search. A GUI waits on this line and
-/// on nothing else, so the one thing this must never do is fail to produce
-/// one — every path below ends in a printed move or a printed `(none)`.
+/// Sends the `bestmove` line that ends a search. The GUI waits for this
+/// line, so each path sends a move or `(none)`:
 ///
-/// - terminal position : `(none)`, whatever the result says
-/// - null best move    : any legal move, or `(none)` if there are none
-/// - real best move    : the move, plus the ponder move if there was one
-///
-/// A terminal position is answered from the board rather than the result,
-/// because a search that was never run leaves a stale result behind. A null
-/// move at a live position means the search was cut off before it finished
-/// its first depth, or died; either way a legal move beats no answer, and a
-/// fallback move is not worth pondering on, so no ponder is offered with it.
+/// - terminal position : `(none)`
+/// - null best move    : a legal move without ponder, or `(none)`
+/// - real best move    : the move, and the ponder move if there is one
 ///
 /// Params:
-/// - result: &SearchResult       -> finished search outcome
-/// - state : &mut State          -> position for move formatting
-/// - dict  : Option<&Translator> -> translator for printed move names
+/// - result: &SearchResult       -> result of the search
+/// - state : &mut State          -> position for the move text
+/// - dict  : Option<&Translator> -> translator for the move text
+///
+/// Notes:
+/// The terminal test reads the board, because an old result can stay after
+/// no search. A null move means the search stopped before depth 1 or
+/// failed. A legal move is better than no move.
+///
 fn print_bestmove(
     result: &SearchResult,
     state: &mut State,
@@ -248,17 +232,15 @@ fn print_bestmove(
 
 /// SearchHandle
 ///
-/// A running search thread, and everything needed to launch it again. The
-/// second half is what makes `ponderhit` possible: a ponder search has to be
-/// stopped and restarted as a timed one, and the limits it was born with are
-/// gone by then unless they were kept here.
+/// A running search thread and the data to start it again. `ponderhit`
+/// restarts a ponder search as a timed search with the kept limits.
 ///
-/// - handle              : the thread, joined on stop, abort, or quit
-/// - is_ponder           : whether its bestmove is being withheld
-/// - search_depth        : the depth limit to restart under
-/// - search_nodes        : the node limit to restart under
-/// - ponderhit_budget_ns : the clock the restart gets, unspent until the
-///                         hit
+/// - handle              : the thread, joined on stop, abort or quit
+/// - is_ponder           : true when its bestmove is kept back
+/// - search_depth        : depth limit for the restart
+/// - search_nodes        : node limit for the restart
+/// - ponderhit_budget_ns : time for the restart, starts at the hit
+///
 struct SearchHandle {
     handle: JoinHandle<SearchResult>,                                           /* the running search thread          */
     is_ponder: bool,                                                            /* true if launched as a ponder       */
@@ -269,16 +251,15 @@ struct SearchHandle {
 
 /// SearchLimits
 ///
-/// Launch parameters for one search thread, bundled so `spawn_search` takes
-/// one argument no matter which of the two callers built it.
+/// The start parameters of one search thread, as one argument of
+/// `spawn_search`.
 ///
-/// - deadline            : absolute, in nanoseconds since engine start
-/// - ponderhit_budget_ns : a duration, not yet anchored to any moment
+/// - deadline            : a time, nanoseconds since engine start
+/// - ponderhit_budget_ns : a duration, starts at the ponder hit
 ///
-/// The two clocks are different kinds on purpose. A timed search knows when
-/// it must stop, so it carries an instant; a ponder search does not know when
-/// its clock will start, so it carries a length and is anchored later, at the
-/// moment the hit actually arrives.
+/// A timed search knows its stop time. A ponder search does not know when
+/// its clock starts, so it keeps a duration.
+///
 struct SearchLimits {
     is_ponder: bool,                                                            /* launch as a ponder search          */
     depth: usize,                                                               /* search depth limit                 */
@@ -289,23 +270,22 @@ struct SearchLimits {
 
 /// Session
 ///
-/// Everything one conversation with a GUI owns, shared by every dialect. The
-/// dialect markers hold nothing at all, so this is the whole of the engine's
-/// mutable protocol state and there is exactly one of it per process.
+/// All protocol state of one GUI session, shared by all dialects. There is
+/// one session for each process.
 ///
-/// - protocol, translator  : which dialect is spoken, and its notation
-/// - state, position_valid : the board, and whether it can be trusted
-/// - variants, variant     : what this dialect serves, and what is loaded
-/// - threads, hash_mb      : the options a GUI may change mid-session
-/// - overhead_ms           : the clock given up before a timed search
-/// - ttable, qtable        : shared with the workers, rebuilt on Hash
-/// - active                : the search in flight, if a go is outstanding
+/// - protocol, translator  : the active dialect and its notation
+/// - state, position_valid : the board, and true when it is correct
+/// - variants, variant     : variants of this dialect, and the loaded one
+/// - threads, hash_mb      : options that the GUI can change
+/// - overhead_ms           : time kept back from a timed search
+/// - ttable, qtable        : shared with the workers, new on Hash
+/// - active                : the running search, if any
 ///
-/// `position_valid` is false only between a failed `position` and the next
-/// clean load. A half-replayed position is worse than no position, because
-/// it is a real board that is not the one the GUI meant, so `go` refuses it
-/// with an immediate `bestmove (none)` instead of searching a plausible
-/// wrong board and answering with conviction.
+/// Notes:
+/// `position_valid` is false after a failed `position` until the next good
+/// load. Then `go` sends `bestmove (none)` at once, and does not search a
+/// wrong board.
+///
 pub struct Session {
     protocol: String,                                                           /* the protocol being spoken          */
     state: State,                                                               /* the engine's working position      */
@@ -325,25 +305,19 @@ pub struct Session {
 impl Session {
     /// Session::new
     ///
-    /// Boots a session for one protocol, ready to answer before a GUI has
-    /// said anything beyond the handshake.
+    /// Makes a session for one protocol, ready after the handshake.
     ///
-    /// - variant    : standard if this dialect serves it, else the first
-    ///                one found
-    /// - state      : that variant's config, reset to its start position
-    /// - translator : the dialect's section of that variant's dictionary
-    /// - tables     : allocated at the default budget, two thirds to the
-    ///                main one
-    ///
-    /// Standard is preferred rather than assumed: a shogi-only or xiangqi-only
-    /// dialect has no standard to fall back to, and the first variant it does
-    /// serve is a better default than a variant it cannot speak.
+    /// - variant    : standard if the dialect has it, else the first one
+    /// - state      : the config of that variant, at its start position
+    /// - translator : the dialect section of the variant dictionary
+    /// - tables     : default size, two thirds for the main table
     ///
     /// Params:
-    /// - protocol: &str -> the protocol name to serve
+    /// - protocol: &str -> the protocol name
     ///
     /// Return:
-    /// Self             -> a session ready to accept commands
+    /// Self             -> a session ready for commands
+    ///
     fn new(protocol: &str) -> Self {
         let variants = list_variants(protocol);
         let default_variant = variants
@@ -387,9 +361,8 @@ impl Session {
 
     /// Session::variant_option
     ///
-    /// The name of this dialect's variant combo option, spelled out of the
-    /// protocol name rather than stored, so the option the handshake lists
-    /// and the option `setoption` answers to cannot drift apart.
+    /// Gives the name of the variant combo option. It comes from the
+    /// protocol name, so the handshake and `setoption` use the same name.
     ///
     /// - `uci`  : `UCI_Variant`
     /// - `usi`  : `USI_Variant`
@@ -397,29 +370,28 @@ impl Session {
     ///
     /// Return:
     /// String -> the `<NAME>_Variant` option name
+    ///
     fn variant_option(&self) -> String {
         format!("{}_Variant", self.protocol.to_uppercase())
     }
 
     /// Session::set_protocol
     ///
-    /// Switches the session to another dialect mid-run, as the handshake word
-    /// or the `Protocol` option asks.
+    /// Changes the dialect of the session, from the handshake word or the
+    /// `Protocol` option:
     ///
-    /// - stop        : any search in flight, before anything else moves
-    /// - rediscover  : which variants the new dialect can serve
-    /// - reseat      : onto its default variant, only if the current one
-    ///                 is gone
-    /// - retranslate : the notation, always, since the dialect changed
-    ///
-    /// A variant both dialects serve is kept along with the position on it,
-    /// which is what lets a GUI change its mind about notation mid-game. A
-    /// variant the new dialect cannot speak is not carried over at all: the
-    /// config is reloaded from scratch and the board reset, so no piece list
-    /// or dictionary from the old variant survives the switch.
+    /// 1. stop the running search
+    /// 2. find the variants of the new dialect
+    /// 3. load its default variant, if the current one is not available
+    /// 4. load the notation of the new dialect
     ///
     /// Params:
-    /// - protocol: &str -> the dialect name to switch to
+    /// - protocol: &str -> the new dialect name
+    ///
+    /// Notes:
+    /// A variant of the two dialects keeps its position. Else, the function
+    /// loads the new config from scratch and resets the board.
+    ///
     fn set_protocol(&mut self, protocol: &str) {
         abort_search(self);
         self.protocol = protocol.to_string();
@@ -451,25 +423,22 @@ impl Session {
 
 /// spawn_hash_tables
 ///
-/// Splits one megabyte budget into the two shared tables. A GUI sets a single
-/// `Hash` figure and expects that to be the engine's whole appetite, so the
-/// split happens here rather than being two options to keep in agreement.
+/// Divides the `Hash` megabytes between the two shared tables. The GUI
+/// sets one value for all tables.
 ///
-/// - main search : two thirds, the deeper tree and the longer-lived
-///                 entries
-/// - quiescence  : one third, a shallower tree that still wants its own
-///                 table
-///
-/// Each side is floored at one megabyte, so even a one-megabyte budget yields
-/// two usable tables instead of one empty one. Rebuilding is how both `Hash`
-/// and `Clear Hash` are served: a fresh table of the right size is a cleared
-/// table, so one path covers both commands.
+/// - main search : two thirds
+/// - quiescence  : one third
 ///
 /// Params:
-/// - hash_mb: usize          -> total table budget in megabytes
+/// - hash_mb: usize           -> total table size in megabytes
 ///
 /// Return:
-/// (Arc<TTable>, Arc<QTable>) -> the freshly sized tables
+/// (Arc<TTable>, Arc<QTable>) -> the new tables
+///
+/// Notes:
+/// Each table has at least one megabyte. `Hash` and `Clear Hash` both use
+/// this function, because a new table is a clear table.
+///
 fn spawn_hash_tables(
     hash_mb: usize,
 ) -> (Arc<TTable>, Arc<QTable>) {
@@ -485,96 +454,65 @@ fn spawn_hash_tables(
 
 /// Session command handlers
 ///
-/// Each applies one command's side effects to the session. They share one
-/// discipline: a command that touches the position or the tables aborts any
-/// search first, because a worker holds a clone of the state and a copy of
-/// the table handles, and changing either underneath it makes its answer
-/// about a board that no longer exists.
+/// The session command handlers. A command that changes the position or the
+/// tables first stops the search. A worker has a copy of the state and of
+/// the table handles.
 ///
-/// - handle_position  : rebuild the board from startpos or FEN, replay
-///                      moves
-/// - abort_search     : interrupt and join, returning what the search had
-/// - stop_search      : abort, and release a ponder search's withheld move
-/// - handle_ponderhit : rejoin the ponder search, relaunch it on the clock
-/// - handle_setoption : apply Protocol, Variant, Threads, Hash, or
-///                      Overhead
+/// - handle_position  : make the board from startpos or FEN, play moves
+/// - abort_search     : interrupt and join, give the search result
+/// - stop_search      : abort, and send a kept ponder move
+/// - handle_ponderhit : join the ponder search, restart it with the clock
+/// - handle_setoption : set Protocol, Variant, Threads, Hash or Overhead
 ///
-/// `start_search` and `spawn_search` interleave below and keep their own
-/// docs, being the two halves of what `go` does.
+/// `start_search` and `spawn_search` are the two parts of `go` and have
+/// their own docs.
 ///
 /// handle_position
 ///
-///   The FEN keyword is skipped rather than matched, so `fen` and `sfen`
-///   are both accepted without either dialect being named here. The board is
-///   built in a fork and only installed once the whole line has succeeded, so
-///   a move that fails to parse halfway through a replay leaves the previous
-///   position standing rather than a partial one.
+///   Skips the FEN keyword, so `fen` and `sfen` both work. It makes the
+///   board in a fork and installs it only after the full line succeeds.
+///   Thus a bad move keeps the previous position.
 ///
 ///   Params:
-///
-///     session: &mut Session
-///     session whose position is replaced, on success
-///
-///     tokens: &[&str]
-///     the split command line, a `startpos` or a FEN, optionally followed by
-///     `moves` and the plies to replay onto it
+///   - session: &mut Session -> session, gets the new position on success
+///   - tokens : &[&str]      -> `startpos` or FEN, optional `moves` list
 ///
 /// abort_search
 ///
-///   Raises the interrupt, joins, and lowers it again, so the flag is never
-///   left set for the next search to trip over. A panicked worker is absorbed
-///   into None rather than propagated: a crashed search should cost a move,
-///   not the session.
+///   Sets the interrupt, joins the thread and clears the interrupt. A
+///   worker panic gives None, so a crash loses a move, not the session.
 ///
 ///   Params:
-///
-///     session: &mut Session
-///     session whose active search is interrupted and joined
+///   - session: &mut Session -> session with the search to stop
 ///
 ///   Return:
-///
-///     Option<(SearchResult, bool)>
-///     what the search had reached and whether it was pondering, or None if
-///     no search was running or the worker died
+///   Option<(SearchResult, bool)> -> result and ponder flag, or None
 ///
 /// stop_search
 ///
-///   A pondering worker withholds its `bestmove`, since nobody asked it for
-///   one yet, so `stop` is the moment that move is finally printed. A timed
-///   search has already printed its own, and printing again here would give
-///   the GUI two answers to one question.
+///   A ponder search keeps its `bestmove` back, so `stop` sends it. A
+///   timed search already sent its move, so `stop` sends nothing.
 ///
 ///   Params:
-///
-///     session: &mut Session
-///     session whose search is aborted
+///   - session: &mut Session -> session with the search to stop
 ///
 /// handle_ponderhit
 ///
-///   The ponder guess was right, so the work stands but the terms change: the
-///   thread is joined and relaunched on the same position with the depth and
-///   node limits it was born with, and with its budget anchored from the
-///   moment of the hit rather than the moment of the `go`.
+///   The ponder move was correct. The function joins the thread and starts
+///   it again with its depth and node limits. The time starts at the hit.
 ///
 ///   Params:
-///
-///     session: &mut Session
-///     session whose ponder search becomes a timed one
+///   - session: &mut Session -> session with the ponder search
 ///
 /// handle_setoption
 ///
-///   Names may contain spaces, so the name is everything between `name` and
-///   `value` rather than one token. An option that is unknown, or whose value
-///   does not parse, changes nothing at all instead of falling back to a
-///   default the GUI did not ask for.
+///   A name can have spaces, so the name is all words between `name` and
+///   `value`. An unknown option or a bad value changes nothing.
 ///
 ///   Params:
+///   - session: &mut Session -> session to change
+///   - tokens : &[&str]      -> the `setoption` line, split
 ///
-///     session: &mut Session
-///     session receiving the option change
-///
-///     tokens: &[&str]
-///     the split `setoption` line
 fn handle_position(session: &mut Session, tokens: &[&str]) {
     abort_search(session);
 
@@ -651,29 +589,22 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 
 /// start_search
 ///
-/// Parses a standard `go` line and launches the search thread. Dialect
-/// clauses are renamed to standard tokens by the protocol before they reach
-/// here, so this parse — and the engine core behind it — never sees a
-/// dialect word.
+/// Parses a standard `go` line and starts the search thread. The dialect
+/// already renamed its clauses, so no dialect word gets here.
 ///
-/// Three kinds of `go` produce three kinds of budget:
-///
-/// - `movetime m` : spend m less overhead, and at least a millisecond
-///                  of it
-/// - a clock      : (remaining − overhead) / movestogo, plus the
-///                  increment
-/// - neither      : no deadline at all, as ponder and infinite both want
-///
-/// A clock search assumes 20 moves left when the GUI does not say, and never
-/// budgets past the clock it actually has, since a share of the remaining
-/// time plus an increment that has not been earned yet can otherwise exceed
-/// what is left. The deadline is anchored against the moment the `go` was
-/// read rather than the moment the thread starts, so thread startup is spent
-/// out of the budget instead of extending it.
+/// - `movetime m` : m minus overhead, minimum one millisecond
+/// - a clock      : (remaining - overhead) / movestogo, plus increment
+/// - neither      : no deadline, for ponder and infinite
 ///
 /// Params:
-/// - session: &mut Session -> session the `go` runs in
-/// - tokens : &[&str]      -> normalized `go` limit tokens
+/// - session: &mut Session -> session of the `go`
+/// - tokens : &[&str]      -> standard `go` tokens
+///
+/// Notes:
+/// Without `movestogo`, the clock uses 20 moves. The time never goes past
+/// the remaining clock. The deadline starts when the `go` is read, so the
+/// thread start uses part of the time.
+///
 pub fn start_search(session: &mut Session, tokens: &[&str]) {
     abort_search(session);
 
@@ -787,28 +718,26 @@ pub fn start_search(session: &mut Session, tokens: &[&str]) {
 
 /// spawn_search
 ///
-/// Launches the search thread for the given limits and records it as the
-/// session's active handle, wiring in the shared tables and the interrupt
-/// plumbing. The position is cloned rather than borrowed, so the session
-/// stays answerable to `stop` and `isready` while the search runs.
+/// Starts the search thread with the limits and keeps it as the active
+/// handle of the session. The thread gets a copy of the position, so the
+/// session can still answer `stop` and `isready`.
 ///
-/// A ponder search is launched with its limits deliberately stripped:
+/// A ponder search starts without limits:
 ///
-/// - depth    : the maximum, not what the `go` asked for
-/// - nodes    : unlimited
+/// - depth    : the maximum
+/// - nodes    : no limit
 /// - deadline : none
-/// - bestmove : withheld, printed only if a stop turns up first
-///
-/// Pondering happens on the opponent's clock, so there is nothing to spend
-/// and no reason to stop early; the real limits are kept on the handle and
-/// applied when the hit arrives. The worker is wrapped so a panic inside the
-/// search yields an empty result instead of unwinding out of the thread,
-/// which keeps the join in `abort_search` from becoming the way a bug in
-/// search takes the whole session down.
+/// - bestmove : kept back until `stop`
 ///
 /// Params:
-/// - session: &mut Session -> the session being mutated
-/// - limits : SearchLimits -> launch parameters for the thread
+/// - session: &mut Session -> the session to change
+/// - limits : SearchLimits -> start parameters of the thread
+///
+/// Notes:
+/// Ponder uses the clock of the opponent. The handle keeps the real limits
+/// for the hit. A panic in the search gives an empty result, so the join in
+/// `abort_search` does not stop the session.
+///
 fn spawn_search(session: &mut Session, limits: SearchLimits) {
     let state_clone = session.state.clone();
     let tt_clone = Arc::clone(&session.ttable);
@@ -997,31 +926,21 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
 
 /// print_handshake
 ///
-/// Answers the handshake with the engine's identity, its options, and the
-/// terminator the GUI is waiting for. Everything dialect-specific in the
-/// reply is spelled out of the protocol name, so a new dialect adds no
-/// tokens here at all.
+/// Answers the handshake with the engine name, its options and the end
+/// word. The dialect parts come from the protocol name.
 ///
-/// - `id name`, `id author` : the same for every dialect
-/// - `Protocol`             : a combo of every dialect, current one the
-///                            default
-/// - `<NAME>_Variant`       : a combo listing what this dialect serves
-/// - `Threads`              : 1 to however many the hardware reports
-/// - `Ponder`               : a checkbox the GUI owns; the engine reads
-///                            the `go`
-/// - `Hash`, `Clear Hash`   : one budget, and a button that rebuilds at
-///                            that size
-/// - `Move Overhead`        : the clock given up per timed search
-/// - `<name>ok`             : the terminator, spelled from the protocol
-///                            name
-///
-/// The variant combo lists only what this dialect can actually speak, so a
-/// GUI is never offered a variant whose moves it would be unable to read.
-/// `Protocol` is offered alongside it because a session may change dialect
-/// without reconnecting.
+/// - `id name`, `id author` : the same for all dialects
+/// - `Protocol`             : combo of all dialects, current one default
+/// - `<NAME>_Variant`       : combo of the variants of this dialect
+/// - `Threads`              : 1 to the hardware thread count
+/// - `Ponder`               : checkbox for the GUI, the engine reads `go`
+/// - `Hash`, `Clear Hash`   : table size, and a button to clear
+/// - `Move Overhead`        : time kept back for each timed search
+/// - `<name>ok`             : the end word, from the protocol name
 ///
 /// Params:
-/// - session: &Session -> the session whose variants are listed
+/// - session: &Session -> the session with the variants
+///
 pub fn print_handshake(session: &Session) {
     let vars_str: String = session.variants
         .iter()
@@ -1057,16 +976,13 @@ pub fn print_handshake(session: &Session) {
 
 /// new_game
 ///
-/// Resets the session to the active variant's start position, aborting any
-/// search in flight. Every dialect's new-game command lands here, since
-/// `ucinewgame` and `usinewgame` differ in spelling and nothing else.
-///
-/// The variant, the options, and the hash tables all survive: a new game is
-/// a new position, not a new session, and clearing the tables is what the
-/// `Clear Hash` button is for.
+/// Resets the session to the start position of the variant and stops the
+/// search. The new game command of each dialect calls it. The variant, the
+/// options and the tables do not change.
 ///
 /// Params:
 /// - session: &mut Session -> the session to reset
+///
 pub fn new_game(session: &mut Session) {
     abort_search(session);
     let start = session.state.statics.startpos.clone();
@@ -1083,28 +999,28 @@ pub fn new_game(session: &mut Session) {
 
 /// execute_common
 ///
-/// Serves every command that behaves identically in all three dialects, and
-/// contains no dialect token anywhere. It runs first, so a dialect only ever
-/// sees what is left over.
+/// Handles the commands that are the same in all dialects. It has no
+/// dialect word. It runs first, and the dialect gets the other lines.
 ///
-/// - `isready`   : `readyok`, the GUI's liveness check
-/// - `position`  : set the board up, however the FEN keyword was spelled
-/// - `stop`      : end the search now, releasing a withheld ponder move
-/// - `ponderhit` : the guess held, put the ponder search on the clock
+/// - `isready`   : reply `readyok`
+/// - `position`  : set the board, with any FEN keyword
+/// - `stop`      : stop the search, send a kept ponder move
+/// - `ponderhit` : put the ponder search on the clock
 /// - `setoption` : change one option
-/// - `d`         : print the board, the result, and the reason for it
+/// - `d`         : print the board, the result and the reason
 /// - `quit`      : stop the search and end the session
 ///
-/// `d` is not part of any protocol and every GUI ignores it, which is
-/// exactly what makes it useful: a human at the same stdin can look at the
-/// position mid-game without the session behaving any differently.
-///
 /// Params:
-/// - session: &mut Session -> the session being driven
-/// - tokens : &[&str]      -> one trimmed, split line of input
+/// - session: &mut Session -> the session
+/// - tokens : &[&str]      -> one input line, trimmed and split
 ///
 /// Return:
-/// Option<bool>            -> Some(should_quit) when served, None to defer
+/// Option<bool>            -> Some(quit) when handled, None to defer
+///
+/// Notes:
+/// `d` is in no protocol, and GUIs ignore it. A person can use it on the
+/// same stdin during a game.
+///
 pub fn execute_common(
     session: &mut Session,
     tokens: &[&str],
@@ -1154,27 +1070,21 @@ pub fn execute_common(
 
 /// run
 ///
-/// The blocking protocol main loop: one process, every dialect. It starts on
-/// UCI and lets the first thing a GUI says decide what it actually is.
+/// The blocking protocol main loop for all dialects. It starts with UCI.
+/// The first word from the GUI selects the dialect.
 ///
-/// - a handshake word : switch to that dialect and greet, whichever it
-///                      was
-/// - anything else    : `execute_common` first, the dialect's `execute`
-///                      after
-/// - `quit` or EOF    : stop the search, drain the printer, return
-///
-/// Any protocol's own name works as a handshake word at any time, so a GUI
-/// speaking USI is answered in USI without the engine being launched for it;
-/// the `Protocol` option reaches the same switch from `setoption`. Output
-/// goes through a printer thread rather than straight to stdout, so a worker
-/// finishing mid-command cannot interleave its `bestmove` into another line.
-///
-/// The loop ends by aborting whatever search is still running and joining the
-/// printer, so the process never exits with a worker mid-search or with a
-/// line still queued.
+/// - a handshake word : change to that dialect and reply
+/// - other lines      : `execute_common` first, then the dialect `execute`
+/// - `quit` or EOF    : stop the search, flush the printer, return
 ///
 /// Return:
-/// IoResult<()> -> Ok on clean shutdown
+/// IoResult<()> -> Ok on a clean stop
+///
+/// Notes:
+/// A protocol name works as a handshake word at all times. A printer
+/// thread writes all output, so a `bestmove` does not mix into another
+/// line. At the end, the loop stops the search and joins the printer.
+///
 pub fn run() -> IoResult<()> {
     let (sender, receiver) = channel::<EngineEvent>();
     set_sink(sender);

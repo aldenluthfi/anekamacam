@@ -1,14 +1,11 @@
 //! drop.rs
 //!
-//! Defines drop move encoding and helper macros for drop-related flags.
+//! Defines the drop move encoding and the macros for drop flags.
 //!
-//! Variants in the shogi family let captured pieces re-enter the board from
-//! a player's hand. Those placements need their own compact representation:
-//! unlike ordinary moves they have no origin square, but they do carry
-//! placement constraints (such as checkmate-delivery bans) that must be
-//! honored at generation time. This file defines the packed `DropMove`
-//! word, the pattern-carrying `Drops` pairing used by the precomputed drop
-//! tables, and the flag accessors shared by generation and execution.
+//! In some variants a player can put a captured piece back on the board.
+//! A drop has no origin square, but it can have rules, for example a ban
+//! on checkmate. This file defines the packed drop word, its pattern pair
+//! and the flag macros for generation and execution.
 //!
 //! Created: 29/01/2026
 //! Author : Alden Luthfi
@@ -19,27 +16,18 @@ use crate::*;
                           DROP REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
 
-/// Encoding helpers for drop-specific flags in packed moves.
-///
-/// A drop's placement rules are known before the game starts, so they are
-/// compiled into the precomputed [`DropMove`] table and only copied onto
-/// the executable move as it is generated. The flag therefore changes both
-/// its home and its polarity on the way across:
-///
-/// - [`DropMove`] bit 20 is the ban the config declares, one flag per
-///   template slot: this drop may not deliver mate
-/// - [`Move`] bit 112 is its negation, written as the move is generated:
-///   this drop may deliver mate
-///
-/// Storing the ban and generating the permission keeps the table reading
-/// the way the variant is written, while the search reads the question it
-/// actually asks.
-///
 /// enc_can_checkmate!
 ///
-///   Params:
-///   - mv : &mut Move -> drop-format move whose word is written
-///   - val: u128      -> may-checkmate flag, masked into bit 112
+/// Writes the checkmate flag of a drop move. The drop table keeps the ban
+/// from the config. The move generator writes the opposite value.
+///
+/// - [`DropMove`] bit 20 : the drop must not give checkmate
+/// - [`Move`] bit 112    : the drop can give checkmate
+///
+/// Params:
+/// - mv : &mut Move -> drop move to write
+/// - val: u128      -> checkmate flag, masked into bit 112
+///
 #[macro_export]
 macro_rules! enc_can_checkmate {
     ($mv:expr, $val:expr) => {
@@ -51,18 +39,17 @@ macro_rules! enc_can_checkmate {
                           DROP REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
 
-/// Decoding helpers for drop-specific flags in packed moves.
-///
-/// These macros read the same drop-flag bits written by the encoder helpers
-/// so drop legality and execution paths can branch on encoded options.
-///
 /// drop_can_checkmate!
 ///
-///   Params:
-///   - drop: &Move -> drop-format move whose word is read
+/// Reads the checkmate flag that `enc_can_checkmate!` writes. The search
+/// uses it to decide if a drop that gives mate is legal.
 ///
-///   Return:
-///   bool          -> may-checkmate flag (bit 112)
+/// Params:
+/// - drop: &Move -> drop move to read
+///
+/// Return:
+/// bool          -> true when the drop can give checkmate (bit 112)
+///
 #[macro_export]
 macro_rules! drop_can_checkmate {
     ($drop:expr) => {
@@ -72,18 +59,16 @@ macro_rules! drop_can_checkmate {
 
 /// illegal_mating_drop!
 ///
-/// Whether the move that reached this position was a drop the variant forbids
-/// from delivering mate. The side to move having no legal move is then not a
-/// loss for it but a loss for the dropper, so every caller that turns "no legal
-/// move" into a result has to ask this — search when it scores a mate, and
-/// `adjudicate_no_move` when it decides one. Reading the same flag from one
-/// place is what keeps the two from disagreeing.
+/// Tells if the last move was a drop that must not give mate. If so, and
+/// the side to move has no legal move, the player who dropped loses. The
+/// search and `adjudicate_no_move` both use this macro, so they agree.
 ///
 /// Params:
-/// - state: &State -> position whose last move is inspected
+/// - state: &State -> position with the last move to examine
 ///
 /// Return:
 /// bool            -> true when the mating move was a banned drop
+///
 #[macro_export]
 macro_rules! illegal_mating_drop {
     ($state:expr) => {
@@ -94,9 +79,10 @@ macro_rules! illegal_mating_drop {
     };
 }
 
-/// DropMove / Drops / DropSet
+/// Drop template types
 ///
-/// A `DropMove` is a packed `u32` (bit 0 = LSB):
+/// Types for drop templates. A `DropMove` is a packed `u32` with the
+/// piece, the target square and the modifiers (bit 0 = LSB):
 ///
 /// ```text
 ///   0               8                       20                      31
@@ -107,14 +93,13 @@ macro_rules! illegal_mating_drop {
 ///
 /// - Bits 0..7   : dropped piece index
 /// - Bits 8..19  : target square index
-/// - Bits 20..31 : drop modifiers
+/// - Bits 20..31 : drop modifiers, read by `drop_k!`
 ///
-/// `piece` is the dropped piece index, `square` is the target square index,
-/// and `modifiers` are the drop-flag bits read by `drop_k!`.
+/// Other types:
 ///
-/// `Drops` pairs a packed drop with the CPMN pattern that must match
-/// around the target square for the drop to be legal, and `DropSet`
-/// collects every such pairing for one (piece, square) table slot.
+/// - `Drops`   : a drop and the CPMN pattern its target square must match
+/// - `DropSet` : all `Drops` of one (piece, square) table slot
+///
 pub type DropMove = u32;
 pub type Drops = (DropMove, Pattern);
 pub type DropSet = Vec<Drops>;
@@ -123,18 +108,17 @@ pub type DropSet = Vec<Drops>;
                          DROP MODIFIER REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-/// Accessors for modifier bits carried by [`DropMove`] entries.
-///
-/// These are consumed by drop generation and legality filtering while building
-/// concrete drop moves.
-///
 /// drop_k!
 ///
-///   Params:
-///   - drop: &Drops -> pairing whose packed `DropMove` word is read
+/// Reads the checkmate ban of a [`DropMove`] template. Drop generation
+/// uses it when it makes the drop moves.
 ///
-///   Return:
-///   bool           -> checkmate-delivery ban flag (bit 20)
+/// Params:
+/// - drop: &Drops -> pair with the packed `DropMove` word to read
+///
+/// Return:
+/// bool           -> true when the drop must not give mate (bit 20)
+///
 #[macro_export]
 macro_rules! drop_k {
     ($drop:expr) => {

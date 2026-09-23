@@ -1,13 +1,11 @@
 //! graphics.rs
 //!
-//! Ratatui-based graphical debug interface for the engine.
+//! Ratatui debug console of the engine.
 //!
-//! Debugging a variant engine means watching several things at once: the
-//! board, the move history, and the derived per-piece data a variant's
-//! config produces, none of which scrolling output can show side by side.
-//! This file is that live view, a tabbed terminal interface wrapped around
-//! the ordinary command loop, so gameplay stays command-driven while every
-//! surface stays visible and up to date.
+//! A person must see the board, the move history and the derived piece
+//! data at the same time. This file is a terminal interface with tabs
+//! around the normal command loop. The commands control the game, and all
+//! panes stay current.
 //!
 //! Created: 23/04/2026
 //! Author : Alden Luthfi
@@ -20,40 +18,36 @@ use crate::*;
 
 /// MAX_LOGS_SCROLL
 ///
-/// How far back a log pane can be scrolled. A ratatui scroll offset is a
-/// `u16`, so a line past the sixty-five thousandth could be drawn but never
-/// scrolled to, and a pane that cannot reach its own end is worse than a
-/// short one. `u16::MAX` itself is spoken for: `clamp_scroll` stores it to
-/// mean "stay at the newest line", so the deepest reachable offset is one
-/// below it.
+/// The maximum scroll offset of a log pane. A ratatui offset is a `u16`.
+/// `clamp_scroll` uses `u16::MAX` for "stay at the newest line", so the
+/// maximum offset is one less.
+///
 const MAX_LOGS_SCROLL: u16 = u16::MAX - 1;
 
 /// Interface constants
 ///
-/// The fixed numbers the whole interface is laid out and driven by: which
-/// tabs there are, which mode the keyboard is in, and where each pane's
-/// scroll position is filed.
+/// Fixed values of the interface: the tabs, the keyboard modes and the
+/// scroll keys of the panes.
 ///
-/// - TUI_INPUT_MODE  : typing, and every key goes into the command line
-/// - TUI_NORMAL_MODE : not typing, and keys move focus and scroll
-/// - TAB_TITLES      : the three tabs, in the order they are shown in
-/// - TAB_FOCUSABLES  : how many panes each of them cycles focus around
-/// - TAB_FOCUS_MOVES : the pane index focus is on for the move history
-/// - TAB_FOCUS_FEN   : the same for the position line
-/// - TAB_FOCUS_LOGS  : the same for the log pane
+/// - TUI_INPUT_MODE  : all keys go into the command line
+/// - TUI_NORMAL_MODE : keys move the focus and scroll
+/// - TAB_TITLES      : the three tabs, in display order
+/// - TAB_FOCUSABLES  : the number of focus panes of each tab
+/// - TAB_FOCUS_MOVES : focus index of the move history
+/// - TAB_FOCUS_FEN   : focus index of the FEN line
+/// - TAB_FOCUS_LOGS  : focus index of the log pane
 ///
-/// A scroll position is filed under the pane it belongs to, which is to
-/// say under a tab and a focus index. Two things scroll that are panes of
-/// no tab at all, so they are filed under a tab that does not exist:
+/// The scroll key of a pane is (tab, focus). Two scrolling views are not
+/// in a tab, so they use a tab that does not exist:
 ///
-/// - SENTINEL_TAB      : 100, the game-selection screen, and the tab the
-///                       two below borrow to file their scroll under
+/// - SENTINEL_TAB      : 100, the game selection screen
 /// - PICKER_SCROLL_KEY : `(SENTINEL_TAB, 100)`, the variant list
 /// - HELP_SCROLL_KEY   : `(SENTINEL_TAB, 50)`, the help overlay
 ///
-/// Being past `TAB_TITLES.len()` is what makes the sentinel work, and it
-/// is also what marks an open help overlay, which is why `help_open!` has
-/// to rule the sentinel out by name.
+/// Notes:
+/// A value past `TAB_TITLES.len()` also marks an open help overlay, so
+/// `help_open!` excludes the sentinel by name.
+///
 const TUI_INPUT_MODE: u8 = 0;
 const TUI_NORMAL_MODE: u8 = 1;
 
@@ -75,56 +69,49 @@ const TAB_FOCUS_LOGS: usize = 2;
 
 /// TUI construction macros
 ///
-/// The three shapes this file drew over and over. All of them file-private:
-/// nothing outside the debug interface builds widgets.
+/// Widget macros of the debug console, private to this file.
 ///
-/// - `split_area!`   : cuts one rect into parts
-/// - `padded_block!` : the frame a pane is drawn inside
-/// - `guide_label!`  : one named box of the help overlay's layout guide
+/// - `split_area!`   : divides one rect into parts
+/// - `padded_block!` : the frame of a pane
+/// - `guide_label!`  : one named box of the help layout guide
 ///
 /// split_area!
 ///
-///   Divides one rect. Thirty-four sites wrote the same four-call builder
-///   chain; the constraint list stays a plain expression so the four that
-///   choose their list with an `if` still fit. The `overlap` form adds the
-///   one-cell overlap that makes adjacent panes share a border line.
+///   Divides one rect. The `overlap` form adds a one-cell overlap, so
+///   panes next to each other share a border line.
 ///
 ///   Params:
 ///   - direction  : ident -> `Horizontal` or `Vertical`
-///   - area       : Rect  -> rect being divided
-///   - constraints: expr  -> constraint array, one entry per part
+///   - area       : Rect  -> rect to divide
+///   - constraints: expr  -> constraint array, one entry for each part
 ///
 ///   Return:
-///   Rects -> the parts, in constraint order
+///   Rects                -> the parts, in constraint order
 ///
 /// padded_block!
 ///
-///   The frame every pane in this interface is drawn in: a full border
-///   with one column of breathing room inside it. Thirteen sites spelled
-///   the same two or three builder calls; the `style` form colours the
-///   border to mark focus, and the `merge` form lets adjacent frames
-///   share their border line. Panes deliberately drawn without a frame
-///   keep their explicit `Borders::NONE` and are not this macro.
+///   The frame of a pane: a full border and one column of padding inside.
+///   The `style` form colours the border for focus. The `merge` form lets
+///   frames next to each other share a border line.
 ///
 ///   Params:
 ///   - style: expr -> border style, `style` form only
 ///
 ///   Return:
-///   Block<'_> -> the frame, ready to hand to `.block()`
+///   Block<'_>     -> the frame for `.block()`
 ///
 /// guide_label!
 ///
-///   Names one pane in the help overlay's layout guide: a paragraph of a
-///   single span inside a padded box whose borders merge with its
-///   neighbours', so the guide reads as one grid rather than as separate
-///   boxes. The `center` form is the board pane, which is drawn bare and
-///   centred because a box there would be mistaken for the board's own.
+///   Names one pane in the help layout guide, in a padded box whose
+///   borders merge with its neighbours. The `center` form is for the board
+///   pane, without a box.
 ///
 ///   Params:
-///   - text: expr -> the pane's name
+///   - text: expr -> the pane name
 ///
 ///   Return:
-///   Paragraph<'_> -> the label, boxed or centred
+///   Paragraph<'_> -> the label, boxed or centered
+///
 macro_rules! split_area {
     ($direction:ident, $area:expr, $constraints:expr) => {
         Layout::default()
@@ -170,17 +157,16 @@ macro_rules! guide_label {
 
 /// help_open!
 ///
-/// Says whether the help overlay is up. One number carries both the tab
-/// and the help page over it, the page being added on in whole multiples
-/// of the tab count, so any value at or past that count has help over it.
-/// The game-selection sentinel is past it as well, and is the one value
-/// that has to be ruled out by name.
+/// Tells if the help overlay is open. One number has the tab and the help
+/// page. The page adds multiples of the tab count, so a value at or above
+/// that count has help open. The macro excludes the sentinel by name.
 ///
 /// Params:
-/// - tab: usize -> the encoded tab value to test
+/// - tab: usize -> encoded tab value to test
 ///
 /// Return:
-/// bool         -> whether a help overlay is open on that tab
+/// bool         -> true when help is open on that tab
+///
 macro_rules! help_open {
     ($tab:expr) => {
         $tab >= TAB_TITLES.len() && $tab != SENTINEL_TAB
@@ -189,23 +175,23 @@ macro_rules! help_open {
 
 /// peel_help
 ///
-/// Takes that number back apart into the tab underneath and the help page
-/// over it. Three tabs, so three is the step:
+/// Splits the encoded number into the tab and the help page. There are
+/// three tabs, so the step is three:
 ///
 /// - 1 : Overview, tab 1, no help
 /// - 4 : Overview with help on Keybinds, tab 1, page 0
 /// - 7 : Overview with help on Commands, tab 1, page 1
 ///
-/// The page is one fewer than the steps taken off, the first step having
-/// opened the overlay rather than turned its page. A value with no help
-/// over it reports page 0, which nobody reads: a caller either asks
-/// `help_open!` first or takes the tab and drops the page.
-///
 /// Params:
-/// - tab: usize   -> the encoded tab value to decode
+/// - tab: usize   -> encoded tab value to decode
 ///
 /// Return:
-/// (usize, usize) -> the tab underneath, and the help page over it
+/// (usize, usize) -> the tab, and the help page
+///
+/// Notes:
+/// The first step opens the overlay, so the page is the step count minus
+/// one. Without help, the page is 0 and callers ignore it.
+///
 fn peel_help(mut tab: usize) -> (usize, usize) {
     let mut layers = 0;
 
@@ -219,35 +205,26 @@ fn peel_help(mut tab: usize) -> (usize, usize) {
 
 /// clamp_scroll
 ///
-/// Fits one pane's stored scroll offset to the pane's current end and
-/// writes the fit back. `u16::MAX` is not an offset but a sentinel: it
-/// means pinned to the bottom, so the pane follows the tail as content
-/// arrives rather than sitting at whatever the last line was when it got
-/// there.
+/// Fits the stored scroll offset of one pane to its current end and stores
+/// the result. `u16::MAX` means "pinned to the bottom", so the pane follows
+/// new content.
 ///
-/// - current < max          : left where it is, the end is still below
-/// - current == max, or MAX : pinned: stored as MAX, drawn at the end
-/// - max < current < MAX    : `max - (MAX - current)`, which is that
-///                            many lines up from the end, wherever the
-///                            end is
+/// - current < max          : no change
+/// - current == max, or MAX : pinned, stored as MAX, drawn at the end
+/// - max < current < MAX    : `max - (MAX - current)`, lines up from the end
 ///
-/// The third arm is what a pinned pane becomes when its content shrinks
-/// under it. Rather than jumping to the top it keeps its distance from
-/// the tail, so a log pane scrolled two lines back stays two lines back.
-///
-/// `current` must be what `scroll_map` holds at `key` — every caller
-/// reads it from there one line earlier — which is what lets the pinned
-/// and at-the-end cases share an arm: re-pinning a pane whose offset is
-/// already the sentinel writes the value it already had.
+/// The third case keeps the distance from the end when the content gets
+/// shorter.
 ///
 /// Params:
-/// - current   : u16            -> stored offset, also `scroll_map[key]`
-/// - max       : u16            -> largest offset the pane can show
-/// - scroll_map: &mut HashMap   -> offsets by (tab, focus), written back
-/// - key       : (usize, usize) -> the pane's entry in that map
+/// - current   : u16            -> stored offset, equal to `scroll_map[key]`
+/// - max       : u16            -> largest offset of the pane
+/// - scroll_map: &mut HashMap   -> offsets by (tab, focus), updated
+/// - key       : (usize, usize) -> the key of the pane in that map
 ///
 /// Return:
-/// u16                          -> offset to render this frame with
+/// u16                          -> offset for this frame
+///
 fn clamp_scroll(
     current: u16,
     max: u16,
@@ -268,15 +245,16 @@ fn clamp_scroll(
 
 /// log_level
 ///
-/// Reads back the level `push_log_message!` stamped on the front of a line.
-/// Anything without one is treated as the noisiest level, so a malformed
-/// entry hides at a quiet verbosity rather than stopping the render.
+/// Reads the level that `push_log_message!` put at the start of a line. A
+/// line without a level gets level 5, so a bad line does not stop the
+/// render.
 ///
 /// Params:
 /// - line: &str -> queued log line, `[n] message`
 ///
 /// Return:
-/// u8           -> the stamped level, or 5
+/// u8           -> the level, or 5
+///
 fn log_level(line: &str) -> u8 {
     match line.as_bytes() {
         [b'[', digit @ b'1'..=b'5', b']', ..] => digit - b'0',
@@ -286,15 +264,15 @@ fn log_level(line: &str) -> u8 {
 
 /// colour_log_line
 ///
-/// Splits a queued line into its level stamp and its message, colouring the
-/// stamp by how loud it is: red for the critical end, magenta for the trace
-/// end, and the message left plain.
+/// Splits a queued line into its level and its message, and colours the
+/// level: red for critical, magenta for trace. The message has no colour.
 ///
 /// Params:
 /// - line: &str       -> queued log line, `[n] message`
 ///
 /// Return:
 /// Line<'static>      -> the styled row
+///
 fn colour_log_line(line: &str) -> Line<'static> {
     let level_color = match log_level(line) {
         1 => Color::LightRed,
@@ -318,33 +296,21 @@ fn colour_log_line(line: &str) -> Line<'static> {
 
 /// visible_log_lines
 ///
-/// The rows a log pane should draw: filtered by verbosity, clamped, and cut
-/// to what fits on screen. The caller renders them at scroll zero, the
-/// windowing having already happened here.
+/// Gives the rows of a log pane: filtered by verbosity, clamped, and cut to
+/// the pane height. The caller draws them at scroll zero.
 ///
-/// Three things went wrong while a pane handed the whole queue to a
-/// paragraph and let the paragraph scroll it:
-///
-/// - taking the newest lines *before* filtering by level returns a window
-///   that can be filtered away to nothing, so a loud run read at a quiet
-///   verbosity shows an empty pane
-/// - counting rendered rows into a `u16` wraps past 65535, and taikyoku
-///   logs some 78000 lines loading, so the ceiling came out a few thousand
-///   instead of tens of thousands: the pane refuses to scroll and will not
-///   sit at the newest line
-/// - building a `Line` for every entry costs two allocations per entry per
-///   frame, however few of them are on screen
-///
-/// Filtering first, measuring in `usize`, and cutting to the viewport
-/// answers all three.
+/// 1. filter by level first, so a quiet level does not show an empty pane
+/// 2. count rows in `usize`, because taikyoku logs about 78000 lines
+/// 3. make a `Line` only for the visible rows
 ///
 /// Params:
-/// - height    : u16            -> rows the pane can show
-/// - scroll_map: &mut HashMap   -> offsets by (tab, focus), written back
-/// - key       : (usize, usize) -> which pane's offset to read and clamp
+/// - height    : u16            -> rows of the pane
+/// - scroll_map: &mut HashMap   -> offsets by (tab, focus), updated
+/// - key       : (usize, usize) -> key of the pane offset
 ///
 /// Return:
-/// Vec<Line<'static>>           -> exactly the rows to draw, newest last
+/// Vec<Line<'static>>           -> the rows to draw, newest last
+///
 fn visible_log_lines(
     height: u16,
     scroll_map: &mut HashMap<(usize, usize), u16>,
@@ -379,29 +345,23 @@ fn visible_log_lines(
 
 /// Tui
 ///
-/// Everything the interface knows. One of these is built at startup, torn
-/// down at exit, and handed to every draw and every keypress in between.
+/// All state of the interface. It is made at startup and used by each
+/// draw and each key press.
 ///
-/// - mode, input, locked     : the command line: what has been typed,
-///                             whether keys go into it, and whether it
-///                             is frozen while a worker is busy
-/// - tab, focus, scroll_map  : where the eye is: which tab, which pane
-///                             of it, and how far down every pane sits
-/// - variant, translator     : the variant that is loaded, and the
-///                             notation its moves are read and written
-///                             in
-/// - game_state, board_state : the position being played, and the drawn
-///                             form of it a frame is rendered from
-/// - playground_state        : a second position, belonging to that tab
-/// - overview_state          : the variant's config, drawn out once
-/// - threads                 : how many a search is given
-/// - receiver                : what the engine has to say, on its way in
+/// - mode, input, locked     : the command line, its mode, and its lock
+/// - tab, focus, scroll_map  : the tab, the pane and each scroll offset
+/// - variant, translator     : the loaded variant and its notation
+/// - game_state, board_state : the game position and its drawn form
+/// - playground_state        : a second position, for that tab
+/// - overview_state          : the variant config, drawn once
+/// - threads                 : number of search threads
+/// - receiver                : events from the engine
 ///
-/// Both positions sit behind an `Arc<Mutex<State>>` because a search runs
-/// on a worker thread while the interface goes on drawing. The snapshots
-/// beside them are how it goes on drawing cheaply: a frame reads strings
-/// that were rendered once, rather than formatting a board sixty times a
-/// second, and neither snapshot is rebuilt until its position changes.
+/// Notes:
+/// The positions are in `Arc<Mutex<State>>`, because a search runs on a
+/// worker thread during the draws. A frame reads text that was drawn once.
+/// A snapshot is rebuilt only when its position changes.
+///
 struct Tui {
     mode: u8,                                                                   /* input mode (normal / command)      */
     threads: usize,                                                             /* worker threads for searches        */
@@ -426,31 +386,28 @@ struct Tui {
 impl Tui {
     /// Tui construction and teardown
     ///
-    /// Both ends of a loaded variant's life. The interface starts on the
-    /// game-selection screen and returns to it, and the two look the same
-    /// from the outside: nothing loaded, nothing scrolled, waiting for a
-    /// name to be picked.
+    /// Start and end of a loaded variant. The two give the same state: the
+    /// game selection screen, nothing loaded, no scroll.
     ///
     /// new
     ///
-    ///   Builds the interface with a scroll slot for every pane of every
-    ///   tab, all of them at the top, and the two overlay slots beside
-    ///   them. Nothing is loaded yet, and one search thread is assumed
-    ///   until a `threads` command says otherwise.
+    ///   Makes the interface with a scroll slot at the top for each pane
+    ///   and the two overlays. It uses one search thread until a `threads`
+    ///   command.
     ///
     ///   Params:
-    ///   - receiver: Receiver<EngineEvent> -> engine-to-TUI event channel
+    ///   - receiver: Receiver<EngineEvent> -> events from the engine
     ///
     ///   Return:
-    ///   Self -> the interface on the game-selection screen
+    ///   Self                              -> the interface, on selection
     ///
     /// reset
     ///
-    ///   Drops the loaded states and goes back to the selection screen.
-    ///   The interrupt flag is raised on the way out, since a worker may
-    ///   still be searching a position that is about to be dropped, and it
-    ///   is cleared again by the `Unlock` event that worker sends as it
-    ///   finishes. Takes nothing and returns nothing.
+    ///   Drops the loaded states and goes back to the selection screen. It
+    ///   sets the interrupt flag, because a worker can still search. The
+    ///   `Unlock` event of that worker clears the flag. No parameters and
+    ///   no return value.
+    ///
     fn new(
         receiver: Receiver<EngineEvent>
     ) -> Self {
@@ -527,29 +484,24 @@ impl Tui {
 
     /// Tui::run
     ///
-    /// The main loop. Draw a frame, take in whatever the engine has said
-    /// since the last one, then wait up to sixteen milliseconds for a key,
-    /// which is sixty frames a second when nothing at all is happening.
+    /// The main loop. It draws a frame, reads the engine events, and waits
+    /// up to 16 milliseconds for a key, 60 frames a second.
     ///
-    /// - Board            : a newly drawn game position, hung straight up
-    /// - StateInit        : a variant has loaded: the overview is derived
-    ///                      from it, the playground takes its own copy
-    /// - PlaygroundUpdate : that copy, replaced where it stands
-    /// - SwitchDict       : a different notation, so the board is redrawn
-    /// - Unlock           : the worker has finished: interrupt cleared
-    ///                      and the command line handed back to the typist
-    ///
-    /// Everything else on the channel belongs to somebody else, the log
-    /// lines most of all: they reach their pane through the logger's own
-    /// buffer rather than through here.
+    /// - Board            : a new game board to show
+    /// - StateInit        : a variant loaded, make overview and playground
+    /// - PlaygroundUpdate : a new playground position
+    /// - SwitchDict       : a new notation, draw the board again
+    /// - Unlock           : the worker ended, clear interrupt, unlock input
     ///
     /// Params:
-    /// - terminal: &mut DefaultTerminal -> the ratatui terminal handle
+    /// - terminal: &mut DefaultTerminal -> the ratatui terminal
     ///
     /// Return:
+    /// IoResult<()>                     -> Ok on a clean exit, else Err
     ///
-    ///     IoResult<()>
-    ///     Ok on clean exit, Err on terminal I/O failure
+    /// Notes:
+    /// The loop ignores other events. Log lines come from the logger queue.
+    ///
     fn run (&mut self, terminal: &mut DefaultTerminal) -> IoResult<()> {
         loop {
             terminal.draw(|frame| render(frame, self))?;
@@ -609,29 +561,23 @@ impl Tui {
                                OVERVIEW SNAPSHOT
 \*----------------------------------------------------------------------------*/
 
-/// Overview-tab snapshot types
+/// Overview tab snapshot types
 ///
-/// The Overview tab shows what the variant's config says rather than what
-/// the game is doing, and a config does not change while it is loaded. So
-/// the whole tab is rendered once, at load, and every frame after that
-/// draws strings that were strings already.
+/// Snapshot types of the Overview tab. The tab shows the variant config,
+/// which does not change, so the tab is drawn once at load.
 ///
-/// - OverviewState     : the config rows, and the piece list
-/// - OverviewPiece     : one row of that list: a name, and the piece's
-///                       rendered attributes, if it has any
-/// - OverviewPieceInfo : those attributes, all of them formatted: the
-///                       letters, promotions, roles, the two material
-///                       values, the two tables, and whichever zones the
-///                       variant gave this piece
+/// - OverviewState     : the config rows and the piece list
+/// - OverviewPiece     : one list row, a name and optional attributes
+/// - OverviewPieceInfo : the formatted attributes of one piece
 ///
-/// A config row carries a height alongside its label and value, because
-/// one of them is the rule list and a variant may have several rules to
-/// name. Every other row is one line tall.
+/// The attributes are the letters, promotions, roles, material values,
+/// tables and zones. A config row has a height, because the rule list can
+/// have many lines.
 ///
-/// A piece type appears once, under its name, with its attributes taken
-/// from White's copy of it: Black's are the same rules seen from the other
-/// end, and its letter is in the row already. `info` stays `None` for a
-/// name with no White piece, and such a row draws as a bare name.
+/// Notes:
+/// Each piece type has one row, with the attributes of the White piece.
+/// `info` is `None` for a name without a White piece.
+///
 struct OverviewPieceInfo {
     char_str: String,                                                           /* board letter for the piece         */
     promotions: String,                                                         /* promotion targets, formatted       */
@@ -658,20 +604,17 @@ struct OverviewState {
 impl OverviewState {
     /// OverviewState::from_state
     ///
-    /// Draws the whole tab out of a loaded variant, once. The config rows
-    /// come first, and only the ones the variant has: a counter limit is
-    /// listed where there is counting to do, a repetition limit where
-    /// repetitions are counted, and neither otherwise.
-    ///
-    /// Then every piece, gathered by name so that a type is one row and
-    /// not two. The order is first-seen rather than sorted, which is the
-    /// order the config named them in.
+    /// Draws the full tab from a loaded variant, once. First the config
+    /// rows of the rules that the variant has, for example a counter limit
+    /// only with a counter. Then one row for each piece name, in config
+    /// order.
     ///
     /// Params:
-    /// - state: &State -> variant state to snapshot
+    /// - state: &State -> variant state to draw
     ///
     /// Return:
-    /// Self            -> the pre-rendered overview
+    /// Self            -> the drawn overview
+    ///
     fn from_state(state: &State) -> Self {
         let mut configs = Vec::new();
         configs.push(("Title".to_string(), state.statics.title.clone(), 1));
@@ -848,14 +791,14 @@ impl OverviewState {
 
 /// BoardState
 ///
-/// The Game tab, drawn out. Where the overview is rendered once a variant,
-/// this is rendered once a move, and for the same reason: a frame should
-/// be a copy, not a formatting job.
+/// The drawn Game tab. It is drawn once for each move, so a frame only
+/// copies text.
 ///
-/// - board        : the board diagram, pieces and coordinates
-/// - move_history : the moves so far, numbered and named
-/// - details      : label and value rows, down the side
-/// - fen          : the position as one line of text
+/// - board        : the board diagram with pieces and coordinates
+/// - move_history : the numbered moves of the game
+/// - details      : label and value rows
+/// - fen          : the position as one line
+///
 pub struct BoardState {
     board: String,                                                              /* composite board diagram            */
     move_history: String,                                                       /* numbered move history              */
@@ -866,32 +809,26 @@ pub struct BoardState {
 impl BoardState {
     /// BoardState::from_state
     ///
-    /// Renders the tab from the position it is handed. The detail rows are
-    /// the part that varies, since a variant is only asked about the rules
-    /// it actually has:
+    /// Draws the tab from the position. The detail rows show only the rules
+    /// that the variant has:
     ///
-    /// - Game Phase       : always, with the phase score beside the name
-    /// - Result           : once there is one, with the reason for it
+    /// - Game Phase       : always, with the phase score
+    /// - Result           : after the end, with the reason
     /// - Turn             : always
     /// - Position Hash    : always
-    /// - Castling Rights  : where the variant castles
-    /// - En Passant       : where it takes en passant
-    /// - Halfmove Clock   : where something is counted, as clock of limit
-    /// - Repetition Count : where repetitions are, the same way
-    /// - Pieces in Hand   : where there are drops, promotion into
-    ///                      captured material, or a setup phase to place
-    ///                      from
-    ///
-    /// A row a variant has no use for is not drawn empty, it is not drawn:
-    /// an en passant square in a game that has no way to take one is a
-    /// line of screen spent saying nothing.
+    /// - Castling Rights  : only with castling
+    /// - En Passant       : only with en passant
+    /// - Halfmove Clock   : only with a counter, as clock of limit
+    /// - Repetition Count : only with repetition, as count of limit
+    /// - Pieces in Hand   : only with drops, captured promotion or setup
     ///
     /// Params:
-    /// - state: &State              -> position to snapshot
-    /// - dict : Option<&Translator> -> translator for move names
+    /// - state: &State              -> position to draw
+    /// - dict : Option<&Translator> -> translator for the move text
     ///
     /// Return:
-    /// Self                         -> the pre-rendered board state
+    /// Self                         -> the drawn board state
+    ///
     pub fn from_state(state: &State, dict: Option<&Translator>) -> Self {
         let board = format_game_state(state);
         let move_history = format_move_history(state, dict);
@@ -909,11 +846,9 @@ impl BoardState {
 
         details.push(["Game Phase".to_string(), phase]);
 
-        let (outcome, reason) = game_outcome(&mut state.clone());               /* the `d` command's oracle, so the   */
-                                                                                /* pane cannot report a different     */
-        if outcome != ONGOING {                                                 /* result from the engine; cloned     */
-            let mut result = format_game_result(outcome);                       /* because the repetition walk needs  */
-                                                                                /* a mutable position to undo into    */
+        let (outcome, reason) = game_outcome(&mut state.clone());               /* the same result as the `d` command */
+        if outcome != ONGOING {                                                 /* a clone, because the repetition    */
+            let mut result = format_game_result(outcome);                       /* walk needs a mutable position      */
             if let Some(name) = reason {
                 result = format!("{} ({})", result, name);
             }
@@ -980,44 +915,33 @@ impl BoardState {
 
 /// Playground state helpers
 ///
-/// The Playground tab answers one question: where does this piece go from
-/// there? It asks on an empty board, so that nothing is in the way and the
-/// piece's own rules are all that is being looked at.
+/// Helpers of the Playground tab. The tab shows where one piece can move,
+/// on an empty board.
 ///
 /// - `init_playground`      : empties the board for a piece type
 /// - `set_playground_piece` : puts that piece on a square
 ///
-/// The empty position is built to the variant's own shape, a rank for
-/// every rank and each of them its full width of nothing, followed by
-/// whichever fields the rules call for, so a loader expecting castling
-/// rights or a hand finds them written. Side to move is the piece's
-/// colour: a piece that cannot move has no moves to show.
-///
-/// Both go through `load_fen` rather than writing the board and leaving
-/// it. Everything hanging off a board — its hashes, its piece lists, its
-/// material — is derived at load, and a piece set straight into the array
-/// would leave all of it describing the board from before. The phase is
-/// then forced to opening, one lone piece otherwise reading as an ending.
-///
-/// Neither returns a value.
+/// The empty FEN has the board size and the rule fields of the variant.
+/// The side to move is the colour of the piece.
 ///
 /// init_playground
 ///
 ///   Params:
-///
-///     state: &mut State
-///     playground position, loaded with an empty FEN oriented for the
-///     piece's own colour
-///
-///     index: PieceIndex
-///     piece the empty board is prepared for
+///   - state: &mut State -> playground position, gets an empty board
+///   - index: PieceIndex -> piece type of the board
 ///
 /// set_playground_piece
 ///
 ///   Params:
-///   - state : &mut State -> playground position the piece is placed on
-///   - index : PieceIndex -> piece type placed
-///   - square: Square     -> square it is placed on; its moves reload
+///   - state : &mut State -> playground position
+///   - index : PieceIndex -> piece type to place
+///   - square: Square     -> square of the piece, its moves reload
+///
+/// Notes:
+/// The two use `load_fen`, because the load derives the hashes, piece lists
+/// and material. Then they set the phase to opening, else one piece reads
+/// as an endgame.
+///
 fn init_playground(state: &mut State, index: PieceIndex) {
     let piece = &state.statics.pieces[index as usize];
     let color = p_color!(piece);
@@ -1062,15 +986,13 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
                                     DRAWING
 \*----------------------------------------------------------------------------*/
 
-/// TUI drawing functions, `draw_*` and `render`
+/// TUI drawing functions
 ///
-/// Each paints one region of the frame out of the current `Tui`. They share
-/// the shape (frame, area, app), never touch engine state, and read the
-/// snapshots rather than the positions behind them; the most any of them
-/// writes is a scroll offset. `render` lays the frame out and hands each
-/// region to whoever draws it. Every screen wears `draw_tabs` on top and
-/// `draw_input` along the bottom, with `draw_help_bar` hinting beside it
-/// and `draw_help_popup` laid over the lot on `?`.
+/// Each function draws one region of the frame from the current `Tui`. They
+/// read the snapshots, not the positions, and write at most a scroll
+/// offset. `render` makes the layout and calls the other functions. Each
+/// screen has `draw_tabs` at the top, `draw_input` at the bottom with
+/// `draw_help_bar`, and `draw_help_popup` on `?`.
 ///
 /// ```text
 /// Selection screen (draw_game_selection)
@@ -1134,65 +1056,45 @@ fn set_playground_piece(state: &mut State, index: PieceIndex, square: Square) {
 /// └────────────────────────────────┴─────────────┘
 /// ```
 ///
-/// Every member takes the same parameters, except `render`, which takes
-/// only `frame` and `app` and computes its own areas:
+/// - draw_game_selection : variant list and preview, sorted, no example
+/// - draw_tabs           : tab bar and the five verbosity levels
+/// - draw_input          : command line and the thread count window
+/// - draw_help_bar       : the current mode and its two main keys
+/// - draw_help_popup     : help overlay, keys page and commands page
+/// - draw_game_tab       : board, moves, details, FEN and log
+/// - draw_overview_tab   : variant config and derived piece data
+/// - draw_playground_tab : the moves of one piece on an empty board
+/// - render              : the layout, calls the other functions
 ///
-/// Params:
+/// draw_game_selection .. draw_playground_tab
+///
+///   Params:
 ///
 ///     frame: &mut Frame<'_>
-///     ratatui frame drawn into
+///     ratatui frame to draw into
 ///
 ///     area: Rect
-///     region of the frame allotted
+///     region of the frame
 ///
 ///     app: &Tui / &mut Tui
-///     interface state read, mutable only where scroll offsets or picks
-///     are updated
+///     interface state, mutable only to update scroll offsets or picks
+///
+/// render
+///
+///   Params:
+///   - frame: &mut Frame<'_> -> ratatui frame to draw into
+///   - app  : &mut Tui       -> interface state
 ///
 /// draw_game_selection
 ///
-///   The variant list, and a preview of whichever name is highlighted.
-///   Every embedded config is listed but the example, sorted by name.
-///   The highlighted one is written into the command line as the
-///   highlight moves, so enter loads what is showing.
-///
 ///   Return:
-///
-///     Option<Arc<Mutex<State>>>
-///     the chosen game once a variant is picked, None until then
-///
-/// draw_tabs
-///   the tab bar, and the log verbosity beside it as five numbers,
-///   with none of them lit when nothing is being logged
-///
-/// draw_input
-///   the command line, lit while it has the keyboard and dimmed while
-///   it has not, and the thread count beside it as a window of three
-///   that stops at one and at whatever the machine offers, up to eight
-///
-/// draw_help_bar
-///   one line under the command line naming the mode that has the
-///   keyboard and the two keys that matter most in it
-///
-/// draw_help_popup
-///   the help overlay, over an area cleared first so that nothing
-///   shows through. Two pages: the keys, under a guide naming every
-///   pane of the tab underneath, and the commands
-///
-/// draw_game_tab
-///   board, move history, detail rows, FEN, and the log
-///
-/// draw_overview_tab
-///   variant config and per-piece derived data
-///
-/// draw_playground_tab
-///   one piece's reachable squares on an empty board
-///
-/// render
-///   lays the frame out and hands each region to whoever draws it
+///   Option<Arc<Mutex<State>>> -> the chosen game, or None
 ///
 /// Notes:
-/// All members except `draw_game_selection` return `()`.
+/// The other functions return `()`. The selection writes the highlighted
+/// name into the command line, so enter loads it. The thread window shows
+/// three values, from one to the hardware count, maximum eight.
+///
 fn draw_game_selection(
     frame: &mut Frame<'_>, area: Rect, app: &mut Tui
 ) -> Option<Arc<Mutex<State>>> {
@@ -2585,22 +2487,18 @@ fn render(frame: &mut Frame<'_>, app: &mut Tui) {
 
 /// switch_protocol
 ///
-/// Reads a `protocol [name]` line and asks the interface to adopt what it
-/// names. A line naming nothing asks for no translator at all, which is
-/// the engine's own notation.
-///
-/// Shared by both dispatchers, the dialect being a property of the
-/// interface rather than of either board. It is announced rather than
-/// applied for the same reason: the interface holds the translator, and
-/// holds the board snapshot that has to be drawn again once moves start
-/// being written a different way.
-///
-/// A name is looked up against the loaded variant, so a line typed before
-/// anything is loaded is refused, and so is a name no dictionary answers.
+/// Reads a `protocol [name]` line and sends a `SwitchDict` event. Without a
+/// name, there is no translator, so the engine notation applies. The two
+/// dispatchers use it, because the interface keeps the translator.
 ///
 /// Params:
-/// - command: &str            -> the raw input line
-/// - variant: Option<String>  -> active variant name, needed to find a dialect
+/// - command: &str           -> the raw input line
+/// - variant: Option<String> -> loaded variant name, for the dictionary
+///
+/// Notes:
+/// The line is an error before a variant is loaded, or when no dictionary
+/// has the name.
+///
 fn switch_protocol(command: &str, variant: Option<String>) {
     let parts: Vec<_> = command.split_whitespace().collect();
 
@@ -2625,26 +2523,25 @@ fn switch_protocol(command: &str, variant: Option<String>) {
 
 /// execute_playground_command
 ///
-/// Interprets one line typed on the playground tab.
+/// Runs one line of the playground tab.
 ///
-/// - `reset`                : empties the board back to the first piece
-/// - `add <piece> <square>` : puts a piece there, by its letter
-/// - `del <square>`         : takes away whatever is on it
-/// - `protocol [name]`      : the notation, as everywhere else
+/// - `reset`                : empty board, first piece
+/// - `add <piece> <square>` : put a piece on the square, by its letter
+/// - `del <square>`         : remove the piece on the square
+/// - `protocol [name]`      : change the notation
 ///
-/// A piece is named by its board letter, so the letter's case picks the
-/// colour along with the type. Anything else is refused with the line it
-/// should have been, and an empty line is not refused at all.
-///
-/// The playground is a scratch board that shares nothing with the game but
-/// its variant tables, so none of these commands reads the game state and
-/// none of them can be made to wait on it. That is what lets the playground
-/// stay usable while a search, a match, or a tuning run owns the game.
+/// The letter case gives the colour. Another line gets a usage error. An
+/// empty line does nothing.
 ///
 /// Params:
 /// - command   : &str           -> the raw input line
 /// - playground: &mut State     -> the scratch position, already locked
-/// - variant   : Option<String> -> active variant name
+/// - variant   : Option<String> -> loaded variant name
+///
+/// Notes:
+/// The playground does not read the game state. Thus it works while a
+/// search, a match or a tuning run uses the game.
+///
 fn execute_playground_command(
     command: &str,
     playground: &mut State,
@@ -2717,42 +2614,40 @@ fn execute_playground_command(
 
 /// execute_command
 ///
-/// Interprets one line typed against the game.
+/// Runs one game command line.
 ///
-/// - `undo`                   : takes the last move back
-/// - `reset`                  : the starting position again
-/// - `ls`                     : every legal move there is, numbered
-/// - `see <move>`             : what a capture wins, by exchange
-/// - `fen <fen>`              : loads a position
-/// - `search [depth]`         : searches the one that is loaded
-/// - `play <depth> <time>`    : engine against itself, from here on
-/// - `perft <depth> [branch]` : counts the move tree, divided at the root
-/// - `move <move>`            : plays one
-/// - `protocol [name]`        : the notation moves are written in
-/// - `datagen <games> <time>` : self-play games, written out for tuning
-/// - `tune <epochs> [rate]`   : fits the evaluation to what was written
-/// - `sprt <a> <b> <control>` : two builds, played off against each other
+/// - `undo`                   : undo the last move
+/// - `reset`                  : go back to the start position
+/// - `ls`                     : list all legal moves, numbered
+/// - `see <move>`             : show the exchange result of a capture
+/// - `fen <fen>`              : load a position
+/// - `search [depth]`         : search the loaded position
+/// - `play <depth> <time>`    : self-play from this position
+/// - `perft <depth> [branch]` : count the move tree, divided at the root
+/// - `move <move>`            : play one move
+/// - `protocol [name]`        : change the notation
+/// - `datagen <games> <time>` : write self-play games for tuning
+/// - `tune <epochs> [rate]`   : fit the evaluation to the data
+/// - `sprt <a> <b> <control>` : match between two builds
 ///
-/// `sprt` takes a game count and the two Elo bounds after its control, and
-/// falls back to two thousand games between nought and five Elo.
-///
-/// The last four run for minutes or hours. They run here, on the worker
-/// thread the line was handed to, and say what they are doing through the
-/// engine sink, which is why the interface keeps drawing throughout and
-/// why the command line is locked until they are done.
-///
-/// Playground commands are not handled here. They go to
-/// `execute_playground_command`, which wants no game state and so never
-/// waits for one.
+/// `sprt` also accepts a game count and two Elo bounds. The defaults are
+/// 2000 games, 0 and 5 Elo.
 ///
 /// Params:
 /// - command   : &str                -> the raw input line
-/// - state     : &mut State          -> the live game state
+/// - state     : &mut State          -> the game state
 /// - variant   : Option<String>      -> variant name, for the long jobs
-/// - dict      : Option<&Translator> -> translator for printed move names
-/// - ttable    : Arc<TTable>         -> shared main table for searches
-/// - qtable    : Arc<QTable>         -> shared qsearch table for searches
-/// - threads   : usize               -> worker count for search commands
+/// - dict      : Option<&Translator> -> translator for the move text
+/// - ttable    : Arc<TTable>         -> shared main table
+/// - qtable    : Arc<QTable>         -> shared quiescence table
+/// - threads   : usize               -> number of search workers
+///
+/// Notes:
+/// The long jobs run on the worker thread of the line and report through
+/// the event sink. The interface keeps drawing, and the command line stays
+/// locked until they end. Playground lines go to
+/// `execute_playground_command`.
+///
 fn execute_command(
     command: &str,
     state: &mut State,
@@ -3075,10 +2970,9 @@ fn execute_command(
 
 /// CommandTarget
 ///
-/// Which board a submitted line acts on, and so which mutex its worker
-/// takes. The distinction is the whole reason the input lock is a branch
-/// gate rather than a guard: the playground shares nothing with the game
-/// but its variant tables, so only the game arm can be busy.
+/// The board of a submitted line, and thus the mutex of its worker. Only
+/// the game can be busy, so the input lock applies only to game lines.
+///
 enum CommandTarget {
     Playground(Arc<Mutex<State>>),                                              /* never gated, never waits           */
     Game(Arc<Mutex<State>>),                                                    /* gated, holds the lock until done   */
@@ -3090,43 +2984,36 @@ enum CommandTarget {
 
 /// handle_key
 ///
-/// Routes one keypress. Which mode has the keyboard decides almost
-/// everything: in one, keys are text; in the other, they are the whole
-/// interface.
+/// Handles one key press. The keyboard mode decides the action:
 ///
 /// - input mode
 ///   - any key : goes into the line
-///   - `Enter` : submits it
+///   - `Enter` : submits the line
 ///   - `Esc`   : back to normal mode
 /// - normal mode
-///   - `i`   : into input mode
-///   - `Tab` : the next tab, or the next help page over it
-///   - `←/→` : the next pane of this tab
-///   - `j/k` : scrolls that pane, `g`/`G` to either end
-///   - `n`   : back to the variant picker
-///   - `?`   : the help overlay, on and off
-///   - `{/}` : log verbosity, up and down
-///   - `[/]` : search threads, likewise
-///   - `q`   : quits
-///
-/// A submitted line is handed to a thread of its own, so that a search
-/// that takes an hour does not take the interface with it. Which board it
-/// is handed for decides whether anything is locked: a playground line
-/// never waits, a game line locks the command line until the worker says
-/// it is done, and a game line typed while one is already running is left
-/// in the box rather than thrown away, so that enter is all it takes to
-/// try again.
-///
-/// `abort` is the one line that is not a command. It raises the interrupt
-/// flag and returns, which is how a running job is stopped by an interface
-/// whose command line that job is holding.
+///   - `i`   : input mode
+///   - `Tab` : next tab, or next help page
+///   - `←/→` : next pane of this tab
+///   - `j/k` : scroll the pane, `g`/`G` to the ends
+///   - `n`   : back to the variant list
+///   - `?`   : help overlay on and off
+///   - `{/}` : log verbosity up and down
+///   - `[/]` : search threads up and down
+///   - `q`   : quit
 ///
 /// Params:
-/// - app  : &mut Tui -> the interface state to mutate
-/// - event: KeyEvent -> the key event to route
+/// - app  : &mut Tui -> the interface state to change
+/// - event: KeyEvent -> the key event
 ///
 /// Return:
-/// bool              -> true when the application should exit
+/// bool              -> true when the application must exit
+///
+/// Notes:
+/// A submitted line runs on its own thread. A playground line never waits.
+/// A game line locks the command line until its worker ends. A game line
+/// during a running job stays in the box. `abort` sets the interrupt flag
+/// to stop the running job.
+///
 fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
     if event.kind != KeyEventKind::Press {
@@ -3416,23 +3303,22 @@ fn handle_key(app: &mut Tui, event: KeyEvent) -> bool {
 
 /// run_debug_graphics
 ///
-/// Takes the terminal, runs the interface in it, and gives the terminal
-/// back. Everything the engine says goes to a channel while this is up,
-/// which is what makes the log pane possible: the sink is set on the way
-/// in and cleared on the way out.
+/// Takes the terminal, runs the interface and gives the terminal back.
+/// During the run, all engine events go to a channel.
 ///
-/// 1. the terminal goes into raw mode, and reports the mouse
-/// 2. the sink is set, so events arrive rather than print
-/// 3. the interface loop runs until a key says otherwise
-/// 4. sink cleared, mouse released, terminal restored
-/// 5. and only then is any failure reported
-///
-/// The order of the last two matters. A terminal left in raw mode is a
-/// terminal the user has to fix by hand, so restoring it comes before
-/// reporting anything, and both failures are held until it is back.
+/// 1. set raw mode and mouse capture
+/// 2. set the sink, so events do not print
+/// 3. run the interface loop until quit
+/// 4. clear the sink, release the mouse, restore the terminal
+/// 5. report any failure
 ///
 /// Return:
-/// IoResult<()> -> Ok on clean exit, Err on terminal I/O failure
+/// IoResult<()> -> Ok on a clean exit, Err on a terminal I/O failure
+///
+/// Notes:
+/// The terminal restore comes before the error report. A terminal in raw
+/// mode needs a manual fix.
+///
 pub fn run_debug_graphics() -> IoResult<()> {
     log_3!("Starting TUI...");
     let mut terminal = ratatui::init();

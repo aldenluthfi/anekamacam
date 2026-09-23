@@ -1,11 +1,10 @@
 //! prelude.rs
 //!
-//! Project-wide prelude for the anekamacam engine.
+//! Common prelude of the anekamacam engine.
 //!
-//! This file re-exports the most commonly used types, macros, and functions
-//! from the project for convenient use in all modules. Import this prelude
-//! to avoid repetitive imports and enable ergonomic access to core engine
-//! functionality. To use it, add `use crate::*;` at the top of the module.
+//! This file exports again the types, macros and functions that all
+//! modules use. It also has the shared constants, statics and the event
+//! sink. A module imports it with `use crate::*;`.
 //!
 //! Created: 25/02/2026
 //! Author : Alden Luthfi
@@ -217,19 +216,19 @@ pub use std::{
                                    CONSTANTS
 \*----------------------------------------------------------------------------*/
 
-/// Engine-wide constants.
+/// Engine constants
 ///
-/// Board and search bounds, colour and castling codes, and representation
-/// sentinels shared across otherwise independent subsystems. `MAX_SQUARES`
-/// sizes every Zobrist table and is therefore the real bound on a variant's
-/// board area, which [`BoardBits`] is chosen wider than; `MAX_DEPTH` bounds
-/// every per-ply array, and `PV_STRIDE` is one wider so a principal
-/// variation collected at the deepest ply still has a row to be copied
-/// into.
+/// Shared constants for board and search limits, colours, castling and
+/// empty values.
 ///
-/// The castling codes are one byte holding two different things: the four
-/// rights a position still has, and, above them, whether a side has already
-/// castled — a fact evaluation wants long after the rights are gone.
+/// - `MAX_SQUARES`     : length of the Zobrist tables, the board area limit
+/// - `MAX_PIECES`      : range of the 10-bit piece field, two per type
+/// - `MAX_PIECE_VALUE` : largest value of the 14-bit material field
+/// - `MAX_DEPTH`       : length of each array with one entry per ply
+/// - `PV_STRIDE`       : `MAX_DEPTH + 1`, a PV row also at the deepest ply
+///
+/// One castling byte has the four rights and, above them, the castled
+/// marks. Evaluation reads the marks after the rights are gone.
 ///
 /// ```text
 ///     7    6    5    4    3    2    1    0
@@ -239,52 +238,30 @@ pub use std::{
 ///             └─CASTLED┘└── CASTLE_RIGHTS ──┘
 /// ```
 ///
-/// `CASTLED` is written shifted left by the castling side's colour, so one
-/// constant serves both sides. Only the low four bits key
-/// `CASTLING_HASHES`; the marks above them are read by evaluation alone, so
-/// castling changes the key by the right it spends and never by the mark it
-/// leaves behind.
+/// - `WHITE`, `BLACK`           : colour codes, also the `CASTLED` shift
+/// - `WK_INDEX` .. `BQ_INDEX`   : slot index of each right
+/// - `WK_CASTLE` .. `BQ_CASTLE` : bit of each right, as in the diagram
+/// - `CASTLE_RIGHTS`            : the four right bits, keys of the hash
+/// - `CASTLED`                  : castled mark, shifted by the colour
 ///
-/// The four rights are spelled twice, once as positions and once as bits,
-/// because both readings are wanted and neither converts cheaply in a hot
-/// path:
+/// Each `NO_*` sentinel is the maximum of its type, so it is never a real
+/// index. A sentinel is never in a packed field.
 ///
-/// - `WHITE`, `BLACK`          : the colour codes, and the distance
-///                               `CASTLED` shifts by
-/// - `WK_INDEX` .. `BQ_INDEX`  : which right a slot holds, for whatever
-///                               stores one entry per right
-/// - `WK_CASTLE` .. `BQ_CASTLE`: those same four as the bits drawn above
+/// Notes:
+/// Derivation can give a value above `MAX_PIECE_VALUE` on a large board.
+/// Then it scales the full table down to fit.
 ///
-/// The sentinels are each the maximum of their own type rather than a
-/// shared magic number, so `NO_PIECE`, `NO_PAWN`, `NO_SQUARE`, and
-/// `NO_EN_PASSANT` stay out of the way of any real index a variant with a
-/// larger board or a longer piece list can produce. Both `NO_PIECE` and
-/// `NO_SQUARE` sit outside the packed fields that carry their values, and
-/// neither has to fit: a mailbox and a piece list are plain vectors, and
-/// nothing ever writes an absence into a bitfield to read it back.
-///
-/// `MAX_PIECE_VALUE` is the widest material value the piece record's
-/// fourteen-bit field can hold. Derivation prices a piece by how far it
-/// reaches, so a board wide enough eventually prices one past that; the
-/// table is squeezed to fit rather than overflowing, and every variant whose
-/// range already fits is left exactly as it was.
-///
-/// `MAX_PIECES` is the ten-bit piece field's width, and so both the most
-/// entries a variant may declare and the length of every table keyed by
-/// piece index. A variant spends two entries per type, one per colour. The
-/// Zobrist tables are cut to this length rather than to the piece list in
-/// front of them, so they cost the same whatever is loaded.
 pub const MAX_SQUARES: usize = 2048;
 pub const MAX_PIECES: usize = 1024;
 pub const MAX_PIECE_VALUE: u16 = 0x3FFF;
 pub const MAX_DEPTH: usize = 256;
 pub const PV_STRIDE: usize = MAX_DEPTH + 1;
 
-/// How many log lines the TUI's mirror queue keeps before dropping its
-/// oldest. The file on disk keeps everything; this is the copy held in
-/// memory for a pane to draw, and it needs an end. Loading taikyoku shogi
-/// writes some 78000 lines, none of which a reader will scroll back to,
-/// and every one of them would otherwise be held for the session.
+/// MAX_LOG_HISTORY
+///
+/// Maximum number of log lines in the console queue. The log file keeps
+/// all lines. A taikyoku shogi load writes about 78000 lines.
+///
 pub const MAX_LOG_HISTORY: usize = 1 << 16;
 
 pub const WHITE: u8 = 0;
@@ -298,10 +275,8 @@ pub const WK_CASTLE: u8 = 0b0001;
 pub const WQ_CASTLE: u8 = 0b0010;
 pub const BK_CASTLE: u8 = 0b0100;
 pub const BQ_CASTLE: u8 = 0b1000;
-pub const CASTLE_RIGHTS: u8 = 0b0000_1111;                                      /* the four bits CASTLING_HASHES is   */
-pub const CASTLED: u8 = 0b0001_0000;                                            /* keyed on; the two above them mark  */
-                                                                                /* a side that has already castled,   */
-                                                                                /* shifted left by its colour         */
+pub const CASTLE_RIGHTS: u8 = 0b0000_1111;                                      /* rights, keyed by CASTLING_HASHES   */
+pub const CASTLED: u8 = 0b0001_0000;                                            /* castled mark, shifted by colour    */
 
 pub const NO_PIECE: PieceIndex = PieceIndex::MAX;
 pub const NO_PAWN: usize = usize::MAX;
@@ -309,20 +284,22 @@ pub const NO_SQUARE: Square = Square::MAX;
 pub const NO_EN_PASSANT: u32 = u32::MAX;
 
 lazy_static! {
-    /// Process-wide lazy statics.
+    /// Process statics
     ///
-    /// The Zobrist tables (`*_HASHES`, `SIDE_HASHES`) are filled once from
-    /// the seeded RNG then stay read-only.
+    /// Statics for the full process. The seeded RNG fills the Zobrist
+    /// tables (`*_HASHES`) once. After that, they do not change.
     ///
-    /// The rest are shared runtime state:
+    /// - `ENGINE_START`      : origin of the engine time
+    /// - `SEED`              : `ANEKAMACAM_SEED` if set, else a time value
+    /// - `RNG`               : random generator from `SEED`
+    /// - `RUNTIME_VERBOSITY` : current log level
+    /// - `DEBUG_FLAG`        : true in the debug console
+    /// - `SYSTEM_INTERRUPT`  : set by the signal handler
+    /// - `LOG_MESSAGES`      : log queue of the debug console
+    /// - `ENGINE_SINK`       : sender of the active event sink
+    /// - `COMMENT_PATTERN`   : config comment regex
+    /// - `SECTION_PATTERN`   : config section regex
     ///
-    /// - `ENGINE_START` fixes the time origin
-    /// - `SEED` fixes all randomness: the `ANEKAMACAM_SEED` environment
-    ///   variable pins it for reproducible runs, unset falls back to a
-    ///   per-process time-based value; `RNG` draws from it
-    /// - `RUNTIME_VERBOSITY` / `DEBUG_FLAG` drive logging
-    /// - `SYSTEM_INTERRUPT` / `LOG_MESSAGES` bridge the signal handler and TUI
-    /// - `COMMENT_PATTERN` / `SECTION_PATTERN` are shared config-parse regexes
     pub static ref CASTLING_HASHES: [u128; 16] =
         array::from_fn(|_| random_u128());
     pub static ref COMMENT_PATTERN: Regex = Regex::new(r"//[^\n\r]*")
@@ -380,8 +357,9 @@ lazy_static! {
 
 /// EngineScore
 ///
-/// A search score as data, not a formatted string, so each consumer prints
-/// the `cp` / `mate` wording (and sign) in its own dialect.
+/// A search score as data, not as text. Each consumer writes the `cp` or
+/// `mate` form in its own notation.
+///
 pub enum EngineScore {
     CP(i32),                                                                    /* centipawn evaluation               */
     Mate(i32),                                                                  /* signed distance to mate, in moves  */
@@ -389,12 +367,14 @@ pub enum EngineScore {
 
 /// EngineEvent
 ///
-/// The one protocol- and render-agnostic message the whole engine
-/// broadcasts. Producers (search, sprt, datagen, derive, the protocol
-/// command loop) `emit` these; the single active frontend — a protocol
-/// printer thread, the debug TUI, or a headless printer — drains them and
-/// renders each variant however it wishes. Every field is owned so the event
-/// is `Send` across the worker-thread boundary.
+/// The message that the engine sends to the active frontend. It does not
+/// depend on a protocol or a display.
+///
+/// - producers : search, sprt, datagen, derive, the protocol command loop
+/// - consumers : protocol printer thread, debug console, headless printer
+///
+/// Each field is owned, so the event can go to other threads (`Send`).
+///
 pub enum EngineEvent {
     Info {                                                                      /* one iterative-deepening report     */
         hashfull: u64,
@@ -418,28 +398,29 @@ pub enum EngineEvent {
     Unlock,                                                                     /* release the TUI input lock         */
 }
 
-/// set_sink / clear_sink / emit
+/// Event sink functions
 ///
-/// The producer side of the broadcast. `set_sink` installs the channel the
-/// active frontend drains; `clear_sink` removes it on shutdown so a late emit
-/// after the receiver is gone is a silent no-op; `emit` sends one event to
-/// the installed sink if any. `emit` never blocks (the channel is unbounded)
-/// and never fails outward, so a producer deep in the search need not know or
-/// care whether anyone is listening.
+/// The producer side of the event channel. `emit` does not block and does
+/// not fail, so a producer does not have to know if a frontend listens.
+///
+/// - set_sink   : installs the channel of the active frontend
+/// - clear_sink : removes the channel, later events do nothing
+/// - emit       : sends one event to the channel, if there is one
 ///
 /// set_sink
 ///
 ///   Params:
-///   - sender: Sender<EngineEvent> -> the frontend's receiving channel
+///   - sender: Sender<EngineEvent> -> channel of the frontend
 ///
 /// clear_sink
 ///
-///   takes no parameters and returns nothing, the sink simply going away
+///   No parameters and no return value.
 ///
 /// emit
 ///
 ///   Params:
-///   - event : EngineEvent         -> the state to broadcast
+///   - event : EngineEvent         -> event to send
+///
 pub fn set_sink(sender: Sender<EngineEvent>) {
     *ENGINE_SINK.lock().unwrap() = Some(sender);
 }
@@ -456,18 +437,20 @@ pub fn emit(event: EngineEvent) {
 
 /// spawn_printer
 ///
-/// The single stdout writer for a text-protocol or headless run. Owns the
-/// receiving end of the event channel and, for every event, formats the
-/// engine's data into the protocol's line and flushes it, so search threads
-/// and the command loop share one ordered, race-free output path. `Board` and
-/// TUI-control events are ignored — those matter only to debug graphics,
-/// which installs its own receiver instead.
+/// Starts the only stdout writer of a protocol or headless run. It writes
+/// each event as a protocol line and flushes it. Thus all threads share one
+/// ordered output.
 ///
 /// Params:
-/// - receiver: Receiver<EngineEvent> -> events from every producer
+/// - receiver: Receiver<EngineEvent> -> events from all producers
 ///
 /// Return:
-/// JoinHandle<()>                    -> join to flush the tail on shutdown
+/// JoinHandle<()>                    -> join it to flush the last lines
+///
+/// Notes:
+/// The printer ignores `Board` and console events. The debug console has
+/// its own receiver.
+///
 pub fn spawn_printer(receiver: Receiver<EngineEvent>) -> JoinHandle<()> {
     thread::spawn(move || {
         for event in receiver {
@@ -503,13 +486,16 @@ pub fn spawn_printer(receiver: Receiver<EngineEvent>) -> JoinHandle<()> {
 
 /// with_stdout_sink
 ///
-/// Runs a headless body with a temporary stdout printer installed as the
-/// active sink, so `derive` / `tune` style tools that only `emit` still
-/// produce output. Installs the sink, runs `body`, then clears the sink and
-/// joins the printer so the final line flushes before returning.
+/// Runs a headless function with a temporary stdout printer as the sink.
+/// Thus tools such as `derive` and `tune`, which only `emit`, write output.
+///
+/// 1. install the sink and start the printer
+/// 2. run `body`
+/// 3. clear the sink and join the printer, so the last line flushes
 ///
 /// Params:
-/// - body: F -> the headless routine to run while the printer is live
+/// - body: F -> the headless function to run
+///
 pub fn with_stdout_sink<F: FnOnce()>(body: F) {
     let (sender, receiver) = channel::<EngineEvent>();
     set_sink(sender);
@@ -519,22 +505,22 @@ pub fn with_stdout_sink<F: FnOnce()>(body: F) {
     let _ = printer.join();
 }
 
-/// Null-move sentinels.
+/// Null move constructors
 ///
-/// `null_move` and `null_pseudo_move` build the all-ones sentinel values
-/// that mark "no move" in PV tables, killer slots, and TT entries. They
-/// are functions rather than constants because `Move` holds a non-const
-/// `Option<Arc<..>>` payload.
+/// Make the all-ones values that mean "no move" in PV tables, killer slots
+/// and hash entries. They are functions, because the `Option<Arc<..>>` of
+/// `Move` cannot be a constant.
 ///
 /// null_move
 ///
 ///   Return:
-///   Move -> all-ones sentinel move with no capture payload
+///   Move       -> all-ones move without capture data
 ///
 /// null_pseudo_move
 ///
 ///   Return:
 ///   PseudoMove -> all-ones packed move with a zero signature
+///
 pub fn null_move() -> Move {
     Move(!0u128, None)
 }
@@ -543,32 +529,27 @@ pub fn null_pseudo_move() -> PseudoMove {
     (!0u128, 0u64)
 }
 
-/// Shared move-format tags.
+/// Move type tags
 ///
-/// The low three bits of [`Move`]`.0` select which packed layout the rest of
-/// the word uses, and these are the five values that field can hold. They
-/// live here rather than beside the encoding because generation, ordering,
-/// make/undo, and every protocol formatter all branch on them; `moves.rs`
-/// carries the bit layout each one implies.
+/// Move type tags. The low three bits of [`Move`]`.0` select the packed
+/// layout of the word. `moves.rs` shows each layout.
 ///
-/// - `QUIET_MOVE`          : a piece moves, and nothing else happens
-/// - `SINGLE_CAPTURE_MOVE` : one victim, on the square landed on or beside
-/// - `MULTI_CAPTURE_MOVE`  : several, each with its own square and fate
-/// - `DROP_MOVE`           : a piece comes off a hand instead of a square
-/// - `CASTLING_MOVE`       : two pieces move, to squares the rule names
+/// - `QUIET_MOVE`          : a piece moves without capture
+/// - `SINGLE_CAPTURE_MOVE` : one captured piece
+/// - `MULTI_CAPTURE_MOVE`  : many captured pieces, each with its own square
+/// - `DROP_MOVE`           : a piece goes from the hand to the board
+/// - `CASTLING_MOVE`       : two pieces move, to squares that the rule gives
+///
 pub const QUIET_MOVE: u128 = 0;
 pub const SINGLE_CAPTURE_MOVE: u128 = 1;
 pub const MULTI_CAPTURE_MOVE: u128 = 2;
 pub const DROP_MOVE: u128 = 3;
 pub const CASTLING_MOVE: u128 = 4;
 
-/// Cardinal unit vectors, ordered clockwise from north.
+/// INDEX_TO_CARDINAL_VECTORS
 ///
-/// Move patterns name their directions by cardinal letter, and every
-/// rotation the parser applies is an index shift modulo eight, so this
-/// ordering is what lets a rotation be arithmetic instead of a table of
-/// special cases. Each entry is `(file, rank)` with east and north positive,
-/// read from the first player's side of the board.
+/// The eight unit vectors in clockwise order from north. Each entry is
+/// `(file, rank)`, with east and north positive, for the first player.
 ///
 /// ```text
 ///   ┌───────────┬───────────┬───────────┐
@@ -583,42 +564,38 @@ pub const CASTLING_MOVE: u128 = 4;
 ///   └───────────┴───────────┴───────────┘
 /// ```
 ///
-/// Adding `k` to an index modulo eight turns the vector 45·k degrees
-/// clockwise, which is how a variant reorients a piece's entire move set
-/// without restating any of it.
+/// The index plus `k`, modulo eight, turns the vector 45 * k degrees
+/// clockwise. The move parser uses this for all rotations.
+///
 pub const INDEX_TO_CARDINAL_VECTORS: [(i8, i8); 8] = [
     (0, 1), (1, 1), (1, 0), (1, -1),
     (0, -1), (-1, -1), (-1, 0), (-1, 1),
 ];
 
-/// Shared game-phase and result tags.
+/// Game phase and result tags
 ///
-/// The phase tags ascend in the order a game usually passes through them, but
-/// only `SETUP` is sticky: it is entered when a variant that places its own
-/// army starts with an unplaced royal, and is left, once and for good, on the
-/// move that empties both hands. The three remaining phases are a function of
-/// the position alone, decided by comparing the material-derived phase score
-/// against the variant's own two thresholds, so a variant with no endgame
-/// worth naming simply never crosses them.
-///
-/// A phase reached is not a phase kept. A promotion or a drop puts material
-/// back on the board and walks the phase back with it, which is what keeps
-/// the tag equal for equal positions: two orders of the same moves must not
-/// disagree about a board they both reach, because the transposition key
-/// carries no phase term and the evaluation branches on one.
+/// Game phase tags and game result tags.
 ///
 /// ```text
 ///   SETUP -- empty --> OPENING <--> MIDDLEGAME <--> ENDGAME
 ///     0                  1              2              3
 /// ```
 ///
-/// The result tags are absolute rather than side-relative, so a stored
-/// result means the same thing whichever side is to move when it is read:
+/// - `SETUP`   : a variant with a setup starts here, if a royal is in hand
+/// - `empty`   : the move that empties the two hands ends the setup
+/// - other     : the phase score and the two variant thresholds select it
 ///
-/// - `ONGOING`   : 0, nothing has ended the game yet
-/// - `DRAW`      : 1, however the rules spell one
+/// The phase depends only on the position. A promotion or a drop can move
+/// the phase back. The hash key has no phase, so equal positions must have
+/// equal phases.
+///
+/// The result tags do not depend on the side to move:
+///
+/// - `ONGOING`   : 0, the game did not end
+/// - `DRAW`      : 1, any draw
 /// - `BLACK_WIN` : 2
 /// - `WHITE_WIN` : 3
+///
 pub const SETUP: u8 = 0;
 pub const OPENING: u8 = 1;
 pub const MIDDLEGAME: u8 = 2;
@@ -629,22 +606,17 @@ pub const DRAW: u8 = 1;
 pub const BLACK_WIN: u8 = 2;
 pub const WHITE_WIN: u8 = 3;
 
-/// Shared search score bands and transposition bound tags.
+/// Search score constants
 ///
-/// `INF` sits outside every score the engine can produce, so `MATE_SCORE`
-/// can stand a full `MAX_DEPTH` below it and still leave every mate room to
-/// carry its distance in plies. `EVAL_NONE` reuses that same value as the
-/// "no static score describes this node" sentinel: a node in check writes
-/// it, and every reader of a stored evaluation tests for it before trusting
-/// what it read.
+/// Search score limits, move ordering bands and hash bound tags.
 ///
-/// Move ordering compares one integer, so each class of move owns a band
-/// that no member of a neighbouring class can reach into. A quiet move sums
-/// `HISTORY_TABLES` cells, each clamped to `HISTORY_BOUND`, so the quiet
-/// band has to be that many bounds wide on both sides of its centre.
-/// Killers sit one bound above the widest quiet score and losing captures
-/// one bound below the narrowest, which keeps the bands apart however full
-/// the tables are.
+/// - `INF`        : larger than all engine scores
+/// - `MATE_SCORE` : `INF - MAX_DEPTH`, room for the mate distance in plies
+/// - `EVAL_NONE`  : `INF`, "no static evaluation", written in check
+///
+/// Each move class has its own band. A quiet score is the sum of
+/// `HISTORY_TABLES` cells, each in `-HISTORY_BOUND..=HISTORY_BOUND`. Thus
+/// the bands never overlap:
 ///
 /// ```text
 ///   5_000_000            TABLE_MOVE_SCORE          table move
@@ -657,15 +629,15 @@ pub const WHITE_WIN: u8 = 3;
 ///           0            UNMAKEABLE_CAPTURE_SCORE  cannot be made at all
 /// ```
 ///
-/// where `b` is `HISTORY_BOUND` and `7b` is `2 * HISTORY_TABLES + 1` bounds,
-/// one clear of the widest quiet score the three tables can reach.
+/// `b` is `HISTORY_BOUND`. `7b` is `2 * HISTORY_TABLES + 1` bounds, one
+/// bound above the largest quiet score.
 ///
-/// The bound tags record how a stored score stood to the window it came out
-/// of, which is what decides whether a later probe may cut on it at all:
+/// The bound tags tell how a stored score relates to its search window:
 ///
-/// - `FALPHA` : an upper bound, no move here beat alpha
-/// - `FBETA`  : a lower bound, a move cut the node off before the rest
-/// - `FEXACT` : the value itself, the search having finished in the window
+/// - `FALPHA` : upper bound, no move was better than alpha
+/// - `FBETA`  : lower bound, a move caused a cutoff
+/// - `FEXACT` : exact value, inside the window
+///
 pub const INF: i32 = 2_000_000;
 pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 pub const EVAL_NONE: i32 = INF;
@@ -684,33 +656,28 @@ pub const FALPHA: u8 = 0;
 pub const FBETA: u8 = 1;
 pub const FEXACT: u8 = 2;
 
-/// Derivation and search constants read by multiple files.
+/// Derivation and search constants
 ///
-/// Every one of these is shared because a table is shaped from it in
-/// `parameters.rs` and then indexed by it in `search.rs` or
-/// `evaluation.rs`. Holding one copy is what stops the two sides drifting
-/// apart, which would read past a margin table or silently stop pruning:
+/// Derivation and search constants. `parameters.rs` sizes tables with them
+/// and `search.rs` or `evaluation.rs` index the tables with them. One copy
+/// keeps the two sides equal.
 ///
-/// - `COEFFICIENT_SCALE`     : denominator every derived coefficient is
-///                             held against, so real-valued derivation
-///                             lands in integers the hot path can use
-/// - `REDUCTION_MOVE_CAP`    : width of the reduction surface's move axis;
-///                             a later move saturates at the last column
-/// - `RFP_DEPTH`             : deepest depth reverse futility may prune at
-/// - `FUTILITY_DEPTH`        : deepest depth plain futility may prune at
-/// - `LMP_DEPTH`             : deepest depth late-move pruning may skip at
-/// - `SEE_PRUNE_DEPTH`       : deepest depth an exchange verdict may prune
-/// - `SHELTER_CAP`           : shelter units counted per royal before the
-///                             term stops paying, so a wall of pieces is
-///                             not worth more than a wall
-/// - `ZONE_ATTACK_UNIT`      : fraction of an expected landing one danger
-///                             entry counts in
-/// - `ZONE_ATTACK_FULL`      : landings that count as a fully attacked
-///                             royal zone; with the unit above it forms
-///                             the divisor the danger sum is normalized by
-/// - `SEARCH_REPETITION_CAP` : plies the repetition scan walks back
-/// - `REPETITION_CYCLE`      : occurrences that close one cycle, used when
-///                             no perpetual rule names an offender
+/// - `COEFFICIENT_SCALE`     : divisor that makes derived values integers
+/// - `REDUCTION_MOVE_CAP`    : move axis width of the reduction surface
+/// - `RFP_DEPTH`             : maximum depth of reverse futility pruning
+/// - `FUTILITY_DEPTH`        : maximum depth of futility pruning
+/// - `LMP_DEPTH`             : maximum depth of late move pruning
+/// - `SEE_PRUNE_DEPTH`       : maximum depth of exchange pruning
+/// - `SHELTER_CAP`           : maximum shelter units for each royal
+/// - `ZONE_ATTACK_UNIT`      : danger units for one expected attack
+/// - `ZONE_ATTACK_FULL`      : attacks for a fully attacked royal zone
+/// - `SEARCH_REPETITION_CAP` : plies that the repetition scan examines
+/// - `REPETITION_CYCLE`      : occurrences for one cycle, without perpetual
+///
+/// Notes:
+/// A move index above `REDUCTION_MOVE_CAP` uses the last column. The danger
+/// sum is divided by `ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL`.
+///
 pub const COEFFICIENT_SCALE: f64 = 1000.0;
 pub const REDUCTION_MOVE_CAP: usize = 64;
 pub const RFP_DEPTH: u32 = 6;
@@ -723,36 +690,39 @@ pub const ZONE_ATTACK_FULL: i32 = 16;
 pub const SEARCH_REPETITION_CAP: usize = 64;
 pub const REPETITION_CYCLE: u8 = 2;
 
-/// Shared protocol, storage, and debug constants.
+/// Protocol, storage and debug constants
 ///
-/// `*_DIR` are working-directory paths written to at runtime; `EMBEDDED_*`
-/// are the same resources baked in at compile time, read when the
-/// directory is absent, which is what lets a copied binary play every
-/// variant with no tree around it. `OPT_*` are the names `setoption`
-/// matches, and `HASH_DEFAULT_MB` / `HASH_MAX_MB` are the two ends of the
-/// range the `Hash` option is clamped into before a table is built from it.
+/// Protocol, storage and debug constants. The engine writes to the
+/// `*_DIR` paths at runtime. The `EMBEDDED_*` files are in the binary, so
+/// a copied binary plays all variants.
 ///
-/// - `DATA_DIR`         : self-play positions, per variant, for tuning
-/// - `PARAMS_DIR`       : what tuning wrote back, per variant
-/// - `LOG_DIR`          : this run's log, and the runs kept before it
-/// - `EMBEDDED_CONFIGS` : the rules of every variant the binary ships
-/// - `EMBEDDED_DICTS`   : their notation, one section per protocol
-/// - `EMBEDDED_PERFT`   : their move-count suites
-/// - `EMBEDDED_PARAMS`  : their tuned payloads, as shipped
+/// - `DATA_DIR`         : self-play positions for tuning, for each variant
+/// - `PARAMS_DIR`       : tuned parameters, for each variant
+/// - `LOG_DIR`          : log of this run and of earlier runs
+/// - `EMBEDDED_CONFIGS` : rules of each variant
+/// - `EMBEDDED_DICTS`   : notation dictionaries, one section per protocol
+/// - `EMBEDDED_PERFT`   : perft suites
+/// - `EMBEDDED_PARAMS`  : shipped tuned parameters
 ///
-/// - `OPT_THREADS`       : how many workers a search is given
-/// - `OPT_PROTOCOL`      : which dialect the session answers in
-/// - `OPT_PONDER`        : offered so a GUI may set it, acted on nowhere
-/// - `OPT_HASH`          : the shared tables' size in megabytes
-/// - `OPT_CLEAR_HASH`    : takes no value, and rebuilds them at that size
-/// - `OPT_MOVE_OVERHEAD` : milliseconds held back from every clock, for
-///                         whatever sits between engine and GUI
+/// The `OPT_*` names are the `setoption` names:
 ///
-/// `PAWN_TABLE_ENTRIES` is each worker's pawn-cache size at default Hash;
-/// other Hash values scale from it, then floor to a power of two for mask
-/// indexing. `OPENING_RANDOM_PLIES` is how many plies a
-/// self-play game is randomized for before real play starts, which is what
-/// keeps datagen and both halves of an SPRT pair off one single line.
+/// - `OPT_THREADS`       : number of search workers
+/// - `OPT_PROTOCOL`      : protocol dialect of the session
+/// - `OPT_PONDER`        : accepted for a GUI, but not used
+/// - `OPT_HASH`          : size of the shared tables in megabytes
+/// - `OPT_CLEAR_HASH`    : no value, makes new tables of the same size
+/// - `OPT_MOVE_OVERHEAD` : milliseconds kept back from each clock
+///
+/// Other constants:
+///
+/// - `HASH_DEFAULT_MB`      : default `Hash` value
+/// - `HASH_MAX_MB`          : maximum `Hash` value
+/// - `PAWN_TABLE_ENTRIES`   : pawn cache size for each worker at default Hash
+/// - `OPENING_RANDOM_PLIES` : random plies at the start of a self-play game
+///
+/// Notes:
+/// The pawn cache size scales with Hash and rounds down to a power of two.
+///
 pub const DATA_DIR: &str = "res/data";
 pub const PARAMS_DIR: &str = "res/param";
 pub const LOG_DIR: &str = "logs";

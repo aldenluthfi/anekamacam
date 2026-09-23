@@ -1,29 +1,25 @@
 //! piece.rs
 //!
-//! Defines piece representation and properties.
+//! Defines the piece type and its properties.
 //!
-//! Every variant describes its army as a list of piece types, and the rest
-//! of the engine refers to pieces only by index into that list. This file
-//! defines the `Piece` record behind those indices: a bit-packed bundle of
-//! the static attributes fixed by the config (identity, color, royalty,
-//! rank) and the dynamic attributes derived at startup (material values,
-//! role classes). Packing both into single words keeps the hot evaluation
-//! and generation paths on cheap mask-and-shift reads.
+//! Each variant has a list of piece types. The engine refers to a piece
+//! only by its index in this list. This file defines the `Piece` record.
+//! One packed word has the static data from the config. A second packed
+//! word has the values that derivation calculates at startup.
 //!
 //! Created: 25/01/2026
 //! Author : Alden Luthfi
 
 /// PieceIndex
 ///
-/// Index of a piece type in the variant's piece list, the engine's sole
-/// runtime identity for a piece. The top value (`NO_PIECE`) is reserved
-/// for "no piece" in mailbox boards and mapping tables.
+/// Index of a piece type in the piece list of the variant. The top value,
+/// `NO_PIECE`, means "no piece" in mailbox boards and mapping tables.
 ///
-/// The type is wider than the ten bits a packed word spends on an index,
-/// there being no ten-bit integer to name. Nothing needs the two to agree:
-/// an absence is only ever held in a mailbox or a mapping table, both plain
-/// vectors, so `NO_PIECE` never has to survive a trip through a bitfield.
-/// `MAX_PIECES` bounds what a config may declare, not what the type holds.
+/// Notes:
+/// A packed word has only 10 bits for an index. `NO_PIECE` is never in a
+/// packed word, so the wider type is safe. `MAX_PIECES` is the limit for a
+/// config, not for the type.
+///
 pub type PieceIndex = u16;
 
 /*----------------------------------------------------------------------------*\
@@ -32,16 +28,19 @@ pub type PieceIndex = u16;
 
 /// p_value!
 ///
-/// Returns the phase-interpolated material value of one piece type. Setup and
-/// opening use the opening value, endgame uses the endgame value, and
-/// middlegame linearly blends both values from the position phase score.
+/// Gives the material value of one piece type for the current phase.
+///
+/// - setup, opening : the opening value
+/// - endgame        : the endgame value
+/// - middlegame     : a linear blend of the two, from the phase score
 ///
 /// Params:
-/// - piece_index: PieceIndex -> piece type whose value is queried
-/// - state      : &State     -> position providing phase thresholds
+/// - piece_index: PieceIndex -> piece type to value
+/// - state      : &State     -> position with the phase thresholds
 ///
 /// Return:
 /// u32                       -> interpolated material value
+///
 #[macro_export]
 macro_rules! p_value {
     ($piece:expr, $state:expr) => {{
@@ -73,20 +72,17 @@ macro_rules! p_value {
                          PIECE BITFIELD REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-/// Piece bitfield accessor macros.
+/// Piece bitfield accessors
 ///
-/// These decode `Piece::encoded_static` and `Piece::encoded_dynamic` into
-/// readable attributes used throughout move generation and evaluation.
+/// Read one field of `Piece::encoded_static` or `Piece::encoded_dynamic`.
+/// The bit layouts are on [`Piece`].
 ///
-/// All take the same single parameter and read one field documented in
-/// the bit layouts on [`Piece`].
-///
-/// Static accessors (encoded_static):
+/// Static fields (encoded_static):
 ///
 /// p_index!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
 ///   PieceIndex      -> piece type index (bits 0-9)
@@ -94,65 +90,65 @@ macro_rules! p_value {
 /// p_color!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
-///   u8              -> owning side, 0 white / 1 black (bit 10)
+///   u8              -> side, 0 white and 1 black (bit 10)
 ///
 /// p_can_promote!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
-///   bool            -> whether the piece can promote (bit 11)
+///   bool            -> true when the piece can promote (bit 11)
 ///
 /// p_is_royal!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
-///   bool            -> whether the piece must be mated (bit 12)
+///   bool            -> true when the piece is royal (bit 12)
 ///
 /// p_rank!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
-///   u8              -> variant-defined capture rank (bits 13-20)
+///   u8              -> rank that the variant defines (bits 13-20)
 ///
-/// Dynamic accessors (encoded_dynamic):
+/// Dynamic fields (encoded_dynamic):
 ///
 /// p_is_big!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
-///   bool            -> big-piece role, royals excluded (bit 0)
+///   bool            -> big piece role, false for royals (bit 0)
 ///
 /// p_is_major!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
-///   bool            -> major-piece role, royals excluded (bit 1)
+///   bool            -> major piece role, false for royals (bit 1)
 ///
 /// p_is_minor!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
-///   bool            -> minor-piece role, royals excluded (bit 1 clear)
+///   bool            -> minor piece role, false for royals (bit 1 clear)
 ///
 /// p_ovalue!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
 ///   u16             -> opening material value (bits 2-15)
@@ -160,10 +156,11 @@ macro_rules! p_value {
 /// p_evalue!
 ///
 ///   Params:
-///   - piece: &Piece -> piece record read
+///   - piece: &Piece -> piece to read
 ///
 ///   Return:
 ///   u16             -> endgame material value (bits 16-29)
+///
 #[macro_export]
 macro_rules! p_index {
     ($piece:expr) => {
@@ -236,12 +233,10 @@ macro_rules! p_evalue {
 
 /// Piece
 ///
-/// One configured piece type and its derived evaluation attributes.
+/// One piece type from the config and its derived evaluation values. A
+/// variant can have a maximum of `MAX_PIECES` piece types.
 ///
-/// Piece indices range from 0 through 1022; a variant may declare no more
-/// than `MAX_PIECES` entries, which the piece list is asserted against.
-///
-/// Static data (`encoded_static`) is encoded in 32 bits:
+/// Static data (`encoded_static`) has 32 bits:
 ///
 /// ```text
 ///   0                  10 11 13              21                    31
@@ -252,13 +247,13 @@ macro_rules! p_evalue {
 /// ```
 ///
 /// - Bits 0..9     : piece index
-/// - Bit 10        : color, 0 = White and 1 = Black
-/// - Bit 11        : promotion capability
-/// - Bit 12        : royal status
-/// - Bits 13..20   : variant-defined rank
+/// - Bit 10        : colour, 0 = White and 1 = Black
+/// - Bit 11        : piece can promote
+/// - Bit 12        : piece is royal
+/// - Bits 13..20   : rank that the variant defines
 /// - Bits 21..31   : unused
 ///
-/// Dynamic data (`encoded_dynamic`) is encoded in 32 bits:
+/// Dynamic data (`encoded_dynamic`) has 32 bits:
 ///
 /// ```text
 ///   0 1 2                           16                          30  31
@@ -267,14 +262,12 @@ macro_rules! p_evalue {
 ///   └─┴─┴───────────────────────────┴───────────────────────────┴────┘
 /// ```
 ///
-/// - Bit 0         : big-piece role
-/// - Bit 1         : major-piece role; clear means minor when non-royal
+/// - Bit 0         : big piece role
+/// - Bit 1         : major piece role, clear means minor if not royal
 /// - Bits 2..15    : 14-bit opening material value
 /// - Bits 16..29   : 14-bit endgame material value
 /// - Bits 30..31   : unused
 ///
-/// The `promotions` field is a `Vec<PieceIndex>` listing the piece types this
-/// piece can promote to.
 #[derive(Clone)]
 pub struct Piece {
     pub name: String,                                                           /* display name of the piece          */
@@ -288,27 +281,26 @@ pub struct Piece {
 impl Piece {
     /// Piece::new
     ///
-    /// Builds a piece type from its config-file attributes, packing them
-    /// into `encoded_static` in the layout documented on [`Piece`]. The
-    /// dynamic word starts zeroed and is filled in later, once parameter
-    /// derivation has computed material values and role classes.
+    /// Makes a piece type from its config data and packs it into
+    /// `encoded_static`. The dynamic word starts at zero. Derivation
+    /// writes it later.
     ///
     /// Params:
     /// - name      : String          -> display name of the piece
-    /// - char      : char            -> FEN/board letter for the piece
-    /// - promotions: Vec<PieceIndex> -> piece types this can promote to
-    /// - index     : u8              -> index in the variant's piece list
-    /// - color     : u8              -> owning side (WHITE or BLACK)
-    /// - is_royal  : bool            -> whether this piece must be mated
-    /// - rank      : u8              -> variant-defined capture rank
+    /// - char      : char            -> FEN and board letter of the piece
+    /// - promotions: Vec<PieceIndex> -> piece types it can promote to
+    /// - index     : PieceIndex      -> index in the piece list
+    /// - color     : u8              -> side, WHITE or BLACK
+    /// - is_royal  : bool            -> true when the piece is royal
+    /// - rank      : u8              -> rank that the variant defines
     ///
     /// Return:
-    /// Self                          -> piece with its static word packed
+    /// Self                          -> piece with the packed static word
     ///
     /// Notes:
-    /// There is no promotion parameter. A piece can promote exactly when it
-    /// was given somewhere to promote to, so bit 11 is set from `promotions`
-    /// being non-empty and cannot disagree with the list it stands for.
+    /// Bit 11 is set when `promotions` is not empty, so the flag and the
+    /// list always agree.
+    ///
     pub fn new(
         name: String,
         char: char,

@@ -1,13 +1,11 @@
 //! vector.rs
 //!
-//! Implements move vector and leg representations for square-board variants.
+//! Defines the move vector and leg types.
 //!
-//! A piece's movement is more than a set of destinations: each step can move,
-//! capture, or be constrained in ways that vary by variant. This file defines
-//! the vocabulary those rules compile down to — the packed leg and atomic
-//! displacement words with their modifier bits, and the parse-tree types the
-//! movement-notation compiler builds on the way there — so generation reasons
-//! about movement uniformly across variants.
+//! Each step of a piece can move, capture or have a constraint, and these
+//! rules change between variants. This file defines the packed leg and
+//! displacement words with their modifier bits. It also defines the parse
+//! tree types of the move notation compiler.
 //!
 //! Created: 12/02/2026
 //! Author : Alden Luthfi
@@ -18,9 +16,10 @@ use crate::*;
                         MOVE GENERATION REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-/// Leg encoding/decoding helper macros used by move generation.
+/// Leg encoding and decoding macros
 ///
-/// A `Leg` is a packed `u32`:
+/// Pack and read the `Leg` word of move generation. A `Leg` is a packed
+/// `u32`:
 ///
 /// ```text
 ///   0               8               16                              31
@@ -33,10 +32,9 @@ use crate::*;
 /// - Bits 8..15    : signed rank displacement
 /// - Bits 16..31   : movement and capture modifiers
 ///
-/// The modifier half is [`LegVector`]'s modifier word moved down by 16
-/// bits, so a compiled leg keeps every rule the notation gave it while
-/// leaving the parse tree behind. Eleven of those bits assert a property
-/// and five deny one, each capital denying the lowercase of its letter:
+/// The modifier half is the modifier word of [`LegVector`], shifted down
+/// by 16 bits. Eleven bits require a property. Five bits deny one, and each
+/// capital letter denies its lowercase letter:
 ///
 /// ```text
 ///   16  18  20  22  24  26  28  30
@@ -46,12 +44,8 @@ use crate::*;
 ///   └─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┴─┘
 /// ```
 ///
-/// `t` and `p` have no negated bit because they grant a capability rather
-/// than constrain one: leaving them clear already says the leg cannot
-/// capture en passant, or does not create an en-passant square.
-///
-/// `leg!` packs a parsed `LegVector` into the compact `Leg`; the rest read
-/// one field each; [`LegVector`] documents all modifier meanings.
+/// `t` and `p` have no denial bit. They give a capability, so a clear bit
+/// already denies it. [`LegVector`] gives the meaning of each modifier.
 ///
 /// leg!
 ///
@@ -61,38 +55,43 @@ use crate::*;
 ///   Return:
 ///   Leg                      -> packed `u32` leg word
 ///
-/// Reader params (every reader):
-///
-/// - l: Leg -> packed leg word read
-///
 /// x!
 ///
+///   Params:
+///   - l: Leg -> packed leg word to read
+///
 ///   Return:
-///   i8 -> signed file delta (bits 0-7)
+///   i8       -> signed file delta (bits 0-7)
 ///
 /// y!
 ///
+///   Params:
+///   - l: Leg -> packed leg word to read
+///
 ///   Return:
-///   i8 -> signed rank delta (bits 8-15)
+///   i8       -> signed rank delta (bits 8-15)
 ///
-/// Every remaining reader returns `bool` for the single modifier bit its
-/// name spells, in the order the table above lays them out:
+/// m! .. not_r!
 ///
-/// - m! -> the leg may move
-/// - c! -> the leg may capture
-/// - d! -> the leg may destroy a friendly piece
-/// - u! -> the leg may unload a held piece
-/// - k! -> what it captures must be royal
-/// - v! -> what it captures must be virgin
-/// - g! -> what it captures must be of greater rank
-/// - t! -> the leg may capture en passant
-/// - p! -> the leg's start square becomes an en-passant square
-/// - i! -> the leg must be the piece's initial move
-/// - r! -> the leg must be used to promote
+///   Params:
+///   - l: Leg -> packed leg word to read
 ///
-/// The five remaining readers, `not_k!`, `not_v!`, `not_g!`, `not_i!` and
-/// `not_r!`, ask the same questions of the denial bits: each is true when
-/// the leg forbids what its lowercase demands.
+///   Return:
+///   bool     -> the modifier bit below
+///
+/// - m!     : the leg can move
+/// - c!     : the leg can capture
+/// - d!     : the leg can destroy an own piece
+/// - u!     : the leg can unload a captured piece
+/// - k!     : the captured piece must be royal
+/// - v!     : the captured piece must be unmoved
+/// - g!     : the captured piece must have a greater rank
+/// - t!     : the leg can capture en passant
+/// - i!     : the leg must be the first move of the piece
+/// - p!     : the start square of the leg becomes an en passant square
+/// - r!     : the leg must promote
+/// - not_k! : denial of `k`, and the same for not_v!, not_g!, not_i!, not_r!
+///
 #[macro_export]
 macro_rules! leg {
     ($l:expr) => {
@@ -230,49 +229,54 @@ macro_rules! not_r {
 
 /// Leg
 ///
-/// One packed movement leg used during generation and validation.
+/// One packed move leg for generation and validation. It has a signed
+/// displacement and the modifier flags, as in the layout on `leg!`.
 ///
-/// The word stores a signed displacement and modifier flags, matching the
-/// layout read by the leg accessors and written from [`LegVector`].
 pub type Leg = u32;
 
-/// MoveVector / MoveSet
+/// Move option types
 ///
-/// A `MoveVector` is one complete movement option: its ordered legs are
-/// visited from origin to destination. A `MoveSet` collects every option the
-/// movement-expression parser produced for one piece type.
+/// Move option types:
 ///
-/// A vector is shared rather than owned. The per-square tables keep, for
-/// every square, the options that stay on the board from there, which is
-/// nearly the whole set on most squares; owning them copied each option once
-/// per square it fits, and on a 36 by 36 board that was most of ten
-/// gigabytes. Nothing edits a vector after it is parsed, so every table can
-/// read the one copy.
+/// - `MoveVector` : one move option, its legs in order from the origin
+/// - `MoveSet`    : all move options of one piece type
+///
+/// Notes:
+/// A vector is shared, not owned. The table of each square keeps the
+/// options that stay on the board. With owned copies, a 36 by 36 board used
+/// almost ten gigabytes. No code changes a vector after the parse.
+///
 pub type MoveVector = Arc<[Leg]>;
 pub type MoveSet = Vec<MoveVector>;
 
 /// MoveVector queries
 ///
-/// Whole-vector predicates over a `MoveVector`, reading its ordered `Leg`s
-/// through the leg accessors above. Every member takes the same single
-/// parameter:
-///
-/// - vector: &MoveVector -> ordered legs of one movement option
+/// Tests on a full `MoveVector`. They read the legs with the leg macros.
 ///
 /// vector_offset!
 ///
+///   Params:
+///   - vector: &MoveVector -> legs of one move option
+///
 ///   Return:
-///   (i32, i32) -> net (file, rank) displacement, summing every leg
+///   (i32, i32)            -> net (file, rank) displacement of all legs
 ///
 /// vector_moves_quietly!
 ///
+///   Params:
+///   - vector: &MoveVector -> legs of one move option
+///
 ///   Return:
-///   bool -> whether the final leg plays as a quiet move
+///   bool                  -> true when the last leg can be a quiet move
 ///
 /// vector_is_initial!
 ///
+///   Params:
+///   - vector: &MoveVector -> legs of one move option
+///
 ///   Return:
-///   bool -> whether any leg is restricted to the first move
+///   bool                  -> true when a leg is for the first move only
+///
 #[macro_export]
 macro_rules! vector_offset {
     ($vector:expr) => {{
@@ -307,13 +311,14 @@ macro_rules! vector_is_initial {
                            MOVE PARSE REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 
-/// Multi-leg parse-tree types.
+/// Multi-leg parse tree types
 ///
-/// `MultiLegGroup` is the working stack of the multi-leg expression parser;
-/// each `MultiLegElement` on it is either an unparsed token, a bracketed
-/// subexpression (plain or slash-form), or an already-evaluated list of
-/// `MultiLegVector`s. A `MultiLegVector` is one fully resolved move option:
-/// the ordered `LegVector`s a piece traverses in a single multi-leg move.
+/// Parse tree types of the multi-leg expression parser.
+///
+/// - `MultiLegGroup`   : the work stack of the parser
+/// - `MultiLegElement` : a token, a bracket expression or a parsed result
+/// - `MultiLegVector`  : one resolved move option, its legs in order
+///
 pub type MultiLegGroup = VecDeque<MultiLegElement>;
 
 #[derive(Clone)]
@@ -343,7 +348,8 @@ pub type MultiLegVector = Vec<LegVector>;
 
 /// LegVector
 ///
-/// A 64-bit vector representation for leg move vectors.
+/// One parsed leg as a 64-bit word. It has the displacement and the
+/// modifier bits.
 ///
 /// Bits 0..31:
 ///
@@ -365,16 +371,16 @@ pub type MultiLegVector = Vec<LegVector>;
 /// ```
 ///
 /// - Bits 0..31 : whole `AtomicVector`
-/// - Bit 32     : `m`, may move
-/// - Bit 33     : `c`, may capture
-/// - Bit 34     : `d`, may destroy a friendly piece
-/// - Bit 35     : `u`, may unload
-/// - Bit 36     : `k`, capture must be royal
-/// - Bit 37     : `v`, capture must be virgin
-/// - Bit 38     : `g`, capture must have greater rank
-/// - Bit 39     : `t`, may capture en passant
-/// - Bit 40     : `i`, must be an initial move
-/// - Bit 41     : `p`, creates an en-passant square
+/// - Bit 32     : `m`, can move
+/// - Bit 33     : `c`, can capture
+/// - Bit 34     : `d`, can destroy an own piece
+/// - Bit 35     : `u`, can unload
+/// - Bit 36     : `k`, captured piece must be royal
+/// - Bit 37     : `v`, captured piece must be unmoved
+/// - Bit 38     : `g`, captured piece must have a greater rank
+/// - Bit 39     : `t`, can capture en passant
+/// - Bit 40     : `i`, must be a first move
+/// - Bit 41     : `p`, makes an en passant square
 /// - Bit 42     : `r`, must promote on this leg
 /// - Bit 43     : `K`, meaning `!k`
 /// - Bit 44     : `V`, meaning `!v`
@@ -383,34 +389,31 @@ pub type MultiLegVector = Vec<LegVector>;
 /// - Bit 47     : `R`, meaning `!r`
 /// - Bits 48..63: unused
 ///
-/// Main modifiers say what the leg may do:
+/// Main modifiers, what the leg can do:
 ///
-/// - `m` : move to the leg's end square
-/// - `c` : capture an enemy piece standing there
-/// - `d` : destroy, which is capturing a friendly piece standing there
-/// - `u` : unload, placing the last captured piece back on the board at
-///         the leg's start square
+/// - `m` : move to the end square of the leg
+/// - `c` : capture an enemy piece on that square
+/// - `d` : destroy, capture an own piece on that square
+/// - `u` : unload, put the last captured piece on the start square
 ///
-/// Capture constraints say what the captured piece must be:
+/// Capture constraints, what the captured piece must be:
 ///
 /// - `k` : royal
-/// - `v` : virgin, having never moved
-/// - `g` : of greater rank than the capturing piece
+/// - `v` : unmoved
+/// - `g` : of a greater rank than the capturing piece
 ///
-/// Leg constraints say when the leg may be used at all:
+/// Leg constraints, when the leg is legal:
 ///
-/// - `i` : only as the piece's initial move
-/// - `r` : only to promote, so the leg is valid only while its own start
-///         or end square lies in a promotion zone, and using it forces
-///         the completed move to be a promotion
+/// - `i` : only as the first move of the piece
+/// - `r` : only as a promotion, with its start or end in a promotion zone
 ///
-/// Two capabilities have no opposite to state:
+/// Capabilities without a denial bit:
 ///
-/// - `t` : this leg may capture en passant
-/// - `p` : this leg's start square creates an en-passant square
+/// - `t` : the leg can capture en passant
+/// - `p` : the start square of the leg becomes an en passant square
 ///
-/// Each of `k`, `v`, `g`, `i`, and `r` also has a denial bit, and all five
-/// pairs are read the same way:
+/// `k`, `v`, `g`, `i` and `r` each have a denial bit. All five pairs work
+/// the same way:
 ///
 /// ```text
 ///   ┌───────┬────────┬──────────────────────────────────────────┐
@@ -423,66 +426,53 @@ pub type MultiLegVector = Vec<LegVector>;
 ///   └───────┴────────┴──────────────────────────────────────────┘
 /// ```
 ///
-/// Rank is whatever the variant declares it to be; with no rank definition
-/// at all every piece has rank 0. The `g` pair compares with `>` and `<=`
-/// rather than `>=` and `<`, which keeps equal-rank captures legal by
-/// default while still letting a variant forbid capturing upward.
+/// The variant defines the rank. Without a rank definition, all pieces have
+/// rank 0. The `g` pair uses `>` and `<=`, so a capture of equal rank is
+/// legal by default.
 ///
-/// Setting both halves of a pair is defined for exactly one of them:
+/// When both bits of a pair are set:
 ///
-/// - `v!v`                      -> this leg bypasses forbidden zones
-/// - `k!k`, `g!g`, `i!i`, `r!r` -> undefined
+/// - `v!v`                      : the leg ignores forbidden zones
+/// - `k!k`, `g!g`, `i!i`, `r!r` : undefined
 ///
-/// Defaults:
-///
-/// A leg written with no modifier letters carries `m`, except the last leg
-/// of a vector, which carries `mc`: a piece that reaches the square it was
-/// aiming at is assumed to be able to take whatever stands on it.
-///
-/// Final notes:
-///
-/// - the capture constraints are only consulted on a leg that captures or
-///   destroys something, so putting them on a quiet leg says nothing
-/// - `mc!kvg` is a move/capture leg whose target must not be royal, must
-///   already have moved, and must not outrank the capturing piece
-/// - because capturing a royal piece is not legal, legs with the k flag are
-///   skipped during move-list generation but used when checking whether a
-///   square is attacked
+/// Defaults: a leg without modifier letters has `m`. The last leg of a
+/// vector has `mc`.
 ///
 /// Examples:
 ///
-/// - Xiangqi "Cannon" (`cdR-u#-nR`): capture/destroy as a rook then unload
-///   it back to that square (hopping), then continue in the same direction
-///   moving as a rook (non-hopping)
-/// - Xiangqi "King" (`W|kcnR`): move as a wazir, or capture/destroy a royal
-///   piece as a rook (the flying-generals rule)
-/// - Chu shogi "Rook" (`mR|rcR|c!rR`): the `r` pair is how a variant says a
-///   capture earns the promotion. One capture leg may only be played as a
-///   promotion and one only without, and since `r` is legal solely where
-///   the leg touches a zone, the two together mean "in the camp it is your
-///   choice, outside it never happens" — with no trigger of its own
-/// - Taikyoku shogi "Great general" (`<mcd!g[1357]K-*>`): a repeated
-///   capturing leg takes everything along the ray, and `!g` stops it at the
-///   first piece that outranks the mover, which is range capture
+/// - `mc!kvg`             : capture only a moved, not royal, lower piece
+/// - `cdR-u#-nR`          : xiangqi cannon, hop over a piece, then slide
+/// - `W|kcnR`             : xiangqi king, wazir or flying general capture
+/// - `mR|rcR|c!rR`        : chu shogi rook, capture in the zone promotes
+/// - `<mcd!g[1357]K-*>`   : taikyoku great general, range capture
+///
+/// The great general captures all pieces on the ray. `!g` stops it at the
+/// first piece of greater rank.
+///
+/// Notes:
+/// The capture constraints apply only to a leg that captures or destroys.
+/// A royal capture is not legal, so move generation skips `k` legs. The
+/// attack test uses them.
+///
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LegVector(u64);
 
 impl LegVector {
     /// LegVector::new
     ///
-    /// Packs an atomic displacement and a modifier string into the packed
-    /// leg representation documented on [`LegVector`].
+    /// Packs a displacement and a modifier string into a leg word, with the
+    /// layout on [`LegVector`].
     ///
     /// Params:
-    /// - atomic   : AtomicVector -> whole/last displacement pair
+    /// - atomic   : AtomicVector -> whole and last displacement pair
     /// - modifiers: &str         -> modifier letters, e.g. "mc!kv"
     ///
     /// Return:
     /// Self                      -> the packed leg vector
     ///
     /// Notes:
-    /// Invalid modifier characters panic in `parse_modifiers`; callers must
-    /// validate notation before constructing a leg.
+    /// A bad modifier letter causes a panic in `parse_modifiers`.
+    ///
     pub fn new(atomic: AtomicVector, modifiers: &str) -> Self {
         let bits = Self::parse_modifiers(modifiers);
         let atomic_bits = atomic.0 as u64;
@@ -492,15 +482,15 @@ impl LegVector {
 
     /// LegVector::parse_modifiers
     ///
-    /// Translates a modifier string into its bitmask: letters before the
-    /// `!` separator set positive-modifier bits, letters after it set the
-    /// corresponding negated bits.
+    /// Converts a modifier string into its bitmask. Letters before `!` set
+    /// the modifier bits. Letters after `!` set the denial bits.
     ///
     /// Params:
-    /// - mods: &str -> modifier letters with optional `!` separator
+    /// - mods: &str -> modifier letters with an optional `!`
     ///
     /// Return:
-    /// u16          -> modifier bitmask as laid out on [`LegVector`]
+    /// u16          -> modifier bitmask, as on [`LegVector`]
+    ///
     fn parse_modifiers(mods: &str) -> u16 {
         let mut bits = 0u16;
         let chars = &mut mods.chars();
@@ -539,11 +529,12 @@ impl LegVector {
 
     /// LegVector::get_modifiers_str
     ///
-    /// Reconstructs the human-readable modifier string ("mc!kv" style)
-    /// from the packed bits; the inverse of `parse_modifiers`.
+    /// Writes the modifier bits as a string, for example "mc!kv". This is
+    /// the inverse of `parse_modifiers`.
     ///
     /// Return:
-    /// String -> modifier letters, negations prefixed by a single `!`
+    /// String -> modifier letters, denials after one `!`
+    ///
     pub fn get_modifiers_str(&self) -> String {
         let mut s = "".to_string();
 
@@ -587,32 +578,31 @@ impl LegVector {
         s
     }
 
-    /// Packed-field accessors.
+    /// LegVector field accessors
     ///
-    /// `get_atomic` / `get_modifiers` read the two halves of the packed
-    /// word (atomic displacement low, modifier bits high), `as_tuple`
-    /// returns both halves, and `add_modifier` ORs extra modifier letters
-    /// into the current set.
+    /// Read the two halves of the leg word, or add modifier letters. The
+    /// low half is the displacement. The high half is the modifier bits.
     ///
     /// get_atomic
     ///
     ///   Return:
-    ///   AtomicVector -> displacement half (bits 0..31)
+    ///   AtomicVector        -> displacement half (bits 0..31)
     ///
     /// get_modifiers
     ///
     ///   Return:
-    ///   u16 -> modifier bits (bits 32..47)
+    ///   u16                 -> modifier bits (bits 32..47)
     ///
     /// as_tuple
     ///
     ///   Return:
-    ///   (AtomicVector, u16) -> both halves, displacement first
+    ///   (AtomicVector, u16) -> the two halves, displacement first
     ///
     /// add_modifier
     ///
     ///   Params:
-    ///   - modifier: &str -> modifier letters ORed into the current set
+    ///   - modifier: &str -> modifier letters to OR into the current set
+    ///
     pub fn get_atomic(&self) -> AtomicVector {
         AtomicVector((self.0 & 0xFFFF_FFFF) as u32)
     }
@@ -646,12 +636,14 @@ impl Debug for LegVector {
     }
 }
 
-/// Atomic parse-tree types.
+/// Atomic parse tree types
 ///
-/// Mirror of the multi-leg parse types one level down: `AtomicGroup` is the
-/// working stack of the atomic expression parser, and each `AtomicElement`
-/// on it is a token, a bracketed subexpression, or an evaluated list of
-/// `AtomicVector`s ready to be combined into legs.
+/// Parse tree types of the atomic expression parser, one level below the
+/// multi-leg types.
+///
+/// - `AtomicGroup`   : the work stack of the parser
+/// - `AtomicElement` : a token, a bracket expression or parsed vectors
+///
 pub type AtomicGroup = VecDeque<AtomicElement>;
 
 #[derive(Clone)]
@@ -673,43 +665,35 @@ impl Debug for AtomicElement {
 
 /// Token
 ///
-/// Lexical categories shared by the atomic and multi-leg tokenizers. Each
-/// variant wraps the raw source fragment so evaluation stages and Debug
-/// output can echo the original expression text unchanged.
+/// Token types of the atomic and multi-leg tokenizers. Each token keeps
+/// its source text, so later stages and Debug can show it.
 ///
 /// Grouping:
 ///
-/// - `BracketToken`      : `<` and `>`, a group whose net displacement
-///                         becomes the direction later legs continue in
-/// - `SlashBracketToken` : `</` and `/>`, the same grouping without that
-///                         rewrite, so later legs follow the group's own
-///                         final step
+/// - `BracketToken`      : `<` `>`, the net displacement sets the direction
+/// - `SlashBracketToken` : `</` `/>`, later legs follow the last step
 ///
-/// Modifiers, held pending until the term they qualify arrives:
+/// Modifiers, which wait for the term after them:
 ///
-/// - `MoveModifierToken` : a run of `mcdukvgtipr!` letters, added to the
-///                         branch's final leg
-/// - `CardinalToken`     : one of the eight compass names, keeping only
-///                         the branches that point that way
-/// - `FilterToken`       : `[n]`, keeping only the branches at those
-///                         1-based indices
+/// - `MoveModifierToken` : `mcdukvgtipr!` letters for the last leg
+/// - `CardinalToken`     : a compass name, keeps branches in that direction
+/// - `FilterToken`       : `[n]`, keeps the branches at those indices
 ///
 /// Bodies:
 ///
 /// - `LegToken`          : one leg of a multi-leg expression
-/// - `AtomicToken`       : one run of `K` atoms inside an atomic
-///                         expression
+/// - `AtomicToken`       : one sequence of `K` atoms
 ///
-/// Repetition and set arithmetic:
+/// Repetition and set operations:
 ///
-/// - `DotsToken`         : `...`, repeating the final leg once per dot,
-///                         each repetition its own runtime leg
-/// - `RangeToken`        : `{i..j}`, branching into every repetition
-///                         count the range allows
-/// - `ColonToken`        : `:{i..j}`, the same over the whole preceding
-///                         element rather than its final leg
-/// - `ExclusionToken`    : `@expr`, dropping every vector `expr`
-///                         produces from the result
+/// - `DotsToken`         : `...`, one more copy of the last leg for each dot
+/// - `RangeToken`        : `{i..j}`, one branch for each count in the range
+/// - `ColonToken`        : `:{i..j}`, the same for the full element before
+/// - `ExclusionToken`    : `@expr`, removes the vectors of `expr`
+///
+/// Notes:
+/// `FilterToken` indices start at 1.
+///
 #[derive(Clone)]
 pub enum Token {
     BracketToken(String),
@@ -751,9 +735,9 @@ impl Debug for Token {
 
 /// AtomicVector
 ///
-/// One displacement in the movement-notation compiler, packed into four
-/// signed bytes of a `u32`: `whole` is the total offset from the piece's
-/// origin, and `last` is the step that got it there.
+/// One displacement of the move notation compiler, as four signed bytes
+/// of a `u32`. `whole` is the total offset from the origin. `last` is the
+/// last step.
 ///
 /// ```text
 ///   0               8               16              24              31
@@ -767,29 +751,24 @@ impl Debug for Token {
 /// - Bits 16..23 : `last.x`
 /// - Bits 24..31 : `last.y`
 ///
-/// Carrying `last` is what lets repetition be expressed without the
-/// notation that produced the vector: `{2..5}` repeats a step the compiler
-/// no longer holds, and `add_last` recovers it from the vector itself.
-/// `origin` seeds the same field with a cardinal unit vector, so a
-/// direction-relative expression begins already pointing somewhere.
+/// `last` lets `{2..5}` repeat a step without the source notation.
+/// `add_last` reads it. `origin` sets it to a unit vector, so a relative
+/// expression starts with a direction.
+///
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtomicVector(u32);
 
 impl AtomicVector {
-    /// AtomicVector constructors and accessors.
+    /// AtomicVector constructors and accessors
     ///
-    /// `new` packs a (whole, last) displacement pair into the byte layout
-    /// documented on [`AtomicVector`]; `whole`, `last`, and
-    /// `as_tuple` unpack it; `set` and `set_last` overwrite components in
-    /// place. `origin(rotation)` builds the zero displacement
-    /// whose `last` field carries the cardinal unit vector of `rotation`,
-    /// seeding direction-relative expression expansion.
+    /// Make, read and write the packed displacement pair, with the layout
+    /// on [`AtomicVector`].
     ///
     /// new
     ///
     ///   Params:
-    ///   - whole: (i8, i8) -> full displacement, packed into bytes 0-1
-    ///   - last : (i8, i8) -> final-step displacement, bytes 2-3
+    ///   - whole: (i8, i8) -> full displacement, bytes 0-1
+    ///   - last : (i8, i8) -> last step displacement, bytes 2-3
     ///
     ///   Return:
     ///   Self              -> the packed displacement pair
@@ -797,10 +776,10 @@ impl AtomicVector {
     /// origin
     ///
     ///   Params:
-    ///   - rotation: i8 -> cardinal index selecting the unit vector
+    ///   - rotation: i8 -> cardinal index of the unit vector
     ///
     ///   Return:
-    ///   Self           -> zero displacement whose `last` is that unit vector
+    ///   Self           -> zero displacement, `last` is that unit vector
     ///
     /// whole
     ///
@@ -810,22 +789,23 @@ impl AtomicVector {
     /// last
     ///
     ///   Return:
-    ///   (i8, i8) -> final-step displacement (bytes 2-3)
+    ///   (i8, i8) -> last step displacement (bytes 2-3)
     ///
     /// set
     ///
     ///   Params:
-    ///   - other: &AtomicVector -> displacement copied wholesale
+    ///   - other: &AtomicVector -> displacement to copy
     ///
     /// set_last
     ///
     ///   Params:
-    ///   - last: (i8, i8) -> final-step displacement written to bytes 2-3
+    ///   - last: (i8, i8) -> last step displacement for bytes 2-3
     ///
     /// as_tuple
     ///
     ///   Return:
     ///   [(i8, i8); 2] -> [whole, last] displacement pair
+    ///
     pub fn new(whole: (i8, i8), last: (i8, i8)) -> Self {
         let x1 = (whole.0 as u8) as u32;
         let y1 = (whole.1 as u8) as u32;
@@ -868,19 +848,19 @@ impl AtomicVector {
 
     /// AtomicVector::add
     ///
-    /// Composes two displacements: the whole vectors are added with
-    /// saturation, and `last` becomes the other vector's whole unless that
-    /// is zero, in which case the current `last` direction is preserved.
+    /// Adds two displacements. The `whole` values add with saturation. The
+    /// new `last` is `other.whole()`, but if that is zero, `last` stays.
     ///
     /// Params:
-    /// - other: &AtomicVector -> displacement applied after `self`
+    /// - other: &AtomicVector -> displacement after `self`
     ///
     /// Return:
     /// AtomicVector           -> the combined displacement
     ///
     /// Notes:
-    /// A zero `other.whole()` is a direction marker, not a displacement.
-    /// Retaining `self.last()` keeps range expansion oriented correctly.
+    /// A zero `other.whole()` only marks a direction. Thus the range
+    /// expansion keeps the correct direction.
+    ///
     pub fn add(&self, other: &AtomicVector) -> AtomicVector {
         let (wx1, wy1) = self.whole();
         let (wx2, wy2) = other.whole();
@@ -897,15 +877,15 @@ impl AtomicVector {
 
     /// AtomicVector::add_last
     ///
-    /// Extends the displacement along its own `last` direction by the
-    /// given multiple — the primitive behind range repetition such as
-    /// `{2..5}` in move expressions.
+    /// Extends the displacement by a multiple of its `last` step. Range
+    /// repetition, for example `{2..5}`, uses it.
     ///
     /// Params:
-    /// - multiple: i8 -> how many additional `last` steps to take
+    /// - multiple: i8 -> number of `last` steps to add
     ///
     /// Return:
     /// AtomicVector   -> extended displacement, `last` unchanged
+    ///
     pub fn add_last(&self, multiple: i8) -> AtomicVector {
         let (wx1, wy1) = self.whole();
         let (lx2, ly2) = self.last();

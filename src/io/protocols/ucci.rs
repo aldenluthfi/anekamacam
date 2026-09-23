@@ -1,13 +1,11 @@
 //! ucci.rs
 //!
-//! The Universal Chinese Chess Interface (UCCI) dialect.
+//! Universal Chinese Chess Interface (UCCI) dialect.
 //!
-//! UCCI shares the whole session engine; the `ucci`/`ucciok` handshake and
-//! the `fen` position keyword fall out of the common dispatcher. What
-//! differs is the `go` line: UCCI states the side-to-move's clock directly
-//! as `time`/`increment` rather than UCI's `wtime`/`btime` split. This file
-//! translates that into the standard clock tokens the shared parser expects,
-//! keeping the dialect out of the engine core.
+//! The shared dispatcher already handles the `ucci`/`ucciok` handshake and
+//! the `fen` position keyword. Only the `go` line is different. UCCI gives
+//! the clock of the side to move as `time` and `increment`. This file
+//! translates these into the standard clock tokens of the shared parser.
 //!
 //! Created: 19/07/2026
 //! Author : Alden Luthfi
@@ -20,50 +18,48 @@ use crate::*;
 
 /// Ucci
 ///
-/// The UCCI dialect marker. Stateless: the session lives in the shared
-/// `Session`, and UCCI intercepts only its `go` line.
+/// Marker type for the UCCI dialect. It has no state. The shared `Session`
+/// keeps the state, and this type changes only the `go` line.
+///
 pub struct Ucci;
 
 impl Protocol for Ucci {
     /// Ucci::name
     ///
-    /// Names the dialect. The common dispatcher builds `ucci`/`ucciok` and
-    /// picks the dictionary section from this string, so the handshake and
-    /// the xiangqi notation both follow from the one word.
+    /// Gives the dialect name. The dispatcher uses it to make the `ucci` and
+    /// `ucciok` handshake words and to select the dictionary section.
     ///
     /// Return:
     /// &str -> the protocol name, "ucci"
+    ///
     fn name(&self) -> &str {
         "ucci"
     }
 
     /// Ucci::execute
     ///
-    /// Handles the one line the universal loop defers to UCCI: `go`, there
-    /// being no new-game command in the dialect. UCCI states only the moving
-    /// side's clock, so the rewrite hands the same figure to both colours and
-    /// lets `start_search` pick whichever one it was going to read.
+    /// Handles `go`, the only line that the shared loop defers to UCCI.
+    /// UCCI has no new game command. UCCI gives only the clock of the side
+    /// to move, so the function gives this clock to the two colours.
     ///
-    /// - `time t`      : `wtime t btime t`
-    /// - `increment i` : `winc i binc i`
-    /// - `movestogo`   : kept, and so are depth, nodes, movetime
-    /// - `ponder`      : kept, and so is infinite, neither taking a value
-    /// - `opptime`     : dropped with its value, as are oppincrement,
-    ///                   oppmovestogo, and mate
-    /// - `draw`        : dropped, along with any other bare advisory flag
+    /// - `time t`       : `wtime t btime t`
+    /// - `increment i`  : `winc i binc i`
+    /// - `movestogo n`  : kept, also `depth`, `nodes` and `movetime`
+    /// - `ponder`       : kept, also `infinite`
+    /// - `opptime t`    : removed, also `oppincrement`, `oppmovestogo`, `mate`
+    /// - `draw`         : removed, also all other flags without a value
     ///
-    /// Giving both colours the same clock is safe precisely because only one
-    /// of the two is ever consulted, and the opponent's figures are dropped
-    /// rather than filled in for the same reason. The walk steps by two over
-    /// value-bearing words and by one over flags, so a dropped clause takes
-    /// its value with it instead of leaving a stray number behind.
+    /// The search reads only the clock of the side to move, so the copy is
+    /// safe. The loop skips two tokens for a word with a value and one token
+    /// for a flag. Thus a removed word also removes its value.
     ///
     /// Params:
     /// - session: &mut Session -> the session the line acts on
-    /// - tokens : &[&str]      -> the whitespace-split input line
+    /// - tokens : &[&str]      -> the input line, split on whitespace
     ///
     /// Return:
-    /// bool                    -> always false; UCCI never quits from here
+    /// bool                    -> always false, UCCI does not quit here
+    ///
     fn execute(
         &self,
         session: &mut Session,

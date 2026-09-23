@@ -1,13 +1,11 @@
 //! move_ordering.rs
 //!
-//! Static exchange evaluation and move scoring for search-time ordering.
+//! Static exchange evaluation and move scores for move ordering.
 //!
-//! Alpha-beta is paid for in move order: the move that cuts should be tried
-//! first, and everything behind it should be cheap to reject. This file says
-//! what a move is worth before it is searched — a capture by playing the
-//! whole exchange out on the board, a quiet move by what the killer and
-//! history tables remember of it — and hands the search one move at a time,
-//! since most nodes never ask for the rest of the list.
+//! Alpha-beta is fast when the move that cuts comes first. This file gives
+//! each move a score before the search. A capture gets the result of the
+//! exchange on the board. A quiet move gets its killer and history values.
+//! The search gets one move at a time, because most nodes cut early.
 //!
 //! Created: 19/04/2026
 //! Author : Alden Luthfi
@@ -18,47 +16,45 @@
 
 /// SEE helper macros
 ///
-/// The three things an exchange simulation needs: what the mover is worth,
-/// what it takes, and who else can reach the square.
+/// Helpers for the exchange simulation. They give the value of the moving
+/// piece, the value of the captured pieces and the next attackers.
 ///
-/// - attack_value! : the moving piece, or what it promotes into
-/// - victim_value! : what the move wins, less what it costs its own side
-/// - lva!          : every legal capture onto one square, cheapest last
-///
-/// A move may take more than one piece, so the victim side is a sum rather
-/// than a lookup, and a piece a move merely puts down is not a piece it took.
-/// A destroying leg takes the mover's own piece, which is a loss and not a
-/// gain, so each record's own flag signs its term: a sweep that burns more
-/// of its own army than it wins prices as the loss it is.
-/// `lva!` sorts descending and the caller pops from the back, which is what
-/// makes the least valuable attacker the next one to try.
+/// - attack_value! : value of the moving piece, or of its promotion
+/// - victim_value! : value that the move wins, minus own pieces it removes
+/// - lva!          : all legal captures on one square, cheapest last
 ///
 /// attack_value!
 ///
 ///   Params:
-///   - mv   : &Move  -> move whose attacker is priced
-///   - state: &State -> position providing piece values
+///   - mv   : &Move  -> move with the attacker to value
+///   - state: &State -> position with the piece values
 ///
 ///   Return:
-///   i32 -> attacker value, promoted value for promotions
+///   i32             -> attacker value, promoted value for promotions
 ///
 /// victim_value!
 ///
 ///   Params:
-///   - mv   : &Move  -> capture move whose victims are priced
-///   - state: &State -> position providing piece values
+///   - mv   : &Move  -> capture move with the victims to value
+///   - state: &State -> position with the piece values
 ///
 ///   Return:
-///   i32 -> enemy pieces taken less own pieces destroyed, unloads skipped
+///   i32             -> enemy value taken minus own value, unloads skipped
 ///
 /// lva!
 ///
 ///   Params:
-///   - state  : &State         -> position providing attacks and board
-///   - target : Square         -> exchange target square
-///   - color  : u8             -> side owning the target piece
-///   - out    : &mut Vec<Move> -> generated candidate captures
-///   - scratch: &mut Vec<u64>  -> multi-capture payload scratch
+///   - state  : &State         -> position with the attacks and the board
+///   - target : Square         -> target square of the exchange
+///   - color  : u8             -> side of the target piece
+///   - out    : &mut Vec<Move> -> list that gets the captures
+///   - scratch: &mut Vec<u64>  -> scratch for multi-capture data
+///
+/// Notes:
+/// A move can capture many pieces, so `victim_value!` adds them. A capture
+/// of an own piece counts as a loss. `lva!` sorts in descending order, and
+/// the caller pops from the back, so the least valuable attacker is next.
+///
 #[macro_export]
 macro_rules! attack_value {
     ($mv:expr, $state:expr) => {{
@@ -140,55 +136,37 @@ macro_rules! lva {
 
 /// see!
 ///
-/// Evaluates a capture sequence on one target square. Positive scores win
-/// material; negative scores lose material. Position is restored on return.
+/// Evaluates the capture sequence on one target square. A positive score
+/// wins material. The macro restores the position before it returns.
 ///
-/// The square is fought over until neither side has an attacker left, each
-/// ply taking with its cheapest one, and the running balance is written down
-/// from the side that moved at that ply:
+/// Each side captures with its cheapest attacker until no attacker is
+/// left. Each entry is the balance for the side that moved at that ply:
 ///
-/// - `gain[0]` : what the first capture takes
-/// - `gain[1]` : the attacker it left there, less `gain[0]`
-/// - `gain[n]` : the same again, one ply deeper each time
+/// - `gain[0]` : value of the first capture
+/// - `gain[1]` : value of the first attacker, minus `gain[0]`
+/// - `gain[n]` : the same, one ply deeper each time
 ///
 /// ```text
 /// backward  gain[i - 1] = -max(-gain[i - 1], gain[i])
 /// ```
 ///
-/// The backward pass is where declining enters. A side is never obliged to
-/// recapture, so reading from the last ply to the first keeps, at each step,
-/// the better of taking and standing still, and `gain[0]` comes out as what
-/// the exchange is worth to whoever started it against best play.
-///
-/// The sequence is capped at the array's length. A square fought over by
-/// more than that many pieces is scored on the part that fit, which orders
-/// no worse than a position nobody will reach in a real game.
-///
-/// The candidate list and its multi-capture payload are the state's own
-/// [`Scratch`] rather than a fresh allocation. Every scored capture runs
-/// this once, so the pair was being asked of the allocator and handed
-/// straight back hundreds of thousands of times a search, for two vectors
-/// that carry nothing between calls.
-///
-/// The two are taken out and put back because the body makes and unmakes
-/// moves on the same state, and a field borrow held across `make_move!` is
-/// a borrow of the entire position. Only the vectors move, never the whole
-/// [`Scratch`]: its `Default` allocates a pawn table, which a take would
-/// build and drop once per scored capture.
+/// A side does not have to recapture. The backward pass keeps the better
+/// result of capture or no capture at each ply. `gain[0]` is the result
+/// for the first side with best play.
 ///
 /// Params:
-/// - state: &mut State -> position simulated and restored
-/// - mv   : &Move      -> capture move evaluated
+/// - state: &mut State -> position to simulate and restore
+/// - mv   : &Move      -> capture move to evaluate
 ///
 /// Return:
-/// i32 -> net material gain for moving side
+/// i32                 -> net material gain for the side to move
 ///
 /// Notes:
-/// A move that cannot legally be made at all returns `-INF` rather than a
-/// number, which the scorer turns into the lowest band there is. The
-/// simulation makes and unmakes real moves, so illegality is discovered the
-/// same way the search discovers it, and the position is left exactly as it
-/// was however early the sequence ended.
+/// An illegal first move gives `-INF`. The sequence stops at the array
+/// length. The move list and data vectors come from [`Scratch`], so there
+/// is no allocation. The macro takes out only the two vectors, because
+/// `make_move!` borrows the full state.
+///
 #[macro_export]
 macro_rules! see {
     ($state:expr, $mv:expr) => {
@@ -284,42 +262,34 @@ macro_rules! see {
 
 /// score_move!
 ///
-/// Returns one ordering score, larger meaning searched sooner.
+/// Gives one ordering score. The search tries a larger score first. The
+/// bands, from high to low:
 ///
-/// - table move         : the move that already worked here
-/// - winning capture    : by the exchange simulation, or by the plain swing
+/// - table move         : the stored move of the hash table
+/// - winning capture    : exchange result or simple swing, 0 or more
 /// - killer             : two quiet moves that cut at this ply before
-/// - quiet              : centre score plus what the history tables say
-/// - losing capture     : still played, but after every quiet move
-/// - unmakeable capture : the simulation could not even make it
+/// - quiet              : quiet band plus the history values
+/// - losing capture     : exchange result or simple swing, below 0
+/// - unmakeable capture : the exchange simulation cannot make the move
 ///
-/// The bands themselves live in the prelude, spaced so that the widest
-/// history score a quiet move can reach still lands under the lowest killer,
-/// which is what keeps a band from bleeding into its neighbour.
+/// The quiet history is the butterfly cell plus one continuation cell for
+/// each earlier move of this node. The prelude spaces the bands, so the
+/// largest history is always below the lowest killer.
 ///
-/// A quiet move's history is the butterfly cell plus one continuation cell
-/// per ply this node has a move to answer. The butterfly cell says the move
-/// worked somewhere; a continuation cell says it worked as the reply to the
-/// move actually on the board, which is the narrower claim and the one worth
-/// ordering by when the node has one.
-///
-/// A capture is priced by the exchange simulation only where the variant's
-/// rules leave that simulation meaning what it says: the swing has to be the
-/// currency, and the attackers of a square must not depend on who is standing
-/// nearby. Elsewhere the price is the plain difference between what the move
-/// takes and what it risks, which claims less and stays inside the same score
-/// bands, so every reader downstream keeps reading winning and losing the
-/// same way.
+/// The exchange simulation applies only if `see_valid!` and
+/// `static_movement!` are true for the variant. Else, the score is the
+/// victim value minus the attacker value.
 ///
 /// Params:
-/// - state     : &mut State          -> position the move is scored on
+/// - state     : &mut State          -> position of the move
 /// - info      : &SearchInfo         -> killer and history tables
 /// - mv        : &Move               -> move to score
 /// - table_move: &Option<PseudoMove> -> stored table move for this node
 /// - cont_bases: &[usize]            -> continuation rows for this node
 ///
 /// Return:
-/// usize -> ordering score, larger searched earlier
+/// usize                             -> ordering score, larger is earlier
+///
 #[macro_export]
 macro_rules! score_move {
     (
@@ -384,33 +354,30 @@ macro_rules! score_move {
 
 /// pick_by_score!
 ///
-/// Brings the best remaining move to `index`, one selection pass per move
-/// the search actually asks for. Sorting the list would price every move in
-/// it; a node that cuts on its second move should pay for two.
+/// Moves the best remaining move to `index`. The macro does one selection
+/// pass for each move that the search asks for, not a full sort. Thus a
+/// node that cuts early does not score all moves.
 ///
 /// ```text
-/// index 0   [ . . . . . . ]  score them all, swap the best to the front
-/// index 1   [x . . . . . ]   score the rest, swap the best to slot one
-/// cut here  [x x . . . . ]   the tail is never scored, let alone searched
+/// index 0   [. . . . . .]  score all, swap the best to slot 0
+/// index 1   [x . . . . .]  score the rest, swap the best to slot 1
+/// cut here  [x x . . . .]  the rest is never scored
 /// ```
 ///
-/// Scores live in a vector beside the moves, `usize::MAX` marking a slot not
-/// yet priced, so a move that survives several passes is priced once. That
-/// matters most for captures, where a price means running the whole exchange
-/// simulation over the board.
-///
-/// The table move short-circuits both halves. It is swapped to the front on
-/// the first call and given the band above everything else, so while it holds
-/// the slot no other move is scored at all.
-///
 /// Params:
-/// - state     : &mut State          -> position used for scoring
+/// - state     : &mut State          -> position for the scores
 /// - info      : &SearchInfo         -> killer and history tables
-/// - moves     : &mut Vec<Move>      -> move list reordered in place
-/// - scores    : &mut Vec<usize>     -> lazily filled score cache
-/// - index     : usize               -> slot receiving best remaining move
+/// - moves     : &mut Vec<Move>      -> move list, reordered in place
+/// - scores    : &mut Vec<usize>     -> score cache, filled when necessary
+/// - index     : usize               -> slot that gets the best move
 /// - table_move: &Option<PseudoMove> -> stored table move for this node
 /// - cont_bases: &[usize]            -> continuation rows for this node
+///
+/// Notes:
+/// `usize::MAX` marks a score that is not calculated yet, so each move gets
+/// one score only. On the first call, the table move goes to slot 0. While
+/// it is there, no other move gets a score.
+///
 #[macro_export]
 macro_rules! pick_by_score {
     (

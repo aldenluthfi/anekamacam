@@ -1,12 +1,11 @@
 //! drop_list.rs
 //!
-//! Generates legal drop moves and relevant drop templates.
+//! Generates drop moves and the drop templates of each square.
 //!
-//! Shogi-family variants let a captured piece re-enter from hand. This file
-//! turns the compiled drop templates into concrete, legal placements: it
-//! prunes templates against board bounds and forbidden zones per square, and
-//! at generation time enforces the drop flags, hand counts, and the
-//! allower/stopper neighbourhood patterns each placement requires.
+//! In some variants a player can drop a captured piece from the hand. At
+//! precompute time, this file removes templates that go off the board or
+//! into a forbidden zone. At move generation, it tests the hand count, the
+//! drop flags and the allower and stopper patterns.
 //!
 //! Created: 18/02/2026
 //! Author : Alden Luthfi
@@ -15,26 +14,19 @@ use crate::*;
 
 /// generate_relevant_drops
 ///
-/// Anchors a piece's compiled drop templates on one target square, stamping
-/// that square into each packed word and re-reading every pattern offset from
-/// where it now points. Offsets are mirrored by the dropped piece's colour
-/// first, so the pattern is judged in the orientation it will be matched in.
+/// Puts the compiled drop templates of a piece on one target square. The
+/// function writes the square into each drop word. Then it tests each
+/// pattern offset, mirrored for the colour of the piece.
 ///
-/// The two halves of a pattern fall off the board differently, and the
-/// difference is not a shortcut but the meaning of each half:
+/// - allower off the board : the drop is never legal, remove the template
+/// - stopper off the board : the stopper never matches, remove the stopper
 ///
-/// - an allower that points off the board asks for a piece on a square that
-///   does not exist, so the drop can never be legal here and is dropped
-/// - a stopper that points off the board vetoes on a square that does not
-///   exist, so it can never fire and is dropped while the drop survives
+/// Example with one template on the top rank:
 ///
-/// One template anchored on the top rank, its offsets already mirrored for
-/// the dropping colour:
-///
-/// - DD : the target square being precomputed
-/// - aa : an allower, a square that has to hold a piece
-/// - ss : a stopper, a square whose piece vetoes the drop
-/// - .. : a square the board does not have
+/// - DD : the target square
+/// - aa : an allower, this square must have a piece
+/// - ss : a stopper, a piece on this square stops the drop
+/// - .. : a square that is not on the board
 ///
 /// ```text
 ///   ..   aa   ..
@@ -45,22 +37,21 @@ use crate::*;
 /// └────┴────┴────┘
 /// ```
 ///
-/// The allower asks after a square beyond the edge, so this whole template
-/// goes and the piece has one placement fewer here. Put a stopper up there
-/// instead and only the stopper goes: nothing can ever stand on it, so the
-/// veto it carries is one the position can never raise.
-///
-/// A square in the piece's forbidden zone returns nothing at all, no pattern
-/// being consulted about a placement the variant has already refused.
+/// The allower is off the board, so the function removes the template. If
+/// a stopper were there, the function would remove only the stopper.
 ///
 /// Params:
-/// - piece            : &Piece     -> piece type the drops belong to
-/// - square_index     : u32        -> target square being precomputed
+/// - piece            : &Piece     -> piece type of the drops
+/// - square_index     : u32        -> target square
 /// - state            : &State     -> board dimensions and forbidden zones
-/// - piece_setup_drops: &[DropSet] -> compiled drops, one set per piece
+/// - piece_setup_drops: &[DropSet] -> compiled drops, one set for each piece
 ///
 /// Return:
-/// DropSet                         -> drops playable onto this square
+/// DropSet                         -> drops that can go on this square
+///
+/// Notes:
+/// A square in the forbidden zone of the piece gives an empty set.
+///
 pub fn generate_relevant_drops(
     piece: &Piece,
     square_index: u32,
@@ -130,32 +121,26 @@ pub fn generate_relevant_drops(
 
 /// generate_drop_list!
 ///
-/// Generates every drop of one held piece the position allows. A drop has no
-/// origin to walk from, so this sweeps target squares instead of legs, and at
-/// each one reads the templates `generate_relevant_drops` already anchored
-/// there. A square with no template left is a square this piece can never be
-/// dropped on, whatever stands around it.
+/// Generates all legal drops of one piece type from the hand. The macro
+/// examines each target square and reads the templates that
+/// `generate_relevant_drops` made for that square.
 ///
-/// Which table is read depends on the phase: a variant with a setup phase
-/// places its army out of `relevant_setup` and drops captures out of
-/// `relevant_drops` afterwards, the same mechanism answering both.
+/// - setup phase : templates from `relevant_setup`
+/// - other phase : templates from `relevant_drops`
 ///
-/// The checkmate ban is inverted on the way onto the move. The table stores
-/// what the variant wrote — this drop may not mate — and the generated move
-/// carries the permission the search asks for, so `illegal_mating_drop!` can
-/// read a move without knowing which table it came from.
+/// The table keeps the checkmate ban. The move gets the opposite flag, the
+/// permission to give mate, which `illegal_mating_drop!` reads.
 ///
 /// Params:
-/// - piece: &Piece         -> piece type to drop from hand
-/// - state: &State         -> current position providing hand and occupancy
-/// - out  : &mut Vec<Move> -> output list receiving encoded drop moves
+/// - piece: &Piece         -> piece type to drop from the hand
+/// - state: &State         -> current position with hands and occupancy
+/// - out  : &mut Vec<Move> -> list that gets the drop moves
 ///
 /// Notes:
-/// The pattern scan is spelled out here rather than delegated to
-/// [`match_pattern!`], which takes a `&Pattern` and would have to be handed
-/// the halves this loop already holds. Both walks mirror by colour and index
-/// unchecked for the same reason: precomputation kept only the offsets that
-/// land on the board from this square.
+/// The pattern test is written here and does not use [`match_pattern!`],
+/// because the loop already has the two halves. There is no bounds check.
+/// Precomputation removes the offsets that go off the board.
+///
 #[macro_export]
 macro_rules! generate_drop_list {
     ($piece:expr, $state:expr, $out:expr) => {{
