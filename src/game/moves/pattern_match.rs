@@ -2,9 +2,10 @@
 //!
 //! Macros that test CPMN patterns on a board position.
 //!
-//! A CPMN pattern tests the pieces on squares near one square. Drop rules
-//! and stand-off rules use these patterns. The macros here test a compiled
-//! pattern on the current board and mirror the offsets for each colour.
+//! A CPMN pattern tests the pieces on squares near one square. Drop rules,
+//! stand-off rules and move conditions use these patterns. The macros here
+//! test a compiled pattern on the current board and mirror the offsets for
+//! each colour.
 //!
 //! Created: 24/02/2026
 //! Author : Alden Luthfi
@@ -83,6 +84,37 @@ macro_rules! match_pattern {
 
         !invalid
     }};
+}
+
+/// match_pattern_set!
+///
+/// Tests the condition of one move vector at the origin of the move. The
+/// condition is a set of alternatives, so one match is sufficient. A vector
+/// without a condition always matches.
+///
+/// Params:
+/// - patterns: &Option<Arc<PatternSet>> -> condition of the move vector
+/// - square  : u32                      -> origin square of the move
+/// - color   : u8                       -> colour of the moving piece
+/// - state   : &State                   -> current position
+///
+/// Return:
+/// bool                                 -> true when the move can be played
+///
+/// Notes:
+/// There is no bounds check. `clip_move_vector` fits each pattern to its
+/// origin square at precompute time.
+///
+#[macro_export]
+macro_rules! match_pattern_set {
+    ($patterns:expr, $square:expr, $color:expr, $state:expr) => {
+        match $patterns {
+            None => true,
+            Some(patterns) => patterns.iter().any(|pattern| {
+                match_pattern!(pattern, $square, $color, $state)
+            }),
+        }
+    };
 }
 
 /*----------------------------------------------------------------------------*\

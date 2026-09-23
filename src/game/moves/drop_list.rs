@@ -100,8 +100,7 @@ pub fn generate_relevant_drops(
 /// - out  : &mut Vec<Move> -> list that gets the drop moves
 ///
 /// Notes:
-/// The pattern test is written here and does not use [`match_pattern!`],
-/// because the loop already has the two halves. There is no bounds check.
+/// [`match_pattern!`] tests each template without a bounds check.
 /// Precomputation removes the offsets that go off the board.
 ///
 #[macro_export]
@@ -131,7 +130,11 @@ macro_rules! generate_drop_list {
                 continue;
             }
 
-            'drop_loop: for drop in drops {
+            for drop in drops {
+                if !match_pattern!(&drop.1, square, color, $state) {
+                    continue;
+                }
+
                 let mut encoded_move = Move::default();
 
                 let drop_k = drop_k!(drop);
@@ -141,52 +144,6 @@ macro_rules! generate_drop_list {
                 enc_start!(encoded_move, square as u128);
                 enc_end!(encoded_move, square as u128);
                 enc_can_checkmate!(encoded_move, !drop_k as u128);
-
-                let drop_allowers = &drop.1.0;
-                let drop_stoppers = &drop.1.1;
-
-                let file = square % $state.statics.files as u32;
-                let rank = square / $state.statics.files as u32;
-
-                for allower in drop_allowers.iter() {
-                    let ax = x!(allower.0) as i32
-                        * (-2 * color as i32 + 1);
-                    let ay = y!(allower.0) as i32
-                        * (-2 * color as i32 + 1);
-                    let allower_pieces = &allower.1;
-
-                    let check_x = file as i32 + ax;
-                    let check_y = rank as i32 + ay;
-                    let check_index = (
-                        check_y * $state.statics.files as i32 + check_x
-                    ) as usize;
-
-                    let piece_check = $state.main_board[check_index];
-
-                    if !allower_pieces.contains(piece_check) {
-                        continue 'drop_loop;
-                    }
-                }
-
-                for stopper in drop_stoppers.iter() {
-                    let sx = x!(stopper.0) as i32
-                        * (-2 * color as i32 + 1);
-                    let sy = y!(stopper.0) as i32
-                        * (-2 * color as i32 + 1);
-                    let stopper_pieces = &stopper.1;
-
-                    let check_x = file as i32 + sx;
-                    let check_y = rank as i32 + sy;
-                    let check_index = (
-                        check_y * $state.statics.files as i32 + check_x
-                    ) as usize;
-
-                    let piece_check = $state.main_board[check_index];
-
-                    if stopper_pieces.contains(piece_check) {
-                        continue 'drop_loop;
-                    }
-                }
 
                 $out.push(encoded_move);
             }

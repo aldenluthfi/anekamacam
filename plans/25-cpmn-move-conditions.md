@@ -2,7 +2,7 @@
 
 ## Status
 
-Opened 2026-09-23. Plan approved. Stages 1 to 3 done.
+Opened 2026-09-23. Plan approved. Stages 1 to 4 done.
 
 Baseline binary: `bin/base-cpmn`, built from `22d4aa6`. Gate signature:
 `debug-headless bench <v> 8 --limit 16` total nodes and
@@ -128,6 +128,15 @@ One commit each. Record outcomes here as they land.
    identical on existing variants. Hand-checked
    `debug-headless perft <variant> 1..3` divide on a crafted example-conf
    position with a conditioned branch.
+   Done. Gate identical on all 8 variants. Speed suite (3 passes) against
+   `bin/base-cpmn`: standard +9%, shogi +4.5%, xiangqi +3% nps, all noise,
+   no loss. A temporary standard copy (not committed) with
+   `P:...|R@@sW~R@`, `p:...|R@@sW~r@` and `N:N@@@nW~Q` showed: a pawn with a
+   rook behind gets rook moves, a pawn without one does not, that pawn gives
+   check along the file (the king cannot step onto it), Black mirrors, and
+   a queen in front stops the knight. Two branches with different
+   modifiers to one square (`mnW` and the rook `nW`) stay two moves. An
+   author avoids this with a stopper on the own branch, as Annan needs.
 5. Derive-time: chance weighting, structural filter, SEE capability audit.
 6. Annan shogi: `annan.conf` and `annan.dict` from shogi, split colour
    lines. For each piece X: its own moves with stopper `sW~<friendly set>`,

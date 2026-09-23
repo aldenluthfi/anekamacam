@@ -572,10 +572,11 @@ pub fn generate_attack_masks(
 
 /// validate_attack_vector!
 ///
-/// Tells if an attack vector can legally reach a target square. It
-/// simulates each leg: move, capture, destroy and unload rules, occupancy,
-/// rank, royal and unmoved filters, and the special modifier pairs. It
-/// tests the attack candidates of `relevant_attacks`.
+/// Tells if an attack vector can legally reach a target square. It tests
+/// the CPMN condition of the vector first. Then it simulates each leg:
+/// move, capture, destroy and unload rules, occupancy, rank, royal and
+/// unmoved filters, and the special modifier pairs. It tests the attack
+/// candidates of `relevant_attacks`.
 ///
 /// Params:
 /// - multi_leg_vector: &MoveVector -> attack vector to simulate
@@ -620,9 +621,16 @@ macro_rules! validate_attack_vector {
         let promotable =
             promotions!($state) && p_can_promote!($attacking_piece);
 
-        let mut valid = true;
+        let mut valid = match_pattern_set!(
+            &$multi_leg_vector.pattern,
+            $square_index as u32,
+            piece_color,
+            $state
+        );
+        let legs: &[Leg] =                                                      /* a failed condition walks no leg    */
+            if valid { &$multi_leg_vector.legs } else { &[] };
 
-        for (leg_index, leg) in $multi_leg_vector.legs.iter().enumerate() {
+        for (leg_index, leg) in legs.iter().enumerate() {
             let last_leg = leg_index + 1 == leg_count;
 
             let start_square = accumulated_index as u32;
@@ -835,8 +843,9 @@ macro_rules! validate_attack_vector {
 /// The core of move construction. It simulates one vector leg by leg on
 /// the current board. If all legs are legal, it adds the encoded moves:
 /// captures, multi-captures, unloads, en passant, castling right changes
-/// and one move for each legal promotion. A blocked leg, a failed capture
-/// rule or a first move rule stops it without a move.
+/// and one move for each legal promotion. A failed CPMN condition, a
+/// blocked leg, a failed capture rule or a first move rule stops it without
+/// a move.
 ///
 /// Each leg starts at the end of the last leg. `S` is the origin, `1` and
 /// `2` are leg ends, and `T` is the target. The macro tests occupancy and
@@ -883,12 +892,15 @@ macro_rules! process_multi_leg_vector {
         $state:expr, $out:expr, $scratch:expr
     ) => {{
 
-        let mut invalid = false;
-
         let piece_index = p_index!($piece);
         let piece_color = p_color!($piece);
         let piece_rank = p_rank!($piece);
         let piece_unmoved = get!($state.virgin_board, $square_index as u32);
+
+        let mut invalid = !match_pattern_set!(
+            &$vector.pattern, $square_index as u32, piece_color, $state
+        );
+        let legs: &[Leg] = if invalid { &[] } else { &$vector.legs };           /* a failed condition walks no leg    */
 
         let mut encoded_move = Move::default();
         enc_start!(encoded_move, $square_index as u128);
@@ -914,7 +926,7 @@ macro_rules! process_multi_leg_vector {
         let mut mandatory = false;
         let mut optionals = false;
 
-        for (leg_index, leg) in $vector.legs.iter().enumerate() {
+        for (leg_index, leg) in legs.iter().enumerate() {
             let last_leg = leg_index + 1 == leg_count;
             let mut taken_piece = 0u64;
 
