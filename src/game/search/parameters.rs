@@ -30,6 +30,15 @@ use crate::*;
 const OPENING_OCCUPANCY: u32 = 360;
 const ENDGAME_OCCUPANCY: u32 = 120;
 
+/// USUAL_CONDITION_CHANCE
+///
+/// The minimum chance, at the opening occupancy, that the CPMN condition of
+/// a vector matches for the vector to be a usual move. Only usual moves
+/// shape the geometry of a piece: reach, offsets and the pawn terms. At
+/// 50%, a move is usual when it is playable in most positions.
+///
+const USUAL_CONDITION_CHANCE: u32 = 500;
+
 /// PST amplitude
 ///
 /// The maximum difference between the best and worst square of a piece
@@ -569,7 +578,7 @@ fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
 
         let mut landings: Vec<usize> = Vec::new();
 
-        for multi_leg_vector in relevant_moves {
+        for multi_leg_vector in usual_vectors(state, relevant_moves) {
             let mut file_offset = 0;
             let mut rank_offset = 0;
 
@@ -651,7 +660,7 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
         let relevant_moves = &state.statics.relevant_moves
             [piece_index * board_size + square];
 
-        for multi_leg_vector in relevant_moves {
+        for multi_leg_vector in usual_vectors(state, relevant_moves) {
             let mut file_offset = 0;
             let mut rank_offset = 0;
 
@@ -757,7 +766,7 @@ fn derive_piece_mobility(
 
     relevant_moves
         .iter()
-        .filter_map(|vector| derive_vector_chance(&vector.legs, occupancy))
+        .filter_map(|vector| derive_vector_chance(state, vector, occupancy))
         .map(|(chance, ..)| chance)
         .sum()
 }
@@ -772,14 +781,18 @@ fn derive_piece_mobility(
 /// - final  : needs `occupancy` again, if it captures after a hop
 /// - marker : has no displacement, skipped
 ///
-/// The chance is the product. Thus a long slide decreases with each
+/// The chance is the product, with the chance of the CPMN condition from
+/// `derive_condition_chance`. Thus a long slide decreases with each
 /// square, a leaper always has 1, and a hopper capture has 0 on an empty
 /// board.
 ///
 /// Params:
 ///
-///     multi_leg_vector: &[Leg]
-///     the legs of the vector, the final leg last
+///     state: &State
+///     start census for the condition chance
+///
+///     vector: &MoveVector
+///     the vector, the final leg last
 ///
 ///     occupancy: f64
 ///     board occupancy
@@ -790,9 +803,9 @@ fn derive_piece_mobility(
 ///     the chance and the file and rank displacement, or None without legs
 ///
 fn derive_vector_chance(
-    multi_leg_vector: &[Leg], occupancy: f64
+    state: &State, vector: &MoveVector, occupancy: f64
 ) -> Option<(f64, i32, i32)> {
-    let (final_leg, intermediate_legs) = multi_leg_vector.split_last()?;
+    let (final_leg, intermediate_legs) = vector.legs.split_last()?;
 
     let mut chance = 1.0;
     let mut hopper = false;
@@ -822,7 +835,113 @@ fn derive_vector_chance(
         chance *= occupancy;
     }
 
+    chance *= derive_condition_chance(state, vector, occupancy);
+
     Some((chance, file_delta, rank_delta))
+}
+
+/// derive_condition_chance
+///
+/// Gives the chance that the CPMN condition of a vector matches on a board
+/// with random occupancy. A square holds a piece with chance `occupancy`,
+/// and the piece is of one type with its share of the start census:
+///
+/// - piece set : the sum of the chances of its members
+/// - empty `?` : adds `1 - occupancy`
+/// - allower   : the chance of its set
+/// - stopper   : one minus the chance of its set
+/// - pattern   : the product of its allowers and stoppers
+/// - condition : one minus the product of the pattern misses
+///
+/// A vector without a condition has chance one.
+///
+/// Params:
+/// - state    : &State      -> start census of the pieces
+/// - vector   : &MoveVector -> vector with the condition
+/// - occupancy: f64         -> board occupancy
+///
+/// Return:
+/// f64                      -> chance that the condition matches
+///
+/// Notes:
+/// A census without pieces, as in a setup phase, gives each type the same
+/// share.
+///
+fn derive_condition_chance(
+    state: &State, vector: &MoveVector, occupancy: f64
+) -> f64 {
+    let Some(patterns) = &vector.pattern else {
+        return 1.0;
+    };
+
+    let piece_types = state.piece_count.len();
+    let census_total = state.piece_count.iter().sum::<u32>();
+
+    let piece_share = |piece_index: usize| {
+        if census_total == 0 {
+            1.0 / piece_types as f64
+        } else {
+            state.piece_count[piece_index] as f64 / census_total as f64
+        }
+    };
+
+    let set_chance = |pieces: &PieceSet| {
+        let empty_chance = if pieces.contains(NO_PIECE) {
+            1.0 - occupancy
+        } else {
+            0.0
+        };
+
+        (0..piece_types)
+            .filter(|&piece_index| pieces.contains(piece_index as PieceIndex))
+            .map(|piece_index| occupancy * piece_share(piece_index))
+            .sum::<f64>()
+            + empty_chance
+    };
+
+    let miss_chance = patterns
+        .iter()
+        .map(|(allowers, stoppers)| {
+            let allower_chance = allowers
+                .iter()
+                .map(|(_, pieces)| set_chance(pieces))
+                .product::<f64>();
+            let stopper_chance = stoppers
+                .iter()
+                .map(|(_, pieces)| 1.0 - set_chance(pieces))
+                .product::<f64>();
+
+            1.0 - allower_chance * stopper_chance
+        })
+        .product::<f64>();
+
+    1.0 - miss_chance
+}
+
+/// usual_vectors
+///
+/// Keeps the vectors that are usual moves: the vectors whose condition
+/// matches with at least `USUAL_CONDITION_CHANCE` at the opening
+/// occupancy. A vector without a condition is always usual. The geometry
+/// of a piece reads only these vectors. Thus an Annan pawn with a rook
+/// move, when a rook stands behind it, stays a pawn.
+///
+/// Params:
+/// - state  : &State        -> start census of the pieces
+/// - vectors: &[MoveVector] -> vectors of one piece on one square
+///
+/// Return:
+/// impl Iterator            -> the usual vectors, in order
+///
+fn usual_vectors<'a>(
+    state: &'a State, vectors: &'a [MoveVector]
+) -> impl Iterator<Item = &'a MoveVector> + 'a {
+    let occupancy = OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
+    let usual_chance = USUAL_CONDITION_CHANCE as f64 / COEFFICIENT_SCALE;
+
+    vectors.iter().filter(move |vector| {
+        derive_condition_chance(state, vector, occupancy) >= usual_chance
+    })
 }
 
 /// derive_distance_from_center
@@ -1485,7 +1604,7 @@ pub fn derive_search_parameters(state: &mut State) {
 ///                         pass, stand-offs, setup, a piece without quiets
 /// - recapture ordering  : recycled captures, check count, goal
 /// - quiet pruning       : misere, goal, check count
-/// - static movement     : a screened leg in the rules
+/// - static movement     : a screened leg or a CPMN move condition
 /// - wide quiescence     : a vector that captures more than one piece
 ///
 /// Two fact types answer the tests:
@@ -1519,6 +1638,7 @@ pub fn derive_search_capabilities(state: &mut State) {
     let movement_facts = (0..statics.pieces.len()).into_par_iter()
         .map(|piece_index| {
             let mut screened = false;
+            let mut conditioned = false;
             let mut royal_capture = false;
             let mut multi_destroy = false;
             let mut multi_capture = false;
@@ -1552,6 +1672,7 @@ pub fn derive_search_capabilities(state: &mut State) {
                     let (files_crossed, ranks_crossed) = vector_offset!(vector);
                     let moves_quietly = vector_moves_quietly!(vector);
 
+                    conditioned |= vector.pattern.is_some();
                     multi_destroy |= destroyed > 1;
                     multi_capture |= victims > 1;
                     may_pass |= moves_quietly && !destroys
@@ -1564,17 +1685,17 @@ pub fn derive_search_capabilities(state: &mut State) {
             let capture_only = vectors > 0 && quiet_vectors == 0;
 
             [
-                screened, royal_capture, multi_destroy,
+                screened, conditioned, royal_capture, multi_destroy,
                 capture_only, multi_capture, may_pass,
             ]
         })
         .reduce(
-            || [false; 6],
+            || [false; 7],
             |left, right| array::from_fn(|fact| left[fact] || right[fact]),
         );
 
     let [
-        screened, royal_capture, multi_destroy,
+        screened, conditioned, royal_capture, multi_destroy,
         capture_only, multi_capture, may_pass,
     ] = movement_facts;
 
@@ -1626,7 +1747,7 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_quiet_pruning!(capabilities);
     }
 
-    if !screened {
+    if !screened && !conditioned {
         enc_static_movement!(capabilities);
     }
 
@@ -2214,7 +2335,7 @@ pub fn derive_danger_parameters(state: &mut State) {
 
             for vector in vectors {
                 let Some((chance, file_delta, rank_delta)) =
-                    derive_vector_chance(&vector.legs, occupancy)
+                    derive_vector_chance(state, vector, occupancy)
                 else {
                     continue;
                 };
@@ -2341,7 +2462,7 @@ fn derive_pawn_slots(state: &State) -> (Vec<usize>, Vec<usize>) {
             let vectors =
                 &state.statics.relevant_moves[index * board_size + square];
 
-            for vector in vectors {
+            for vector in usual_vectors(state, vectors) {
                 let (file_offset, rank_offset) = vector_offset!(vector);
                 let quiet = vector_moves_quietly!(vector);
 
@@ -2418,7 +2539,7 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
         let vectors =
             &state.statics.relevant_moves[index * board_size + current];
 
-        for vector in vectors {
+        for vector in usual_vectors(state, vectors) {
             if !vector_moves_quietly!(vector) {
                 continue;
             }
@@ -2476,7 +2597,7 @@ fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
     let mut stop = board!(state.statics.files, state.statics.ranks);
     let vectors = &state.statics.relevant_moves[index * board_size + square];
 
-    for vector in vectors {
+    for vector in usual_vectors(state, vectors) {
         if !vector_moves_quietly!(vector) || vector_is_initial!(vector) {
             continue;
         }
@@ -2542,7 +2663,7 @@ fn derive_pawn_captures(state: &State, color: u8, targets: &Board) -> Board {
             let vectors = &state.statics.relevant_captures
                 [index * board_size + source];
 
-            for vector in vectors {
+            for vector in usual_vectors(state, vectors) {
                 let (file_offset, rank_offset) = vector_offset!(vector);
                 let file = source as i32 % files + file_offset * sign;
                 let rank = source as i32 / files + rank_offset * sign;
@@ -2638,7 +2759,7 @@ fn derive_pawn_support_files(state: &State, index: usize) -> Vec<i32> {
         let captures =
             &state.statics.relevant_captures[index * board_size + square];
 
-        for vector in captures {
+        for vector in usual_vectors(state, captures) {
             let capture_file = vector_offset!(vector).0;
 
             if !capture_files.contains(&capture_file) {
@@ -2649,7 +2770,7 @@ fn derive_pawn_support_files(state: &State, index: usize) -> Vec<i32> {
         let moves =
             &state.statics.relevant_moves[index * board_size + square];
 
-        for vector in moves {
+        for vector in usual_vectors(state, moves) {
             if !vector_moves_quietly!(vector) || vector_is_initial!(vector) {
                 continue;
             }

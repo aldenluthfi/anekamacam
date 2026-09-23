@@ -2,7 +2,7 @@
 
 ## Status
 
-Opened 2026-09-23. Plan approved. Stages 1 to 4 done.
+Opened 2026-09-23. Plan approved. Stages 1 to 5 done.
 
 Baseline binary: `bin/base-cpmn`, built from `22d4aa6`. Gate signature:
 `debug-headless bench <v> 8 --limit 16` total nodes and
@@ -138,6 +138,16 @@ One commit each. Record outcomes here as they land.
    modifiers to one square (`mnW` and the rook `nW`) stay two moves. An
    author avoids this with a stopper on the own branch, as Annan needs.
 5. Derive-time: chance weighting, structural filter, SEE capability audit.
+   Done. `derive_condition_chance` gives a set member the chance
+   `occupancy` times its share of the start census, and `?` the chance
+   `1 - occupancy`. `derive_vector_chance` multiplies by it, so mobility,
+   value and zone attacks weight a conditioned vector. `usual_vectors`
+   keeps vectors with a chance of at least `USUAL_CONDITION_CHANCE` (50%)
+   at opening occupancy, for reach, offsets and all pawn terms. SEE audit:
+   `see!` walks live moves, so it obeys conditions. All SEE, recapture and
+   static-exchange uses are also gated on `static_movement`, and a
+   conditioned vector now clears that bit, as a screen does. Gate
+   identical; startpos `evaluate` identical on six variants.
 6. Annan shogi: `annan.conf` and `annan.dict` from shogi, split colour
    lines. For each piece X: its own moves with stopper `sW~<friendly set>`,
    plus for each friendly type Y: `<Y moves>@@sW~Y@`. Confirm the rules
