@@ -129,19 +129,7 @@ macro_rules! lva {
                 );
             });
 
-        out.retain(|mv| {
-            m_capture!(mv)
-            && (
-                move_type!(mv) == SINGLE_CAPTURE_MOVE
-                && captured_square!(mv) as u16 == target
-                && !is_unload!(mv)
-                || move_type!(mv) == MULTI_CAPTURE_MOVE
-                && m_captures!(mv).iter().any(|captured| {
-                    !multi_move_is_unload!(captured)
-                    && multi_move_captured_square!(captured) as u16 == target
-                })
-            )
-        });
+        out.retain(|mv| m_capture!(mv) && m_takes_square!(mv, target));
 
         out.sort_unstable_by_key(
             |mv| -(p_value!(piece!(mv), state) as i32)

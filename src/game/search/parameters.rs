@@ -1585,6 +1585,7 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - recapture ordering  : recycled captures, a check count, or a goal
 /// - quiet pruning       : misere, a goal, or a check count
 /// - static movement     : a screened leg anywhere in the rules
+/// - wide quiescence     : a vector that takes more than one piece
 ///
 /// Two kinds of fact answer the questions. Movement facts come from the
 /// generated vectors: a leg that unloads what it destroyed needs a second
@@ -1597,6 +1598,16 @@ pub fn derive_search_parameters(state: &mut State) {
 /// with no quiet vector cannot give up a tempo at all. Terminal facts come
 /// from the declared rules: counting pieces, holding a zone, or tallying
 /// checks all pay in a currency material does not convert to.
+///
+/// Wide quiescence is the one restriction rather than shortcut, and it reads
+/// the same way round: a leaf may answer any capture at all only while taking
+/// a piece costs a piece, since that is what empties the contested square and
+/// ends the sequence. A vector that takes two pieces at once leaves a winning
+/// capture standing somewhere on the board no matter how long the leaf looks,
+/// so the leaf follows the square the exchange began on instead. The last leg
+/// of a plain slider carries no capture flag of its own — movement generation
+/// reads a final leg that cannot move as one that takes — so the count here
+/// has to read it the same way or every slider would look like a sweep.
 ///
 /// Recapture ordering used to fall to the same self-destroying vector, on
 /// the grounds that such a move wins more than the one victim the exchange
@@ -1626,6 +1637,7 @@ pub fn derive_search_capabilities(state: &mut State) {
     let mut royal_capture = false;
     let mut multi_destroy = false;
     let mut capture_only = false;
+    let mut multi_capture = false;
     let mut may_pass = false;
 
     for piece_index in 0..statics.pieces.len() {
@@ -1639,19 +1651,27 @@ pub fn derive_search_capabilities(state: &mut State) {
                 .chain(statics.relevant_captures[slot].iter())
             {
                 let mut destroyed = 0;
+                let mut victims = 0;
                 let mut destroys = false;
 
-                for leg in vector {
+                for (leg_index, leg) in vector.iter().enumerate() {
+                    let last_leg = leg_index + 1 == vector.len();
+                    let takes = c!(leg) || d!(leg)
+                        || (last_leg && !m!(leg));                              /* a plain slider takes on its last   */
+
                     screened |= u!(leg);
                     royal_capture |= k!(leg);
                     destroys |= d!(leg);
                     destroyed += (d!(leg) && !u!(leg)) as usize;                /* an unloaded piece is put back      */
+                    victims += takes as usize;
+                    victims = victims.saturating_sub(u!(leg) as usize);         /* a screen is taken and handed back  */
                 }
 
                 let (files_crossed, ranks_crossed) = vector_offset!(vector);
                 let moves_quietly = vector_moves_quietly!(vector);
 
                 multi_destroy |= destroyed > 1;
+                multi_capture |= victims > 1;
                 may_pass |= moves_quietly && !destroys
                     && files_crossed == 0 && ranks_crossed == 0;                /* nothing moved and nothing taken    */
                 vectors += 1;
@@ -1714,9 +1734,13 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_static_movement!(capabilities);
     }
 
+    if !multi_capture {
+        enc_wide_quiescence!(capabilities);
+    }
+
     state.static_mut().capabilities = capabilities;
 
-    log_3!("Derived Search Capabilities: {:07b}", capabilities);
+    log_3!("Derived Search Capabilities: {:08b}", capabilities);
 }
 
 /*----------------------------------------------------------------------------*\

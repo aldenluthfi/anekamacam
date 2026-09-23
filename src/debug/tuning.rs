@@ -809,7 +809,7 @@ fn load_dataset(
         info.nodes = 0;
         info.interrupt = false;
         let score = quiescence_search(
-            &mut scratch, &ttable, &qtable, -INF, INF, &mut info,
+            &mut scratch, &ttable, &qtable, -INF, INF, &mut info, None,
         ) * (-2 * scratch.playing as i32 + 1);
         let sample = extract_sample(&scratch, shape, label, score, theta);
         if game_id % TUNING_VALIDATION_MODULUS == 0 {

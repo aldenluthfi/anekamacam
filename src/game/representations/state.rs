@@ -256,8 +256,18 @@ macro_rules! enc_promote_on_exit {
 /// - recapture_order! -> capture order is monotone enough to cut, bit 4
 /// - quiet_pruning!   -> a late quiet move may go unsearched, bit 5
 /// - static_movement! -> reach never depends on other pieces, bit 6
+/// - wide_quiescence! -> a leaf may answer any capture at all, bit 7
 ///
-/// Every writer, `enc_see_valid!` through `enc_static_movement!`, sets the
+/// `wide_quiescence!` is the one that says what a leaf is allowed to look at.
+/// Quiescence exists to settle the exchange the last move began, and an
+/// exchange is a sequence of captures contesting one square. Searching every
+/// capture instead is an approximation that holds only while taking one piece
+/// costs another, because that is what empties the square and ends the
+/// sequence. Where one move sweeps several pieces off at once, a winning
+/// capture stays available somewhere on the board however long the leaf
+/// searches, and the leaf follows the contested square instead.
+///
+/// Every writer, `enc_see_valid!` through `enc_wide_quiescence!`, sets the
 /// bit its reader tests and takes only the mask under construction:
 ///
 /// - mask: &mut u16 -> capability mask being assembled at derive time
@@ -356,6 +366,20 @@ macro_rules! static_movement {
 macro_rules! enc_static_movement {
     ($mask:expr) => {
         $mask |= 1 << 6;
+    };
+}
+
+#[macro_export]
+macro_rules! wide_quiescence {
+    ($state:expr) => {
+        ($state.statics.capabilities >> 7 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_wide_quiescence {
+    ($mask:expr) => {
+        $mask |= 1 << 7;
     };
 }
 

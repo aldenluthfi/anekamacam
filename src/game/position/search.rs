@@ -730,13 +730,31 @@ pub fn iterative_deepening(
 /// whether that stop is available and the rest of the list is searched where
 /// it is not.
 ///
+/// An exchange is a sequence of captures contesting **one square**, and that
+/// is the whole of what these leaves exist to settle. The first leaf is the
+/// horizon itself, so every capture is open to it, and whichever it plays
+/// names the square being fought over. Every leaf under that one answers on
+/// that square or not at all: a capture somewhere else on the board is not a
+/// reply, it is a new plan, and a new plan is the tree's business rather than
+/// the horizon's.
+///
+/// Without that, quiescence has no reason to stop wherever a winning capture
+/// is always available somewhere. Taikyoku shogi is the case that shows it:
+/// its flying generals sweep a whole file, one is nearly always worth playing,
+/// and the leaves walked 86 plies of them — 85% of the captures they searched
+/// answered nothing that had just happened. The bound here is not a depth
+/// limit; it is how many pieces can reach one square, which is the same bound
+/// the exchange simulation already assumes.
+///
 /// Params:
-/// - state : &mut State      -> position searched, restored on return
-/// - ttable: &TTable         -> main table, read for table-move ordering
-/// - qtable: &QTable         -> quiescence table probed and updated
-/// - alpha : i32             -> lower search bound
-/// - beta  : i32             -> upper search bound
-/// - info  : &mut SearchInfo -> node counters and interrupt polling
+/// - state    : &mut State      -> position searched, restored on return
+/// - ttable   : &TTable         -> main table, read for table-move ordering
+/// - qtable   : &QTable         -> quiescence table probed and updated
+/// - alpha    : i32             -> lower search bound
+/// - beta     : i32             -> upper search bound
+/// - info     : &mut SearchInfo -> node counters and interrupt polling
+/// - contested: Option<Square>  -> square under exchange, `None` at the
+///                                 horizon where any capture may open one
 ///
 /// Return:
 /// i32 -> stand-pat or best capture score within the window
@@ -758,6 +776,7 @@ pub fn quiescence_search(
     alpha: i32,
     beta: i32,
     info: &mut SearchInfo,
+    contested: Option<Square>,
 ) -> i32 {
     let mut alpha = alpha;
 
@@ -843,6 +862,14 @@ pub fn quiescence_search(
             break;                                                              /* ordered: every later one loses too */
         }
 
+        if !wide_quiescence!(state)
+        && !in_check
+        && contested
+            .is_some_and(|square| !m_takes_square!(&moves[index], square))
+        {
+            continue;                                                           /* a plan, not a reply to this square */
+        }
+
         if delta_prunable
         && !m_promotion!(&moves[index])
         && stand_pat + victim_value!(&moves[index], state) + delta <= alpha {
@@ -857,6 +884,7 @@ pub fn quiescence_search(
 
         let score = -quiescence_search(
             state, ttable, qtable, -beta, -alpha, info,
+            contested.or(Some(end!(&moves[index]) as Square)),
         );
 
         undo_move!(state);
@@ -1053,7 +1081,7 @@ pub fn alpha_beta(
 
     if depth == 0 {
         return quiescence_search(
-            state, ttable, qtable, alpha, beta, info,
+            state, ttable, qtable, alpha, beta, info, None,
         );
     }
 
@@ -1121,7 +1149,7 @@ pub fn alpha_beta(
     && plain_eval + state.statics.search.razor_margin[depth] < alpha
     {
         let score = quiescence_search(
-            state, ttable, qtable, alpha, alpha + 1, info,
+            state, ttable, qtable, alpha, alpha + 1, info, None,
         );
 
         if score <= alpha {
@@ -1205,7 +1233,7 @@ pub fn alpha_beta(
 
             let mut score = -quiescence_search(
                 state, ttable, qtable,
-                -probcut_beta, -probcut_beta + 1, info,
+                -probcut_beta, -probcut_beta + 1, info, None,
             );
 
             if score >= probcut_beta {

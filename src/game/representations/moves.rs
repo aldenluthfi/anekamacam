@@ -380,6 +380,36 @@ macro_rules! m_capture {
     };
 }
 
+/// m_takes_square!
+///
+/// Whether the move removes a piece standing on one named square. A move may
+/// take several pieces, so this is a search of the list rather than a lookup,
+/// and a piece the move merely puts down is not one it took.
+///
+/// The exchange simulation asks it to collect the attackers of a square, and
+/// quiescence asks it to tell a reply from a new plan. Both want the same
+/// question answered, so both ask it here.
+///
+/// Params:
+/// - mv    : &Move -> move under test
+/// - square: Square -> square whose occupant may be taken
+///
+/// Return:
+/// bool            -> whether that square's piece is among the victims
+#[macro_export]
+macro_rules! m_takes_square {
+    ($mv:expr, $square:expr) => {
+        move_type!($mv) == SINGLE_CAPTURE_MOVE
+        && !is_unload!($mv)
+        && captured_square!($mv) as Square == $square
+        || move_type!($mv) == MULTI_CAPTURE_MOVE
+        && m_captures!($mv).iter().any(|&capture| {
+            !multi_move_is_unload!(capture)
+            && multi_move_captured_square!(capture) as Square == $square
+        })
+    };
+}
+
 #[macro_export]
 macro_rules! m_drop {
     ($mv:expr) => {
