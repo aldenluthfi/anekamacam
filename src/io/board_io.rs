@@ -186,10 +186,10 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
     ));
 
     for col in 0..files {
-        let file_label = if files < 26 {
+        let file_label = if files <= 26 {
             ((b'a' + col) as char).to_string()
         } else {
-            format!("{:>2}", col)
+            format!("{:02}", col + 1)
         };
         if col < files - 1 {
             result.push_str(&format!("{:3} ", file_label));
@@ -282,7 +282,11 @@ pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
                 width = width
             ));
         } else {
-            result.push_str(&format!(" {:^width$} ", file, width = width));
+            result.push_str(&format!(
+                " {:^width$} ",
+                format!("{:02}", file + 1),
+                width = width
+            ));
         }
         if file + 1 < files {
             result.push(' ');
