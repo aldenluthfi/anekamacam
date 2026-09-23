@@ -76,6 +76,8 @@ pub struct SearchInfo {
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 
     pub eval_stack: Vec<i32>,                                                   /* static score standing at each ply  */
+
+    pub candidate_move: Move,                                                   /* best root move proved so far       */
 }
 
 /// move_key!
@@ -335,6 +337,7 @@ pub fn clear_search(
     info.start_time = ENGINE_START.elapsed().as_nanos();
     info.nodes = 0;
     info.interrupt = false;
+    info.candidate_move = null_move();
 
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
@@ -484,6 +487,13 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
 /// was searched under a window that never closed, so the answer it holds is
 /// unproven, and the previous depth's move is the one that gets played.
 ///
+/// The first iteration is the exception, because there is no previous depth
+/// to fall back on and throwing it away hands back no move at all. What it
+/// keeps instead is the best root move whose subtree finished before the
+/// clock ran out: each of those was searched to the end, so the choice among
+/// them is proved, only over fewer candidates than the whole list. Its score
+/// is not kept, being the best of a partial list rather than of the root.
+///
 /// The line is refilled from the table after every iteration, and the second
 /// move of it is offered as the ponder move, but only when the first is still
 /// the move being played: a table that has moved on since would otherwise
@@ -583,6 +593,10 @@ pub fn iterative_deepening(
         fill_pv_line!(state, info, ttable, depth);
 
         if info.interrupt {
+            if completed_depth == 0 && info.candidate_move != null_move() {
+                best_move = info.candidate_move.clone();
+            }
+
             break;
         }
 
@@ -1459,6 +1473,10 @@ pub fn alpha_beta(
         if score > best_score {
             best_score = score;
             best_move = moves[index].clone();
+
+            if ply == 0 {
+                info.candidate_move = best_move.clone();                        /* its whole subtree was searched     */
+            }
 
             if score > alpha {
                 if score >= beta {
