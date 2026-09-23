@@ -22,11 +22,14 @@
 /// what it takes, and who else can reach the square.
 ///
 /// - attack_value! : the moving piece, or what it promotes into
-/// - victim_value! : everything the move captures, unloads not counted
+/// - victim_value! : what the move wins, less what it costs its own side
 /// - lva!          : every legal capture onto one square, cheapest last
 ///
 /// A move may take more than one piece, so the victim side is a sum rather
 /// than a lookup, and a piece a move merely puts down is not a piece it took.
+/// A destroying leg takes the mover's own piece, which is a loss and not a
+/// gain, so each record's own flag signs its term: a sweep that burns more
+/// of its own army than it wins prices as the loss it is.
 /// `lva!` sorts descending and the caller pops from the back, which is what
 /// makes the least valuable attacker the next one to try.
 ///
@@ -46,7 +49,7 @@
 ///   - state: &State -> position providing piece values
 ///
 ///   Return:
-///   i32 -> summed value of captured pieces, unloads skipped
+///   i32 -> enemy pieces taken less own pieces destroyed, unloads skipped
 ///
 /// lva!
 ///
@@ -69,19 +72,24 @@ macro_rules! attack_value {
 #[macro_export]
 macro_rules! victim_value {
     ($mv:expr, $state:expr) => {{
-        let move_type = move_type!($mv);
+        let valued_move: &Move = $mv;
+        let move_type = move_type!(valued_move);
 
         if move_type == SINGLE_CAPTURE_MOVE {
-            p_value!(captured_piece!($mv), $state) as i32
+            let piece = captured_piece!(valued_move);
+            let own = captured_own!(valued_move);
+
+            p_value!(piece, $state) as i32 * (1 - 2 * own as i32)
         } else if move_type == MULTI_CAPTURE_MOVE {
-            m_captures!($mv).iter().fold(
+            m_captures!(valued_move).iter().fold(
                 0,
                 |value, &captured| {
                     let is_unload = multi_move_is_unload!(captured);
+                    let is_own = multi_move_captured_own!(captured);
                     let piece = multi_move_captured_piece!(captured);
 
                     value + p_value!(piece, $state) as i32
-                        * !is_unload as i32
+                        * !is_unload as i32 * (1 - 2 * is_own as i32)
                 },
             )
         } else {

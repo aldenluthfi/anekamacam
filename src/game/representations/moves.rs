@@ -40,7 +40,7 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// transposition table storage, where holding a raw list pointer would dangle.
 ///
 /// The fold is lossy by construction — it is an identity check, not a
-/// reconstruction — so bit 34 rides above it as a second discriminator,
+/// reconstruction — so bit 35 rides above it as a second discriminator,
 /// separating a list that takes something from one that only unloads.
 ///
 /// Bits 0..31:
@@ -55,16 +55,16 @@ pub type AttackMask = (PieceIndex, Square, MoveVector);
 /// Bits 32..63:
 ///
 /// ```text
-///   32  34                                                          63
-///         35
-///   ┌───┬─┬──────────────────────────────────────────────────────────┐
-///   │← X│c│                          unused                          │
-///   └───┴─┴──────────────────────────────────────────────────────────┘
+///   32   35                                                         63
+///          36
+///   ┌────┬─┬─────────────────────────────────────────────────────────┐
+///   │← X │c│                          unused                         │
+///   └────┴─┴─────────────────────────────────────────────────────────┘
 /// ```
 ///
-/// - bits 0..33 (`XOR`): XOR-folded capture records
-/// - bit 34     (`c`)  : at least one record is a real capture
-/// - bits 35..63       : unused
+/// - bits 0..34 (`XOR`): XOR-folded capture records
+/// - bit 35     (`c`)  : at least one record is a real capture
+/// - bits 36..63       : unused
 pub type MoveSignature = u64;
 
 /// PseudoMove
@@ -128,9 +128,10 @@ pub type PseudoMove = (u128, MoveSignature);
 ///
 /// ```text
 ///   96      102                   113                              127
-///   ┌───────┬─────────────────────┬─┬────────────────────────────────┐
-///   │← cap  │       capt sq       │m│             unused             │
-///   └───────┴─────────────────────┴─┴────────────────────────────────┘
+///                                   114
+///   ┌───────┬─────────────────────┬─┬─┬──────────────────────────────┐
+///   │← cap  │       capt sq       │m│o│            unused            │
+///   └───────┴─────────────────────┴─┴─┴──────────────────────────────┘
 /// ```
 ///
 /// - bits 0..2     (`type`)      : packed move format
@@ -147,7 +148,8 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - bits 92..101  (`capt pc`)   : captured piece index
 /// - bits 102..112 (`capt sq`)   : captured square
 /// - bit 113       (`m`)         : captured piece was unmoved
-/// - bits 114..127               : unused
+/// - bit 114       (`o`)         : captured piece was the mover's own
+/// - bits 115..127               : unused
 ///
 /// A piece index spends ten bits and a square eleven, which is the whole of
 /// `MAX_SQUARES`. The two are neighbours everywhere they appear, so the bit
@@ -155,7 +157,7 @@ pub type PseudoMove = (u128, MoveSignature);
 /// flags between `end` and `promoted` keep the places they have always had.
 ///
 /// A multi-capture (`010`) keeps its first capture above. Each further
-/// capture is one 34-bit record in a `u64` stored in `Move.1`:
+/// capture is one 35-bit record in a `u64` stored in `Move.1`:
 ///
 /// Bits 0..31:
 ///
@@ -170,10 +172,10 @@ pub type PseudoMove = (u128, MoveSignature);
 ///
 /// ```text
 ///   32  34                                                          63
-///     33
-///   ┌─┬─┬────────────────────────────────────────────────────────────┐
-///   │←│m│                           unused                           │
-///   └─┴─┴────────────────────────────────────────────────────────────┘
+///     33  35
+///   ┌─┬─┬─┬──────────────────────────────────────────────────────────┐
+///   │←│m│o│                          unused                          │
+///   └─┴─┴─┴──────────────────────────────────────────────────────────┘
 /// ```
 ///
 /// - bit 0       (`u`): unload flag
@@ -181,12 +183,19 @@ pub type PseudoMove = (u128, MoveSignature);
 /// - bits 12..21      : captured piece index
 /// - bits 22..32      : captured square
 /// - bit 33      (`m`): captured piece was unmoved
-/// - bits 34..63      : unused
+/// - bit 34      (`o`): captured piece was the mover's own
+/// - bits 35..63      : unused
 ///
-/// The record is 34 bits and its `m` flag sits on bit 33. `enc_capture_part!`
+/// The record is 35 bits and its `o` flag sits on bit 34. `enc_capture_part!`
 /// shifts the whole of it to bit 80, which lands every field exactly where
 /// the primary word reads it, so the first capture needs no separate
 /// spelling from the rest.
+///
+/// The `o` flag is written where a destroying leg is resolved, which is the
+/// one place in the engine that already knows whose piece stood on the
+/// square. Recording it there keeps the question "did this move take
+/// anything from the other side" answerable from the move alone, without a
+/// piece table to read a colour out of.
 ///
 /// A drop (`011`) has no origin square, so it repeats the placement square in
 /// both `start` and `end`. Make/undo reads `start`, while every target-indexed
@@ -293,9 +302,11 @@ macro_rules! m_captures {
 /// Computes the `MoveSignature` for a `Move` by XOR-folding every element of
 /// `move.1`. The result is 0 for moves with no captures (empty list).
 ///
-/// Bit 34 is set when at least one record in the list is a real capture, so
+/// Bit 35 is set when at least one record in the list is a real capture, so
 /// a list of nothing but unloads stays distinguishable from one that takes
-/// a piece even where the fold happens to agree.
+/// a piece even where the fold happens to agree. It sits one bit above the
+/// widest record rather than on a fixed number, so it never collides with
+/// a field the fold itself carries.
 ///
 /// Params:
 /// - mv: &Move   -> move whose auxiliary list is folded
@@ -308,16 +319,17 @@ macro_rules! m_signature {
         m_captures!($mv).iter().fold(0u64, |acc, &x| acc ^ x) |
         (m_captures!($mv).iter().any(
             |&capture| !multi_move_is_unload!(capture)
-        ) as u64) << 34                                                         /* set when a record really captures  */
+        ) as u64) << 35                                                         /* set when a record really captures  */
     };
 }
 
 /// Move predicate macros.
 ///
 /// `m_matches!` tests a `Move` against a stored `PseudoMove` without
-/// touching the captures list pointer; `m_capture!` detects a real capture
-/// from the captures list; `m_drop!`, `m_promotion!`, and `m_quiet!`
-/// classify moves for ordering and pruning decisions during search.
+/// touching the captures list pointer; `m_capture!` asks whether the move
+/// takes anything belonging to the other side; `m_drop!`, `m_promotion!`,
+/// and `m_quiet!` classify moves for ordering and pruning decisions during
+/// search.
 ///
 /// Every member takes the move it judges as its first parameter:
 ///
@@ -334,10 +346,17 @@ macro_rules! m_signature {
 /// The rest take no second parameter, and each answers one question about
 /// the move with a `bool`:
 ///
-/// - m_capture!   -> something is really taken, unloads excluded
+/// - m_capture!   -> the other side loses a piece, unloads excluded
 /// - m_drop!      -> the move places a piece from the hand
 /// - m_promotion! -> the move promotes
 /// - m_quiet!     -> the move is in quiet format and does not promote
+///
+/// A destroying leg removes a piece of the mover's own, and both kinds of
+/// victim are written into one list under one encoding, which is why each
+/// record carries the `o` flag saying which it was. A move that removes
+/// nothing but its own army takes no more than a quiet move walking into a
+/// loss does, and calling it a capture hands quiescence a position with no
+/// quiet horizon to reach.
 #[macro_export]
 macro_rules! m_matches {
     ($mv:expr, $pseudo:expr) => {
@@ -348,10 +367,15 @@ macro_rules! m_matches {
 #[macro_export]
 macro_rules! m_capture {
     ($mv:expr) => {
-        move_type!($mv) == SINGLE_CAPTURE_MOVE && !is_unload!($mv) ||
-        move_type!($mv) == MULTI_CAPTURE_MOVE  &&
-        m_captures!($mv).iter().any(
-            |&capture| !multi_move_is_unload!(capture)
+        move_type!($mv) == SINGLE_CAPTURE_MOVE
+        && !is_unload!($mv)
+        && !captured_own!($mv) ||
+
+        move_type!($mv) == MULTI_CAPTURE_MOVE
+        && m_captures!($mv).iter().any(
+            |&capture|
+            !multi_move_is_unload!(capture) &&
+            !multi_move_captured_own!(capture)
         )
     };
 }
@@ -417,13 +441,14 @@ macro_rules! m_quiet {
 /// enc_capture_part!
 ///
 ///   Params:
-///   - taken_piece: u128 -> whole 34-bit capture payload, bits 80..113
+///   - taken_piece: u128 -> whole 35-bit capture payload, bits 80..114
 ///
 /// Notes:
-/// `enc_capture_part!` is how a single capture gets its bit 113. Move
-/// generation builds every capture as a multi-capture payload word, so
-/// the payload's bit 33 becomes bit 113 under the shift; there is no
-/// separate encoder for the captured-was-unmoved flag.
+/// `enc_capture_part!` is how a single capture gets its bits 113 and 114.
+/// Move generation builds every capture as a multi-capture payload word, so
+/// the payload's bits 33 and 34 become those two under the shift; there is
+/// no separate encoder for the captured-was-unmoved or captured-was-own
+/// flags.
 #[macro_export]
 macro_rules! enc_move_type {
     ($mv:expr, $val:expr) => {
@@ -518,7 +543,7 @@ macro_rules! enc_captured_square {
 #[macro_export]
 macro_rules! enc_capture_part {
     ($mv:expr, $taken_piece:expr) => {
-        $mv.0 |= ($taken_piece & 0x3_FFFF_FFFF) << 80;
+        $mv.0 |= ($taken_piece & 0x7_FFFF_FFFF) << 80;
     };
 }
 
@@ -548,12 +573,13 @@ macro_rules! enc_capture_part {
 /// - captured_piece!  -> captured piece index, bits 92..101
 /// - captured_square! -> captured square, bits 102..112
 ///
-/// Four answer a yes-or-no question with `bool`:
+/// Five answer a yes-or-no question with `bool`:
 ///
 /// - promotion!        -> the move promotes, bit 36
 /// - creates_enp!      -> the move leaves an en-passant square, bit 37
 /// - is_unload!        -> the payload drops a piece, takes none, bit 80
 /// - captured_unmoved! -> the captured piece had never moved, bit 113
+/// - captured_own!     -> the captured piece was the mover's, bit 114
 ///
 /// `is_pass!` reads no field of its own. It recognises the shape a variant
 /// that allows passing produces — a quiet move whose start and end squares
@@ -669,6 +695,13 @@ macro_rules! captured_unmoved {
     };
 }
 
+#[macro_export]
+macro_rules! captured_own {
+    ($mv:expr) => {
+        ($mv.0 >> 114) & 1 == 1
+    };
+}
+
 /*----------------------------------------------------------------------------*\
                        MOVE LIST REPRESENTATION DECODING
 \*----------------------------------------------------------------------------*/
@@ -688,10 +721,11 @@ macro_rules! captured_unmoved {
 /// - multi_move_captured_piece!  -> captured piece index, bits 12..21
 /// - multi_move_captured_square! -> captured square, bits 22..32
 ///
-/// Two read a flag as `bool`:
+/// Three read a flag as `bool`:
 ///
 /// - multi_move_is_unload!        -> the record drops a piece, bit 0
 /// - multi_move_captured_unmoved! -> the captured piece never moved, bit 33
+/// - multi_move_captured_own!     -> the piece was the mover's own, bit 34
 #[macro_export]
 macro_rules! multi_move_is_unload {
     ($mv:expr) => {
@@ -727,6 +761,13 @@ macro_rules! multi_move_captured_unmoved {
     };
 }
 
+#[macro_export]
+macro_rules! multi_move_captured_own {
+    ($mv:expr) => {
+        ($mv >> 34) & 1 == 1
+    };
+}
+
 /*----------------------------------------------------------------------------*\
                        MOVE LIST REPRESENTATION ENCODING
 \*----------------------------------------------------------------------------*/
@@ -748,6 +789,7 @@ macro_rules! multi_move_captured_unmoved {
 /// - enc_multi_move_captured_piece!   -> captured piece index, bits 12..21
 /// - enc_multi_move_captured_square!  -> captured square, bits 22..32
 /// - enc_multi_move_captured_unmoved! -> captured-was-unmoved flag, bit 33
+/// - enc_multi_move_captured_own!     -> captured-was-own flag, bit 34
 #[macro_export]
 macro_rules! enc_multi_move_is_unload {
     ($mv:expr, $val:expr) => {
@@ -780,5 +822,12 @@ macro_rules! enc_multi_move_captured_square {
 macro_rules! enc_multi_move_captured_unmoved {
     ($mv:expr, $val:expr) => {
         $mv |= ($val & 1) << 33;
+    };
+}
+
+#[macro_export]
+macro_rules! enc_multi_move_captured_own {
+    ($mv:expr, $val:expr) => {
+        $mv |= ($val & 1) << 34;
     };
 }

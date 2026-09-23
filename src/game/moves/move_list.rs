@@ -1063,6 +1063,10 @@ macro_rules! process_multi_leg_vector {
                         enc_multi_move_captured_unmoved!(
                             taken_piece, capt_unmoved as u64
                         );
+                        enc_multi_move_captured_own!(
+                            taken_piece,
+                            (capt_piece_color == piece_color) as u64
+                        );
 
                         $scratch.push(taken_piece);
                     } else {
@@ -1108,6 +1112,7 @@ macro_rules! process_multi_leg_vector {
                 enc_multi_move_captured_unmoved!(
                     taken_piece, capt_unmoved as u64
                 );
+                enc_multi_move_captured_own!(taken_piece, 1);                   /* only a destroying leg reaches here */
 
                 $scratch.push(taken_piece);
             } else if enemy && !pass_move {
