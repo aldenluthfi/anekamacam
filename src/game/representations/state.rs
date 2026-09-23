@@ -1292,11 +1292,12 @@ impl State {
         expr_set.par_iter().map(|expr| {
             generate_move_vectors(expr, self)
                 .iter()
-                .map(|multi_leg_vector: &Vec<LegVector>| {
-                    multi_leg_vector
+                .map(|multi_leg_vector: &Vec<LegVector>| MoveVector {
+                    legs: multi_leg_vector
                         .iter()
                         .map(|leg_vector| leg!(leg_vector))
-                        .collect::<MoveVector>()
+                        .collect(),
+                    pattern: None,
                 })
                 .collect::<MoveSet>()
         }).collect()

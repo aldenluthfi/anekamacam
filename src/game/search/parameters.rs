@@ -573,7 +573,7 @@ fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
             let mut file_offset = 0;
             let mut rank_offset = 0;
 
-            for leg in multi_leg_vector.iter() {
+            for leg in multi_leg_vector.legs.iter() {
                 file_offset += x!(leg) as i32;
                 rank_offset += y!(leg) as i32;
             }
@@ -655,7 +655,7 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
             let mut file_offset = 0;
             let mut rank_offset = 0;
 
-            for leg in multi_leg_vector.iter() {
+            for leg in multi_leg_vector.legs.iter() {
                 file_offset += x!(leg) as i32;
                 rank_offset += y!(leg) as i32;
             }
@@ -757,7 +757,7 @@ fn derive_piece_mobility(
 
     relevant_moves
         .iter()
-        .filter_map(|vector| derive_vector_chance(vector, occupancy))
+        .filter_map(|vector| derive_vector_chance(&vector.legs, occupancy))
         .map(|(chance, ..)| chance)
         .sum()
 }
@@ -1536,8 +1536,8 @@ pub fn derive_search_capabilities(state: &mut State) {
                     let mut victims = 0;
                     let mut destroys = false;
 
-                    for (leg_index, leg) in vector.iter().enumerate() {
-                        let last_leg = leg_index + 1 == vector.len();
+                    for (leg_index, leg) in vector.legs.iter().enumerate() {
+                        let last_leg = leg_index + 1 == vector.legs.len();
                         let takes = c!(leg) || d!(leg)
                             || (last_leg && !m!(leg));                          /* a plain slider takes on its last   */
 
@@ -2214,7 +2214,7 @@ pub fn derive_danger_parameters(state: &mut State) {
 
             for vector in vectors {
                 let Some((chance, file_delta, rank_delta)) =
-                    derive_vector_chance(vector, occupancy)
+                    derive_vector_chance(&vector.legs, occupancy)
                 else {
                     continue;
                 };

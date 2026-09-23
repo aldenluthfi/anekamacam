@@ -238,15 +238,24 @@ pub type Leg = u32;
 ///
 /// Move option types:
 ///
-/// - `MoveVector` : one move option, its legs in order from the origin
+/// - `MoveVector` : one move option, its legs and its CPMN condition
 /// - `MoveSet`    : all move options of one piece type
 ///
+/// The legs are in order from the origin. The condition is a set of CPMN
+/// patterns at the origin square. The option is playable when one of them
+/// matches. `None` is an option without a condition.
+///
 /// Notes:
-/// A vector is shared, not owned. The table of each square keeps the
+/// The legs are shared, not owned. The table of each square keeps the
 /// options that stay on the board. With owned copies, a 36 by 36 board used
 /// almost ten gigabytes. No code changes a vector after the parse.
 ///
-pub type MoveVector = Arc<[Leg]>;
+#[derive(Clone)]
+pub struct MoveVector {
+    pub legs: Arc<[Leg]>,
+    pub pattern: Option<Arc<PatternSet>>,
+}
+
 pub type MoveSet = Vec<MoveVector>;
 
 /// MoveVector queries
@@ -282,7 +291,7 @@ macro_rules! vector_offset {
     ($vector:expr) => {{
         let mut file_offset = 0i32;
         let mut rank_offset = 0i32;
-        for leg in $vector.iter() {
+        for leg in $vector.legs.iter() {
             file_offset += x!(leg) as i32;
             rank_offset += y!(leg) as i32;
         }
@@ -293,7 +302,7 @@ macro_rules! vector_offset {
 #[macro_export]
 macro_rules! vector_moves_quietly {
     ($vector:expr) => {
-        (match $vector.last() {
+        (match $vector.legs.last() {
             Some(leg) => m!(leg) || !(c!(leg) || d!(leg)),
             None => false,
         })
@@ -303,7 +312,7 @@ macro_rules! vector_moves_quietly {
 #[macro_export]
 macro_rules! vector_is_initial {
     ($vector:expr) => {
-        ($vector.iter().any(|leg| i!(leg)))
+        ($vector.legs.iter().any(|leg| i!(leg)))
     };
 }
 

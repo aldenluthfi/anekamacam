@@ -371,7 +371,7 @@ pub fn generate_relevant_moves(
         let mut file = accumulated_index % (state.statics.files as i32);
         let mut rank = accumulated_index / (state.statics.files as i32);
 
-        for leg in multi_leg_vector.iter() {
+        for leg in multi_leg_vector.legs.iter() {
             let file_offset = x!(leg);
             let rank_offset = y!(leg);
 
@@ -399,7 +399,7 @@ pub fn generate_relevant_moves(
         result.push(multi_leg_vector.clone());
     }
 
-    result.sort_by_key(|v| -(v.len() as isize));
+    result.sort_by_key(|v| -(v.legs.len() as isize));
     result
 }
 
@@ -444,8 +444,8 @@ pub fn generate_relevant_captures(
 
         let mut has_capture_leg = false;
 
-        for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
-            let last_leg = leg_index + 1 == multi_leg_vector.len();
+        for (leg_index, leg) in multi_leg_vector.legs.iter().enumerate() {
+            let last_leg = leg_index + 1 == multi_leg_vector.legs.len();
 
             let file_offset = x!(leg);
             let rank_offset = y!(leg);
@@ -483,7 +483,7 @@ pub fn generate_relevant_captures(
         }
     }
 
-    result.sort_by_key(|v| -(v.len() as isize));
+    result.sort_by_key(|v| -(v.legs.len() as isize));
     result
 }
 
@@ -526,9 +526,9 @@ pub fn generate_attack_masks(
         for multi_leg_vector in vector_set {
             let mut accumulated_index = square_index as i16;
 
-            let leg_count = multi_leg_vector.len();
+            let leg_count = multi_leg_vector.legs.len();
 
-            for (leg_index, leg) in multi_leg_vector.iter().enumerate() {
+            for (leg_index, leg) in multi_leg_vector.legs.iter().enumerate() {
                 let last_leg = leg_index + 1 == leg_count;
 
                 let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
@@ -540,9 +540,8 @@ pub fn generate_attack_masks(
                 let c = c!(leg) || (last_leg && !m!(leg));
                 let d = d!(leg);
 
-                let mask = (
-                    piece_index, square_index, Arc::clone(multi_leg_vector)
-                );
+                let mask =
+                    (piece_index, square_index, multi_leg_vector.clone());
 
                 if d {
                     pending.push((
@@ -611,14 +610,14 @@ macro_rules! validate_attack_vector {
         let mut accumulated_index = $square_index as i16;
         let mut target_was_last_captured = false;
 
-        let leg_count = $multi_leg_vector.len();
+        let leg_count = $multi_leg_vector.legs.len();
 
         let promotable =
             promotions!($state) && p_can_promote!($attacking_piece);
 
         let mut valid = true;
 
-        for (leg_index, leg) in $multi_leg_vector.iter().enumerate() {
+        for (leg_index, leg) in $multi_leg_vector.legs.iter().enumerate() {
             let last_leg = leg_index + 1 == leg_count;
 
             let start_square = accumulated_index as u32;
@@ -894,7 +893,7 @@ macro_rules! process_multi_leg_vector {
 
         let mut accumulated_index = $square_index as i16;
 
-        let leg_count = $vector.len();
+        let leg_count = $vector.legs.len();
 
         let promotable = promotions!($state) && p_can_promote!($piece);
 
@@ -910,7 +909,7 @@ macro_rules! process_multi_leg_vector {
         let mut mandatory = false;
         let mut optionals = false;
 
-        for (leg_index, leg) in $vector.iter().enumerate() {
+        for (leg_index, leg) in $vector.legs.iter().enumerate() {
             let last_leg = leg_index + 1 == leg_count;
             let mut taken_piece = 0u64;
 

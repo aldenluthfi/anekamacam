@@ -2,8 +2,12 @@
 
 ## Status
 
-Opened 2026-09-23. Plan approved. Stage 1 (this document) done. Stages 2 to
-7 not started. Nothing committed. Stage 2 waits for the plan 24 commit.
+Opened 2026-09-23. Plan approved. Stages 1 and 2 done.
+
+Baseline binary: `bin/base-cpmn`, built from `22d4aa6`. Gate signature:
+`debug-headless bench <v> 8 --limit 16` total nodes and
+`debug-headless perft <v> 3` at seed 42, for standard, shogi, xiangqi,
+janggi, chushogi, crazyhouse, grand and makruk.
 
 ## Context
 
@@ -108,6 +112,9 @@ One commit each. Record outcomes here as they land.
    sites, empty patterns everywhere. Gate: fixed-depth node counts and
    bench signature identical to the pre-stage binary on standard, shogi,
    xiangqi, janggi and chushogi. `standard.perft` suite unchanged.
+   Done. The condition is `Option<Arc<PatternSet>>`, not a bare
+   `PatternSet`: the struct stays 24 bytes and the legs stay one pointer
+   away. Gate identical on all 8 variants; perft suite 20256/20256.
 3. Parse and compile: branch splitter, positional `@`/`@@` CPMN split,
    optional allower half, per-branch pattern, OR-merge dedupe, shared clip,
    `example.conf` `= piece moves =` doc with an example. Gate: existing
