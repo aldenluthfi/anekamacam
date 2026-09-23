@@ -3486,6 +3486,7 @@ fn multi_leg_to_vector(
 /// Two branches that walked the very same legs come back as one, which is what
 /// keeps an expression naming a route twice from generating it twice. Branches
 /// reaching one square by different legs are different moves and both stay.
+#[hotpath::measure]
 pub fn generate_move_vectors(
     expr: &str,
     state: &State,

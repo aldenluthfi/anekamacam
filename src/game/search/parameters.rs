@@ -710,7 +710,7 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
             let mut file_offset = 0;
             let mut rank_offset = 0;
 
-            for leg in multi_leg_vector {
+            for leg in multi_leg_vector.iter() {
                 file_offset += x!(leg) as i32;
                 rank_offset += y!(leg) as i32;
             }
@@ -1456,6 +1456,7 @@ fn dearest_piece_value(state: &State) -> u64 {
 /// depth. The aspiration width is floored at one, a window of zero holding
 /// no score at all, and the late-move count at one, so the ordering always
 /// gets to try its first quiet move.
+#[hotpath::measure]
 pub fn derive_search_parameters(state: &mut State) {
     let dearest = dearest_piece_value(state);
     let (value_sum, value_count) = state.statics.pieces.iter()
@@ -1652,59 +1653,76 @@ pub fn derive_search_parameters(state: &mut State) {
 /// The movement scan reads every piece on every square rather than the
 /// piece's own template, since a leg that only appears near an edge is
 /// still a leg the rules contain. It runs once at load, so the sweep costs
-/// nothing a search will ever wait on.
+/// nothing a search will ever wait on. Each piece is scanned on its own
+/// thread and the facts are joined by `or`, since every fact is a question
+/// of whether any vector anywhere has the shape, and the answer does not
+/// depend on which piece was asked first.
+#[hotpath::measure]
 pub fn derive_search_capabilities(state: &mut State) {
     let statics = &state.statics;
     let board_size = statics.board_size;
 
-    let mut screened = false;
-    let mut royal_capture = false;
-    let mut multi_destroy = false;
-    let mut capture_only = false;
-    let mut multi_capture = false;
-    let mut may_pass = false;
+    let movement_facts = (0..statics.pieces.len()).into_par_iter()
+        .map(|piece_index| {
+            let mut screened = false;
+            let mut royal_capture = false;
+            let mut multi_destroy = false;
+            let mut multi_capture = false;
+            let mut may_pass = false;
+            let mut vectors = 0;
+            let mut quiet_vectors = 0;
 
-    for piece_index in 0..statics.pieces.len() {
-        let mut vectors = 0;
-        let mut quiet_vectors = 0;
+            for square in 0..board_size {
+                let slot = piece_index * board_size + square;
 
-        for square in 0..board_size {
-            let slot = piece_index * board_size + square;
+                for vector in statics.relevant_moves[slot].iter()
+                    .chain(statics.relevant_captures[slot].iter())
+                {
+                    let mut destroyed = 0;
+                    let mut victims = 0;
+                    let mut destroys = false;
 
-            for vector in statics.relevant_moves[slot].iter()
-                .chain(statics.relevant_captures[slot].iter())
-            {
-                let mut destroyed = 0;
-                let mut victims = 0;
-                let mut destroys = false;
+                    for (leg_index, leg) in vector.iter().enumerate() {
+                        let last_leg = leg_index + 1 == vector.len();
+                        let takes = c!(leg) || d!(leg)
+                            || (last_leg && !m!(leg));                          /* a plain slider takes on its last   */
 
-                for (leg_index, leg) in vector.iter().enumerate() {
-                    let last_leg = leg_index + 1 == vector.len();
-                    let takes = c!(leg) || d!(leg)
-                        || (last_leg && !m!(leg));                              /* a plain slider takes on its last   */
+                        screened |= u!(leg);
+                        royal_capture |= k!(leg);
+                        destroys |= d!(leg);
+                        destroyed += (d!(leg) && !u!(leg)) as usize;            /* an unloaded piece is put back      */
+                        victims += takes as usize;
+                        victims = victims.saturating_sub(u!(leg) as usize);     /* a screen is taken and handed back  */
+                    }
 
-                    screened |= u!(leg);
-                    royal_capture |= k!(leg);
-                    destroys |= d!(leg);
-                    destroyed += (d!(leg) && !u!(leg)) as usize;                /* an unloaded piece is put back      */
-                    victims += takes as usize;
-                    victims = victims.saturating_sub(u!(leg) as usize);         /* a screen is taken and handed back  */
+                    let (files_crossed, ranks_crossed) = vector_offset!(vector);
+                    let moves_quietly = vector_moves_quietly!(vector);
+
+                    multi_destroy |= destroyed > 1;
+                    multi_capture |= victims > 1;
+                    may_pass |= moves_quietly && !destroys
+                        && files_crossed == 0 && ranks_crossed == 0;            /* nothing moved and nothing taken    */
+                    vectors += 1;
+                    quiet_vectors += moves_quietly as usize;
                 }
-
-                let (files_crossed, ranks_crossed) = vector_offset!(vector);
-                let moves_quietly = vector_moves_quietly!(vector);
-
-                multi_destroy |= destroyed > 1;
-                multi_capture |= victims > 1;
-                may_pass |= moves_quietly && !destroys
-                    && files_crossed == 0 && ranks_crossed == 0;                /* nothing moved and nothing taken    */
-                vectors += 1;
-                quiet_vectors += moves_quietly as usize;
             }
-        }
 
-        capture_only |= vectors > 0 && quiet_vectors == 0;
-    }
+            let capture_only = vectors > 0 && quiet_vectors == 0;
+
+            [
+                screened, royal_capture, multi_destroy,
+                capture_only, multi_capture, may_pass,
+            ]
+        })
+        .reduce(
+            || [false; 6],
+            |left, right| array::from_fn(|fact| left[fact] || right[fact]),
+        );
+
+    let [
+        screened, royal_capture, multi_destroy,
+        capture_only, multi_capture, may_pass,
+    ] = movement_facts;
 
     let termination = &state.termination;
 
@@ -1979,6 +1997,7 @@ pub fn derive_eval_parameters(state: &mut State) {
 /// Roles are assigned before the army is resolved, because the setup walk
 /// plays real moves on a copy of the position and the copy's evaluation
 /// caches count pieces by the roles they carry.
+#[hotpath::measure]
 pub fn derive_eval_products(state: &mut State) {
     log_3!("Deriving dynamic evaluation parameters...");
 
@@ -2225,6 +2244,7 @@ fn derive_royal_confinement(state: &State) -> [bool; 2] {
 ///
 /// Params:
 /// - state: &mut State -> variant whose shelter tables are rebuilt
+#[hotpath::measure]
 pub fn derive_shelter_parameters(state: &mut State) {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
@@ -2366,6 +2386,7 @@ pub fn derive_shelter_parameters(state: &mut State) {
 ///
 /// Params:
 /// - state: &mut State -> variant whose danger tables are rebuilt
+#[hotpath::measure]
 pub fn derive_danger_parameters(state: &mut State) {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
@@ -2960,6 +2981,7 @@ fn derive_pawn_advancement(
 ///
 /// Params:
 /// - state: &mut State -> variant whose pawn tables are rebuilt
+#[hotpath::measure]
 pub fn derive_pawn_parameters(state: &mut State) {
     let board_size = state.statics.board_size;
 
@@ -3125,6 +3147,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
 ///
 /// Params:
 /// - state: &mut State -> variant whose advantage scalars are filled
+#[hotpath::measure]
 pub fn derive_advantage_parameters(state: &mut State) {
     let dearest = dearest_piece_value(state);
 

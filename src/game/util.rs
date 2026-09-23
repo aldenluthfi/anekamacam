@@ -86,6 +86,7 @@ where
 ///
 /// Return:
 /// Result<State, String> -> loaded state or unknown-variant diagnostic
+#[hotpath::measure]
 pub fn load_variant(variant: &str) -> Result<State, String> {
     let config_name = format!("{}.conf", variant);
     if EMBEDDED_CONFIGS.get_file(&config_name).is_none() {

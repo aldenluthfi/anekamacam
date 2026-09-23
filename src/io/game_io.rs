@@ -244,6 +244,7 @@ fn validate_castling(fen: &str, state: &State) -> bool {
 /// Every value is bounded to ±0x3FFF, the width the packed piece word and
 /// the evaluation accumulators leave for it. A payload out of that range is
 /// a corrupt file rather than an unusual variant, so it panics.
+#[hotpath::measure]
 pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     let piece_type_pairs = collect_piece_type_pairs(state);
     let piece_type_count = piece_type_pairs.len();
@@ -805,6 +806,7 @@ fn piece_indices(
 ///
 /// Return:
 /// State        -> the fully initialized variant, ready to be played
+#[hotpath::measure]
 pub fn parse_config_file(path: &str) -> State {
     let sections = split_sections(&config_text(path));
 
@@ -1955,6 +1957,7 @@ pub fn parse_config_file(path: &str) -> State {
 /// rank present, every rank the full width — and panics otherwise. Masks
 /// are config text compiled once at load time, so one that does not fit the
 /// board is a broken variant rather than a position to reject.
+#[hotpath::measure]
 fn parse_bit_fen(fen: Option<&str>, state: &State) -> Board {
     if fen.is_none() {
         return board!(state.statics.files, state.statics.ranks);

@@ -31,6 +31,11 @@ use crate::*;
 /// different rules along them — one blockable, one hopping, one that may
 /// only capture what it outranks — so a candidate is confirmed by walking
 /// its own vector, not by a shared ray table.
+///
+/// The vector is shared rather than owned. One vector is filed under every
+/// square it can take on, so a ray that takes along its whole length is
+/// filed once per leg, and owning a copy each time stored a 35-leg sweep 35
+/// times over. Every reader only walks it, so they all read one copy.
 pub type AttackMask = (PieceIndex, Square, MoveVector);
 
 /// MoveSignature

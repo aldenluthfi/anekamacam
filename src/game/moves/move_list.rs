@@ -360,6 +360,7 @@ pub fn generate_relevant_castling(
 ///
 ///     MoveSet
 ///     vectors playable from this square, longest first
+#[hotpath::measure]
 pub fn generate_relevant_moves(
     piece: &Piece,
     square_index: u32,
@@ -377,7 +378,7 @@ pub fn generate_relevant_moves(
         let mut file = accumulated_index % (state.statics.files as i32);
         let mut rank = accumulated_index / (state.statics.files as i32);
 
-        for leg in multi_leg_vector {
+        for leg in multi_leg_vector.iter() {
             let file_offset = x!(leg);
             let rank_offset = y!(leg);
 
@@ -434,6 +435,7 @@ pub fn generate_relevant_moves(
 ///
 ///     MoveSet
 ///     capture-capable vectors playable from this square
+#[hotpath::measure]
 pub fn generate_relevant_captures(
     piece: &Piece,
     square_index: u32,
@@ -498,17 +500,27 @@ pub fn generate_relevant_captures(
 
 /// generate_attack_masks
 ///
-/// Populates `relevant_attacks` entries originating from one start square.
-/// For each prefiltered move vector, this records whether each traversed
-/// target is attacked as enemy capture (`c`) and/or friendly destroy (`d`).
+/// Collects the `relevant_attacks` entries originating from one start
+/// square. For each prefiltered move vector, this records whether each
+/// traversed target is attacked as enemy capture (`c`) and/or friendly
+/// destroy (`d`).
 ///
-/// Two-phase: collect pending writes while holding only shared borrows, then
-/// apply via Arc::get_mut after all borrows expire.
+/// It only reads the position and hands the entries back, so every square
+/// can be collected at once on its own thread. The caller files them in
+/// square order afterwards, which keeps each square's list of attackers in
+/// the order a serial pass would have built it.
 ///
 /// Params:
-/// - square_index: u16        -> origin square of the outgoing attacks
-/// - state       : &mut State -> engine state receiving reverse attack table
-pub fn generate_attack_masks(square_index: u16, state: &mut State) {
+/// - square_index: u16    -> origin square of the outgoing attacks
+/// - state       : &State -> engine state holding the relevant-move tables
+///
+/// Return:
+/// Vec<(usize, usize, AttackMask)> -> (side attacked, square, entry) writes
+#[hotpath::measure]
+pub fn generate_attack_masks(
+    square_index: u16,
+    state: &State,
+) -> Vec<(usize, usize, AttackMask)> {
     let board_size = state.statics.board_size;
     let files = state.statics.files;
 
@@ -539,7 +551,7 @@ pub fn generate_attack_masks(square_index: u16, state: &mut State) {
                 let d = d!(leg);
 
                 let mask = (
-                    piece_index, square_index, multi_leg_vector.to_vec()
+                    piece_index, square_index, Arc::clone(multi_leg_vector)
                 );
 
                 if d {
@@ -561,11 +573,7 @@ pub fn generate_attack_masks(square_index: u16, state: &mut State) {
         }
     }
 
-    let static_data = Arc::get_mut(&mut state.statics)
-        .expect("static_data has multiple Arc references during precompute");
-    for (color, sq, mask) in pending {
-        static_data.relevant_attacks[color][sq].push(mask);
-    }
+    pending
 }
 
 /// validate_attack_vector!

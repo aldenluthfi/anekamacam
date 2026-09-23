@@ -241,7 +241,14 @@ pub type Leg = u32;
 /// A `MoveVector` is one complete movement option: its ordered legs are
 /// visited from origin to destination. A `MoveSet` collects every option the
 /// movement-expression parser produced for one piece type.
-pub type MoveVector = Vec<Leg>;
+///
+/// A vector is shared rather than owned. The per-square tables keep, for
+/// every square, the options that stay on the board from there, which is
+/// nearly the whole set on most squares; owning them copied each option once
+/// per square it fits, and on a 36 by 36 board that was most of ten
+/// gigabytes. Nothing edits a vector after it is parsed, so every table can
+/// read the one copy.
+pub type MoveVector = Arc<[Leg]>;
 pub type MoveSet = Vec<MoveVector>;
 
 /// MoveVector queries
@@ -271,7 +278,7 @@ macro_rules! vector_offset {
     ($vector:expr) => {{
         let mut file_offset = 0i32;
         let mut rank_offset = 0i32;
-        for leg in $vector {
+        for leg in $vector.iter() {
             file_offset += x!(leg) as i32;
             rank_offset += y!(leg) as i32;
         }

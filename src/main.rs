@@ -150,7 +150,7 @@ pub mod prelude;
 /// Without a printer listening on the other end their output would go
 /// nowhere at all, so one is installed for the length of the call and joined
 /// afterwards to be sure the last line has been flushed.
-#[hotpath::main]
+#[hotpath::main(functions_limit = 0)]
 fn main() {
     init_logging();
 

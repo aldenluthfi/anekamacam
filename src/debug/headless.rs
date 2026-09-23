@@ -125,6 +125,7 @@ fn headless_usage() -> String {
 ///
 /// Return:
 /// Result<HeadlessPosition, String> -> the loaded position, or the fault
+#[hotpath::measure]
 fn parse_position_arguments(
     command: &str,
     arguments: &[String],
@@ -297,6 +298,7 @@ fn parse_position_arguments(
 ///
 /// Return:
 /// Result<(), String>           -> printed, or the value it refused
+#[hotpath::measure]
 fn run_state_command(
     mut position: HeadlessPosition,
 ) -> Result<(), String> {
@@ -1053,6 +1055,7 @@ fn run_sprt_command(arguments: &[String]) -> Result<(), String> {
 ///
 /// Params:
 /// - arguments: &[String] -> values after `debug-headless`
+#[hotpath::measure]
 pub fn run_debug_headless(arguments: &[String]) {
     SYSTEM_INTERRUPT.store(false, Ordering::Relaxed);
 

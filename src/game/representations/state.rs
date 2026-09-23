@@ -1248,6 +1248,7 @@ impl State {
     /// reach this from a protocol, a fixture file or the engine's own
     /// round-trip, and every one of those is a caller that has no answer
     /// to a half-loaded board.
+    #[hotpath::measure]
     pub fn load_fen(&mut self, fen: &str, dict: Option<&Translator>) {
         self.reset();
         parse_fen(self, fen, dict)
@@ -1342,22 +1343,19 @@ impl State {
     ///
     ///   Return:
     ///   Vec<PatternSet>         -> one pattern per `|` branch, none if empty
+    #[hotpath::measure]
     fn generate_piece_moves(&self, expr_set: &Vec<String>) -> Vec<MoveSet> {
-        let mut piece_moves = Vec::with_capacity(self.statics.pieces.len());
-        for expr in expr_set {
-            let move_vectors = generate_move_vectors(expr, self);
-            let moves_for_piece = move_vectors
+        expr_set.par_iter().map(|expr| {
+            generate_move_vectors(expr, self)
                 .iter()
                 .map(|multi_leg_vector: &Vec<LegVector>| {
                     multi_leg_vector
                         .iter()
                         .map(|leg_vector| leg!(leg_vector))
-                        .collect::<Vec<u32>>()
+                        .collect::<MoveVector>()
                 })
-                .collect::<Vec<Vec<u32>>>();
-            piece_moves.push(moves_for_piece);
-        }
-        piece_moves
+                .collect::<MoveSet>()
+        }).collect()
     }
 
     fn generate_piece_drops(&self, expr_set: &[String]) -> Vec<DropSet> {
@@ -1402,7 +1400,8 @@ impl State {
     ///
     ///     Vec<Vec<T>>
     ///     one entry per piece and square, at piece * board_size + square
-    fn populate_relevant<T: Clone>(
+    #[hotpath::measure]
+    fn populate_relevant<T: Clone + Send + Sync>(
         &self,
         source: &[Vec<T>],
         generator: fn(&Piece, u32, &State, &[Vec<T>]) -> Vec<T>,
@@ -1410,16 +1409,11 @@ impl State {
         let board_size = self.statics.board_size;
         let piece_count = self.statics.pieces.len();
 
-        let mut results = vec![Vec::new(); piece_count * board_size];
+        (0..piece_count * board_size).into_par_iter().map(|slot| {
+            let piece = &self.statics.pieces[slot / board_size];
 
-        for (index, piece) in self.statics.pieces.iter().enumerate() {
-            for square in 0..board_size {
-                results[index * board_size + square] =
-                    generator(piece, square as u32, self, source);
-            }
-        }
-
-        results
+            generator(piece, (slot % board_size) as u32, self, source)
+        }).collect()
     }
 
     /// State::precompute
@@ -1441,6 +1435,7 @@ impl State {
     /// - drops_expr_set    : Vec<String> -> per-piece drop expressions
     /// - setup_expr_set    : Vec<String> -> per-piece setup expressions
     /// - stand_off_expr_set: Vec<String> -> per-piece stand-off expressions
+    #[hotpath::measure]
     pub fn precompute(
         &mut self,
         moves_expr_set: Vec<String>,
@@ -1493,8 +1488,15 @@ impl State {
             self.static_mut().relevant_stand_offs = stand_offs;
         }
 
-        for square in 0..self.statics.board_size {
-            generate_attack_masks(square as Square, self);
+        let attack_writes: Vec<Vec<(usize, usize, AttackMask)>> =
+            (0..self.statics.board_size).into_par_iter()
+                .map(|square| generate_attack_masks(square as Square, self))
+                .collect();
+
+        let statics = self.static_mut();
+
+        for (color, square, mask) in attack_writes.into_iter().flatten() {
+            statics.relevant_attacks[color][square].push(mask);
         }
     }
 }
