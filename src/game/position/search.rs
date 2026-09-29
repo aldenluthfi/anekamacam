@@ -1336,7 +1336,7 @@ pub fn alpha_beta(
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
         let is_drop = m_drop!(mv);
-        let is_quiet = m_quiet!(mv);
+        let is_quiet = m_quiet!(mv) || is_drop && !is_capture;                  /* a drop takes nothing, as a step    */
 
         let prunable = ply > 0
             && !in_check
@@ -1344,8 +1344,7 @@ pub fn alpha_beta(
             && beta - alpha == 1
             && alpha.abs() < MATE_SCORE;
 
-        let prunable_quiet = prunable && !is_capture && !is_promotion
-            && !is_drop;
+        let prunable_quiet = prunable && !is_capture && !is_promotion;
 
         let late_quiet = prunable_quiet
             && quiet_pruning!(state)
@@ -1409,7 +1408,7 @@ pub fn alpha_beta(
         && !gives_check
         {
             let surface = match (
-                is_capture || is_promotion || is_drop, in_check
+                is_capture || is_promotion, in_check
             ) {
                 (false, false) => &state.statics.search.reduction_quiet,
                 (false, true) => &state.statics.search.reduction_quiet_check,

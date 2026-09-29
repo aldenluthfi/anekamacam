@@ -433,8 +433,28 @@ binary `base0` is b970373.
 - SPRT grand `0 5` (x1b against base0): paused by the user at 514 games,
   254W 184L 76D, +46.6 ± 27.9, LLR 1.13. No verdict; an SPRT cannot
   resume, so the arm starts again from zero.
-- Next: restart the grand arm of x1b, then the `-5 5` arms (xiangqi,
-  shogi, standard), then commit S1 + X1 as one stage.
+- SPRT grand `0 5` again on the compute server (32 cores, 30 slots,
+  branch `plan27-s1x1`, 416069e against b970373): H1 at 1795 games,
+  832W 664L 299D, +33.6 ± 14.3, LLR 2.95.
+- The `-5 5` arms on the server, same binaries: xiangqi H1 +26.3 ± 18.5,
+  shogi H1 +77.6 ± 33.2, standard H1 +33.0 ± 20.8. S1 + X1 passes in all
+  four variants (commit 416069e on `plan27-s1x1`).
+
+### E1 (2026-09-29, branch `plan27-e1`, 41d7954)
+
+- `king_danger!` is in `endgame_score!` too.
+- In a drop variant, `phase_score` counts the big pieces in hand. A capture
+  to the hand keeps the phase, a drop does not add to it, and a
+  promotion that takes a piece from a hand removes it. The debug build
+  compares the sum with `game_phase_score!` after each move; searches on
+  shogi and crazyhouse positions do not panic.
+- The endgame promotion gradient of the piece-square tables falls from
+  40% to 6% of the gain, as in the opening. The passed pawn term gave the
+  same race a second time. The tables are in `res/param/*/latest.param`,
+  so the params are made again; only the endgame tables of pieces that
+  promote change, the material stays the same.
+- Example `N7/4n3/2p5/3p1k1p/3K4/8/8/5B2 b` (FSF +7 cp): 637 before, 406
+  after. The rest is the pawn value itself (P1).
 
 ## Verification
 
