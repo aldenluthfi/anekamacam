@@ -776,15 +776,17 @@ fn derive_piece_mobility(
 /// Walks one vector on a board with random occupancy. It gives the chance
 /// that all leg conditions are true, and the total displacement.
 ///
-/// - pass   : needs an empty square, chance `1 - occupancy`
-/// - screen : needs an occupied square, chance `occupancy`
-/// - final  : needs `occupancy` again, if it captures after a hop
-/// - marker : has no displacement, skipped
+/// - pass         : needs an empty square, chance `1 - occupancy`
+/// - screen       : needs an occupied square, chance `occupancy`
+/// - final, move  : a move-only last leg needs an empty square
+/// - final, take  : a capture-only last leg needs a piece, `occupancy`
+/// - final, both  : a last leg that moves and takes lands always, 1
+/// - marker       : has no displacement, skipped
 ///
 /// The chance is the product, with the chance of the CPMN condition from
 /// `derive_condition_chance`. Thus a long slide decreases with each
-/// square, a leaper always has 1, and a hopper capture has 0 on an empty
-/// board.
+/// square, a pawn step and a pawn capture each land less often than a
+/// leaper, and a hopper capture has 0 on an empty board.
 ///
 /// Params:
 ///
@@ -808,7 +810,6 @@ fn derive_vector_chance(
     let (final_leg, intermediate_legs) = vector.legs.split_last()?;
 
     let mut chance = 1.0;
-    let mut hopper = false;
     let mut file_delta = x!(final_leg) as i32;
     let mut rank_delta = y!(final_leg) as i32;
 
@@ -827,13 +828,17 @@ fn derive_vector_chance(
         } else {
             1.0 - occupancy
         };
-
-        hopper |= needs_piece;
     }
 
-    if hopper && c!(final_leg) && !m!(final_leg) {
-        chance *= occupancy;
-    }
+    let final_flagged = c!(final_leg) || d!(final_leg);
+    let final_moves = m!(final_leg) || !final_flagged;                          /* a plain last leg moves and takes   */
+    let final_takes = final_flagged || !m!(final_leg);
+
+    chance *= match (final_moves, final_takes) {
+        (true, false) => 1.0 - occupancy,
+        (false, true) => occupancy,
+        _ => 1.0,
+    };
 
     chance *= derive_condition_chance(state, vector, occupancy);
 
