@@ -140,7 +140,8 @@ pub use crate::debug::graphics::{run_debug_graphics, BoardState};
 pub use crate::debug::headless::run_debug_headless;
 pub use crate::debug::datagen::run_datagen;
 pub use crate::debug::sprt::{
-    parse_sprt_time_control, run_sprt, SPRTTimeControl,
+    parse_sprt_option, parse_sprt_time_control, run_sprt, SPRTEngine,
+    SPRTMatch, SPRTTimeControl,
 };
 pub use crate::debug::tuning::run_tuning;
 
@@ -207,7 +208,7 @@ pub use std::{
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering},
         mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
     },

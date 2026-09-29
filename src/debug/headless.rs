@@ -71,7 +71,9 @@ fn headless_usage() -> String {
         "  derive\n",
         "  datagen <variant> <games> <movetime-ms> [threads]\n",
         "  tune <variant> <epochs> [learning-rate]\n",
-        "  sprt <variant> <bin-a> <bin-b> <ms|base+inc> [games] [h0] [h1]\n\n",
+        "  sprt <variant> <bin-a> <bin-b> <ms|base+inc> [games] [h0] [h1]\n",
+        "       [--concurrency n] [--option-a name=value]...\n",
+        "       [--option-b name=value]...\n\n",
 
         "Position options:\n",
         "  --protocol <uci|usi|ucci>\n",
@@ -949,8 +951,20 @@ fn run_tune_command(arguments: &[String]) -> Result<(), String> {
 /// - h0       : Elo to reject, 0.0 by default
 /// - h1       : Elo to accept, 5.0 by default
 ///
+/// Flags can be anywhere after the variant:
+///
+/// - `--concurrency n`         : games at the same time, 1 by default
+/// - `--option-a name=value`   : `setoption` for engine A, repeatable
+/// - `--option-b name=value`   : `setoption` for engine B, repeatable
+///
+/// ```text
+/// sprt xiangqi ./anekamacam fairy-stockfish 10000+100 2000 -5 5
+///      --concurrency 8 --option-a Hash=64 --option-b Hash=64
+///      --option-b UCI_LimitStrength=true --option-b UCI_Elo=1500
+/// ```
+///
 /// Params:
-/// - arguments: &[String] -> the pair, the control and the bounds
+/// - arguments: &[String] -> the pair, the control, the bounds and flags
 ///
 /// Return:
 /// Result<(), String>     -> Ok, or the rejected argument
@@ -960,32 +974,67 @@ fn run_tune_command(arguments: &[String]) -> Result<(), String> {
 /// colours.
 ///
 fn run_sprt_command(arguments: &[String]) -> Result<(), String> {
-    if arguments.len() < 4 || arguments.len() > 7 {
+    let mut values = Vec::new();
+    let mut concurrency = 1usize;
+    let mut options_a = Vec::new();
+    let mut options_b = Vec::new();
+    let mut index = 0usize;
+
+    while index < arguments.len() {
+        let flag = arguments[index].as_str();
+        if !flag.starts_with("--") {
+            values.push(arguments[index].clone());
+            index += 1;
+            continue;
+        }
+
+        let value = arguments
+            .get(index + 1)
+            .ok_or_else(|| format!("Missing value for {}", flag))?;
+        match flag {
+            "--concurrency" => {
+                concurrency = value.parse::<usize>().map_err(|_| {
+                    format!("Invalid concurrency: {}", value)
+                })?;
+            }
+            "--option-a" => options_a.push(parse_sprt_option(value)?),
+            "--option-b" => options_b.push(parse_sprt_option(value)?),
+            _ => return Err(format!("Unknown sprt flag: {}", flag)),
+        }
+        index += 2;
+    }
+
+    if values.len() < 4 || values.len() > 7 {
         return Err(
             "sprt requires variant, two binaries, and time control".to_string()
         );
     }
 
-    let variant = &arguments[0];
-    let state = load_variant(variant)?;
-    let time_control = parse_sprt_time_control(&arguments[3])?;
-    let max_games = parse_number(arguments, 4, 2000usize, "games")?;
-    let h0 = parse_number(arguments, 5, 0.0f64, "h0")?;
-    let h1 = parse_number(arguments, 6, 5.0f64, "h1")?;
-    if max_games < 2 {
+    let state = load_variant(&values[0])?;
+    let settings = SPRTMatch {
+        variant: values[0].clone(),
+        engine_a: SPRTEngine {
+            binary: values[1].clone(),
+            options: options_a,
+        },
+        engine_b: SPRTEngine {
+            binary: values[2].clone(),
+            options: options_b,
+        },
+        time_control: parse_sprt_time_control(&values[3])?,
+        max_games: parse_number(&values, 4, 2000usize, "games")?,
+        h0: parse_number(&values, 5, 0.0f64, "h0")?,
+        h1: parse_number(&values, 6, 5.0f64, "h1")?,
+        concurrency,
+    };
+    if settings.max_games < 2 {
         return Err("sprt requires at least two games".to_string());
     }
+    if settings.concurrency == 0 {
+        return Err("sprt requires at least one slot".to_string());
+    }
 
-    run_sprt(
-        &state,
-        variant,
-        &arguments[1],
-        &arguments[2],
-        time_control,
-        max_games,
-        h0,
-        h1,
-    );
+    run_sprt(&state, &settings);
     Ok(())
 }
 

@@ -2903,10 +2903,24 @@ fn execute_command(
                 return;
             };
 
-            run_sprt(
-                state, variant_name, parts[1], parts[2],
-                time_control, max_games, h0, h1,
-            );
+            let settings = SPRTMatch {
+                variant: variant_name.clone(),
+                engine_a: SPRTEngine {
+                    binary: parts[1].to_string(),
+                    options: Vec::new(),
+                },
+                engine_b: SPRTEngine {
+                    binary: parts[2].to_string(),
+                    options: Vec::new(),
+                },
+                time_control,
+                max_games,
+                h0,
+                h1,
+                concurrency: 1,
+            };
+
+            run_sprt(state, &settings);
         }
         _ if trimmed.starts_with("perft") => {
             let parts = trimmed.split_whitespace().collect::<Vec<_>>();

@@ -51,33 +51,118 @@ const SPRT_HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
 const SPRT_RESPONSE_GRACE_MS: u128 = 5_000;
 const SPRT_SHUTDOWN_TIMEOUT_MS: u64 = 1_000;
 
+/// run_sandbox_root
+///
+/// Gives the folder of all engine sandboxes of this run. The process id
+/// makes it private, so two runs at the same time do not share files.
+///
+/// Return:
+/// PathBuf -> the folder, `/tmp/anekamacam-sprt/<pid>`
+///
+fn run_sandbox_root() -> PathBuf {
+    env::temp_dir()
+        .join("anekamacam-sprt")
+        .join(std::process::id().to_string())
+}
+
 /// engine_sandbox
 ///
-/// Gives the private work directory of one engine binary. Each engine runs
-/// in it, so `res/param` has its own exports or its embedded defaults. With
-/// shared files, the two engines would have the same parameters, and a
-/// parameter patch could not be measured.
+/// Gives the private work directory of one engine in one match slot. Each
+/// engine runs in it, so `res/param` has its own exports or its embedded
+/// defaults, and `logs/latest.log` has one writer. With shared files, the
+/// two engines would have the same parameters, and two engines that roll
+/// one log at the same time crash at startup.
 ///
 /// ```text
-/// /tmp/anekamacam-sprt/_Users_me_build_release_main
-///      ^               ^
-///      |               the binary path, each separator is an underscore
-///      one folder for the full harness
+/// /tmp/anekamacam-sprt/4242/3-engine-b
+///                      ^    ^ ^
+///                      |    | the side label
+///                      |    the match slot
+///                      the process id of the run
 /// ```
 ///
 /// Params:
-/// - binary: &str          -> path of the engine binary
+/// - slot : usize -> index of the match slot
+/// - label: &str  -> `engine-a` or `engine-b`
 ///
 /// Return:
-/// Result<PathBuf, String> -> the sandbox path, or the path error
+/// PathBuf        -> the sandbox path
 ///
-fn engine_sandbox(binary: &str) -> Result<PathBuf, String> {
-    let executable = fs::canonicalize(binary).map_err(|error| {
-        format!("Failed to resolve engine {}: {}", binary, error)
-    })?;
-    let name = executable.to_string_lossy().replace(['/', '\\'], "_");
+fn engine_sandbox(slot: usize, label: &str) -> PathBuf {
+    run_sandbox_root().join(format!("{}-{}", slot, label))
+}
 
-    Ok(env::temp_dir().join("anekamacam-sprt").join(name))
+/*----------------------------------------------------------------------------*\
+                                  ENGINE SPEC
+\*----------------------------------------------------------------------------*/
+
+/// SPRTEngine
+///
+/// One side of the match: a binary and the options it gets after the
+/// variant. The options set a reference engine, for example a strength
+/// limit, without a wrapper script.
+///
+/// - binary  : path of the engine binary
+/// - options : `setoption` name and value pairs, sent in order
+///
+#[derive(Clone)]
+pub struct SPRTEngine {
+    pub binary: String,                                                         /* executable path                    */
+    pub options: Vec<(String, String)>,                                         /* setoption pairs after the variant  */
+}
+
+/// parse_sprt_option
+///
+/// Reads one engine option from the command line. The first `=` separates
+/// the name and the value.
+///
+/// - `Hash=64`      : `setoption name Hash value 64`
+/// - `UCI_Elo=1965` : `setoption name UCI_Elo value 1965`
+///
+/// Params:
+/// - value: &str                    -> the option as `name=value`
+///
+/// Return:
+/// Result<(String, String), String> -> the name and value, or the bad text
+///
+pub fn parse_sprt_option(value: &str) -> Result<(String, String), String> {
+    match value.split_once('=') {
+        Some((name, option_value)) if !name.is_empty() => {
+            Ok((name.to_string(), option_value.to_string()))
+        }
+        _ => Err(format!("Invalid engine option: {}", value)),
+    }
+}
+
+/// SPRTEngine::fmt
+///
+/// Writes the binary and its options for the log and the result file.
+///
+/// ```text
+/// fairy-stockfish (UCI_LimitStrength=true, UCI_Elo=1965)
+/// ```
+///
+/// Params:
+/// - formatter: &mut FmtFormatter<'_> -> the output
+///
+/// Return:
+/// FmtResult                          -> the result of the output
+///
+impl Display for SPRTEngine {
+    fn fmt(&self, formatter: &mut FmtFormatter<'_>) -> FmtResult {
+        write!(formatter, "{}", self.binary)?;
+
+        if self.options.is_empty() {
+            return Ok(());
+        }
+
+        let options = self.options.iter()
+            .map(|(name, value)| format!("{}={}", name, value))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        write!(formatter, " ({})", options)
+    }
 }
 
 /*----------------------------------------------------------------------------*\
@@ -222,6 +307,8 @@ impl Display for SPRTChildError {
 /// One running engine and its three pipes. The two sides are real binaries
 /// on UCI, so the test measures the shipped engine.
 ///
+/// - engine  : binary and options, to start it again after a failure
+/// - sandbox : its work folder, kept for a restart
 /// - input  : harness → engine, commands flushed at once
 /// - output : harness ← engine, replies from a reader thread
 /// - errors : harness ← engine, diagnostics read after the exit
@@ -232,7 +319,8 @@ impl Display for SPRTChildError {
 /// loses one game, not the full run.
 ///
 struct SPRTChild {
-    binary: String,                                                             /* executable path for diagnostics    */
+    engine: SPRTEngine,                                                        /* binary and options, for restarts   */
+    sandbox: PathBuf,                                                           /* private work folder, for restarts  */
     process: Child,                                                             /* the running engine subprocess      */
     input: ChildStdin,                                                          /* pipe carrying commands to it       */
     output: Receiver<Result<Option<String>, String>>,                           /* timed subprocess reply stream      */
@@ -277,8 +365,9 @@ struct SPRTChild {
 /// spawn
 ///
 ///   Params:
-///   - binary : &str                   -> path of the engine binary
+///   - engine : &SPRTEngine            -> binary and options to start
 ///   - variant: &str                   -> variant to select on UCI
+///   - sandbox: &Path                  -> work folder of the engine
 ///
 ///   Return:
 ///   Result<SPRTChild, SPRTChildError> -> a ready engine, or the error
@@ -344,13 +433,14 @@ struct SPRTChild {
 ///   - timeout   : Duration                 -> time limit for a reply
 ///
 ///   Return:
-///   Result<Option<String>, SPRTChildError> -> the move, `None`, or an error
+///   Result<(Option<String>, String), SPRTChildError> -> move, last score
 ///
 /// Notes:
 /// `spawn` runs each engine in its own `engine_sandbox` with one thread, so
-/// the two do not compete for cores. A failure is returned, not raised. An
-/// engine that fails loses the game and restarts. Only a failure of the two
-/// engines at once ends the run.
+/// the two do not compete for cores. The options of the engine come after
+/// the thread count, so they can change it. A failure is returned, not
+/// raised. An engine that fails loses the game and restarts. Only a failure
+/// of the two engines at once ends the run.
 ///
 impl SPRTChild {
     fn setup_error(
@@ -393,15 +483,17 @@ impl SPRTChild {
         receiver
     }
 
-    fn spawn(binary: &str, variant: &str) -> Result<SPRTChild, SPRTChildError> {
+    fn spawn(
+        engine: &SPRTEngine,
+        variant: &str,
+        sandbox: &Path,
+    ) -> Result<SPRTChild, SPRTChildError> {
+        let binary = engine.binary.as_str();
         let executable = fs::canonicalize(binary).map_err(|error| {
             Self::setup_error(binary, "path resolution", error.to_string())
         })?;
-        let sandbox = engine_sandbox(binary).map_err(|detail| {
-            Self::setup_error(binary, "sandbox resolution", detail)
-        })?;
 
-        fs::create_dir_all(&sandbox).map_err(|error| {
+        fs::create_dir_all(sandbox).map_err(|error| {
             Self::setup_error(
                 binary,
                 "sandbox creation",
@@ -410,8 +502,7 @@ impl SPRTChild {
         })?;
 
         let mut process = Command::new(executable)
-            .arg(SPRT_PROTOCOL)
-            .current_dir(&sandbox)
+            .current_dir(sandbox)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -442,31 +533,35 @@ impl SPRTChild {
             ));
         };
 
-        let mut engine = SPRTChild {
-            binary: binary.to_string(),
+        let mut child = SPRTChild {
+            engine: engine.clone(),
+            sandbox: sandbox.to_path_buf(),
             process,
             input,
             output: Self::output_reader(output),
             errors,
         };
 
-        engine.send(SPRT_PROTOCOL)?;
-        engine.wait_for(
+        child.send(SPRT_PROTOCOL)?;
+        child.wait_for(
             &format!("{}ok", SPRT_PROTOCOL),
             Duration::from_millis(SPRT_HANDSHAKE_TIMEOUT_MS),
         )?;
-        engine.send(&format!(
+        child.send(&format!(
             "setoption name {}_Variant value {}",
             SPRT_PROTOCOL.to_uppercase(), variant,
         ))?;
-        engine.send(&format!("setoption name {} value 1", OPT_THREADS))?;
-        engine.send("isready")?;
-        engine.wait_for(
+        child.send(&format!("setoption name {} value 1", OPT_THREADS))?;
+        for (name, value) in &engine.options {
+            child.send(&format!("setoption name {} value {}", name, value))?;
+        }
+        child.send("isready")?;
+        child.wait_for(
             "readyok",
             Duration::from_millis(SPRT_HANDSHAKE_TIMEOUT_MS),
         )?;
 
-        Ok(engine)
+        Ok(child)
     }
 
     fn failure(&mut self, action: &str, detail: String) -> SPRTChildError {
@@ -482,7 +577,7 @@ impl SPRTChild {
         };
 
         SPRTChildError {
-            binary: self.binary.clone(),
+            binary: self.engine.binary.clone(),
             action: action.to_string(),
             detail,
             status,
@@ -493,7 +588,7 @@ impl SPRTChild {
     fn exited_error(&mut self, action: &str) -> Option<SPRTChildError> {
         match self.process.try_wait() {
             Ok(Some(status)) => Some(SPRTChildError {
-                binary: self.binary.clone(),
+                binary: self.engine.binary.clone(),
                 action: action.to_string(),
                 detail: "process exited unexpectedly".to_string(),
                 status: status.to_string(),
@@ -591,7 +686,7 @@ impl SPRTChild {
         moves: &[String],
         go_command: &str,
         timeout: Duration,
-    ) -> Result<Option<String>, SPRTChildError> {
+    ) -> Result<(Option<String>, String), SPRTChildError> {
         let mut command = format!("position fen {}", startpos);
         if !moves.is_empty() {
             command.push_str(" moves");
@@ -605,6 +700,7 @@ impl SPRTChild {
         self.send(go_command)?;
 
         let deadline = Instant::now() + timeout;
+        let mut score = "-".to_string();
 
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -622,7 +718,11 @@ impl SPRTChild {
             };
             let mut tokens = line.split_whitespace();
             if tokens.next() == Some("bestmove") {
-                return Ok(tokens.next().map(str::to_string));
+                return Ok((tokens.next().map(str::to_string), score));
+            }
+            if let Some((_, tail)) = line.split_once(" score ") {
+                score = tail.split_whitespace().take(2)
+                    .collect::<Vec<_>>().join(" ");
             }
         }
     }
@@ -672,6 +772,7 @@ impl Drop for SPRTChild {
 /// - `Score(0.0)` : Black won
 /// - `EngineLoss` : one engine failed, it loses and restarts
 /// - `Aborted`    : the two engines failed, no score, the run stops
+/// - `Stopped`    : the run has a verdict, the game has no use
 ///
 enum SPRTGameOutcome {
     Score(f64),                                                                 /* a played game, White's view        */
@@ -681,6 +782,7 @@ enum SPRTGameOutcome {
         error: SPRTChildError,                                                  /* why it needs restarting            */
     },
     Aborted(String),                                                            /* both gone; nothing to score        */
+    Stopped,                                                                    /* verdict found in another slot      */
 }
 
 /// GameManager
@@ -696,13 +798,17 @@ enum SPRTGameOutcome {
 /// - game 1 : A as White, B as Black, score for White
 /// - game 2 : B as White, A as Black, score flipped back to A
 ///
-/// The referee `State` also goes to the board view, so a person can watch
-/// the match.
+/// The referee `State` of slot 0 also goes to the board view, so a person
+/// can watch one game of the match.
+///
+/// `record` has one `fen;move;score` row for each engine move of the game.
 ///
 struct GameManager {
+    slot: usize,                                                                /* index of the slot, 0 is watched    */
     state: State,                                                               /* neutral referee; history is game   */
     white: SPRTChild,                                                           /* child currently playing White      */
     black: SPRTChild,                                                           /* child currently playing Black      */
+    record: Vec<String>,                                                        /* rows of the current game           */
 }
 
 /// GameManager driver
@@ -722,13 +828,15 @@ struct GameManager {
 /// - flag          : with a clock, the measured wall time is charged
 /// - failed engine : a loss for it, no score if the two failed
 /// - interrupt     : loss if in check or no move loses, else a draw
+/// - stop          : no score, the run already has a verdict
 ///
 /// new
 ///
 ///   Params:
+///   - slot    : usize                   -> index of the slot
 ///   - template: &State                  -> variant to fork as the referee
-///   - binary_a: &str                    -> engine that starts as White
-///   - binary_b: &str                    -> engine that starts as Black
+///   - engine_a: &SPRTEngine             -> engine that starts as White
+///   - engine_b: &SPRTEngine             -> engine that starts as Black
 ///   - variant : &str                    -> variant of the two engines
 ///
 ///   Return:
@@ -762,6 +870,7 @@ struct GameManager {
 ///   - dict        : Option<&Translator> -> notation of the two engines
 ///   - startpos    : &str                -> start position of the variant
 ///   - time_control: SPRTTimeControl     -> time for each move or game
+///   - stop        : &AtomicBool         -> set when the run has a verdict
 ///
 ///   Return:
 ///   SPRTGameOutcome                     -> the end of the game
@@ -772,18 +881,25 @@ struct GameManager {
 ///
 impl GameManager {
     fn new(
+        slot: usize,
         template: &State,
-        binary_a: &str,
-        binary_b: &str,
+        engine_a: &SPRTEngine,
+        engine_b: &SPRTEngine,
         variant: &str,
     ) -> Result<GameManager, SPRTChildError> {
-        let white = SPRTChild::spawn(binary_a, variant)?;
-        let black = SPRTChild::spawn(binary_b, variant)?;
+        let white = SPRTChild::spawn(
+            engine_a, variant, &engine_sandbox(slot, "engine-a"),
+        )?;
+        let black = SPRTChild::spawn(
+            engine_b, variant, &engine_sandbox(slot, "engine-b"),
+        )?;
 
         Ok(GameManager {
+            slot,
             state: template.fork(),
             white,
             black,
+            record: Vec::new(),
         })
     }
 
@@ -796,18 +912,18 @@ impl GameManager {
         side: u8,
         variant: &str,
     ) -> Result<(), SPRTChildError> {
-        let binary = if side == WHITE {
-            self.white.binary.clone()
+        let failed = if side == WHITE {
+            &mut self.white
         } else {
-            self.black.binary.clone()
+            &mut self.black
         };
-        let child = SPRTChild::spawn(&binary, variant)?;
 
-        if side == WHITE {
-            self.white = child;
-        } else {
-            self.black = child;
-        }
+        let _ = failed.process.kill();                                          /* one log writer for each sandbox    */
+        let _ = failed.process.wait();
+
+        *failed = SPRTChild::spawn(
+            &failed.engine.clone(), variant, &failed.sandbox.clone(),
+        )?;
 
         Ok(())
     }
@@ -818,6 +934,7 @@ impl GameManager {
         opening: &[Move],
     ) -> Result<(), String> {
         self.state = template.fork();
+        self.record.clear();
         let state = &mut self.state;
 
         for played in opening {
@@ -844,6 +961,7 @@ impl GameManager {
         dict: Option<&Translator>,
         startpos: &str,
         time_control: SPRTTimeControl,
+        stop: &AtomicBool,
     ) -> SPRTGameOutcome {
         let state = &mut self.state;
 
@@ -853,6 +971,9 @@ impl GameManager {
         };
 
         loop {
+            if stop.load(Ordering::Relaxed) {
+                return SPRTGameOutcome::Stopped;
+            }
             let terminal = game_outcome(state).0;
             if terminal != ONGOING {
                 return SPRTGameOutcome::Score(
@@ -904,7 +1025,12 @@ impl GameManager {
             };
 
             let move_string = match result {
-                Ok(Some(text)) if text != "(none)" => text,
+                Ok((Some(text), score)) if text != "(none)" => {
+                    self.record.push(format!(
+                        "{};{};{}", format_fen(state, dict), text, score,
+                    ));
+                    text
+                }
                 Ok(_) => return SPRTGameOutcome::Score(side as f64),
                 Err(error) => {
                     let other = if side == WHITE {
@@ -927,28 +1053,35 @@ impl GameManager {
                     };
                 }
             };
+            let mover = if side == WHITE { &self.white } else { &self.black };
 
             if let SPRTTimeControl::Clock { inc_ms, .. } = time_control {
                 let spent = move_start.elapsed().as_millis();
                 let clock = &mut clocks[side as usize];
 
                 if spent > *clock {
+                    log_1!(
+                        "SPRT slot {}: {} lost on time",
+                        self.slot, mover.engine.binary,
+                    );
                     return SPRTGameOutcome::Score(side as f64);
                 }
 
                 *clock = *clock - spent + inc_ms;
             }
 
-            let parsed = match parse_move(&move_string, state, dict) {
-                Some(mv) => mv,
-                None => return SPRTGameOutcome::Score(state.playing as f64),
-            };
-
-            if !make_move!(state, parsed) {
-                return SPRTGameOutcome::Score(state.playing as f64);
+            let parsed = parse_move(&move_string, state, dict);
+            if !parsed.is_some_and(|played| make_move!(state, played)) {
+                log_1!(
+                    "SPRT slot {}: {} lost by illegal move {}",
+                    self.slot, mover.engine.binary, move_string,
+                );
+                return SPRTGameOutcome::Score(side as f64);
             }
 
-            emit(EngineEvent::Board(BoardState::from_state(state, dict)));
+            if self.slot == 0 {
+                emit(EngineEvent::Board(BoardState::from_state(state, dict)));
+            }
         }
     }
 }
@@ -1032,6 +1165,34 @@ fn log_likelihood_ratio(
         / (2.0 * variance)
 }
 
+/// elo_margin
+///
+/// Gives the half width of the 95% interval of the Elo difference. The
+/// interval uses the pair scores, so it has the same variance as the ratio.
+/// A rating benchmark reads the difference to a reference engine as
+/// `elo ± margin`.
+///
+/// ```text
+/// margin = (elo(mean + 1.96 · se) - elo(mean - 1.96 · se)) / 2
+/// se     = sqrt(variance / pairs)
+/// ```
+///
+/// Params:
+/// - pairs   : f64 -> number of played pairs
+/// - mean    : f64 -> mean of the pair scores
+/// - variance: f64 -> population variance of the pair scores
+///
+/// Return:
+/// f64             -> the half width in Elo
+///
+fn elo_margin(pairs: f64, mean: f64, variance: f64) -> f64 {
+    let standard_error = (variance.max(0.0) / pairs.max(1.0)).sqrt();
+    let high = elo_from_score(mean + 1.96 * standard_error);
+    let low = elo_from_score(mean - 1.96 * standard_error);
+
+    (high - low) / 2.0
+}
+
 /// game_score_bucket
 ///
 /// Converts the score of one game into win, draw and loss counts. The log
@@ -1079,47 +1240,36 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 ///
 /// ```text
 /// engine A: ./old
-/// engine B: ./new
+/// engine B: fairy-stockfish (UCI_LimitStrength=true, UCI_Elo=1965)
 /// variant: standard
-/// time control: clock 8000+80ms
+/// time control: clock 10000+100ms
+/// concurrency: 8
 /// elo bounds: [0, 5]  alpha: 0.05  beta: 0.05
 /// every figure below is from engine A's view
 /// result (A): 118W 96L 214D
+/// pentanomial (A): [9, 41, 82, 65, 17]
+/// elo (A): 17.9 +/- 21.3
 /// LLR: 2.951
 /// verdict: H1 accepted (./old is stronger)
 /// ```
 ///
 /// Params:
-/// - variant     : &str            -> variant, selects the folder
-/// - binary_a    : &str            -> path of the first engine
-/// - binary_b    : &str            -> path of the second engine
-/// - time_control: SPRTTimeControl -> time control of the games
-/// - h0          : f64             -> Elo difference to reject
-/// - h1          : f64             -> Elo difference to accept
-/// - wins        : u32             -> wins of engine A
-/// - draws       : u32             -> draws of engine A
-/// - losses      : u32             -> losses of engine A
-/// - llr         : f64             -> last value of the ratio
-/// - verdict     : &str            -> reason for the stop
+/// - settings: &SPRTMatch -> engines, variant, control and bounds
+/// - tally   : &SPRTTally -> games and pair scores of engine A
+/// - llr     : f64        -> last value of the ratio
+/// - verdict : &str       -> reason for the stop
 ///
 /// Notes:
 /// The function also writes a file when no game was played. Thus the old
 /// file is never the current answer.
 ///
 fn write_result_file(
-    variant: &str,
-    binary_a: &str,
-    binary_b: &str,
-    time_control: SPRTTimeControl,
-    h0: f64,
-    h1: f64,
-    wins: u32,
-    draws: u32,
-    losses: u32,
+    settings: &SPRTMatch,
+    tally: &SPRTTally,
     llr: f64,
     verdict: &str,
 ) {
-    let dir = format!("{}/{}", SPRT_DIR, variant);
+    let dir = format!("{}/{}", SPRT_DIR, settings.variant);
     fs::create_dir_all(&dir).unwrap_or_else(|e| {
         panic!("Failed to create SPRT directory {}: {}", dir, e)
     });
@@ -1128,12 +1278,16 @@ fn write_result_file(
 
     let body = format!(
         "engine A: {}\nengine B: {}\nvariant: {}\ntime control: {}\n\
+         concurrency: {}\n\
          elo bounds: [{}, {}]  alpha: {}  beta: {}\n\
          every figure below is from engine A's view\n\
-         result (A): {}W {}L {}D\nLLR: {:.3}\nverdict: {}\n",
-        binary_a, binary_b, variant, time_control,
-        h0, h1, SPRT_ALPHA, SPRT_BETA,
-        wins, losses, draws, llr, verdict,
+         result (A): {}W {}L {}D\npentanomial (A): {:?}\n\
+         elo (A): {:.1} +/- {:.1}\nLLR: {:.3}\nverdict: {}\n",
+        settings.engine_a, settings.engine_b, settings.variant,
+        settings.time_control, settings.concurrency,
+        settings.h0, settings.h1, SPRT_ALPHA, SPRT_BETA,
+        tally.wins, tally.losses, tally.draws, tally.pentanomial,
+        elo_from_score(tally.mean()), tally.margin(), llr, verdict,
     );
 
     roll_latest(&dir, "", "sprt");
@@ -1147,92 +1301,328 @@ fn write_result_file(
 
 /// harvest_child_logs
 ///
-/// Copies the log of each engine out of its sandbox before the next run
-/// deletes it. An engine writes `logs/latest.log`, so this function adds
-/// the engine label:
+/// Copies the log of each engine out of its sandbox, then deletes the
+/// sandboxes of the run. An engine writes `logs/latest.log`, so this
+/// function adds the slot and the engine label:
 ///
 /// ```text
-/// /tmp/anekamacam-sprt/_home_me_old/logs/latest.log
-///     → res/sprt/standard/engine-a_latest.log
+/// /tmp/anekamacam-sprt/4242/0-engine-a/logs/latest.log
+///     → res/sprt/standard/0-engine-a_latest.log
 ///
-/// /tmp/anekamacam-sprt/_home_me_new/logs/latest.log
-///     → res/sprt/standard/engine-b_latest.log
+/// /tmp/anekamacam-sprt/4242/3-engine-b/logs/latest.log
+///     → res/sprt/standard/3-engine-b_latest.log
 /// ```
 ///
 /// Params:
-/// - variant : &str -> variant, selects the folder
-/// - binary_a: &str -> first engine, saved as `engine-a`
-/// - binary_b: &str -> second engine, saved as `engine-b`
+/// - variant    : &str  -> variant, selects the folder
+/// - concurrency: usize -> number of match slots of the run
 ///
 /// Notes:
-/// Each label has its own rolled history. A sandbox without a log is
-/// skipped: the engine did not start, or the two sides are one binary. The
-/// function runs only after the two engines stop, so the logs are flushed.
+/// Each slot and label has its own rolled history. A sandbox without a log
+/// is skipped: the engine did not start, or it does not write logs. The
+/// function runs only after all engines stop, so the logs are flushed.
 ///
-fn harvest_child_logs(variant: &str, binary_a: &str, binary_b: &str) {
+fn harvest_child_logs(variant: &str, concurrency: usize) {
     let dir = format!("{}/{}", SPRT_DIR, variant);
 
-    for (label, binary) in [("engine-a", binary_a), ("engine-b", binary_b)] {
-        let Ok(sandbox) = engine_sandbox(binary) else {
-            continue;
-        };
-        let source = sandbox.join("logs").join("latest.log");
-        if !source.exists() {
-            continue;
-        }
+    for slot in 0..concurrency {
+        for label in ["engine-a", "engine-b"] {
+            let source = engine_sandbox(slot, label)
+                .join("logs")
+                .join("latest.log");
+            if !source.exists() {
+                continue;
+            }
 
-        let prefix = format!("{}_", label);
-        let destination = format!("{}/{}latest.log", dir, prefix);
+            let prefix = format!("{}-{}_", slot, label);
+            let destination = format!("{}/{}latest.log", dir, prefix);
 
-        roll_latest(&dir, &prefix, "log");
-        if let Err(error) = fs::copy(&source, &destination) {
-            log_2!("Failed to harvest {} log: {}", label, error);
-            continue;
+            roll_latest(&dir, &prefix, "log");
+            if let Err(error) = fs::copy(&source, &destination) {
+                log_2!("Failed to harvest {}{} log: {}", slot, label, error);
+                continue;
+            }
+            prune_backups(&dir, &prefix, "log", SPRT_HISTORY_KEEP);
         }
-        prune_backups(&dir, &prefix, "log", SPRT_HISTORY_KEEP);
     }
+
+    let _ = fs::remove_dir_all(run_sandbox_root());
 }
 
 /*----------------------------------------------------------------------------*\
                                   MATCH RUNNER
 \*----------------------------------------------------------------------------*/
 
-/// run_sprt
+/// SPRTMatch
 ///
-/// Runs the full test, from the sandbox clear to the saved verdict.
+/// All settings of one run. The command line fills it, and all match slots
+/// read it at the same time.
 ///
-/// 1. clear the two sandboxes, so no old parameters stay
-/// 2. start the two engines on the variant, one thread each
-/// 3. make one random opening for each pair
+/// - variant      : variant name, for setup and output
+/// - engine_a     : the build to test
+/// - engine_b     : the reference engine
+/// - time_control : time control of each game
+/// - max_games    : game limit
+/// - h0           : Elo difference to reject
+/// - h1           : Elo difference to accept
+/// - concurrency  : number of games at the same time
+///
+pub struct SPRTMatch {
+    pub variant: String,                                                        /* variant name, selects the folder   */
+    pub engine_a: SPRTEngine,                                                   /* the build to test                  */
+    pub engine_b: SPRTEngine,                                                   /* the reference engine               */
+    pub time_control: SPRTTimeControl,                                          /* move time or clock of each game    */
+    pub max_games: usize,                                                       /* stop without a verdict after this  */
+    pub h0: f64,                                                                /* Elo difference to reject           */
+    pub h1: f64,                                                                /* Elo difference to accept           */
+    pub concurrency: usize,                                                     /* match slots, one game in each      */
+}
+
+/// SPRTTally
+///
+/// The counts of the run, from the view of engine A. The game counts are
+/// for the person. The pentanomial counts are for the ratio and the Elo
+/// interval.
+///
+/// A pair score is the mean of two games, so it has only five values. The
+/// count of each value gives all pair statistics:
+///
+/// ```text
+/// pentanomial[i] = pairs that scored i / 4, for i = 0 to 4
+/// pairs          = Σ pentanomial[i]
+/// mean           = Σ pentanomial[i] · (i / 4)     / pairs
+/// variance       = Σ pentanomial[i] · (i / 4)²    / pairs - mean²
+/// ```
+///
+/// - add_game : count one game as a win, a draw or a loss
+/// - add_pair : count one pair in its pentanomial bucket
+/// - pairs    : number of finished pairs
+/// - mean     : mean pair score, 0.5 before the first pair
+/// - variance : population variance of the pair scores
+/// - margin   : half width of the 95% Elo interval
+///
+/// add_game, add_pair
+///
+///   Params:
+///   - score: f64 -> score of engine A, 0 to 1
+///
+/// pairs, mean, variance, margin
+///
+///   Return:
+///   f64 -> the statistic
+///
+#[derive(Default)]
+struct SPRTTally {
+    wins: u32,                                                                  /* games won by engine A              */
+    draws: u32,                                                                 /* games drawn                        */
+    losses: u32,                                                                /* games lost by engine A             */
+    pentanomial: [u32; 5],                                                      /* pairs by score 0, 1/4, ..., 1      */
+}
+
+impl SPRTTally {
+    fn add_game(&mut self, score: f64) {
+        let (win, draw, loss) = game_score_bucket(score);
+
+        self.wins += win;
+        self.draws += draw;
+        self.losses += loss;
+    }
+
+    fn add_pair(&mut self, score: f64) {
+        self.pentanomial[(score * 4.0).round().clamp(0.0, 4.0) as usize] += 1;
+    }
+
+    fn pairs(&self) -> f64 {
+        self.pentanomial.iter().sum::<u32>() as f64
+    }
+
+    fn mean(&self) -> f64 {
+        if self.pairs() == 0.0 {
+            return 0.5;
+        }
+
+        zip(0.., self.pentanomial)
+            .map(|(bucket, count)| count as f64 * bucket as f64 / 4.0)
+            .sum::<f64>()
+            / self.pairs()
+    }
+
+    fn variance(&self) -> f64 {
+        if self.pairs() == 0.0 {
+            return 0.0;
+        }
+
+        zip(0.., self.pentanomial)
+            .map(|(bucket, count)| {
+                count as f64 * (bucket as f64 / 4.0).powi(2)
+            })
+            .sum::<f64>()
+            / self.pairs()
+            - self.mean().powi(2)
+    }
+
+    fn margin(&self) -> f64 {
+        elo_margin(self.pairs(), self.mean(), self.variance())
+    }
+}
+
+/// SPRTReport
+///
+/// A message from a match slot to the runner. The runner owns the tally,
+/// so the slots do not share counts.
+///
+/// - `Game(1.0, 0.0, rows)` : engine A won as Black, with the game rows
+/// - `Pair(0.75)`           : engine A scored 1.5 of 2 in one pair
+/// - `Stop(reason)`         : the slot cannot continue, the verdict
+///
+enum SPRTReport {
+    Game(f64, f64, Vec<String>),                                                /* score of A, of White, and the rows */
+    Pair(f64),                                                                  /* mean score of the pair for A       */
+    Stop(String),                                                               /* the slot failed, the run stops     */
+}
+
+/// run_slot
+///
+/// Plays pairs in one match slot until the game limit or a stop. The slots
+/// take pair numbers from one counter, so the total does not go above the
+/// limit.
+///
+/// 1. start the two engines in the sandboxes of the slot
+/// 2. take the next pair number, or stop at the limit
+/// 3. make one random opening for the pair
 /// 4. play the pair, with swapped colours
-/// 5. add the pair score to the mean and variance
-/// 6. stop at a bound, or start the next pair
+/// 5. send each game score and the pair score to the runner
 ///
 /// Params:
-/// - template    : &State          -> loaded variant, forked as referee
-/// - variant     : &str            -> variant name, for setup and output
-/// - binary_a    : &str            -> path of the first engine binary
-/// - binary_b    : &str            -> path of the second engine binary
-/// - time_control: SPRTTimeControl -> time control of each game
-/// - max_games   : usize           -> game limit
-/// - h0          : f64             -> Elo difference to reject
-/// - h1          : f64             -> Elo difference to accept
+/// - slot     : usize               -> index of the slot
+/// - template : &State              -> loaded variant, forked as referee
+/// - settings : &SPRTMatch          -> engines, control and limit
+/// - dict     : Option<&Translator> -> notation of the two engines
+/// - startpos : &str                -> start position in engine notation
+/// - next_pair: &AtomicUsize        -> number of the next pair to play
+/// - stop     : &AtomicBool         -> set when the run has a verdict
+/// - reports  : Sender<SPRTReport>  -> channel to the runner
+///
+/// Notes:
+/// A pair that the stop cuts is not sent. Its first game is already in the
+/// win, draw and loss counts, but not in the ratio.
+///
+fn run_slot(
+    slot: usize,
+    template: &State,
+    settings: &SPRTMatch,
+    dict: Option<&Translator>,
+    startpos: &str,
+    next_pair: &AtomicUsize,
+    stop: &AtomicBool,
+    reports: Sender<SPRTReport>,
+) {
+    let variant = settings.variant.as_str();
+    let mut manager = match GameManager::new(
+        slot, template, &settings.engine_a, &settings.engine_b, variant,
+    ) {
+        Ok(manager) => manager,
+        Err(error) => {
+            let _ = reports.send(SPRTReport::Stop(
+                format!("aborted during setup: {}", error)
+            ));
+            return;
+        }
+    };
+
+    while !stop.load(Ordering::Relaxed)
+        && !SYSTEM_INTERRUPT.load(Ordering::Relaxed)
+    {
+        if next_pair.fetch_add(1, Ordering::Relaxed) >= settings.max_games / 2
+        {
+            return;
+        }
+
+        let mut opening_state = template.fork();                                /* one scratch board for each pair    */
+        opening_state.play_random_opening(OPENING_RANDOM_PLIES);                /* the pair games share this opening  */
+        let opening: Vec<Move> = opening_state.history
+            .iter().map(|snapshot| snapshot.move_ply.clone()).collect();
+
+        let mut pair_score = 0.0;
+        for game in 0..2 {
+            if let Err(error) = manager.reset_to(template, &opening) {
+                let _ = reports.send(SPRTReport::Stop(
+                    format!("aborted during game setup: {}", error)
+                ));
+                return;
+            }
+
+            let outcome = manager.play(
+                dict, startpos, settings.time_control, stop,
+            );
+            let (score, restart) = match outcome {
+                SPRTGameOutcome::Score(score) => (score, Ok(())),
+                SPRTGameOutcome::EngineLoss { score, side, error } => {
+                    log_1!("SPRT scored engine loss: {}", error);
+                    (score, manager.restart(side, variant))
+                }
+                SPRTGameOutcome::Aborted(error) => {
+                    let _ = reports.send(SPRTReport::Stop(
+                        format!("aborted during game: {}", error)
+                    ));
+                    return;
+                }
+                SPRTGameOutcome::Stopped => return,
+            };
+            let score_a = if game == 0 { score } else { 1.0 - score };          /* game 2 has B as White              */
+
+            let _ = reports.send(SPRTReport::Game(
+                score_a, score, mem::take(&mut manager.record),
+            ));
+            pair_score += score_a / 2.0;
+            manager.swap_colors();
+
+            if let Err(error) = restart {
+                let _ = reports.send(SPRTReport::Stop(format!(
+                    "aborted after engine loss; restart failed: {}", error,
+                )));
+                return;
+            }
+        }
+
+        let _ = reports.send(SPRTReport::Pair(pair_score));
+    }
+}
+
+/// run_sprt
+///
+/// Runs the full test, from the engine start to the saved verdict. Each
+/// match slot is one thread with its own two engines, so the run plays
+/// `concurrency` games at the same time.
+///
+/// 1. start `concurrency` slots, each with `run_slot`
+/// 2. add each reported game and pair to the tally
+/// 3. after each pair, calculate the ratio again
+/// 4. at a bound or a slot failure, stop all slots
+/// 5. write the result file and copy the engine logs
+///
+/// Each game also goes to `res/sprt/{variant}/latest.games`, one row for
+/// each engine move, in the `datagen` format with the move and the score of
+/// the engine that moved between the position and the result:
+///
+/// ```text
+/// 12;<fen>;e2e4;cp 34;1
+/// ```
+///
+/// Params:
+/// - template: &State     -> loaded variant, forked as referee
+/// - settings: &SPRTMatch -> engines, variant, control, bounds and slots
 ///
 /// Notes:
 /// The referee uses the same translator as the engines. A variant without
-/// a dictionary is an error. Each stop, also a setup failure, a double
-/// engine failure, an interrupt or the game limit, writes a result file.
+/// a dictionary is an error. The start position goes through the
+/// translator, so a reference engine reads it in its own notation. Each
+/// stop, also a setup failure, a double engine failure, an interrupt or
+/// the game limit, writes a result file. Each engine has one thread, so
+/// `concurrency` must stay below the number of cores.
 ///
-pub fn run_sprt(
-    template: &State,
-    variant: &str,
-    binary_a: &str,
-    binary_b: &str,
-    time_control: SPRTTimeControl,
-    max_games: usize,
-    h0: f64,
-    h1: f64,
-) {
+pub fn run_sprt(template: &State, settings: &SPRTMatch) {
+    let variant = settings.variant.as_str();
     let translator = Translator::find(variant, SPRT_PROTOCOL);
 
     if translator.is_none() {
@@ -1243,168 +1633,109 @@ pub fn run_sprt(
     }
 
     let dict = translator.as_ref();
-    let startpos = template.statics.startpos.clone();
+    let startpos = format_fen(template, dict);
 
-    for binary in [binary_a, binary_b] {
-        let sandbox = match engine_sandbox(binary) {
-            Ok(path) => path,
-            Err(error) => {
-                let verdict = format!("aborted during setup: {}", error);
-                log_1!("SPRT {}", verdict);
-                write_result_file(
-                    variant, binary_a, binary_b, time_control, h0, h1,
-                    0, 0, 0, 0.0, &verdict,
-                );
-                return;
-            }
-        };
-        let _ = fs::remove_dir_all(sandbox);
-    }
-
-    let mut manager = match GameManager::new(
-        template, binary_a, binary_b, variant
-    ) {
-        Ok(manager) => manager,
-        Err(error) => {
-            let verdict = format!("aborted during setup: {}", error);
-            log_1!("SPRT {}", verdict);
-            write_result_file(
-                variant, binary_a, binary_b, time_control, h0, h1,
-                0, 0, 0, 0.0, &verdict,
-            );
-            return;
-        }
-    };
-
-    let mu_0 = expected_score(h0);
-    let mu_1 = expected_score(h1);
+    let mu_0 = expected_score(settings.h0);
+    let mu_1 = expected_score(settings.h1);
     let upper = ((1.0 - SPRT_BETA) / SPRT_ALPHA).ln();
     let lower = (SPRT_BETA / (1.0 - SPRT_ALPHA)).ln();
 
-    let (mut wins, mut draws, mut losses) = (0u32, 0u32, 0u32);
-    let (mut pairs, mut sum, mut sum_squares) = (0.0f64, 0.0f64, 0.0f64);
+    let mut tally = SPRTTally::default();
     let mut llr = 0.0f64;
-    let mut verdict = "inconclusive (game budget reached)".to_string();
+    let mut verdict = None;
+    let next_pair = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
+    let (sender, receiver) = channel();
+    let dir = format!("{}/{}", SPRT_DIR, variant);
+    let _ = fs::create_dir_all(&dir);
+    roll_latest(&dir, "", "games");
+    let mut game_file = fs::File::create(format!("{}/latest.games", dir))
+        .unwrap_or_else(|e| panic!("Failed to open game record: {}", e));
+    let mut games = 0usize;
 
-    'pairs: for pair_index in 0..(max_games / 2) {
-        if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
-            verdict = "cancelled".to_string();
-            break;
+    let _ = fs::remove_dir_all(run_sandbox_root());
+    log_1!(
+        "SPRT {} vs {} on {} | {} | {} slots",
+        settings.engine_a, settings.engine_b, variant,
+        settings.time_control, settings.concurrency,
+    );
+
+    thread::scope(|scope| {
+        for slot in 0..settings.concurrency {
+            let reports = sender.clone();
+            let (startpos, next_pair, stop) = (&startpos, &next_pair, &stop);
+
+            scope.spawn(move || run_slot(
+                slot, template, settings, dict, startpos, next_pair, stop,
+                reports,
+            ));
         }
+        drop(sender);
 
-        let mut opening_state = template.fork();                                /* one scratch board for each pair    */
-        opening_state.play_random_opening(OPENING_RANDOM_PLIES);                /* the pair games share this opening  */
-        let opening: Vec<Move> = opening_state.history
-            .iter().map(|snapshot| snapshot.move_ply.clone()).collect();
-
-        if let Err(error) = manager.reset_to(template, &opening) {
-            verdict = format!("aborted during game setup: {}", error);
-            break;
-        }
-
-        let first = manager.play(dict, &startpos, time_control);
-        let score_first = match first {
-            SPRTGameOutcome::Score(score) => score,
-            SPRTGameOutcome::EngineLoss { score, side, error } => {
-                log_1!("SPRT scored engine loss: {}", error);
-                if let Err(restart_error) = manager.restart(side, variant) {
-                    let (win, draw, loss) = game_score_bucket(score);
-                    wins += win;
-                    draws += draw;
-                    losses += loss;
-                    verdict = format!(
-                       "aborted after engine loss; restart failed: {}",
-                        restart_error,
+        for report in receiver {
+            match report {
+                SPRTReport::Game(score_a, white_score, rows) => {
+                    tally.add_game(score_a);
+                    for row in rows {
+                        let _ = writeln!(
+                            game_file, "{};{};{}", games, row, white_score,
+                        );
+                    }
+                    games += 1;
+                }
+                SPRTReport::Pair(score) => {
+                    tally.add_pair(score);
+                    llr = log_likelihood_ratio(
+                        tally.pairs(), tally.mean(), tally.variance(),
+                        mu_0, mu_1,
                     );
-                    break 'pairs;
+
+                    if tally.pairs() as usize % 5 == 0 {
+                        log_1!(
+                            "SPRT {}W {}L {}D | A elo {:.1} +/- {:.1} | \
+                             LLR {:.2} [{:.2}, {:.2}]",
+                            tally.wins, tally.losses, tally.draws,
+                            elo_from_score(tally.mean()), tally.margin(),
+                            llr, lower, upper,
+                        );
+                    }
+
+                    if llr >= upper {
+                        verdict = Some(format!(
+                            "H1 accepted ({} is stronger)",
+                            settings.engine_a.binary,
+                        ));
+                    } else if llr <= lower {
+                        verdict = Some(format!(
+                            "H0 accepted ({} is not stronger)",
+                            settings.engine_a.binary,
+                        ));
+                    }
                 }
-                score
+                SPRTReport::Stop(reason) => verdict = Some(reason),
             }
-            SPRTGameOutcome::Aborted(error) => {
-                verdict = format!("aborted during game: {}", error);
-                break 'pairs;
+
+            if verdict.is_some() {
+                stop.store(true, Ordering::Relaxed);
+                break;
             }
-        };
-        let (win, draw, loss) = game_score_bucket(score_first);
-        wins += win;
-        draws += draw;
-        losses += loss;
-
-        manager.swap_colors();
-
-        if let Err(error) = manager.reset_to(template, &opening) {
-            verdict = format!("aborted during game setup: {}", error);
-            break;
         }
+    });
 
-        let mut abort_after_pair = None;
-        let second = manager.play(dict, &startpos, time_control);
-        let score_second = match second {
-            SPRTGameOutcome::Score(score) => 1.0 - score,
-            SPRTGameOutcome::EngineLoss { score, side, error } => {
-                log_1!("SPRT scored engine loss: {}", error);
-                if let Err(restart_error) = manager.restart(side, variant) {
-                    abort_after_pair = Some(format!(
-                        "aborted after engine loss; restart failed: {}",
-                        restart_error,
-                    ));
-                }
-                1.0 - score
-            }
-            SPRTGameOutcome::Aborted(error) => {
-                verdict = format!("aborted during game: {}", error);
-                break 'pairs;
-            }
-        };
-        let (win, draw, loss) = game_score_bucket(score_second);
-        wins += win;
-        draws += draw;
-        losses += loss;
-
-        manager.swap_colors();
-
-        let pair_score = (score_first + score_second) / 2.0;
-        pairs += 1.0;
-        sum += pair_score;
-        sum_squares += pair_score * pair_score;
-
-        let mean = sum / pairs;
-        let variance = sum_squares / pairs - mean * mean;
-        llr = log_likelihood_ratio(pairs, mean, variance, mu_0, mu_1);
-
-        if (pair_index + 1) % 5 == 0 {
-            log_1!(
-                "SPRT A={} {}W {}L {}D | A elo {:.1} | LLR {:.2} [{:.2}, {:.2}]",
-                binary_a, wins, losses, draws, elo_from_score(mean),
-                llr, lower, upper,
-            );
+    let verdict = verdict.unwrap_or_else(|| {
+        if SYSTEM_INTERRUPT.load(Ordering::Relaxed) {
+            "cancelled".to_string()
+        } else {
+            "inconclusive (game budget reached)".to_string()
         }
-
-        if let Some(error) = abort_after_pair {
-            verdict = error;
-            break;
-        }
-
-        if llr >= upper {
-            verdict = format!("H1 accepted ({} is stronger)", binary_a);
-            break;
-        }
-        if llr <= lower {
-            verdict = format!("H0 accepted ({} is not stronger)", binary_a);
-            break;
-        }
-    }
+    });
 
     log_1!(
-        "SPRT done: {} | {}W {}L {}D | LLR {:.3}",
-        verdict, wins, losses, draws, llr,
+        "SPRT done: {} | {}W {}L {}D | elo {:.1} +/- {:.1} | LLR {:.3}",
+        verdict, tally.wins, tally.losses, tally.draws,
+        elo_from_score(tally.mean()), tally.margin(), llr,
     );
 
-    write_result_file(
-        variant, binary_a, binary_b, time_control, h0, h1,
-        wins, draws, losses, llr, &verdict,
-    );
-
-    drop(manager);
-    harvest_child_logs(variant, binary_a, binary_b);
+    write_result_file(settings, &tally, llr, &verdict);
+    harvest_child_logs(variant, settings.concurrency);
 }
