@@ -459,7 +459,7 @@ binary `base0` is b970373.
 - `-5 5` arms: xiangqi +5.3 ± 9.5 and shogi +1.4 ± 12.2 (both
   inconclusive at 3000 games; lower ends -4.2 and -10.8, so a loss is not
   ruled out), standard H1 +79.9 ± 33.5. Not proven: the two inconclusive
-  arms run again with 6000 games.
+  arms run again with `-5 0`.
 
 ### N1, drops (2026-09-29, branch `plan27-n1`, 628cf00)
 
@@ -488,9 +488,11 @@ binary `base0` is b970373.
 - SPRT xiangqi `0 5` (p1 against n1): H1, +311.3 ± 84.7. `-5 5` arms:
   grand H1 +34.9 ± 21.3, standard H1 +74.0 ± 32.0, shogi +3.9 ± 12.3
   (inconclusive at 3000 games, lower end -8.4). Not proven: the shogi arm
-  runs again with 6000 games.
-- Rule from now on: an arm counts only with H1. An inconclusive arm runs
-  again with a larger budget; H0 means investigate or revert.
+  runs again with `-5 0`.
+- Rule from now on: a regression arm uses bounds `-5 0` (H1: not worse
+  than 0; H0: a loss of 5 or more). `-5 5` asked the wrong question. The
+  gain arm keeps `0 5`. An arm counts only with H1. The three arms above
+  run again with `-5 0`.
 
 ### Rating check against FSF at UCI_Elo 2000 (2026-09-30)
 
