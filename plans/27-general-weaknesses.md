@@ -455,6 +455,61 @@ binary `base0` is b970373.
   promote change, the material stays the same.
 - Example `N7/4n3/2p5/3p1k1p/3K4/8/8/5B2 b` (FSF +7 cp): 637 before, 406
   after. The rest is the pawn value itself (P1).
+- SPRT grand `0 5` (e1 against S1 + X1): H1, +165.2 ± 39.2.
+- `-5 5` arms: xiangqi +5.3 ± 9.5 and shogi +1.4 ± 12.2 (both
+  inconclusive at 3000 games, no loss), standard H1 +79.9 ± 33.5. E1
+  passes.
+
+### N1, drops (2026-09-29, branch `plan27-n1`, 628cf00)
+
+- A drop is a quiet move: LMP, futility, the quiet LMR table, killers and
+  history (bonus and malus) apply to it. A checking drop stays safe
+  through S1. Drop keys already use the landing square.
+- Shogi, depth 10, four positions: 1.59 s to 0.86 s, nodes -48%.
+- SPRT shogi `0 5` (n1 against e1): H1, +195.1 ± 46.0. The other arms do
+  not run: without drops the search is the same move for move.
+- The grand quiescence and move order parts wait. They run only if a
+  later rating shows the need.
+
+### P1 (2026-09-29, branch `plan27-p1`, b523a23)
+
+- `derive_vector_chance`: a move-only last leg needs an empty square
+  (`1 - occupancy`), a capture-only last leg needs a piece
+  (`occupancy`), a last leg that moves and takes keeps 1. The old hopper
+  case is the capture-only case. Params made again.
+- Removal test, pawn = 1: standard N 2.57 to 2.95, B 3.03 to 3.44, R 4.45
+  to 4.85, Q 7.78 to 8.21 (nearer FSF). Xiangqi chariot 5.41 to 5.40,
+  cannon 6.12 to 5.22: the cannon falls but stays near the chariot (gate
+  1.4 not met). The rest of the cannon value is its move-only slides,
+  which the mobility model counts as the chariot's. A half share for
+  enemy pieces (`occupancy / 2`) was tried: standard moved away from FSF
+  and xiangqi did not move, so it was not kept.
+- SPRT xiangqi `0 5` (p1 against n1): H1, +311.3 ± 84.7. `-5 5` arms:
+  grand H1 +34.9 ± 21.3, standard H1 +74.0 ± 32.0, shogi +3.9 ± 12.3
+  (inconclusive at 3000 games, no loss). P1 passes.
+
+### Rating check against FSF at UCI_Elo 2000 (2026-09-30)
+
+- p1 (b523a23) against `fairy-stockfish` with `UCI_LimitStrength=true
+  UCI_Elo=2000`, `-5 5`, 3000 games, 30 slots on the compute server, in
+  the order standard, xiangqi, shogi, grand. H1 means above 2000.
+- Standard: H1, +18.6 ± 15.6. Standard is above 2000.
+- Xiangqi: H0, -73.8 ± 32.3, about 1926 (from about 1800).
+
+### C1 (2026-09-30, branch `plan27-c1`, 2368522)
+
+- `static_movement!` no longer gates SEE ordering, SEE pruning, ProbCut,
+  the quiescence losing-capture break, razoring and IIR. `see!` makes
+  each capture and `lva!` reads the attackers from the board again, so a
+  screen that a capture adds or takes away is seen. Check: `see xiangqi
+  h3h10` from the start gives -329 (cannon for knight, the chariot takes
+  back), which is right.
+- The `static_movement` bit and its facts (screened leg, CPMN condition)
+  are removed; `wide_quiescence` moves to bit 6. A seeded search gives
+  the same nodes and moves as before the removal.
+- Xiangqi, depth 12, four positions: 2.0 s to 0.37 s.
+- Only variants with a screened leg or a CPMN condition change, so only
+  the xiangqi arm runs (`0 5` against p1), then xiangqi against FSF 2000.
 
 ## Verification
 

@@ -593,7 +593,8 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 /// already renamed its clauses, so no dialect word gets here.
 ///
 /// - `movetime m` : m minus overhead, minimum one millisecond
-/// - a clock      : (remaining - overhead) / movestogo, plus increment
+/// - a clock      : two shares, a share is (remaining - overhead) /
+///                  movestogo plus increment, at most half the clock
 /// - neither      : no deadline, for ponder and infinite
 ///
 /// Params:
@@ -601,9 +602,10 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 /// - tokens : &[&str]      -> standard `go` tokens
 ///
 /// Notes:
-/// Without `movestogo`, the clock uses 20 moves. The time never goes past
-/// the remaining clock. The deadline starts when the `go` is read, so the
-/// thread start uses part of the time.
+/// Without `movestogo`, the clock uses 20 moves. The search starts a new
+/// depth only in the first half of the time, so a clock move uses about
+/// one share, and a depth that has started can finish. The deadline starts
+/// when the `go` is read, so the thread start uses part of the time.
 ///
 pub fn start_search(session: &mut Session, tokens: &[&str]) {
     abort_search(session);
@@ -694,10 +696,10 @@ pub fn start_search(session: &mut Session, tokens: &[&str]) {
         let remaining =
             time_ms.saturating_sub(session.overhead_ms).max(1);
         let moves = if movestogo > 0 { movestogo as u128 } else { 20 };
+        let share = (remaining / moves).saturating_add(inc_ms);
 
-        (remaining / moves).saturating_add(inc_ms)
-            .clamp(1, remaining) * 1_000_000
-    };
+        (2 * share).clamp(1, (remaining / 2).max(1)) * 1_000_000                /* a new depth starts in the first    */
+    };                                                                          /* half only, see iterative_deepening */
 
     let deadline = if infinite || budget_ns == 0 {
         0
