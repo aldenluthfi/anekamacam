@@ -722,6 +722,7 @@ pub fn iterative_deepening(
 ///
 /// - in check  : all evasions, also drops, no stand pat
 /// - otherwise : stand pat first, then captures while they win
+/// - horizon   : also board moves that give check, if stand pat >= alpha
 ///
 /// A side in check cannot stand pat, because it must move. Out of check,
 /// the loop stops at the first losing capture, because the ordering puts
@@ -1038,10 +1039,12 @@ pub fn quiescence_search(
 /// score made drop game trees much larger in tests. All bounds update the
 /// table.
 ///
-/// A move that gives check is never skipped and never reduced. The reply
-/// side has few moves, so the loss can be short. The test is made after the
-/// move, so it also sees a discovered check and a check through a new
-/// screen.
+/// A move that gives check is never skipped and never reduced. It gets one
+/// more ply while the line is shorter than two times the iteration depth.
+/// The reply side has few moves, so the loss can be short. The test is made
+/// after the move, so it also sees a discovered check and a check through a
+/// new screen. A skip tests only a move whose piece has a line from its
+/// landing square to an enemy royal.
 ///
 #[hotpath::measure]
 pub fn alpha_beta(
@@ -1343,7 +1346,7 @@ pub fn alpha_beta(
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
         let is_drop = m_drop!(mv);
-        let is_quiet = m_quiet!(mv) || is_drop && !is_capture;                  /* a drop takes nothing, as a step    */
+        let is_quiet = m_quiet!(mv) || is_drop && !is_capture;                  /* a drop is pruned like a quiet move */
 
         let prunable = ply > 0
             && !in_check

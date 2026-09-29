@@ -593,8 +593,7 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 /// already renamed its clauses, so no dialect word gets here.
 ///
 /// - `movetime m` : m minus overhead, minimum one millisecond
-/// - a clock      : two shares, a share is (remaining - overhead) /
-///                  movestogo plus increment, at most half the clock
+/// - a clock      : two shares, a share is (remaining - overhead) / movestogo
 /// - neither      : no deadline, for ponder and infinite
 ///
 /// Params:
@@ -602,8 +601,9 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 /// - tokens : &[&str]      -> standard `go` tokens
 ///
 /// Notes:
-/// Without `movestogo`, the clock uses 20 moves. The search starts a new
-/// depth only in the first half of the time, so a clock move uses about
+/// Without `movestogo`, the clock uses 20 moves. A share also gets the
+/// increment, and the time is at most half the clock. The search starts a
+/// new depth only in the first half of the time, so a clock move uses about
 /// one share, and a depth that has started can finish. The deadline starts
 /// when the `go` is read, so the thread start uses part of the time.
 ///
