@@ -396,6 +396,46 @@ Each SPRT runs one arm for each benchmark variant.
 11. **R: re-rate all variants** with the final build. Each bisection starts
     from a range around the old rating.
 
+## Stage outcomes
+
+Work started 2026-09-29. Goal from the user: all four variants above 2000
+on the FSF UCI_Elo scale, with the smallest change that passes. Baseline
+binary `base0` is b970373.
+
+### S1 alone (2026-09-29)
+
+- Change: LMP, futility and SEE skips test for check after the move, and a
+  checking move gets no LMR.
+- Xiangqi mate 2: found at depth 3 (base: not at depth 8). Perft is
+  unchanged in all four variants.
+- Cost: each skipped move is made and undone for the test. NPS falls by
+  about 20% (xiangqi 1.3M to 1.0M, grand 1.0M to 0.82M, depth 11, four
+  positions each).
+- SPRT xiangqi `0 5`: stopped at 2124 games, +0.8 ± 12.1, LLR -0.22. The
+  gain pays only for the lost speed.
+- Two cheaper forms lose the mate: no LMR for checks only (S1b), and S1b
+  plus no SEE skip for checks (S1c). The mate needs a quiet check that LMP
+  or futility skips. So S1 goes on as the base of X1, as this plan says.
+
+### S1 + X1 (2026-09-29)
+
+- Change: S1, plus one ply of extension for a move that gives check while
+  `ply + depth < 2 * root_depth`, plus quiet checks (not drops) at the
+  first quiescence ply when the stand pat is not below alpha.
+- Grand mate -7: found at depth 16 (base: -124 at depth 16). Xiangqi mate
+  2 at depth 3.
+- SPRT grand `0 5`: inconclusive at 3000 games, +10.9 ± 10.9, LLR 1.35.
+- Pivot (x1b): before the make, a skipped move is tested only if its piece
+  has an attack line from its landing square to an enemy royal square
+  (`relevant_attacks`, the table of `is_square_attacked!`). Other skipped
+  moves are not made. The mates stay found; grand mate -7 takes 4.7 s
+  instead of 7.2 s.
+- SPRT grand `0 5` (x1b against base0): paused by the user at 514 games,
+  254W 184L 76D, +46.6 ± 27.9, LLR 1.13. No verdict; an SPRT cannot
+  resume, so the arm starts again from zero.
+- Next: restart the grand arm of x1b, then the `-5 5` arms (xiangqi,
+  shogi, standard), then commit S1 + X1 as one stage.
+
 ## Verification
 
 - Each stage: SPRT against the previous stage, one arm for each benchmark

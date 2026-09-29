@@ -44,6 +44,7 @@ pub struct SearchInfo {
     pub start_time: u128,                                                       /* start time since engine launch     */
 
     pub set_depth: usize,                                                       /* maximum search depth               */
+    pub root_depth: usize,                                                      /* depth of the current iteration     */
     pub set_nodes: u128,                                                        /* node limit (0 = unlimited)         */
 
     pub deadline: u128,                                                         /* ns since launch (0 = unlimited)    */
@@ -531,6 +532,7 @@ pub fn iterative_deepening(
     for depth in 1..=info.set_depth {
         let depth_start_nodes = info.nodes;
         let depth_start_time = ENGINE_START.elapsed().as_nanos();
+        info.root_depth = depth;
 
         let mut delta = opening_delta;
         let mut alpha = -INF;
@@ -753,6 +755,11 @@ pub fn iterative_deepening(
 ///     square of the exchange, `None` at the horizon, where any capture can
 ///     start one
 ///
+///     quiet_checks: bool
+///     true at the horizon of the main tree: a board move that is not a
+///     capture is also played if it gives check and the stand pat is not
+///     below alpha
+///
 /// Return:
 ///
 ///     i32
@@ -775,6 +782,7 @@ pub fn quiescence_search(
     beta: i32,
     info: &mut SearchInfo,
     contested: Option<Square>,
+    quiet_checks: bool,
 ) -> i32 {
     let mut alpha = alpha;
 
@@ -834,7 +842,9 @@ pub fn quiescence_search(
     let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
     let NodeLists { moves, scores, payload } = &mut lists;
 
-    if in_check {
+    let checks_wanted = quiet_checks && !in_check && stand_pat >= alpha;        /* a side behind wants captures       */
+
+    if in_check || checks_wanted {
         generate_all_moves_and_drops(state, moves, payload);
     } else {
         generate_all_captures(state, moves, payload);
@@ -868,7 +878,16 @@ pub fn quiescence_search(
             continue;                                                           /* a plan, not a reply to this square */
         }
 
-        if delta_prunable
+        let quiet = !in_check
+            && !m_capture!(&moves[index])
+            && !m_promotion!(&moves[index]);
+
+        if quiet && m_drop!(&moves[index]) {
+            continue;
+        }
+
+        if !quiet
+        && delta_prunable
         && !m_promotion!(&moves[index])
         && stand_pat + victim_value!(&moves[index], state) + delta <= alpha {
             continue;
@@ -878,11 +897,16 @@ pub fn quiescence_search(
             continue;
         }
 
+        if quiet && !is_in_check!(state.playing, state) {
+            undo_move!(state);
+            continue;
+        }
+
         legal_moves += 1;
 
         let score = -quiescence_search(
             state, ttable, qtable, -beta, -alpha, info,
-            contested.or(Some(end!(&moves[index]) as Square)),
+            contested.or(Some(end!(&moves[index]) as Square)), false,
         );
 
         undo_move!(state);
@@ -1007,6 +1031,11 @@ pub fn quiescence_search(
 /// score made drop game trees much larger in tests. All bounds update the
 /// table.
 ///
+/// A move that gives check is never skipped and never reduced. The reply
+/// side has few moves, so the loss can be short. The test is made after the
+/// move, so it also sees a discovered check and a check through a new
+/// screen.
+///
 #[hotpath::measure]
 pub fn alpha_beta(
     state: &mut State,
@@ -1071,7 +1100,7 @@ pub fn alpha_beta(
 
     if depth == 0 {
         return quiescence_search(
-            state, ttable, qtable, alpha, beta, info, None,
+            state, ttable, qtable, alpha, beta, info, None, true,
         );
     }
 
@@ -1139,7 +1168,7 @@ pub fn alpha_beta(
     && plain_eval + state.statics.search.razor_margin[depth] < alpha
     {
         let score = quiescence_search(
-            state, ttable, qtable, alpha, alpha + 1, info, None,
+            state, ttable, qtable, alpha, alpha + 1, info, None, false,
         );
 
         if score <= alpha {
@@ -1223,7 +1252,7 @@ pub fn alpha_beta(
 
             let mut score = -quiescence_search(
                 state, ttable, qtable,
-                -probcut_beta, -probcut_beta + 1, info, None,
+                -probcut_beta, -probcut_beta + 1, info, None, false,
             );
 
             if score >= probcut_beta {
@@ -1315,42 +1344,58 @@ pub fn alpha_beta(
             && beta - alpha == 1
             && alpha.abs() < MATE_SCORE;
 
-        if prunable && !is_capture && !is_promotion && !is_drop {
-            if quiet_pruning!(state)
-            && legal_moves >= state.statics.search.lmp_count[lmp_row + lmp_slot]
-            {
-                continue;
-            }
+        let prunable_quiet = prunable && !is_capture && !is_promotion
+            && !is_drop;
 
-            if forward_pruning!(state)
+        let late_quiet = prunable_quiet
+            && quiet_pruning!(state)
+            && legal_moves
+                >= state.statics.search.lmp_count[lmp_row + lmp_slot];
+
+        let futile = prunable_quiet
+            && forward_pruning!(state)
             && futility_depth <= futility_deepest
             && plain_eval
                 + state.statics.search.futility_margin[
                     futility_row + futility_depth
                 ]
-                <= alpha
-            {
-                continue;
-            }
-        }
+                <= alpha;
 
-        if prunable
-        && see_pruning!(state)
-        && see_valid!(state)
-        && static_movement!(state)
-        && is_capture
-        && !is_promotion
-        && !is_drop
-        && depth <= see_deepest
-        && scores[index] != UNMAKEABLE_CAPTURE_SCORE
-        && scores[index] < LOSING_CAPTURE_SCORE as usize
-        && scores[index] as i32 - LOSING_CAPTURE_SCORE
-            < -state.statics.search.see_allowance[depth]
+        let losing_capture = prunable
+            && see_pruning!(state)
+            && see_valid!(state)
+            && static_movement!(state)
+            && is_capture
+            && !is_promotion
+            && !is_drop
+            && depth <= see_deepest
+            && scores[index] != UNMAKEABLE_CAPTURE_SCORE
+            && scores[index] < LOSING_CAPTURE_SCORE as usize
+            && scores[index] as i32 - LOSING_CAPTURE_SCORE
+                < -state.statics.search.see_allowance[depth];
+
+        let skippable = late_quiet || futile || losing_capture;
+        let enemy = (state.playing ^ 1) as usize;
+
+        if skippable
+        && !state.royal_list[enemy].iter().any(|&royal| {                       /* no line from its landing square to */
+            state.statics.relevant_attacks[enemy][royal as usize].iter()        /* a royal: it cannot check directly  */
+                .any(|(piece, start, _)| {
+                    *piece as u128 == piece!(mv) && *start as u128 == end!(mv)
+                })
+        })
         {
             continue;
         }
 
         if !make_move!(state, mv.clone()) {
+            continue;
+        }
+
+        let gives_check = is_in_check!(state.playing, state);                   /* the side that got the move         */
+
+        if skippable && !gives_check {
+            undo_move!(state);
             continue;
         }
 
@@ -1361,6 +1406,7 @@ pub fn alpha_beta(
 
         let reduction = if depth >= minimum_depth
         && legal_moves > move_gate
+        && !gives_check
         {
             let surface = match (
                 is_capture || is_promotion || is_drop, in_check
@@ -1380,12 +1426,15 @@ pub fn alpha_beta(
             0
         };
 
+        let extended = gives_check && ply + depth < 2 * info.root_depth;        /* a line gains at most its own depth */
+        let child_depth = depth - 1 + extended as usize;
+
         let mut score = if legal_moves == 1 {
             -alpha_beta(
                 state,
                 ttable,
                 qtable,
-                depth - 1,
+                child_depth,
                 -beta,
                 -alpha,
                 info,
@@ -1396,7 +1445,7 @@ pub fn alpha_beta(
                 state,
                 ttable,
                 qtable,
-                depth - 1 - reduction,
+                child_depth - reduction,
                 -alpha - 1,
                 -alpha,
                 info,
@@ -1430,7 +1479,7 @@ pub fn alpha_beta(
                 state,
                 ttable,
                 qtable,
-                depth - 1,
+                child_depth,
                 -beta,
                 -alpha,
                 info,
