@@ -250,8 +250,7 @@ macro_rules! enc_promote_on_exit {
 /// - null_pruning!    : a pass is never good, bit 3
 /// - recapture_order! : capture order is monotone enough to cut, bit 4
 /// - quiet_pruning!   : a late quiet move can be skipped, bit 5
-/// - static_movement! : reach does not depend on other pieces, bit 6
-/// - wide_quiescence! : a leaf can search any capture, bit 7
+/// - wide_quiescence! : a leaf can search any capture, bit 6
 ///
 /// enc_see_valid! .. enc_wide_quiescence!
 ///
@@ -349,30 +348,16 @@ macro_rules! enc_quiet_pruning {
 }
 
 #[macro_export]
-macro_rules! static_movement {
+macro_rules! wide_quiescence {
     ($state:expr) => {
         ($state.statics.capabilities >> 6 & 1) == 1
     };
 }
 
 #[macro_export]
-macro_rules! enc_static_movement {
-    ($mask:expr) => {
-        $mask |= 1 << 6;
-    };
-}
-
-#[macro_export]
-macro_rules! wide_quiescence {
-    ($state:expr) => {
-        ($state.statics.capabilities >> 7 & 1) == 1
-    };
-}
-
-#[macro_export]
 macro_rules! enc_wide_quiescence {
     ($mask:expr) => {
-        $mask |= 1 << 7;
+        $mask |= 1 << 6;
     };
 }
 
@@ -703,7 +688,7 @@ macro_rules! is_terminal {
 /// - bit 6 : setup phase at the start
 /// - bit 7 : a move can make a stand-off
 ///
-/// `capabilities` is a second mask, eight bits in a `u16`, of the allowed
+/// `capabilities` is a second mask, seven bits in a `u16`, of the allowed
 /// search shortcuts. Derivation sets it, and the `see_valid!` macro group
 /// gives the bits.
 ///

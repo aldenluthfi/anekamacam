@@ -1602,7 +1602,6 @@ pub fn derive_search_parameters(state: &mut State) {
 ///                         pass, stand-offs, setup, a piece without quiets
 /// - recapture ordering  : recycled captures, check count, goal
 /// - quiet pruning       : misere, goal, check count
-/// - static movement     : a screened leg or a CPMN move condition
 /// - wide quiescence     : a vector that captures more than one piece
 ///
 /// Two fact types answer the tests:
@@ -1635,8 +1634,6 @@ pub fn derive_search_capabilities(state: &mut State) {
 
     let movement_facts = (0..statics.pieces.len()).into_par_iter()
         .map(|piece_index| {
-            let mut screened = false;
-            let mut conditioned = false;
             let mut royal_capture = false;
             let mut multi_destroy = false;
             let mut multi_capture = false;
@@ -1659,7 +1656,6 @@ pub fn derive_search_capabilities(state: &mut State) {
                         let takes = c!(leg) || d!(leg)
                             || (last_leg && !m!(leg));                          /* a plain slider takes on its last   */
 
-                        screened |= u!(leg);
                         royal_capture |= k!(leg);
                         destroys |= d!(leg);
                         destroyed += (d!(leg) && !u!(leg)) as usize;            /* an unloaded piece is put back      */
@@ -1670,7 +1666,6 @@ pub fn derive_search_capabilities(state: &mut State) {
                     let (files_crossed, ranks_crossed) = vector_offset!(vector);
                     let moves_quietly = vector_moves_quietly!(vector);
 
-                    conditioned |= vector.pattern.is_some();
                     multi_destroy |= destroyed > 1;
                     multi_capture |= victims > 1;
                     may_pass |= moves_quietly && !destroys
@@ -1683,18 +1678,17 @@ pub fn derive_search_capabilities(state: &mut State) {
             let capture_only = vectors > 0 && quiet_vectors == 0;
 
             [
-                screened, conditioned, royal_capture, multi_destroy,
-                capture_only, multi_capture, may_pass,
+                royal_capture, multi_destroy, capture_only, multi_capture,
+                may_pass,
             ]
         })
         .reduce(
-            || [false; 7],
+            || [false; 5],
             |left, right| array::from_fn(|fact| left[fact] || right[fact]),
         );
 
     let [
-        screened, conditioned, royal_capture, multi_destroy,
-        capture_only, multi_capture, may_pass,
+        royal_capture, multi_destroy, capture_only, multi_capture, may_pass,
     ] = movement_facts;
 
     let termination = &state.termination;
@@ -1745,17 +1739,13 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_quiet_pruning!(capabilities);
     }
 
-    if !screened && !conditioned {
-        enc_static_movement!(capabilities);
-    }
-
     if !multi_capture {
         enc_wide_quiescence!(capabilities);
     }
 
     state.static_mut().capabilities = capabilities;
 
-    log_3!("Derived Search Capabilities: {:08b}", capabilities);
+    log_3!("Derived Search Capabilities: {:07b}", capabilities);
 }
 
 /*----------------------------------------------------------------------------*\

@@ -863,7 +863,6 @@ pub fn quiescence_search(
         );                                                                      /* line worth learning a reply to     */
 
         if recapture_order!(state)
-        && static_movement!(state)
         && !in_check
         && scores[index] < LOSING_CAPTURE_SCORE as usize
         {
@@ -1159,7 +1158,6 @@ pub fn alpha_beta(
     }
 
     if forward_pruning!(state)
-    && static_movement!(state)
     && !in_check
     && depth < state.statics.search.razor_margin.len()
     && beta - alpha == 1
@@ -1214,7 +1212,6 @@ pub fn alpha_beta(
     if forward_pruning!(state)
     && see_pruning!(state)
     && see_valid!(state)
-    && static_movement!(state)
     && !in_check
     && depth >= MIN_PROBCUT_DEPTH
     && beta - alpha == 1
@@ -1289,7 +1286,6 @@ pub fn alpha_beta(
     let futility_depth = depth;
 
     if forward_pruning!(state)
-    && static_movement!(state)
     && table_move.is_none()
     && depth >= MIN_IIR_DEPTH
     {
@@ -1363,7 +1359,6 @@ pub fn alpha_beta(
         let losing_capture = prunable
             && see_pruning!(state)
             && see_valid!(state)
-            && static_movement!(state)
             && is_capture
             && !is_promotion
             && !is_drop
