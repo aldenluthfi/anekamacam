@@ -219,8 +219,10 @@ macro_rules! royal_guard {
 ///
 /// Gives the cost of the enemy pressure on the royals of one colour. Each
 /// enemy piece that is not royal and not a shield reads its `zone_attack`
-/// value from its square. In a drop variant, each piece in the hand reads
-/// `zone_attack_best`, the pressure from its best drop square.
+/// value from its square. In a drop variant, each type in the hand reads
+/// `zone_attack_best`, the pressure from its best drop square, once. A
+/// side drops one piece in each move, so a second copy adds no pressure
+/// now.
 ///
 /// The cost is the square of the total pressure, so attackers compound:
 ///
@@ -275,7 +277,7 @@ macro_rules! king_danger {
                 }
 
                 if drops {
-                    units += hand[piece_index] as i64
+                    units += (hand[piece_index] > 0) as i64
                         * best[piece_index] as i64;
                 }
             }
