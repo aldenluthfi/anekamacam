@@ -495,8 +495,23 @@ binary `base0` is b970373.
   the order standard, xiangqi, shogi, grand. H1 means above 2000.
 - Standard: H1, +18.6 ± 15.6. Standard is above 2000.
 - Xiangqi: H0, -73.8 ± 32.3, about 1926 (from about 1800).
+- Shogi: H0, -124.6 ± 45.0, about 1875 (from about 1824).
+- Grand: H0, -196.7 ± 66.7, about 1800 (from about 1760).
+- The self-play gains are much larger than the gains against FSF.
 
-### C1 (2026-09-30, branch `plan27-c1`, 2368522)
+### Grand piece values (2026-09-30)
+
+- Removal test from the start, pawn = 1, p1 against FSF `eval`: N 2.85 /
+  3.8, B 3.63 / 4.8, R 5.0 / 5.8, Q 8.6 / 12.3, C 7.7 / 10.0, A 6.2 / 9.5.
+  All pieces are 20 to 35% cheap against the pawn, the compounds most.
+- Cause: `derive_material_values` shifts all raw values by one offset so
+  the cheapest piece is 100. The shift adds the same amount to each
+  piece, so the ratios are flat, and a compound (A = B + N moves) is worth
+  less than its parts.
+- Tried: values in proportion to the raw value (`raw * 100 / cheapest`).
+  Much too steep: standard Q 15.9, grand N 6.3. Not kept.
+
+### C1 (2026-09-30, branch `plan27-c1`, 1a09ee8)
 
 - `static_movement!` no longer gates SEE ordering, SEE pruning, ProbCut,
   the quiescence losing-capture break, razoring and IIR. `see!` makes
@@ -510,6 +525,24 @@ binary `base0` is b970373.
 - Xiangqi, depth 12, four positions: 2.0 s to 0.37 s.
 - Only variants with a screened leg or a CPMN condition change, so only
   the xiangqi arm runs (`0 5` against p1), then xiangqi against FSF 2000.
+- SPRT xiangqi `0 5`: H0, -49.6 ± 18.7. Five times faster to a depth, but
+  weaker: the exchange shortcuts cut lines that matter when cannons are on
+  the board. C1 is not merged; p1 stays the base.
+
+### E2 (2026-09-30, branch `plan27-e2`, 52a7be5)
+
+- `king_danger!`: a hand type adds its best drop pressure once, not once
+  for each copy. Only drop variants change, so only the shogi arm runs
+  (`0 5` against p1).
+
+### T1 (2026-09-30, branch `plan27-t1`, a9dd7a2)
+
+- A clock move gets a hard limit of two shares (a share is remaining / 20
+  plus increment), at most half the clock. Iterative deepening starts no
+  new depth after half the time to the limit. Before, the deadline cut
+  the last depth and its time was lost. Movetime keeps its limit.
+- Smoke test at 10+0.1: depth 14 in 812 ms, limit 1195 ms.
+- SPRT grand `0 5` against p1 after E2.
 
 ## Verification
 
