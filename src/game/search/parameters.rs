@@ -1051,21 +1051,20 @@ fn derive_promotion_span(field: &[f64]) -> f64 {
 /// derive_promotion_bonus
 ///
 /// Gives the progress bonus of a piece that can promote. It is a gradient
-/// to the nearest promotion square, scaled by the promotion gain.
-///
-/// - opening : 6% of the gain, times the progress
-/// - endgame : 40% of the gain, times the progress
+/// to the nearest promotion square: 6% of the promotion gain, times the
+/// progress, in both phases.
 ///
 /// The progress is squared, so the bonus is flat at the start and steep
-/// near the zone, as for a passed pawn. A piece without a zone, or with a
-/// zone on the full board, gets zero.
+/// near the zone. A piece without a zone, or with a zone on the full board,
+/// gets zero. The gradient only orders the squares. The passed pawn term
+/// of `pawn_structure!` gives the value of a free path, so a larger
+/// endgame gradient would count the same race two times.
 ///
 /// Params:
 /// - state         : &State     -> board dimensions and promotion zones
 /// - piece_index   : PieceIndex -> piece to place
 /// - closest       : f64        -> promotion distance from this square
 /// - span          : f64        -> spread of that distance on the board
-/// - is_endgame    : bool       -> selects the bonus part of the phase
 /// - piece_value   : f64        -> value of the piece in this phase
 /// - promoted_value: f64        -> best value after promotion
 ///
@@ -1074,7 +1073,7 @@ fn derive_promotion_span(field: &[f64]) -> f64 {
 ///
 fn derive_promotion_bonus(
     state: &State, piece_index: PieceIndex, closest: f64, span: f64,
-    is_endgame: bool, piece_value: f64, promoted_value: f64
+    piece_value: f64, promoted_value: f64
 ) -> f64 {
     let piece = &state.statics.pieces[piece_index as usize];
 
@@ -1085,13 +1084,7 @@ fn derive_promotion_bonus(
     let advancement =
         (1.0 - closest / state.statics.ranks as f64).max(0.0);
 
-    let fraction = if is_endgame {
-        0.40
-    } else {
-        0.06
-    };
-
-    fraction * (promoted_value - piece_value).max(0.0)
+    0.06 * (promoted_value - piece_value).max(0.0)
         * advancement.powf(2.0)
 }
 
@@ -1191,7 +1184,7 @@ fn derive_pst(
             (scores[square] - mean) / max_deviation * amplitude;
         let promotion = derive_promotion_bonus(
             state, index, promotion_field[square], promotion_span,
-            is_endgame, piece_value, promoted_value
+            piece_value, promoted_value
         );
 
         (positional + promotion).round() as i32

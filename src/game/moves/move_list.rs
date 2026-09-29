@@ -1739,6 +1739,13 @@ macro_rules! make_move {
                                     $state.statics.pieces
                                         [enemy_equiv as usize]
                                 ) as u32;
+
+                            let hand_copy = &$state.statics.pieces
+                                [enemy_equiv as usize];
+
+                            $state.phase_score -= p_ovalue!(hand_copy) as u32
+                                * p_is_big!(hand_copy) as u32
+                                * !p_is_royal!(hand_copy) as u32;
                         }
                     }
                 }
@@ -1932,6 +1939,13 @@ macro_rules! make_move {
                                     $state.statics.pieces
                                         [enemy_equiv as usize]
                                 ) as u32;
+
+                            let hand_copy = &$state.statics.pieces
+                                [enemy_equiv as usize];
+
+                            $state.phase_score -= p_ovalue!(hand_copy) as u32
+                                * p_is_big!(hand_copy) as u32
+                                * !p_is_royal!(hand_copy) as u32;
                         }
                     }
                 }
@@ -2036,14 +2050,15 @@ macro_rules! make_move {
                     *hand += 1;
 
                     if drops!($state) {
+                        let held = &$state.statics.pieces[hand_piece];
+
                         $state.opening_material[piece_color as usize] +=
-                            p_ovalue!(
-                                $state.statics.pieces[hand_piece]
-                            ) as u32;
+                            p_ovalue!(held) as u32;
                         $state.endgame_material[piece_color as usize] +=
-                            p_evalue!(
-                                $state.statics.pieces[hand_piece]
-                            ) as u32;
+                            p_evalue!(held) as u32;
+                        $state.phase_score += p_ovalue!(held) as u32
+                            * p_is_big!(held) as u32
+                            * !p_is_royal!(held) as u32;
                     }
                 }
 
@@ -2299,6 +2314,13 @@ macro_rules! make_move {
                                     $state.statics.pieces
                                         [enemy_equiv as usize]
                                 ) as u32;
+
+                            let hand_copy = &$state.statics.pieces
+                                [enemy_equiv as usize];
+
+                            $state.phase_score -= p_ovalue!(hand_copy) as u32
+                                * p_is_big!(hand_copy) as u32
+                                * !p_is_royal!(hand_copy) as u32;
                         }
                     }
                 }
@@ -2413,14 +2435,15 @@ macro_rules! make_move {
                         *hand += 1;
 
                         if drops!($state) {
+                            let held = &$state.statics.pieces[hand_piece];
+
                             $state.opening_material[piece_color as usize] +=
-                                p_ovalue!(
-                                    $state.statics.pieces[hand_piece]
-                                ) as u32;
+                                p_ovalue!(held) as u32;
                             $state.endgame_material[piece_color as usize] +=
-                                p_evalue!(
-                                    $state.statics.pieces[hand_piece]
-                                ) as u32;
+                                p_evalue!(held) as u32;
+                            $state.phase_score += p_ovalue!(held) as u32
+                                * p_is_big!(held) as u32
+                                * !p_is_royal!(held) as u32;
                         }
                     }
 
@@ -2587,13 +2610,13 @@ macro_rules! make_move {
                 $state.minor_pieces[piece_color as usize] +=
                     p_is_minor!($state.statics.pieces[piece_index]) as u32;
 
-                $state.phase_score += p_ovalue!(
-                    $state.statics.pieces[piece_index]
+                $state.phase_score += p_ovalue!(                                /* a hand of a drop variant is in the */
+                    $state.statics.pieces[piece_index]                          /* phase already, a setup hand is not */
                 ) as u32 * p_is_big!(
                     $state.statics.pieces[piece_index]
                 ) as u32 * !p_is_royal!(
                     $state.statics.pieces[piece_index]
-                ) as u32;
+                ) as u32 * !drops!($state) as u32;
 
 
                 let hand = &mut $state.piece_in_hand

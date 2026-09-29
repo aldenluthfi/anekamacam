@@ -598,8 +598,10 @@ macro_rules! pass_snapshot {
 /// game_phase_score!
 ///
 /// Calculates the phase score from scratch. It is the sum of the opening
-/// values of all big pieces on the board that are not royal. `game_phase!`
-/// compares it with the thresholds of the variant.
+/// values of all big pieces that are not royal, on the board and, in a
+/// drop variant, in the hands. A piece in hand can come back at once, so
+/// a capture does not move the game toward its end. `game_phase!` compares
+/// the sum with the thresholds of the variant.
 ///
 /// Params:
 /// - state: &State -> position to count
@@ -614,8 +616,12 @@ macro_rules! game_phase_score {
 
         for (piece_idx, piece) in $state.statics.pieces.iter().enumerate() {
             if p_is_big!(piece) && !p_is_royal!(piece) {
-                phase_score +=
-                    p_ovalue!(piece) as u32 * $state.piece_count[piece_idx];
+                let in_hand = drops!($state) as u32
+                    * $state.piece_in_hand[p_color!(piece) as usize][piece_idx]
+                        as u32;
+
+                phase_score += p_ovalue!(piece) as u32
+                    * ($state.piece_count[piece_idx] + in_hand);
             }
         }
 

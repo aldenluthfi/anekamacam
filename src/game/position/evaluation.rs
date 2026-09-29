@@ -676,9 +676,11 @@ macro_rules! opening_score {
 
 /// endgame_score!
 ///
-/// Gives the endgame score, White minus Black. It is only the material and
-/// piece-square totals, without safety terms. In the endgame, the royal
-/// must go to the center, and the endgame tables already give this.
+/// Gives the endgame score, White minus Black. It is the material and
+/// piece-square totals plus the enemy pressure on the royals. In the
+/// endgame, the royal must go to the center, and the endgame tables already
+/// give this. Shelter, guard, open files and castling keep a royal at home,
+/// so they stay out. The pressure falls by itself when the attackers leave.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -696,6 +698,8 @@ macro_rules! endgame_score {
             - $state.endgame_material[black] as i32
             + $state.endgame_pst_bonus[white]
             - $state.endgame_pst_bonus[black]
+            + king_danger!($state, black)
+            - king_danger!($state, white)
     }};
 }
 
@@ -768,7 +772,7 @@ macro_rules! material_advantage {
 /// Where each term goes:
 ///
 /// - material, piece-square : both halves, each with its own values
-/// - royal safety           : opening half only
+/// - royal safety           : opening half; enemy pressure in both
 /// - pawn structure         : both halves, one value for each
 /// - material imbalance     : outside the blend, added once
 /// - tempo                  : outside, after the flip to the side to move
