@@ -568,6 +568,25 @@ binary `base0` is b970373.
   0.740, standard 0.673 to 0.665.
 - SPRT grand `0 5` against p1, then xiangqi, shogi, standard `-5 0`.
 
+### HB (2026-09-30, branch `plan27-hb`, 05c3478)
+
+- A piece in hand gets the best square bonus of the squares where it can
+  be dropped (`hand_bonus!`, derived in `derive_advantage_parameters`
+  from the final tables). A piece on the board already gets its square
+  bonus; in hand it got none.
+- Reason: a fit of FSF `eval` on our shogi eval plus the hand material
+  gives about 28 cp for each pawn unit in hand above our eval.
+- Correlation with FSF, shogi: 0.740 to 0.756.
+- SPRT shogi `0 5` against p1.
+
+### Server disk full (2026-09-30)
+
+- The clones kept harvested engine logs and full `target/` trees (e1
+  alone 5.5 GB); the 20 GB disk filled. The T1 and KD builds failed, and
+  the queue went on to the first rerun. The stage scripts now delete
+  build files and harvested logs after each run, and the queue runs T1,
+  KD, HB and the reruns again.
+
 ### T1 (2026-09-30, branch `plan27-t1`, a9dd7a2)
 
 - A clock move gets a hard limit of two shares (a share is remaining / 20
