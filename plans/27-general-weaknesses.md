@@ -583,7 +583,7 @@ binary `base0` is b970373.
 - Reason: a fit of FSF `eval` on our shogi eval plus the hand material
   gives about 28 cp for each pawn unit in hand above our eval.
 - Correlation with FSF, shogi: 0.740 to 0.756.
-- SPRT shogi `0 5` against p1.
+- SPRT shogi `0 5` against p1: H0, -46.4 ± 18.1. Not merged.
 
 ### HL (2026-09-30, branch `plan27-hl`, 3b7d543)
 
@@ -606,7 +606,8 @@ binary `base0` is b970373.
   xiangqi gets the exchange order only.
 - Xiangqi, depth 12, four positions: 1.99 s to 1.01 s, nodes 2.17M to
   0.69M. Perft unchanged.
-- SPRT xiangqi `0 5` against p1.
+- SPRT xiangqi `0 5` against p1: H1, +42.1 ± 16.2. Only variants with a
+  screened or royal-capture leg change, so no other arm runs. Merged.
 
 ### GS (2026-09-30, branch `plan27-gs`, d604934)
 
@@ -617,7 +618,8 @@ binary `base0` is b970373.
   no losing-capture stop (6.7 quiescence nodes per main node).
 - Grand, depth 11, four positions: 1.85 s to 1.24 s, nodes 1.72M to
   0.83M.
-- SPRT grand `0 5` against p1.
+- SPRT grand `0 5` against p1: H1, +136.7 ± 33.6. Only variants with
+  promotion to a captured type and no drops change. Merged.
 
 ### Server disk full (2026-09-30)
 
@@ -639,7 +641,14 @@ binary `base0` is b970373.
   could run to two shares, so a move used more than one share on
   average and the clock ran low later.
 - T1b (c47125c): no new depth after a quarter of the window (half a
-  share), same limit of two shares. SPRT grand `0 5` against p1.
+  share), same limit of two shares. SPRT grand `0 5` against p1: H1,
+  +105.8 ± 28.0. Time is generic, so the FSF ratings of the merged build
+  check the other variants.
+
+### Merged build (2026-09-30, branch `plan27-main`, 529e9e4)
+
+- p1 + T1b + GS + SO. KD, HB, E2, C1 are not in it; HL waits for its
+  SPRT. Rated against FSF 2000 in xiangqi, shogi, grand and standard.
 
 ## Verification
 
