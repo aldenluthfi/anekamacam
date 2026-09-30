@@ -853,15 +853,17 @@ fn derive_family_mobility(
 ///
 /// - pass         : needs an empty square, chance `1 - occupancy`
 /// - screen       : needs an occupied square, chance `occupancy`
-/// - final, move  : a move-only last leg needs an empty square
-/// - final, take  : a capture-only last leg needs a piece, `occupancy`
+/// - final, move  : a move-only last leg, half the empty chance
+/// - final, take  : a capture-only last leg, half of `occupancy`
 /// - final, both  : a last leg that moves and takes lands always, 1
 /// - marker       : has no displacement, skipped
 ///
 /// The chance is the product, with the chance of the CPMN condition from
 /// `derive_condition_chance`. Thus a long slide decreases with each
 /// square, a pawn step and a pawn capture each land less often than a
-/// leaper, and a hopper capture has 0 on an empty board.
+/// leaper, and a hopper capture has 0 on an empty board. A single-purpose
+/// last leg counts half: the piece moves to a square it cannot guard, or
+/// guards a square it cannot move to.
 ///
 /// Params:
 ///
@@ -910,8 +912,8 @@ fn derive_vector_chance(
     let final_takes = final_flagged || !m!(final_leg);
 
     chance *= match (final_moves, final_takes) {
-        (true, false) => 1.0 - occupancy,
-        (false, true) => occupancy,
+        (true, false) => 0.5 * (1.0 - occupancy),
+        (false, true) => 0.5 * occupancy,
         _ => 1.0,
     };
 
