@@ -692,7 +692,15 @@ binary `base0` is b970373.
 - Merged build 2 plus DP and GP. DP changes only drop variants, GP only
   variants with promotion to a captured type, so xiangqi and standard
   keep their build 2 ratings. Rated against FSF 2000 in shogi and grand.
-- Shogi: H0, -99.0 ± 38.6 (about 1901, from 1852).
+- Shogi: H0, -99.0 ± 38.6 (about 1901, from 1852). Grand: H0, -65.8 ±
+  30.0 (about 1934, from 1898).
+
+### T2 (2026-09-30, branch `plan27-t2`, 7379833)
+
+- Without `movestogo`, the clock plans for 15 moves, not 20. T1b gave
+  grand +105.8, so time use is a large lever; FSF also spends more per
+  move early.
+- SPRT grand `0 5` against merged build 3.
 
 ### PX (2026-09-30, branch `plan27-px`, d6b4d99)
 
