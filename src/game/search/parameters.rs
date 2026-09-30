@@ -264,10 +264,10 @@ const DANGER_CAP_RATIO: u32 = 1000;
 /// so a few attackers near the royal make a mate. Over `COEFFICIENT_SCALE`
 /// of the most valuable piece:
 ///
-/// - with drops    : 50% for each enemy piece near a royal
+/// - with drops    : 10% for each enemy piece near a royal
 /// - without drops : nothing
 ///
-const PROXIMITY_RATIO: u32 = 500;
+const PROXIMITY_RATIO: u32 = 100;
 
 /// Open shield penalty
 ///
