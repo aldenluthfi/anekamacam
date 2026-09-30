@@ -479,7 +479,7 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
 /// - depth 1 to 3 : full window
 /// - depth 4 on   : small window around the last score, wider on a fail
 /// - stop         : at the depth limit or the clock
-/// - no new depth : after half the time to the deadline
+/// - no new depth : after a quarter of the time to the deadline
 ///
 /// An iteration that the clock stops is discarded, because its score is not
 /// proved. The move of the previous depth is played. Depth 1 is different,
@@ -671,8 +671,8 @@ pub fn iterative_deepening(
 
         let now = ENGINE_START.elapsed().as_nanos();
 
-        if info.deadline != 0 && 2 * now > info.start_time + info.deadline {    /* past half: the next depth would be */
-            break;                                                              /* cut and its time lost              */
+        if info.deadline != 0 && 4 * now > 3 * info.start_time + info.deadline {/* past a quarter: the next depth may */
+            break;                                                              /* not end, and its time is lost      */
         }
     }
 
