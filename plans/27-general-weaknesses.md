@@ -662,6 +662,28 @@ binary `base0` is b970373.
   without H1 but with a lower end above 0 (+1.2, +2.4). The build goes to
   the FSF 2000 ratings in xiangqi, grand, shogi and standard, which also
   check it against a loss. Perft unchanged.
+- FSF 2000: xiangqi H1 +26.0 ± 18.5 (about 2026, passes), standard H1
+  +41.8 ± 23.5 (about 2042, passes), grand H0 -102.5 ± 39.5 (about
+  1898), shogi H0 -148.0 ± 51.2 (about 1852). Merged build 2 is the new
+  base.
+
+### DP (2026-09-30, branch `plan27-dp`, 23771d3)
+
+- Drops no longer clear SEE pruning and the recapture order. With drops,
+  each capture of an exchange also fills the hand of the taker, so every
+  step is worth two times as much; the sum doubles and keeps its sign.
+- Shogi, depth 11, four positions: nodes -14%, time equal.
+- SPRT shogi `0 5` against merged build 2.
+
+### GP (2026-09-30, branch `plan27-gp`, c40c014)
+
+- `derive_promotion_target` replaces the two copies of "best piece". With
+  `promote to captured`, a pawn can become only a type that was captured;
+  the pool is empty at the start, so only the cheapest target (not royal,
+  cannot promote itself) is sure. The PST gradient and the passed pawn
+  term use it. Params made again; only grand and sittuyin change.
+- Correlation with FSF, grand: 0.844 to 0.893 (opening 0.561 to 0.621).
+- SPRT grand `0 5` against merged build 2.
 
 ### Shogi eval against FSF, board features (2026-09-30)
 
