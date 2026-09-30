@@ -651,7 +651,7 @@ binary `base0` is b970373.
   SPRT. Rated against FSF 2000 in xiangqi, shogi, grand and standard.
 - Xiangqi H0, -39.2 ± 22.8 (about 1961, from 1926). Shogi H0, -132.4 ±
   47.2 (about 1868, no change). Grand H0, -125.4 ± 44.8 (about 1875, from
-  1800).
+  1800). Standard H1, +51.6 ± 26.5 (about 2050, from about 2019).
 
 ### Shogi eval against FSF, board features (2026-09-30)
 
