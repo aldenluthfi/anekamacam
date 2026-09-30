@@ -673,7 +673,8 @@ binary `base0` is b970373.
   each capture of an exchange also fills the hand of the taker, so every
   step is worth two times as much; the sum doubles and keeps its sign.
 - Shogi, depth 11, four positions: nodes -14%, time equal.
-- SPRT shogi `0 5` against merged build 2.
+- SPRT shogi `0 5` against merged build 2: H1, +88.3 ± 25.0. Only drop
+  variants change.
 
 ### GP (2026-09-30, branch `plan27-gp`, c40c014)
 
