@@ -842,6 +842,32 @@ binary `base0` is b970373.
 - SPRT shogi `0 5` against the merged build: inconclusive at 3000 games,
   +0.9 ± 12.4. No effect; not merged.
 
+### Merged build 5 (2026-10-01, branch `plan27-main5`, 90da58c)
+
+- Merged build 4 plus PT and the ASEAN config fix (plan 28). All 44
+  param files derive the same as the committed ones.
+- Rating sweep queued on the server: every variant that FSF plays (36),
+  400 games each against FSF 2000. The harness sends our variant name to
+  both engines, so the sweep gives FSF its own name with `--option-b
+  UCI_Variant=...` (5check, kingofthehill, losalamos, cambodian, 3check).
+  Without it FSF plays chess in those five.
+
+### Robustness (2026-10-01, branch `plan27-sec` on merged build 5, 285ff67)
+
+- Self-play, 16 games at 2+0.02 in each of the 44 variants: no crash, no
+  illegal move, no forfeit, except four.
+- Chu, dai, dai dai and taikyoku shogi panicked when a UCI GUI selected
+  them (`Missing mandatory sections: uci moves`). `split_sections`
+  dropped empty sections and then paired titles with bodies by position,
+  and these four dicts end with an empty `= uci moves =`. An empty
+  section in the middle of a file would have moved every later body to
+  the wrong title. Now only the text before the first title is dropped;
+  an empty section keeps its title. All 44 param files are the same; chu
+  and dai shogi answer `bestmove`.
+- Taikyoku shogi takes 10.4 s from `setoption` to `readyok` (36x36, 402
+  pieces), past the 10 s handshake of the harness. A GUI with a longer
+  wait plays it.
+
 ## Verification
 
 - Each stage: SPRT against the previous stage, one arm for each benchmark
