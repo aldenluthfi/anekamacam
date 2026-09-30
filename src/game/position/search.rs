@@ -722,7 +722,7 @@ pub fn iterative_deepening(
 ///
 /// - in check  : all evasions, also drops, no stand pat
 /// - otherwise : stand pat first, then captures while they win
-/// - horizon   : also board moves that give check, if stand pat >= alpha
+/// - horizon   : also moves and drops that give check, if stand pat >= alpha
 ///
 /// A side in check cannot stand pat, because it must move. Out of check,
 /// the loop stops at the first losing capture, because the ordering puts
@@ -764,8 +764,8 @@ pub fn iterative_deepening(
 ///     start one
 ///
 ///     quiet_checks: bool
-///     true at the horizon of the main tree: a board move that is not a
-///     capture is also played if it gives check and the stand pat is not
+///     true at the horizon of the main tree: a move or a drop that is not
+///     a capture is also played if it gives check and the stand pat is not
 ///     below alpha
 ///
 /// Return:
@@ -889,10 +889,6 @@ pub fn quiescence_search(
         let quiet = !in_check
             && !m_capture!(&moves[index])
             && !m_promotion!(&moves[index]);
-
-        if quiet && m_drop!(&moves[index]) {
-            continue;
-        }
 
         if !quiet
         && delta_prunable
