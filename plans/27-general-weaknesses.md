@@ -700,7 +700,10 @@ binary `base0` is b970373.
 - Without `movestogo`, the clock plans for 15 moves, not 20. T1b gave
   grand +105.8, so time use is a large lever; FSF also spends more per
   move early.
-- SPRT grand `0 5` against merged build 3.
+- SPRT grand `0 5` against merged build 3: H0, -36.0 ± 16.0. More time
+  early hurts.
+- T3 (28c6162): 30 moves, the other way. SPRT grand `0 5` against merged
+  build 3.
 
 ### PX (2026-09-30, branch `plan27-px`, d6b4d99)
 
