@@ -1718,12 +1718,12 @@ pub fn derive_search_parameters(state: &mut State) {
 /// set, unless a rule removes it:
 ///
 /// - exchange simulation : multi own destroy, misere, extinction
-/// - pruning on it       : check count, counting, goal
-/// - forward pruning     : misere, extinction, goal, check count
-/// - null pruning        : misere, goal, check count, counting, a legal
-///                         pass, stand-offs, setup, a piece without quiets
-/// - recapture ordering  : check count, goal
-/// - quiet pruning       : misere, goal, check count
+/// - pruning on it       : check count, counting
+/// - forward pruning     : misere, extinction, check count
+/// - null pruning        : misere, check count, counting, a legal pass,
+///                         stand-offs, setup, a piece without quiets
+/// - recapture ordering  : check count
+/// - quiet pruning       : misere, check count
 /// - static movement     : a screened leg or a CPMN move condition
 /// - wide quiescence     : a vector that captures more than one piece
 ///
@@ -1832,7 +1832,6 @@ pub fn derive_search_capabilities(state: &mut State) {
     let termination = &state.termination;
 
     let counts_pieces = !termination.extinct.is_empty();
-    let holds_zone = termination.goal.is_some();
     let counts_checks = termination.checks.is_some();
     let counts_material = termination.counting.is_some();
 
@@ -1850,25 +1849,25 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_see_valid!(capabilities);
     }
 
-    if !counts_checks && !counts_material && !holds_zone {
+    if !counts_checks && !counts_material {
         enc_see_pruning!(capabilities);
     }
 
-    if !misere && !counts_pieces && !holds_zone && !counts_checks {
+    if !misere && !counts_pieces && !counts_checks {
         enc_forward_pruning!(capabilities);
     }
 
-    if !misere && !holds_zone && !counts_checks && !counts_material
+    if !misere && !counts_checks && !counts_material
     && !may_pass && !vetoes_moves && !places_army && !capture_only
     {
         enc_null_pruning!(capabilities);
     }
 
-    if !counts_checks && !holds_zone {
+    if !counts_checks {
         enc_recapture_order!(capabilities);
     }
 
-    if !misere && !holds_zone && !counts_checks {
+    if !misere && !counts_checks {
         enc_quiet_pruning!(capabilities);
     }
 

@@ -1384,7 +1384,10 @@ pub fn alpha_beta(
             && scores[index] as i32 - LOSING_CAPTURE_SCORE
                 < -state.statics.search.see_allowance[depth];
 
-        let skippable = late_quiet || futile || losing_capture;
+        let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
+            .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
+
+        let skippable = (late_quiet || futile || losing_capture) && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
         if skippable
@@ -1417,6 +1420,7 @@ pub fn alpha_beta(
         let reduction = if depth >= minimum_depth
         && legal_moves > move_gate
         && !gives_check
+        && !goal_move
         {
             let surface = match (
                 is_capture || is_promotion, in_check
