@@ -653,8 +653,9 @@ fn config_text(path: &str) -> String {
 /// HashMap<String, Vec<String>> -> section title to body lines
 ///
 /// Notes:
-/// Titles and bodies pair by position, so text before the first title would
-/// become the first body. Comments are removed before the split.
+/// Titles and bodies pair by position. The text before the first title is
+/// not a body, and an empty section keeps its title with no lines. Comments
+/// are removed before the split.
 ///
 pub fn split_sections(content: &str) -> HashMap<String, Vec<String>> {
     let uncommented = COMMENT_PATTERN.replace_all(content, "");
@@ -666,9 +667,7 @@ pub fn split_sections(content: &str) -> HashMap<String, Vec<String>> {
         .join("\n");
 
     let titles = SECTION_PATTERN.captures_iter(&cleaned);
-    let bodies = SECTION_PATTERN
-        .split(&cleaned)
-        .filter(|body| !body.trim().is_empty());
+    let bodies = SECTION_PATTERN.split(&cleaned).skip(1);
 
     titles
         .zip(bodies)
