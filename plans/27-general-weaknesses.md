@@ -973,6 +973,25 @@ around FSF. Each fix makes perft equal FSF.
   vital pieces after the royals, and the opening table keeps them home
   like a royal. Only the extinction params change.
 - SPRT extinction `0 5` against merged build 6.
+- Extinction: H0, -146.7 ± 36.1. Not merged. Likely cause: the queen is
+  vital too, so it stays home and fears every attacker; the king walk
+  needs a narrower rule.
+
+### Large boards (2026-10-01)
+
+- With the fixed castling, embassy is -139.2 ± 48.8 and janus -80.8 ±
+  34.1 (the earlier +135 and +107 were games where FSF played a
+  different castling). Capablanca with the right setup: -109.6 ± 40.8.
+  Every chess-family variant larger than 8x8 is below 2000 (Capablanca,
+  embassy, gothic, janus, chancellor, modern, grand); the 8x8 ones pass.
+- Depth in 4 s, ours against FSF (classical eval): standard 16/19,
+  Capablanca 14/20, embassy 11/19, chancellor 14/19, janus 12/18. The
+  nodes per second ratio is the same on all boards (0.6 to 0.7), so the
+  gap is breadth. Nodes to depth 12, ours / FSF: standard 1.2, embassy
+  7.1, chancellor 6.4, janus 2.6, gothic 2.2, Capablanca 0.8.
+- The pruning counts and reduction surfaces do not depend on the board.
+  Hypothesis: the compound pieces give many checks, and S1/X1 never
+  prune or reduce a check and extend it.
 
 ### GR (2026-10-01, branch `plan27-gr` on merged build 6)
 
