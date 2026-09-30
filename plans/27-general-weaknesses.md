@@ -579,6 +579,17 @@ binary `base0` is b970373.
 - Correlation with FSF, shogi: 0.740 to 0.756.
 - SPRT shogi `0 5` against p1.
 
+### GS (2026-09-30, branch `plan27-gs`, d604934)
+
+- `promote to captured` no longer clears the exchange bits (`see_valid`,
+  `see_pruning`, `recapture_order`); only drops count as recycled
+  captures. A capture gives the piece back to its owner's pool, not to
+  the taker, and `see!` makes real moves. Grand had no exchange order and
+  no losing-capture stop (6.7 quiescence nodes per main node).
+- Grand, depth 11, four positions: 1.85 s to 1.24 s, nodes 1.72M to
+  0.83M.
+- SPRT grand `0 5` against p1.
+
 ### Server disk full (2026-09-30)
 
 - The clones kept harvested engine logs and full `target/` trees (e1
