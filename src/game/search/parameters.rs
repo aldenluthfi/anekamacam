@@ -269,6 +269,17 @@ const DANGER_CAP_RATIO: u32 = 1000;
 ///
 const PROXIMITY_RATIO: u32 = 100;
 
+/// Goal race
+///
+/// The worth of a goal piece near its goal zone, in a variant with a
+/// `goal` rule. Over `COEFFICIENT_SCALE` of the most valuable piece, for
+/// the goal piece of a colour that is nearest to the zone:
+///
+/// - one step from the zone : 100%, it arrives next move if not stopped
+/// - each step more         : half of the step before
+///
+const GOAL_RATIO: u32 = 1000;
+
 /// Open shield penalty
 ///
 /// The penalty for a royal with no own shield piece in front of it, on its
@@ -434,6 +445,8 @@ pub struct EvalParams {
     pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
     pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
     pub proximity_value: i32,                                                   /* cost of an enemy near a royal      */
+    pub goal_steps: Vec<u8>,                                                    /* square to king steps to the goal   */
+    pub goal_value: i32,                                                        /* worth one step from the goal       */
 
     pub pawn_slots: Vec<usize>,                                                 /* piece index to pawn slot, or NONE  */
     pub pawn_pieces: Vec<usize>,                                                /* pawn slot to piece index           */
@@ -2510,6 +2523,7 @@ pub fn derive_danger_parameters(state: &mut State) {
         / COEFFICIENT_SCALE as u64).max(OPEN_SHIELD_FLOOR as u64);
     let proximity_value = dearest * PROXIMITY_RATIO as u64
         * drops!(state) as u64 / COEFFICIENT_SCALE as u64;
+    let (goal_steps, goal_value) = derive_goal_steps(state, dearest);
 
     log_3!(
         concat!(
@@ -2530,6 +2544,48 @@ pub fn derive_danger_parameters(state: &mut State) {
     statics.eval.king_danger_cap = king_danger_cap as i32;
     statics.eval.open_shield_penalty = open_shield_penalty as i32;
     statics.eval.proximity_value = proximity_value as i32;
+    statics.eval.goal_steps = goal_steps;
+    statics.eval.goal_value = goal_value;
+}
+
+/// derive_goal_steps
+///
+/// Gives the king steps from each square to the nearest goal square, and
+/// the worth of a goal piece one step from the zone. A king step moves one
+/// file, one rank or both, so the count is the larger of the two gaps.
+/// Without a goal rule, the table is empty and the worth is zero.
+///
+/// Params:
+/// - state  : &State -> variant with the goal rule
+/// - dearest: u64    -> value of the most valuable piece
+///
+/// Return:
+/// (Vec<u8>, i32)    -> steps of each square, and the worth at one step
+///
+fn derive_goal_steps(state: &State, dearest: u64) -> (Vec<u8>, i32) {
+    let Some(goal) = state.termination.goal.as_ref() else {
+        return (Vec::new(), 0);
+    };
+
+    let files = state.statics.files as i32;
+    let zone: Vec<usize> = set_indices!(goal.zone);
+
+    let steps = (0..state.statics.board_size).map(|square| {
+        zone.iter()
+            .map(|&target| {
+                let file_gap = (square as i32 % files - target as i32 % files)
+                    .abs();
+                let rank_gap = (square as i32 / files - target as i32 / files)
+                    .abs();
+
+                file_gap.max(rank_gap)
+            })
+            .min()
+            .unwrap_or(0)
+            .min(u8::MAX as i32) as u8
+    }).collect();
+
+    (steps, (dearest * GOAL_RATIO as u64 / COEFFICIENT_SCALE as u64) as i32)
 }
 
 /*----------------------------------------------------------------------------*\

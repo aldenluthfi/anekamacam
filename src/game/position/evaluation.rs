@@ -396,6 +396,49 @@ macro_rules! open_shield {
     }};
 }
 
+/// goal_race!
+///
+/// Gives the worth of the goal piece of one colour that is nearest to the
+/// goal zone. The worth halves for each king step past the first:
+///
+/// - 1 step  : `goal_value`, it arrives next move if not stopped
+/// - 2 steps : half of it
+/// - 3 steps : a quarter of it
+///
+/// Params:
+/// - state: &State -> position to score
+/// - color: usize  -> colour of the goal pieces
+///
+/// Return:
+/// i32             -> race worth for that colour, 0 or more
+///
+#[macro_export]
+macro_rules! goal_race {
+    ($state:expr, $color:expr) => {{
+        let statics = &$state.statics;
+        let mut nearest = u8::MAX;
+
+        if let Some(goal) = $state.termination.goal.as_ref() {
+            for (piece_index, piece) in statics.pieces.iter().enumerate() {
+                if !goal.set[piece_index]
+                    || p_color!(piece) as usize != $color {
+                    continue;
+                }
+
+                for square in piece_squares!($state, piece_index) {
+                    nearest = nearest
+                        .min(statics.eval.goal_steps[*square as usize]);
+                }
+            }
+        }
+
+        match nearest {
+            0 | u8::MAX => 0,
+            steps => statics.eval.goal_value >> (steps - 1).min(31),
+        }
+    }};
+}
+
 /// castling_bonus!
 ///
 /// Gives the castling value of one colour. Thus castling is better than a
@@ -689,8 +732,9 @@ macro_rules! pawn_structure {
 /// opening_score!
 ///
 /// Gives the opening score, White minus Black. It is the material and
-/// piece-square totals plus all royal safety terms. The opening, the setup
-/// and the middlegame blend use it. The endgame does not.
+/// piece-square totals plus all royal safety terms and the goal race. The
+/// opening, the setup and the middlegame blend use it. The endgame does
+/// not.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -720,13 +764,16 @@ macro_rules! opening_score {
             - royal_proximity!($state, white)
             + open_shield!($state, black)
             - open_shield!($state, white)
+            + goal_race!($state, white)
+            - goal_race!($state, black)
     }};
 }
 
 /// endgame_score!
 ///
 /// Gives the endgame score, White minus Black. It is the material and
-/// piece-square totals plus the enemy pressure and nearness to the royals.
+/// piece-square totals plus the enemy pressure and nearness to the royals,
+/// and the goal race.
 /// In the endgame, the royal must go to the center, and the endgame tables
 /// already give this. Shelter, guard, open files and castling keep a royal
 /// at home, so they stay out. The pressure falls by itself when the
@@ -752,6 +799,8 @@ macro_rules! endgame_score {
             - king_danger!($state, white)
             + royal_proximity!($state, black)
             - royal_proximity!($state, white)
+            + goal_race!($state, white)
+            - goal_race!($state, black)
     }};
 }
 
