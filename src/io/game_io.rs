@@ -1276,8 +1276,18 @@ pub fn parse_config_file(path: &str) -> State {
             .collect::<Vec<_>>()[1]
             .trim();
 
+        let mut castling_leaders: Vec<usize> = Vec::new();
+
         for p_char in castling_pieces.chars() {
             let p_index = result.statics.piece_char_map[&p_char] as usize;
+            let p_color = p_color!(&result.statics.pieces[p_index]);
+
+            if castling_leaders.iter().all(|leader| {
+                p_color!(&result.statics.pieces[*leader]) != p_color
+            }) {
+                castling_leaders.push(p_index);
+            }
+
             result.static_mut().castling_pieces[p_index] = true;
         }
 
@@ -1396,7 +1406,11 @@ pub fn parse_config_file(path: &str) -> State {
 
         result.static_mut().relevant_castling = possible_pairs
             .iter()
-            .map(|(start, end)| generate_relevant_castling(start, end, &result))
+            .map(|(start, end)| {
+                generate_relevant_castling(
+                    start, end, &castling_leaders, &result
+                )
+            })
             .collect::<Vec<_>>()
             .try_into()
             .expect("Expected exactly 4 entries");

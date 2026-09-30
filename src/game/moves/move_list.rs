@@ -146,20 +146,26 @@ macro_rules! legal_moves {
 /// └────┴────┴────┴────┴────┘      └────┴────┴────┴────┴────┘
 /// ```
 ///
-/// The royal piece is in the main slot of the move, and the partner in the
-/// capture and unload slots. The `+` and `*` squares go into the move list
-/// for the runtime test.
+/// The leader, the first piece of its colour in the `pieces:` line, is in
+/// the main slot of the move, and the partner in the capture and unload
+/// slots. The `+` and `*` squares go into the move list for the runtime
+/// test.
 ///
 /// Params:
-/// - start: &Vec<String> -> start layouts, one for each castling option
-/// - end  : &Vec<String> -> matching end layouts
-/// - state: &State       -> piece dictionary and board dimensions
+/// - start  : &Vec<String> -> start layouts, one for each castling option
+/// - end    : &Vec<String> -> matching end layouts
+/// - leaders: &[usize]     -> the leader piece of each colour
+/// - state  : &State       -> piece dictionary and board dimensions
 ///
 /// Return:
-/// Vec<Move>             -> one castling move for each layout pair
+/// Vec<Move>               -> one castling move for each layout pair
+///
+/// Notes:
+/// The leader is the king of the variant, royal or not. A variant without a
+/// royal piece still castles.
 ///
 pub fn generate_relevant_castling(
-    start: &Vec<String>, end: &Vec<String>, state: &State
+    start: &Vec<String>, end: &Vec<String>, leaders: &[usize], state: &State
 ) -> Vec<Move> {
 
     let mut result = Vec::new();
@@ -302,9 +308,7 @@ pub fn generate_relevant_castling(
             .collect::<Vec<_>>();
 
         for (piece, start_sq, end_sq) in zipped {
-            let is_royal = p_is_royal!(&state.statics.pieces[piece]);
-
-            if is_royal {
+            if leaders.contains(&piece) {
                 enc_piece!(encoded_move, piece as u128);
                 enc_start!(encoded_move, start_sq as u128);
                 enc_end!(encoded_move, end_sq as u128);
@@ -1380,7 +1384,8 @@ macro_rules! retain_captures {
 /// - the right of that side and wing
 /// - the two pieces unmoved on their start squares
 /// - empty end and path squares
-/// - no attack on each `*` square of the move list
+/// - no attack on each `*` square of the move list, when the leader is
+///   royal (a piece that is not royal is never in check)
 ///
 /// Params:
 /// - state: &State         -> current position with rights and occupancy
@@ -1404,6 +1409,7 @@ macro_rules! generate_castling_list {
 
                 let piece = &$state.statics.pieces[piece!(mv) as usize];
                 let piece_rank = p_rank!(piece);
+                let guarded = p_is_royal!(piece);
 
                 let start = start!(mv) as usize;
                 let end = end!(mv) as usize;
@@ -1417,7 +1423,7 @@ macro_rules! generate_castling_list {
                 || $state.main_board[end] != NO_PIECE
                 || $state.main_board[captured_square] != captured_piece
                 || $state.main_board[unload_square] != NO_PIECE
-                || is_square_attacked!(
+                || guarded && is_square_attacked!(
                     start as u32,
                     color as u8,
                     true,
@@ -1425,7 +1431,7 @@ macro_rules! generate_castling_list {
                     piece_rank,
                     $state
                 )
-                || is_square_attacked!(
+                || guarded && is_square_attacked!(
                     end as u32,
                     color as u8,
                     true,
@@ -1444,7 +1450,7 @@ macro_rules! generate_castling_list {
 
                         $state.main_board[square] == NO_PIECE &&
                         (
-                            !attack ||
+                            !attack || !guarded ||
                             !is_square_attacked!(
                                 square as u32,
                                 color as u8,
@@ -1468,6 +1474,7 @@ macro_rules! generate_castling_list {
 
                 let piece = &$state.statics.pieces[piece!(mv) as usize];
                 let piece_rank = p_rank!(piece);
+                let guarded = p_is_royal!(piece);
 
                 let start = start!(mv) as usize;
                 let end = end!(mv) as usize;
@@ -1481,7 +1488,7 @@ macro_rules! generate_castling_list {
                 || $state.main_board[end] != NO_PIECE
                 || $state.main_board[captured_square] != captured_piece
                 || $state.main_board[unload_square] != NO_PIECE
-                || is_square_attacked!(
+                || guarded && is_square_attacked!(
                     start as u32,
                     color as u8,
                     true,
@@ -1489,7 +1496,7 @@ macro_rules! generate_castling_list {
                     piece_rank,
                     $state
                 )
-                || is_square_attacked!(
+                || guarded && is_square_attacked!(
                     end as u32,
                     color as u8,
                     true,
@@ -1508,7 +1515,7 @@ macro_rules! generate_castling_list {
 
                         $state.main_board[square] == NO_PIECE &&
                         (
-                            !attack ||
+                            !attack || !guarded ||
                             !is_square_attacked!(
                                 square as u32,
                                 color as u8,
