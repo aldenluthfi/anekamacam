@@ -649,6 +649,30 @@ binary `base0` is b970373.
 
 - p1 + T1b + GS + SO. KD, HB, E2, C1 are not in it; HL waits for its
   SPRT. Rated against FSF 2000 in xiangqi, shogi, grand and standard.
+- Xiangqi H0, -39.2 ± 22.8 (about 1961, from 1926). Shogi H0, -132.4 ±
+  47.2 (about 1868, no change). Grand H0, -125.4 ± 44.8 (about 1875, from
+  1800).
+
+### Shogi eval against FSF, board features (2026-09-30)
+
+- A fit of FSF `eval` on our eval plus features read from the FEN: R2
+  0.545 to 0.738. The largest is the net count of enemy pieces within two
+  squares of each royal (about +300 cp each), then hand material (about
+  +52 cp for each pawn unit).
+- A linear royal danger cost (in place of the square) moves the
+  correlation little: shogi +0.005, xiangqi +0.013, grand +0.014,
+  standard +0.003.
+- Our eval plus w times the nearby enemy count: correlation rises with w
+  in shogi (0.699 to 0.760) and xiangqi (0.745 to 0.800) and falls in
+  grand and standard. No single weight fits all, so it is not used.
+
+### D1 (2026-09-30, branch `plan27-d1`, 258964d)
+
+- A drop that gives check is played at the first quiescence ply, like a
+  quiet board move that gives check. X1 generated the drops there and
+  skipped them.
+- Shogi, depth 10, four positions: nodes equal or fewer.
+- SPRT shogi `0 5` against the merged build.
 
 ## Verification
 
