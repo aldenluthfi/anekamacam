@@ -714,6 +714,8 @@ binary `base0` is b970373.
   3.68, R 4.96, Q 9.81 against the pawn. Perft unchanged.
 - SPRT xiangqi `0 5` against the merged build (CS does not change
   xiangqi, so the arm measures SP alone).
+- Xiangqi: H1, +178.4 ± 42.1. The cannon priced as a chariot cost the
+  most of all stages. SP is in merged build 2.
 
 ### D1 (2026-09-30, branch `plan27-d1`, 258964d)
 
