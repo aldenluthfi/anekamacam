@@ -540,6 +540,33 @@ binary `base0` is b970373.
 - `king_danger!`: a hand type adds its best drop pressure once, not once
   for each copy. Only drop variants change, so only the shogi arm runs
   (`0 5` against p1).
+- SPRT shogi `0 5`: inconclusive at 3000 games, -6.4 ± 12.4. Not merged.
+
+### Eval against FSF, term by term (2026-09-30)
+
+- 400 to 600 positions per variant from the p1 rating games, our static
+  eval against FSF `eval`, and each of our terms against FSF.
+- Correlation of the full eval: grand 0.79 (0.45 in the opening phase),
+  standard 0.67, xiangqi 0.76, shogi 0.73. In grand, naive material alone
+  correlates better (0.87).
+- At equal material in the opening, some terms point the wrong way:
+  pawn structure (grand -0.40, shogi -0.54, standard -0.15), shelter and
+  guard (standard -0.44 and -0.35). King danger is positive everywhere.
+- A joint fit asks for 3 to 8 times more king danger against material in
+  standard, xiangqi and grand. This gives KD below.
+- Tried on the same data and not kept: no guard term (worse in 3 of 4),
+  no opening pawn structure (better in grand and standard, worse in
+  xiangqi and shogi).
+- Since E1, all shogi positions are in the opening phase: material in
+  hand keeps `phase_score` at the start value.
+
+### KD (2026-09-30, branch `plan27-kd`, 7ce34df)
+
+- `ZONE_ATTACK_FULL` 16 to 8: the royal danger cost is 4 times larger for
+  the same pressure, still capped at the most valuable piece. Correlation
+  with FSF: grand 0.832 to 0.847, xiangqi 0.758 to 0.774, shogi 0.732 to
+  0.740, standard 0.673 to 0.665.
+- SPRT grand `0 5` against p1, then xiangqi, shogi, standard `-5 0`.
 
 ### T1 (2026-09-30, branch `plan27-t1`, a9dd7a2)
 
