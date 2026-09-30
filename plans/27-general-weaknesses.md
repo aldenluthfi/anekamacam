@@ -842,6 +842,11 @@ binary `base0` is b970373.
 - SPRT shogi `0 5` against the merged build: inconclusive at 3000 games,
   +0.9 ± 12.4. No effect; not merged.
 
+### T4 result (2026-10-01)
+
+- Grand `0 5` against merged build 3: inconclusive at 3000 games, +6.6 ±
+  10.6. Not merged; the horizon stays at 20 moves.
+
 ### Merged build 5 (2026-10-01, branch `plan27-main5`, 90da58c)
 
 - Merged build 4 plus PT and the ASEAN config fix (plan 28). All 44
