@@ -1672,11 +1672,11 @@ pub fn derive_search_parameters(state: &mut State) {
 /// set, unless a rule removes it:
 ///
 /// - exchange simulation : multi own destroy, misere, extinction
-/// - pruning on it       : drops, check count, counting, goal
+/// - pruning on it       : check count, counting, goal
 /// - forward pruning     : misere, extinction, goal, check count
 /// - null pruning        : misere, goal, check count, counting, a legal
 ///                         pass, stand-offs, setup, a piece without quiets
-/// - recapture ordering  : drops, check count, goal
+/// - recapture ordering  : check count, goal
 /// - quiet pruning       : misere, goal, check count
 /// - static movement     : a screened leg or a CPMN move condition
 /// - wide quiescence     : a vector that captures more than one piece
@@ -1696,6 +1696,11 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - state: &mut State -> variant with the capability mask to derive
 ///
 /// Notes:
+/// Drops keep the exchange bits. With drops, each capture of an exchange
+/// also puts the piece in the hand of the taker, so each step is worth two
+/// times as much. The sum doubles and its sign stays, so a losing capture
+/// still loses.
+///
 /// Promotion to a captured type keeps the exchange bits. A capture gives
 /// the piece back to the pool of its owner, not to the hand of the taker,
 /// and the simulation makes real moves, so each promotion obeys the pool.
@@ -1790,7 +1795,6 @@ pub fn derive_search_capabilities(state: &mut State) {
         || termination.extinct.iter()
             .any(|rule| rule.outcome == Outcome::Win);
 
-    let recycles_captures = drops!(state);                                      /* the taker can drop what it takes   */
     let places_army = setup_phase!(state);
     let vetoes_moves = stand_offs!(state);
 
@@ -1800,9 +1804,7 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_see_valid!(capabilities);
     }
 
-    if !recycles_captures && !counts_checks
-    && !counts_material && !holds_zone
-    {
+    if !counts_checks && !counts_material && !holds_zone {
         enc_see_pruning!(capabilities);
     }
 
@@ -1816,7 +1818,7 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_null_pruning!(capabilities);
     }
 
-    if !recycles_captures && !counts_checks && !holds_zone {
+    if !counts_checks && !holds_zone {
         enc_recapture_order!(capabilities);
     }
 
