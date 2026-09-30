@@ -579,6 +579,20 @@ binary `base0` is b970373.
 - Correlation with FSF, shogi: 0.740 to 0.756.
 - SPRT shogi `0 5` against p1.
 
+### SO (2026-09-30, branch `plan27-so`, 078da70)
+
+- Correction to C1: xiangqi never had SEE. The flying-general leg (a
+  capture that must take a royal) set `royal_capture`, which cleared
+  `see_valid` for the whole variant. So C1 changed only razoring, IIR and
+  the quiescence losing-capture stop, and those lost 50 Elo.
+- SO: `royal_capture` is removed (an exchange square never holds a royal
+  that a move can take), and the capture order uses SEE without the
+  `static_movement` gate. The SEE skips still need `static_movement`, so
+  xiangqi gets the exchange order only.
+- Xiangqi, depth 12, four positions: 1.99 s to 1.01 s, nodes 2.17M to
+  0.69M. Perft unchanged.
+- SPRT xiangqi `0 5` against p1.
+
 ### GS (2026-09-30, branch `plan27-gs`, d604934)
 
 - `promote to captured` no longer clears the exchange bits (`see_valid`,
