@@ -622,7 +622,12 @@ binary `base0` is b970373.
   new depth after half the time to the limit. Before, the deadline cut
   the last depth and its time was lost. Movetime keeps its limit.
 - Smoke test at 10+0.1: depth 14 in 812 ms, limit 1195 ms.
-- SPRT grand `0 5` against p1 after E2.
+- SPRT grand `0 5` against p1: H0, -34.6 ± 15.6 (478W 618L 311D). No
+  losses on time. Cause: a depth that started before half the window
+  could run to two shares, so a move used more than one share on
+  average and the clock ran low later.
+- T1b (c47125c): no new depth after a quarter of the window (half a
+  share), same limit of two shares. SPRT grand `0 5` against p1.
 
 ## Verification
 
