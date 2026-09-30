@@ -714,7 +714,12 @@ binary `base0` is b970373.
   standard, so it is tied to the drop rule.
 - Shogi: correlation with FSF 0.741 to 0.796; depth 11, four positions,
   641 ms to 430 ms.
-- SPRT shogi `0 5` against merged build 3.
+- SPRT shogi `0 5` against merged build 3: H0, -305.9 ± 84.1. At half the
+  dearest piece (about four pawns) for each nearby piece, the term rules
+  the eval: the search values a piece next to the royal even when it
+  hangs. A better fit to FSF's static eval is not a better engine.
+- PX2 (de70e48): a tenth of the dearest piece. Correlation 0.759. SPRT
+  shogi `0 5` against merged build 3.
 
 ### Shogi eval against FSF, board features (2026-09-30)
 
