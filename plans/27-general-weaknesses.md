@@ -703,7 +703,9 @@ binary `base0` is b970373.
 - SPRT grand `0 5` against merged build 3: H0, -36.0 ± 16.0. More time
   early hurts.
 - T3 (28c6162): 30 moves, the other way. SPRT grand `0 5` against merged
-  build 3.
+  build 3: inconclusive at 3000 games, +15.3 ± 10.5 (lower end +4.8).
+- T4 (44a0118): 40 moves, further the same way. SPRT grand `0 5` against
+  merged build 3.
 
 ### PX (2026-09-30, branch `plan27-px`, d6b4d99)
 
