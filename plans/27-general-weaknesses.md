@@ -727,8 +727,11 @@ binary `base0` is b970373.
 
 ### Merged build 4 (2026-09-30, branch `plan27-main4`, e1eeb09)
 
-- Merged build 3 plus PX2. PX2 changes only drop variants. Rated against
-  FSF 2000 in shogi.
+- Merged build 3 plus PX2. PX2 changes only drop variants.
+- Not rated yet. Rule from now on: rate against FSF 2000 only when the
+  self-play gains stacked since the last rated build cover the gap two
+  times (self-play gains shrink about half against FSF): shogi needs
+  about +200, grand about +130 over merged build 3.
 
 ### Shogi eval against FSF, board features (2026-09-30)
 
