@@ -288,6 +288,53 @@ macro_rules! king_danger {
     }};
 }
 
+/// royal_proximity!
+///
+/// Gives the cost of the enemy pieces near the royals of one colour. Each
+/// enemy piece that is not royal and stands within two files and two
+/// ranks of a royal costs `proximity_value`. Derivation gives a value only
+/// in a variant with drops, so the others skip the count.
+///
+/// Params:
+/// - state: &State -> position to score
+/// - color: usize  -> colour of the royals
+///
+/// Return:
+/// i32             -> proximity cost for that colour, 0 or more
+///
+#[macro_export]
+macro_rules! royal_proximity {
+    ($state:expr, $color:expr) => {{
+        let statics = &$state.statics;
+        let files = statics.files as i32;
+        let mut near = 0;
+
+        if statics.eval.proximity_value != 0 {
+            for royal_square in &$state.royal_list[$color] {
+                let royal_file = *royal_square as i32 % files;
+                let royal_rank = *royal_square as i32 / files;
+
+                for (piece_index, piece) in statics.pieces.iter().enumerate() {
+                    if p_color!(piece) as usize == $color
+                        || p_is_royal!(piece) {
+                        continue;
+                    }
+
+                    for square in piece_squares!($state, piece_index) {
+                        let file = *square as i32 % files;
+                        let rank = *square as i32 / files;
+
+                        near += ((file - royal_file).abs() <= 2
+                            && (rank - royal_rank).abs() <= 2) as i32;
+                    }
+                }
+            }
+        }
+
+        near * statics.eval.proximity_value
+    }};
+}
+
 /// open_shield!
 ///
 /// Gives the penalty for a royal with no own shield piece in front of it,
@@ -669,6 +716,8 @@ macro_rules! opening_score {
             - castling_bonus!($state, black)
             + king_danger!($state, black)
             - king_danger!($state, white)
+            + royal_proximity!($state, black)
+            - royal_proximity!($state, white)
             + open_shield!($state, black)
             - open_shield!($state, white)
     }};
@@ -677,10 +726,11 @@ macro_rules! opening_score {
 /// endgame_score!
 ///
 /// Gives the endgame score, White minus Black. It is the material and
-/// piece-square totals plus the enemy pressure on the royals. In the
-/// endgame, the royal must go to the center, and the endgame tables already
-/// give this. Shelter, guard, open files and castling keep a royal at home,
-/// so they stay out. The pressure falls by itself when the attackers leave.
+/// piece-square totals plus the enemy pressure and nearness to the royals.
+/// In the endgame, the royal must go to the center, and the endgame tables
+/// already give this. Shelter, guard, open files and castling keep a royal
+/// at home, so they stay out. The pressure falls by itself when the
+/// attackers leave.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -700,6 +750,8 @@ macro_rules! endgame_score {
             - $state.endgame_pst_bonus[black]
             + king_danger!($state, black)
             - king_danger!($state, white)
+            + royal_proximity!($state, black)
+            - royal_proximity!($state, white)
     }};
 }
 
