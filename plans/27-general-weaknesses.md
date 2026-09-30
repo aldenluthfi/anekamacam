@@ -722,7 +722,13 @@ binary `base0` is b970373.
   the eval: the search values a piece next to the royal even when it
   hangs. A better fit to FSF's static eval is not a better engine.
 - PX2 (de70e48): a tenth of the dearest piece. Correlation 0.759. SPRT
-  shogi `0 5` against merged build 3.
+  shogi `0 5` against merged build 3: inconclusive at 3000 games, +16.3
+  ± 12.4 (lower end +3.9).
+
+### Merged build 4 (2026-09-30, branch `plan27-main4`, e1eeb09)
+
+- Merged build 3 plus PX2. PX2 changes only drop variants. Rated against
+  FSF 2000 in shogi.
 
 ### Shogi eval against FSF, board features (2026-09-30)
 
