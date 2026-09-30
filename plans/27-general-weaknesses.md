@@ -878,24 +878,81 @@ binary `base0` is b970373.
   The harness gives both engines our start FEN, so the sweep games below
   are valid games from the wrong setup.
 
-### Sweep of merged build 5 against FSF 2000 (2026-10-01, in progress)
+### Sweep of merged build 5 against FSF 2000 (2026-10-01)
 
-400 games per variant at 10+0.1, `-5 5`, Elo of our engine:
+400 games per variant at 10+0.1, `-5 5`, Elo of our engine. A result
+marked "invalid" came from a rules or protocol fault, fixed below.
 
-| variant          | Elo            | variant          | Elo            |
-| ---------------- | -------------- | ---------------- | -------------- |
-| standard         | +94.8 ± 37.5   | ai-wok           | +175.2 ± 58.8  |
-| xiangqi          | +30.5 ± 29.2   | almost           | +109.5 ± 41.2  |
-| shogi            | -96.6 ± 38.0   | amazon           | +49.0 ± 28.2   |
-| grand            | -61.4 ± 34.8   | asean            | 44-0-2, H1     |
-| crazyhouse       | -127.9 ± 45.5  | Capablanca       | -90.4 ± 36.1   |
-| makruk           | +139.2 ± 48.1  | chancellor       | -84.5 ± 34.8   |
-| shatranj         | 42-4-1, H1     | chigorin         | +93.4 ± 37.2   |
-| minishogi        | +25.6 ± 18.4   | embassy          | +135.1 ± 47.9  |
+| variant       | Elo            | variant       | Elo                   |
+| ------------- | -------------- | ------------- | --------------------- |
+| ai-wok        | +175.2 ± 58.8  | kinglet       | invalid (rules)       |
+| makruk        | +139.2 ± 48.1  | pocketknight  | invalid (400-0)       |
+| embassy       | +135.1 ± 47.9  | threecheck    | invalid (400-0)       |
+| almost        | +109.5 ± 41.2  | fivecheck     | invalid (400-0)       |
+| janus         | +106.8 ± 40.3  | sittuyin      | invalid (400-0)       |
+| minixiangqi   | +101.0 ± 39.1  | newzealand    | invalid (400-0)       |
+| standard      | +94.8 ± 37.5   | janggi        | invalid (setup phase) |
+| chigorin      | +93.4 ± 37.2   | ouk-chaktrang | 889 ± 850 (rules)     |
+| los-alamos    | +69.9 ± 31.1   | horde         | 585 ± 1006 (rules)    |
+| amazon        | +49.0 ± 28.2   | hoppelpoppel  | -27.9 ± 33.9          |
+| knightmate    | +49.0 ± 31.3   | grand         | -61.4 ± 34.8          |
+| xiangqi       | +30.5 ± 29.2   | chancellor    | -84.5 ± 34.8          |
+| minishogi     | +25.6 ± 18.4   | modern        | -87.5 ± 35.6          |
+| euroshogi     | +20.9 ± 34.8   | Capablanca    | -90.4 ± 36.1 (setup)  |
+| judkins       | +19.6 ± 15.6   | shogi         | -96.6 ± 38.0          |
+| shatranj      | 42-4-1, H1     | crazyhouse    | -127.9 ± 45.5         |
+| asean         | 44-0-2, H1     | gothic        | -142.0 ± 49.1         |
+|               |                | extinction    | -167.3 ± 56.6         |
+|               |                | koth          | -246.2 ± 86.2         |
 
-- Below 2000: crazyhouse, shogi, Capablanca (wrong setup), chancellor,
-  grand. Embassy (10x8, same pieces as Capablanca) is +135, so neither
-  the board size nor the compound pieces explain the chess-family gaps.
+- Embassy (10x8, same pieces as Capablanca) is +135 and gothic -142, so
+  neither the board size nor the compound pieces explain the
+  chess-family gaps.
+
+### Rules and protocol fixes (2026-10-01, branch `plan27-cfg`)
+
+Found with perft at depth 1 to 5 against FSF from each start position and
+from castling positions, and by replaying games through a logging wrapper
+around FSF. Each fix makes perft equal FSF.
+
+- Kinglet: the pawn had no double step and no en passant, there was no
+  castling, and the pawn promoted to a queen; FSF promotes to the king
+  (not royal). Castling moves put the royal piece in the main slot, so a
+  variant without a royal could not castle. Now the leader is the first
+  piece of its colour in the `pieces:` line, and the attack test on the
+  castling path runs only for a royal leader (a piece that is not royal
+  is never in check).
+- Threecheck and fivecheck: FSF reads a FEN without a check counter as
+  `1+1`, so it played a one-check game. The dicts write `3+3` / `5+5` and
+  strip the counter on input.
+- Pocketknight: the pocket knight is `O` in our FEN; FSF knows only `N`.
+  The dict writes `N` and `N@`, and reads a hand `N` as `O`.
+- Sittuyin: black drops were lowercase (`s@d6`); UCI drops use uppercase.
+- Embassy: the king castles three squares (h1, b1). Janus: to i1 and b1.
+- New Zealand: the rook captures only as a knight and the knight only as
+  a rook (the config also let them capture their own way).
+- Ouk chaktrang: the first king leap goes only to the wide forward
+  squares (b2, f2), `i<[2]Kn[2]K>|i<[8]Kn[8]K>`. Perft equal to depth 5.
+- Not fixed: horde lets any unmoved pawn double-step; FSF allows it only
+  from ranks 1 and 2. CPMN has no rank condition. Janggi starts with a
+  setup phase; FSF starts from a fixed setup, so it cannot be rated.
+
+### GZ (2026-10-01, branch `plan27-gz` on merged build 5)
+
+- Koth lost 89 of 107 games, nearly all to the enemy king walking onto
+  the centre. A `goal` rule removed SEE, forward, null and quiet pruning
+  and recapture ordering, so koth searched to depth 9 where standard
+  reaches 13 in 3 s.
+- Now the goal rule keeps them all. A move of a goal piece is never
+  pruned or reduced, as a checking move. Koth reaches depth 14 in 3 s.
+- SPRT koth `0 5` against merged build 5, then the sweep again.
+
+### Merged build 6 (2026-10-01, branch `plan27-main6`)
+
+- Merged build 5 plus the section fix, the rules fixes and GZ. All 44
+  param files derive the same as the committed ones.
+- Queued: koth `0 5` against merged build 5, then 400 games against FSF
+  2000 in koth and the ten variants with fixed rules.
 
 ## Verification
 
