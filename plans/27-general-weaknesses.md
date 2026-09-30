@@ -684,7 +684,14 @@ binary `base0` is b970373.
   cannot promote itself) is sure. The PST gradient and the passed pawn
   term use it. Params made again; only grand and sittuyin change.
 - Correlation with FSF, grand: 0.844 to 0.893 (opening 0.561 to 0.621).
-- SPRT grand `0 5` against merged build 2.
+- SPRT grand `0 5` against merged build 2: inconclusive at 3000 games,
+  +17.3 ± 11.5 (lower end +5.8).
+
+### Merged build 3 (2026-09-30, branch `plan27-main3`, adbef5b)
+
+- Merged build 2 plus DP and GP. DP changes only drop variants, GP only
+  variants with promotion to a captured type, so xiangqi and standard
+  keep their build 2 ratings. Rated against FSF 2000 in shogi and grand.
 
 ### Shogi eval against FSF, board features (2026-09-30)
 
