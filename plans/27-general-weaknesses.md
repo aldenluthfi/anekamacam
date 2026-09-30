@@ -493,6 +493,9 @@ binary `base0` is b970373.
   than 0; H0: a loss of 5 or more). `-5 5` asked the wrong question. The
   gain arm keeps `0 5`. An arm counts only with H1. The three arms above
   run again with `-5 0`.
+- Shogi `-5 0` (p1 against n1): inconclusive at 6000 games, +2.0 ± 8.5
+  (lower end -6.5). Not proven. P1 stays for its gains in the other three
+  variants; the shogi result is open.
 
 ### Rating check against FSF at UCI_Elo 2000 (2026-09-30)
 
