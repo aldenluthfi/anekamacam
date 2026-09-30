@@ -570,6 +570,9 @@ binary `base0` is b970373.
   with FSF: grand 0.832 to 0.847, xiangqi 0.758 to 0.774, shogi 0.732 to
   0.740, standard 0.673 to 0.665.
 - SPRT grand `0 5` against p1, then xiangqi, shogi, standard `-5 0`.
+- Grand: inconclusive at 3000 games, -10.4 ± 11.1. No gain, so KD is not
+  merged and its other arms were stopped (xiangqi stood at +6.7 ± 13.9
+  after 1725 games).
 
 ### HB (2026-09-30, branch `plan27-hb`, 05c3478)
 
