@@ -681,17 +681,20 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
 /// derive_piece_value
 ///
 /// Gives the value of one piece for one phase from its moves only. It uses
-/// four measurements:
+/// five measurements:
 ///
 /// - empty mobility    : moves for each square on an empty board
 /// - occupied mobility : the same count with the phase occupancy
+/// - families          : the same mobility for each direction family
 /// - reach             : the part of the board it can reach
 /// - maneuverability   : the part of its offsets that it can reverse
 ///
-/// The mobility is 70% occupied and 30% empty. Then reach scales it, with a
-/// minimum factor of 0.6, and maneuverability scales it, with a minimum
-/// factor of 0.5. Thus a colour-bound or one-way piece is cheaper, but not
-/// zero.
+/// The mobility is 70% occupied and 30% empty. A piece that controls lines
+/// of more than one family gets half the mobility of all families but its
+/// largest again: it attacks two sets of squares that one enemy piece
+/// cannot both avoid. Then reach scales it, with a minimum factor of 0.6,
+/// and maneuverability scales it, with a minimum factor of 0.5. Thus a
+/// colour-bound or one-way piece is cheaper, but not zero.
 ///
 /// Params:
 /// - state    : &State -> precomputed move tables
@@ -733,8 +736,24 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
         derive_piece_mobility(state, piece_index, square, occupancy)
     }).sum::<f64>() / board_size as f64;
 
+    let families = (0..board_size).map(|square| {
+        let empty = derive_family_mobility(state, piece_index, square, 0.0);
+        let occupied =
+            derive_family_mobility(state, piece_index, square, occupancy);
+
+        array::from_fn::<f64, 3, _>(|family| {
+            0.3 * empty[family] + (1.0 - 0.3) * occupied[family]
+        })
+    }).fold([0.0; 3], |total, square| {
+        array::from_fn(|family| total[family] + square[family])
+    });
+    let largest = families.iter().copied().fold(0.0, f64::max);
+    let synergy = 0.5 * (families.iter().sum::<f64>() - largest)
+        / board_size as f64;
+
     let blended_mobility = 0.3 * empty_mobility
-        + (1.0 - 0.3) * occupied_mobility;
+        + (1.0 - 0.3) * occupied_mobility
+        + synergy;
 
     let coverage = 0.6 + (1.0 - 0.6) * reach;
     let maneuver = 0.5 + (1.0 - 0.5) * maneuverability;
@@ -771,6 +790,62 @@ fn derive_piece_mobility(
         .sum()
 }
 
+/// derive_family_mobility
+///
+/// Gives the expected move count from one square for each direction
+/// family. Only a vector whose last leg can move and take counts, because
+/// that is a line the piece controls:
+///
+/// - orthogonal : no file change or no rank change
+/// - diagonal   : the same file and rank change
+/// - oblique    : any other change, as a knight leap
+///
+/// Params:
+/// - state      : &State     -> precomputed move tables
+/// - piece_index: PieceIndex -> piece with the vectors
+/// - square     : usize      -> origin square
+/// - occupancy  : f64        -> board occupancy
+///
+/// Return:
+/// [f64; 3]                  -> expected vectors, one for each family
+///
+fn derive_family_mobility(
+    state: &State, piece_index: PieceIndex, square: usize, occupancy: f64
+) -> [f64; 3] {
+    let board_size = state.statics.board_size;
+    let mut families = [0.0; 3];
+
+    for vector in &state.statics.relevant_moves
+        [piece_index as usize * board_size + square]
+    {
+        let Some(final_leg) = vector.legs.last() else {
+            continue;
+        };
+
+        if (c!(final_leg) || d!(final_leg)) != m!(final_leg) {                  /* a move-only or take-only last leg  */
+            continue;
+        }
+
+        let Some((chance, file_delta, rank_delta)) =
+            derive_vector_chance(state, vector, occupancy)
+        else {
+            continue;
+        };
+
+        let family = if file_delta == 0 || rank_delta == 0 {
+            0
+        } else if file_delta.abs() == rank_delta.abs() {
+            1
+        } else {
+            2
+        };
+
+        families[family] += chance;
+    }
+
+    families
+}
+
 /// derive_vector_chance
 ///
 /// Walks one vector on a board with random occupancy. It gives the chance
@@ -778,15 +853,17 @@ fn derive_piece_mobility(
 ///
 /// - pass         : needs an empty square, chance `1 - occupancy`
 /// - screen       : needs an occupied square, chance `occupancy`
-/// - final, move  : a move-only last leg needs an empty square
-/// - final, take  : a capture-only last leg needs a piece, `occupancy`
+/// - final, move  : a move-only last leg, half the empty chance
+/// - final, take  : a capture-only last leg, half of `occupancy`
 /// - final, both  : a last leg that moves and takes lands always, 1
 /// - marker       : has no displacement, skipped
 ///
 /// The chance is the product, with the chance of the CPMN condition from
 /// `derive_condition_chance`. Thus a long slide decreases with each
 /// square, a pawn step and a pawn capture each land less often than a
-/// leaper, and a hopper capture has 0 on an empty board.
+/// leaper, and a hopper capture has 0 on an empty board. A single-purpose
+/// last leg counts half: the piece moves to a square it cannot guard, or
+/// guards a square it cannot move to.
 ///
 /// Params:
 ///
@@ -835,8 +912,8 @@ fn derive_vector_chance(
     let final_takes = final_flagged || !m!(final_leg);
 
     chance *= match (final_moves, final_takes) {
-        (true, false) => 1.0 - occupancy,
-        (false, true) => occupancy,
+        (true, false) => 0.5 * (1.0 - occupancy),
+        (false, true) => 0.5 * occupancy,
         _ => 1.0,
     };
 
