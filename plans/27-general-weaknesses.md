@@ -692,6 +692,21 @@ binary `base0` is b970373.
 - Merged build 2 plus DP and GP. DP changes only drop variants, GP only
   variants with promotion to a captured type, so xiangqi and standard
   keep their build 2 ratings. Rated against FSF 2000 in shogi and grand.
+- Shogi: H0, -99.0 ± 38.6 (about 1901, from 1852).
+
+### PX (2026-09-30, branch `plan27-px`, d6b4d99)
+
+- `royal_proximity!`: each enemy piece (not royal) within two files and
+  two ranks of a royal costs half the most valuable piece, in drop
+  variants only (derivation gives 0 otherwise, and the count is skipped).
+  In both halves of the eval. With drops, a piece in hand joins such a
+  piece at once.
+- The earlier fit: the nearby enemy count is the largest feature missing
+  from our shogi eval; it helps shogi and xiangqi and hurts grand and
+  standard, so it is tied to the drop rule.
+- Shogi: correlation with FSF 0.741 to 0.796; depth 11, four positions,
+  641 ms to 430 ms.
+- SPRT shogi `0 5` against merged build 3.
 
 ### Shogi eval against FSF, board features (2026-09-30)
 
