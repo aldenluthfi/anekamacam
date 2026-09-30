@@ -61,6 +61,30 @@ derivation (the shift map of plan 27, which saw none of these tables):
   (current 288 and 231), chu shogi lion 854 (current 2475, the strongest
   piece of the game). The current derivation keeps them in order.
 
+## Noise floor
+
+The reference tables disagree with each other about as much as we
+disagree with them (same error): standard FSF against Kaufman 0.218,
+xiangqi FSF against common values 0.166, shogi FSF against Kaufman 0.079.
+A better fit to one table is not a better value.
+
+## DC: hand material (2026-09-30, branch `plan27-dc`, 1885c4e)
+
+- Two rules, only with drops. A captured piece comes back to the hand of
+  the capturer and can drop on any empty square, so a slow piece loses
+  less of its worth: the value over the cheapest piece gets the power 0.7
+  (FSF compresses drop variants the same way). A piece whose capture
+  gives only its demoted form (tokin to pawn) keeps half of the
+  difference as extra value.
+- Error against the references: shogi 0.239 to 0.178, crazyhouse 0.223
+  to 0.119 (power alone: 0.191 and 0.119; demotion alone: 0.231). Mean of
+  all 9: 0.169 to 0.151.
+- Shogi: P 100, L 121, N 108, S 225, G 250, B 272, R 381, tokin 311,
+  horse 503, dragon 532. The pawn is dear against the rook (Kaufman 1 to
+  13, now 1 to 3.8). Crazyhouse: N 257, B 255, R 359, Q 565.
+- Only the 7 drop variants change their params. Perft unchanged.
+- SPRT shogi `0 5` against merged build 4, then crazyhouse `-5 0`.
+
 ## Conclusion
 
 The current derivation is a better prior for an unknown variant than a
