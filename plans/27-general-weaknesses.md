@@ -694,6 +694,8 @@ binary `base0` is b970373.
   (0.49), gold 0.49 to 0.55 (0.59). Perft unchanged.
 - SPRT grand `0 5` against the merged build; then standard and shogi
   `-5 0`.
+- Grand: inconclusive at 3000 games, +13.8 ± 11.4 (lower end +2.4). No
+  H1; the regression arms did not run.
 
 ### SP (2026-09-30, branch `plan27-sp` on CS, c595836)
 
