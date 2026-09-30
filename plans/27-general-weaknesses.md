@@ -953,6 +953,45 @@ around FSF. Each fix makes perft equal FSF.
   param files derive the same as the committed ones.
 - Queued: koth `0 5` against merged build 5, then 400 games against FSF
   2000 in koth and the ten variants with fixed rules.
+- The koth arm against merged build 5 wrote to the same folder as the
+  rating that followed, so its verdict is lost.
+- Against FSF 2000 (400 games, `-5 5`): koth -391.1 ± 256.5 (still lost,
+  see GR), threecheck -391.1 ± 256.5 (see CC), fivecheck -190.8 ± 64.5,
+  pocketknight -144.8 ± 50.3, New Zealand -61.4 ± 32.0, sittuyin 470 ±
+  1047. The loop stopped on kinglet (the server has 15 GB for 30 games);
+  Capablanca, embassy, janus, ouk chaktrang and kinglet run again.
+
+### VP (2026-10-01, branch `plan27-vp` on merged build 6)
+
+- Extinction lost 121 of 171 to FSF, often after an early king walk
+  (Kd3, Kc3, Kb3, Ka4). The king there is not royal: its capture ends the
+  game through the `extinct` rule, but no royal term read it, and its
+  table sent it to the centre.
+- A vital piece is not royal but is the only piece of its colour in a set
+  of an `extinct` rule that loses at zero (extinction: king and queen).
+  The shelter, guard, danger, proximity and open-file terms read the
+  vital pieces after the royals, and the opening table keeps them home
+  like a royal. Only the extinction params change.
+- SPRT extinction `0 5` against merged build 6.
+
+### GR (2026-10-01, branch `plan27-gr` on merged build 6)
+
+- GZ gave depth but koth still lost at FSF 2000: by move 15 FSF scored
+  +4276 with its king two steps from the centre, and we saw -283.
+- A goal race term: the goal piece of a colour nearest to the goal zone
+  is worth the most valuable piece at one king step, half of it at two,
+  a quarter at three. The lost position now reads -1173.
+- SPRT koth `0 5` against merged build 6.
+
+### CC (2026-10-01, branch `plan27-cc` on merged build 6)
+
+- A `checks` rule removed the same pruning as a goal rule: threecheck
+  searched to depth 9 where standard reaches 14. A checking move is never
+  pruned or reduced (S1), so the rule now keeps all pruning; depth 17.
+- A check race term: the checks a colour has given are worth the most
+  valuable piece when one check is left to win, half with two, a quarter
+  with three. After Bxf7+ Kxf7 the score is +12, was -284.
+- SPRT threecheck `0 5` against merged build 6.
 
 ## Verification
 
