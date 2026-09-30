@@ -1103,6 +1103,38 @@ fn derive_promotion_field(state: &State, piece_index: PieceIndex) -> Vec<f64> {
     }).collect()
 }
 
+/// derive_promotion_target
+///
+/// Gives the value that a promotion can bring, for one phase. Normally it
+/// is the most valuable piece that is not royal. When a piece can promote
+/// only to a type that was captured, the pool is empty at the start and
+/// fills with the pieces that were traded, so only the cheapest target is
+/// sure: the value is the cheapest piece that is not royal and that
+/// cannot promote itself.
+///
+/// Params:
+/// - state     : &State -> variant with the piece values and rules
+/// - is_endgame: bool   -> true for the endgame values
+///
+/// Return:
+/// i32                  -> value of the promotion target
+///
+fn derive_promotion_target(state: &State, is_endgame: bool) -> i32 {
+    let values = state.statics.pieces.iter()
+        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
+        .filter(|piece| !promote_to_captured!(state) || !p_can_promote!(piece))
+        .map(|piece| match is_endgame {
+            true => p_evalue!(piece) as i32,
+            false => p_ovalue!(piece) as i32,
+        });
+
+    match promote_to_captured!(state) {
+        true => values.min(),
+        false => values.max(),
+    }
+    .unwrap_or(0)
+}
+
 /// derive_promotion_span
 ///
 /// Gives the spread of the promotion distance on the board for one piece.
@@ -1868,14 +1900,8 @@ pub fn derive_search_capabilities(state: &mut State) {
 ///     opening and endgame rows by piece index, White and mirrored Black
 ///
 pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
-    let promoted_opening = state.statics.pieces.iter()
-        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
-        .map(|piece| p_ovalue!(piece) as f64)
-        .fold(0.0_f64, f64::max);
-    let promoted_endgame = state.statics.pieces.iter()
-        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
-        .map(|piece| p_evalue!(piece) as f64)
-        .fold(0.0_f64, f64::max);
+    let promoted_opening = derive_promotion_target(state, false) as f64;
+    let promoted_endgame = derive_promotion_target(state, true) as f64;
 
     let pst_entries: Vec<(usize, Vec<i32>, Vec<i32>)> =
         state.statics.pieces.par_iter().map(|piece| {
@@ -2972,16 +2998,8 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut passed_opening = vec![0i32; pieces.len() * stride];
     let mut passed_endgame = vec![0i32; pieces.len() * stride];
 
-    let promoted_opening = state.statics.pieces.iter()
-        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
-        .map(|piece| p_ovalue!(piece) as i32)
-        .max()
-        .unwrap_or(0);
-    let promoted_endgame = state.statics.pieces.iter()
-        .filter(|piece| p_color!(piece) == WHITE && !p_is_royal!(piece))
-        .map(|piece| p_evalue!(piece) as i32)
-        .max()
-        .unwrap_or(0);
+    let promoted_opening = derive_promotion_target(state, false);
+    let promoted_endgame = derive_promotion_target(state, true);
 
     for (slot, index) in pieces.iter().copied().enumerate() {
         let piece = &state.statics.pieces[index];
