@@ -269,6 +269,19 @@ const DANGER_CAP_RATIO: u32 = 1000;
 ///
 const PROXIMITY_RATIO: u32 = 100;
 
+/// Hand material
+///
+/// The value change in a variant with drops. A captured piece goes to the
+/// hand of the capturer and can come back on any empty square, so a slow
+/// piece loses less of its worth. Over `COEFFICIENT_SCALE`:
+///
+/// - `DEMOTION_SHARE` : 50% of the value that a piece loses when its
+///   capture gives the capturer its demoted form
+/// - `HAND_POWER`     : the power 0.7 on the value over the cheapest piece
+///
+const DEMOTION_SHARE: u32 = 500;
+const HAND_POWER: u32 = 700;
+
 /// Open shield penalty
 ///
 /// The penalty for a royal with no own shield piece in front of it, on its
@@ -1969,7 +1982,8 @@ pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
 /// 1. derive each White piece, once for each occupancy
 /// 2. the offset is the cheapest opening value minus 100
 /// 3. subtract the offset from the two values of each piece
-/// 4. if the largest value is above 14 bits, scale the table down to fit
+/// 4. with drops, add the demotion share and apply the hand power
+/// 5. if the largest value is above 14 bits, scale the table down to fit
 ///
 /// Params:
 /// - state: &mut State -> variant with the material values to derive
@@ -2003,10 +2017,47 @@ fn derive_material_values(state: &mut State) {
         .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
-    let peak = values
+    let mut shifted = vec![(0.0, 0.0); state.statics.pieces.len()];
+
+    for (index, opening, endgame) in &values {
+        let black_index = state.statics.piece_swap_map[*index] as usize;
+
+        shifted[*index] = (opening - offset, endgame - offset);
+        shifted[black_index] = shifted[*index];
+    }
+
+    let demotion_share = DEMOTION_SHARE as f64 / COEFFICIENT_SCALE;
+    let hand_power = HAND_POWER as f64 / COEFFICIENT_SCALE;
+    let in_hand = |value: f64, demoted_value: f64| {
+        let kept = (value + demotion_share * (value - demoted_value))
+            .max(1.0);
+
+        100.0 * (kept / 100.0).powf(hand_power)
+    };
+
+    let worths: Vec<(usize, f64, f64)> = values
+        .iter()
+        .map(|(index, _, _)| {
+            let (opening, endgame) = shifted[*index];
+            let demoted =
+                state.statics.piece_demotion_map[*index] as usize;
+            let (demoted_opening, demoted_endgame) = shifted[demoted];
+
+            match drops!(state) {
+                true => (
+                    *index,
+                    in_hand(opening, demoted_opening),
+                    in_hand(endgame, demoted_endgame),
+                ),
+                false => (*index, opening, endgame),
+            }
+        })
+        .collect();
+
+    let peak = worths
         .iter()
         .map(|(_, opening, endgame)| opening.max(*endgame))
-        .fold(f64::NEG_INFINITY, f64::max) - offset;
+        .fold(f64::NEG_INFINITY, f64::max);
 
     let squeeze = if peak > MAX_PIECE_VALUE as f64 {                            /* a board wide enough prices a piece */
         (MAX_PIECE_VALUE as f64 - 100.0) / (peak - 100.0)                       /* past the field it has to land in   */
@@ -2014,13 +2065,11 @@ fn derive_material_values(state: &mut State) {
         1.0
     };
 
-    for (index, opening, endgame) in values {
+    for (index, opening, endgame) in worths {
         let black_index = state.statics.piece_swap_map[index] as usize;
         let white_index = index;
-        let ovalue =
-            (100.0 + (opening - offset - 100.0) * squeeze).round() as u16;
-        let evalue =
-            (100.0 + (endgame - offset - 100.0) * squeeze).round() as u16;
+        let ovalue = (100.0 + (opening - 100.0) * squeeze).round() as u16;
+        let evalue = (100.0 + (endgame - 100.0) * squeeze).round() as u16;
 
         set_piece_dynamic_parameters(
             &mut state.static_mut().pieces[black_index],
