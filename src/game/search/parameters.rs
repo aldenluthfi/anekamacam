@@ -1594,13 +1594,12 @@ pub fn derive_search_parameters(state: &mut State) {
 /// claim about the game, for example that material decides. Each bit is
 /// set, unless a rule removes it:
 ///
-/// - exchange simulation : royal capture, multi own destroy, misere,
-///                         extinction, promotion to a captured type
-/// - pruning on it       : recycled captures, check count, counting, goal
+/// - exchange simulation : royal capture, multi own destroy, misere, extinct
+/// - pruning on it       : drops, check count, counting, goal
 /// - forward pruning     : misere, extinction, goal, check count
 /// - null pruning        : misere, goal, check count, counting, a legal
 ///                         pass, stand-offs, setup, a piece without quiets
-/// - recapture ordering  : recycled captures, check count, goal
+/// - recapture ordering  : drops, check count, goal
 /// - quiet pruning       : misere, goal, check count
 /// - static movement     : a screened leg or a CPMN move condition
 /// - wide quiescence     : a vector that captures more than one piece
@@ -1620,6 +1619,10 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - state: &mut State -> variant with the capability mask to derive
 ///
 /// Notes:
+/// Promotion to a captured type keeps the exchange bits. A capture gives
+/// the piece back to the pool of its owner, not to the hand of the taker,
+/// and the simulation makes real moves, so each promotion obeys the pool.
+///
 /// Recapture ordering does not test multi own destroy now. The capture band
 /// is the capture value minus the own destroyed value, so such a move sorts
 /// below the quiet moves. The exchange simulation keeps the test.
@@ -1709,15 +1712,13 @@ pub fn derive_search_capabilities(state: &mut State) {
         || termination.extinct.iter()
             .any(|rule| rule.outcome == Outcome::Win);
 
-    let recycles_captures = promote_to_captured!(state) || drops!(state);
+    let recycles_captures = drops!(state);                                      /* the taker can drop what it takes   */
     let places_army = setup_phase!(state);
     let vetoes_moves = stand_offs!(state);
 
     let mut capabilities = 0u16;
 
-    if !royal_capture && !multi_destroy && !misere
-    && !counts_pieces && !promote_to_captured!(state)
-    {
+    if !royal_capture && !multi_destroy && !misere && !counts_pieces {
         enc_see_valid!(capabilities);
     }
 
