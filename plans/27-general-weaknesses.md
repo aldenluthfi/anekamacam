@@ -585,6 +585,15 @@ binary `base0` is b970373.
 - Correlation with FSF, shogi: 0.740 to 0.756.
 - SPRT shogi `0 5` against p1.
 
+### HL (2026-09-30, branch `plan27-hl`, 3b7d543)
+
+- Late move reduction reads the history of a quiet move (not a killer):
+  one ply less when it is positive, one ply more when it is negative,
+  kept in `[0, depth - 2]`.
+- Nodes to depth 11, four positions each: standard -26%, shogi -34%,
+  grand -31%, xiangqi -67%.
+- SPRT xiangqi `0 5` against p1; if H1, grand, shogi, standard `-5 0`.
+
 ### SO (2026-09-30, branch `plan27-so`, 078da70)
 
 - Correction to C1: xiangqi never had SEE. The flying-general leg (a
