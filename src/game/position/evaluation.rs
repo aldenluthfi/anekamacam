@@ -635,15 +635,48 @@ macro_rules! pawn_structure {
     };
 }
 
+/// hand_bonus!
+///
+/// Gives the square bonus of the pieces in hand, White minus Black. A piece
+/// in hand can go to its best drop square in one move, so each copy gets
+/// the bonus of that square. A variant without drops gives zero.
+///
+/// Params:
+/// - state: &State -> position with the hands
+/// - phase: usize  -> 0 for the opening table, 1 for the endgame table
+///
+/// Return:
+/// i32             -> hand square bonus, White minus Black
+///
+#[macro_export]
+macro_rules! hand_bonus {
+    ($state:expr, $phase:expr) => {{
+        let bonus = &$state.statics.eval.hand_bonus[$phase];
+        let mut worth = 0;
+
+        if drops!($state) {
+            for (color, sign) in [(WHITE as usize, 1), (BLACK as usize, -1)] {
+                for (piece_index, count) in
+                    $state.piece_in_hand[color].iter().enumerate()
+                {
+                    worth += sign * *count as i32 * bonus[piece_index];
+                }
+            }
+        }
+
+        worth
+    }};
+}
+
 /*----------------------------------------------------------------------------*\
                              PHASE SCORE COMPONENTS
 \*----------------------------------------------------------------------------*/
 
 /// opening_score!
 ///
-/// Gives the opening score, White minus Black. It is the material and
-/// piece-square totals plus all royal safety terms. The opening, the setup
-/// and the middlegame blend use it. The endgame does not.
+/// Gives the opening score, White minus Black. It is the material, board
+/// and hand square totals plus all royal safety terms. The opening, the
+/// setup and the middlegame blend use it. The endgame does not.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -661,6 +694,7 @@ macro_rules! opening_score {
             - $state.opening_material[black] as i32
             + $state.opening_pst_bonus[white]
             - $state.opening_pst_bonus[black]
+            + hand_bonus!($state, 0)
             + royal_shelter!($state, white)
             - royal_shelter!($state, black)
             + royal_guard!($state, white)
@@ -676,8 +710,8 @@ macro_rules! opening_score {
 
 /// endgame_score!
 ///
-/// Gives the endgame score, White minus Black. It is the material and
-/// piece-square totals plus the enemy pressure on the royals. In the
+/// Gives the endgame score, White minus Black. It is the material, board
+/// and hand square totals plus the enemy pressure on the royals. In the
 /// endgame, the royal must go to the center, and the endgame tables already
 /// give this. Shelter, guard, open files and castling keep a royal at home,
 /// so they stay out. The pressure falls by itself when the attackers leave.
@@ -698,6 +732,7 @@ macro_rules! endgame_score {
             - $state.endgame_material[black] as i32
             + $state.endgame_pst_bonus[white]
             - $state.endgame_pst_bonus[black]
+            + hand_bonus!($state, 1)
             + king_danger!($state, black)
             - king_danger!($state, white)
     }};

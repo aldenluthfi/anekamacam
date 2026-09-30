@@ -443,6 +443,7 @@ pub struct EvalParams {
     pub imbalance_minor: i32,                                                   /* worth of one light piece of extra  */
     pub pair_pieces: Vec<usize>,                                                /* pieces a second copy completes     */
     pub pair_bonus: i32,                                                        /* worth of completing such a pair    */
+    pub hand_bonus: [Vec<i32>; 2],                                              /* phase, piece to best drop square   */
 
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
@@ -3015,15 +3016,20 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
 /// derive_advantage_parameters
 ///
-/// Gives the three advantages that material does not include:
+/// Gives the four advantages that material does not include:
 ///
 /// - tempo     : part of the most valuable piece, with a floor
 /// - imbalance : one part for a major surplus, one for a minor surplus
 /// - pair      : a part again, only for pieces that reach half the board
+/// - hand      : best square bonus where a piece in hand can be dropped
 ///
 /// The pair test uses the piece reach, not the name. Royals are not
 /// tested. The list has the two colours of each pair piece, so the
 /// evaluation needs no swap map.
+///
+/// A piece on the board gets the bonus of its square. A piece in hand can
+/// go to its best square with one drop, so it gets that bonus. The hand
+/// bonus reads the final tables, so a tuned file changes it too.
 ///
 /// Params:
 /// - state: &mut State -> variant with the advantage values to fill
@@ -3065,6 +3071,23 @@ pub fn derive_advantage_parameters(state: &mut State) {
             .collect::<Vec<char>>()
     );
 
+    let board_size = state.statics.board_size;
+    let best_drop = |table: &Vec<Vec<i32>>| -> Vec<i32> {
+        (0..state.statics.pieces.len()).map(|piece_index| {
+            (0..board_size)
+                .filter(|square| !state.statics.relevant_drops
+                    [piece_index * board_size + square].is_empty())
+                .map(|square| table[piece_index][square])
+                .max()
+                .unwrap_or(0)
+                .max(0)
+        }).collect()
+    };
+    let hand_bonus = [
+        best_drop(&state.statics.pst_opening),
+        best_drop(&state.statics.pst_endgame),
+    ];
+
     let statics = state.static_mut();
 
     statics.eval.tempo_bonus = tempo as i32;
@@ -3072,4 +3095,5 @@ pub fn derive_advantage_parameters(state: &mut State) {
     statics.eval.imbalance_minor = minor as i32;
     statics.eval.pair_pieces = pair_pieces;
     statics.eval.pair_bonus = pair as i32;
+    statics.eval.hand_bonus = hand_bonus;
 }
