@@ -593,6 +593,9 @@ binary `base0` is b970373.
 - Nodes to depth 11, four positions each: standard -26%, shogi -34%,
   grand -31%, xiangqi -67%.
 - SPRT xiangqi `0 5` against p1; if H1, grand, shogi, standard `-5 0`.
+- Xiangqi: inconclusive at 3000 games, +11.1 ± 9.9 (lower end +1.2). No
+  H1, so not merged and the other arms did not run. The fewer nodes give
+  less Elo than their size suggests.
 
 ### SO (2026-09-30, branch `plan27-so`, 078da70)
 
