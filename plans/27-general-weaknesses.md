@@ -872,6 +872,30 @@ binary `base0` is b970373.
 - Taikyoku shogi takes 10.4 s from `setoption` to `readyok` (36x36, 402
   pieces), past the 10 s handshake of the harness. A GUI with a longer
   wait plays it.
+- Start positions against FSF `d`: all agree (hand and letter spelling
+  aside) except Capablanca, which had `RANBQKBNCR` for `RNABQKBCNR`.
+  Fixed on branch `plan27-capa` (1e15f11); perft equals FSF to depth 4.
+  The harness gives both engines our start FEN, so the sweep games below
+  are valid games from the wrong setup.
+
+### Sweep of merged build 5 against FSF 2000 (2026-10-01, in progress)
+
+400 games per variant at 10+0.1, `-5 5`, Elo of our engine:
+
+| variant          | Elo            | variant          | Elo            |
+| ---------------- | -------------- | ---------------- | -------------- |
+| standard         | +94.8 ± 37.5   | ai-wok           | +175.2 ± 58.8  |
+| xiangqi          | +30.5 ± 29.2   | almost           | +109.5 ± 41.2  |
+| shogi            | -96.6 ± 38.0   | amazon           | +49.0 ± 28.2   |
+| grand            | -61.4 ± 34.8   | asean            | 44-0-2, H1     |
+| crazyhouse       | -127.9 ± 45.5  | Capablanca       | -90.4 ± 36.1   |
+| makruk           | +139.2 ± 48.1  | chancellor       | -84.5 ± 34.8   |
+| shatranj         | 42-4-1, H1     | chigorin         | +93.4 ± 37.2   |
+| minishogi        | +25.6 ± 18.4   | embassy          | +135.1 ± 47.9  |
+
+- Below 2000: crazyhouse, shogi, Capablanca (wrong setup), chancellor,
+  grand. Embassy (10x8, same pieces as Capablanca) is +135, so neither
+  the board size nor the compound pieces explain the chess-family gaps.
 
 ## Verification
 
