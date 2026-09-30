@@ -280,7 +280,7 @@ const PROXIMITY_RATIO: u32 = 100;
 /// - `HAND_POWER`     : the power 0.7 on the value over the cheapest piece
 ///
 const DEMOTION_SHARE: u32 = 500;
-const HAND_POWER: u32 = 700;
+const HAND_POWER: u32 = 1000;
 
 /// Open shield penalty
 ///
