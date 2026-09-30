@@ -666,6 +666,17 @@ binary `base0` is b970373.
   in shogi (0.699 to 0.760) and xiangqi (0.745 to 0.800) and falls in
   grand and standard. No single weight fits all, so it is not used.
 
+### Piece value map (2026-09-30, not kept)
+
+- Tried `value = 100 * (raw / cheapest)^0.8` in place of the shift. The
+  pawn ratios move toward FSF, but the ratios between pieces get worse.
+- FSF removal test, piece against piece (the pawn removal is too noisy to
+  use): standard Q/R 2.19 (ours 1.69), grand Q/R 2.12 (1.73), grand A/R
+  1.65 (1.25), xiangqi R/C 1.58 (1.04).
+- The value adds the mobility of each move type, so a compound piece
+  (Q = R + B, A = B + N) is worth only its parts. FSF prices compounds
+  above the sum. This needs a change to the value model, not the map.
+
 ### D1 (2026-09-30, branch `plan27-d1`, 258964d)
 
 - A drop that gives check is played at the first quiescence ply, like a
