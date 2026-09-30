@@ -733,6 +733,18 @@ binary `base0` is b970373.
   times (self-play gains shrink about half against FSF): shogi needs
   about +200, grand about +130 over merged build 3.
 
+### PI (2026-09-30, branch `plan27-pi`, 5e6f173)
+
+- Bug: a shogi pawn captures and steps on its own file, so its only
+  support offset was 0. Two own pawns never share a file there, so every
+  shogi pawn on the board paid the isolated penalty, and a pawn in hand
+  did not.
+- Fix: the own file is the path, not a neighbour, so offset 0 is not a
+  support file; a pawn type without support files is never isolated.
+  Standard and Berolina keep {-1, +1}.
+- Correlation with FSF unchanged (shogi 0.756 to 0.753). SPRT shogi `0 5`
+  against merged build 4.
+
 ### Shogi eval against FSF, board features (2026-09-30)
 
 - A fit of FSF `eval` on our eval plus features read from the FEN: R2
