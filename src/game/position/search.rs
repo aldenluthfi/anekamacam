@@ -170,6 +170,7 @@ const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 /// - move 1, 2   : full depth, at a zero window
 /// - move 1 to 4 : full depth, at a wide window
 /// - other moves : `surface[depth][move number]`, minimum one ply
+/// - history     : a quiet move with good history one ply less, bad one more
 ///
 /// A wide window is a PV node. There a bad reduction costs the full line,
 /// so more moves get full depth.
@@ -1418,9 +1419,13 @@ pub fn alpha_beta(
 
             let depth_slot = depth.min(MAX_DEPTH - 1);
             let move_slot = legal_moves.min(REDUCTION_MOVE_CAP - 1);
+            let history = scores[index] as i32 - QUIET_MOVE_SCORE;
+            let learned = is_quiet
+                && scores[index] < KILLER_MOVE_SCORE;                           /* killers keep the plain reduction   */
 
-            (surface[depth_slot * REDUCTION_MOVE_CAP + move_slot] as usize)
-                .min(depth - 2)                                                 /* one ply always survives the cut    */
+            (surface[depth_slot * REDUCTION_MOVE_CAP + move_slot] as i32
+                - history.signum() * learned as i32)                            /* a move that worked is cut less     */
+                .clamp(0, depth as i32 - 2) as usize                            /* one ply always survives the cut    */
         } else {
             0
         };
