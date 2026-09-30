@@ -745,6 +745,18 @@ binary `base0` is b970373.
 - Correlation with FSF unchanged (shogi 0.756 to 0.753). SPRT shogi `0 5`
   against merged build 4.
 
+### PT (2026-09-30, branch `plan27-pt`, 393db12)
+
+- Bug: `derive_promotion_target` gave every piece the most valuable
+  non-royal piece of the variant as its promotion. A shogi pawn becomes a
+  tokin, not a dragon. Now it reads the `promotions` list of the piece:
+  the best of its own targets, or the cheapest with `promote to
+  captured`.
+- 13 param files change (the shogi family and others with limited
+  promotion); standard, xiangqi, grand, crazyhouse do not. Perft
+  unchanged. Shogi correlation 0.759 to 0.764.
+- SPRT shogi `0 5` against merged build 4.
+
 ### Shogi eval against FSF, board features (2026-09-30)
 
 - A fit of FSF `eval` on our eval plus features read from the FEN: R2
