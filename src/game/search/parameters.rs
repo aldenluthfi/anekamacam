@@ -245,10 +245,10 @@ const CASTLING_RIGHT_RATIO: u32 = 20;
 /// the pressure, so attackers compound. At `ZONE_ATTACK_FULL` moves, the
 /// cost is `DANGER_RATIO` of the most valuable piece.
 ///
-/// - 4 moves  : 1/16 of the cost
-/// - 8 moves  : 1/4 of the cost
-/// - 16 moves : the full cost, 60% of the most valuable piece
-/// - more     : up to the cap, 100% of the most valuable piece
+/// - 2 moves : 1/16 of the cost
+/// - 4 moves : 1/4 of the cost
+/// - 8 moves : the full cost, 60% of the most valuable piece
+/// - more    : up to the cap, 100% of the most valuable piece
 ///
 /// Notes:
 /// The cap stops the square from growing too much on large boards. An
