@@ -2844,14 +2844,17 @@ fn derive_pawn_interference(
 
 /// derive_pawn_support_files
 ///
-/// Gives the file offsets from which an own pawn can defend the pawn or
-/// its stop square. A pawn with no own pawn on these files, on any rank,
-/// is isolated.
+/// Gives the other file offsets from which an own pawn can defend the pawn
+/// or its stop square. A pawn with no own pawn on these files, on any rank,
+/// is isolated. The own file is the path of the pawn, not a neighbour, so
+/// it is not in the list. A pawn type with an empty list is never
+/// isolated.
 ///
 /// - behind : the file of each capture leg
 /// - beside : each capture leg combined with each forward step
 ///
-/// FIDE gives {-1, +1}, Berolina {-1, 0, +1} and shogi {0}:
+/// FIDE and Berolina give {-1, +1}, shogi gives none. The diagrams show
+/// all defending squares, the own file too:
 ///
 /// ```text
 ///       FIDE               Berolina               Shogi
@@ -2912,8 +2915,8 @@ fn derive_pawn_support_files(state: &State, index: usize) -> Vec<i32> {
         for offset in step_files.iter()
             .map(|step_file| (step_file - capture_file) * sign)
             .chain([-capture_file * sign]) {
-            if !offsets.contains(&offset) {
-                offsets.push(offset);
+            if offset != 0 && !offsets.contains(&offset) {                      /* the own file is the path, not a    */
+                offsets.push(offset);                                           /* neighbour                          */
             }
         }
     }

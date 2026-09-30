@@ -447,7 +447,7 @@ macro_rules! castling_bonus {
 /// - connected passed : a passed pawn with a passed defender, 2 times
 /// - connected        : another own pawn defends it
 /// - doubled          : an own pawn is on its path
-/// - isolated         : no own pawn on a file that can defend it
+/// - isolated         : no own pawn on another file that can defend it
 /// - backward         : a neighbour but no defender, stop square attacked
 ///
 /// The passed value is the promotion gain, scaled by the progress of the
@@ -628,6 +628,8 @@ macro_rules! pawn_structure {
                                 other.1 != square
                                     && neighbours.contains(&(other.2 - file))
                             );
+                            let isolated = !neighbours.is_empty()
+                                && !neighboured;
                             let contested = !connected && neighboured
                                 && pawns[color ^ 1].iter().any(
                                     |other| get!(stop, other.1 as u32)
@@ -649,7 +651,7 @@ macro_rules! pawn_structure {
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
                                     - statics.eval.pawn_isolated_penalty[slot]
-                                        * !neighboured as i32
+                                        * isolated as i32
                                     - statics.eval.pawn_backward_penalty[slot]
                                         * contested as i32
                             );
@@ -660,7 +662,7 @@ macro_rules! pawn_structure {
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
                                     - statics.eval.pawn_isolated_penalty[slot]
-                                        * !neighboured as i32
+                                        * isolated as i32
                                     - statics.eval.pawn_backward_penalty[slot]
                                         * contested as i32
                             );
