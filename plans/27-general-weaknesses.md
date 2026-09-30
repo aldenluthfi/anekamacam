@@ -759,6 +759,23 @@ binary `base0` is b970373.
   unchanged. Shogi correlation 0.759 to 0.764.
 - SPRT shogi `0 5` against merged build 4.
 
+### PV (2026-09-30, branch `plan27-pv2` on merged build 4, 1c425b7)
+
+- Hint from the user: shogi pieces are too cheap. Hand values (bare kings,
+  one piece in hand, pawn = 1) with the shift map: lance 1.5, knight 1.2,
+  silver 3.2, gold 3.7, bishop 5.0, rook 8.8; Kaufman 4, 5, 7, 8, 11, 13.
+  Standard with the shift: N 3.1, Q 9.8, against FSF's own tables N 4.1
+  to 6.2, Q 12.9 to 20.
+- The plain ratio (`raw / cheapest`) is too wide: standard N 8.1, Q 29.5
+  (the pawn is small after SP); shogi rook 48.
+- `value = 100 * (raw / cheapest)^0.7`: standard N 4.97, B 5.71, R 7.38,
+  Q 12.47; shogi hand L 2.6, N 1.6, S 6.4, G 7.3, B 9.6, R 15; xiangqi
+  R 5.23, C 3.17, N 2.75 (was 5.4, 3.0, 2.5); grand against the knight B
+  1.24, R 1.59, Q 2.78, C 2.51, A 2.17 (FSF 1.26, 1.51, 3.23, 2.62, 2.49).
+  The shogi knight stays low; the move model does not see its value.
+- SPRT shogi `0 5` against merged build 4, then standard, xiangqi, grand
+  `-5 0` so no other variant gets overvalued pieces.
+
 ### Shogi eval against FSF, board features (2026-09-30)
 
 - A fit of FSF `eval` on our eval plus features read from the FEN: R2
