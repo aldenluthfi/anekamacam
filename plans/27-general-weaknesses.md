@@ -677,6 +677,21 @@ binary `base0` is b970373.
   (Q = R + B, A = B + N) is worth only its parts. FSF prices compounds
   above the sum. This needs a change to the value model, not the map.
 
+### CS (2026-09-30, branch `plan27-cs`, db54e03)
+
+- `derive_family_mobility` splits the vectors whose last leg moves and
+  takes into three direction families (orthogonal, diagonal, oblique). A
+  piece gets half the mobility of all families but its largest on top:
+  two sets of lines that one enemy piece cannot both avoid.
+- Pawns get nothing (their step and their capture are single-purpose).
+  Xiangqi has no piece with two families; its params do not change.
+- Removal test against FSF: standard Q/R 1.69 to 2.01 (FSF 1.99 to
+  2.19); grand Q/R 1.73 to 2.12 (2.12), C/R 1.55 to 1.84 (1.74 to 1.94),
+  A/R 1.25 to 1.52 (1.62 to 1.65); shogi, rook = 1, silver 0.43 to 0.47
+  (0.49), gold 0.49 to 0.55 (0.59). Perft unchanged.
+- SPRT grand `0 5` against the merged build; then standard and shogi
+  `-5 0`.
+
 ### D1 (2026-09-30, branch `plan27-d1`, 258964d)
 
 - A drop that gives check is played at the first quiescence ply, like a
