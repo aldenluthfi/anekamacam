@@ -1963,21 +1963,26 @@ pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
 /// derive_material_values
 ///
 /// Derives the opening and endgame material from the moves only, one value
-/// for each phase occupancy. Then it shifts the table, so the cheapest
-/// piece is 100.
+/// for each phase occupancy. Then it maps the table, so the cheapest piece
+/// is 100 and each value is 100 times its ratio to the cheapest, to the
+/// power 0.7.
 ///
 /// 1. derive each White piece, once for each occupancy
-/// 2. the offset is the cheapest opening value minus 100
-/// 3. subtract the offset from the two values of each piece
+/// 2. divide each value by the cheapest opening value
+/// 3. raise the ratio to the power 0.7 and multiply by 100
 /// 4. if the largest value is above 14 bits, scale the table down to fit
 ///
 /// Params:
 /// - state: &mut State -> variant with the material values to derive
 ///
 /// Notes:
-/// The shift makes variants comparable. Black gets the White values through
-/// the swap map. The role flags stay clear, because the roles need the
-/// completed table.
+/// The map makes variants comparable. A shift that added the same amount to
+/// each piece made the ratios near one where the cheapest piece has little
+/// mobility (shogi lance 1.5, rook 8.8 pawns). The plain ratio made them too
+/// wide (standard queen 30 pawns). The power keeps the order and puts the
+/// ratios in the range of known tables. Black gets the White values
+/// through the swap map. The role flags stay clear, because the roles need
+/// the completed table.
 ///
 fn derive_material_values(state: &mut State) {
     let opening_occupancy = OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
@@ -1998,18 +2003,21 @@ fn derive_material_values(state: &mut State) {
         })
         .collect::<Vec<_>>();
 
-    let offset = values
+    let cheapest = values
         .iter()
         .map(|(_, opening, _)| *opening)
-        .fold(f64::INFINITY, f64::min) - 100.0;
+        .filter(|opening| *opening > 0.0)
+        .fold(f64::INFINITY, f64::min);
+
+    let scaled = |raw: f64| 100.0 * (raw.max(0.0) / cheapest).powf(0.7);
 
     let peak = values
         .iter()
-        .map(|(_, opening, endgame)| opening.max(*endgame))
-        .fold(f64::NEG_INFINITY, f64::max) - offset;
+        .map(|(_, opening, endgame)| scaled(opening.max(*endgame)))
+        .fold(f64::NEG_INFINITY, f64::max);
 
     let squeeze = if peak > MAX_PIECE_VALUE as f64 {                            /* a board wide enough prices a piece */
-        (MAX_PIECE_VALUE as f64 - 100.0) / (peak - 100.0)                       /* past the field it has to land in   */
+        MAX_PIECE_VALUE as f64 / peak                                           /* past the field it has to land in   */
     } else {
         1.0
     };
@@ -2017,10 +2025,8 @@ fn derive_material_values(state: &mut State) {
     for (index, opening, endgame) in values {
         let black_index = state.statics.piece_swap_map[index] as usize;
         let white_index = index;
-        let ovalue =
-            (100.0 + (opening - offset - 100.0) * squeeze).round() as u16;
-        let evalue =
-            (100.0 + (endgame - offset - 100.0) * squeeze).round() as u16;
+        let ovalue = (scaled(opening) * squeeze).round().max(1.0) as u16;
+        let evalue = (scaled(endgame) * squeeze).round().max(1.0) as u16;
 
         set_piece_dynamic_parameters(
             &mut state.static_mut().pieces[black_index],
