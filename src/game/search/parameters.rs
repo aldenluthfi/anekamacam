@@ -257,6 +257,18 @@ const CASTLING_RIGHT_RATIO: u32 = 20;
 const DANGER_RATIO: u32 = 600;
 const DANGER_CAP_RATIO: u32 = 1000;
 
+/// Royal proximity
+///
+/// The cost of each enemy piece within two files and two ranks of a royal,
+/// in a variant with drops. A piece in hand can join such a piece at once,
+/// so a few attackers near the royal make a mate. Over `COEFFICIENT_SCALE`
+/// of the most valuable piece:
+///
+/// - with drops    : 10% for each enemy piece near a royal
+/// - without drops : nothing
+///
+const PROXIMITY_RATIO: u32 = 100;
+
 /// Open shield penalty
 ///
 /// The penalty for a royal with no own shield piece in front of it, on its
@@ -421,6 +433,7 @@ pub struct EvalParams {
     pub king_danger_scale: i32,                                                 /* worth of a fully pressed zone      */
     pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
     pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
+    pub proximity_value: i32,                                                   /* cost of an enemy near a royal      */
 
     pub pawn_slots: Vec<usize>,                                                 /* piece index to pawn slot, or NONE  */
     pub pawn_pieces: Vec<usize>,                                                /* pawn slot to piece index           */
@@ -2494,6 +2507,8 @@ pub fn derive_danger_parameters(state: &mut State) {
         / COEFFICIENT_SCALE as u64;
     let open_shield_penalty = (dearest * OPEN_SHIELD_RATIO as u64
         / COEFFICIENT_SCALE as u64).max(OPEN_SHIELD_FLOOR as u64);
+    let proximity_value = dearest * PROXIMITY_RATIO as u64
+        * drops!(state) as u64 / COEFFICIENT_SCALE as u64;
 
     log_3!(
         concat!(
@@ -2513,6 +2528,7 @@ pub fn derive_danger_parameters(state: &mut State) {
     statics.eval.king_danger_scale = king_danger_scale as i32;
     statics.eval.king_danger_cap = king_danger_cap as i32;
     statics.eval.open_shield_penalty = open_shield_penalty as i32;
+    statics.eval.proximity_value = proximity_value as i32;
 }
 
 /*----------------------------------------------------------------------------*\
