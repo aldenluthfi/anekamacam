@@ -279,7 +279,7 @@ const PROXIMITY_RATIO: u32 = 100;
 ///   capture gives the capturer its demoted form
 /// - `HAND_POWER`     : the power 0.7 on the value over the cheapest piece
 ///
-const DEMOTION_SHARE: u32 = 500;
+const DEMOTION_SHARE: u32 = 0;
 const HAND_POWER: u32 = 700;
 
 /// Open shield penalty
