@@ -723,7 +723,8 @@ binary `base0` is b970373.
   quiet board move that gives check. X1 generated the drops there and
   skipped them.
 - Shogi, depth 10, four positions: nodes equal or fewer.
-- SPRT shogi `0 5` against the merged build.
+- SPRT shogi `0 5` against the merged build: inconclusive at 3000 games,
+  +0.9 ± 12.4. No effect; not merged.
 
 ## Verification
 
