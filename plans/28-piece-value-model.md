@@ -85,6 +85,24 @@ A better fit to one table is not a better value.
 - Only the 7 drop variants change their params. Perft unchanged.
 - SPRT shogi `0 5` against merged build 4, then crazyhouse `-5 0`.
 
+## Removal scan of all variants against FSF (2026-10-01)
+
+- For each variant that FSF plays (36 of 44), remove one of each White
+  non-royal piece from the start position in both engines, and compare
+  the eval drops as ratios, centred per variant. Pawn drops are too noisy
+  (FSF: xiangqi soldier 8, shogi pawn -16) and do not count.
+- ASEAN: the config gave the bishop and queen their chess moves. In ASEAN
+  they move as the khon (`F|nW`) and the met (`F`), the pawn promotes to
+  R, N, B or Q, and a bare king is counted as in makruk. Fixed on branch
+  `plan27-asean` (1ddfd34); perft equals FSF to depth 4 and on a
+  promotion position. After the fix all ASEAN pieces are within x1.1.
+- Other outliers past x1.5: Hoppel-Poppel knight x0.57 and New Zealand
+  rook x1.61 (a piece that moves one way and takes another: FSF prices
+  the capture part above the quiet part, we count each half), knightmate
+  commoner x1.52, xiangqi horse x1.65 and advisor x0.61. All other pieces
+  in 34 variants are within x1.5. Janggi and sittuyin start with a setup
+  phase and horde has one piece type, so the scan says little there.
+
 ## Conclusion
 
 The current derivation is a better prior for an unknown variant than a

@@ -760,6 +760,7 @@ binary `base0` is b970373.
   promotion); standard, xiangqi, grand, crazyhouse do not. Perft
   unchanged. Shogi correlation 0.759 to 0.764.
 - SPRT shogi `0 5` against merged build 4.
+- Shogi: H1, +42.4 ± 16.3. Goes into merged build 5.
 
 ### PV (2026-09-30, branch `plan27-pv2` on merged build 4, 1c425b7)
 
