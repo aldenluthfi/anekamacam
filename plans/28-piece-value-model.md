@@ -84,6 +84,12 @@ A better fit to one table is not a better value.
   13, now 1 to 3.8). Crazyhouse: N 257, B 255, R 359, Q 565.
 - Only the 7 drop variants change their params. Perft unchanged.
 - SPRT shogi `0 5` against merged build 4, then crazyhouse `-5 0`.
+- Shogi: H0, -26.6 ± 13.8. Crazyhouse: H1 of the regression arm, +84.5 ±
+  25.1, a large gain. Not merged: the two drop variants disagree.
+- Next: which half costs shogi. Two single-rule branches against merged
+  build 4 in shogi (local, concurrency 5): `plan27-dcp` (the power only,
+  shogi R/P 3.8, promoted pieces 250) and `plan27-dcd` (the demotion
+  only, R/P 6.8, tokin 505, dragon 1089).
 
 ## Removal scan of all variants against FSF (2026-10-01)
 
