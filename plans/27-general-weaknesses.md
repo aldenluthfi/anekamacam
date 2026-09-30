@@ -692,6 +692,17 @@ binary `base0` is b970373.
 - SPRT grand `0 5` against the merged build; then standard and shogi
   `-5 0`.
 
+### SP (2026-09-30, branch `plan27-sp` on CS, c595836)
+
+- A move-only or capture-only last leg counts half in the vector chance:
+  the piece moves to a square it cannot guard, or guards a square it
+  cannot move to. Params made again.
+- Xiangqi removal test: chariot/cannon 1.04 to 1.81, cannon/horse 2.08 to
+  1.19 (FSF classical values: about 2.1 and 1.1). Standard: N 3.09, B
+  3.68, R 4.96, Q 9.81 against the pawn. Perft unchanged.
+- SPRT xiangqi `0 5` against the merged build (CS does not change
+  xiangqi, so the arm measures SP alone).
+
 ### D1 (2026-09-30, branch `plan27-d1`, 258964d)
 
 - A drop that gives check is played at the first quiescence ply, like a
