@@ -746,6 +746,8 @@ binary `base0` is b970373.
   Standard and Berolina keep {-1, +1}.
 - Correlation with FSF unchanged (shogi 0.756 to 0.753). SPRT shogi `0 5`
   against merged build 4.
+- Shogi: H0, -30.1 ± 14.7. The penalty on every board pawn works as a
+  preference for a pawn in hand. Not merged.
 
 ### PT (2026-09-30, branch `plan27-pt`, 393db12)
 
@@ -775,6 +777,7 @@ binary `base0` is b970373.
   The shogi knight stays low; the move model does not see its value.
 - SPRT shogi `0 5` against merged build 4, then standard, xiangqi, grand
   `-5 0` so no other variant gets overvalued pieces.
+- Cancelled before a verdict for the value model of plan 28.
 
 ### Shogi eval against FSF, board features (2026-09-30)
 
