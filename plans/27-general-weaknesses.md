@@ -656,6 +656,13 @@ binary `base0` is b970373.
   47.2 (about 1868, no change). Grand H0, -125.4 ± 44.8 (about 1875, from
   1800). Standard H1, +51.6 ± 26.5 (about 2050, from about 2019).
 
+### Merged build 2 (2026-09-30, branch `plan27-main2`, ac05b42)
+
+- The merged build plus HL, CS and SP. HL and CS each ended their gain arm
+  without H1 but with a lower end above 0 (+1.2, +2.4). The build goes to
+  the FSF 2000 ratings in xiangqi, grand, shogi and standard, which also
+  check it against a loss. Perft unchanged.
+
 ### Shogi eval against FSF, board features (2026-09-30)
 
 - A fit of FSF `eval` on our eval plus features read from the FEN: R2
