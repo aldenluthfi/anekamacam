@@ -276,9 +276,11 @@ macro_rules! see {
 /// each earlier move of this node. The prelude spaces the bands, so the
 /// largest history is always below the lowest killer.
 ///
-/// The exchange simulation applies only if `see_valid!` and
-/// `static_movement!` are true for the variant. Else, the score is the
-/// victim value minus the attacker value.
+/// The exchange simulation applies only if `see_valid!` is true for the
+/// variant. Else, the score is the victim value minus the attacker value.
+/// A screened leg does not stop the order: the simulation makes each
+/// capture and reads the attackers again. Only the skips that trust the
+/// result also need `static_movement!`.
 ///
 /// Params:
 /// - state     : &mut State          -> position of the move
@@ -329,7 +331,7 @@ macro_rules! score_move {
 
                 (QUIET_MOVE_SCORE + history) as usize
             }
-        } else if see_valid!($state) && static_movement!($state) {
+        } else if see_valid!($state) {
             let see_score = see!($state, scored_move);
 
             if see_score == -INF {

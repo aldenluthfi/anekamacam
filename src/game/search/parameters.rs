@@ -1594,7 +1594,7 @@ pub fn derive_search_parameters(state: &mut State) {
 /// claim about the game, for example that material decides. Each bit is
 /// set, unless a rule removes it:
 ///
-/// - exchange simulation : royal capture, multi own destroy, misere, extinct
+/// - exchange simulation : multi own destroy, misere, extinction
 /// - pruning on it       : drops, check count, counting, goal
 /// - forward pruning     : misere, extinction, goal, check count
 /// - null pruning        : misere, goal, check count, counting, a legal
@@ -1623,6 +1623,9 @@ pub fn derive_search_parameters(state: &mut State) {
 /// the piece back to the pool of its owner, not to the hand of the taker,
 /// and the simulation makes real moves, so each promotion obeys the pool.
 ///
+/// A leg that can take only a royal does not stop the exchange simulation.
+/// An exchange square never holds a royal that a move can take.
+///
 /// Recapture ordering does not test multi own destroy now. The capture band
 /// is the capture value minus the own destroyed value, so such a move sorts
 /// below the quiet moves. The exchange simulation keeps the test.
@@ -1640,7 +1643,6 @@ pub fn derive_search_capabilities(state: &mut State) {
         .map(|piece_index| {
             let mut screened = false;
             let mut conditioned = false;
-            let mut royal_capture = false;
             let mut multi_destroy = false;
             let mut multi_capture = false;
             let mut may_pass = false;
@@ -1663,7 +1665,6 @@ pub fn derive_search_capabilities(state: &mut State) {
                             || (last_leg && !m!(leg));                          /* a plain slider takes on its last   */
 
                         screened |= u!(leg);
-                        royal_capture |= k!(leg);
                         destroys |= d!(leg);
                         destroyed += (d!(leg) && !u!(leg)) as usize;            /* an unloaded piece is put back      */
                         victims += takes as usize;
@@ -1686,18 +1687,18 @@ pub fn derive_search_capabilities(state: &mut State) {
             let capture_only = vectors > 0 && quiet_vectors == 0;
 
             [
-                screened, conditioned, royal_capture, multi_destroy,
-                capture_only, multi_capture, may_pass,
+                screened, conditioned, multi_destroy, capture_only,
+                multi_capture, may_pass,
             ]
         })
         .reduce(
-            || [false; 7],
+            || [false; 6],
             |left, right| array::from_fn(|fact| left[fact] || right[fact]),
         );
 
     let [
-        screened, conditioned, royal_capture, multi_destroy,
-        capture_only, multi_capture, may_pass,
+        screened, conditioned, multi_destroy, capture_only, multi_capture,
+        may_pass,
     ] = movement_facts;
 
     let termination = &state.termination;
@@ -1718,7 +1719,7 @@ pub fn derive_search_capabilities(state: &mut State) {
 
     let mut capabilities = 0u16;
 
-    if !royal_capture && !multi_destroy && !misere && !counts_pieces {
+    if !multi_destroy && !misere && !counts_pieces {
         enc_see_valid!(capabilities);
     }
 
