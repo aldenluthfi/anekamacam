@@ -988,10 +988,11 @@ pub fn quiescence_search(
 /// - move loop                       : ordered, reduced, searched again
 ///
 /// Each shortcut tests the capability mask first: static score cuts, null
-/// move, ProbCut, internal iterative reduction, losing capture skips and
-/// late quiet move skips. Each is a claim about the game. Late move
-/// reduction is not a shortcut, because a reduced move that beats alpha
-/// gets full depth again.
+/// move, ProbCut, internal iterative reduction, losing capture and losing
+/// quiet skips, and late quiet move skips. Each is a claim about the game.
+/// A losing quiet move hangs its piece by more than the exchange allowance
+/// of the depth. Late move reduction is not a shortcut, because a reduced
+/// move that beats alpha gets full depth again.
 ///
 /// Params:
 ///
@@ -1384,10 +1385,20 @@ pub fn alpha_beta(
             && scores[index] as i32 - LOSING_CAPTURE_SCORE
                 < -state.statics.search.see_allowance[depth];
 
+        let losing_quiet = prunable_quiet                                       /* a quiet move that hangs the piece  */
+            && !late_quiet                                                      /* it moves, tested last as it costs  */
+            && !futile                                                          /* a full exchange simulation         */
+            && see_pruning!(state)
+            && see_valid!(state)
+            && static_movement!(state)
+            && depth <= see_deepest
+            && see!(state, mv) < -state.statics.search.see_allowance[depth];
+
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
 
-        let skippable = (late_quiet || futile || losing_capture) && !goal_move;
+        let skippable = (late_quiet || futile || losing_capture || losing_quiet)
+            && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
         if skippable
