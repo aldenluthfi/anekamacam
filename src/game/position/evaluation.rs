@@ -103,6 +103,36 @@ macro_rules! terminal_score {
                                ROYAL SAFETY TERMS
 \*----------------------------------------------------------------------------*/
 
+/// guarded_squares!
+///
+/// Gives the squares of the pieces of one colour whose capture ends the
+/// game: the royals, then the royal stand-in of an `extinct` rule. The
+/// royal safety terms below read each of them.
+///
+/// Params:
+///
+///     state: &State
+///     position to score
+///
+///     color: usize
+///     colour of the pieces
+///
+/// Return:
+///
+///     impl Iterator<Item = Square>
+///     the royal squares, then the squares of the stand-in
+///
+#[macro_export]
+macro_rules! guarded_squares {
+    ($state:expr, $color:expr) => {
+        $state.royal_list[$color].iter().copied().chain(
+            $state.termination.extinct.iter()
+                .filter_map(|rule| rule.lone[$color])
+                .flat_map(|index| piece_squares!($state, index).copied())
+        )
+    };
+}
+
 /// royal_shelter!
 ///
 /// Gives the value of the own shield pieces in front of the royals of one
@@ -142,8 +172,8 @@ macro_rules! royal_shelter {
         let cap = SHELTER_CAP as i32;
         let mut worth = 0;
 
-        for royal_square in &$state.royal_list[$color] {
-            let royal = *royal_square as usize;
+        for royal_square in guarded_squares!($state, $color) {
+            let royal = royal_square as usize;
             let mut shelter = 0;
 
             for slot in 0..statics.eval.shelter_counts[$color][royal] as usize {
@@ -199,8 +229,8 @@ macro_rules! royal_guard {
         let stride = statics.eval.local_stride;
         let mut guards = 0;
 
-        for royal_square in &$state.royal_list[$color] {
-            let royal = *royal_square as usize;
+        for royal_square in guarded_squares!($state, $color) {
+            let royal = royal_square as usize;
 
             for slot in 0..statics.eval.ring_counts[royal] as usize {
                 let square = statics.eval.ring_squares[royal * stride + slot];
@@ -251,8 +281,8 @@ macro_rules! king_danger {
         let drops = drops!($state);
         let mut units = 0i64;
 
-        for royal_square in &$state.royal_list[$color] {
-            let royal = *royal_square as usize;
+        for royal_square in guarded_squares!($state, $color) {
+            let royal = royal_square as usize;
             let zone = &statics.eval.zone_attack[
                 royal * piece_count * board_size
                     ..(royal + 1) * piece_count * board_size
@@ -310,9 +340,9 @@ macro_rules! royal_proximity {
         let mut near = 0;
 
         if statics.eval.proximity_value != 0 {
-            for royal_square in &$state.royal_list[$color] {
-                let royal_file = *royal_square as i32 % files;
-                let royal_rank = *royal_square as i32 / files;
+            for royal_square in guarded_squares!($state, $color) {
+                let royal_file = royal_square as i32 % files;
+                let royal_rank = royal_square as i32 / files;
 
                 for (piece_index, piece) in statics.pieces.iter().enumerate() {
                     if p_color!(piece) as usize == $color
@@ -369,9 +399,9 @@ macro_rules! open_shield {
         let forward = statics.eval.forward_steps[$color];
         let mut penalty = 0;
 
-        for royal_square in &$state.royal_list[$color] {
-            let royal_file = *royal_square as i32 % files;
-            let royal_rank = *royal_square as i32 / files;
+        for royal_square in guarded_squares!($state, $color) {
+            let royal_file = royal_square as i32 % files;
+            let royal_rank = royal_square as i32 / files;
             let mut covered = false;
 
             for (piece_index, piece) in statics.pieces.iter().enumerate() {

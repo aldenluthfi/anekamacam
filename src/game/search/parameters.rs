@@ -1295,7 +1295,11 @@ fn derive_pst(
     let mobility_weight = if is_endgame { 0.25 } else { 0.5 };
     let center_weight = if is_endgame { 1.75 } else { 1.25 };
 
-    let scores: Vec<f64> = if !is_endgame && p_is_royal!(piece) {
+    let stand_in = state.termination.extinct.iter().any(|rule| {
+        rule.lone[p_color!(piece) as usize] == Some(index as usize)
+    });
+
+    let scores: Vec<f64> = if !is_endgame && (p_is_royal!(piece) || stand_in) {
         (0..board_size).map(|square| -((square / files) as f64)).collect()
     } else {
         (0..board_size).into_par_iter().map(|square| {
@@ -2131,6 +2135,8 @@ pub fn derive_eval_products(state: &mut State) {
     state.static_mut().eval.draw_span = draw_span as i32;
     state.static_mut().eval.draw_contempt = draw_contempt as i32;
 
+    derive_royal_stand_ins(state, &start_army);
+
     let (pst_opening, pst_endgame) = derive_base_pst(state);
     state.static_mut().pst_opening = pst_opening;
     state.static_mut().pst_endgame = pst_endgame;
@@ -2147,6 +2153,72 @@ pub fn derive_eval_products(state: &mut State) {
 /*----------------------------------------------------------------------------*\
                             ROYAL SAFETY DERIVATION
 \*----------------------------------------------------------------------------*/
+
+/// derive_royal_stand_ins
+///
+/// Sets the `lone` piece of the `extinct` rules. A candidate is not royal,
+/// but its capture ends the game: it is the only piece of its colour in
+/// the set of a rule that loses at zero. For each colour, the cheapest
+/// candidate stands in for the royal: the royal terms of the evaluation
+/// read it, so the king of an extinction variant keeps its shelter, and a
+/// dear piece stays active.
+///
+/// - extinction chess : the king (the queen is dearer)
+/// - kinglet          : none, eight pawns in the set
+/// - standard         : none, no extinct rule
+///
+/// Params:
+/// - state     : &mut State -> variant with the end rules
+/// - start_army: &[u32]     -> count of each piece index at the start
+///
+fn derive_royal_stand_ins(state: &mut State, start_army: &[u32]) {
+    let mut cheapest: [Option<(usize, usize)>; 2] = [None; 2];
+
+    for (rule_index, rule) in state.termination.extinct.iter().enumerate() {
+        if rule.threshold != 0 || rule.outcome != Outcome::Loss {
+            continue;
+        }
+
+        for color in [WHITE, BLACK] {
+            let members: Vec<usize> = state.statics.pieces.iter()
+                .enumerate()
+                .filter(|(index, piece)| {
+                    rule.set[*index] && p_color!(piece) == color
+                })
+                .map(|(index, _)| index)
+                .collect();
+            let army = members.iter()
+                .map(|index| start_army[*index])
+                .sum::<u32>();
+
+            for index in members {
+                let piece = &state.statics.pieces[index];
+                let cheaper = cheapest[color as usize]
+                    .is_none_or(|(_, best)| {
+                        p_ovalue!(piece)
+                            < p_ovalue!(&state.statics.pieces[best])
+                    });
+
+                if army == 1
+                    && start_army[index] == 1
+                    && !p_is_royal!(piece)
+                    && cheaper {
+                    cheapest[color as usize] = Some((rule_index, index));
+                }
+            }
+        }
+    }
+
+    for rule in &mut state.termination.extinct {
+        rule.lone = [None; 2];
+    }
+
+    for (color, choice) in cheapest.into_iter().enumerate() {
+        if let Some((rule_index, index)) = choice {
+            state.termination.extinct[rule_index].lone[color] = Some(index);
+        }
+    }
+}
 
 /// derive_forward_directions
 ///
