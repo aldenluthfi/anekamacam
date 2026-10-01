@@ -1025,11 +1025,32 @@ around FSF. Each fix makes perft equal FSF.
 - Threecheck: H1, +248.3 ± 60.6. Merged into merged build 7 (branch
   `plan27-main7`). Queued: fivecheck `-5 0`, then merged build 7 against
   FSF 2000 in threecheck and fivecheck.
+- Fivecheck `-5 0`: H1, +276.5 ± 70.5, a gain there too.
+- Merged build 7 against FSF 2000: threecheck H0 (-187.4 ± 63.1, early
+  stop), fivecheck -30.0 ± 32.4 at 400 games (was -190.8 ± 64.5).
+- Following a user note, the check value moved from the eval params to
+  the `Checks` rule, and the goal steps and value to the `Goal` rule. A
+  variant without the rule has no field. Seeded fixed-depth searches give
+  the same node counts before and after.
+- Harness: an SPRT where all pairs score the same could not decide (zero
+  variance). Empty pentanomial buckets now weigh half a pair (3e51894).
 
 ### VP2 (2026-10-01, branch `plan27-vp2` on VP)
 
 - Only the cheapest vital piece of a colour stands in for the royal
   (extinction: the king; the queen stays active). SPRT extinction `0 5`
+  against merged build 6.
+- Extinction: inconclusive at 3000 games, +18.9 ± 11.6 (lower end +7.3).
+  The stand-in now lives on the `extinct` rule (`lone`), with the same
+  node counts. Merged into merged build 8 (branch `plan27-main8`); its
+  extinction rating against FSF 2000 is queued.
+
+### DC-P (2026-10-01, abandoned)
+
+- The local shogi run of the power-only half of DC was stopped before a
+  verdict: it held the local machine for six hours. DC-D (demotion only)
+  had H0, -57.0 ± 20.2.
+- GR2 (the goal race only in the endgame score) is queued: koth `0 5`
   against merged build 6.
 
 ## Verification
