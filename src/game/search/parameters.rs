@@ -280,6 +280,17 @@ const PROXIMITY_RATIO: u32 = 100;
 ///
 const CHECK_RATIO: u32 = 1000;
 
+/// Goal race
+///
+/// The worth of a goal piece near its goal zone, in a variant with a
+/// `goal` rule. Over `COEFFICIENT_SCALE` of the most valuable piece, for
+/// the goal piece of a colour that is nearest to the zone:
+///
+/// - one step from the zone : 100%, it arrives next move if not stopped
+/// - each step more         : half of the step before
+///
+const GOAL_RATIO: u32 = 1000;
+
 /// Open shield penalty
 ///
 /// The penalty for a royal with no own shield piece in front of it, on its
@@ -2592,6 +2603,8 @@ pub fn derive_danger_parameters(state: &mut State) {
         * drops!(state) as u64 / COEFFICIENT_SCALE as u64;
     let check_value = dearest * CHECK_RATIO as u64 / COEFFICIENT_SCALE as u64;
 
+    derive_goal_race(state, dearest);
+
     log_3!(
         concat!(
             "Derived king danger worth {} at {} landings, capped at {}, ",
@@ -2615,6 +2628,45 @@ pub fn derive_danger_parameters(state: &mut State) {
     statics.eval.king_danger_cap = king_danger_cap as i32;
     statics.eval.open_shield_penalty = open_shield_penalty as i32;
     statics.eval.proximity_value = proximity_value as i32;
+}
+
+/// derive_goal_race
+///
+/// Sets the goal race of the goal rule: the king steps from each square to
+/// the nearest goal square, and the worth of a goal piece one step from the
+/// zone. A king step moves one file, one rank or both, so the count is the
+/// larger of the two gaps. A variant without a goal rule does not change.
+///
+/// Params:
+/// - state  : &mut State -> variant with the goal rule
+/// - dearest: u64        -> value of the most valuable piece
+///
+fn derive_goal_race(state: &mut State, dearest: u64) {
+    let files = state.statics.files as i32;
+    let board_size = state.statics.board_size;
+
+    let Some(goal) = state.termination.goal.as_mut() else {
+        return;
+    };
+
+    let zone: Vec<usize> = set_indices!(goal.zone);
+
+    goal.steps = (0..board_size).map(|square| {
+        zone.iter()
+            .map(|&target| {
+                let file_gap = (square as i32 % files - target as i32 % files)
+                    .abs();
+                let rank_gap = (square as i32 / files - target as i32 / files)
+                    .abs();
+
+                file_gap.max(rank_gap)
+            })
+            .min()
+            .unwrap_or(0)
+            .min(u8::MAX as i32) as u8
+    }).collect();
+    goal.value =
+        (dearest * GOAL_RATIO as u64 / COEFFICIENT_SCALE as u64) as i32;
 }
 
 /*----------------------------------------------------------------------------*\

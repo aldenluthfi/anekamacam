@@ -1768,7 +1768,9 @@ pub fn parse_config_file(path: &str) -> State {
                     let zone = parse_bit_fen(Some(zone_fen.as_str()), &result);
                     let outcome = parse_outcome(arguments[2]);
 
-                    termination.goal = Some(Goal { set, zone, outcome, name });
+                    termination.goal = Some(Goal {
+                        set, zone, outcome, name, steps: Vec::new(), value: 0,
+                    });
                 }
                 "perpetual" => {
                     let mut check = None;
