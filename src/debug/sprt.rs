@@ -30,6 +30,7 @@ use crate::*;
 /// - SPRT_HANDSHAKE_TIMEOUT_MS : time limit for the engine setup
 /// - SPRT_RESPONSE_GRACE_MS    : extra time after the clock for a reply
 /// - SPRT_SHUTDOWN_TIMEOUT_MS  : time limit to quit, then kill
+/// - PENTANOMIAL_FLOOR         : weight of an empty pair bucket
 ///
 /// The two error rates set the stop bounds. With equal rates, the bounds
 /// are symmetric:
@@ -50,6 +51,7 @@ const SPRT_BETA: f64 = 0.05;
 const SPRT_HANDSHAKE_TIMEOUT_MS: u64 = 10_000;
 const SPRT_RESPONSE_GRACE_MS: u128 = 5_000;
 const SPRT_SHUTDOWN_TIMEOUT_MS: u64 = 1_000;
+const PENTANOMIAL_FLOOR: f64 = 0.5;
 
 /// run_sandbox_root
 ///
@@ -1134,12 +1136,13 @@ impl GameManager {
 ///   - mu_one  : f64 -> expected score if the patch gained the claim
 ///
 ///   Return:
-///   f64             -> the ratio, or zero without variance
+///   f64             -> the ratio, or zero before the first pair
 ///
 /// Notes:
 /// The two games of a pair use one opening with swapped colours. Thus the
 /// opening quality cancels, the variance is smaller, and the ratio grows
-/// faster. With zero variance, the ratio is zero, not a division by zero.
+/// faster. [`SPRTTally`] floors empty buckets, so a run where all pairs
+/// score the same still has a variance and reaches a verdict.
 ///
 fn expected_score(elo: f64) -> f64 {
     1.0 / (1.0 + 10f64.powf(-elo / 400.0))
@@ -1389,14 +1392,21 @@ pub struct SPRTMatch {
 ///
 /// ```text
 /// pentanomial[i] = pairs that scored i / 4, for i = 0 to 4
+/// weight[i]      = max(pentanomial[i], PENTANOMIAL_FLOOR)
 /// pairs          = Σ pentanomial[i]
-/// mean           = Σ pentanomial[i] · (i / 4)     / pairs
-/// variance       = Σ pentanomial[i] · (i / 4)²    / pairs - mean²
+/// mean           = Σ weight[i] · (i / 4)     / Σ weight[i]
+/// variance       = Σ weight[i] · (i / 4)²    / Σ weight[i] - mean²
 /// ```
+///
+/// The floor gives each empty bucket the weight of half a pair. A run of
+/// 200 pairs that all score 1 then has a variance, so the ratio accepts H1
+/// (about 155) and the Elo interval is finite. One pair of two wins gives
+/// a ratio near zero, so a single pair cannot decide.
 ///
 /// - add_game : count one game as a win, a draw or a loss
 /// - add_pair : count one pair in its pentanomial bucket
 /// - pairs    : number of finished pairs
+/// - weights  : the bucket counts with the floor
 /// - mean     : mean pair score, 0.5 before the first pair
 /// - variance : population variance of the pair scores
 /// - margin   : half width of the 95% Elo interval
@@ -1405,6 +1415,11 @@ pub struct SPRTMatch {
 ///
 ///   Params:
 ///   - score: f64 -> score of engine A, 0 to 1
+///
+/// weights
+///
+///   Return:
+///   [f64; 5] -> weight of each bucket
 ///
 /// pairs, mean, variance, margin
 ///
@@ -1436,15 +1451,21 @@ impl SPRTTally {
         self.pentanomial.iter().sum::<u32>() as f64
     }
 
+    fn weights(&self) -> [f64; 5] {
+        self.pentanomial.map(|count| (count as f64).max(PENTANOMIAL_FLOOR))
+    }
+
     fn mean(&self) -> f64 {
         if self.pairs() == 0.0 {
             return 0.5;
         }
 
-        zip(0.., self.pentanomial)
-            .map(|(bucket, count)| count as f64 * bucket as f64 / 4.0)
+        let weights = self.weights();
+
+        zip(0.., weights)
+            .map(|(bucket, weight)| weight * bucket as f64 / 4.0)
             .sum::<f64>()
-            / self.pairs()
+            / weights.iter().sum::<f64>()
     }
 
     fn variance(&self) -> f64 {
@@ -1452,12 +1473,12 @@ impl SPRTTally {
             return 0.0;
         }
 
-        zip(0.., self.pentanomial)
-            .map(|(bucket, count)| {
-                count as f64 * (bucket as f64 / 4.0).powi(2)
-            })
+        let weights = self.weights();
+
+        zip(0.., weights)
+            .map(|(bucket, weight)| weight * (bucket as f64 / 4.0).powi(2))
             .sum::<f64>()
-            / self.pairs()
+            / weights.iter().sum::<f64>()
             - self.mean().powi(2)
     }
 
