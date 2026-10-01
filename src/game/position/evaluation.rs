@@ -396,6 +396,39 @@ macro_rules! open_shield {
     }};
 }
 
+/// check_race!
+///
+/// Gives the worth of the checks one colour has given, in a variant where
+/// a count of checks wins. The worth halves for each check that is still
+/// missing past the first:
+///
+/// - 1 check left  : `check_value`, the next check wins
+/// - 2 checks left : half of it
+/// - 3 checks left : a quarter of it
+///
+/// Params:
+/// - state: &State -> position to score
+/// - color: usize  -> colour that gives the checks
+///
+/// Return:
+/// i32             -> race worth for that colour, 0 or more
+///
+#[macro_export]
+macro_rules! check_race {
+    ($state:expr, $color:expr) => {{
+        match $state.termination.checks.as_ref() {
+            Some(checks) if checks.outcome == Outcome::Win => {
+                let left = checks.count
+                    .saturating_sub(checks.delivered[$color])
+                    .max(1);
+
+                $state.statics.eval.check_value >> (left - 1).min(31)
+            }
+            _ => 0,
+        }
+    }};
+}
+
 /// castling_bonus!
 ///
 /// Gives the castling value of one colour. Thus castling is better than a
@@ -689,8 +722,9 @@ macro_rules! pawn_structure {
 /// opening_score!
 ///
 /// Gives the opening score, White minus Black. It is the material and
-/// piece-square totals plus all royal safety terms. The opening, the setup
-/// and the middlegame blend use it. The endgame does not.
+/// piece-square totals plus all royal safety terms and the check race. The
+/// opening, the setup and the middlegame blend use it. The endgame does
+/// not.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -720,13 +754,16 @@ macro_rules! opening_score {
             - royal_proximity!($state, white)
             + open_shield!($state, black)
             - open_shield!($state, white)
+            + check_race!($state, white)
+            - check_race!($state, black)
     }};
 }
 
 /// endgame_score!
 ///
 /// Gives the endgame score, White minus Black. It is the material and
-/// piece-square totals plus the enemy pressure and nearness to the royals.
+/// piece-square totals plus the enemy pressure and nearness to the royals,
+/// and the check race.
 /// In the endgame, the royal must go to the center, and the endgame tables
 /// already give this. Shelter, guard, open files and castling keep a royal
 /// at home, so they stay out. The pressure falls by itself when the
@@ -752,6 +789,8 @@ macro_rules! endgame_score {
             - king_danger!($state, white)
             + royal_proximity!($state, black)
             - royal_proximity!($state, white)
+            + check_race!($state, white)
+            - check_race!($state, black)
     }};
 }
 
