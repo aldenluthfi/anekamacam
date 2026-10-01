@@ -271,11 +271,15 @@ const PROXIMITY_RATIO: u32 = 100;
 
 /// Hand power
 ///
-/// The power on the value over the cheapest piece, in a variant with drops.
-/// A captured piece goes to the hand of the capturer and can come back on
-/// an empty square, so a slow piece loses less of its worth and the values
-/// lie closer together. Over `COEFFICIENT_SCALE`: 0.7. Without drops the
-/// values do not change.
+/// The power on the value over the cheapest piece, in a variant with free
+/// drops. A captured piece goes to the hand of the capturer and can come
+/// back on any empty square, so a slow piece loses less of its worth and
+/// the values lie closer together. Over `COEFFICIENT_SCALE`: 0.7.
+///
+/// Drops are free when no drop has a pattern beyond the empty target
+/// square. A drop rule (one pawn on a file, no drop mate) keeps a piece in
+/// the hand weak, so such a variant and a variant without drops keep their
+/// values.
 ///
 const HAND_POWER: u32 = 700;
 
@@ -1992,7 +1996,7 @@ pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
 /// 1. derive each White piece, once for each occupancy
 /// 2. the offset is the cheapest opening value minus 100
 /// 3. subtract the offset from the two values of each piece
-/// 4. with drops, apply the hand power to each value over the cheapest
+/// 4. with free drops, apply the hand power to each value over the cheapest
 /// 5. if the largest value is above 14 bits, scale the table down to fit
 ///
 /// Params:
@@ -2027,9 +2031,14 @@ fn derive_material_values(state: &mut State) {
         .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
-    let drops = drops!(state);
+    let free_drops = drops!(state)
+        && state.statics.relevant_drops.iter()
+            .flatten()
+            .all(|(_, (allowers, stoppers))| {
+                allowers.len() <= 1 && stoppers.is_empty()
+            });
     let hand_power = HAND_POWER as f64 / COEFFICIENT_SCALE;
-    let in_hand = |value: f64| match drops {
+    let in_hand = |value: f64| match free_drops {
         true => 100.0 * (value.max(1.0) / 100.0).powf(hand_power),
         false => value,
     };
