@@ -1384,8 +1384,10 @@ macro_rules! retain_captures {
 /// - the right of that side and wing
 /// - the two pieces unmoved on their start squares
 /// - empty end and path squares
-/// - no attack on each `*` square of the move list, when the leader is
-///   royal (a piece that is not royal is never in check)
+/// - no attack on each `*` square of the move list, for a royal leader
+///
+/// A leader that is not royal is never in check, so its path can be under
+/// attack.
 ///
 /// Params:
 /// - state: &State         -> current position with rights and occupancy
