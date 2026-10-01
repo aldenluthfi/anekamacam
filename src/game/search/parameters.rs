@@ -445,8 +445,6 @@ pub struct EvalParams {
     pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
     pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
     pub proximity_value: i32,                                                   /* cost of an enemy near a royal      */
-    pub goal_steps: Vec<u8>,                                                    /* square to king steps to the goal   */
-    pub goal_value: i32,                                                        /* worth one step from the goal       */
 
     pub pawn_slots: Vec<usize>,                                                 /* piece index to pawn slot, or NONE  */
     pub pawn_pieces: Vec<usize>,                                                /* pawn slot to piece index           */
@@ -2523,7 +2521,8 @@ pub fn derive_danger_parameters(state: &mut State) {
         / COEFFICIENT_SCALE as u64).max(OPEN_SHIELD_FLOOR as u64);
     let proximity_value = dearest * PROXIMITY_RATIO as u64
         * drops!(state) as u64 / COEFFICIENT_SCALE as u64;
-    let (goal_steps, goal_value) = derive_goal_steps(state, dearest);
+
+    derive_goal_race(state, dearest);
 
     log_3!(
         concat!(
@@ -2544,33 +2543,30 @@ pub fn derive_danger_parameters(state: &mut State) {
     statics.eval.king_danger_cap = king_danger_cap as i32;
     statics.eval.open_shield_penalty = open_shield_penalty as i32;
     statics.eval.proximity_value = proximity_value as i32;
-    statics.eval.goal_steps = goal_steps;
-    statics.eval.goal_value = goal_value;
 }
 
-/// derive_goal_steps
+/// derive_goal_race
 ///
-/// Gives the king steps from each square to the nearest goal square, and
-/// the worth of a goal piece one step from the zone. A king step moves one
-/// file, one rank or both, so the count is the larger of the two gaps.
-/// Without a goal rule, the table is empty and the worth is zero.
+/// Sets the goal race of the goal rule: the king steps from each square to
+/// the nearest goal square, and the worth of a goal piece one step from the
+/// zone. A king step moves one file, one rank or both, so the count is the
+/// larger of the two gaps. A variant without a goal rule does not change.
 ///
 /// Params:
-/// - state  : &State -> variant with the goal rule
-/// - dearest: u64    -> value of the most valuable piece
+/// - state  : &mut State -> variant with the goal rule
+/// - dearest: u64        -> value of the most valuable piece
 ///
-/// Return:
-/// (Vec<u8>, i32)    -> steps of each square, and the worth at one step
-///
-fn derive_goal_steps(state: &State, dearest: u64) -> (Vec<u8>, i32) {
-    let Some(goal) = state.termination.goal.as_ref() else {
-        return (Vec::new(), 0);
+fn derive_goal_race(state: &mut State, dearest: u64) {
+    let files = state.statics.files as i32;
+    let board_size = state.statics.board_size;
+
+    let Some(goal) = state.termination.goal.as_mut() else {
+        return;
     };
 
-    let files = state.statics.files as i32;
     let zone: Vec<usize> = set_indices!(goal.zone);
 
-    let steps = (0..state.statics.board_size).map(|square| {
+    goal.steps = (0..board_size).map(|square| {
         zone.iter()
             .map(|&target| {
                 let file_gap = (square as i32 % files - target as i32 % files)
@@ -2584,8 +2580,8 @@ fn derive_goal_steps(state: &State, dearest: u64) -> (Vec<u8>, i32) {
             .unwrap_or(0)
             .min(u8::MAX as i32) as u8
     }).collect();
-
-    (steps, (dearest * GOAL_RATIO as u64 / COEFFICIENT_SCALE as u64) as i32)
+    goal.value =
+        (dearest * GOAL_RATIO as u64 / COEFFICIENT_SCALE as u64) as i32;
 }
 
 /*----------------------------------------------------------------------------*\

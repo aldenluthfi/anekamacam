@@ -401,7 +401,7 @@ macro_rules! open_shield {
 /// Gives the worth of the goal piece of one colour that is nearest to the
 /// goal zone. The worth halves for each king step past the first:
 ///
-/// - 1 step  : `goal_value`, it arrives next move if not stopped
+/// - 1 step  : the `value` of the rule, it arrives next move if not stopped
 /// - 2 steps : half of it
 /// - 3 steps : a quarter of it
 ///
@@ -415,26 +415,29 @@ macro_rules! open_shield {
 #[macro_export]
 macro_rules! goal_race {
     ($state:expr, $color:expr) => {{
-        let statics = &$state.statics;
-        let mut nearest = u8::MAX;
+        match $state.termination.goal.as_ref() {
+            Some(goal) => {
+                let mut nearest = u8::MAX;
 
-        if let Some(goal) = $state.termination.goal.as_ref() {
-            for (piece_index, piece) in statics.pieces.iter().enumerate() {
-                if !goal.set[piece_index]
-                    || p_color!(piece) as usize != $color {
-                    continue;
+                for (piece_index, piece) in
+                    $state.statics.pieces.iter().enumerate()
+                {
+                    if !goal.set[piece_index]
+                        || p_color!(piece) as usize != $color {
+                        continue;
+                    }
+
+                    for square in piece_squares!($state, piece_index) {
+                        nearest = nearest.min(goal.steps[*square as usize]);
+                    }
                 }
 
-                for square in piece_squares!($state, piece_index) {
-                    nearest = nearest
-                        .min(statics.eval.goal_steps[*square as usize]);
+                match nearest {
+                    0 | u8::MAX => 0,
+                    steps => goal.value >> (steps - 1).min(31),
                 }
             }
-        }
-
-        match nearest {
-            0 | u8::MAX => 0,
-            steps => statics.eval.goal_value >> (steps - 1).min(31),
+            None => 0,
         }
     }};
 }
