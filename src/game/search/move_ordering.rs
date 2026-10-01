@@ -35,11 +35,11 @@
 /// victim_value!
 ///
 ///   Params:
-///   - mv   : &Move  -> capture move with the victims to value
+///   - mv   : &Move  -> move with the victims to value
 ///   - state: &State -> position with the piece values
 ///
 ///   Return:
-///   i32             -> enemy value taken minus own value, unloads skipped
+///   i32             -> enemy value taken minus own value, 0 for no capture
 ///
 /// lva!
 ///
@@ -89,7 +89,7 @@ macro_rules! victim_value {
                 },
             )
         } else {
-            unreachable!()
+            0
         }
     }};
 }
@@ -137,7 +137,9 @@ macro_rules! lva {
 /// see!
 ///
 /// Evaluates the capture sequence on one target square. A positive score
-/// wins material. The macro restores the position before it returns.
+/// wins material. A quiet move takes nothing, so its score is zero or the
+/// loss of the moved piece. The macro restores the position before it
+/// returns.
 ///
 /// Each side captures with its cheapest attacker until no attacker is
 /// left. Each entry is the balance for the side that moved at that ply:
@@ -156,7 +158,7 @@ macro_rules! lva {
 ///
 /// Params:
 /// - state: &mut State -> position to simulate and restore
-/// - mv   : &Move      -> capture move to evaluate
+/// - mv   : &Move      -> capture or quiet move to evaluate
 ///
 /// Return:
 /// i32                 -> net material gain for the side to move

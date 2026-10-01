@@ -1444,7 +1444,15 @@ pub fn alpha_beta(
             0
         };
 
-        let extended = gives_check && ply + depth < 2 * info.root_depth;        /* a line gains at most its own depth */
+        let extended = gives_check
+            && ply + depth < 2 * info.root_depth                                /* a line gains at most its own depth */
+            && (!see_valid!(state) || {                                         /* only a check that keeps its piece: */
+                undo_move!(state);                                              /* a sacrifice check is not extended  */
+                let keeps_piece = see!(state, mv) >= 0;
+                make_move!(state, mv.clone());
+
+                keeps_piece
+            });
         let child_depth = depth - 1 + extended as usize;
 
         let mut score = if legal_moves == 1 {
