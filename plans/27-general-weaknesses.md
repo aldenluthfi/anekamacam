@@ -1132,6 +1132,9 @@ around FSF. Each fix makes perft equal FSF.
 - Depth in 10 s on the four slow shogi positions: 8/11/10/11 to
   12/14/13/13.
 - SPRT shogi `0 5` against merged build 8, then crazyhouse `-5 0`.
+- Shogi: inconclusive at 3000 games, -2.0 ± 12.4. The deeper search on
+  the slow positions gives no strength. Not merged; the crazyhouse arm
+  was stopped.
 
 ### CP (2026-10-01, branch `plan27-cp` on merged build 8)
 
@@ -1140,6 +1143,17 @@ around FSF. Each fix makes perft equal FSF.
   shogi, so the demotion share is the part that hurt; crazyhouse has
   almost no demoting pieces, so its +84.5 came from the power.
 - SPRT crazyhouse `0 5` against merged build 8, then shogi `-5 0`.
+- Crazyhouse: H1, +80.2 ± 23.5. Shogi: H0, -25.0 ± 12.2. The power helps
+  where a piece in hand drops on any square and hurts where drop rules
+  keep the hand weak (shogi: one pawn on a file, no drop mate).
+
+### CP2 (2026-10-02, branch `plan27-cp2` on CP)
+
+- The hand power only for free drops: no compiled drop pattern has more
+  than one allower or any stopper. Of all variants only crazyhouse has
+  free drops; the shogi family and pocketknight keep their values, so
+  only the crazyhouse params differ from merged build 8.
+- SPRT crazyhouse `0 5` against merged build 8.
 
 ### Merged build 9 (2026-10-01, branch `plan27-main9`)
 
@@ -1152,6 +1166,10 @@ around FSF. Each fix makes perft equal FSF.
   -21.7 ± 12.7 after 1502 games (LLR -2.32) when the server rebooted:
   T3 is the only change of main9 that reaches xiangqi, so the 30-move
   horizon may help grand and hurt xiangqi.
+- After the reboot, run again from the start: xiangqi `-5 0` -8.2 ± 8.7,
+  shogi `-5 0` +5.9 ± 12.4, both inconclusive at 3000 games. The 30-move
+  horizon gains in grand (lower end +8.8) and may cost a few points in
+  xiangqi (upper end +0.5).
 
 ### Pause (2026-10-01)
 
