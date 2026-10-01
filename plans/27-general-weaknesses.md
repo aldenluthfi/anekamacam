@@ -964,7 +964,7 @@ around FSF. Each fix makes perft equal FSF.
 - The koth arm against merged build 5 wrote to the same folder as the
   rating that followed, so its verdict is lost.
 - Against FSF 2000 (400 games, `-5 5`): koth H0 and threecheck H0 (both
-  stopped after 26 pairs, so -391 ± 256 is no rating), fivecheck -190.8 ±
+  stopped after 21 pairs, so -391 ± 256 is no rating), fivecheck -190.8 ±
   64.5, pocketknight -144.8 ± 50.3, New Zealand -61.4 ± 32.0, sittuyin H1
   (early stop), kinglet +23.5 ± 30.9, Capablanca -109.6 ± 40.8, embassy
   -139.2 ± 48.8, janus -80.8 ± 34.1, ouk chaktrang H1 (early stop).
