@@ -1050,8 +1050,42 @@ around FSF. Each fix makes perft equal FSF.
 - The local shogi run of the power-only half of DC was stopped before a
   verdict: it held the local machine for six hours. DC-D (demotion only)
   had H0, -57.0 ± 20.2.
-- GR2 (the goal race only in the endgame score) is queued: koth `0 5`
-  against merged build 6.
+
+### GR2 (2026-10-01, branch `plan27-gr2` on GR)
+
+- The goal race only in the endgame score, so a royal walks to the goal
+  when the board is thin. The steps and value live on the `Goal` rule.
+- Koth `0 5` against merged build 6: H1, +170.9 ± 40.5. To merge.
+
+### Key variants (2026-10-01)
+
+- Against FSF 2000 (merged build 5, unchanged since for these four):
+  standard +94.8 ± 37.5 (H1), xiangqi +30.5 ± 29.2, grand -61.4 ± 34.8,
+  shogi -96.6 ± 38.0 (H0).
+- Nodes and time to a fixed depth, four positions each, ours / FSF:
+  standard d12 2.1 / 2.8, shogi d9 2.8 / 2.8, xiangqi d11 4.6 / 5.9,
+  grand d10 6.9 / 11. Our branching factor is lower in all four (1.77
+  to 2.04 against 1.96 to 2.54), so the excess is a constant factor that
+  is there from the first plies (grand depth 4: 4679 nodes, FSF 428).
+- Probe of a grand depth-6 search (13971 nodes): about 2900 main nodes
+  with a move loop, 5800 main nodes that return early, 5300 quiescence
+  nodes of which 75% stop on the stand pat. Depth-1 nodes search 2.4
+  moves and the first move cuts 96% of the time, so ordering is good;
+  the count of nodes, not the work in each, is high.
+
+### QP (2026-10-01, branch `plan27-qp` on merged build 8)
+
+- FSF prunes a quiet move whose exchange loses the moved piece; we did
+  not. Now a quiet move at a zero window, after the first legal move and
+  at a depth up to the exchange prune depth, is skipped when its SEE is
+  below minus the allowance of the depth (the capture allowance). The
+  test runs only when the cheaper rules did not skip the move.
+- `victim_value!` gives 0 for a move without a capture, so `see!` scores
+  a quiet move as zero or the loss of its piece.
+- Nodes to a fixed depth, one position each: grand -30%, xiangqi -11%,
+  standard and shogi within noise.
+- SPRT grand `0 5` against merged build 8, then standard, xiangqi, shogi
+  `-5 0`.
 
 ## Verification
 
