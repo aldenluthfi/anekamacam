@@ -1001,6 +1001,9 @@ around FSF. Each fix makes perft equal FSF.
   is worth the most valuable piece at one king step, half of it at two,
   a quarter at three. The lost position now reads -1173.
 - SPRT koth `0 5` against merged build 6.
+- Koth: inconclusive at 3000 games, -5.8 ± 11.9. Not merged. Three steps
+  out the term is already a quarter of the dearest piece, so each early
+  king step gains about 300 and the king leaves its shelter.
 
 ### CC (2026-10-01, branch `plan27-cc` on merged build 6)
 
@@ -1011,6 +1014,15 @@ around FSF. Each fix makes perft equal FSF.
   valuable piece when one check is left to win, half with two, a quarter
   with three. After Bxf7+ Kxf7 the score is +12, was -284.
 - SPRT threecheck `0 5` against merged build 6.
+- Threecheck: H1, +248.3 ± 60.6. Merged into merged build 7 (branch
+  `plan27-main7`). Queued: fivecheck `-5 0`, then merged build 7 against
+  FSF 2000 in threecheck and fivecheck.
+
+### VP2 (2026-10-01, branch `plan27-vp2` on VP)
+
+- Only the cheapest vital piece of a colour stands in for the royal
+  (extinction: the king; the queen stays active). SPRT extinction `0 5`
+  against merged build 6.
 
 ## Verification
 
