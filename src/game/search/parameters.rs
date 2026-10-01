@@ -434,7 +434,6 @@ pub struct EvalParams {
     pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
     pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
     pub proximity_value: i32,                                                   /* cost of an enemy near a royal      */
-    pub vital_pieces: [Vec<usize>; 2],                                          /* colour to lone extinct piece types */
 
     pub pawn_slots: Vec<usize>,                                                 /* piece index to pawn slot, or NONE  */
     pub pawn_pieces: Vec<usize>,                                                /* pawn slot to piece index           */
@@ -1285,10 +1284,11 @@ fn derive_pst(
     let mobility_weight = if is_endgame { 0.25 } else { 0.5 };
     let center_weight = if is_endgame { 1.75 } else { 1.25 };
 
-    let vital = state.statics.eval.vital_pieces[p_color!(piece) as usize]
-        .contains(&(index as usize));
+    let stand_in = state.termination.extinct.iter().any(|rule| {
+        rule.lone[p_color!(piece) as usize] == Some(index as usize)
+    });
 
-    let scores: Vec<f64> = if !is_endgame && (p_is_royal!(piece) || vital) {
+    let scores: Vec<f64> = if !is_endgame && (p_is_royal!(piece) || stand_in) {
         (0..board_size).map(|square| -((square / files) as f64)).collect()
     } else {
         (0..board_size).into_par_iter().map(|square| {
@@ -2126,8 +2126,8 @@ pub fn derive_eval_products(state: &mut State) {
     state.static_mut().endgame_score = endgame_score as u32;
     state.static_mut().eval.draw_span = draw_span as i32;
     state.static_mut().eval.draw_contempt = draw_contempt as i32;
-    state.static_mut().eval.vital_pieces =
-        derive_vital_pieces(state, &start_army);
+
+    derive_royal_stand_ins(state, &start_army);
 
     let (pst_opening, pst_endgame) = derive_base_pst(state);
     state.static_mut().pst_opening = pst_opening;
@@ -2146,29 +2146,27 @@ pub fn derive_eval_products(state: &mut State) {
                             ROYAL SAFETY DERIVATION
 \*----------------------------------------------------------------------------*/
 
-/// derive_vital_pieces
+/// derive_royal_stand_ins
 ///
-/// Finds the piece that is not royal, but whose capture ends the game.
-/// Such a piece is the only piece of its colour in the set of an `extinct`
-/// rule that fires at zero. Of these, the cheapest one stands in for the
-/// royal: the royal terms of the evaluation read it, so the king of an
-/// extinction variant keeps its shelter, and a dear one stays active.
+/// Sets the `lone` piece of the `extinct` rules. A candidate is not royal,
+/// but its capture ends the game: it is the only piece of its colour in
+/// the set of a rule that loses at zero. For each colour, the cheapest
+/// candidate stands in for the royal: the royal terms of the evaluation
+/// read it, so the king of an extinction variant keeps its shelter, and a
+/// dear piece stays active.
 ///
 /// - extinction chess : the king (the queen is dearer)
 /// - kinglet          : none, eight pawns in the set
 /// - standard         : none, no extinct rule
 ///
 /// Params:
-/// - state     : &State -> variant with the end rules
-/// - start_army: &[u32] -> count of each piece index at the start of play
+/// - state     : &mut State -> variant with the end rules
+/// - start_army: &[u32]     -> count of each piece index at the start
 ///
-/// Return:
-/// [Vec<usize>; 2]      -> the vital piece index of each colour, if any
-///
-fn derive_vital_pieces(state: &State, start_army: &[u32]) -> [Vec<usize>; 2] {
-    let mut vital = [Vec::new(), Vec::new()];
+fn derive_royal_stand_ins(state: &mut State, start_army: &[u32]) {
+    let mut cheapest: [Option<(usize, usize)>; 2] = [None; 2];
 
-    for rule in &state.termination.extinct {
+    for (rule_index, rule) in state.termination.extinct.iter().enumerate() {
         if rule.threshold != 0 || rule.outcome != Outcome::Loss {
             continue;
         }
@@ -2186,25 +2184,32 @@ fn derive_vital_pieces(state: &State, start_army: &[u32]) -> [Vec<usize>; 2] {
                 .sum::<u32>();
 
             for index in members {
+                let piece = &state.statics.pieces[index];
+                let cheaper = cheapest[color as usize]
+                    .is_none_or(|(_, best)| {
+                        p_ovalue!(piece)
+                            < p_ovalue!(&state.statics.pieces[best])
+                    });
+
                 if army == 1
                     && start_army[index] == 1
-                    && !p_is_royal!(&state.statics.pieces[index])
-                    && !vital[color as usize].contains(&index) {
-                    vital[color as usize].push(index);
+                    && !p_is_royal!(piece)
+                    && cheaper {
+                    cheapest[color as usize] = Some((rule_index, index));
                 }
             }
         }
     }
 
-    for pieces in &mut vital {
-        let cheapest = pieces.iter()
-            .copied()
-            .min_by_key(|index| p_ovalue!(&state.statics.pieces[*index]));
-
-        pieces.retain(|index| Some(*index) == cheapest);
+    for rule in &mut state.termination.extinct {
+        rule.lone = [None; 2];
     }
 
-    vital
+    for (color, choice) in cheapest.into_iter().enumerate() {
+        if let Some((rule_index, index)) = choice {
+            state.termination.extinct[rule_index].lone[color] = Some(index);
+        }
+    }
 }
 
 /// derive_forward_directions

@@ -106,22 +106,29 @@ macro_rules! terminal_score {
 /// guarded_squares!
 ///
 /// Gives the squares of the pieces of one colour whose capture ends the
-/// game: the royals, then the vital pieces (the only piece of an extinct
-/// set). The royal safety terms below read each of them.
+/// game: the royals, then the royal stand-in of an `extinct` rule. The
+/// royal safety terms below read each of them.
 ///
 /// Params:
-/// - state: &State -> position to score
-/// - color: usize  -> colour of the pieces
+///
+///     state: &State
+///     position to score
+///
+///     color: usize
+///     colour of the pieces
 ///
 /// Return:
-/// impl Iterator<Item = Square> -> royal squares, then vital squares
+///
+///     impl Iterator<Item = Square>
+///     the royal squares, then the squares of the stand-in
 ///
 #[macro_export]
 macro_rules! guarded_squares {
     ($state:expr, $color:expr) => {
         $state.royal_list[$color].iter().copied().chain(
-            $state.statics.eval.vital_pieces[$color].iter()
-                .flat_map(|index| piece_squares!($state, *index).copied())
+            $state.termination.extinct.iter()
+                .filter_map(|rule| rule.lone[$color])
+                .flat_map(|index| piece_squares!($state, index).copied())
         )
     };
 }
