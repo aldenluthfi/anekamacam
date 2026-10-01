@@ -1050,8 +1050,76 @@ around FSF. Each fix makes perft equal FSF.
 - The local shogi run of the power-only half of DC was stopped before a
   verdict: it held the local machine for six hours. DC-D (demotion only)
   had H0, -57.0 ± 20.2.
-- GR2 (the goal race only in the endgame score) is queued: koth `0 5`
-  against merged build 6.
+
+### GR2 (2026-10-01, branch `plan27-gr2` on GR)
+
+- The goal race only in the endgame score, so a royal walks to the goal
+  when the board is thin. The steps and value live on the `Goal` rule.
+- Koth `0 5` against merged build 6: H1, +170.9 ± 40.5. To merge.
+
+### Key variants (2026-10-01)
+
+- Against FSF 2000 (merged build 5, unchanged since for these four):
+  standard +94.8 ± 37.5 (H1), xiangqi +30.5 ± 29.2, grand -61.4 ± 34.8,
+  shogi -96.6 ± 38.0 (H0).
+- Nodes and time to a fixed depth, four positions each, ours / FSF:
+  standard d12 2.1 / 2.8, shogi d9 2.8 / 2.8, xiangqi d11 4.6 / 5.9,
+  grand d10 6.9 / 11. Our branching factor is lower in all four (1.77
+  to 2.04 against 1.96 to 2.54), so the excess is a constant factor that
+  is there from the first plies (grand depth 4: 4679 nodes, FSF 428).
+- Probe of a grand depth-6 search (13971 nodes): about 2900 main nodes
+  with a move loop, 5800 main nodes that return early, 5300 quiescence
+  nodes of which 75% stop on the stand pat. Depth-1 nodes search 2.4
+  moves and the first move cuts 96% of the time, so ordering is good;
+  the count of nodes, not the work in each, is high.
+
+### QP (2026-10-01, branch `plan27-qp` on merged build 8)
+
+- FSF prunes a quiet move whose exchange loses the moved piece; we did
+  not. Now a quiet move at a zero window, after the first legal move and
+  at a depth up to the exchange prune depth, is skipped when its SEE is
+  below minus the allowance of the depth (the capture allowance). The
+  test runs only when the cheaper rules did not skip the move.
+- `victim_value!` gives 0 for a move without a capture, so `see!` scores
+  a quiet move as zero or the loss of its piece.
+- Nodes to a fixed depth, one position each: grand -30%, xiangqi -11%,
+  standard and shogi within noise.
+- SPRT grand `0 5` against merged build 8, then standard, xiangqi, shogi
+  `-5 0`.
+- Grand: flat, -2.0 ± 21.8 after 701 games (LLR -0.18); stopped. Fewer
+  nodes to a fixed depth did not give strength. Not merged.
+- Grand losses to FSF 2000 (merged build 5): 198 of 227 are sudden, and
+  in 181 our score was +150 or more at some point.
+- Fatal positions (40, FSF depth 16): FSF already sees 28 as lost before
+  our move, while we score them level or better; only 5 are our blunder.
+  A walk back over the last 12 moves of 15 games gives no single cause:
+  an early king walk (Kd3 at move 7), a promotion choice, mid-game
+  tactics, and drops that are already earlier than the window.
+
+### Shogi losses (2026-10-01)
+
+- Merged build 5 against FSF 2000: 176 of 211 losses are sudden, 167 had
+  a score of +150 or more. Fatal positions (40): 28 lost before our move
+  for FSF, 6 our blunder. Our score is often far ahead where FSF sees a
+  loss (g19 +1185 against -1353, g74 +458 against -3292, g176 +108
+  against mate).
+- Searched again for 30 s, some stay optimistic (g19 +922 at depth 14),
+  and some reach only depth 9 to 12 where FSF reaches 16. The check
+  extension is the cost: without it the same positions reach depth 13 to
+  15 in 10 s, and g176 and g74 move toward the FSF score.
+
+### XS (2026-10-01, branch `plan27-xs` on merged build 8)
+
+- A check is extended only when its SEE is not negative, so a check that
+  sacrifices its piece (common with drops) gets no extra ply. A safe
+  check, as in the long grand mates of X1, still does. The move is taken
+  back for the SEE and made again, only for a checking move under the
+  extension cap.
+- `victim_value!` gives 0 for a move without a capture (as in QP).
+- Depth in 10 s on the four slow shogi positions: 8/12/10/11 to 9/14/12/
+  14, and g176 and g74 move toward the FSF score.
+- SPRT shogi `0 5` against merged build 8, then grand, standard, xiangqi
+  `-5 0`.
 
 ## Verification
 
