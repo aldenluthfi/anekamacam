@@ -1154,6 +1154,15 @@ around FSF. Each fix makes perft equal FSF.
   free drops; the shogi family and pocketknight keep their values, so
   only the crazyhouse params differ from merged build 8.
 - SPRT crazyhouse `0 5` against merged build 8.
+- Crazyhouse: H1, +89.9 ± 25.3.
+
+### Merged build 10 (2026-10-02, branch `plan27-main10`)
+
+- Merged build 9 plus CP2. All 44 param files derive the same as the
+  committed ones; perft unchanged.
+- The full sweep against FSF 2000 runs on it: all 35 variants that FSF
+  plays (not janggi), 400 games each, bounds `0 0` so no run stops early
+  and each gives a rating.
 
 ### Merged build 9 (2026-10-01, branch `plan27-main9`)
 
