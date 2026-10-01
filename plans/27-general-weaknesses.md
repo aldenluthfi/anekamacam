@@ -905,9 +905,17 @@ marked "invalid" came from a rules or protocol fault, fixed below.
 |               |                | extinction    | -167.3 ± 56.6         |
 |               |                | koth          | -246.2 ± 86.2         |
 
-- Embassy (10x8, same pieces as Capablanca) is +135 and gothic -142, so
-  neither the board size nor the compound pieces explain the
-  chess-family gaps.
+- How to read it: an SPRT that stops early gives only its verdict, not a
+  rating. Ouk chaktrang 889 ± 850, horde 585 ± 1006, shatranj, ASEAN and
+  koth -246 ± 86 stopped after a few pairs: above (H1) or below (H0)
+  2000, Elo unknown.
+- The "invalid (400-0)" rows printed `2400.0 +/- 0.0` and "inconclusive":
+  when all pairs score the same, the variance was zero, the ratio stayed
+  at 0 and the run could not decide. The harness now gives each empty
+  pentanomial bucket the weight of half a pair (3e51894), so such a run
+  accepts H1 and the interval is finite.
+- Embassy and janus are invalid too: their castling differed from FSF
+  (fixed below). Re-rated: embassy -139.2 ± 48.8, janus -80.8 ± 34.1.
 
 ### Rules and protocol fixes (2026-10-01, branch `plan27-cfg`)
 
@@ -955,11 +963,11 @@ around FSF. Each fix makes perft equal FSF.
   2000 in koth and the ten variants with fixed rules.
 - The koth arm against merged build 5 wrote to the same folder as the
   rating that followed, so its verdict is lost.
-- Against FSF 2000 (400 games, `-5 5`): koth -391.1 ± 256.5 (still lost,
-  see GR), threecheck -391.1 ± 256.5 (see CC), fivecheck -190.8 ± 64.5,
-  pocketknight -144.8 ± 50.3, New Zealand -61.4 ± 32.0, sittuyin 470 ±
-  1047. The loop stopped on kinglet (the server has 15 GB for 30 games);
-  Capablanca, embassy, janus, ouk chaktrang and kinglet run again.
+- Against FSF 2000 (400 games, `-5 5`): koth H0 and threecheck H0 (both
+  stopped after 26 pairs, so -391 ± 256 is no rating), fivecheck -190.8 ±
+  64.5, pocketknight -144.8 ± 50.3, New Zealand -61.4 ± 32.0, sittuyin H1
+  (early stop), kinglet +23.5 ± 30.9, Capablanca -109.6 ± 40.8, embassy
+  -139.2 ± 48.8, janus -80.8 ± 34.1, ouk chaktrang H1 (early stop).
 
 ### VP (2026-10-01, branch `plan27-vp` on merged build 6)
 
