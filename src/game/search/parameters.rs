@@ -2148,12 +2148,13 @@ pub fn derive_eval_products(state: &mut State) {
 
 /// derive_vital_pieces
 ///
-/// Finds the pieces that are not royal, but whose capture ends the game.
+/// Finds the piece that is not royal, but whose capture ends the game.
 /// Such a piece is the only piece of its colour in the set of an `extinct`
-/// rule that fires at zero. The royal terms of the evaluation read these
-/// pieces too, so the king of an extinction variant keeps its shelter.
+/// rule that fires at zero. Of these, the cheapest one stands in for the
+/// royal: the royal terms of the evaluation read it, so the king of an
+/// extinction variant keeps its shelter, and a dear one stays active.
 ///
-/// - extinction chess : the king and the queen, one of each
+/// - extinction chess : the king (the queen is dearer)
 /// - kinglet          : none, eight pawns in the set
 /// - standard         : none, no extinct rule
 ///
@@ -2162,7 +2163,7 @@ pub fn derive_eval_products(state: &mut State) {
 /// - start_army: &[u32] -> count of each piece index at the start of play
 ///
 /// Return:
-/// [Vec<usize>; 2]      -> the vital piece indices of each colour
+/// [Vec<usize>; 2]      -> the vital piece index of each colour, if any
 ///
 fn derive_vital_pieces(state: &State, start_army: &[u32]) -> [Vec<usize>; 2] {
     let mut vital = [Vec::new(), Vec::new()];
@@ -2193,6 +2194,14 @@ fn derive_vital_pieces(state: &State, start_army: &[u32]) -> [Vec<usize>; 2] {
                 }
             }
         }
+    }
+
+    for pieces in &mut vital {
+        let cheapest = pieces.iter()
+            .copied()
+            .min_by_key(|index| p_ovalue!(&state.statics.pieces[*index]));
+
+        pieces.retain(|index| Some(*index) == cheapest);
     }
 
     vital
