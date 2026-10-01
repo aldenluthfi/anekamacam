@@ -269,6 +269,16 @@ const DANGER_CAP_RATIO: u32 = 1000;
 ///
 const PROXIMITY_RATIO: u32 = 100;
 
+/// Hand power
+///
+/// The power on the value over the cheapest piece, in a variant with drops.
+/// A captured piece goes to the hand of the capturer and can come back on
+/// an empty square, so a slow piece loses less of its worth and the values
+/// lie closer together. Over `COEFFICIENT_SCALE`: 0.7. Without drops the
+/// values do not change.
+///
+const HAND_POWER: u32 = 700;
+
 /// Check race
 ///
 /// The worth of the checks that a colour has given, in a variant with a
@@ -1982,7 +1992,8 @@ pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
 /// 1. derive each White piece, once for each occupancy
 /// 2. the offset is the cheapest opening value minus 100
 /// 3. subtract the offset from the two values of each piece
-/// 4. if the largest value is above 14 bits, scale the table down to fit
+/// 4. with drops, apply the hand power to each value over the cheapest
+/// 5. if the largest value is above 14 bits, scale the table down to fit
 ///
 /// Params:
 /// - state: &mut State -> variant with the material values to derive
@@ -2016,10 +2027,24 @@ fn derive_material_values(state: &mut State) {
         .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
-    let peak = values
+    let drops = drops!(state);
+    let hand_power = HAND_POWER as f64 / COEFFICIENT_SCALE;
+    let in_hand = |value: f64| match drops {
+        true => 100.0 * (value.max(1.0) / 100.0).powf(hand_power),
+        false => value,
+    };
+
+    let worths: Vec<(usize, f64, f64)> = values
+        .iter()
+        .map(|(index, opening, endgame)| {
+            (*index, in_hand(opening - offset), in_hand(endgame - offset))
+        })
+        .collect();
+
+    let peak = worths
         .iter()
         .map(|(_, opening, endgame)| opening.max(*endgame))
-        .fold(f64::NEG_INFINITY, f64::max) - offset;
+        .fold(f64::NEG_INFINITY, f64::max);
 
     let squeeze = if peak > MAX_PIECE_VALUE as f64 {                            /* a board wide enough prices a piece */
         (MAX_PIECE_VALUE as f64 - 100.0) / (peak - 100.0)                       /* past the field it has to land in   */
@@ -2027,13 +2052,11 @@ fn derive_material_values(state: &mut State) {
         1.0
     };
 
-    for (index, opening, endgame) in values {
+    for (index, opening, endgame) in worths {
         let black_index = state.statics.piece_swap_map[index] as usize;
         let white_index = index;
-        let ovalue =
-            (100.0 + (opening - offset - 100.0) * squeeze).round() as u16;
-        let evalue =
-            (100.0 + (endgame - offset - 100.0) * squeeze).round() as u16;
+        let ovalue = (100.0 + (opening - 100.0) * squeeze).round() as u16;
+        let evalue = (100.0 + (endgame - 100.0) * squeeze).round() as u16;
 
         set_piece_dynamic_parameters(
             &mut state.static_mut().pieces[black_index],
