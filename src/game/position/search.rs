@@ -1444,7 +1444,9 @@ pub fn alpha_beta(
             0
         };
 
-        let extended = gives_check && ply + depth < 2 * info.root_depth;        /* a line gains at most its own depth */
+        let extended = gives_check
+            && !is_drop                                                         /* a hand gives many checks, extended */
+            && ply + depth < 2 * info.root_depth;                               /* each one, the tree would explode   */
         let child_depth = depth - 1 + extended as usize;
 
         let mut score = if legal_moves == 1 {
