@@ -732,9 +732,10 @@ macro_rules! pawn_structure {
 /// opening_score!
 ///
 /// Gives the opening score, White minus Black. It is the material and
-/// piece-square totals plus all royal safety terms and the goal race. The
-/// opening, the setup and the middlegame blend use it. The endgame does
-/// not.
+/// piece-square totals plus all royal safety terms. The opening, the setup
+/// and the middlegame blend use it. The endgame does not. The goal race is
+/// only in the endgame score, so a royal walks to the goal when the board
+/// is thin, not while the army can still attack it.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -764,8 +765,6 @@ macro_rules! opening_score {
             - royal_proximity!($state, white)
             + open_shield!($state, black)
             - open_shield!($state, white)
-            + goal_race!($state, white)
-            - goal_race!($state, black)
     }};
 }
 
