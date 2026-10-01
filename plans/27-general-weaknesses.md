@@ -1086,6 +1086,11 @@ around FSF. Each fix makes perft equal FSF.
   standard and shogi within noise.
 - SPRT grand `0 5` against merged build 8, then standard, xiangqi, shogi
   `-5 0`.
+- Grand: flat, -2.0 ± 21.8 after 701 games (LLR -0.18); stopped. Fewer
+  nodes to a fixed depth did not give strength. Not merged.
+- Grand losses to FSF 2000 (merged build 5): 198 of 227 are sudden, and
+  in 181 our score was +150 or more at some point. Next: the fatal
+  positions against FSF at depth 16.
 
 ## Verification
 
