@@ -445,7 +445,6 @@ pub struct EvalParams {
     pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
     pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
     pub proximity_value: i32,                                                   /* cost of an enemy near a royal      */
-    pub check_value: i32,                                                       /* worth one check from the win       */
 
     pub pawn_slots: Vec<usize>,                                                 /* piece index to pawn slot, or NONE  */
     pub pawn_pieces: Vec<usize>,                                                /* pawn slot to piece index           */
@@ -2532,6 +2531,10 @@ pub fn derive_danger_parameters(state: &mut State) {
         open_shield_penalty
     );
 
+    if let Some(checks) = state.termination.checks.as_mut() {
+        checks.value = check_value as i32;
+    }
+
     let statics = state.static_mut();
 
     statics.eval.zone_attack = table;
@@ -2540,7 +2543,6 @@ pub fn derive_danger_parameters(state: &mut State) {
     statics.eval.king_danger_cap = king_danger_cap as i32;
     statics.eval.open_shield_penalty = open_shield_penalty as i32;
     statics.eval.proximity_value = proximity_value as i32;
-    statics.eval.check_value = check_value as i32;
 }
 
 /*----------------------------------------------------------------------------*\

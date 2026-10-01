@@ -1736,7 +1736,7 @@ pub fn parse_config_file(path: &str) -> State {
                         .unwrap_or(Outcome::Win);
 
                     termination.checks = Some(Checks {
-                        delivered: [0; 2], count, outcome, name,
+                        delivered: [0; 2], count, outcome, name, value: 0,
                     });
                 }
                 "extinct" => {

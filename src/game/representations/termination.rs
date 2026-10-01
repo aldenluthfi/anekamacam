@@ -175,7 +175,8 @@ pub struct Repetition {
 /// Checks
 ///
 /// An N-check rule. The side that gives its `count`-th check gets
-/// `outcome`.
+/// `outcome`. Derivation sets `value`, the worth of the checks of a side
+/// with one check left; the evaluation reads it.
 ///
 /// Subject: the checking side, the side that moved.
 ///
@@ -185,6 +186,7 @@ pub struct Checks {
     pub count: u8,                                                              /* checks before the outcome fires    */
     pub outcome: Outcome,                                                       /* result for the checking side       */
     pub name: String,                                                           /* reason reported when it fires      */
+    pub value: i32,                                                             /* worth one check from the win       */
 }
 
 /*----------------------------------------------------------------------------*\

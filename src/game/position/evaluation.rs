@@ -402,7 +402,7 @@ macro_rules! open_shield {
 /// a count of checks wins. The worth halves for each check that is still
 /// missing past the first:
 ///
-/// - 1 check left  : `check_value`, the next check wins
+/// - 1 check left  : the `value` of the rule, the next check wins
 /// - 2 checks left : half of it
 /// - 3 checks left : a quarter of it
 ///
@@ -422,7 +422,7 @@ macro_rules! check_race {
                     .saturating_sub(checks.delivered[$color])
                     .max(1);
 
-                $state.statics.eval.check_value >> (left - 1).min(31)
+                checks.value >> (left - 1).min(31)
             }
             _ => 0,
         }
