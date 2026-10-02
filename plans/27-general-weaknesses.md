@@ -1164,6 +1164,41 @@ around FSF. Each fix makes perft equal FSF.
   plays (not janggi), 400 games each, bounds `0 0` so no run stops early
   and each gives a rating.
 
+### Sweep of merged build 10 against FSF 2000 (2026-10-02)
+
+400 games each, Elo of our engine. "Above" and "below" need the whole
+interval on that side of 2000.
+
+| above 2000    | Elo        | uncertain   | Elo        | below 2000   | Elo         |
+| ------------- | ---------- | ----------- | ---------- | ------------ | ----------- |
+| ouk-chaktrang | +529 ± 67  | xiangqi     | +13 ± 31   | hoppelpoppel | -49 ± 30    |
+| shatranj      | +396 ± 54  | judkins     | +13 ± 17   | grand        | -50 ± 33    |
+| asean         | +382 ± 46  | knightmate  | +5 ± 33    | chancellor   | -54 ± 32    |
+| horde         | +369 ± 54  | kinglet     | -6 ± 31    | modern       | -61 ± 32    |
+| sittuyin      | +187 ± 31  | fivecheck   | -20 ± 30   | newzealand   | -70 ± 32    |
+| makruk        | +160 ± 24  | euroshogi   | -24 ± 34   | janus        | -90 ± 33    |
+| ai-wok        | +155 ± 35  |             |            | shogi        | -90 ± 35    |
+| chigorin      | +120 ± 30  |             |            | Capablanca   | -96 ± 31    |
+| minixiangqi   | +114 ± 26  |             |            | gothic       | -110 ± 30   |
+| almost        | +84 ± 33   |             |            | embassy      | -125 ± 32   |
+| standard      | +66 ± 33   |             |            | crazyhouse   | -143 ± 35   |
+| los-alamos    | +62 ± 21   |             |            | extinction   | -151 ± 36   |
+| amazon        | +39 ± 30   |             |            | threecheck   | -172 ± 36   |
+| minishogi     | +32 ± 18   |             |            | pocketknight | -181 ± 35   |
+|               |            |             |            | koth         | -185 ± 34   |
+
+- 14 above, 6 uncertain, 15 below. Horde is above, but its double-step
+  rule still differs from FSF. Not rated: janggi (setup phase) and the 8
+  variants FSF does not play.
+- Key variants: standard above, xiangqi uncertain, grand and shogi below.
+- Self-play gains did not reach FSF in the goal-type variants: CP2 was
+  +90 in crazyhouse against our own build and crazyhouse is -143 (merged
+  build 5: -128); GR2 was +171 in koth and koth is -185 (merged build 6:
+  -246); CC was +248 and threecheck is -172. These need analysis against
+  FSF itself, as done for grand and shogi.
+- The chess-family boards wider than 8x8 (grand, chancellor, modern,
+  janus, Capablanca, gothic, embassy) are all below, from -50 to -125.
+
 ### Merged build 9 (2026-10-01, branch `plan27-main9`)
 
 - Merged build 8 plus GR2 and T3 (the clock plans for 30 moves, not 20).
