@@ -261,10 +261,14 @@ const DANGER_CAP_RATIO: u32 = 1000;
 ///
 /// The pressure of a piece in hand that can drop with check on a square the
 /// royal side does not guard. Over `COEFFICIENT_SCALE` of a fully pressed
-/// zone (`ZONE_ATTACK_FULL` moves): 50%. A piece type with two or more
+/// zone (`ZONE_ATTACK_FULL` moves): 12.5%. A piece type with two or more
 /// such squares adds half again, as the defence cannot cover them all.
 ///
-const SAFE_CHECK_RATIO: u32 = 500;
+/// Notes:
+/// At 50% the term reached the cap with a few pieces in hand, and shogi
+/// lost 115 Elo.
+///
+const SAFE_CHECK_RATIO: u32 = 125;
 
 /// Royal proximity
 ///
