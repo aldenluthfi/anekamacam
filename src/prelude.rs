@@ -675,12 +675,17 @@ pub const FEXACT: u8 = 2;
 /// - `SHELTER_CAP`           : maximum shelter units for each royal
 /// - `ZONE_ATTACK_UNIT`      : danger units for one expected attack
 /// - `ZONE_ATTACK_FULL`      : attacks for a fully attacked royal zone
+/// - `CHECK_DANGER_BASE`     : offset of the checks left in the weight
+/// - `CHECK_DANGER_GAIN`     : extra danger weight with no check left
 /// - `SEARCH_REPETITION_CAP` : plies that the repetition scan examines
 /// - `REPETITION_CYCLE`      : occurrences for one cycle, without perpetual
 ///
 /// Notes:
 /// A move index above `REDUCTION_MOVE_CAP` uses the last column. The danger
-/// sum is divided by `ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL`.
+/// sum is divided by `ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL`. With an N-check
+/// rule, the danger is multiplied by `(BASE + GAIN + left) / (BASE + left)`,
+/// where `left` is the checks that the attacker still needs: 2.75 with one
+/// left, 2.17 with three.
 ///
 pub const COEFFICIENT_SCALE: f64 = 1000.0;
 pub const REDUCTION_MOVE_CAP: usize = 64;
@@ -691,6 +696,8 @@ pub const SEE_PRUNE_DEPTH: u32 = 5;
 pub const SHELTER_CAP: u32 = 3;
 pub const ZONE_ATTACK_UNIT: i32 = 16;
 pub const ZONE_ATTACK_FULL: i32 = 16;
+pub const CHECK_DANGER_BASE: i64 = 3;
+pub const CHECK_DANGER_GAIN: i64 = 7;
 pub const SEARCH_REPETITION_CAP: usize = 64;
 pub const REPETITION_CYCLE: u8 = 2;
 

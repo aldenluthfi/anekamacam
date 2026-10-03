@@ -257,8 +257,10 @@ macro_rules! royal_guard {
 /// - pressure : 1, 2, 3, 4
 /// - cost     : 1, 4, 9, 16, before the cap
 ///
-/// The cap is near the value of the most valuable piece. The caller
-/// subtracts the cost from the colour.
+/// The cap is near the value of the most valuable piece. With an N-check
+/// rule, each check is a step to the end, so the capped cost grows as the
+/// attacker needs fewer checks (`CHECK_DANGER_BASE`, `CHECK_DANGER_GAIN`).
+/// The caller subtracts the cost from the colour.
 ///
 /// Params:
 /// - state: &State -> position to score
@@ -312,9 +314,22 @@ macro_rules! king_danger {
         }
 
         let full = (ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL) as i64;
+        let (weight, scale) = match $state.termination.checks.as_ref() {
+            Some(checks) if checks.outcome == Outcome::Win => {
+                let left = checks.count
+                    .saturating_sub(checks.delivered[$color ^ 1])
+                    .max(1) as i64;
 
-        (units * units * statics.eval.king_danger_scale as i64 / (full * full))
-            .min(statics.eval.king_danger_cap as i64) as i32
+                (
+                    CHECK_DANGER_BASE + CHECK_DANGER_GAIN + left,
+                    CHECK_DANGER_BASE + left,
+                )
+            }
+            _ => (1, 1),
+        };
+
+        ((units * units * statics.eval.king_danger_scale as i64 / (full * full))
+            .min(statics.eval.king_danger_cap as i64) * weight / scale) as i32
     }};
 }
 
