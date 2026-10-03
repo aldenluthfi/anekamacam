@@ -2,8 +2,9 @@
 
 ## Status
 
-Opened 2026-10-04. Stage 0 (this document) is done. Stages SD, DW, LA,
-GA, CD, EX and TH are next, in one server queue.
+Opened 2026-10-04. Stage 0 and LA are done. SD runs on the server; DW
+and CD wait in the queue. GA, EX and SB are next. TH is dropped (see
+LA).
 
 ## Context
 
@@ -99,7 +100,8 @@ A stage must pass all five:
 | Capture history | plan 4 G | -14, removed | excluded |
 | Countermove | plan 17 K-5 | never run | not in this plan |
 | Mobility | plans 3 U, 13 | 55% time to depth | excluded until attacks are cheap |
-| Hanging pieces | never | | stage TH |
+| Hanging pieces | never | LA: FSF threats about 0 where we lose | dropped (TH) |
+| Safe checks from board pieces | never | LA: king safety is the gap in grand, capablanca | stage SB |
 | More king danger | KD, grand | -10 | drop form only (DW) |
 | Hand bonus | HB | shogi H0 -46 | excluded |
 | Hand counted once in danger | E2 | -6 | excluded |
@@ -122,12 +124,27 @@ passes merges into merged build 11 (`plan27-main11`).
 | Stage | Target | Change | Arms |
 | ----- | ------ | ------ | ---- |
 | SD | drops | safe drop checks add `safe_check_units` to `king_danger!` | shogi `0 5`, crazyhouse `-5 0` |
-| DW | drops | danger, cap, shelter, guard x `DROP_SAFETY_RATIO` with free drops | shogi `0 5`, crazyhouse `-5 0` |
+| DW | drops | danger, cap, shelter, guard x `DROP_SAFETY_RATIO` where captures return | shogi `0 5`, crazyhouse `-5 0` |
 | LA | goal, wide | loss analysis against FSF, no code; gates GA, CD, EX, TH | |
-| GA | koth | goal steps for each goal piece from its moves; attacked squares add a step | koth `0 5` |
+| GA | koth | goal steps for each goal piece from its moves; attacked squares add a step; both phases | koth `0 5` |
 | CD | n-check | danger and cap x `(10 + left) / (3 + left)` | threecheck `0 5`, fivecheck `-5 0` |
 | EX | extinction | attacked vital pieces cost `value / left^2` | extinction `0 5`, kinglet, horde `-5 0` |
-| TH | wide, xiangqi | attacked, undefended pieces cost `hanging_value` | grand `0 5`, standard, xiangqi, shogi `-5 0` |
+| ~~TH~~ | | dropped after LA: FSF threats are about 0 at the grand and capablanca fatal positions | |
+| SB | royal variants | safe checks from board pieces, as SD | grand `0 5`, standard, xiangqi, shogi `-5 0` |
+
+Departures from the first plan:
+
+- DW: CP2's free-drop test is false in shogi (the pawn rule has a
+  stopper), so it would miss the main target. Captures return when more
+  than half of the droppable piece types have only free patterns: shogi
+  13 of 14, crazyhouse 10 of 10, pocketknight 1 of 7 (no weight).
+- DW: shelter, guard, danger and cap are stored in `res/param`, so the
+  params of the six drop variants were regenerated (annanshogi,
+  crazyhouse, euroshogi, judkins, minishogi, shogi).
+- GA: LA puts 33 of the 40 koth fatal positions in our opening phase,
+  where the endgame-only goal race (GR2) is zero. The new race is in
+  both phases; the attack hold is what GR lacked.
+- TH dropped and SB added: see LA.
 
 Acceptance (user choice, hybrid): self-play SPRT under the plan 27
 rules. After an H1, base and candidate each play 400 games against FSF
@@ -138,4 +155,51 @@ warning-free, params regenerated.
 
 ## Results
 
-None yet.
+### SD (2026-10-04, branch `plan29-sd`, 53e8bc5)
+
+- Seeded node counts at depth 9: standard, xiangqi, grand the same as
+  merged build 10; perft of shogi and crazyhouse the same.
+- Cost on the four slow shogi positions at depth 8: NPS -11% to -18%
+  (mean about -13%), inside the 15% gate. Scores: g341 +416 to -18,
+  g176 -284 to -686 (FSF: mate), g74 +161 to +286, g19 +1067 to +1049.
+- SPRT shogi `0 5` against merged build 10 (`final`): running.
+
+### DW (2026-10-04, branch `plan29-dw`, 561b83b)
+
+- Seeded node counts: standard, xiangqi, grand, pocketknight the same.
+- Shogi slow positions at depth 8: g341 +416 to +265, g176 -284 to
+  -379, g74 +161 to +194, g19 +1067 to +1075.
+- Queued after SD: shogi `0 5`, crazyhouse `-5 0`.
+
+### LA (2026-10-04)
+
+40 fatal positions per variant from the merged build 10 games against
+FSF 2000 (`scratchpad/la/la.py`). The position is the last one before
+our score fell from -0.5 or better to -3 or worse. Means in pawns, side
+to move = us; an FSF term is the mean of its MG and EG trace values.
+
+| variant | our static | FSF static | FSF d12 | FSF king safety | FSF threats | FSF variant | FSF mobility |
+| ------- | ---------- | ---------- | ------- | --------------- | ----------- | ----------- | ------------ |
+| koth | +3.33 | -4.06 | -6.01 | -0.70 | -0.02 | **-4.23** | -0.55 |
+| threecheck | +2.64 | -2.17 | -1.97 | **-2.01** | +0.01 | 0.00 | -0.61 |
+| extinction | +1.49 | -2.15 | -8.23 | 0.00 | **-1.25** | -0.56 | -0.49 |
+| shogi | +6.87 | -3.70 | -5.96 | **-4.25** | -0.10 | 0.00 | -0.19 |
+| crazyhouse | +3.46 | -6.63 | -14.58 | **-6.88** | -0.09 | 0.00 | -0.47 |
+| grand | +2.49 | -4.22 | -12.74 | **-2.16** | -0.14 | 0.00 | -0.48 |
+| capablanca | +0.35 | -3.79 | -17.86 | **-1.71** | -0.01 | 0.00 | -0.76 |
+
+- Our static eval is optimistic at all of them; FSF at depth 12 agrees
+  with its static sign.
+- Koth: the goal term is the gap (30 of 34 below -0.5); 33 of 40
+  positions are in our opening phase. GA goes, in both phases.
+- Threecheck: king safety is the gap. CD goes.
+- Extinction: threats on vital pieces are the gap. EX goes.
+- Shogi, crazyhouse: king safety is the gap. SD and DW aim there.
+- Grand, capablanca: king safety is the gap, not threats. TH is
+  dropped. SB (safe checks from board pieces) takes its place.
+
+### CD (2026-10-04, branch `plan29-cd`, 9bea04f)
+
+- Seeded node counts: standard, xiangqi, grand, shogi the same;
+  threecheck 53117 to 62565, fivecheck 40694 to 29870.
+- Queued after DW: threecheck `0 5`, fivecheck `-5 0`.
