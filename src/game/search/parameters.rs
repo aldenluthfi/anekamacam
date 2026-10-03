@@ -2664,10 +2664,17 @@ pub fn derive_danger_parameters(state: &mut State) {
 
 /// derive_goal_race
 ///
-/// Sets the goal race of the goal rule: the king steps from each square to
-/// the nearest goal square, and the worth of a goal piece one step from the
-/// zone. A king step moves one file, one rank or both, so the count is the
-/// larger of the two gaps. A variant without a goal rule does not change.
+/// Sets the goal race of the goal rule. For each goal piece, the moves on
+/// an empty board give a graph of squares, and a walk back from the zone
+/// gives each square its count of moves to the zone:
+///
+/// - steps  : moves to the nearest zone square, `u8::MAX` if out of reach
+/// - closer : the squares one move away with one step less
+/// - value  : the worth of a goal piece one move from the zone
+///
+/// A vector that needs a screen or only captures cannot move on an empty
+/// board, so it is not in the graph. A variant without a goal rule does
+/// not change.
 ///
 /// Params:
 /// - state  : &mut State -> variant with the goal rule
@@ -2675,28 +2682,82 @@ pub fn derive_danger_parameters(state: &mut State) {
 ///
 fn derive_goal_race(state: &mut State, dearest: u64) {
     let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
     let board_size = state.statics.board_size;
+    let piece_count = state.statics.pieces.len();
+
+    let Some(goal) = state.termination.goal.as_ref() else {
+        return;
+    };
+
+    let zone = goal.zone.clone();
+    let set = goal.set.clone();
+
+    let mut steps = vec![u8::MAX; piece_count * board_size];
+    let mut closer = vec![Vec::new(); piece_count * board_size];
+
+    for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
+        if !set[piece_index] {
+            continue;
+        }
+
+        let sign = -2 * p_color!(piece) as i32 + 1;
+        let row = piece_index * board_size;
+
+        let landings: Vec<Vec<usize>> = (0..board_size).map(|from| {
+            state.statics.relevant_moves[row + from].iter()
+                .filter_map(|vector| {
+                    derive_vector_chance(state, vector, 0.0)
+                        .filter(|(chance, _, _)| *chance > 0.0)
+                })
+                .filter_map(|(_, file_delta, rank_delta)| {
+                    let file = from as i32 % files + file_delta * sign;
+                    let rank = from as i32 / files + rank_delta * sign;
+
+                    (file >= 0 && file < files && rank >= 0 && rank < ranks)
+                        .then_some((rank * files + file) as usize)
+                })
+                .collect()
+        }).collect();
+
+        for square in 0..board_size {
+            if get!(zone, square as u32) {
+                steps[row + square] = 0;
+            }
+        }
+
+        for step in 1..u8::MAX {
+            let mut reached = false;
+
+            for from in 0..board_size {
+                if steps[row + from] != u8::MAX {
+                    continue;
+                }
+
+                let next: Vec<Square> = landings[from].iter()
+                    .filter(|&&to| steps[row + to] == step - 1)
+                    .map(|&to| to as Square)
+                    .collect();
+
+                if !next.is_empty() {
+                    steps[row + from] = step;
+                    closer[row + from] = next;
+                    reached = true;
+                }
+            }
+
+            if !reached {
+                break;
+            }
+        }
+    }
 
     let Some(goal) = state.termination.goal.as_mut() else {
         return;
     };
 
-    let zone: Vec<usize> = set_indices!(goal.zone);
-
-    goal.steps = (0..board_size).map(|square| {
-        zone.iter()
-            .map(|&target| {
-                let file_gap = (square as i32 % files - target as i32 % files)
-                    .abs();
-                let rank_gap = (square as i32 / files - target as i32 / files)
-                    .abs();
-
-                file_gap.max(rank_gap)
-            })
-            .min()
-            .unwrap_or(0)
-            .min(u8::MAX as i32) as u8
-    }).collect();
+    goal.steps = steps;
+    goal.closer = closer;
     goal.value =
         (dearest * GOAL_RATIO as u64 / COEFFICIENT_SCALE as u64) as i32;
 }
