@@ -675,6 +675,7 @@ pub const FEXACT: u8 = 2;
 /// - `SHELTER_CAP`           : maximum shelter units for each royal
 /// - `ZONE_ATTACK_UNIT`      : danger units for one expected attack
 /// - `ZONE_ATTACK_FULL`      : attacks for a fully attacked royal zone
+/// - `SAFE_CHECK_GATE`       : attacks before the safe check test runs
 /// - `SEARCH_REPETITION_CAP` : plies that the repetition scan examines
 /// - `REPETITION_CYCLE`      : occurrences for one cycle, without perpetual
 ///
@@ -691,6 +692,7 @@ pub const SEE_PRUNE_DEPTH: u32 = 5;
 pub const SHELTER_CAP: u32 = 3;
 pub const ZONE_ATTACK_UNIT: i32 = 16;
 pub const ZONE_ATTACK_FULL: i32 = 16;
+pub const SAFE_CHECK_GATE: i32 = 4;
 pub const SEARCH_REPETITION_CAP: usize = 64;
 pub const REPETITION_CYCLE: u8 = 2;
 

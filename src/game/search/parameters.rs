@@ -257,6 +257,16 @@ const CASTLING_RIGHT_RATIO: u32 = 20;
 const DANGER_RATIO: u32 = 600;
 const DANGER_CAP_RATIO: u32 = 1000;
 
+/// Safe check
+///
+/// The pressure of an enemy piece that can move to a square from which it
+/// checks the royal, when the royal side does not guard that square. Over
+/// `COEFFICIENT_SCALE` of a fully pressed zone (`ZONE_ATTACK_FULL` moves):
+/// 12.5%. A piece type with two or more such squares adds half again, as
+/// the defence cannot cover them all.
+///
+const SAFE_CHECK_RATIO: u32 = 125;
+
 /// Royal proximity
 ///
 /// The cost of each enemy piece within two files and two ranks of a royal,
@@ -468,6 +478,7 @@ pub struct EvalParams {
     pub zone_attack_best: Vec<u8>,                                              /* pressure from its dearest origin   */
     pub king_danger_scale: i32,                                                 /* worth of a fully pressed zone      */
     pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
+    pub safe_check_units: i32,                                                  /* pressure of one safe check square  */
     pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
     pub proximity_value: i32,                                                   /* cost of an enemy near a royal      */
 
@@ -2634,6 +2645,8 @@ pub fn derive_danger_parameters(state: &mut State) {
     let proximity_value = dearest * PROXIMITY_RATIO as u64
         * drops!(state) as u64 / COEFFICIENT_SCALE as u64;
     let check_value = dearest * CHECK_RATIO as u64 / COEFFICIENT_SCALE as u64;
+    let safe_check_units = (ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL) as u64
+        * SAFE_CHECK_RATIO as u64 / COEFFICIENT_SCALE as u64;
 
     derive_goal_race(state, dearest);
 
@@ -2658,6 +2671,7 @@ pub fn derive_danger_parameters(state: &mut State) {
     statics.eval.zone_attack_best = best;
     statics.eval.king_danger_scale = king_danger_scale as i32;
     statics.eval.king_danger_cap = king_danger_cap as i32;
+    statics.eval.safe_check_units = safe_check_units as i32;
     statics.eval.open_shield_penalty = open_shield_penalty as i32;
     statics.eval.proximity_value = proximity_value as i32;
 }

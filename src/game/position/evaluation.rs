@@ -245,12 +245,130 @@ macro_rules! royal_guard {
     }};
 }
 
+/// safe_board_checks!
+///
+/// Gives the pressure of the enemy pieces on the board on one royal
+/// through safe checks. A check square is safe when all of these are true:
+///
+/// - it is empty or holds a piece of the royal side
+/// - an enemy piece of the type checks the royal from it on this board
+/// - an enemy piece of the type reaches it with a vector that can move
+/// - no piece of the royal side attacks it
+///
+/// Each piece type with one such square adds `safe_check_units`. A type
+/// with two or more adds half again, as the defence cannot cover them all.
+///
+/// Params:
+/// - state: &State -> position to score
+/// - color: usize  -> colour of the royal under pressure
+/// - royal: usize  -> square of the royal
+///
+/// Return:
+/// i64             -> pressure in zone attack units, 0 or more
+///
+/// Notes:
+/// The reach test reads `relevant_attacks`, so a move that cannot capture,
+/// such as a pawn push or the slide of a cannon, does not count. The
+/// candidates come from `relevant_attacks` of the royal square, so the
+/// macro tests only the squares from which a piece can attack it.
+///
+#[macro_export]
+macro_rules! safe_board_checks {
+    ($state:expr, $color:expr, $royal:expr) => {{
+        let statics = &$state.statics;
+        let enemy = $color ^ 1;
+        let target = &statics.pieces[$state.main_board[$royal] as usize];
+        let target_unmoved = get!($state.virgin_board, $royal as u32);
+        let single = statics.eval.safe_check_units as i64;
+        let mut units = 0i64;
+
+        for (piece_index, piece) in statics.pieces.iter().enumerate() {
+            if p_color!(piece) as usize != enemy
+                || p_is_royal!(piece)
+                || $state.piece_count[piece_index] == 0 {
+                continue;
+            }
+
+            let mut safe_checks = 0;
+
+            for (attacker, start, vector) in
+                &statics.relevant_attacks[$color][$royal]
+            {
+                let square = *start as usize;
+                let holder = $state.main_board[square];
+
+                if *attacker as usize != piece_index
+                    || holder != NO_PIECE
+                        && p_color!(&statics.pieces[holder as usize]) as usize
+                            == enemy {
+                    continue;
+                }
+
+                let checks = validate_attack_vector!(
+                    vector,
+                    *start,
+                    piece,
+                    target_unmoved,
+                    p_is_royal!(target),
+                    p_rank!(target),
+                    $royal as u32,
+                    $state
+                );
+
+                let reaches = checks
+                    && statics.relevant_attacks[$color][square].iter()
+                        .any(|(mover, origin, path)| {
+                            let last = path.legs.last();
+
+                            *mover as usize == piece_index
+                                && $state.main_board[*origin as usize]
+                                    == *mover
+                                && last.is_some_and(|leg| {
+                                    m!(leg) || !c!(leg) && !d!(leg)
+                                })
+                                && validate_attack_vector!(
+                                    path,
+                                    *origin,
+                                    piece,
+                                    false,
+                                    false,
+                                    p_rank!(piece),
+                                    square as u32,
+                                    $state
+                                )
+                        });
+
+                if reaches
+                && !is_square_attacked!(
+                    square as u32, enemy, false, false, p_rank!(piece), $state
+                ) {
+                    safe_checks += 1;
+
+                    if safe_checks == 2 {
+                        break;
+                    }
+                }
+            }
+
+            units += match safe_checks {
+                0 => 0,
+                1 => single,
+                _ => single * 3 / 2,
+            };
+        }
+
+        units
+    }};
+}
+
 /// king_danger!
 ///
 /// Gives the cost of the enemy pressure on the royals of one colour. Each
 /// enemy piece that is not royal and not a shield reads its `zone_attack`
 /// value from its square. In a drop variant, each piece in the hand reads
 /// `zone_attack_best`, the pressure from its best drop square.
+/// [`safe_board_checks!`] adds the checks that the enemy pieces can give
+/// from an unguarded square.
 ///
 /// The cost is the square of the total pressure, so attackers compound:
 ///
@@ -308,6 +426,10 @@ macro_rules! king_danger {
                     units += hand[piece_index] as i64
                         * best[piece_index] as i64;
                 }
+            }
+
+            if units >= (ZONE_ATTACK_UNIT * SAFE_CHECK_GATE) as i64 {
+                units += safe_board_checks!($state, $color, royal);
             }
         }
 
