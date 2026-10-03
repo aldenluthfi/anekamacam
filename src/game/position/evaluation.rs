@@ -245,12 +245,111 @@ macro_rules! royal_guard {
     }};
 }
 
+/// safe_drop_checks!
+///
+/// Gives the pressure of the enemy hand on one royal through safe drop
+/// checks. A drop check is safe when all of these are true:
+///
+/// - the enemy holds the piece and the square is empty
+/// - a drop rule of the piece allows that square now
+/// - the piece attacks the royal from there on the current board
+/// - no piece of the royal side attacks that square
+///
+/// Each piece type with one such square adds `safe_check_units`. A type
+/// with two or more adds half again, as the defence cannot cover them all.
+///
+/// Params:
+/// - state: &State -> position to score
+/// - color: usize  -> colour of the royal under pressure
+/// - royal: usize  -> square of the royal
+///
+/// Return:
+/// i64             -> pressure in zone attack units, 0 or more
+///
+/// Notes:
+/// The candidates come from `relevant_attacks` of the royal square, so
+/// the macro tests only the squares from which a piece can attack it.
+///
+#[macro_export]
+macro_rules! safe_drop_checks {
+    ($state:expr, $color:expr, $royal:expr) => {{
+        let statics = &$state.statics;
+        let board_size = statics.board_size;
+        let enemy = $color ^ 1;
+        let target = &statics.pieces[$state.main_board[$royal] as usize];
+        let target_unmoved = get!($state.virgin_board, $royal as u32);
+        let single = statics.eval.safe_check_units as i64;
+        let mut units = 0i64;
+
+        for (piece_index, held) in
+            $state.piece_in_hand[enemy].iter().enumerate()
+        {
+            if *held == 0 {
+                continue;
+            }
+
+            let piece = &statics.pieces[piece_index];
+            let mut safe_checks = 0;
+
+            for (attacker, start, vector) in
+                &statics.relevant_attacks[$color][$royal]
+            {
+                let square = *start as usize;
+
+                if *attacker as usize != piece_index
+                    || $state.main_board[square] != NO_PIECE {
+                    continue;
+                }
+
+                let droppable = statics.relevant_drops[
+                    piece_index * board_size + square
+                ]
+                    .iter()
+                    .any(|drop| {
+                        match_pattern!(&drop.1, square as u32, enemy, $state)
+                    });
+
+                if droppable
+                && validate_attack_vector!(
+                    vector,
+                    *start,
+                    piece,
+                    target_unmoved,
+                    p_is_royal!(target),
+                    p_rank!(target),
+                    $royal as u32,
+                    $state
+                )
+                && !is_square_attacked!(
+                    square as u32, enemy, false, false, p_rank!(piece), $state
+                ) {
+                    safe_checks += 1;
+
+                    if safe_checks == 2 {
+                        break;
+                    }
+                }
+            }
+
+            units += match safe_checks {
+                0 => 0,
+                1 => single,
+                _ => single * 3 / 2,
+            };
+        }
+
+        units
+    }};
+}
+
 /// king_danger!
 ///
 /// Gives the cost of the enemy pressure on the royals of one colour. Each
 /// enemy piece that is not royal and not a shield reads its `zone_attack`
 /// value from its square. In a drop variant, each piece in the hand reads
-/// `zone_attack_best`, the pressure from its best drop square.
+/// `zone_attack_best`, the pressure from its best drop square, and
+/// [`safe_drop_checks!`] adds the drops that check from an unguarded
+/// square.
 ///
 /// The cost is the square of the total pressure, so attackers compound:
 ///
@@ -268,8 +367,8 @@ macro_rules! royal_guard {
 /// i32             -> danger cost for that colour, 0 or more
 ///
 /// Notes:
-/// The macro does not test drop legality for pieces in the hand. A value
-/// that is too high is safer than a value that is too low.
+/// The best drop pressure does not test drop legality. A value that is too
+/// high is safer than a value that is too low.
 ///
 #[macro_export]
 macro_rules! king_danger {
@@ -308,6 +407,10 @@ macro_rules! king_danger {
                     units += hand[piece_index] as i64
                         * best[piece_index] as i64;
                 }
+            }
+
+            if drops {
+                units += safe_drop_checks!($state, $color, royal);
             }
         }
 
