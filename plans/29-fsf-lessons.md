@@ -2,9 +2,9 @@
 
 ## Status
 
-Opened 2026-10-04. Stage 0 and LA are done. SD runs on the server; DW
-and CD wait in the queue. GA, EX and SB are next. TH is dropped (see
-LA).
+Opened 2026-10-04. Stage 0 and LA are done. SD failed (H0); SD2 is its
+pivot. DW runs on the server; CD, SD2, GA, EX and SB wait in the queue.
+TH is dropped (see LA).
 
 ## Context
 
@@ -162,7 +162,16 @@ warning-free, params regenerated.
 - Cost on the four slow shogi positions at depth 8: NPS -11% to -18%
   (mean about -13%), inside the 15% gate. Scores: g341 +416 to -18,
   g176 -284 to -686 (FSF: mate), g74 +161 to +286, g19 +1067 to +1049.
-- SPRT shogi `0 5` against merged build 10 (`final`): running.
+- SPRT shogi `0 5` against merged build 10 (`final`): H0, -115.3 ±
+  30.4 (538 games). The crazyhouse arm was stopped. Eval correlation
+  with FSF on 250 shogi positions rose (0.802 to 0.831), so the term
+  points the right way; at half a pressed zone for each piece type, a
+  few pieces in hand push the danger to its cap.
+
+### SD2 (2026-10-04, branch `plan29-sd2` on SD, 5f0f581)
+
+- `SAFE_CHECK_RATIO` 500 to 125. Correlation 0.797 to 0.803.
+- Queued after CD: shogi `0 5`, crazyhouse `-5 0`.
 
 ### DW (2026-10-04, branch `plan29-dw`, 561b83b)
 
@@ -203,3 +212,38 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - Seeded node counts: standard, xiangqi, grand, shogi the same;
   threecheck 53117 to 62565, fivecheck 40694 to 29870.
 - Queued after DW: threecheck `0 5`, fivecheck `-5 0`.
+
+### GA (2026-10-04, branch `plan29-ga`, ae69bbb)
+
+- `Goal.steps` and `Goal.closer` for each goal piece, from its moves on
+  an empty board. `goal_race!` adds one move for each step where all
+  next squares are attacked or hold an own piece (within
+  `GOAL_HOLD_STEPS` = 3), in both phases.
+- Seeded node counts: standard, xiangqi, grand, shogi the same; koth
+  49623 to 12692. Koth eval correlation with FSF (252 positions): 0.737
+  to 0.900.
+- Queued: koth `0 5`.
+
+### EX (2026-10-04, branch `plan29-ex`, fcf1122)
+
+- `extinct_threat!`: each attacked set piece of a losing rule costs
+  `threat / left^2` (`threat` = 25% of the dearest piece, on the rule),
+  only with at most `EXTINCT_THREAT_LEFT` = 2 copies left. Both halves.
+- Seeded node counts: standard, xiangqi, grand, shogi, kinglet, horde the
+  same; extinction 93767 to 50090. Extinction eval correlation (291
+  positions): 0.700 to 0.883.
+- Queued: extinction `0 5`, kinglet `-5 0`.
+
+### SB (2026-10-04, branch `plan29-sb`, 0184cb5)
+
+- `safe_board_checks!`: for each enemy piece type on the board, the
+  check squares (empty or own piece) that a piece of the type reaches
+  with a vector that can move, and that the royal side does not attack.
+  Same units as SD2.
+- First form: NPS -70% to -80% at depth 10 (grand, standard, xiangqi
+  midgame positions), far outside the gate. Now the test runs only when
+  the zone pressure is at least `SAFE_CHECK_GATE` = 4 expected moves;
+  NPS is then the same as merged build 10.
+- Seeded node counts: standard, xiangqi, shogi the same; grand 424988 to
+  478804. Correlation (164 grand positions): 0.850 to 0.852.
+- Queued: grand `0 5`, then standard, xiangqi, shogi `-5 0`.
