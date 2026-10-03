@@ -305,6 +305,16 @@ const CHECK_RATIO: u32 = 1000;
 ///
 const GOAL_RATIO: u32 = 1000;
 
+/// Extinction threat
+///
+/// The cost of an attacked set piece of a losing `extinct` rule, over
+/// `COEFFICIENT_SCALE` of the most valuable piece, when one copy of the
+/// set is left above the threshold: 25%. With `left` copies, the cost is
+/// divided by `left` squared. The evaluation skips a set with more than
+/// `EXTINCT_THREAT_LEFT` copies left, as the cost is small there.
+///
+const EXTINCT_THREAT_RATIO: u32 = 250;
+
 /// Open shield penalty
 ///
 /// The penalty for a royal with no own shield piece in front of it, on its
@@ -2650,6 +2660,14 @@ pub fn derive_danger_parameters(state: &mut State) {
 
     if let Some(checks) = state.termination.checks.as_mut() {
         checks.value = check_value as i32;
+    }
+
+    for rule in &mut state.termination.extinct {
+        rule.threat = match rule.outcome {
+            Outcome::Loss => (dearest * EXTINCT_THREAT_RATIO as u64
+                / COEFFICIENT_SCALE as u64) as i32,
+            _ => 0,
+        };
     }
 
     let statics = state.static_mut();

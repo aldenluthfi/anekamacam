@@ -1755,6 +1755,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                     termination.extinct.push(Extinct {
                         set, threshold, outcome, name, lone: [None; 2],
+                        threat: 0,
                     });
                 }
                 "goal" => {
