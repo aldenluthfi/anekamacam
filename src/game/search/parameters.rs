@@ -269,6 +269,17 @@ const DANGER_CAP_RATIO: u32 = 1000;
 ///
 const PROXIMITY_RATIO: u32 = 100;
 
+/// Drop safety
+///
+/// The weight of the royal safety values in a variant where captures
+/// return as drops, over `COEFFICIENT_SCALE`: 2. A capture there moves its
+/// piece twice, off the board and into the hand of the capturer, who can
+/// drop it at once. So a unit of material weighs half as much against an
+/// attack on the royal. The weight applies to the shelter, guard and
+/// danger values, not to the material.
+///
+const DROP_SAFETY_RATIO: u32 = 2000;
+
 /// Hand power
 ///
 /// The power on the value over the cheapest piece, in a variant with free
@@ -1998,6 +2009,55 @@ pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
     (opening, endgame)
 }
 
+/// safety_weight
+///
+/// Gives the weight of the royal safety values over `COEFFICIENT_SCALE`.
+/// It is `DROP_SAFETY_RATIO` when captures return: more than half of the
+/// piece types that can drop have only free drop patterns (at most one
+/// allower, the empty target, and no stopper). Else it is one.
+///
+/// - one rule on one type (one pawn on a file) : captures still return
+/// - only a pocket piece drops freely           : captures do not return
+///
+/// Params:
+/// - state: &State -> variant with the compiled drop patterns
+///
+/// Return:
+/// u64             -> weight, `COEFFICIENT_SCALE` for one
+///
+fn safety_weight(state: &State) -> u64 {
+    let board_size = state.statics.board_size;
+    let mut droppable = 0;
+    let mut free = 0;
+
+    for piece in &state.statics.pieces {
+        if !drops!(state) || p_color!(piece) == BLACK {
+            continue;
+        }
+
+        let index = p_index!(piece) as usize;
+        let sets = &state.statics.relevant_drops[
+            index * board_size..(index + 1) * board_size
+        ];
+
+        if sets.iter().all(|set| set.is_empty()) {
+            continue;
+        }
+
+        droppable += 1;
+        free += sets.iter()
+            .flatten()
+            .all(|(_, (allowers, stoppers))| {
+                allowers.len() <= 1 && stoppers.is_empty()
+            }) as usize;
+    }
+
+    match 2 * free > droppable {
+        true => DROP_SAFETY_RATIO as u64,
+        false => COEFFICIENT_SCALE as u64,
+    }
+}
+
 /// derive_material_values
 ///
 /// Derives the opening and endgame material from the moves only, one value
@@ -2491,11 +2551,14 @@ pub fn derive_shelter_parameters(state: &mut State) {
     }
 
     let dearest = dearest_piece_value(state);
+    let weight = safety_weight(state);
 
-    let shelter_value = (dearest * SHELTER_RATIO as u64
-        / COEFFICIENT_SCALE as u64).max(SHELTER_FLOOR as u64);
-    let guard_value = (dearest * GUARD_RATIO as u64
-        / COEFFICIENT_SCALE as u64).max(GUARD_FLOOR as u64);
+    let shelter_value = (dearest * SHELTER_RATIO as u64 * weight
+        / (COEFFICIENT_SCALE * COEFFICIENT_SCALE) as u64)
+        .max(SHELTER_FLOOR as u64);
+    let guard_value = (dearest * GUARD_RATIO as u64 * weight
+        / (COEFFICIENT_SCALE * COEFFICIENT_SCALE) as u64)
+        .max(GUARD_FLOOR as u64);
     let castled_value = dearest * CASTLED_RATIO as u64
         / COEFFICIENT_SCALE as u64;
     let castling_right_value = dearest * CASTLING_RIGHT_RATIO as u64
@@ -2624,11 +2687,12 @@ pub fn derive_danger_parameters(state: &mut State) {
     }
 
     let dearest = dearest_piece_value(state);
+    let weight = safety_weight(state);
 
-    let king_danger_scale = dearest * DANGER_RATIO as u64
-        / COEFFICIENT_SCALE as u64;
-    let king_danger_cap = dearest * DANGER_CAP_RATIO as u64
-        / COEFFICIENT_SCALE as u64;
+    let king_danger_scale = dearest * DANGER_RATIO as u64 * weight
+        / (COEFFICIENT_SCALE * COEFFICIENT_SCALE) as u64;
+    let king_danger_cap = dearest * DANGER_CAP_RATIO as u64 * weight
+        / (COEFFICIENT_SCALE * COEFFICIENT_SCALE) as u64;
     let open_shield_penalty = (dearest * OPEN_SHIELD_RATIO as u64
         / COEFFICIENT_SCALE as u64).max(OPEN_SHIELD_FLOOR as u64);
     let proximity_value = dearest * PROXIMITY_RATIO as u64
