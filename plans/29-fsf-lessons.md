@@ -155,6 +155,42 @@ warning-free, params regenerated.
 
 ## Results
 
+### Referee audit (2026-10-04)
+
+The SPRT harness is its own referee (`src/debug/sprt.rs`): a move that
+does not parse or that `make_move!` refuses loses for the side that
+played it, by our rules. The log line is deleted after each run, so the
+audit reads the game files (`scratchpad/illegal.py`): a game whose last
+mover scores 0 on a non-mate move ended on an illegal move, a time loss
+or a rule that makes the mover lose (perpetual check or chase).
+
+- Self-play (both sides ours, same rules): rare and even between A and
+  B, all very late (move 300 to 1800) in shogi, xiangqi and grand. These
+  are time losses and perpetual rules. The self-play SPRTs are not biased.
+- Merged build 10 against FSF 2000: our engine never lost this way. FSF
+  did in six variants. Their ratings are not valid:
+
+| variant | FSF games lost on own move | rating as swept | without those games |
+| ------- | -------------------------- | --------------- | ------------------- |
+| horde | 352 of 400 | +376.9 | -307.1 (48 games) |
+| ouk-chaktrang | 330 of 400 | +546.5 | +204.3 (70 games) |
+| sittuyin | 193 of 400 | +187.4 | +6.7 (207 games) |
+| asean | 23 of 400 | +386.6 | +375.1 |
+| chigorin | 20 of 400 | +120.1 | +106.5 |
+| xiangqi | 10 of 400 | +13.9 | +5.3 |
+
+- Removing the games biases the result (FSF did not lose them on the
+  board), so the right column is an estimate only.
+- Causes by example: horde `g6f7` (double step rule), ouk `g8e7`,
+  sittuyin `f6f6f` (promotion in place), asean `f7f8r` and chigorin
+  `h2h1c` (promotion choice), xiangqi moves FSF scored `cp 0` that our
+  perpetual rule calls a chase or check loss. Earlier sweeps (merged
+  builds 5 to 8) also had this in embassy, janus, kinglet, newzealand,
+  pocketknight, janggi; the config and dict fixes of plan 27 cleared
+  those in build 10.
+- To do: fix each mismatch (rules, dict or translation), then rate the
+  six again.
+
 ### SD (2026-10-04, branch `plan29-sd`, 53e8bc5)
 
 - Seeded node counts at depth 9: standard, xiangqi, grand the same as
