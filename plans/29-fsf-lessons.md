@@ -188,8 +188,25 @@ or a rule that makes the mover lose (perpetual check or chase).
   builds 5 to 8) also had this in embassy, janus, kinglet, newzealand,
   pocketknight, janggi; the config and dict fixes of plan 27 cleared
   those in build 10.
-- To do: fix each mismatch (rules, dict or translation), then rate the
-  six again.
+- Fixes (branch `plan29-ref`), each checked with a local match against
+  FSF and the FSF input captured (`scratchpad/ouktest`):
+  - horde: a pawn double steps only from the first two ranks
+    (`m<nW-pnW>@@@sW{2}~*?`, no first-move flag). Perft now equals FSF
+    to depth 5 (265223). Local match: 0 forfeits, 4W 12L.
+  - asean: the dict lowercased only `=Q`; FSF and we disagreed on
+    `f7f8r`. Local match: 0 forfeits in 32 games.
+  - ouk-chaktrang: FSF keeps the king leap and met jump as gates from
+    the FEN castling field; the start FEN now sends `DEde`. Promotion is
+    on rank 6, so `=M -> m` replaces `8=M`. Forfeits fell from 330 of 400
+    to 4 of 32. The rest: FSF drops the leap when a rook aims at the
+    king and drops the rights when the king moves; our rules keep them,
+    so our leap desyncs FSF. Not fixed.
+  - The SPRT result file now has a `forfeits:` line (illegal move, time)
+    for each engine.
+- Not fixed: sittuyin (FSF lets the last pawn promote anywhere; our
+  promotion zone has no pawn count), chigorin (FSF 14.0.1 lets both
+  sides promote to any piece; its newer source does not), xiangqi
+  (perpetual chase rules differ in 10 of 400 games).
 
 ### SD (2026-10-04, branch `plan29-sd`, 53e8bc5)
 
@@ -214,7 +231,10 @@ or a rule that makes the mover lose (perpetual check or chase).
 - Seeded node counts: standard, xiangqi, grand, pocketknight the same.
 - Shogi slow positions at depth 8: g341 +416 to +265, g176 -284 to
   -379, g74 +161 to +194, g19 +1067 to +1075.
-- Queued after SD: shogi `0 5`, crazyhouse `-5 0`.
+- SPRT shogi `0 5` against merged build 10: inconclusive at 3000 games,
+  -8.6 ± 12.5. Crazyhouse `-5 0` stood at -118.3 ± 56.6 after 131 games
+  and was stopped. Not merged: doubling the royal safety values does not
+  help, as KD did not in grand.
 
 ### LA (2026-10-04)
 
@@ -247,7 +267,9 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 
 - Seeded node counts: standard, xiangqi, grand, shogi the same;
   threecheck 53117 to 62565, fivecheck 40694 to 29870.
-- Queued after DW: threecheck `0 5`, fivecheck `-5 0`.
+- SPRT threecheck `0 5` against merged build 10: inconclusive at 3000
+  games, +9.0 ± 10.7 (lower end -1.7). Not merged; the fivecheck arm
+  was stopped.
 
 ### GA (2026-10-04, branch `plan29-ga`, ae69bbb)
 
