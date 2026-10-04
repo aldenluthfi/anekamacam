@@ -338,4 +338,7 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   NPS is then the same as merged build 10.
 - Seeded node counts: standard, xiangqi, shogi the same; grand 424988 to
   478804. Correlation (164 grand positions): 0.850 to 0.852.
-- Queued: grand `0 5`, then standard, xiangqi, shogi `-5 0`.
+- SPRT grand `0 5` against merged build 10: H0, -31.3 ± 14.9. The
+  regression arms were stopped. Same pattern as SD: check knowledge in
+  the eval, with a search that plays every check out, loses. Retry only
+  with CR.
