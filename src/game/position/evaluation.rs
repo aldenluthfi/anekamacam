@@ -947,8 +947,8 @@ macro_rules! opening_score {
             - royal_guard!($state, black)
             + castling_bonus!($state, white)
             - castling_bonus!($state, black)
-            + open_shield!($state, black)
-            - open_shield!($state, white)
+            + (open_shield!($state, black) - open_shield!($state, white))
+            * probe!("open_shield", 1)
     }};
 }
 
@@ -972,10 +972,11 @@ macro_rules! shared_score {
         let white = WHITE as usize;
         let black = BLACK as usize;
 
-        king_danger!($state, black)
-            - king_danger!($state, white)
-            + royal_proximity!($state, black)
-            - royal_proximity!($state, white)
+        (king_danger!($state, black) - king_danger!($state, white))
+            * probe!("king_danger", 1)
+            + (royal_proximity!($state, black)
+                - royal_proximity!($state, white))
+            * probe!("proximity", 1)
             + check_race!($state, white)
             - check_race!($state, black)
             + goal_race!($state, white)

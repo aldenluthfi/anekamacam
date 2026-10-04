@@ -1117,7 +1117,8 @@ pub fn alpha_beta(
 
     if depth == 0 {
         return quiescence_search(
-            state, ttable, qtable, alpha, beta, info, None, true,
+            state, ttable, qtable, alpha, beta, info, None,
+            probe!("x1", 1) != 0,
         );
     }
 
@@ -1165,6 +1166,7 @@ pub fn alpha_beta(
     let row = improving as usize * (deepest + 1);                               /* the rising side asks for less      */
 
     if forward_pruning!(state)
+    && probe!("rfp", 1) != 0
     && !in_check
     && ply > 0
     && depth <= deepest
@@ -1176,6 +1178,7 @@ pub fn alpha_beta(
     }
 
     if forward_pruning!(state)
+    && probe!("razoring", 1) != 0
     && static_movement!(state)
     && !in_check
     && depth < state.statics.search.razor_margin.len()
@@ -1194,6 +1197,7 @@ pub fn alpha_beta(
     }
 
     if null_pruning!(state)
+    && probe!("null_move", 1) != 0
     && allow_null_move
     && !in_check
     && depth > 2
@@ -1365,11 +1369,13 @@ pub fn alpha_beta(
 
         let late_quiet = prunable_quiet
             && quiet_pruning!(state)
+            && probe!("lmp", 1) != 0
             && legal_moves
                 >= state.statics.search.lmp_count[lmp_row + lmp_slot];
 
         let futile = prunable_quiet
             && forward_pruning!(state)
+            && probe!("futility", 1) != 0
             && futility_depth <= futility_deepest
             && plain_eval
                 + state.statics.search.futility_margin[
@@ -1395,14 +1401,17 @@ pub fn alpha_beta(
 
         let skippable = (late_quiet || futile || losing_capture) && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
+        let spare_checks = probe!("s1", 1) != 0;
 
         if skippable
-        && !state.royal_list[enemy].iter().any(|&royal| {                       /* no line from its landing square to */
-            state.statics.relevant_attacks[enemy][royal as usize].iter()        /* a royal: it cannot check directly  */
-                .any(|(piece, start, _)| {
-                    *piece as u128 == piece!(mv) && *start as u128 == end!(mv)
-                })
-        })
+        && (!spare_checks
+            || !state.royal_list[enemy].iter().any(|&royal| {                   /* no line from its landing square to */
+                state.statics.relevant_attacks[enemy][royal as usize].iter()    /* a royal: it cannot check directly  */
+                    .any(|(piece, start, _)| {
+                        *piece as u128 == piece!(mv)
+                            && *start as u128 == end!(mv)
+                    })
+            }))
         {
             continue;
         }
@@ -1413,7 +1422,7 @@ pub fn alpha_beta(
 
         let gives_check = is_in_check!(state.playing, state);                   /* the side that got the move         */
 
-        if skippable && !gives_check {
+        if skippable && !(gives_check && spare_checks) {
             undo_move!(state);
             continue;
         }
@@ -1425,7 +1434,7 @@ pub fn alpha_beta(
 
         let reduction = if depth >= minimum_depth
         && legal_moves > move_gate
-        && !gives_check
+        && !(gives_check && spare_checks)
         && !goal_move
         {
             let surface = match (
@@ -1450,7 +1459,9 @@ pub fn alpha_beta(
             0
         };
 
-        let extended = gives_check && ply + depth < 2 * info.root_depth;        /* a line gains at most its own depth */
+        let extended = gives_check
+            && probe!("x1", 1) != 0
+            && ply + depth < 2 * info.root_depth;                               /* a line gains at most its own depth */
         let child_depth = depth - 1 + extended as usize;
 
         let mut score = if legal_moves == 1 {

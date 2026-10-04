@@ -295,6 +295,7 @@ lazy_static! {
     ///
     /// - `ENGINE_START`      : origin of the engine time
     /// - `SEED`              : `ANEKAMACAM_SEED` if set, else a time value
+    /// - `PROBE`             : `ANEKAMACAM_PROBE` switches, `name=value,...`
     /// - `RNG`               : random generator from `SEED`
     /// - `RUNTIME_VERBOSITY` : current log level
     /// - `DEBUG_FLAG`        : true in the debug console
@@ -343,6 +344,15 @@ lazy_static! {
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or_else(|| ENGINE_START.elapsed().as_nanos() as u64);
+    pub static ref PROBE: HashMap<String, i32> =
+        env::var("ANEKAMACAM_PROBE")
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|pair| pair.split_once('='))
+            .filter_map(|(name, text)| {
+                text.parse::<i32>().ok().map(|value| (name.to_owned(), value))
+            })
+            .collect();
     pub static ref RNG: Mutex<StdRng> =
         Mutex::new(StdRng::seed_from_u64(*SEED));
     pub static ref RUNTIME_VERBOSITY: AtomicU8 = AtomicU8::new(5);
@@ -353,6 +363,26 @@ lazy_static! {
     pub static ref DEBUG_FLAG: AtomicBool = AtomicBool::new(false);
     pub static ref ENGINE_SINK: Mutex<Option<Sender<EngineEvent>>> =
         Mutex::new(None);
+}
+
+/// probe!
+///
+/// Reads one switch of `ANEKAMACAM_PROBE`. A switch removes or scales a
+/// term or a rule of the search. Without the variable, each read gives
+/// the default, so the node counts equal the base.
+///
+/// Params:
+/// - name   : &str -> switch name
+/// - default: i32  -> value when the switch is not set
+///
+/// Return:
+/// i32             -> value of the switch
+///
+#[macro_export]
+macro_rules! probe {
+    ($name:expr, $default:expr) => {
+        *PROBE.get($name).unwrap_or(&$default)
+    };
 }
 
 /*----------------------------------------------------------------------------*\
