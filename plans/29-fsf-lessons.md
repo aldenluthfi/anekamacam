@@ -2,9 +2,9 @@
 
 ## Status
 
-Opened 2026-10-04. Stage 0 and LA are done. SD failed (H0); SD2 is its
-pivot. DW runs on the server; CD, SD2, GA, EX and SB wait in the queue.
-TH is dropped (see LA).
+Opened 2026-10-04. Merged build 11 = build 10 + GA + EX + the referee
+fixes. Not merged: SD, SD2, DW, CD, SB. TH dropped (see LA). Running or
+queued: TI, CR, SD at 30+0.3. Planned: CS, FL.
 
 ## Context
 
@@ -245,7 +245,9 @@ or a rule that makes the mover lose (perpetual check or chase).
     for each engine.
 - Rated again on the fixed build (`ref`, 400 games, bounds `0 0`):
   horde -99.2 ± 27.2 (FSF forfeits 2 illegal, 2 time), asean +328.3 ±
-  40.7 (no forfeits).
+  40.7 (no forfeits), ouk-chaktrang +144.7 ± 21.8 but FSF forfeits 3
+  illegal and 39 on time, so ouk is still not valid. The time losses
+  are new and need a look.
 - Not fixed: sittuyin (FSF lets the last pawn promote anywhere; our
   promotion zone has no pawn count), chigorin (FSF 14.0.1 lets both
   sides promote to any piece; its newer source does not), xiangqi
@@ -325,7 +327,9 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - Seeded node counts: standard, xiangqi, grand, shogi the same; koth
   49623 to 12692. Koth eval correlation with FSF (252 positions): 0.737
   to 0.900.
-- Queued: koth `0 5`.
+- SPRT koth `0 5` against merged build 10: H1, +137.4 ± 33.8.
+- FSF check (400 games, FSF 2000): koth -109.6 ± 33.8 (build 10:
+  -185). Merged into merged build 11.
 
 ### EX (2026-10-04, branch `plan29-ex`, fcf1122)
 
@@ -335,7 +339,11 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - Seeded node counts: standard, xiangqi, grand, shogi, kinglet, horde the
   same; extinction 93767 to 50090. Extinction eval correlation (291
   positions): 0.700 to 0.883.
-- Queued: extinction `0 5`, kinglet `-5 0`.
+- SPRT extinction `0 5` against merged build 10: H1, +184.3 ± 43.2.
+  Kinglet `-5 0`: H1, +94.5 ± 26.8 (a gain there too).
+- FSF check (400 games, FSF 2000): extinction -51.0 ± 32.1 (build 10:
+  -151), kinglet +72.5 ± 33.9 (build 10: -6). Merged into merged build
+  11.
 
 ### SB (2026-10-04, branch `plan29-sb`, 0184cb5)
 
@@ -362,4 +370,16 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   at depth 15 in 1.9 s (3.4M nodes to depth 16); CR at depth 18 in 1.5
   s (248k nodes to depth 16, where it scores -1693). Passes the time
   gate.
-- Move-choice screen in shogi at 300 ms: running.
+- Move-choice screen in shogi at 300 ms (94 of 400 positions differ):
+  CR's moves 18 cp worse on average, inside the noise (about ± 25 cp).
+  Board moves worse in 33 and better in 20; drops near the enemy royal
+  better (worse in 1, better in 7). Not decisive, so the SPRT decides.
+
+### Merged build 11 (2026-10-04, branch `plan27-main11`)
+
+- Merged build 10 + GA + EX + the referee fixes (`plan29-ref`: horde
+  double step, asean and ouk dicts, forfeit counts in the result file).
+- Seeded node counts at depth 9: koth equals GA, extinction equals EX,
+  standard, xiangqi, grand, shogi and kinglet equal merged build 10.
+  Perft at depth 3 unchanged in standard, shogi, xiangqi, grand,
+  crazyhouse.
