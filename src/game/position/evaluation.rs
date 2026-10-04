@@ -920,11 +920,10 @@ macro_rules! pawn_structure {
 /// opening_score!
 ///
 /// Gives the opening score, White minus Black. It is the material and
-/// piece-square totals plus all royal safety terms, the check race and the
-/// goal race and the extinction threats. The opening, the setup and the
-/// middlegame blend use it. The endgame does not. The goal race counts a
-/// path the enemy attacks as one move longer, so a royal does not walk
-/// into the army that guards it.
+/// piece-square totals plus the royal safety terms that keep a royal at
+/// home: shelter, guard, castling and open files. The opening, the setup
+/// and the middlegame blend use it, each with [`shared_score!`] added.
+/// The endgame does not.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -948,12 +947,35 @@ macro_rules! opening_score {
             - royal_guard!($state, black)
             + castling_bonus!($state, white)
             - castling_bonus!($state, black)
-            + king_danger!($state, black)
+            + open_shield!($state, black)
+            - open_shield!($state, white)
+    }};
+}
+
+/// shared_score!
+///
+/// Gives the terms that the opening and the endgame score share, White
+/// minus Black: the enemy pressure and nearness to the royals, the check
+/// race, the goal race and the extinction threats. They do not depend on
+/// the phase, so the evaluation calculates them once and adds the same
+/// value to the two halves before the blend.
+///
+/// Params:
+/// - state: &State -> position to evaluate
+///
+/// Return:
+/// i32             -> shared score, White minus Black
+///
+#[macro_export]
+macro_rules! shared_score {
+    ($state:expr) => {{
+        let white = WHITE as usize;
+        let black = BLACK as usize;
+
+        king_danger!($state, black)
             - king_danger!($state, white)
             + royal_proximity!($state, black)
             - royal_proximity!($state, white)
-            + open_shield!($state, black)
-            - open_shield!($state, white)
             + check_race!($state, white)
             - check_race!($state, black)
             + goal_race!($state, white)
@@ -966,12 +988,11 @@ macro_rules! opening_score {
 /// endgame_score!
 ///
 /// Gives the endgame score, White minus Black. It is the material and
-/// piece-square totals plus the enemy pressure and nearness to the royals,
-/// the check race, the goal race and the extinction threats.
-/// In the endgame, the royal must go to the center, and the endgame tables
-/// already give this. Shelter, guard, open files and castling keep a royal
-/// at home, so they stay out. The pressure falls by itself when the
-/// attackers leave.
+/// piece-square totals; [`shared_score!`] adds the pressure, nearness and
+/// race terms. In the endgame, the royal must go to the center, and the
+/// endgame tables already give this. Shelter, guard, open files and
+/// castling keep a royal at home, so they stay out. The pressure falls by
+/// itself when the attackers leave.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -989,16 +1010,6 @@ macro_rules! endgame_score {
             - $state.endgame_material[black] as i32
             + $state.endgame_pst_bonus[white]
             - $state.endgame_pst_bonus[black]
-            + king_danger!($state, black)
-            - king_danger!($state, white)
-            + royal_proximity!($state, black)
-            - royal_proximity!($state, white)
-            + check_race!($state, white)
-            - check_race!($state, black)
-            + goal_race!($state, white)
-            - goal_race!($state, black)
-            + extinct_threat!($state, black)
-            - extinct_threat!($state, white)
     }};
 }
 
@@ -1072,6 +1083,7 @@ macro_rules! material_advantage {
 ///
 /// - material, piece-square : both halves, each with its own values
 /// - royal safety           : opening half; enemy pressure in both
+/// - shared terms           : calculated once, added to both halves
 /// - pawn structure         : both halves, one value for each
 /// - material imbalance     : outside the blend, added once
 /// - tempo                  : outside, after the flip to the side to move
@@ -1092,20 +1104,26 @@ macro_rules! evaluate_position {
         hotpath::measure_block!("eval::position", {
             let side_sign = -2 * $state.playing as i32 + 1;
 
+            let shared = shared_score!($state);
+
             let score = match $state.game_phase {
                 OPENING | SETUP => {
                     opening_score!($state)
+                        + shared
                         + pawn_structure!($state).0
                 }
                 ENDGAME => {
                     endgame_score!($state)
+                        + shared
                         + pawn_structure!($state).1
                 }
                 MIDDLEGAME => {
                     let (pawn_opening, pawn_endgame) =
                         pawn_structure!($state);
-                    let opening = opening_score!($state) + pawn_opening;
-                    let endgame = endgame_score!($state) + pawn_endgame;
+                    let opening =
+                        opening_score!($state) + shared + pawn_opening;
+                    let endgame =
+                        endgame_score!($state) + shared + pawn_endgame;
 
                     let opening_bound = $state.statics.opening_score as i32;
                     let endgame_bound = $state.statics.endgame_score as i32;
