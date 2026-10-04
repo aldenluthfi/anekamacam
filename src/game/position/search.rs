@@ -237,6 +237,22 @@ const ASPIRATION_CLAMP: u32 = 16000;
 const ASPIRATION_WIDEN: u32 = 2000;
 const ASPIRATION_START_DEPTH: u32 = 4;
 
+/// New depth window
+///
+/// The part of the time to the deadline in which the search may start a
+/// new depth, in quarters. A depth that starts later may not end, and its
+/// time is lost.
+///
+/// - `STABLE_DEPTH_QUARTERS`   : 1, the best move and score held
+/// - `UNSTABLE_DEPTH_QUARTERS` : 2, the last depth changed the best move
+///   or lost more than the aspiration delta
+///
+/// An unstable root has a refutation that one more depth can find, so it
+/// gets the time. A stable root plays at once.
+///
+const STABLE_DEPTH_QUARTERS: u128 = 1;
+const UNSTABLE_DEPTH_QUARTERS: u128 = 2;
+
 /*----------------------------------------------------------------------------*\
                             SEARCH SETUP AND CONTROL
 \*----------------------------------------------------------------------------*/
@@ -480,7 +496,8 @@ pub fn log_table_stats(table: &TTable, qtable: &QTable) {
 /// - depth 1 to 3 : full window
 /// - depth 4 on   : small window around the last score, wider on a fail
 /// - stop         : at the depth limit or the clock
-/// - no new depth : after a quarter of the time to the deadline
+/// - no new depth : after a quarter of the time to the deadline, or a half
+///   when the last depth changed the best move or lost score
 ///
 /// An iteration that the clock stops is discarded, because its score is not
 /// proved. The move of the previous depth is played. Depth 1 is different,
@@ -588,6 +605,10 @@ pub fn iterative_deepening(
             break;
         }
 
+        let unstable = completed_depth > 0
+            && (info.pv_line[0] != best_move
+                || (score as i64) < best_score as i64 - opening_delta);
+
         best_score = score;
         best_move = info.pv_line[0].clone();
         completed_depth = depth;
@@ -671,9 +692,16 @@ pub fn iterative_deepening(
         }
 
         let now = ENGINE_START.elapsed().as_nanos();
+        let quarters = match unstable {
+            true => UNSTABLE_DEPTH_QUARTERS,
+            false => STABLE_DEPTH_QUARTERS,
+        };
 
-        if info.deadline != 0 && 4 * now > 3 * info.start_time + info.deadline {/* past a quarter: the next depth may */
-            break;                                                              /* not end, and its time is lost      */
+        if info.deadline != 0
+        && 4 * now.saturating_sub(info.start_time)
+            > quarters * info.deadline.saturating_sub(info.start_time)
+        {
+            break;
         }
     }
 

@@ -603,8 +603,9 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 /// Notes:
 /// Without `movestogo`, the clock uses 30 moves. A share also gets the
 /// increment, and the time is at most half the clock. The search starts a
-/// new depth only in the first quarter of the time, so a clock move uses
-/// about one share, and a depth that has started can finish. The deadline starts
+/// new depth only in the first quarter of the time (a half when the root
+/// is unstable), so a clock move uses about one share, and a depth that
+/// has started can finish. The deadline starts
 /// when the `go` is read, so the thread start uses part of the time.
 ///
 pub fn start_search(session: &mut Session, tokens: &[&str]) {
