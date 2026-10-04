@@ -769,15 +769,21 @@ impl Drop for SPRTChild {
 /// The end of one game. Each score is for White. `WHITE` is 0 and `BLACK`
 /// is 1, so a side that loses by its own fault scores its own colour.
 ///
-/// - `Score(1.0)` : White won, by a rule or because Black did not reply
+/// - `Score(1.0)` : White won, by a rule of the variant
 /// - `Score(0.5)` : a draw by a rule of the variant
 /// - `Score(0.0)` : Black won
+/// - `Forfeit`    : one side gave no legal move or ran out of time
 /// - `EngineLoss` : one engine failed, it loses and restarts
 /// - `Aborted`    : the two engines failed, no score, the run stops
 /// - `Stopped`    : the run has a verdict, the game has no use
 ///
 enum SPRTGameOutcome {
     Score(f64),                                                                 /* a played game, White's view        */
+    Forfeit {
+        score: f64,                                                             /* the loss, still White's view       */
+        side: u8,                                                               /* colour of the side that forfeited  */
+        illegal: bool,                                                          /* no legal move, else out of time    */
+    },
     EngineLoss {
         score: f64,                                                             /* the loss, still White's view       */
         side: u8,                                                               /* which child has to be restarted    */
@@ -1033,7 +1039,9 @@ impl GameManager {
                     ));
                     text
                 }
-                Ok(_) => return SPRTGameOutcome::Score(side as f64),
+                Ok(_) => return SPRTGameOutcome::Forfeit {
+                    score: side as f64, side, illegal: true,
+                },
                 Err(error) => {
                     let other = if side == WHITE {
                         self.black.exited_error("opponent status check")
@@ -1066,7 +1074,9 @@ impl GameManager {
                         "SPRT slot {}: {} lost on time",
                         self.slot, mover.engine.binary,
                     );
-                    return SPRTGameOutcome::Score(side as f64);
+                    return SPRTGameOutcome::Forfeit {
+                        score: side as f64, side, illegal: false,
+                    };
                 }
 
                 *clock = *clock - spent + inc_ms;
@@ -1078,7 +1088,9 @@ impl GameManager {
                     "SPRT slot {}: {} lost by illegal move {}",
                     self.slot, mover.engine.binary, move_string,
                 );
-                return SPRTGameOutcome::Score(side as f64);
+                return SPRTGameOutcome::Forfeit {
+                    score: side as f64, side, illegal: true,
+                };
             }
 
             if self.slot == 0 {
@@ -1251,6 +1263,7 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 /// every figure below is from engine A's view
 /// result (A): 118W 96L 214D
 /// pentanomial (A): [9, 41, 82, 65, 17]
+/// forfeits: A 0 illegal 0 time, B 0 illegal 1 time
 /// elo (A): 17.9 +/- 21.3
 /// LLR: 2.951
 /// verdict: H1 accepted (./old is stronger)
@@ -1285,11 +1298,14 @@ fn write_result_file(
          elo bounds: [{}, {}]  alpha: {}  beta: {}\n\
          every figure below is from engine A's view\n\
          result (A): {}W {}L {}D\npentanomial (A): {:?}\n\
+         forfeits: A {} illegal {} time, B {} illegal {} time\n\
          elo (A): {:.1} +/- {:.1}\nLLR: {:.3}\nverdict: {}\n",
         settings.engine_a, settings.engine_b, settings.variant,
         settings.time_control, settings.concurrency,
         settings.h0, settings.h1, SPRT_ALPHA, SPRT_BETA,
         tally.wins, tally.losses, tally.draws, tally.pentanomial,
+        tally.forfeits[0][0], tally.forfeits[0][1],
+        tally.forfeits[1][0], tally.forfeits[1][1],
         elo_from_score(tally.mean()), tally.margin(), llr, verdict,
     );
 
@@ -1432,6 +1448,7 @@ struct SPRTTally {
     draws: u32,                                                                 /* games drawn                        */
     losses: u32,                                                                /* games lost by engine A             */
     pentanomial: [u32; 5],                                                      /* pairs by score 0, 1/4, ..., 1      */
+    forfeits: [[u32; 2]; 2],                                                    /* [A, B] by [illegal, time]          */
 }
 
 impl SPRTTally {
@@ -1493,11 +1510,13 @@ impl SPRTTally {
 /// so the slots do not share counts.
 ///
 /// - `Game(1.0, 0.0, rows)` : engine A won as Black, with the game rows
+/// - `Forfeit(1, true)`     : engine B lost the last game by a bad move
 /// - `Pair(0.75)`           : engine A scored 1.5 of 2 in one pair
 /// - `Stop(reason)`         : the slot cannot continue, the verdict
 ///
 enum SPRTReport {
     Game(f64, f64, Vec<String>),                                                /* score of A, of White, and the rows */
+    Forfeit(usize, bool),                                                       /* engine 0 = A, 1 = B; illegal move  */
     Pair(f64),                                                                  /* mean score of the pair for A       */
     Stop(String),                                                               /* the slot failed, the run stops     */
 }
@@ -1578,6 +1597,12 @@ fn run_slot(
             );
             let (score, restart) = match outcome {
                 SPRTGameOutcome::Score(score) => (score, Ok(())),
+                SPRTGameOutcome::Forfeit { score, side, illegal } => {
+                    let engine = (side == WHITE) as usize                       /* the first game of a pair has A as  */
+                        ^ (game == 0) as usize;                                 /* White, the second has B            */
+                    let _ = reports.send(SPRTReport::Forfeit(engine, illegal));
+                    (score, Ok(()))
+                }
                 SPRTGameOutcome::EngineLoss { score, side, error } => {
                     log_1!("SPRT scored engine loss: {}", error);
                     (score, manager.restart(side, variant))
@@ -1703,6 +1728,9 @@ pub fn run_sprt(template: &State, settings: &SPRTMatch) {
                         );
                     }
                     games += 1;
+                }
+                SPRTReport::Forfeit(engine, illegal) => {
+                    tally.forfeits[engine][!illegal as usize] += 1;
                 }
                 SPRTReport::Pair(score) => {
                     tally.add_pair(score);
