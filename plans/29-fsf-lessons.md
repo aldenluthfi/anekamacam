@@ -391,9 +391,10 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   plies late, and the defending move (in shogi, a drop next to our own
   royal) is skipped. The extra depth (+1 to 1.5 plies) does not pay for
   that. S1's full-depth checks thus protect the defender as much as the
-  attacker. A reduction that spares the defender would need to know
-  which side the check threatens at the root, which the tree does not
-  track today.
+  attacker. Ply parity gives the side of each check relative to the
+  root, so a reduction can spare the defender: CR2 reduces only the root
+  side's checks and keeps the enemy's checks at full depth. That tests
+  the mechanism directly.
 
 ### TI (2026-10-04, branch `plan29-ti`, 3e1a460)
 
