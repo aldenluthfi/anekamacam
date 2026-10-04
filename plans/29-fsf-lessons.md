@@ -381,6 +381,24 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   CR's moves 18 cp worse on average, inside the noise (about ± 25 cp).
   Board moves worse in 33 and better in 20; drops near the enemy royal
   better (worse in 1, better in 7). Not decisive, so the SPRT decides.
+- Median depth on the 24 shogi midgame positions: 8 at 300 ms and 10.5
+  at 1 s (base 7 and 9).
+- Queued after TI: shogi `0 5`, then grand, xiangqi, standard `-5 0`.
+
+### CS (2026-10-04, branch `plan29-cs` on CR, cf7c364)
+
+- On CR, a check whose landing square the defender attacks is reduced
+  one ply more (`is_square_attacked!` after the move).
+- Gates: xiangqi mate in 2 at depth 1; grand mate in 7 at depth 18 in
+  1.6 s (base 1.9 s). Median depth: 7 at 300 ms, 10 at 1 s, no more
+  than CR.
+- Move-choice screen in shogi at 300 ms (85 positions differ): 42 cp
+  worse; board moves 83 cp worse. In the 5 positions where the base
+  dropped a piece next to its own royal, CS played another move and lost
+  744 cp each. Likely cause: in our own tree the enemy's checks are cut
+  too, so a mating threat against us shows late and the defending drop
+  is skipped. CR shows the same direction more weakly. CS waits: it runs
+  only if CR passes.
 
 ### Merged build 11 (2026-10-04, branch `plan27-main11`)
 
