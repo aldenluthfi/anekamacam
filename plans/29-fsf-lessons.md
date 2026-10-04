@@ -512,3 +512,49 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   verdicts stand and DW and TI get no new run.
 - D1: median nodes for each move in M-d (15 slots, both engines,
   156k moves): 27,497 in shogi.
+
+### D3 (2026-10-04, branch `plan29-probe`, 528a504, never merged)
+
+- `ANEKAMACAM_PROBE="name=v,..."` fills `PROBE`; `probe!(name, default)`
+  reads it. Switches: `king_danger`, `proximity`, `open_shield`
+  (scale), `s1`, `x1`, `null_move`, `futility`, `lmp`, `rfp`,
+  `razoring` (0 = off).
+- Without the variable, node counts equal plan29-m2 in shogi,
+  standard, xiangqi, grand, crazyhouse (bench depth 9) and koth,
+  extinction, threecheck, kinglet, fivecheck (start, depth 9). Each
+  switch at 0 changes the shogi bench count.
+
+### D5 (2026-10-04): the position predictor fails
+
+- `ablate.py` on the shogi sets (156 fatal, 400 good), each branch
+  against its parent at the same node count, 0.7, 1.0 and 1.4 × 27,497.
+  `net` at 1.0 with its standard error over the positions:
+
+  | Branch | SPRT Elo | net (cp) |
+  | --- | --- | --- |
+  | PX | -306 | -9.1 ± 4.3 |
+  | SD | -115 | +2.1 ± 3.0 |
+  | CR | -51 | -2.5 ± 1.7 |
+  | SD2 | -33 | +0.1 ± 2.1 |
+  | DW | -9 | -0.2 ± 2.9 |
+  | PX2 | +16 | +3.0 ± 2.8 |
+  | TI | -20 | 0, no move changes (time use only) |
+
+- Spearman ρ 0.60 (gate 0.7). SD has the wrong sign at all three
+  budgets (+2.1, +2.1, +2.7), and the gate needs SD negative. The
+  1.4 retry fails too. `fixed - broken` is negative for all six, PX2
+  too, so it does not separate them.
+- The null perturbations do not work: nodes ±1% and +2% change no move
+  (the interrupt test runs every 2048 nodes, and a stop inside an
+  iteration keeps the last full one), and Hash 32 / 128 change 4 to 6.
+  σ0 from them is near 0.05 cp. The position standard error (1.7 to
+  4.4 cp) is the real noise.
+- Why: each set position tests one move from a build 10 game. SD loses
+  by drops that lead to positions build 10 did not reach, and the loss
+  comes moves later. A one-move test off the candidate's own games does
+  not see this. Only PX (-306) is large enough to show.
+- As the plan says, a short screen replaces the predictor: 600 games
+  at 5+0.05 with the book, 15 slots, calibrated on the same branches
+  (queue81: SD, SD2, CR, DW, TI against build 10; PX, PX2 against
+  build 3). The D1 budgets and the koth, extinction and threecheck
+  labels were for the predictor only, so queue80 was stopped.
