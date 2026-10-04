@@ -155,10 +155,18 @@ Added after the first plan (2026-10-04, user discussion):
   pruning and lost the mate), not to reduction, so CR keeps the
   pruning exemption and lets LMR reduce: a reduced check that beats
   alpha is searched again at full depth.
-- Gates for CR and CS: xiangqi mate in 2 at depth 3, grand mate in 7 by
-  depth 16, perft unchanged; then the move-choice screen at 300 ms.
-- Measure first for CR: the share of searched nodes that are checks in
-  shogi, grand, xiangqi and standard.
+- Gates for CR and CS: xiangqi mate in 2 at depth 3, grand mate in 7
+  within the time the base needs (user choice: a time gate, as a
+  reduction makes each ply cheaper), perft unchanged; then the
+  move-choice screen at 300 ms.
+- Measure first for CR (probe copy of merged build 10, midgame
+  positions): checks are 12.8% of searched moves and their subtrees
+  37.1% of nodes in shogi; grand 9.1% / 10.6%, xiangqi 12.1% / 12.8%,
+  standard 9.8% / 12.2%. A shogi check costs about three times an
+  average move.
+- Note from plan 27: in the xiangqi mate in 2, LMR reduced the first
+  move `f1h1` in the base of that time; checks exempt from LMR found it
+  at depth 8 and S1 at depth 3. Reduction and pruning both delayed it.
 - Move-choice screen: before each SPRT, compare the candidate's moves
   with the base at 300 ms per move on 400 game positions, judged by FSF
   at depth 14 (`scratchpad/la/movediff.py`). Correlation with FSF is a
@@ -235,6 +243,9 @@ or a rule that makes the mover lose (perpetual check or chase).
     so our leap desyncs FSF. Not fixed.
   - The SPRT result file now has a `forfeits:` line (illegal move, time)
     for each engine.
+- Rated again on the fixed build (`ref`, 400 games, bounds `0 0`):
+  horde -99.2 ± 27.2 (FSF forfeits 2 illegal, 2 time), asean +328.3 ±
+  40.7 (no forfeits).
 - Not fixed: sittuyin (FSF lets the last pawn promote anywhere; our
   promotion zone has no pawn count), chigorin (FSF 14.0.1 lets both
   sides promote to any piece; its newer source does not), xiangqi
@@ -342,3 +353,13 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   regression arms were stopped. Same pattern as SD: check knowledge in
   the eval, with a search that plays every check out, loses. Retry only
   with CR.
+
+### CR (2026-10-04, branch `plan29-cr`, 504e6e8)
+
+- The LMR gate no longer exempts a checking move. Pruning still never
+  skips one, and the check extension stays.
+- Gates: xiangqi mate in 2 at depth 1 (base: 1). Grand mate in 7: base
+  at depth 15 in 1.9 s (3.4M nodes to depth 16); CR at depth 18 in 1.5
+  s (248k nodes to depth 16, where it scores -1693). Passes the time
+  gate.
+- Move-choice screen in shogi at 300 ms: running.
