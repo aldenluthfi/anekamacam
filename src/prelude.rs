@@ -676,6 +676,7 @@ pub const FEXACT: u8 = 2;
 /// - `ZONE_ATTACK_UNIT`      : danger units for one expected attack
 /// - `ZONE_ATTACK_FULL`      : attacks for a fully attacked royal zone
 /// - `GOAL_HOLD_STEPS`       : goal distance that tests the path attacks
+/// - `EXTINCT_THREAT_LEFT`   : most copies left for an extinction threat
 /// - `SEARCH_REPETITION_CAP` : plies that the repetition scan examines
 /// - `REPETITION_CYCLE`      : occurrences for one cycle, without perpetual
 ///
@@ -693,6 +694,7 @@ pub const SHELTER_CAP: u32 = 3;
 pub const ZONE_ATTACK_UNIT: i32 = 16;
 pub const ZONE_ATTACK_FULL: i32 = 16;
 pub const GOAL_HOLD_STEPS: u8 = 3;
+pub const EXTINCT_THREAT_LEFT: u32 = 2;
 pub const SEARCH_REPETITION_CAP: usize = 64;
 pub const REPETITION_CYCLE: u8 = 2;
 

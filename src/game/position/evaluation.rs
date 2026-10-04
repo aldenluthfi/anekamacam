@@ -563,6 +563,70 @@ macro_rules! goal_race {
     }};
 }
 
+/// extinct_threat!
+///
+/// Gives the cost of the attacked set pieces of one colour under the
+/// losing `extinct` rules. A capture of the last copies above the
+/// threshold loses the game, so each attacked copy costs the `threat` of
+/// the rule over `left` squared:
+///
+/// - 1 copy left  : `threat` for each attacked copy
+/// - 2 copies left : a quarter of it
+/// - more         : skipped, `EXTINCT_THREAT_LEFT` is the limit
+///
+/// Params:
+/// - state: &State -> position to score
+/// - color: usize  -> colour of the set pieces
+///
+/// Return:
+/// i32             -> threat cost for that colour, 0 or more
+///
+#[macro_export]
+macro_rules! extinct_threat {
+    ($state:expr, $color:expr) => {{
+        let mut cost = 0;
+
+        for rule in &$state.termination.extinct {
+            if rule.threat == 0 {
+                continue;
+            }
+
+            let members = || $state.statics.pieces.iter()
+                .enumerate()
+                .filter(|(index, piece)| {
+                    rule.set[*index] && p_color!(piece) as usize == $color
+                });
+            let count = members()
+                .map(|(index, _)| $state.piece_count[index])
+                .sum::<u32>();
+            let left = count.saturating_sub(rule.threshold as u32);
+
+            if left == 0 || left > EXTINCT_THREAT_LEFT {
+                continue;
+            }
+
+            let mut attacked = 0;
+
+            for (index, piece) in members() {
+                for square in piece_squares!($state, index) {
+                    attacked += is_square_attacked!(
+                        *square as u32,
+                        $color,
+                        get!($state.virgin_board, *square as u32),
+                        p_is_royal!(piece),
+                        p_rank!(piece),
+                        $state
+                    ) as i32;
+                }
+            }
+
+            cost += rule.threat * attacked / (left * left) as i32;
+        }
+
+        cost
+    }};
+}
+
 /// castling_bonus!
 ///
 /// Gives the castling value of one colour. Thus castling is better than a
@@ -857,9 +921,10 @@ macro_rules! pawn_structure {
 ///
 /// Gives the opening score, White minus Black. It is the material and
 /// piece-square totals plus all royal safety terms, the check race and the
-/// goal race. The opening, the setup and the middlegame blend use it. The
-/// endgame does not. The goal race counts a path the enemy attacks as one
-/// move longer, so a royal does not walk into the army that guards it.
+/// goal race and the extinction threats. The opening, the setup and the
+/// middlegame blend use it. The endgame does not. The goal race counts a
+/// path the enemy attacks as one move longer, so a royal does not walk
+/// into the army that guards it.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -893,6 +958,8 @@ macro_rules! opening_score {
             - check_race!($state, black)
             + goal_race!($state, white)
             - goal_race!($state, black)
+            + extinct_threat!($state, black)
+            - extinct_threat!($state, white)
     }};
 }
 
@@ -900,7 +967,7 @@ macro_rules! opening_score {
 ///
 /// Gives the endgame score, White minus Black. It is the material and
 /// piece-square totals plus the enemy pressure and nearness to the royals,
-/// the check race and the goal race.
+/// the check race, the goal race and the extinction threats.
 /// In the endgame, the royal must go to the center, and the endgame tables
 /// already give this. Shelter, guard, open files and castling keep a royal
 /// at home, so they stay out. The pressure falls by itself when the
@@ -930,6 +997,8 @@ macro_rules! endgame_score {
             - check_race!($state, black)
             + goal_race!($state, white)
             - goal_race!($state, black)
+            + extinct_threat!($state, black)
+            - extinct_threat!($state, white)
     }};
 }
 

@@ -83,7 +83,8 @@ pub struct Counting {
 /// A material extinction rule. When the count of `set` pieces of a colour
 /// is `threshold` or less, that colour gets `outcome`. Derivation sets
 /// `lone`, the piece of a colour that stands in for the royal in the
-/// evaluation.
+/// evaluation, and `threat`, the cost of an attacked set piece when one
+/// copy is left above the threshold.
 ///
 /// Subject: the colour with no pieces left. It is not always the side that
 /// moved. A capture removes enemy pieces, and a promotion can remove own
@@ -96,6 +97,7 @@ pub struct Extinct {
     pub outcome: Outcome,                                                       /* result for the extinct colour      */
     pub name: String,                                                           /* reason reported when it fires      */
     pub lone: [Option<usize>; 2],                                               /* colour to its royal stand-in       */
+    pub threat: i32,                                                            /* cost of a last copy under attack   */
 }
 
 /// Goal
