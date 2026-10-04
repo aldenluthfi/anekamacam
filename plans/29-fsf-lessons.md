@@ -635,3 +635,31 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   shogi and crazyhouse change. The test position (enemy hand
   `ssggg`) goes from -6449 to -7378 cp.
 - Screen: shogi `0 5` arm, crazyhouse regression arm (queue83).
+- Screen: shogi -69.2 ± 28.3, crazyhouse -12.2 ± 25.9. Fails.
+- Why, from its 600 shogi games: KH is near 100 cp more hopeful than
+  the base on the same positions (wins +132, losses +123), and it keeps
+  more pieces (not pawns) in the hand: 2.24 against 1.34 at ply 80. A
+  gold in the hand counted, a dropped gold (a board shield) did not, so
+  each drop lowered the danger it gave.
+
+### KH2, KH3, KB, HR (2026-10-04)
+
+All against plan29-m2, 600-game screens at 5+0.05:
+
+| Change | Shogi | Crazyhouse | Others |
+| --- | --- | --- | --- |
+| KH2 (dded47c): shields count, hand and board | -66.8 ± 28.9 | +4.6 ± 26.1 | grand -0.6 |
+| KH3 (f625360): KH2, hand pressure halved | -8.1 ± 27.2 | | |
+| KB (plan29-kb): shields count on the board, no hand term | +15.6 ± 27.6 | +75.9 ± 28.6 | grand -15.1, standard +16.2, xiangqi -0.6 |
+| HR (ff6a405): m2 without the hand term | -16.8 ± 27.2 | +64.9 (468 games) | node counts equal |
+
+- KH2 still keeps pieces in the hand (2.01 against 1.51 at ply 80)
+  and is still 106 to 132 cp more hopeful. Cause: a piece in the hand
+  reads `zone_attack_best`, the pressure of its best square on the
+  whole board. Nearly every real drop square gives less, so a drop
+  lowers the danger. The base has this for the rook, bishop, knight
+  and lance in the hand.
+- Less hand weight is better in each step: full -67, half -8, none
+  +16. The hand term goes. KB goes to the shogi SPRT `0 5` at 10+0.1
+  (queue87); its grand screen (-15.1) needs a regression check before
+  a merge.
