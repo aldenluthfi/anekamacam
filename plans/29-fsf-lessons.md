@@ -666,3 +666,17 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   games that we won, at our scores of -100 to +100, FSF gave our side
   -176. Units differ too. Only the depth-16 suite and the hand values
   stand as facts.
+
+### RZ and DK results (2026-10-05)
+
+- RZ shogi SPRT `0 5` at 10+0.1: inconclusive at 4000 games,
+  +4.1 ± 10.5. Not merged on shogi; its crazyhouse screen (+41.3) goes
+  on in HRZ.
+- DK (plan29-dk, 353fde7): a drop reads its own plane of history keys.
+  Node counts equal plan29-m2 without drops. Suite 51. Screens at
+  10+0.1: shogi -10.4 ± 27.9. Fails.
+- The suite picked RZ (+8) and DK (+10); both are near 0 in games. The
+  suite does not predict shogi strength and is dropped, as the
+  predictor was.
+- HRZ (plan29-hrz, e1012f6, HR + RZ): crazyhouse SPRT `0 5`, then
+  shogi `-5 0` (queue93).
