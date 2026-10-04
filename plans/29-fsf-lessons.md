@@ -396,6 +396,23 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   side's checks and keeps the enemy's checks at full depth. That tests
   the mechanism directly.
 
+### CR2 (2026-10-04, branch `plan29-cr2` on CR, screen only)
+
+- LMR may reduce a check of the root side (even ply), not of the
+  opponent.
+- Gates: xiangqi mate in 2 at depth 1; grand mate in 7 (a threat against
+  the side to move) in 1.7 to 2.2 s, as the base (1.9 s).
+- Median depth 7.5 at 300 ms, 9.5 at 1 s (base 7, 9; CR 8, 10.5).
+- Move-choice screen in shogi at 300 ms (76 positions differ): 49 cp
+  worse; it still skips the defending drop next to its own royal in 4
+  positions (564 cp each), which give about 30 of the 49 cp.
+- So the defender mechanism does not explain the CR loss: keeping the
+  opponent's checks at full depth fails the same way. The cause is not
+  known. With CR at H0 and a worse screen, CR2 gets no SPRT. The check
+  reduction line ends here. Open question for later: what in the 4
+  defending-drop positions makes every reduced form choose another move
+  (a probe of those positions at fixed depth would show it).
+
 ### TI (2026-10-04, branch `plan29-ti`, 3e1a460)
 
 - An unstable root (best move changed, or score fell by more than the
