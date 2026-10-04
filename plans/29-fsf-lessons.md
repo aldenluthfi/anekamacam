@@ -246,8 +246,15 @@ or a rule that makes the mover lose (perpetual check or chase).
 - Rated again on the fixed build (`ref`, 400 games, bounds `0 0`):
   horde -99.2 ± 27.2 (FSF forfeits 2 illegal, 2 time), asean +328.3 ±
   40.7 (no forfeits), ouk-chaktrang +144.7 ± 21.8 but FSF forfeits 3
-  illegal and 39 on time, so ouk is still not valid. The time losses
-  are new and need a look.
+  illegal and 39 on time, so ouk is still not valid.
+- FSF time losses (ouk, local capture of 16 games): the harness charges
+  FSF what FSF reports (median difference -1 ms over 1249 moves), so the
+  clock is fair. FSF sometimes thinks 1.5 to 1.8 s early, then lives on
+  the 100 ms increment with its default 10 ms `Move Overhead`; with 8 to
+  30 games at once, the pipe and the scheduler take more than that, and
+  FSF flags. Ouk games are long (median 174 plies), so ouk shows it
+  most. With `Move Overhead=100` for FSF: 0 time losses in 32 games. The
+  rating script (`~/p27b/sweep2.sh`) now sets it for FSF from here on.
 - Not fixed: sittuyin (FSF lets the last pawn promote anywhere; our
   promotion zone has no pawn count), chigorin (FSF 14.0.1 lets both
   sides promote to any piece; its newer source does not), xiangqi
