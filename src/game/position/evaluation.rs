@@ -251,9 +251,10 @@ macro_rules! royal_guard {
 /// enemy piece on the board that is not royal reads its `zone_attack`
 /// value from its square. In a drop variant, each piece in the hand reads
 /// `zone_attack_best`, the pressure from its best drop square. A shield
-/// counts as any other piece, in the hand and on the board. When only the
-/// hand counted it, a drop lost the pressure, and the engine kept its
-/// golds and silvers in the hand.
+/// counts as any other piece, in the hand and on the board. A piece in
+/// the hand gives half its best pressure: the drop takes one move, and at
+/// full value each drop away from the best square lowered the danger, so
+/// the engine kept its pieces in the hand.
 ///
 /// The cost is the square of the total pressure, so attackers compound:
 ///
@@ -307,7 +308,7 @@ macro_rules! king_danger {
 
                 if drops {
                     units += hand[piece_index] as i64
-                        * best[piece_index] as i64;
+                        * best[piece_index] as i64 / 2;                         /* a drop spends one move first      */
                 }
             }
         }
