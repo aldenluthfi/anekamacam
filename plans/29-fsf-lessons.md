@@ -558,3 +558,39 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   (queue81: SD, SD2, CR, DW, TI against build 10; PX, PX2 against
   build 3). The D1 budgets and the koth, extinction and threecheck
   labels were for the predictor only, so queue80 was stopped.
+
+### D6 traced questions (2026-10-04)
+
+- Q1, which gate drops the defending drop. Shogi set position 119
+  (White to move, king e1; build 10 plays `S@d2`, FSF -30; CR, SD
+  and SD2 play `d1d2`, -646). CR with the D3 switches (probe build,
+  CR's eval), seeded `go nodes`:
+
+  | Nodes | build 10 | CR | CR, `s1=0` |
+  | --- | --- | --- | --- |
+  | 20,000 | `S@d2`, depth 6 | `b8a9`, depth 4 | `d1d2`, depth 5 |
+  | 27,497 | `S@d2`, depth 7 | `d1d2`, depth 5 | `S@d2`, depth 8 |
+  | 40,000 | `S@d2`, depth 8 | `S@d2`, depth 7 | `S@d2`, depth 8 |
+
+  No one gate drops it: with LMP, futility, null move, RFP or razoring
+  off, CR gets less deep and still misses it. CR finds `S@d2` from
+  depth 7, but reaches each depth later than build 10 here (a reduced
+  check that fails high is searched again at full depth). Thus CR
+  costs depth in check-heavy positions, where it was to gain depth.
+- The position is also an eval gap. Our search gives White +12.7, our
+  static eval +14.5 (White has 2 silvers and 2 pawns more). FSF static
+  -9.85, FSF search -0.30: Black's horse on e3, knight on f5 and gold,
+  silver and knight in hand attack the king on e1. `king_danger!`,
+  `royal_proximity!` and `open_shield!` together give 16 cp there
+  (all three off: 1450 to 1466 cp).
+- Q2, can qsearch see the refutation of SD's bad drops. FSF depth 14
+  lines after five SD and SD2 drops that lose 300 cp or more (set
+  positions 5, 141, 377, 12, 84): `S@d4` is taken (`h8d4`), then the
+  loss comes from drops `S@e3`, `S@f2`; `B@e1` gets a king move and
+  `R@c9`; `S@f7` gets the drop check `L@e8` and mate; `P@e2` gets
+  `G@c7`; `N@d4` gets `N@c7`. In 4 of 5, the refutation is a quiet drop
+  or king move at ply 2 or later. Qsearch (captures, checks at its
+  first ply) does not see them.
+- Both answers point to one gap: the royal terms do not price an attack
+  that the pieces in hand can still make. The C candidates must aim at
+  that, and the screen must show it.
