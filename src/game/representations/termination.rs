@@ -102,7 +102,9 @@ pub struct Extinct {
 ///
 /// A goal zone rule. When a colour moves a `set` piece to a `zone` square,
 /// that colour gets `outcome`. The two colours share the zone. Derivation
-/// sets `steps` and `value` for the goal race of the evaluation.
+/// sets `steps`, `closer` and `value` for the goal race of the evaluation.
+/// The two tables have one row of squares for each piece, and only the
+/// `set` pieces fill their rows.
 ///
 /// Subject: the colour with the piece in the zone.
 ///
@@ -112,7 +114,8 @@ pub struct Goal {
     pub zone: Board,                                                            /* target squares                     */
     pub outcome: Outcome,                                                       /* result for the arriving colour     */
     pub name: String,                                                           /* reason reported when it fires      */
-    pub steps: Vec<u8>,                                                         /* square to king steps to the zone   */
+    pub steps: Vec<u8>,                                                         /* piece, square to moves to the zone */
+    pub closer: Vec<Vec<Square>>,                                               /* piece, square to next step squares */
     pub value: i32,                                                             /* worth one step from the zone       */
 }
 

@@ -462,11 +462,15 @@ macro_rules! check_race {
 /// goal_race!
 ///
 /// Gives the worth of the goal piece of one colour that is nearest to the
-/// goal zone. The worth halves for each king step past the first:
+/// goal zone. The distance is the count of moves of that piece to the
+/// zone, from the `steps` table of the rule. Within `GOAL_HOLD_STEPS`, a
+/// walk along the `closer` squares adds one move for each step where all
+/// the squares are attacked by the enemy or hold an own piece: a move must
+/// first clear the way. The worth halves for each move past the first:
 ///
-/// - 1 step  : the `value` of the rule, it arrives next move if not stopped
-/// - 2 steps : half of it
-/// - 3 steps : a quarter of it
+/// - 1 move  : the `value` of the rule, it arrives next move if not stopped
+/// - 2 moves : half of it
+/// - 3 moves : a quarter of it
 ///
 /// Params:
 /// - state: &State -> position to score
@@ -480,6 +484,7 @@ macro_rules! goal_race {
     ($state:expr, $color:expr) => {{
         match $state.termination.goal.as_ref() {
             Some(goal) => {
+                let board_size = $state.statics.board_size;
                 let mut nearest = u8::MAX;
 
                 for (piece_index, piece) in
@@ -490,8 +495,61 @@ macro_rules! goal_race {
                         continue;
                     }
 
+                    let row = piece_index * board_size;
+
                     for square in piece_squares!($state, piece_index) {
-                        nearest = nearest.min(goal.steps[*square as usize]);
+                        let steps = goal.steps[row + *square as usize];
+
+                        if steps == 0 || steps > GOAL_HOLD_STEPS {
+                            nearest = nearest.min(steps);
+                            continue;
+                        }
+
+                        let mut frontier = vec![*square];
+                        let mut held = 0u8;
+
+                        for _ in 0..steps {
+                            let mut next: Vec<Square> = Vec::new();
+
+                            for from in &frontier {
+                                for to in &goal.closer[row + *from as usize] {
+                                    if !next.contains(to) {
+                                        next.push(*to);
+                                    }
+                                }
+                            }
+
+                            let free: Vec<Square> = next.iter().copied()
+                                .filter(|&to| {
+                                    let holder = $state.main_board[
+                                        to as usize
+                                    ];
+
+                                    (holder == NO_PIECE
+                                        || p_color!(
+                                            &$state.statics.pieces[
+                                                holder as usize
+                                            ]
+                                        ) as usize != $color)
+                                    && !is_square_attacked!(
+                                        to as u32,
+                                        $color,
+                                        false,
+                                        p_is_royal!(piece),
+                                        p_rank!(piece),
+                                        $state
+                                    )
+                                })
+                                .collect();
+
+                            held += free.is_empty() as u8;
+                            frontier = match free.is_empty() {
+                                true => next,
+                                false => free,
+                            };
+                        }
+
+                        nearest = nearest.min(steps + held);
                     }
                 }
 
@@ -798,11 +856,10 @@ macro_rules! pawn_structure {
 /// opening_score!
 ///
 /// Gives the opening score, White minus Black. It is the material and
-/// piece-square totals plus all royal safety terms and the check race. The
-/// opening, the setup and the middlegame blend use it. The endgame does
-/// not. The goal race is only in the endgame score, so a royal walks to
-/// the goal when the board is thin, not while the army can still attack
-/// it.
+/// piece-square totals plus all royal safety terms, the check race and the
+/// goal race. The opening, the setup and the middlegame blend use it. The
+/// endgame does not. The goal race counts a path the enemy attacks as one
+/// move longer, so a royal does not walk into the army that guards it.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -834,6 +891,8 @@ macro_rules! opening_score {
             - open_shield!($state, white)
             + check_race!($state, white)
             - check_race!($state, black)
+            + goal_race!($state, white)
+            - goal_race!($state, black)
     }};
 }
 
