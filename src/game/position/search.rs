@@ -1041,10 +1041,12 @@ pub fn quiescence_search(
 /// table.
 ///
 /// A move that gives check is never skipped. It gets one more ply while the
-/// line is shorter than two times the iteration depth, and a late check is
-/// reduced as other late moves are. A skipped check is never seen, but a
-/// reduced check that beats alpha is searched again at full depth. Drop
-/// checks are many, so a full search of each makes the tree large. The
+/// line is shorter than two times the iteration depth. A late check of the
+/// root side is reduced as other late moves are; a check of the opponent
+/// is not, so a threat against the root side shows at full depth. A
+/// skipped check is never seen, but a reduced check that beats alpha is
+/// searched again at full depth. Drop checks are many, so a full search
+/// of each makes the tree large. The
 /// reply side has few moves, so the loss can be short. The test is made
 /// after the move, so it also sees a discovered check and a check through a
 /// new screen. A skip tests only a move whose piece has a line from its
@@ -1423,7 +1425,8 @@ pub fn alpha_beta(
         let reduction = if depth >= minimum_depth
         && legal_moves > move_gate
         && !goal_move
-        {
+        && !(gives_check && ply % 2 == 1)                                       /* the opponent's checks stay full,   */
+        {                                                                       /* so a threat on us shows in time    */
             let surface = match (
                 is_capture || is_promotion, in_check
             ) {
