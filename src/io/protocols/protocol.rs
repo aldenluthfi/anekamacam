@@ -471,7 +471,9 @@ fn spawn_hash_tables(
 ///
 ///   Skips the FEN keyword, so `fen` and `sfen` both work. It makes the
 ///   board in a fork and installs it only after the full line succeeds.
-///   Thus a bad move keeps the previous position.
+///   Thus a bad move keeps the previous position. A line that extends
+///   the current game, the same root and the moves in its history, plays
+///   only the new moves on the board. A bad new move marks it invalid.
 ///
 ///   Params:
 ///   - session: &mut Session -> session, gets the new position on success
@@ -563,9 +565,27 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
             return;
         }
 
-        let replayed = &mut scratch;
+        let moves = &tokens[index + 1..];
+        let played = &session.state.history;
+        let root_ply = session.state.ply_counter - played.len() as u32;
 
-        for (ply, &token) in tokens[index + 1..].iter().enumerate() {
+        let known = match played.first() {
+            Some(root) if session.position_valid
+            && root.position_hash == scratch.position_hash
+            && root_ply == scratch.ply_counter
+            && moves.len() >= played.len()
+            && played.iter().zip(moves).all(|(snap, &token)| {
+                format_move(&snap.move_ply, &scratch, dict.as_ref()) == token
+            }) => played.len(),
+            _ => 0,
+        };
+
+        let replayed = match known {
+            0 => &mut scratch,
+            _ => &mut session.state,
+        };
+
+        for (ply, &token) in moves.iter().enumerate().skip(known) {
             let Some(mv) = parse_move(token, replayed, dict.as_ref())
             else {
                 log_2!(
@@ -580,6 +600,11 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
                 session.position_valid = false;
                 return;
             }
+        }
+
+        if known > 0 {
+            session.position_valid = true;
+            return;
         }
     }
 

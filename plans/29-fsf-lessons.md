@@ -447,3 +447,12 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   standard, xiangqi, grand, shogi and kinglet equal merged build 10.
   Perft at depth 3 unchanged in standard, shogi, xiangqi, grand,
   crazyhouse.
+
+### M2 (2026-10-04, branch `plan29-m2` on F2)
+
+- `position` with a line that extends the current game (same root hash
+  and ply, the history moves as the first tokens) plays only the new
+  moves. No new field: the known moves come from `state.history`.
+- Shogi, 150 plies, one `position` per ply: 118 ms in total before,
+  17 ms after. Board (`d`) and seeded depth-7 search equal a fresh full
+  replay every 25 plies in shogi, chess, xiangqi and crazyhouse.
