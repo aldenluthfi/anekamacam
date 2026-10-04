@@ -193,6 +193,59 @@ not below the base in each. A stage tied to a rule keeps the seeded
 node counts of the variants without it. Perft unchanged, build
 warning-free, params regenerated.
 
+## Plan 29b: evidence first (2026-10-04)
+
+After nine candidates with two passes, the user asked for a serious
+analysis and no more futile attempts. Three read-only audits (search
+and eval interaction, eval history, test method) found:
+
+- **Biased measurement.** 30 games on 32 hyperthreaded cores, with wall
+  time charged from before `position` (the move list replay included).
+  Openings are 8 uniform random plies and often decided at once, so pair
+  colour swaps reduce variance very little (grand pentanomial [214, 215,
+  589, 227, 255]). No game length cap. Inconclusive merges were not
+  calibrated.
+- **Misleading diagnostics.** Correlation with FSF rose for every losing
+  term. The 400-position move screen has about ±25 cp of noise. Fixed
+  depth hides the NPS cost (SD +27 cp at depth 8, -47 cp at 300 ms).
+- **Wasted speed.** King danger, proximity, check race, goal race and
+  extinction threat are computed twice per middlegame eval. Qsearch
+  evaluates before its check test. `clear_search` reallocates the history
+  tables every move. Qsearch ignores the stored TT eval.
+- **Structural gaps.** Qsearch skips every quiet drop (drop checks too).
+  Null move has no eval margin and no verification. Futility is not
+  history-gated. All margins are fractions of the dearest piece while
+  king danger can swing a whole one. Drop variants never leave OPENING.
+- **Eval pattern.** Every losing term pays for a piece standing near the
+  royal without checking that it is safe; the loss shrinks with the
+  weight. Winners price a game-end rule or a slow structural fact.
+
+Program (each step gated; nothing reaches an SPRT on a guess):
+
+- **M, measurement.** Harness flags `--book FILE` (move lists, pairs in
+  order) and `--max-plies N` (draw at N). A book of 8-12 random plies
+  kept when FSF depth 12 says |eval| <= 60 cp (100 with drops). The
+  replay cost is measured. A vs A at 30 slots with random openings and
+  at 15 slots with the book; bench NPS at 1, 15 and 30 copies; SD2 and
+  CD again under the repaired protocol. An inconclusive result no longer
+  merges. (`--seed` is not needed: `ANEKAMACAM_SEED` seeds the harness,
+  and the book fixes the openings.)
+- **F, free speed.** Shared king and rule terms computed once (F1), no
+  qsearch eval in check (F2), history tables kept allocated (F3), TT
+  eval as stand pat (F4). Each must give identical seeded node counts
+  and best moves on 192 positions, perft unchanged, NPS up under load.
+- **D, diagnosis.** A node budget per variant from game logs (scaled by
+  the candidate's NPS), fatal and good position sets from build 11's
+  FSF games labelled at FSF depth 16, probe switches
+  (`ANEKAMACAM_PROBE`), and a score of fixed, broken and net against a
+  measured noise floor σ0. The predictor is calibrated on SD, SD2, SB,
+  CR, DW, CD, GA, EX, PX, PX2 and CC before it is trusted. A census of
+  removal switches ranks the mechanisms.
+- **C, candidates** (null-move margin and verification, history-gated
+  futility and LMP, qsearch drop checks with the king term, board-only
+  phase with drops, drop tempo, kept history), in census order. Each
+  gets one SPRT only after it passes the D gate.
+
 ## Results
 
 ### Referee audit (2026-10-04)

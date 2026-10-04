@@ -836,6 +836,7 @@ struct GameManager {
 /// - flag          : with a clock, the measured wall time is charged
 /// - failed engine : a loss for it, no score if the two failed
 /// - interrupt     : loss if in check or no move loses, else a draw
+/// - ply limit     : a draw at `max_plies`, when it is set
 /// - stop          : no score, the run already has a verdict
 ///
 /// new
@@ -878,6 +879,7 @@ struct GameManager {
 ///   - dict        : Option<&Translator> -> notation of the two engines
 ///   - startpos    : &str                -> start position of the variant
 ///   - time_control: SPRTTimeControl     -> time for each move or game
+///   - max_plies   : usize               -> draw at this length, 0 for none
 ///   - stop        : &AtomicBool         -> set when the run has a verdict
 ///
 ///   Return:
@@ -969,6 +971,7 @@ impl GameManager {
         dict: Option<&Translator>,
         startpos: &str,
         time_control: SPRTTimeControl,
+        max_plies: usize,
         stop: &AtomicBool,
     ) -> SPRTGameOutcome {
         let state = &mut self.state;
@@ -1003,6 +1006,9 @@ impl GameManager {
                 return SPRTGameOutcome::Score(
                     game_result_score(result)
                 );
+            }
+            if max_plies > 0 && state.history.len() >= max_plies {
+                return SPRTGameOutcome::Score(0.5);
             }
 
             let moves: Vec<String> = state.history.iter()
@@ -1259,6 +1265,8 @@ fn game_score_bucket(score: f64) -> (u32, u32, u32) {
 /// variant: standard
 /// time control: clock 10000+100ms
 /// concurrency: 8
+/// openings: book res/books/standard.book (2000 lines)
+/// max plies: 800
 /// elo bounds: [0, 5]  alpha: 0.05  beta: 0.05
 /// every figure below is from engine A's view
 /// result (A): 118W 96L 214D
@@ -1294,7 +1302,7 @@ fn write_result_file(
 
     let body = format!(
         "engine A: {}\nengine B: {}\nvariant: {}\ntime control: {}\n\
-         concurrency: {}\n\
+         concurrency: {}\nopenings: {}\nmax plies: {}\n\
          elo bounds: [{}, {}]  alpha: {}  beta: {}\n\
          every figure below is from engine A's view\n\
          result (A): {}W {}L {}D\npentanomial (A): {:?}\n\
@@ -1302,6 +1310,13 @@ fn write_result_file(
          elo (A): {:.1} +/- {:.1}\nLLR: {:.3}\nverdict: {}\n",
         settings.engine_a, settings.engine_b, settings.variant,
         settings.time_control, settings.concurrency,
+        match settings.book.is_empty() {
+            true => format!("random, {} plies", OPENING_RANDOM_PLIES),
+            false => format!(
+                "book {} ({} lines)", settings.book_path, settings.book.len(),
+            ),
+        },
+        settings.max_plies,
         settings.h0, settings.h1, SPRT_ALPHA, SPRT_BETA,
         tally.wins, tally.losses, tally.draws, tally.pentanomial,
         tally.forfeits[0][0], tally.forfeits[0][1],
@@ -1385,6 +1400,9 @@ fn harvest_child_logs(variant: &str, concurrency: usize) {
 /// - h0           : Elo difference to reject
 /// - h1           : Elo difference to accept
 /// - concurrency  : number of games at the same time
+/// - book         : opening move lists, empty for random openings
+/// - book_path    : file of the book, for the result file
+/// - max_plies    : a game this long is a draw, 0 for no limit
 ///
 pub struct SPRTMatch {
     pub variant: String,                                                        /* variant name, selects the folder   */
@@ -1395,6 +1413,9 @@ pub struct SPRTMatch {
     pub h0: f64,                                                                /* Elo difference to reject           */
     pub h1: f64,                                                                /* Elo difference to accept           */
     pub concurrency: usize,                                                     /* match slots, one game in each      */
+    pub book: Vec<String>,                                                      /* opening move lists, pair by pair   */
+    pub book_path: String,                                                      /* book file, empty for random        */
+    pub max_plies: usize,                                                       /* draw at this length, 0 for none    */
 }
 
 /// SPRTTally
@@ -1529,7 +1550,7 @@ enum SPRTReport {
 ///
 /// 1. start the two engines in the sandboxes of the slot
 /// 2. take the next pair number, or stop at the limit
-/// 3. make one random opening for the pair
+/// 3. take the book line of the pair number, or a random opening
 /// 4. play the pair, with swapped colours
 /// 5. send each game score and the pair score to the runner
 ///
@@ -1573,13 +1594,32 @@ fn run_slot(
     while !stop.load(Ordering::Relaxed)
         && !SYSTEM_INTERRUPT.load(Ordering::Relaxed)
     {
-        if next_pair.fetch_add(1, Ordering::Relaxed) >= settings.max_games / 2
-        {
+        let pair = next_pair.fetch_add(1, Ordering::Relaxed);
+
+        if pair >= settings.max_games / 2 {
             return;
         }
 
         let mut opening_state = template.fork();                                /* one scratch board for each pair    */
-        opening_state.play_random_opening(OPENING_RANDOM_PLIES);                /* the pair games share this opening  */
+
+        if settings.book.is_empty() {
+            opening_state.play_random_opening(OPENING_RANDOM_PLIES);            /* the pair games share this opening  */
+        } else {
+            let line = &settings.book[pair % settings.book.len()];
+
+            for text in line.split_whitespace() {
+                let played = parse_move(text, &opening_state, dict);
+                let board = &mut opening_state;
+
+                if !played.is_some_and(|mv| make_move!(board, mv)) {
+                    let _ = reports.send(SPRTReport::Stop(format!(
+                        "aborted: book move {} is not legal in {}", text, line,
+                    )));
+                    return;
+                }
+            }
+        }
+
         let opening: Vec<Move> = opening_state.history
             .iter().map(|snapshot| snapshot.move_ply.clone()).collect();
 
@@ -1593,7 +1633,8 @@ fn run_slot(
             }
 
             let outcome = manager.play(
-                dict, startpos, settings.time_control, stop,
+                dict, startpos, settings.time_control, settings.max_plies,
+                stop,
             );
             let (score, restart) = match outcome {
                 SPRTGameOutcome::Score(score) => (score, Ok(())),

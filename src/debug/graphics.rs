@@ -2918,6 +2918,9 @@ fn execute_command(
                 h0,
                 h1,
                 concurrency: 1,
+                book: Vec::new(),
+                book_path: String::new(),
+                max_plies: 0,
             };
 
             run_sprt(state, &settings);

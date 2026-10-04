@@ -73,7 +73,7 @@ fn headless_usage() -> String {
         "  tune <variant> <epochs> [learning-rate]\n",
         "  sprt <variant> <bin-a> <bin-b> <ms|base+inc> [games] [h0] [h1]\n",
         "       [--concurrency n] [--option-a name=value]...\n",
-        "       [--option-b name=value]...\n\n",
+        "       [--option-b name=value]... [--book file] [--max-plies n]\n\n",
 
         "Position options:\n",
         "  --protocol <uci|usi|ucci>\n",
@@ -956,6 +956,9 @@ fn run_tune_command(arguments: &[String]) -> Result<(), String> {
 /// - `--concurrency n`         : games at the same time, 1 by default
 /// - `--option-a name=value`   : `setoption` for engine A, repeatable
 /// - `--option-b name=value`   : `setoption` for engine B, repeatable
+/// - `--book file`             : one opening move list per line, in the
+///   protocol notation; pair n plays line n (wrapping)
+/// - `--max-plies n`           : a game of n plies is a draw, 0 for none
 ///
 /// ```text
 /// sprt xiangqi ./anekamacam fairy-stockfish 10000+100 2000 -5 5
@@ -978,6 +981,9 @@ fn run_sprt_command(arguments: &[String]) -> Result<(), String> {
     let mut concurrency = 1usize;
     let mut options_a = Vec::new();
     let mut options_b = Vec::new();
+    let mut book = Vec::new();
+    let mut book_path = String::new();
+    let mut max_plies = 0usize;
     let mut index = 0usize;
 
     while index < arguments.len() {
@@ -999,6 +1005,21 @@ fn run_sprt_command(arguments: &[String]) -> Result<(), String> {
             }
             "--option-a" => options_a.push(parse_sprt_option(value)?),
             "--option-b" => options_b.push(parse_sprt_option(value)?),
+            "--book" => {
+                book = fs::read_to_string(value)
+                    .map_err(|e| format!("Cannot read book {}: {}", value, e))?
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                    .map(str::to_string)
+                    .collect();
+                book_path = value.clone();
+            }
+            "--max-plies" => {
+                max_plies = value.parse::<usize>().map_err(|_| {
+                    format!("Invalid max plies: {}", value)
+                })?;
+            }
             _ => return Err(format!("Unknown sprt flag: {}", flag)),
         }
         index += 2;
@@ -1026,6 +1047,9 @@ fn run_sprt_command(arguments: &[String]) -> Result<(), String> {
         h0: parse_number(&values, 5, 0.0f64, "h0")?,
         h1: parse_number(&values, 6, 5.0f64, "h1")?,
         concurrency,
+        book,
+        book_path,
+        max_plies,
     };
     if settings.max_games < 2 {
         return Err("sprt requires at least two games".to_string());
