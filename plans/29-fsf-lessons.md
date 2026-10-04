@@ -94,7 +94,8 @@ A stage must pass all five:
 | FSF idea | Tried | Result | Verdict |
 | -------- | ----- | ------ | ------- |
 | Never reduce or prune a check; extend checks | S1 + X1 | H1 in all four, shogi +78 | kept |
-| Reduce checks, extend few (the FSF form) | XS, XS2 | grand -17 stopped; shogi -2 | excluded, against S1 |
+| Fewer check extensions | XS, XS2 | grand -17 stopped; shogi -2 | excluded: grand's long mates need sacrifice checks extended |
+| Reduce checks in LMR, never prune them | never (S1b tested the reverse: no LMR, pruning kept, mate lost) | | stage CR |
 | Quiet and drop checks at the first qsearch ply | X1, D1 | X1 kept; D1 +0.9 | done |
 | Singular, multicut, double extension | plans 2, 13, 16 | -19, removed | excluded |
 | Capture history | plan 4 G | -14, removed | excluded |
@@ -131,6 +132,37 @@ passes merges into merged build 11 (`plan27-main11`).
 | EX | extinction | attacked vital pieces cost `value / left^2` | extinction `0 5`, kinglet, horde `-5 0` |
 | ~~TH~~ | | dropped after LA: FSF threats are about 0 at the grand and capablanca fatal positions | |
 | SB | royal variants | safe checks from board pieces, as SD | grand `0 5`, standard, xiangqi, shogi `-5 0` |
+| TI | all | a new depth may start until half the time when the last depth changed the best move or lost more than the aspiration delta (a quarter otherwise) | shogi `0 5`, grand, standard, xiangqi `-5 0` |
+| CR | checks | LMR may reduce a checking move; no pruning skips it, and its extension stays | shogi `0 5`, grand, xiangqi, standard `-5 0` |
+| CS | checks | on CR, one ply more reduction for a check whose SEE is negative | as CR |
+| FL | eval | flight squares of the royal with the SD2 safe drop checks, after CR | shogi `0 5`, crazyhouse `-5 0` |
+
+Added after the first plan (2026-10-04, user discussion):
+
+- Why SD scored better and played worse: its static eval agreed more
+  with FSF's static eval (0.805 to 0.822), FSF's depth-12 search (0.641
+  to 0.650) and the game result (0.292 to 0.307), and at a fixed depth
+  of 8 its moves were 27 cp better by FSF depth 14. At 300 ms per move
+  its moves were 47 cp worse, and its drops next to the enemy royal 348
+  cp worse: they are refuted at depth 8 to 9, and we reach a median
+  depth of 7 there (9 at 1 s, 10 at 3 s; FSF's nominal depth 14, 16,
+  17). At 1 s the gap was +21 cp, at 3 s SD was 15 cp better.
+- Why the tree is deep for checks: each checking move is exempt from
+  pruning and reduction and extended one ply (S1, X1). S1 exists
+  because our king danger is a static table blind to checks, so a
+  pruned quiet check hid mates (xiangqi mate in 2 found at depth 3 with
+  S1, past 8 without). The mates were lost to pruning (S1b kept
+  pruning and lost the mate), not to reduction, so CR keeps the
+  pruning exemption and lets LMR reduce: a reduced check that beats
+  alpha is searched again at full depth.
+- Gates for CR and CS: xiangqi mate in 2 at depth 3, grand mate in 7 by
+  depth 16, perft unchanged; then the move-choice screen at 300 ms.
+- Measure first for CR: the share of searched nodes that are checks in
+  shogi, grand, xiangqi and standard.
+- Move-choice screen: before each SPRT, compare the candidate's moves
+  with the base at 300 ms per move on 400 game positions, judged by FSF
+  at depth 14 (`scratchpad/la/movediff.py`). Correlation with FSF is a
+  diagnostic only.
 
 Departures from the first plan:
 
