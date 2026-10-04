@@ -385,6 +385,17 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   at 1 s (base 7 and 9).
 - Queued after TI: shogi `0 5`, then grand, xiangqi, standard `-5 0`.
 
+### TI (2026-10-04, branch `plan29-ti`, 3e1a460)
+
+- An unstable root (best move changed, or score fell by more than the
+  aspiration delta) may start a new depth until half its time, a stable
+  one until a quarter. Fixed-depth node counts unchanged.
+- SPRT shogi `0 5` against merged build 10: inconclusive at 3000 games,
+  -19.8 ± 12.3 (the whole interval below zero). The other arms were
+  stopped. Not merged. Likely cause, as in E1 (more time early, -36 in
+  grand): time spent on unstable moves comes out of later moves, and the
+  clock has no reserve for it. Not measured.
+
 ### CS (2026-10-04, branch `plan29-cs` on CR, cf7c364)
 
 - On CR, a check whose landing square the defender attacks is reduced
