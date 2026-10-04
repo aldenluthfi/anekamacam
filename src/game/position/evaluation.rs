@@ -249,8 +249,10 @@ macro_rules! royal_guard {
 ///
 /// Gives the cost of the enemy pressure on the royals of one colour. Each
 /// enemy piece that is not royal and not a shield reads its `zone_attack`
-/// value from its square. In a drop variant, each piece in the hand reads
-/// `zone_attack_best`, the pressure from its best drop square.
+/// value from its square. A piece in the hand does not count: it read the
+/// pressure of its best drop square, more than most board squares give,
+/// so each drop lowered the danger and the engine kept its pieces in the
+/// hand.
 ///
 /// The cost is the square of the total pressure, so attackers compound:
 ///
@@ -267,18 +269,12 @@ macro_rules! royal_guard {
 /// Return:
 /// i32             -> danger cost for that colour, 0 or more
 ///
-/// Notes:
-/// The macro does not test drop legality for pieces in the hand. A value
-/// that is too high is safer than a value that is too low.
-///
 #[macro_export]
 macro_rules! king_danger {
     ($state:expr, $color:expr) => {{
         let statics = &$state.statics;
         let board_size = statics.board_size;
         let piece_count = statics.pieces.len();
-        let hand = &$state.piece_in_hand[$color ^ 1];
-        let drops = drops!($state);
         let mut units = 0i64;
 
         for royal_square in guarded_squares!($state, $color) {
@@ -286,9 +282,6 @@ macro_rules! king_danger {
             let zone = &statics.eval.zone_attack[
                 royal * piece_count * board_size
                     ..(royal + 1) * piece_count * board_size
-            ];
-            let best = &statics.eval.zone_attack_best[
-                royal * piece_count..(royal + 1) * piece_count
             ];
 
             for (piece_index, piece) in statics.pieces.iter().enumerate() {
@@ -302,11 +295,6 @@ macro_rules! king_danger {
                     units += zone[
                         piece_index * board_size + *square as usize
                     ] as i64;
-                }
-
-                if drops {
-                    units += hand[piece_index] as i64
-                        * best[piece_index] as i64;
                 }
             }
         }
