@@ -542,6 +542,25 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   since it began is shifted down by that much (SD2, DW, CD, TI, CR and
   others). The re-test plan of M-d then covers them.
 
+### Plan 29b M-b: A vs A, shogi, 15 slots, book, 800-ply cap
+
+- 2000 games: +17.7 ± 14.6 for A, pentanomial [199, 29, 490, 35, 247],
+  no forfeits (the time losses of M-a are gone at 15 slots).
+- So two A vs A runs fall outside their 95% intervals on opposite sides
+  (M-a -22.3, M-b +17.7). For an unbiased harness with correct error
+  bars that has a chance of about 0.1%.
+- Checked and ruled out:
+  - time drift: pair scores in game order show block variance 0.97 and
+    0.68 of the independent value and lag-1 autocorrelation -0.03 and
+    -0.02;
+  - colour: the second game of a pair follows the stronger engine of the
+    run in both runs (M-a: White 0.4545 then 0.5185; M-b: 0.5195 then
+    0.4685);
+  - CPU placement: in M-a the per-slot A/B ratio of median nodes per move
+    is 0.96 to 1.05 (sd 2.3%), worth well under 5 Elo.
+- Open: chance, or a per-process effect not yet found. M-a2 (an exact
+  repeat of M-a) decides between them.
+
 ### Plan 29b F1 (branch `plan29-f1`, 2a47f64) and F2 (`plan29-f2`, b32f0d4)
 
 - F1: `shared_score!` computes king danger, proximity, check race, goal
