@@ -632,3 +632,29 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   xiangqi and grand. Suite: 49 solved (base 41).
 - Screens: shogi +37.8 ± 28.3, crazyhouse +45.9 (488 games). Shogi SPRT
   `0 5` at 10+0.1, then crazyhouse (queue90).
+- Suite noise is larger than the node test showed: the base over six
+  hash seeds solves 39 to 45 (mean 40.7). RZ (49) and DK (51) are each
+  above that, but RZ and DK together solve 43: changes do not add.
+- RZ shogi SPRT: near 0 at 2665 games (+0.3 ± 12.8), running to the
+  cap. Short shogi screens gave +16 to +58 for DW, CD, KB and RZ, and
+  the SPRTs gave about 0; shogi screens now run at 10+0.1.
+
+### How the shogi games against FSF are lost (2026-10-05)
+
+- Build 10 against FSF 2000, 400 shogi games, 251 losses (median 92
+  plies). In 184 of them our score reached +300 or more after our move
+  5; in 152 it fell to -300 or less before our move 30.
+- FSF's score of our side, at our moves where we gave +300 or more, in
+  games we lost: median -115. Where we gave +100 to +300: -200 (lost),
+  -100 (won). We take lines that we think win and FSF does not.
+- The gap (our score minus FSF's, from our side) grows with our plain
+  material lead: -3 or less +345, -2 to 2 +403, 3 to 7 +627, 8 or more
+  +897. The cp scales differ (one pawn in hand: ours +100, FSF +31),
+  so the slope is partly units; the +345 when behind is not.
+- One piece in hand at the start, relative to a silver (ours / FSF):
+  pawn 0.31 / 0.15, lance 0.43 / 0.56, knight 0.37 / 0.63, gold
+  1.16 / 1.04, bishop 1.34 / 1.30, rook 2.19 / 1.37. We value a rook in
+  the hand near 60% higher and a pawn near two times higher, the lance
+  and knight lower. One squeeze of all values does not fit: what lowers
+  the rook raises the pawn. A rule-based cause is needed before a
+  candidate; it is the main shogi lead.
