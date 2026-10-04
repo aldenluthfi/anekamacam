@@ -561,6 +561,32 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - Open: chance, or a per-process effect not yet found. M-a2 (an exact
   repeat of M-a) decides between them.
 
+### Plan 29b M-a2 and M-c
+
+- M-a2 (exact repeat of M-a): +8.7 ± 14.9, pentanomial [223, 8, 513, 8,
+  248]. M-a's -22 does not repeat.
+- The three A vs A runs (-22.3, +17.7, +8.7, each about ±15 at 95%)
+  spread more than the stated error allows: the sum of squared z is
+  15.3 on 3 degrees of freedom (p about 0.2%). The real error of a run
+  looks about twice the reported one. The source is not known (no time
+  drift, no per-slot speed gap, no colour effect). Two more A vs A runs
+  under the repaired protocol will size this factor.
+- Time forfeits (our engine on both sides): M-a 48, M-a2 46 (18 A, 28
+  B), M-b 0. All 46 of M-a2 are in games of 840 to 3058 plies (median
+  1640; the other games have a median of 125). Shogi has no move-count
+  rule, so such a game runs on with each side living on the 100 ms
+  increment, and the engine replays the whole move list before each move
+  (a cost that grows with the game, charged to its clock). The 800-ply
+  draw cap removes these games. An engine fix (reuse the board when the
+  new move list extends the last one) is stage M2.
+- M-c, one seeded depth-9 shogi search: 0.34 s alone, 0.52 s with 15
+  copies, 0.68 s with 30. 30 copies are 31% slower than 15, above the
+  25% limit.
+- **Repaired protocol:** 15 slots, a balanced book, `--max-plies 800`,
+  bounds `0 5` / `-5 0`; an inconclusive result never merges; the error
+  bars are read as about twice their stated width until the calibration
+  runs give a better factor.
+
 ### Plan 29b F1 (branch `plan29-f1`, 2a47f64) and F2 (`plan29-f2`, b32f0d4)
 
 - F1: `shared_score!` computes king danger, proximity, check race, goal
