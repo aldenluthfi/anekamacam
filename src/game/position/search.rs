@@ -1040,9 +1040,12 @@ pub fn quiescence_search(
 /// score made drop game trees much larger in tests. All bounds update the
 /// table.
 ///
-/// A move that gives check is never skipped and never reduced. It gets one
-/// more ply while the line is shorter than two times the iteration depth.
-/// The reply side has few moves, so the loss can be short. The test is made
+/// A move that gives check is never skipped. It gets one more ply while the
+/// line is shorter than two times the iteration depth, and a late check is
+/// reduced as other late moves are. A skipped check is never seen, but a
+/// reduced check that beats alpha is searched again at full depth. Drop
+/// checks are many, so a full search of each makes the tree large. The
+/// reply side has few moves, so the loss can be short. The test is made
 /// after the move, so it also sees a discovered check and a check through a
 /// new screen. A skip tests only a move whose piece has a line from its
 /// landing square to an enemy royal.
@@ -1419,7 +1422,6 @@ pub fn alpha_beta(
 
         let reduction = if depth >= minimum_depth
         && legal_moves > move_gate
-        && !gives_check
         && !goal_move
         {
             let surface = match (
