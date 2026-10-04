@@ -594,3 +594,41 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - Both answers point to one gap: the royal terms do not price an attack
   that the pieces in hand can still make. The C candidates must aim at
   that, and the screen must show it.
+
+### Screen and KH chain (2026-10-04, records on `plan29-kb`, c0e7358)
+
+- The 600-game screen at 5+0.05 passes D5 on 12 past branches
+  (Spearman 0.97, no sign miss); a screen gain still needs the SPRT.
+- KH, KH2, KH3, KB, HR: the hand term of `king_danger!` reads the best
+  drop square, so each drop lowers the danger and the engine keeps its
+  pieces in the hand. Less hand weight was better at each step.
+- KB shogi SPRT `0 5` at 10+0.1: inconclusive at 4000 games,
+  -10.2 ± 10.7. Not merged. KB and HR screen +76 and +57 in crazyhouse.
+
+### Shogi tactics suite (2026-10-05)
+
+- The 156 fatal shogi D2 positions (our move loses 100 cp or more, FSF
+  depth 16). Solved: our move within 30 cp of FSF's best (FSF depth 14
+  `searchmoves`, cached).
+- Base at 1x, 4x, 16x of 28,000 nodes: 15, 24, 41 solved. At 16x, 101
+  still lose 100 cp or more, and our depth is near 12. FSF finds its
+  move within 448,000 nodes in 75 of those 101 (median 207,000 nodes,
+  depth 14). FSF's static eval terms do not separate its move from
+  ours (mean +0.28 pawns, no term stands out): these are tactics that
+  our search does not reach, not a missing static term.
+- In 73 of the 101 the enemy hand has fewer than two pieces that are
+  not pawns: drop attacks on our royal are near one quarter of them.
+- Each gate off (D3 switches), 448,000 nodes, noise ±2 (base at 400k
+  to 500k: 41 to 43): S1 52, razoring 49, null move 46, RFP 45, X1 45,
+  futility 42, base 41, LMP 35. S1 split: pruning part 39, LMR part 46;
+  drop checks only 41. The LMR part is CR, which lost -51 in its SPRT,
+  so the suite is a filter like the screen, not a result.
+
+### RZ (2026-10-05, branch `plan29-rz`, 92f4a58)
+
+- No razoring in a drop variant. Razoring asks quiescence to confirm
+  a fail low; quiescence plays no drops, so it confirms a fail low
+  that a drop would save. Node counts equal plan29-m2 in standard,
+  xiangqi and grand. Suite: 49 solved (base 41).
+- Screens: shogi +37.8 ± 28.3, crazyhouse +45.9 (488 games). Shogi SPRT
+  `0 5` at 10+0.1, then crazyhouse (queue90).
