@@ -224,7 +224,9 @@ or a rule that makes the mover lose (perpetual check or chase).
 ### SD2 (2026-10-04, branch `plan29-sd2` on SD, 5f0f581)
 
 - `SAFE_CHECK_RATIO` 500 to 125. Correlation 0.797 to 0.803.
-- Queued after CD: shogi `0 5`, crazyhouse `-5 0`.
+- SPRT shogi `0 5` against merged build 10: H0, -32.5 ± 15.2. The loss
+  shrinks with the weight, so the term itself hurts (and costs about 13%
+  NPS). The crazyhouse arm was stopped. The safe drop check line ends.
 
 ### DW (2026-10-04, branch `plan29-dw`, 561b83b)
 
