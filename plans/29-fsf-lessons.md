@@ -94,7 +94,8 @@ A stage must pass all five:
 | FSF idea | Tried | Result | Verdict |
 | -------- | ----- | ------ | ------- |
 | Never reduce or prune a check; extend checks | S1 + X1 | H1 in all four, shogi +78 | kept |
-| Reduce checks, extend few (the FSF form) | XS, XS2 | grand -17 stopped; shogi -2 | excluded, against S1 |
+| Fewer check extensions | XS, XS2 | grand -17 stopped; shogi -2 | excluded: grand's long mates need sacrifice checks extended |
+| Reduce checks in LMR, never prune them | never (S1b tested the reverse: no LMR, pruning kept, mate lost) | | stage CR |
 | Quiet and drop checks at the first qsearch ply | X1, D1 | X1 kept; D1 +0.9 | done |
 | Singular, multicut, double extension | plans 2, 13, 16 | -19, removed | excluded |
 | Capture history | plan 4 G | -14, removed | excluded |
@@ -131,6 +132,45 @@ passes merges into merged build 11 (`plan27-main11`).
 | EX | extinction | attacked vital pieces cost `value / left^2` | extinction `0 5`, kinglet, horde `-5 0` |
 | ~~TH~~ | | dropped after LA: FSF threats are about 0 at the grand and capablanca fatal positions | |
 | SB | royal variants | safe checks from board pieces, as SD | grand `0 5`, standard, xiangqi, shogi `-5 0` |
+| TI | all | a new depth may start until half the time when the last depth changed the best move or lost more than the aspiration delta (a quarter otherwise) | shogi `0 5`, grand, standard, xiangqi `-5 0` |
+| CR | checks | LMR may reduce a checking move; no pruning skips it, and its extension stays | shogi `0 5`, grand, xiangqi, standard `-5 0` |
+| CS | checks | on CR, one ply more reduction for a check whose SEE is negative | as CR |
+| FL | eval | flight squares of the royal with the SD2 safe drop checks, after CR | shogi `0 5`, crazyhouse `-5 0` |
+
+Added after the first plan (2026-10-04, user discussion):
+
+- Why SD scored better and played worse: its static eval agreed more
+  with FSF's static eval (0.805 to 0.822), FSF's depth-12 search (0.641
+  to 0.650) and the game result (0.292 to 0.307), and at a fixed depth
+  of 8 its moves were 27 cp better by FSF depth 14. At 300 ms per move
+  its moves were 47 cp worse, and its drops next to the enemy royal 348
+  cp worse: they are refuted at depth 8 to 9, and we reach a median
+  depth of 7 there (9 at 1 s, 10 at 3 s; FSF's nominal depth 14, 16,
+  17). At 1 s the gap was +21 cp, at 3 s SD was 15 cp better.
+- Why the tree is deep for checks: each checking move is exempt from
+  pruning and reduction and extended one ply (S1, X1). S1 exists
+  because our king danger is a static table blind to checks, so a
+  pruned quiet check hid mates (xiangqi mate in 2 found at depth 3 with
+  S1, past 8 without). The mates were lost to pruning (S1b kept
+  pruning and lost the mate), not to reduction, so CR keeps the
+  pruning exemption and lets LMR reduce: a reduced check that beats
+  alpha is searched again at full depth.
+- Gates for CR and CS: xiangqi mate in 2 at depth 3, grand mate in 7
+  within the time the base needs (user choice: a time gate, as a
+  reduction makes each ply cheaper), perft unchanged; then the
+  move-choice screen at 300 ms.
+- Measure first for CR (probe copy of merged build 10, midgame
+  positions): checks are 12.8% of searched moves and their subtrees
+  37.1% of nodes in shogi; grand 9.1% / 10.6%, xiangqi 12.1% / 12.8%,
+  standard 9.8% / 12.2%. A shogi check costs about three times an
+  average move.
+- Note from plan 27: in the xiangqi mate in 2, LMR reduced the first
+  move `f1h1` in the base of that time; checks exempt from LMR found it
+  at depth 8 and S1 at depth 3. Reduction and pruning both delayed it.
+- Move-choice screen: before each SPRT, compare the candidate's moves
+  with the base at 300 ms per move on 400 game positions, judged by FSF
+  at depth 14 (`scratchpad/la/movediff.py`). Correlation with FSF is a
+  diagnostic only.
 
 Departures from the first plan:
 
@@ -188,8 +228,28 @@ or a rule that makes the mover lose (perpetual check or chase).
   builds 5 to 8) also had this in embassy, janus, kinglet, newzealand,
   pocketknight, janggi; the config and dict fixes of plan 27 cleared
   those in build 10.
-- To do: fix each mismatch (rules, dict or translation), then rate the
-  six again.
+- Fixes (branch `plan29-ref`), each checked with a local match against
+  FSF and the FSF input captured (`scratchpad/ouktest`):
+  - horde: a pawn double steps only from the first two ranks
+    (`m<nW-pnW>@@@sW{2}~*?`, no first-move flag). Perft now equals FSF
+    to depth 5 (265223). Local match: 0 forfeits, 4W 12L.
+  - asean: the dict lowercased only `=Q`; FSF and we disagreed on
+    `f7f8r`. Local match: 0 forfeits in 32 games.
+  - ouk-chaktrang: FSF keeps the king leap and met jump as gates from
+    the FEN castling field; the start FEN now sends `DEde`. Promotion is
+    on rank 6, so `=M -> m` replaces `8=M`. Forfeits fell from 330 of 400
+    to 4 of 32. The rest: FSF drops the leap when a rook aims at the
+    king and drops the rights when the king moves; our rules keep them,
+    so our leap desyncs FSF. Not fixed.
+  - The SPRT result file now has a `forfeits:` line (illegal move, time)
+    for each engine.
+- Rated again on the fixed build (`ref`, 400 games, bounds `0 0`):
+  horde -99.2 ± 27.2 (FSF forfeits 2 illegal, 2 time), asean +328.3 ±
+  40.7 (no forfeits).
+- Not fixed: sittuyin (FSF lets the last pawn promote anywhere; our
+  promotion zone has no pawn count), chigorin (FSF 14.0.1 lets both
+  sides promote to any piece; its newer source does not), xiangqi
+  (perpetual chase rules differ in 10 of 400 games).
 
 ### SD (2026-10-04, branch `plan29-sd`, 53e8bc5)
 
@@ -207,14 +267,19 @@ or a rule that makes the mover lose (perpetual check or chase).
 ### SD2 (2026-10-04, branch `plan29-sd2` on SD, 5f0f581)
 
 - `SAFE_CHECK_RATIO` 500 to 125. Correlation 0.797 to 0.803.
-- Queued after CD: shogi `0 5`, crazyhouse `-5 0`.
+- SPRT shogi `0 5` against merged build 10: H0, -32.5 ± 15.2. The loss
+  shrinks with the weight, so the term itself hurts (and costs about 13%
+  NPS). The crazyhouse arm was stopped. The safe drop check line ends.
 
 ### DW (2026-10-04, branch `plan29-dw`, 561b83b)
 
 - Seeded node counts: standard, xiangqi, grand, pocketknight the same.
 - Shogi slow positions at depth 8: g341 +416 to +265, g176 -284 to
   -379, g74 +161 to +194, g19 +1067 to +1075.
-- Queued after SD: shogi `0 5`, crazyhouse `-5 0`.
+- SPRT shogi `0 5` against merged build 10: inconclusive at 3000 games,
+  -8.6 ± 12.5. Crazyhouse `-5 0` stood at -118.3 ± 56.6 after 131 games
+  and was stopped. Not merged: doubling the royal safety values does not
+  help, as KD did not in grand.
 
 ### LA (2026-10-04)
 
@@ -247,7 +312,9 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 
 - Seeded node counts: standard, xiangqi, grand, shogi the same;
   threecheck 53117 to 62565, fivecheck 40694 to 29870.
-- Queued after DW: threecheck `0 5`, fivecheck `-5 0`.
+- SPRT threecheck `0 5` against merged build 10: inconclusive at 3000
+  games, +9.0 ± 10.7 (lower end -1.7). Not merged; the fivecheck arm
+  was stopped.
 
 ### GA (2026-10-04, branch `plan29-ga`, ae69bbb)
 
@@ -282,4 +349,17 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   NPS is then the same as merged build 10.
 - Seeded node counts: standard, xiangqi, shogi the same; grand 424988 to
   478804. Correlation (164 grand positions): 0.850 to 0.852.
-- Queued: grand `0 5`, then standard, xiangqi, shogi `-5 0`.
+- SPRT grand `0 5` against merged build 10: H0, -31.3 ± 14.9. The
+  regression arms were stopped. Same pattern as SD: check knowledge in
+  the eval, with a search that plays every check out, loses. Retry only
+  with CR.
+
+### CR (2026-10-04, branch `plan29-cr`, 504e6e8)
+
+- The LMR gate no longer exempts a checking move. Pruning still never
+  skips one, and the check extension stays.
+- Gates: xiangqi mate in 2 at depth 1 (base: 1). Grand mate in 7: base
+  at depth 15 in 1.9 s (3.4M nodes to depth 16); CR at depth 18 in 1.5
+  s (248k nodes to depth 16, where it scores -1693). Passes the time
+  gate.
+- Move-choice screen in shogi at 300 ms: running.
