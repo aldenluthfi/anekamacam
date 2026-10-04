@@ -248,9 +248,11 @@ macro_rules! royal_guard {
 /// king_danger!
 ///
 /// Gives the cost of the enemy pressure on the royals of one colour. Each
-/// enemy piece that is not royal and not a shield reads its `zone_attack`
-/// value from its square. In a drop variant, each piece in the hand reads
-/// `zone_attack_best`, the pressure from its best drop square.
+/// enemy piece on the board that is not royal and not a shield reads its
+/// `zone_attack` value from its square. In a drop variant, each piece in
+/// the hand reads `zone_attack_best`, the pressure from its best drop
+/// square. A shield in the hand counts too: a drop puts it next to the
+/// royal in one move, and a shogi gold or silver is a shield.
 ///
 /// The cost is the square of the total pressure, so attackers compound:
 ///
@@ -292,16 +294,16 @@ macro_rules! king_danger {
             ];
 
             for (piece_index, piece) in statics.pieces.iter().enumerate() {
-                if p_color!(piece) as usize == $color
-                    || p_is_royal!(piece)
-                    || statics.eval.shield_pieces[piece_index] {
+                if p_color!(piece) as usize == $color || p_is_royal!(piece) {
                     continue;
                 }
 
-                for square in piece_squares!($state, piece_index) {
-                    units += zone[
-                        piece_index * board_size + *square as usize
-                    ] as i64;
+                if !statics.eval.shield_pieces[piece_index] {
+                    for square in piece_squares!($state, piece_index) {
+                        units += zone[
+                            piece_index * board_size + *square as usize
+                        ] as i64;
+                    }
                 }
 
                 if drops {
