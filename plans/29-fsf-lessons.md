@@ -383,7 +383,17 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   better (worse in 1, better in 7). Not decisive, so the SPRT decides.
 - Median depth on the 24 shogi midgame positions: 8 at 300 ms and 10.5
   at 1 s (base 7 and 9).
-- Queued after TI: shogi `0 5`, then grand, xiangqi, standard `-5 0`.
+- SPRT shogi `0 5` against merged build 10: H0, -50.9 ± 19.0. The other
+  arms were stopped. Not merged; CS (on CR) and FL (after CR) are
+  dropped with it.
+- Why, from the CS screen: the same reduction acts in our own tree on
+  the enemy's checks. A mating threat against us then shows one or two
+  plies late, and the defending move (in shogi, a drop next to our own
+  royal) is skipped. The extra depth (+1 to 1.5 plies) does not pay for
+  that. S1's full-depth checks thus protect the defender as much as the
+  attacker. A reduction that spares the defender would need to know
+  which side the check threatens at the root, which the tree does not
+  track today.
 
 ### TI (2026-10-04, branch `plan29-ti`, 3e1a460)
 
