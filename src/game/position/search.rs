@@ -808,7 +808,10 @@ pub fn quiescence_search(
     verify_game_state(state);
 
     let in_check = is_in_check!(state.playing, state);
-    let stand_pat = evaluate_position!(state);
+    let stand_pat = match in_check {                                            /* a checked side cannot stand pat,   */
+        true => -INF,                                                           /* so its score is never read below   */
+        false => evaluate_position!(state),
+    };
 
     if !in_check {
         if stand_pat >= beta {
@@ -821,7 +824,10 @@ pub fn quiescence_search(
     }
 
     if state.search_ply >= MAX_DEPTH as u32 {
-        return stand_pat;
+        return match in_check {
+            true => evaluate_position!(state),
+            false => stand_pat,
+        };
     }
 
     let repeats = count_repetitions(state, SEARCH_REPETITION_CAP);
