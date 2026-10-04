@@ -1042,7 +1042,8 @@ pub fn quiescence_search(
 ///
 /// A move that gives check is never skipped. It gets one more ply while the
 /// line is shorter than two times the iteration depth, and a late check is
-/// reduced as other late moves are. A skipped check is never seen, but a
+/// reduced as other late moves are, one ply more when the defender
+/// attacks its landing square. A skipped check is never seen, but a
 /// reduced check that beats alpha is searched again at full depth. Drop
 /// checks are many, so a full search of each makes the tree large. The
 /// reply side has few moves, so the loss can be short. The test is made
@@ -1438,9 +1439,22 @@ pub fn alpha_beta(
             let history = scores[index] as i32 - QUIET_MOVE_SCORE;
             let learned = is_quiet
                 && scores[index] < KILLER_MOVE_SCORE;                           /* killers keep the plain reduction   */
+            let landing = end!(mv) as usize;
+            let checker = state.main_board[landing];
+            let exposed = gives_check                                           /* a check the defender can take is   */
+                && checker != NO_PIECE                                          /* most often a sacrifice, so it is   */
+                && is_square_attacked!(                                         /* cut one ply more                   */
+                    landing as u32,
+                    state.playing ^ 1,
+                    false,
+                    p_is_royal!(&state.statics.pieces[checker as usize]),
+                    p_rank!(&state.statics.pieces[checker as usize]),
+                    state
+                );
 
             (surface[depth_slot * REDUCTION_MOVE_CAP + move_slot] as i32
-                - history.signum() * learned as i32)                            /* a move that worked is cut less     */
+                - history.signum() * learned as i32                             /* a move that worked is cut less     */
+                + exposed as i32)
                 .clamp(0, depth as i32 - 2) as usize                            /* one ply always survives the cut    */
         } else {
             0
