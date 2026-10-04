@@ -491,3 +491,24 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - The sign changes in each variant and no mean reaches 1%. An earlier
   shogi run on the positions of both sides gave -2.2%, but that run
   searches each ply, so the table is warmer than in a game. Reverted.
+
+### D2 sets and M-d (2026-10-04, server)
+
+- `sets.py` (D2) stopped for 22 min: 1998 of 2000 shogi labels were
+  done, and two FSF `go depth 16` searches did not end. The script
+  kept all labels in memory, so the queue waited. Now each search
+  stops at depth 16 or after 60 s and keeps the depth it got. Each
+  label goes to disk when it is done, and a restart skips the done
+  labels. The two stopped positions were lost shogi ends with full
+  hands (near -4300 cp), not in the fatal or good sets.
+- D2 sets, 2000 labels each (fatal, good): shogi 156, 1208; grand 147,
+  1296; xiangqi 95, 1375; standard 88, 1480. Grand 6 and xiangqi 7
+  labels stopped at 60 s.
+- The opening books (20 workers, near 8 to 10 h for 7 variants) stop
+  with SIGSTOP while a timed run (M-d, A vs A, D1 budgets) plays, so
+  those runs have a quiet machine. Queue79 and queue80 do this.
+- M-d, SD2 against merged build 10, shogi, repaired protocol: H0,
+  -56.7 ± 20.0. Same as the old H0 (-32.5 ± 15.2), so the past
+  verdicts stand and DW and TI get no new run.
+- D1: median nodes for each move in M-d (15 slots, both engines,
+  156k moves): 27,497 in shogi.
