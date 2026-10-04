@@ -657,4 +657,12 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   the hand near 60% higher and a pawn near two times higher, the lance
   and knight lower. One squeeze of all values does not fit: what lowers
   the rook raises the pawn. A rule-based cause is needed before a
-  candidate; it is the main shogi lead.
+  candidate. CP (plan 27) already gave shogi this squeeze: H0, -25.0;
+  CP2 then kept it to free drops. A per-piece form (every piece but the
+  pawn) is the same in shogi, so it was not run.
+- Correction: the score gap above does not show that we are too
+  hopeful. FSF at UCI_Elo 2000 reports the score of its best line but
+  plays a weaker move (skill level), so its scores favour FSF: in grand
+  games that we won, at our scores of -100 to +100, FSF gave our side
+  -176. Units differ too. Only the depth-16 suite and the hand values
+  stand as facts.
