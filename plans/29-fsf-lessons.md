@@ -594,3 +594,44 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - Both answers point to one gap: the royal terms do not price an attack
   that the pieces in hand can still make. The C candidates must aim at
   that, and the screen must show it.
+
+### Screen calibration (2026-10-04, queue81, queue82)
+
+- 600 games at 5+0.05, book (400-line screen books for grand, koth,
+  extinction, threecheck), 15 slots, each branch against its parent:
+
+  | Branch | Variant | SPRT Elo | Screen Elo |
+  | --- | --- | --- | --- |
+  | PX | shogi | -306 | -357.0 ± 44.6 |
+  | SD | shogi | -115 | -116.5 ± 29.5 |
+  | SD2 | shogi | -33 | -64.4 ± 28.7 |
+  | CR | shogi | -51 | -53.1 ± 26.4 |
+  | TI | shogi | -20 | -8.7 ± 26.6 |
+  | DW | shogi | -9 | +29.6 ± 27.2 |
+  | PX2 | shogi | +16 | +16.8 ± 27.5 |
+  | SB | grand | -31 | -26.7 ± 23.8 |
+  | GA | koth | +137 | +123.0 ± 29.1 |
+  | EX | extinction | +184 | +187.0 ± 32.4 |
+  | CD | threecheck | +9 | +57.9 ± 27.7 |
+  | CC | threecheck | +248 | +340.4 ± 42.5 |
+
+- Spearman ρ 0.97, Pearson 0.99, no sign miss in the 8 decisive
+  results. The screen passes D5 and replaces the predictor.
+- CD is 3 standard errors above its SPRT: at 5+0.05 the check-count
+  danger gains more than at 10+0.1. A screen gain is thus a filter,
+  not a result; each screen winner still needs the SPRT.
+
+### KH (2026-10-04, branch `plan29-kh`, bcd0f97)
+
+- Bug: `king_danger!` skipped every enemy shield piece, the hand too.
+  `derive_shield_pieces` marks the shogi gold and silver as shields
+  (local, forward lean), so three golds and two silvers in the enemy
+  hand added 0 danger. Over 335 shogi set positions, our danger was
+  median 0 cp, p90 54 cp; FSF King safety median 0.95, p90 8.0 pawns;
+  correlation 0.35. SD, DW and PX tuned a term that did not see the
+  main shogi attackers.
+- Fix: a shield on the board is still skipped, a shield in the hand
+  counts. Node counts equal plan29-m2 in standard, xiangqi and grand;
+  shogi and crazyhouse change. The test position (enemy hand
+  `ssggg`) goes from -6449 to -7378 cp.
+- Screen: shogi `0 5` arm, crazyhouse regression arm (queue83).
