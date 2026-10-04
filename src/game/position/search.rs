@@ -72,23 +72,28 @@ pub struct SearchInfo {
 /// move_key!
 ///
 /// Gives the history cell of a move, `piece * board_size + end`. This is
-/// the "move key" of this file. Continuation history nests two keys.
+/// the "move key" of this file. Continuation history nests two keys. A
+/// drop reads a second plane of `pieces * board_size` keys: a drop to a
+/// square and a board move to it are not the same plan.
 ///
 /// Params:
 /// - mv        : &Move -> move to index
 /// - board_size: usize -> number of squares, the key stride
+/// - plane     : usize -> `pieces * board_size`, the drop offset
 ///
 /// Return:
 /// usize               -> flat index into a history table
 ///
 /// Notes:
-/// The caller gives `board_size`, so the scoring loop reads `statics` only
-/// once.
+/// The caller gives `board_size` and `plane`, so the scoring loop reads
+/// `statics` only once.
 ///
 #[macro_export]
 macro_rules! move_key {
-    ($mv:expr, $board_size:expr) => {{
-        piece!($mv) as usize * $board_size + end!($mv) as usize
+    ($mv:expr, $board_size:expr, $plane:expr) => {{
+        piece!($mv) as usize * $board_size
+            + end!($mv) as usize
+            + m_drop!($mv) as usize * $plane
     }};
 }
 
@@ -345,7 +350,7 @@ pub fn clear_search(
     let piece_count = state.statics.pieces.len();
     let board_size = state.statics.board_size;
 
-    let move_keys = piece_count * board_size;
+    let move_keys = piece_count * board_size * (1 + drops!(state) as usize);
 
     info.search_hist = vec![0i16; move_keys];
     let cont_dense = CONTINUATION_PLIES * move_keys * move_keys;
@@ -1314,6 +1319,7 @@ pub fn alpha_beta(
     }
 
     let board_size = state.statics.board_size;
+    let plane = state.statics.pieces.len() * board_size;
     let history_bonus = (depth * depth) as i32;
     let cont_bases = continuation_bases(state);
 
@@ -1348,7 +1354,7 @@ pub fn alpha_beta(
         );
 
         let mv = &moves[index];
-        let history_index = move_key!(mv, board_size);
+        let history_index = move_key!(mv, board_size, plane);
 
         let is_capture = m_capture!(mv);
         let is_promotion = m_promotion!(mv);
@@ -1744,7 +1750,8 @@ fn update_correction(
 ///
 fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
     let board_size = state.statics.board_size;
-    let move_keys = state.statics.pieces.len() * board_size;
+    let plane = state.statics.pieces.len() * board_size;
+    let move_keys = plane * (1 + drops!(state) as usize);
     let played = state.history.len();
 
     let mut bases = [usize::MAX; CONTINUATION_PLIES];
@@ -1760,7 +1767,7 @@ fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
             continue;
         }
 
-        let key = move_key!(previous, board_size);
+        let key = move_key!(previous, board_size, plane);
 
         bases[plies_back] = (plies_back * move_keys + key) * move_keys;
     }

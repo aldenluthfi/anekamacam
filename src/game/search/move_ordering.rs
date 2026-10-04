@@ -317,7 +317,8 @@ macro_rules! score_move {
                 KILLER_MOVE_SCORE + 1
             } else {
                 let board_size = $state.statics.board_size;
-                let index = move_key!(scored_move, board_size);
+                let plane = $state.statics.pieces.len() * board_size;
+                let index = move_key!(scored_move, board_size, plane);
 
                 let continuation: i32 = $cont_bases.iter()
                     .filter(|&&base| base != usize::MAX)
