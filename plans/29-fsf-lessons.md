@@ -456,3 +456,38 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - Shogi, 150 plies, one `position` per ply: 118 ms in total before,
   17 ms after. Board (`d`) and seeded depth-7 search equal a fresh full
   replay every 25 plies in shogi, chess, xiangqi and crazyhouse.
+
+### F3 (2026-10-04, not made)
+
+- Each `go` makes a new `SearchInfo` in a new thread
+  (`protocol.rs` go handler). To keep the tables between moves needs a
+  new session field.
+- Ceiling: `vec![0; n]` gets zero pages from the OS, and only touched
+  pages fault. Shogi, 72 moves of `go nodes 200000` in one UCI
+  session: 20.8 s, 28k to 29k minor faults in total, near 400 for each
+  move. At 1 to 2 us for each fault, this is below 1 ms of 290 ms, so
+  near 0.2%. The gate is 1%.
+- `fill(0)` writes the full table each move. `cont_hist` is at the
+  1 GB cap in taikyoku, chu and dai-dai shogi, so near 100 ms for each
+  move there. Not made.
+
+### F4 (2026-10-04, measured, reverted)
+
+- Change: qsearch probes the main table before the stand pat and uses
+  its raw eval when the entry has one. Node counts equal in bench at
+  depth 10 in shogi, standard, xiangqi and grand.
+- Hit rate, non-check qnodes with an eval in the main table: cold bench
+  shogi 2.6%, standard 13.8%, xiangqi 3.5%, grand 1.9%. Warm UCI
+  session, shogi, 71 moves: 4.0%.
+- Cost: the probe, the repetition count and the key move in front of
+  the stand pat cutoff, so each cutoff node pays them.
+- Wall time, one UCI session for each variant, Hash 64, `go nodes
+  200000` on the positions of one side of game 6 to 9 of the final
+  sweep, 3 paired rounds (F4 against base, + is slower):
+  - shogi +0.5, +1.4, -2.3 (mean -0.1%)
+  - standard -0.7, +2.0, +1.4 (mean +0.9%)
+  - xiangqi +3.6, -4.2, +1.3 (mean +0.2%)
+  - grand -4.9, +1.3, +0.5 (mean -1.0%)
+- The sign changes in each variant and no mean reaches 1%. An earlier
+  shogi run on the positions of both sides gave -2.2%, but that run
+  searches each ply, so the table is warmer than in a game. Reverted.
