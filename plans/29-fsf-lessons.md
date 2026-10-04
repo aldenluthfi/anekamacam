@@ -518,7 +518,29 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   calls are not affected (40 of 40 correct).
 - SD at 30+0.3 (600 games, bounds `0 0`): -89.1 ± 27.5 at 592 games. SD
   loses at three times the time per move too, so "it only lacks depth"
-  does not hold. A calibration point for D5.
+  does not hold. A calibration point for D5. Final: -85.0 ± 27.5 at 600
+  games.
+
+### Plan 29b M-a: A vs A, shogi, 30 slots, random openings (failed)
+
+- Same binary on both sides, 2000 games: -22.3 ± 15.4 for A (the
+  interval excludes 0; p about 0.5%). Pentanomial [283, 10, 480, 6,
+  221]. Time forfeits 24 for each side (2.4% of games, above the 0.5%
+  limit). **M-a fails on both conditions**, so stop rule 1 holds: no
+  candidate SPRT until the harness is understood.
+- By colour and order: A as White in the first game of a pair scores
+  0.4545, A as Black in the second game 0.4815; White scores 0.4865 in
+  all. B wins both halves, so colour is not the cause.
+- By resources: median nodes per move A 21,684, B 21,507 (means 28,310
+  and 28,114) over about 176,000 moves each. CPU share is not the cause.
+- Open: chance (p about 0.5%) or a subtler harness effect. M-b (15
+  slots, book) and M-a2 (an exact repeat of M-a) separate chance, load
+  and openings.
+- Side result for D1: the median search under 30-slot load is about
+  21.7k nodes per move in shogi.
+- If a bias of about -20 Elo against A is real, every candidate verdict
+  since it began is shifted down by that much (SD2, DW, CD, TI, CR and
+  others). The re-test plan of M-d then covers them.
 
 ### Plan 29b F1 (branch `plan29-f1`, 2a47f64) and F2 (`plan29-f2`, b32f0d4)
 
