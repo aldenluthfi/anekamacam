@@ -500,3 +500,42 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   standard, xiangqi, grand, shogi and kinglet equal merged build 10.
   Perft at depth 3 unchanged in standard, shogi, xiangqi, grand,
   crazyhouse.
+
+### Plan 29b M: harness (2026-10-04, branch `plan29-meas`, c377a7b)
+
+- `--book FILE` (one move list per line in protocol notation; pair n
+  plays line n, wrapping) and `--max-plies N` (a draw at N plies). The
+  result file names the openings and the ply limit. Tested: a 2-line
+  book with a 20-ply limit gives the book positions and capped draws; a
+  shogi line with a promotion (`c3b4+`) plays.
+- Book builder `scratchpad/book/mkbook.py`: each ply is drawn from the
+  moves that both our engine (`perft 1 --protocol uci`) and FSF list, so
+  every line is legal under both rule sets; kept when FSF depth 12 gives
+  |eval| <= the limit. About 6 s of CPU per shogi line.
+- A local run of the identity check failed on 5 of 192 positions because
+  parallel engines in one working directory clash when they roll
+  `logs/latest.log`; each run now gets its own directory. Parallel perft
+  calls are not affected (40 of 40 correct).
+- SD at 30+0.3 (600 games, bounds `0 0`): -89.1 ± 27.5 at 592 games. SD
+  loses at three times the time per move too, so "it only lacks depth"
+  does not hold. A calibration point for D5.
+
+### Plan 29b F1 (branch `plan29-f1`, 2a47f64) and F2 (`plan29-f2`, b32f0d4)
+
+- F1: `shared_score!` computes king danger, proximity, check race, goal
+  race and extinction threat once per eval and adds the same value to
+  both halves before the blend, so the blend inputs are bit-equal.
+- F2: quiescence does not evaluate a checked side (its stand pat is never
+  read); the MAX_DEPTH return evaluates it then.
+- Identity (`scratchpad/speed/verify.py`, seeded depth 9, 24 positions
+  in each of standard, xiangqi, grand, shogi, crazyhouse, koth,
+  extinction, threecheck): node counts and best moves identical for F1
+  against merged build 11 and for F2 against F1.
+- Speed: not measured yet; the local machine was busy with the book, so
+  the timings are not valid. To be measured under game load on the
+  server (M-c method).
+- F3 note: `vec![0; n]` takes lazily zeroed pages, while `fill(0)` writes
+  the whole table (about 20 MB in shogi) every move; which is faster has
+  to be measured, so F3 waits for that. F4 note: the main search hands
+  depth 0 to quiescence without an eval, so the TT seldom holds one for a
+  q-node; F4 waits for the speed numbers.
