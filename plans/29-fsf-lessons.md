@@ -948,3 +948,21 @@ All against plan29-m2, 600-game screens at 5+0.05:
   base each on the same book lines, and the Elo difference between the
   two ratings decides. At 2000 games each the difference has near
   ± 16 Elo; the self-play SPRT stays the first filter.
+
+### Build 12 baseline against FSF 2000 (2026-10-05)
+
+1000 games each, repaired protocol (book, 15 slots, 800-ply cap, FSF
+Move Overhead 100):
+
+| Variant | Build 12 | Build 10 (old protocol, 400 games) |
+| --- | --- | --- |
+| standard | +67.2 ± 22.5 | +66 |
+| xiangqi | +60.0 ± 22.1 | +13 |
+| grand | -34.2 ± 20.6 | -50 |
+| shogi | -92.3 ± 23.0 | -90 |
+
+The four play the same as build 11 (node counts equal), so the xiangqi
+rise is the protocol (book lines, Move Overhead), not the engine.
+Standard and xiangqi meet the goal; grand needs near +35, shogi +92.
+Next: RZ on build 12 against FSF in shogi, 2000 games, against a
+build 12 run of 2000 on the same book lines (queue100).
