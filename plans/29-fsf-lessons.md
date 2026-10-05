@@ -1043,3 +1043,23 @@ a time.
   NPS within 5% (grand -5%, shogi +9%).
 - Test: against FSF 2000 in the key four, 1000 games each on the same
   book lines as the build 12 and 13 runs (queue104).
+- Shogi against FSF: -64.5 +/- 21.4, the same as build 13. The other
+  three FSF runs did not run: the screens of queue106 replaced them.
+- Screens against build 13, 600 games, 5+0.05: grand +47.8 +/- 25.3,
+  xiangqi +12.2 +/- 23.5, standard -27.3 +/- 24.5.
+
+### PS2 (2026-10-05, branch `plan29-ps2`, d7dfba5)
+
+- Why standard fell: PS charged each push, also a push that cannot
+  happen. In standard a pawn often stands in front of a piece or steps
+  onto a square that an own pawn guards. FSF counts only a safe push:
+  an empty stop that no enemy pawn attacks.
+- Change: a push counts only if a stop square is empty and no pawn of
+  the threatened colour attacks it. A new mask `pawn_stop` (slot,
+  square to the stop squares) holds the stop; `pawn_backward` already
+  holds the squares that attack it.
+- Check (standard, black pawn on b5, white knight on c3): build 13 /
+  PS / PS2 are 76 / 36 / 36 cp with a free b4; 103 / 63 / 103 with a3
+  guarding b4; 56 / 16 / 56 with b4 blocked.
+- Test: screens in the 7 pawn variants, standard first (queue107). The
+  PS screens left in queue106 were stopped.
