@@ -1022,3 +1022,11 @@ lines as the build 12 and RZ runs:
   kinglet, knightmate, minishogi, ouk-chaktrang, shogi.
 - Test: build 13 and SY each 400 games against FSF 2000 in the 9
   variants, the sum decides (queue105).
+- Queue105 was replaced by screens (queue106, queue107): SY against
+  build 13, 600 games, 5+0.05 (shogi 10+0.1), book where one exists:
+  knightmate +93.7 +/- 24.6, kinglet +64.4 +/- 26.1, horde +12.2 +/-
+  22.7, ouk-chaktrang +5.8 +/- 7.7, judkins +4.9 +/- 16.3, euroshogi
+  +2.3 +/- 26.5, ai-wok -4.1 +/- 23.5, shogi -8.7 +/- 27.2, minishogi
+  -9.2 +/- 14.7. No variant falls; the two with a commoner gain.
+- Next (queue109): SPRT `0 5` at 10+0.1 in knightmate, then SY and
+  build 13 each 1000 games against FSF 2000 in knightmate and kinglet.
