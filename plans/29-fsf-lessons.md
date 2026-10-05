@@ -999,3 +999,47 @@ lines as the build 12 and RZ runs:
 - HM loses in shogi against FSF too; HMF keeps it to free drops.
 - RF fails: unlike razoring, reverse futility does not ask quiescence,
   and the static score cut is worth more than the drops it misses.
+
+### General loss analysis, 35 variants (2026-10-05)
+
+Change of method: one analysis over all variants, then fixes that cover
+many of them, tested against FSF in a sweep, in place of one variant at
+a time.
+
+- Data: the build 10 sweep against FSF 2000 (400 games in each of 35
+  variants), 6345 losses. Tool: `~/ga/trace.py` on the server.
+- In each loss, at each of our moves from ply 8 while the position is
+  not decided (FSF best below +300, above -500): FSF depth 10 best move
+  and score, and our move's score (`searchmoves`). The first move of
+  ours that loses 80 cp or more is the costly move: found in 4667.
+- Results, the same in nearly every variant:
+  - When: median ply 11 to 18, our first moves after the opening.
+  - Kind: in 56% FSF's static eval does not separate its move from ours
+    (below 0.3 pawn), so the cost shows only in search. Where it does,
+    the leading FSF term is mobility (523), then material (440), king
+    safety (421) and threats (387).
+  - E1: our piece move where FSF moves a pawn, 802 against 405 for the
+    reverse; grand 156 against 65.
+  - E2: our capture where FSF does not take, 440 against 132; most in
+    xiangqi (53 against 10), newzealand, hoppelpoppel, knightmate.
+- Grand detail: at the costly move, our piece goes where one enemy pawn
+  step attacks it 32 times in 120, FSF's move 10 times; FSF pushes a
+  pawn 63 times, we do 27 times.
+- Why: we have no mobility term (too slow, plans 3 and 13). FSF counts
+  mobility only on squares that enemy pawns do not attack, so its search
+  sees a piece that pawns will chase; ours sees it when material falls.
+
+### PS (2026-10-05, branch `plan29-ps`, 00bdd50)
+
+- A piece that is not a pawn and not royal, on a square that one enemy
+  pawn step would attack, costs 40% of that pawn's opening value, in the
+  opening score. The origins come from a derived mask for each colour
+  and square (`derive_pawn_push_threats`: the pawn's stop, then its
+  captures), so the eval reads a few bits for each piece.
+- Standard check: a knight on e5 with black pawns on their start costs
+  40 cp (79 to 39 cp); on f3 it costs 0.
+- Bench depth 9 against build 13: node counts change in shogi, grand,
+  xiangqi, crazyhouse (the standard bench positions have no such case);
+  NPS within 5% (grand -5%, shogi +9%).
+- Test: against FSF 2000 in the key four, 1000 games each on the same
+  book lines as the build 12 and 13 runs (queue104).
