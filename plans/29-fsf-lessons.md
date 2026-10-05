@@ -680,3 +680,16 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   predictor was.
 - HRZ (plan29-hrz, e1012f6, HR + RZ): crazyhouse SPRT `0 5`, then
   shogi `-5 0` (queue93).
+- HRZ crazyhouse SPRT `0 5`: H1, +42.0 ± 16.3 (1586 games). Shogi
+  `-5 0`: inconclusive at 4000 games, -16.6 ± 10.6 (the upper end is
+  -6). A shogi loss, so HRZ is not merged.
+- The hand term is worth keeping in shogi and harmful in crazyhouse. A
+  likely cause: the crazyhouse hand holds a queen and rooks, so the sum
+  of best-square pressures grows past use; shogi hand pieces are weak.
+
+### HM (2026-10-05, branch `plan29-hm`, 15e892a)
+
+- The hand adds only its largest `zone_attack_best`: a side drops one
+  piece in a move. Node counts equal plan29-m2 without drops.
+- Screens at 10+0.1 against plan29-m2 (queue96), then RZ crazyhouse
+  SPRT `0 5`.
