@@ -2,9 +2,9 @@
 
 ## Status
 
-Opened 2026-10-04. Merged build 11 = build 10 + GA + EX + the referee
-fixes. Not merged: SD, SD2, DW, CD, SB. TH dropped (see LA). Running or
-queued: TI, CR, SD at 30+0.3. Planned: CS, FL.
+Merged build 12 (2026-10-05) = build 11 + F1, F2, M2 + HMF + the
+plan29-meas harness. HMF: crazyhouse H1 +60. No key-variant gain in
+plan 29b; shogi resists every hand, king danger and gate change so far.
 
 ## Context
 
@@ -192,6 +192,59 @@ rules. After an H1, base and candidate each play 400 games against FSF
 not below the base in each. A stage tied to a rule keeps the seeded
 node counts of the variants without it. Perft unchanged, build
 warning-free, params regenerated.
+
+## Plan 29b: evidence first (2026-10-04)
+
+After nine candidates with two passes, the user asked for a serious
+analysis and no more futile attempts. Three read-only audits (search
+and eval interaction, eval history, test method) found:
+
+- **Biased measurement.** 30 games on 32 hyperthreaded cores, with wall
+  time charged from before `position` (the move list replay included).
+  Openings are 8 uniform random plies and often decided at once, so pair
+  colour swaps reduce variance very little (grand pentanomial [214, 215,
+  589, 227, 255]). No game length cap. Inconclusive merges were not
+  calibrated.
+- **Misleading diagnostics.** Correlation with FSF rose for every losing
+  term. The 400-position move screen has about ±25 cp of noise. Fixed
+  depth hides the NPS cost (SD +27 cp at depth 8, -47 cp at 300 ms).
+- **Wasted speed.** King danger, proximity, check race, goal race and
+  extinction threat are computed twice per middlegame eval. Qsearch
+  evaluates before its check test. `clear_search` reallocates the history
+  tables every move. Qsearch ignores the stored TT eval.
+- **Structural gaps.** Qsearch skips every quiet drop (drop checks too).
+  Null move has no eval margin and no verification. Futility is not
+  history-gated. All margins are fractions of the dearest piece while
+  king danger can swing a whole one. Drop variants never leave OPENING.
+- **Eval pattern.** Every losing term pays for a piece standing near the
+  royal without checking that it is safe; the loss shrinks with the
+  weight. Winners price a game-end rule or a slow structural fact.
+
+Program (each step gated; nothing reaches an SPRT on a guess):
+
+- **M, measurement.** Harness flags `--book FILE` (move lists, pairs in
+  order) and `--max-plies N` (draw at N). A book of 8-12 random plies
+  kept when FSF depth 12 says |eval| <= 60 cp (100 with drops). The
+  replay cost is measured. A vs A at 30 slots with random openings and
+  at 15 slots with the book; bench NPS at 1, 15 and 30 copies; SD2 and
+  CD again under the repaired protocol. An inconclusive result no longer
+  merges. (`--seed` is not needed: `ANEKAMACAM_SEED` seeds the harness,
+  and the book fixes the openings.)
+- **F, free speed.** Shared king and rule terms computed once (F1), no
+  qsearch eval in check (F2), history tables kept allocated (F3), TT
+  eval as stand pat (F4). Each must give identical seeded node counts
+  and best moves on 192 positions, perft unchanged, NPS up under load.
+- **D, diagnosis.** A node budget per variant from game logs (scaled by
+  the candidate's NPS), fatal and good position sets from build 11's
+  FSF games labelled at FSF depth 16, probe switches
+  (`ANEKAMACAM_PROBE`), and a score of fixed, broken and net against a
+  measured noise floor σ0. The predictor is calibrated on SD, SD2, SB,
+  CR, DW, CD, GA, EX, PX, PX2 and CC before it is trusted. A census of
+  removal switches ranks the mechanisms.
+- **C, candidates** (null-move margin and verification, history-gated
+  futility and LMP, qsearch drop checks with the king term, board-only
+  phase with drops, drop tempo, kept history), in census order. Each
+  gets one SPRT only after it passes the D gate.
 
 ## Results
 
@@ -448,6 +501,112 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
   Perft at depth 3 unchanged in standard, shogi, xiangqi, grand,
   crazyhouse.
 
+### Plan 29b M: harness (2026-10-04, branch `plan29-meas`, c377a7b)
+
+- `--book FILE` (one move list per line in protocol notation; pair n
+  plays line n, wrapping) and `--max-plies N` (a draw at N plies). The
+  result file names the openings and the ply limit. Tested: a 2-line
+  book with a 20-ply limit gives the book positions and capped draws; a
+  shogi line with a promotion (`c3b4+`) plays.
+- Book builder `scratchpad/book/mkbook.py`: each ply is drawn from the
+  moves that both our engine (`perft 1 --protocol uci`) and FSF list, so
+  every line is legal under both rule sets; kept when FSF depth 12 gives
+  |eval| <= the limit. About 6 s of CPU per shogi line.
+- A local run of the identity check failed on 5 of 192 positions because
+  parallel engines in one working directory clash when they roll
+  `logs/latest.log`; each run now gets its own directory. Parallel perft
+  calls are not affected (40 of 40 correct).
+- SD at 30+0.3 (600 games, bounds `0 0`): -89.1 ± 27.5 at 592 games. SD
+  loses at three times the time per move too, so "it only lacks depth"
+  does not hold. A calibration point for D5. Final: -85.0 ± 27.5 at 600
+  games.
+
+### Plan 29b M-a: A vs A, shogi, 30 slots, random openings (failed)
+
+- Same binary on both sides, 2000 games: -22.3 ± 15.4 for A (the
+  interval excludes 0; p about 0.5%). Pentanomial [283, 10, 480, 6,
+  221]. Time forfeits 24 for each side (2.4% of games, above the 0.5%
+  limit). **M-a fails on both conditions**, so stop rule 1 holds: no
+  candidate SPRT until the harness is understood.
+- By colour and order: A as White in the first game of a pair scores
+  0.4545, A as Black in the second game 0.4815; White scores 0.4865 in
+  all. B wins both halves, so colour is not the cause.
+- By resources: median nodes per move A 21,684, B 21,507 (means 28,310
+  and 28,114) over about 176,000 moves each. CPU share is not the cause.
+- Open: chance (p about 0.5%) or a subtler harness effect. M-b (15
+  slots, book) and M-a2 (an exact repeat of M-a) separate chance, load
+  and openings.
+- Side result for D1: the median search under 30-slot load is about
+  21.7k nodes per move in shogi.
+- If a bias of about -20 Elo against A is real, every candidate verdict
+  since it began is shifted down by that much (SD2, DW, CD, TI, CR and
+  others). The re-test plan of M-d then covers them.
+
+### Plan 29b M-b: A vs A, shogi, 15 slots, book, 800-ply cap
+
+- 2000 games: +17.7 ± 14.6 for A, pentanomial [199, 29, 490, 35, 247],
+  no forfeits (the time losses of M-a are gone at 15 slots).
+- So two A vs A runs fall outside their 95% intervals on opposite sides
+  (M-a -22.3, M-b +17.7). For an unbiased harness with correct error
+  bars that has a chance of about 0.1%.
+- Checked and ruled out:
+  - time drift: pair scores in game order show block variance 0.97 and
+    0.68 of the independent value and lag-1 autocorrelation -0.03 and
+    -0.02;
+  - colour: the second game of a pair follows the stronger engine of the
+    run in both runs (M-a: White 0.4545 then 0.5185; M-b: 0.5195 then
+    0.4685);
+  - CPU placement: in M-a the per-slot A/B ratio of median nodes per move
+    is 0.96 to 1.05 (sd 2.3%), worth well under 5 Elo.
+- Open: chance, or a per-process effect not yet found. M-a2 (an exact
+  repeat of M-a) decides between them.
+
+### Plan 29b M-a2 and M-c
+
+- M-a2 (exact repeat of M-a): +8.7 ± 14.9, pentanomial [223, 8, 513, 8,
+  248]. M-a's -22 does not repeat.
+- The three A vs A runs (-22.3, +17.7, +8.7, each about ±15 at 95%)
+  spread more than the stated error allows: the sum of squared z is
+  15.3 on 3 degrees of freedom (p about 0.2%). The real error of a run
+  looks about twice the reported one. The source is not known (no time
+  drift, no per-slot speed gap, no colour effect). Two more A vs A runs
+  under the repaired protocol will size this factor.
+- Time forfeits (our engine on both sides): M-a 48, M-a2 46 (18 A, 28
+  B), M-b 0. All 46 of M-a2 are in games of 840 to 3058 plies (median
+  1640; the other games have a median of 125). Shogi has no move-count
+  rule, so such a game runs on with each side living on the 100 ms
+  increment, and the engine replays the whole move list before each move
+  (a cost that grows with the game, charged to its clock). The 800-ply
+  draw cap removes these games. An engine fix (reuse the board when the
+  new move list extends the last one) is stage M2.
+- M-c, one seeded depth-9 shogi search: 0.34 s alone, 0.52 s with 15
+  copies, 0.68 s with 30. 30 copies are 31% slower than 15, above the
+  25% limit.
+- **Repaired protocol:** 15 slots, a balanced book, `--max-plies 800`,
+  bounds `0 5` / `-5 0`; an inconclusive result never merges; the error
+  bars are read as about twice their stated width until the calibration
+  runs give a better factor.
+
+### Plan 29b F1 (branch `plan29-f1`, 2a47f64) and F2 (`plan29-f2`, b32f0d4)
+
+- F1: `shared_score!` computes king danger, proximity, check race, goal
+  race and extinction threat once per eval and adds the same value to
+  both halves before the blend, so the blend inputs are bit-equal.
+- F2: quiescence does not evaluate a checked side (its stand pat is never
+  read); the MAX_DEPTH return evaluates it then.
+- Identity (`scratchpad/speed/verify.py`, seeded depth 9, 24 positions
+  in each of standard, xiangqi, grand, shogi, crazyhouse, koth,
+  extinction, threecheck): node counts and best moves identical for F1
+  against merged build 11 and for F2 against F1.
+- Speed: not measured yet; the local machine was busy with the book, so
+  the timings are not valid. To be measured under game load on the
+  server (M-c method).
+- F3 note: `vec![0; n]` takes lazily zeroed pages, while `fill(0)` writes
+  the whole table (about 20 MB in shogi) every move; which is faster has
+  to be measured, so F3 waits for that. F4 note: the main search hands
+  depth 0 to quiescence without an eval, so the TT seldom holds one for a
+  q-node; F4 waits for the speed numbers.
+
 ### M2 (2026-10-04, branch `plan29-m2` on F2)
 
 - `position` with a line that extends the current game (same root hash
@@ -594,3 +753,185 @@ to move = us; an FSF term is the mean of its MG and EG trace values.
 - Both answers point to one gap: the royal terms do not price an attack
   that the pieces in hand can still make. The C candidates must aim at
   that, and the screen must show it.
+
+### Screen calibration (2026-10-04, queue81, queue82)
+
+- 600 games at 5+0.05, book (400-line screen books for grand, koth,
+  extinction, threecheck), 15 slots, each branch against its parent:
+
+  | Branch | Variant | SPRT Elo | Screen Elo |
+  | --- | --- | --- | --- |
+  | PX | shogi | -306 | -357.0 ± 44.6 |
+  | SD | shogi | -115 | -116.5 ± 29.5 |
+  | SD2 | shogi | -33 | -64.4 ± 28.7 |
+  | CR | shogi | -51 | -53.1 ± 26.4 |
+  | TI | shogi | -20 | -8.7 ± 26.6 |
+  | DW | shogi | -9 | +29.6 ± 27.2 |
+  | PX2 | shogi | +16 | +16.8 ± 27.5 |
+  | SB | grand | -31 | -26.7 ± 23.8 |
+  | GA | koth | +137 | +123.0 ± 29.1 |
+  | EX | extinction | +184 | +187.0 ± 32.4 |
+  | CD | threecheck | +9 | +57.9 ± 27.7 |
+  | CC | threecheck | +248 | +340.4 ± 42.5 |
+
+- Spearman ρ 0.97, Pearson 0.99, no sign miss in the 8 decisive
+  results. The screen passes D5 and replaces the predictor.
+- CD is 3 standard errors above its SPRT: at 5+0.05 the check-count
+  danger gains more than at 10+0.1. A screen gain is thus a filter,
+  not a result; each screen winner still needs the SPRT.
+
+### KH (2026-10-04, branch `plan29-kh`, bcd0f97)
+
+- Bug: `king_danger!` skipped every enemy shield piece, the hand too.
+  `derive_shield_pieces` marks the shogi gold and silver as shields
+  (local, forward lean), so three golds and two silvers in the enemy
+  hand added 0 danger. Over 335 shogi set positions, our danger was
+  median 0 cp, p90 54 cp; FSF King safety median 0.95, p90 8.0 pawns;
+  correlation 0.35. SD, DW and PX tuned a term that did not see the
+  main shogi attackers.
+- Fix: a shield on the board is still skipped, a shield in the hand
+  counts. Node counts equal plan29-m2 in standard, xiangqi and grand;
+  shogi and crazyhouse change. The test position (enemy hand
+  `ssggg`) goes from -6449 to -7378 cp.
+- Screen: shogi `0 5` arm, crazyhouse regression arm (queue83).
+- Screen: shogi -69.2 ± 28.3, crazyhouse -12.2 ± 25.9. Fails.
+- Why, from its 600 shogi games: KH is near 100 cp more hopeful than
+  the base on the same positions (wins +132, losses +123), and it keeps
+  more pieces (not pawns) in the hand: 2.24 against 1.34 at ply 80. A
+  gold in the hand counted, a dropped gold (a board shield) did not, so
+  each drop lowered the danger it gave.
+
+### KH2, KH3, KB, HR (2026-10-04)
+
+All against plan29-m2, 600-game screens at 5+0.05:
+
+| Change | Shogi | Crazyhouse | Others |
+| --- | --- | --- | --- |
+| KH2 (dded47c): shields count, hand and board | -66.8 ± 28.9 | +4.6 ± 26.1 | grand -0.6 |
+| KH3 (f625360): KH2, hand pressure halved | -8.1 ± 27.2 | | |
+| KB (plan29-kb): shields count on the board, no hand term | +15.6 ± 27.6 | +75.9 ± 28.6 | grand -15.1, standard +16.2, xiangqi -0.6 |
+| HR (ff6a405): m2 without the hand term | -16.8 ± 27.2 | +64.9 (468 games) | node counts equal |
+
+- KH2 still keeps pieces in the hand (2.01 against 1.51 at ply 80)
+  and is still 106 to 132 cp more hopeful. Cause: a piece in the hand
+  reads `zone_attack_best`, the pressure of its best square on the
+  whole board. Nearly every real drop square gives less, so a drop
+  lowers the danger. The base has this for the rook, bishop, knight
+  and lance in the hand.
+- Less hand weight is better in each step: full -67, half -8, none
+  +16. The hand term goes. KB goes to the shogi SPRT `0 5` at 10+0.1
+  (queue87); its grand screen (-15.1) needs a regression check before
+  a merge.
+
+### Shogi tactics suite (2026-10-05)
+
+- The 156 fatal shogi D2 positions (our move loses 100 cp or more, FSF
+  depth 16). Solved: our move within 30 cp of FSF's best (FSF depth 14
+  `searchmoves`, cached).
+- Base at 1x, 4x, 16x of 28,000 nodes: 15, 24, 41 solved. At 16x, 101
+  still lose 100 cp or more, and our depth is near 12. FSF finds its
+  move within 448,000 nodes in 75 of those 101 (median 207,000 nodes,
+  depth 14). FSF's static eval terms do not separate its move from
+  ours (mean +0.28 pawns, no term stands out): these are tactics that
+  our search does not reach, not a missing static term.
+- In 73 of the 101 the enemy hand has fewer than two pieces that are
+  not pawns: drop attacks on our royal are near one quarter of them.
+- Each gate off (D3 switches), 448,000 nodes, noise ±2 (base at 400k
+  to 500k: 41 to 43): S1 52, razoring 49, null move 46, RFP 45, X1 45,
+  futility 42, base 41, LMP 35. S1 split: pruning part 39, LMR part 46;
+  drop checks only 41. The LMR part is CR, which lost -51 in its SPRT,
+  so the suite is a filter like the screen, not a result.
+
+### RZ (2026-10-05, branch `plan29-rz`, 92f4a58)
+
+- No razoring in a drop variant. Razoring asks quiescence to confirm
+  a fail low; quiescence plays no drops, so it confirms a fail low
+  that a drop would save. Node counts equal plan29-m2 in standard,
+  xiangqi and grand. Suite: 49 solved (base 41).
+- Screens: shogi +37.8 ± 28.3, crazyhouse +45.9 (488 games). Shogi SPRT
+  `0 5` at 10+0.1, then crazyhouse (queue90).
+- Suite noise is larger than the node test showed: the base over six
+  hash seeds solves 39 to 45 (mean 40.7). RZ (49) and DK (51) are each
+  above that, but RZ and DK together solve 43: changes do not add.
+- RZ shogi SPRT: near 0 at 2665 games (+0.3 ± 12.8), running to the
+  cap. Short shogi screens gave +16 to +58 for DW, CD, KB and RZ, and
+  the SPRTs gave about 0; shogi screens now run at 10+0.1.
+
+### How the shogi games against FSF are lost (2026-10-05)
+
+- Build 10 against FSF 2000, 400 shogi games, 251 losses (median 92
+  plies). In 184 of them our score reached +300 or more after our move
+  5; in 152 it fell to -300 or less before our move 30.
+- FSF's score of our side, at our moves where we gave +300 or more, in
+  games we lost: median -115. Where we gave +100 to +300: -200 (lost),
+  -100 (won). We take lines that we think win and FSF does not.
+- The gap (our score minus FSF's, from our side) grows with our plain
+  material lead: -3 or less +345, -2 to 2 +403, 3 to 7 +627, 8 or more
+  +897. The cp scales differ (one pawn in hand: ours +100, FSF +31),
+  so the slope is partly units; the +345 when behind is not.
+- One piece in hand at the start, relative to a silver (ours / FSF):
+  pawn 0.31 / 0.15, lance 0.43 / 0.56, knight 0.37 / 0.63, gold
+  1.16 / 1.04, bishop 1.34 / 1.30, rook 2.19 / 1.37. We value a rook in
+  the hand near 60% higher and a pawn near two times higher, the lance
+  and knight lower. One squeeze of all values does not fit: what lowers
+  the rook raises the pawn. A rule-based cause is needed before a
+  candidate. CP (plan 27) already gave shogi this squeeze: H0, -25.0;
+  CP2 then kept it to free drops. A per-piece form (every piece but the
+  pawn) is the same in shogi, so it was not run.
+- Correction: the score gap above does not show that we are too
+  hopeful. FSF at UCI_Elo 2000 reports the score of its best line but
+  plays a weaker move (skill level), so its scores favour FSF: in grand
+  games that we won, at our scores of -100 to +100, FSF gave our side
+  -176. Units differ too. Only the depth-16 suite and the hand values
+  stand as facts.
+
+### RZ and DK results (2026-10-05)
+
+- RZ shogi SPRT `0 5` at 10+0.1: inconclusive at 4000 games,
+  +4.1 ± 10.5. Not merged on shogi; its crazyhouse screen (+41.3) goes
+  on in HRZ.
+- DK (plan29-dk, 353fde7): a drop reads its own plane of history keys.
+  Node counts equal plan29-m2 without drops. Suite 51. Screens at
+  10+0.1: shogi -10.4 ± 27.9. Fails.
+- The suite picked RZ (+8) and DK (+10); both are near 0 in games. The
+  suite does not predict shogi strength and is dropped, as the
+  predictor was.
+- HRZ (plan29-hrz, e1012f6, HR + RZ): crazyhouse SPRT `0 5`, then
+  shogi `-5 0` (queue93).
+- HRZ crazyhouse SPRT `0 5`: H1, +42.0 ± 16.3 (1586 games). Shogi
+  `-5 0`: inconclusive at 4000 games, -16.6 ± 10.6 (the upper end is
+  -6). A shogi loss, so HRZ is not merged.
+- The hand term is worth keeping in shogi and harmful in crazyhouse. A
+  likely cause: the crazyhouse hand holds a queen and rooks, so the sum
+  of best-square pressures grows past use; shogi hand pieces are weak.
+
+### HM (2026-10-05, branch `plan29-hm`, 15e892a)
+
+- The hand adds only its largest `zone_attack_best`: a side drops one
+  piece in a move. Node counts equal plan29-m2 without drops.
+- Screens at 10+0.1 against plan29-m2 (queue96), then RZ crazyhouse
+  SPRT `0 5`.
+- Screens at 10+0.1: crazyhouse +32.5 ± 27.4, shogi +4.1 ± 27.8.
+- Crazyhouse SPRT `0 5`: H1, +60.0 ± 19.9 (1002 games). Shogi `-5 0`:
+  -16.5 ± 14.9 at 2024 games (LLR -1.23), stopped for HMF: any change
+  of the hand term so far costs shogi.
+
+### HMF (2026-10-05, branch `plan29-hmf`, 7f42603)
+
+- HM only where all drops are free (`free_drops!`, capability bit 8).
+  `drops_are_free` is the CP2 test, now shared by the material
+  derivation and the capability mask. With drop rules the hand keeps
+  the sum of its pressures, as in plan29-m2.
+- Node counts: standard, xiangqi, grand, shogi equal plan29-m2 (bench
+  depth 9); minishogi, euroshogi, annanshogi, judkins, pocketknight,
+  kinglet equal plan29-m2 (search depth 8); crazyhouse equals HM. Of
+  all variants only crazyhouse has free drops (CP2), so HM's
+  crazyhouse H1 holds for HMF and no other variant changes.
+
+### Merged build 12 (2026-10-05, branch `plan27-main12`)
+
+- Merged build 11 + F1, F2, M2 (node-identical speed work) + HMF + the
+  plan29-meas harness (`--book`, `--max-plies`, forfeit counts).
+- Perft at depth 3 unchanged in standard, shogi, xiangqi, grand,
+  crazyhouse.
+- Not merged: KH, KH2, KH3, KB, HR, HRZ (shogi loss), RZ (shogi 0), DK.
