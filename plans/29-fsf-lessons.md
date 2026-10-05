@@ -1078,3 +1078,18 @@ lines as the build 12 and RZ runs:
   variants. With drops a taken pawn returns as a drop, so taking it does
   not lose time. Fix (5a59336): no spread with drops. The params of the
   7 drop variants are then those of build 13.
+- OS2 screens against build 13 (OS in brackets): grand +43.1 +/- 25.4
+  (-15.6), standard +54.9 +/- 24.0 (+32.5), hoppelpoppel +95.6 +/-
+  22.4 (+57.3), newzealand +47.8 +/- 22.2 (+27.3), xiangqi +39.5 +/-
+  22.0 (+11.6), capablanca +9.8 +/- 22.1 (+15.1). Mean +48.5. OS2 is
+  above OS in five of six, so the phase order of the values mattered:
+  a piece must not be worth more in the opening than in the endgame.
+
+### ST: the stack (2026-10-06, branch `plan29-st`, 373b7ba)
+
+- Build 13 + SY + OS2, params derived again from the merged code. Drop
+  variants have the SY params.
+- Test (queue112): SPRT `0 5` at 10+0.1 against build 13 in standard;
+  then 1000 games each against FSF 2000 in standard, grand, xiangqi
+  (build 12 runs on the same books are the base: build 13 changed only
+  drop variants), and ST and build 13 in knightmate and kinglet.
