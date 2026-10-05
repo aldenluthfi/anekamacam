@@ -1063,3 +1063,14 @@ a time.
   guarding b4; 56 / 16 / 56 with b4 blocked.
 - Test: screens in the 7 pawn variants, standard first (queue107). The
   PS screens left in queue106 were stopped.
+- Screens against build 13 (PS in brackets): standard -11.0 +/- 23.8
+  (-27.3), grand +13.9 +/- 24.6 (+47.8), xiangqi -1.2 +/- 22.3
+  (+12.2), crazyhouse -55.5 +/- 25.8 (not run).
+- Crazyhouse: the pawn value is 100 cp as in standard, so the cost is
+  not larger there. With drops the threatened side drops a blocker on
+  the stop or a pawn that guards it, so the piece need not move. Fix
+  (3af926b): no push masks when the variant has drops. Crazyhouse bench
+  is node-identical to build 13 (542521 nodes, depth 9, seed 1). The
+  other screens stay valid: the fix changes only drop variants.
+- Grand fell from +47.8 to +13.9 (p near 0.06). Queue108 plays PS2
+  against PS in grand and standard, 600 games each, to test it.
