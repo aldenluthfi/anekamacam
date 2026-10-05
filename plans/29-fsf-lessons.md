@@ -1077,3 +1077,6 @@ a time.
 - Last screens: capablanca -2.3 +/- 23.4, gothic -19.7 +/- 22.8,
   embassy -5.8 +/- 22.0. The mean of the six variants without drops is
   -4.4. PS2 fails and does not merge.
+- PS2 against PS, 600 games, 5+0.05: grand -1.7 +/- 25.1, standard
+  +9.3 +/- 24.3. The two are equal in grand, so the PS grand screen
+  (+47.8) was mostly noise. Push threats are dropped.
