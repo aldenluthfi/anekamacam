@@ -1074,3 +1074,6 @@ a time.
   other screens stay valid: the fix changes only drop variants.
 - Grand fell from +47.8 to +13.9 (p near 0.06). Queue108 plays PS2
   against PS in grand and standard, 600 games each, to test it.
+- Last screens: capablanca -2.3 +/- 23.4, gothic -19.7 +/- 22.8,
+  embassy -5.8 +/- 22.0. The mean of the six variants without drops is
+  -4.4. PS2 fails and does not merge.
