@@ -999,3 +999,26 @@ lines as the build 12 and RZ runs:
 - HM loses in shogi against FSF too; HMF keeps it to free drops.
 - RF fails: unlike razoring, reverse futility does not ask quiescence,
   and the static score cut is worth more than the drops it misses.
+
+### SY (2026-10-05, branch `plan29-sy`, a4a84bd)
+
+- From the general loss analysis (E2, see `plan29-ps`): our capture
+  where FSF does not take, 440 against 132. In 140 of 240 such cases
+  FSF takes the capturing piece back within two replies, so it is a
+  trade we value and FSF does not. Most: knightmate bishop takes mann
+  (25), kinglet bishop takes the (not royal) king (10).
+- Values against a knight, ours (build 13) and FSF (`types.h`):
+  commoner 1.45 / 0.90, pawn 0.26 / 0.16, bishop 1.19 / 1.06, rook
+  1.64 / 1.63, queen 3.16 / 3.25.
+- Cause: `derive_piece_value` adds half the mobility of all families
+  but the largest (synergy). It is meant for lines that one enemy piece
+  cannot both avoid, but a stepper of two families (commoner, gold) got
+  it too, and the knight with the same 8 squares did not.
+- Fix: synergy only for a rider (an offset and its double are both
+  usual moves). Params derived again (42 of 44 files change; in most
+  only the royal value, which does not change play).
+- Result: commoner 546 to 457 cp (bishop 453). Node counts equal build
+  13 in 26 variants; 9 change: ai-wok, euroshogi, horde, judkins,
+  kinglet, knightmate, minishogi, ouk-chaktrang, shogi.
+- Test: build 13 and SY each 400 games against FSF 2000 in the 9
+  variants, the sum decides (queue105).
