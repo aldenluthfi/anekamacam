@@ -1042,3 +1042,8 @@ lines as the build 12 and RZ runs:
   fall by a third in the opening too.
 - Test: screens in grand, standard, hoppelpoppel, newzealand, xiangqi,
   capablanca (queue111).
+- Last OS screens: makruk +6.9 +/- 9.1, shogi -31.4 +/- 27.4,
+  crazyhouse -27.2 +/- 29.4. The loss analysis did not use the drop
+  variants. With drops a taken pawn returns as a drop, so taking it does
+  not lose time. Fix (5a59336): no spread with drops. The params of the
+  7 drop variants are then those of build 13.
