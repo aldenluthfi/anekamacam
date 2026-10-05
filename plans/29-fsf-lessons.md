@@ -935,3 +935,16 @@ All against plan29-m2, 600-game screens at 5+0.05:
 - Perft at depth 3 unchanged in standard, shogi, xiangqi, grand,
   crazyhouse.
 - Not merged: KH, KH2, KH3, KB, HR, HRZ (shogi loss), RZ (shogi 0), DK.
+- Build 12 against FSF 2000, crazyhouse, 400 games (book, 15 slots,
+  800-ply cap, FSF Move Overhead 100): -132.2 ± 36.2 (build 10:
+  -143.1 ± 34.7). HMF's +60 in self-play is near +11 against FSF.
+
+### Self-play is not the target (2026-10-05)
+
+- Each SPRT of plan 29b measures a change against our own last build;
+  the goal is strength against FSF. HMF gave +60 in self-play and about
+  +11 against FSF; plan 27 saw self-play gains near halved against FSF.
+- From here a key-variant candidate also plays FSF 2000: candidate and
+  base each on the same book lines, and the Elo difference between the
+  two ratings decides. At 2000 games each the difference has near
+  ± 16 Elo; the self-play SPRT stays the first filter.
