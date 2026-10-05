@@ -1030,3 +1030,51 @@ lines as the build 12 and RZ runs:
   -9.2 +/- 14.7. No variant falls; the two with a commoner gain.
 - Next (queue109): SPRT `0 5` at 10+0.1 in knightmate, then SY and
   build 13 each 1000 games against FSF 2000 in knightmate and kinglet.
+
+### OS (2026-10-06, branch `plan29-os`, 7a3d8d1)
+
+- From the loss analysis (`plan29-ps`), variants without drops: our
+  capture where FSF does not take hits a pawn 427 times and a piece 156
+  times. FSF's capture where we do not take: pawn 121, piece 119. The
+  excess is pawn grabs. In xiangqi 34 of 53 are a cannon that takes a
+  soldier.
+- Values against our knight, standard opening: FSF pawn 62, bishop
+  405, rook 626, queen 1245; ours 100, 380, 621, 1186. The pieces agree,
+  the pawn is 60% dearer. In the endgame the two agree. Xiangqi soldier
+  against our chariot: 1.55 times FSF.
+- Cause: `derive_material_values` shifts each raw value by the same
+  amount so that the cheapest piece is 100. A standard pawn has a raw
+  value near 35, a knight near 318, so each gets 65 cp: most of the
+  pawn, little of the knight. Raw N/P is 9; after the shift it is 3.8.
+- Change: the opening value is `100 + (raw - cheapest) * 1.5`
+  (`OPENING_SPREAD`); the endgame keeps the plain shift. Standard
+  opening P 100, N 525, B 520, R 882, Q 1729 (N/P 5.25, FSF 6.2);
+  xiangqi cannon/soldier 2.19 to 2.48. All 45 param files change.
+- Test: screens against build 13 in standard, xiangqi, grand,
+  capablanca, newzealand, hoppelpoppel, makruk, shogi, crazyhouse
+  (queue110).
+- Screens: standard +32.5 +/- 23.5, xiangqi +11.6 +/- 21.4, grand
+  -15.6 +/- 25.1, capablanca +15.1 +/- 23.8, newzealand +27.3 +/-
+  23.3, hoppelpoppel +57.3 +/- 22.0.
+
+### OS2 (2026-10-06, branch `plan29-os2`, 508584e)
+
+- Why grand may fall with OS: the spread raises each piece in the
+  opening above its endgame value (grand rook 1027 to 930, queen 2051
+  to 1787). As pieces leave the board, the lead of a side ahead falls,
+  so that side keeps pieces on and the side behind trades. Build 13 had
+  the reverse (grand rook 718 to 930). FSF too: its pieces are near flat
+  across phases, and only its pawn rises (126 to 208).
+- Change: the cheapest opening value is 100 / 1.5 and each other piece
+  keeps its raw gap over it. The ratios are near those of OS, and each
+  piece stays below its endgame value. Standard opening P 67, N 350,
+  B 347, R 588, Q 1153; grand R 685, Q 1368.
+- The pawn structure terms are parts of the opening pawn value, so they
+  fall by a third in the opening too.
+- Test: screens in grand, standard, hoppelpoppel, newzealand, xiangqi,
+  capablanca (queue111).
+- Last OS screens: makruk +6.9 +/- 9.1, shogi -31.4 +/- 27.4,
+  crazyhouse -27.2 +/- 29.4. The loss analysis did not use the drop
+  variants. With drops a taken pawn returns as a drop, so taking it does
+  not lose time. Fix (5a59336): no spread with drops. The params of the
+  7 drop variants are then those of build 13.
