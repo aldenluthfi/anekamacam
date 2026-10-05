@@ -979,3 +979,23 @@ build 12 run of 2000 on the same book lines (queue100).
 - Merged build 12 + RZ (no razoring in a drop variant), on the FSF
   result above (shogi +29 against FSF; crazyhouse self-play +16.9 ±
   10.3, inconclusive). Standard, xiangqi and grand play as build 12.
+
+### Shogi against FSF after the reboot (2026-10-05)
+
+The server rebooted; DK's run (1278 games, -65.2 ± 19.6, level with
+build 12) was lost and not run again. 2000 games each, the same book
+lines as the build 12 and RZ runs:
+
+| Build | Elo | Note |
+| --- | --- | --- |
+| build 12 | -80.6 | two runs, 3000 games |
+| build 13 (build 12 + RZ) | -63.9 ± 15.5 | same code as the RZ run |
+| RZ, both runs | -54.8 | 4000 games, +26 on build 12 |
+| HM (on plan29-m2) | -117.0 ± 15.9 | -42 on build 12 |
+| RF (build 13 + no RFP with drops) | -78.0 ± 15.5 | -14 to -23 on build 13 |
+
+- Two runs of the same code gave -45.7 and -63.9: one 2000-game run
+  has near ± 16, so a change needs two runs or 4000 games.
+- HM loses in shogi against FSF too; HMF keeps it to free drops.
+- RF fails: unlike razoring, reverse futility does not ask quiescence,
+  and the static score cut is worth more than the drops it misses.
