@@ -2,9 +2,10 @@
 
 ## Status
 
-Merged build 12 (2026-10-05) = build 11 + F1, F2, M2 + HMF + the
-plan29-meas harness. HMF: crazyhouse H1 +60. No key-variant gain in
-plan 29b; shogi resists every hand, king danger and gate change so far.
+Merged build 13 (2026-10-05) = build 12 + RZ. Build 12 = build 11 +
+F1, F2, M2 + HMF + the plan29-meas harness. HMF: crazyhouse self-play
+H1 +60 (near +11 against FSF). RZ: shogi +29 against FSF (2000 games
+each), near 0 in self-play. Key variants also play FSF from here.
 
 ## Context
 
@@ -966,3 +967,15 @@ rise is the protocol (book lines, Move Overhead), not the engine.
 Standard and xiangqi meet the goal; grand needs near +35, shogi +92.
 Next: RZ on build 12 against FSF in shogi, 2000 games, against a
 build 12 run of 2000 on the same book lines (queue100).
+- Result: build 12 again on the same 1000 book lines, 2000 games:
+  -74.7 ± 15.5 (the first 1000-game run: -92.3 ± 23.0). RZ on build 12:
+  -45.7 ± 15.5. Difference +29.0, near 2.6 standard errors. RZ is near
+  0 in shogi self-play (+4.1 ± 10.5) and gains against FSF: FSF attacks
+  with drops, razoring cut the drop that defends, and in self-play the
+  two sides make the same error.
+
+### Merged build 13 (2026-10-05, branch `plan27-main13`)
+
+- Merged build 12 + RZ (no razoring in a drop variant), on the FSF
+  result above (shogi +29 against FSF; crazyhouse self-play +16.9 ±
+  10.3, inconclusive). Standard, xiangqi and grand play as build 12.
