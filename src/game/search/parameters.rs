@@ -398,12 +398,21 @@ const PAWN_MIN_START_COUNT: usize = 5;
 /// - `PAWN_DOUBLED_RATIO`           : -25%, the same in the two phases
 /// - `PAWN_ISOLATED_RATIO`          : -25%, the same in the two phases
 /// - `PAWN_BACKWARD_RATIO`          : -17.5%, the same in the two phases
+/// - `PAWN_PUSH_THREAT_RATIO`       : -40% for each piece a push attacks,
+///                                    in the opening only
+///
+/// A piece that one pawn step would attack must move again, and the pawn
+/// gains the square. In the loss analysis against FSF (35 variants), our
+/// costly move was a piece move where FSF moved a pawn two times more
+/// often than the reverse, and in grand it put the piece where one push
+/// attacks it three times more often than FSF's move did.
 ///
 const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
 const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
 const PAWN_DOUBLED_RATIO: u32 = 250;
 const PAWN_ISOLATED_RATIO: u32 = 250;
 const PAWN_BACKWARD_RATIO: u32 = 175;
+const PAWN_PUSH_THREAT_RATIO: u32 = 400;
 
 /// Passed pawn values
 ///
@@ -496,6 +505,8 @@ pub struct EvalParams {
     pub pawn_doubled_penalty: Vec<i32>,                                         /* slot to cost of blocking itself    */
     pub pawn_isolated_penalty: Vec<i32>,                                        /* slot to cost of standing alone     */
     pub pawn_backward_penalty: Vec<i32>,                                        /* slot to cost of a contested stop   */
+    pub pawn_push_threat: Vec<Board>,                                           /* colour, square to push origins     */
+    pub pawn_push_penalty: Vec<i32>,                                            /* slot to cost of a chased piece     */
 
     pub tempo_bonus: i32,                                                       /* worth of holding the move          */
     pub imbalance_major: i32,                                                   /* worth of one heavy piece of extra  */
@@ -3237,6 +3248,79 @@ fn derive_pawn_advancement(
     (advancement * advancement * 256.0) as i32
 }
 
+/// derive_pawn_push_threats
+///
+/// Gives, for each colour and square, the squares from which an enemy
+/// pawn steps once and then attacks that square:
+///
+/// ```text
+/// ┌────┬────┬────┐
+/// │    │ XX │    │   XX = the square of the piece
+/// ├────┼────┼────┤
+/// │ SS │    │ SS │   SS = after the step, the pawn attacks XX
+/// ├────┼────┼────┤
+/// │ OO │    │ OO │   OO = origins, their step lands on an SS
+/// └────┴────┴────┘
+/// ```
+///
+/// Params:
+/// - state: &State -> precomputed move tables and pawn slots
+///
+/// Return:
+/// Vec<Board>      -> colour * board_size + square to the pawn origins
+///
+/// Notes:
+/// The step is the stop of `derive_pawn_stop`. A piece on the step square
+/// blocks the push in a game, but the mask does not test it.
+///
+fn derive_pawn_push_threats(state: &State) -> Vec<Board> {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let empty = board!(state.statics.files, state.statics.ranks);
+
+    let mut threats = vec![empty; 2 * board_size];
+
+    for index in 0..state.statics.pieces.len() {
+        if state.statics.eval.pawn_slots[index] == NO_PAWN {
+            continue;
+        }
+
+        let color = p_color!(&state.statics.pieces[index]);
+        let sign = -2 * color as i32 + 1;
+        let victim = (color ^ 1) as usize;
+
+        for origin in 0..board_size {
+            let stop = derive_pawn_stop(state, index, origin);
+
+            for step in 0..board_size {
+                if !get!(stop, step as u32) {
+                    continue;
+                }
+
+                let vectors =
+                    &state.statics.relevant_captures[index * board_size + step];
+
+                for vector in usual_vectors(state, vectors) {
+                    let (file_offset, rank_offset) = vector_offset!(vector);
+                    let file = step as i32 % files + file_offset * sign;
+                    let rank = step as i32 / files + rank_offset * sign;
+
+                    if file < 0 || file >= files || rank < 0 || rank >= ranks {
+                        continue;
+                    }
+
+                    let target = (rank * files + file) as usize;
+
+                    set!(threats[victim * board_size + target], origin as u32);
+                }
+            }
+        }
+    }
+
+    threats
+}
+
 /// derive_pawn_parameters
 ///
 /// Makes all tables of `pawn_structure!`: the pawn pieces, four masks for
@@ -3255,6 +3339,9 @@ fn derive_pawn_advancement(
 /// - doubled   : part of the opening pawn value, the same in both phases
 /// - isolated  : the same part, from the support files
 /// - backward  : the same part, from the attacked stop
+/// - push      : a part of the pawn value for each piece a push attacks
+///
+/// It also makes the push threat masks of `pawn_push_threats!`.
 ///
 /// Params:
 /// - state: &mut State -> variant with the pawn tables to rebuild
@@ -3362,6 +3449,13 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let backward_penalty: Vec<i32> = opening_values.iter()
         .map(|value| share(*value, PAWN_BACKWARD_RATIO))
         .collect();
+    let push_penalty: Vec<i32> = opening_values.iter()
+        .map(|value| share(*value, PAWN_PUSH_THREAT_RATIO))
+        .collect();
+    let push_threat = match pieces.is_empty() {
+        true => Vec::new(),
+        false => derive_pawn_push_threats(state),
+    };
 
     log_3!(
         concat!(
@@ -3393,6 +3487,8 @@ pub fn derive_pawn_parameters(state: &mut State) {
     statics.eval.pawn_doubled_penalty = doubled;
     statics.eval.pawn_isolated_penalty = isolated;
     statics.eval.pawn_backward_penalty = backward_penalty;
+    statics.eval.pawn_push_threat = push_threat;
+    statics.eval.pawn_push_penalty = push_penalty;
 }
 
 /*----------------------------------------------------------------------------*\

@@ -925,6 +925,66 @@ macro_rules! pawn_structure {
     };
 }
 
+/// pawn_push_threats!
+///
+/// Gives the cost of the pieces of one colour that one enemy pawn step
+/// would attack. Each piece that is not a pawn and not royal reads the
+/// origin mask of its square. An enemy pawn on an origin can step and
+/// attack the piece, so the piece must move again and the pawn gains the
+/// square. The cost is the push penalty of that pawn.
+///
+/// Params:
+/// - state: &State -> position to evaluate
+/// - color: usize  -> colour of the pieces under threat
+///
+/// Return:
+/// i32             -> push threat cost for that colour, 0 or more
+///
+/// Notes:
+/// A variant without pawns has no masks and returns at once. Each piece
+/// counts once, for the first enemy pawn type that threatens it.
+///
+#[macro_export]
+macro_rules! pawn_push_threats {
+    ($state:expr, $color:expr) => {{
+        let statics = &$state.statics;
+        let board_size = statics.board_size;
+        let mut cost = 0;
+
+        if !statics.eval.pawn_push_threat.is_empty() {
+            for (piece_index, piece) in statics.pieces.iter().enumerate() {
+                if p_color!(piece) as usize != $color
+                    || p_is_royal!(piece)
+                    || statics.eval.pawn_slots[piece_index] != NO_PAWN {
+                    continue;
+                }
+
+                for square in piece_squares!($state, piece_index) {
+                    let origins = &statics.eval.pawn_push_threat[
+                        $color * board_size + *square as usize
+                    ];
+
+                    cost += statics.eval.pawn_pieces.iter()
+                        .copied()
+                        .enumerate()
+                        .filter(|&(_, pawn)| {
+                            p_color!(&statics.pieces[pawn]) as usize != $color
+                        })
+                        .find(|&(_, pawn)| {
+                            piece_squares!($state, pawn)
+                                .any(|enemy| get!(origins, *enemy as u32))
+                        })
+                        .map_or(0, |(slot, _)| {
+                            statics.eval.pawn_push_penalty[slot]
+                        });
+                }
+            }
+        }
+
+        cost
+    }};
+}
+
 /*----------------------------------------------------------------------------*\
                              PHASE SCORE COMPONENTS
 \*----------------------------------------------------------------------------*/
@@ -933,9 +993,9 @@ macro_rules! pawn_structure {
 ///
 /// Gives the opening score, White minus Black. It is the material and
 /// piece-square totals plus the royal safety terms that keep a royal at
-/// home: shelter, guard, castling and open files. The opening, the setup
-/// and the middlegame blend use it, each with [`shared_score!`] added.
-/// The endgame does not.
+/// home: shelter, guard, castling and open files, and the pawn push
+/// threats on the pieces. The opening, the setup and the middlegame blend
+/// use it, each with [`shared_score!`] added. The endgame does not.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -961,6 +1021,8 @@ macro_rules! opening_score {
             - castling_bonus!($state, black)
             + open_shield!($state, black)
             - open_shield!($state, white)
+            + pawn_push_threats!($state, black)
+            - pawn_push_threats!($state, white)
     }};
 }
 
