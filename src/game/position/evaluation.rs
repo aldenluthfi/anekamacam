@@ -933,6 +933,10 @@ macro_rules! pawn_structure {
 /// attack the piece, so the piece must move again and the pawn gains the
 /// square. The cost is the push penalty of that pawn.
 ///
+/// The push must be free: a stop square is empty, and no pawn of the
+/// threatened colour attacks the stop. A pawn that steps into a pawn
+/// capture loses itself, so it chases nothing.
+///
 /// Params:
 /// - state: &State -> position to evaluate
 /// - color: usize  -> colour of the pieces under threat
@@ -949,9 +953,33 @@ macro_rules! pawn_push_threats {
     ($state:expr, $color:expr) => {{
         let statics = &$state.statics;
         let board_size = statics.board_size;
+        let stride = statics.eval.pawn_stride;
         let mut cost = 0;
 
         if !statics.eval.pawn_push_threat.is_empty() {
+            let mut occupied = $state.pieces_board[WHITE as usize];
+            or!(occupied, $state.pieces_board[BLACK as usize]);
+
+            let guards = |entry: usize| {
+                let stop = &statics.eval.pawn_backward[entry];
+
+                statics.eval.pawn_pieces.iter()
+                    .filter(|&&pawn| {
+                        p_color!(&statics.pieces[pawn]) as usize == $color
+                    })
+                    .any(|&pawn| {
+                        piece_squares!($state, pawn)
+                            .any(|own| get!(stop, *own as u32))
+                    })
+            };
+            let free = |entry: usize| {
+                let stop = &statics.eval.pawn_stop[entry];
+                let mut taken = *stop;
+                and!(taken, occupied);
+
+                count_bits!(taken) < count_bits!(stop) && !guards(entry)
+            };
+
             for (piece_index, piece) in statics.pieces.iter().enumerate() {
                 if p_color!(piece) as usize != $color
                     || p_is_royal!(piece)
@@ -970,9 +998,11 @@ macro_rules! pawn_push_threats {
                         .filter(|&(_, pawn)| {
                             p_color!(&statics.pieces[pawn]) as usize != $color
                         })
-                        .find(|&(_, pawn)| {
-                            piece_squares!($state, pawn)
-                                .any(|enemy| get!(origins, *enemy as u32))
+                        .find(|&(slot, pawn)| {
+                            piece_squares!($state, pawn).any(|enemy| {
+                                get!(origins, *enemy as u32)
+                                    && free(slot * stride + *enemy as usize)
+                            })
                         })
                         .map_or(0, |(slot, _)| {
                             statics.eval.pawn_push_penalty[slot]

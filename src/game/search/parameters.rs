@@ -496,6 +496,7 @@ pub struct EvalParams {
     pub pawn_path: Vec<Board>,                                                  /* slot, square to advance squares    */
     pub pawn_interference: Vec<Board>,                                          /* slot, square to passer stoppers    */
     pub pawn_support: Vec<Board>,                                               /* slot, square to defending squares  */
+    pub pawn_stop: Vec<Board>,                                                  /* slot, square to one-step squares   */
     pub pawn_backward: Vec<Board>,                                              /* slot, square to stop attackers     */
     pub pawn_support_files: Vec<Vec<i32>>,                                      /* slot to supporting file offsets    */
     pub pawn_passed_opening: Vec<i32>,                                          /* slot, square to passer worth,      */
@@ -3270,8 +3271,8 @@ fn derive_pawn_advancement(
 /// Vec<Board>      -> colour * board_size + square to the pawn origins
 ///
 /// Notes:
-/// The step is the stop of `derive_pawn_stop`. A piece on the step square
-/// blocks the push in a game, but the mask does not test it.
+/// The step is the stop of `derive_pawn_stop`. The mask does not test the
+/// step square. `pawn_push_threats!` tests it in the game.
 ///
 fn derive_pawn_push_threats(state: &State) -> Vec<Board> {
     let files = state.statics.files as i32;
@@ -3323,12 +3324,13 @@ fn derive_pawn_push_threats(state: &State) -> Vec<Board> {
 
 /// derive_pawn_parameters
 ///
-/// Makes all tables of `pawn_structure!`: the pawn pieces, four masks for
+/// Makes all tables of `pawn_structure!`: the pawn pieces, five masks for
 /// each pawn and square, the passed pawn values, and the structure values.
 ///
 /// - path         : squares in front, an own pawn here is doubled
 /// - interference : enemy squares that stop it, all empty means passed
 /// - support      : own squares that connect it or defend its stop
+/// - stop         : squares of one normal step
 /// - backward     : enemy squares that attack its stop
 ///
 /// Each mask is a full board, so each test is one bit read. The tables use
@@ -3366,6 +3368,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut path = vec![empty; pieces.len() * stride];
     let mut interference = vec![empty; pieces.len() * stride];
     let mut support = vec![empty; pieces.len() * stride];
+    let mut stops = vec![empty; pieces.len() * stride];
     let mut backward = vec![empty; pieces.len() * stride];
     let mut support_files = vec![Vec::new(); pieces.len()];
     let mut passed_opening = vec![0i32; pieces.len() * stride];
@@ -3413,6 +3416,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
             support[entry] =
                 derive_pawn_captures(state, p_color!(piece), &defended);
             backward[entry] = derive_pawn_captures(state, enemy, &stop);
+            stops[entry] = stop;
 
             passed_opening[entry] = (opening_gain.max(0) as i64
                 * opening_ratio as i64 * advancement
@@ -3478,6 +3482,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     statics.eval.pawn_path = path;
     statics.eval.pawn_interference = interference;
     statics.eval.pawn_support = support;
+    statics.eval.pawn_stop = stops;
     statics.eval.pawn_backward = backward;
     statics.eval.pawn_support_files = support_files;
     statics.eval.pawn_passed_opening = passed_opening;
