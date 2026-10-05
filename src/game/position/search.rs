@@ -997,8 +997,9 @@ pub fn quiescence_search(
 /// move, ProbCut, internal iterative reduction, losing capture skips and
 /// late quiet move skips. Each is a claim about the game. Late move
 /// reduction is not a shortcut, because a reduced move that beats alpha
-/// gets full depth again. Razoring asks quiescence to confirm a fail low.
-/// Quiescence plays no drops, so a drop variant skips razoring.
+/// gets full depth again. Razoring asks quiescence to confirm a fail low,
+/// and reverse futility trusts the static score for a fail high. Neither
+/// sees a drop, so a drop variant skips both.
 ///
 /// Params:
 ///
@@ -1166,7 +1167,8 @@ pub fn alpha_beta(
     let row = improving as usize * (deepest + 1);                               /* the rising side asks for less      */
 
     if forward_pruning!(state)
-    && !in_check
+    && !drops!(state)                                                           /* a static score cannot see a drop  */
+    && !in_check                                                                /* that breaks the node              */
     && ply > 0
     && depth <= deepest
     && beta - alpha == 1
