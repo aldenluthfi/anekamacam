@@ -751,9 +751,12 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
 /// The mobility is 70% occupied and 30% empty. A piece that controls lines
 /// of more than one family gets half the mobility of all families but its
 /// largest again: it attacks two sets of squares that one enemy piece
-/// cannot both avoid. Then reach scales it, with a minimum factor of 0.6,
-/// and maneuverability scales it, with a minimum factor of 0.5. Thus a
-/// colour-bound or one-way piece is cheaper, but not zero.
+/// cannot both avoid. Only a rider controls lines: an offset and its
+/// double are both moves of it. A stepper of more than one family, as a
+/// commoner, a gold or a pawn, attacks only its neighbours, and a knight
+/// attacks as many without the bonus. Then reach scales it, with a minimum
+/// factor of 0.6, and maneuverability scales it, with a minimum factor of
+/// 0.5. Thus a colour-bound or one-way piece is cheaper, but not zero.
 ///
 /// Params:
 /// - state    : &State -> precomputed move tables
@@ -807,8 +810,14 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
         array::from_fn(|family| total[family] + square[family])
     });
     let largest = families.iter().copied().fold(0.0, f64::max);
-    let synergy = 0.5 * (families.iter().sum::<f64>() - largest)
-        / board_size as f64;
+    let rides = offsets.iter().any(|(file_offset, rank_offset)| {
+        offsets.contains(&(2 * file_offset, 2 * rank_offset))
+    });
+    let synergy = match rides {
+        true => 0.5 * (families.iter().sum::<f64>() - largest)
+            / board_size as f64,
+        false => 0.0,
+    };
 
     let blended_mobility = 0.3 * empty_mobility
         + (1.0 - 0.3) * occupied_mobility
