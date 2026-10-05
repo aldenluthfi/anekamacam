@@ -999,3 +999,26 @@ lines as the build 12 and RZ runs:
 - HM loses in shogi against FSF too; HMF keeps it to free drops.
 - RF fails: unlike razoring, reverse futility does not ask quiescence,
   and the static score cut is worth more than the drops it misses.
+
+### OS (2026-10-06, branch `plan29-os`, 7a3d8d1)
+
+- From the loss analysis (`plan29-ps`), variants without drops: our
+  capture where FSF does not take hits a pawn 427 times and a piece 156
+  times. FSF's capture where we do not take: pawn 121, piece 119. The
+  excess is pawn grabs. In xiangqi 34 of 53 are a cannon that takes a
+  soldier.
+- Values against our knight, standard opening: FSF pawn 62, bishop
+  405, rook 626, queen 1245; ours 100, 380, 621, 1186. The pieces agree,
+  the pawn is 60% dearer. In the endgame the two agree. Xiangqi soldier
+  against our chariot: 1.55 times FSF.
+- Cause: `derive_material_values` shifts each raw value by the same
+  amount so that the cheapest piece is 100. A standard pawn has a raw
+  value near 35, a knight near 318, so each gets 65 cp: most of the
+  pawn, little of the knight. Raw N/P is 9; after the shift it is 3.8.
+- Change: the opening value is `100 + (raw - cheapest) * 1.5`
+  (`OPENING_SPREAD`); the endgame keeps the plain shift. Standard
+  opening P 100, N 525, B 520, R 882, Q 1729 (N/P 5.25, FSF 6.2);
+  xiangqi cannon/soldier 2.19 to 2.48. All 45 param files change.
+- Test: screens against build 13 in standard, xiangqi, grand,
+  capablanca, newzealand, hoppelpoppel, makruk, shogi, crazyhouse
+  (queue110).
