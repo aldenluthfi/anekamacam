@@ -44,6 +44,10 @@ const ENDGAME_OCCUPANCY: u32 = 120;
 /// The pieces do not get more value in the opening: then a side ahead
 /// would keep pieces on the board, and a side behind would trade them.
 ///
+/// A variant with drops keeps the plain shift: a taken pawn goes to the
+/// hand and comes back as a drop, so the time to take it is not lost
+/// (OS screens: shogi -31, crazyhouse -27).
+///
 const OPENING_SPREAD: u32 = 1500;
 
 /// USUAL_CONDITION_CHANCE
@@ -2096,7 +2100,10 @@ fn derive_material_values(state: &mut State) {
         .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
-    let spread = OPENING_SPREAD as f64 / COEFFICIENT_SCALE;
+    let spread = match drops!(state) {
+        true => 1.0,
+        false => OPENING_SPREAD as f64 / COEFFICIENT_SCALE,
+    };
     let free_drops = drops_are_free(state);
     let hand_power = HAND_POWER as f64 / COEFFICIENT_SCALE;
     let in_hand = |value: f64| match free_drops {
