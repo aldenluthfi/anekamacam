@@ -30,6 +30,19 @@ use crate::*;
 const OPENING_OCCUPANCY: u32 = 360;
 const ENDGAME_OCCUPANCY: u32 = 120;
 
+/// OPENING_SPREAD
+///
+/// The opening value of each piece is 100 plus its raw value over the
+/// cheapest piece, times 1.5. The endgame value keeps the plain shift.
+/// In the opening few lines are open, so a pawn has a small part of the
+/// value of a piece. A piece that leaves its place to take a pawn loses
+/// more time than the pawn is worth. In the loss analysis against FSF
+/// (35 variants) our capture where FSF did not take was a pawn 427
+/// times against 156 pieces; FSF's capture where we did not take was a
+/// pawn 121 times against 119 pieces.
+///
+const OPENING_SPREAD: u32 = 1500;
+
 /// USUAL_CONDITION_CHANCE
 ///
 /// The minimum chance, at the opening occupancy, that the CPMN condition of
@@ -2043,8 +2056,9 @@ fn drops_are_free(state: &State) -> bool {
 /// 1. derive each White piece, once for each occupancy
 /// 2. the offset is the cheapest opening value minus 100
 /// 3. subtract the offset from the two values of each piece
-/// 4. with free drops, apply the hand power to each value over the cheapest
-/// 5. if the largest value is above 14 bits, scale the table down to fit
+/// 4. multiply each opening value over 100 by `OPENING_SPREAD`
+/// 5. with free drops, apply the hand power to each value over the cheapest
+/// 6. if the largest value is above 14 bits, scale the table down to fit
 ///
 /// Params:
 /// - state: &mut State -> variant with the material values to derive
@@ -2078,6 +2092,7 @@ fn derive_material_values(state: &mut State) {
         .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
+    let spread = OPENING_SPREAD as f64 / COEFFICIENT_SCALE;
     let free_drops = drops_are_free(state);
     let hand_power = HAND_POWER as f64 / COEFFICIENT_SCALE;
     let in_hand = |value: f64| match free_drops {
@@ -2088,7 +2103,9 @@ fn derive_material_values(state: &mut State) {
     let worths: Vec<(usize, f64, f64)> = values
         .iter()
         .map(|(index, opening, endgame)| {
-            (*index, in_hand(opening - offset), in_hand(endgame - offset))
+            let opening = 100.0 + (opening - offset - 100.0) * spread;
+
+            (*index, in_hand(opening), in_hand(endgame - offset))
         })
         .collect();
 
