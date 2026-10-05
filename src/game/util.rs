@@ -1140,7 +1140,7 @@ pub fn run_derive_headless() {
         emit(EngineEvent::Print(format!("deriving {}", filename)));
         let derived = parse_config_file(filename);
         emit(EngineEvent::Print(format!(
-            " capabilities {:07b}\n", derived.statics.capabilities
+            " capabilities {:09b}\n", derived.statics.capabilities
         )));
     }
 }

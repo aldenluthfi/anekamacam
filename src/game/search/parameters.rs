@@ -1926,9 +1926,13 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_wide_quiescence!(capabilities);
     }
 
+    if drops_are_free(state) {
+        enc_free_drops!(capabilities);
+    }
+
     state.static_mut().capabilities = capabilities;
 
-    log_3!("Derived Search Capabilities: {:08b}", capabilities);
+    log_3!("Derived Search Capabilities: {:09b}", capabilities);
 }
 
 /*----------------------------------------------------------------------------*\
@@ -2008,6 +2012,28 @@ pub fn derive_base_pst(state: &State) -> (Vec<Vec<i32>>, Vec<Vec<i32>>) {
     (opening, endgame)
 }
 
+/// drops_are_free
+///
+/// Tells if a piece in the hand can come back on any empty square: the
+/// variant has drops, and no compiled drop pattern has more than one
+/// allower or any stopper. A drop rule (one pawn on a file, no drop mate)
+/// makes the drops not free.
+///
+/// Params:
+/// - state: &State -> variant with the compiled drop patterns
+///
+/// Return:
+/// bool            -> true when all drops are free
+///
+fn drops_are_free(state: &State) -> bool {
+    drops!(state)
+        && state.statics.relevant_drops.iter()
+            .flatten()
+            .all(|(_, (allowers, stoppers))| {
+                allowers.len() <= 1 && stoppers.is_empty()
+            })
+}
+
 /// derive_material_values
 ///
 /// Derives the opening and endgame material from the moves only, one value
@@ -2052,12 +2078,7 @@ fn derive_material_values(state: &mut State) {
         .map(|(_, opening, _)| *opening)
         .fold(f64::INFINITY, f64::min) - 100.0;
 
-    let free_drops = drops!(state)
-        && state.statics.relevant_drops.iter()
-            .flatten()
-            .all(|(_, (allowers, stoppers))| {
-                allowers.len() <= 1 && stoppers.is_empty()
-            });
+    let free_drops = drops_are_free(state);
     let hand_power = HAND_POWER as f64 / COEFFICIENT_SCALE;
     let in_hand = |value: f64| match free_drops {
         true => 100.0 * (value.max(1.0) / 100.0).powf(hand_power),

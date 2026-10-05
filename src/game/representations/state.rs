@@ -236,7 +236,7 @@ macro_rules! enc_promote_on_exit {
 /// example that material decides. `derive_search_capabilities` sets a bit
 /// only when the rules prove the claim. Else the bit stays clear.
 ///
-/// see_valid! .. wide_quiescence!
+/// see_valid! .. free_drops!
 ///
 ///   Params:
 ///   - state: &State -> position with the capability flags
@@ -252,8 +252,9 @@ macro_rules! enc_promote_on_exit {
 /// - quiet_pruning!   : a late quiet move can be skipped, bit 5
 /// - static_movement! : reach does not depend on other pieces, bit 6
 /// - wide_quiescence! : a leaf can search any capture, bit 7
+/// - free_drops!      : a hand piece drops on any empty square, bit 8
 ///
-/// enc_see_valid! .. enc_wide_quiescence!
+/// enc_see_valid! .. enc_free_drops!
 ///
 ///   Params:
 ///   - mask: &mut u16 -> capability mask to build at derive time
@@ -373,6 +374,20 @@ macro_rules! wide_quiescence {
 macro_rules! enc_wide_quiescence {
     ($mask:expr) => {
         $mask |= 1 << 7;
+    };
+}
+
+#[macro_export]
+macro_rules! free_drops {
+    ($state:expr) => {
+        ($state.statics.capabilities >> 8 & 1) == 1
+    };
+}
+
+#[macro_export]
+macro_rules! enc_free_drops {
+    ($mask:expr) => {
+        $mask |= 1 << 8;
     };
 }
 
@@ -703,7 +718,7 @@ macro_rules! is_terminal {
 /// - bit 6 : setup phase at the start
 /// - bit 7 : a move can make a stand-off
 ///
-/// `capabilities` is a second mask, eight bits in a `u16`, of the allowed
+/// `capabilities` is a second mask, nine bits in a `u16`, of the allowed
 /// search shortcuts. Derivation sets it, and the `see_valid!` macro group
 /// gives the bits.
 ///
