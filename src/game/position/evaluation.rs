@@ -945,8 +945,9 @@ macro_rules! pawn_structure {
 /// i32             -> push threat cost for that colour, 0 or more
 ///
 /// Notes:
-/// A variant without pawns has no masks and returns at once. Each piece
-/// counts once, for the first enemy pawn type that threatens it.
+/// A variant without pawns or with drops has no masks and returns at
+/// once. Each piece counts once, for the first enemy pawn type that
+/// threatens it.
 ///
 #[macro_export]
 macro_rules! pawn_push_threats {

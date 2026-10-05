@@ -405,7 +405,9 @@ const PAWN_MIN_START_COUNT: usize = 5;
 /// gains the square. In the loss analysis against FSF (35 variants), our
 /// costly move was a piece move where FSF moved a pawn two times more
 /// often than the reverse, and in grand it put the piece where one push
-/// attacks it three times more often than FSF's move did.
+/// attacks it three times more often than FSF's move did. A variant with
+/// drops has no push threat: a drop blocks or guards the stop, so the
+/// piece need not move (crazyhouse screen -55).
 ///
 const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
 const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
@@ -3456,7 +3458,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let push_penalty: Vec<i32> = opening_values.iter()
         .map(|value| share(*value, PAWN_PUSH_THREAT_RATIO))
         .collect();
-    let push_threat = match pieces.is_empty() {
+    let push_threat = match pieces.is_empty() || drops!(state) {                /* a drop blocks or guards the stop   */
         true => Vec::new(),
         false => derive_pawn_push_threats(state),
     };
