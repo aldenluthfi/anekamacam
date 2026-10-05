@@ -1178,10 +1178,10 @@ pub fn alpha_beta(
 
     if forward_pruning!(state)
     && static_movement!(state)
-    && !drops!(state)                                                           /* quiescence has no drops to save   */
+    && !drops!(state)                                                           /* quiescence sees no drop defence    */
     && !in_check
-    && depth < state.statics.search.razor_margin.len()                          /* the node, so it confirms a false  */
-    && beta - alpha == 1                                                        /* fail low and cuts a defence       */
+    && depth < state.statics.search.razor_margin.len()
+    && beta - alpha == 1
     && alpha.abs() < MATE_SCORE
     && state.game_phase != ENDGAME
     && plain_eval + state.statics.search.razor_margin[depth] < alpha
