@@ -999,3 +999,42 @@ lines as the build 12 and RZ runs:
 - HM loses in shogi against FSF too; HMF keeps it to free drops.
 - RF fails: unlike razoring, reverse futility does not ask quiescence,
   and the static score cut is worth more than the drops it misses.
+
+### Where we lose against FSF (2026-10-06, build 12 games)
+
+- Data: the 1000-game runs of build 12 against FSF 2000 in standard
+  and grand. Games pair by start position; engine A is White in the
+  first game of a pair. All games end in mate, so the end type says
+  nothing.
+- In each loss, the first FSF score of +300 or more: we are ahead in
+  material there in 59% of losses (standard and grand), and our own
+  score is +100 or more in 37% (standard) and 48% (grand). Median ply
+  27 and 25.
+- Control: in our wins FSF makes such a claim while we are ahead in 20%
+  (standard) and 44% (grand). After such a claim we lose 67% and 61%.
+  So FSF sees a real factor that is not material, early in the middle
+  game, and our eval does not.
+- Sample (standard game 439): up a piece, we take back on f6 with the g
+  pawn; the queen and knight come in. FSF reads +1246, we read +674 a
+  move before the loss of the queen.
+- FSF's leading terms at our costly moves (loss analysis): mobility,
+  then material, king safety, threats. We have no mobility term (plan
+  04 stage U: a full vector walk cost 55% time to depth) and no threat
+  term; our king danger is a static table at the opening occupancy.
+
+### FM (2026-10-06, branch `plan29-fm`, f4a07b8)
+
+- Change: mobility from first steps. For each piece and square, the
+  table holds the squares that the first legs of its move vectors reach.
+  A step with no own piece on it is free. A free step is worth 12% of
+  the opening value over the most first steps of the piece; the count
+  expected at the opening occupancy is taken off. Pawns and royals
+  have none. In `shared_score!`, both phases.
+- A ray goes on only past an empty first step, so the first step tells
+  most of what a slider can do, at a few reads for each piece.
+- Check (standard, from the start): build 13 / FM: e3 21 / 56, Nf3
+  56 / 73, Nh3 33 / 53.
+- Bench depth 9, seed 1, same machine, two rounds: NPS standard -4%,
+  grand -13%, xiangqi -8%, shogi -7%.
+- Test (queue114): FM and build 13 each 600 games against FSF 2000 at
+  5+0.05 in standard, grand, xiangqi, shogi, capablanca, crazyhouse.
