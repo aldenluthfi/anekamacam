@@ -474,8 +474,7 @@ pub struct EvalParams {
     pub castled_value: i32,                                                     /* worth of having castled already    */
     pub castling_right_value: i32,                                              /* worth of still being able to       */
 
-    pub zone_attack: Vec<u8>,                                                   /* royal, piece, origin to pressure   */
-    pub zone_attack_best: Vec<u8>,                                              /* pressure from its dearest origin   */
+    pub zone_attack_best: Vec<u8>,                                              /* royal, piece to best hand pressure */
     pub king_danger_scale: i32,                                                 /* worth of a fully pressed zone      */
     pub king_danger_cap: i32,                                                   /* most a pressed zone may ever cost  */
     pub open_shield_penalty: i32,                                               /* cost of a royal nothing covers     */
@@ -2576,15 +2575,15 @@ pub fn derive_shelter_parameters(state: &mut State) {
 
 /// derive_danger_parameters
 ///
-/// Makes the zone attack tables of `king_danger!` and the costs of
+/// Makes the hand pressure table of `king_danger!` and the costs of
 /// `king_danger!` and `open_shield!`. For each piece, origin square and
-/// royal square, the table has the expected number of moves of that piece
-/// onto the royal square or its ring. It uses the opening occupancy. Thus
-/// the evaluation only adds bytes for the enemy pieces.
+/// royal square, a local table has the expected number of moves of that
+/// piece onto the royal square or its ring, at the opening occupancy.
+/// A piece on the board reads its real attack map instead; the table
+/// serves a piece in hand, which has no square:
 ///
 /// - landing square : gets the chance of the vector to arrive there
 /// - ring squares   : each gets the same chance again
-/// - index          : `(royal * pieces + piece) * squares + origin`
 /// - best row       : the maximum over the origins, for pieces in hand
 ///
 /// An entry is in units of `1 / ZONE_ATTACK_UNIT` of an expected move, and
@@ -2594,9 +2593,8 @@ pub fn derive_shelter_parameters(state: &mut State) {
 /// - state: &mut State -> variant with the danger tables to rebuild
 ///
 /// Notes:
-/// A piece in hand has no square, so it reads `zone_attack_best`. The
-/// function uses the ring of `derive_shelter_parameters`, so that function
-/// must run first.
+/// The function uses the ring of `derive_shelter_parameters`, so that
+/// function must run first.
 ///
 #[hotpath::measure]
 pub fn derive_danger_parameters(state: &mut State) {
@@ -2702,7 +2700,6 @@ pub fn derive_danger_parameters(state: &mut State) {
 
     let statics = state.static_mut();
 
-    statics.eval.zone_attack = table;
     statics.eval.zone_attack_best = best;
     statics.eval.king_danger_scale = king_danger_scale as i32;
     statics.eval.king_danger_cap = king_danger_cap as i32;

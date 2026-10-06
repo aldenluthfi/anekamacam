@@ -247,10 +247,13 @@ macro_rules! royal_guard {
 
 /// king_danger!
 ///
-/// Gives the cost of the enemy pressure on the royals of one colour. Each
-/// enemy piece that is not royal and not a shield reads its `zone_attack`
-/// value from its square. In a drop variant, each piece in the hand reads
-/// `zone_attack_best`, the pressure from its best drop square. With free
+/// Gives the cost of the enemy pressure on the royals of one colour. The
+/// zone of a royal is its square and its ring. Each enemy piece that is
+/// not royal and not a shield adds the zone squares that its attack map
+/// reaches now, with the blockers of the position (`piece_attacks!`): an
+/// open line to the royal counts, a closed one does not. In a drop
+/// variant, each piece in the hand reads `zone_attack_best`, the pressure
+/// from its best drop square. With free
 /// drops (`free_drops!`), the hand adds only its largest such value: a
 /// side drops one piece in a move, and a hand of queens and rooks summed
 /// over best squares grows past any use. With drop rules the hand is
@@ -279,21 +282,28 @@ macro_rules! royal_guard {
 macro_rules! king_danger {
     ($state:expr, $color:expr) => {{
         let statics = &$state.statics;
-        let board_size = statics.board_size;
         let piece_count = statics.pieces.len();
+        let stride = statics.eval.local_stride;
         let hand = &$state.piece_in_hand[$color ^ 1];
         let drops = drops!($state);
+        let unit = ZONE_ATTACK_UNIT as i64;
+        let mut occupied = $state.pieces_board[0];
         let mut units = 0i64;
+
+        or!(occupied, $state.pieces_board[1]);
 
         for royal_square in guarded_squares!($state, $color) {
             let royal = royal_square as usize;
-            let zone = &statics.eval.zone_attack[
-                royal * piece_count * board_size
-                    ..(royal + 1) * piece_count * board_size
-            ];
             let best = &statics.eval.zone_attack_best[
                 royal * piece_count..(royal + 1) * piece_count
             ];
+            let mut zone = board!(statics.files, statics.ranks);
+
+            set!(zone, royal);
+
+            for slot in 0..statics.eval.ring_counts[royal] as usize {
+                set!(zone, statics.eval.ring_squares[royal * stride + slot]);
+            }
 
             let mut hand_best = 0i64;
 
@@ -305,9 +315,13 @@ macro_rules! king_danger {
                 }
 
                 for square in piece_squares!($state, piece_index) {
-                    units += zone[
-                        piece_index * board_size + *square as usize
-                    ] as i64;
+                    let mut attacks = board!(statics.files, statics.ranks);
+
+                    piece_attacks!(
+                        $state, piece_index, *square, occupied, attacks
+                    );
+                    and!(attacks, zone);
+                    units += count_bits!(attacks) as i64 * unit;
                 }
 
                 if drops && hand[piece_index] > 0 {
