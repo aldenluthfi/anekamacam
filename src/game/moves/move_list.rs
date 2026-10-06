@@ -574,6 +574,330 @@ pub fn generate_attack_masks(
     pending
 }
 
+/// AttackRecipes
+///
+/// The tables of `piece_attacks!`, in `StaticState` field order: line
+/// rays, line direction, leap boards, lines and gates. Boards are flat
+/// rows of `(board_size + 63) / 64` words.
+///
+pub type AttackRecipes = (
+    Vec<u64>,
+    Vec<bool>,
+    Vec<u64>,
+    Vec<Vec<(u8, bool)>>,
+    Vec<Vec<(Square, Vec<(Square, bool)>)>>,
+);
+
+/// derive_attack_recipes
+///
+/// Makes the attack tables of `piece_attacks!` from the compiled move
+/// vectors of each piece and square. A vector whose last leg can capture
+/// gives a target, and its other legs give the squares on the way:
+///
+/// - a leg that can only move : its square must be empty
+/// - a leg that can only take : its square must hold a piece, a screen
+/// - a pass leg `(0, 0)`      : no square
+///
+/// Then each target goes to one of four shapes, by the squares it needs:
+///
+/// ```text
+/// leap         line           hop             gate
+/// S . . T      S - - T . .    S - s - T . .   S - . .
+///              (all distances (one screen,        |
+///               to the edge)   all distances)     T
+/// ```
+///
+/// - leap : nothing on the way, a bit of a fixed board
+/// - line : one step to each distance up to the edge, empty on the way;
+///          a ray cut at its first blocker at run time
+/// - hop  : one step, one screen at each distance, each target past it;
+///          the first blocker past the first blocker at run time
+/// - gate : any other target, its squares tested one by one
+///
+/// Params:
+/// - state: &State -> variant with the compiled move tables
+///
+/// Return:
+/// AttackRecipes   -> rays, ray direction, leaps, lines and gates
+///
+/// Notes:
+/// A vector with a move condition, a first-move leg or a royal-only last
+/// leg is left out, and the other target rules (rank, unmoved) are not
+/// tested: the attack maps serve the evaluation, and move generation keeps
+/// the full rules.
+///
+pub fn derive_attack_recipes(state: &State) -> AttackRecipes {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let piece_count = state.statics.pieces.len();
+    let words = (board_size + 63) >> 6;
+    let on_board = |file: i32, rank: i32| {
+        file >= 0 && file < files && rank >= 0 && rank < ranks
+    };
+
+    let mut steps: Vec<(i32, i32)> = Vec::new();
+    let mut leaps = vec![0u64; piece_count * board_size * words];
+    let mut lines = vec![Vec::new(); piece_count * board_size];
+    let mut gates = vec![Vec::new(); piece_count * board_size];
+
+    for entry in 0..piece_count * board_size {
+        let piece = &state.statics.pieces[entry / board_size];
+        let sign = -2 * p_color!(piece) as i32 + 1;
+        let origin = (entry % board_size) as i32;
+        let mut shaped: HashMap<(i32, i32), Vec<(Square, Vec<(Square, bool)>)>>
+            = HashMap::new();
+        let mut loose: Vec<(Square, Vec<(Square, bool)>)> = Vec::new();
+
+        for vector in &state.statics.relevant_moves[entry] {
+            let first_move = vector.legs.iter().any(|leg| i!(*leg));
+            let royal_only = vector.legs.last().is_some_and(|leg| k!(*leg));
+
+            if vector.pattern.is_some() || first_move || royal_only {
+                continue;
+            }
+
+            let leg_count = vector.legs.len();
+            let mut file = origin % files;
+            let mut rank = origin / files;
+            let mut needs = Vec::new();
+            let mut step = None;
+            let mut uniform = true;
+            let mut target = None;
+
+            for (leg_index, leg) in vector.legs.iter().enumerate() {
+                let file_step = x!(*leg) as i32 * sign;
+                let rank_step = y!(*leg) as i32 * sign;
+                let last = leg_index + 1 == leg_count;
+                let moves = m!(*leg) || !c!(*leg) && !d!(*leg);
+                let takes = c!(*leg) || d!(*leg) || last && !m!(*leg);
+
+                if file_step == 0 && rank_step == 0 {
+                    continue;
+                }
+
+                file += file_step;
+                rank += rank_step;
+
+                if !on_board(file, rank) {
+                    target = None;
+                    break;
+                }
+
+                let this_step = (file_step, rank_step);
+
+                uniform &= step.is_none_or(|known| known == this_step);
+                step = Some(this_step);
+
+                let square = (rank * files + file) as Square;
+
+                match (last, moves, takes) {
+                    (true, _, true) => target = Some(square),
+                    (false, true, false) => needs.push((square, false)),
+                    (false, false, true) => needs.push((square, true)),
+                    _ => {}
+                }
+            }
+
+            match (target, step.filter(|_| uniform)) {
+                (Some(square), Some(line)) => {
+                    shaped.entry(line).or_default().push((square, needs));
+                }
+                (Some(square), None) => loose.push((square, needs)),
+                _ => {}
+            }
+        }
+
+        for (step, group) in shaped {
+            let mut reach = 0;
+            while on_board(
+                origin % files + step.0 * (reach + 1),
+                origin / files + step.1 * (reach + 1),
+            ) {
+                reach += 1;
+            }
+
+            let slides = group.iter()
+                .filter(|(_, needs)| needs.iter().all(|&(_, piece)| !piece))
+                .count();
+            let hops = group.iter()
+                .filter(|(_, needs)| {
+                    needs.iter().filter(|&&(_, piece)| piece).count() == 1
+                })
+                .count();
+            let mut line = || -> u8 {
+                match steps.iter().position(|known| *known == step) {
+                    Some(index) => index as u8,
+                    None => {
+                        steps.push(step);
+                        (steps.len() - 1) as u8
+                    }
+                }
+            };
+
+            if reach >= 2 && slides == reach as usize && hops == 0 {
+                let index = line();
+                lines[entry].push((index, false));
+            } else if reach >= 2 && slides == 0
+                && hops == (reach * (reach - 1) / 2) as usize
+            {
+                let index = line();
+                lines[entry].push((index, true));
+            } else {
+                loose.extend(group);
+            }
+        }
+
+        for (target, needs) in loose {
+            match needs.is_empty() {
+                true => {
+                    leaps[entry * words + (target as usize >> 6)] |=
+                        1u64 << (target as usize & 63);
+                }
+                false => gates[entry].push((target, needs)),
+            }
+        }
+    }
+
+    let mut rays = vec![0u64; steps.len() * board_size * words];
+    let rising: Vec<bool> = steps.iter()
+        .map(|&(file_step, rank_step)| rank_step * files + file_step > 0)
+        .collect();
+
+    for (line, &(file_step, rank_step)) in steps.iter().enumerate() {
+        for origin in 0..board_size as i32 {
+            let row = (line * board_size + origin as usize) * words;
+            let mut file = origin % files + file_step;
+            let mut rank = origin / files + rank_step;
+
+            while on_board(file, rank) {
+                let square = (rank * files + file) as usize;
+                rays[row + (square >> 6)] |= 1u64 << (square & 63);
+                file += file_step;
+                rank += rank_step;
+            }
+        }
+    }
+
+    (rays, rising, leaps, lines, gates)
+}
+
+/// first_blocker!
+///
+/// Gives the first set square of a ray that the occupancy also has. On a
+/// line of one step the square index grows or falls by a fixed amount, so
+/// the first blocker is the lowest set bit of a rising ray and the highest
+/// of a falling one, on any board width.
+///
+/// Params:
+/// - ray     : &[u64]  -> squares past the origin, in words
+/// - occupied: &Board  -> squares that hold a piece
+/// - rising  : bool    -> the line grows the square index
+/// - words   : usize   -> words of the board area
+///
+/// Return:
+/// Option<usize>       -> the first blocker, or none
+///
+#[macro_export]
+macro_rules! first_blocker {
+    ($ray:expr, $occupied:expr, $rising:expr, $words:expr) => {{
+        let ray = $ray;
+        let occupied = &$occupied;
+        let hit = |word: usize| ray[word] & occupied.2[word];
+
+        match $rising {
+            true => (0..$words).find(|&word| hit(word) != 0)
+                .map(|word| word * 64 + hit(word).trailing_zeros() as usize),
+            false => (0..$words).rev().find(|&word| hit(word) != 0)
+                .map(|word| {
+                    word * 64 + 63 - hit(word).leading_zeros() as usize
+                }),
+        }
+    }};
+}
+
+/// piece_attacks!
+///
+/// Adds the squares that one piece attacks from one square to a board,
+/// with the given occupancy: its leap board, each line ray up to and with
+/// its first blocker, each hop target (the first blocker past the first
+/// blocker), and each gate target whose squares on the way hold as
+/// needed.
+///
+/// Params:
+/// - state      : &State     -> variant with the attack tables
+/// - piece_index: usize      -> attacking piece
+/// - square     : usize      -> its square
+/// - occupied   : &Board     -> squares that hold a piece
+/// - attacks    : &mut Board -> board that gets the attacked squares
+///
+/// Notes:
+/// An attacked square can hold an own piece: the piece defends it.
+///
+#[macro_export]
+macro_rules! piece_attacks {
+    (
+        $state:expr,
+        $piece_index:expr,
+        $square:expr,
+        $occupied:expr,
+        $attacks:expr
+    ) => {{
+        let statics = &$state.statics;
+        let board_size = statics.board_size;
+        let words = board_words!($occupied);
+        let origin = $square as usize;
+        let entry = $piece_index as usize * board_size + origin;
+        let ray_from = |line: usize, square: usize| {
+            &statics.attack_rays[(line * board_size + square) * words..]
+                [..words]
+        };
+
+        for word in 0..words {
+            $attacks.2[word] |= statics.attack_leaps[entry * words + word];
+        }
+
+        for &(line, hops) in &statics.attack_lines[entry] {
+            let line = line as usize;
+            let rising = statics.attack_rising[line];
+            let ray = ray_from(line, origin);
+
+            match (first_blocker!(ray, $occupied, rising, words), hops) {
+                (None, false) => {
+                    for word in 0..words {
+                        $attacks.2[word] |= ray[word];
+                    }
+                }
+                (Some(blocker), false) => {
+                    let beyond = ray_from(line, blocker);
+
+                    for word in 0..words {
+                        $attacks.2[word] |= ray[word] & !beyond[word];
+                    }
+                }
+                (Some(screen), true) => {
+                    let past = ray_from(line, screen);
+
+                    if let Some(target) =
+                        first_blocker!(past, $occupied, rising, words)
+                    {
+                        set!($attacks, target);
+                    }
+                }
+                (None, true) => {}
+            }
+        }
+
+        for (target, needs) in &statics.attack_gates[entry] {
+            if needs.iter().all(|&(gate, piece)| {
+                get!($occupied, gate as u32) == piece
+            }) {
+                set!($attacks, *target as u32);
+            }
+        }
+    }};
+}
+
 /// validate_attack_vector!
 ///
 /// Tells if an attack vector can legally reach a target square. It tests

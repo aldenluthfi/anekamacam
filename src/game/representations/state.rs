@@ -752,6 +752,11 @@ pub struct StaticState {
     pub relevant_setup: Vec<DropSet>,                                           /* setup-phase army placement         */
     pub relevant_stand_offs: Vec<PatternSet>,                                   /* facing-config veto patterns        */
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],                            /* [side][square] to its attackers    */
+    pub attack_rays: Vec<u64>,                                                  /* line, square to squares past it    */
+    pub attack_rising: Vec<bool>,                                               /* line to a growing square index     */
+    pub attack_leaps: Vec<u64>,                                                 /* piece, square to fixed targets     */
+    pub attack_lines: Vec<Vec<(u8, bool)>>,                                     /* piece, square to lines, hop flag   */
+    pub attack_gates: Vec<Vec<(Square, Vec<(Square, bool)>)>>,                  /* piece, square to gated targets     */
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
@@ -1068,6 +1073,11 @@ impl State {
                 vec![Vec::new(); board_size],
                 vec![Vec::new(); board_size],
             ],
+            attack_rays: Vec::new(),
+            attack_rising: Vec::new(),
+            attack_leaps: Vec::new(),
+            attack_lines: Vec::new(),
+            attack_gates: Vec::new(),
             relevant_castling: array::from_fn(|_| Vec::new()),
 
             piece_swap_map: vec![NO_PIECE; piece_count],
@@ -1395,7 +1405,8 @@ impl State {
     /// 1. compile the expressions, one set for each piece
     /// 2. `populate_relevant` puts the sets on each square
     /// 3. `generate_attack_masks` stores each move under its target square
-    /// 4. the capture reach, the squares that the capture legs land on
+    /// 4. `derive_attack_recipes` makes the tables of `piece_attacks!`
+    /// 5. the capture reach, the squares that the capture legs land on
     ///
     /// The reach lets the capture generation skip a piece that has no enemy
     /// piece in it. It is kept only for a board of at most
@@ -1466,11 +1477,18 @@ impl State {
                 .map(|square| generate_attack_masks(square as Square, self))
                 .collect();
 
+        let (rays, rising, leaps, lines, gates) = derive_attack_recipes(self);
         let statics = self.static_mut();
 
         for (color, square, mask) in attack_writes.into_iter().flatten() {
             statics.relevant_attacks[color][square].push(mask);
         }
+
+        statics.attack_rays = rays;
+        statics.attack_rising = rising;
+        statics.attack_leaps = leaps;
+        statics.attack_lines = lines;
+        statics.attack_gates = gates;
 
         let files = statics.files as i32;
         let ranks = statics.ranks as i32;
