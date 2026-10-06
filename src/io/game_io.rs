@@ -334,6 +334,7 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     derive_shelter_parameters(state);
     derive_danger_parameters(state);
     derive_pawn_parameters(state);
+    derive_mobility_parameters(state);
     derive_advantage_parameters(state);
     derive_search_capabilities(state);
 

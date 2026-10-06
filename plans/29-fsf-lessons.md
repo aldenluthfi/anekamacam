@@ -1046,3 +1046,90 @@ lines as the build 12 and RZ runs:
   -63.9 +/- 15.5). A run before the server crash stopped at 930 games
   near -71.7. SY costs shogi nothing.
 - Merged as build 14 (`plan27-main14`).
+
+### Where we lose against FSF (2026-10-06, build 12 games)
+
+- Data: the 1000-game runs of build 12 against FSF 2000 in standard
+  and grand. Games pair by start position; engine A is White in the
+  first game of a pair. All games end in mate, so the end type says
+  nothing.
+- In each loss, the first FSF score of +300 or more: we are ahead in
+  material there in 59% of losses (standard and grand), and our own
+  score is +100 or more in 37% (standard) and 48% (grand). Median ply
+  27 and 25.
+- Control: in our wins FSF makes such a claim while we are ahead in 20%
+  (standard) and 44% (grand). After such a claim we lose 67% and 61%.
+  So FSF sees a real factor that is not material, early in the middle
+  game, and our eval does not.
+- Sample (standard game 439): up a piece, we take back on f6 with the g
+  pawn; the queen and knight come in. FSF reads +1246, we read +674 a
+  move before the loss of the queen.
+- FSF's leading terms at our costly moves (loss analysis): mobility,
+  then material, king safety, threats. We have no mobility term (plan
+  04 stage U: a full vector walk cost 55% time to depth) and no threat
+  term; our king danger is a static table at the opening occupancy.
+
+### FM (2026-10-06, branch `plan29-fm`, f4a07b8)
+
+- Change: mobility from first steps. For each piece and square, the
+  table holds the squares that the first legs of its move vectors reach.
+  A step with no own piece on it is free. A free step is worth 12% of
+  the opening value over the most first steps of the piece; the count
+  expected at the opening occupancy is taken off. Pawns and royals
+  have none. In `shared_score!`, both phases.
+- A ray goes on only past an empty first step, so the first step tells
+  most of what a slider can do, at a few reads for each piece.
+- Check (standard, from the start): build 13 / FM: e3 21 / 56, Nf3
+  56 / 73, Nh3 33 / 53.
+- Bench depth 9, seed 1, same machine, two rounds: NPS standard -4%,
+  grand -13%, xiangqi -8%, shogi -7%.
+- Test (queue114): FM and build 13 each 600 games against FSF 2000 at
+  5+0.05 in standard, grand, xiangqi, shogi, capablanca, crazyhouse.
+- Screens (FM, build 13, gap): standard +31.9 / -4.1 / +36, xiangqi
+  +12.7 / -6.9 / +20, shogi -64.6 / -80.9 / +16, crazyhouse -93.8 /
+  -108.9 / +15, capablanca -137.0 / -118.5 / -18, grand -123.0 / -96.2
+  / -27 (each near +/- 28). Gains on 8 and 9 files, losses on the two
+  boards of 10 files.
+- At 5+0.05 build 13 is far below its 10+0.1 rating (standard -4.1
+  against +67.2, grand -96.2 against -34.2): FSF picks its move at
+  depth 7 or 8 at any time control, and our search loses depth. A
+  screen is a gap at one time control, not a rating, and it weighs a
+  cost in NPS more than 10+0.1 does.
+
+### FM2 (2026-10-06, branch `plan29-fm2`, 75c13e5)
+
+- FSF counts mobility only on squares that no enemy pawn attacks. FM
+  counted them, so it paid a piece in front of enemy pawns: the grand
+  habit of E1. Change: a first step that an enemy pawn attacks is not
+  free. The pawn tables get `pawn_attacks` (slot, square to attacked
+  squares); each evaluation ORs them for the enemy pawns.
+- Bench, same machine: NPS against build 13 standard -5%, xiangqi -6%,
+  shogi -2%, grand -17%.
+- Screens against FSF at 5+0.05: grand -115.2 +/- 30.0 (FM -123.0,
+  build 13 -96.2), capablanca -126.3 +/- 26.2 (FM -137.0, build 13
+  -118.5).
+- Standard +27.9 +/- 28.1 (FM +31.9, build 13 -4.1), xiangqi +5.2 +/-
+  28.4 (+12.7, -6.9), shogi -44.1 +/- 27.4 (-64.6, -80.9). Gaps to
+  build 13: +32, +12, +37, -8, -19; mean +11. The two boards of 10
+  files still fall.
+- The server died at 12:44 and came back at 13:16 after a reboot; the
+  five screens had ended before it. The SY shogi run started again.
+- Test (queue117): FM2 crazyhouse screen, then FM2 against FSF at
+  10+0.1, 1000 games, in grand and standard on the build 12 books: does
+  the grand loss come from the NPS cost at 5+0.05?
+- FM2 at 10+0.1, 1000 games: grand -105.3 +/- 22.1, standard +14.3 +/-
+  21.1. Build 13 control the same day, grand: -80.9 +/- 21.9 at 946
+  games, against -34.2 for build 12 on 10-05 (same play in grand). The
+  same code moved by 47: the runs of one day are not a base for another.
+
+### Paired batch (2026-10-06)
+
+- The comparisons against the build 12 runs of 10-05 were biased: OS2
+  was dropped on them, and FM2 looked far worse than it is.
+- Batch (queue119): build 14, ST (build 14 + OS2) and FM2B (build 14 +
+  FM2) against FSF 2000 at 10+0.1 in standard and grand, in 5 rounds of
+  200 games; each round plays the three engines one after another, so
+  drift hits them alike. 1000 games for each engine and variant.
+- Rule, set before the batch: a candidate merges if its gap to build
+  14, standard and grand together, is +2 sigma or more; it drops if the
+  gap is 0 or less; else one more batch decides.
