@@ -547,7 +547,7 @@ pub fn iterative_deepening(
 
         let score = loop {
             let score = alpha_beta(
-                state, ttable, qtable, depth, alpha, beta, info, true,
+                state, ttable, qtable, depth, alpha, beta, info, true, None,
             );
 
             if info.interrupt {
@@ -1026,6 +1026,9 @@ pub fn quiescence_search(
 ///     allow_null_move: bool
 ///     true when null move pruning can run at this node
 ///
+///     known_check: Option<bool>
+///     check state of the side to move, when the caller has tested it
+///
 /// Return:
 ///
 ///     i32
@@ -1064,6 +1067,7 @@ pub fn alpha_beta(
     beta: i32,
     info: &mut SearchInfo,
     allow_null_move: bool,
+    known_check: Option<bool>,
 ) -> i32 {
     let ply = state.search_ply as usize;
     let mut alpha = alpha;
@@ -1113,7 +1117,8 @@ pub fn alpha_beta(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
-    let in_check = is_in_check!(state.playing, state);
+    let in_check = known_check
+        .unwrap_or_else(|| is_in_check!(state.playing, state));
     let mut depth = depth;
 
     if depth == 0 {
@@ -1217,6 +1222,7 @@ pub fn alpha_beta(
             -beta + 1,
             info,
             false,
+            None,
         );
 
         undo_null_move!(state);
@@ -1284,6 +1290,7 @@ pub fn alpha_beta(
                     -probcut_beta + 1,
                     info,
                     true,
+                    None,
                 );
             }
 
@@ -1465,6 +1472,7 @@ pub fn alpha_beta(
                 -alpha,
                 info,
                 true,
+                Some(gives_check),
             )
         } else {
             -alpha_beta(
@@ -1476,6 +1484,7 @@ pub fn alpha_beta(
                 -alpha,
                 info,
                 true,
+                Some(gives_check),
             )
         };
 
@@ -1492,6 +1501,7 @@ pub fn alpha_beta(
                 -alpha,
                 info,
                 true,
+                Some(gives_check),
             );
         }
 
@@ -1510,6 +1520,7 @@ pub fn alpha_beta(
                 -alpha,
                 info,
                 true,
+                Some(gives_check),
             );
         }
 
