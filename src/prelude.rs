@@ -83,7 +83,8 @@ pub use crate::game::search::{
     parallel::ThreadPool,
     parameters::{
         derive_advantage_parameters, derive_base_pst, derive_danger_parameters,
-        derive_eval_parameters, derive_eval_products, derive_parameters,
+        derive_eval_parameters, derive_eval_products,
+        derive_mobility_parameters, derive_parameters,
         derive_pawn_parameters, derive_search_capabilities,
         derive_search_parameters, derive_shelter_parameters,
         reduction_surface, EvalParams, SearchParams,

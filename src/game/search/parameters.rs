@@ -257,6 +257,24 @@ const CASTLING_RIGHT_RATIO: u32 = 20;
 const DANGER_RATIO: u32 = 600;
 const DANGER_CAP_RATIO: u32 = 1000;
 
+/// Mobility
+///
+/// The worth of the free first steps of a piece that is not a pawn and
+/// not royal. The first step of a move vector is the square of its first
+/// leg; it is free when no own piece stands on it. Each free step is worth
+/// `MOBILITY_RATIO` of the opening value of the piece, over the most first
+/// steps the piece has on any square. The count expected at the opening
+/// occupancy is taken off, so the term adds no material on average.
+///
+/// - knight, 8 steps : 12% of 383 over 8, near 6 cp a step
+/// - bishop, 4 steps : 12% of 380 over 4, near 11 cp a step
+///
+/// In the loss analysis against FSF, FSF was 3 pawns up while we were
+/// ahead in material in 59% of our losses (standard and grand). Mobility
+/// is the largest term of FSF's eval, and we had none.
+///
+const MOBILITY_RATIO: u32 = 120;
+
 /// Royal proximity
 ///
 /// The cost of each enemy piece within two files and two ranks of a royal,
@@ -496,6 +514,12 @@ pub struct EvalParams {
     pub pawn_doubled_penalty: Vec<i32>,                                         /* slot to cost of blocking itself    */
     pub pawn_isolated_penalty: Vec<i32>,                                        /* slot to cost of standing alone     */
     pub pawn_backward_penalty: Vec<i32>,                                        /* slot to cost of a contested stop   */
+
+    pub step_squares: Vec<Square>,                                              /* piece, square to first steps       */
+    pub step_counts: Vec<u8>,                                                   /* steps stored per entry above       */
+    pub step_stride: usize,                                                     /* slots each entry owns              */
+    pub step_value: Vec<i32>,                                                   /* piece to milli-cp of a free step   */
+    pub step_base: Vec<i32>,                                                    /* piece, square to expected worth    */
 
     pub tempo_bonus: i32,                                                       /* worth of holding the move          */
     pub imbalance_major: i32,                                                   /* worth of one heavy piece of extra  */
@@ -1507,9 +1531,10 @@ fn resolve_setup_army(state: &State) -> Vec<u32> {
 /// 3. shelter      : the royal ring, and if shelter applies
 /// 4. danger       : the zone attacks, on the shelter ring
 /// 5. pawn         : pawn structure and passed pawn terms
-/// 6. advantage    : imbalance and contempt
-/// 7. capabilities : the pruning claims that the rules allow
-/// 8. refresh      : the incremental caches
+/// 6. mobility     : first steps, on the pawn slots
+/// 7. advantage    : imbalance and contempt
+/// 8. capabilities : the pruning claims that the rules allow
+/// 9. refresh      : the incremental caches
 ///
 /// Params:
 /// - state: &mut State -> new precomputed variant state
@@ -1520,6 +1545,7 @@ pub fn derive_parameters(state: &mut State) {
     derive_shelter_parameters(state);
     derive_danger_parameters(state);
     derive_pawn_parameters(state);
+    derive_mobility_parameters(state);
     derive_advantage_parameters(state);
     derive_search_capabilities(state);
     refresh_eval_state(state);
@@ -3393,6 +3419,117 @@ pub fn derive_pawn_parameters(state: &mut State) {
     statics.eval.pawn_doubled_penalty = doubled;
     statics.eval.pawn_isolated_penalty = isolated;
     statics.eval.pawn_backward_penalty = backward_penalty;
+}
+
+/*----------------------------------------------------------------------------*\
+                              MOBILITY DERIVATION
+\*----------------------------------------------------------------------------*/
+
+/// derive_mobility_parameters
+///
+/// Makes the first step tables of `piece_mobility!`. For each piece and
+/// square, the first steps are the different squares that the first legs
+/// of its move vectors reach:
+///
+/// ```text
+/// ┌────┬────┬────┐
+/// │ ** │ ** │ ** │   ** = the first steps of a queen; each of its rays
+/// ├────┼────┼────┤        goes on only past an empty first step
+/// │ ** │ QQ │ ** │
+/// ├────┼────┼────┤
+/// │ ** │ ** │ ** │
+/// └────┴────┴────┘
+/// ```
+///
+/// - step value : `MOBILITY_RATIO` of the opening value, in milli-cp, over
+///                the most first steps of the piece on any square
+/// - step base  : the step value times the steps expected free at the
+///                opening occupancy, from that square
+///
+/// Pawns and royals get no step value, so the evaluation skips them.
+///
+/// Params:
+/// - state: &mut State -> variant with the mobility tables to rebuild
+///
+/// Notes:
+/// It must run after `derive_pawn_parameters`, which sets the pawn slots.
+///
+#[hotpath::measure]
+pub fn derive_mobility_parameters(state: &mut State) {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let piece_count = state.statics.pieces.len();
+    let open = 1.0 - OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
+
+    let steps: Vec<Vec<Square>> = (0..piece_count * board_size).map(|entry| {
+        let piece = &state.statics.pieces[entry / board_size];
+        let sign = -2 * p_color!(piece) as i32 + 1;
+        let origin = (entry % board_size) as i32;
+
+        let mut landings: Vec<Square> = state.statics.relevant_moves[entry]
+            .iter()
+            .filter_map(|vector| {
+                let leg = vector.legs.first()?;
+                let file = origin % files + x!(leg) as i32 * sign;
+                let rank = origin / files + y!(leg) as i32 * sign;
+
+                (file >= 0 && file < files && rank >= 0 && rank < ranks)
+                    .then_some((rank * files + file) as Square)
+            })
+            .filter(|&landing| landing as i32 != origin)
+            .collect();
+
+        landings.sort_unstable();
+        landings.dedup();
+        landings
+    }).collect();
+
+    let stride = steps.iter().map(Vec::len).max().unwrap_or(0);
+
+    let mut step_squares = vec![0 as Square; piece_count * board_size * stride];
+    let mut step_counts = vec![0u8; piece_count * board_size];
+    let mut step_value = vec![0i32; piece_count];
+    let mut step_base = vec![0i32; piece_count * board_size];
+
+    for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
+        let start = piece_index * board_size;
+        let rows = &steps[start..start + board_size];
+        let most = rows.iter().map(Vec::len).max().unwrap_or(0);
+
+        if p_is_royal!(piece)
+            || state.statics.eval.pawn_slots[piece_index] != NO_PAWN
+            || most == 0 {
+            continue;
+        }
+
+        let value = p_ovalue!(piece) as f64 * MOBILITY_RATIO as f64
+            / most as f64;
+
+        step_value[piece_index] = value.round() as i32;
+
+        for (square, row) in rows.iter().enumerate() {
+            let entry = piece_index * board_size + square;
+
+            step_squares[entry * stride..entry * stride + row.len()]
+                .copy_from_slice(row);
+            step_counts[entry] = row.len() as u8;
+            step_base[entry] = (value * row.len() as f64 * open).round() as i32;
+        }
+    }
+
+    log_3!(
+        "Derived mobility with {} first steps at most, step values {:?}",
+        stride, step_value
+    );
+
+    let statics = state.static_mut();
+
+    statics.eval.step_squares = step_squares;
+    statics.eval.step_counts = step_counts;
+    statics.eval.step_stride = stride;
+    statics.eval.step_value = step_value;
+    statics.eval.step_base = step_base;
 }
 
 /*----------------------------------------------------------------------------*\

@@ -926,6 +926,65 @@ macro_rules! pawn_structure {
 }
 
 /*----------------------------------------------------------------------------*\
+                                MOBILITY TERM
+\*----------------------------------------------------------------------------*/
+
+/// piece_mobility!
+///
+/// Gives the mobility worth of the pieces of one colour. Each piece with
+/// a step value reads the first steps of its square. A step is free when
+/// no own piece stands on it. The worth is the step value times the free
+/// steps, less the base: the worth of the steps expected free at the
+/// opening occupancy.
+///
+/// - bishop behind its own pawns : 0 free of 4, the full base is lost
+/// - bishop on an open diagonal  : 4 free of 4, above the base
+///
+/// Params:
+/// - state: &State -> position to score
+/// - color: usize  -> colour of the pieces
+///
+/// Return:
+/// i32             -> mobility worth for that colour, in cp
+///
+/// Notes:
+/// A step that an enemy holds is free: the piece can take there.
+///
+#[macro_export]
+macro_rules! piece_mobility {
+    ($state:expr, $color:expr) => {{
+        let statics = &$state.statics;
+        let board_size = statics.board_size;
+        let stride = statics.eval.step_stride;
+        let own = &$state.pieces_board[$color];
+        let mut worth = 0i64;
+
+        for (piece_index, piece) in statics.pieces.iter().enumerate() {
+            let value = statics.eval.step_value[piece_index] as i64;
+
+            if value == 0 || p_color!(piece) as usize != $color {
+                continue;
+            }
+
+            for square in piece_squares!($state, piece_index) {
+                let entry = piece_index * board_size + *square as usize;
+                let count = statics.eval.step_counts[entry] as usize;
+                let steps = &statics.eval.step_squares[
+                    entry * stride..entry * stride + count
+                ];
+                let free = steps.iter()
+                    .filter(|&&step| !get!(own, step as u32))
+                    .count() as i64;
+
+                worth += value * free - statics.eval.step_base[entry] as i64;
+            }
+        }
+
+        (worth / 1000) as i32
+    }};
+}
+
+/*----------------------------------------------------------------------------*\
                              PHASE SCORE COMPONENTS
 \*----------------------------------------------------------------------------*/
 
@@ -994,6 +1053,8 @@ macro_rules! shared_score {
             - goal_race!($state, black)
             + extinct_threat!($state, black)
             - extinct_threat!($state, white)
+            + piece_mobility!($state, white)
+            - piece_mobility!($state, black)
     }};
 }
 
