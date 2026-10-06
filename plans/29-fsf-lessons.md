@@ -2,6 +2,10 @@
 
 ## Status
 
+Merged build 14 (2026-10-06) = build 13 + SY. Against FSF 2000 (1000
+games each, build 13 in brackets): knightmate +31.4 (-12.9), kinglet
++77.7 (+40.5); shogi 2000 games -63.3 (-63.9).
+
 Merged build 13 (2026-10-05) = build 12 + RZ. Build 12 = build 11 +
 F1, F2, M2 + HMF + the plan29-meas harness. HMF: crazyhouse self-play
 H1 +60 (near +11 against FSF). RZ: shogi +29 against FSF (2000 games
@@ -1038,3 +1042,7 @@ lines as the build 12 and RZ runs:
   FSF prices them near 0.78 of a bishop (ours 0.55, SY 0.49). Shogi
   is a key variant, so SY plays FSF there too before the merge: 2000
   games (queue115); build 13 had -63.9 and -45.7.
+- Shogi: -63.3 +/- 15.5 over 2000 games on the same book (build 13
+  -63.9 +/- 15.5). A run before the server crash stopped at 930 games
+  near -71.7. SY costs shogi nothing.
+- Merged as build 14 (`plan27-main14`).
