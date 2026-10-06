@@ -1094,3 +1094,21 @@ lines as the build 12 and RZ runs:
   (build 12 runs on the same books are the base: build 13 changed only
   drop variants), and ST and build 13 in knightmate and kinglet.
 - SPRT standard: H1, +48.3 +/- 17.5.
+- Against FSF 2000: standard +41.2 +/- 21.3 (build 12: +67.2 +/-
+  22.5); grand -78.2 +/- 30.0 at 566 games (build 12: -34.2 +/- 20.6).
+  In these two variants ST is OS2 alone: SY changes only the params of
+  variants with a commoner or drops.
+- Where standard loses (games paired by start position; engine A is
+  White in the first game of a pair): at ply 30 ST is ahead in material
+  as often as build 12, but scores less from it. Up 5 or more: 0.718
+  (n 87) against 0.844 (n 96); up 2 to 4: 0.626 against 0.671; behind:
+  0.361 against 0.408; even: 0.515 for both.
+- Why self-play misled: the screens and the SPRT play build 13, which
+  has the old values. OS2 punishes build 13's pawn grabs. FSF does not
+  grab, so the gain is not there against FSF, and the lower opening
+  values cost conversion.
+- Verdict: OS2 does not merge. SY goes on alone (knightmate, kinglet
+  against FSF, queue113).
+- Method change: a value change is screened against FSF at 5+0.05,
+  600 games, not against the old build: the old build shares the
+  fault that the change fixes.
