@@ -1087,3 +1087,65 @@ one thread, Hash 64, FSF 14.0.1 XQ (also the server's), build 14.
   chess).
 - From here a change is judged against full FSF on the budget where we
   score near 50%: no skill noise, so each win is against its real play.
+
+### Paired batch result (2026-10-06, queue119)
+
+Against FSF 2000 at 10+0.1, 5 rounds of 200 games, 1000 for each engine
+and variant (build 14 / ST = build 14 + OS2 / FM2B = build 14 + FM2):
+
+| variant | build 14 | ST | FM2B |
+| ------- | -------- | -- | ---- |
+| standard | +37.3 +/- 21.7 | +31.0 +/- 21.6 | +25.1 +/- 21.6 |
+| grand | -60.4 +/- 21.9 | -69.7 +/- 22.0 | -98.8 +/- 22.4 |
+
+- ST gap -7.8, FM2B gap -25.3 (mean of the two variants): both 0 or
+  less, so both drop by the rule set before the batch.
+- Why, from the analysis below: each was one prior term without attack
+  information, and FM2 paid for full-width boards on each node.
+
+### How we lose against FSF (2026-10-06, analysis before any candidate)
+
+Data: the 1000-game build 12 runs against FSF 2000; scripts in the
+scratch dir. A decision is our move just before FSF first claims +300
+while we are ahead in material.
+
+- Net material from before our move to 8 plies of FSF's depth-16 line
+  (349 standard losses): no net loss 62%, net loss 2+ 34%, mate or check
+  attack 5%. In the real games the no-loss group is 2 down within 16
+  plies in 54%: two thirds of all losses lose material within 16 plies of
+  a move we rated 0 or more.
+- Time to solution (40 decisions, 10 s, one thread): FSF agreed with our
+  move in 7; of the other 33 we never played FSF's move in 24, and in the
+  9 we did we needed a median 13x its time. FSF found most of the 24 in
+  under 0.2 s (g458 7 ms, g961 14 ms): its eval picks the move, so the gap
+  is judgment, not depth.
+- Replays at 5 s (40 decisions): another move FSF rates 150 cp better in
+  16, the same losing move in 14, another but no better move in 10.
+  Builds without LMR, without null move, or without futility and LMP
+  each fixed 0 or 1 of the 14: no single cut hides them.
+- At the depth-12 leaves FSF's move gives about 2 pawns of material for
+  +1.0 king safety and +0.2 mobility against ours (FSF's classical terms,
+  but FSF plays chess with NNUE; to repeat with the classical FSF).
+- M3, passed pawns: the value grows with progress and doubles when
+  connected and chained, with no test of the pieces that can stop the
+  pawn. Game 575: four pawns against a rook, ours +7.6 (pawn term +1111
+  cp), FSF -2.69. In losses where we hold a passer on rank 5 or more our
+  static eval is 3+ pawns above FSF's in 68% (26 of 38).
+- Static gaps measured at decisions sit inside exchanges (we have just
+  taken a piece), so raw static evals mislead there; the next step uses
+  depth-1 scores and quiet positions.
+- Structure: FSF builds its eval on attack bitboards per piece type
+  (mobility area, king ring attackers, safe checks, threats), from 13
+  rider magics and leaper tables on 128-bit boards. We have no attack
+  maps at run time, and `Board` is `U4096` for every variant, so each OR,
+  AND or count on a board is 64 words. Mobility (plan 04) and FM paid
+  for that.
+- CK (6b5f823) searches the same nodes as build 14 in 12 variants
+  (bench: standard, xiangqi, grand, shogi, crazyhouse, makruk, janggi;
+  search from the start: koth, chushogi, threecheck, extinction).
+  Merged as build 15 (`plan27-main15`).
+- Approved plan: measure first (board width cost, eval error against a
+  classical FSF oracle with a ranking of the missing terms, decisions
+  with a classical FSF), then attack maps derived from any move vector,
+  then eval terms in that order, each through offline gates before games.
+  Weights are rule-derived priors; tuning on data stays a last resort.
