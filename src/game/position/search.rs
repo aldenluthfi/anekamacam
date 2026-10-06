@@ -1497,7 +1497,7 @@ pub fn alpha_beta(
                 state,
                 ttable,
                 qtable,
-                depth - 1,
+                child_depth,                                                    /* a check keeps its extension        */
                 -alpha - 1,
                 -alpha,
                 info,
