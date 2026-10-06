@@ -1030,3 +1030,11 @@ lines as the build 12 and RZ runs:
   -9.2 +/- 14.7. No variant falls; the two with a commoner gain.
 - Next (queue109): SPRT `0 5` at 10+0.1 in knightmate, then SY and
   build 13 each 1000 games against FSF 2000 in knightmate and kinglet.
+- Queue109 was replaced (queue112, queue113); the SPRT did not run.
+  Against FSF 2000, 1000 games each, no book: knightmate SY +31.4 +/-
+  19.5, build 13 -12.9 +/- 19.6; kinglet SY +77.7 +/- 20.9, build 13
+  +40.5 +/- 20.3. SY gains about 40 against FSF in both.
+- SY also lowers shogi gold (370 to 332) and silver (318 to 295), while
+  FSF prices them near 0.78 of a bishop (ours 0.55, SY 0.49). Shogi
+  is a key variant, so SY plays FSF there too before the merge: 2000
+  games (queue115); build 13 had -63.9 and -45.7.
