@@ -2,6 +2,8 @@
 
 ## Status
 
+Merged build 15 (2026-10-06) = build 14 + CK (same nodes, NPS +2% to +8%).
+
 Merged build 14 (2026-10-06) = build 13 + SY. Against FSF 2000 (1000
 games each, build 13 in brackets): knightmate +31.4 (-12.9), kinglet
 +77.7 (+40.5); shogi 2000 games -63.3 (-63.9).
