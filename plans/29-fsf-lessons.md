@@ -1038,3 +1038,26 @@ lines as the build 12 and RZ runs:
   grand -13%, xiangqi -8%, shogi -7%.
 - Test (queue114): FM and build 13 each 600 games against FSF 2000 at
   5+0.05 in standard, grand, xiangqi, shogi, capablanca, crazyhouse.
+- Screens (FM, build 13, gap): standard +31.9 / -4.1 / +36, xiangqi
+  +12.7 / -6.9 / +20, shogi -64.6 / -80.9 / +16, crazyhouse -93.8 /
+  -108.9 / +15, capablanca -137.0 / -118.5 / -18, grand -123.0 / -96.2
+  / -27 (each near +/- 28). Gains on 8 and 9 files, losses on the two
+  boards of 10 files.
+- At 5+0.05 build 13 is far below its 10+0.1 rating (standard -4.1
+  against +67.2, grand -96.2 against -34.2): FSF picks its move at
+  depth 7 or 8 at any time control, and our search loses depth. A
+  screen is a gap at one time control, not a rating, and it weighs a
+  cost in NPS more than 10+0.1 does.
+
+### FM2 (2026-10-06, branch `plan29-fm2`, 75c13e5)
+
+- FSF counts mobility only on squares that no enemy pawn attacks. FM
+  counted them, so it paid a piece in front of enemy pawns: the grand
+  habit of E1. Change: a first step that an enemy pawn attacks is not
+  free. The pawn tables get `pawn_attacks` (slot, square to attacked
+  squares); each evaluation ORs them for the enemy pawns.
+- Bench, same machine: NPS against build 13 standard -5%, xiangqi -6%,
+  shogi -2%, grand -17%.
+- Screens against FSF at 5+0.05: grand -115.2 +/- 30.0 (FM -123.0,
+  build 13 -96.2), capablanca -126.3 +/- 26.2 (FM -137.0, build 13
+  -118.5).
