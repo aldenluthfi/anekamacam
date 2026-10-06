@@ -1151,3 +1151,65 @@ while we are ahead in material.
   with a classical FSF), then attack maps derived from any move vector,
   then eval terms in that order, each through offline gates before games.
   Weights are rule-derived priors; tuning on data stays a last resort.
+
+### Phase 1 measurements (2026-10-06, build 14 and 15)
+
+1a, board width. A pass over 16 pieces (OR of attack sets, AND with an
+area, count) costs: U4096 141 ns, U256 114 ns, U128 44 ns, u64 3.3 ns;
+a fixed `[u64; 64]` that loops only over the words in use: 1 word 12.5
+ns, 2 words 20 ns, 4 words 35 ns, 21 words (taikyoku) 112 ns. A U128
+build of the engine searches the same nodes at the same NPS (key
+variants), so the width costs nothing today; it costs the attack maps.
+Board sizes: 30 variants have 64 squares or fewer, 10 have 65 to 128,
+4 have more (chushogi 144, daishogi 165, tjatoer 256, daidaishogi 289),
+taikyoku 1296. Choice: one board type that loops over the words in use
+(set at variant load), so all sizes stay in one build.
+
+Ladder: build 14 against full FSF on a node budget (`nodestime`), 200
+games at 10+0.1 (score from our side; tf = FSF time forfeits):
+
+| variant | 1/4 | 1/16 | 1/64 |
+| ------- | --- | ---- | ---- |
+| standard, classical FSF | 0-200-0 | 3-188-9 | 56-122-22 (-119) |
+| grand | 1-198-1 | 21-173-6 | |
+| xiangqi | 33-167-0 (tf 32) | 14-185-1 | |
+| shogi | 48-152-0 (tf 47) | 43-157-0 | |
+| makruk | 0-132-68 | 4-64-132 | |
+| ouk-chaktrang | 28-118-54 | 29-58-113 | |
+
+- In standard, classical FSF at 1/64 of its effort still wins by 119:
+  near 6 doublings plus 119, so full classical FSF is about 500 Elo
+  above us. The NPS gap explains about 15 of it.
+- With `nodestime` FSF overstepped its clock in xiangqi and shogi at 1/4
+  (32 and 47 forfeits): those wins are not ours. Every rung shows the
+  count; a rung with forfeits does not count.
+- Makruk and ouk-chaktrang, where we beat FSF 2000 by +160 and +529,
+  lose to full FSF too: that lead was FSF's skill noise.
+
+1b, eval against a classical oracle. 616 to 666 positions from our FSF
+games per variant, FSF classical (`Use NNUE=false`) at depth 13 as the
+label; each engine's depth-1 score against it (correlation; error in
+win probability after the best scale factor):
+
+| variant | corr ours | corr FSF | error ours | error FSF | our scale |
+| ------- | --------- | -------- | ---------- | --------- | --------- |
+| standard | 0.55 | 0.86 | 0.067 | 0.021 | 0.30 |
+| xiangqi | 0.36 | 0.80 | 0.075 | 0.023 | 0.20 |
+| grand | 0.38 | 0.80 | 0.095 | 0.032 | 0.25 |
+| shogi | 0.36 | 0.77 | 0.103 | 0.037 | 0.20 |
+
+- Our judgment has three times FSF's error in all four, and our scores
+  are 3 to 5 times too large.
+- Our residual against FSF's own terms (correlation; FSF's residual in
+  brackets): king safety +0.30 to +0.41 (near 0), mobility +0.28 to
+  +0.32 (near 0), threats +0.15 to +0.26 in xiangqi, grand and shogi,
+  rooks +0.08 to +0.28. Passed and pawns are negative in standard and
+  shogi: we overvalue them (M3).
+- All FSF terms together explain 34% to 44% of our residual; king safety
+  alone 9% to 17%, mobility 8% to 10%.
+- Our own terms on quiet positions: king danger varies by 8 to 22 cp
+  only (a flat signal where FSF's king safety carries the most); the
+  pawn term spreads 90 to 175 cp in standard and grand with a fitted
+  weight near 0 (noise there); in xiangqi and shogi it helps.
+- Order for Phase 3, from these numbers: king safety from attack maps,
+  mobility, threats, passed pawns with stoppers (M3).
