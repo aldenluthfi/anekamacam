@@ -933,8 +933,9 @@ macro_rules! pawn_structure {
 ///
 /// Gives the mobility worth of the pieces of one colour. Each piece with
 /// a step value reads the first steps of its square. A step is free when
-/// no own piece stands on it. The worth is the step value times the free
-/// steps, less the base: the worth of the steps expected free at the
+/// no own piece stands on it and no enemy pawn attacks it: a piece that
+/// goes there is chased at once. The worth is the step value times the
+/// free steps, less the base: the worth of the steps expected free at the
 /// opening occupancy.
 ///
 /// - bishop behind its own pawns : 0 free of 4, the full base is lost
@@ -956,8 +957,25 @@ macro_rules! piece_mobility {
         let statics = &$state.statics;
         let board_size = statics.board_size;
         let stride = statics.eval.step_stride;
+        let pawn_stride = statics.eval.pawn_stride;
         let own = &$state.pieces_board[$color];
+        let mut chased = board!(statics.files, statics.ranks);
         let mut worth = 0i64;
+
+        for (slot, &pawn) in statics.eval.pawn_pieces.iter().enumerate() {
+            if p_color!(&statics.pieces[pawn]) as usize == $color {
+                continue;
+            }
+
+            for square in piece_squares!($state, pawn) {
+                or!(
+                    chased,
+                    statics.eval.pawn_attacks[
+                        slot * pawn_stride + *square as usize
+                    ]
+                );
+            }
+        }
 
         for (piece_index, piece) in statics.pieces.iter().enumerate() {
             let value = statics.eval.step_value[piece_index] as i64;
@@ -973,7 +991,9 @@ macro_rules! piece_mobility {
                     entry * stride..entry * stride + count
                 ];
                 let free = steps.iter()
-                    .filter(|&&step| !get!(own, step as u32))
+                    .filter(|&&step| {
+                        !get!(own, step as u32) && !get!(chased, step as u32)
+                    })
                     .count() as i64;
 
                 worth += value * free - statics.eval.step_base[entry] as i64;

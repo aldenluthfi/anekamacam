@@ -506,6 +506,7 @@ pub struct EvalParams {
     pub pawn_interference: Vec<Board>,                                          /* slot, square to passer stoppers    */
     pub pawn_support: Vec<Board>,                                               /* slot, square to defending squares  */
     pub pawn_backward: Vec<Board>,                                              /* slot, square to stop attackers     */
+    pub pawn_attacks: Vec<Board>,                                               /* slot, square to attacked squares   */
     pub pawn_support_files: Vec<Vec<i32>>,                                      /* slot to supporting file offsets    */
     pub pawn_passed_opening: Vec<i32>,                                          /* slot, square to passer worth,      */
     pub pawn_passed_endgame: Vec<i32>,                                          /* opening then ending                */
@@ -3099,6 +3100,42 @@ fn derive_pawn_captures(state: &State, color: u8, targets: &Board) -> Board {
     sources
 }
 
+/// derive_pawn_attacks
+///
+/// Gives the squares that one pawn attacks from one square: the targets
+/// of its capture offsets, turned by the colour sign. It is the forward
+/// form of `derive_pawn_captures`.
+///
+/// Params:
+/// - state : &State -> precomputed capture tables
+/// - index : usize  -> pawn piece index
+/// - square: usize  -> square of the pawn
+///
+/// Return:
+/// Board            -> the squares the pawn attacks
+///
+fn derive_pawn_attacks(state: &State, index: usize, square: usize) -> Board {
+    let files = state.statics.files as i32;
+    let ranks = state.statics.ranks as i32;
+    let board_size = state.statics.board_size;
+    let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
+
+    let mut targets = board!(state.statics.files, state.statics.ranks);
+    let vectors = &state.statics.relevant_captures[index * board_size + square];
+
+    for vector in usual_vectors(state, vectors) {
+        let (file_offset, rank_offset) = vector_offset!(vector);
+        let file = square as i32 % files + file_offset * sign;
+        let rank = square as i32 / files + rank_offset * sign;
+
+        if file >= 0 && file < files && rank >= 0 && rank < ranks {
+            set!(targets, (rank * files + file) as u32);
+        }
+    }
+
+    targets
+}
+
 /// derive_pawn_interference
 ///
 /// Gives all enemy squares that can stop the pawn: the path, and each
@@ -3273,6 +3310,9 @@ fn derive_pawn_advancement(
 /// - support      : own squares that connect it or defend its stop
 /// - backward     : enemy squares that attack its stop
 ///
+/// It also makes the attack mask of `piece_mobility!`: the squares the
+/// pawn attacks.
+///
 /// Each mask is a full board, so each test is one bit read. The tables use
 /// the pawn slot, not the piece index, so they stay small. The values are:
 ///
@@ -3306,6 +3346,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut interference = vec![empty; pieces.len() * stride];
     let mut support = vec![empty; pieces.len() * stride];
     let mut backward = vec![empty; pieces.len() * stride];
+    let mut attacks = vec![empty; pieces.len() * stride];
     let mut support_files = vec![Vec::new(); pieces.len()];
     let mut passed_opening = vec![0i32; pieces.len() * stride];
     let mut passed_endgame = vec![0i32; pieces.len() * stride];
@@ -3352,6 +3393,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
             support[entry] =
                 derive_pawn_captures(state, p_color!(piece), &defended);
             backward[entry] = derive_pawn_captures(state, enemy, &stop);
+            attacks[entry] = derive_pawn_attacks(state, index, square);
 
             passed_opening[entry] = (opening_gain.max(0) as i64
                 * opening_ratio as i64 * advancement
@@ -3411,6 +3453,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     statics.eval.pawn_interference = interference;
     statics.eval.pawn_support = support;
     statics.eval.pawn_backward = backward;
+    statics.eval.pawn_attacks = attacks;
     statics.eval.pawn_support_files = support_files;
     statics.eval.pawn_passed_opening = passed_opening;
     statics.eval.pawn_passed_endgame = passed_endgame;
