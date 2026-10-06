@@ -2,6 +2,10 @@
 
 ## Status
 
+Plan 29c (2026-10-06): an Elo map of FSF, one feature off at a time
+(queue121). The plan 29b Phase 3 order and gate A are withdrawn; see
+the retrospective.
+
 Merged build 15 (2026-10-06) = build 14 + CK (same nodes, NPS +2% to +8%).
 
 Merged build 14 (2026-10-06) = build 13 + SY. Against FSF 2000 (1000
@@ -1240,3 +1244,97 @@ Attack maps, design:
   no target condition applies; cost measured on the bench. Estimate:
   150 to 300 ns for both sides on 8x8 against 540 ns for each node now,
   so a term must win more than the 25 to 35 Elo the speed costs.
+
+AM (branch `plan29-am`, a142b09): `derive_attack_recipes` and
+`piece_attacks!`, no reader yet. Against the capture targets of move
+generation on random positions: exact in 34 of 44 variants, the four key
+variants among them. Not exact: annanshogi (move patterns), hiashatar,
+janggi (cannon rules), sittuyin, and a few squares in the large shogis.
+Cost of the maps of both sides: standard 108 ns, shogi 140, xiangqi
+163, capablanca 178, grand 191, chushogi 1115.
+
+KS1 (branch `plan29-ks`, d0a3ae6): `king_danger!` counts the zone
+squares that each enemy piece reaches on the maps, in place of the
+static `zone_attack` table. Gate A error: standard 0.0673 to 0.0655,
+xiangqi 0.0745 to 0.0737, grand 0.0953 to 0.0938, shogi 0.0984 to
+0.0981.
+
+KS2 (uncommitted, on KS1): safe checks (an enemy type that reaches a
+check square that we do not guard) and weak squares (attacked zone
+squares that only the royal defends). Gate A error: standard 0.0555,
+xiangqi 0.0681, grand 0.0819, shogi 0.0979. KS2 repeats SB, and KS3
+(drop checks) would repeat SD; the retrospective below stops both.
+
+### Retrospective (2026-10-06)
+
+Phase 3 came from FSF's eval code and the oracle; the ledger was not
+read before it. What the ledger and the result sections say:
+
+| Mechanism | Tries | Games | Recorded cause |
+| --------- | ----- | ----- | -------------- |
+| Larger king danger | KD, DW, PX | -10, -9, -306 | PX: the term rules the eval |
+| Safe checks | SB, SD, SD2 | -31, -115, -33 | SD: its drops are refuted at depth 8 to 9, we reach 7 at 300 ms |
+| Hand pressure | HB, E2, KH, KH2, KH3, HM | -46, -6, -69, -67, -8, FSF -42 | a drop lowers the danger the hand gave |
+| Cut checks | CR, CR2, CS, XS, XS2 | -51, -49 cp, -42 cp, -17, -2 | not known; CR2 rules out the defender cause |
+| Fewer nodes | QP, HL, XS2 | -2, +11, -2 | fewer nodes to a depth gave no strength |
+| Rule misreadings fixed | P1, N1, E1, SP, EX, GA, CC, RZ, SY | +311, +195, +165, +178, +184, +137, +248, FSF +29, FSF +40 | gains |
+
+- KS2 repeats SB and KS3 would repeat SD, with no change on the
+  recorded cause. SB said: retry only with CR; CR failed.
+- SD was 47 cp worse at 300 ms and 15 cp better at 3 s: the king terms
+  ask for depth that we do not reach at 10+0.1.
+
+Gate A against old changes with known results, each against its parent
+(error in win probability, lower is better):
+
+| Change | Variant | Gate A | Games |
+| ------ | ------- | ------ | ----- |
+| SD | shogi | 0.0988 to 0.0968 | -115 |
+| SD2 | shogi | 0.0988 to 0.0982 | -33 |
+| SB | grand | 0.0953 to 0.0952 | -31 |
+| PX | shogi | 0.1010 to 0.1003 | -306 |
+| PX2 | shogi | 0.1010 to 0.1006 | +16, inconclusive |
+| KD | grand, xiangqi | 0.0980 to 0.0970, 0.0690 to 0.0676 | -10, +7, inconclusive |
+| HB | shogi | 0.1003 to 0.1009 | -46 |
+| KH, KH2 | shogi | 0.0988 to 0.1002 | -69, -67 (screens) |
+
+Gate A passes four of the five large losses. It does not predict games
+and is dropped. Corrections to Phase 1:
+
+- "Full classical FSF is about 500 Elo above us" took 60 to 70 Elo for
+  each doubling above 1/64. The ladder gives near 200 for each doubling
+  from 1/64 to 1/16 (standard -119 to -527, shogi +182 to -222), and at
+  1/4 we scored 0 of 200 in standard and 1 real win in 153 shogi games
+  (47 of the 48 wins are FSF time forfeits). The gap at full effort is
+  not measured: well above 500 in standard, above 300 in shogi.
+- "Our scores are 3 to 5 times too large": the best scale also shrinks
+  with low correlation. Scale over correlation gives 1.5 to 2 times.
+- "S1 explains much of" the low-depth tree: checks hold 10% to 37% of
+  the nodes, so S1 cannot explain trees 10 to 46 times FSF's.
+
+### Plan 29c: an Elo map of FSF (2026-10-06)
+
+Each candidate so far guessed which FSF feature matters and tested it in
+our engine. Plan 29c measures it in FSF first.
+
+- Lab: FSF from `tmp/src` (scratch copy, server `~/fsflab`) with
+  switches in `FSF_ABLATE`, a comma list. Search: `rfp`, `nmp`,
+  `probcut`, `iir`, `mcp`, `seecap`, `chprune`, `fpp`, `seequiet`,
+  `singular`, `checkext`, `lmr`, `lmrhist`, `lmradj` (base table only),
+  `conthist`, `caphist`, `mainhist`, `killers`, `countermove`. Eval:
+  `e_imbalance`, `e_pawns`, `e_pieces`, `e_hand`, `e_mobility`,
+  `e_king`, `e_passed`, `e_variant`, `e_threats`, `e_space`. `s1` puts
+  our check rule in FSF: no pruning or reduction of a check, and one ply
+  for each check while the line is shorter than twice the root depth.
+- Each switch changes the nodes to a fixed depth (chess 16, shogi 14),
+  except where its term does not exist (`e_hand`, `e_variant` in chess;
+  `e_variant`, `e_pawns` in shogi).
+- Step 1, queue121: each switch against the lab base, 400 games at
+  10+0.1 on the screen books, in standard (classical), xiangqi, grand
+  and shogi; base against base gives the noise. Books paused meanwhile.
+- Step 2: our behaviours in FSF (`s1` and `lmradj` in queue121, then
+  their combinations) show which of them cost FSF the most.
+- Step 3: port in rank order, each with a target from the map. A port
+  below its target is a defect to find with counters from FSF on the
+  same positions, not a dropped idea. Games against full FSF decide.
+- KS2 is parked; the Phase 3 order is withdrawn.
