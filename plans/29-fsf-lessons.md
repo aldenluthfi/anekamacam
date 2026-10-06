@@ -1046,3 +1046,44 @@ lines as the build 12 and RZ runs:
   -63.9 +/- 15.5). A run before the server crash stopped at 930 games
   near -71.7. SY costs shogi nothing.
 - Merged as build 14 (`plan27-main14`).
+
+### Full-strength FSF (2026-10-06, user request)
+
+The user asked for FSF without UCI_Elo: our limits measured part by
+part, the ceiling against full FSF, and our real strengths. Wins
+against the skill handicap do not count as strength. All local runs:
+one thread, Hash 64, FSF 14.0.1 XQ (also the server's), build 14.
+
+- Perft (make and undo at each leaf for us; FSF counts its leaves in
+  bulk): leaves per second standard 12.8M / 54M, xiangqi 7.8M / 33M,
+  grand 10.9M / 61M, shogi 11.0M / 43M.
+- Search NPS from the start (10 s): standard 1.32M / 1.57M (84%),
+  xiangqi 0.77M / 0.96M (80%), grand 0.79M / 1.23M (64%), shogi
+  1.01M / 1.20M (84%).
+- Depth at 10 s (`go infinite`): standard 21 / 24, xiangqi 18 / 23,
+  grand 15 / 20, shogi 19 / 27. Late in the search the trees grow alike
+  (about 1.45 nodes for each ply). At low depth ours is much larger:
+  depth 8 standard 55,934 / 5,247 nodes; depth 9 grand 606k / 13k,
+  shogi 93k / 6.3k. The check rule (S1) explains much of it; CR and
+  XS already showed that cutting checks loses.
+- Timed build, bench standard depth 10 (each timed call adds about 15
+  to 20 ns): make 92 ns, undo 20 ns, check test 28 ns (2.8 for each
+  make), eval 69 ns, all moves 88 ns, captures 173 ns, hash probe 41
+  ns; 540 ns for each node in all.
+- With `movetime` our clock starts no new depth after a quarter of the
+  time, so a fixed-time test uses `go infinite` and `stop`.
+- Speed alone: 0.25 to 0.64 doublings, near 15 to 45 Elo at 60 to 70
+  for each doubling. Speed is not what keeps grand and shogi low.
+- CK (branch `plan29-ck`, 6b5f823): the move loop passes its gives-check
+  test to the child, which tested the same position again. Node counts
+  equal at depth 9; NPS standard +8%, xiangqi +3.5%, grand +2.3%,
+  shogi +2%.
+- Ladder (queue120): build 14 against full FSF on a node budget
+  (`nodestime` 350, 88, 22, 5: 1/4 to 1/280 of its effort), 200 games
+  at 10+0.1 in the four key variants, makruk and ouk-chaktrang. The
+  budget at 50% gives the gap to full FSF in doublings; the gap less
+  the speed share is the search and eval share. Local check: no time
+  forfeits; FSF won 4 of 4 standard games at 1/16 (it uses NNUE in
+  chess).
+- From here a change is judged against full FSF on the budget where we
+  score near 50%: no skill noise, so each win is against its real play.
