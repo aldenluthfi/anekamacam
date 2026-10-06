@@ -13,7 +13,7 @@
                               CORE REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 pub use crate::game::representations::{
-    board::{Board, BoardBits},
+    board::{Board, BoardBits, BOARD_WORDS},
     drop::DropSet,
     termination::{
         Adjudicate, Checks, Counter, Counting, Termination, Extinct, Goal,
@@ -149,7 +149,6 @@ pub use crate::debug::tuning::run_tuning;
                              EXTERNAL DEPENDENCIES
 \*----------------------------------------------------------------------------*/
 pub use arboard::Clipboard;
-pub use bnum::types::U4096;
 pub use chrono;
 pub use core::cell::SyncUnsafeCell;
 pub use crossterm::{

@@ -3,8 +3,9 @@
 //! Defines the board type and the bitboard macros.
 //!
 //! Some variants have boards with many more than 64 squares, so a `u64`
-//! is too small. This file defines one board type on a wide bitset and the
-//! bit operations on it. Other modules use these macros, not raw bits.
+//! is too small. This file defines one board type on an array of 64-bit
+//! words and the bit operations on it. An operation reads only the words
+//! of the board's own area. Other modules use these macros, not raw bits.
 //!
 //! Created: 18/02/2024
 //! Author : Alden Luthfi
@@ -13,14 +14,27 @@ use crate::*;
 
 /// BoardBits
 ///
-/// The 4096-bit bitset of each [`Board`]. This width sets the cost of each
-/// board copy, for all variants. It is wider than all supported boards.
+/// The bits of each [`Board`]: `MAX_SQUARES` bits in 64-bit words. A board
+/// uses only the words that cover its own area, `files * ranks` bits:
+///
+/// - 8x8, 64 squares     : 1 word
+/// - 10x10, 100 squares  : 2 words
+/// - 36x36, 1296 squares : 21 words
+///
+/// Thus a union or a count on a small board costs one or two words, and
+/// all board sizes stay in one build.
 ///
 /// Notes:
-/// The Zobrist tables have `MAX_SQUARES` entries. Thus `MAX_SQUARES`, not
-/// this width, is the limit on the board area.
+/// The Zobrist tables have `MAX_SQUARES` entries, so `MAX_SQUARES` is the
+/// limit on the board area.
 ///
-pub type BoardBits = U4096;
+pub type BoardBits = [u64; BOARD_WORDS];
+
+/// BOARD_WORDS
+///
+/// The number of 64-bit words in [`BoardBits`], for `MAX_SQUARES` bits.
+///
+pub const BOARD_WORDS: usize = MAX_SQUARES / 64;
 
 /// Board
 ///
@@ -75,6 +89,14 @@ pub type Board = (u8, u8, BoardBits);
 ///
 ///   Return:
 ///   u8               -> rank count
+///
+/// board_words!
+///
+///   Params:
+///   - board : &Board -> board to read
+///
+///   Return:
+///   usize            -> words that cover the area, `files * ranks` bits
 ///
 /// get!
 ///
@@ -138,7 +160,7 @@ pub type Board = (u8, u8, BoardBits);
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {
-        ($files, $ranks, BoardBits::MIN)
+        ($files, $ranks, [0u64; BOARD_WORDS])
     };
 }
 
@@ -157,45 +179,69 @@ macro_rules! ranks {
 }
 
 #[macro_export]
-macro_rules! get {
-    ($board:expr, $index:expr) => {
-        $board.2.bit($index)
+macro_rules! board_words {
+    ($board:expr) => {
+        (files!($board) as usize * ranks!($board) as usize + 63) >> 6
     };
+}
+
+#[macro_export]
+macro_rules! get {
+    ($board:expr, $index:expr) => {{
+        let bit_index = $index as usize;
+        ($board.2[bit_index >> 6] >> (bit_index & 63)) & 1 != 0
+    }};
 }
 
 #[macro_export]
 macro_rules! set {
-    ($board:expr, $index:expr) => {
-        $board.2.set_bit($index, true);
-    };
+    ($board:expr, $index:expr) => {{
+        let bit_index = $index as usize;
+        $board.2[bit_index >> 6] |= 1u64 << (bit_index & 63);
+    }};
 }
 
 #[macro_export]
 macro_rules! clear {
-    ($board:expr, $index:expr) => {
-        $board.2.set_bit($index, false);
-    };
+    ($board:expr, $index:expr) => {{
+        let bit_index = $index as usize;
+        $board.2[bit_index >> 6] &= !(1u64 << (bit_index & 63));
+    }};
 }
 
 #[macro_export]
 macro_rules! or {
-    ($board1:expr, $board2:expr) => {
-        $board1.2 |= &$board2.2
-    };
+    ($board1:expr, $board2:expr) => {{
+        let words = board_words!($board1);
+        let source = &$board2;
+
+        for word in 0..words {
+            $board1.2[word] |= source.2[word];
+        }
+    }};
 }
 
 #[macro_export]
 macro_rules! and {
-    ($board1:expr, $board2:expr) => {
-        $board1.2 &= &$board2.2
-    };
+    ($board1:expr, $board2:expr) => {{
+        let words = board_words!($board1);
+        let source = &$board2;
+
+        for word in 0..words {
+            $board1.2[word] &= source.2[word];
+        }
+    }};
 }
 
 #[macro_export]
 macro_rules! count_bits {
-    ($board:expr) => {
-        $board.2.count_ones()
-    }
+    ($board:expr) => {{
+        let source = &$board;
+
+        source.2[..board_words!(source)].iter()
+            .map(|word| word.count_ones())
+            .sum::<u32>()
+    }};
 }
 
 #[macro_export]
@@ -213,7 +259,9 @@ macro_rules! set_indices {
 
 #[macro_export]
 macro_rules! is_empty {
-    ($board:expr) => {
-        $board.2.is_zero()
-    };
+    ($board:expr) => {{
+        let source = &$board;
+
+        source.2[..board_words!(source)].iter().all(|word| *word == 0)
+    }};
 }

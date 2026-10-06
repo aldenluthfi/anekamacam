@@ -15,7 +15,7 @@ use crate::*;
 /// Square
 ///
 /// A board square as the flat index `rank * files + file`. Sixteen bits
-/// cover all squares of a `U4096` bitboard.
+/// cover all `MAX_SQUARES` squares of a board.
 ///
 pub type Square = u16;
 
