@@ -11,7 +11,6 @@ path = "main.rs"
 hotpath = { workspace = true }
 lazy_static = { workspace = true }
 regex = { workspace = true }
-bnum = { workspace = true }
 rand = { workspace = true }
 hashbrown = { workspace = true }
 log = { workspace = true }

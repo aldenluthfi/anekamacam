@@ -16,9 +16,6 @@ members = [
 ]
 
 [workspace.dependencies]
-bnum = {
-    version = ">=0.14.4"
-}
 regex = {
     version = ">=1.12.3"
 }
