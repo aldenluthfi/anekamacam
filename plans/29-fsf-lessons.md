@@ -1061,3 +1061,12 @@ lines as the build 12 and RZ runs:
 - Screens against FSF at 5+0.05: grand -115.2 +/- 30.0 (FM -123.0,
   build 13 -96.2), capablanca -126.3 +/- 26.2 (FM -137.0, build 13
   -118.5).
+- Standard +27.9 +/- 28.1 (FM +31.9, build 13 -4.1), xiangqi +5.2 +/-
+  28.4 (+12.7, -6.9), shogi -44.1 +/- 27.4 (-64.6, -80.9). Gaps to
+  build 13: +32, +12, +37, -8, -19; mean +11. The two boards of 10
+  files still fall.
+- The server died at 12:44 and came back at 13:16 after a reboot; the
+  five screens had ended before it. The SY shogi run started again.
+- Test (queue117): FM2 crazyhouse screen, then FM2 against FSF at
+  10+0.1, 1000 games, in grand and standard on the build 12 books: does
+  the grand loss come from the NPS cost at 5+0.05?
