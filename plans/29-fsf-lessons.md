@@ -1093,3 +1093,4 @@ lines as the build 12 and RZ runs:
   then 1000 games each against FSF 2000 in standard, grand, xiangqi
   (build 12 runs on the same books are the base: build 13 changed only
   drop variants), and ST and build 13 in knightmate and kinglet.
+- SPRT standard: H1, +48.3 +/- 17.5.
