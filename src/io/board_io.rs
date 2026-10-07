@@ -142,7 +142,7 @@ pub fn format_board(board: &Board, piece_char: Option<char>) -> String {
         for col in 0..files {
             let index: u32 = row as u32 * files as u32 + col as u32;
             bitboard_str.push_str(
-                ["0  ", "1  "][board.2.bit(index) as usize]
+                ["0  ", "1  "][get!(board, index) as usize]
             );
         }
         bitboard_str.push('\n');

@@ -925,6 +925,193 @@ macro_rules! pawn_structure {
     };
 }
 
+/// passer_walk!
+///
+/// Gives the part of the passed pawn value that the pawns cannot walk
+/// safely, White minus Black. A passed pawn is worth its promotion gain
+/// times the share of its walk that it can make safely:
+///
+/// ```text
+/// worth = value * (safe steps + 1) / (path length + 1)
+/// ```
+///
+/// The safe steps are the path squares before the nearest one that an
+/// enemy piece holds, or that an enemy piece attacks and no own piece
+/// defends. A step is a king step, so the count holds for any pawn that
+/// moves one square at a time. The value is the one that
+/// [`pawn_structure!`] gives, with the same connected and chained bonus.
+/// That macro caches the full value, so this term gives the part to take
+/// off it.
+///
+/// Params:
+/// - state: &State -> position with the pawns
+///
+/// Return:
+/// (i32, i32)      -> opening and endgame part, White minus Black
+///
+/// Notes:
+/// The enemy attack map is made only for a side that has a passed pawn.
+///
+#[macro_export]
+macro_rules! passer_walk {
+    ($state:expr) => {{
+        let statics = &$state.statics;
+        let stride = statics.eval.pawn_stride;
+        let files = statics.files as usize;
+        let mut opening = 0;
+        let mut endgame = 0;
+
+        if stride > 0 {
+            let mut occupied = $state.pieces_board[0];
+            let mut pawn_boards = [board!(statics.files, statics.ranks); 2];
+
+            or!(occupied, $state.pieces_board[1]);
+
+            for &pawn_index in &statics.eval.pawn_pieces {
+                let color = p_color!(&statics.pieces[pawn_index]) as usize;
+
+                for square in piece_squares!($state, pawn_index) {
+                    set!(pawn_boards[color], *square);
+                }
+            }
+
+            let is_passed = |color: usize, cell: usize| {
+                let mut blockers = statics.eval.pawn_interference[cell];
+
+                and!(blockers, pawn_boards[color ^ 1]);
+                is_empty!(blockers)
+            };
+
+            for color in [WHITE as usize, BLACK as usize] {
+                let sign = -2 * color as i32 + 1;
+                let mut unsafe_squares: Option<Board> = None;
+
+                for &pawn_index in &statics.eval.pawn_pieces {
+                    if p_color!(&statics.pieces[pawn_index]) as usize != color {
+                        continue;
+                    }
+
+                    let slot = statics.eval.pawn_slots[pawn_index];
+
+                    for &square in piece_squares!($state, pawn_index) {
+                        let cell = slot * stride + square as usize;
+
+                        if !is_passed(color, cell) {
+                            continue;
+                        }
+
+                        let unsafe_board = unsafe_squares.get_or_insert_with(
+                            || {
+                                let enemy_color = color ^ 1;
+                                let mut attacks =
+                                    board!(statics.files, statics.ranks);
+                                let mut defence =
+                                    board!(statics.files, statics.ranks);
+
+                                for (piece_index, piece) in
+                                    statics.pieces.iter().enumerate()
+                                {
+                                    for piece_square in
+                                        piece_squares!($state, piece_index)
+                                    {
+                                        match p_color!(piece) as usize
+                                            == color
+                                        {
+                                            true => piece_attacks!(
+                                                $state, piece_index,
+                                                *piece_square, occupied,
+                                                defence
+                                            ),
+                                            false => piece_attacks!(
+                                                $state, piece_index,
+                                                *piece_square, occupied,
+                                                attacks
+                                            ),
+                                        }
+                                    }
+                                }
+
+                                and_not!(attacks, defence);
+                                or!(attacks, $state.pieces_board[enemy_color]);
+                                attacks
+                            }
+                        );
+
+                        let path = &statics.eval.pawn_path[cell];
+                        let pawn_file = square as usize % files;
+                        let pawn_rank = square as usize / files;
+                        let mut path_length = 0usize;
+                        let mut nearest_unsafe = usize::MAX;
+
+                        for word in 0..board_words!(path) {
+                            let mut bits = path.2[word];
+
+                            while bits != 0 {
+                                let target = word * 64
+                                    + bits.trailing_zeros() as usize;
+                                let steps = (target % files)
+                                    .abs_diff(pawn_file)
+                                    .max((target / files).abs_diff(pawn_rank));
+
+                                path_length = path_length.max(steps);
+                                if get!(unsafe_board, target as u32) {
+                                    nearest_unsafe = nearest_unsafe.min(steps);
+                                }
+                                bits &= bits - 1;
+                            }
+                        }
+
+                        if nearest_unsafe == usize::MAX {
+                            continue;
+                        }
+
+                        let mut supporters = statics.eval.pawn_support[cell];
+
+                        and!(supporters, pawn_boards[color]);
+
+                        let connected = !is_empty!(supporters);
+                        let chained = connected
+                            && (0..board_words!(supporters)).any(|word| {
+                                let mut bits = supporters.2[word];
+                                let mut found = false;
+
+                                while bits != 0 && !found {
+                                    let supporter = word * 64
+                                        + bits.trailing_zeros() as usize;
+                                    let supporter_index =
+                                        $state.main_board[supporter] as usize;
+                                    let supporter_slot = statics.eval
+                                        .pawn_slots[supporter_index];
+
+                                    found = is_passed(
+                                        color,
+                                        supporter_slot * stride + supporter,
+                                    );
+                                    bits &= bits - 1;
+                                }
+
+                                found
+                            });
+                        let bonus = 2 + connected as i32 + chained as i32;
+                        let unsafe_steps =
+                            (path_length + 1 - nearest_unsafe) as i32;
+                        let walk = (path_length + 1) as i32;
+
+                        opening += sign
+                            * statics.eval.pawn_passed_opening[cell] * bonus / 2
+                            * unsafe_steps / walk;
+                        endgame += sign
+                            * statics.eval.pawn_passed_endgame[cell] * bonus / 2
+                            * unsafe_steps / walk;
+                    }
+                }
+            }
+        }
+
+        (opening, endgame)
+    }};
+}
+
 /*----------------------------------------------------------------------------*\
                              PHASE SCORE COMPONENTS
 \*----------------------------------------------------------------------------*/
@@ -1117,21 +1304,20 @@ macro_rules! evaluate_position {
             let side_sign = -2 * $state.playing as i32 + 1;
 
             let shared = shared_score!($state);
+            let (structure_opening, structure_endgame) =
+                pawn_structure!($state);
+            let (walk_opening, walk_endgame) = passer_walk!($state);
+            let pawn_opening = structure_opening - walk_opening;
+            let pawn_endgame = structure_endgame - walk_endgame;
 
             let score = match $state.game_phase {
                 OPENING | SETUP => {
-                    opening_score!($state)
-                        + shared
-                        + pawn_structure!($state).0
+                    opening_score!($state) + shared + pawn_opening
                 }
                 ENDGAME => {
-                    endgame_score!($state)
-                        + shared
-                        + pawn_structure!($state).1
+                    endgame_score!($state) + shared + pawn_endgame
                 }
                 MIDDLEGAME => {
-                    let (pawn_opening, pawn_endgame) =
-                        pawn_structure!($state);
                     let opening =
                         opening_score!($state) + shared + pawn_opening;
                     let endgame =

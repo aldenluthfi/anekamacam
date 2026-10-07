@@ -1213,3 +1213,30 @@ win probability after the best scale factor):
   weight near 0 (noise there); in xiangqi and shogi it helps.
 - Order for Phase 3, from these numbers: king safety from attack maps,
   mobility, threats, passed pawns with stoppers (M3).
+
+### Phase 2 (2026-10-06)
+
+BW (branch `plan29-bw`, dc53bed): `BoardBits` is `[u64; MAX_SQUARES /
+64]` and `or!`, `and!`, `count_bits!`, `is_empty!` loop over the words of
+`files * ranks` only (`board_words!`). bnum is gone. Perft suites pass in
+17 variants; node counts equal build 15 (bench standard, xiangqi, grand,
+shogi, crazyhouse; search chushogi, tjatoer, taikyoku, koth); NPS equal.
+
+Attack maps, design:
+- At variant load, each piece's compiled move vectors become, for each
+  square, an attack recipe: the capture landings, each with the squares
+  that must be empty (pass legs) or occupied (screens). No list of piece
+  types: riders, leapers, lame leapers, hoppers and any leg pattern come
+  out of the same walk over the legs.
+- At run time a rider direction is a ray mask cut at its first blocker:
+  along any fixed step the square index changes by a constant, so the
+  first blocker is the lowest or highest set bit of `ray & occupied` on
+  any board width. Leapers read one board for each square; lame leapers
+  and hoppers walk their few squares.
+- Target-dependent conditions (royal, rank, unmoved, en passant, unload)
+  stay with move generation; an attack map is for the eval, as in FSF.
+- Gate before any eval term: on random positions in all 44 variants the
+  map of each piece equals the capture targets of move generation where
+  no target condition applies; cost measured on the bench. Estimate:
+  150 to 300 ns for both sides on 8x8 against 540 ns for each node now,
+  so a term must win more than the 25 to 35 Elo the speed costs.

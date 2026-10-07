@@ -13,7 +13,7 @@
                               CORE REPRESENTATIONS
 \*----------------------------------------------------------------------------*/
 pub use crate::game::representations::{
-    board::{Board, BoardBits},
+    board::{Board, BoardBits, BOARD_WORDS},
     drop::DropSet,
     termination::{
         Adjudicate, Checks, Counter, Counting, Termination, Extinct, Goal,
@@ -52,7 +52,7 @@ pub use crate::game::moves::drop_list::generate_relevant_drops;
 pub use crate::game::moves::drop_parse::generate_drop_vectors;
 pub use crate::game::moves::move_list::{
     generate_all_captures, generate_all_moves_and_drops,
-    generate_attack_masks,
+    derive_attack_recipes, generate_attack_masks, AttackRecipes,
     generate_relevant_captures, generate_relevant_castling,
     generate_relevant_moves,
 };
@@ -149,7 +149,6 @@ pub use crate::debug::tuning::run_tuning;
                              EXTERNAL DEPENDENCIES
 \*----------------------------------------------------------------------------*/
 pub use arboard::Clipboard;
-pub use bnum::types::U4096;
 pub use chrono;
 pub use core::cell::SyncUnsafeCell;
 pub use crossterm::{
