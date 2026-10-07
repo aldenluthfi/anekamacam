@@ -170,7 +170,7 @@ const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 /// - move 1, 2   : full depth, at a zero window
 /// - move 1 to 4 : full depth, at a wide window
 /// - other moves : `surface[depth][move number]`, minimum one ply
-/// - history     : a quiet move with good history one ply less, bad one more
+/// - history     : a quiet move one ply less or more for each history step
 ///
 /// A wide window is a PV node. There a bad reduction costs the full line,
 /// so more moves get full depth.
@@ -182,6 +182,18 @@ const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 const REDUCTION_MINIMUM_DEPTH: u32 = 3;
 const REDUCTION_MOVE_BASE: u32 = 2;
 const REDUCTION_MOVE_WIDE: u32 = 2;
+
+/// History steps of late move reduction
+///
+/// The history of a quiet move is the sum of its `HISTORY_TABLES` cells.
+/// Each step of it changes the reduction by one ply, so a move that cut
+/// often is cut less and a move that failed often is cut more:
+///
+/// - `HISTORY_REDUCTION_STEP`   : seven steps span the full sum
+/// - `HISTORY_REDUCTION_OFFSET` : a third of a step toward a deeper cut
+///
+const HISTORY_REDUCTION_STEP: i32 = HISTORY_TABLES * HISTORY_BOUND / 7;
+const HISTORY_REDUCTION_OFFSET: i32 = HISTORY_REDUCTION_STEP / 3;
 
 /// ProbCut settings
 ///
@@ -1448,12 +1460,13 @@ pub fn alpha_beta(
 
             let depth_slot = depth.min(MAX_DEPTH - 1);
             let move_slot = legal_moves.min(REDUCTION_MOVE_CAP - 1);
-            let history = scores[index] as i32 - QUIET_MOVE_SCORE;
+            let history = scores[index] as i32 - QUIET_MOVE_SCORE
+                - HISTORY_REDUCTION_OFFSET;
             let learned = is_quiet
                 && scores[index] < KILLER_MOVE_SCORE;                           /* killers keep the plain reduction   */
 
             (surface[depth_slot * REDUCTION_MOVE_CAP + move_slot] as i32
-                - history.signum() * learned as i32)                            /* a move that worked is cut less     */
+                - history / HISTORY_REDUCTION_STEP * learned as i32)            /* a move that worked is cut less     */
                 .clamp(0, depth as i32 - 2) as usize                            /* one ply always survives the cut    */
         } else {
             0
