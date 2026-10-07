@@ -277,7 +277,7 @@ fn phase_weights(state: &State) -> (f64, f64) {
 /// the line goes through the real engine score.
 ///
 /// Params:
-/// - state: &State     -> quiet position to convert
+/// - state: &mut State -> quiet position, with the attack scratch
 /// - shape: &TuneShape -> vector geometry
 /// - label: f64        -> game result for White
 /// - score: i32        -> quiescence score for White
@@ -291,12 +291,13 @@ fn phase_weights(state: &State) -> (f64, f64) {
 /// gets no gradient and stays at zero for the full run.
 ///
 fn extract_sample(
-    state: &State,
+    state: &mut State,
     shape: &TuneShape,
     label: f64,
     score: i32,
     theta: &[f64],
 ) -> Sample {
+    let dangers = king_danger!(state);
     let (opening_weight, endgame_weight) = phase_weights(state);
     let board_size = shape.board_size;
     let mut features: Vec<(usize, f64)> = Vec::new();
@@ -380,7 +381,7 @@ fn extract_sample(
             && state.castling_state & rights[color] != 0) as u8 as f64
     };
     let danger = |color: usize| {
-        let score = king_danger!(state, color);
+        let score = dangers[color];
         if score > 0 && score == eval.king_danger_cap {
             (0.0, 1.0)
         } else {
@@ -742,7 +743,7 @@ fn load_dataset(
         let score = quiescence_search(
             &mut scratch, &ttable, &qtable, -INF, INF, &mut info, None, false,
         ) * (-2 * scratch.playing as i32 + 1);
-        let sample = extract_sample(&scratch, shape, label, score, theta);
+        let sample = extract_sample(&mut scratch, shape, label, score, theta);
         if game_id % TUNING_VALIDATION_MODULUS == 0 {
             validation.push(sample);
         } else {

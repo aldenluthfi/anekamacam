@@ -115,6 +115,15 @@ pub type Board = (u8, u8, BoardBits);
 ///   Return:
 ///   u32              -> number of set bits
 ///
+/// count_common!
+///
+///   Params:
+///   - board1: &Board -> first board to read
+///   - board2: &Board -> second board to read
+///
+///   Return:
+///   u32              -> number of bits set in both, with no copy
+///
 /// set_indices!
 ///
 ///   Params:
@@ -144,6 +153,11 @@ pub type Board = (u8, u8, BoardBits);
 ///   Params:
 ///   - board : &mut Board -> board to change
 ///   - index : u32        -> square index of the bit to clear
+///
+/// clear_board!
+///
+///   Params:
+///   - board : &mut Board -> board to empty, only the words in use
 ///
 /// or!
 ///
@@ -216,6 +230,15 @@ macro_rules! clear {
 }
 
 #[macro_export]
+macro_rules! clear_board {
+    ($board:expr) => {{
+        let words = board_words!($board);
+
+        $board.2[..words].fill(0);
+    }};
+}
+
+#[macro_export]
 macro_rules! or {
     ($board1:expr, $board2:expr) => {{
         let words = board_words!($board1);
@@ -258,6 +281,19 @@ macro_rules! count_bits {
 
         source.2[..board_words!(source)].iter()
             .map(|word| word.count_ones())
+            .sum::<u32>()
+    }};
+}
+
+#[macro_export]
+macro_rules! count_common {
+    ($board1:expr, $board2:expr) => {{
+        let first = &$board1;
+        let second = &$board2;
+        let words = board_words!(first);
+
+        first.2[..words].iter().zip(&second.2[..words])
+            .map(|(one, two)| (one & two).count_ones())
             .sum::<u32>()
     }};
 }

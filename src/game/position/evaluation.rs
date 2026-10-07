@@ -271,132 +271,171 @@ macro_rules! royal_guard {
 /// - cost     : 1, 4, 9, 16, before the cap
 ///
 /// The cap is near the value of the most valuable piece. The caller
-/// subtracts the cost from the colour.
+/// subtracts the cost of each colour from that colour.
 ///
 /// Params:
-/// - state: &State -> position to score
-/// - color: usize  -> colour of the royals under pressure
+/// - state: &mut State -> position to score, with the attack scratch
 ///
 /// Return:
-/// i32             -> danger cost for that colour, 0 or more
+/// [i32; 2]            -> danger cost of each colour, 0 or more
 ///
 /// Notes:
-/// The macro does not test drop legality for pieces in the hand. A value
-/// that is too high is safer than a value that is too low.
+/// One pass makes the attacks of each piece once. It counts the zone
+/// attacks on the other colour, and keeps the union of each piece type in
+/// `attack_reach` for the check and weak square tests. The macro does not
+/// test drop legality for pieces in the hand. A value that is too high is
+/// safer than a value that is too low.
 ///
 #[macro_export]
 macro_rules! king_danger {
-    ($state:expr, $color:expr) => {{
+    ($state:expr) => {{
+        let mut reach = std::mem::take(&mut $state.scratch.attack_reach);
+        let mut zones = std::mem::take(&mut $state.scratch.attack_zones);
         let statics = &$state.statics;
         let files = statics.files;
         let ranks = statics.ranks;
         let piece_count = statics.pieces.len();
         let stride = statics.eval.local_stride;
-        let hand = &$state.piece_in_hand[$color ^ 1];
-        let enemies = &$state.pieces_board[$color ^ 1];
         let drops = drops!($state);
         let unit = ZONE_ATTACK_UNIT as i64;
+        let full = (ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL) as i64;
         let mut occupied = $state.pieces_board[0];
-        let mut guarded = board!(files, ranks);
-        let mut defended = board!(files, ranks);
-        let mut units = 0i64;
+        let mut guarded = [board!(files, ranks), board!(files, ranks)];
+        let mut defended = [board!(files, ranks), board!(files, ranks)];
+        let mut attacks = board!(files, ranks);
+        let mut pressed = board!(files, ranks);
+        let mut checks = board!(files, ranks);
+        let mut units = [0i64; 2];
+        let mut cost = [0i32; 2];
 
         or!(occupied, $state.pieces_board[1]);
 
-        for (piece_index, piece) in statics.pieces.iter().enumerate() {
-            if p_color!(piece) as usize != $color {
-                continue;
+        if reach.len() != piece_count
+            || reach.first().is_some_and(|board| {
+                files!(board) != files || ranks!(board) != ranks
+            }) {
+            reach.clear();                                                      /* a new variant sizes it again       */
+            reach.resize(piece_count, board!(files, ranks));
+        }
+
+        for color in 0..2 {
+            zones[color].clear();
+
+            for royal_square in guarded_squares!($state, color) {
+                let royal = royal_square as usize;
+                let mut zone = board!(files, ranks);
+
+                set!(zone, royal);
+
+                for slot in 0..statics.eval.ring_counts[royal] as usize {
+                    set!(
+                        zone, statics.eval.ring_squares[royal * stride + slot]
+                    );
+                }
+
+                zones[color].push(zone);
             }
+        }
+
+        for (piece_index, piece) in statics.pieces.iter().enumerate() {
+            let color = p_color!(piece) as usize;
+            let royal = p_is_royal!(piece);
+            let counted = !royal && !statics.eval.shield_pieces[piece_index];
+
+            clear_board!(reach[piece_index]);
 
             for square in piece_squares!($state, piece_index) {
-                let mut attacks = board!(files, ranks);
-
+                clear_board!(attacks);
                 piece_attacks!(
                     $state, piece_index, *square, occupied, attacks
                 );
-                or!(guarded, attacks);
+                or!(guarded[color], attacks);
 
-                if !p_is_royal!(piece) {
-                    or!(defended, attacks);
-                }
-            }
-        }
-
-        for royal_square in guarded_squares!($state, $color) {
-            let royal = royal_square as usize;
-            let best = &statics.eval.zone_attack_best[
-                royal * piece_count..(royal + 1) * piece_count
-            ];
-            let ring_count = statics.eval.ring_counts[royal] as usize;
-            let mut zone = board!(files, ranks);
-            let mut pressed = board!(files, ranks);
-
-            set!(zone, royal);
-
-            for slot in 0..ring_count {
-                set!(zone, statics.eval.ring_squares[royal * stride + slot]);
-            }
-
-            let mut hand_best = 0i64;
-
-            for (piece_index, piece) in statics.pieces.iter().enumerate() {
-                if p_color!(piece) as usize == $color || p_is_royal!(piece) {
+                if royal {
                     continue;
                 }
 
-                let shield = statics.eval.shield_pieces[piece_index];
-                let mut reach = board!(files, ranks);
+                or!(defended[color], attacks);
+                or!(reach[piece_index], attacks);
 
-                for square in piece_squares!($state, piece_index) {
-                    let mut attacks = board!(files, ranks);
-
-                    piece_attacks!(
-                        $state, piece_index, *square, occupied, attacks
-                    );
-                    or!(reach, attacks);
-
-                    if !shield {
-                        and!(attacks, zone);
-                        units += count_bits!(attacks) as i64 * unit;
-                    }
-                }
-
-                or!(pressed, reach);
-
-                let mirror = statics.piece_swap_map[piece_index];
-
-                if !shield && mirror != NO_PIECE && !is_empty!(reach) {
-                    let mut checks = board!(files, ranks);
-
-                    piece_attacks!($state, mirror, royal, occupied, checks);
-                    and!(checks, reach);
-                    and_not!(checks, *enemies);
-                    and_not!(checks, guarded);
-
-                    if !is_empty!(checks) {
-                        units += unit;
-                    }
-                }
-
-                if drops && hand[piece_index] > 0 {
-                    let pressure = best[piece_index] as i64;
-
-                    match free_drops!($state) {
-                        true => hand_best = hand_best.max(pressure),
-                        false => units += hand[piece_index] as i64 * pressure,
+                if counted {
+                    for zone in &zones[color ^ 1] {
+                        units[color ^ 1] +=
+                            count_common!(attacks, *zone) as i64 * unit;
                     }
                 }
             }
-
-            and!(pressed, zone);
-            and_not!(pressed, defended);
-            units += count_bits!(pressed) as i64 * unit + hand_best;
         }
 
-        let full = (ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL) as i64;
+        for color in 0..2 {
+            let hand = &$state.piece_in_hand[color ^ 1];
+            let enemies = &$state.pieces_board[color ^ 1];
 
-        (units * units * statics.eval.king_danger_scale as i64 / (full * full))
-            .min(statics.eval.king_danger_cap as i64) as i32
+            for (slot, royal_square) in
+                guarded_squares!($state, color).enumerate()
+            {
+                let royal = royal_square as usize;
+                let best = &statics.eval.zone_attack_best[
+                    royal * piece_count..(royal + 1) * piece_count
+                ];
+                let mut hand_best = 0i64;
+
+                clear_board!(pressed);
+
+                for (piece_index, piece) in statics.pieces.iter().enumerate() {
+                    if p_color!(piece) as usize == color || p_is_royal!(piece) {
+                        continue;
+                    }
+
+                    let shield = statics.eval.shield_pieces[piece_index];
+                    let mirror = statics.piece_swap_map[piece_index];
+
+                    or!(pressed, reach[piece_index]);
+
+                    if !shield
+                        && mirror != NO_PIECE
+                        && !is_empty!(reach[piece_index])
+                    {
+                        clear_board!(checks);
+                        piece_attacks!(
+                            $state, mirror, royal, occupied, checks
+                        );
+                        and!(checks, reach[piece_index]);
+                        and_not!(checks, *enemies);
+                        and_not!(checks, guarded[color]);
+
+                        if !is_empty!(checks) {
+                            units[color] += unit;
+                        }
+                    }
+
+                    if drops && hand[piece_index] > 0 {
+                        let pressure = best[piece_index] as i64;
+
+                        match free_drops!($state) {
+                            true => hand_best = hand_best.max(pressure),
+                            false => {
+                                units[color] +=
+                                    hand[piece_index] as i64 * pressure
+                            }
+                        }
+                    }
+                }
+
+                and!(pressed, zones[color][slot]);
+                and_not!(pressed, defended[color]);
+                units[color] += count_bits!(pressed) as i64 * unit + hand_best;
+            }
+
+            cost[color] = (units[color] * units[color]
+                * statics.eval.king_danger_scale as i64 / (full * full))
+                .min(statics.eval.king_danger_cap as i64) as i32;
+        }
+
+        $state.scratch.attack_reach = reach;
+        $state.scratch.attack_zones = zones;
+
+        cost
     }};
 }
 
@@ -1043,19 +1082,20 @@ macro_rules! opening_score {
 /// value to the two halves before the blend.
 ///
 /// Params:
-/// - state: &State -> position to evaluate
+/// - state: &mut State -> position to evaluate, with the attack scratch
 ///
 /// Return:
-/// i32             -> shared score, White minus Black
+/// i32                 -> shared score, White minus Black
 ///
 #[macro_export]
 macro_rules! shared_score {
     ($state:expr) => {{
         let white = WHITE as usize;
         let black = BLACK as usize;
+        let danger = king_danger!($state);
 
-        king_danger!($state, black)
-            - king_danger!($state, white)
+        danger[black]
+            - danger[white]
             + royal_proximity!($state, black)
             - royal_proximity!($state, white)
             + check_race!($state, white)

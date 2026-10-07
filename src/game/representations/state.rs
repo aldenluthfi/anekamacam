@@ -845,11 +845,14 @@ pub struct State {
 /// - `see_scratch`  : multi-capture data of those attackers
 /// - `pawn_rosters` : pawn lists that `pawn_structure!` fills
 /// - `pawn_table`   : the pawn structure cache
+/// - `attack_reach` : the attacks of each piece type, from `king_danger!`
+/// - `attack_zones` : the royal zones of each colour, from `king_danger!`
 ///
 /// Code that keeps a vector across `make_move!` takes it out of the
 /// [`State`] and puts it back, because a field borrow across a move borrows
 /// the full position. `pawn_structure!` makes no move, so it borrows in
-/// place.
+/// place. `king_danger!` takes its two out, because it reads the position
+/// while it fills them.
 ///
 /// Notes:
 /// A clone gets empty memory, except `pawn_table`. Its key is the pawn
@@ -862,6 +865,8 @@ pub struct Scratch {
     pub see_scratch: Vec<u64>,                                                  /* multi-capture data of see_moves    */
     pub pawn_rosters: [Vec<PawnEntry>; 2],                                      /* colour to its pawns, one sweep old */
     pub pawn_table: PTable,                                                     /* arrangement to its two scores      */
+    pub attack_reach: Vec<Board>,                                               /* piece type to its attacks          */
+    pub attack_zones: [Vec<Board>; 2],                                          /* colour to its royal zones          */
 }
 
 /// NodeLists
@@ -895,8 +900,8 @@ impl Default for Scratch {
     /// Scratch::default
     ///
     /// Makes empty work memory: one node list set for each ply, the two
-    /// exchange vectors, the two pawn lists and an empty pawn cache. A new,
-    /// cloned or reset state gets it.
+    /// exchange vectors, the two pawn lists, an empty pawn cache and empty
+    /// attack lists. A new, cloned or reset state gets it.
     ///
     /// Return:
     /// Self -> empty work memory with start capacities
@@ -914,6 +919,8 @@ impl Default for Scratch {
                 Vec::with_capacity(32), Vec::with_capacity(32),
             ],
             pawn_table: PTable::default(),
+            attack_reach: Vec::new(),                                           /* sized at the first evaluation      */
+            attack_zones: [Vec::new(), Vec::new()],
         }
     }
 }
