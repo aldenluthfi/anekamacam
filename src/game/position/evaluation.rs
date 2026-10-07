@@ -936,8 +936,9 @@ macro_rules! pawn_structure {
 /// ```
 ///
 /// The safe steps are the path squares before the nearest one that an
-/// enemy piece attacks or holds. A step is a king step, so the count holds
-/// for any pawn that moves one square at a time. The value is the one that
+/// enemy piece holds, or that an enemy piece attacks and no own piece
+/// defends. A step is a king step, so the count holds for any pawn that
+/// moves one square at a time. The value is the one that
 /// [`pawn_structure!`] gives, with the same connected and chained bonus.
 /// That macro caches the full value, so this term gives the part to take
 /// off it.
@@ -1003,25 +1004,35 @@ macro_rules! passer_walk {
                             || {
                                 let enemy_color = color ^ 1;
                                 let mut attacks =
-                                    $state.pieces_board[enemy_color];
+                                    board!(statics.files, statics.ranks);
+                                let mut defence =
+                                    board!(statics.files, statics.ranks);
 
-                                for (enemy_index, enemy) in
+                                for (piece_index, piece) in
                                     statics.pieces.iter().enumerate()
                                 {
-                                    if p_color!(enemy) as usize == color {
-                                        continue;
-                                    }
-
-                                    for enemy_square in
-                                        piece_squares!($state, enemy_index)
+                                    for piece_square in
+                                        piece_squares!($state, piece_index)
                                     {
-                                        piece_attacks!(
-                                            $state, enemy_index,
-                                            *enemy_square, occupied, attacks
-                                        );
+                                        match p_color!(piece) as usize
+                                            == color
+                                        {
+                                            true => piece_attacks!(
+                                                $state, piece_index,
+                                                *piece_square, occupied,
+                                                defence
+                                            ),
+                                            false => piece_attacks!(
+                                                $state, piece_index,
+                                                *piece_square, occupied,
+                                                attacks
+                                            ),
+                                        }
                                     }
                                 }
 
+                                and_not!(attacks, defence);
+                                or!(attacks, $state.pieces_board[enemy_color]);
                                 attacks
                             }
                         );
