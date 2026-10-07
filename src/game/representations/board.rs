@@ -157,12 +157,6 @@ pub type Board = (u8, u8, BoardBits);
 ///   - board1: &mut Board -> target, gets the intersection
 ///   - board2: &Board     -> source of the bits
 ///
-/// and_not!
-///
-///   Params:
-///   - board1: &mut Board -> target, loses the bits of the source
-///   - board2: &Board     -> source of the bits to clear
-///
 #[macro_export]
 macro_rules! board {
     ($files:expr, $ranks:expr) => {
@@ -235,18 +229,6 @@ macro_rules! and {
 
         for word in 0..words {
             $board1.2[word] &= source.2[word];
-        }
-    }};
-}
-
-#[macro_export]
-macro_rules! and_not {
-    ($board1:expr, $board2:expr) => {{
-        let words = board_words!($board1);
-        let source = &$board2;
-
-        for word in 0..words {
-            $board1.2[word] &= !source.2[word];
         }
     }};
 }
