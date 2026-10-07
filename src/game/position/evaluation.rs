@@ -247,14 +247,23 @@ macro_rules! royal_guard {
 
 /// king_danger!
 ///
-/// Gives the cost of the enemy pressure on the royals of one colour. Each
-/// enemy piece that is not royal and not a shield reads its `zone_attack`
-/// value from its square. In a drop variant, each piece in the hand reads
-/// `zone_attack_best`, the pressure from its best drop square. With free
-/// drops (`free_drops!`), the hand adds only its largest such value: a
-/// side drops one piece in a move, and a hand of queens and rooks summed
-/// over best squares grows past any use. With drop rules the hand is
-/// weak, and the sum stays.
+/// Gives the cost of the enemy pressure on the royals of one colour. The
+/// zone of a royal is its square and its ring. The counts read the attack
+/// maps of the position, so a closed line to the royal does not count:
+///
+/// - attack : a zone square that an enemy piece reaches
+/// - weak   : an attacked zone square that no own piece but a royal defends
+/// - check  : the whole zone, once for each enemy type with a safe check
+///
+/// Shields add no attack and no check. A check square is a square that
+/// the own piece of the same type attacks from the royal square. A check
+/// is safe when an enemy of that type reaches the square, no enemy piece
+/// stands on it, and no own piece attacks it.
+///
+/// In a drop variant, each piece in the hand reads `zone_attack_best`,
+/// the pressure from its best drop square. With free drops, the hand adds
+/// only its largest value: a side drops one piece in a move. With drop
+/// rules the hand is weak, and the sum stays.
 ///
 /// The cost is the square of the total pressure, so attackers compound:
 ///
@@ -279,35 +288,94 @@ macro_rules! royal_guard {
 macro_rules! king_danger {
     ($state:expr, $color:expr) => {{
         let statics = &$state.statics;
-        let board_size = statics.board_size;
+        let files = statics.files;
+        let ranks = statics.ranks;
         let piece_count = statics.pieces.len();
+        let stride = statics.eval.local_stride;
         let hand = &$state.piece_in_hand[$color ^ 1];
+        let enemies = &$state.pieces_board[$color ^ 1];
         let drops = drops!($state);
+        let unit = ZONE_ATTACK_UNIT as i64;
+        let mut occupied = $state.pieces_board[0];
+        let mut guarded = board!(files, ranks);
+        let mut defended = board!(files, ranks);
         let mut units = 0i64;
+
+        or!(occupied, $state.pieces_board[1]);
+
+        for (piece_index, piece) in statics.pieces.iter().enumerate() {
+            if p_color!(piece) as usize != $color {
+                continue;
+            }
+
+            for square in piece_squares!($state, piece_index) {
+                let mut attacks = board!(files, ranks);
+
+                piece_attacks!(
+                    $state, piece_index, *square, occupied, attacks
+                );
+                or!(guarded, attacks);
+
+                if !p_is_royal!(piece) {
+                    or!(defended, attacks);
+                }
+            }
+        }
 
         for royal_square in guarded_squares!($state, $color) {
             let royal = royal_square as usize;
-            let zone = &statics.eval.zone_attack[
-                royal * piece_count * board_size
-                    ..(royal + 1) * piece_count * board_size
-            ];
             let best = &statics.eval.zone_attack_best[
                 royal * piece_count..(royal + 1) * piece_count
             ];
+            let ring_count = statics.eval.ring_counts[royal] as usize;
+            let mut zone = board!(files, ranks);
+            let mut pressed = board!(files, ranks);
+
+            set!(zone, royal);
+
+            for slot in 0..ring_count {
+                set!(zone, statics.eval.ring_squares[royal * stride + slot]);
+            }
 
             let mut hand_best = 0i64;
 
             for (piece_index, piece) in statics.pieces.iter().enumerate() {
-                if p_color!(piece) as usize == $color
-                    || p_is_royal!(piece)
-                    || statics.eval.shield_pieces[piece_index] {
+                if p_color!(piece) as usize == $color || p_is_royal!(piece) {
                     continue;
                 }
 
+                let shield = statics.eval.shield_pieces[piece_index];
+                let mut reach = board!(files, ranks);
+
                 for square in piece_squares!($state, piece_index) {
-                    units += zone[
-                        piece_index * board_size + *square as usize
-                    ] as i64;
+                    let mut attacks = board!(files, ranks);
+
+                    piece_attacks!(
+                        $state, piece_index, *square, occupied, attacks
+                    );
+                    or!(reach, attacks);
+
+                    if !shield {
+                        and!(attacks, zone);
+                        units += count_bits!(attacks) as i64 * unit;
+                    }
+                }
+
+                or!(pressed, reach);
+
+                let mirror = statics.piece_swap_map[piece_index];
+
+                if !shield && mirror != NO_PIECE && !is_empty!(reach) {
+                    let mut checks = board!(files, ranks);
+
+                    piece_attacks!($state, mirror, royal, occupied, checks);
+                    and!(checks, reach);
+                    and_not!(checks, *enemies);
+                    and_not!(checks, guarded);
+
+                    if !is_empty!(checks) {
+                        units += (ring_count as i64 + 1) * unit;
+                    }
                 }
 
                 if drops && hand[piece_index] > 0 {
@@ -320,7 +388,9 @@ macro_rules! king_danger {
                 }
             }
 
-            units += hand_best;
+            and!(pressed, zone);
+            and_not!(pressed, defended);
+            units += count_bits!(pressed) as i64 * unit + hand_best;
         }
 
         let full = (ZONE_ATTACK_UNIT * ZONE_ATTACK_FULL) as i64;
