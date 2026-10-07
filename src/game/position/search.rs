@@ -92,13 +92,21 @@ macro_rules! move_key {
     }};
 }
 
-/// CONTINUATION_PLIES
+/// Continuation plies
 ///
-/// The number of continuation history tables. One table follows the last
-/// move, and one follows the previous move of the same side. Tests showed
-/// that the two help and a third does not.
+/// The continuation history tables and the moves they follow, as plies
+/// back from the reply:
 ///
-const CONTINUATION_PLIES: usize = 2;
+/// - slot 0 : one ply back, the opponent move to answer
+/// - slot 1 : two plies back, the previous move of this side
+/// - slot 2 : four plies back, the move of this side before that
+/// - slot 3 : six plies back, one more move of this side
+///
+/// A plan of the side to move often spans its own last moves, so the
+/// tables past one ply follow only them.
+///
+const CONTINUATION_PLIES: usize = 4;
+const CONTINUATION_OFFSETS: [usize; CONTINUATION_PLIES] = [0, 1, 3, 5];
 
 /// CONT_HIST_CELLS
 ///
@@ -1755,10 +1763,8 @@ fn update_correction(
 
 /// continuation_bases
 ///
-/// Gives the continuation row offsets for a reply at this node:
-///
-/// - slot 0 : one ply back, the opponent move to answer
-/// - slot 1 : two plies back, the previous move of this side
+/// Gives the continuation row offsets for a reply at this node, one for
+/// each slot of `CONTINUATION_OFFSETS`:
 ///
 /// ```text
 /// base = (slot * keys + key of that move) * keys
@@ -1781,7 +1787,7 @@ fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
 
     let mut bases = [usize::MAX; CONTINUATION_PLIES];
 
-    for plies_back in 0..CONTINUATION_PLIES {
+    for (slot, &plies_back) in CONTINUATION_OFFSETS.iter().enumerate() {
         if played <= plies_back {
             break;
         }
@@ -1794,7 +1800,7 @@ fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
 
         let key = move_key!(previous, board_size);
 
-        bases[plies_back] = (plies_back * move_keys + key) * move_keys;
+        bases[slot] = (slot * move_keys + key) * move_keys;
     }
 
     bases
