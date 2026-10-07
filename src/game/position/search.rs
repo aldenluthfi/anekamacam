@@ -1323,7 +1323,8 @@ pub fn alpha_beta(
     }
 
     let board_size = state.statics.board_size;
-    let history_bonus = (depth * depth) as i32;
+    let history_bonus = (depth as i32 * HISTORY_BOUND / HISTORY_DEPTH_SHARE)
+        .min(HISTORY_BOUND / HISTORY_MOST_SHARE);
     let cont_bases = continuation_bases(state);
 
     let minimum_depth = REDUCTION_MINIMUM_DEPTH as usize;
@@ -1634,24 +1635,42 @@ pub fn alpha_beta(
                          HISTORY AND CORRECTION UPDATES
 \*----------------------------------------------------------------------------*/
 
+/// History steps
+///
+/// A cutoff at depth `d` moves a history cell `d / HISTORY_DEPTH_SHARE` of
+/// the way to its bound, at most `1 / HISTORY_MOST_SHARE` of it. A cell
+/// that one move after another hits only a few times in a search thus
+/// still holds a measure.
+///
+/// - `HISTORY_DEPTH_SHARE` : 128, the share of the bound for each ply
+/// - `HISTORY_MOST_SHARE`  : 16, the largest share, from depth 8 on
+///
+const HISTORY_DEPTH_SHARE: i32 = 128;
+const HISTORY_MOST_SHARE: i32 = 16;
+
 /// update_history
 ///
-/// Adds one signed change to a history cell and clamps it to the history
-/// bound. The caller uses depth squared, so a deep node counts more. The
-/// quiet move that cut gets the bonus. Each other quiet move tried gets the
-/// same value as a malus.
+/// Adds one signed change to a history cell and pulls the cell toward
+/// zero in proportion to its size:
+///
+/// ```text
+/// cell = cell + bonus - cell * |bonus| / bound
+/// ```
+///
+/// The quiet move that cut gets the bonus. Each other quiet move tried gets
+/// the same value as a malus. The pull keeps a cell inside the bound, so a
+/// cell measures how often the move worked lately, not how often it was
+/// tried.
 ///
 /// Params:
 /// - entry: &mut i16 -> history cell to update
 /// - bonus: i32      -> signed bonus or malus
 ///
-/// Notes:
-/// The clamp lets a cell forget. A cell at the top gains no more, but can
-/// fall through the full range. Thus no decay pass is necessary.
-///
 #[inline(always)]
 fn update_history(entry: &mut i16, bonus: i32) {
-    *entry = (*entry as i32 + bonus)
+    let cell = *entry as i32;
+
+    *entry = (cell + bonus - cell * bonus.abs() / HISTORY_BOUND)
         .clamp(-HISTORY_BOUND, HISTORY_BOUND) as i16;
 }
 
