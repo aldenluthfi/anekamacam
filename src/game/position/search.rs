@@ -1050,12 +1050,13 @@ pub fn quiescence_search(
 /// score made drop game trees much larger in tests. All bounds update the
 /// table.
 ///
-/// A move that gives check is never skipped and never reduced. It gets one
-/// more ply while the line is shorter than two times the iteration depth.
-/// The reply side has few moves, so the loss can be short. The test is made
-/// after the move, so it also sees a discovered check and a check through a
-/// new screen. A skip tests only a move whose piece has a line from its
-/// landing square to an enemy royal.
+/// A move that gives check is never cut by futility and never reduced. The
+/// move count and the exchange skip it as any other move, before it is
+/// made. It gets one more ply while the line is shorter than two times the
+/// iteration depth. The reply side has few moves, so the loss can be short.
+/// The test is made after the move, so it also sees a discovered check and
+/// a check through a new screen. A futility skip tests only a move whose
+/// piece has a line from its landing square to an enemy royal.
 ///
 #[hotpath::measure]
 pub fn alpha_beta(
@@ -1403,7 +1404,11 @@ pub fn alpha_beta(
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
 
-        let skippable = (late_quiet || futile || losing_capture) && !goal_move;
+        if (late_quiet || losing_capture) && !goal_move {                       /* a check falls to the move count    */
+            continue;                                                           /* and the exchange as any move does  */
+        }
+
+        let skippable = futile && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
         if skippable
