@@ -253,7 +253,7 @@ macro_rules! royal_guard {
 ///
 /// - attack : a zone square that an enemy piece reaches
 /// - weak   : an attacked zone square that no own piece but a royal defends
-/// - check  : the whole zone, once for each enemy type with a safe check
+/// - check  : one move onto the royal, for each enemy type with a safe check
 ///
 /// Shields add no attack and no check. A check square is a square that
 /// the own piece of the same type attacks from the royal square. A check
@@ -374,7 +374,7 @@ macro_rules! king_danger {
                     and_not!(checks, guarded);
 
                     if !is_empty!(checks) {
-                        units += (ring_count as i64 + 1) * unit;
+                        units += unit;
                     }
                 }
 
