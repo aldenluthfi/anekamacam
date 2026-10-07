@@ -183,6 +183,15 @@ const REDUCTION_MINIMUM_DEPTH: u32 = 3;
 const REDUCTION_MOVE_BASE: u32 = 2;
 const REDUCTION_MOVE_WIDE: u32 = 2;
 
+/// FAILED_REPLY_DEPTH
+///
+/// A late quiet move is skipped when both of its continuation cells are
+/// negative and its reduced depth is below this. As a reply to the last
+/// move, and as a follow up to the move before it, it failed more often
+/// than it worked.
+///
+const FAILED_REPLY_DEPTH: usize = 5;
+
 /// ProbCut settings
 ///
 /// ProbCut settings. A node far above beta will probably fail high. The
@@ -994,11 +1003,12 @@ pub fn quiescence_search(
 /// - move loop                       : ordered, reduced, searched again
 ///
 /// Each shortcut tests the capability mask first: static score cuts, null
-/// move, ProbCut, internal iterative reduction, losing capture skips and
-/// late quiet move skips. Each is a claim about the game. Late move
-/// reduction is not a shortcut, because a reduced move that beats alpha
-/// gets full depth again. Razoring asks quiescence to confirm a fail low.
-/// Quiescence plays no drops, so a drop variant skips razoring.
+/// move, ProbCut, internal iterative reduction, losing capture skips, late
+/// quiet move skips and failed reply skips. Each is a claim about the
+/// game. Late move reduction is not a shortcut, because a reduced move
+/// that beats alpha gets full depth again. Razoring asks quiescence to
+/// confirm a fail low. Quiescence plays no drops, so a drop variant skips
+/// razoring.
 ///
 /// Params:
 ///
@@ -1400,10 +1410,27 @@ pub fn alpha_beta(
             && scores[index] as i32 - LOSING_CAPTURE_SCORE
                 < -state.statics.search.see_allowance[depth];
 
+        let reduced_depth = depth.saturating_sub(
+            1 + state.statics.search.reduction_quiet[
+                depth.min(MAX_DEPTH - 1) * REDUCTION_MOVE_CAP
+                    + (legal_moves + 1).min(REDUCTION_MOVE_CAP - 1)
+            ] as usize
+        );
+
+        let failed_reply = prunable_quiet
+            && quiet_pruning!(state)
+            && reduced_depth < FAILED_REPLY_DEPTH
+            && cont_bases.iter().all(|&base| {
+                base != usize::MAX
+                    && info.cont_hist[cont_cell!(info, base + history_index)]
+                        < 0
+            });
+
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
 
-        let skippable = (late_quiet || futile || losing_capture) && !goal_move;
+        let skippable = (late_quiet || futile || losing_capture || failed_reply)
+            && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
         if skippable
