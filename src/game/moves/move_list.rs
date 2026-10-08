@@ -102,6 +102,70 @@ macro_rules! is_in_check {
     };
 }
 
+/// royal_unreached!
+///
+/// Tells if a move left each attack on the royals of `$side` as it was.
+/// The squares are all the squares the move changed. The reach of a royal
+/// square has each square that its attack tests read: the attacker's
+/// square, each leg, each square of the condition, and the royal square.
+/// When no changed square is in the reach of any royal, the check state of
+/// the side is the same as before the move.
+///
+/// Params:
+/// - side   : u8       -> side of the royal pieces
+/// - squares: [u32; 4] -> the squares the move changed, repeats allowed
+/// - state  : &State   -> position after the move, same royal squares
+///
+/// Return:
+/// bool                -> true when no changed square is in a royal reach
+///
+#[macro_export]
+macro_rules! royal_unreached {
+    ($side:expr, $squares:expr, $state:expr) => {{
+        let board_size = $state.statics.board_size;
+        let words = (board_size + 63) >> 6;
+
+        $state.royal_list[$side as usize].iter().all(|&royal| {
+            let entry = ($side as usize * board_size + royal as usize) * words;
+
+            $squares.iter().all(|&square| {
+                $state.statics.royal_reach[entry + (square as usize >> 6)]
+                    >> (square & 63) & 1 == 0
+            })
+        })
+    }};
+}
+
+/// to_move_in_check!
+///
+/// Tells if the side to move is in check. A move keeps the answer in its
+/// snapshot when the answer was free. Else the board tells, and the last
+/// snapshot keeps it, so the next move can skip its own legality test.
+///
+/// Params:
+/// - state: &mut State -> current position
+///
+/// Return:
+/// bool                -> true when the side to move is in check
+///
+#[macro_export]
+macro_rules! to_move_in_check {
+    ($state:expr) => {
+        match $state.history.last().and_then(|snapshot| snapshot.in_check) {
+            Some(checked) => checked,
+            None => {
+                let checked = is_in_check!($state.playing, $state);
+
+                if let Some(snapshot) = $state.history.last_mut() {
+                    snapshot.in_check = Some(checked);
+                }
+
+                checked
+            }
+        }
+    };
+}
+
 /// legal_moves!
 ///
 /// Collects all legal moves of the position. It generates the pseudo-legal
@@ -2809,14 +2873,65 @@ macro_rules! make_move {
             let this_player = $state.playing;
             let next_player = 1 - this_player;
 
-            let still_in_check = is_in_check!(this_player, $state);
+            let royal = |index: usize| {
+                p_is_royal!($state.statics.pieces[index])
+            };
+            let start_square = start!(applied_move) as u32;
+            let end_square = end!(applied_move) as u32;
+            let lands_royal = move_type <= SINGLE_CAPTURE_MOVE                  /* only these two can promote         */
+                && promotion!(applied_move)
+                && royal(promoted!(applied_move) as usize);
+
+            let changed = match move_type {
+                _ if last_game_phase == SETUP                                   /* the setup phase has no checks, so  */
+                || $state.game_phase == SETUP => None,                          /* its end is a change of its own     */
+                _ if royal(piece_index) => None,
+                QUIET_MOVE if !lands_royal => Some(
+                    [start_square, end_square, end_square, end_square]
+                ),
+                SINGLE_CAPTURE_MOVE if !lands_royal
+                && !royal(captured_piece!(applied_move) as usize) => Some([
+                    start_square,
+                    end_square,
+                    captured_square!(applied_move) as u32,
+                    match is_unload!(applied_move) {
+                        true => unload_square!(applied_move) as u32,
+                        false => end_square,
+                    },
+                ]),
+                DROP_MOVE => Some([start_square; 4]),
+                _ => None,
+            };
+
+            let last = $state.history.last();
+            let still_in_check = match (
+                changed, last.and_then(|snapshot| snapshot.in_check)
+            ) {
+                (Some(squares), Some(checked))
+                if royal_unreached!(this_player, squares, $state) => checked,
+                _ => is_in_check!(this_player, $state),
+            };
 
             let in_stand_off = stand_offs!($state)
                 .then(|| is_in_stand_off!($state));
 
-            let in_check = $state.termination.checks.as_ref().map(
-                |_| is_in_check!(next_player, $state)
+            let legal = stand_off_before && pass_move || (
+                !still_in_check && (
+                    in_stand_off != Some(true) || !stand_off_before
+                )
             );
+
+            let in_check = match changed {
+                _ if !legal => None,                                            /* an illegal move is undone at once  */
+                Some(squares)
+                if last.is_some_and(|snapshot| !pass_snapshot!(snapshot))       /* a move that is not a pass leaves   */
+                && royal_unreached!(next_player, squares, $state)               /* its own side out of check          */
+                => Some(false),
+                _ if $state.termination.checks.is_some() => Some(
+                    is_in_check!(next_player, $state)
+                ),
+                _ => None,                                                      /* asked for only when needed         */
+            };
 
             if in_check == Some(true)
             && let Some(checks) = &mut $state.termination.checks
@@ -2856,12 +2971,6 @@ macro_rules! make_move {
             };
 
             $state.history.push(snapshot);
-
-            let legal = stand_off_before && pass_move || (
-                !still_in_check && (
-                    in_stand_off != Some(true) || !stand_off_before
-                )
-            );
 
             if !legal {
                 undo_move!($state);
