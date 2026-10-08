@@ -1057,10 +1057,11 @@ pub fn quiescence_search(
 /// new screen. A skip tests only a move whose piece has a line from its
 /// landing square to an enemy royal.
 ///
-/// The move list starts with the captures only. The other moves join when
-/// no winning capture is left, as they then rank first, or when the list
-/// runs out. Most nodes cut on the table move or a capture and never make
-/// the full list. A quiet table move needs the full list from the start.
+/// The move list starts without the drops. They join when no winning
+/// capture is left, as a drop can then rank first, or when the list runs
+/// out. In shogi a hand of a few pieces gives hundreds of drops, and most
+/// nodes cut on the table move or a capture before any is needed. A table
+/// move that drops needs them from the start.
 ///
 #[hotpath::measure]
 pub fn alpha_beta(
@@ -1347,18 +1348,20 @@ pub fn alpha_beta(
     let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
     let NodeLists { moves, scores, payload, later } = &mut lists;
 
-    generate_all_captures(state, moves, payload);
-
-    let mut quiets_pending = table_move.is_none_or(|table_move| {               /* a quiet table move needs the full  */
-        moves.iter().any(|mv| m_matches!(mv, &table_move))                      /* list before the first pick         */
-    });
-
-    if !quiets_pending {
-        generate_all_moves_and_drops(state, moves, payload);
-    }
-
+    generate_board_moves(state, moves, payload);
     scores.clear();                                                             /* last node's scores answer for it   */
     scores.resize(moves.len(), usize::MAX);
+
+    let mut drops_pending = drops!(state) || state.game_phase == SETUP;
+
+    if drops_pending
+    && table_move.is_some_and(|table_move| {                                    /* a table move that drops needs the  */
+        !moves.iter().any(|mv| m_matches!(mv, &table_move))                     /* drops before the first pick        */
+    })
+    {
+        join_drops(state, moves, scores, later);
+        drops_pending = false;
+    }
 
     let mut best_move = null_move();
     let mut best_score = -INF;
@@ -1369,7 +1372,7 @@ pub fn alpha_beta(
     loop {
         let index = next_index;
 
-        if index == moves.len() && !quiets_pending {
+        if index == moves.len() && !drops_pending {
             break;
         }
 
@@ -1380,12 +1383,12 @@ pub fn alpha_beta(
             );
         }
 
-        if quiets_pending
+        if drops_pending
         && (index == moves.len()
             || scores[index] < WINNING_CAPTURE_SCORE as usize)
         {
-            join_quiet_moves(state, moves, scores, later, payload);             /* no winning capture is left, so the */
-            quiets_pending = false;                                             /* killers and quiet moves rank first */
+            join_drops(state, moves, scores, later);                            /* no winning capture is left, so a   */
+            drops_pending = false;                                              /* drop can rank first                */
             continue;
         }
 
@@ -1665,36 +1668,25 @@ pub fn alpha_beta(
     alpha
 }
 
-/// join_quiet_moves
+/// join_drops
 ///
-/// Adds the moves that are not captures to a list of captures, from a new
-/// full list. A capture in the full list joins only if the list does not
-/// have it yet. The new moves get no score yet.
+/// Adds the drops of the side to move to the move list of a node. The new
+/// moves get no score yet.
 ///
 /// Params:
-/// - state  : &State          -> position of the node
-/// - moves  : &mut Vec<Move>  -> the captures, gets the other moves
-/// - scores : &mut Vec<usize> -> the scores, grows with the list
-/// - later  : &mut Vec<Move>  -> work list for the full list
-/// - payload: &mut Vec<u64>   -> multi-capture buffer of the generator
+/// - state : &State          -> position of the node
+/// - moves : &mut Vec<Move>  -> the board moves, gets the drops
+/// - scores: &mut Vec<usize> -> the scores, grows with the list
+/// - later : &mut Vec<Move>  -> work list for the drops
 ///
-fn join_quiet_moves(
+fn join_drops(
     state: &State,
     moves: &mut Vec<Move>,
     scores: &mut Vec<usize>,
     later: &mut Vec<Move>,
-    payload: &mut Vec<u64>,
 ) {
-    let captures = moves.len();
-
-    generate_all_moves_and_drops(state, later, payload);
-
-    for mv in later.drain(..) {
-        if !m_capture!(&mv) || !moves[..captures].contains(&mv) {
-            moves.push(mv);
-        }
-    }
-
+    generate_all_drops(state, later);
+    moves.append(later);
     scores.resize(moves.len(), usize::MAX);
 }
 
