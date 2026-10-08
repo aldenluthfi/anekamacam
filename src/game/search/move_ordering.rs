@@ -266,7 +266,8 @@ macro_rules! see {
 /// bands, from high to low:
 ///
 /// - table move         : the stored move of the hash table
-/// - untested capture   : victim value first, then the cheaper attacker
+/// - untested capture   : victim value first, then capture history and the
+///                        cheaper attacker
 /// - winning capture    : exchange result or simple swing, 0 or more
 /// - killer             : two quiet moves that cut at this ply before
 /// - quiet              : quiet band plus the history values
@@ -291,7 +292,7 @@ macro_rules! see {
 ///
 /// Params:
 /// - state     : &mut State          -> position of the move
-/// - info      : &SearchInfo         -> killer and history tables
+/// - info      : &SearchInfo         -> killer, history and capture tables
 /// - mv        : &Move               -> move to score
 /// - table_move: &Option<PseudoMove> -> stored table move for this node
 /// - cont_bases: &[usize]            -> continuation rows for this node
@@ -339,8 +340,13 @@ macro_rules! score_move {
                 (QUIET_MOVE_SCORE + history) as usize
             }
         } else if see_valid!($state) {
+            let cell = capture_cell!(
+                $info, scored_move, $state.statics.board_size,
+                $state.statics.pieces.len()
+            );
             let guess = victim_value!(scored_move, $state) * VICTIM_WEIGHT
-                - attack_value!(scored_move, $state);
+                - attack_value!(scored_move, $state)
+                + $info.capture_hist[cell] as i32;                              /* a capture that worked comes first  */
             let span = (TABLE_MOVE_SCORE - UNTESTED_CAPTURE_SCORE - 1) as i32;
 
             UNTESTED_CAPTURE_SCORE + guess.clamp(0, span) as usize
@@ -371,7 +377,7 @@ macro_rules! score_move {
 ///
 /// Params:
 /// - state     : &mut State          -> position for the scores
-/// - info      : &SearchInfo         -> killer and history tables
+/// - info      : &SearchInfo         -> killer, history and capture tables
 /// - moves     : &mut Vec<Move>      -> move list, reordered in place
 /// - scores    : &mut Vec<usize>     -> score cache, filled when necessary
 /// - index     : usize               -> slot that gets the best move
