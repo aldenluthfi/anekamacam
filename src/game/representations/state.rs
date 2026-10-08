@@ -757,6 +757,7 @@ pub struct StaticState {
     pub attack_leaps: Vec<u64>,                                                 /* piece, square to fixed targets     */
     pub attack_lines: Vec<Vec<(u8, bool)>>,                                     /* piece, square to lines, hop flag   */
     pub attack_gates: Vec<Vec<(Square, Vec<(Square, bool)>)>>,                  /* piece, square to gated targets     */
+    pub attack_whole: Vec<bool>,                                                /* piece to maps that hold all takes  */
     pub relevant_castling: [Vec<Move>; 4],                                      /* KQkq precomputed moves             */
 
     pub piece_swap_map: Vec<PieceIndex>,                                        /* piece index to swap color (if any) */
@@ -1078,6 +1079,7 @@ impl State {
             attack_leaps: Vec::new(),
             attack_lines: Vec::new(),
             attack_gates: Vec::new(),
+            attack_whole: Vec::new(),
             relevant_castling: array::from_fn(|_| Vec::new()),
 
             piece_swap_map: vec![NO_PIECE; piece_count],
@@ -1477,7 +1479,8 @@ impl State {
                 .map(|square| generate_attack_masks(square as Square, self))
                 .collect();
 
-        let (rays, rising, leaps, lines, gates) = derive_attack_recipes(self);
+        let (rays, rising, leaps, lines, gates, whole) =
+            derive_attack_recipes(self);
         let statics = self.static_mut();
 
         for (color, square, mask) in attack_writes.into_iter().flatten() {
@@ -1489,6 +1492,7 @@ impl State {
         statics.attack_leaps = leaps;
         statics.attack_lines = lines;
         statics.attack_gates = gates;
+        statics.attack_whole = whole;
 
         let files = statics.files as i32;
         let ranks = statics.ranks as i32;
@@ -1511,8 +1515,14 @@ impl State {
                 let mut file = origin % files;
                 let mut rank = origin / files;
 
+                statics.capture_destroys[piece_index] |=                        /* a screen taken and put back by an  */
+                    vector.legs.iter().enumerate().any(|(index, leg)| {         /* unload, as the cannon's, takes no  */
+                        d!(*leg)                                                /* own piece                          */
+                            && !vector.legs[index + 1..].iter()
+                                .any(|later| u!(*later))
+                    });
+
                 for leg in vector.legs.iter() {
-                    statics.capture_destroys[piece_index] |= d!(*leg);
                     file += x!(*leg) as i32 * sign;
                     rank += y!(*leg) as i32 * sign;
 

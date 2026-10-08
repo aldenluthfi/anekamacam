@@ -577,8 +577,9 @@ pub fn generate_attack_masks(
 /// AttackRecipes
 ///
 /// The tables of `piece_attacks!`, in `StaticState` field order: line
-/// rays, line direction, leap boards, lines and gates. Boards are flat
-/// rows of `(board_size + 63) / 64` words.
+/// rays, line direction, leap boards, lines and gates, then for each piece
+/// whether its maps hold all its captures. Boards are flat rows of
+/// `(board_size + 63) / 64` words.
 ///
 pub type AttackRecipes = (
     Vec<u64>,
@@ -586,6 +587,7 @@ pub type AttackRecipes = (
     Vec<u64>,
     Vec<Vec<(u8, bool)>>,
     Vec<Vec<(Square, Vec<(Square, bool)>)>>,
+    Vec<bool>,
 );
 
 /// derive_attack_recipes
@@ -618,13 +620,17 @@ pub type AttackRecipes = (
 /// - state: &State -> variant with the compiled move tables
 ///
 /// Return:
-/// AttackRecipes   -> rays, ray direction, leaps, lines and gates
+/// AttackRecipes   -> rays, ray direction, leaps, lines, gates and whole
 ///
 /// Notes:
 /// A vector with a move condition, a first-move leg or a royal-only last
 /// leg is left out, and the other target rules (rank, unmoved) are not
 /// tested: the attack maps serve the evaluation, and move generation keeps
-/// the full rules.
+/// the full rules. So a map holds more targets than the captures, never
+/// fewer, unless a left-out vector can capture, a vector takes a piece on
+/// the way that no unload puts back (a lion's double capture), or its last
+/// leg can take an own piece; such a piece is not whole. A take that an
+/// unload puts back is a screen, as the cannon's.
 ///
 pub fn derive_attack_recipes(state: &State) -> AttackRecipes {
     let files = state.statics.files as i32;
@@ -640,6 +646,7 @@ pub fn derive_attack_recipes(state: &State) -> AttackRecipes {
     let mut leaps = vec![0u64; piece_count * board_size * words];
     let mut lines = vec![Vec::new(); piece_count * board_size];
     let mut gates = vec![Vec::new(); piece_count * board_size];
+    let mut whole = vec![true; piece_count];
 
     for entry in 0..piece_count * board_size {
         let piece = &state.statics.pieces[entry / board_size];
@@ -654,6 +661,12 @@ pub fn derive_attack_recipes(state: &State) -> AttackRecipes {
             let royal_only = vector.legs.last().is_some_and(|leg| k!(*leg));
 
             if vector.pattern.is_some() || first_move || royal_only {
+                let last = vector.legs.len().saturating_sub(1);
+
+                whole[entry / board_size] &= !vector.legs.iter().enumerate()
+                    .any(|(index, leg)| {
+                        c!(*leg) || d!(*leg) || index == last && !m!(*leg)
+                    });
                 continue;
             }
 
@@ -664,6 +677,12 @@ pub fn derive_attack_recipes(state: &State) -> AttackRecipes {
             let mut step = None;
             let mut uniform = true;
             let mut target = None;
+
+            whole[entry / board_size] &=                                        /* a take on the way that no unload   */
+                (vector.legs.iter().any(|leg| u!(*leg))                         /* puts back, or an own piece taken,  */
+                    || !vector.legs[..leg_count.saturating_sub(1)].iter()       /* is a capture the map does not hold */
+                        .any(|leg| c!(*leg) || d!(*leg)))
+                && !vector.legs.last().is_some_and(|leg| d!(*leg));
 
             for (leg_index, leg) in vector.legs.iter().enumerate() {
                 let file_step = x!(*leg) as i32 * sign;
@@ -779,7 +798,7 @@ pub fn derive_attack_recipes(state: &State) -> AttackRecipes {
         }
     }
 
-    (rays, rising, leaps, lines, gates)
+    (rays, rising, leaps, lines, gates, whole)
 }
 
 /// first_blocker!
@@ -4190,9 +4209,12 @@ pub fn generate_all_moves_and_drops(
 /// never makes quiet moves, drops or castling.
 ///
 /// A piece whose capture reach holds no enemy piece can capture nothing,
-/// so it is skipped before its vectors are walked. The reach is not read
-/// for a piece that can capture an own piece, nor while an en passant
-/// square is open, as that victim is off the landing squares.
+/// so it is skipped before its vectors are walked. A whole piece, whose
+/// attack map holds all its captures, is then skipped when its map on the
+/// board holds no enemy piece: a line piece blocked by its own side. The
+/// reach and the map are not read for a piece that can capture an own
+/// piece, nor while an en passant square is open, as that victim is off
+/// the landing squares.
 ///
 /// Params:
 /// - state  : &State         -> position to examine
@@ -4217,19 +4239,32 @@ pub fn generate_all_captures(
     let words = (board_size + 63) >> 6;
     let reach = &state.statics.capture_reach;
     let enemies = &state.pieces_board[state.playing as usize ^ 1];
-    let screened = !reach.is_empty()
-        && state.en_passant_square == NO_EN_PASSANT;
+    let ep_closed = state.en_passant_square == NO_EN_PASSANT;
+    let mut occupied = state.pieces_board[0];
+    let mut attacks = board!(state.statics.files, state.statics.ranks);
+
+    or!(occupied, state.pieces_board[1]);
 
     for piece_index in start_index..end_index {
         let piece = &state.statics.pieces[piece_index];
-        let skippable = screened
-            && !state.statics.capture_destroys[piece_index];
+        let plain = ep_closed && !state.statics.capture_destroys[piece_index];
+        let skippable = plain && !reach.is_empty();
+        let mapped = plain && state.statics.attack_whole[piece_index];
 
         for &index in piece_squares!(state, piece_index) {
             let row = (piece_index * board_size + index as usize) * words;
 
             if skippable && !meets_row!(enemies, &reach[row..row + words]) {
                 continue;
+            }
+
+            if mapped {
+                attacks.2[..words].fill(0);
+                piece_attacks!(state, piece_index, index, occupied, attacks);
+
+                if !meets_row!(enemies, &attacks.2[..words]) {
+                    continue;
+                }
             }
 
             generate_capture_list!(index, piece, state, out, scratch);
