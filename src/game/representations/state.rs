@@ -869,6 +869,8 @@ pub struct Scratch {
 /// The work lists of one node: its moves, their ordering scores and the
 /// multi-capture records. A node keeps them until it returns, while its
 /// children fill their own. Thus [`Scratch`] has one set for each ply.
+/// `later` holds the full move list of `alpha_beta` while its quiet moves
+/// join `moves`.
 ///
 /// Notes:
 /// The depth guards of `alpha_beta` and `quiescence_search` return first,
@@ -881,6 +883,7 @@ pub struct NodeLists {
     pub moves: Vec<Move>,                                                       /* this node's pseudo-legal moves     */
     pub scores: Vec<usize>,                                                     /* ordering score, filled lazily      */
     pub payload: Vec<u64>,                                                      /* multi-capture records under them   */
+    pub later: Vec<Move>,                                                       /* the full list, for its quiet moves */
 }
 
 /// PawnEntry
