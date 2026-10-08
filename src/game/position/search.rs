@@ -855,7 +855,7 @@ pub fn quiescence_search(
     let mut legal_moves = 0;
     let ply = state.search_ply as usize;
     let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
-    let NodeLists { moves, scores, payload } = &mut lists;
+    let NodeLists { moves, scores, payload, .. } = &mut lists;
 
     let checks_wanted = quiet_checks && !in_check && stand_pat >= alpha;        /* a side behind wants captures       */
 
@@ -1057,6 +1057,12 @@ pub fn quiescence_search(
 /// new screen. A skip tests only a move whose piece has a line from its
 /// landing square to an enemy royal.
 ///
+/// The move list starts without the drops. They join when no winning
+/// capture is left, as a drop can then rank first, or when the list runs
+/// out. In shogi a hand of a few pieces gives hundreds of drops, and most
+/// nodes cut on the table move or a capture before any is needed. A table
+/// move that drops needs them from the start.
+///
 #[hotpath::measure]
 pub fn alpha_beta(
     state: &mut State,
@@ -1247,7 +1253,7 @@ pub fn alpha_beta(
     && prune_eval >= beta
     {
         let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
-        let NodeLists { moves, scores, payload } = &mut lists;
+        let NodeLists { moves, scores, payload, .. } = &mut lists;
 
         generate_all_captures(state, moves, payload);
         scores.clear();
@@ -1340,22 +1346,53 @@ pub fn alpha_beta(
     let lmp_slot = depth.min(lmp_deepest);                                      /* deeper nodes reuse the last row    */
 
     let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
-    let NodeLists { moves, scores, payload } = &mut lists;
+    let NodeLists { moves, scores, payload, later } = &mut lists;
 
-    generate_all_moves_and_drops(state, moves, payload);
+    generate_board_moves(state, moves, payload);
     scores.clear();                                                             /* last node's scores answer for it   */
     scores.resize(moves.len(), usize::MAX);
+
+    let mut drops_pending = drops!(state) || state.game_phase == SETUP;
+
+    if drops_pending
+    && table_move.is_some_and(|table_move| {                                    /* a table move that drops needs the  */
+        !moves.iter().any(|mv| m_matches!(mv, &table_move))                     /* drops before the first pick        */
+    })
+    {
+        join_drops(state, moves, scores, later);
+        drops_pending = false;
+    }
 
     let mut best_move = null_move();
     let mut best_score = -INF;
     let mut legal_moves = 0;
     let alpha_start = alpha;
+    let mut next_index = 0;
 
-    for index in 0..moves.len() {
-        pick_by_score!(
-            state, info, moves, scores, index, &table_move,
-            &cont_bases
-        );
+    loop {
+        let index = next_index;
+
+        if index == moves.len() && !drops_pending {
+            break;
+        }
+
+        if index < moves.len() {
+            pick_by_score!(
+                state, info, moves, scores, index, &table_move,
+                &cont_bases
+            );
+        }
+
+        if drops_pending
+        && (index == moves.len()
+            || scores[index] < WINNING_CAPTURE_SCORE as usize)
+        {
+            join_drops(state, moves, scores, later);                            /* no winning capture is left, so a   */
+            drops_pending = false;                                              /* drop can rank first                */
+            continue;
+        }
+
+        next_index += 1;
 
         let mv = &moves[index];
         let history_index = move_key!(mv, board_size);
@@ -1629,6 +1666,28 @@ pub fn alpha_beta(
     }
 
     alpha
+}
+
+/// join_drops
+///
+/// Adds the drops of the side to move to the move list of a node. The new
+/// moves get no score yet.
+///
+/// Params:
+/// - state : &State          -> position of the node
+/// - moves : &mut Vec<Move>  -> the board moves, gets the drops
+/// - scores: &mut Vec<usize> -> the scores, grows with the list
+/// - later : &mut Vec<Move>  -> work list for the drops
+///
+fn join_drops(
+    state: &State,
+    moves: &mut Vec<Move>,
+    scores: &mut Vec<usize>,
+    later: &mut Vec<Move>,
+) {
+    generate_all_drops(state, later);
+    moves.append(later);
+    scores.resize(moves.len(), usize::MAX);
 }
 
 /*----------------------------------------------------------------------------*\

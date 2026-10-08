@@ -3779,28 +3779,110 @@ pub fn generate_all_moves_and_drops(
         return;
     }
 
-    let piece_count = state.statics.pieces.len() / 2;
-    let start_index = piece_count * state.playing as usize;
-    let end_index = start_index + piece_count;
-
-    if state.game_phase != SETUP {
-        for piece_index in start_index..end_index {
-            let piece = &state.statics.pieces[piece_index];
-            for &index in piece_squares!(state, piece_index) {
-                generate_move_list!(index, piece, state, out, scratch);
-            }
-        }
-    }
-
-    if drops!(state) || state.game_phase == SETUP {
-        for piece_index in start_index..end_index {
-            let piece = &state.statics.pieces[piece_index];
-            generate_drop_list!(piece, state, out);
-        }
-    }
+    push_board_moves(state, out, scratch);
+    push_drops(state, out);
 
     if castling!(state) {
         generate_castling_list!(state, out);
+    }
+}
+
+/// generate_board_moves
+///
+/// Generates the pseudo-legal moves of the side to move without its drops:
+/// the piece moves and castling. `alpha_beta` makes the drops later, as
+/// most nodes cut before a drop is reached.
+///
+/// Params:
+/// - state  : &State         -> position to examine
+/// - out    : &mut Vec<Move> -> cleared, then filled with the moves
+/// - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+///
+#[hotpath::measure]
+pub fn generate_board_moves(
+    state: &State,
+    out: &mut Vec<Move>,
+    scratch: &mut Vec<u64>,
+) {
+    out.clear();
+
+    if is_terminal!(state) {
+        return;
+    }
+
+    push_board_moves(state, out, scratch);
+
+    if castling!(state) {
+        generate_castling_list!(state, out);
+    }
+}
+
+/// generate_all_drops
+///
+/// Generates the pseudo-legal drops of the side to move, the moves that
+/// `generate_board_moves` leaves out.
+///
+/// Params:
+/// - state: &State         -> position to examine
+/// - out  : &mut Vec<Move> -> cleared, then filled with the drops
+///
+#[hotpath::measure]
+pub fn generate_all_drops(state: &State, out: &mut Vec<Move>) {
+    out.clear();
+
+    if is_terminal!(state) {
+        return;
+    }
+
+    push_drops(state, out);
+}
+
+/// push_board_moves
+///
+/// Adds the piece moves of the side to move to a list. The setup phase has
+/// none.
+///
+/// Params:
+/// - state  : &State         -> position to examine
+/// - out    : &mut Vec<Move> -> list that gets the moves
+/// - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+///
+fn push_board_moves(state: &State, out: &mut Vec<Move>, scratch: &mut Vec<u64>) {
+    if state.game_phase == SETUP {
+        return;
+    }
+
+    let piece_count = state.statics.pieces.len() / 2;
+    let start_index = piece_count * state.playing as usize;
+
+    for piece_index in start_index..start_index + piece_count {
+        let piece = &state.statics.pieces[piece_index];
+        for &index in piece_squares!(state, piece_index) {
+            generate_move_list!(index, piece, state, out, scratch);
+        }
+    }
+}
+
+/// push_drops
+///
+/// Adds the drops of the side to move to a list, with the drop rule or in
+/// the setup phase.
+///
+/// Params:
+/// - state: &State         -> position to examine
+/// - out  : &mut Vec<Move> -> list that gets the drops
+///
+fn push_drops(state: &State, out: &mut Vec<Move>) {
+    if !drops!(state) && state.game_phase != SETUP {
+        return;
+    }
+
+    let piece_count = state.statics.pieces.len() / 2;
+    let start_index = piece_count * state.playing as usize;
+
+    for piece_index in start_index..start_index + piece_count {
+        let piece = &state.statics.pieces[piece_index];
+        generate_drop_list!(piece, state, out);
     }
 }
 
