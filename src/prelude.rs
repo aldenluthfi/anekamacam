@@ -639,8 +639,10 @@ pub const WHITE_WIN: u8 = 3;
 /// bound above the largest quiet score. An untested capture leaves its
 /// band when it is picked: the exchange then moves it to the winning, the
 /// losing or the unmakeable band. In its band, it ranks by `VICTIM_WEIGHT`
-/// times the victim value minus the attacker value, so the victim comes
-/// first and the cheaper attacker breaks a tie.
+/// times the victim value minus the attacker value, plus its capture
+/// history cell, so the victim comes first, then the capture that worked,
+/// and the cheaper attacker breaks a tie. A full cell weighs near the
+/// dearest victim, as FSF's capture history does against its MVV term.
 ///
 /// The bound tags tell how a stored score relates to its search window:
 ///

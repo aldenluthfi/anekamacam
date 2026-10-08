@@ -31,6 +31,7 @@ use crate::*;
 /// learned tables.
 ///
 /// - search_hist : `[move key]`, moves that worked anywhere
+/// - capture_hist: `[move key][captured piece]`, captures that worked
 /// - cont_hist   : `[plies back][reply][move key]`, good replies
 /// - corr_hist   : `[side][pawn key]`, the evaluation error
 /// - killer_hist : `[ply]`, two quiet moves that cut here
@@ -60,6 +61,7 @@ pub struct SearchInfo {
     pub pv_length: Vec<usize>,                                                  /* PV length per ply                  */
 
     pub search_hist: Vec<i16>,                                                  /* [move key]                         */
+    pub capture_hist: Vec<i16>,                                                 /* [move key][captured piece]         */
     pub cont_hist: Vec<i16>,                                                    /* [plies back][reply key][move key]  */
     pub corr_hist: Vec<i16>,                                                    /* [side][pawn hash] eval correction  */
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
@@ -136,6 +138,42 @@ macro_rules! cont_cell {
     ($info:expr, $dense_index:expr) => {
         $dense_index % $info.cont_hist.len()
     };
+}
+
+/// CAPTURE_HIST_CELLS
+///
+/// The maximum capture history size of one worker: 2^22 cells of `i16`.
+/// The dense size is `pieces * squares * pieces`; as in the continuation
+/// history, a larger variant wraps its cells into the table.
+///
+const CAPTURE_HIST_CELLS: usize = 1 << 22;
+
+/// capture_cell!
+///
+/// Gives the capture history cell of a capture: its move key with the
+/// captured piece, modulo the table length. A move that takes many pieces
+/// counts as a take of the first piece type.
+///
+/// Params:
+/// - info       : &SearchInfo -> worker with the table
+/// - mv         : &Move       -> capture to index
+/// - board_size : usize       -> number of squares, the key stride
+/// - piece_count: usize       -> number of piece types
+///
+/// Return:
+/// usize                      -> the cell index in the table
+///
+#[macro_export]
+macro_rules! capture_cell {
+    ($info:expr, $mv:expr, $board_size:expr, $piece_count:expr) => {{
+        let captured = match move_type!($mv) == SINGLE_CAPTURE_MOVE {
+            true => captured_piece!($mv) as usize,
+            false => 0,
+        };
+
+        (move_key!($mv, $board_size) * $piece_count + captured)
+            % $info.capture_hist.len()
+    }};
 }
 
 /// Correction history sizing
@@ -316,6 +354,7 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// its histories go on learning.
 ///
 /// - search_hist : one cell for each key, kept
+/// - capture_hist: keys × pieces, at most `CAPTURE_HIST_CELLS`, kept
 /// - cont_hist   : plies × keys × keys, at most `CONT_HIST_CELLS`, kept
 /// - corr_hist   : 2 × 16384 cells, kept
 /// - killer_hist : one move pair for each ply
@@ -349,11 +388,16 @@ pub fn clear_search(
 
     let move_keys = piece_count * board_size;
 
+    let capture_cells = (move_keys * piece_count).min(CAPTURE_HIST_CELLS);
     let cont_cells =
         (CONTINUATION_PLIES * move_keys * move_keys).min(CONT_HIST_CELLS);
 
     if info.search_hist.len() != move_keys {
         info.search_hist = vec![0i16; move_keys];
+    }
+
+    if info.capture_hist.len() != capture_cells {
+        info.capture_hist = vec![0i16; capture_cells];
     }
 
     if info.cont_hist.len() != cont_cells {
@@ -1413,6 +1457,9 @@ pub fn alpha_beta(
         let is_promotion = m_promotion!(mv);
         let is_drop = m_drop!(mv);
         let is_quiet = m_quiet!(mv) || is_drop && !is_capture;                  /* a drop is pruned like a quiet move */
+        let capture_index = is_capture.then(|| {
+            capture_cell!(info, mv, board_size, state.statics.pieces.len())
+        });
 
         let prunable = ply > 0
             && !in_check
@@ -1452,7 +1499,14 @@ pub fn alpha_beta(
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
 
-        let skippable = (late_quiet || futile || losing_capture) && !goal_move;
+        let failing_capture = prunable                                          /* at the last ply, a capture that    */
+            && see_pruning!(state)                                              /* failed more often than it worked   */
+            && !is_promotion
+            && depth <= 1
+            && capture_index.is_some_and(|cell| info.capture_hist[cell] < 0);
+
+        let skippable = (late_quiet || futile || losing_capture
+            || failing_capture) && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
         if skippable
@@ -1604,6 +1658,12 @@ pub fn alpha_beta(
                         );
                     }
 
+                    if let Some(cell) = capture_index {
+                        update_history(
+                            &mut info.capture_hist[cell], history_bonus,
+                        );
+                    }
+
                     update_correction(
                         &mut info.corr_hist[corr_index],
                         static_eval, beta, depth, FBETA, is_capture,
@@ -1621,6 +1681,10 @@ pub fn alpha_beta(
                     update_histories(
                         info, &cont_bases, history_index, history_bonus,
                     );
+                }
+
+                if let Some(cell) = capture_index {
+                    update_history(&mut info.capture_hist[cell], history_bonus);
                 }
 
                 alpha = score;
@@ -1643,6 +1707,8 @@ pub fn alpha_beta(
             update_histories(
                 info, &cont_bases, history_index, -history_bonus,
             );
+        } else if let Some(cell) = capture_index {
+            update_history(&mut info.capture_hist[cell], -history_bonus);
         }
     }
 
