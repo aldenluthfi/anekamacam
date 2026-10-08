@@ -625,16 +625,17 @@ pub const WHITE_WIN: u8 = 3;
 /// ```text
 ///   5_000_000            TABLE_MOVE_SCORE          table move
 ///   4_000_000 + b        WINNING_CAPTURE_SCORE     winning capture
-///   1_000_000 + 7b       KILLER_MOVE_SCORE         killer
-///   1_000_000 + 6b   ┐
-///   1_000_000 + 3b   ┤   QUIET_MOVE_SCORE          centre, plus history
+///   1_000_000 + 11b      KILLER_MOVE_SCORE         killer
+///   1_000_000 + 10b  ┐
+///   1_000_000 + 5b   ┤   QUIET_MOVE_SCORE          centre, plus history
 ///   1_000_000        ┘
 ///   1_000_000 - b        LOSING_CAPTURE_SCORE      losing capture
 ///           0            UNMAKEABLE_CAPTURE_SCORE  cannot be made at all
 /// ```
 ///
-/// `b` is `HISTORY_BOUND`. `7b` is `2 * HISTORY_TABLES + 1` bounds, one
-/// bound above the largest quiet score.
+/// `b` is `HISTORY_BOUND`. `11b` is `2 * HISTORY_TABLES + 1` bounds, one
+/// bound above the largest quiet score. The tables are the butterfly table
+/// and the four continuation tables.
 ///
 /// The bound tags tell how a stored score relates to its search window:
 ///
@@ -647,7 +648,7 @@ pub const MATE_SCORE: i32 = INF - MAX_DEPTH as i32;
 pub const EVAL_NONE: i32 = INF;
 
 pub const HISTORY_BOUND: i32 = i16::MAX as i32 / 2;
-pub const HISTORY_TABLES: i32 = 3;
+pub const HISTORY_TABLES: i32 = 5;
 pub const TABLE_MOVE_SCORE: usize = 5_000_000;
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000 + HISTORY_BOUND;
 pub const KILLER_MOVE_SCORE: usize =
