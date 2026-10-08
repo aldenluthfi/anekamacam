@@ -403,6 +403,38 @@ macro_rules! tt_score {
                        TRANSPOSITION TABLE STORE / PROBE
 \*----------------------------------------------------------------------------*/
 
+/// probe_tt_bound!
+///
+/// Probes the main table as `probe_tt_entry!` does, but gives the stored
+/// score, bound and depth as they are, for a test that needs the bound of
+/// the table move: the singular test of `alpha_beta`.
+///
+/// Params:
+/// - state: &State  -> position for the ply correction of mate scores
+/// - key  : u128    -> search key of the node
+/// - table: &TTable -> shared transposition table
+///
+/// Return:
+/// Option<(i32, u8, usize)> -> score, bound flag and depth, or none
+///
+#[macro_export]
+macro_rules! probe_tt_bound {
+    ($state:expr, $key:expr, $table:expr) => {
+        probe_hash_slot!($table, $key, None, |_move_slot, data_slot| {
+            let encoded = (data_slot & 0x1FF) as u32;
+            let mut score = tt_score!(data_slot);
+
+            if score > MATE_SCORE {
+                score -= $state.search_ply as i32;
+            } else if score < -MATE_SCORE {
+                score += $state.search_ply as i32;
+            }
+
+            Some((score, tt_flags!(encoded), tt_depth!(encoded)))
+        })
+    };
+}
+
 /// probe_tt_entry!
 ///
 /// Probes the main table with the parity and seqlock tests. The stored

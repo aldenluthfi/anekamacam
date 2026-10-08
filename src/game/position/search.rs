@@ -65,6 +65,7 @@ pub struct SearchInfo {
     pub killer_hist: Vec<[Move; 2]>,                                            /* search ply to killer moves         */
 
     pub eval_stack: Vec<i32>,                                                   /* static score standing at each ply  */
+    pub excluded: Vec<Move>,                                                    /* ply to the move a test leaves out  */
 
     pub candidate_move: Move,                                                   /* best root move proved so far       */
 }
@@ -209,6 +210,21 @@ const PROBCUT_MAX_CAPTURES: usize = 3;
 ///
 const MIN_IIR_DEPTH: usize = 4;
 
+/// SINGULAR_DEPTH
+///
+/// Minimum depth of the singular test. The table move of a node gets one
+/// more ply when a search of the other moves, at half the depth, cannot
+/// reach the table score less one point for each ply. If that search
+/// beats beta too, two moves beat beta and the node cuts. The table entry
+/// must be a lower or exact bound from at most three plies less.
+///
+/// Notes:
+/// The test is off in drop variants: FSF's own singular test loses there
+/// (plan 29, 39 in shogi). The test leaves the table alone, as its result
+/// is not that of the full node.
+///
+const SINGULAR_DEPTH: usize = 7;
+
 /// Aspiration window settings
 ///
 /// Aspiration window settings. From the start depth, an iteration opens a
@@ -320,6 +336,7 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 /// - pv_table    : stride squared
 /// - pv_length   : one length for each ply
 /// - eval_stack  : one score for each ply, plus one
+/// - excluded    : one move for each ply, plus one, all null
 ///
 /// Params:
 /// - state : &mut State      -> position that sets the table sizes
@@ -359,6 +376,7 @@ pub fn clear_search(
     info.pv_length = vec![0; PV_STRIDE];
 
     info.eval_stack = vec![EVAL_NONE; MAX_DEPTH + 1];
+    info.excluded = vec![null_move(); MAX_DEPTH + 1];
 
     ttable.age.fetch_add(1, Ordering::Relaxed);
     qtable.age.fetch_add(1, Ordering::Relaxed);
@@ -1143,8 +1161,10 @@ pub fn alpha_beta(
     } else {
         None
     };
+    let excluded = info.excluded[ply].clone();
+    let excluding = excluded != null_move();                                    /* a singular test, not a full search */
 
-    if table_entry.0 && !pv_node {
+    if table_entry.0 && !pv_node && !excluding {
         return table_entry.1;
     }
 
@@ -1208,6 +1228,7 @@ pub fn alpha_beta(
 
     if null_pruning!(state)
     && allow_null_move
+    && !excluding
     && !in_check
     && depth > 2
     && ply > 0
@@ -1247,6 +1268,7 @@ pub fn alpha_beta(
     && see_valid!(state)
     && static_movement!(state)
     && !in_check
+    && !excluding
     && depth >= MIN_PROBCUT_DEPTH
     && beta - alpha == 1
     && beta.abs() < MATE_SCORE
@@ -1395,6 +1417,51 @@ pub fn alpha_beta(
         next_index += 1;
 
         let mv = &moves[index];
+
+        if excluding && *mv == excluded {
+            continue;
+        }
+
+        let mut singular = false;
+
+        if !excluding
+        && ply > 0
+        && !drops!(state)                                                       /* FSF's singular test loses in shogi */
+        && depth >= SINGULAR_DEPTH
+        && table_move.as_ref().is_some_and(|table| m_matches!(mv, table))
+        && let Some((table_score, flags, stored_depth)) =
+            probe_tt_bound!(state, table_key, ttable)
+        && flags != FALPHA
+        && stored_depth + 3 >= depth
+        && table_score.abs() < MATE_SCORE
+        {
+            let singular_beta = table_score - depth as i32;
+
+            info.excluded[ply] = mv.clone();
+
+            let score = alpha_beta(
+                state,
+                ttable,
+                qtable,
+                (depth - 1) / 2,
+                singular_beta - 1,
+                singular_beta,
+                info,
+                false,
+                Some(in_check),
+            );
+
+            info.excluded[ply] = null_move();
+
+            if score < singular_beta {
+                singular = true;                                                /* no other move comes near: extend   */
+            } else if singular_beta >= beta && !info.interrupt {
+                state.scratch.node_lists[ply] = lists;
+
+                return singular_beta;                                           /* two moves beat beta: cut           */
+            }
+        }
+
         let history_index = move_key!(mv, board_size);
 
         let is_capture = m_capture!(mv);
@@ -1497,7 +1564,8 @@ pub fn alpha_beta(
             0
         };
 
-        let extended = gives_check && ply + depth < 2 * info.root_depth;        /* a line gains at most its own depth */
+        let extended = (gives_check || singular)
+            && ply + depth < 2 * info.root_depth;                               /* a line gains at most its own depth */
         let child_depth = depth - 1 + extended as usize;
 
         let mut score = if legal_moves == 1 {
@@ -1592,14 +1660,17 @@ pub fn alpha_beta(
                         );
                     }
 
-                    update_correction(
-                        &mut info.corr_hist[corr_index],
-                        static_eval, beta, depth, FBETA, is_capture,
-                    );
-                    hash_tt_entry!(
-                        moves[index], beta, FBETA, depth, static_eval,
-                        state, table_key, ttable
-                    );
+                    if !excluding {                                             /* a test without the best move would */
+                        update_correction(                                      /* store a wrong bound                */
+                            &mut info.corr_hist[corr_index],
+                            static_eval, beta, depth, FBETA, is_capture,
+                        );
+                        hash_tt_entry!(
+                            moves[index], beta, FBETA, depth, static_eval,
+                            state, table_key, ttable
+                        );
+                    }
+
                     state.scratch.node_lists[ply] = lists;
 
                     return beta;
@@ -1635,6 +1706,10 @@ pub fn alpha_beta(
     }
 
     state.scratch.node_lists[ply] = lists;
+
+    if excluding {
+        return alpha;                                                           /* the left-out move may be the only  */
+    }                                                                           /* one, and nothing is stored         */
 
     if legal_moves == 0 {
         let (outcome, inverted) = no_move_verdict!(state, in_check);
