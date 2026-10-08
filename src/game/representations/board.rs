@@ -279,12 +279,7 @@ macro_rules! is_empty {
 macro_rules! meets_row {
     ($board:expr, $row:expr) => {{
         let row: &[u64] = $row;
-        let bytes = $board.2.as_bytes();
 
-        row.iter().enumerate().any(|(word, mask)| {
-            let chunk = &bytes[word * 8..word * 8 + 8];
-
-            u64::from_le_bytes(chunk.try_into().unwrap()) & mask != 0
-        })
+        row.iter().zip($board.2.iter()).any(|(mask, word)| word & mask != 0)
     }};
 }
