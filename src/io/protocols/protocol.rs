@@ -280,11 +280,14 @@ struct SearchLimits {
 /// - overhead_ms           : time kept back from a timed search
 /// - ttable, qtable        : shared with the workers, new on Hash
 /// - active                : the running search, if any
+/// - learned               : the search worker of the last move, with its
+///                           histories, empty at a new game or variant
 ///
 /// Notes:
 /// `position_valid` is false after a failed `position` until the next good
 /// load. Then `go` sends `bestmove (none)` at once, and does not search a
-/// wrong board.
+/// wrong board. The histories learn from each move of a game, as FSF's do,
+/// so a search does not start from empty cells.
 ///
 pub struct Session {
     protocol: String,                                                           /* the protocol being spoken          */
@@ -300,6 +303,7 @@ pub struct Session {
     qtable: Arc<QTable>,                                                        /* shared quiescence table            */
     active: Option<SearchHandle>,                                               /* in-flight search, if any           */
     position_valid: bool,                                                       /* false after a failed position cmd  */
+    learned: Arc<Mutex<Option<SearchInfo>>>,                                    /* histories kept between the moves   */
 }
 
 impl Session {
@@ -356,6 +360,7 @@ impl Session {
             qtable,
             active: None,
             position_valid: true,
+            learned: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -769,6 +774,7 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
     let state_clone = session.state.clone();
     let tt_clone = Arc::clone(&session.ttable);
     let qt_clone = Arc::clone(&session.qtable);
+    let learned = Arc::clone(&session.learned);
     let dict_clone = session.translator.clone();
     let tc = session.threads;
     let is_ponder = limits.is_ponder;
@@ -784,12 +790,15 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
         .stack_size(64 * 1024 * 1024)
         .spawn(move || {
             let mut s = state_clone;
-            let mut info = SearchInfo {
-                set_depth: thread_depth,
-                set_nodes,
-                deadline,
-                ..Default::default()
-            };
+            let mut info = learned.lock()
+                .map(|mut slot| slot.take())
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+
+            info.set_depth = thread_depth;
+            info.set_nodes = set_nodes;
+            info.deadline = deadline;
             let table = Arc::clone(&tt_clone);
             let qtable = Arc::clone(&qt_clone);
             let result = catch_unwind(AssertUnwindSafe(|| {
@@ -812,6 +821,10 @@ fn spawn_search(session: &mut Session, limits: SearchLimits) {
             }
 
             log_table_stats(&tt_clone, &qt_clone);
+
+            if let Ok(mut slot) = learned.lock() {
+                *slot = Some(info);
+            }
 
             result
         }).expect("failed to spawn search thread");
@@ -901,6 +914,7 @@ fn handle_setoption(session: &mut Session, tokens: &[&str]) {
         }
         (n, Some(v)) if n == variant && session.variants.contains(&v) => {
             abort_search(session);
+            forget_learned(session);
             let conf = format!("{}.conf", v);
             session.state = parse_config_file(&conf);
             session.state.scratch.pawn_table =
@@ -1001,17 +1015,32 @@ pub fn print_handshake(session: &Session) {
     )));
 }
 
+/// forget_learned
+///
+/// Drops the histories that the session keeps between the moves of a game.
+/// A new game or a new variant starts from empty cells.
+///
+/// Params:
+/// - session: &mut Session -> the session to clear
+///
+fn forget_learned(session: &mut Session) {
+    if let Ok(mut slot) = session.learned.lock() {
+        *slot = None;
+    }
+}
+
 /// new_game
 ///
 /// Resets the session to the start position of the variant and stops the
 /// search. The new game command of each dialect calls it. The variant, the
-/// options and the tables do not change.
+/// options and the tables do not change; the kept histories are dropped.
 ///
 /// Params:
 /// - session: &mut Session -> the session to reset
 ///
 pub fn new_game(session: &mut Session) {
     abort_search(session);
+    forget_learned(session);
     let start = session.state.statics.startpos.clone();
     session.state.reset();
     parse_fen(&mut session.state, &start, None)

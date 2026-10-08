@@ -309,13 +309,15 @@ pub fn check_interrupt(info: &mut SearchInfo) {
 
 /// clear_search
 ///
-/// Resets the node counters and allocates the ordering tables and the PV
-/// storage of the worker. A move key is `pieces * squares` wide, so the
-/// variant sets the sizes.
+/// Resets the node counters, the killers and the PV storage of the worker.
+/// A move key is `pieces * squares` wide, so the variant sets the sizes.
+/// The learned tables are new only when their size does not fit the
+/// variant: the session keeps a worker between the moves of a game, and
+/// its histories go on learning.
 ///
-/// - search_hist : one cell for each key
-/// - cont_hist   : plies × keys × keys, at most `CONT_HIST_CELLS`
-/// - corr_hist   : 2 × 16384 cells
+/// - search_hist : one cell for each key, kept
+/// - cont_hist   : plies × keys × keys, at most `CONT_HIST_CELLS`, kept
+/// - corr_hist   : 2 × 16384 cells, kept
 /// - killer_hist : one move pair for each ply
 /// - pv_table    : stride squared
 /// - pv_length   : one length for each ply
@@ -347,11 +349,21 @@ pub fn clear_search(
 
     let move_keys = piece_count * board_size;
 
-    info.search_hist = vec![0i16; move_keys];
-    let cont_dense = CONTINUATION_PLIES * move_keys * move_keys;
+    let cont_cells =
+        (CONTINUATION_PLIES * move_keys * move_keys).min(CONT_HIST_CELLS);
 
-    info.cont_hist = vec![0i16; cont_dense.min(CONT_HIST_CELLS)];
-    info.corr_hist = vec![0i16; 2 * CORR_HIST_SIZE];
+    if info.search_hist.len() != move_keys {
+        info.search_hist = vec![0i16; move_keys];
+    }
+
+    if info.cont_hist.len() != cont_cells {
+        info.cont_hist = vec![0i16; cont_cells];
+    }
+
+    if info.corr_hist.len() != 2 * CORR_HIST_SIZE {
+        info.corr_hist = vec![0i16; 2 * CORR_HIST_SIZE];
+    }
+
     info.killer_hist = vec![array::from_fn(|_| null_move()); MAX_DEPTH];
 
     info.pv_line = vec![null_move(); MAX_DEPTH];
