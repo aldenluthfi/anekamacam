@@ -190,6 +190,12 @@ const REDUCTION_MOVE_WIDE: u32 = 2;
 /// move, and as a follow up to the move before it, it failed more often
 /// than it worked.
 ///
+/// Notes:
+/// A drop is never skipped this way. A drop can answer a threat on any
+/// square, so a cell that failed in most lines says little about the line
+/// at hand. With drops in the skip, shogi lost 20 Elo while the variants
+/// without drops gained 9 to 26.
+///
 const FAILED_REPLY_DEPTH: usize = 5;
 
 /// ProbCut settings
@@ -1418,6 +1424,7 @@ pub fn alpha_beta(
         );
 
         let failed_reply = prunable_quiet
+            && !is_drop
             && quiet_pruning!(state)
             && reduced_depth < FAILED_REPLY_DEPTH
             && cont_bases.iter().all(|&base| {
