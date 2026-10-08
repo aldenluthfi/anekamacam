@@ -141,14 +141,13 @@ const ASPIRATION_RATIO: u32 = 30;
 /// Reverse futility margin
 ///
 /// The reverse futility margin. The static evaluation must be this much
-/// above beta to cut. An improving side needs less. The two are over
-/// `COEFFICIENT_SCALE`.
+/// above beta to cut. An improving side is one ply ahead, so it needs the
+/// margin of one ply less. `RFP_RATIO` is over `COEFFICIENT_SCALE`.
 ///
 /// - not improving : 11% of the most valuable piece for each ply
-/// - improving     : 75% of that margin
+/// - improving     : the same, for one ply less
 ///
 const RFP_RATIO: u32 = 110;
-const RFP_IMPROVING: u32 = 750;
 
 /// Futility margin
 ///
@@ -1657,12 +1656,8 @@ pub fn derive_search_parameters(state: &mut State) {
     let mut margins = vec![0i32; 2 * (deepest + 1)];
 
     for depth in 1..=deepest {
-        let flat = step * depth as u64;
-
-        margins[depth] = flat as i32;
-        margins[deepest + 1 + depth] = (flat
-            * RFP_IMPROVING as u64
-            / COEFFICIENT_SCALE as u64) as i32;
+        margins[depth] = (step * depth as u64) as i32;
+        margins[deepest + 1 + depth] = (step * (depth - 1) as u64) as i32;
     }
 
     let razor = [
