@@ -686,6 +686,7 @@ pub const FEXACT: u8 = 2;
 /// - `EXTINCT_THREAT_LEFT`   : most copies left for an extinction threat
 /// - `SEARCH_REPETITION_CAP` : plies that the repetition scan examines
 /// - `REPETITION_CYCLE`      : occurrences for one cycle, without perpetual
+/// - `CAPTURE_REACH_WORDS`   : most board words that keep a capture reach
 ///
 /// Notes:
 /// A move index above `REDUCTION_MOVE_CAP` uses the last column. The danger
@@ -704,6 +705,7 @@ pub const GOAL_HOLD_STEPS: u8 = 3;
 pub const EXTINCT_THREAT_LEFT: u32 = 2;
 pub const SEARCH_REPETITION_CAP: usize = 64;
 pub const REPETITION_CYCLE: u8 = 2;
+pub const CAPTURE_REACH_WORDS: usize = 2;
 
 /// Protocol, storage and debug constants
 ///

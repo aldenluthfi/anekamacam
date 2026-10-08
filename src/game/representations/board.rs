@@ -109,6 +109,15 @@ pub type Board = (u8, u8, BoardBits);
 ///   Return:
 ///   bool             -> true when no bit is set
 ///
+/// meets_row!
+///
+///   Params:
+///   - board : &Board -> board to read
+///   - row   : &[u64] -> low words of a square set, the first word first
+///
+///   Return:
+///   bool             -> true when a bit is set in both
+///
 /// Changes in place, no return value:
 ///
 /// set!
@@ -216,4 +225,18 @@ macro_rules! is_empty {
     ($board:expr) => {
         $board.2.is_zero()
     };
+}
+
+#[macro_export]
+macro_rules! meets_row {
+    ($board:expr, $row:expr) => {{
+        let row: &[u64] = $row;
+        let bytes = $board.2.as_bytes();
+
+        row.iter().enumerate().any(|(word, mask)| {
+            let chunk = &bytes[word * 8..word * 8 + 8];
+
+            u64::from_le_bytes(chunk.try_into().unwrap()) & mask != 0
+        })
+    }};
 }

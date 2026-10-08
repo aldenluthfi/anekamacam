@@ -746,6 +746,8 @@ pub struct StaticState {
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
+    pub capture_reach: Vec<u64>,                                                /* piece, square to capture leg reach */
+    pub capture_destroys: Vec<bool>,                                            /* piece to an own-piece capture leg  */
     pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
     pub relevant_setup: Vec<DropSet>,                                           /* setup-phase army placement         */
     pub relevant_stand_offs: Vec<PatternSet>,                                   /* facing-config veto patterns        */
@@ -1042,6 +1044,8 @@ impl State {
 
             relevant_moves: vec![MoveSet::new(); board_size * piece_count],
             relevant_captures: vec![MoveSet::new(); board_size * piece_count],
+            capture_reach: Vec::new(),
+            capture_destroys: vec![false; piece_count],
             relevant_drops: vec![DropSet::new(); board_size * piece_count],
             relevant_setup: vec![DropSet::new(); board_size * piece_count],
             relevant_stand_offs: vec![
@@ -1377,6 +1381,12 @@ impl State {
     /// 1. compile the expressions, one set for each piece
     /// 2. `populate_relevant` puts the sets on each square
     /// 3. `generate_attack_masks` stores each move under its target square
+    /// 4. the capture reach, the squares that the capture legs land on
+    ///
+    /// The reach lets the capture generation skip a piece that has no enemy
+    /// piece in it. It is kept only for a board of at most
+    /// `CAPTURE_REACH_WORDS` words, as its size grows with the square of the
+    /// board area.
     ///
     /// Params:
     /// - moves_expr_set    : Vec<String> -> move expression of each piece
@@ -1447,5 +1457,45 @@ impl State {
         for (color, square, mask) in attack_writes.into_iter().flatten() {
             statics.relevant_attacks[color][square].push(mask);
         }
+
+        let files = statics.files as i32;
+        let ranks = statics.ranks as i32;
+        let board_size = statics.board_size;
+        let words = (board_size + 63) >> 6;
+
+        if words > CAPTURE_REACH_WORDS {
+            return;
+        }
+
+        let mut reach = vec![0u64; piece_count * board_size * words];
+
+        for (entry, vectors) in statics.relevant_captures.iter().enumerate() {
+            let piece_index = entry / board_size;
+            let piece = &statics.pieces[piece_index];
+            let sign = -2 * p_color!(piece) as i32 + 1;
+            let origin = (entry % board_size) as i32;
+
+            for vector in vectors {
+                let mut file = origin % files;
+                let mut rank = origin / files;
+
+                for leg in vector.legs.iter() {
+                    statics.capture_destroys[piece_index] |= d!(*leg);
+                    file += x!(*leg) as i32 * sign;
+                    rank += y!(*leg) as i32 * sign;
+
+                    if file < 0 || file >= files || rank < 0 || rank >= ranks {
+                        break;
+                    }
+
+                    let square = (rank * files + file) as usize;
+
+                    reach[entry * words + (square >> 6)] |=
+                        1u64 << (square & 63);
+                }
+            }
+        }
+
+        statics.capture_reach = reach;
     }
 }
