@@ -380,7 +380,10 @@ macro_rules! score_move {
 ///
 /// An untested capture that wins the pass gets its exchange result. A
 /// winning capture stays at `index`. A losing or unmakeable one falls to
-/// its band, and the pass runs again:
+/// its band, and the pass runs again. A capture whose victim is worth at
+/// least its attacker needs no simulation: the side that captures can
+/// stop after each recapture, so it keeps at least the difference. The
+/// search plays a winning capture at once, so it needs only the sign:
 ///
 /// ```text
 /// pass 1    [Bx . . . .]  untested Bx is best: its exchange loses
@@ -457,7 +460,12 @@ macro_rules! pick_by_score {
                 break;
             }
 
-            let exchange = see!($state, &moves[index]);
+            let floor = victim_value!(&moves[index], $state)
+                - attack_value!(&moves[index], $state);
+            let exchange = match floor >= 0 {
+                true => floor,                                                  /* a recapture can only give it back  */
+                false => see!($state, &moves[index]),
+            };
 
             scores[index] = if exchange == -INF {
                 UNMAKEABLE_CAPTURE_SCORE
