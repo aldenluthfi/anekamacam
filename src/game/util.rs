@@ -534,13 +534,6 @@ pub fn verify_game_state(state: &State) {
         format_game_state(state)
     );
 
-    let mut temp_pieces_board = board!(
-        state.statics.files, state.statics.ranks
-    );
-
-    or!(temp_pieces_board, &temp_white_board);
-    or!(temp_pieces_board, &temp_black_board);
-
     let mut temp_big_pieces = [0; 2];
     let mut temp_major_pieces = [0; 2];
     let mut temp_minor_pieces = [0; 2];
