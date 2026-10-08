@@ -22,7 +22,9 @@ use crate::*;
 /// - 36x36, 1296 squares : 21 words
 ///
 /// Thus a union or a count on a small board costs one or two words, and
-/// all board sizes stay in one build.
+/// all board sizes stay in one build. A board of one or two words takes
+/// its two low words with no loop; the second word of a one-word board
+/// stays zero, so it adds nothing.
 ///
 /// Notes:
 /// The Zobrist tables have `MAX_SQUARES` entries, so `MAX_SQUARES` is the
@@ -224,8 +226,13 @@ macro_rules! or {
         let words = board_words!($board1);
         let source = &$board2;
 
-        for word in 0..words {
-            $board1.2[word] |= source.2[word];
+        if words <= 2 {
+            $board1.2[0] |= source.2[0];
+            $board1.2[1] |= source.2[1];
+        } else {
+            for word in 0..words {
+                $board1.2[word] |= source.2[word];
+            }
         }
     }};
 }
@@ -236,8 +243,13 @@ macro_rules! and {
         let words = board_words!($board1);
         let source = &$board2;
 
-        for word in 0..words {
-            $board1.2[word] &= source.2[word];
+        if words <= 2 {
+            $board1.2[0] &= source.2[0];
+            $board1.2[1] &= source.2[1];
+        } else {
+            for word in 0..words {
+                $board1.2[word] &= source.2[word];
+            }
         }
     }};
 }
@@ -246,10 +258,14 @@ macro_rules! and {
 macro_rules! count_bits {
     ($board:expr) => {{
         let source = &$board;
+        let words = board_words!(source);
 
-        source.2[..board_words!(source)].iter()
-            .map(|word| word.count_ones())
-            .sum::<u32>()
+        match words <= 2 {
+            true => source.2[0].count_ones() + source.2[1].count_ones(),
+            false => source.2[..words].iter()
+                .map(|word| word.count_ones())
+                .sum::<u32>(),
+        }
     }};
 }
 
@@ -270,8 +286,12 @@ macro_rules! set_indices {
 macro_rules! is_empty {
     ($board:expr) => {{
         let source = &$board;
+        let words = board_words!(source);
 
-        source.2[..board_words!(source)].iter().all(|word| *word == 0)
+        match words <= 2 {
+            true => source.2[0] | source.2[1] == 0,
+            false => source.2[..words].iter().all(|word| *word == 0),
+        }
     }};
 }
 
