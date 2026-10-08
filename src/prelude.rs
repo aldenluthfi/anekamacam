@@ -624,6 +624,7 @@ pub const WHITE_WIN: u8 = 3;
 ///
 /// ```text
 ///   5_000_000            TABLE_MOVE_SCORE          table move
+///   4_500_000            UNTESTED_CAPTURE_SCORE    capture, plus its victim
 ///   4_000_000 + b        WINNING_CAPTURE_SCORE     winning capture
 ///   1_000_000 + 7b       KILLER_MOVE_SCORE         killer
 ///   1_000_000 + 6b   ┐
@@ -634,7 +635,11 @@ pub const WHITE_WIN: u8 = 3;
 /// ```
 ///
 /// `b` is `HISTORY_BOUND`. `7b` is `2 * HISTORY_TABLES + 1` bounds, one
-/// bound above the largest quiet score.
+/// bound above the largest quiet score. An untested capture leaves its
+/// band when it is picked: the exchange then moves it to the winning, the
+/// losing or the unmakeable band. In its band, it ranks by `VICTIM_WEIGHT`
+/// times the victim value minus the attacker value, so the victim comes
+/// first and the cheaper attacker breaks a tie.
 ///
 /// The bound tags tell how a stored score relates to its search window:
 ///
@@ -649,6 +654,8 @@ pub const EVAL_NONE: i32 = INF;
 pub const HISTORY_BOUND: i32 = i16::MAX as i32 / 2;
 pub const HISTORY_TABLES: i32 = 3;
 pub const TABLE_MOVE_SCORE: usize = 5_000_000;
+pub const UNTESTED_CAPTURE_SCORE: usize = 4_500_000;
+pub const VICTIM_WEIGHT: i32 = 16;
 pub const WINNING_CAPTURE_SCORE: i32 = 4_000_000 + HISTORY_BOUND;
 pub const KILLER_MOVE_SCORE: usize =
     (1_000_000 + (2 * HISTORY_TABLES + 1) * HISTORY_BOUND) as usize;
