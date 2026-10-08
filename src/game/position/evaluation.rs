@@ -1098,7 +1098,11 @@ macro_rules! material_advantage {
 /// - shared terms           : calculated once, added to both halves
 /// - pawn structure         : both halves, one value for each
 /// - material imbalance     : outside the blend, added once
-/// - tempo                  : outside, after the flip to the side to move
+///
+/// The score has no tempo bonus for the side to move. With one, a search
+/// of one ply fell below the static score at 35 to 41% of the nodes, as
+/// each move gives the bonus to the other side; the pruning that trusts
+/// the static score then cut wrongly.
 ///
 /// Params:
 /// - state: &mut State -> position to evaluate
@@ -1150,7 +1154,6 @@ macro_rules! evaluate_position {
             };
 
             (score + material_advantage!($state)) * side_sign
-                + $state.statics.eval.tempo_bonus
         })
     };
 }
