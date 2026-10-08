@@ -3810,6 +3810,11 @@ pub fn generate_all_moves_and_drops(
 /// It uses the `relevant_captures` tables and keeps only real captures. It
 /// never makes quiet moves, drops or castling.
 ///
+/// A piece whose capture reach holds no enemy piece can capture nothing,
+/// so it is skipped before its vectors are walked. The reach is not read
+/// for a piece that can capture an own piece, nor while an en passant
+/// square is open, as that victim is off the landing squares.
+///
 /// Params:
 /// - state  : &State         -> position to examine
 /// - out    : &mut Vec<Move> -> cleared, then filled with the captures
@@ -3829,10 +3834,25 @@ pub fn generate_all_captures(
     let piece_count = state.statics.pieces.len() / 2;
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
+    let board_size = state.statics.board_size;
+    let words = (board_size + 63) >> 6;
+    let reach = &state.statics.capture_reach;
+    let enemies = &state.pieces_board[state.playing as usize ^ 1];
+    let screened = !reach.is_empty()
+        && state.en_passant_square == NO_EN_PASSANT;
 
     for piece_index in start_index..end_index {
         let piece = &state.statics.pieces[piece_index];
+        let skippable = screened
+            && !state.statics.capture_destroys[piece_index];
+
         for &index in piece_squares!(state, piece_index) {
+            let row = (piece_index * board_size + index as usize) * words;
+
+            if skippable && !meets_row!(enemies, &reach[row..row + words]) {
+                continue;
+            }
+
             generate_capture_list!(index, piece, state, out, scratch);
         }
     }

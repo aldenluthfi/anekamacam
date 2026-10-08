@@ -1075,8 +1075,49 @@ macro_rules! material_advantage {
 
 /// evaluate_position!
 ///
-/// Gives the static evaluation of a position for the side to move. The
-/// phase selects the parts:
+/// Gives the static evaluation of a position for the side to move. A
+/// position in the score cache takes its stored score. Else the macro
+/// calculates it with [`position_score!`] and stores it. A position often
+/// comes again: through a transposition, in the next iteration and in a
+/// search again of a subtree. The quiescence search keeps no score.
+///
+/// Params:
+/// - state: &mut State -> position to evaluate
+///
+/// Return:
+/// i32                 -> score for the side to move
+///
+/// Notes:
+/// The key is `eval_key`, all the inputs of the evaluation. A stored score
+/// is equal to a new one, so the search makes the same tree with the cache
+/// and without it.
+///
+#[macro_export]
+macro_rules! evaluate_position {
+    ($state:expr) => {
+        hotpath::measure_block!("eval::position", {
+            let key = eval_key(&$state);
+            let slot = key as usize & ($state.scratch.eval_table.len() - 1);
+            let check = (key >> 64) as u64;
+            let (stored, score) = $state.scratch.eval_table[slot];
+
+            match stored == check {
+                true => score,
+                false => {
+                    let score = position_score!($state);
+
+                    $state.scratch.eval_table[slot] = (check, score);
+                    score
+                }
+            }
+        })
+    };
+}
+
+/// position_score!
+///
+/// Calculates the static evaluation of a position for the side to move.
+/// The phase selects the parts:
 ///
 /// - OPENING, SETUP : opening score and opening pawn value
 /// - MIDDLEGAME     : blend of the two, from the material on the board
@@ -1111,46 +1152,44 @@ macro_rules! material_advantage {
 /// the four causes a panic.
 ///
 #[macro_export]
-macro_rules! evaluate_position {
-    ($state:expr) => {
-        hotpath::measure_block!("eval::position", {
-            let side_sign = -2 * $state.playing as i32 + 1;
+macro_rules! position_score {
+    ($state:expr) => {{
+        let side_sign = -2 * $state.playing as i32 + 1;
 
-            let shared = shared_score!($state);
+        let shared = shared_score!($state);
 
-            let score = match $state.game_phase {
-                OPENING | SETUP => {
-                    opening_score!($state)
-                        + shared
-                        + pawn_structure!($state).0
-                }
-                ENDGAME => {
-                    endgame_score!($state)
-                        + shared
-                        + pawn_structure!($state).1
-                }
-                MIDDLEGAME => {
-                    let (pawn_opening, pawn_endgame) =
-                        pawn_structure!($state);
-                    let opening =
-                        opening_score!($state) + shared + pawn_opening;
-                    let endgame =
-                        endgame_score!($state) + shared + pawn_endgame;
+        let score = match $state.game_phase {
+            OPENING | SETUP => {
+                opening_score!($state)
+                    + shared
+                    + pawn_structure!($state).0
+            }
+            ENDGAME => {
+                endgame_score!($state)
+                    + shared
+                    + pawn_structure!($state).1
+            }
+            MIDDLEGAME => {
+                let (pawn_opening, pawn_endgame) =
+                    pawn_structure!($state);
+                let opening =
+                    opening_score!($state) + shared + pawn_opening;
+                let endgame =
+                    endgame_score!($state) + shared + pawn_endgame;
 
-                    let opening_bound = $state.statics.opening_score as i32;
-                    let endgame_bound = $state.statics.endgame_score as i32;
-                    let current = $state.phase_score as i32;
+                let opening_bound = $state.statics.opening_score as i32;
+                let endgame_bound = $state.statics.endgame_score as i32;
+                let current = $state.phase_score as i32;
 
-                    (
-                        opening * (current - endgame_bound)
-                            + endgame * (opening_bound - current)
-                    ) / (opening_bound - endgame_bound)
-                }
-                _ => panic!("Invalid game phase {}", $state.game_phase),
-            };
+                (
+                    opening * (current - endgame_bound)
+                        + endgame * (opening_bound - current)
+                ) / (opening_bound - endgame_bound)
+            }
+            _ => panic!("Invalid game phase {}", $state.game_phase),
+        };
 
-            (score + material_advantage!($state)) * side_sign
-                + $state.statics.eval.tempo_bonus
-        })
-    };
+        (score + material_advantage!($state)) * side_sign
+            + $state.statics.eval.tempo_bonus
+    }};
 }

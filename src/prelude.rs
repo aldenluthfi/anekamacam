@@ -26,8 +26,8 @@ pub use crate::game::representations::{
     },
     piece::{Piece, PieceIndex},
     state::{
-        EnPassantSquare, NodeLists, PawnEntry, Scratch, Snapshot, Square,
-        State,
+        EnPassantSquare, EvalEntry, NodeLists, PawnEntry, Scratch, Snapshot,
+        Square, State,
     },
     vector::{
         AtomicElement::{self, AtomicEval, AtomicExpr, AtomicTerm},
@@ -70,8 +70,8 @@ pub use crate::game::moves::pattern_parse::{
 };
 pub use crate::game::position::{
     hash::{
-        hash_pawns, hash_position, hash_virgin_board, qsearch_key, search_key,
-        PositionHash,
+        eval_key, hash_pawns, hash_position, hash_virgin_board, qsearch_key,
+        search_key, PositionHash,
     },
     search::{
         alpha_beta, check_interrupt, clear_search, iterative_deepening,
@@ -686,6 +686,7 @@ pub const FEXACT: u8 = 2;
 /// - `EXTINCT_THREAT_LEFT`   : most copies left for an extinction threat
 /// - `SEARCH_REPETITION_CAP` : plies that the repetition scan examines
 /// - `REPETITION_CYCLE`      : occurrences for one cycle, without perpetual
+/// - `CAPTURE_REACH_WORDS`   : most board words that keep a capture reach
 ///
 /// Notes:
 /// A move index above `REDUCTION_MOVE_CAP` uses the last column. The danger
@@ -704,6 +705,7 @@ pub const GOAL_HOLD_STEPS: u8 = 3;
 pub const EXTINCT_THREAT_LEFT: u32 = 2;
 pub const SEARCH_REPETITION_CAP: usize = 64;
 pub const REPETITION_CYCLE: u8 = 2;
+pub const CAPTURE_REACH_WORDS: usize = 2;
 
 /// Protocol, storage and debug constants
 ///
@@ -733,6 +735,7 @@ pub const REPETITION_CYCLE: u8 = 2;
 /// - `HASH_DEFAULT_MB`      : default `Hash` value
 /// - `HASH_MAX_MB`          : maximum `Hash` value
 /// - `PAWN_TABLE_ENTRIES`   : pawn cache size for each worker at default Hash
+/// - `EVAL_TABLE_ENTRIES`   : static score cache size for each worker
 /// - `OPENING_RANDOM_PLIES` : random plies at the start of a self-play game
 ///
 /// Notes:
@@ -752,6 +755,7 @@ pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
 pub const HASH_DEFAULT_MB: usize = 256;
 pub const HASH_MAX_MB: usize = 65536;
 pub const PAWN_TABLE_ENTRIES: usize = 1 << 13;
+pub const EVAL_TABLE_ENTRIES: usize = 1 << 16;
 pub const OPENING_RANDOM_PLIES: usize = 8;
 
 pub static EMBEDDED_CONFIGS: Dir<'static> =

@@ -355,6 +355,7 @@ pub fn parse_tuned_parameters(state: &mut State, content: &str) {
     ] = values.try_into().unwrap();
 
     state.scratch.pawn_table.table.fill(PTEntry::default());
+    state.scratch.eval_table.fill((0, 0));
     refresh_eval_state(state);
 }
 
