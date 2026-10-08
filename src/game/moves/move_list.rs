@@ -832,7 +832,9 @@ macro_rules! first_blocker {
 /// - attacks    : &mut Board -> board that gets the attacked squares
 ///
 /// Notes:
-/// An attacked square can hold an own piece: the piece defends it.
+/// An attacked square can hold an own piece: the piece defends it. A board
+/// of at most two words takes a path on one 128-bit integer: one AND, one
+/// bit scan and one AND NOT for each line, with no loop over words.
 ///
 #[macro_export]
 macro_rules! piece_attacks {
@@ -853,46 +855,99 @@ macro_rules! piece_attacks {
                 [..words]
         };
 
-        for word in 0..words {
-            $attacks.2[word] |= statics.attack_leaps[entry * words + word];
-        }
+        if words <= 2 {
+            let wide = |table: &[u64], index: usize| -> u128 {
+                let start = index * words;
+                let high = match words {
+                    2 => (table[start + 1] as u128) << 64,
+                    _ => 0,
+                };
 
-        for &(line, hops) in &statics.attack_lines[entry] {
-            let line = line as usize;
-            let rising = statics.attack_rising[line];
-            let ray = ray_from(line, origin);
+                table[start] as u128 | high
+            };
+            let occupied =
+                $occupied.2[0] as u128 | ($occupied.2[1] as u128) << 64;
+            let mut reach = wide(&statics.attack_leaps, entry);
 
-            match (first_blocker!(ray, $occupied, rising, words), hops) {
-                (None, false) => {
-                    for word in 0..words {
-                        $attacks.2[word] |= ray[word];
-                    }
+            for &(line, hops) in &statics.attack_lines[entry] {
+                let base = line as usize * board_size;
+                let rising = statics.attack_rising[line as usize];
+                let first = |bits: u128| match rising {
+                    true => bits.trailing_zeros() as usize,
+                    false => 127 - bits.leading_zeros() as usize,
+                };
+                let ray = wide(&statics.attack_rays, base + origin);
+                let hit = ray & occupied;
+
+                if hit == 0 {
+                    reach |= ray * !hops as u128;
+                    continue;
                 }
-                (Some(blocker), false) => {
-                    let beyond = ray_from(line, blocker);
 
-                    for word in 0..words {
-                        $attacks.2[word] |= ray[word] & !beyond[word];
-                    }
-                }
-                (Some(screen), true) => {
-                    let past = ray_from(line, screen);
+                let beyond = wide(&statics.attack_rays, base + first(hit));
 
-                    if let Some(target) =
-                        first_blocker!(past, $occupied, rising, words)
-                    {
-                        set!($attacks, target);
+                match hops {
+                    false => reach |= ray & !beyond,
+                    true if beyond & occupied != 0 => {
+                        reach |= 1u128 << first(beyond & occupied);
                     }
+                    true => {}
                 }
-                (None, true) => {}
             }
-        }
 
-        for (target, needs) in &statics.attack_gates[entry] {
-            if needs.iter().all(|&(gate, piece)| {
-                get!($occupied, gate as u32) == piece
-            }) {
-                set!($attacks, *target as u32);
+            for (target, needs) in &statics.attack_gates[entry] {
+                if needs.iter().all(|&(gate, piece)| {
+                    (occupied >> gate) & 1 == piece as u128
+                }) {
+                    reach |= 1u128 << *target;
+                }
+            }
+
+            $attacks.2[0] |= reach as u64;
+            $attacks.2[1] |= (reach >> 64) as u64;
+        } else {
+            for word in 0..words {
+                $attacks.2[word] |=
+                    statics.attack_leaps[entry * words + word];
+            }
+
+            for &(line, hops) in &statics.attack_lines[entry] {
+                let line = line as usize;
+                let rising = statics.attack_rising[line];
+                let ray = ray_from(line, origin);
+
+                match (first_blocker!(ray, $occupied, rising, words), hops) {
+                    (None, false) => {
+                        for word in 0..words {
+                            $attacks.2[word] |= ray[word];
+                        }
+                    }
+                    (Some(blocker), false) => {
+                        let beyond = ray_from(line, blocker);
+
+                        for word in 0..words {
+                            $attacks.2[word] |= ray[word] & !beyond[word];
+                        }
+                    }
+                    (Some(screen), true) => {
+                        let past = ray_from(line, screen);
+
+                        if let Some(target) =
+                            first_blocker!(past, $occupied, rising, words)
+                        {
+                            set!($attacks, target);
+                        }
+                    }
+                    (None, true) => {}
+                }
+            }
+
+            for (target, needs) in &statics.attack_gates[entry] {
+                if needs.iter().all(|&(gate, piece)| {
+                    get!($occupied, gate as u32) == piece
+                }) {
+                    set!($attacks, *target as u32);
+                }
             }
         }
     }};
