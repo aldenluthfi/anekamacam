@@ -868,22 +868,23 @@ pub fn quiescence_search(
     scores.clear();                                                             /* last node's scores answer for it   */
     scores.resize(moves.len(), usize::MAX);
 
-    let mut drop_checks = board!(state.statics.files, state.statics.ranks);
-
-    if checks_wanted && drops!(state) {
+    let drop_checks = (checks_wanted && drops!(state)).then(|| {                /* the squares where a drop can check */
         let enemy = (state.playing ^ 1) as usize;
         let hand = &state.piece_in_hand[state.playing as usize];
+        let mut squares = board!(state.statics.files, state.statics.ranks);
 
         for &royal in &state.royal_list[enemy] {
             for (piece, start, _) in
                 &state.statics.relevant_attacks[enemy][royal as usize]
             {
                 if hand[*piece as usize] > 0 {
-                    set!(drop_checks, *start as u32);
+                    set!(squares, *start as u32);
                 }
             }
         }
-    }
+
+        squares
+    });
 
     let delta = state.statics.search.qsearch_delta;
     let delta_prunable = !in_check && state.game_phase != ENDGAME;              /* a thin board plays for one capture */
@@ -916,7 +917,9 @@ pub fn quiescence_search(
 
         if quiet
         && m_drop!(&moves[index])
-        && !get!(drop_checks, end!(&moves[index]) as u32)
+        && drop_checks.as_ref().is_none_or(|squares| {
+            !get!(squares, end!(&moves[index]) as u32)
+        })
         {
             continue;                                                           /* no line to a royal: it cannot check */
         }
