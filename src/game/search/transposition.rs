@@ -406,7 +406,8 @@ macro_rules! tt_score {
 /// probe_tt_entry!
 ///
 /// Probes the main table with the parity and seqlock tests. The stored
-/// depth and bound decide if the score can cut. Each valid hit also gives
+/// depth and bound decide if the score can cut. A cut gives the stored
+/// score, which can lie outside the window. Each valid hit also gives
 /// the move, the raw static evaluation and the evaluation refined by the
 /// bound. A mate score does not refine the evaluation.
 ///
@@ -485,28 +486,15 @@ macro_rules! probe_tt_entry {
                         false, i32::MIN, pseudo_move, entry_eval, bound_eval
                     )
                 } else {
-                    let mut valid_cutoff = false;
-                    let mut cutoff_score = entry_score;
-
-                    match entry_flags {
-                        FALPHA => {
-                            if cutoff_score <= $alpha {
-                                cutoff_score = $alpha;
-                                valid_cutoff = true;
-                            }
-                        }
-                        FBETA => {
-                            if cutoff_score >= $beta {
-                                cutoff_score = $beta;
-                                valid_cutoff = true;
-                            }
-                        }
-                        FEXACT => valid_cutoff = true,
+                    let valid_cutoff = match entry_flags {
+                        FALPHA => entry_score <= $alpha,
+                        FBETA => entry_score >= $beta,
+                        FEXACT => true,
                         _ => unreachable!(),
-                    }
+                    };
 
                     (
-                        valid_cutoff, cutoff_score, pseudo_move,
+                        valid_cutoff, entry_score, pseudo_move,
                         entry_eval, bound_eval,
                     )
                 }
@@ -969,7 +957,8 @@ macro_rules! qt_flags {
 /// probe_qt_entry!
 ///
 /// Probes the quiescence table with the parity and seqlock tests of
-/// `probe_hash_slot!`. An entry without a move never cuts.
+/// `probe_hash_slot!`. An entry without a move never cuts. A cut gives the
+/// stored score.
 ///
 /// - FBETA  : cuts when the score is at or above beta
 /// - FEXACT : always cuts
@@ -1006,17 +995,11 @@ macro_rules! probe_qt_entry {
                     entry_score += $state.search_ply as i32;
                 }
 
-                let mut valid_cutoff = false;
-                match entry_flags {
-                    FBETA => {
-                        if entry_score >= $beta {
-                            entry_score = $beta;
-                            valid_cutoff = true;
-                        }
-                    }
-                    FEXACT => valid_cutoff = true,
+                let mut valid_cutoff = match entry_flags {
+                    FBETA => entry_score >= $beta,
+                    FEXACT => true,
                     _ => unreachable!(),
-                }
+                };
 
                 if pseudo_move == null_pseudo_move() {
                     valid_cutoff = false;

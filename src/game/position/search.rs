@@ -772,7 +772,7 @@ pub fn iterative_deepening(
 /// Return:
 ///
 ///     i32
-///     stand pat or best capture score in the window
+///     stand pat or best capture score, a bound when outside the window
 ///
 /// Notes:
 /// Without the square rule, quiescence does not stop when a winning capture
@@ -815,7 +815,7 @@ pub fn quiescence_search(
 
     if !in_check {
         if stand_pat >= beta {
-            return beta;
+            return stand_pat;
         }
 
         if stand_pat > alpha {
@@ -851,6 +851,7 @@ pub fn quiescence_search(
     };
 
     let mut best_move = null_move();
+    let mut best_score = stand_pat;
     let alpha_start = alpha;
     let mut legal_moves = 0;
     let ply = state.search_ply as usize;
@@ -904,8 +905,14 @@ pub fn quiescence_search(
         if !quiet
         && delta_prunable
         && !m_promotion!(&moves[index])
-        && stand_pat + victim_value!(&moves[index], state) + delta <= alpha {
-            continue;
+        {
+            let futile_score = stand_pat
+                + victim_value!(&moves[index], state) + delta;
+
+            if futile_score <= alpha {
+                best_score = best_score.max(futile_score);                      /* the most the capture could give    */
+                continue;
+            }
         }
 
         if !make_move!(state, moves[index].clone()) {
@@ -932,14 +939,16 @@ pub fn quiescence_search(
             return alpha;
         }
 
+        best_score = best_score.max(score);
+
         if score > alpha {
             if score >= beta {
                 hash_qt_entry!(
-                    moves[index], beta, FBETA, state, qtable_key, qtable
+                    moves[index], score, FBETA, state, qtable_key, qtable
                 );
                 state.scratch.node_lists[ply] = lists;
 
-                return beta;
+                return score;
             }
 
             best_move = moves[index].clone();
@@ -964,7 +973,7 @@ pub fn quiescence_search(
         );
     }
 
-    alpha
+    best_score
 }
 
 /*----------------------------------------------------------------------------*\
@@ -1032,9 +1041,15 @@ pub fn quiescence_search(
 /// Return:
 ///
 ///     i32
-///     best score in the window, for the side to move
+///     best score, a bound when outside the window, for the side to move
 ///
 /// Notes:
+/// A node returns the best score it found, and a shortcut the score that
+/// made it. Outside the window the score is a bound, and the table stores
+/// it so. A later window above a lower bound, or below an upper one, cuts
+/// on it. A clamped score would hold only the old window. A null move
+/// that finds a mate returns beta, because a pass is not a legal move.
+///
 /// A repetition gets the variant result at the first closed cycle, before
 /// the rule count, because either side can repeat again. With a perpetual
 /// rule that blames an offender, the search waits for the rule count.
@@ -1184,7 +1199,7 @@ pub fn alpha_beta(
     && beta.abs() < MATE_SCORE
     && prune_eval - state.statics.search.rfp_margin[row + depth] >= beta
     {
-        return beta;
+        return prune_eval;
     }
 
     if forward_pruning!(state)
@@ -1202,7 +1217,7 @@ pub fn alpha_beta(
         );
 
         if score <= alpha {
-            return alpha;
+            return score;
         }
     }
 
@@ -1234,7 +1249,10 @@ pub fn alpha_beta(
         undo_null_move!(state);
 
         if score >= beta {
-            return beta;
+            return match score >= MATE_SCORE {                                  /* a mate after a pass is no proof    */
+                true => beta,
+                false => score,
+            };
         }
     }
 
@@ -1311,7 +1329,7 @@ pub fn alpha_beta(
             if score >= probcut_beta {
                 state.scratch.node_lists[ply] = lists;
 
-                return probcut_beta;
+                return score;
             }
         }
 
@@ -1594,15 +1612,15 @@ pub fn alpha_beta(
 
                     update_correction(
                         &mut info.corr_hist[corr_index],
-                        static_eval, beta, depth, FBETA, is_capture,
+                        static_eval, score, depth, FBETA, is_capture,
                     );
                     hash_tt_entry!(
-                        moves[index], beta, FBETA, depth, static_eval,
+                        moves[index], score, FBETA, depth, static_eval,
                         state, table_key, ttable
                     );
                     state.scratch.node_lists[ply] = lists;
 
-                    return beta;
+                    return score;
                 }
 
                 if is_quiet {
@@ -1657,15 +1675,15 @@ pub fn alpha_beta(
     } else {
         update_correction(
             &mut info.corr_hist[corr_index],
-            static_eval, alpha, depth, FALPHA, m_capture!(&best_move),
+            static_eval, best_score, depth, FALPHA, m_capture!(&best_move),
         );
         hash_tt_entry!(
-            best_move, alpha, FALPHA, depth, static_eval,
+            best_move, best_score, FALPHA, depth, static_eval,
             state, table_key, ttable
         );
     }
 
-    alpha
+    best_score
 }
 
 /// join_drops
