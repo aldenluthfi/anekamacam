@@ -723,7 +723,7 @@ pub fn iterative_deepening(
 ///
 /// - in check  : all evasions, also drops, no stand pat
 /// - otherwise : stand pat first, then captures while they win
-/// - horizon   : also board moves that give check, if stand pat >= alpha
+/// - horizon   : also moves and drops that give check, if stand pat >= alpha
 ///
 /// A side in check cannot stand pat, because it must move. Out of check,
 /// the loop stops at the first losing capture, because the ordering puts
@@ -765,9 +765,9 @@ pub fn iterative_deepening(
 ///     start one
 ///
 ///     quiet_checks: bool
-///     true at the horizon of the main tree: a board move that is not a
-///     capture is also played if it gives check and the stand pat is not
-///     below alpha
+///     true at the horizon of the main tree: a move or a drop that is not
+///     a capture is also played if it gives check and the stand pat is not
+///     below alpha; a drop only on a square with a line to an enemy royal
 ///
 /// Return:
 ///
@@ -868,6 +868,23 @@ pub fn quiescence_search(
     scores.clear();                                                             /* last node's scores answer for it   */
     scores.resize(moves.len(), usize::MAX);
 
+    let mut drop_checks = board!(state.statics.files, state.statics.ranks);
+
+    if checks_wanted && drops!(state) {
+        let enemy = (state.playing ^ 1) as usize;
+        let hand = &state.piece_in_hand[state.playing as usize];
+
+        for &royal in &state.royal_list[enemy] {
+            for (piece, start, _) in
+                &state.statics.relevant_attacks[enemy][royal as usize]
+            {
+                if hand[*piece as usize] > 0 {
+                    set!(drop_checks, *start as u32);
+                }
+            }
+        }
+    }
+
     let delta = state.statics.search.qsearch_delta;
     let delta_prunable = !in_check && state.game_phase != ENDGAME;              /* a thin board plays for one capture */
 
@@ -897,8 +914,11 @@ pub fn quiescence_search(
             && !m_capture!(&moves[index])
             && !m_promotion!(&moves[index]);
 
-        if quiet && m_drop!(&moves[index]) {
-            continue;
+        if quiet
+        && m_drop!(&moves[index])
+        && !get!(drop_checks, end!(&moves[index]) as u32)
+        {
+            continue;                                                           /* no line to a royal: it cannot check */
         }
 
         if !quiet
@@ -1055,7 +1075,8 @@ pub fn quiescence_search(
 /// The reply side has few moves, so the loss can be short. The test is made
 /// after the move, so it also sees a discovered check and a check through a
 /// new screen. A skip tests only a move whose piece has a line from its
-/// landing square to an enemy royal.
+/// landing square to an enemy royal. A drop past the move count is skipped
+/// even when it checks, as the horizon of quiescence plays checking drops.
 ///
 /// The move list starts without the drops. They join when no winning
 /// capture is left, as a drop can then rank first, or when the list runs
@@ -1439,6 +1460,10 @@ pub fn alpha_beta(
 
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
+
+        if late_quiet && is_drop && !goal_move {                                /* a checking drop too falls to the   */
+            continue;                                                           /* move count: the horizon plays it   */
+        }
 
         let skippable = (late_quiet || futile || losing_capture) && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
