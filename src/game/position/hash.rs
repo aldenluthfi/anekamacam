@@ -224,6 +224,41 @@ fn wide_context(slot: usize, value: u16) -> u128 {
         ^ CONTEXT_HASHES[slot + 1][(value >> 8) as usize]
 }
 
+/// eval_key
+///
+/// Gives the key of the static score cache: all that the evaluation reads
+/// and the board does not show.
+///
+/// ```text
+/// key = position_hash            (placement, side, rights, hands)
+///     ^ virgin_hash              (which pieces are still unmoved)
+///     ^ checks made and required (while an N-check rule is declared)
+/// ```
+///
+/// Params:
+/// - state: &State -> position to key
+///
+/// Return:
+/// u128            -> score cache key of the position
+///
+/// Notes:
+/// The score of an N-check variant counts the checks still needed, so two
+/// boards with other check counts must not share a score.
+///
+pub fn eval_key(state: &State) -> u128 {
+    let mut key = state.position_hash ^ state.virgin_hash;
+
+    if let Some(checks) = &state.termination.checks {
+        let made = checks.delivered;
+
+        key ^= &CONTEXT_HASHES[CHECKS_WHITE][made[WHITE as usize] as usize];
+        key ^= &CONTEXT_HASHES[CHECKS_BLACK][made[BLACK as usize] as usize];
+        key ^= &CONTEXT_HASHES[CHECKS_COUNT][checks.count as usize];
+    }
+
+    key
+}
+
 /// search_key
 ///
 /// Gives the hash table key of a node. It is the position key plus each
@@ -232,11 +267,9 @@ fn wide_context(slot: usize, value: u16) -> u128 {
 /// boards only. The key is this XOR:
 ///
 /// ```text
-/// key = position_hash            (placement, side, rights, hands)
-///     ^ virgin_hash              (which pieces are still unmoved)
+/// key = eval_key                 (all that the static score reads)
 ///     ^ counter clock and limit  (while a counter rule is declared)
 ///     ^ counting count and limit (while a bare-king count runs)
-///     ^ checks made and required (while an N-check rule is declared)
 ///     ^ repetition occurrences   (while a repetition rule is declared)
 ///     ^ pass and stand-off bits  (always)
 /// ```
@@ -263,7 +296,7 @@ fn wide_context(slot: usize, value: u16) -> u128 {
 /// the node, not on the position.
 ///
 pub fn search_key(state: &State, repeats: u8) -> u128 {
-    let mut key = state.position_hash ^ state.virgin_hash;
+    let mut key = eval_key(state);
 
     if let Some(counter) = &state.termination.counter {
         key ^= &CONTEXT_HASHES[COUNTER_CLOCK][counter.clock as usize];
@@ -275,14 +308,6 @@ pub fn search_key(state: &State, repeats: u8) -> u128 {
     {
         key ^= wide_context(COUNTING_COUNT, count);
         key ^= wide_context(COUNTING_LIMIT, limit);
-    }
-
-    if let Some(checks) = &state.termination.checks {
-        let made = checks.delivered;
-
-        key ^= &CONTEXT_HASHES[CHECKS_WHITE][made[WHITE as usize] as usize];
-        key ^= &CONTEXT_HASHES[CHECKS_BLACK][made[BLACK as usize] as usize];
-        key ^= &CONTEXT_HASHES[CHECKS_COUNT][checks.count as usize];
     }
 
     if state.termination.repetition.is_some() {

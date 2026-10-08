@@ -1088,15 +1088,15 @@ macro_rules! material_advantage {
 /// i32                 -> score for the side to move
 ///
 /// Notes:
-/// The key is the position hash and the unmoved piece hash, the inputs of
-/// the evaluation. A stored score is equal to a new one, so the search
-/// makes the same tree with the cache and without it.
+/// The key is `eval_key`, all the inputs of the evaluation. A stored score
+/// is equal to a new one, so the search makes the same tree with the cache
+/// and without it.
 ///
 #[macro_export]
 macro_rules! evaluate_position {
     ($state:expr) => {
         hotpath::measure_block!("eval::position", {
-            let key = $state.position_hash ^ $state.virgin_hash;
+            let key = eval_key(&$state);
             let slot = key as usize & ($state.scratch.eval_table.len() - 1);
             let check = (key >> 64) as u64;
             let (stored, score) = $state.scratch.eval_table[slot];
