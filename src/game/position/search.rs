@@ -819,7 +819,7 @@ pub fn quiescence_search(
     #[cfg(debug_assertions)]
     verify_game_state(state);
 
-    let in_check = is_in_check!(state.playing, state);
+    let in_check = to_move_in_check!(state);
     let stand_pat = match in_check {                                            /* a checked side cannot stand pat,   */
         true => -INF,                                                           /* so its score is never read below   */
         false => evaluate_position!(state),
@@ -924,7 +924,7 @@ pub fn quiescence_search(
             continue;
         }
 
-        if quiet && !is_in_check!(state.playing, state) {
+        if quiet && !to_move_in_check!(state) {
             undo_move!(state);
             continue;
         }
@@ -1136,7 +1136,7 @@ pub fn alpha_beta(
     verify_game_state(state);
 
     let in_check = known_check
-        .unwrap_or_else(|| is_in_check!(state.playing, state));
+        .unwrap_or_else(|| to_move_in_check!(state));
     let mut depth = depth;
 
     if depth == 0 {
@@ -1470,7 +1470,7 @@ pub fn alpha_beta(
             continue;
         }
 
-        let gives_check = is_in_check!(state.playing, state);                   /* the side that got the move         */
+        let gives_check = to_move_in_check!(state);                             /* the side that got the move         */
 
         if skippable && !gives_check {
             undo_move!(state);

@@ -748,6 +748,7 @@ pub struct StaticState {
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
     pub capture_reach: Vec<u64>,                                                /* piece, square to capture leg reach */
     pub capture_destroys: Vec<bool>,                                            /* piece to an own-piece capture leg  */
+    pub royal_reach: Vec<u64>,                                                  /* side, royal square to attack reads */
     pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
     pub relevant_setup: Vec<DropSet>,                                           /* setup-phase army placement         */
     pub relevant_stand_offs: Vec<PatternSet>,                                   /* facing-config veto patterns        */
@@ -1062,6 +1063,7 @@ impl State {
             relevant_captures: vec![MoveSet::new(); board_size * piece_count],
             capture_reach: Vec::new(),
             capture_destroys: vec![false; piece_count],
+            royal_reach: Vec::new(),
             relevant_drops: vec![DropSet::new(); board_size * piece_count],
             relevant_setup: vec![DropSet::new(); board_size * piece_count],
             relevant_stand_offs: vec![
@@ -1479,6 +1481,57 @@ impl State {
         let ranks = statics.ranks as i32;
         let board_size = statics.board_size;
         let words = (board_size + 63) >> 6;
+        let mut royal_reach = vec![0u64; 2 * board_size * words];
+
+        for (side, targets) in statics.relevant_attacks.iter().enumerate() {
+            for (target, attacks) in targets.iter().enumerate() {
+                let entry = (side * board_size + target) * words;
+                let reach = &mut royal_reach[entry..entry + words];
+
+                reach[target >> 6] |= 1u64 << (target & 63);
+
+                for (piece_index, start, vector) in attacks {
+                    let piece = &statics.pieces[*piece_index as usize];
+                    let sign = -2 * p_color!(piece) as i32 + 1;
+                    let origin = *start as i32;
+                    let units = vector.pattern.iter()
+                        .flat_map(|patterns| patterns.iter())
+                        .flat_map(|(allowers, stoppers)| {
+                            allowers.iter().chain(stoppers.iter())
+                        });
+
+                    let mut mark = |square: i32| {
+                        if square >= 0 && square < board_size as i32 {
+                            reach[square as usize >> 6] |=
+                                1u64 << (square & 63);
+                        }
+                    };
+                    let mut walk = origin;
+                    let mut passing = false;
+
+                    mark(origin);
+
+                    for leg in vector.legs.iter() {
+                        walk += (y!(*leg) as i32 * files + x!(*leg) as i32)
+                            * sign;
+                        passing |= t!(*leg) && walk != target as i32;           /* the leg onto the royal never reads */
+                        mark(walk);                                             /* the en passant square              */
+                    }
+
+                    for (unit, _) in units {
+                        mark(origin
+                            + (y!(*unit) as i32 * files + x!(*unit) as i32)
+                            * sign);
+                    }
+
+                    if passing {
+                        reach.fill(u64::MAX);                                   /* en passant reads a square no move  */
+                    }                                                           /* names, so each move tests it       */
+                }
+            }
+        }
+
+        statics.royal_reach = royal_reach;
 
         if words > CAPTURE_REACH_WORDS {
             return;
