@@ -266,6 +266,7 @@ macro_rules! see {
 /// bands, from high to low:
 ///
 /// - table move         : the stored move of the hash table
+/// - untested capture   : victim value first, then the cheaper attacker
 /// - winning capture    : exchange result or simple swing, 0 or more
 /// - killer             : two quiet moves that cut at this ply before
 /// - quiet              : quiet band plus the history values
@@ -281,6 +282,12 @@ macro_rules! see {
 /// A screened leg does not stop the order: the simulation makes each
 /// capture and reads the attackers again. Only the skips that trust the
 /// result also need `static_movement!`.
+///
+/// The simulation makes each capture of the exchange, so it costs more
+/// than all other scores. A capture thus starts untested, and
+/// [`pick_by_score!`] runs the simulation only for the capture it picks.
+/// Most nodes cut after one or two moves, and the other captures are never
+/// simulated.
 ///
 /// Params:
 /// - state     : &mut State          -> position of the move
@@ -332,15 +339,11 @@ macro_rules! score_move {
                 (QUIET_MOVE_SCORE + history) as usize
             }
         } else if see_valid!($state) {
-            let see_score = see!($state, scored_move);
+            let guess = victim_value!(scored_move, $state) * VICTIM_WEIGHT
+                - attack_value!(scored_move, $state);
+            let span = (TABLE_MOVE_SCORE - UNTESTED_CAPTURE_SCORE - 1) as i32;
 
-            if see_score == -INF {
-                UNMAKEABLE_CAPTURE_SCORE
-            } else if see_score >= 0 {
-                (WINNING_CAPTURE_SCORE + see_score) as usize
-            } else {
-                (LOSING_CAPTURE_SCORE + see_score) as usize
-            }
+            UNTESTED_CAPTURE_SCORE + guess.clamp(0, span) as usize
         } else {
             let swing = victim_value!(scored_move, $state)
                 - attack_value!(scored_move, $state);
@@ -375,10 +378,20 @@ macro_rules! score_move {
 /// - table_move: &Option<PseudoMove> -> stored table move for this node
 /// - cont_bases: &[usize]            -> continuation rows for this node
 ///
+/// An untested capture that wins the pass gets its exchange result. A
+/// winning capture stays at `index`. A losing or unmakeable one falls to
+/// its band, and the pass runs again:
+///
+/// ```text
+/// pass 1    [Bx . . . .]  untested Bx is best: its exchange loses
+/// pass 2    [Nx . . Bx .]  Bx now ranks below the quiet moves
+/// ```
+///
 /// Notes:
 /// `usize::MAX` marks a score that is not calculated yet, so each move gets
 /// one score only. On the first call, the table move goes to slot 0. While
-/// it is there, no other move gets a score.
+/// it is there, no other move gets a score. The move at `index` always has
+/// its final score, so the callers can read its band.
 ///
 #[macro_export]
 macro_rules! pick_by_score {
@@ -414,28 +427,49 @@ macro_rules! pick_by_score {
             );
         }
 
-        let mut best_index = index;
-        let mut best_score = scores[index];
+        loop {
+            let mut best_index = index;
+            let mut best_score = scores[index];
 
-        if best_score != TABLE_MOVE_SCORE {
-            for candidate in (index + 1)..moves.len() {
-                if scores[candidate] == usize::MAX {
-                    scores[candidate] = score_move!(
-                        $state, $info, &moves[candidate], $table_move,
-                        $cont_bases
-                    );
-                }
+            if best_score != TABLE_MOVE_SCORE {
+                for candidate in (index + 1)..moves.len() {
+                    if scores[candidate] == usize::MAX {
+                        scores[candidate] = score_move!(
+                            $state, $info, &moves[candidate], $table_move,
+                            $cont_bases
+                        );
+                    }
 
-                if scores[candidate] > best_score {
-                    best_score = scores[candidate];
-                    best_index = candidate;
+                    if scores[candidate] > best_score {
+                        best_score = scores[candidate];
+                        best_index = candidate;
+                    }
                 }
             }
-        }
 
-        if best_index != index {
-            moves.swap(index, best_index);
-            scores.swap(index, best_index);
+            if best_index != index {
+                moves.swap(index, best_index);
+                scores.swap(index, best_index);
+            }
+
+            if best_score == TABLE_MOVE_SCORE
+                || best_score < UNTESTED_CAPTURE_SCORE {
+                break;
+            }
+
+            let exchange = see!($state, &moves[index]);
+
+            scores[index] = if exchange == -INF {
+                UNMAKEABLE_CAPTURE_SCORE
+            } else if exchange >= 0 {
+                (WINNING_CAPTURE_SCORE + exchange) as usize
+            } else {
+                (LOSING_CAPTURE_SCORE + exchange) as usize
+            };
+
+            if exchange >= 0 {
+                break;
+            }
         }
         })
     };
