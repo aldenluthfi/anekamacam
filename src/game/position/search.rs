@@ -1050,6 +1050,11 @@ pub fn quiescence_search(
 /// score made drop game trees much larger in tests. All bounds update the
 /// table.
 ///
+/// A null move gives the tempo away: the side to move loses its tempo
+/// bonus and the opponent gains one. So the score must stand at least two
+/// tempo bonuses above beta before the pass. Below that, the opponent's
+/// standing score alone refutes the pass, and the null search is wasted.
+///
 /// A move that gives check is never skipped and never reduced. It gets one
 /// more ply while the line is shorter than two times the iteration depth.
 /// The reply side has few moves, so the loss can be short. The test is made
@@ -1207,7 +1212,7 @@ pub fn alpha_beta(
     && ply > 0
     && state.game_phase != ENDGAME
     && state.big_pieces[state.playing as usize] > 0
-    && prune_eval >= beta
+    && prune_eval - 2 * state.statics.eval.tempo_bonus >= beta                  /* the pass hands the tempo over      */
     {
         let reduction = (4 + depth / 4).min(depth);
 
