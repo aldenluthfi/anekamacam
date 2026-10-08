@@ -26,8 +26,8 @@ pub use crate::game::representations::{
     },
     piece::{Piece, PieceIndex},
     state::{
-        EnPassantSquare, NodeLists, PawnEntry, Scratch, Snapshot, Square,
-        State,
+        EnPassantSquare, EvalEntry, NodeLists, PawnEntry, Scratch, Snapshot,
+        Square, State,
     },
     vector::{
         AtomicElement::{self, AtomicEval, AtomicExpr, AtomicTerm},
@@ -735,6 +735,7 @@ pub const CAPTURE_REACH_WORDS: usize = 2;
 /// - `HASH_DEFAULT_MB`      : default `Hash` value
 /// - `HASH_MAX_MB`          : maximum `Hash` value
 /// - `PAWN_TABLE_ENTRIES`   : pawn cache size for each worker at default Hash
+/// - `EVAL_TABLE_ENTRIES`   : static score cache size for each worker
 /// - `OPENING_RANDOM_PLIES` : random plies at the start of a self-play game
 ///
 /// Notes:
@@ -754,6 +755,7 @@ pub const OPT_MOVE_OVERHEAD: &str = "Move Overhead";
 pub const HASH_DEFAULT_MB: usize = 256;
 pub const HASH_MAX_MB: usize = 65536;
 pub const PAWN_TABLE_ENTRIES: usize = 1 << 13;
+pub const EVAL_TABLE_ENTRIES: usize = 1 << 16;
 pub const OPENING_RANDOM_PLIES: usize = 8;
 
 pub static EMBEDDED_CONFIGS: Dir<'static> =

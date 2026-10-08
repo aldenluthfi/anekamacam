@@ -842,6 +842,7 @@ pub struct State {
 /// - `see_scratch`  : multi-capture data of those attackers
 /// - `pawn_rosters` : pawn lists that `pawn_structure!` fills
 /// - `pawn_table`   : the pawn structure cache
+/// - `eval_table`   : the static score cache of `evaluate_position!`
 ///
 /// Code that keeps a vector across `make_move!` takes it out of the
 /// [`State`] and puts it back, because a field borrow across a move borrows
@@ -849,8 +850,9 @@ pub struct State {
 /// place.
 ///
 /// Notes:
-/// A clone gets empty memory, except `pawn_table`. Its key is the pawn
-/// hash, so it is correct for all positions. `State::reset` clears it.
+/// A clone gets empty memory, except the two caches. Their keys are the
+/// pawn hash and the position hash, so they are correct for all positions.
+/// `State::reset` and new parameters clear them.
 ///
 pub struct Scratch {
 
@@ -859,6 +861,7 @@ pub struct Scratch {
     pub see_scratch: Vec<u64>,                                                  /* multi-capture data of see_moves    */
     pub pawn_rosters: [Vec<PawnEntry>; 2],                                      /* colour to its pawns, one sweep old */
     pub pawn_table: PTable,                                                     /* arrangement to its two scores      */
+    pub eval_table: Vec<EvalEntry>,                                             /* position to its static score       */
 }
 
 /// NodeLists
@@ -888,12 +891,20 @@ pub struct NodeLists {
 ///
 pub type PawnEntry = (usize, Square, i32, bool);
 
+/// EvalEntry
+///
+/// One cached static score: `(check, score)`. The low bits of the position
+/// key select the slot and the high 64 bits are the check, so a slot that
+/// another position took gives no score. An empty slot has check zero.
+///
+pub type EvalEntry = (u64, i32);
+
 impl Default for Scratch {
     /// Scratch::default
     ///
     /// Makes empty work memory: one node list set for each ply, the two
-    /// exchange vectors, the two pawn lists and an empty pawn cache. A new,
-    /// cloned or reset state gets it.
+    /// exchange vectors, the two pawn lists and the two empty caches. A
+    /// new, cloned or reset state gets it.
     ///
     /// Return:
     /// Self -> empty work memory with start capacities
@@ -911,6 +922,7 @@ impl Default for Scratch {
                 Vec::with_capacity(32), Vec::with_capacity(32),
             ],
             pawn_table: PTable::default(),
+            eval_table: vec![(0, 0); EVAL_TABLE_ENTRIES],
         }
     }
 }
@@ -968,7 +980,8 @@ impl Clone for State {
             piece_in_hand: self.piece_in_hand.clone(),
 
             scratch: Scratch {
-                pawn_table: self.scratch.pawn_table.clone(),                    /* the one part true of any board     */
+                pawn_table: self.scratch.pawn_table.clone(),                    /* the two parts true of any board    */
+                eval_table: self.scratch.eval_table.clone(),
                 ..Scratch::default()
             },
         }
@@ -1207,6 +1220,7 @@ impl State {
         self.piece_in_hand = [vec![0; piece_count], vec![0; piece_count]];
 
         self.scratch.pawn_table.table.fill(PTEntry::default());                 /* keep Hash size, clear old answers  */
+        self.scratch.eval_table.fill((0, 0));
     }
 
     /// State::load_fen
