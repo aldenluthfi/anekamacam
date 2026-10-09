@@ -1499,14 +1499,7 @@ pub fn alpha_beta(
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
 
-        let failing_capture = prunable                                          /* at the last ply, a capture that    */
-            && see_pruning!(state)                                              /* failed more often than it worked   */
-            && !is_promotion
-            && depth <= 1
-            && capture_index.is_some_and(|cell| info.capture_hist[cell] < 0);
-
-        let skippable = (late_quiet || futile || losing_capture
-            || failing_capture) && !goal_move;
+        let skippable = (late_quiet || futile || losing_capture) && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
         if skippable
