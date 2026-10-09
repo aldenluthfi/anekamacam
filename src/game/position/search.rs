@@ -167,7 +167,7 @@ const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 /// constants select the moves that can use it:
 ///
 /// - depth < 3   : no reduction
-/// - move 1, 2   : full depth, at a zero window
+/// - move 1      : full depth, at a zero window
 /// - move 1 to 4 : full depth, at a wide window
 /// - other moves : `surface[depth][move number]`, minimum one ply
 /// - history     : a quiet move with good history one ply less, bad one more
@@ -180,8 +180,8 @@ const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 /// - `REDUCTION_MOVE_WIDE`     : extra full depth moves at a wide window
 ///
 const REDUCTION_MINIMUM_DEPTH: u32 = 3;
-const REDUCTION_MOVE_BASE: u32 = 2;
-const REDUCTION_MOVE_WIDE: u32 = 2;
+const REDUCTION_MOVE_BASE: u32 = 1;
+const REDUCTION_MOVE_WIDE: u32 = 3;
 
 /// ProbCut settings
 ///
