@@ -1343,7 +1343,7 @@ pub fn alpha_beta(
     let board_size = state.statics.board_size;
     let history_bonus = (depth as i32 * HISTORY_BOUND / HISTORY_DEPTH_SHARE)
         .min(HISTORY_BOUND / HISTORY_MOST_SHARE);
-    let cont_bases = continuation_bases(state);
+    let cont_bases = continuation_bases(state, 0);
 
     let minimum_depth = REDUCTION_MINIMUM_DEPTH as usize;
     let move_base = REDUCTION_MOVE_BASE as usize;
@@ -1675,6 +1675,25 @@ pub fn alpha_beta(
             best_move, alpha, FALPHA, depth, static_eval,
             state, table_key, ttable
         );
+
+        let prior = state.history.last()
+            .map(|snapshot| snapshot.move_ply.clone())
+            .filter(|prior| {
+                prior.0 != u128::MAX
+                && (m_quiet!(prior) || m_drop!(prior) && !m_capture!(prior))
+            });
+
+        if depth >= PRIOR_REPLY_DEPTH && let Some(prior) = prior {              /* each reply failed: the move that   */
+            let index = move_key!(&prior, board_size);                          /* led here was a good reply itself   */
+
+            for base in continuation_bases(state, 1).iter()
+                .filter(|&&base| base != usize::MAX)
+            {
+                let cell = cont_cell!(info, base + index);
+
+                update_history(&mut info.cont_hist[cell], history_bonus);
+            }
+        }
     }
 
     alpha
@@ -1718,6 +1737,15 @@ fn join_drops(
 ///
 const HISTORY_DEPTH_SHARE: i32 = 128;
 const HISTORY_MOST_SHARE: i32 = 16;
+
+/// PRIOR_REPLY_DEPTH
+///
+/// A node of at least this depth where no move beats alpha credits the
+/// quiet move that led to it, in that move's continuation cells, as FSF
+/// does. Its replies all failed, so it was a good reply to the moves before
+/// it. Shallower nodes fail low too often to say much.
+///
+const PRIOR_REPLY_DEPTH: usize = 3;
 
 /// update_history
 ///
@@ -1826,7 +1854,8 @@ fn update_correction(
 
 /// continuation_bases
 ///
-/// Gives the continuation row offsets for a reply at this node:
+/// Gives the continuation row offsets for a reply at this node, or for the
+/// move that led here when `earlier` is 1:
 ///
 /// - slot 0 : one ply back, the opponent move to answer
 /// - slot 1 : two plies back, the previous move of this side
@@ -1837,7 +1866,8 @@ fn update_correction(
 /// ```
 ///
 /// Params:
-/// - state: &State               -> position with the last plies
+/// - state  : &State             -> position with the last plies
+/// - earlier: usize              -> plies to step back before slot 0
 ///
 /// Return:
 /// [usize; CONTINUATION_PLIES]   -> row offsets, `usize::MAX` if unset
@@ -1845,7 +1875,10 @@ fn update_correction(
 /// Notes:
 /// A slot is `usize::MAX` when its ply does not exist or is a null move.
 ///
-fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
+fn continuation_bases(
+    state: &State,
+    earlier: usize,
+) -> [usize; CONTINUATION_PLIES] {
     let board_size = state.statics.board_size;
     let move_keys = state.statics.pieces.len() * board_size;
     let played = state.history.len();
@@ -1853,11 +1886,12 @@ fn continuation_bases(state: &State) -> [usize; CONTINUATION_PLIES] {
     let mut bases = [usize::MAX; CONTINUATION_PLIES];
 
     for plies_back in 0..CONTINUATION_PLIES {
-        if played <= plies_back {
+        if played <= earlier + plies_back {
             break;
         }
 
-        let previous = &state.history[played - 1 - plies_back].move_ply;
+        let previous =
+            &state.history[played - 1 - earlier - plies_back].move_ply;
 
         if previous.0 == u128::MAX {
             continue;
