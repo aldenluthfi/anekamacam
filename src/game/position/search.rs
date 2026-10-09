@@ -1456,12 +1456,9 @@ pub fn alpha_beta(
         let enemy = (state.playing ^ 1) as usize;
 
         if skippable
-        && !state.royal_list[enemy].iter().any(|&royal| {                       /* no line from its landing square to */
-            state.statics.relevant_attacks[enemy][royal as usize].iter()        /* a royal: it cannot check directly  */
-                .any(|(piece, start, _)| {
-                    *piece as u128 == piece!(mv) && *start as u128 == end!(mv)
-                })
-        })
+        && !royal_line!(                                                        /* no line from its landing square to */
+            enemy, piece!(mv) as usize, end!(mv) as usize, state                /* a royal: it cannot check directly  */
+        )
         {
             continue;
         }

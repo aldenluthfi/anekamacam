@@ -136,6 +136,50 @@ macro_rules! royal_unreached {
     }};
 }
 
+/// royal_line!
+///
+/// Tells if `$piece` on `$square` has an attack vector onto a royal of
+/// `$side`, so a move that lands it there can give check directly. On a
+/// board with royal lines, one bit for each royal answers; else the attack
+/// list of each royal square is read.
+///
+/// Params:
+/// - side  : u8     -> side of the royal pieces
+/// - piece : usize  -> piece index of the moving piece
+/// - square: usize  -> landing square of the moving piece
+/// - state : &State -> position with the royal squares
+///
+/// Return:
+/// bool             -> true when an attack starts there with that piece
+///
+#[macro_export]
+macro_rules! royal_line {
+    ($side:expr, $piece:expr, $square:expr, $state:expr) => {{
+        let statics = &$state.statics;
+        let board_size = statics.board_size;
+        let piece_count = statics.pieces.len();
+        let words = (board_size + 63) >> 6;
+        let (piece, square): (usize, usize) = ($piece, $square);
+
+        $state.royal_list[$side as usize].iter().any(|&royal| {
+            match statics.royal_lines.is_empty() {
+                true => statics.relevant_attacks[$side as usize]
+                    [royal as usize].iter()
+                    .any(|(attacker, start, _)| {
+                        *attacker as usize == piece && *start as usize == square
+                    }),
+                false => {
+                    let entry = (($side as usize * board_size + royal as usize)
+                        * piece_count + piece) * words;
+
+                    statics.royal_lines[entry + (square >> 6)]
+                        >> (square & 63) & 1 == 1
+                }
+            }
+        })
+    }};
+}
+
 /// to_move_in_check!
 ///
 /// Tells if the side to move is in check. A move keeps the answer in its

@@ -749,6 +749,7 @@ pub struct StaticState {
     pub capture_reach: Vec<u64>,                                                /* piece, square to capture leg reach */
     pub capture_destroys: Vec<bool>,                                            /* piece to an own-piece capture leg  */
     pub royal_reach: Vec<u64>,                                                  /* side, royal square to attack reads */
+    pub royal_lines: Vec<u64>,                                                  /* side, royal, piece to attack start */
     pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
     pub relevant_setup: Vec<DropSet>,                                           /* setup-phase army placement         */
     pub relevant_stand_offs: Vec<PatternSet>,                                   /* facing-config veto patterns        */
@@ -1064,6 +1065,7 @@ impl State {
             capture_reach: Vec::new(),
             capture_destroys: vec![false; piece_count],
             royal_reach: Vec::new(),
+            royal_lines: Vec::new(),
             relevant_drops: vec![DropSet::new(); board_size * piece_count],
             relevant_setup: vec![DropSet::new(); board_size * piece_count],
             relevant_stand_offs: vec![
@@ -1400,12 +1402,14 @@ impl State {
     /// 1. compile the expressions, one set for each piece
     /// 2. `populate_relevant` puts the sets on each square
     /// 3. `generate_attack_masks` stores each move under its target square
-    /// 4. the capture reach, the squares that the capture legs land on
+    /// 4. the royal reach, the squares an attack on a royal square reads
+    /// 5. the royal lines, the squares a piece attacks a royal square from
+    /// 6. the capture reach, the squares that the capture legs land on
     ///
-    /// The reach lets the capture generation skip a piece that has no enemy
-    /// piece in it. It is kept only for a board of at most
-    /// `CAPTURE_REACH_WORDS` words, as its size grows with the square of the
-    /// board area.
+    /// The capture reach lets the capture generation skip a piece that has
+    /// no enemy piece in it. It and the royal lines are kept only for a
+    /// board of at most `CAPTURE_REACH_WORDS` words, as their size grows with
+    /// the square of the board area.
     ///
     /// Params:
     /// - moves_expr_set    : Vec<String> -> move expression of each piece
@@ -1529,6 +1533,24 @@ impl State {
                     }                                                           /* names, so each move tests it       */
                 }
             }
+        }
+
+        if words <= CAPTURE_REACH_WORDS {
+            let mut lines = vec![0u64; 2 * board_size * piece_count * words];
+
+            for (side, targets) in statics.relevant_attacks.iter().enumerate() {
+                for (target, attacks) in targets.iter().enumerate() {
+                    for (piece_index, start, _) in attacks {
+                        let entry = ((side * board_size + target) * piece_count
+                            + *piece_index as usize) * words;
+
+                        lines[entry + (*start as usize >> 6)] |=
+                            1u64 << (*start & 63);
+                    }
+                }
+            }
+
+            statics.royal_lines = lines;
         }
 
         statics.royal_reach = royal_reach;
