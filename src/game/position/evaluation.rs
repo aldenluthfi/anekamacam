@@ -110,17 +110,11 @@ macro_rules! terminal_score {
 /// royal safety terms below read each of them.
 ///
 /// Params:
-///
-///     state: &State
-///     position to score
-///
-///     color: usize
-///     colour of the pieces
+/// - state: &State                 -> position to score
+/// - color: usize                  -> colour of the pieces
 ///
 /// Return:
-///
-///     impl Iterator<Item = Square>
-///     the royal squares, then the squares of the stand-in
+/// impl Iterator<Item = Square>    -> royal squares, then stand-in squares
 ///
 #[macro_export]
 macro_rules! guarded_squares {
@@ -247,22 +241,17 @@ macro_rules! royal_guard {
 
 /// king_danger!
 ///
-/// Gives the cost of the enemy pressure on the royals of one colour. Each
-/// enemy piece that is not royal and not a shield reads its `zone_attack`
-/// value from its square. In a drop variant, each piece in the hand reads
-/// `zone_attack_best`, the pressure from its best drop square. With free
-/// drops (`free_drops!`), the hand adds only its largest such value: a
-/// side drops one piece in a move, and a hand of queens and rooks summed
-/// over best squares grows past any use. With drop rules the hand is
-/// weak, and the sum stays.
-///
-/// The cost is the square of the total pressure, so attackers compound:
+/// Gives the cost of the enemy pressure on the royals of one colour. The
+/// cost is the square of the total pressure, so attackers compound:
 ///
 /// - pressure : 1, 2, 3, 4
 /// - cost     : 1, 4, 9, 16, before the cap
 ///
-/// The cap is near the value of the most valuable piece. The caller
-/// subtracts the cost from the colour.
+/// The pressure sources, each enemy piece that is not royal or a shield:
+///
+/// - on the board : its `zone_attack` value from its square
+/// - in the hand  : its `zone_attack_best`, from its best drop square
+/// - free drops   : only the largest hand value, one drop for each move
 ///
 /// Params:
 /// - state: &State -> position to score
@@ -272,8 +261,9 @@ macro_rules! royal_guard {
 /// i32             -> danger cost for that colour, 0 or more
 ///
 /// Notes:
-/// The macro does not test drop legality for pieces in the hand. A value
-/// that is too high is safer than a value that is too low.
+/// The cap is near the value of the most valuable piece. A summed hand of
+/// free drops grew past any use. The macro does not test drop legality,
+/// as a value that is too high is safer than one too low.
 ///
 #[macro_export]
 macro_rules! king_danger {
@@ -474,11 +464,9 @@ macro_rules! check_race {
 /// goal_race!
 ///
 /// Gives the worth of the goal piece of one colour that is nearest to the
-/// goal zone. The distance is the count of moves of that piece to the
-/// zone, from the `steps` table of the rule. Within `GOAL_HOLD_STEPS`, a
-/// walk along the `closer` squares adds one move for each step where all
-/// the squares are attacked by the enemy or hold an own piece: a move must
-/// first clear the way. The worth halves for each move past the first:
+/// goal zone. The distance is its count of moves to the zone, from the
+/// `steps` table of the rule. The worth halves for each move past the
+/// first:
 ///
 /// - 1 move  : the `value` of the rule, it arrives next move if not stopped
 /// - 2 moves : half of it
@@ -490,6 +478,11 @@ macro_rules! check_race {
 ///
 /// Return:
 /// i32             -> race worth for that colour, 0 or more
+///
+/// Notes:
+/// Within `GOAL_HOLD_STEPS`, the walk along the `closer` squares adds one
+/// move for each step that is blocked. A step is blocked when all its
+/// squares are attacked by the enemy or hold an own piece.
 ///
 #[macro_export]
 macro_rules! goal_race {
@@ -582,9 +575,9 @@ macro_rules! goal_race {
 /// threshold loses the game, so each attacked copy costs the `threat` of
 /// the rule over `left` squared:
 ///
-/// - 1 copy left  : `threat` for each attacked copy
+/// - 1 copy left   : `threat` for each attacked copy
 /// - 2 copies left : a quarter of it
-/// - more         : skipped, `EXTINCT_THREAT_LEFT` is the limit
+/// - more          : skipped, `EXTINCT_THREAT_LEFT` is the limit
 ///
 /// Params:
 /// - state: &State -> position to score
@@ -999,12 +992,9 @@ macro_rules! shared_score {
 
 /// endgame_score!
 ///
-/// Gives the endgame score, White minus Black. It is the material and
-/// piece-square totals; [`shared_score!`] adds the pressure, nearness and
-/// race terms. In the endgame, the royal must go to the center, and the
-/// endgame tables already give this. Shelter, guard, open files and
-/// castling keep a royal at home, so they stay out. The pressure falls by
-/// itself when the attackers leave.
+/// Gives the endgame score, White minus Black: the material and the
+/// piece-square totals. The terms that keep a royal at home stay out, as
+/// an endgame royal must go to the center.
 ///
 /// Params:
 /// - state: &State -> position to evaluate

@@ -272,14 +272,9 @@ const PROXIMITY_RATIO: u32 = 100;
 /// Hand power
 ///
 /// The power on the value over the cheapest piece, in a variant with free
-/// drops. A captured piece goes to the hand of the capturer and can come
-/// back on any empty square, so a slow piece loses less of its worth and
-/// the values lie closer together. Over `COEFFICIENT_SCALE`: 0.7.
-///
-/// Drops are free when no drop has a pattern beyond the empty target
-/// square. A drop rule (one pawn on a file, no drop mate) keeps a piece in
-/// the hand weak, so such a variant and a variant without drops keep their
-/// values.
+/// drops. Over `COEFFICIENT_SCALE`: 0.7. A captured piece can come back on
+/// any empty square, so a slow piece loses less of its worth. Thus the
+/// values lie closer together.
 ///
 const HAND_POWER: u32 = 700;
 
@@ -308,10 +303,12 @@ const GOAL_RATIO: u32 = 1000;
 /// Extinction threat
 ///
 /// The cost of an attacked set piece of a losing `extinct` rule, over
-/// `COEFFICIENT_SCALE` of the most valuable piece, when one copy of the
-/// set is left above the threshold: 25%. With `left` copies, the cost is
-/// divided by `left` squared. The evaluation skips a set with more than
-/// `EXTINCT_THREAT_LEFT` copies left, as the cost is small there.
+/// `COEFFICIENT_SCALE` of the most valuable piece:
+///
+/// - 1 copy left   : 25%, the next capture loses
+/// - `left` copies : 25% over `left` squared
+///
+/// A set with more than `EXTINCT_THREAT_LEFT` copies left is skipped.
 ///
 const EXTINCT_THREAT_RATIO: u32 = 250;
 
@@ -748,15 +745,12 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
 /// - reach             : the part of the board it can reach
 /// - maneuverability   : the part of its offsets that it can reverse
 ///
-/// The mobility is 70% occupied and 30% empty. A piece that controls lines
-/// of more than one family gets half the mobility of all families but its
-/// largest again: it attacks two sets of squares that one enemy piece
-/// cannot both avoid. Only a rider controls lines: an offset and its
-/// double are both moves of it. A stepper of more than one family, as a
-/// commoner, a gold or a pawn, attacks only its neighbours, and a knight
-/// attacks as many without the bonus. Then reach scales it, with a minimum
-/// factor of 0.6, and maneuverability scales it, with a minimum factor of
-/// 0.5. Thus a colour-bound or one-way piece is cheaper, but not zero.
+/// The value, in steps:
+///
+/// 1. mobility, 70% occupied and 30% empty
+/// 2. a rider adds half the mobility of all families but its largest
+/// 3. reach scales it, with a minimum factor of 0.6
+/// 4. maneuverability scales it, with a minimum factor of 0.5
 ///
 /// Params:
 /// - state    : &State -> precomputed move tables
@@ -767,8 +761,13 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
 /// f64                 -> raw value, normalized for the army later
 ///
 /// Notes:
-/// The opening has the higher occupancy, so sliders stop earlier there and
-/// gain value in the endgame.
+/// A rider has an offset whose double is also a move. A rider of two
+/// families attacks two sets of squares that one enemy piece cannot both
+/// avoid. A stepper, as a gold or a pawn, attacks only its neighbours.
+///
+/// The minimum factors make a colour-bound or one-way piece cheaper, but
+/// not zero. The opening has the higher occupancy, so sliders stop earlier
+/// there and gain value in the endgame.
 ///
 fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
     log_4!("Deriving base value for piece '{}'", piece.char);
@@ -926,28 +925,22 @@ fn derive_family_mobility(
 /// - final, both  : a last leg that moves and takes lands always, 1
 /// - marker       : has no displacement, skipped
 ///
-/// The chance is the product, with the chance of the CPMN condition from
-/// `derive_condition_chance`. Thus a long slide decreases with each
-/// square, a pawn step and a pawn capture each land less often than a
-/// leaper, and a hopper capture has 0 on an empty board. A single-purpose
-/// last leg counts half: the piece moves to a square it cannot guard, or
-/// guards a square it cannot move to.
+/// The chance is the product, times the chance of the CPMN condition from
+/// `derive_condition_chance`. Thus a long slide falls with each square,
+/// and a hopper capture has 0 on an empty board.
 ///
 /// Params:
-///
-///     state: &State
-///     start census for the condition chance
-///
-///     vector: &MoveVector
-///     the vector, the final leg last
-///
-///     occupancy: f64
-///     board occupancy
+/// - state    : &State      -> start census for the condition chance
+/// - vector   : &MoveVector -> the vector, the final leg last
+/// - occupancy: f64         -> board occupancy
 ///
 /// Return:
+/// Option<(f64, i32, i32)>  -> chance, file and rank shift, or None
 ///
-///     Option<(f64, i32, i32)>
-///     the chance and the file and rank displacement, or None without legs
+/// Notes:
+/// A single-purpose last leg counts half. The piece moves to a square it
+/// cannot guard, or guards a square it cannot move to. None means the
+/// vector has no legs.
 ///
 fn derive_vector_chance(
     state: &State, vector: &MoveVector, occupancy: f64
@@ -1235,13 +1228,8 @@ fn derive_promotion_span(field: &[f64]) -> f64 {
 ///
 /// Gives the progress bonus of a piece that can promote. It is a gradient
 /// to the nearest promotion square: 6% of the promotion gain, times the
-/// progress, in both phases.
-///
-/// The progress is squared, so the bonus is flat at the start and steep
-/// near the zone. A piece without a zone, or with a zone on the full board,
-/// gets zero. The gradient only orders the squares. The passed pawn term
-/// of `pawn_structure!` gives the value of a free path, so a larger
-/// endgame gradient would count the same race two times.
+/// progress, in both phases. The progress is squared, so the bonus is flat
+/// at the start and steep near the zone.
 ///
 /// Params:
 /// - state         : &State     -> board dimensions and promotion zones
@@ -1253,6 +1241,11 @@ fn derive_promotion_span(field: &[f64]) -> f64 {
 ///
 /// Return:
 /// f64                          -> bonus to add to the square score
+///
+/// Notes:
+/// A piece without a zone, or with a zone on the full board, gets zero.
+/// The gradient only orders the squares. The passed pawn term gives the
+/// value of a free path, so a larger gradient counts the race two times.
 ///
 fn derive_promotion_bonus(
     state: &State, piece_index: PieceIndex, closest: f64, span: f64,
@@ -1772,54 +1765,37 @@ pub fn derive_search_parameters(state: &mut State) {
 /// derive_search_capabilities
 ///
 /// Decides once, before play, which search shortcuts the rules allow, and
-/// writes them to `capabilities` (see [`StaticState`]). Each shortcut is a
-/// claim about the game, for example that material decides. Each bit is
-/// set, unless a rule removes it:
+/// writes them to `capabilities` (see [`StaticState`]). Each bit is set,
+/// unless a rule removes it:
 ///
 /// - exchange simulation : multi own destroy, misere, extinction
 /// - pruning on it       : counting
 /// - forward pruning     : misere, extinction
-/// - null pruning        : misere, counting, a legal pass, stand-offs,
-///                         setup, a piece without quiets
+/// - null pruning        : misere, counting, pass, stand-off, setup, capturer
 /// - recapture ordering  : none
 /// - quiet pruning       : misere
 /// - static movement     : a screened leg or a CPMN move condition
 /// - wide quiescence     : a vector that captures more than one piece
 ///
-/// Two fact types answer the tests:
-///
-/// - movement facts : from the generated vectors
-/// - terminal facts : from the declared end rules
-///
-/// A vector that ends on its start square without a capture is a legal
-/// pass. A lion that returns over a destroyed piece is not a pass, so the
-/// destroy flag counts, not only the displacement. The final leg of a plain
-/// slider has no capture flag, but move generation reads it as a capture,
-/// so the count here does the same.
+/// A pass is a vector that ends on its start square without a capture. A
+/// capturer is a piece that has capture vectors only. The movement facts
+/// come from the generated vectors, the terminal facts from the end rules.
 ///
 /// Params:
 /// - state: &mut State -> variant with the capability mask to derive
 ///
 /// Notes:
-/// Drops keep the exchange bits. With drops, each capture of an exchange
-/// also puts the piece in the hand of the taker, so each step is worth two
-/// times as much. The sum doubles and its sign stays, so a losing capture
-/// still loses.
+/// Drops keep the exchange bits. Each capture also fills the hand of the
+/// taker, so the sum doubles, but its sign stays.
 ///
-/// Promotion to a captured type keeps the exchange bits. A capture gives
-/// the piece back to the pool of its owner, not to the hand of the taker,
-/// and the simulation makes real moves, so each promotion obeys the pool.
+/// Promotion to a captured type keeps the exchange bits. The simulation
+/// makes real moves, so each promotion obeys the pool.
 ///
-/// A leg that can take only a royal does not stop the exchange simulation.
-/// An exchange square never holds a royal that a move can take.
+/// Recapture ordering keeps multi own destroy. The capture band subtracts
+/// the own destroyed value, so such a move sorts below the quiet moves.
 ///
-/// Recapture ordering does not test multi own destroy now. The capture band
-/// is the capture value minus the own destroyed value, so such a move sorts
-/// below the quiet moves. The exchange simulation keeps the test.
-///
-/// The scan reads each piece on each square, because some legs exist only
-/// near an edge. Each piece has its own thread, and the results join with
-/// `or`. No test reads a variant name.
+/// A lion that returns over a destroyed piece is not a pass. The scan
+/// reads each piece on each square, as some legs exist only near an edge.
 ///
 #[hotpath::measure]
 pub fn derive_search_capabilities(state: &mut State) {
@@ -2239,12 +2215,12 @@ pub fn derive_eval_products(state: &mut State) {
 
 /// derive_royal_stand_ins
 ///
-/// Sets the `lone` piece of the `extinct` rules. A candidate is not royal,
-/// but its capture ends the game: it is the only piece of its colour in
-/// the set of a rule that loses at zero. For each colour, the cheapest
-/// candidate stands in for the royal: the royal terms of the evaluation
-/// read it, so the king of an extinction variant keeps its shelter, and a
-/// dear piece stays active.
+/// Sets the `lone` piece of the `extinct` rules: for each colour, the
+/// cheapest piece that is not royal, but whose capture ends the game. The
+/// royal terms of the evaluation read it as a royal.
+///
+/// A candidate is the only piece of its colour in the set of a rule that
+/// loses at zero. The cheapest one stands in, so a dear piece stays active.
 ///
 /// - extinction chess : the king (the queen is dearer)
 /// - kinglet          : none, eight pawns in the set

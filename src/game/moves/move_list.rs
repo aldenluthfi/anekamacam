@@ -105,11 +105,9 @@ macro_rules! is_in_check {
 /// royal_unreached!
 ///
 /// Tells if a move left each attack on the royals of `$side` as it was.
-/// The squares are all the squares the move changed. The reach of a royal
-/// square has each square that its attack tests read: the attacker's
-/// square, each leg, each square of the condition, and the royal square.
-/// When no changed square is in the reach of any royal, the check state of
-/// the side is the same as before the move.
+/// The reach of a royal square has each square that an attack test on it
+/// reads. When no changed square is in a reach, the check state of the
+/// side is the same as before the move.
 ///
 /// Params:
 /// - side   : u8       -> side of the royal pieces
@@ -182,9 +180,14 @@ macro_rules! royal_line {
 
 /// to_move_in_check!
 ///
-/// Tells if the side to move is in check. A move keeps the answer in its
-/// snapshot when the answer was free. Else the board tells, and the last
-/// snapshot keeps it, so the next move can skip its own legality test.
+/// Tells if the side to move is in check. The snapshot of the last move
+/// keeps the answer:
+///
+/// - Some(answer) : known, the move got it at no cost
+/// - None         : not known, the board tells, and the snapshot keeps it
+///
+/// A kept answer lets each move from this position skip its legality test
+/// when it changes no square in the reach of its own royals.
 ///
 /// Params:
 /// - state: &mut State -> current position
@@ -1494,8 +1497,8 @@ macro_rules! retain_captures {
 /// - empty end and path squares
 /// - no attack on each `*` square of the move list, for a royal leader
 ///
-/// A leader that is not royal is never in check, so its path can be under
-/// attack.
+/// The attack test is a rule about check, and only a royal can be in
+/// check. A leader that is not royal castles through attacked squares.
 ///
 /// Params:
 /// - state: &State         -> current position with rights and occupancy
@@ -2969,7 +2972,7 @@ macro_rules! make_move {
             let in_check = match changed_squares {
                 _ if !legal => None,                                            /* an illegal move is undone at once  */
                 Some(squares)
-                if last.is_some_and(|snapshot| !pass_snapshot!(snapshot))       /* a move that is not a pass leaves   */
+                if last.is_some_and(|snapshot| !pass_snapshot!(snapshot))       /* the last move, not a pass, left    */
                 && royal_unreached!(next_player, squares, $state)               /* its own side out of check          */
                 => Some(false),
                 _ if $state.termination.checks.is_some() => Some(
@@ -4053,9 +4056,11 @@ pub fn generate_drops(state: &State, out: &mut Vec<Move>) {
 /// never makes quiet moves, drops or castling.
 ///
 /// A piece whose capture reach holds no enemy piece can capture nothing,
-/// so it is skipped before its vectors are walked. The reach is not read
-/// for a piece that can capture an own piece, nor while an en passant
-/// square is open, as that victim is off the landing squares.
+/// so it is skipped before its vectors are walked. The skip is off when a
+/// victim can be off the enemy squares of the reach:
+///
+/// - own capture : a destroy leg takes an own piece, a legal capture too
+/// - en passant  : the victim is not on a leg square
 ///
 /// Params:
 /// - state  : &State         -> position to examine

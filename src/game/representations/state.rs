@@ -612,11 +612,12 @@ macro_rules! pass_snapshot {
 
 /// game_phase_score!
 ///
-/// Calculates the phase score from scratch. It is the sum of the opening
-/// values of all big pieces that are not royal, on the board and, in a
-/// drop variant, in the hands. A piece in hand can come back at once, so
-/// a capture does not move the game toward its end. `game_phase!` compares
-/// the sum with the thresholds of the variant.
+/// Calculates the phase score from scratch: the sum of the opening values
+/// of all big pieces that are not royal. `game_phase!` compares the sum
+/// with the thresholds of the variant.
+///
+/// A drop variant also counts the hands. A piece in hand can come back at
+/// once, so a capture does not move the game toward its end.
 ///
 /// Params:
 /// - state: &State -> position to count
@@ -1392,10 +1393,8 @@ impl State {
     /// 5. the royal lines, the squares a piece attacks a royal square from
     /// 6. the capture reach, the squares that the capture legs land on
     ///
-    /// The capture reach lets the capture generation skip a piece that has
-    /// no enemy piece in it. It and the royal lines are kept only for a
-    /// board of at most `CAPTURE_REACH_WORDS` words, as their size grows with
-    /// the square of the board area.
+    /// The size of steps 5 and 6 grows with the square of the board area.
+    /// Only a board of at most `CAPTURE_REACH_WORDS` words keeps them.
     ///
     /// Params:
     /// - moves_expr_set    : Vec<String> -> move expression of each piece

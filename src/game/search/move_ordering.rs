@@ -266,28 +266,17 @@ macro_rules! see {
 /// bands, from high to low:
 ///
 /// - table move         : the stored move of the hash table
-/// - untested capture   : victim value first, then the cheaper attacker
+/// - untested capture   : MVV-LVA, before the exchange simulation
 /// - winning capture    : exchange result or simple swing, 0 or more
 /// - killer             : two quiet moves that cut at this ply before
 /// - quiet              : quiet band plus the history values
 /// - losing capture     : exchange result or simple swing, below 0
 /// - unmakeable capture : the exchange simulation cannot make the move
 ///
-/// The quiet history is the butterfly cell plus one continuation cell for
-/// each earlier move of this node. The prelude spaces the bands, so the
-/// largest history is always below the lowest killer.
-///
-/// The exchange simulation applies only if `see_valid!` is true for the
-/// variant. Else, the score is the victim value minus the attacker value.
-/// A screened leg does not stop the order: the simulation makes each
-/// capture and reads the attackers again. Only the skips that trust the
-/// result also need `static_movement!`.
-///
 /// The simulation makes each capture of the exchange, so it costs more
-/// than all other scores. A capture thus starts untested, and
+/// than all other scores. A capture thus starts in the untested band, and
 /// [`pick_by_score!`] runs the simulation only for the capture it picks.
-/// Most nodes cut after one or two moves, and the other captures are never
-/// simulated.
+/// Most nodes cut after one or two moves.
 ///
 /// Params:
 /// - state     : &mut State          -> position of the move
@@ -298,6 +287,13 @@ macro_rules! see {
 ///
 /// Return:
 /// usize                             -> ordering score, larger is earlier
+///
+/// Notes:
+/// Without `see_valid!`, a capture gets the simple swing, the victim value
+/// minus the attacker value, at once.
+///
+/// The quiet history is the butterfly cell plus one continuation cell for
+/// each earlier move of this node.
 ///
 #[macro_export]
 macro_rules! score_move {
@@ -369,6 +365,15 @@ macro_rules! score_move {
 /// cut here  [x x . . . .]  the rest is never scored
 /// ```
 ///
+/// An untested capture that wins the pass gets its exchange result. A
+/// winning one stays at `index`. A losing one falls to its band, and the
+/// pass runs again:
+///
+/// ```text
+/// pass 1    [Bx . . . .]  untested Bx is best: its exchange loses
+/// pass 2    [Nx . . Bx .]  Bx now ranks below the quiet moves
+/// ```
+///
 /// Params:
 /// - state     : &mut State          -> position for the scores
 /// - info      : &SearchInfo         -> killer and history tables
@@ -378,23 +383,14 @@ macro_rules! score_move {
 /// - table_move: &Option<PseudoMove> -> stored table move for this node
 /// - cont_bases: &[usize]            -> continuation rows for this node
 ///
-/// An untested capture that wins the pass gets its exchange result. A
-/// winning capture stays at `index`. A losing or unmakeable one falls to
-/// its band, and the pass runs again. A capture whose victim is worth at
-/// least its attacker needs no simulation: the side that captures can
-/// stop after each recapture, so it keeps at least the difference. The
-/// search plays a winning capture at once, so it needs only the sign:
-///
-/// ```text
-/// pass 1    [Bx . . . .]  untested Bx is best: its exchange loses
-/// pass 2    [Nx . . Bx .]  Bx now ranks below the quiet moves
-/// ```
-///
 /// Notes:
-/// `usize::MAX` marks a score that is not calculated yet, so each move gets
-/// one score only. On the first call, the table move goes to slot 0. While
-/// it is there, no other move gets a score. The move at `index` always has
-/// its final score, so the callers can read its band.
+/// A capture whose victim is worth at least its attacker needs no
+/// simulation. The capturer can stop after each recapture, so it keeps at
+/// least the difference.
+///
+/// `usize::MAX` marks a score that is not calculated yet. On the first
+/// call, the table move goes to slot 0, and no other move gets a score.
+/// The move at `index` always has its final score.
 ///
 #[macro_export]
 macro_rules! pick_by_score {

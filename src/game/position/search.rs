@@ -737,61 +737,33 @@ pub fn iterative_deepening(
 /// - otherwise : stand pat first, then captures while they win
 /// - horizon   : also board moves that give check, if stand pat >= alpha
 ///
-/// A side in check cannot stand pat, because it must move. Out of check,
-/// the loop stops at the first losing capture, because the ordering puts
-/// all later captures lower. It also skips a capture whose victim plus a
-/// margin is below alpha. The margin does not apply to a promotion or in
-/// the endgame.
-///
-/// The early stop needs a monotone order. The capability mask turns it off
-/// in variants where a capture also fills a hand, counts a check, or takes
-/// two pieces.
-///
-/// An exchange is a capture sequence on **one square**. The first leaf can
-/// play any capture, and that capture sets the square. All deeper leaves
-/// capture only on that square. A capture on another square is a new plan
-/// for the main tree.
+/// An exchange is a capture sequence on one square. The first capture sets
+/// the square, and all deeper leaves capture only on it. A capture on
+/// another square is a new plan for the main tree.
 ///
 /// Params:
-///
-///     state: &mut State
-///     position to search, restored at the end
-///
-///     ttable: &TTable
-///     main table, read only for the move order
-///
-///     qtable: &QTable
-///     quiescence table to probe and update
-///
-///     alpha: i32
-///     lower search bound
-///
-///     beta: i32
-///     upper search bound
-///
-///     info: &mut SearchInfo
-///     node counters and interrupt test
-///
-///     contested: Option<Square>
-///     square of the exchange, `None` at the horizon, where any capture can
-///     start one
-///
-///     quiet_checks: bool
-///     true at the horizon of the main tree: a board move that is not a
-///     capture is also played if it gives check and the stand pat is not
-///     below alpha
+/// - state       : &mut State      -> position to search, then restored
+/// - ttable      : &TTable         -> main table, read only for the move order
+/// - qtable      : &QTable         -> quiescence table to probe and update
+/// - alpha       : i32             -> lower search bound
+/// - beta        : i32             -> upper search bound
+/// - info        : &mut SearchInfo -> node counters and interrupt test
+/// - contested   : Option<Square>  -> exchange square, None at the horizon
+/// - quiet_checks: bool            -> true at the horizon of the main tree
 ///
 /// Return:
-///
-///     i32
-///     stand pat or best capture score in the window
+/// i32                             -> stand pat or best capture score
 ///
 /// Notes:
-/// Without the square rule, quiescence does not stop when a winning capture
-/// is always available. In taikyoku shogi, the flying generals made 86-ply
-/// leaves, and 85% of those captures replied to nothing. The limit is now
-/// the number of pieces that reach one square, as in the exchange
-/// simulation. A node in check without a legal move gets the variant
+/// The loop stops at the first losing capture, as the order puts all later
+/// captures lower. The capability mask turns the stop off where a capture
+/// also fills a hand, counts a check, or takes two pieces.
+///
+/// A capture whose victim plus a margin is below alpha is skipped, except
+/// a promotion or in the endgame.
+///
+/// Without the square rule, the flying generals of taikyoku shogi made
+/// 86-ply leaves. A node in check without a legal move gets the variant
 /// result.
 ///
 #[hotpath::measure]
@@ -1005,75 +977,43 @@ pub fn quiescence_search(
 /// - ProbCut                         : some captures against a higher beta
 /// - move loop                       : ordered, reduced, searched again
 ///
-/// Each shortcut tests the capability mask first: static score cuts, null
-/// move, ProbCut, internal iterative reduction, losing capture skips and
-/// late quiet move skips. Each is a claim about the game. Late move
-/// reduction is not a shortcut, because a reduced move that beats alpha
-/// gets full depth again. Razoring asks quiescence to confirm a fail low.
-/// Quiescence plays no drops, so a drop variant skips razoring.
+/// Each shortcut tests the capability mask first, as each is a claim about
+/// the game. Late move reduction is not a shortcut: a reduced move that
+/// beats alpha gets full depth again.
 ///
 /// Params:
-///
-///     state: &mut State
-///     position to search, restored at the end
-///
-///     ttable: &TTable
-///     main table to probe and update
-///
-///     qtable: &QTable
-///     quiescence table for the leaves
-///
-///     depth: usize
-///     remaining depth in plies
-///
-///     alpha: i32
-///     lower search bound
-///
-///     beta: i32
-///     upper search bound
-///
-///     info: &mut SearchInfo
-///     node counters and interrupt test
-///
-///     allow_null_move: bool
-///     true when null move pruning can run at this node
-///
-///     known_check: Option<bool>
-///     check state of the side to move, when the caller has tested it
+/// - state          : &mut State      -> position to search, then restored
+/// - ttable         : &TTable         -> main table to probe and update
+/// - qtable         : &QTable         -> quiescence table for the leaves
+/// - depth          : usize           -> remaining depth in plies
+/// - alpha          : i32             -> lower search bound
+/// - beta           : i32             -> upper search bound
+/// - info           : &mut SearchInfo -> node counters and interrupt test
+/// - allow_null_move: bool            -> true when null move can run here
+/// - known_check    : Option<bool>    -> check state of the mover, if known
 ///
 /// Return:
-///
-///     i32
-///     best score in the window, for the side to move
+/// i32                                -> best score in the window
 ///
 /// Notes:
-/// A repetition gets the variant result at the first closed cycle, before
-/// the rule count, because either side can repeat again. With a perpetual
-/// rule that blames an offender, the search waits for the rule count.
+/// A repetition gets the variant result at the first closed cycle. With a
+/// perpetual rule that blames an offender, the search waits for the rule
+/// count.
 ///
-/// A stored bound cuts only a scout node. A wide window must find a move,
-/// and a bound has no move. The stored move is used at all nodes.
+/// A stored bound cuts only a scout node, as a wide window must find a
+/// move. The stored move is used at all nodes.
 ///
-/// Each valid hit gives the raw static evaluation. Its bound refines a
-/// separate pruning score. The improving test keeps the raw evaluation.
+/// Correction history applies only to the fail-high gates: reverse
+/// futility, null move and ProbCut. Fail-low futility and razoring use the
+/// raw score. Razoring asks quiescence, which plays no drops, so a drop
+/// variant skips it.
 ///
-/// Correction history applies only to fail-high pruning, reverse futility
-/// and null move. Fail-low futility uses the raw score, because a corrected
-/// score made drop game trees much larger in tests. All bounds update the
-/// table.
+/// A move that gives check is never reduced. It gets one more ply while
+/// the line is shorter than two times the iteration depth. A skip is made
+/// and tested for check only if its piece can reach an enemy royal.
 ///
-/// A move that gives check is never skipped and never reduced. It gets one
-/// more ply while the line is shorter than two times the iteration depth.
-/// The reply side has few moves, so the loss can be short. The test is made
-/// after the move, so it also sees a discovered check and a check through a
-/// new screen. A skip tests only a move whose piece has a line from its
-/// landing square to an enemy royal.
-///
-/// The move list starts without the drops. They join when no winning
-/// capture is left, as a drop can then rank first, or when the list runs
-/// out. In shogi a hand of a few pieces gives hundreds of drops, and most
-/// nodes cut on the table move or a capture before any is needed. A table
-/// move that drops needs them from the start.
+/// Drops join the move list when no winning capture is left or the list
+/// runs out. Most shogi nodes cut before they need one of the many drops.
 ///
 #[hotpath::measure]
 pub fn alpha_beta(

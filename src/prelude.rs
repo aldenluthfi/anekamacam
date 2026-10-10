@@ -625,7 +625,7 @@ pub const WHITE_WIN: u8 = 3;
 ///
 /// ```text
 ///   5_000_000            TABLE_MOVE_SCORE          table move
-///   4_500_000            UNTESTED_CAPTURE_SCORE    capture, plus its victim
+///   4_500_000            UNTESTED_CAPTURE_SCORE    capture, plus MVV-LVA
 ///   4_000_000 + b        WINNING_CAPTURE_SCORE     winning capture
 ///   1_000_000 + 7b       KILLER_MOVE_SCORE         killer
 ///   1_000_000 + 6b   ┐
@@ -635,12 +635,10 @@ pub const WHITE_WIN: u8 = 3;
 ///           0            UNMAKEABLE_CAPTURE_SCORE  cannot be made at all
 /// ```
 ///
-/// `b` is `HISTORY_BOUND`. `7b` is `2 * HISTORY_TABLES + 1` bounds, one
-/// bound above the largest quiet score. An untested capture leaves its
-/// band when it is picked: the exchange then moves it to the winning, the
-/// losing or the unmakeable band. In its band, it ranks by `VICTIM_WEIGHT`
-/// times the victim value minus the attacker value, so the victim comes
-/// first and the cheaper attacker breaks a tie.
+/// `b` is `HISTORY_BOUND`. `7b` is one bound above the largest quiet
+/// score. The MVV-LVA term is `VICTIM_WEIGHT` times the victim value minus
+/// the attacker value. When an untested capture is picked, its exchange
+/// result moves it to the winning, losing or unmakeable band.
 ///
 /// The bound tags tell how a stored score relates to its search window:
 ///

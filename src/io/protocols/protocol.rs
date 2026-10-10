@@ -280,14 +280,15 @@ struct SearchLimits {
 /// - overhead_ms           : time kept back from a timed search
 /// - ttable, qtable        : shared with the workers, new on Hash
 /// - active                : the running search, if any
-/// - learned               : the search worker of the last move, with its
-///                           histories, empty at a new game or variant
+/// - learned               : the last search worker, with its histories
 ///
 /// Notes:
 /// `position_valid` is false after a failed `position` until the next good
 /// load. Then `go` sends `bestmove (none)` at once, and does not search a
-/// wrong board. The histories learn from each move of a game, as FSF's do,
-/// so a search does not start from empty cells.
+/// wrong board.
+///
+/// The histories of `learned` learn from each move of a game, as FSF's do.
+/// A new game or variant empties them.
 ///
 pub struct Session {
     protocol: String,                                                           /* the protocol being spoken          */
@@ -475,10 +476,8 @@ fn spawn_hash_tables(
 /// handle_position
 ///
 ///   Skips the FEN keyword, so `fen` and `sfen` both work. It makes the
-///   board in a fork and installs it only after the full line succeeds.
-///   Thus a bad move keeps the previous position. A line that extends
-///   the current game, the same root and the moves in its history, plays
-///   only the new moves on the board. A bad new move marks it invalid.
+///   board in a fork and installs it only when the full line is good. A
+///   line that extends the current game plays only its new moves.
 ///
 ///   Params:
 ///   - session: &mut Session -> session, gets the new position on success
@@ -490,7 +489,7 @@ fn spawn_hash_tables(
 ///   worker panic gives None, so a crash loses a move, not the session.
 ///
 ///   Params:
-///   - session: &mut Session -> session with the search to stop
+///   - session: &mut Session      -> session with the search to stop
 ///
 ///   Return:
 ///   Option<(SearchResult, bool)> -> result and ponder flag, or None
@@ -632,10 +631,9 @@ fn handle_position(session: &mut Session, tokens: &[&str]) {
 ///
 /// Notes:
 /// Without `movestogo`, the clock uses 30 moves. A share also gets the
-/// increment, and the time is at most half the clock. The search starts a
-/// new depth only in the first quarter of the time, so a clock move uses
-/// about one share, and a depth that has started can finish. The deadline starts
-/// when the `go` is read, so the thread start uses part of the time.
+/// increment, and the time is at most half the clock. A new depth starts
+/// only in the first quarter of the time, so a clock move uses about one
+/// share. The deadline starts when the `go` is read.
 ///
 pub fn start_search(session: &mut Session, tokens: &[&str]) {
     abort_search(session);

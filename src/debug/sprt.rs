@@ -1520,8 +1520,7 @@ fn run_slot(
 /// 5. write the result file and delete the engine sandboxes
 ///
 /// Each game also goes to `res/sprt/{variant}/latest.games`, one row for
-/// each engine move, in the `datagen` format with the move and the score of
-/// the engine that moved between the position and the result:
+/// each engine move: ply, position, move, score of the mover, result.
 ///
 /// ```text
 /// 12;<fen>;e2e4;cp 34;1
@@ -1532,12 +1531,9 @@ fn run_slot(
 /// - settings: &SPRTMatch -> engines, variant, control, bounds and slots
 ///
 /// Notes:
-/// The referee uses the same translator as the engines. A variant without
-/// a dictionary is an error. The start position goes through the
-/// translator, so a reference engine reads it in its own notation. Each
-/// stop, also a setup failure, a failed restart, an interrupt or the game
-/// limit, writes a result file. Each engine has one thread, so
-/// `concurrency` must stay below the number of cores.
+/// The referee uses the translator of the engines, so a variant without a
+/// dictionary is an error. Each stop writes a result file. Each engine has
+/// one thread, so `concurrency` must stay below the number of cores.
 ///
 pub fn run_sprt(template: &State, settings: &SPRTMatch) {
     let variant = settings.variant.as_str();
