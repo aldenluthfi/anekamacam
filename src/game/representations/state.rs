@@ -1470,7 +1470,7 @@ impl State {
         let files = statics.files as i32;
         let ranks = statics.ranks as i32;
         let board_size = statics.board_size;
-        let words = (board_size + 63) >> 6;
+        let words = (board_size + 63) >> 6;                                     /* one bit per square, 64 to a word   */
         let mut royal_reach = vec![0u64; 2 * board_size * words];
 
         for (side, targets) in statics.relevant_attacks.iter().enumerate() {

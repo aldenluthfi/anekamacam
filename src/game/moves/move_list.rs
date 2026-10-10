@@ -123,7 +123,7 @@ macro_rules! is_in_check {
 macro_rules! royal_unreached {
     ($side:expr, $squares:expr, $state:expr) => {{
         let board_size = $state.statics.board_size;
-        let words = (board_size + 63) >> 6;
+        let words = (board_size + 63) >> 6;                                     /* one bit per square, 64 to a word   */
 
         $state.royal_list[$side as usize].iter().all(|&royal| {
             let entry = ($side as usize * board_size + royal as usize) * words;
@@ -158,7 +158,7 @@ macro_rules! royal_line {
         let statics = &$state.statics;
         let board_size = statics.board_size;
         let piece_count = statics.pieces.len();
-        let words = (board_size + 63) >> 6;
+        let words = (board_size + 63) >> 6;                                     /* one bit per square, 64 to a word   */
         let (piece, square): (usize, usize) = ($piece, $square);
 
         $state.royal_list[$side as usize].iter().any(|&royal| {
@@ -2917,24 +2917,25 @@ macro_rules! make_move {
             let this_player = $state.playing;
             let next_player = 1 - this_player;
 
-            let royal = |index: usize| {
-                p_is_royal!($state.statics.pieces[index])
-            };
+            let pieces = &$state.statics.pieces;
             let start_square = start!(applied_move) as u32;
             let end_square = end!(applied_move) as u32;
-            let lands_royal = move_type <= SINGLE_CAPTURE_MOVE                  /* only these two can promote         */
+            let moves_royal = p_is_royal!(pieces[piece_index]);
+            let promotes_royal = move_type <= SINGLE_CAPTURE_MOVE               /* only these two can promote         */
                 && promotion!(applied_move)
-                && royal(promoted!(applied_move) as usize);
+                && p_is_royal!(pieces[promoted!(applied_move) as usize]);
+            let takes_royal = move_type == SINGLE_CAPTURE_MOVE
+                && p_is_royal!(pieces[captured_piece!(applied_move) as usize]);
+            let royals_stay = !moves_royal && !promotes_royal && !takes_royal
+                && last_game_phase != SETUP                                     /* the setup phase has no checks, so  */
+                && $state.game_phase != SETUP;                                  /* its end is a change of its own     */
 
-            let changed = match move_type {
-                _ if last_game_phase == SETUP                                   /* the setup phase has no checks, so  */
-                || $state.game_phase == SETUP => None,                          /* its end is a change of its own     */
-                _ if royal(piece_index) => None,
-                QUIET_MOVE if !lands_royal => Some(
+            let changed_squares = match move_type {
+                _ if !royals_stay => None,
+                QUIET_MOVE => Some(
                     [start_square, end_square, end_square, end_square]
                 ),
-                SINGLE_CAPTURE_MOVE if !lands_royal
-                && !royal(captured_piece!(applied_move) as usize) => Some([
+                SINGLE_CAPTURE_MOVE => Some([
                     start_square,
                     end_square,
                     captured_square!(applied_move) as u32,
@@ -2949,7 +2950,7 @@ macro_rules! make_move {
 
             let last = $state.history.last();
             let still_in_check = match (
-                changed, last.and_then(|snapshot| snapshot.in_check)
+                changed_squares, last.and_then(|snapshot| snapshot.in_check)
             ) {
                 (Some(squares), Some(checked))
                 if royal_unreached!(this_player, squares, $state) => checked,
@@ -2965,7 +2966,7 @@ macro_rules! make_move {
                 )
             );
 
-            let in_check = match changed {
+            let in_check = match changed_squares {
                 _ if !legal => None,                                            /* an illegal move is undone at once  */
                 Some(squares)
                 if last.is_some_and(|snapshot| !pass_snapshot!(snapshot))       /* a move that is not a pass leaves   */
@@ -3904,6 +3905,61 @@ macro_rules! undo_null_move {
     }};
 }
 
+/// Move list fill macros
+///
+/// Add the moves of the side to move to a list. The three generators below
+/// expand them, so the work runs inside one function call.
+///
+/// - push_board_moves! : the piece moves, none in the setup phase
+/// - push_drops!       : the drops, with the drop rule or in the setup phase
+///
+/// push_board_moves!
+///
+///   Params:
+///   - state  : &State         -> position to examine
+///   - out    : &mut Vec<Move> -> list that gets the moves
+///   - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+///
+/// push_drops!
+///
+///   Params:
+///   - state: &State         -> position to examine
+///   - out  : &mut Vec<Move> -> list that gets the drops
+///
+#[macro_export]
+macro_rules! push_board_moves {
+    ($state:expr, $out:expr, $scratch:expr) => {
+        if $state.game_phase != SETUP {
+            let piece_count = $state.statics.pieces.len() / 2;
+            let start_index = piece_count * $state.playing as usize;
+
+            for piece_index in start_index..start_index + piece_count {
+                let piece = &$state.statics.pieces[piece_index];
+
+                for &index in piece_squares!($state, piece_index) {
+                    generate_move_list!(index, piece, $state, $out, $scratch);
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! push_drops {
+    ($state:expr, $out:expr) => {
+        if drops!($state) || $state.game_phase == SETUP {
+            let piece_count = $state.statics.pieces.len() / 2;
+            let start_index = piece_count * $state.playing as usize;
+
+            for piece_index in start_index..start_index + piece_count {
+                let piece = &$state.statics.pieces[piece_index];
+
+                generate_drop_list!(piece, $state, $out);
+            }
+        }
+    };
+}
+
 /// generate_all_moves_and_drops
 ///
 /// Generates all pseudo-legal moves of the side to move:
@@ -3932,8 +3988,8 @@ pub fn generate_all_moves_and_drops(
         return;
     }
 
-    push_board_moves(state, out, scratch);
-    push_drops(state, out);
+    push_board_moves!(state, out, scratch);
+    push_drops!(state, out);
 
     if castling!(state) {
         generate_castling_list!(state, out);
@@ -3963,14 +4019,14 @@ pub fn generate_board_moves(
         return;
     }
 
-    push_board_moves(state, out, scratch);
+    push_board_moves!(state, out, scratch);
 
     if castling!(state) {
         generate_castling_list!(state, out);
     }
 }
 
-/// generate_all_drops
+/// generate_drops
 ///
 /// Generates the pseudo-legal drops of the side to move, the moves that
 /// `generate_board_moves` leaves out.
@@ -3980,63 +4036,14 @@ pub fn generate_board_moves(
 /// - out  : &mut Vec<Move> -> cleared, then filled with the drops
 ///
 #[hotpath::measure]
-pub fn generate_all_drops(state: &State, out: &mut Vec<Move>) {
+pub fn generate_drops(state: &State, out: &mut Vec<Move>) {
     out.clear();
 
     if is_terminal!(state) {
         return;
     }
 
-    push_drops(state, out);
-}
-
-/// push_board_moves
-///
-/// Adds the piece moves of the side to move to a list. The setup phase has
-/// none.
-///
-/// Params:
-/// - state  : &State         -> position to examine
-/// - out    : &mut Vec<Move> -> list that gets the moves
-/// - scratch: &mut Vec<u64>  -> reused multi-capture buffer
-///
-fn push_board_moves(state: &State, out: &mut Vec<Move>, scratch: &mut Vec<u64>) {
-    if state.game_phase == SETUP {
-        return;
-    }
-
-    let piece_count = state.statics.pieces.len() / 2;
-    let start_index = piece_count * state.playing as usize;
-
-    for piece_index in start_index..start_index + piece_count {
-        let piece = &state.statics.pieces[piece_index];
-        for &index in piece_squares!(state, piece_index) {
-            generate_move_list!(index, piece, state, out, scratch);
-        }
-    }
-}
-
-/// push_drops
-///
-/// Adds the drops of the side to move to a list, with the drop rule or in
-/// the setup phase.
-///
-/// Params:
-/// - state: &State         -> position to examine
-/// - out  : &mut Vec<Move> -> list that gets the drops
-///
-fn push_drops(state: &State, out: &mut Vec<Move>) {
-    if !drops!(state) && state.game_phase != SETUP {
-        return;
-    }
-
-    let piece_count = state.statics.pieces.len() / 2;
-    let start_index = piece_count * state.playing as usize;
-
-    for piece_index in start_index..start_index + piece_count {
-        let piece = &state.statics.pieces[piece_index];
-        generate_drop_list!(piece, state, out);
-    }
+    push_drops!(state, out);
 }
 
 /// generate_all_captures
@@ -4070,7 +4077,7 @@ pub fn generate_all_captures(
     let start_index = piece_count * state.playing as usize;
     let end_index = start_index + piece_count;
     let board_size = state.statics.board_size;
-    let words = (board_size + 63) >> 6;
+    let words = (board_size + 63) >> 6;                                         /* one bit per square, 64 to a word   */
     let reach = &state.statics.capture_reach;
     let enemies = &state.pieces_board[state.playing as usize ^ 1];
     let screened = !reach.is_empty()

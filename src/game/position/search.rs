@@ -1371,7 +1371,9 @@ pub fn alpha_beta(
         !moves.iter().any(|mv| m_matches!(mv, &table_move))                     /* drops before the first pick        */
     })
     {
-        join_drops(state, moves, scores, later);
+        generate_drops(state, later);
+        moves.append(later);
+        scores.resize(moves.len(), usize::MAX);
         drops_pending = false;
     }
 
@@ -1399,8 +1401,10 @@ pub fn alpha_beta(
         && (index == moves.len()
             || scores[index] < WINNING_CAPTURE_SCORE as usize)
         {
-            join_drops(state, moves, scores, later);                            /* no winning capture is left, so a   */
-            drops_pending = false;                                              /* drop can rank first                */
+            generate_drops(state, later);                                       /* no winning capture is left, so a   */
+            moves.append(later);                                                /* drop can rank first                */
+            scores.resize(moves.len(), usize::MAX);
+            drops_pending = false;
             continue;
         }
 
@@ -1677,28 +1681,6 @@ pub fn alpha_beta(
     alpha
 }
 
-/// join_drops
-///
-/// Adds the drops of the side to move to the move list of a node. The new
-/// moves get no score yet.
-///
-/// Params:
-/// - state : &State          -> position of the node
-/// - moves : &mut Vec<Move>  -> the board moves, gets the drops
-/// - scores: &mut Vec<usize> -> the scores, grows with the list
-/// - later : &mut Vec<Move>  -> work list for the drops
-///
-fn join_drops(
-    state: &State,
-    moves: &mut Vec<Move>,
-    scores: &mut Vec<usize>,
-    later: &mut Vec<Move>,
-) {
-    generate_all_drops(state, later);
-    moves.append(later);
-    scores.resize(moves.len(), usize::MAX);
-}
-
 /*----------------------------------------------------------------------------*\
                          HISTORY AND CORRECTION UPDATES
 \*----------------------------------------------------------------------------*/
@@ -1716,7 +1698,7 @@ fn join_drops(
 const HISTORY_DEPTH_SHARE: i32 = 128;
 const HISTORY_MOST_SHARE: i32 = 16;
 
-/// update_history
+/// update_history!
 ///
 /// Adds one signed change to a history cell and pulls the cell toward
 /// zero in proportion to its size:
@@ -1734,12 +1716,16 @@ const HISTORY_MOST_SHARE: i32 = 16;
 /// - entry: &mut i16 -> history cell to update
 /// - bonus: i32      -> signed bonus or malus
 ///
-#[inline(always)]
-fn update_history(entry: &mut i16, bonus: i32) {
-    let cell = *entry as i32;
+#[macro_export]
+macro_rules! update_history {
+    ($entry:expr, $bonus:expr) => {{
+        let entry: &mut i16 = $entry;
+        let bonus: i32 = $bonus;
+        let cell = *entry as i32;
 
-    *entry = (cell + bonus - cell * bonus.abs() / HISTORY_BOUND)
-        .clamp(-HISTORY_BOUND, HISTORY_BOUND) as i16;
+        *entry = (cell + bonus - cell * bonus.abs() / HISTORY_BOUND)
+            .clamp(-HISTORY_BOUND, HISTORY_BOUND) as i16;
+    }};
 }
 
 /// correction_index
@@ -1889,11 +1875,11 @@ fn update_histories(
     index: usize,
     bonus: i32,
 ) {
-    update_history(&mut info.search_hist[index], bonus);
+    update_history!(&mut info.search_hist[index], bonus);
 
     for base in bases.iter().filter(|&&base| base != usize::MAX) {
         let cell = cont_cell!(info, base + index);
 
-        update_history(&mut info.cont_hist[cell], bonus);
+        update_history!(&mut info.cont_hist[cell], bonus);
     }
 }
