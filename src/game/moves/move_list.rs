@@ -110,12 +110,12 @@ macro_rules! is_in_check {
 /// side is the same as before the move.
 ///
 /// Params:
-/// - side   : u8       -> side of the royal pieces
-/// - squares: [u32; 4] -> the squares the move changed, repeats allowed
-/// - state  : &State   -> position after the move, same royal squares
+/// - side   : u8          -> side of the royal pieces
+/// - squares: [Square; 4] -> the squares the move changed, then NO_SQUARE
+/// - state  : &State      -> position after the move, same royal squares
 ///
 /// Return:
-/// bool                -> true when no changed square is in a royal reach
+/// bool                   -> true when no changed square is in a royal reach
 ///
 #[macro_export]
 macro_rules! royal_unreached {
@@ -126,8 +126,9 @@ macro_rules! royal_unreached {
         $state.royal_list[$side as usize].iter().all(|&royal| {
             let entry = ($side as usize * board_size + royal as usize) * words;
 
-            $squares.iter().all(|&square| {
-                $state.statics.royal_reach[entry + (square as usize >> 6)]
+            $squares.iter().all(|&square: &Square| {
+                square == NO_SQUARE
+                || $state.statics.royal_reach[entry + (square as usize >> 6)]
                     >> (square & 63) & 1 == 0
             })
         })
@@ -2921,8 +2922,8 @@ macro_rules! make_move {
             let next_player = 1 - this_player;
 
             let pieces = &$state.statics.pieces;
-            let start_square = start!(applied_move) as u32;
-            let end_square = end!(applied_move) as u32;
+            let start_square = start!(applied_move) as Square;
+            let end_square = end!(applied_move) as Square;
             let moves_royal = p_is_royal!(pieces[piece_index]);
             let promotes_royal = move_type <= SINGLE_CAPTURE_MOVE               /* only these two can promote         */
                 && promotion!(applied_move)
@@ -2936,18 +2937,20 @@ macro_rules! make_move {
             let changed_squares = match move_type {
                 _ if !royals_stay => None,
                 QUIET_MOVE => Some(
-                    [start_square, end_square, end_square, end_square]
+                    [start_square, end_square, NO_SQUARE, NO_SQUARE]
                 ),
                 SINGLE_CAPTURE_MOVE => Some([
                     start_square,
                     end_square,
-                    captured_square!(applied_move) as u32,
+                    captured_square!(applied_move) as Square,
                     match is_unload!(applied_move) {
-                        true => unload_square!(applied_move) as u32,
-                        false => end_square,
+                        true => unload_square!(applied_move) as Square,
+                        false => NO_SQUARE,
                     },
                 ]),
-                DROP_MOVE => Some([start_square; 4]),
+                DROP_MOVE => Some(
+                    [start_square, NO_SQUARE, NO_SQUARE, NO_SQUARE]
+                ),
                 _ => None,
             };
 
