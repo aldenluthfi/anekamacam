@@ -2620,3 +2620,153 @@ d9385ab), 633 lines added and 1010 removed:
   out of `~/p27b/status.sh`. The server did not answer on 2026-10-10.
 - The next build line starts from `plan29-review`: the same nodes as
   build 21, with near 3% more time in shogi.
+- Done on 2026-10-11: the books and clones are archived off the server
+  and deleted, and `status.sh` has no book lines.
+
+### King safety in parts, with our check rule (2026-10-13, queue160)
+
+KS1 and KS2c ported FSF's attack sum and carried near +12. Under our
+check rule all of FSF's king safety was worth 161 in standard and 97 in
+grand. The lab splits it into four switches, each turned off against
+`s1` alone (400 games each, Elo of the side with the part off; a minus
+means the part helps):
+
+| Part off | standard | xiangqi | grand | shogi |
+| -------- | -------- | ------- | ----- | ----- |
+| `e_kdanger` (the attack sum) | -41.0 ± 28.2 | -5.2 ± 29.0 | -37.5 ± 31.0 | +154.5 ± 36.2 |
+| `e_kchecks` (safe checks in the sum) | +1.7 ± 26.8 | +44.5 ± 27.6 | +27.9 ± 31.2 | +127.0 ± 35.5 |
+| `e_kshelter` (pawn shelter and storm) | -39.3 ± 27.9 | -18.3 ± 26.4 | -31.4 ± 33.5 | +43.7 ± 33.5 |
+| `e_kflank` (flank attacks) | +5.2 ± 26.5 | +8.7 ± 26.6 | -16.5 ± 30.8 | +33.1 ± 33.5 |
+
+- The attack sum counts attackers and their weights, weak ring squares,
+  safe checks, pins and flank attacks, and applies above 100 units. The
+  flank switch zeroes the flank count in the sum and in its own term.
+- Under our check rule the attack sum is worth near 40 in standard and
+  grand and nothing in xiangqi. KS's +12 after the cost of its map pass
+  sits under that ceiling; a better port of the sum has little left.
+- The safe checks lose 45 in xiangqi, 28 in grand and 127 in shogi, and
+  are worth nothing in standard. Why: our rule searches every check and
+  extends it, so the search already resolves what the safe-check count
+  predicts. The count adds the same danger a second time, and the
+  engine overrates its own attacks. Drops give shogi the most checks,
+  so the double count is largest there.
+- The parts add to near 73 in standard and 58 in grand, under half of
+  the whole. They stand in for each other: with one part off, the rest
+  still sees most of the danger.
+- Shelter is the largest part outside shogi: 39, 18 and 31.
+
+What our own royal safety is worth: NK (`plan29-nk`, 732aa94) is main
+without shelter, guard, castling, open shield, danger and proximity.
+Queue161 played NK and main against full FSF, three rounds of 200 in
+each key variant (W-L-D, Elo):
+
+| Variant | main | NK | main minus NK |
+| ------- | ---- | -- | ------------- |
+| standard | 321-228-51, +54.3 | 305-253-42, +30.2 | +24.1 ± 38.1 |
+| xiangqi | 323-267-10, +32.5 | 295-286-19, +5.2 | +27.3 ± 39.0 |
+| grand | 317-245-38, +41.9 | 303-256-41, +27.3 | +14.6 ± 38.3 |
+| shogi | 275-323-2, -27.9 | 272-327-1, -31.9 | +4.1 ± 39.5 |
+
+- Ours is worth +17.5 ± 19.4 over the four. FSF's, under the same
+  check rule, is worth 161 in standard and 97 in grand. The lead stays.
+- Why so little: the terms against FSF's, on the same positions.
+  Positions from queue161's main games (move 9 on, one in twelve, not
+  in check, FSF's classical score within 1.5 pawns): 251 in standard,
+  175 in grand. Ours is main minus a build without the part (NKA: no
+  danger or proximity, NKC: no castling, NKG: no guard, NKO: no open
+  shield; shelter is the rest). FSF's is the lab's classical score minus
+  the score with the switch off. All in pawns, White's view:
+
+  | Part | sd, standard | sd, grand | best match in FSF | corr, standard | corr, grand |
+  | ---- | ------------ | --------- | ----------------- | -------------- | ----------- |
+  | ours, all | 0.18 | 0.26 | all of `e_king` | +0.20 | +0.05 |
+  | ours, danger and proximity | 0.07 | 0.10 | `e_kdanger` | +0.35 | +0.51 |
+  | ours, shelter | 0.10 | 0.14 | `e_kshelter` | +0.26 | +0.32 |
+  | ours, guard | 0.06 | 0.11 | `e_kflank` | -0.28 | -0.50 |
+  | ours, open shield | 0.06 | 0.04 | none | near 0 | near 0 |
+  | FSF, all of `e_king` | 1.09 | 1.72 | | | |
+  | FSF, `e_kdanger` | 0.95 | 1.57 | | | |
+  | FSF, `e_kshelter` | 0.33 | 0.28 | | | |
+
+- Our danger points the right way but moves 13 to 15 times less than
+  FSF's. Our shelter moves 2 to 3 times less. Our guard runs against
+  FSF's flank term: more own pieces near the royal where FSF sees more
+  enemy attacks on that flank.
+- Why our danger moves so little: it is the square of the expected
+  enemy landings on the ring, from a static table at opening occupancy,
+  with no threshold. In a level middlegame both sides have near the
+  same landings, so the term barely differs between them. FSF's sum
+  adds the real attackers and their weights, weak ring squares, safe
+  and unsafe checks, pins, flank attacks, the mobility difference, no
+  enemy queen (-873), a knight defender (-100), and its own shelter
+  (`- 6 * mg_value(score) / 8`), then squares it above 100 units. It
+  grows only where several weaknesses meet.
+- That last input is why the parts add to under half of the whole:
+  shelter is both its own term and an input of the square, so turning
+  either off also takes most of the other's effect. Ours keeps shelter
+  linear and outside the danger.
+- To check this root before any build: queue162 drops each of three
+  inputs from FSF's sum against `s1` alone (400 games in standard,
+  xiangqi and grand): shelter (`e_kshsum`), the mobility difference
+  (`e_kmobsum`) and the enemy major gate (`e_kmajsum`).
+
+| Input dropped | standard | xiangqi | grand |
+| ------------- | -------- | ------- | ----- |
+| `e_kshsum` (shelter in the sum) | -16.5 ± 24.4 | +16.5 ± 25.4 | +8.7 ± 31.5 |
+| `e_kmobsum` (mobility difference) | -10.4 ± 23.2 | +5.2 ± 27.0 | -10.4 ± 32.2 |
+| `e_kmajsum` (no enemy major, -873) | -44.5 ± 24.0 | -83.2 ± 29.9 | -25.2 ± 30.1 |
+
+- Shelter inside the sum is worth nothing clear, so the coupling is not
+  why the parts add to under half of the whole. The guess is wrong.
+- The major gate is the largest input. Without it the sum fires where
+  no attack can come; in xiangqi that loses 83, more than the whole sum
+  is worth (5). Most of the sum's value is in knowing when not to fire.
+- `e_king` turns off only `king()`: shelter and storm, the sum, the
+  pawnless flank and the flank penalty. Each part alone is worth near
+  40 and the whole 161, so they stand in for each other. Ours has
+  shelter and danger too and is worth 17. Two whys remain: ours is too
+  small to do the job (its spread is 3 to 15 times under FSF's), or
+  FSF's 161 is FSF's own (self-play, and terms that lean on `king()`).
+- The size test: DX (`plan29-dx`, danger ten times) and SX
+  (`plan29-sx`, shelter three times), diagnostics and not candidates.
+  On positions from queue161 (not filtered for level), DX's danger has
+  sd 1.40 and 2.07 pawns in standard and grand (FSF's sum 1.7 and 3.0),
+  SX's shelter 0.24 and 0.34 (FSF's 0.36 and 0.33). Queue163 plays
+  main, DX and SX against full FSF, three rounds in each key variant.
+  If either gains, size is the root and the next step is a derived
+  value of that size; if neither does, FSF's value is its own.
+
+Queue163, against full FSF, three rounds of 200 (W-L-D; the change is
+the build minus main, then by round):
+
+| Variant | main | DX | DX minus main | SX | SX minus main |
+| ------- | ---- | -- | ------------- | -- | ------------- |
+| standard | 294-243-63 | 219-311-70 | -83.3 ± 37.4 (-89, -103, -58) | 289-255-56 | -9.9 ± 37.5 |
+| xiangqi | 312-278-10 | 334-249-17 | +29.8 ± 39.2 (+47, +23, +20) | 308-282-10 | -4.6 ± 39.1 |
+| grand | 344-219-37 | 214-336-50 | -145.1 ± 38.7 (-96, -169, -172) | 311-250-39 | -38.0 ± 38.6 |
+| shogi | 286-314-0 | 235-364-1 | -59.7 ± 39.9 (-121, -16, -43) | 298-299-3 | +15.6 ± 39.4 |
+
+- DX -64.6 ± 19.4 over the four, SX -9.2 ± 19.3. Size is not the root.
+- Why DX loses: at FSF's size our danger's errors rule. It matches
+  FSF's sum at only +0.35 to +0.51 and has no gate, so it fires where
+  no attack can come, the same fault that `e_kmajsum` shows costs FSF
+  44 to 83. Xiangqi gains (+30): the royal stays in its palace, so the
+  static landings on its ring are near the real attacks there.
+- Why SX does nothing: our shelter counts shield pieces near the royal;
+  FSF's scores each file's shelter pawn and storm pawn by rank, and
+  takes the best of the royal's square and its castled squares.
+- The chain so far: KS gained +12 because FSF's sum is worth only near
+  40 under our check rule; ours as a whole is worth 17 because its
+  danger has the wrong shape; a better shape needs the real attackers,
+  the gate and the safe squares, which are per-node attack maps. On the
+  AF line the map pass costs x0.83 to x0.88 in nodes per second, near
+  -16, against a ceiling near 40 for the sum alone in standard and
+  grand and a loss in shogi. One term cannot pay for the maps.
+- The maps would pay only if several terms read them. FSF's other map
+  terms are threats (36 to 83 at FSF's own check rule) and mobility (56
+  to 87 in standard and xiangqi); neither was played in ours (TH was
+  dropped without a run, mobility was excluded on its cost). Their
+  worth under our check rule decides whether a map bundle is the lead:
+  queue164 turns off, against `s1` alone, mobility, threats, and
+  mobility, threats and the king sum together, 400 games in each key
+  variant.
