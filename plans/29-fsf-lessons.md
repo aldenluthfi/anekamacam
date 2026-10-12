@@ -2770,3 +2770,28 @@ the build minus main, then by round):
   queue164 turns off, against `s1` alone, mobility, threats, and
   mobility, threats and the king sum together, 400 games in each key
   variant.
+
+Queue164, FSF's map terms off against `s1` alone (400 games each, Elo
+of the side with the terms off):
+
+| Off | standard | xiangqi | grand | shogi |
+| --- | -------- | ------- | ----- | ----- |
+| `e_threats` | -106.6 ± 27.3 | -35.7 ± 27.3 | -103.7 ± 32.6 | -79.5 ± 31.6 |
+| `e_mobility` | -42.8 ± 24.2 | -56.1 ± 27.1 | +30.5 ± 31.6 | -119.1 ± 36.3 |
+| `e_mobility`, `e_threats`, `e_kdanger` | -207.5 ± 35.0 | -139.0 ± 33.5 | -117.2 ± 36.1 | +112.3 ± 37.1 |
+
+- Under our check rule threats are worth 36 to 107 in all four, more
+  than twice what the map pass costs (near 16). Mobility is worth 43 to
+  119 except in grand. The three map terms together are worth 117 to
+  208 outside shogi; in shogi the king sum's loss (155) outweighs them.
+- So the map pass pays when several terms read it, and threats first.
+  TH was dropped in plan 29 because FSF's threat term was near 0 at
+  the fatal positions of grand and capablanca; that read the eval at
+  one position, not the term's worth through the search.
+- Queue165 splits FSF's threats in five groups, each off against `s1`
+  alone, 400 games in each key variant, to find which kind carries the
+  value before a rule-derived term is designed: `e_tpiece` (a piece
+  attacked by a minor, a rook or the king), `e_thang` (hanging, and a
+  weak piece only the queen protects), `e_tpawn` (attacks by safe pawns
+  and safe pawn pushes), `e_trestr` (squares both sides attack) and
+  `e_tqueen` (knight and slider attacks next to the queen).
