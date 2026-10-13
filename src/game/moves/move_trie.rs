@@ -35,21 +35,17 @@ pub type WalkState = (i16, i16, i16, bool, bool);
 
 /// TrieNode
 ///
-/// One leg of the trie of a piece. A branch starts at a root node, and all
-/// the nodes of the branch share the CPMN condition of its root. A vector
-/// with another condition starts its own branch. The slides of a rook to
-/// the east are one branch, and a slide ends on each of its nodes:
+/// One leg of the trie of a piece. The slides of a rook to the east are
+/// one branch, and a slide ends on each of its nodes:
 ///
 /// ```text
-/// root (no condition)
-///  └─ W ● ─ W ● ─ W ● ─ W ● ─ W ● ─ W ● ─ W ●
+/// W ● ─ W ● ─ W ● ─ W ● ─ W ● ─ W ● ─ W ●
 ///
 /// ● : a vector ends on this leg (`can_end`)
 /// ```
 ///
 pub struct TrieNode {
     pub leg: Leg,                                                               /* the step of this node              */
-    pub condition: Option<Arc<PatternSet>>,                                     /* on a root: the branch's condition  */
     pub children: Vec<TrieNode>,                                                /* the next legs                      */
     pub can_end: bool,                                                          /* a vector ends on this leg          */
     pub has_capture: bool,                                                      /* a capture vector ends at or under  */
@@ -57,9 +53,11 @@ pub struct TrieNode {
 
 /// MoveTrie
 ///
-/// The root nodes of the trie of each piece, by piece index.
+/// The trie of one piece: its branches, each a root node with the CPMN
+/// condition that all the nodes of the branch share. A vector with another
+/// condition starts its own branch.
 ///
-pub type MoveTrie = Vec<Vec<TrieNode>>;
+pub type MoveTrie = Vec<(TrieNode, Option<Arc<PatternSet>>)>;
 
 /*----------------------------------------------------------------------------*\
                                   TRIE BUILDING
@@ -67,61 +65,73 @@ pub type MoveTrie = Vec<Vec<TrieNode>>;
 
 /// build_move_trie
 ///
-/// Makes the trie of each piece from its compiled vectors. Each vector goes
-/// down from the roots: a root with its first leg and its condition, then a
-/// child with each next leg, made when there is none. Its last node can end
-/// a move. A vector that can capture marks each node on its way.
+/// Makes the trie of one piece from its compiled vectors. Each vector goes
+/// down from a branch with its first leg and its condition, then through a
+/// child with each next leg; a missing branch or child is made. Its last
+/// node can end a move. A vector that can capture marks each node on its
+/// way.
 ///
 /// Params:
-/// - piece_moves: &[MoveSet] -> compiled vectors, one set for each piece
+/// - vectors: &MoveSet -> compiled vectors of the piece
 ///
 /// Return:
-/// MoveTrie                  -> the roots of the trie of each piece
+/// MoveTrie            -> the branches of the trie of the piece
 ///
-#[hotpath::measure]
-pub fn build_move_trie(piece_moves: &[MoveSet]) -> MoveTrie {
-    piece_moves.iter().map(|vectors| {
-        let mut roots: Vec<TrieNode> = Vec::new();
+pub fn build_move_trie(vectors: &MoveSet) -> MoveTrie {
+    let mut branches: MoveTrie = Vec::new();
 
-        for vector in vectors {
-            let count = vector.legs.len();
-            let captures = vector.legs.iter().enumerate().any(|(index, leg)| {
-                c!(*leg) || d!(*leg) || index + 1 == count && !m!(*leg)
-            });
-            let mut level = &mut roots;
-
-            for (index, &leg) in vector.legs.iter().enumerate() {
-                let condition = match index {
-                    0 => vector.pattern.clone(),
-                    _ => None,
-                };
-                let found = level.iter().position(|node| {
-                    node.leg == leg && match (&node.condition, &condition) {
-                        (None, None) => true,
-                        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
-                        _ => false,
-                    }
-                });
-                let at = found.unwrap_or_else(|| {
-                    level.push(TrieNode {
-                        leg,
-                        condition,
-                        children: Vec::new(),
-                        can_end: false,
-                        has_capture: false,
-                    });
-                    level.len() - 1
-                });
-                let node = &mut level[at];
-
-                node.can_end |= index + 1 == count;
-                node.has_capture |= captures;
-                level = &mut node.children;
+    for vector in vectors {
+        let Some((&first, rest)) = vector.legs.split_first() else {
+            continue;
+        };
+        let count = vector.legs.len();
+        let captures = vector.legs.iter().enumerate().any(|(index, leg)| {
+            c!(*leg) || d!(*leg) || index + 1 == count && !m!(*leg)
+        });
+        let found = branches.iter().position(|(root, condition)| {
+            root.leg == first && match (condition, &vector.pattern) {
+                (None, None) => true,
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                _ => false,
             }
+        });
+        let at = found.unwrap_or_else(|| {
+            branches.push((trie_node(first), vector.pattern.clone()));
+            branches.len() - 1
+        });
+        let mut node = &mut branches[at].0;
+
+        node.has_capture |= captures;
+
+        for &leg in rest {
+            let at = node.children.iter().position(|child| child.leg == leg)
+                .unwrap_or_else(|| {
+                    node.children.push(trie_node(leg));
+                    node.children.len() - 1
+                });
+
+            node = &mut node.children[at];
+            node.has_capture |= captures;
         }
 
-        roots
-    }).collect()
+        node.can_end = true;
+    }
+
+    branches
+}
+
+/// trie_node
+///
+/// Gives a new trie node for a leg, with no children and no end.
+///
+/// Params:
+/// - leg: Leg -> step of the node
+///
+/// Return:
+/// TrieNode   -> the new node
+///
+fn trie_node(leg: Leg) -> TrieNode {
+    TrieNode { leg, children: Vec::new(), can_end: false, has_capture: false }
 }
 
 /*----------------------------------------------------------------------------*\
@@ -131,6 +141,7 @@ pub fn build_move_trie(piece_moves: &[MoveSet]) -> MoveTrie {
 /// walk_move_trie
 ///
 /// Makes the moves of one piece on one square from its trie, depth first.
+/// A branch whose condition fails at the origin is skipped whole.
 ///
 /// Params:
 /// - state        : &State         -> current position
@@ -149,18 +160,23 @@ pub fn walk_move_trie(
     scratch: &mut Vec<u64>,
     captures_only: bool,
 ) {
-    let roots = &state.statics.move_trie[p_index!(piece) as usize];
+    let trie = &state.statics.move_tries[p_index!(piece) as usize];
     let mover: WalkOrigin = walk_origin!(square_index, piece, state);
+    let walk = walk_start!(mover, state);
     let mut encoded_move = Move::default();
 
     enc_start!(encoded_move, square_index as u128);
     enc_piece!(encoded_move, mover.1 as u128);
     scratch.clear();
 
-    walk_trie_nodes(
-        state, piece, mover, roots, walk_start!(mover, state), &encoded_move,
-        out, scratch, captures_only,
-    );
+    for (root, condition) in trie {
+        if match_pattern_set!(condition, mover.0, mover.2, state) {
+            walk_trie_nodes(
+                state, piece, mover, std::slice::from_ref(root), walk,
+                &encoded_move, out, scratch, captures_only,
+            );
+        }
+    }
 }
 
 /// walk_trie_nodes
@@ -170,7 +186,6 @@ pub fn walk_move_trie(
 ///
 /// - captures_only : no capture vector ends on or under it
 /// - edge or zone  : its leg leaves the board or enters a forbidden zone
-/// - condition     : the condition of its branch fails at the origin
 /// - blocked       : its leg fails as a middle leg
 ///
 /// A node is read once as a middle leg. A vector that ends on it makes its
@@ -204,7 +219,6 @@ fn walk_trie_nodes(
     for node in nodes {
         if captures_only && !node.has_capture
         || !leg_lands!(&node.leg, mover, walk, state)
-        || !match_pattern_set!(&node.condition, mover.0, mover.2, state)
         {
             continue;
         }

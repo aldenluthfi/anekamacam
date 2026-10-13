@@ -25,14 +25,15 @@ This plan builds the user's design and profiles it before any games.
 
 `src/game/moves/move_trie.rs`, one trie for each piece:
 
-- `TrieNode { leg, condition, children, can_end, has_capture }`
+- `TrieNode { leg, children, can_end, has_capture }`
   - `leg`: the step of the node; children are told apart by it
-  - `condition`: set on the first node of a branch; vectors with other
-    conditions take another branch, so every node under it shares it
   - `children: Vec<TrieNode>`
   - `can_end`: a vector ends on this node
   - `has_capture`: a capture vector ends on or under it
-- `MoveTrie`: for each piece, its root nodes.
+- `MoveTrie = Vec<(TrieNode, Option<Arc<PatternSet>>)>`: the trie of one
+  piece, its branches, each a root with the CPMN condition all its nodes
+  share (the user's layout); a vector with another condition starts its
+  own branch. `StaticState::move_tries` holds one for each piece.
 - The walk is a plain depth-first recursion. A node is skipped with all
   its children when the condition of its branch fails, when its leg
   leaves the board or enters a forbidden zone it may not pass, or when

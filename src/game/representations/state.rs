@@ -747,7 +747,7 @@ pub struct StaticState {
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
-    pub move_trie: MoveTrie,                                                    /* each piece's vectors by their legs */
+    pub move_tries: Vec<MoveTrie>,                                              /* piece to its vectors by their legs */
     pub capture_reach: Vec<u64>,                                                /* piece, square to capture leg reach */
     pub capture_destroys: Vec<bool>,                                            /* piece to an own-piece capture leg  */
     pub royal_reach: Vec<u64>,                                                  /* side, royal square to attack reads */
@@ -1057,7 +1057,7 @@ impl State {
 
             relevant_moves: vec![MoveSet::new(); board_size * piece_count],
             relevant_captures: vec![MoveSet::new(); board_size * piece_count],
-            move_trie: MoveTrie::default(),
+            move_tries: Vec::new(),
             capture_reach: Vec::new(),
             capture_destroys: vec![false; piece_count],
             royal_reach: Vec::new(),
@@ -1402,7 +1402,7 @@ impl State {
     ///
     /// 1. compile the expressions, one set for each piece
     /// 2. `populate_relevant` puts the sets on each square
-    /// 3. `build_move_trie` joins the vectors of each piece by their legs
+    /// 3. `build_move_trie` joins the vectors of a piece by their legs
     /// 4. `generate_attack_masks` stores each move under its target square
     /// 5. `derive_attack_recipes` makes the tables of `piece_attacks!`
     /// 6. the royal reach, the squares an attack on a royal square reads
@@ -1452,7 +1452,8 @@ impl State {
             self.populate_relevant(&piece_moves, generate_relevant_captures);
         self.static_mut().relevant_captures = captures;
 
-        self.static_mut().move_trie = build_move_trie(&piece_moves);
+        self.static_mut().move_tries =
+            piece_moves.iter().map(build_move_trie).collect();
 
         if drops!(self) {
             let drops =
