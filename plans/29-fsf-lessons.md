@@ -2896,3 +2896,33 @@ session costs nothing and stays, but drift is not its reason.
   embeds, so its builds failed after 2026-10-12 and it ran the build of
   403cebf (the build 21 line with the review, the same engine as before
   the port). `res/` is restored and it now builds 1db0677.
+
+### TH on build 22 (2026-10-13, branch `plan29-th2`, fa6eaa0, not played)
+
+- `threats!` makes the attack map of each piece once for each evaluation
+  and scores the three kinds that pay in FSF (queue165): a hanging enemy
+  piece, an enemy piece that a pawn attacks from a safe square, and a
+  restricted square. The values are parts of the most valuable piece
+  from FSF's values over its queen (`HANGING_RATIO`, `PAWN_THREAT_RATIO`,
+  `RESTRICTED_RATIO`), opening then endgame, in both halves of the blend.
+- Hand positions: a lone hanging knight +15, the same knight hit by a
+  pawn +56 (hanging and pawn), the mirror 0, the side flip exact.
+- Time for 1M nodes from the start position against build 22 (server,
+  all variants at once): x0.90 to x1.64, standard x0.98, xiangqi x1.25,
+  grand x1.38, shogi x1.12; chu x1.36, dai x1.33, dai-dai x0.96. On a
+  large board the pass costs no more than on a small one.
+- Next: games against full FSF, interleaved with build 22, three rounds
+  in each key variant.
+
+### Taikyoku on build 22 (2026-10-13)
+
+- Alone on the server, 100k nodes from the start position take 73 s
+  (near 1.4k nodes per second), and the process peaks at 14.2 GB of the
+  server's 16 GB; TH takes 90 s and 13.9 GB. Two taikyoku processes at
+  once run out of memory, so taikyoku cannot be played in a match, with
+  or without TH.
+- Not yet known: which tables hold the memory (the history tables are
+  near their 1 GB cap there; the move tables, the capture reach and the
+  attack recipes grow with the pieces and the squares), and how much of
+  it the port added. The build before the port, measured the same way,
+  gives the port's share.
