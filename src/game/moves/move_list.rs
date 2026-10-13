@@ -608,6 +608,59 @@ pub fn generate_relevant_captures(
     result
 }
 
+/// fitted_vectors
+///
+/// Gives the vectors of a piece that can go from one origin square, fitted
+/// to it, with `generate_relevant_moves`. The load passes ask for them one
+/// square at a time, so no table of them is kept.
+///
+/// Params:
+/// - state       : &State -> variant with `piece_moves`
+/// - piece_index : usize  -> piece of the vectors
+/// - square_index: usize  -> origin square
+///
+/// Return:
+/// MoveSet                -> playable vectors, longest first
+///
+pub fn fitted_vectors(
+    state: &State,
+    piece_index: usize,
+    square_index: usize,
+) -> MoveSet {
+    generate_relevant_moves(
+        &state.statics.pieces[piece_index],
+        square_index as u32,
+        state,
+        &state.statics.piece_moves,
+    )
+}
+
+/// fitted_captures
+///
+/// Gives the vectors of `fitted_vectors` that can capture or destroy, with
+/// `generate_relevant_captures`.
+///
+/// Params:
+/// - state       : &State -> variant with `piece_moves`
+/// - piece_index : usize  -> piece of the vectors
+/// - square_index: usize  -> origin square
+///
+/// Return:
+/// MoveSet                -> playable capture vectors, longest first
+///
+pub fn fitted_captures(
+    state: &State,
+    piece_index: usize,
+    square_index: usize,
+) -> MoveSet {
+    generate_relevant_captures(
+        &state.statics.pieces[piece_index],
+        square_index as u32,
+        state,
+        &state.statics.piece_moves,
+    )
+}
+
 /// generate_attack_masks
 ///
 /// Collects the `relevant_attacks` entries from one origin square. For
@@ -616,7 +669,7 @@ pub fn generate_relevant_captures(
 ///
 /// Params:
 /// - square_index: u16    -> origin square of the attacks
-/// - state       : &State -> engine state with the move tables
+/// - state       : &State -> engine state with `piece_moves`
 ///
 /// Return:
 ///
@@ -632,7 +685,6 @@ pub fn generate_attack_masks(
     square_index: u16,
     state: &State,
 ) -> Vec<(usize, usize, AttackMask)> {
-    let board_size = state.statics.board_size;
     let files = state.statics.files;
 
     let mut pending: Vec<(usize, usize, AttackMask)> = Vec::new();
@@ -641,10 +693,11 @@ pub fn generate_attack_masks(
         let piece_index = p_index!(piece);
         let piece_color = p_color!(piece);
 
-        let vector_set = &state.statics.relevant_moves
-            [piece_index as usize * board_size + square_index as usize];
+        let vector_set = fitted_vectors(
+            state, piece_index as usize, square_index as usize
+        );
 
-        for multi_leg_vector in vector_set {
+        for multi_leg_vector in &vector_set {
             let mut accumulated_index = square_index as i16;
 
             let leg_count = multi_leg_vector.legs.len();
@@ -767,8 +820,10 @@ pub fn derive_attack_recipes(state: &State) -> AttackRecipes {
         let mut shaped: HashMap<(i32, i32), Vec<(Square, Vec<(Square, bool)>)>>
             = HashMap::new();
         let mut loose: Vec<(Square, Vec<(Square, bool)>)> = Vec::new();
+        let vectors =
+            fitted_vectors(state, entry / board_size, origin as usize);
 
-        for vector in &state.statics.relevant_moves[entry] {
+        for vector in &vectors {
             let first_move = vector.legs.iter().any(|leg| i!(*leg));
             let royal_only = vector.legs.last().is_some_and(|leg| k!(*leg));
 

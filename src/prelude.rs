@@ -55,7 +55,7 @@ pub use crate::game::moves::move_list::{
     generate_drops,
     derive_attack_recipes, generate_attack_masks, AttackRecipes,
     generate_relevant_captures, generate_relevant_castling,
-    generate_relevant_moves,
+    generate_relevant_moves, fitted_captures, fitted_vectors,
 };
 pub use crate::game::moves::move_trie::{
     build_move_trie, walk_move_trie, MoveTrie, TrieNode, WalkOrigin, WalkState,

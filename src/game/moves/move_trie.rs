@@ -151,6 +151,13 @@ fn trie_node(leg: Leg) -> TrieNode {
 /// - scratch      : &mut Vec<u64>  -> pieces taken on the current path
 /// - captures_only: bool           -> walk only the capture vectors
 ///
+/// Notes:
+/// The set of moves is that of `process_multi_leg_vector!` for each vector
+/// of `fitted_vectors` of the square: a leg off the board or into a
+/// forbidden zone ends its vectors as the fit would leave them out, and
+/// `match_pattern!` reads a condition with the bounds that `clip_pattern`
+/// fits.
+///
 #[inline]
 pub fn walk_move_trie(
     state: &State,
