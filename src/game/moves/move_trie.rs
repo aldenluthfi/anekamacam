@@ -119,6 +119,11 @@ pub fn build_move_trie(state: &State) -> MoveTrie {
         trie.ends.extend(ends);
     }
 
+    log_3!(
+        "Built move trie: {} legs, {} vector ends, {} entries",
+        trie.nodes.len(), trie.ends.len(), trie.roots.len()
+    );
+
     trie
 }
 
