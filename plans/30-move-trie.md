@@ -178,3 +178,36 @@ perft against a base, each run in its own working folder) and
   the build. The per-square tables are what fill taikyoku's memory: 71 M
   vectors are kept once in `relevant_moves`, again in
   `relevant_captures`, and now in the trie.
+
+### Stage 3 (0e7cabb, 0473c4b)
+
+- One trie for each piece: 1752 legs in standard, against 7836 for the
+  tries of all squares.
+- Perft equals build 22 in all 21 runs (17 suites, chushogi 4, daishogi
+  4, daidaishogi 3, taikyoku 2). The games differ, as the order does.
+- A plain perft prints its root moves in move order, so the check first
+  marked daidaishogi as different (186662 in both); `ident.sh` now sorts
+  perft lines before it compares them.
+- Nodes per second against build 22: standard x0.935 ± 0.018, xiangqi
+  x1.102 ± 0.025, grand x1.025 ± 0.014, shogi x0.946 ± 0.032. The trees
+  differ now, so this mixes speed with the make-up of the tree; perft
+  time, where both walk the same tree, is measured with stage 4.
+- Taikyoku loaded alone: build 22 13.6 GB, stage 3 13.9 GB; it fits.
+- Queue167 plays build 22 and stage 3 against full FSF (results below).
+
+### Stage 4 (8f9ff3b) and the landing test (016dbc7)
+
+- `relevant_moves` and `relevant_captures` are gone; `fitted_vectors` and
+  `fitted_captures` serve the load passes.
+- The load logs (every derived value), sorted, equal stage 3 in all 44
+  variants.
+- Taikyoku loaded alone on the laptop: 7.3 GB and 22.6 s for stage 3,
+  5.8 GB and 31.3 s for stage 4. The load fits again for each pass that
+  asks, which costs time; macOS reads its peak lower than the server.
+- One trie for each piece walks legs that leave the board, which the
+  tries of the squares never held, and each such node failed twice (as a
+  last leg and as a middle leg). `leg_lands!` now tests the edge and the
+  zone once for each node, before either read; `walk_leg!` no longer
+  tests them, as the vectors of `lva!` are fitted to their squares.
+- Queue168 checks it against stage 3 (the same moves in the same order)
+  and times perft against build 22 and stage 3 after queue167.
