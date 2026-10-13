@@ -232,10 +232,10 @@ fn build_piece_trie(vectors: &MoveSet) -> (Vec<TrieNode>, Vec<TrieEnd>, u32) {
 ///
 /// Notes:
 /// The set of moves is that of `process_multi_leg_vector!` for each vector
-/// of `relevant_moves` of the square: a leg off the board or into a
-/// forbidden zone ends its vectors as the table would leave them out, and
+/// of `fitted_vectors` of the square: a leg off the board or into a
+/// forbidden zone ends its vectors as the fit would leave them out, and
 /// `match_pattern!` reads a condition with the bounds that `clip_pattern`
-/// fits at load.
+/// fits.
 ///
 #[inline]
 pub fn walk_move_trie(

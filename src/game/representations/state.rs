@@ -745,8 +745,7 @@ pub struct StaticState {
     pub ranks: u8,                                                              /* squares up the board               */
     pub board_size: usize,                                                      /* files * ranks                      */
 
-    pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
-    pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
+    pub piece_moves: Vec<MoveSet>,                                              /* piece to its compiled vectors      */
     pub move_trie: MoveTrie,                                                    /* each piece's vectors by their legs */
     pub capture_reach: Vec<u64>,                                                /* piece, square to capture leg reach */
     pub capture_destroys: Vec<bool>,                                            /* piece to an own-piece capture leg  */
@@ -1055,8 +1054,7 @@ impl State {
             ranks,
             board_size,
 
-            relevant_moves: vec![MoveSet::new(); board_size * piece_count],
-            relevant_captures: vec![MoveSet::new(); board_size * piece_count],
+            piece_moves: vec![MoveSet::new(); piece_count],
             move_trie: MoveTrie::default(),
             capture_reach: Vec::new(),
             capture_destroys: vec![false; piece_count],
@@ -1395,21 +1393,23 @@ impl State {
 
     /// State::precompute
     ///
-    /// Makes all runtime tables from the variant expressions: moves,
-    /// captures, drops, setup drops, stand-offs and attack masks. It runs
-    /// once after the config parse, before the search threads. It skips a
-    /// table when its special rule is off.
+    /// Makes all runtime tables from the variant expressions: the move
+    /// tries, drops, setup drops, stand-offs and attack masks. It runs once
+    /// after the config parse, before the search threads. It skips a table
+    /// when its special rule is off.
     ///
     /// 1. compile the expressions, one set for each piece
-    /// 2. `populate_relevant` puts the sets on each square
-    /// 3. `build_move_trie` joins the vectors of each piece by their legs
+    /// 2. `build_move_trie` joins the vectors of each piece by their legs
+    /// 3. `populate_relevant` puts the drop and stand-off sets on each square
     /// 4. `generate_attack_masks` stores each move under its target square
     /// 5. `derive_attack_recipes` makes the tables of `piece_attacks!`
     /// 6. the royal reach, the squares an attack on a royal square reads
     /// 7. the royal lines, the squares a piece attacks a royal square from
     /// 8. the capture reach, the squares that the capture legs land on
     ///
-    /// The size of steps 7 and 8 grows with the square of the board area.
+    /// The vectors of a piece fitted to a square are not kept: steps 4, 5
+    /// and 8 and the derivation ask `fitted_vectors` for them. The size of
+    /// steps 7 and 8 grows with the square of the board area.
     /// Only a board of at most `CAPTURE_REACH_WORDS` words keeps them.
     ///
     /// Params:
@@ -1444,15 +1444,8 @@ impl State {
             piece_stand_off = self.generate_piece_stand_off(stand_off_expr_set);
         }
 
-        let moves =
-            self.populate_relevant(&piece_moves, generate_relevant_moves);
-        self.static_mut().relevant_moves = moves;
-
-        let captures =
-            self.populate_relevant(&piece_moves, generate_relevant_captures);
-        self.static_mut().relevant_captures = captures;
-
         self.static_mut().move_trie = build_move_trie(&piece_moves);
+        self.static_mut().piece_moves = piece_moves;
 
         if drops!(self) {
             let drops =
@@ -1480,6 +1473,16 @@ impl State {
 
         let (rays, rising, leaps, lines, gates, whole) =
             derive_attack_recipes(self);
+        let size = self.statics.board_size;
+        let capture_sets: Vec<MoveSet> =                                        /* only a board that keeps a capture  */
+            match (size + 63) >> 6 > CAPTURE_REACH_WORDS {                      /* reach reads them                   */
+                true => Vec::new(),
+                false => (0..piece_count * size).into_par_iter()
+                    .map(|entry| {
+                        fitted_captures(self, entry / size, entry % size)
+                    })
+                    .collect(),
+            };
         let statics = self.static_mut();
 
         for (color, square, mask) in attack_writes.into_iter().flatten() {
@@ -1573,7 +1576,7 @@ impl State {
 
         let mut reach = vec![0u64; piece_count * board_size * words];
 
-        for (entry, vectors) in statics.relevant_captures.iter().enumerate() {
+        for (entry, vectors) in capture_sets.iter().enumerate() {
             let piece_index = entry / board_size;
             let piece = &statics.pieces[piece_index];
             let sign = -2 * p_color!(piece) as i32 + 1;

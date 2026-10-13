@@ -629,12 +629,11 @@ fn derive_piece_reach(state: &State, piece: &Piece) -> f64 {
         let start_file = square as i32 % files;
         let start_rank = square as i32 / files;
 
-        let relevant_moves = &state.statics.relevant_moves
-            [piece_index * board_size + square];
+        let vectors = &fitted_vectors(state, piece_index, square);
 
         let mut landings: Vec<usize> = Vec::new();
 
-        for multi_leg_vector in usual_vectors(state, relevant_moves) {
+        for multi_leg_vector in usual_vectors(state, vectors) {
             let mut file_offset = 0;
             let mut rank_offset = 0;
 
@@ -713,10 +712,9 @@ fn derive_piece_offsets(state: &State, piece: &Piece) -> HashSet<(i32, i32)> {
     let mut offsets: HashSet<(i32, i32)> = HashSet::new();
 
     for square in 0..board_size {
-        let relevant_moves = &state.statics.relevant_moves
-            [piece_index * board_size + square];
+        let vectors = &fitted_vectors(state, piece_index, square);
 
-        for multi_leg_vector in usual_vectors(state, relevant_moves) {
+        for multi_leg_vector in usual_vectors(state, vectors) {
             let mut file_offset = 0;
             let mut rank_offset = 0;
 
@@ -845,12 +843,7 @@ fn derive_piece_value(state: &State, piece: &Piece, occupancy: f64) -> f64 {
 fn derive_piece_mobility(
     state: &State, piece_index: PieceIndex, square: usize, occupancy: f64
 ) -> f64 {
-    let board_size = state.statics.board_size;
-
-    let relevant_moves = &state.statics.relevant_moves
-        [piece_index as usize * board_size + square];
-
-    relevant_moves
+    fitted_vectors(state, piece_index as usize, square)
         .iter()
         .filter_map(|vector| derive_vector_chance(state, vector, occupancy))
         .map(|(chance, ..)| chance)
@@ -879,12 +872,9 @@ fn derive_piece_mobility(
 fn derive_family_mobility(
     state: &State, piece_index: PieceIndex, square: usize, occupancy: f64
 ) -> [f64; 3] {
-    let board_size = state.statics.board_size;
     let mut families = [0.0; 3];
 
-    for vector in &state.statics.relevant_moves
-        [piece_index as usize * board_size + square]
-    {
+    for vector in &fitted_vectors(state, piece_index as usize, square) {
         let Some(final_leg) = vector.legs.last() else {
             continue;
         };
@@ -1813,10 +1803,8 @@ pub fn derive_search_capabilities(state: &mut State) {
             let mut quiet_vectors = 0;
 
             for square in 0..board_size {
-                let slot = piece_index * board_size + square;
-
-                for vector in statics.relevant_moves[slot].iter()
-                    .chain(statics.relevant_captures[slot].iter())
+                for vector in fitted_vectors(state, piece_index, square).iter()
+                    .chain(fitted_captures(state, piece_index, square).iter())
                 {
                     let mut destroyed = 0;
                     let mut victims = 0;
@@ -2588,8 +2576,7 @@ pub fn derive_danger_parameters(state: &mut State) {
     for piece_index in 0..piece_count {
         for from in 0..board_size {
             let mut pressure = vec![0.0f64; board_size];
-            let vectors = &state.statics.relevant_moves
-                [piece_index * board_size + from];
+            let vectors = &fitted_vectors(state, piece_index, from);
 
             for vector in vectors {
                 let Some((chance, file_delta, rank_delta)) =
@@ -2729,7 +2716,7 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
         let row = piece_index * board_size;
 
         let landings: Vec<Vec<usize>> = (0..board_size).map(|from| {
-            state.statics.relevant_moves[row + from].iter()
+            fitted_vectors(state, piece_index, from).iter()
                 .filter_map(|vector| {
                     derive_vector_chance(state, vector, 0.0)
                         .filter(|(chance, _, _)| *chance > 0.0)
@@ -2835,8 +2822,7 @@ fn derive_pawn_slots(state: &State) -> (Vec<usize>, Vec<usize>) {
         let mut ranges_far = false;
 
         for square in 0..board_size {
-            let vectors =
-                &state.statics.relevant_moves[index * board_size + square];
+            let vectors = &fitted_vectors(state, index, square);
 
             for vector in usual_vectors(state, vectors) {
                 let (file_offset, rank_offset) = vector_offset!(vector);
@@ -2904,7 +2890,6 @@ fn derive_pawn_slots(state: &State) -> (Vec<usize>, Vec<usize>) {
 fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
-    let board_size = state.statics.board_size;
     let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
 
     let mut path = board!(state.statics.files, state.statics.ranks);
@@ -2912,8 +2897,7 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
     pending.push_back(square);
 
     while let Some(current) = pending.pop_front() {
-        let vectors =
-            &state.statics.relevant_moves[index * board_size + current];
+        let vectors = &fitted_vectors(state, index, current);
 
         for vector in usual_vectors(state, vectors) {
             if !vector_moves_quietly!(vector) {
@@ -2967,11 +2951,10 @@ fn derive_pawn_path(state: &State, index: usize, square: usize) -> Board {
 fn derive_pawn_stop(state: &State, index: usize, square: usize) -> Board {
     let files = state.statics.files as i32;
     let ranks = state.statics.ranks as i32;
-    let board_size = state.statics.board_size;
     let sign = -2 * p_color!(&state.statics.pieces[index]) as i32 + 1;
 
     let mut stop = board!(state.statics.files, state.statics.ranks);
-    let vectors = &state.statics.relevant_moves[index * board_size + square];
+    let vectors = &fitted_vectors(state, index, square);
 
     for vector in usual_vectors(state, vectors) {
         if !vector_moves_quietly!(vector) || vector_is_initial!(vector) {
@@ -3036,8 +3019,7 @@ fn derive_pawn_captures(state: &State, color: u8, targets: &Board) -> Board {
         }
 
         for source in 0..board_size {
-            let vectors = &state.statics.relevant_captures
-                [index * board_size + source];
+            let vectors = &fitted_captures(state, index, source);
 
             for vector in usual_vectors(state, vectors) {
                 let (file_offset, rank_offset) = vector_offset!(vector);
@@ -3132,8 +3114,7 @@ fn derive_pawn_support_files(state: &State, index: usize) -> Vec<i32> {
     let mut step_files: Vec<i32> = Vec::new();
 
     for square in 0..board_size {
-        let captures =
-            &state.statics.relevant_captures[index * board_size + square];
+        let captures = &fitted_captures(state, index, square);
 
         for vector in usual_vectors(state, captures) {
             let capture_file = vector_offset!(vector).0;
@@ -3143,8 +3124,7 @@ fn derive_pawn_support_files(state: &State, index: usize) -> Vec<i32> {
             }
         }
 
-        let moves =
-            &state.statics.relevant_moves[index * board_size + square];
+        let moves = &fitted_vectors(state, index, square);
 
         for vector in usual_vectors(state, moves) {
             if !vector_moves_quietly!(vector) || vector_is_initial!(vector) {

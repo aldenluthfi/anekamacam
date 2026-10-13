@@ -105,7 +105,21 @@ castling.
      interleaved with build 22, three rounds of 200 in each key variant
      (`nodestime` 14, 16, 29, 44), at +2σ on the mean; perft must still
      equal build 22 everywhere.
-4. Results here; merge as build 23.
+4. No per-square vector tables (asked by the user after stage 3). With
+   the trie, `relevant_moves` and `relevant_captures` are read only at
+   load: the attack masks, the attack recipes, the capture reach and the
+   derivation in `parameters.rs` (again by `tune`). On taikyoku they hold
+   71 M fitted vectors twice, most of its 13.4 GB.
+   - `StaticState` keeps `piece_moves`, the compiled vectors of each piece,
+     in place of the two tables.
+   - `fitted_vectors` and `fitted_captures` give the vectors of a piece
+     fitted to one square on demand, with `generate_relevant_moves` and
+     `generate_relevant_captures` as now, so each reader sees the same
+     vectors in the same order.
+   - Check: the load logs (every derived value) equal stage 3 line for
+     line in all 44 variants; perft and seeded games equal stage 3;
+     taikyoku's peak memory and load time against stage 3.
+5. Results here; merge as build 23.
 
 ## Verification
 
