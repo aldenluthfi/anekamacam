@@ -46,8 +46,14 @@ This plan builds the user's design and profiles it before any games.
   can differ.
 - The leg rules stay in `walk_leg!` (plan 30 stage 1, badad6e), and
   `match_pattern!` tests the bounds (plan 30 stage 3).
-- The per-square vector tables stay for the load passes; this plan is the
-  walk only.
+- No per-square vector tables (asked by the user, from plan 30 stage 4):
+  `StaticState` keeps `piece_moves`, and the load passes (attack masks,
+  attack recipes, capture reach, the derivation in `parameters.rs`) ask
+  `fitted_vectors` and `fitted_captures` for a piece's vectors fitted to a
+  square. In plan 30 this gave the same load logs in all 44 variants and
+  took taikyoku from 13.6 to 7.4 GB, with a slower load (76 s).
+- `relevant_attacks` stays: it is read backwards from a target square,
+  and a backward trie would be its own plan.
 
 ## Stages
 
