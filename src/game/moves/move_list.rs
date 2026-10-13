@@ -1475,15 +1475,50 @@ macro_rules! walk_start {
     }};
 }
 
+/// leg_lands!
+///
+/// Tells if a leg from the walk state ends on the board and outside the
+/// forbidden zone of the piece, unless the leg may pass the zone. These are
+/// the tests that fit a vector to a square, and they do not depend on how
+/// the leg is read, so the trie walk makes them once for each node.
+///
+/// Params:
+/// - leg  : &Leg       -> leg to test
+/// - mover: WalkOrigin -> the facts of `walk_origin!`
+/// - walk : &WalkState -> the walk before the leg
+/// - state: &State     -> board dimensions and forbidden zones
+///
+/// Return:
+/// bool                -> true if the leg can land
+///
+#[macro_export]
+macro_rules! leg_lands {
+    ($leg:expr, $mover:expr, $walk:expr, $state:expr) => {{
+        let leg: &Leg = $leg;
+        let sign = -2 * $mover.2 as i16 + 1;
+        let file = $walk.1 + x!(leg) as i16 * sign;
+        let rank = $walk.2 + y!(leg) as i16 * sign;
+        let files = $state.statics.files as i16;
+
+        file >= 0 && file < files
+            && rank >= 0 && rank < $state.statics.ranks as i16
+            && !(forbidden_zones!($state)
+                && get!(
+                    $state.statics.forbidden_zones[$mover.1 as usize],
+                    (rank * files + file) as u32
+                )
+                && !(v!(leg) && not_v!(leg)))                                   /* a bypass leg may pass the zone     */
+    }};
+}
+
 /// walk_leg!
 ///
-/// Plays one leg of a vector on the walk state. It tests the board edge,
-/// the forbidden zone, the occupancy and the modifiers at the leg end, adds
-/// a taken piece to `scratch`, and adds the first move, en passant and
-/// promotion facts. A leg off the board or into a forbidden zone it may not
-/// pass, a blocked leg, a failed capture rule, a failed promotion rule or a
-/// failed first move rule ends the vector. A last leg differs from a middle
-/// leg only in its capture: a last leg without `m` can capture.
+/// Plays one leg of a vector on the walk state. It tests the occupancy and
+/// the modifiers at the leg end, adds a taken piece to `scratch`, and adds
+/// the first move, en passant and promotion facts. A blocked leg, a failed
+/// capture rule, a failed promotion rule or a failed first move rule ends
+/// the vector. A last leg differs from a middle leg only in its capture: a
+/// last leg without `m` can capture.
 ///
 /// Params:
 /// - leg         : &Leg           -> leg to play
@@ -1499,8 +1534,8 @@ macro_rules! walk_start {
 ///
 /// Notes:
 /// The piece colour scales the offsets. The move gathers its first move
-/// and en passant bits over all legs. A vector fitted to its square at load
-/// passes the edge and zone tests on every leg.
+/// and en passant bits over all legs. The leg must land, as `leg_lands!`
+/// tells: a vector fitted to its square lands on every leg.
 ///
 #[macro_export]
 macro_rules! walk_leg {
@@ -1526,26 +1561,9 @@ macro_rules! walk_leg {
 
             walk.1 += file_offset as i16;
             walk.2 += rank_offset as i16;
-
-            if walk.1 < 0 || walk.1 >= $state.statics.files as i16
-            || walk.2 < 0 || walk.2 >= $state.statics.ranks as i16
-            {
-                break 'leg false;
-            }
-
             walk.0 = walk.2 * $state.statics.files as i16 + walk.1;
 
             let end_square = walk.0 as u32;
-
-            if forbidden_zones!($state)
-            && get!(
-                $state.statics.forbidden_zones[piece_index as usize],
-                end_square
-            )
-            && !(v!(leg) && not_v!(leg))                                        /* a bypass leg may pass the zone     */
-            {
-                break 'leg false;
-            }
 
             let m = m!(leg) || (!c!(leg) && !d!(leg));
             let c = c!(leg) || (last_leg && !m!(leg));

@@ -294,7 +294,9 @@ fn walk_trie_run(
     for index in run.0..run.0 + run.1 {
         let node = &trie.nodes[index as usize];
 
-        if captures_only && !node.captures {
+        if captures_only && !node.captures
+        || !leg_lands!(&node.leg, mover, walk, state)
+        {
             continue;
         }
 
