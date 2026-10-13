@@ -4501,13 +4501,16 @@ pub fn generate_all_captures(
         let mapped = plain && state.statics.attack_whole[piece_index];
 
         for &index in piece_squares!(state, piece_index) {
-            let row = (piece_index * board_size + index as usize) * words;
+            let entry = piece_index * board_size + index as usize;
+            let row = entry * words;
+            let leaps_only = state.statics.attack_lines[entry].is_empty()
+                && state.statics.attack_gates[entry].is_empty();
 
             if skippable && !meets_row!(enemies, &reach[row..row + words]) {
                 continue;
             }
 
-            if mapped {
+            if mapped && !(skippable && leaps_only) {                           /* leaps only: the reach covered it   */
                 attacks.2[..words].fill(0);
                 piece_attacks!(state, piece_index, index, occupied, attacks);
 
