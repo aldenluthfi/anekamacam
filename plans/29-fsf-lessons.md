@@ -2795,3 +2795,83 @@ of the side with the terms off):
   weak piece only the queen protects), `e_tpawn` (attacks by safe pawns
   and safe pawn pushes), `e_trestr` (squares both sides attack) and
   `e_tqueen` (knight and slider attacks next to the queen).
+
+Queue165, FSF's threat groups off against `s1` alone (400 games each,
+Elo of the side with the group off):
+
+| Off | standard | xiangqi | grand | shogi | mean |
+| --- | -------- | ------- | ----- | ----- | ---- |
+| `e_thang` | -6.9 ± 24.6 | -41.0 ± 27.9 | -25.2 ± 28.9 | -56.1 ± 34.5 | -32.3 |
+| `e_tpawn` | -22.6 ± 24.7 | -2.6 ± 27.5 | -41.9 ± 31.3 | -35.7 ± 35.0 | -25.7 |
+| `e_trestr` | -20.0 ± 24.9 | +15.6 ± 27.4 | -35.7 ± 29.2 | -29.6 ± 33.2 | -17.4 |
+| `e_tpiece` | -25.2 ± 24.9 | +1.7 ± 26.8 | -0.9 ± 32.1 | -4.3 ± 33.9 | -7.2 |
+| `e_tqueen` | -23.5 ± 24.5 | +4.3 ± 25.8 | +11.3 ± 32.5 | -1.7 ± 34.8 | -2.4 |
+
+- The groups add up to the whole: their sums are -98, -22, -92 and
+  -127 against -107, -36, -104 and -80 with all threats off, each within
+  the error of a sum of five (near ± 38 at 1σ). So, unlike FSF's king
+  sum, the threat value has no hidden coupling between its parts.
+- Hanging pieces carry the most, and in all four variants: a piece we
+  attack that the enemy does not hold strongly (no defending pawn, and
+  not more defenders than our attackers). Safe pawn attacks and pushes
+  come next, then restricted squares (both sides attack, the enemy does
+  not hold the square strongly). Threats by a lesser piece and the
+  queen terms count only in standard, where FSF's piece names fit.
+- The three that pay are stated by attack counts, pawn slots and
+  defence, not by piece names, so they fit a rule-derived term on the
+  attack maps (AM, AM2): a hanging enemy piece scored by its value, a
+  pawn-slot attack or push that hits a piece, and a restricted square.
+
+### Score drift between sessions (2026-10-13)
+
+The record says, more than once, that the same build drifts 45 to 52
+Elo between sessions, and every test since pairs its builds in one
+session for that reason. That claim was never tested. The question here
+is whether the drift is real, and if so, why.
+
+The suspected mechanism: our engine plays on the clock and FSF on a node
+budget (`nodestime`), so only our strength depends on the speed of the
+machine.
+
+- Speed under load (seeded bench, standard, five runs each, nodes per
+  second; FSF's own bench beside it):
+
+| Background | 0 | 8 | 16 | 24 | 31 |
+| ---------- | - | - | -- | -- | -- |
+| spin loops, ours | 1.15M | 1.22M | 1.15M | 1.08M | 0.99M |
+| our bench copies, ours | 1.23M | 1.12M | 1.06M | 0.98M | 0.96M |
+| our bench copies, FSF | 367k | 341k | 341k | 289k | 277k |
+
+- Our engine loses about 22% of its speed under 31 copies of itself.
+  Spin loops cause much less of that loss until the cores run out, so
+  most of it is shared cache and memory, not CPU time. At 60 to 70 Elo
+  for each doubling that is near 20 Elo. FSF loses as much speed, but
+  at a node budget that costs it no strength.
+- Load against score (queue166, main against full FSF, standard,
+  `nodestime` 14, three interleaved rounds of 200 games each): 15 games
+  at once +47.8 ± 27.0, 30 at once +24.9 ± 26.4, 30 at once with 8 spin
+  loops beside them +6.4 ± 26.9. The order follows the load, and the
+  two ends differ by 2.1σ. So load moves our score, by about as much as
+  the speed loss predicts.
+- Drift at a fixed protocol (all 268 rounds of b15, b16, b19 and main
+  against full FSF at the key `nodestime`, 30 games at once, 2 to 14
+  sessions for each build and variant, 10-07 to 10-13): the spread of
+  the session means is 0.90 of what the stated error predicts (χ² 75.9
+  on 84 degrees of freedom, p 0.72). Rounds within a session give 1.11
+  (204.7 on 184, p 0.14), and all rounds together 1.05. So the score
+  does not drift between sessions, and the stated error bars hold.
+- The two cases that were called drift: b15 in shogi (h1 -10, h2 -62)
+  is the most extreme of 16 build and variant groups (between-session
+  χ² 10.0 on 5, p 0.08), as chance gives among 16. b12 and b13 in grand
+  against FSF 2000 (-34 on 10-05, -75 on 10-06, 1000 games each, near
+  2.9σ) were a day apart, with both engines on the clock, the machine
+  load not logged, and the claim that the two builds play grand alike
+  not checked.
+
+Why chain: the scores looked like they drifted because single pairs of
+sessions were compared, and the largest of many differences was read as
+a cause, with no test of the spread over all sessions. The real effect
+is load: another job on the machine, or a change in the games at once,
+moves our score by 20 to 40 Elo. So a comparison is valid only at the
+same games at once with nothing else on the machine. Pairing in one
+session costs nothing and stays, but drift is not its reason.
