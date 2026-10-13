@@ -3,6 +3,7 @@
 ## Status
 
 Opened 2026-10-13 on build 22 (main 78deaff), branch `plan32-speed`.
+Closed 2026-10-14 without a merge: no change was faster beyond noise.
 
 ## Context
 
@@ -136,3 +137,70 @@ Neither merges.
   change. Build 22 makes slides by length first (each length in all
   directions, from `process_multi_leg_range_token`); the depth-first
   trie walk gives each direction to its end first.
+
+The f31 loss did not repeat. Three more rounds of f31 and build 22
+(queue175, rounds 4 to 6) gave this:
+
+| Build | standard | xiangqi | grand | shogi | mean |
+| ----- | -------- | ------- | ----- | ----- | ---- |
+| build 22 | 78.4 | 34.9 | 36.7 | 2.9 | 38.2 |
+| f31 | 73.2 | 59.7 | 85.7 | 8.7 | 56.8 |
+
+Over all six rounds, f31 is -1.5 ± 7.0 against build 22. The first
+-21.5 was noise. The spread of the rounds is 1.26 times the spread
+that the game counts give. Thus a gap under about 15 Elo on the mean
+is not visible in three rounds. The links of the generation-order
+explanation were each tested before the replication and refuted. The
+trees have the same size. Quiet moves with equal scores are not more
+frequent. No capture is missed.
+
+Profile with `perf` on the server (symbols from a build with line
+tables). The `hotpath` shares above are not correct for small nested
+blocks:
+
+- `see!` is about 0.25% of the time, not 7% to 14%. The timer of
+  `hotpath` costs more than one exchange step.
+- In grand, generation is 27% of the time. Most of it is the leg
+  interpreter, which decodes each step of each vector. FSF reads a
+  bitboard attack set. This cost comes from the variant-agnostic
+  design, so it is not a lead for this plan.
+- In shogi, drop generation is about 14% of the time, and about 60% of
+  that is charged to the lines of `match_pattern!`.
+
+Two changes to the pattern test, each node-identical (`ident.sh`: 64
+same), speed against build 22:
+
+| | standard | xiangqi | grand | shogi |
+| - | -------- | ------- | ----- | ----- |
+| pc perft time | x0.959 | x1.058 | x1.042 | x0.988 |
+| pc bench speed | x0.981 | x1.006 | x0.989 | x1.000 |
+| pt perft time | x1.056 | x1.034 | x1.068 | x1.078 |
+| pt bench speed | x0.939 | x1.001 | x1.006 | x0.997 |
+
+- pc stores a `PieceSet` as a bitset of `u64` words, not as 1025
+  flags. One set is then 136 bytes, not 1 kilobyte.
+- pt stops the test at the first allower that fails and at the first
+  stopper that matches. The shogi pawn drop `#~?@n+sW*~P` has the
+  empty target as its only allower, so an occupied square skips the
+  file walk.
+
+Neither is faster in shogi. Thus the cost under `match_pattern!` is
+neither the size of the sets nor the number of units read, and the
+`perf` share of the drops does not point to work that can be removed.
+
+The speed scripts were tested for bias (queue178). Build 22 was built
+again from the same commit, and the two binaries are identical. The
+second binary against the first: perft time x1.033, x0.999, x1.001,
+x1.010 and bench x0.995, x0.997, x0.995, x0.999. In the reversed order:
+perft time x0.822, x0.984, x1.016, x0.977. The scripts have no bias
+outside the standard perft, which is too short to be stable. The slower
+perft of pc and pt in xiangqi and grand is a real effect of the code
+layout.
+
+Conclusion. Each part of our time is small: no block that a change can
+remove is above a few percent of the time. The cost is spread over
+the interpreter of rules (legs, patterns, attack lists), which FSF
+replaces with code and bitboards written for each variant. A gain of a
+few percent in speed is a few Elo, under what the games can detect.
+The gap to FSF in speed comes from the design, and plan 32 closes
+without a merge.
