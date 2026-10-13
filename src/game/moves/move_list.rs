@@ -1352,107 +1352,163 @@ macro_rules! validate_attack_vector {
     }};
 }
 
-/// process_multi_leg_vector!
+/// walk_origin!
 ///
-/// The core of move construction. It simulates one vector leg by leg on
-/// the current board. If all legs are legal, it adds the encoded moves:
-/// captures, multi-captures, unloads, en passant, castling right changes
-/// and one move for each legal promotion. A failed CPMN condition, a
-/// blocked leg, a failed capture rule or a first move rule stops it without
-/// a move.
+/// Gives the facts of a piece on its origin square that each leg of a
+/// walk reads, as one tuple in this order:
 ///
-/// Each leg starts at the end of the last leg. `S` is the origin, `1` and
-/// `2` are leg ends, and `T` is the target. The macro tests occupancy and
-/// modifiers at each leg end:
-///
-/// ```text
-/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │ T  │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │ 1  │    │    │ 2  │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │ S  │    │    │    │    │    │    │    │
-/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
-/// │    │    │    │    │    │    │    │    │    │
-/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
-/// ```
+/// - origin           : the origin square
+/// - piece            : its index, colour and rank
+/// - unmoved          : the piece has not moved from the origin
+/// - promotable       : the variant promotes and the piece can promote
+/// - origin mandatory : the origin is in its mandatory promotion zone
+/// - origin optional  : the origin is in its optional promotion zone
 ///
 /// Params:
-/// - square_index: Square         -> origin square of the moving piece
-/// - piece       : &Piece         -> moving piece type
-/// - vector      : &MoveVector    -> compiled vector to simulate
-/// - state       : &State         -> current position
-/// - out         : &mut Vec<Move> -> list that gets the moves
-/// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
+/// - square_index: Square -> origin square of the moving piece
+/// - piece       : &Piece -> moving piece type
+/// - state       : &State -> current position
 ///
-/// Notes:
-/// The piece colour scales the offsets. The macro clears `scratch` first and
-/// moves it into a multi-capture move only if it has extra records.
+/// Return:
+/// WalkOrigin             -> the eight facts above
 ///
 #[macro_export]
-macro_rules! process_multi_leg_vector {
-    (
-        $square_index:expr, $piece:expr, $vector:expr,
-        $state:expr, $out:expr, $scratch:expr
-    ) => {{
-
+macro_rules! walk_origin {
+    ($square_index:expr, $piece:expr, $state:expr) => {{
+        let origin = $square_index as u32;
         let piece_index = p_index!($piece);
-        let piece_color = p_color!($piece);
-        let piece_rank = p_rank!($piece);
-        let piece_unmoved = get!($state.virgin_board, $square_index as u32);
-
-        let mut invalid = !match_pattern_set!(
-            &$vector.pattern, $square_index as u32, piece_color, $state
-        );
-        let legs: &[Leg] = if invalid { &[] } else { &$vector.legs };           /* a failed condition walks no leg    */
-
-        let mut encoded_move = Move::default();
-        enc_start!(encoded_move, $square_index as u128);
-        enc_piece!(encoded_move, piece_index as u128);
-
-        $scratch.clear();
-
-        let mut accumulated_index = $square_index as i16;
-
-        let leg_count = $vector.legs.len();
-
         let promotable = promotions!($state) && p_can_promote!($piece);
 
-        let origin_mandatory = promotable && get!(                              /* the square the whole move left,    */
-            $state.statics.promotion_zones_mandatory[piece_index as usize],     /* which is what tells crossing into  */
-            $square_index as u32                                                /* the zone from starting inside it   */
-        );
-        let origin_optional = promotable && get!(
-            $state.statics.promotion_zones_optional[piece_index as usize],
-            $square_index as u32
-        );
+        (
+            origin,
+            piece_index,
+            p_color!($piece),
+            p_rank!($piece),
+            get!($state.virgin_board, origin),
+            promotable,
+            promotable && get!(                                                 /* the square the whole move left,    */
+                $state.statics.promotion_zones_mandatory[piece_index as usize], /* which is what tells crossing into  */
+                origin                                                          /* the zone from starting inside it   */
+            ),
+            promotable && get!(
+                $state.statics.promotion_zones_optional[piece_index as usize],
+                origin
+            ),
+        )
+    }};
+}
 
-        let mut mandatory = false;
-        let mut optionals = false;
+/// walk_start!
+///
+/// Gives the walk state at the origin: the origin square, its file and its
+/// rank, and no promotion yet.
+///
+/// Params:
+/// - mover: WalkOrigin -> the facts of `walk_origin!`
+/// - state: &State     -> board dimensions
+///
+/// Return:
+/// WalkState           -> the state before the first leg
+///
+#[macro_export]
+macro_rules! walk_start {
+    ($mover:expr, $state:expr) => {{
+        let origin = $mover.0 as i16;
+        let files = $state.statics.files as i16;
 
-        for (leg_index, leg) in legs.iter().enumerate() {
-            let last_leg = leg_index + 1 == leg_count;
+        (origin, origin % files, origin / files, false, false)
+    }};
+}
+
+/// leg_lands!
+///
+/// Tells if a leg from the walk state ends on the board and outside the
+/// forbidden zone of the piece, unless the leg may pass the zone. These are
+/// the tests that fit a vector to a square, and they do not depend on how
+/// the leg is read, so the trie walk makes them once for each node.
+///
+/// Params:
+/// - leg  : &Leg       -> leg to test
+/// - mover: WalkOrigin -> the facts of `walk_origin!`
+/// - walk : &WalkState -> the walk before the leg
+/// - state: &State     -> board dimensions and forbidden zones
+///
+/// Return:
+/// bool                -> true if the leg can land
+///
+#[macro_export]
+macro_rules! leg_lands {
+    ($leg:expr, $mover:expr, $walk:expr, $state:expr) => {{
+        let leg: &Leg = $leg;
+        let sign = -2 * $mover.2 as i16 + 1;
+        let file = $walk.1 + x!(leg) as i16 * sign;
+        let rank = $walk.2 + y!(leg) as i16 * sign;
+        let files = $state.statics.files as i16;
+
+        file >= 0 && file < files
+            && rank >= 0 && rank < $state.statics.ranks as i16
+            && !(forbidden_zones!($state)
+                && get!(
+                    $state.statics.forbidden_zones[$mover.1 as usize],
+                    (rank * files + file) as u32
+                )
+                && !(v!(leg) && not_v!(leg)))                                   /* a bypass leg may pass the zone     */
+    }};
+}
+
+/// walk_leg!
+///
+/// Plays one leg of a vector on the walk state. It tests the occupancy and
+/// the modifiers at the leg end, adds a taken piece to `scratch`, and adds
+/// the first move, en passant and promotion facts. A blocked leg, a failed
+/// capture rule, a failed promotion rule or a failed first move rule ends
+/// the vector. A last leg differs from a middle leg only in its capture: a
+/// last leg without `m` can capture.
+///
+/// Params:
+/// - leg         : &Leg           -> leg to play
+/// - last_leg    : bool           -> the leg is the last of its vector
+/// - mover       : WalkOrigin     -> the facts of `walk_origin!`
+/// - walk        : &mut WalkState -> the walk so far
+/// - state       : &State         -> current position
+/// - encoded_move: &mut Move      -> move built so far
+/// - scratch     : &mut Vec<u64>  -> pieces taken so far
+///
+/// Return:
+/// bool                           -> true if the leg can be played
+///
+/// Notes:
+/// The piece colour scales the offsets. The move gathers its first move
+/// and en passant bits over all legs. The leg must land, as `leg_lands!`
+/// tells: a vector fitted to its square lands on every leg.
+///
+#[macro_export]
+macro_rules! walk_leg {
+    (
+        $leg:expr, $last_leg:expr, $mover:expr, $walk:expr,
+        $state:expr, $encoded_move:expr, $scratch:expr
+    ) => {{
+        'leg: {
+            let (
+                origin, piece_index, piece_color, piece_rank,
+                piece_unmoved, promotable, origin_mandatory, origin_optional,
+            ) = $mover;
+            let walk: &mut WalkState = $walk;
+            let encoded_move: &mut Move = $encoded_move;
+            let leg: &Leg = $leg;
+            let last_leg: bool = $last_leg;
             let mut taken_piece = 0u64;
 
-            let start_square = accumulated_index as u32;
+            let start_square = walk.0 as u32;
 
             let file_offset = x!(leg) * (-2 * piece_color as i8 + 1);
             let rank_offset = y!(leg) * (-2 * piece_color as i8 + 1);
 
-            accumulated_index += rank_offset as i16                             /* widened: a leg reaching four       */
-                * ($state.statics.files as i16) + file_offset as i16;           /* ranks on a wide board overflows    */
+            walk.1 += file_offset as i16;
+            walk.2 += rank_offset as i16;
+            walk.0 = walk.2 * $state.statics.files as i16 + walk.1;
 
-            let end_square = accumulated_index as u32;
+            let end_square = walk.0 as u32;
 
             let m = m!(leg) || (!c!(leg) && !d!(leg));
             let c = c!(leg) || (last_leg && !m!(leg));
@@ -1473,8 +1529,7 @@ macro_rules! process_multi_leg_vector {
             let special_v = v && not_v;
 
             if i && !piece_unmoved || not_i && piece_unmoved {
-                invalid = true;
-                break;
+                break 'leg false;
             }
 
             if promotable {
@@ -1509,8 +1564,7 @@ macro_rules! process_multi_leg_vector {
                 || not_r && start_mandatory
                 || not_r && end_mandatory
                 {
-                    invalid = true;
-                    break;
+                    break 'leg false;
                 }
 
                 let entry_mandatory = promote_on_entry!($state)
@@ -1524,11 +1578,11 @@ macro_rules! process_multi_leg_vector {
 
                 if entry_mandatory || entry_optional
                 || exit_mandatory  || exit_optional {
-                    optionals = !not_r;
+                    walk.4 = !not_r;
                 }
 
                 if r || entry_mandatory || exit_mandatory {
-                    mandatory = true;
+                    walk.3 = true;
                 }
             }
 
@@ -1536,7 +1590,7 @@ macro_rules! process_multi_leg_vector {
 
             let friendly = get!(
                 $state.pieces_board[piece_color as usize], end_square
-            ) && end_square != $square_index as u32;
+            ) && end_square != origin;
             let enemy = get!(
                 $state.pieces_board[1 - piece_color as usize], end_square
             );
@@ -1581,8 +1635,7 @@ macro_rules! process_multi_leg_vector {
                         || (v && !capt_unmoved || not_v && capt_unmoved)
                         && !special_v
                         {
-                            invalid = true;
-                            break;
+                            break 'leg false;
                         }
 
                         enc_multi_move_captured_unmoved!(
@@ -1595,17 +1648,14 @@ macro_rules! process_multi_leg_vector {
 
                         $scratch.push(taken_piece);
                     } else {
-                        invalid = true;
-                        break;
+                        break 'leg false;
                     }
                 } else if !m {
-                    invalid = true;
-                    break;
+                    break 'leg false;
                 }
             } else if friendly && !pass_move {
                 if !d {
-                    invalid = true;
-                    break;
+                    break 'leg false;
                 }
 
                 let capt_piece_index =
@@ -1624,8 +1674,7 @@ macro_rules! process_multi_leg_vector {
                 || (v && !capt_unmoved || not_v && capt_unmoved)
                 && !special_v
                 {
-                    invalid = true;
-                    break;
+                    break 'leg false;
                 }
 
                 enc_multi_move_captured_piece!(
@@ -1642,8 +1691,7 @@ macro_rules! process_multi_leg_vector {
                 $scratch.push(taken_piece);
             } else if enemy && !pass_move {
                 if !c {
-                    invalid = true;
-                    break;
+                    break 'leg false;
                 }
 
                 let capt_piece_index =
@@ -1662,8 +1710,7 @@ macro_rules! process_multi_leg_vector {
                 || (v && !capt_unmoved || not_v && capt_unmoved)
                 && !special_v
                 {
-                    invalid = true;
-                    break;
+                    break 'leg false;
                 }
 
                 enc_multi_move_captured_piece!(
@@ -1706,87 +1753,170 @@ macro_rules! process_multi_leg_vector {
                 p as u128
                     * (
                         (start_square as u128 & 0x7FF) |
-                        (accumulated_index as u128) << 11 |
+                        (walk.0 as u128) << 11 |
                         (piece_index as u128) << 22
                     )
             );
-        }
 
-
-        if !invalid {
-            enc_end!(encoded_move, accumulated_index as u128);
-
-            if $scratch.is_empty() {
-                enc_move_type!(encoded_move, QUIET_MOVE);
-            } else if $scratch.len() == 1 {
-                enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
-                enc_capture_part!(encoded_move, $scratch[0] as u128);
-            } else {
-                enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
-                encoded_move.1 = Some(Arc::new(mem::take($scratch)));
-            }
-
-            if mandatory || optionals {
-                for promo_piece_index in &$piece.promotions {
-                    let mut can_promote = true;
-
-                    if promote_to_captured!($state) {
-                        let enemy_equiv = $state.statics.piece_swap_map[
-                            *promo_piece_index as usize
-                        ];
-
-                        can_promote &= $state.piece_in_hand
-                            [1 - piece_color as usize]
-                            [enemy_equiv as usize] > 0;
-                    }
-
-                    if can_promote {
-                        let mut promo_move = encoded_move.clone();
-
-                        enc_promotion!(promo_move, 1);
-                        enc_promoted!(
-                            promo_move, *promo_piece_index as u128
-                        );
-
-                        $out.push(promo_move);
-                    }
-                }
-            }
-
-            if !mandatory {
-                $out.push(encoded_move);
-            }
+            true
         }
     }};
 }
 
-/// generate_move_list_from_vectors!
+/// push_walked_move!
 ///
-/// Generates all pseudo-legal moves of `$piece` from `$square_index` for
-/// each vector of `$vector_set`, with `process_multi_leg_vector!`. The
-/// two list macros give the source table:
+/// Adds the moves of a vector whose legs all passed: the end square, the
+/// move type from the taken pieces, and one move for each legal promotion.
+/// A mandatory promotion adds no move without a promotion.
 ///
-/// - `relevant_moves`    : full pseudo-legal move list
-/// - `relevant_captures` : capture list
+/// Params:
+/// - piece       : &Piece         -> moving piece type
+/// - state       : &State         -> current position
+/// - encoded_move: Move           -> move built by the walk
+/// - walk        : WalkState      -> the walk after the last leg
+/// - scratch     : &mut Vec<u64>  -> pieces taken by the walk
+/// - out         : &mut Vec<Move> -> list that gets the moves
+/// - keep        : bool           -> copy `scratch` into a multi-capture
+///                                   move, not move it
+///
+#[macro_export]
+macro_rules! push_walked_move {
+    (
+        $piece:expr, $state:expr, $encoded_move:expr, $walk:expr,
+        $scratch:expr, $out:expr, $keep:expr
+    ) => {{
+        let mut encoded_move: Move = $encoded_move;
+        let (end_square, _, _, mandatory, optionals): WalkState = $walk;
+        let piece_color = p_color!($piece);
+
+        enc_end!(encoded_move, end_square as u128);
+
+        if $scratch.is_empty() {
+            enc_move_type!(encoded_move, QUIET_MOVE);
+        } else if $scratch.len() == 1 {
+            enc_move_type!(encoded_move, SINGLE_CAPTURE_MOVE);
+            enc_capture_part!(encoded_move, $scratch[0] as u128);
+        } else {
+            enc_move_type!(encoded_move, MULTI_CAPTURE_MOVE);
+            encoded_move.1 = Some(Arc::new(match $keep {
+                true => $scratch.clone(),
+                false => mem::take($scratch),
+            }));
+        }
+
+        if mandatory || optionals {
+            for promo_piece_index in &$piece.promotions {
+                let mut can_promote = true;
+
+                if promote_to_captured!($state) {
+                    let enemy_equiv = $state.statics.piece_swap_map[
+                        *promo_piece_index as usize
+                    ];
+
+                    can_promote &= $state.piece_in_hand
+                        [1 - piece_color as usize]
+                        [enemy_equiv as usize] > 0;
+                }
+
+                if can_promote {
+                    let mut promo_move = encoded_move.clone();
+
+                    enc_promotion!(promo_move, 1);
+                    enc_promoted!(promo_move, *promo_piece_index as u128);
+
+                    $out.push(promo_move);
+                }
+            }
+        }
+
+        if !mandatory {
+            $out.push(encoded_move);
+        }
+    }};
+}
+
+/// process_multi_leg_vector!
+///
+/// The core of move construction. It simulates one vector leg by leg on
+/// the current board. If all legs are legal, it adds the encoded moves:
+/// captures, multi-captures, unloads, en passant, castling right changes
+/// and one move for each legal promotion. A failed CPMN condition, a
+/// blocked leg, a failed capture rule or a first move rule stops it without
+/// a move.
+///
+/// Each leg starts at the end of the last leg. `S` is the origin, `1` and
+/// `2` are leg ends, and `T` is the target. The macro tests occupancy and
+/// modifiers at each leg end:
+///
+/// ```text
+/// ┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │ T  │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │ 1  │    │    │ 2  │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │ S  │    │    │    │    │    │    │    │
+/// ├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+/// │    │    │    │    │    │    │    │    │    │
+/// └────┴────┴────┴────┴────┴────┴────┴────┴────┘
+/// ```
+///
+/// Each leg is one `walk_leg!`, and the moves come from `push_walked_move!`.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
 /// - piece       : &Piece         -> moving piece type
-/// - vector_set  : &MoveSet       -> compiled vectors to expand
+/// - vector      : &MoveVector    -> compiled vector to simulate
 /// - state       : &State         -> current position
 /// - out         : &mut Vec<Move> -> list that gets the moves
 /// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
 ///
+/// Notes:
+/// The macro clears `scratch` first and moves it into a multi-capture move
+/// only if it has extra records.
+///
 #[macro_export]
-macro_rules! generate_move_list_from_vectors {
+macro_rules! process_multi_leg_vector {
     (
-        $square_index:expr, $piece:expr, $vector_set:expr,
+        $square_index:expr, $piece:expr, $vector:expr,
         $state:expr, $out:expr, $scratch:expr
     ) => {{
-        for multi_leg_vector in $vector_set {
-            process_multi_leg_vector!(
-                $square_index, $piece, multi_leg_vector,
-                $state, $out, $scratch
+        let mover = walk_origin!($square_index, $piece, $state);
+        let mut walk: WalkState = walk_start!(mover, $state);
+        let mut encoded_move = Move::default();
+        let leg_count = $vector.legs.len();
+        let mut valid = match_pattern_set!(                                     /* a failed condition walks no leg    */
+            &$vector.pattern, mover.0, mover.2, $state
+        );
+
+        enc_start!(encoded_move, $square_index as u128);
+        enc_piece!(encoded_move, mover.1 as u128);
+        $scratch.clear();
+
+        for (leg_index, leg) in $vector.legs.iter().enumerate() {
+            let last_leg = leg_index + 1 == leg_count;
+
+            if !valid || !walk_leg!(
+                leg, last_leg, mover, &mut walk,
+                $state, &mut encoded_move, $scratch
+            ) {
+                valid = false;
+                break;
+            }
+        }
+
+        if valid {
+            push_walked_move!(
+                $piece, $state, encoded_move, walk, $scratch, $out, false
             );
         }
     }};
@@ -1795,7 +1925,7 @@ macro_rules! generate_move_list_from_vectors {
 /// generate_move_list!
 ///
 /// Generates all pseudo-legal moves of `$piece` from `$square_index`, from
-/// its `relevant_moves` vectors, and adds them to `$out`.
+/// its move trie, and adds them to `$out`.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
@@ -1808,24 +1938,17 @@ macro_rules! generate_move_list_from_vectors {
 macro_rules! generate_move_list {
     (
         $square_index:expr, $piece:expr, $state:expr, $out:expr, $scratch:expr
-    ) => {{
-        let piece_index = p_index!($piece) as usize;
-        let board_size = $state.statics.board_size;
-        let vector_set =
-            &$state.statics.relevant_moves
-                [piece_index * board_size + $square_index as usize];
-
-        generate_move_list_from_vectors!(
-            $square_index, $piece, vector_set, $state, $out, $scratch
-        )
-    }};
+    ) => {
+        walk_move_trie($state, $piece, $square_index, $out, $scratch, false)
+    };
 }
 
 /// generate_capture_list!
 ///
 /// Generates only the pseudo-legal captures of `$piece` from
-/// `$square_index`. It uses `relevant_captures` and then removes the moves
-/// that do not capture.
+/// `$square_index`. It walks only the trie nodes of capture vectors, those
+/// with a `c`, `d` or last-leg capture, and then removes the moves that do
+/// not capture.
 ///
 /// Params:
 /// - square_index: Square         -> origin square of the moving piece
@@ -1835,26 +1958,17 @@ macro_rules! generate_move_list {
 /// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
 ///
 /// Notes:
-/// The two tables use the same stable sort, so the captures have the same
-/// order as in `generate_move_list!`. The staged generation of `alpha_beta`
-/// needs this.
+/// The captures keep the order of `generate_move_list!`, as both walk the
+/// same trie, which the staged generation of `alpha_beta` needs.
 ///
 #[macro_export]
 macro_rules! generate_capture_list {
     (
         $square_index:expr, $piece:expr, $state:expr, $out:expr, $scratch:expr
     ) => {{
-        let piece_index = p_index!($piece) as usize;
-        let board_size = $state.statics.board_size;
-        let vector_set =
-            &$state.statics.relevant_captures
-                [piece_index * board_size + $square_index as usize];
-
         let start = $out.len();
-        generate_move_list_from_vectors!(
-            $square_index, $piece, vector_set, $state, $out, $scratch
-        );
 
+        walk_move_trie($state, $piece, $square_index, $out, $scratch, true);
         retain_captures!($out, start, true);
     }};
 }
@@ -4453,8 +4567,8 @@ pub fn generate_drops(state: &State, out: &mut Vec<Move>) {
 /// generate_all_captures
 ///
 /// The capture version of `generate_all_moves_and_drops`, for quiescence.
-/// It uses the `relevant_captures` tables and keeps only real captures. It
-/// never makes quiet moves, drops or castling.
+/// It walks the capture vectors of the move tries and keeps only real
+/// captures. It never makes quiet moves, drops or castling.
 ///
 /// A piece whose capture reach holds no enemy piece can capture nothing,
 /// so it is skipped before its vectors are walked. A whole piece, whose

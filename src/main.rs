@@ -43,6 +43,7 @@ pub mod game {
     pub mod moves {
         pub mod move_list;
         pub mod move_parse;
+        pub mod move_trie;
 
         pub mod drop_list;
         pub mod drop_parse;

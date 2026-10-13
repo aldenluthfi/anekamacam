@@ -57,6 +57,9 @@ pub use crate::game::moves::move_list::{
     generate_relevant_captures, generate_relevant_castling,
     generate_relevant_moves,
 };
+pub use crate::game::moves::move_trie::{
+    build_move_trie, walk_move_trie, MoveTrie, TrieNode, WalkOrigin, WalkState,
+};
 pub use crate::game::representations::termination::{
     adjudicate_outcome, count_repetitions, counting_limit, counting_progress,
     game_outcome, position_terminal, repetition_outcome, side_is_bare,
