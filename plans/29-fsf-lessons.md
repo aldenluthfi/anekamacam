@@ -2875,3 +2875,24 @@ is load: another job on the machine, or a change in the games at once,
 moves our score by 20 to 40 Elo. So a comparison is valid only at the
 same games at once with nothing else on the machine. Pairing in one
 session costs nothing and stays, but drift is not its reason.
+
+### Merged build 22 (2026-10-13, main 1db0677)
+
+- Build 21 with the code review (`plan29-review`), plus the board and
+  map line of build 18 ported to it (`plan29-th`): BW, AM, AM2, BW2 and
+  AF, with conflicts only in doc lines.
+- Then capture generation makes no attack map for a piece with only
+  leaps on its square: that map is its reach, which the reach test read
+  just before. Shogi had lost near 2% to these maps. The first try ran
+  the leaps test before the reach test, on each piece square, and lost
+  3.9% in standard; after the reach test it is neutral in all four.
+- Seeded 40-ply games at a fixed depth equal the build before in all 44
+  variants, and perft equals it in all 17 suites.
+- Nodes per second against the build before (16 seeds each, server
+  idle): standard x0.984 ± 0.021, xiangqi x1.104 ± 0.017, grand x1.113 ±
+  0.017, shogi x0.993 ± 0.020. Merged on that, as a change that plays
+  the same games.
+- The server's `aneka-main` clone had lost `res/`, which the build
+  embeds, so its builds failed after 2026-10-12 and it ran the build of
+  403cebf (the build 21 line with the review, the same engine as before
+  the port). `res/` is restored and it now builds 1db0677.
