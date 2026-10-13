@@ -211,3 +211,33 @@ perft against a base, each run in its own working folder) and
   tests them, as the vectors of `lva!` are fitted to their squares.
 - Queue168 checks it against stage 3 (the same moves in the same order)
   and times perft against build 22 and stage 3 after queue167.
+
+### Queue167 and queue168 results
+
+Build 22 and stage 3 against full FSF, three interleaved rounds of 200
+games in each key variant, no forfeits (Elo over 600 games):
+
+| Variant | build 22 | stage 3 | difference |
+| ------- | -------- | ------- | ---------- |
+| standard (`nodestime` 14) | +54.3 | +73.0 | +18.7 |
+| xiangqi (16) | +8.7 | +16.8 | +8.1 |
+| grand (29) | +69.4 | +29.0 | -40.4 |
+| shogi (44) | -8.1 | -21.4 | -13.3 |
+
+- Mean -6.7, near ± 14 at 1σ: no gain, not merged.
+- Stage 4 with the landing test against stage 3: the same in all 43
+  seeded games and all 21 perfts.
+- Perft time (the same tree for both builds), stage 4 over build 22:
+  standard x1.127 ± 0.216, xiangqi x1.036 ± 0.045, grand x1.064 ± 0.050,
+  shogi x1.088 ± 0.047. Over stage 3: x0.972 ± 0.258, x0.991 ± 0.008,
+  x1.017 ± 0.015, x0.995 ± 0.009. Bench, over build 22: standard x0.942
+  ± 0.016, xiangqi x1.079 ± 0.017, grand x1.040 ± 0.025, shogi x0.940 ±
+  0.030.
+- So one trie for each piece walks slower than the vector tables of build
+  22, and the landing test gives back little. The xiangqi bench gain is
+  the make-up of its trees, not speed: perft there is 3.6% slower. The
+  tries of the squares (stage 2) were faster on build 22's own trees
+  (xiangqi x1.167, grand x1.030) because they hold no leg that leaves the
+  board and every condition there is fitted already.
+- Taikyoku alone on the server: build 22 13.6 GB, stage 3 13.9 GB, stage
+  4 7.4 GB with a load of 76 s.
