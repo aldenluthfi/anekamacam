@@ -21,7 +21,9 @@
 /// of its pieces at its offset. No stopper can find one of its pieces.
 ///
 /// The offsets are for White. For Black, the macro negates both deltas.
-/// The macro reads the stoppers only if all allowers match.
+/// The macro stops at the first allower that fails and at the first
+/// stopper that matches, so it reads the stoppers only if all allowers
+/// match.
 ///
 /// Params:
 /// - pattern: &Pattern -> compiled (allower, stopper) pattern to test
@@ -41,48 +43,22 @@ macro_rules! match_pattern {
     ($pattern:expr, $square:expr, $color:expr, $state:expr) => {{
         let (allowers, stoppers) = $pattern;
 
-        let file = $square % $state.statics.files as u32;
-        let rank = $square / $state.statics.files as u32;
+        let files = $state.statics.files as i32;
+        let file = $square as i32 % files;
+        let rank = $square as i32 / files;
+        let sign = -2 * $color as i32 + 1;
 
-        let mut invalid = false;
+        let piece_at = |offset: u16| {
+            let check_x = file + x!(offset) as i32 * sign;
+            let check_y = rank + y!(offset) as i32 * sign;
 
-        for allower in allowers {
-            let x = x!(allower.0) as i32 * (-2 * $color as i32 + 1);
-            let y = y!(allower.0) as i32 * (-2 * $color as i32 + 1);
-            let allower_pieces = &allower.1;
+            $state.main_board[(check_y * files + check_x) as usize]
+        };
 
-            let check_x = file as i32 + x;
-            let check_y = rank as i32 + y;
-            let check_index =
-                (check_y * $state.statics.files as i32 + check_x) as usize;
-
-            let piece_check = $state.main_board[check_index];
-
-            if !allower_pieces.contains(piece_check) {
-                invalid = true;
-            }
-        }
-
-        if !invalid {
-            for stopper in stoppers {
-                let x = x!(stopper.0) as i32 * (-2 * $color as i32 + 1);
-                let y = y!(stopper.0) as i32 * (-2 * $color as i32 + 1);
-                let stopper_pieces = &stopper.1;
-
-                let check_x = file as i32 + x;
-                let check_y = rank as i32 + y;
-                let check_index =
-                    (check_y * $state.statics.files as i32 + check_x) as usize;
-
-                let piece_check = $state.main_board[check_index];
-
-                if stopper_pieces.contains(piece_check) {
-                    invalid = true;
-                }
-            }
-        }
-
-        !invalid
+        allowers.iter().all(|allower| allower.1.contains(piece_at(allower.0)))
+            && !stoppers.iter().any(
+                |stopper| stopper.1.contains(piece_at(stopper.0))
+            )
     }};
 }
 
