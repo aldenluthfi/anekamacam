@@ -353,26 +353,86 @@ macro_rules! score_move {
     }};
 }
 
+/// sort_by_score!
+///
+/// Sorts `moves[from..]` and `scores[from..]` together, the highest score
+/// first, ties in their list order. Each score becomes a key that also
+/// holds its place, so the keys are unique and need no second buffer; the
+/// moves then follow their keys one cycle at a time:
+///
+/// ```text
+/// key = score << 20 | (0xFFFFF - place)    higher score, then lower place
+/// ```
+///
+/// Params:
+/// - moves : &mut Vec<Move>  -> move list, reordered in place
+/// - scores: &mut Vec<usize> -> their scores, all calculated
+/// - from  : usize           -> first slot of the sort
+///
+/// Notes:
+/// A score fits in 23 bits (the table move score is the highest) and a
+/// place in 20, so bit 63 is free to mark a slot that is in place.
+///
+#[macro_export]
+macro_rules! sort_by_score {
+    ($moves:expr, $scores:expr, $from:expr) => {{
+        let moves: &mut Vec<Move> = $moves;
+        let tail = &mut $scores[$from..];
+        let placed = 1usize << 63;
+
+        for (place, score) in tail.iter_mut().enumerate() {
+            *score = *score << 20 | (0xFFFFF - place);
+        }
+
+        tail.sort_unstable_by(|a, b| b.cmp(a));
+
+        for cycle in 0..tail.len() {
+            let mut slot = cycle;
+
+            while tail[slot] & placed == 0 {
+                let source = 0xFFFFF - (tail[slot] & 0xFFFFF);
+
+                tail[slot] |= placed;
+
+                if source == cycle {
+                    break;
+                }
+
+                moves.swap($from + slot, $from + source);
+                slot = source;
+            }
+        }
+
+        for score in tail.iter_mut() {
+            *score = (*score & !placed) >> 20;
+        }
+    }};
+}
+
 /// pick_by_score!
 ///
-/// Moves the best remaining move to `index`. The macro does one selection
-/// pass for each move that the search asks for, not a full sort. Thus a
-/// node that cuts early does not score all moves.
+/// Moves the best remaining move to `index`. The first pick that finds
+/// moves without a score scores them all and sorts the rest of the list
+/// once, so each later pick takes the next slot. A table move takes slot
+/// 0 before anything is scored, so a node that cuts on it scores nothing:
 ///
 /// ```text
-/// index 0   [. . . . . .]  score all, swap the best to slot 0
-/// index 1   [x . . . . .]  score the rest, swap the best to slot 1
-/// cut here  [x x . . . .]  the rest is never scored
+/// index 0   [T . . . . .]  the table move, nothing else scored
+/// index 1   [T . . . . .]  score the rest, sort it once
+/// index 2   [T x . . . .]  the next move is already in its slot
 /// ```
 ///
-/// An untested capture that wins the pass gets its exchange result. A
-/// winning one stays at `index`. A losing one falls to its band, and the
-/// pass runs again:
+/// An untested capture that comes first gets its exchange result. A
+/// winning one stays at `index`. A losing one sinks to its place in the
+/// sorted rest, and the next first move is tested the same way:
 ///
 /// ```text
-/// pass 1    [Bx . . . .]  untested Bx is best: its exchange loses
-/// pass 2    [Nx . . Bx .]  Bx now ranks below the quiet moves
+/// before    [Bx Nx q q]    untested Bx is first: its exchange loses
+/// after     [Nx q q Bx]    Bx now ranks below the quiet moves
 /// ```
+///
+/// Drops that the search appends later have no score, so the next pick
+/// scores and sorts again.
 ///
 /// Params:
 /// - state     : &mut State          -> position for the scores
@@ -388,9 +448,9 @@ macro_rules! score_move {
 /// simulation. The capturer can stop after each recapture, so it keeps at
 /// least the difference.
 ///
-/// `usize::MAX` marks a score that is not calculated yet. On the first
-/// call, the table move goes to slot 0, and no other move gets a score.
-/// The move at `index` always has its final score.
+/// `usize::MAX` marks a score that is not calculated yet. Unscored moves
+/// are always at the end of the list, so the last score tells if any are
+/// left. The move at `index` always has its final score.
 ///
 #[macro_export]
 macro_rules! pick_by_score {
@@ -420,36 +480,22 @@ macro_rules! pick_by_score {
             }
         }
 
-        if scores[index] == usize::MAX {
-            scores[index] = score_move!(
-                $state, $info, &moves[index], $table_move, $cont_bases
-            );
-        }
-
-        loop {
-            let mut best_index = index;
-            let mut best_score = scores[index];
-
-            if best_score != TABLE_MOVE_SCORE {
-                for candidate in (index + 1)..moves.len() {
-                    if scores[candidate] == usize::MAX {
-                        scores[candidate] = score_move!(
-                            $state, $info, &moves[candidate], $table_move,
-                            $cont_bases
-                        );
-                    }
-
-                    if scores[candidate] > best_score {
-                        best_score = scores[candidate];
-                        best_index = candidate;
-                    }
+        if scores[index] != TABLE_MOVE_SCORE
+        && scores.last() == Some(&usize::MAX)
+        {
+            for slot in index..moves.len() {
+                if scores[slot] == usize::MAX {
+                    scores[slot] = score_move!(
+                        $state, $info, &moves[slot], $table_move, $cont_bases
+                    );
                 }
             }
 
-            if best_index != index {
-                moves.swap(index, best_index);
-                scores.swap(index, best_index);
-            }
+            sort_by_score!(moves, scores, index);
+        }
+
+        loop {
+            let best_score = scores[index];
 
             if best_score == TABLE_MOVE_SCORE
                 || best_score < UNTESTED_CAPTURE_SCORE {
@@ -473,6 +519,14 @@ macro_rules! pick_by_score {
 
             if exchange >= 0 {
                 break;
+            }
+
+            let mut slot = index;
+
+            while slot + 1 < moves.len() && scores[slot + 1] > scores[slot] {
+                moves.swap(slot, slot + 1);
+                scores.swap(slot, slot + 1);
+                slot += 1;
             }
         }
         })
