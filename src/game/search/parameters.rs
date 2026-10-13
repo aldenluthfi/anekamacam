@@ -1419,8 +1419,11 @@ fn walk_setup_endings(
 
     let mut placements = Vec::new();
     let mut scratch = Vec::new();
+    let mut ranks = Vec::new();
 
-    generate_all_moves_and_drops(probe, &mut placements, &mut scratch);
+    generate_all_moves_and_drops(
+        probe, &mut placements, &mut scratch, &mut ranks
+    );
 
     for placement in placements {
         if !make_move!(probe, placement) {

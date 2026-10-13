@@ -686,13 +686,14 @@ macro_rules! fill_pv_line {
 
         let mut out: Vec<Move> = Vec::with_capacity(64);
         let mut scratch: Vec<u64> = Vec::with_capacity(16);
+        let mut ranks: Vec<usize> = Vec::new();
         let mut walk_complete = true;
 
         for slot in 0..triangular_length {
             let pv_move = $info.pv_line[slot].clone();
 
             generate_all_moves_and_drops(
-                $state, &mut out, &mut scratch
+                $state, &mut out, &mut scratch, &mut ranks
             );
 
             if !out.iter().any(|mv| *mv == pv_move)
@@ -724,7 +725,7 @@ macro_rules! fill_pv_line {
             };
 
             generate_all_moves_and_drops(
-                $state, &mut out, &mut scratch
+                $state, &mut out, &mut scratch, &mut ranks
             );
 
             let mut pv_cand = None;

@@ -843,10 +843,10 @@ pub fn quiescence_search(
 
     let checks_wanted = quiet_checks && !in_check && stand_pat >= alpha;        /* a side behind wants captures       */
 
-    if in_check || checks_wanted {
-        generate_all_moves_and_drops(state, moves, payload);
+    if in_check || checks_wanted {                                              /* scores ranks the trie walk first   */
+        generate_all_moves_and_drops(state, moves, payload, scores);
     } else {
-        generate_all_captures(state, moves, payload);
+        generate_all_captures(state, moves, payload, scores);
     }
 
     scores.clear();                                                             /* last node's scores answer for it   */
@@ -1207,7 +1207,7 @@ pub fn alpha_beta(
         let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
         let NodeLists { moves, scores, payload, .. } = &mut lists;
 
-        generate_all_captures(state, moves, payload);
+        generate_all_captures(state, moves, payload, scores);
         scores.clear();
         scores.resize(moves.len(), usize::MAX);
 
@@ -1300,7 +1300,7 @@ pub fn alpha_beta(
     let mut lists = mem::take(&mut state.scratch.node_lists[ply]);
     let NodeLists { moves, scores, payload, later } = &mut lists;
 
-    generate_board_moves(state, moves, payload);
+    generate_board_moves(state, moves, payload, scores);                        /* scores ranks the trie walk first   */
     scores.clear();                                                             /* last node's scores answer for it   */
     scores.resize(moves.len(), usize::MAX);
 

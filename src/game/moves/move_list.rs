@@ -231,7 +231,10 @@ macro_rules! legal_moves {
     ($state:expr) => {{
         let mut moves = Vec::with_capacity(64);
         let mut scratch = Vec::with_capacity(16);
-        generate_all_moves_and_drops($state, &mut moves, &mut scratch);
+        let mut ranks = Vec::new();
+        generate_all_moves_and_drops(
+            $state, &mut moves, &mut scratch, &mut ranks
+        );
 
         moves.into_iter().filter(|mv| {
             if make_move!($state, mv.clone()) {
@@ -1862,101 +1865,61 @@ macro_rules! process_multi_leg_vector {
     }};
 }
 
-/// generate_move_list_from_vectors!
-///
-/// Generates all pseudo-legal moves of `$piece` from `$square_index` for
-/// each vector of `$vector_set`, with `process_multi_leg_vector!`. The
-/// two list macros give the source table:
-///
-/// - `relevant_moves`    : full pseudo-legal move list
-/// - `relevant_captures` : capture list
-///
-/// Params:
-/// - square_index: Square         -> origin square of the moving piece
-/// - piece       : &Piece         -> moving piece type
-/// - vector_set  : &MoveSet       -> compiled vectors to expand
-/// - state       : &State         -> current position
-/// - out         : &mut Vec<Move> -> list that gets the moves
-/// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
-///
-#[macro_export]
-macro_rules! generate_move_list_from_vectors {
-    (
-        $square_index:expr, $piece:expr, $vector_set:expr,
-        $state:expr, $out:expr, $scratch:expr
-    ) => {{
-        for multi_leg_vector in $vector_set {
-            process_multi_leg_vector!(
-                $square_index, $piece, multi_leg_vector,
-                $state, $out, $scratch
-            );
-        }
-    }};
-}
-
 /// generate_move_list!
 ///
 /// Generates all pseudo-legal moves of `$piece` from `$square_index`, from
-/// its `relevant_moves` vectors, and adds them to `$out`.
+/// its move trie, and adds them to `$out` in the order of `relevant_moves`.
 ///
 /// Params:
-/// - square_index: Square         -> origin square of the moving piece
-/// - piece       : &Piece         -> moving piece type
-/// - state       : &State         -> current position
-/// - out         : &mut Vec<Move> -> list that gets the moves
-/// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
+/// - square_index: Square           -> origin square of the moving piece
+/// - piece       : &Piece           -> moving piece type
+/// - state       : &State           -> current position
+/// - out         : &mut Vec<Move>   -> list that gets the moves
+/// - scratch     : &mut Vec<u64>    -> reused multi-capture buffer
+/// - ranks       : &mut Vec<usize>  -> reused rank buffer of the walk
 ///
 #[macro_export]
 macro_rules! generate_move_list {
     (
-        $square_index:expr, $piece:expr, $state:expr, $out:expr, $scratch:expr
-    ) => {{
-        let piece_index = p_index!($piece) as usize;
-        let board_size = $state.statics.board_size;
-        let vector_set =
-            &$state.statics.relevant_moves
-                [piece_index * board_size + $square_index as usize];
-
-        generate_move_list_from_vectors!(
-            $square_index, $piece, vector_set, $state, $out, $scratch
+        $square_index:expr, $piece:expr, $state:expr,
+        $out:expr, $scratch:expr, $ranks:expr
+    ) => {
+        walk_move_trie(
+            $state, $piece, $square_index, $out, $scratch, $ranks, false
         )
-    }};
+    };
 }
 
 /// generate_capture_list!
 ///
 /// Generates only the pseudo-legal captures of `$piece` from
-/// `$square_index`. It uses `relevant_captures` and then removes the moves
-/// that do not capture.
+/// `$square_index`. It walks only the trie nodes of capture vectors, the
+/// vectors of `relevant_captures`, and then removes the moves that do not
+/// capture.
 ///
 /// Params:
-/// - square_index: Square         -> origin square of the moving piece
-/// - piece       : &Piece         -> moving piece type
-/// - state       : &State         -> current position
-/// - out         : &mut Vec<Move> -> list that gets the captures
-/// - scratch     : &mut Vec<u64>  -> reused multi-capture buffer
+/// - square_index: Square           -> origin square of the moving piece
+/// - piece       : &Piece           -> moving piece type
+/// - state       : &State           -> current position
+/// - out         : &mut Vec<Move>   -> list that gets the captures
+/// - scratch     : &mut Vec<u64>    -> reused multi-capture buffer
+/// - ranks       : &mut Vec<usize>  -> reused rank buffer of the walk
 ///
 /// Notes:
-/// The two tables use the same stable sort, so the captures have the same
-/// order as in `generate_move_list!`. The staged generation of `alpha_beta`
-/// needs this.
+/// The captures keep the order of `generate_move_list!`, which the staged
+/// generation of `alpha_beta` needs.
 ///
 #[macro_export]
 macro_rules! generate_capture_list {
     (
-        $square_index:expr, $piece:expr, $state:expr, $out:expr, $scratch:expr
+        $square_index:expr, $piece:expr, $state:expr,
+        $out:expr, $scratch:expr, $ranks:expr
     ) => {{
-        let piece_index = p_index!($piece) as usize;
-        let board_size = $state.statics.board_size;
-        let vector_set =
-            &$state.statics.relevant_captures
-                [piece_index * board_size + $square_index as usize];
-
         let start = $out.len();
-        generate_move_list_from_vectors!(
-            $square_index, $piece, vector_set, $state, $out, $scratch
-        );
 
+        walk_move_trie(
+            $state, $piece, $square_index, $out, $scratch, $ranks, true
+        );
         retain_captures!($out, start, true);
     }};
 }
@@ -4422,9 +4385,10 @@ macro_rules! undo_null_move {
 /// push_board_moves!
 ///
 ///   Params:
-///   - state  : &State         -> position to examine
-///   - out    : &mut Vec<Move> -> list that gets the moves
-///   - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+///   - state  : &State          -> position to examine
+///   - out    : &mut Vec<Move>  -> list that gets the moves
+///   - scratch: &mut Vec<u64>   -> reused multi-capture buffer
+///   - ranks  : &mut Vec<usize> -> reused rank buffer of the trie walk
 ///
 /// push_drops!
 ///
@@ -4434,7 +4398,7 @@ macro_rules! undo_null_move {
 ///
 #[macro_export]
 macro_rules! push_board_moves {
-    ($state:expr, $out:expr, $scratch:expr) => {
+    ($state:expr, $out:expr, $scratch:expr, $ranks:expr) => {
         if $state.game_phase != SETUP {
             let piece_count = $state.statics.pieces.len() / 2;
             let start_index = piece_count * $state.playing as usize;
@@ -4443,7 +4407,9 @@ macro_rules! push_board_moves {
                 let piece = &$state.statics.pieces[piece_index];
 
                 for &index in piece_squares!($state, piece_index) {
-                    generate_move_list!(index, piece, $state, $out, $scratch);
+                    generate_move_list!(
+                        index, piece, $state, $out, $scratch, $ranks
+                    );
                 }
             }
         }
@@ -4475,9 +4441,10 @@ macro_rules! push_drops {
 /// - castling    : with the castling rule
 ///
 /// Params:
-/// - state  : &State         -> position to examine
-/// - out    : &mut Vec<Move> -> cleared, then filled with the moves
-/// - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+/// - state  : &State          -> position to examine
+/// - out    : &mut Vec<Move>  -> cleared, then filled with the moves
+/// - scratch: &mut Vec<u64>   -> reused multi-capture buffer
+/// - ranks  : &mut Vec<usize> -> reused rank buffer of the trie walk
 ///
 /// Notes:
 /// A terminal position gives an empty list, so `legal_moves!` is empty too.
@@ -4487,6 +4454,7 @@ pub fn generate_all_moves_and_drops(
     state: &State,
     out: &mut Vec<Move>,
     scratch: &mut Vec<u64>,
+    ranks: &mut Vec<usize>,
 ) {
     out.clear();
 
@@ -4494,7 +4462,7 @@ pub fn generate_all_moves_and_drops(
         return;
     }
 
-    push_board_moves!(state, out, scratch);
+    push_board_moves!(state, out, scratch, ranks);
     push_drops!(state, out);
 
     if castling!(state) {
@@ -4509,15 +4477,17 @@ pub fn generate_all_moves_and_drops(
 /// most nodes cut before a drop is reached.
 ///
 /// Params:
-/// - state  : &State         -> position to examine
-/// - out    : &mut Vec<Move> -> cleared, then filled with the moves
-/// - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+/// - state  : &State          -> position to examine
+/// - out    : &mut Vec<Move>  -> cleared, then filled with the moves
+/// - scratch: &mut Vec<u64>   -> reused multi-capture buffer
+/// - ranks  : &mut Vec<usize> -> reused rank buffer of the trie walk
 ///
 #[hotpath::measure]
 pub fn generate_board_moves(
     state: &State,
     out: &mut Vec<Move>,
     scratch: &mut Vec<u64>,
+    ranks: &mut Vec<usize>,
 ) {
     out.clear();
 
@@ -4525,7 +4495,7 @@ pub fn generate_board_moves(
         return;
     }
 
-    push_board_moves!(state, out, scratch);
+    push_board_moves!(state, out, scratch, ranks);
 
     if castling!(state) {
         generate_castling_list!(state, out);
@@ -4555,8 +4525,8 @@ pub fn generate_drops(state: &State, out: &mut Vec<Move>) {
 /// generate_all_captures
 ///
 /// The capture version of `generate_all_moves_and_drops`, for quiescence.
-/// It uses the `relevant_captures` tables and keeps only real captures. It
-/// never makes quiet moves, drops or castling.
+/// It walks the capture vectors of the move tries and keeps only real
+/// captures. It never makes quiet moves, drops or castling.
 ///
 /// A piece whose capture reach holds no enemy piece can capture nothing,
 /// so it is skipped before its vectors are walked. A whole piece, whose
@@ -4568,15 +4538,17 @@ pub fn generate_drops(state: &State, out: &mut Vec<Move>) {
 /// - en passant  : the victim is not on a leg square
 ///
 /// Params:
-/// - state  : &State         -> position to examine
-/// - out    : &mut Vec<Move> -> cleared, then filled with the captures
-/// - scratch: &mut Vec<u64>  -> reused multi-capture buffer
+/// - state  : &State          -> position to examine
+/// - out    : &mut Vec<Move>  -> cleared, then filled with the captures
+/// - scratch: &mut Vec<u64>   -> reused multi-capture buffer
+/// - ranks  : &mut Vec<usize> -> reused rank buffer of the trie walk
 ///
 #[hotpath::measure]
 pub fn generate_all_captures(
     state: &State,
     out: &mut Vec<Move>,
     scratch: &mut Vec<u64>,
+    ranks: &mut Vec<usize>,
 ) {
     out.clear();
     if is_terminal!(state) || state.game_phase == SETUP {
@@ -4622,7 +4594,7 @@ pub fn generate_all_captures(
                 }
             }
 
-            generate_capture_list!(index, piece, state, out, scratch);
+            generate_capture_list!(index, piece, state, out, scratch, ranks);
         }
     }
 }
