@@ -110,3 +110,44 @@ All on the server, in parallel, each run with a time limit.
   `relevant_captures` is not kept at run time.
 - Merge: the same nodes, faster on the mean of the four key variants,
   and not slower beyond noise in any.
+
+## Results
+
+The checks run on the server with `~/p27b/ident.sh` (seeded games and
+perft against a base, each run in its own working folder) and
+`~/p27b/nps.sh` (seeded bench, 16 seeds, alternating).
+
+### Stage 1 (badad6e)
+
+- `walk_origin!`, `walk_leg!` and `push_walked_move!` taken out of
+  `process_multi_leg_vector!`.
+- The same as build 22: 43 seeded games (taikyoku left out), 17 perft
+  suites at depth 3, chushogi 4, daishogi 4, daidaishogi 3, taikyoku 2.
+- Nodes per second against build 22: standard x1.019 ± 0.025, xiangqi
+  x1.013 ± 0.015, grand x0.997 ± 0.014, shogi x1.005 ± 0.014.
+- The first run of the check showed 28 games different. The engines
+  shared one working folder and raced to roll the same log file, and the
+  ones that lost panicked; each run now has its own folder, and a crash
+  shows as a crash.
+
+### Stage 2 (d4b8a5c)
+
+- The same as build 22 in the 43 games and the 20 perfts on boards up to
+  daidaishogi. Taikyoku perft 2 was killed for memory.
+- Nodes per second against build 22: standard x0.958 ± 0.017, xiangqi
+  x1.167 ± 0.018, grand x1.030 ± 0.022, shogi x0.965 ± 0.018. Not merged.
+- Why standard and shogi lose: the rank order. A build without it (not
+  exact, for the measure only) against stage 2: standard x1.047 ± 0.021,
+  xiangqi x1.051 ± 0.013, grand x1.029 ± 0.015, shogi x1.044 ± 0.037. So
+  the walk alone is near x1.00 in standard and shogi, x1.23 in xiangqi
+  and x1.06 in grand, and keeping the order of build 22 costs near 4%:
+  each slider square sorts and permutes its moves at each generation.
+- Why the walk gains little in standard: 7836 legs for 7740 vector ends.
+  A slide ends a vector on each of its nodes, so the trie saves leg
+  reads, not nodes; the gain grows with long open lines (xiangqi).
+- Memory, taikyoku loaded alone (`state`): build 22 peaks at 13.4 GB.
+  With the trie the load was killed above 15.6 GB: 85.2 M legs and 71.4
+  M vector ends, near 2.0 and 1.7 GB at 24 bytes each, plus the copies of
+  the build. The per-square tables are what fill taikyoku's memory: 71 M
+  vectors are kept once in `relevant_moves`, again in
+  `relevant_captures`, and now in the trie.
