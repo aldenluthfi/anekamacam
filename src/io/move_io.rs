@@ -158,8 +158,7 @@ pub fn parse_move(
 ) -> Option<Move> {
     let mut out = Vec::with_capacity(64);
     let mut scratch = Vec::with_capacity(16);
-    let mut ranks = Vec::new();
-    generate_all_moves_and_drops(state, &mut out, &mut scratch, &mut ranks);
+    generate_all_moves_and_drops(state, &mut out, &mut scratch);
 
     out
         .into_iter()

@@ -2262,10 +2262,9 @@ fn draw_playground_tab(frame: &mut Frame<'_>, area: Rect, app: &mut Tui) {
 
                 let mut out = Vec::with_capacity(64);
                 let mut scratch = Vec::with_capacity(16);
-                let mut ranks = Vec::new();
 
                 generate_all_moves_and_drops(
-                    &state, &mut out, &mut scratch, &mut ranks
+                    &state, &mut out, &mut scratch
                 );
 
                 let mut legal_moves = Vec::with_capacity(out.len());
@@ -2688,10 +2687,7 @@ fn execute_command(
         "ls" => {
             let mut moves = Vec::with_capacity(64);
             let mut scratch = Vec::with_capacity(16);
-            let mut ranks = Vec::new();
-            generate_all_moves_and_drops(
-                state, &mut moves, &mut scratch, &mut ranks
-            );
+            generate_all_moves_and_drops(state, &mut moves, &mut scratch);
 
             if moves.is_empty() {
                 log_2!("No legal moves available");

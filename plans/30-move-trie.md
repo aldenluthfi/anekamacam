@@ -89,10 +89,23 @@ castling.
    the same nodes, the same speed.
 2. `move_trie.rs`: types, `build_move_trie`, the walk with the rank
    order; generation switched to it.
-3. If the rank order costs more than about 1% in nodes per second, a
-   cheaper exact order (rank buckets). An order without it changes the
-   trees and needs games against full FSF: a separate candidate.
-4. Results here; merge as build 23 on the speed result.
+3. Decided by the user after stage 2 (see Results): the walk order is the
+   move order, and the trie is one for each piece, not for each square.
+   - No rank buffer and no reorder; the `ranks` argument goes again.
+   - `build_move_trie` reads the compiled vectors of each piece, before
+     they are fitted to the squares.
+   - `walk_leg!` keeps the file and rank of the walk and ends a leg that
+     leaves the board or enters a forbidden zone (unless it may pass
+     one), the tests `generate_relevant_moves` makes at load. A vector
+     fitted to its square passes them all, so `lva!` is unchanged.
+   - `match_pattern!` tests the bounds itself: an allower off the board
+     fails its pattern, a stopper off the board is ignored, as
+     `clip_pattern` gives. A fitted pattern gives the same answer.
+   - The trees change, so it merges on games against full FSF,
+     interleaved with build 22, three rounds of 200 in each key variant
+     (`nodestime` 14, 16, 29, 44), at +2σ on the mean; perft must still
+     equal build 22 everywhere.
+4. Results here; merge as build 23.
 
 ## Verification
 

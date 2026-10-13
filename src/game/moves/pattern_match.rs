@@ -21,7 +21,9 @@
 /// of its pieces at its offset. No stopper can find one of its pieces.
 ///
 /// The offsets are for White. For Black, the macro negates both deltas.
-/// The macro reads the stoppers only if all allowers match.
+/// The macro reads the stoppers only if all allowers match. An offset off
+/// the board holds no piece: an allower there fails the pattern, and a
+/// stopper there is ignored, as `clip_pattern` fits a pattern at load.
 ///
 /// Params:
 /// - pattern: &Pattern -> compiled (allower, stopper) pattern to test
@@ -32,57 +34,37 @@
 /// Return:
 /// bool                -> true when all allowers match and no stopper does
 ///
-/// Notes:
-/// There is no bounds check. Precomputation removes each pattern that goes
-/// off the board from its square.
-///
 #[macro_export]
 macro_rules! match_pattern {
     ($pattern:expr, $square:expr, $color:expr, $state:expr) => {{
         let (allowers, stoppers) = $pattern;
 
-        let file = $square % $state.statics.files as u32;
-        let rank = $square / $state.statics.files as u32;
+        let files = $state.statics.files as i32;
+        let ranks = $state.statics.ranks as i32;
+        let file = ($square % files as u32) as i32;
+        let rank = ($square / files as u32) as i32;
+        let piece_at = |offset: u16| {
+            let check_x = file + x!(offset) as i32 * (-2 * $color as i32 + 1);
+            let check_y = rank + y!(offset) as i32 * (-2 * $color as i32 + 1);
 
-        let mut invalid = false;
-
-        for allower in allowers {
-            let x = x!(allower.0) as i32 * (-2 * $color as i32 + 1);
-            let y = y!(allower.0) as i32 * (-2 * $color as i32 + 1);
-            let allower_pieces = &allower.1;
-
-            let check_x = file as i32 + x;
-            let check_y = rank as i32 + y;
-            let check_index =
-                (check_y * $state.statics.files as i32 + check_x) as usize;
-
-            let piece_check = $state.main_board[check_index];
-
-            if !allower_pieces.contains(piece_check) {
-                invalid = true;
+            match check_x >= 0 && check_x < files
+                && check_y >= 0 && check_y < ranks
+            {
+                true => Some(
+                    $state.main_board[(check_y * files + check_x) as usize]
+                ),
+                false => None,
             }
-        }
+        };
 
-        if !invalid {
-            for stopper in stoppers {
-                let x = x!(stopper.0) as i32 * (-2 * $color as i32 + 1);
-                let y = y!(stopper.0) as i32 * (-2 * $color as i32 + 1);
-                let stopper_pieces = &stopper.1;
-
-                let check_x = file as i32 + x;
-                let check_y = rank as i32 + y;
-                let check_index =
-                    (check_y * $state.statics.files as i32 + check_x) as usize;
-
-                let piece_check = $state.main_board[check_index];
-
-                if stopper_pieces.contains(piece_check) {
-                    invalid = true;
-                }
-            }
-        }
-
-        !invalid
+        allowers.iter().all(|allower| {
+            piece_at(allower.0)
+                .is_some_and(|piece_check| allower.1.contains(piece_check))
+        })
+        && !stoppers.iter().any(|stopper| {
+            piece_at(stopper.0)
+                .is_some_and(|piece_check| stopper.1.contains(piece_check))
+        })
     }};
 }
 
@@ -102,8 +84,9 @@ macro_rules! match_pattern {
 /// bool                                 -> true when the move can be played
 ///
 /// Notes:
-/// There is no bounds check. `clip_move_vector` fits each pattern to its
-/// origin square at precompute time.
+/// `match_pattern!` tests the bounds, so a condition fitted to its square
+/// by `clip_move_vector` and the same condition before the fit give the
+/// same answer.
 ///
 #[macro_export]
 macro_rules! match_pattern_set {

@@ -747,7 +747,7 @@ pub struct StaticState {
 
     pub relevant_moves: Vec<MoveSet>,                                           /* idx = piece * board size + square  */
     pub relevant_captures: Vec<MoveSet>,                                        /* flattened because of cache         */
-    pub move_trie: MoveTrie,                                                    /* the vectors above, shared prefixes */
+    pub move_trie: MoveTrie,                                                    /* each piece's vectors by their legs */
     pub capture_reach: Vec<u64>,                                                /* piece, square to capture leg reach */
     pub capture_destroys: Vec<bool>,                                            /* piece to an own-piece capture leg  */
     pub royal_reach: Vec<u64>,                                                  /* side, royal square to attack reads */
@@ -1402,7 +1402,7 @@ impl State {
     ///
     /// 1. compile the expressions, one set for each piece
     /// 2. `populate_relevant` puts the sets on each square
-    /// 3. `build_move_trie` joins the vectors of each square by their legs
+    /// 3. `build_move_trie` joins the vectors of each piece by their legs
     /// 4. `generate_attack_masks` stores each move under its target square
     /// 5. `derive_attack_recipes` makes the tables of `piece_attacks!`
     /// 6. the royal reach, the squares an attack on a royal square reads
@@ -1452,8 +1452,7 @@ impl State {
             self.populate_relevant(&piece_moves, generate_relevant_captures);
         self.static_mut().relevant_captures = captures;
 
-        let trie = build_move_trie(self);
-        self.static_mut().move_trie = trie;
+        self.static_mut().move_trie = build_move_trie(&piece_moves);
 
         if drops!(self) {
             let drops =

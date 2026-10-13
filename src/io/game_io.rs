@@ -2629,9 +2629,8 @@ pub fn format_fen(state: &State, dict: Option<&Translator>) -> String {
 
         let mut out = Vec::new();
         let mut scratch = Vec::new();
-        let mut ranks = Vec::new();
 
-        generate_all_captures(state, &mut out, &mut scratch, &mut ranks);
+        generate_all_captures(state, &mut out, &mut scratch);
 
         if out
             .iter()

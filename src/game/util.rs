@@ -1076,10 +1076,7 @@ pub fn perft(
 
     let mut possible_moves = Vec::with_capacity(64);
     let mut scratch = Vec::with_capacity(16);
-    let mut ranks = Vec::new();
-    generate_all_moves_and_drops(
-        state, &mut possible_moves, &mut scratch, &mut ranks
-    );
+    generate_all_moves_and_drops(state, &mut possible_moves, &mut scratch);
     let mut nodes = 0;
 
     if branch < 0 {
