@@ -42,9 +42,11 @@ walked and fewer vector setups.
 - The CPMN condition of a vector depends on the origin and the position,
   not on the walk. Tested at the end node before the move is made, it
   gives the same result as tested first.
-- `enc_is_initial!` and `enc_creates_enp!` are written again at each leg,
-  so only the last leg sets them. `mandatory` and `optionals` grow along
-  the path and are path state.
+- `enc_is_initial!`, `enc_creates_enp!` and `enc_created_enp!` OR their
+  bits into the move at each leg, so the move gathers them over the whole
+  path; with `mandatory` and `optionals` it is path state, saved before a
+  node and put back for its next sibling. (The first version of this plan
+  said only the last leg set them; the macros say otherwise.)
 
 ## Design
 
@@ -63,16 +65,19 @@ walked and fewer vector setups.
 - `build_move_trie`: from the finished `relevant_moves`, one entry for
   each thread, filed in entry order, in `State::precompute` after
   `relevant_captures`.
-- The walk goes depth first with a stack of saved path state. At a node
+- The walk goes depth first with a stack of saved path state (square,
+  promotion flags, the move so far, the length and top of the taken
+  list). At a node
   with ends, it reads the leg as a last leg and makes the move of each
   end whose condition holds. At a node with children, it reads the leg as
   a middle leg and goes down only when it passes.
 - Order: each move keeps the rank of its end, and the new part of the
   list is put back in rank order after the walk. The staged generation of
   `alpha_beta` needs today's order.
-- `walk_leg!`: the leg body of `process_multi_leg_vector!`, shared by the
-  trie walk and `process_multi_leg_vector!`, which `lva!` still uses for
-  single attack vectors.
+- `walk_origin!`, `walk_leg!` and `push_walked_move!`: the origin facts,
+  the leg body and the move output of `process_multi_leg_vector!`, shared
+  by the trie walk and `process_multi_leg_vector!`, which `lva!` still
+  uses for single attack vectors.
 
 Not in this plan: the attack side (`relevant_attacks`,
 `validate_attack_vector!`, `is_square_attacked!`, `lva!`), drops and
