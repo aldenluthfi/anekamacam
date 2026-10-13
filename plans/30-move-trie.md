@@ -2,7 +2,12 @@
 
 ## Status
 
-Opened 2026-10-13 on build 22 (main 1db0677), branch `plan30-trie`.
+Opened and closed 2026-10-13 on build 22 (main 1db0677), branch
+`plan30-trie`. Not kept. The tries of the squares walk faster than the
+vector tables but add their memory on top; one trie for each piece halves
+taikyoku's memory but walks 4 to 9% slower than the tables, and in games
+against full FSF it is -6.7, near ± 14. The user closed the plan; build 22
+keeps its vector walk.
 
 ## Context
 
