@@ -35,29 +35,36 @@ pub type WalkState = (i16, i16, i16, bool, bool);
 
 /// TrieNode
 ///
-/// One leg of the trie of a piece. The slides of a rook to the east are
-/// one branch, and a slide ends on each of its nodes:
+/// One leg of the trie of a piece. The nodes lie in depth-first order, so
+/// the nodes under a node follow it, `size` of them with itself. A leg that
+/// fails skips its subtree by a jump of `size`. The slides of a rook to the
+/// east are one branch, and a slide ends on each of its nodes:
 ///
 /// ```text
-/// W ● ─ W ● ─ W ● ─ W ● ─ W ● ─ W ● ─ W ●
+/// node   W ● ─ W ● ─ W ● ─ W ● ─ W ● ─ W ● ─ W ●
+/// size   7     6     5     4     3     2     1
 ///
 /// ● : a vector ends on this leg (`can_end`)
 /// ```
 ///
 pub struct TrieNode {
     pub leg: Leg,                                                               /* the step of this node              */
-    pub children: Vec<TrieNode>,                                                /* the next legs                      */
+    pub size: u32,                                                              /* this node and the nodes under it   */
     pub can_end: bool,                                                          /* a vector ends on this leg          */
     pub has_capture: bool,                                                      /* a capture vector ends at or under  */
 }
 
 /// MoveTrie
 ///
-/// The trie of one piece: its branches, each a root node with the CPMN
-/// condition that all the nodes of the branch share. A vector with another
-/// condition starts its own branch.
+/// The trie of one piece: its nodes in depth-first order, and its branches,
+/// each the index of a root node with the CPMN condition that all the nodes
+/// of the branch share. A vector with another condition starts its own
+/// branch.
 ///
-pub type MoveTrie = Vec<(TrieNode, Option<Arc<PatternSet>>)>;
+pub struct MoveTrie {
+    pub nodes: Vec<TrieNode>,                                                   /* every leg, depth first             */
+    pub branches: Vec<(u32, Option<Arc<PatternSet>>)>,                          /* root index and its condition       */
+}
 
 /*----------------------------------------------------------------------------*\
                                   TRIE BUILDING
@@ -65,73 +72,98 @@ pub type MoveTrie = Vec<(TrieNode, Option<Arc<PatternSet>>)>;
 
 /// build_move_trie
 ///
-/// Makes the trie of one piece from its compiled vectors. Each vector goes
-/// down from a branch with its first leg and its condition, then through a
-/// child with each next leg; a missing branch or child is made. Its last
-/// node can end a move. A vector that can capture marks each node on its
-/// way.
+/// Makes the trie of one piece from its compiled vectors, straight into its
+/// depth-first node list. Each vector goes down its branch (the root with
+/// its first leg and its condition) through the children with its next
+/// legs; the child of node `i` is `i + 1`, and the next sibling of a child
+/// follows its subtree. The legs it does not find go in as one chain at the
+/// end of the subtree it reached, and each node on its path grows by that
+/// chain. A vector with no branch gets its own at the end of the list.
 ///
 /// Params:
 /// - vectors: &MoveSet -> compiled vectors of the piece
 ///
 /// Return:
-/// MoveTrie            -> the branches of the trie of the piece
+/// MoveTrie            -> the trie of the piece
 ///
 pub fn build_move_trie(vectors: &MoveSet) -> MoveTrie {
-    let mut branches: MoveTrie = Vec::new();
+    let mut trie = MoveTrie { nodes: Vec::new(), branches: Vec::new() };
 
     for vector in vectors {
-        let Some((&first, rest)) = vector.legs.split_first() else {
+        let legs = &vector.legs[..];
+        let count = legs.len();
+
+        if count == 0 {
             continue;
-        };
-        let count = vector.legs.len();
-        let captures = vector.legs.iter().enumerate().any(|(index, leg)| {
-            c!(*leg) || d!(*leg) || index + 1 == count && !m!(*leg)
-        });
-        let found = branches.iter().position(|(root, condition)| {
-            root.leg == first && match (condition, &vector.pattern) {
-                (None, None) => true,
-                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
-                _ => false,
-            }
-        });
-        let at = found.unwrap_or_else(|| {
-            branches.push((trie_node(first), vector.pattern.clone()));
-            branches.len() - 1
-        });
-        let mut node = &mut branches[at].0;
-
-        node.has_capture |= captures;
-
-        for &leg in rest {
-            let at = node.children.iter().position(|child| child.leg == leg)
-                .unwrap_or_else(|| {
-                    node.children.push(trie_node(leg));
-                    node.children.len() - 1
-                });
-
-            node = &mut node.children[at];
-            node.has_capture |= captures;
         }
 
-        node.can_end = true;
+        let captures = legs.iter().enumerate().any(|(index, leg)| {
+            c!(*leg) || d!(*leg) || index + 1 == count && !m!(*leg)
+        });
+        let chain = |from: usize| legs[from..].iter().enumerate()
+            .map(move |(index, &leg)| TrieNode {
+                leg,
+                size: (count - from - index) as u32,
+                can_end: from + index + 1 == count,
+                has_capture: captures,
+            });
+        let nodes = &mut trie.nodes;
+        let root = trie.branches.iter().find(|(at, condition)| {
+            nodes[*at as usize].leg == legs[0]
+                && match (condition, &vector.pattern) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                    _ => false,
+                }
+        }).map(|(at, _)| *at as usize);
+
+        let Some(root) = root else {
+            trie.branches.push((nodes.len() as u32, vector.pattern.clone()));
+            nodes.extend(chain(0));
+            continue;
+        };
+
+        let mut path = vec![root];
+        let mut depth = 1;
+
+        while depth < count {
+            let at = path[path.len() - 1];
+            let end = at + nodes[at].size as usize;
+            let mut child = at + 1;
+
+            while child < end && nodes[child].leg != legs[depth] {
+                child += nodes[child].size as usize;
+            }
+
+            if child >= end {
+                break;
+            }
+
+            path.push(child);
+            depth += 1;
+        }
+
+        let last = path[path.len() - 1];
+        let start = last + nodes[last].size as usize;
+        let grown = (count - depth) as u32;
+
+        nodes.splice(start..start, chain(depth));
+
+        for &at in &path {
+            nodes[at].size += grown;
+            nodes[at].has_capture |= captures;
+        }
+
+        nodes[last].can_end |= depth == count;
+
+        for (at, _) in trie.branches.iter_mut() {
+            if *at as usize >= start {
+                *at += grown;
+            }
+        }
     }
 
-    branches
-}
-
-/// trie_node
-///
-/// Gives a new trie node for a leg, with no children and no end.
-///
-/// Params:
-/// - leg: Leg -> step of the node
-///
-/// Return:
-/// TrieNode   -> the new node
-///
-fn trie_node(leg: Leg) -> TrieNode {
-    TrieNode { leg, children: Vec::new(), can_end: false, has_capture: false }
+    trie
 }
 
 /*----------------------------------------------------------------------------*\
@@ -176,20 +208,20 @@ pub fn walk_move_trie(
     enc_piece!(encoded_move, mover.1 as u128);
     scratch.clear();
 
-    for (root, condition) in trie {
+    for (root, condition) in &trie.branches {
         if match_pattern_set!(condition, mover.0, mover.2, state) {
-            walk_trie_nodes(
-                state, piece, mover, std::slice::from_ref(root), walk,
+            walk_trie_node(
+                state, piece, mover, &trie.nodes, *root as usize, walk,
                 &encoded_move, out, scratch, captures_only,
             );
         }
     }
 }
 
-/// walk_trie_nodes
+/// walk_trie_node
 ///
-/// Walks sibling nodes and their children. A node and all its children are
-/// skipped when:
+/// Walks one node and the nodes under it. The node and all the nodes under
+/// it are skipped when:
 ///
 /// - captures_only : no capture vector ends on or under it
 /// - edge or zone  : its leg leaves the board or enters a forbidden zone
@@ -204,82 +236,130 @@ pub fn walk_move_trie(
 /// - state        : &State         -> current position
 /// - piece        : &Piece         -> moving piece type
 /// - mover        : WalkOrigin     -> facts of the origin
-/// - nodes        : &[TrieNode]    -> the siblings to walk
-/// - walk         : WalkState      -> state before their leg
-/// - encoded_move : &Move          -> move before their leg
+/// - nodes        : &[TrieNode]    -> the nodes of the trie
+/// - at           : usize          -> index of the node to walk
+/// - walk         : WalkState      -> state before its leg
+/// - encoded_move : &Move          -> move before its leg
 /// - out          : &mut Vec<Move> -> list that gets the moves
 /// - scratch      : &mut Vec<u64>  -> pieces taken on the path
 /// - captures_only: bool           -> walk only capture vectors
 ///
-#[allow(clippy::too_many_arguments)]
-fn walk_trie_nodes(
+/// Notes:
+/// It is inlined into its callers, so a node without children costs no
+/// call. Only a node with children calls `walk_trie_children`.
+///
+#[inline(always)]
+fn walk_trie_node(
     state: &State,
     piece: &Piece,
     mover: WalkOrigin,
     nodes: &[TrieNode],
+    at: usize,
     walk: WalkState,
     encoded_move: &Move,
     out: &mut Vec<Move>,
     scratch: &mut Vec<u64>,
     captures_only: bool,
 ) {
-    for node in nodes {
-        if captures_only && !node.has_capture
-        || !leg_lands!(&node.leg, mover, walk, state)
-        {
-            continue;
-        }
+    let node = &nodes[at];
 
-        let taken = scratch.len();
-        let top = scratch.last().copied();
-        let sign = -2 * mover.2 as i16 + 1;
-        let square = ((walk.2 + y!(&node.leg) as i16 * sign)
-            * state.statics.files as i16
-            + walk.1 + x!(&node.leg) as i16 * sign) as u32;
-        let reread = node.can_end && (
-            get!(state.pieces_board[0], square)
-                || get!(state.pieces_board[1], square)
-                || t!(&node.leg)
-                    && enp_square!(state.en_passant_square) == square
-        );
+    if captures_only && !node.has_capture
+    || !leg_lands!(&node.leg, mover, walk, state)
+    {
+        return;
+    }
 
-        if reread {
-            let mut end_walk = walk;
-            let mut end_move = encoded_move.clone();
+    let taken = scratch.len();
+    let top = scratch.last().copied();
+    let sign = -2 * mover.2 as i16 + 1;
+    let square = ((walk.2 + y!(&node.leg) as i16 * sign)
+        * state.statics.files as i16
+        + walk.1 + x!(&node.leg) as i16 * sign) as u32;
+    let reread = node.can_end && (
+        get!(state.pieces_board[0], square)
+            || get!(state.pieces_board[1], square)
+            || t!(&node.leg) && enp_square!(state.en_passant_square) == square
+    );
 
-            if walk_leg!(
-                &node.leg, true, mover, &mut end_walk,
-                state, &mut end_move, scratch
-            ) {
-                push_walked_move!(
-                    piece, state, end_move, end_walk, scratch, out, true
-                );
-            }
-
-            restore_taken(scratch, taken, top);
-        }
-
-        let mut path_walk = walk;
-        let mut path_move = encoded_move.clone();
+    if reread {
+        let mut end_walk = walk;
+        let mut end_move = encoded_move.clone();
 
         if walk_leg!(
-            &node.leg, false, mover, &mut path_walk,
-            state, &mut path_move, scratch
+            &node.leg, true, mover, &mut end_walk,
+            state, &mut end_move, scratch
         ) {
-            if node.can_end && !reread {
-                push_walked_move!(
-                    piece, state, path_move.clone(), path_walk,
-                    scratch, out, true
-                );
-            }
-
-            walk_trie_nodes(
-                state, piece, mover, &node.children, path_walk, &path_move,
-                out, scratch, captures_only,
+            push_walked_move!(
+                piece, state, end_move, end_walk, scratch, out, true
             );
         }
 
         restore_taken(scratch, taken, top);
+    }
+
+    let mut path_walk = walk;
+    let mut path_move = encoded_move.clone();
+
+    if walk_leg!(
+        &node.leg, false, mover, &mut path_walk,
+        state, &mut path_move, scratch
+    ) {
+        if node.can_end && !reread {
+            push_walked_move!(
+                piece, state, path_move.clone(), path_walk,
+                scratch, out, true
+            );
+        }
+
+        if node.size > 1 {
+            walk_trie_children(
+                state, piece, mover, nodes, at, path_walk, &path_move,
+                out, scratch, captures_only,
+            );
+        }
+    }
+
+    restore_taken(scratch, taken, top);
+}
+
+/// walk_trie_children
+///
+/// Walks the children of a node: the first follows it, and each next one
+/// follows the subtree of the one before.
+///
+/// Params:
+/// - state        : &State         -> current position
+/// - piece        : &Piece         -> moving piece type
+/// - mover        : WalkOrigin     -> facts of the origin
+/// - nodes        : &[TrieNode]    -> the nodes of the trie
+/// - parent       : usize          -> index of the node whose children run
+/// - walk         : WalkState      -> state after the parent's leg
+/// - encoded_move : &Move          -> move after the parent's leg
+/// - out          : &mut Vec<Move> -> list that gets the moves
+/// - scratch      : &mut Vec<u64>  -> pieces taken on the path
+/// - captures_only: bool           -> walk only capture vectors
+///
+fn walk_trie_children(
+    state: &State,
+    piece: &Piece,
+    mover: WalkOrigin,
+    nodes: &[TrieNode],
+    parent: usize,
+    walk: WalkState,
+    encoded_move: &Move,
+    out: &mut Vec<Move>,
+    scratch: &mut Vec<u64>,
+    captures_only: bool,
+) {
+    let end = parent + nodes[parent].size as usize;
+    let mut at = parent + 1;
+
+    while at < end {
+        walk_trie_node(
+            state, piece, mover, nodes, at, walk, encoded_move,
+            out, scratch, captures_only,
+        );
+        at += nodes[at].size as usize;
     }
 }
 
