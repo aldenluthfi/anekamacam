@@ -3153,3 +3153,77 @@ FSF, 200 games at each `nodestime`:
 - Our depth 1 there is still 11663 nodes: an `extinct` rule clears SEE
   (`see_valid`) and forward pruning for horde, extinction and kinglet.
   Queue192 plays HC against build 24 in horde.
+
+### Queue192 (2026-10-14, candidates against build 24)
+
+| Variant | Opponent | build 24 | candidate | mean gain |
+| ------- | -------- | -------- | --------- | --------- |
+| threecheck | FSF 2000 | -41.9 ± 40.8, -81.4 ± 47.9 | SC2 -65.0 ± 45.3, -79.5 ± 52.3 | -10.6 |
+| fivecheck | FSF 2000 | +161.9 ± 53.0, +141.0 ± 55.7 | SC2 +168.4 ± 55.2, +177.2 ± 55.7 | +21.4 |
+| horde | FSF 2000 | -47.2 ± 23.5, -24.4 ± 22.2 | HC -47.2 ± 23.5, -17.4 ± 14.9 | +3.5 |
+| crazyhouse | full FSF, nodestime 16 | -17.4, -10.4, +17.4 | LM +41.9, +45.4, -15.6 | +27.3 |
+
+- SC2: +5.4 over the two variants, nothing. Build 24 alone (MB) already
+  plays threecheck at -62 (build 23: -244), so the +150 of queue190 was
+  MB. Not merged; see CK for why.
+- LM: pooled 320-279-1 against 295-301-4, +27.3 with one σ near 20,
+  short of +2σ. Rounds +59, +56, -33. Not merged.
+- HC: horde no worse, and the judge no longer aborts. Merged.
+- Horde main round 2 had one FSF forfeit (no move). The games replayed in
+  FSF show the cause in game 87: after White's `e1e3` our engine took en
+  passant on e2, which FSF refused. FSF's horde (`variant.cpp`) excludes
+  en passant on the second rank (`enPassantRegion` Rank3 and Rank6) and
+  gives Black its castling rights (`kq` in its start FEN). Ours had no
+  castling and took en passant after a first-rank double step.
+
+### Horde rules (2026-10-14, branch `plan29-hc`, f007315)
+
+- Black castles as in standard (castling section copied, rights `kq`).
+  The pawn's double step splits by rank: from the second rank the passed
+  square opens en passant, from the first rank it does not. The dict is
+  standard's (the FEN now carries castling rights).
+- Perft equals FSF: start position at depths 1 to 6 (5396554 at 6); the
+  game 87 position at depth 2, 495 (build 24: 496); 400 positions from
+  the queue192 horde games at depth 3, all equal (47 with Black's rights).
+
+### Merged build 25 (2026-10-14, main 5eed585)
+
+- Build 24 with HC, the judge limit and the horde rules
+  (`plan27-main25`). All param files derive the same.
+
+### CK (2026-10-14, branch `plan29-ck`, 441fdb0)
+
+Why chain, from SC2's nothing:
+
+- A: we lose threecheck to FSF 2000. 399 of the 400 queue192 games of
+  build 24 end on a third check (FSF replays of the full move lists).
+- B: we walk into forced check wins. The record does not say which side
+  was ours, so each side's scores were matched against our depth-6
+  search of the same positions (88 wins found for the 88 of round 1).
+  In round 1's losses, 104 fatal positions (our score from -0.5 or better
+  to -3 or worse); at 24 of them FSF's next score is a mate score, while
+  ours was often +3 to +6.
+- C: our search finds those wins late. After our fatal move, the time to
+  a lasting mate score for the side to move (3 s, local): build 24
+  median 201 ms, 9 of 24 above 350 ms (about the time a move gets in
+  these games), one not found. FSF at depth 1 to 19. In game 183 (White
+  one check from the win, a queen and a knight down: Rh3 then Rh8+) FSF
+  sees it at depth 2, build 24 at depth 10 after -9.8 at depths 1 to 9.
+- D: the forward cuts drop the threat. Without forward pruning the same
+  position falls at depth 3, and the 24 positions at a median of 33 ms
+  (one above 350 ms).
+- E: the static score cannot see the next check. `check_race!` counts
+  checks given, and SC2's safe checks need a square the defender does not
+  attack, though with one check left any check wins. A move that sets up
+  a check is quiet; the score below the window cuts it away. FSF in a
+  check race widens futility, ProbCut and the move-loop futility (`1 +
+  check_counting`) and raises king danger by the checks left
+  (`kingDanger * 7 / (3 + checks_remaining)`).
+- The eval cannot see a check two moves away (Rh3 then Rh8+), so E is
+  not fixable in the eval alone; CK takes forward pruning off with a
+  checks rule (threecheck, fivecheck). Queue193 plays it against build
+  25 at FSF 2000, two rounds.
+- Two gaps found on the way: our FEN has no check counters (the dict
+  drops FSF's and writes `3+3`), so a position sent as a FEN alone loses
+  the checks given; games send moves, so they are not affected. The
+  record has no field for which side engine A played.
