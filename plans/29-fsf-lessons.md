@@ -3240,6 +3240,28 @@ Why chain, from SC2's nothing:
 - Mean +20.5, near 1.2σ. Build 25 alone moved 75 between its two
   threecheck rounds. Queue195 plays rounds 3 and 4.
 - Horde, build 25 against FSF 2000: -40.1 ± 23.9, no forfeits.
+- Queue195, rounds 3 and 4: threecheck build 25 -137.0 ± 52.0, -109.5 ±
+  50.2, CK -127.0 ± 50.3, -105.6 ± 45.4; fivecheck build 25 +125.0 ±
+  48.3, +129.0 ± 53.8, CK +90.6 ± 46.8, +85.0 ± 47.3. Over four rounds
+  CK gains +14.9 in threecheck and -10.5 in fivecheck, +2.2 in all. Not
+  merged.
+- Why: CK costs nothing (300 ms on 160 positions of the games: depth and
+  nodes within 1 to 11% of build 25's either way), so it neither pays a
+  price nor finds a gain. The fatal positions came too late. Full FSF at
+  1 s on the 106 fatal positions of round 1 (us to move): 84 already
+  lost (-3 or worse), median -8.6; one of our moves earlier, 64 of 100
+  lost, median -4.5; two moves earlier, 48 of 97, median -2.9. Our own
+  score stayed at -0.5 or better through all of them. The games are lost
+  over several moves of positions our eval misjudges, not by one missed
+  check; finding the forced check faster at the end changes nothing.
+- So threecheck is an eval gap, as LA said. FSF's race (`evaluate.cpp`,
+  nCheck): `(3600, 1000) / remaining²` for each side, near 0.16, 0.35
+  and 1.42 queens at three, two and one check left in the middlegame;
+  ours is 0.25, 0.5 and 1. Its king danger rises by `7 / (3 + checks
+  left)`, ring weakness, unsafe checks and ring attacks count two to five
+  times, any check counts as safe with one left, and the king safety MG
+  adds `2 / (2 + checks left)` of itself to the EG. Which of these carry
+  the value under our check rule is measured in the lab first.
 
 ### Crazyhouse and capablanca fatal positions (2026-10-14)
 
