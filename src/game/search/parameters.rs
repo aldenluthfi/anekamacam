@@ -1824,7 +1824,7 @@ pub fn derive_search_parameters(state: &mut State) {
 ///
 /// - exchange simulation : multi own destroy, misere, extinction
 /// - pruning on it       : counting
-/// - forward pruning     : misere, extinction
+/// - forward pruning     : misere, extinction, a count of checks
 /// - null pruning        : misere, counting, pass, stand-off, setup, capturer
 /// - recapture ordering  : none
 /// - quiet pruning       : misere
@@ -1835,6 +1835,12 @@ pub fn derive_search_parameters(state: &mut State) {
 /// the first two ranks, does not change an exchange. Counting it too took
 /// the losing-capture stop from horde's quiescence: a depth-8 search ran
 /// 4 s on some openings.
+///
+/// In a race of checks the static score counts the checks given, not the
+/// checks that can come. A side one check from the win, but a queen down,
+/// scores far below the window, and the forward cuts drop the move that
+/// threatens the check. Threecheck games lost on forced checks that
+/// Fairy-Stockfish saw at depth 2 and the search saw at depth 10.
 ///
 /// A pass is a vector that ends on its start square without a capture. A
 /// capturer is a piece that has capture vectors only. The movement facts
@@ -1946,7 +1952,7 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_see_pruning!(capabilities);
     }
 
-    if !misere && !counts_pieces {
+    if !misere && !counts_pieces && termination.checks.is_none() {
         enc_forward_pruning!(capabilities);
     }
 
