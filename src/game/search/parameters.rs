@@ -396,10 +396,16 @@ const PAIR_REACH_SLACK: f64 = 0.02;
 /// - `RESTRICTED_RATIO`  : 0.3% and 0.3% for each square
 /// - `THREAT_FLOOR`      : 1, the minimum of each
 ///
+/// The quiescence search skips the threats when the score without them is
+/// beyond its window by more than a margin, as they would not bring it
+/// back. The margin is 10% of the most valuable piece, near four times the
+/// mean threat value in standard (`THREAT_LAZY_RATIO`).
+///
 const HANGING_RATIO: [u32; 2] = [27, 13];
 const PAWN_THREAT_RATIO: [u32; 2] = [68, 35];
 const RESTRICTED_RATIO: [u32; 2] = [3, 3];
 const THREAT_FLOOR: u32 = 1;
+const THREAT_LAZY_RATIO: u32 = 100;
 
 /// PAWN_MIN_START_COUNT
 ///
@@ -531,6 +537,7 @@ pub struct EvalParams {
     pub hanging_value: [i32; 2],                                                /* worth of a loose enemy piece,      */
     pub pawn_threat_value: [i32; 2],                                            /* of a pawn on a piece and of a      */
     pub restricted_value: [i32; 2],                                             /* contested square, opening, ending  */
+    pub threat_margin: i32,                                                     /* lead past the window that skips it */
 
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
@@ -3451,6 +3458,8 @@ pub fn derive_advantage_parameters(state: &mut State) {
     let hanging = threat(HANGING_RATIO);
     let pawn_threat = threat(PAWN_THREAT_RATIO);
     let restricted = threat(RESTRICTED_RATIO);
+    let threat_margin = dearest * THREAT_LAZY_RATIO as u64
+        / COEFFICIENT_SCALE as u64;
 
     let bound: Vec<usize> = state.statics.pieces.iter()
         .filter(|piece| p_color!(piece) == WHITE)
@@ -3477,8 +3486,8 @@ pub fn derive_advantage_parameters(state: &mut State) {
     );
 
     log_3!(
-        "Derived threats: hanging {:?}, pawn {:?}, restricted {:?}",
-        hanging, pawn_threat, restricted
+        "Derived threats: hanging {:?}, pawn {:?}, restricted {:?}, margin {}",
+        hanging, pawn_threat, restricted, threat_margin
     );
 
     let statics = state.static_mut();
@@ -3486,6 +3495,7 @@ pub fn derive_advantage_parameters(state: &mut State) {
     statics.eval.hanging_value = hanging;
     statics.eval.pawn_threat_value = pawn_threat;
     statics.eval.restricted_value = restricted;
+    statics.eval.threat_margin = threat_margin as i32;
     statics.eval.tempo_bonus = tempo as i32;
     statics.eval.imbalance_major = major as i32;
     statics.eval.imbalance_minor = minor as i32;

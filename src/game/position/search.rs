@@ -794,7 +794,7 @@ pub fn quiescence_search(
     let in_check = to_move_in_check!(state);
     let stand_pat = match in_check {                                            /* a checked side cannot stand pat,   */
         true => -INF,                                                           /* so its score is never read below   */
-        false => evaluate_position!(state),
+        false => evaluate_position!(state, alpha, beta),
     };
 
     if !in_check {

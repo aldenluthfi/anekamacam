@@ -1249,8 +1249,14 @@ macro_rules! material_advantage {
 /// - material imbalance     : outside the blend, added once
 /// - tempo                  : outside, after the flip to the side to move
 ///
+/// With a window, the threats are left out when the score without them is
+/// beyond the window by more than `threat_margin`: they would not bring it
+/// back inside. Without a window, the score is always complete.
+///
 /// Params:
 /// - state: &mut State -> position to evaluate
+/// - alpha: i32        -> lower bound of the window, optional
+/// - beta : i32        -> upper bound of the window, optional
 ///
 /// Return:
 /// i32                 -> score for the side to move
@@ -1262,47 +1268,46 @@ macro_rules! material_advantage {
 #[macro_export]
 macro_rules! evaluate_position {
     ($state:expr) => {
+        evaluate_position!($state, -INF, INF)
+    };
+    ($state:expr, $alpha:expr, $beta:expr) => {
         hotpath::measure_block!("eval::position", {
             let side_sign = -2 * $state.playing as i32 + 1;
+            let phase = $state.game_phase;
+            let opening_bound = $state.statics.opening_score as i32;
+            let endgame_bound = $state.statics.endgame_score as i32;
+            let current = $state.phase_score as i32;
+            let tempo = $state.statics.eval.tempo_bonus;
+            let margin = $state.statics.eval.threat_margin;
 
             let shared = shared_score!($state);
-            let (threat_opening, threat_endgame) = threats!($state);
+            let (pawn_opening, pawn_endgame) = pawn_structure!($state);
+            let opening = opening_score!($state) + shared + pawn_opening;
+            let endgame = endgame_score!($state) + shared + pawn_endgame;
+            let material = material_advantage!($state);
 
-            let score = match $state.game_phase {
-                OPENING | SETUP => {
-                    opening_score!($state)
-                        + shared
-                        + pawn_structure!($state).0
-                        + threat_opening
-                }
-                ENDGAME => {
-                    endgame_score!($state)
-                        + shared
-                        + pawn_structure!($state).1
-                        + threat_endgame
-                }
-                MIDDLEGAME => {
-                    let (pawn_opening, pawn_endgame) =
-                        pawn_structure!($state);
-                    let opening = opening_score!($state)
-                        + shared + pawn_opening + threat_opening;
-                    let endgame = endgame_score!($state)
-                        + shared + pawn_endgame + threat_endgame;
-
-                    let opening_bound = $state.statics.opening_score as i32;
-                    let endgame_bound = $state.statics.endgame_score as i32;
-                    let current = $state.phase_score as i32;
-
-                    (
+            let finish = |opening: i32, endgame: i32| {
+                let score = match phase {
+                    OPENING | SETUP => opening,
+                    ENDGAME => endgame,
+                    MIDDLEGAME => (
                         opening * (current - endgame_bound)
                             + endgame * (opening_bound - current)
-                    ) / (opening_bound - endgame_bound)
-                }
-                _ => panic!("Invalid game phase {}", $state.game_phase),
-            };
+                    ) / (opening_bound - endgame_bound),
+                    _ => panic!("Invalid game phase {}", phase),
+                };
 
-            (score + material_advantage!($state)) * side_sign
-                + $state.statics.eval.tempo_bonus
+                (score + material) * side_sign + tempo
+            };
+            let lazy = finish(opening, endgame);
+
+            if lazy - margin >= $beta || lazy + margin <= $alpha {
+                lazy
+            } else {
+                let (threat_opening, threat_endgame) = threats!($state);
+
+                finish(opening + threat_opening, endgame + threat_endgame)
+            }
         })
     };
 }
