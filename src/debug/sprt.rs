@@ -1309,13 +1309,13 @@ impl SPRTTally {
 /// A message from a match slot to the runner. The runner owns the tally,
 /// so the slots do not share counts.
 ///
-/// - `Game(1.0, 0.0, rows)` : engine A won as Black, with the game rows
+/// - `Game(1.0, 0.0, 'b', rows)` : engine A won as Black, with the rows
 /// - `Forfeit(1, Time)`     : engine B lost the last game on time
 /// - `Pair(0.75)`           : engine A scored 1.5 of 2 in one pair
 /// - `Stop(reason)`         : the slot cannot continue, the verdict
 ///
 enum SPRTReport {
-    Game(f64, f64, Vec<String>),                                                /* score of A, of White, and the rows */
+    Game(f64, f64, char, Vec<String>),                                          /* score of A, of White, A's colour   */
     Forfeit(usize, SPRTForfeit),                                                /* engine 0 = A, 1 = B; the reason    */
     Pair(f64),                                                                  /* mean score of the pair for A       */
     Stop(String),                                                               /* the slot failed, the run stops     */
@@ -1490,9 +1490,10 @@ fn run_slot(
                 }
             };
             let score_a = if game == 0 { score } else { 1.0 - score };          /* game 2 has B as White              */
+            let color_a = if game == 0 { 'w' } else { 'b' };
 
             let _ = reports.send(SPRTReport::Game(
-                score_a, score, mem::take(&mut manager.record),
+                score_a, score, color_a, mem::take(&mut manager.record),
             ));
             pair_score += score_a / 2.0;
             manager.swap_colors();
@@ -1522,10 +1523,11 @@ fn run_slot(
 /// 5. write the result file and delete the engine sandboxes
 ///
 /// Each game also goes to `res/sprt/{variant}/latest.games`, one row for
-/// each engine move: ply, position, move, score of the mover, result.
+/// each engine move: game, position, move, score of the mover, result for
+/// White, colour of engine A.
 ///
 /// ```text
-/// 12;<fen>;e2e4;cp 34;1
+/// 12;<fen>;e2e4;cp 34;1;w
 /// ```
 ///
 /// Params:
@@ -1590,11 +1592,12 @@ pub fn run_sprt(template: &State, settings: &SPRTMatch) {
 
         for report in receiver {
             match report {
-                SPRTReport::Game(score_a, white_score, rows) => {
+                SPRTReport::Game(score_a, white_score, color_a, rows) => {
                     tally.add_game(score_a);
                     for row in rows {
                         let _ = writeln!(
-                            game_file, "{};{};{}", games, row, white_score,
+                            game_file, "{};{};{};{}",
+                            games, row, white_score, color_a,
                         );
                     }
                     games += 1;
