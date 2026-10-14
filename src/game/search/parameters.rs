@@ -2631,7 +2631,10 @@ pub fn derive_shelter_parameters(state: &mut State) {
 /// Notes:
 /// A piece in hand has no square, so it reads `zone_attack_best`. The
 /// function uses the ring of `derive_shelter_parameters`, so that function
-/// must run first.
+/// must run first. The vectors are in the frame of the piece owner, so a
+/// Black landing turns both shifts round, as the move walk does. Without
+/// it each Black landing was mirrored through the origin: a Black queen on
+/// h4 put no pressure on a White king on f3.
 ///
 #[hotpath::measure]
 pub fn derive_danger_parameters(state: &mut State) {
@@ -2645,6 +2648,8 @@ pub fn derive_danger_parameters(state: &mut State) {
     let mut table = vec![0u8; board_size * piece_count * board_size];
 
     for piece_index in 0..piece_count {
+        let sign = -2 * p_color!(&state.statics.pieces[piece_index]) as i32 + 1;
+
         for from in 0..board_size {
             let mut pressure = vec![0.0f64; board_size];
             let vectors = &state.statics.relevant_moves
@@ -2657,8 +2662,8 @@ pub fn derive_danger_parameters(state: &mut State) {
                     continue;
                 };
 
-                let file = from as i32 % files + file_delta;
-                let rank = from as i32 / files + rank_delta;
+                let file = from as i32 % files + file_delta * sign;
+                let rank = from as i32 / files + rank_delta * sign;
 
                 if file < 0 || file >= files || rank < 0 || rank >= ranks {
                     continue;
