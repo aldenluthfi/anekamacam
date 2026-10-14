@@ -3285,3 +3285,50 @@ The same reading as LA, on build 24's losses: crazyhouse from queue192
   safety loses 140 there under that rule (queue125). Queue195 measures in
   the lab what FSF's parts and our check rule are worth in crazyhouse and
   capablanca before any candidate.
+- When do the lost games tip? Full FSF at 1 s on crazyhouse round 1
+  (107 losses, us to move): at the fatal position 95 lost (-3 or worse),
+  one of our moves earlier 89, two 82, three 76 (median -6.3). Scanning
+  each lost game at 300 ms, FSF first has us at -3 or worse at recorded
+  ply 13 (median; p25 7, p75 20), where our own score is +0.38 (median;
+  41 of 107 at +1 or more). The openings are not the cause: FSF at 1 s
+  puts 10 of the 100 crazyhouse openings past 3 pawns (threecheck 14),
+  median 1.38 either way.
+
+### The lab in crazyhouse, capablanca and threecheck (2026-10-14, queues 195 to 197)
+
+400 games each at 10+0.1, classical eval, Elo of the side with the part
+off (a minus means the part is worth that much to FSF):
+
+| Off | threecheck | crazyhouse | capablanca |
+| --- | ---------- | ---------- | ---------- |
+| `s1` (our check rule on) against base | -6.9 ± 28.3 | -396.7 ± 62.5 | -197.9 ± 35.7 |
+| `s1prune` (no check pruned) | | -99.0 ± 34.5 | -65.9 ± 28.3 |
+| `s1lmr` (no check reduced) | | -109.5 ± 34.7 | -27.0 ± 29.3 |
+| `s1ext` (each check extended) | | -6.1 ± 32.8 | +12.2 ± 28.8 |
+| `e_king` against base | -367.7 ± 55.1 | -213.6 ± 41.3 | -288.1 ± 45.2 |
+| `e_king` against `s1` | -317.2 ± 46.5 | -34.9 ± 31.2 | -108.5 ± 36.3 |
+| `e_kdanger` against `s1` | -218.6 ± 36.4 | | |
+| `e_kchecks` against `s1` | -80.4 ± 32.0 | | |
+| `e_variant` (the race) against base | -216.1 ± 37.5 | | |
+| `e_variant` against `s1` | -205.0 ± 39.4 | | |
+| `e_mobility` against base | | -96.2 ± 33.6 | -79.5 ± 30.8 |
+| `e_threats` against base | | | -85.0 ± 30.9 |
+| `e_hand` against base | | -9.6 ± 30.3 | |
+
+- Threecheck: our check rule costs FSF nothing. Under it FSF's king
+  safety is worth 317, its danger sum alone 219, and its race term 205.
+  The why chain of CK ends here: the games tip over several moves that
+  our eval misjudges, and these two terms are what FSF reads there. Our
+  danger is the wrong shape (queue163: a static landing table, no real
+  attackers, no gate) and our race steps differ (above).
+- Capablanca: the rule costs 198, most of it the pruning (66); king
+  safety under the rule is worth 108; threats and mobility near 80 each.
+- Crazyhouse: the rule costs 397, pruning and reduction near 100 each,
+  more together than apart; king safety under the rule only 35. The
+  proxy has failed before for the check rule (CR3 in shogi: the lab said
+  +200 to 250, our engine -9), so a check rule change is tested in our
+  engine before it is believed.
+- Order: the danger sum on the attack maps (threecheck 219, capablanca
+  up to 108, every variant with a royal); the map pass that blocked KS
+  (x0.83 to x0.88) is paid already by `attack_terms!`. Then the race
+  shape, then the check rule in crazyhouse.
