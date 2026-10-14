@@ -3226,4 +3226,40 @@ Why chain, from SC2's nothing:
 - Two gaps found on the way: our FEN has no check counters (the dict
   drops FSF's and writes `3+3`), so a position sent as a FEN alone loses
   the checks given; games send moves, so they are not affected. The
-  record has no field for which side engine A played.
+  record had no field for which side engine A played; each row now ends
+  with A's colour (39d27eb).
+- On all 104 fatal positions of round 1 (not only the mates), the side
+  to move keeps +3 within 350 ms in 66 with CK, 42 with build 25.
+- Queue193, FSF 2000, two rounds of 200:
+
+| Variant | build 25 | CK | CK minus build 25 |
+| ------- | -------- | -- | ----------------- |
+| threecheck | -161.9 ± 46.7, -86.9 ± 49.7 | -70.4 ± 48.5, -132.9 ± 47.2 | +91.5, -46.0 |
+| fivecheck | +139.0 ± 51.5, +103.7 ± 50.1 | +161.9 ± 54.0, +117.2 ± 47.1 | +22.9, +13.5 |
+
+- Mean +20.5, near 1.2σ. Build 25 alone moved 75 between its two
+  threecheck rounds. Queue195 plays rounds 3 and 4.
+- Horde, build 25 against FSF 2000: -40.1 ± 23.9, no forfeits.
+
+### Crazyhouse and capablanca fatal positions (2026-10-14)
+
+The same reading as LA, on build 24's losses: crazyhouse from queue192
+(full FSF, nodestime 16, 296 positions), capablanca from queue191
+(nodestime 16 and 32, 171 positions). Means in pawns, side to move = us.
+
+| Variant | our static | FSF classical | FSF material | FSF king safety | FSF mobility |
+| ------- | ---------- | ------------- | ------------ | --------------- | ------------ |
+| crazyhouse | +2.57 | -8.51 | +1.74 | -8.66 | -0.54 |
+| capablanca | +2.29 | -4.10 | +0.41 | -2.26 | -0.49 |
+
+- Crazyhouse games all end in mate (596 of 600). The fatal move comes at
+  a median of ply 26 after the opening.
+- Not the forward cuts: with them off under drops, the side to move
+  keeps +3 within 3 s in 176 of 296 positions against 164. More time
+  does find it: on 19 of them, 7 at 300 ms, 12 at 3 s, 17 at 20 s. FSF
+  sees it at once on a few thousand nodes, so its eval carries what our
+  search finds only deep.
+- Our king terms in shogi lost under our check rule, and FSF's own king
+  safety loses 140 there under that rule (queue125). Queue195 measures in
+  the lab what FSF's parts and our check rule are worth in crazyhouse and
+  capablanca before any candidate.
