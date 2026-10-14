@@ -948,8 +948,13 @@ macro_rules! pawn_structure {
 ///                pawns attacks from a safe square: one the enemy does not
 ///                attack, or one we attack too
 /// - restricted : a square both colours attack that is not strong
+/// - check      : in a race of checks, an own piece type, not royal, that
+///                reaches a square from which it attacks an enemy royal,
+///                with no own piece on it and no enemy attack on it
 ///
-/// Each piece or square counts once, whatever the number of attackers.
+/// Each piece or square counts once, whatever the number of attackers. A
+/// safe check is worth the next step of the race, [`check_race!`]: the
+/// race of each colour gains that step with the check.
 ///
 /// Params:
 /// - state: &mut State -> position to score, with the threat scratch
@@ -962,8 +967,11 @@ macro_rules! pawn_structure {
 /// so a map can hold more targets than the captures. A pawn is a piece
 /// with a pawn slot. A piece in the hand attacks nothing. The pass keeps
 /// the square and the map of each pawn for the pawn kind, as a safe square
-/// is known only after the pass. The mobility formula is Fairy-Stockfish's
-/// for its fairy pieces.
+/// is known only after the pass; in a race of checks it keeps the union of
+/// the maps of each piece type for the same reason. The check squares are
+/// the map of the type of the other colour cast from the royal, which is
+/// exact for leaps, lines and hops. The mobility formula is
+/// Fairy-Stockfish's for its fairy pieces.
 ///
 #[macro_export]
 macro_rules! attack_terms {
@@ -975,14 +983,22 @@ macro_rules! attack_terms {
             let span = words.max(2);                                            /* the 128-bit path reads two words   */
             let maps = &mut $state.scratch.threat_maps;
             let pawn_maps = &mut $state.scratch.threat_pawns;
+            let kinds = &mut $state.scratch.threat_kinds;
             let [occupied, attacks] = &mut $state.scratch.threat_boards;
             let region = |kind: usize, color: usize| (2 * kind + color) * words;
             let (once, twice, pawn_hits, pawns, royals, targets, area) =
                 (0, 1, 2, 3, 4, 5, 6);
+            let steps = [check_race!($state, 0), check_race!($state, 1)];
+            let race = steps[0] > 0;                                            /* a count of checks wins             */
 
             if maps.len() != 14 * words {
                 maps.clear();                                                   /* a new variant sizes it again       */
                 maps.resize(14 * words, 0);
+            }
+
+            if race {
+                kinds.clear();
+                kinds.resize(statics.pieces.len() * words, 0);
             }
 
             maps.fill(0);
@@ -1035,6 +1051,13 @@ macro_rules! attack_terms {
                                 hits * pawn as u64;
                             reach += (hits & maps[region(area, color) + word])
                                 .count_ones() as usize;
+                        }
+
+                        if race {
+                            for word in 0..words {
+                                kinds[piece_index * words + word] |=
+                                    attacks.2[word];
+                            }
                         }
 
                         maps[region(pawns, color) + (at >> 6)] |=
@@ -1097,6 +1120,38 @@ macro_rules! attack_terms {
                 }
             }
 
+            let mut checks = [0i32; 2];
+
+            for color in (0..2).filter(|_| race) {
+                let them = color ^ 1;
+                let own = &$state.pieces_board[color].2;
+
+                for &royal in &$state.royal_list[them] {
+                    for (piece_index, piece) in
+                        statics.pieces.iter().enumerate() {
+                        let mirror = statics.piece_swap_map[piece_index];
+                        let reach = &kinds[piece_index * words..][..words];
+
+                        if p_color!(piece) as usize != color
+                            || p_is_royal!(piece)
+                            || mirror == NO_PIECE
+                            || reach.iter().all(|word| *word == 0) {
+                            continue;
+                        }
+
+                        attacks.2[..span].fill(0);
+                        piece_attacks!(
+                            $state, mirror, royal, occupied, attacks
+                        );
+
+                        checks[color] += (0..words).any(|word| {
+                            attacks.2[word] & reach[word] & !own[word]
+                                & !maps[region(once, them) + word] != 0
+                        }) as i32;
+                    }
+                }
+            }
+
             let eval = &statics.eval;
             let value = |phase: usize| {
                 (counts[0][0] - counts[1][0]) * eval.hanging_value[phase]
@@ -1105,6 +1160,7 @@ macro_rules! attack_terms {
                     + (counts[0][2] - counts[1][2])
                         * eval.restricted_value[phase]
                     + mobility[0][phase] - mobility[1][phase]
+                    + checks[0] * steps[0] - checks[1] * steps[1]
             };
 
             (value(0), value(1))
