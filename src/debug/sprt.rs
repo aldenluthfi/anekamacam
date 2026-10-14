@@ -32,6 +32,7 @@ use crate::*;
 /// - SPRT_SHUTDOWN_TIMEOUT_MS  : time limit to quit, then kill
 /// - OPENING_TRIES             : random openings tried for each pair
 /// - OPENING_JUDGE_DEPTH       : search depth that scores an opening
+/// - OPENING_JUDGE_TIMEOUT_MS  : time limit for that search
 /// - OPENING_BALANCE_CP        : largest score of a level opening
 ///
 /// The two error rates set the stop bounds. With equal rates, the bounds
@@ -55,6 +56,7 @@ const SPRT_RESPONSE_GRACE_MS: u128 = 5_000;
 const SPRT_SHUTDOWN_TIMEOUT_MS: u64 = 1_000;
 const OPENING_TRIES: usize = 64;
 const OPENING_JUDGE_DEPTH: usize = 8;
+const OPENING_JUDGE_TIMEOUT_MS: u64 = 60_000;                                   /* a search on a loaded machine       */
 const OPENING_BALANCE_CP: i32 = 50;
 
 /// run_sandbox_root
@@ -1349,7 +1351,7 @@ fn balanced_opening(
 ) -> Result<Vec<Move>, String> {
     let mut board = template.fork();
     let go_command = format!("go depth {}", OPENING_JUDGE_DEPTH);
-    let timeout = Duration::from_millis(SPRT_HANDSHAKE_TIMEOUT_MS);
+    let timeout = Duration::from_millis(OPENING_JUDGE_TIMEOUT_MS);
 
     for _ in 0..OPENING_TRIES {
         board = template.fork();

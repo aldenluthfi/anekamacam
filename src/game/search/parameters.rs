@@ -1828,8 +1828,13 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - null pruning        : misere, counting, pass, stand-off, setup, capturer
 /// - recapture ordering  : none
 /// - quiet pruning       : misere
-/// - static movement     : a screened leg or a CPMN move condition
+/// - static movement     : a screened leg or a CPMN condition on a capture
 /// - wide quiescence     : a vector that captures more than one piece
+///
+/// A condition on a move that takes nothing, as horde's double step from
+/// the first two ranks, does not change an exchange. Counting it too took
+/// the losing-capture stop from horde's quiescence: a depth-8 search ran
+/// 4 s on some openings.
 ///
 /// A pass is a vector that ends on its start square without a capture. A
 /// capturer is a piece that has capture vectors only. The movement facts
@@ -1891,7 +1896,7 @@ pub fn derive_search_capabilities(state: &mut State) {
                     let (files_crossed, ranks_crossed) = vector_offset!(vector);
                     let moves_quietly = vector_moves_quietly!(vector);
 
-                    conditioned |= vector.pattern.is_some();
+                    conditioned |= vector.pattern.is_some() && victims > 0;     /* a quiet move does not exchange     */
                     multi_destroy |= destroyed > 1;
                     multi_capture |= victims > 1;
                     may_pass |= moves_quietly && !destroys
