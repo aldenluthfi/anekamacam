@@ -919,15 +919,24 @@ macro_rules! pawn_structure {
 }
 
 /*----------------------------------------------------------------------------*\
-                                    THREATS
+                                  ATTACK TERMS
 \*----------------------------------------------------------------------------*/
 
-/// threats!
+/// attack_terms!
 ///
-/// Gives the threat value, White minus Black, for the opening and the
-/// endgame. One pass makes the attack map of each piece and keeps for each
-/// colour the squares it attacks once and twice, the squares its pawns
-/// attack, and its pawn and royal squares. Then for each colour:
+/// Gives the threat and mobility value, White minus Black, for the opening
+/// and the endgame. One pass makes the attack map of each piece and keeps
+/// for each colour the squares it attacks once and twice, the squares its
+/// pawns attack, and its pawn and royal squares. The pass maps the pawns
+/// and the royals first, so the mobility area of each other piece is known
+/// when its map is made:
+///
+/// - area     : no own pawn, no own royal, no square an enemy pawn attacks
+/// - mobility : the squares of the area that the piece attacks, `m`; it
+///              is worth `value * (m - 2) / (8 + m)` from `mobility_table`,
+///              below zero under two squares and toward `value` above
+///
+/// Then for each colour, the threats:
 ///
 /// - strong     : an enemy pawn attacks it, or two enemy pieces and fewer
 ///                than two of ours
@@ -953,12 +962,13 @@ macro_rules! pawn_structure {
 /// so a map can hold more targets than the captures. A pawn is a piece
 /// with a pawn slot. A piece in the hand attacks nothing. The pass keeps
 /// the square and the map of each pawn for the pawn kind, as a safe square
-/// is known only after the pass.
+/// is known only after the pass. The mobility formula is Fairy-Stockfish's
+/// for its fairy pieces.
 ///
 #[macro_export]
-macro_rules! threats {
+macro_rules! attack_terms {
     ($state:expr) => {
-        hotpath::measure_block!("eval::threats", {
+        hotpath::measure_block!("eval::attack_terms", {
             let statics = &$state.statics;
             let board_size = statics.board_size;
             let words = (board_size + 63) >> 6;                                 /* one bit per square, 64 to a word   */
@@ -967,12 +977,12 @@ macro_rules! threats {
             let pawn_maps = &mut $state.scratch.threat_pawns;
             let [occupied, attacks] = &mut $state.scratch.threat_boards;
             let region = |kind: usize, color: usize| (2 * kind + color) * words;
-            let (once, twice, pawn_hits, pawns, royals, targets) =
-                (0, 1, 2, 3, 4, 5);
+            let (once, twice, pawn_hits, pawns, royals, targets, area) =
+                (0, 1, 2, 3, 4, 5, 6);
 
-            if maps.len() != 12 * words {
+            if maps.len() != 14 * words {
                 maps.clear();                                                   /* a new variant sizes it again       */
-                maps.resize(12 * words, 0);
+                maps.resize(14 * words, 0);
             }
 
             maps.fill(0);
@@ -985,37 +995,62 @@ macro_rules! threats {
                     | $state.pieces_board[1].2[word];
             }
 
-            for (piece_index, piece) in statics.pieces.iter().enumerate() {
-                let color = p_color!(piece) as usize;
-                let pawn = statics.eval.pawn_slots[piece_index] != NO_PAWN;
-                let royal = p_is_royal!(piece);
+            let mut mobility = [[0i32; 2]; 2];                                  /* colour to opening, endgame         */
 
-                for &square in piece_squares!($state, piece_index) {
-                    let at = square as usize;
-
-                    attacks.2[..span].fill(0);
-                    piece_attacks!(
-                        $state, piece_index, square, occupied, attacks
-                    );
-
+            for first in [true, false] {                                        /* pawns and royals, then the rest    */
+                for color in (0..2).filter(|_| !first) {                        /* pawns and royals are all mapped    */
                     for word in 0..words {
-                        let hits = attacks.2[word];
+                        maps[region(area, color) + word] =
+                            !(maps[region(pawns, color) + word]
+                                | maps[region(royals, color) + word]
+                                | maps[region(pawn_hits, color ^ 1) + word]);
+                    }
+                }
 
-                        maps[region(twice, color) + word] |=
-                            maps[region(once, color) + word] & hits;
-                        maps[region(once, color) + word] |= hits;
-                        maps[region(pawn_hits, color) + word] |=
-                            hits * pawn as u64;
+                for (piece_index, piece) in statics.pieces.iter().enumerate() {
+                    let color = p_color!(piece) as usize;
+                    let pawn = statics.eval.pawn_slots[piece_index] != NO_PAWN;
+                    let royal = p_is_royal!(piece);
+
+                    if (pawn || royal) != first {
+                        continue;
                     }
 
-                    maps[region(pawns, color) + (at >> 6)] |=
-                        (pawn as u64) << (at & 63);
-                    maps[region(royals, color) + (at >> 6)] |=
-                        (royal as u64) << (at & 63);
+                    for &square in piece_squares!($state, piece_index) {
+                        let at = square as usize;
+                        let mut reach = 0usize;
 
-                    if pawn {
-                        pawn_maps.push((color * board_size + at) as u64);       /* colour and square, then the map    */
-                        pawn_maps.extend_from_slice(&attacks.2[..words]);
+                        attacks.2[..span].fill(0);
+                        piece_attacks!(
+                            $state, piece_index, square, occupied, attacks
+                        );
+
+                        for word in 0..words {
+                            let hits = attacks.2[word];
+
+                            maps[region(twice, color) + word] |=
+                                maps[region(once, color) + word] & hits;
+                            maps[region(once, color) + word] |= hits;
+                            maps[region(pawn_hits, color) + word] |=
+                                hits * pawn as u64;
+                            reach += (hits & maps[region(area, color) + word])
+                                .count_ones() as usize;
+                        }
+
+                        maps[region(pawns, color) + (at >> 6)] |=
+                            (pawn as u64) << (at & 63);
+                        maps[region(royals, color) + (at >> 6)] |=
+                            (royal as u64) << (at & 63);
+
+                        if pawn {
+                            pawn_maps.push((color * board_size + at) as u64);   /* colour and square, then the map    */
+                            pawn_maps.extend_from_slice(&attacks.2[..words]);
+                        } else if !first {
+                            let worth = statics.eval.mobility_table[reach];
+
+                            mobility[color][0] += worth[0];
+                            mobility[color][1] += worth[1];
+                        }
                     }
                 }
             }
@@ -1069,6 +1104,7 @@ macro_rules! threats {
                         * eval.pawn_threat_value[phase]
                     + (counts[0][2] - counts[1][2])
                         * eval.restricted_value[phase]
+                    + mobility[0][phase] - mobility[1][phase]
             };
 
             (value(0), value(1))
@@ -1245,13 +1281,13 @@ macro_rules! material_advantage {
 /// - royal safety           : opening half; enemy pressure in both
 /// - shared terms           : calculated once, added to both halves
 /// - pawn structure         : both halves, one value for each
-/// - threats                : both halves, one value for each
+/// - threats, mobility      : both halves, one value for each
 /// - material imbalance     : outside the blend, added once
 /// - tempo                  : outside, after the flip to the side to move
 ///
-/// With a window, the threats are left out when the score without them is
-/// beyond the window by more than `threat_margin`: they would not bring it
-/// back inside. Without a window, the score is always complete.
+/// With a window, the attack terms are left out when the score without
+/// them is beyond the window by more than `threat_margin`: they would not
+/// bring it back inside. Without a window, the score is always complete.
 ///
 /// Params:
 /// - state: &mut State -> position to evaluate
@@ -1304,9 +1340,9 @@ macro_rules! evaluate_position {
             if lazy - margin >= $beta || lazy + margin <= $alpha {
                 lazy
             } else {
-                let (threat_opening, threat_endgame) = threats!($state);
+                let (attack_opening, attack_endgame) = attack_terms!($state);
 
-                finish(opening + threat_opening, endgame + threat_endgame)
+                finish(opening + attack_opening, endgame + attack_endgame)
             }
         })
     };

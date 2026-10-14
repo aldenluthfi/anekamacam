@@ -407,6 +407,20 @@ const RESTRICTED_RATIO: [u32; 2] = [3, 3];
 const THREAT_FLOOR: u32 = 1;
 const THREAT_LAZY_RATIO: u32 = 100;
 
+/// Mobility
+///
+/// The value of the squares a piece attacks, read from the same attack
+/// maps. A piece that is not a pawn and not royal with `m` squares in its
+/// area is worth `value * (m - 2) / (8 + m)`, from a table by `m`. The
+/// value is Fairy-Stockfish's for its fairy pieces, over its queen, opening
+/// then endgame (`MOBILITY_RATIO`: 5.9% and 7.5% of the most valuable
+/// piece).
+///
+/// Fairy-Stockfish doubles it when a captured piece goes to the hand, or
+/// when a count of checks wins: more mobility is then worth more.
+///
+const MOBILITY_RATIO: [u32; 2] = [59, 75];
+
 /// PAWN_MIN_START_COUNT
 ///
 /// The minimum start count of a piece type to be a pawn. The other pawn
@@ -538,6 +552,7 @@ pub struct EvalParams {
     pub pawn_threat_value: [i32; 2],                                            /* of a pawn on a piece and of a      */
     pub restricted_value: [i32; 2],                                             /* contested square, opening, ending  */
     pub threat_margin: i32,                                                     /* lead past the window that skips it */
+    pub mobility_table: Vec<[i32; 2]>,                                          /* squares in the area to its worth   */
 
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
@@ -3425,12 +3440,14 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
 /// derive_advantage_parameters
 ///
-/// Gives the four advantages that material does not include:
+/// Gives the five advantages that material does not include:
 ///
 /// - tempo     : part of the most valuable piece, with a floor
 /// - imbalance : one part for a major surplus, one for a minor surplus
 /// - pair      : a part again, only for pieces that reach half the board
 /// - threats   : a part for each attack kind, opening then endgame
+/// - mobility  : a part, opening then endgame, twice with drops or a
+///               count of checks
 ///
 /// The pair test uses the piece reach, not the name. Royals are not
 /// tested. The list has the two colours of each pair piece, so the
@@ -3460,6 +3477,16 @@ pub fn derive_advantage_parameters(state: &mut State) {
     let restricted = threat(RESTRICTED_RATIO);
     let threat_margin = dearest * THREAT_LAZY_RATIO as u64
         / COEFFICIENT_SCALE as u64;
+    let doubled = drops!(state) || state.termination.checks.is_some();
+    let mobility = MOBILITY_RATIO.map(|part| {
+        (dearest * part as u64 / COEFFICIENT_SCALE as u64) as i32
+            * (1 + doubled as i32)
+    });
+    let mobility_table = (0..=state.statics.board_size as i32)
+        .map(|squares| mobility.map(|value| {
+            value * (squares - 2) / (8 + squares)
+        }))
+        .collect();
 
     let bound: Vec<usize> = state.statics.pieces.iter()
         .filter(|piece| p_color!(piece) == WHITE)
@@ -3490,12 +3517,15 @@ pub fn derive_advantage_parameters(state: &mut State) {
         hanging, pawn_threat, restricted, threat_margin
     );
 
+    log_3!("Derived mobility {:?}", mobility);
+
     let statics = state.static_mut();
 
     statics.eval.hanging_value = hanging;
     statics.eval.pawn_threat_value = pawn_threat;
     statics.eval.restricted_value = restricted;
     statics.eval.threat_margin = threat_margin as i32;
+    statics.eval.mobility_table = mobility_table;
     statics.eval.tempo_bonus = tempo as i32;
     statics.eval.imbalance_major = major as i32;
     statics.eval.imbalance_minor = minor as i32;
