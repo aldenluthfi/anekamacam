@@ -2996,3 +2996,92 @@ or runs out of time.
 - Build 22 over its 12 rounds against full FSF (queues 171, 175, 179,
   187): 68.6, 46.5, 61.3, -3.3, mean 43.3. Build 23: 72.9, 50.9, 110.6,
   29.6, mean 66.0.
+
+### Build 23 against FSF 2000 (2026-10-14, queue188)
+
+FSF with `UCI_LimitStrength` at `UCI_Elo=2000`, 10+0.1, `Move
+Overhead=100`, bounds `0 0` (no early stop). The key variants 600 games,
+every other variant FSF plays 200. Elo of our engine; "FSF forfeits" are
+games FSF lost on a move our referee refuses.
+
+| variant | Elo | variant | Elo |
+| ------- | --- | ------- | --- |
+| standard | +102.5 ± 27.5 | judkins | +59.6 ± 50.0 |
+| xiangqi | +103.7 ± 29.2 | chancellor | +40.1 ± 44.7 |
+| grand | +94.9 ± 27.4 | fivecheck | +13.9 ± 48.7 |
+| shogi | +51.3 ± 29.2 | euroshogi | +10.4 ± 45.9 |
+| asean | +494.0 ± 79.8 | modern | +1.7 ± 46.8 |
+| minixiangqi | +214.8 ± 52.2 | hoppelpoppel | -5.2 ± 45.3 |
+| ai-wok | +207.5 ± 51.7 | janus | -8.7 ± 47.3 |
+| makruk | +190.8 ± 32.9 | extinction | -33.1 ± 49.1 |
+| amazon | +179.5 ± 59.4 | embassy | -38.4 ± 47.2 |
+| almost | +153.4 ± 48.5 | gothic | -38.4 ± 46.9 |
+| chigorin | +153.4 ± 49.5 | capablanca | -47.2 ± 44.9 |
+| los-alamos | +139.0 ± 50.9 | koth | -56.1 ± 44.1 |
+| minishogi | +139.0 ± 47.9 | crazyhouse | -74.1 ± 50.0 |
+| knightmate | +137.0 ± 49.4 | pocketknight | -88.7 ± 49.0 |
+| kinglet | +127.0 ± 50.9 | newzealand | -90.6 ± 46.2 |
+| | | threecheck | -240.8 ± 57.4 |
+
+- The four key variants are above 2000 (2026-09-30: standard +18.6,
+  xiangqi -73.8, shogi -124.6, grand -196.7). Over build 10's sweep
+  (2026-10-02) the chess boards wider than 8x8 rose by 40 to 90 each
+  and are now near 2000.
+- Below 2000 beyond one interval: threecheck, newzealand, pocketknight,
+  crazyhouse, koth, capablanca. Threecheck lost 160 of 200 (62 of 100
+  pairs lost twice); build 10 had -172 ± 36.
+- Not valid, from rule differences already recorded (referee audit):
+  sittuyin +232.8 (FSF forfeits 107), ouk-chaktrang +170.6 (25),
+  chigorin (14, promotion choice), janggi (FSF forfeits all 200: our
+  setup phase puts the horses and elephants in the hand; FSF has no
+  setup phase). Shatranj +478.0 counts 75 FSF forfeits, but each came
+  after a move that bared FSF's king: FSF sees the game over and sends
+  no move, so the results stand.
+- Extinction: FSF forfeits 3, each a promotion to the king (`e2f1k`),
+  which FSF's extinction allows and our config does not. Fixed on
+  `plan29-ext` (e4eb8ff): perft equals FSF (52 at depth 1, 3869514 at
+  depth 4 from a promotion position); the params do not change.
+- Horde gave no games: our engine, the opening judge, did not answer a
+  depth-8 search within the 10 s handshake limit at the start of the
+  run. Our start score is -1157 against FSF's -107: FSF's imbalance
+  term gives the horde 7 pawns back.
+  A local self-play run of 600 horde games judged every opening with no
+  abort, so it is run again on the server (queue190).
+
+### MB (2026-10-14, branch `plan29-mb`, 79ee0d3)
+
+- `threats!` is now `attack_terms!`: the pass maps the pawns and the
+  royals first, so each other piece's mobility area is known when its
+  map is made. Area: no own pawn, no own royal, no square an enemy pawn
+  attacks. A piece that is not a pawn or royal with `m` area squares is
+  worth `value * (m - 2) / (8 + m)` (Fairy-Stockfish's fairy formula),
+  `MOBILITY_RATIO` 5.9% and 7.5% of the dearest piece, doubled with drops
+  or a check race.
+- Retrospective: mobility was tried before (plans 03, 04, 13) and dropped
+  only for the cost of a walk over the move vectors (55% more time to a
+  depth). The maps of TH make it cheap. FSF's lab put `e_mobility` at
+  43 to 119 except grand (-31).
+- Start positions score the same as build 23 in the four key variants;
+  the colour mirror is exact. Bench against build 23: x0.957 standard,
+  x1.003 xiangqi, x0.905 grand, x0.933 shogi (the trees differ).
+- Queue189, MB and build 23 against full FSF, three rounds of 200
+  (W-L-D, then Elo of the pooled 600):
+
+| Variant | build 23 | MB | MB minus build 23 |
+| ------- | -------- | -- | ----------------- |
+| standard | 341-204-55, +80.8 | 380-154-66, +137.6 | +56.9 ± 19.9 |
+| xiangqi | 334-258-8, +44.2 | 368-223-9, +85.7 | +41.4 ± 20.3 |
+| grand | 363-202-35, +95.6 | 419-145-36, +171.3 | +75.7 ± 20.9 |
+| shogi | 305-292-3, +7.5 | 344-252-4, +53.7 | +46.2 ± 20.1 |
+
+- +55.1 ± 10.2 over the four, the largest gain of plan 29. Grand gains
+  most, though the lab had FSF's mobility at -31 there: the lab measures
+  FSF's term inside FSF's eval, not ours.
+
+### Merged build 24 (2026-10-14, main 0dd425e)
+
+- Build 23 with MB and the extinction fix (`plan27-main24`). All 44
+  param files derive the same as the committed ones.
+- Against full FSF (queue189, 600 games each): 137.6, 85.7, 171.3, 53.7,
+  mean 112.1 (build 23 in the same session: 80.8, 44.2, 95.6, 7.5, mean
+  57.0).
