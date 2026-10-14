@@ -281,13 +281,20 @@ const HAND_POWER: u32 = 700;
 /// Check race
 ///
 /// The worth of the checks that a colour has given, in a variant with a
-/// `checks` rule that wins. Over `COEFFICIENT_SCALE` of the most valuable
-/// piece:
+/// `checks` rule that wins. With `l` checks left to win it is the value
+/// over `l * l`, Fairy-Stockfish's shape. The value is its own over its
+/// queen, over `COEFFICIENT_SCALE` of the most valuable piece, opening then
+/// endgame:
 ///
-/// - one check left to win : 100%, the next check wins
-/// - each check more       : half of the one before
+/// - one check left    : 141.8% and 37.3%, the next check wins
+/// - two checks left   : a quarter of it
+/// - three checks left : a ninth of it
 ///
-const CHECK_RATIO: u32 = 1000;
+/// The halving shape before (100%, 50%, 25% in both phases) gave the third
+/// check too little and the first two too much in the opening; FSF's race
+/// term was worth 205 to it in threecheck under our check rule.
+///
+const CHECK_RATIO: [u32; 2] = [1418, 373];
 
 /// Goal race
 ///
@@ -2708,7 +2715,9 @@ pub fn derive_danger_parameters(state: &mut State) {
         / COEFFICIENT_SCALE as u64).max(OPEN_SHIELD_FLOOR as u64);
     let proximity_value = dearest * PROXIMITY_RATIO as u64
         * drops!(state) as u64 / COEFFICIENT_SCALE as u64;
-    let check_value = dearest * CHECK_RATIO as u64 / COEFFICIENT_SCALE as u64;
+    let check_value = CHECK_RATIO.map(|part| {
+        (dearest * part as u64 / COEFFICIENT_SCALE as u64) as i32
+    });
 
     derive_goal_race(state, dearest);
 
@@ -2724,7 +2733,7 @@ pub fn derive_danger_parameters(state: &mut State) {
     );
 
     if let Some(checks) = state.termination.checks.as_mut() {
-        checks.value = check_value as i32;
+        checks.value = check_value;
     }
 
     for rule in &mut state.termination.extinct {

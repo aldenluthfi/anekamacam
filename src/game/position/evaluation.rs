@@ -431,30 +431,31 @@ macro_rules! open_shield {
 /// check_race!
 ///
 /// Gives the worth of the checks one colour has given, in a variant where
-/// a count of checks wins. The worth halves for each check that is still
-/// missing past the first:
+/// a count of checks wins, for one phase. With `l` checks left it is the
+/// `value` of the rule over `l * l`:
 ///
 /// - 1 check left  : the `value` of the rule, the next check wins
-/// - 2 checks left : half of it
-/// - 3 checks left : a quarter of it
+/// - 2 checks left : a quarter of it
+/// - 3 checks left : a ninth of it
 ///
 /// Params:
 /// - state: &State -> position to score
 /// - color: usize  -> colour that gives the checks
+/// - phase: usize  -> 0 for the opening, 1 for the endgame
 ///
 /// Return:
 /// i32             -> race worth for that colour, 0 or more
 ///
 #[macro_export]
 macro_rules! check_race {
-    ($state:expr, $color:expr) => {{
+    ($state:expr, $color:expr, $phase:expr) => {{
         match $state.termination.checks.as_ref() {
             Some(checks) if checks.outcome == Outcome::Win => {
                 let left = checks.count
                     .saturating_sub(checks.delivered[$color])
-                    .max(1);
+                    .max(1) as i32;
 
-                checks.value >> (left - 1).min(31)
+                checks.value[$phase] / (left * left)
             }
             _ => 0,
         }
@@ -1120,9 +1121,9 @@ macro_rules! attack_terms {
 ///
 /// Gives the opening score, White minus Black. It is the material and
 /// piece-square totals plus the royal safety terms that keep a royal at
-/// home: shelter, guard, castling and open files. The opening, the setup
-/// and the middlegame blend use it, each with [`shared_score!`] added.
-/// The endgame does not.
+/// home: shelter, guard, castling and open files, and the opening worth of
+/// the check race. The opening, the setup and the middlegame blend use it,
+/// each with [`shared_score!`] added. The endgame does not.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -1148,16 +1149,18 @@ macro_rules! opening_score {
             - castling_bonus!($state, black)
             + open_shield!($state, black)
             - open_shield!($state, white)
+            + check_race!($state, white, 0)
+            - check_race!($state, black, 0)
     }};
 }
 
 /// shared_score!
 ///
 /// Gives the terms that the opening and the endgame score share, White
-/// minus Black: the enemy pressure and nearness to the royals, the check
-/// race, the goal race and the extinction threats. They do not depend on
-/// the phase, so the evaluation calculates them once and adds the same
-/// value to the two halves before the blend.
+/// minus Black: the enemy pressure and nearness to the royals, the goal
+/// race and the extinction threats. They do not depend on the phase, so
+/// the evaluation calculates them once and adds the same value to the two
+/// halves before the blend.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -1175,8 +1178,6 @@ macro_rules! shared_score {
             - king_danger!($state, white)
             + royal_proximity!($state, black)
             - royal_proximity!($state, white)
-            + check_race!($state, white)
-            - check_race!($state, black)
             + goal_race!($state, white)
             - goal_race!($state, black)
             + extinct_threat!($state, black)
@@ -1187,8 +1188,9 @@ macro_rules! shared_score {
 /// endgame_score!
 ///
 /// Gives the endgame score, White minus Black: the material and the
-/// piece-square totals. The terms that keep a royal at home stay out, as
-/// an endgame royal must go to the center.
+/// piece-square totals, and the endgame worth of the check race. The
+/// terms that keep a royal at home stay out, as an endgame royal must go
+/// to the center.
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -1206,6 +1208,8 @@ macro_rules! endgame_score {
             - $state.endgame_material[black] as i32
             + $state.endgame_pst_bonus[white]
             - $state.endgame_pst_bonus[black]
+            + check_race!($state, white, 1)
+            - check_race!($state, black, 1)
     }};
 }
 
