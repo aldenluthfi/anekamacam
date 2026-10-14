@@ -3332,3 +3332,60 @@ off (a minus means the part is worth that much to FSF):
   up to 108, every variant with a royal); the map pass that blocked KS
   (x0.83 to x0.88) is paid already by `attack_terms!`. Then the race
   shape, then the check rule in crazyhouse.
+
+### ZS (2026-10-14, branch `plan29-zs`, 2e52934)
+
+- Found while testing KD for colour symmetry: 150 positions from the
+  queue192 games and their colour mirrors (ranks turned, case swapped,
+  side, castling, en passant and hand swapped) scored differently in 89
+  of 150 threecheck and 122 of 150 crazyhouse positions on build 25.
+  Bisected to `king_danger!`: a Black queen on h4 put 0 units of pressure
+  on a White king on f3, the mirrored White queen 59.
+- Why: the move vectors are in the owner's frame and the move walk turns
+  both shifts round for Black (`-2 * colour + 1`).
+  `derive_danger_parameters` added the raw shifts, so every Black landing
+  was mirrored through its origin, and Black's pressure on a royal was
+  counted on the wrong squares in every variant. The other derivations
+  that read the shifts use both signs or the owner's frame on purpose.
+- ZS turns them round. Mirror mismatches: 0 of 150 in threecheck and in
+  crazyhouse.
+- Also found: the crazyhouse dict rejects a hand written Black first
+  (`[pP]`) with "FEN rank 7 has 12 files"; FSF takes either order.
+
+### KD (2026-10-14, branch `plan29-kd` on ZS, 49d22bf)
+
+- FSF's king danger sum on the maps of `attack_terms!`, beside the old
+  table term. The ring is the royal square and its local ring from the
+  shelter derivation. Inputs: attackers (pieces whose map meets the ring,
+  plus ring squares enemy pawns attack, times the pieces), weak ring
+  squares (attacked, not held twice), hits next to the royal, safe and
+  unsafe checks for each enemy type (the check squares are the map of
+  the other colour's type cast from the royal; a pawn checks only from
+  the hand; a held piece drops on any empty square), and the cut for no
+  enemy major.
+- A first draft pasted FSF's danger units (183, 600, threshold 100, its
+  queen 2538). The user flagged it: those numbers assume a chess king,
+  ring and army. Now every part is derived: the unit is a full weak ring
+  (`local_stride + 1` squares) = 1000, the parts are FSF's over its own
+  full weak ring (9 × 183), the rule weights for drops and a race of
+  checks are folded in at derivation, the race rise is a table by checks
+  left, and the cost is a part of the most valuable piece (26.1% opening,
+  quadratic, 3.8% endgame at a full ring). Only where a royal can be
+  mated, with one royal on the board.
+- Mirror mismatches 0 of 150 in threecheck and crazyhouse. Start
+  positions score as build 25. Static score at the round 1 fatal
+  positions, mean (pawns) and correlation with FSF's classical score:
+
+| | threecheck | crazyhouse |
+| - | ---------- | ---------- |
+| FSF classical | -2.97 | -9.17 |
+| build 25 | +2.96, 0.17 | +1.72, -0.05 |
+| ZS | +2.92, 0.18 | +1.69, -0.04 |
+| KD | -0.03, 0.67 | -0.06, 0.45 |
+
+- Seeded bench at depth 9, 20 positions, against ZS: nodes per second
+  -1.5% standard, -12% xiangqi, -3% crazyhouse, -14% capablanca; time to
+  the depth +27%, +13%, -12%, +24%.
+- Queue198 plays build 25, ZS and KD interleaved against full FSF in the
+  test set (standard 14, xiangqi 16, crazyhouse 16, capablanca 26), three
+  rounds, then threecheck at FSF 2000, two rounds.
