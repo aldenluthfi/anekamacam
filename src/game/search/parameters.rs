@@ -399,13 +399,18 @@ const PAIR_REACH_SLACK: f64 = 0.02;
 /// The quiescence search skips the threats when the score without them is
 /// beyond its window by more than a margin, as they would not bring it
 /// back. The margin is 10% of the most valuable piece, near four times the
-/// mean threat value in standard (`THREAT_LAZY_RATIO`).
+/// mean threat value in standard (`THREAT_LAZY_RATIO`). The threats and
+/// mobility go past it in 0.6% of the evaluations in standard and 3% in
+/// xiangqi and grand. Where mobility is doubled they go much further (in
+/// shogi past one margin in 28%, past three in 0.1%), so the margin is
+/// three times as large there (`THREAT_LAZY_DOUBLED`).
 ///
 const HANGING_RATIO: [u32; 2] = [27, 13];
 const PAWN_THREAT_RATIO: [u32; 2] = [68, 35];
 const RESTRICTED_RATIO: [u32; 2] = [3, 3];
 const THREAT_FLOOR: u32 = 1;
 const THREAT_LAZY_RATIO: u32 = 100;
+const THREAT_LAZY_DOUBLED: u64 = 3;
 
 /// Mobility
 ///
@@ -3475,9 +3480,10 @@ pub fn derive_advantage_parameters(state: &mut State) {
     let hanging = threat(HANGING_RATIO);
     let pawn_threat = threat(PAWN_THREAT_RATIO);
     let restricted = threat(RESTRICTED_RATIO);
-    let threat_margin = dearest * THREAT_LAZY_RATIO as u64
-        / COEFFICIENT_SCALE as u64;
     let doubled = drops!(state) || state.termination.checks.is_some();
+    let threat_margin = dearest * THREAT_LAZY_RATIO as u64
+        / COEFFICIENT_SCALE as u64
+        * if doubled { THREAT_LAZY_DOUBLED } else { 1 };
     let mobility = MOBILITY_RATIO.map(|part| {
         (dearest * part as u64 / COEFFICIENT_SCALE as u64) as i32
             * (1 + doubled as i32)
