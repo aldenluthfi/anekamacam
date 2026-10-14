@@ -3085,3 +3085,71 @@ games FSF lost on a move our referee refuses.
 - Against full FSF (queue189, 600 games each): 137.6, 85.7, 171.3, 53.7,
   mean 112.1 (build 23 in the same session: 80.8, 44.2, 95.6, 7.5, mean
   57.0).
+
+### SC (2026-10-14, branch `plan29-sc`, f30e785 on MB; `plan29-sc2`, de9050b on build 24)
+
+- Threecheck lost 160 of 200 to FSF 2000. In a lost opening FSF scores
+  White's king safety at -8.55 pawns (static total -8.7, search -3.9);
+  ours scored the position +1.18. LA (above) found the same gap.
+- In a race of checks, `attack_terms!` keeps the union of each piece
+  type's maps. A check square is the map of the type of the other colour
+  cast from the enemy royal. A type with a check square it reaches, with
+  no own piece on it and no enemy attack on it, is a safe check, worth
+  the next step of the race (`check_race!`). The position above scores
+  -4.93. Colour mirror exact; seeded bench nodes equal in the key
+  variants (no check race there).
+- Queue190 against FSF 2000, two rounds of 200, with build 23 (its MB
+  arms played no games: the `mb` binary was deleted while the queue
+  waited):
+
+| Variant | build 23 | SC on MB |
+| ------- | -------- | -------- |
+| threecheck | -251.9 ± 61.5, -235.4 ± 58.5 | -86.9 ± 49.1, -94.3 ± 49.7 |
+| fivecheck | +27.9 ± 47.5, +12.2 ± 45.6 | +161.9 ± 53.3, +153.4 ± 52.7 |
+
+- Near +150 in both; part may be MB's doubled mobility. SC2 (the same
+  commit on build 24) plays build 24 in queue192.
+
+### Budgets for crazyhouse and capablanca (2026-10-14, queue191)
+
+The user moved the test set to standard, xiangqi, crazyhouse and
+capablanca for now, as the last two trail 2000. Build 24 against full
+FSF, 200 games at each `nodestime`:
+
+| Variant | 8 | 16 | 32 | near 50% |
+| ------- | - | -- | -- | -------- |
+| crazyhouse | +159.8 ± 56.5 | +5.2 ± 49.8 | -130.9 ± 54.0 | 16 |
+| capablanca | +342.0 ± 80.0 | +121.1 ± 52.3 | -57.9 ± 52.8 | 26 |
+
+### LM (2026-10-14, branch `plan29-lm`, 366a289)
+
+- The lazy margin (10% of the dearest piece) was set for the threats.
+  With mobility in the attack terms, build 24 on a seeded bench finds the
+  attack terms past the margin in 0.6% of the full evaluations in
+  standard, 2.6% in xiangqi, 2.7% in grand and 28% in shogi (past two
+  margins 10%, past three 0.1%): mobility is doubled there.
+- LM triples the margin where mobility is doubled (drops or a check
+  race). Standard nodes equal; crazyhouse and shogi trees change.
+  Queue192 plays it in crazyhouse.
+
+### HC (2026-10-14, branch `plan29-hc`, d8fe7ea, 3d54895)
+
+- Horde gave no games twice (queues 188 and 190): the opening judge, a
+  depth-8 search, missed the 10 s handshake limit. Over 2000 random
+  openings (local, FSF making the random quiet plies) the judge search
+  took 16 ms at the median and 4.27 s at most. On that opening our depth
+  1 searched 418154 nodes and depth 2 4.86M; FSF's depth 9 searched
+  10996.
+- Why: horde's double step has a move condition (only from the first two
+  ranks). Any condition cleared `static_movement`, which turns off the
+  quiescence stop at the first losing capture, so with 36 pawns every
+  losing pawn capture chain was searched. A condition on a move that
+  takes nothing cannot change an exchange; HC counts only conditions on
+  vectors that capture. Only horde's capabilities change (44 variants
+  compared). The same opening: depth 9 in 83 ms (125949 nodes); the
+  2000 openings: at most 0.26 s.
+- The harness judge gets its own limit, 60 s (`OPENING_JUDGE_TIMEOUT_MS`):
+  it is a search on a loaded machine, not a handshake.
+- Our depth 1 there is still 11663 nodes: an `extinct` rule clears SEE
+  (`see_valid`) and forward pruning for horde, extinction and kinglet.
+  Queue192 plays HC against build 24 in horde.
