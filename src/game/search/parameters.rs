@@ -421,6 +421,50 @@ const THREAT_LAZY_RATIO: u32 = 100;
 ///
 const MOBILITY_RATIO: [u32; 2] = [59, 75];
 
+/// King danger
+///
+/// The sum of the enemy attack on a royal, read from the same attack maps,
+/// in parts of a full weak ring over `COEFFICIENT_SCALE`. The ring is the
+/// royal square and its local ring (`ring_squares`); full, it has
+/// `local_stride + 1` squares. The parts are Fairy-Stockfish's over its own
+/// full weak ring (nine squares at 183):
+///
+/// - `DANGER_WEAK_RING`    : 100%, the ring squares the enemy attacks and
+///                           we do not hold twice, shared by the squares
+/// - `DANGER_HIT_RATIO`    : 37.7% of a weak square, each enemy hit on a
+///                           ring square next to the royal
+/// - `DANGER_UNSAFE_RATIO` : 80.9% of a weak square, each check square an
+///                           enemy type reaches when none is safe
+/// - `DANGER_ATTACKER`     : 2.4% for each attacker, times the attackers
+/// - `DANGER_CHECK`        : 36.4% for an enemy type with one safe check
+///                           square, 54.6% with more
+/// - `DANGER_NO_MAJOR`     : 53% less when the enemy has no major piece
+/// - `DANGER_BASE`         : 2.2% added to each sum
+/// - `DANGER_THRESHOLD`    : 6.1%, the sum costs nothing up to it
+/// - `DANGER_CAP`          : 212.5%, the opening cost is linear past it
+///
+/// A sum `d` past the threshold costs `min(d, cap) * d` in the opening and
+/// `d` in the endgame, scaled so that a full weak ring costs
+/// `DANGER_COST_RATIO` of the most valuable piece: 26.1% and 3.8%.
+///
+/// Fairy-Stockfish weighs the parts by the rules. With drops, a weak square
+/// counts twice, a hit 1.5 times, and there is no cut for a missing major.
+/// In a race of checks, a weak square and an unsafe check count twice, a
+/// hit five times, the cut halves, the safe checks rise by `7 / (3 + l)`
+/// with `l` checks left to the enemy, a check is always safe with one left,
+/// and the endgame cost gains `2 / (2 + l)` of the opening cost.
+///
+const DANGER_WEAK_RING: u32 = 1000;
+const DANGER_HIT_RATIO: u32 = 377;
+const DANGER_UNSAFE_RATIO: u32 = 809;
+const DANGER_ATTACKER: u32 = 24;
+const DANGER_CHECK: [u32; 2] = [364, 546];
+const DANGER_NO_MAJOR: u32 = 530;
+const DANGER_BASE: u32 = 22;
+const DANGER_THRESHOLD: u32 = 61;
+const DANGER_CAP: u32 = 2125;
+const DANGER_COST_RATIO: [u32; 2] = [261, 38];
+
 /// PAWN_MIN_START_COUNT
 ///
 /// The minimum start count of a piece type to be a pawn. The other pawn
@@ -553,6 +597,17 @@ pub struct EvalParams {
     pub restricted_value: [i32; 2],                                             /* contested square, opening, ending  */
     pub threat_margin: i32,                                                     /* lead past the window that skips it */
     pub mobility_table: Vec<[i32; 2]>,                                          /* squares in the area to its worth   */
+    pub danger_weak: i32,                                                       /* danger of one weak ring square     */
+    pub danger_hit: i32,                                                        /* of one enemy hit next to the royal */
+    pub danger_unsafe: i32,                                                     /* of one unsafe check square         */
+    pub danger_attacker: i32,                                                   /* of each attacker, times attackers  */
+    pub danger_check: [i32; 2],                                                 /* of a type with 1, more safe checks */
+    pub danger_no_major: i32,                                                   /* cut when the enemy has no major    */
+    pub danger_base: i32,                                                       /* added to each sum                  */
+    pub danger_threshold: i32,                                                  /* sum that costs nothing             */
+    pub danger_cap: i32,                                                        /* opening cost is linear past it     */
+    pub danger_cost: [i32; 2],                                                  /* cost of a full ring, 0 is off      */
+    pub danger_race: Vec<[i32; 2]>,                                             /* checks left to check rise, endgame */
 
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
@@ -2631,7 +2686,10 @@ pub fn derive_shelter_parameters(state: &mut State) {
 /// Notes:
 /// A piece in hand has no square, so it reads `zone_attack_best`. The
 /// function uses the ring of `derive_shelter_parameters`, so that function
-/// must run first.
+/// must run first. The vectors are in the frame of the piece owner, so a
+/// Black landing turns both shifts round, as the move walk does. Without
+/// it each Black landing was mirrored through the origin: a Black queen on
+/// h4 put no pressure on a White king on f3.
 ///
 #[hotpath::measure]
 pub fn derive_danger_parameters(state: &mut State) {
@@ -2645,6 +2703,8 @@ pub fn derive_danger_parameters(state: &mut State) {
     let mut table = vec![0u8; board_size * piece_count * board_size];
 
     for piece_index in 0..piece_count {
+        let sign = -2 * p_color!(&state.statics.pieces[piece_index]) as i32 + 1;
+
         for from in 0..board_size {
             let mut pressure = vec![0.0f64; board_size];
             let vectors = &state.statics.relevant_moves
@@ -2657,8 +2717,8 @@ pub fn derive_danger_parameters(state: &mut State) {
                     continue;
                 };
 
-                let file = from as i32 % files + file_delta;
-                let rank = from as i32 / files + rank_delta;
+                let file = from as i32 % files + file_delta * sign;
+                let rank = from as i32 / files + rank_delta * sign;
 
                 if file < 0 || file >= files || rank < 0 || rank >= ranks {
                     continue;
@@ -3453,6 +3513,11 @@ pub fn derive_pawn_parameters(state: &mut State) {
 /// - threats   : a part for each attack kind, opening then endgame
 /// - mobility  : a part, opening then endgame, twice with drops or a
 ///               count of checks
+/// - danger    : the parts of the king danger sum, the weak square from
+///               the ring size, the rule weights for drops and a race of
+///               checks, and the cost as a part of the most valuable
+///               piece; only where a royal can be mated, else the cost is 0
+///               and the sum is off
 ///
 /// The pair test uses the piece reach, not the name. Royals are not
 /// tested. The list has the two colours of each pair piece, so the
@@ -3492,6 +3557,32 @@ pub fn derive_advantage_parameters(state: &mut State) {
             value * (squares - 2) / (8 + squares)
         }))
         .collect();
+    let scale = COEFFICIENT_SCALE as u64;
+    let mated = state.termination.checkmate == Outcome::Loss
+        && state.statics.pieces.iter().any(|piece| p_is_royal!(piece));
+    let race = state.termination.checks.as_ref()
+        .filter(|checks| checks.outcome == Outcome::Win);
+    let (drop, racing) = (drops!(state) as u64, race.is_some() as u64);
+    let weak = DANGER_WEAK_RING as u64
+        / (state.statics.eval.local_stride as u64 + 1);
+    let danger_weak = weak * (1 + drop + racing);
+    let danger_hit = weak * DANGER_HIT_RATIO as u64
+        * (2 + 8 * racing + drop) / (2 * scale);
+    let danger_unsafe = weak * DANGER_UNSAFE_RATIO as u64 * (1 + racing)
+        / scale;
+    let danger_no_major = DANGER_NO_MAJOR as u64 * (1 - drop)
+        / (1 + racing);
+    let danger_cost = DANGER_COST_RATIO.map(|part| {
+        (dearest * part as u64 / scale) as i32 * mated as i32
+    });
+    let danger_race: Vec<[i32; 2]> = race.map_or(Vec::new(), |checks| {
+        (0..=checks.count as u64)
+            .map(|left| [
+                (scale + 7 * scale / (3 + left)) as i32,
+                (2 * scale / (2 + left)) as i32,
+            ])
+            .collect()
+    });
 
     let bound: Vec<usize> = state.statics.pieces.iter()
         .filter(|piece| p_color!(piece) == WHITE)
@@ -3524,6 +3615,11 @@ pub fn derive_advantage_parameters(state: &mut State) {
 
     log_3!("Derived mobility {:?}", mobility);
 
+    log_3!(
+        "Derived danger: weak {}, hit {}, unsafe {}, cost {:?}, race {:?}",
+        danger_weak, danger_hit, danger_unsafe, danger_cost, danger_race
+    );
+
     let statics = state.static_mut();
 
     statics.eval.hanging_value = hanging;
@@ -3531,6 +3627,17 @@ pub fn derive_advantage_parameters(state: &mut State) {
     statics.eval.restricted_value = restricted;
     statics.eval.threat_margin = threat_margin as i32;
     statics.eval.mobility_table = mobility_table;
+    statics.eval.danger_weak = danger_weak as i32;
+    statics.eval.danger_hit = danger_hit as i32;
+    statics.eval.danger_unsafe = danger_unsafe as i32;
+    statics.eval.danger_attacker = DANGER_ATTACKER as i32;
+    statics.eval.danger_check = DANGER_CHECK.map(|part| part as i32);
+    statics.eval.danger_no_major = danger_no_major as i32;
+    statics.eval.danger_base = DANGER_BASE as i32;
+    statics.eval.danger_threshold = DANGER_THRESHOLD as i32;
+    statics.eval.danger_cap = DANGER_CAP as i32;
+    statics.eval.danger_cost = danger_cost;
+    statics.eval.danger_race = danger_race;
     statics.eval.tempo_bonus = tempo as i32;
     statics.eval.imbalance_major = major as i32;
     statics.eval.imbalance_minor = minor as i32;

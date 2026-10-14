@@ -871,6 +871,7 @@ pub struct Scratch {
     pub threat_maps: Vec<u64>,                                                  /* colour maps of `attack_terms!`     */
     pub threat_boards: [Board; 2],                                              /* occupancy and one piece's attacks  */
     pub threat_pawns: Vec<u64>,                                                 /* each pawn's square and its map     */
+    pub threat_kinds: Vec<u64>,                                                 /* each piece type's union of maps    */
 }
 
 /// NodeLists
@@ -930,6 +931,7 @@ impl Default for Scratch {
             threat_maps: Vec::new(),
             threat_boards: [board!(0, 0), board!(0, 0)],
             threat_pawns: Vec::new(),
+            threat_kinds: Vec::new(),
         }
     }
 }
