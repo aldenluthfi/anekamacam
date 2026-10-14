@@ -3401,3 +3401,42 @@ off (a minus means the part is worth that much to FSF):
 - Queue199 plays it against build 25 in threecheck and fivecheck at FSF
   2000, two rounds, after queue198. The user set build 26 as the last
   build for now: what passes of ZS, KD and RS goes in, then work stops.
+
+### Queues 198 to 200 (2026-10-15)
+
+Candidate minus build 25 by round (full FSF at the calibrated nodestime;
+threecheck and fivecheck at FSF 2000), then the mean:
+
+| Variant | ZS | KD (on ZS) | RS |
+| ------- | -- | ---------- | -- |
+| standard | -66.5, -3.9, +16.7: -17.9 | +4.5, +5.9, +8.2: +6.2 | |
+| xiangqi | +34.8, +32.4, +38.0: +35.1 | +75.6, +40.3, +40.0: +52.0 | |
+| crazyhouse | -35.1, +7.0, -69.8: -32.6 | -73.4, -1.7, -50.6, +20.9, -29.7, +15.9: -19.8 | |
+| capablanca | -7.0, -12.2, +5.3: -4.6 | -21.0, -1.8, +20.9: -0.6 | |
+| threecheck | +5.8, -67.3: -30.8 | +174.7, +132.6: +153.7 | -118.1, -67.8 |
+| fivecheck | | | -67.1, -55.9 |
+
+- RS: -77 over four rounds; the halving shape was not the race's fault.
+  Not merged.
+- ZS alone: xiangqi +35 in all three rounds; the rest within the noise
+  of a build 25 that ran hot in crazyhouse (+32.6 there, against -3.5 in
+  queue192 and +5 in queue191).
+- KD: the test-set mean of the first three rounds was +3.9, under +2σ;
+  over the five variants played, +34 ± 9. The one negative, crazyhouse,
+  was settled by rounds 4 to 6 (queue200) with a rule set before them:
+  KD merges unless crazyhouse over six rounds is worse than -2σ. Six
+  rounds: -19.8 ± 15.5 (-1.3σ), pooled 610-585-5 against 645-552-3.
+  Merged. In crazyhouse the danger sum may still cost a little: the lab
+  put FSF's king safety under our check rule at only 35 there, and the
+  check rule at 397.
+
+### Merged build 26 (2026-10-15, main 0f3f296)
+
+- Build 25 with ZS and KD (`plan27-main26`). All variants derive the
+  same capabilities and parameter files as build 25.
+- Work stops here for now, at the user's request. Open leads, in order:
+  the check rule in crazyhouse (lab: pruning and reduction of checks
+  near 100 each, 397 together); capablanca's pruning of checks (66);
+  king safety for the other trailing variants (newzealand,
+  pocketknight, koth, gothic, embassy, extinction were last measured on
+  build 23); the crazyhouse dict's hand order.
