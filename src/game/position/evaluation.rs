@@ -951,6 +951,23 @@ macro_rules! pawn_structure {
 ///
 /// Each piece or square counts once, whatever the number of attackers.
 ///
+/// Then for each colour with one royal that can be mated, the king danger
+/// sum of the enemy, from the same maps. The ring is the royal square and
+/// its local ring:
+///
+/// - attackers : enemy pieces whose map meets the ring, and the ring
+///               squares enemy pawns attack; their count times the pieces
+/// - weak      : ring squares the enemy attacks and we do not hold twice
+/// - hits      : the enemy hits on the local ring, one for each piece
+/// - checks    : an enemy piece type that reaches a check square that is
+///               safe, one we do not attack or a weak one the enemy holds
+///               twice; else each check square it reaches is unsafe
+/// - no major  : the enemy has no major piece, less danger
+///
+/// A sum past the threshold costs the colour its square in the opening,
+/// linear past the cap, and the sum itself in the endgame; the weights
+/// and the race rise come from [`derive_advantage_parameters`].
+///
 /// Params:
 /// - state: &mut State -> position to score, with the threat scratch
 ///
@@ -962,7 +979,11 @@ macro_rules! pawn_structure {
 /// so a map can hold more targets than the captures. A pawn is a piece
 /// with a pawn slot. A piece in the hand attacks nothing. The pass keeps
 /// the square and the map of each pawn for the pawn kind, as a safe square
-/// is known only after the pass. The mobility formula is Fairy-Stockfish's
+/// is known only after the pass, and the union of the maps of each piece
+/// type for the checks. The check squares are the map of the type of the
+/// other colour cast from the royal, exact for leaps, lines and hops. A
+/// pawn checks only from the hand, and a held piece drops on any empty
+/// square. The mobility formula and the danger sum are Fairy-Stockfish's
 /// for its fairy pieces.
 ///
 #[macro_export]
@@ -975,17 +996,41 @@ macro_rules! attack_terms {
             let span = words.max(2);                                            /* the 128-bit path reads two words   */
             let maps = &mut $state.scratch.threat_maps;
             let pawn_maps = &mut $state.scratch.threat_pawns;
+            let kinds = &mut $state.scratch.threat_kinds;
             let [occupied, attacks] = &mut $state.scratch.threat_boards;
             let region = |kind: usize, color: usize| (2 * kind + color) * words;
             let (once, twice, pawn_hits, pawns, royals, targets, area) =
                 (0, 1, 2, 3, 4, 5, 6);
+            let (guard, unsafe_checks) = (7, 8);
+            let danger = statics.eval.danger_cost[0] > 0;
 
-            if maps.len() != 14 * words {
+            if maps.len() != 18 * words {
                 maps.clear();                                                   /* a new variant sizes it again       */
-                maps.resize(14 * words, 0);
+                maps.resize(18 * words, 0);
+            }
+
+            if danger {
+                kinds.clear();
+                kinds.resize(statics.pieces.len() * words, 0);
             }
 
             maps.fill(0);
+
+            for color in (0..2).filter(|_| danger) {
+                let [royal] = $state.royal_list[color][..] else {
+                    continue;
+                };
+                let stride = statics.eval.local_stride;
+                let count = statics.eval.ring_counts[royal as usize] as usize;
+
+                for slot in 0..count {
+                    let at = statics.eval.ring_squares[
+                        royal as usize * stride + slot
+                    ] as usize;
+
+                    maps[region(guard, color) + (at >> 6)] |= 1 << (at & 63);
+                }
+            }
             pawn_maps.clear();
             (occupied.0, occupied.1) = (statics.files, statics.ranks);
             (attacks.0, attacks.1) = (statics.files, statics.ranks);
@@ -996,6 +1041,8 @@ macro_rules! attack_terms {
             }
 
             let mut mobility = [[0i32; 2]; 2];                                  /* colour to opening, endgame         */
+            let mut attackers = [0i64; 2];                                      /* pieces of a colour on the enemy    */
+            let mut ring_hits = [0i64; 2];                                      /* ring, and their hits next to it    */
 
             for first in [true, false] {                                        /* pawns and royals, then the rest    */
                 for color in (0..2).filter(|_| !first) {                        /* pawns and royals are all mapped    */
@@ -1033,8 +1080,27 @@ macro_rules! attack_terms {
                             maps[region(once, color) + word] |= hits;
                             maps[region(pawn_hits, color) + word] |=
                                 hits * pawn as u64;
-                            reach += (hits & maps[region(area, color) + word])
+                            reach +=(hits & maps[region(area, color) + word])
                                 .count_ones() as usize;
+                        }
+
+                        if danger {
+                            let enemy = color ^ 1;
+                            let mut near = false;
+
+                            for word in 0..words {
+                                let hits = attacks.2[word];
+                                let next = maps[region(guard, enemy) + word];
+                                let ring = next
+                                    | maps[region(royals, enemy) + word];
+
+                                kinds[piece_index * words + word] |= hits;
+                                near |= hits & ring != 0;
+                                ring_hits[color] += (hits & next)
+                                    .count_ones() as i64 * !first as i64;
+                            }
+
+                            attackers[color] += (near && !first) as i64;
                         }
 
                         maps[region(pawns, color) + (at >> 6)] |=
@@ -1098,6 +1164,110 @@ macro_rules! attack_terms {
             }
 
             let eval = &statics.eval;
+            let mut cost = [[0i32; 2]; 2];                                      /* colour of the royal to its cost    */
+
+            for color in (0..2).filter(|_| danger) {
+                let [royal] = $state.royal_list[color][..] else {
+                    continue;
+                };
+                let them = color ^ 1;
+                let hand = &$state.piece_in_hand[them];
+                let left = $state.termination.checks.as_ref()
+                    .filter(|_| !eval.danger_race.is_empty())
+                    .map(|checks| {
+                        checks.count.saturating_sub(checks.delivered[them])
+                            .max(1) as usize
+                    });
+                let race = left.map(|left| eval.danger_race[left]);
+                let always_safe = left == Some(1);                              /* the next check wins the race       */
+                let mut checks = 0i64;
+
+                for (piece_index, piece) in statics.pieces.iter().enumerate() {
+                    let mirror = statics.piece_swap_map[piece_index];
+                    let held = drops!($state) && hand[piece_index] > 0;
+                    let pawn = statics.eval.pawn_slots[piece_index] != NO_PAWN;
+                    let reach = &kinds[piece_index * words..][..words];
+
+                    if p_color!(piece) as usize != them
+                        || p_is_royal!(piece)
+                        || mirror == NO_PIECE
+                        || !held && (pawn || reach.iter().all(|w| *w == 0)) {   /* a pawn checks only from the hand   */
+                        continue;
+                    }
+
+                    attacks.2[..span].fill(0);
+                    piece_attacks!($state, mirror, royal, occupied, attacks);
+
+                    let mut safe = 0u32;
+
+                    for pass in [false, true] {
+                        for word in 0..words {
+                            let board = reach[word] * !pawn as u64;
+                            let open = !occupied.2[word] * held as u64;         /* a held piece drops on any empty    */
+                            let hits = attacks.2[word] & (board | open)
+                                & !$state.pieces_board[them].2[word];
+                            let weak = maps[region(once, them) + word]
+                                & !maps[region(twice, color) + word];
+                            let shielded = !maps[region(once, color) + word]
+                                | (weak & maps[region(twice, them) + word])
+                                | (always_safe as u64).wrapping_neg();
+                            let slot = region(unsafe_checks, color) + word;
+
+                            match pass {
+                                false => safe += (hits & shielded).count_ones(),
+                                true => maps[slot] |= hits * (safe == 0) as u64,
+                            }
+                        }
+                    }
+
+                    checks += match safe {
+                        0 => 0,
+                        1 => eval.danger_check[0] as i64,
+                        _ => eval.danger_check[1] as i64,
+                    };
+                }
+
+                let mut weak_ring = 0i64;
+                let mut pawn_hits_ring = 0i64;
+                let mut unsafe_squares = 0i64;
+
+                for word in 0..words {
+                    let ring = maps[region(guard, color) + word]
+                        | maps[region(royals, color) + word];
+                    let weak = maps[region(once, them) + word]
+                        & !maps[region(twice, color) + word];
+
+                    weak_ring += (ring & weak).count_ones() as i64;
+                    pawn_hits_ring += (ring
+                        & maps[region(pawn_hits, them) + word])
+                        .count_ones() as i64;
+                    unsafe_squares += maps[region(unsafe_checks, color) + word]
+                        .count_ones() as i64;
+                }
+
+                let scale = COEFFICIENT_SCALE as i64;
+                let major_gone = $state.major_pieces[them] == 0;
+                let sum = (attackers[them] + pawn_hits_ring)
+                        * attackers[them] * eval.danger_attacker as i64
+                    + weak_ring * eval.danger_weak as i64
+                    + ring_hits[them] * eval.danger_hit as i64
+                    + unsafe_squares * eval.danger_unsafe as i64
+                    + checks * race.map_or(scale, |rise| rise[0] as i64) / scale
+                    - major_gone as i64 * eval.danger_no_major as i64
+                    + eval.danger_base as i64;
+
+                if sum <= eval.danger_threshold as i64 {
+                    continue;
+                }
+
+                let opening = sum.min(eval.danger_cap as i64) * sum
+                    * eval.danger_cost[0] as i64 / (scale * scale);
+                let endgame = sum * eval.danger_cost[1] as i64 / scale
+                    + race.map_or(0, |rise| opening * rise[1] as i64 / scale);
+
+                cost[color] = [opening as i32, endgame as i32];
+            }
+
             let value = |phase: usize| {
                 (counts[0][0] - counts[1][0]) * eval.hanging_value[phase]
                     + (counts[0][1] - counts[1][1])
@@ -1105,6 +1275,7 @@ macro_rules! attack_terms {
                     + (counts[0][2] - counts[1][2])
                         * eval.restricted_value[phase]
                     + mobility[0][phase] - mobility[1][phase]
+                    + cost[1][phase] - cost[0][phase]
             };
 
             (value(0), value(1))
