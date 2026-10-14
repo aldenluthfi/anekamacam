@@ -60,9 +60,9 @@ const PST_AMPLITUDE_FLOOR: f64 = 24.0;
 /// The role splits of the army, sorted by value. Royals are not ranked.
 ///
 /// ```text
-/// non-big         minor             major
-/// ├───│───────────────────────────│──────┤
-///    10%                         80%   100%
+///  non-big                      minor                           major
+/// ├───────┼───────────────────────────────────────────────┼──────────────┤
+///        10%                                             80%            100%
 /// ```
 ///
 /// - `ROLE_NON_BIG_SPLIT` : the cheapest 10%, not big

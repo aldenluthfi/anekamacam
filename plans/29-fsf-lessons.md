@@ -2926,3 +2926,73 @@ session costs nothing and stays, but drift is not its reason.
   attack recipes grow with the pieces and the squares), and how much of
   it the port added. The build before the port, measured the same way,
   gives the port's share.
+
+### TH played, and why it gave nothing (2026-10-14)
+
+TH against build 22, both against full FSF at the key `nodestime`, three
+interleaved rounds of 200 (queue179):
+
+| Build | standard | xiangqi | grand | shogi | mean |
+| ----- | -------- | ------- | ----- | ----- | ---- |
+| build 22 | 62.2 | 45.5 | 64.5 | 8.2 | 45.1 |
+| TH | 59.4 | 38.4 | 70.2 | 12.9 | 45.2 |
+
+TH is +0.1 ± 9.9. FSF's three groups that TH ports (hanging, safe pawn,
+restricted) were worth 75 together under our check rule (queue165). The
+why chain, each link tested:
+
+- A wrong term: refuted. On 266 positions of the standard games, TH's
+  score (TH less build 22, the same position) against FSF's Threats row
+  with `e_tpiece` and `e_tqueen` off: correlation 0.68, mean size 21 cp
+  against 17 cp.
+- Threats pay only beside FSF's other map terms: refuted. In the proxy
+  of our engine (`usbase`: no king safety, mobility, threats or space,
+  our check rule), 400 games each at 10+0.1 (queue180): TH's groups
+  back (`usb_th`) +46.3, +65.0, +48.1, +106.6 (mean +66.5); all threats
+  back +109.5, +63.2, +100.9, +86.9 (mean +90.1).
+- Self-play overstates the value: confirmed. The proxy plays full FSF at
+  the budgets where it scores near 50% (queue182: 69, 69, 94 and 81 nodes
+  a ms), three rounds of 200 (queue183): `usbase` -20.4, -13.4, -4.0,
+  +12.8; `usb_th` -1.2, +30.8, +16.2, +41.4. The threats are worth +28.1
+  ± 9.9 against FSF, not 66.
+- The speed of the map pass takes the rest: confirmed. Build 22 with its
+  clock cut to TH's speed (a wrapper that scales the times of each `go`:
+  0.8 xiangqi, 0.725 grand, 0.893 shogi, standard unchanged) against TH,
+  three rounds (queue184): slowed build 22 68.1, 24.4, 50.9, -9.3
+  (33.5); TH 59.4, 36.2, 116.0, 2.3 (53.5). TH at equal speed is +20.0 ±
+  9.9. The cut cost build 22 near 17 in xiangqi, grand and shogi.
+
+So TH's eval is worth near +20 and its speed cost near as much. The cost
+is the computation, not the trees: a build that makes the threats and
+discards them (tz) has TH's speed, x0.900, x0.840, x0.783, x0.896 over
+build 22 against TH's x0.900, x0.854, x0.790, x0.894. In grand TH runs
+30% more instructions for each node at the same instructions for each
+cycle. The pass maps each piece at each evaluation, near 40 in grand.
+
+- th1 (`plan29-th2`, bd53bbb): the pass keeps each pawn's map, so the
+  safe pawns are not mapped again. The same nodes (`ident.sh`: 64 same),
+  x1.005, x0.998, x1.011, x1.018 over TH: a pawn's map is one leap read.
+- LT (510c3d3): the quiescence search leaves the threats out when the
+  score without them is beyond its window by `threat_margin`, 10% of the
+  most valuable piece. Other evaluations stay complete. Bench speed over
+  th1 x0.969, x1.042, x1.022, x1.047 (the trees change).
+
+LT against build 22, both against full FSF, three rounds of 200
+(queue187):
+
+| Build | standard | xiangqi | grand | shogi | mean |
+| ----- | -------- | ------- | ----- | ----- | ---- |
+| build 22 | 56.1 | 60.9 | 61.4 | -24.4 | 38.5 |
+| LT | 72.9 | 50.9 | 110.6 | 29.6 | 66.0 |
+
+LT is +27.5 ± 9.9, 2.8 sigma, with no forfeit. In all 44 variants
+(`ident.sh` against build 22) perft equals build 22, and no game crashes
+or runs out of time.
+
+### Merged build 23 (2026-10-14, main ec0f995)
+
+- Build 22 with TH, th1 and LT (`plan27-main23`). The server's
+  `aneka-main` builds the same binary as the tested LT.
+- Build 22 over its 12 rounds against full FSF (queues 171, 175, 179,
+  187): 68.6, 46.5, 61.3, -3.3, mean 43.3. Build 23: 72.9, 50.9, 110.6,
+  29.6, mean 66.0.
