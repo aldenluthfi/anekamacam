@@ -372,6 +372,41 @@ const PAIR_FLOOR: u32 = 10;
 const PAIR_REACH: f64 = 0.5;
 const PAIR_REACH_SLACK: f64 = 0.02;
 
+/// Threats
+///
+/// The value of the attacks on enemy pieces, read from the attack maps. A
+/// square is held strongly when a pawn of its side attacks it, or two of
+/// its side attack it and fewer than two of the other side do:
+///
+/// - hanging    : an enemy piece, not royal, that we attack and the enemy
+///                does not hold strongly; it counts when no enemy piece
+///                holds it, or when two of ours attack a piece that is not
+///                a pawn
+/// - pawn       : an enemy piece, not royal and not a pawn, that one of our
+///                pawns attacks from a square the enemy does not attack or
+///                we attack too
+/// - restricted : a square both sides attack that the enemy does not hold
+///                strongly
+///
+/// Each is a part of the most valuable piece, opening then endgame. The
+/// parts are Fairy-Stockfish's values over its queen:
+///
+/// - `HANGING_RATIO`     : 2.7% and 1.3% for each piece
+/// - `PAWN_THREAT_RATIO` : 6.8% and 3.5% for each piece
+/// - `RESTRICTED_RATIO`  : 0.3% and 0.3% for each square
+/// - `THREAT_FLOOR`      : 1, the minimum of each
+///
+/// The quiescence search skips the threats when the score without them is
+/// beyond its window by more than a margin, as they would not bring it
+/// back. The margin is 10% of the most valuable piece, near four times the
+/// mean threat value in standard (`THREAT_LAZY_RATIO`).
+///
+const HANGING_RATIO: [u32; 2] = [27, 13];
+const PAWN_THREAT_RATIO: [u32; 2] = [68, 35];
+const RESTRICTED_RATIO: [u32; 2] = [3, 3];
+const THREAT_FLOOR: u32 = 1;
+const THREAT_LAZY_RATIO: u32 = 100;
+
 /// PAWN_MIN_START_COUNT
 ///
 /// The minimum start count of a piece type to be a pawn. The other pawn
@@ -499,6 +534,10 @@ pub struct EvalParams {
     pub imbalance_minor: i32,                                                   /* worth of one light piece of extra  */
     pub pair_pieces: Vec<usize>,                                                /* pieces a second copy completes     */
     pub pair_bonus: i32,                                                        /* worth of completing such a pair    */
+    pub hanging_value: [i32; 2],                                                /* worth of a loose enemy piece,      */
+    pub pawn_threat_value: [i32; 2],                                            /* of a pawn on a piece and of a      */
+    pub restricted_value: [i32; 2],                                             /* contested square, opening, ending  */
+    pub threat_margin: i32,                                                     /* lead past the window that skips it */
 
     pub draw_contempt: i32,                                                     /* a draw's cost one span ahead       */
     pub draw_span: i32,                                                         /* lead at which that cost saturates  */
@@ -3386,11 +3425,12 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
 /// derive_advantage_parameters
 ///
-/// Gives the three advantages that material does not include:
+/// Gives the four advantages that material does not include:
 ///
 /// - tempo     : part of the most valuable piece, with a floor
 /// - imbalance : one part for a major surplus, one for a minor surplus
 /// - pair      : a part again, only for pieces that reach half the board
+/// - threats   : a part for each attack kind, opening then endgame
 ///
 /// The pair test uses the piece reach, not the name. Royals are not
 /// tested. The list has the two colours of each pair piece, so the
@@ -3411,6 +3451,15 @@ pub fn derive_advantage_parameters(state: &mut State) {
         / COEFFICIENT_SCALE as u64).max(IMBALANCE_MINOR_FLOOR as u64);
     let pair = (dearest * PAIR_RATIO as u64
         / COEFFICIENT_SCALE as u64).max(PAIR_FLOOR as u64);
+    let threat = |ratio: [u32; 2]| ratio.map(|part| {
+        (dearest * part as u64 / COEFFICIENT_SCALE as u64)
+            .max(THREAT_FLOOR as u64) as i32
+    });
+    let hanging = threat(HANGING_RATIO);
+    let pawn_threat = threat(PAWN_THREAT_RATIO);
+    let restricted = threat(RESTRICTED_RATIO);
+    let threat_margin = dearest * THREAT_LAZY_RATIO as u64
+        / COEFFICIENT_SCALE as u64;
 
     let bound: Vec<usize> = state.statics.pieces.iter()
         .filter(|piece| p_color!(piece) == WHITE)
@@ -3436,8 +3485,17 @@ pub fn derive_advantage_parameters(state: &mut State) {
             .collect::<Vec<char>>()
     );
 
+    log_3!(
+        "Derived threats: hanging {:?}, pawn {:?}, restricted {:?}, margin {}",
+        hanging, pawn_threat, restricted, threat_margin
+    );
+
     let statics = state.static_mut();
 
+    statics.eval.hanging_value = hanging;
+    statics.eval.pawn_threat_value = pawn_threat;
+    statics.eval.restricted_value = restricted;
+    statics.eval.threat_margin = threat_margin as i32;
     statics.eval.tempo_bonus = tempo as i32;
     statics.eval.imbalance_major = major as i32;
     statics.eval.imbalance_minor = minor as i32;

@@ -919,6 +919,164 @@ macro_rules! pawn_structure {
 }
 
 /*----------------------------------------------------------------------------*\
+                                    THREATS
+\*----------------------------------------------------------------------------*/
+
+/// threats!
+///
+/// Gives the threat value, White minus Black, for the opening and the
+/// endgame. One pass makes the attack map of each piece and keeps for each
+/// colour the squares it attacks once and twice, the squares its pawns
+/// attack, and its pawn and royal squares. Then for each colour:
+///
+/// - strong     : an enemy pawn attacks it, or two enemy pieces and fewer
+///                than two of ours
+/// - weak       : an enemy piece, not royal, that we attack and that is not
+///                strong
+/// - hanging    : a weak piece that no enemy piece attacks, or one that is
+///                not a pawn and that two of ours attack
+/// - pawn       : an enemy piece, not royal and not a pawn, that one of our
+///                pawns attacks from a safe square: one the enemy does not
+///                attack, or one we attack too
+/// - restricted : a square both colours attack that is not strong
+///
+/// Each piece or square counts once, whatever the number of attackers.
+///
+/// Params:
+/// - state: &mut State -> position to score, with the threat scratch
+///
+/// Return:
+/// (i32, i32)          -> opening and endgame value, White minus Black
+///
+/// Notes:
+/// The maps are those of `piece_attacks!`: a move condition is not tested,
+/// so a map can hold more targets than the captures. A pawn is a piece
+/// with a pawn slot. A piece in the hand attacks nothing. The pass keeps
+/// the square and the map of each pawn for the pawn kind, as a safe square
+/// is known only after the pass.
+///
+#[macro_export]
+macro_rules! threats {
+    ($state:expr) => {
+        hotpath::measure_block!("eval::threats", {
+            let statics = &$state.statics;
+            let board_size = statics.board_size;
+            let words = (board_size + 63) >> 6;                                 /* one bit per square, 64 to a word   */
+            let span = words.max(2);                                            /* the 128-bit path reads two words   */
+            let maps = &mut $state.scratch.threat_maps;
+            let pawn_maps = &mut $state.scratch.threat_pawns;
+            let [occupied, attacks] = &mut $state.scratch.threat_boards;
+            let region = |kind: usize, color: usize| (2 * kind + color) * words;
+            let (once, twice, pawn_hits, pawns, royals, targets) =
+                (0, 1, 2, 3, 4, 5);
+
+            if maps.len() != 12 * words {
+                maps.clear();                                                   /* a new variant sizes it again       */
+                maps.resize(12 * words, 0);
+            }
+
+            maps.fill(0);
+            pawn_maps.clear();
+            (occupied.0, occupied.1) = (statics.files, statics.ranks);
+            (attacks.0, attacks.1) = (statics.files, statics.ranks);
+
+            for word in 0..span {
+                occupied.2[word] = $state.pieces_board[0].2[word]
+                    | $state.pieces_board[1].2[word];
+            }
+
+            for (piece_index, piece) in statics.pieces.iter().enumerate() {
+                let color = p_color!(piece) as usize;
+                let pawn = statics.eval.pawn_slots[piece_index] != NO_PAWN;
+                let royal = p_is_royal!(piece);
+
+                for &square in piece_squares!($state, piece_index) {
+                    let at = square as usize;
+
+                    attacks.2[..span].fill(0);
+                    piece_attacks!(
+                        $state, piece_index, square, occupied, attacks
+                    );
+
+                    for word in 0..words {
+                        let hits = attacks.2[word];
+
+                        maps[region(twice, color) + word] |=
+                            maps[region(once, color) + word] & hits;
+                        maps[region(once, color) + word] |= hits;
+                        maps[region(pawn_hits, color) + word] |=
+                            hits * pawn as u64;
+                    }
+
+                    maps[region(pawns, color) + (at >> 6)] |=
+                        (pawn as u64) << (at & 63);
+                    maps[region(royals, color) + (at >> 6)] |=
+                        (royal as u64) << (at & 63);
+
+                    if pawn {
+                        pawn_maps.push((color * board_size + at) as u64);       /* colour and square, then the map    */
+                        pawn_maps.extend_from_slice(&attacks.2[..words]);
+                    }
+                }
+            }
+
+            for record in pawn_maps.chunks_exact(words + 1) {
+                let color = record[0] as usize / board_size;
+                let at = record[0] as usize % board_size;
+                let bit = 1u64 << (at & 63);
+                let attacked = maps[region(once, color ^ 1) + (at >> 6)];
+                let covered = maps[region(once, color) + (at >> 6)];
+
+                if attacked & bit != 0 && covered & bit == 0 {
+                    continue;
+                }
+
+                for word in 0..words {
+                    maps[region(targets, color) + word] |= record[1 + word];
+                }
+            }
+
+            let mut counts = [[0i32; 3]; 2];                                    /* hanging, pawn, restricted          */
+
+            for color in 0..2 {
+                let them = color ^ 1;
+
+                for word in 0..words {
+                    let at = |kind: usize, side: usize| {
+                        maps[region(kind, side) + word]
+                    };
+                    let strong = at(pawn_hits, them)
+                        | (at(twice, them) & !at(twice, color));
+                    let enemies =
+                        $state.pieces_board[them].2[word] & !at(royals, them);
+                    let weak = enemies & !strong & at(once, color);
+                    let hanging = weak & (
+                        !at(once, them) | (!at(pawns, them) & at(twice, color))
+                    );
+                    let hit = at(targets, color) & enemies & !at(pawns, them);
+                    let restricted = at(once, them) & !strong & at(once, color);
+
+                    counts[color][0] += hanging.count_ones() as i32;
+                    counts[color][1] += hit.count_ones() as i32;
+                    counts[color][2] += restricted.count_ones() as i32;
+                }
+            }
+
+            let eval = &statics.eval;
+            let value = |phase: usize| {
+                (counts[0][0] - counts[1][0]) * eval.hanging_value[phase]
+                    + (counts[0][1] - counts[1][1])
+                        * eval.pawn_threat_value[phase]
+                    + (counts[0][2] - counts[1][2])
+                        * eval.restricted_value[phase]
+            };
+
+            (value(0), value(1))
+        })
+    };
+}
+
+/*----------------------------------------------------------------------------*\
                              PHASE SCORE COMPONENTS
 \*----------------------------------------------------------------------------*/
 
@@ -1087,11 +1245,18 @@ macro_rules! material_advantage {
 /// - royal safety           : opening half; enemy pressure in both
 /// - shared terms           : calculated once, added to both halves
 /// - pawn structure         : both halves, one value for each
+/// - threats                : both halves, one value for each
 /// - material imbalance     : outside the blend, added once
 /// - tempo                  : outside, after the flip to the side to move
 ///
+/// With a window, the threats are left out when the score without them is
+/// beyond the window by more than `threat_margin`: they would not bring it
+/// back inside. Without a window, the score is always complete.
+///
 /// Params:
 /// - state: &mut State -> position to evaluate
+/// - alpha: i32        -> lower bound of the window, optional
+/// - beta : i32        -> upper bound of the window, optional
 ///
 /// Return:
 /// i32                 -> score for the side to move
@@ -1103,44 +1268,46 @@ macro_rules! material_advantage {
 #[macro_export]
 macro_rules! evaluate_position {
     ($state:expr) => {
+        evaluate_position!($state, -INF, INF)
+    };
+    ($state:expr, $alpha:expr, $beta:expr) => {
         hotpath::measure_block!("eval::position", {
             let side_sign = -2 * $state.playing as i32 + 1;
+            let phase = $state.game_phase;
+            let opening_bound = $state.statics.opening_score as i32;
+            let endgame_bound = $state.statics.endgame_score as i32;
+            let current = $state.phase_score as i32;
+            let tempo = $state.statics.eval.tempo_bonus;
+            let margin = $state.statics.eval.threat_margin;
 
             let shared = shared_score!($state);
+            let (pawn_opening, pawn_endgame) = pawn_structure!($state);
+            let opening = opening_score!($state) + shared + pawn_opening;
+            let endgame = endgame_score!($state) + shared + pawn_endgame;
+            let material = material_advantage!($state);
 
-            let score = match $state.game_phase {
-                OPENING | SETUP => {
-                    opening_score!($state)
-                        + shared
-                        + pawn_structure!($state).0
-                }
-                ENDGAME => {
-                    endgame_score!($state)
-                        + shared
-                        + pawn_structure!($state).1
-                }
-                MIDDLEGAME => {
-                    let (pawn_opening, pawn_endgame) =
-                        pawn_structure!($state);
-                    let opening =
-                        opening_score!($state) + shared + pawn_opening;
-                    let endgame =
-                        endgame_score!($state) + shared + pawn_endgame;
-
-                    let opening_bound = $state.statics.opening_score as i32;
-                    let endgame_bound = $state.statics.endgame_score as i32;
-                    let current = $state.phase_score as i32;
-
-                    (
+            let finish = |opening: i32, endgame: i32| {
+                let score = match phase {
+                    OPENING | SETUP => opening,
+                    ENDGAME => endgame,
+                    MIDDLEGAME => (
                         opening * (current - endgame_bound)
                             + endgame * (opening_bound - current)
-                    ) / (opening_bound - endgame_bound)
-                }
-                _ => panic!("Invalid game phase {}", $state.game_phase),
-            };
+                    ) / (opening_bound - endgame_bound),
+                    _ => panic!("Invalid game phase {}", phase),
+                };
 
-            (score + material_advantage!($state)) * side_sign
-                + $state.statics.eval.tempo_bonus
+                (score + material) * side_sign + tempo
+            };
+            let lazy = finish(opening, endgame);
+
+            if lazy - margin >= $beta || lazy + margin <= $alpha {
+                lazy
+            } else {
+                let (threat_opening, threat_endgame) = threats!($state);
+
+                finish(opening + threat_opening, endgame + threat_endgame)
+            }
         })
     };
 }
