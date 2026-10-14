@@ -870,6 +870,7 @@ pub struct Scratch {
     pub pawn_table: PTable,                                                     /* arrangement to its two scores      */
     pub threat_maps: Vec<u64>,                                                  /* colour maps of `threats!` by kind  */
     pub threat_boards: [Board; 2],                                              /* occupancy and one piece's attacks  */
+    pub threat_pawns: Vec<u64>,                                                 /* each pawn's square and its map     */
 }
 
 /// NodeLists
@@ -906,8 +907,9 @@ impl Default for Scratch {
     /// Scratch::default
     ///
     /// Makes empty work memory: one node list set for each ply, the two
-    /// exchange vectors, the two pawn lists, an empty pawn cache and empty
-    /// threat maps. A new, cloned or reset state gets it.
+    /// exchange vectors, the two pawn lists, an empty pawn cache, empty
+    /// threat maps and an empty pawn map list. A new, cloned or reset state
+    /// gets it.
     ///
     /// Return:
     /// Self -> empty work memory with start capacities
@@ -927,6 +929,7 @@ impl Default for Scratch {
             pawn_table: PTable::default(),
             threat_maps: Vec::new(),
             threat_boards: [board!(0, 0), board!(0, 0)],
+            threat_pawns: Vec::new(),
         }
     }
 }

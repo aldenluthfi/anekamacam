@@ -951,18 +951,20 @@ macro_rules! pawn_structure {
 /// Notes:
 /// The maps are those of `piece_attacks!`: a move condition is not tested,
 /// so a map can hold more targets than the captures. A pawn is a piece
-/// with a pawn slot. A piece in the hand attacks nothing. The maps of the
-/// pawns are made again for the pawn kind, as a safe square is known only
-/// after the pass.
+/// with a pawn slot. A piece in the hand attacks nothing. The pass keeps
+/// the square and the map of each pawn for the pawn kind, as a safe square
+/// is known only after the pass.
 ///
 #[macro_export]
 macro_rules! threats {
     ($state:expr) => {
         hotpath::measure_block!("eval::threats", {
             let statics = &$state.statics;
-            let words = (statics.board_size + 63) >> 6;                         /* one bit per square, 64 to a word   */
+            let board_size = statics.board_size;
+            let words = (board_size + 63) >> 6;                                 /* one bit per square, 64 to a word   */
             let span = words.max(2);                                            /* the 128-bit path reads two words   */
             let maps = &mut $state.scratch.threat_maps;
+            let pawn_maps = &mut $state.scratch.threat_pawns;
             let [occupied, attacks] = &mut $state.scratch.threat_boards;
             let region = |kind: usize, color: usize| (2 * kind + color) * words;
             let (once, twice, pawn_hits, pawns, royals, targets) =
@@ -974,6 +976,7 @@ macro_rules! threats {
             }
 
             maps.fill(0);
+            pawn_maps.clear();
             (occupied.0, occupied.1) = (statics.files, statics.ranks);
             (attacks.0, attacks.1) = (statics.files, statics.ranks);
 
@@ -1009,30 +1012,27 @@ macro_rules! threats {
                         (pawn as u64) << (at & 63);
                     maps[region(royals, color) + (at >> 6)] |=
                         (royal as u64) << (at & 63);
+
+                    if pawn {
+                        pawn_maps.push((color * board_size + at) as u64);       /* colour and square, then the map    */
+                        pawn_maps.extend_from_slice(&attacks.2[..words]);
+                    }
                 }
             }
 
-            for &piece_index in &statics.eval.pawn_pieces {
-                let color = p_color!(&statics.pieces[piece_index]) as usize;
+            for record in pawn_maps.chunks_exact(words + 1) {
+                let color = record[0] as usize / board_size;
+                let at = record[0] as usize % board_size;
+                let bit = 1u64 << (at & 63);
+                let attacked = maps[region(once, color ^ 1) + (at >> 6)];
+                let covered = maps[region(once, color) + (at >> 6)];
 
-                for &square in piece_squares!($state, piece_index) {
-                    let at = square as usize;
-                    let bit = 1u64 << (at & 63);
-                    let attacked = maps[region(once, color ^ 1) + (at >> 6)];
-                    let covered = maps[region(once, color) + (at >> 6)];
+                if attacked & bit != 0 && covered & bit == 0 {
+                    continue;
+                }
 
-                    if attacked & bit != 0 && covered & bit == 0 {
-                        continue;
-                    }
-
-                    attacks.2[..span].fill(0);
-                    piece_attacks!(
-                        $state, piece_index, square, occupied, attacks
-                    );
-
-                    for word in 0..words {
-                        maps[region(targets, color) + word] |= attacks.2[word];
-                    }
+                for word in 0..words {
+                    maps[region(targets, color) + word] |= record[1 + word];
                 }
             }
 
