@@ -3389,3 +3389,15 @@ off (a minus means the part is worth that much to FSF):
 - Queue198 plays build 25, ZS and KD interleaved against full FSF in the
   test set (standard 14, xiangqi 16, crazyhouse 16, capablanca 26), three
   rounds, then threecheck at FSF 2000, two rounds.
+
+### RS (2026-10-14, branch `plan29-rs`, 9da80fe)
+
+- The race term takes FSF's shape: with `l` checks left, its value over
+  `l * l`, opening then endgame (FSF's `(3600, 1000)` over its queen:
+  141.8% and 37.3% of the most valuable piece). Before: 100%, 50%, 25%
+  in both phases. It moves from the shared score into the two halves.
+- Standard nodes equal build 25 (no race). Threecheck round 1 fatal
+  positions: mean +2.96 to +2.39, correlation with FSF 0.17 to 0.22.
+- Queue199 plays it against build 25 in threecheck and fivecheck at FSF
+  2000, two rounds, after queue198. The user set build 26 as the last
+  build for now: what passes of ZS, KD and RS goes in, then work stops.
