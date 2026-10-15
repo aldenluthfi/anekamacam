@@ -1009,8 +1009,10 @@ pub fn quiescence_search(
 /// variant skips it.
 ///
 /// A move that gives check is never reduced. It gets one more ply while
-/// the line is shorter than two times the iteration depth. A skip is made
-/// and tested for check only if its piece can reach an enemy royal.
+/// the line is shorter than two times the iteration depth. The move count
+/// and the exchange skip it as any other move, before it is made. A
+/// futility skip is made and tested for check only if its piece can reach
+/// an enemy royal.
 ///
 /// Drops join the move list when no winning capture is left or the list
 /// runs out. Most shogi nodes cut before they need one of the many drops.
@@ -1396,7 +1398,11 @@ pub fn alpha_beta(
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
 
-        let skippable = (late_quiet || futile || losing_capture) && !goal_move;
+        if (late_quiet || losing_capture) && !goal_move {                       /* a check falls to the move count    */
+            continue;                                                           /* and the exchange as any move does  */
+        }
+
+        let skippable = futile && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
         if skippable
