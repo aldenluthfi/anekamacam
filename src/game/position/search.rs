@@ -1008,9 +1008,12 @@ pub fn quiescence_search(
 /// raw score. Razoring asks quiescence, which plays no drops, so a drop
 /// variant skips it.
 ///
-/// A move that gives check is never reduced. It gets one more ply while
-/// the line is shorter than two times the iteration depth. A skip is made
-/// and tested for check only if its piece can reach an enemy royal.
+/// A board move that gives check is never reduced. A check gets one more
+/// ply while the line is shorter than two times the iteration depth. A
+/// skip is made and tested for check only if its piece can reach an enemy
+/// royal. A drop is skipped by the move count and reduced as any late
+/// move, checking or not: with a hand, most quiet drops near a royal check,
+/// and keeping them all at full depth makes the tree too wide.
 ///
 /// Drops join the move list when no winning capture is left or the list
 /// runs out. Most shogi nodes cut before they need one of the many drops.
@@ -1396,6 +1399,10 @@ pub fn alpha_beta(
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
 
+        if late_quiet && is_drop && !goal_move {                                /* a checking drop falls to the move  */
+            continue;                                                           /* count as any drop does             */
+        }
+
         let skippable = (late_quiet || futile || losing_capture) && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
@@ -1425,7 +1432,7 @@ pub fn alpha_beta(
 
         let reduction = if depth >= minimum_depth
         && legal_moves > move_gate
-        && !gives_check
+        && (!gives_check || is_drop)
         && !goal_move
         {
             let surface = match (
