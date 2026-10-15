@@ -1008,9 +1008,13 @@ pub fn quiescence_search(
 /// raw score. Razoring asks quiescence, which plays no drops, so a drop
 /// variant skips it.
 ///
-/// A move that gives check is never reduced. It gets one more ply while
-/// the line is shorter than two times the iteration depth. A skip is made
-/// and tested for check only if its piece can reach an enemy royal.
+/// A move that gives check gets one more ply while the line is shorter
+/// than two times the iteration depth. It is never reduced and only
+/// futility skips it, unless the mover holds a piece in hand: then any
+/// empty square near a royal can take a checking drop, a check is common,
+/// and the move count, the exchange and LMR treat it as any move. A
+/// futility skip is made and tested for check only if its piece can reach
+/// an enemy royal.
 ///
 /// Drops join the move list when no winning capture is left or the list
 /// runs out. Most shogi nodes cut before they need one of the many drops.
@@ -1305,6 +1309,9 @@ pub fn alpha_beta(
     scores.resize(moves.len(), usize::MAX);
 
     let mut drops_pending = drops!(state) || state.game_phase == SETUP;
+    let hand_held = drops!(state)                                               /* checks are common, so the check    */
+        && state.piece_in_hand[state.playing as usize]                          /* rule gives way                     */
+            .iter().any(|&count| count > 0);
 
     if drops_pending
     && table_move.is_some_and(|table_move| {                                    /* a table move that drops needs the  */
@@ -1396,6 +1403,10 @@ pub fn alpha_beta(
         let goal_move = state.termination.goal.as_ref()                         /* a piece that can win by arriving   */
             .is_some_and(|goal| goal.set[piece!(mv) as usize]);                 /* is never pruned or reduced         */
 
+        if hand_held && (late_quiet || losing_capture) && !goal_move {          /* a check falls to the move count    */
+            continue;                                                           /* and the exchange as any move does  */
+        }
+
         let skippable = (late_quiet || futile || losing_capture) && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
@@ -1425,7 +1436,7 @@ pub fn alpha_beta(
 
         let reduction = if depth >= minimum_depth
         && legal_moves > move_gate
-        && !gives_check
+        && (!gives_check || hand_held)
         && !goal_move
         {
             let surface = match (
