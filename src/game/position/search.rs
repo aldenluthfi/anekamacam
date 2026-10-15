@@ -1008,11 +1008,11 @@ pub fn quiescence_search(
 /// raw score. Razoring asks quiescence, which plays no drops, so a drop
 /// variant skips it.
 ///
-/// A move that gives check is never reduced. It gets one more ply while
-/// the line is shorter than two times the iteration depth. The move count
-/// and the exchange skip it as any other move, before it is made. A
-/// futility skip is made and tested for check only if its piece can reach
-/// an enemy royal.
+/// A move that gives check gets one more ply while the line is shorter
+/// than two times the iteration depth. The move count and the exchange
+/// skip it as any other move, before it is made, and a late check is
+/// reduced as other late moves are. A futility skip is made and tested for
+/// check only if its piece can reach an enemy royal.
 ///
 /// Drops join the move list when no winning capture is left or the list
 /// runs out. Most shogi nodes cut before they need one of the many drops.
@@ -1431,7 +1431,6 @@ pub fn alpha_beta(
 
         let reduction = if depth >= minimum_depth
         && legal_moves > move_gate
-        && !gives_check
         && !goal_move
         {
             let surface = match (
