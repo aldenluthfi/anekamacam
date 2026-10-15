@@ -3440,3 +3440,123 @@ threecheck and fivecheck at FSF 2000), then the mean:
   king safety for the other trailing variants (newzealand,
   pocketknight, koth, gothic, embassy, extinction were last measured on
   build 23); the crazyhouse dict's hand order.
+
+### PC26 and CR26 (2026-10-15)
+
+- The hand order, read again: `debug-headless --fen` takes the engine's
+  own notation (hand `P/p`), and the UCI dict is used only with
+  `--protocol uci`. Through the dict, `[Pp]`, `[]` and `[Qnp]` load;
+  `[pP]` and `[npQ]` do not. The inverse rules of the nine drop dicts
+  read a hand as White's letters, then Black's. FSF, cutechess and
+  lichess write White's first, so no game is affected; a regex rule
+  cannot sort a mixed hand in one pass. Left as is.
+- Why the check rule now: PC (checks fall to the move count and the
+  exchange, -37 on build 16) and CR3, CR3b (checks reduced) lost, and
+  the record put the cause in the eval: without king safety of FSF's
+  kind the search must keep every check to see a mating attack
+  (`s1_eking`, PCD's skipped drops). KD put FSF's danger sum in build
+  26, so that cause is gone. The lab prices the rule at 397 in
+  crazyhouse (pruning 99, reduction 110) and 198 in capablanca.
+- PC26 (`plan29-pc26`, 6a3a114) is PC on build 26; CR26 (`plan29-cr26`,
+  636748f) is CR3 on build 26 (the search again at `depth - 1`, as CR3
+  beat CR3b). Mean depth at 300 ms on 160 positions of queue198's games
+  (build 26, PC26, CR26): standard 21.7, 22.0, 21.9; xiangqi 18.2,
+  18.4, 18.7; crazyhouse 20.6, 21.0, 21.3; capablanca 20.9, 21.3, 21.3.
+- Queue201 plays build 26, PC26 and CR26 interleaved against full FSF in
+  the test set at the calibrated nodestime, three rounds of 200.
+- Queue201 (server rebooted before it; one hour for 36 runs). Elo by
+  round, then each candidate's mean minus build 26's:
+
+| Variant | build 26 | PC26 | CR26 |
+| ------- | -------- | ---- | ---- |
+| standard | +177.2, +209.9, +209.9 | +121.1, +225.0, +149.3: -33.9 | +175.0, +164.1, +200.2: -19.2 |
+| xiangqi | +132.9, +153.4, +172.8 | +137.0, +151.3, +119.1: -17.2 | +157.7, +188.5, +113.3: +0.2 |
+| crazyhouse | +52.5, +29.6, +70.4 | +92.5, +61.4, +68.6: +23.3 | +24.4, +98.1, +125.0: +31.7 |
+| capablanca | -24.4, +13.9, +8.7 | +5.2, -15.6, -0.0: -2.9 | -10.4, -52.5, +15.6: -15.2 |
+
+- Means: PC26 -7.7, CR26 -0.6, near ± 10 each. Neither passes.
+  Crazyhouse is up for both (1.1σ, 1.5σ), where the lab put each part
+  near 100 and the two together at 397.
+- The budgets are stale: build 26 scores near +200 in standard and +150
+  in xiangqi (build 25 in queue198: +149, +79), and at such scores a
+  difference reads small. Queue202 builds PCR26 (`plan29-pcr26`,
+  b788238: both parts) and plays build 26 on a ladder of budgets, one
+  round each.
+- Queue202, build 26 against full FSF by nodestime: standard 28 -5.2,
+  42 -141.0, 56 -225.0, 84 -463.2; xiangqi 28 +59.6, 42 -68.6, 56
+  -137.0; crazyhouse 24 +5.2, 32 -137.0. The new budgets near our 50%
+  point: standard 28, xiangqi 34, crazyhouse 24, capablanca 26 (as
+  before).
+- Queue203 plays build 26, PC26, CR26 and PCR26 interleaved at the new
+  budgets, six rounds of 200.
+- Queue203, mean Elo over six rounds (build 26), then each candidate's
+  mean minus build 26's (σ near 13 for each, 7 for the mean of four):
+
+| Variant | build 26 | PC26 | CR26 | PCR26 |
+| ------- | -------- | ---- | ---- | ----- |
+| standard | -9.8 | -6.8 | -18.4 | +9.5 |
+| xiangqi | -27.0 | +3.5 | +15.4 | -29.5 |
+| crazyhouse | -34.7 | +3.6 | +21.6 | +35.0 |
+| capablanca | +17.4 | -29.0 | -17.1 | -28.2 |
+| mean | | -7.2 | +0.4 | -3.3 |
+
+- None passes. Crazyhouse gains from cutting checks (PCR26 +35, 2.6σ;
+  CR26 +25 over nine rounds with queue201); capablanca loses 17 to 29.
+- Why the same cut helps one variant and hurts another: what the rule
+  costs depends on how many moves check. With a hand, most quiet drops
+  near a royal check, so the rule holds a wide set of moves at full
+  depth with the extension (the lab: 397 in crazyhouse). Without drops
+  checks are few, the rule is cheap, and the late checks it keeps are 4
+  to 18 times as often good (PC's counters). If this holds, cutting only
+  the checking drops keeps crazyhouse's gain and loses nothing elsewhere.
+- PCRD (`plan29-pcrd`, 8178c58): a checking drop falls to the move count
+  and to LMR as any drop does; a board check keeps the rule. Bench nodes
+  (seed 7, depth 7, 10 positions) equal build 26 in standard and
+  capablanca; crazyhouse x0.84. Queue204 plays build 26, PCRD and PCR26
+  in crazyhouse (nodestime 24, six rounds), then build 26 and PCRD in
+  shogi (nodestime 44, three rounds) as a guard for drops.
+- Queue204, crazyhouse by round: build 26 -13.9, -56.1, -41.9, -45.4,
+  -41.9, -26.1 (mean -37.6); PCRD -34.9, -24.4, -31.4, +24.4, -45.4,
+  -45.4 (+11.4 over build 26); PCR26 -41.9, -50.7, -20.9, +5.2, +15.6,
+  -3.5 (+21.6). Shogi: build 26 +107.5, +74.1, +105.6; PCRD +86.9,
+  +105.6, +85.0 (-3.2). Shogi's budget is stale too (+96 at 44).
+- PCR26 in crazyhouse over twelve rounds: +28.3, 3σ. The checking drops
+  alone carry less than half (+11 ± 13), so board checks gain from the
+  cut there as well: a hand makes every check common, not only the
+  drops. PCRH (`plan29-pcrh`, eb17bc1) applies PCR's cut while the mover
+  holds a piece in hand, and the check rule otherwise. Bench nodes equal
+  build 26 in standard and capablanca; crazyhouse x0.77. Queue205 plays
+  build 26, PCRH and PCR26 in crazyhouse (six rounds), then build 26 and
+  PCRH in shogi (three rounds).
+- Queue205, crazyhouse by round: build 26 -34.9, -52.5, -38.4, -13.9,
+  -47.2, -36.6 (mean -37.3); PCRH -61.4, +0.0, +1.7, -56.1, +12.2, +3.5
+  (+20.6 over build 26); PCR26 -3.5, -5.2, +0.0, -15.6, -17.4, -8.7
+  (+28.9). Shogi: build 26 +49.0, +117.2, +57.9; PCRH +74.1, +101.8,
+  +100.0 (+17.3).
+- PCR26 in crazyhouse over eighteen rounds: +28.5 ± 7.7, 3.7σ. PCRH
+  against PCR26 in the same session -8 ± 13: the same within noise, as
+  a crazyhouse mover nearly always holds a piece. PCRH changes no node
+  without drops, so it cannot lose standard, xiangqi or capablanca; its
+  own crazyhouse gain is 1.6σ so far. Rule set before more games: PCRH
+  merges if crazyhouse over twelve rounds is at +2σ and shogi is not
+  below -2σ. Queue206 plays crazyhouse rounds 7 to 12 and shogi 4 to 6.
+- Queue206, crazyhouse by round: build 26 -19.1, -45.4, -66.8, -103.7,
+  -41.9, -31.4; PCRH -24.4, -31.4, +3.5, -47.2, +6.9, -24.4 (+31.9).
+  Shogi: build 26 +27.9, +79.5, +77.7; PCRH +92.5, +130.9, +63.2
+  (+33.8).
+- PCRH over twelve crazyhouse rounds: +26.2 ± 10.5 (the spread of the
+  paired round differences), 2.5σ; shogi over six rounds +25.6. The rule
+  holds: merged.
+
+### Merged build 27 (2026-10-16, main 10589b0)
+
+- Build 26 with PCRH (`plan27-main27`). The check rule gives way while
+  the mover holds a piece in hand.
+- `ident.sh` against build 26: every perft the same; the seeded games
+  differ only in the seven drop variants (judkins, minishogi, euroshogi,
+  crazyhouse, pocketknight, shogi, annanshogi), the other 57 runs the
+  same.
+- The check rule in the variants without drops stays: PC26, CR26 and
+  PCR26 lost 17 to 29 in capablanca with FSF's king danger in our eval,
+  and the record's root for that (PC, 2026-10-08) still holds: in our
+  wide tree a check is a small share and keeping it costs little.
