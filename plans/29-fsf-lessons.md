@@ -3677,3 +3677,160 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
   its count of supporters and phalanx neighbours times a rank table
   (`HordeConnected`). Koth is carried by the goal flood fill (variant)
   and king safety, extinction by threats.
+- Speed is not the horde gap: from the start, 10 s, three runs, ours
+  480k nodes per second at depth 18, FSF classical 428k at depth 22
+  (standard: 337k at 17, FSF 514k at 20, where we are +190).
+- Queue213, the lab split of those terms (two new lab switches:
+  `e_crank` gives the connected bonus one flat value over the ranks,
+  `e_hconn` uses the usual connected formula in a pawn mass):
+
+  | Variant | Part off | Elo |
+  | - | - | - |
+  | horde | connected rank scale | -235.4 |
+  | horde | pawn mass formula | -179.5 |
+  | extinction | hanging | -0.9 |
+  | extinction | safe pawn threat | -7.8 |
+  | extinction | threat by piece | +1.7 |
+  | extinction | restricted | +1.7 |
+  | koth | king danger | -137.0 |
+  | koth | shelter | +20.0 |
+
+### Horde why chain (2026-10-16)
+
+- Horde is -51 because FSF's pawn term carries 230 there, and of it the
+  rank scale of the connected bonus carries the most (-235 flat).
+- Our connected bonus is one flat part of the pawn value on any rank
+  (plan 21 R4 kept iteration 3's values). That is a gap in all pawn
+  variants, but not the root in horde: there `derive_pawn_slots` finds
+  no pawn type, so horde has had no pawn structure at all.
+- Root: since 783db0b the horde pawn's double step is a move with a
+  condition (only from the first two ranks), not a first move (`i`).
+  Patterns compile for each square, so the condition always holds on
+  those ranks, the vector is usual, and the short range test rejects
+  the pawn. The test meant to allow a longer first move; a pawn never
+  steps back, so a long move from a start square is a first move too.
+- HP (`plan29-hp` cce3d91): the short range test skips start squares.
+  Derive logs of all variants against build 28: only horde changes.
+- PR (`plan29-pr` 4d55dec, on HP): the connected value is per square,
+  the flat part plus 125% (opening) and 80% (endgame) of the pawn value
+  times the squared progress of `derive_pawn_advancement`, as for the
+  passed pawn. One step from promotion on eight ranks a defended pawn
+  gains about one pawn; FSF's `Connected` is 0 to 87 by rank, times 2
+  to 3. Horde start: build 28 -1205, HP -1167, PR -583 (FSF -154).
+
+- Queue214, three rounds of 200, interleaved: horde against FSF 2000,
+  the test set against full FSF at the queue202 budgets (rounds, then
+  the pooled Elo):
+
+  | Variant | Build 28 | HP | PR |
+  | - | - | - | - |
+  | horde | -59.6, -70.4, -45.4 (-58.5) | -29.6, -22.6, -36.6 (-29.6) | -17.4, +5.2, +17.4 (+1.7) |
+  | standard | -5.2, -24.4, -43.7 (-24.4) | | -86.9, -81.4, -74.1 (-80.8) |
+  | xiangqi | -56.1, +3.5, -43.7 (-31.9) | | -50.7, -100.0, -36.6 (-62.0) |
+  | crazyhouse | -17.4, +20.9, 0.0 (+1.2) | | -19.1, -34.9, -79.5 (-44.2) |
+  | capablanca | -34.9, -3.5, +24.4 (-4.6) | | +24.4, -3.5, -15.6 (+1.7) |
+
+- HP: +29 in horde and no other variant changes. To merge.
+- PR: +31 more in horde, but -56 standard, -30 xiangqi, -45 crazyhouse.
+  Why: our passed pawn value already grows with connection (times 1.5
+  and 2), where FSF's passed term does not; PR adds the progress part
+  on top, so a connected passer counts its progress twice, and M3 found
+  our passed term already too high. PR2 (`plan29-pr2` be6580e, on PR):
+  the connected value only for a pawn that is not passed. Queue217.
+
+### Koth why chain (2026-10-16)
+
+- 233 of our 328 koth losses (q211) end with FSF's king on the goal. At
+  the tip (our first move where FSF at 300 ms sees -300 or worse; median
+  ply 16) our own score has median -41, and 168 of 328 are -50 or
+  better: the loss is decided early and we do not see it.
+- At the tips our king has left its first rank in 230 of 328, FSF's in
+  93. FSF's classical trace there (side to move = us): king safety
+  -1.10, mobility -0.51, variant +0.61. Our king walks out and is hunted.
+- One king step costs FSF more than ours: after 1. e4 e5, Ke2, Ke3 and
+  Kd3 our static (side to move) is -22, -106 and +91 in koth (standard
+  -170, -551, -354); FSF classical -1.92, -6.62, -5.31 pawns, its goal
+  term +0.92, +1.67, +1.85 against king safety -1.35, -6.79, -5.33.
+- The derived king safety of koth and standard is the same, so the koth
+  lift is the goal race: 1186 halved for each step (148, 296, 593, 1186
+  for 4 to 1 steps), where FSF's term goes 287, 379, 406, 423 over the
+  same walk. At the 328 tips our race (koth minus standard static) has
+  mean +189, FSF's goal term +47; correlation 0.81, slope 0.97,
+  intercept +143.
+- The lab: king danger carries 137 of FSF's king term in koth; shelter
+  none.
+- Which part of FSF's race we lack: a Python copy of its flood (the
+  king's moves, holds from the attack counts) gives FSF's own term at
+  the 303 tips not in check (correlation 0.994, fit 0.99 x + 4). With
+  one rule changed at a time, the fit's intercept:
+
+  | FSF's flood with | Intercept | Correlation |
+  | - | - | - |
+  | all its rules | +4 | 0.994 |
+  | the second hold (attacked twice, or by a pawn) as one | +106 | 0.890 |
+  | an own pawn blocked by an enemy pawn passable | +25 | 0.978 |
+  | own pieces hold too | +30 | 0.963 |
+  | only the shortest paths of an empty board | +9 | 0.929 (slope 0.73) |
+
+- Root: our race holds a piece back only when a whole step is blocked,
+  never two moves, so an attacked center looks near. With holds for
+  each square, a race on the shortest paths alone keeps a +42 bias
+  and correlation 0.85; on all the moves with simple holds (one move
+  for a square the enemy attacks, two for twice or a pawn, two for an
+  own pawn, never for an own pawn an enemy pawn blocks) it is -1 and
+  0.957.
+- GH (`plan29-gh` 7c85877): `Goal.landings` (each goal piece's moves on
+  an empty board) replaces `steps` and `closer`; `goal_race!` floods
+  them with those holds, read from the attack maps of `attack_terms!`
+  (it moves there, and the lazy margin adds the race's `value` so a
+  skipped race could not change the result), and sums `value * w /
+  (w + d^2)` over the zone squares; `GOAL_RATIO` 1540 (FSF's 4000 over
+  its queen). At the tips our race against FSF's term: 0.84 x + 0,
+  correlation 0.92 (build 28: 0.97 x + 143, 0.81). After 1. e4 e5 the
+  king walk Ke2, Ke3, Kd3 reads -53, -363, -157 (build 28: -22, -106,
+  +91). Koth search: 534k to 564k nodes per second against 809k to 920k;
+  bench nodes of standard, xiangqi, shogi and crazyhouse the same, and
+  only koth's derive log changes (the lazy margin).
+- Queue215, koth against FSF 2000, three rounds of 200, interleaved:
+  build 28 92-103-5, 82-116-2, 87-113-0 (-41.3); GH 107-90-3, 95-105-0,
+  98-102-0 (+1.7). GH is +43 at 60% of the speed. To merge.
+
+### Extinction why chain (2026-10-16)
+
+- The 321 extinction losses of q211 tip at a median ply 30, where we
+  read -50 or better in 144. FSF's classical trace there (side to move
+  = us): threats -1.16, material +0.58, variant -0.38: we take material
+  and leave set pieces attacked.
+- The lab carries FSF's threats in extinction (-277) in none of its
+  parts alone (hanging -0.9, safe pawn -7.8, by piece +1.7, restricted
+  +1.7): it is the extinction block, `1000 / copies^2` for each
+  attacked copy of a set type, which no switch covers.
+- At the tips, attacked copies of ours: pawns (3 or more left) 686,
+  knights (2) 127, bishops (2) 82, rooks (2) 38, queen (1) 29, king (1)
+  21, knight (1) 18, bishop (1) 13.
+- A Python copy of FSF's block against its trace: correlation 0.970,
+  fit 0.91 x - 6. Ours (EX): correlation 0.968, fit 0.56 x - 4; with no
+  copy limit the same. Our shape is FSF's, at 0.6 of its scale.
+- Root: EX's 25% of the dearest piece is a prior of its own; FSF's part
+  is 1000 over its queen (2538 opening, 2682 endgame), 38.3%.
+- EXR (`plan29-exr` bd4e7f0): `EXTINCT_THREAT_RATIO` 383. It changes
+  extinction, kinglet, horde and chushogi (the losing extinct rules).
+- Queue216 against FSF 2000, interleaved: extinction build 28 84-112-4,
+  90-109-1, 96-104-0 (-31.9), EXR 85-112-3, 74-123-3, 81-116-3 (-65.0);
+  kinglet build 28 +137.0, +155.5 (+146.2), EXR +172.8, +157.7
+  (+165.1). EXR is -33 in its target. Not merged.
+- Why: the scale was not the root. FSF's static at the tips is about
+  -1.0 and its search -3: the losses are tactics (forks of two-copy
+  minors), and a larger static cost made us weaker, as PX taught. Open:
+  how the search treats threats on set pieces (extinction lost
+  `see_valid` and forward pruning in plan 17).
+
+### Merged build 29 (2026-10-16)
+
+- Build 28 with HP and GH (`plan27-main29`). Derive logs against build
+  28: only horde (its pawn types) and koth (the lazy margin) change;
+  seeded bench nodes of standard, xiangqi, shogi, crazyhouse and grand
+  the same.
+- Horde -58.5 to -29.6 (HP), koth -41.3 to +1.7 (GH), against FSF 2000.
+- Queue217 plays PR2 (on HP) in horde against HP and in the test set
+  against build 28.
