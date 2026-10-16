@@ -681,7 +681,8 @@ macro_rules! castling_bonus {
 /// - passed           : no enemy pawn can block or capture on its path
 /// - protected passed : a passed pawn with a pawn defender, 1.5 times
 /// - connected passed : a passed pawn with a passed defender, 2 times
-/// - connected        : another own pawn defends it, more near promotion
+/// - connected        : another own pawn defends it, more near promotion;
+///                      not for a passed pawn, its 1.5 and 2 times hold it
 /// - doubled          : an own pawn is on its path
 /// - isolated         : no own pawn on a file that can defend it
 /// - backward         : a neighbour but no defender, stop square attacked
@@ -877,11 +878,12 @@ macro_rules! pawn_structure {
                                     * passed as i32;
                             let bonus =
                                 2 + connected as i32 + chained as i32;
+                            let joined = (connected && !passed) as i32;
 
                             opening += sign * (
                                 passer_opening * bonus / 2
                                     + statics.eval.pawn_connected_opening[index]
-                                        * connected as i32
+                                        * joined
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
                                     - statics.eval.pawn_isolated_penalty[slot]
@@ -892,7 +894,7 @@ macro_rules! pawn_structure {
                             endgame += sign * (
                                 passer_endgame * bonus / 2
                                     + statics.eval.pawn_connected_endgame[index]
-                                        * connected as i32
+                                        * joined
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
                                     - statics.eval.pawn_isolated_penalty[slot]
