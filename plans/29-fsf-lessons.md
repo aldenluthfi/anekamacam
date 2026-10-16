@@ -3853,3 +3853,41 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
 - Against FSF 2000 on builds 29 and 30: horde about -2 (build 28
   -58.5), koth +1.7 (-41.3). Open below 2000: extinction (-32, the
   search of threats on set pieces), crazyhouse near.
+- Queue219, build 30 against FSF 2000, three rounds of 200: horde +1.7,
+  -3.5, -12.2 (-4.6); koth +13.9, -8.7, -10.4 (-1.7); crazyhouse -52.5,
+  -94.3, -74.1 (-73.5, build 28 -5.8 in q211); extinction -77.7, -66.8,
+  -49.0 (-64.4, build 28 -31.9 in q216). Horde and koth hold. Crazyhouse
+  and extinction fell; PR2 is the only change of build 30 there, and it
+  was not played in extinction. Queue220 plays build 29 against build 30
+  in both.
+- Queue220 against FSF 2000, interleaved: crazyhouse build 29 -24.4,
+  -20.9, -63.2 (-36.0), build 30 -57.9, -86.9, -63.2 (-69.2), -33;
+  extinction build 29 -33.1, -6.9, -40.1 (-26.7), build 30 -29.6,
+  -43.7, -68.6 (-47.2), -20. PR2 is the drop.
+- Why PR2 gains only in horde: over its games it is +41 horde, -2
+  standard, +1 xiangqi, -33 crazyhouse, -20 extinction, -15 capablanca.
+  Our pawn piece-square tables already carry the same squared progress
+  (`derive_pawn_advancement` is their gradient), where FSF's pawn tables
+  are near flat over the ranks; so a progress part counts the advance a
+  second time, and in the drop and extinction variants pawns run from
+  the royal. In horde FSF itself scores a pawn mass apart: when a side
+  has more pawns than a quarter of the board, `HordeConnected` (the lab
+  puts that switch at 180).
+- PM (`plan29-pm` 73d90a9, on build 30 with PR and PR2 taken back to
+  build 29's pawn code): the progress part (`PAWN_MASS_ADVANCE_RATIO`,
+  125% and 80%) only for a defended pawn that is not passed, in a colour
+  with more pawns than `board / PAWN_MASS_DIVISOR` (4), derived as
+  `pawn_mass`. Against build 29: derive logs the same in every variant,
+  seeded bench nodes the same in standard, xiangqi, crazyhouse,
+  capablanca and shogi; horde start -527 (build 29 -1167). Queue221
+  plays PM against build 30 in horde.
+- Queue221, horde against FSF 2000, interleaved: build 30 -3.5, +17.4,
+  -19.1 (-1.7); PM +20.9, +6.9, -3.5 (+8.1). PM keeps the horde gain.
+  To merge.
+
+### Merged build 31 (2026-10-16)
+
+- Build 30 with PM (`plan27-main31`): build 29 in every variant but
+  horde, node for node, and the pawn mass part in horde.
+- Against FSF 2000: horde +8.1 (build 28 -58.5), koth -1.7 to +1.7
+  (-41.3); crazyhouse (-36.0) and extinction (-26.7) as build 29.
