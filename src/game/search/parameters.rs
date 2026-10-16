@@ -1901,7 +1901,8 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - exchange simulation : multi own destroy, misere, extinction
 /// - pruning on it       : counting
 /// - forward pruning     : misere, extinction
-/// - null pruning        : misere, counting, pass, stand-off, setup, capturer
+/// - null pruning        : misere, counting, pass, stand-off, setup,
+///                         capturer, extinction
 /// - recapture ordering  : none
 /// - quiet pruning       : misere
 /// - static movement     : a screened leg or a CPMN condition on a capture
@@ -1911,6 +1912,10 @@ pub fn derive_search_parameters(state: &mut State) {
 /// the first two ranks, does not change an exchange. Counting it too took
 /// the losing-capture stop from horde's quiescence: a depth-8 search ran
 /// 4 s on some openings.
+///
+/// Under an extinction rule a lost copy can end the game, so a free move
+/// for the enemy proves little about the position: Fairy-Stockfish plays
+/// stronger there without its null move (plan 29, queue229).
 ///
 /// A pass is a vector that ends on its start square without a capture. A
 /// capturer is a piece that has capture vectors only. The movement facts
@@ -2026,7 +2031,7 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_forward_pruning!(capabilities);
     }
 
-    if !misere && !counts_material
+    if !misere && !counts_material && !counts_pieces
     && !may_pass && !vetoes_moves && !places_army && !capture_only
     {
         enc_null_pruning!(capabilities);
