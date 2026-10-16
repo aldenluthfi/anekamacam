@@ -403,7 +403,10 @@ const PAIR_REACH_SLACK: f64 = 0.02;
 /// back. The margin is 10% of the most valuable piece, near four times the
 /// mean threat value in standard (`THREAT_LAZY_RATIO`). The goal race goes
 /// with the threats, so with a goal rule the margin adds its `value`, as
-/// much as the race can be worth.
+/// much as the race can be worth. The king danger goes with them too, so
+/// where a royal can be mated the margin adds the cost of a full weak
+/// ring at the derived weights, four times as much where captures fill
+/// the hand and a weak square counts twice.
 ///
 const HANGING_RATIO: [u32; 2] = [27, 13];
 const PAWN_THREAT_RATIO: [u32; 2] = [68, 35];
@@ -3601,6 +3604,11 @@ pub fn derive_advantage_parameters(state: &mut State) {
             ])
             .collect()
     });
+
+    let full_ring = danger_weak * (state.statics.eval.local_stride as u64 + 1);
+    let ring_cost = full_ring.min(DANGER_CAP as u64) * full_ring
+        * danger_cost[0] as u64 / (scale * scale);
+    let threat_margin = threat_margin + ring_cost;
 
     let bound: Vec<usize> = state.statics.pieces.iter()
         .filter(|piece| p_color!(piece) == WHITE)
