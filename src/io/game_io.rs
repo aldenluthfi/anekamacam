@@ -1771,7 +1771,7 @@ pub fn parse_config_file(path: &str) -> State {
 
                     termination.goal = Some(Goal {
                         set, zone, outcome, name,
-                        steps: Vec::new(), closer: Vec::new(), value: 0,
+                        landings: Vec::new(), value: 0,
                     });
                 }
                 "perpetual" => {

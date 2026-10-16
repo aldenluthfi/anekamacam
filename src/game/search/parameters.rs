@@ -291,14 +291,16 @@ const CHECK_RATIO: u32 = 1000;
 
 /// Goal race
 ///
-/// The worth of a goal piece near its goal zone, in a variant with a
-/// `goal` rule. Over `COEFFICIENT_SCALE` of the most valuable piece, for
-/// the goal piece of a colour that is nearest to the zone:
+/// The worth of the goal pieces near their goal zone, in a variant with a
+/// `goal` rule, over `COEFFICIENT_SCALE` of the most valuable piece. One
+/// zone square one move away is worth half of it, 77% of the most valuable
+/// piece, and `goal_race!` divides it by the moves squared:
 ///
-/// - one step from the zone : 100%, it arrives next move if not stopped
-/// - each step more         : half of the step before
+/// - 1 square, 1 move   : 77%, it arrives next move if not stopped
+/// - 1 square, 2 moves  : 31%
+/// - 2 squares, 3 moves : 28%
 ///
-const GOAL_RATIO: u32 = 1000;
+const GOAL_RATIO: u32 = 1540;
 
 /// Extinction threat
 ///
@@ -399,7 +401,9 @@ const PAIR_REACH_SLACK: f64 = 0.02;
 /// The quiescence search skips the threats when the score without them is
 /// beyond its window by more than a margin, as they would not bring it
 /// back. The margin is 10% of the most valuable piece, near four times the
-/// mean threat value in standard (`THREAT_LAZY_RATIO`).
+/// mean threat value in standard (`THREAT_LAZY_RATIO`). The goal race goes
+/// with the threats, so with a goal rule the margin adds its `value`, as
+/// much as the race can be worth.
 ///
 const HANGING_RATIO: [u32; 2] = [27, 13];
 const PAWN_THREAT_RATIO: [u32; 2] = [68, 35];
@@ -2823,17 +2827,15 @@ pub fn derive_danger_parameters(state: &mut State) {
 
 /// derive_goal_race
 ///
-/// Sets the goal race of the goal rule. For each goal piece, the moves on
-/// an empty board give a graph of squares, and a walk back from the zone
-/// gives each square its count of moves to the zone:
+/// Sets the goal race of the goal rule:
 ///
-/// - steps  : moves to the nearest zone square, `u8::MAX` if out of reach
-/// - closer : the squares one move away with one step less
-/// - value  : the worth of a goal piece one move from the zone
+/// - landings : for each goal piece and square, the squares of its moves
+///              on an empty board
+/// - value    : the worth of one zone square one move away, doubled
 ///
 /// A vector that needs a screen or only captures cannot move on an empty
-/// board, so it is not in the graph. A variant without a goal rule does
-/// not change.
+/// board, so it is not a landing. A variant without a goal rule does not
+/// change.
 ///
 /// Params:
 /// - state  : &mut State -> variant with the goal rule
@@ -2849,11 +2851,8 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
         return;
     };
 
-    let zone = goal.zone.clone();
     let set = goal.set.clone();
-
-    let mut steps = vec![u8::MAX; piece_count * board_size];
-    let mut closer = vec![Vec::new(); piece_count * board_size];
+    let mut landings = vec![Vec::new(); piece_count * board_size];
 
     for (piece_index, piece) in state.statics.pieces.iter().enumerate() {
         if !set[piece_index] {
@@ -2863,8 +2862,9 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
         let sign = -2 * p_color!(piece) as i32 + 1;
         let row = piece_index * board_size;
 
-        let landings: Vec<Vec<usize>> = (0..board_size).map(|from| {
-            state.statics.relevant_moves[row + from].iter()
+        for from in 0..board_size {
+            landings[row + from] = state.statics.relevant_moves[row + from]
+                .iter()
                 .filter_map(|vector| {
                     derive_vector_chance(state, vector, 0.0)
                         .filter(|(chance, _, _)| *chance > 0.0)
@@ -2874,40 +2874,9 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
                     let rank = from as i32 / files + rank_delta * sign;
 
                     (file >= 0 && file < files && rank >= 0 && rank < ranks)
-                        .then_some((rank * files + file) as usize)
+                        .then_some((rank * files + file) as Square)
                 })
-                .collect()
-        }).collect();
-
-        for square in 0..board_size {
-            if get!(zone, square as u32) {
-                steps[row + square] = 0;
-            }
-        }
-
-        for step in 1..u8::MAX {
-            let mut reached = false;
-
-            for from in 0..board_size {
-                if steps[row + from] != u8::MAX {
-                    continue;
-                }
-
-                let next: Vec<Square> = landings[from].iter()
-                    .filter(|&&to| steps[row + to] == step - 1)
-                    .map(|&to| to as Square)
-                    .collect();
-
-                if !next.is_empty() {
-                    steps[row + from] = step;
-                    closer[row + from] = next;
-                    reached = true;
-                }
-            }
-
-            if !reached {
-                break;
-            }
+                .collect();
         }
     }
 
@@ -2915,8 +2884,7 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
         return;
     };
 
-    goal.steps = steps;
-    goal.closer = closer;
+    goal.landings = landings;
     goal.value =
         (dearest * GOAL_RATIO as u64 / COEFFICIENT_SCALE as u64) as i32;
 }
@@ -3562,7 +3530,9 @@ pub fn derive_advantage_parameters(state: &mut State) {
     let pawn_threat = threat(PAWN_THREAT_RATIO);
     let restricted = threat(RESTRICTED_RATIO);
     let threat_margin = dearest * THREAT_LAZY_RATIO as u64
-        / COEFFICIENT_SCALE as u64;
+        / COEFFICIENT_SCALE as u64
+        + state.termination.goal.as_ref()
+            .map_or(0, |goal| goal.value as u64);
     let doubled = captures_fill_hand(state)
         || state.termination.checks.is_some();
     let mobility = MOBILITY_RATIO.map(|part| {
