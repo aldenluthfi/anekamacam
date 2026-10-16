@@ -4007,3 +4007,25 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
 - Crazyhouse is above FSF 2000 (+21.5 over six rounds). Open below 2000:
   extinction (near -55). Queue229 measures FSF's search parts in
   extinction.
+- Queue229, the lab in extinction, each search part off against base,
+  400 games: LMR 72-295-33 (-218.6), continuation history 79-299-22
+  (-214.8), singular 153-206-41 (-46.3), ProbCut -18.3, main history
+  -11.3, parent futility +12.2, quiet SEE +13.9, null move 204-162-34
+  (+36.6). LMR and continuation history carry FSF here as in chess
+  (157 to 338 and 166 to 293): the general gap of our tree (H3 merged,
+  H4 and H2 parked), not an extinction one. The one sign for
+  extinction: FSF is stronger there without its null move (1.2 sigma).
+- NX (`plan29-nx` e50e141, on build 32): no null move under a losing
+  extinct rule (extinction, kinglet, horde, chushogi change their
+  capability bit). Queue230 rebuilds the server's main to build 32, then
+  plays NX against it at FSF 2000: extinction six rounds, kinglet and
+  horde two.
+- Queue230, at FSF 2000, interleaved: extinction build 32 -43.4 ± 10.0,
+  NX -43.4 ± 10.1 (0.0); horde +16.5, +17.4; kinglet +170.6, +124.0
+  (-46.6, -1.7 sigma). Not merged.
+- Extinction leads closed: the pruning gate, the threat scale, the null
+  move. What FSF's search has there and ours lacks is what it has in
+  every variant (LMR 219, continuation history 215): the general gap of
+  our tree, the lead for all variants, not an extinction one.
+- Queue231: build 32 against FSF 2000 in every variant FSF knows, the
+  test set, grand and shogi 600 games each, the rest 200.
