@@ -756,8 +756,9 @@ macro_rules! castling_bonus {
 /// - passed           : no enemy pawn can block or capture on its path
 /// - protected passed : a passed pawn with a pawn defender, 1.5 times
 /// - connected passed : a passed pawn with a passed defender, 2 times
-/// - connected        : another own pawn defends it, more near promotion;
-///                      not for a passed pawn, its 1.5 and 2 times hold it
+/// - connected        : another own pawn defends it
+/// - pushed           : connected, not passed, in a colour with more pawns
+///                      than `pawn_mass`: its progress part too
 /// - doubled          : an own pawn is on its path
 /// - isolated         : no own pawn on a file that can defend it
 /// - backward         : a neighbour but no defender, stop square attacked
@@ -912,6 +913,8 @@ macro_rules! pawn_structure {
 
                     for color in [WHITE as usize, BLACK as usize] {
                         let sign = -2 * color as i32 + 1;
+                        let mass =
+                            pawns[color].len() > statics.eval.pawn_mass;
 
                         for entry in 0..pawns[color].len() {
                             let (slot, square, file, passed) =
@@ -953,12 +956,14 @@ macro_rules! pawn_structure {
                                     * passed as i32;
                             let bonus =
                                 2 + connected as i32 + chained as i32;
-                            let joined = (connected && !passed) as i32;
+                            let pushed = (mass && connected && !passed) as i32;
 
                             opening += sign * (
                                 passer_opening * bonus / 2
-                                    + statics.eval.pawn_connected_opening[index]
-                                        * joined
+                                    + statics.eval.pawn_connected_opening[slot]
+                                        * connected as i32
+                                    + statics.eval.pawn_mass_opening[index]
+                                        * pushed
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
                                     - statics.eval.pawn_isolated_penalty[slot]
@@ -968,8 +973,10 @@ macro_rules! pawn_structure {
                             );
                             endgame += sign * (
                                 passer_endgame * bonus / 2
-                                    + statics.eval.pawn_connected_endgame[index]
-                                        * joined
+                                    + statics.eval.pawn_connected_endgame[slot]
+                                        * connected as i32
+                                    + statics.eval.pawn_mass_endgame[index]
+                                        * pushed
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
                                     - statics.eval.pawn_isolated_penalty[slot]
@@ -1357,7 +1364,8 @@ macro_rules! attack_terms {
 
                 hit(once) as i32 * (1 + (hit(twice) || hit(pawn_hits)) as i32)
             };
-            let goal = goal_race!($state, 0, hold) - goal_race!($state, 1, hold);
+            let goal =
+                goal_race!($state, 0, hold) - goal_race!($state, 1, hold);
 
             let value = |phase: usize| {
                 (counts[0][0] - counts[1][0]) * eval.hanging_value[phase]

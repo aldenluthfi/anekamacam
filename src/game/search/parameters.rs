@@ -489,20 +489,23 @@ const PAWN_MIN_START_COUNT: usize = 5;
 ///
 /// - `PAWN_CONNECTED_OPENING_RATIO` : +20% of the opening pawn value
 /// - `PAWN_CONNECTED_ENDGAME_RATIO` : +35% of the endgame pawn value
-/// - `PAWN_CONNECTED_ADVANCE_RATIO` : +125% and +80% of the pawn value in
+/// - `PAWN_MASS_ADVANCE_RATIO`      : +125% and +80% of the pawn value in
 ///                                    each phase, times the progress
 /// - `PAWN_DOUBLED_RATIO`           : -25%, the same in the two phases
 /// - `PAWN_ISOLATED_RATIO`          : -25%, the same in the two phases
 /// - `PAWN_BACKWARD_RATIO`          : -17.5%, the same in the two phases
 ///
-/// A defended pawn near promotion is a threat to promote that a capture
-/// cannot end, so the progress part grows its value from the same squared
-/// progress as the passed pawn. One step from promotion on eight ranks, a
-/// defended pawn is worth about one more pawn.
+/// A colour with more pawns than `1 / PAWN_MASS_DIVISOR` of the board has
+/// a pawn mass: it wins by pushing its defended pawns, so each one that is
+/// not passed gains the progress part, from the same squared progress as
+/// the passed pawn. One step from promotion on eight ranks, it is about
+/// one pawn more. Elsewhere the piece-square tables already pay for the
+/// progress, and a second part made the pawns run (plan 29 PR, PR2).
 ///
 const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
 const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
-const PAWN_CONNECTED_ADVANCE_RATIO: [u32; 2] = [1250, 800];
+const PAWN_MASS_ADVANCE_RATIO: [u32; 2] = [1250, 800];
+const PAWN_MASS_DIVISOR: usize = 4;
 const PAWN_DOUBLED_RATIO: u32 = 250;
 const PAWN_ISOLATED_RATIO: u32 = 250;
 const PAWN_BACKWARD_RATIO: u32 = 175;
@@ -593,8 +596,11 @@ pub struct EvalParams {
     pub pawn_support_files: Vec<Vec<i32>>,                                      /* slot to supporting file offsets    */
     pub pawn_passed_opening: Vec<i32>,                                          /* slot, square to passer worth,      */
     pub pawn_passed_endgame: Vec<i32>,                                          /* opening then ending                */
-    pub pawn_connected_opening: Vec<i32>,                                       /* slot, square to defended worth,    */
+    pub pawn_connected_opening: Vec<i32>,                                       /* slot to worth of being defended,   */
     pub pawn_connected_endgame: Vec<i32>,                                       /* opening then ending                */
+    pub pawn_mass_opening: Vec<i32>,                                            /* slot, square to progress worth in  */
+    pub pawn_mass_endgame: Vec<i32>,                                            /* a mass, opening then ending        */
+    pub pawn_mass: usize,                                                       /* pawns of a colour that make a mass */
     pub pawn_doubled_penalty: Vec<i32>,                                         /* slot to cost of blocking itself    */
     pub pawn_isolated_penalty: Vec<i32>,                                        /* slot to cost of standing alone     */
     pub pawn_backward_penalty: Vec<i32>,                                        /* slot to cost of a contested stop   */
@@ -3352,8 +3358,8 @@ fn derive_pawn_advancement(
 /// the pawn slot, not the piece index, so they stay small. The values are:
 ///
 /// - passed    : promotion gain, times the ratio, times the progress
-/// - connected : part of the pawn value, separate for each phase, plus a
-///               part times the progress
+/// - connected : part of the pawn value, separate for each phase
+/// - mass      : pawn value, times the ratio, times the progress
 /// - doubled   : part of the opening pawn value, the same in both phases
 /// - isolated  : the same part, from the support files
 /// - backward  : the same part, from the attacked stop
@@ -3385,12 +3391,8 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut support_files = vec![Vec::new(); pieces.len()];
     let mut passed_opening = vec![0i32; pieces.len() * stride];
     let mut passed_endgame = vec![0i32; pieces.len() * stride];
-    let mut connected_opening = vec![0i32; pieces.len() * stride];
-    let mut connected_endgame = vec![0i32; pieces.len() * stride];
-
-    let share = |value: i32, ratio: u32| -> i32 {
-        (value as i64 * ratio as i64 / COEFFICIENT_SCALE as i64) as i32
-    };
+    let mut mass_opening = vec![0i32; pieces.len() * stride];
+    let mut mass_endgame = vec![0i32; pieces.len() * stride];
 
     for (slot, index) in pieces.iter().copied().enumerate() {
         let piece = &state.statics.pieces[index];
@@ -3442,24 +3444,30 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
             passed_opening[entry] = grown(opening_gain, opening_ratio);
             passed_endgame[entry] = grown(endgame_gain, endgame_ratio);
-            connected_opening[entry] =
-                share(opening_value, PAWN_CONNECTED_OPENING_RATIO)
-                    + grown(opening_value, PAWN_CONNECTED_ADVANCE_RATIO[0]);
-            connected_endgame[entry] =
-                share(endgame_value, PAWN_CONNECTED_ENDGAME_RATIO)
-                    + grown(endgame_value, PAWN_CONNECTED_ADVANCE_RATIO[1]);
+            mass_opening[entry] =
+                grown(opening_value, PAWN_MASS_ADVANCE_RATIO[0]);
+            mass_endgame[entry] =
+                grown(endgame_value, PAWN_MASS_ADVANCE_RATIO[1]);
         }
     }
+
+    let share = |value: i32, ratio: u32| -> i32 {
+        (value as i64 * ratio as i64 / COEFFICIENT_SCALE as i64) as i32
+    };
 
     let opening_values: Vec<i32> = pieces.iter()
         .map(|index| p_ovalue!(&state.statics.pieces[*index]) as i32)
         .collect();
-    let top = |values: &Vec<i32>| -> Vec<i32> {
-        values.chunks(stride.max(1))
-            .map(|row| row.iter().copied().max().unwrap_or(0))
-            .collect()
-    };
+    let endgame_values: Vec<i32> = pieces.iter()
+        .map(|index| p_evalue!(&state.statics.pieces[*index]) as i32)
+        .collect();
 
+    let connected_opening: Vec<i32> = opening_values.iter()
+        .map(|value| share(*value, PAWN_CONNECTED_OPENING_RATIO))
+        .collect();
+    let connected_endgame: Vec<i32> = endgame_values.iter()
+        .map(|value| share(*value, PAWN_CONNECTED_ENDGAME_RATIO))
+        .collect();
     let doubled: Vec<i32> = opening_values.iter()
         .map(|value| share(*value, PAWN_DOUBLED_RATIO))
         .collect();
@@ -3472,15 +3480,15 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
     log_3!(
         concat!(
-            "Derived {} pawn types {:?}, connected up to {:?} then {:?}, ",
+            "Derived {} pawn types {:?}, connected {:?} then {:?}, ",
             "doubled {:?}, isolated {:?}, backward {:?}"
         ),
         pieces.len(),
         pieces.iter()
             .map(|index| state.statics.pieces[*index].char)
             .collect::<Vec<char>>(),
-        top(&connected_opening),
-        top(&connected_endgame),
+        connected_opening,
+        connected_endgame,
         doubled,
         isolated,
         backward_penalty
@@ -3497,6 +3505,9 @@ pub fn derive_pawn_parameters(state: &mut State) {
     statics.eval.pawn_passed_endgame = passed_endgame;
     statics.eval.pawn_connected_opening = connected_opening;
     statics.eval.pawn_connected_endgame = connected_endgame;
+    statics.eval.pawn_mass_opening = mass_opening;
+    statics.eval.pawn_mass_endgame = mass_endgame;
+    statics.eval.pawn_mass = board_size / PAWN_MASS_DIVISOR;
     statics.eval.pawn_doubled_penalty = doubled;
     statics.eval.pawn_isolated_penalty = isolated;
     statics.eval.pawn_backward_penalty = backward_penalty;
