@@ -681,7 +681,7 @@ macro_rules! castling_bonus {
 /// - passed           : no enemy pawn can block or capture on its path
 /// - protected passed : a passed pawn with a pawn defender, 1.5 times
 /// - connected passed : a passed pawn with a passed defender, 2 times
-/// - connected        : another own pawn defends it
+/// - connected        : another own pawn defends it, more near promotion
 /// - doubled          : an own pawn is on its path
 /// - isolated         : no own pawn on a file that can defend it
 /// - backward         : a neighbour but no defender, stop square attacked
@@ -880,7 +880,7 @@ macro_rules! pawn_structure {
 
                             opening += sign * (
                                 passer_opening * bonus / 2
-                                    + statics.eval.pawn_connected_opening[slot]
+                                    + statics.eval.pawn_connected_opening[index]
                                         * connected as i32
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
@@ -891,7 +891,7 @@ macro_rules! pawn_structure {
                             );
                             endgame += sign * (
                                 passer_endgame * bonus / 2
-                                    + statics.eval.pawn_connected_endgame[slot]
+                                    + statics.eval.pawn_connected_endgame[index]
                                         * connected as i32
                                     - statics.eval.pawn_doubled_penalty[slot]
                                         * doubled as i32
