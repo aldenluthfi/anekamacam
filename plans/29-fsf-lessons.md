@@ -3639,3 +3639,41 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
   moves. Pocketknight is now above 2000 by about 200.
 - Open: horde (-74), koth (-74), extinction (-49), crazyhouse (-40) on
   build 27; the last near one interval.
+- Queue211, build 28 against FSF 2000, three rounds of 200: horde -38.4,
+  -52.5, -63.2 (mean -51.4, ± 15: horde games pair by colour); koth
+  -38.4, -6.9, -65.0 (-36.8); extinction -3.5, -41.9, -34.9 (-26.8);
+  crazyhouse +17.4, -6.9, -27.9 (-5.8). Crazyhouse is near 2000 now.
+- Horde by colour (600 games): we win 250 of 300 as the horde (White),
+  6 of 300 with the pieces; FSF wins 294 of 300 as the horde. The horde
+  side wins nearly all games either way; we convert less as the horde
+  and hold less with the pieces.
+- Start position, our static -1205 (White's view); FSF classical -154:
+  material -22.25, imbalance +6.82, space +13.99 (its weight is the
+  square of the piece count, so 36 pawns make it large), pawns +1.15,
+  mobility +1.36, variant -3.77. We have no space term, and our
+  imbalance reads only major and minor surpluses. Queue212 measures in
+  the lab what each FSF term is worth in horde (space, imbalance,
+  variant, pawns, mobility), koth (variant, king, mobility) and
+  extinction (variant, threats, imbalance), 400 games each.
+- Queue212, the term off against FSF classical, 400 games each:
+
+  | Variant | Term off | Elo |
+  | - | - | - |
+  | horde | pawns | -230.2 |
+  | horde | variant | -90.6 |
+  | horde | imbalance | -34.9 |
+  | horde | space | +20.0 |
+  | horde | mobility | +79.5 |
+  | koth | variant | -466.8 |
+  | koth | king | -187.4 |
+  | koth | mobility | -108.5 |
+  | extinction | threats | -277.0 |
+  | extinction | imbalance | -27.0 |
+  | extinction | variant | -10.4 |
+
+- Space is not what carries horde (off is +20), so the start score gap
+  is not the cause. In horde the pawn term carries: when a side has more
+  pawns than a quarter of the board, FSF scores each connected pawn by
+  its count of supporters and phalanx neighbours times a rank table
+  (`HordeConnected`). Koth is carried by the goal flood fill (variant)
+  and king safety, extinction by threats.
