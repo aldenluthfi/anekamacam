@@ -260,12 +260,12 @@ const DANGER_CAP_RATIO: u32 = 1000;
 /// Royal proximity
 ///
 /// The cost of each enemy piece within two files and two ranks of a royal,
-/// in a variant with drops. A piece in hand can join such a piece at once,
-/// so a few attackers near the royal make a mate. Over `COEFFICIENT_SCALE`
-/// of the most valuable piece:
+/// in a variant where the captures fill the hand. A piece in hand can join
+/// such a piece at once, so a few attackers near the royal make a mate.
+/// Over `COEFFICIENT_SCALE` of the most valuable piece:
 ///
-/// - with drops    : 10% for each enemy piece near a royal
-/// - without drops : nothing
+/// - captures fill the hand : 10% for each enemy piece near a royal
+/// - otherwise              : nothing
 ///
 const PROXIMITY_RATIO: u32 = 100;
 
@@ -2133,6 +2133,22 @@ fn drops_are_free(state: &State) -> bool {
             })
 }
 
+/// captures_fill_hand
+///
+/// Tells if a capture puts a piece in the hand that can come back by a
+/// drop. A hand that only starts full, as one knight to place, does not
+/// grow with the captures, so the weights for a growing hand stay off.
+///
+/// Params:
+/// - state: &State -> variant with the hand rule of each piece
+///
+/// Return:
+/// bool            -> true when the captures fill the hand
+///
+fn captures_fill_hand(state: &State) -> bool {
+    drops!(state) && state.statics.captured_to_hand.iter().any(|&fills| fills)
+}
+
 /// derive_material_values
 ///
 /// Derives the opening and endgame material from the moves only, one value
@@ -2767,7 +2783,7 @@ pub fn derive_danger_parameters(state: &mut State) {
     let open_shield_penalty = (dearest * OPEN_SHIELD_RATIO as u64
         / COEFFICIENT_SCALE as u64).max(OPEN_SHIELD_FLOOR as u64);
     let proximity_value = dearest * PROXIMITY_RATIO as u64
-        * drops!(state) as u64 / COEFFICIENT_SCALE as u64;
+        * captures_fill_hand(state) as u64 / COEFFICIENT_SCALE as u64;
     let check_value = dearest * CHECK_RATIO as u64 / COEFFICIENT_SCALE as u64;
 
     derive_goal_race(state, dearest);
@@ -3511,13 +3527,13 @@ pub fn derive_pawn_parameters(state: &mut State) {
 /// - imbalance : one part for a major surplus, one for a minor surplus
 /// - pair      : a part again, only for pieces that reach half the board
 /// - threats   : a part for each attack kind, opening then endgame
-/// - mobility  : a part, opening then endgame, twice with drops or a
-///               count of checks
+/// - mobility  : a part, opening then endgame, twice when the captures
+///               fill the hand or with a count of checks
 /// - danger    : the parts of the king danger sum, the weak square from
-///               the ring size, the rule weights for drops and a race of
-///               checks, and the cost as a part of the most valuable
-///               piece; only where a royal can be mated, else the cost is 0
-///               and the sum is off
+///               the ring size, the rule weights for a hand the captures
+///               fill and a race of checks, and the cost as a part of the
+///               most valuable piece; only where a royal can be mated, else
+///               the cost is 0 and the sum is off
 ///
 /// The pair test uses the piece reach, not the name. Royals are not
 /// tested. The list has the two colours of each pair piece, so the
@@ -3547,7 +3563,8 @@ pub fn derive_advantage_parameters(state: &mut State) {
     let restricted = threat(RESTRICTED_RATIO);
     let threat_margin = dearest * THREAT_LAZY_RATIO as u64
         / COEFFICIENT_SCALE as u64;
-    let doubled = drops!(state) || state.termination.checks.is_some();
+    let doubled = captures_fill_hand(state)
+        || state.termination.checks.is_some();
     let mobility = MOBILITY_RATIO.map(|part| {
         (dearest * part as u64 / COEFFICIENT_SCALE as u64) as i32
             * (1 + doubled as i32)
@@ -3562,7 +3579,8 @@ pub fn derive_advantage_parameters(state: &mut State) {
         && state.statics.pieces.iter().any(|piece| p_is_royal!(piece));
     let race = state.termination.checks.as_ref()
         .filter(|checks| checks.outcome == Outcome::Win);
-    let (drop, racing) = (drops!(state) as u64, race.is_some() as u64);
+    let drop = captures_fill_hand(state) as u64;
+    let racing = race.is_some() as u64;
     let weak = DANGER_WEAK_RING as u64
         / (state.statics.eval.local_stride as u64 + 1);
     let danger_weak = weak * (1 + drop + racing);

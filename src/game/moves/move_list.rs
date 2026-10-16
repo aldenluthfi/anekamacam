@@ -2548,7 +2548,7 @@ macro_rules! make_move {
                     ][captured_color as usize];
                 }
 
-                if drops!($state) || promote_to_captured!($state) {
+                if $state.statics.captured_to_hand[captured_piece] {
 
                     let demoted_piece = $state.statics.piece_demotion_map
                         [captured_piece] as usize;
@@ -2934,7 +2934,7 @@ macro_rules! make_move {
                         ][captured_color as usize];
                     }
 
-                    if drops!($state) || promote_to_captured!($state) {
+                    if $state.statics.captured_to_hand[captured_piece] {
 
                         let demoted_piece = $state.statics.piece_demotion_map
                             [captured_piece] as usize;
@@ -3799,7 +3799,7 @@ macro_rules! undo_move {
 
             }
 
-            if drops!($state) || promote_to_captured!($state) {
+            if $state.statics.captured_to_hand[captured_piece] {
                 let demoted_piece = $state.statics.piece_demotion_map
                     [captured_piece] as usize;
                 let hand_piece = $state.statics.piece_swap_map
@@ -4029,7 +4029,7 @@ macro_rules! undo_move {
 
                     }
 
-                if drops!($state) || promote_to_captured!($state) {
+                if $state.statics.captured_to_hand[captured_piece] {
                     let demoted_piece = $state.statics.piece_demotion_map
                         [captured_piece] as usize;
                     let hand_piece = $state.statics.piece_swap_map

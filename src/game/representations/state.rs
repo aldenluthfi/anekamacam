@@ -752,6 +752,7 @@ pub struct StaticState {
     pub royal_reach: Vec<u64>,                                                  /* side, royal square to attack reads */
     pub royal_lines: Vec<u64>,                                                  /* side, royal, piece to attack start */
     pub relevant_drops: Vec<DropSet>,                                           /* optimization                       */
+    pub captured_to_hand: Vec<bool>,                                            /* piece to a capture fills the hand  */
     pub relevant_setup: Vec<DropSet>,                                           /* setup-phase army placement         */
     pub relevant_stand_offs: Vec<PatternSet>,                                   /* facing-config veto patterns        */
     pub relevant_attacks: [Vec<Vec<AttackMask>>; 2],                            /* [side][square] to its attackers    */
@@ -1070,6 +1071,7 @@ impl State {
             royal_reach: Vec::new(),
             royal_lines: Vec::new(),
             relevant_drops: vec![DropSet::new(); board_size * piece_count],
+            captured_to_hand: vec![false; piece_count],
             relevant_setup: vec![DropSet::new(); board_size * piece_count],
             relevant_stand_offs: vec![
                 PatternSet::new(); board_size * piece_count
@@ -1409,13 +1411,15 @@ impl State {
     ///
     /// 1. compile the expressions, one set for each piece
     /// 2. `populate_relevant` puts the sets on each square
-    /// 3. `generate_attack_masks` stores each move under its target square
-    /// 4. `derive_attack_recipes` makes the tables of `piece_attacks!`
-    /// 5. the royal reach, the squares an attack on a royal square reads
-    /// 6. the royal lines, the squares a piece attacks a royal square from
-    /// 7. the capture reach, the squares that the capture legs land on
+    /// 3. the pieces a capture puts in the hand: those a promotion takes
+    ///    back, and those with a drop pattern that can match
+    /// 4. `generate_attack_masks` stores each move under its target square
+    /// 5. `derive_attack_recipes` makes the tables of `piece_attacks!`
+    /// 6. the royal reach, the squares an attack on a royal square reads
+    /// 7. the royal lines, the squares a piece attacks a royal square from
+    /// 8. the capture reach, the squares that the capture legs land on
     ///
-    /// The size of steps 6 and 7 grows with the square of the board area.
+    /// The size of steps 7 and 8 grows with the square of the board area.
     /// Only a board of at most `CAPTURE_REACH_WORDS` words keeps them.
     ///
     /// Params:
@@ -1463,6 +1467,26 @@ impl State {
                 self.populate_relevant(&piece_drops, generate_relevant_drops);
             self.static_mut().relevant_drops = drops;
         }
+
+        let board_size = self.statics.board_size;
+        let droppable: Vec<bool> = self.statics.relevant_drops
+            .chunks(board_size)
+            .map(|slots| slots.iter().flatten().any(|(_, pattern)| {
+                let (allowers, stoppers) = pattern;
+
+                !allowers.iter().any(|allower| stoppers.iter().any(|stop| {     /* a stopper that takes all that an   */
+                    stop.0 == allower.0 && allower.1.within(&stop.1)            /* allower takes always fires         */
+                }))
+            }))
+            .collect();
+        let captured_to_hand = (0..piece_count).map(|piece| {
+            let demoted = self.statics.piece_demotion_map[piece] as usize;
+            let held = self.statics.piece_swap_map[demoted] as usize;
+
+            promote_to_captured!(self)                                          /* a promotion takes it from the hand */
+                || drops!(self) && droppable.get(held) == Some(&true)
+        }).collect();
+        self.static_mut().captured_to_hand = captured_to_hand;
 
         if setup_phase!(self) {
             let setup =
