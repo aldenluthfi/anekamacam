@@ -1041,6 +1041,11 @@ macro_rules! pawn_structure {
 ///
 /// - attackers : enemy pieces whose map meets the ring, and the ring
 ///               squares enemy pawns attack; their count times the pieces
+/// - in hand   : the enemy's held pieces of each type that can drop on an
+///               empty ring square we do not hold twice, or one the enemy
+///               attacks; their count times the board pieces, and each of
+///               those squares next to the royal is a hit, as Fairy-
+///               Stockfish counts a hand
 /// - weak      : ring squares the enemy attacks and we do not hold twice
 /// - hits      : the enemy hits on the local ring, one for each piece
 /// - checks    : an enemy piece type that reaches a check square that is
@@ -1269,6 +1274,26 @@ macro_rules! attack_terms {
                 let race = left.map(|left| eval.danger_race[left]);
                 let always_safe = left == Some(1);                              /* the next check wins the race       */
                 let mut checks = 0i64;
+                let mut in_hand = 0i64;                                         /* held pieces that drop on the ring  */
+                let mut hand_hits = 0i64;                                       /* and their drops next to the royal  */
+
+                for count in hand.iter()
+                    .filter(|count| drops!($state) && **count > 0)
+                {
+                    let mut lands = false;
+
+                    for word in 0..words {
+                        let next = maps[region(guard, color) + word];
+                        let open = !occupied.2[word]
+                            & (!maps[region(twice, color) + word]
+                                | maps[region(once, them) + word]);
+
+                        lands |= open & next != 0;
+                        hand_hits += (open & next).count_ones() as i64;
+                    }
+
+                    in_hand += lands as i64 * *count as i64;
+                }
 
                 for (piece_index, piece) in statics.pieces.iter().enumerate() {
                     let mirror = statics.piece_swap_map[piece_index];
@@ -1335,10 +1360,11 @@ macro_rules! attack_terms {
 
                 let scale = COEFFICIENT_SCALE as i64;
                 let major_gone = $state.major_pieces[them] == 0;
-                let sum = (attackers[them] + pawn_hits_ring)
-                        * attackers[them] * eval.danger_attacker as i64
+                let board = attackers[them] + pawn_hits_ring;
+                let sum = ((board + in_hand) * attackers[them]
+                        + board * in_hand) * eval.danger_attacker as i64
                     + weak_ring * eval.danger_weak as i64
-                    + ring_hits[them] * eval.danger_hit as i64
+                    + (ring_hits[them] + hand_hits) * eval.danger_hit as i64
                     + unsafe_squares * eval.danger_unsafe as i64
                     + checks * race.map_or(scale, |rise| rise[0] as i64) / scale
                     - major_gone as i64 * eval.danger_no_major as i64
