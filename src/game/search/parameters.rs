@@ -2932,13 +2932,16 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
 ///
 /// - never backward : no vector has a negative rank
 /// - steps forward  : a quiet one-rank move, file change at most one
-/// - short range    : no move longer than one square after the first move
+/// - short range    : no move longer than one square, but the first move
+///                    or a move from a start square
 /// - many copies    : at least `PAWN_MIN_START_COUNT`, board and hand
 ///
 /// The step test rejects the shogi knight and lance. The backward test
 /// rejects the gold, silver, advisor and elephant. The count rejects a
 /// single forward stepper. The first move can be longer, so the FIDE pawn
-/// keeps its double step.
+/// keeps its double step. A pawn that never steps back cannot come back
+/// to a start square, so a long move from one is a first move too, as the
+/// horde pawn's double step from its first two ranks.
 ///
 /// Params:
 /// - state: &State          -> variant with the pieces to test
@@ -2965,6 +2968,7 @@ fn derive_pawn_slots(state: &State) -> (Vec<usize>, Vec<usize>) {
 
         let index = p_index!(piece) as usize;
         let color = p_color!(piece) as usize;
+        let start = &state.statics.initial_setup[index];
         let mut steps_backward = false;
         let mut steps_forward = false;
         let mut ranges_far = false;
@@ -2982,11 +2986,12 @@ fn derive_pawn_slots(state: &State) -> (Vec<usize>, Vec<usize>) {
                     quiet && rank_offset == 1 && file_offset.abs() <= 1;
                 ranges_far |= quiet
                     && !vector_is_initial!(vector)
+                    && !get!(start, square as u32)
                     && (rank_offset > 1 || file_offset.abs() > 1);
             }
         }
 
-        let fielded = count_bits!(state.statics.initial_setup[index]) as usize
+        let fielded = count_bits!(start) as usize
             + state.piece_in_hand[color][index] as usize;
 
         if steps_backward
