@@ -3891,3 +3891,119 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
   horde, node for node, and the pawn mass part in horde.
 - Against FSF 2000: horde +8.1 (build 28 -58.5), koth -1.7 to +1.7
   (-41.3); crazyhouse (-36.0) and extinction (-26.7) as build 29.
+
+### Extinction and crazyhouse on build 31 (2026-10-16)
+
+- Extinction plays as build 28 (q211 -26.8, q216 -31.9, q220 -26.7:
+  near -28). Our search at the 321 tips (FSF sees -300 at 300 ms):
+  300 ms median -104, 70 at -300 or worse, 140 at -50 or better (depth
+  10); 3 s median -221, 119 and 65 (depth 15). FSF reaches depth 15 in
+  300 ms there, so depth is part of it but at that depth we still miss
+  202.
+- The pruning gate is not it: with `see_valid` and `forward_pruning` on
+  in extinction (a local build, not kept) the depth is 11 and 17, and
+  63 and 123 tips are seen.
+- FSF's lines at the tips we miss (2 s) are quiet: 21 of 46 take
+  nothing in 8 plies. Eight plies on, our search reads -78 and our
+  static +67, where FSF's trace goes from -1.18 to -2.47, threats -0.90
+  to -1.49, variant -0.46 to -0.63: the pressure on set pieces grows.
+- The lab with FSF's extinction threat at 0.6 of its scale (ours,
+  `e_ext06`, queue222): 157-201-42, -38.4 for FSF. The scale does carry
+  FSF, against EXR's -33 in our engine (q216, near -1 sigma). Queue223
+  plays EXR against build 31 in extinction again, six rounds.
+- Queue223, extinction against FSF 2000, interleaved: build 31 -57.9,
+  -79.5, -72.2, -96.2, -59.6, -45.4 (-68.3); EXR -52.5, -3.5, -66.8,
+  -57.9, -40.1, -54.3 (-45.7). With q216's three rounds: EXR -52.1 ±
+  8.2, build 31 -56.1 ± 8.3, +4.0 (0.3 sigma). The scale carries FSF
+  but not us; EXR stays out. Extinction is near -55 over nine rounds,
+  below the earlier -28. Two leads closed (the pruning gate, the
+  threat scale); FSF finds the quiet build-ups and we do not, with a
+  static that already has FSF's shape.
+- Our static at the 321 tips against FSF's classical: +0.17 against
+  -1.99, correlation 0.873. The gap (ours minus FSF) follows FSF's
+  variant term most (correlation -0.611; mean -0.43), then imbalance
+  (-0.356), threats (-0.328), material (-0.278). FSF's variant term in
+  extinction is a scarcity cost, `1000000 / (500 + value) / copies^2`
+  for each set type: trading down to a last copy costs. We have none.
+  The lab put the term at -10 for FSF (q212), so it is a weak lead.
+- Crazyhouse plays as build 29 (q211 -5.8, q220 -36.0: near -20). The
+  330 losses of q220 tip at a median ply 17 with our score +85 (262 at
+  -50 or better); FSF's classical there: king safety -2.23, material
+  +0.77, total -2.43. Our static +0.86 against FSF's -2.47, correlation
+  0.475; our 3 s search sees -300 in 16. The eval misreads the king.
+- FSF's king term for a game where captures go to the hand: hand pieces
+  count as attackers, the weak ring twice, the hits 1.5 times, no
+  mobility or no-queen part, flank attacks six times
+  (`FlankAttacks * kingFlankAttack * (1 + 5 * captures_to_hand)`), and
+  the score is the same in both phases, times the material density. Ours
+  has the weak ring and the hits doubled, no flank term and no density.
+  Queue224 measures FSF's king parts in crazyhouse: danger sum, flank,
+  checks, shelter.
+- Queue224, the lab in crazyhouse, each part off against base: danger
+  sum 128-270-2 (-129.0), flank 198-199-3 (-0.9), checks 205-189-6
+  (+13.9), shelter 195-192-13 (+2.6). The danger sum carries it, not
+  its checks: the flank term is not the gap.
+- In the danger sum FSF counts a hand: each held type that can drop on
+  an empty ring square the defender does not hold twice (or one the
+  attacker hits) adds its count to the attackers and its weight to the
+  sum, and its drops next to the king to the hits (`A W + A_hand W +
+  A W_hand`). Ours said a piece in the hand attacks nothing. Lab switch
+  `e_khand` (queue225): 159-226-15, -58.5 for FSF.
+- KH (`plan29-kh` edd5f93): the held pieces of each type that drop on
+  such a ring square count, `((a + p + h) a + (a + p) h)` times the
+  attacker part for `a` board attackers, `p` pawn-hit ring squares and
+  `h` held pieces, and their drops on the local ring add to the hits.
+  Bench nodes the same in standard, xiangqi and capablanca; crazyhouse
+  and shogi change. Crazyhouse tips: our static +0.86 to +0.67,
+  correlation with FSF 0.475 to 0.546. Queue226: crazyhouse three
+  rounds, shogi two, against build 31.
+- Queue226 against FSF 2000: crazyhouse build 31 -33.1, 0.0, -20.9
+  (-18.0 ± 14.2), KH -6.9, -45.4, -20.9 (-24.4 ± 14.2); shogi +54.3,
+  +45.4 (+49.8), KH +45.4, +63.2 (+54.3). No gain; not merged.
+- Why the danger port moves us so little: a probe (a local build, not
+  kept) read our danger inputs for the side to move at the 288 tips not
+  in check: attackers mean 0.6 (median 0), weak ring 0.3, hits 0.8,
+  unsafe checks 1.5, sum 445 (median 375), opening cost 52 cp (median
+  21), where FSF's king safety for that side is -3.00 (median -1.73);
+  correlation -0.80. The ring works (queen and knight on g2 and f3
+  against a king on g1: 2 attackers, 5 weak, 5 hits). All 330 tips are
+  in our opening phase. At the tips we hold more heavy pieces (rooks
+  +69, queens +58 over the 330): we take material while the hand
+  attacks.
+- Found on the way: the lazy margin of `attack_terms!` is 10% of the
+  dearest piece, sized for the threats (THREAT_LAZY_RATIO), but since
+  KD the king danger is in `attack_terms!` too. In crazyhouse the
+  dearest is 565 (CP2's hand power), so a quiescence node skips the
+  danger sum whenever it is beyond its window by 56 cp; a full weak ring
+  there costs 587. FSF's lazy skip is for chess only, at about 0.6 of a
+  queen.
+- LZ (`plan29-lz` df8057e): the margin adds the cost of a full weak
+  ring at the derived weights. Margins: standard 118 to 426, crazyhouse
+  56 to 642, xiangqi 252, shogi 1085, koth 2252; no change without a
+  mateable royal (extinction 118). Queue227: crazyhouse against FSF
+  2000 and the test set against full FSF, three rounds.
+- Queue227, LZ minus build 31 (pooled): crazyhouse at FSF 2000 +32.5
+  (-18.0 to +14.5, 1.6 sigma), standard +20.4 (1.1), crazyhouse +13.3
+  (0.7), xiangqi +8.7 (0.4), capablanca +5.8 (0.3). All five up, mean
+  +16 near 1.85 sigma. Rule set before more games: LZ merges if the
+  mean over the five after six rounds is +2 sigma or more. Queue228
+  plays rounds 4 to 6.
+- Six rounds (queues 227 and 228), pooled, LZ minus build 31:
+
+  | Test | Build 31 | LZ | Diff |
+  | - | - | - | - |
+  | crazyhouse at FSF 2000 | -7.5 | +21.5 | +29.0 (2.0 sigma) |
+  | crazyhouse | -19.4 | +6.7 | +26.1 (1.8) |
+  | xiangqi | -9.8 | +3.5 | +13.3 (0.9) |
+  | capablanca | +5.2 | +17.7 | +12.5 (0.9) |
+  | standard | -23.8 | -12.2 | +11.6 (0.9) |
+
+  Mean +18.5 ± 6.2, 3.0 sigma. Merged.
+
+### Merged build 32 (2026-10-17)
+
+- Build 31 with LZ (`plan27-main32`). Every variant with a mateable
+  royal searches differently (the lazy margin); the rest the same.
+- Crazyhouse is above FSF 2000 (+21.5 over six rounds). Open below 2000:
+  extinction (near -55). Queue229 measures FSF's search parts in
+  extinction.
