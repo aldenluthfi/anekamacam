@@ -463,105 +463,180 @@ macro_rules! check_race {
 
 /// goal_race!
 ///
-/// Gives the worth of the goal piece of one colour that is nearest to the
-/// goal zone. The distance is its count of moves to the zone, from the
-/// `steps` table of the rule. The worth halves for each move past the
-/// first:
+/// Gives the worth of the goal pieces of one colour on their way to the
+/// goal zone. A flood from the goal pieces of each type follows their
+/// `landings`, one move for each step plus the hold of the square it
+/// enters:
 ///
-/// - 1 move  : the `value` of the rule, it arrives next move if not stopped
-/// - 2 moves : half of it
-/// - 3 moves : a quarter of it
+/// - `hold` : the enemy attacks on the square, if no own pawn is there
+/// - 2      : an own pawn
+/// - -      : an own pawn that an enemy pawn blocks, it cannot make way
+///
+/// Each zone square takes the earliest arrival of any goal piece. The `w`
+/// zone squares first reached after `d` moves are worth:
+///
+/// ```text
+///   value * w / (w + d * d)
+/// ```
+///
+/// - 1 square, 1 move  : half the `value`, it arrives next move if not
+///                       stopped
+/// - 1 square, 2 moves : a fifth of it
+/// - 2 squares, 3 moves: two elevenths of it
 ///
 /// Params:
-/// - state: &State -> position to score
-/// - color: usize  -> colour of the goal pieces
+/// - state: &State                  -> position to score
+/// - color: usize                   -> colour of the goal pieces
+/// - hold : Fn(Square, usize) -> i32 -> moves the enemy attacks on a square
+///                                     cost that colour: 0, 1 when attacked
+///                                     once, 2 when twice or by a pawn
 ///
 /// Return:
-/// i32             -> race worth for that colour, 0 or more
+/// i32                              -> race worth for that colour, 0 or
+///                                     more
 ///
 /// Notes:
-/// Within `GOAL_HOLD_STEPS`, the walk along the `closer` squares adds one
-/// move for each step that is blocked. A step is blocked when all its
-/// squares are attacked by the enemy or hold an own piece.
+/// A goal piece on the zone has won, so it is not scored here. The flood
+/// keeps one square set for each move count still to come, as one bit
+/// for each square, and stops when it has reached each zone square or
+/// nothing is left. The holds are Fairy-Stockfish's flag race: a piece
+/// must wait for each attack on its way to go, and a pawn of its own must
+/// move first. An enemy pawn blocks an own pawn when it stands on the
+/// path next to it.
 ///
 #[macro_export]
 macro_rules! goal_race {
-    ($state:expr, $color:expr) => {{
+    ($state:expr, $color:expr, $hold:expr) => {{
         match $state.termination.goal.as_ref() {
             Some(goal) => {
-                let board_size = $state.statics.board_size;
-                let mut nearest = u8::MAX;
+                let statics = &$state.statics;
+                let board_size = statics.board_size;
+                let files = statics.files as i32;
+                let zone_size = count_bits!(goal.zone) as usize;
+                let mut arrivals: Vec<(Square, i32)> = Vec::new();              /* zone square, earliest move count   */
 
-                for (piece_index, piece) in
-                    $state.statics.pieces.iter().enumerate()
-                {
+                let stuck = |pawn: usize, at: Square| {
+                    let slot = statics.eval.pawn_slots[pawn];
+                    let path = &statics.eval.pawn_path[
+                        slot * statics.eval.pawn_stride + at as usize
+                    ];
+                    let near = |other: Square| {
+                        (other as i32 % files - at as i32 % files).abs() <= 1
+                            && (other as i32 / files - at as i32 / files)
+                                .abs() <= 1
+                    };
+
+                    statics.eval.pawn_pieces.iter()
+                        .filter(|&&enemy| {
+                            p_color!(&statics.pieces[enemy]) as usize
+                                != $color
+                        })
+                        .any(|&enemy| {
+                            piece_squares!($state, enemy).any(|&other| {
+                                get!(path, other as u32) && near(other)
+                            })
+                        })
+                };
+
+                let words = (board_size + 63) >> 6;
+
+                for (piece_index, piece) in statics.pieces.iter().enumerate() {
                     if !goal.set[piece_index]
                         || p_color!(piece) as usize != $color {
                         continue;
                     }
 
                     let row = piece_index * board_size;
+                    let hold = |to: Square| -> Option<usize> {
+                        let holder = $state.main_board[to as usize];
+                        let own_pawn = holder != NO_PIECE
+                            && p_color!(&statics.pieces[holder as usize])
+                                as usize == $color
+                            && statics.eval.pawn_slots[holder as usize]
+                                != NO_PAWN;
 
-                    for square in piece_squares!($state, piece_index) {
-                        let steps = goal.steps[row + *square as usize];
+                        match own_pawn {
+                            false => Some($hold(to, $color) as usize),
+                            true if stuck(holder as usize, to) => None,
+                            true => Some(2),
+                        }
+                    };
+                    let mut waves = [                                           /* entered in 0, 1 and 2 more moves   */
+                        vec![0u64; words], vec![0u64; words], vec![0u64; words]
+                    ];
+                    let mut current = vec![0u64; words];
+                    let mut queued = vec![0u64; words];                         /* the first wave a square enters is  */
+                    let mut found = 0;                                          /* its earliest, its hold never moves */
 
-                        if steps == 0 || steps > GOAL_HOLD_STEPS {
-                            nearest = nearest.min(steps);
-                            continue;
+                    for &start in piece_squares!($state, piece_index) {
+                        let bit = !get!(goal.zone, start as u32) as u64;
+
+                        waves[0][start as usize >> 6] |= bit << (start & 63);
+                        queued[start as usize >> 6] |= 1u64 << (start & 63);
+                    }
+
+                    for moves in 0.. {
+                        if found == zone_size
+                            || waves.iter().flatten().all(|word| *word == 0) {
+                            break;
                         }
 
-                        let mut frontier = vec![*square];
-                        let mut held = 0u8;
+                        waves.rotate_left(1);
+                        std::mem::swap(&mut waves[2], &mut current);            /* a clear set for 2 more moves       */
 
-                        for _ in 0..steps {
-                            let mut next: Vec<Square> = Vec::new();
+                        for word in 0..words {
+                            let mut bits = current[word];
 
-                            for from in &frontier {
-                                for to in &goal.closer[row + *from as usize] {
-                                    if !next.contains(to) {
-                                        next.push(*to);
+                            while bits != 0 {
+                                let from = (word << 6
+                                    | bits.trailing_zeros() as usize) as Square;
+
+                                bits &= bits - 1;
+
+                                if get!(goal.zone, from as u32) {
+                                    found += 1;
+
+                                    match arrivals.iter_mut()
+                                        .find(|(at, _)| *at == from) {
+                                        Some(entry) =>
+                                            entry.1 = entry.1.min(moves),
+                                        None => arrivals.push((from, moves)),
+                                    }
+
+                                    continue;
+                                }
+
+                                for &to in &goal.landings[row + from as usize] {
+                                    let at = to as usize >> 6;
+                                    let bit = 1u64 << (to & 63);
+
+                                    if queued[at] & bit != 0 {
+                                        continue;
+                                    }
+
+                                    queued[at] |= bit;
+
+                                    if let Some(wait) = hold(to) {
+                                        waves[wait][at] |= bit;
                                     }
                                 }
                             }
-
-                            let free: Vec<Square> = next.iter().copied()
-                                .filter(|&to| {
-                                    let holder = $state.main_board[
-                                        to as usize
-                                    ];
-
-                                    (holder == NO_PIECE
-                                        || p_color!(
-                                            &$state.statics.pieces[
-                                                holder as usize
-                                            ]
-                                        ) as usize != $color)
-                                    && !is_square_attacked!(
-                                        to as u32,
-                                        $color,
-                                        false,
-                                        p_is_royal!(piece),
-                                        p_rank!(piece),
-                                        $state
-                                    )
-                                })
-                                .collect();
-
-                            held += free.is_empty() as u8;
-                            frontier = match free.is_empty() {
-                                true => next,
-                                false => free,
-                            };
                         }
 
-                        nearest = nearest.min(steps + held);
+                        current.fill(0);
                     }
                 }
 
-                match nearest {
-                    0 | u8::MAX => 0,
-                    steps => goal.value >> (steps - 1).min(31),
-                }
+                arrivals.sort_unstable_by_key(|(_, moves)| *moves);
+
+                arrivals.chunk_by(|a, b| a.1 == b.1)
+                    .map(|group| {
+                        let reached = group.len() as i32;
+                        let moves = group[0].1;
+
+                        goal.value * reached / (reached + moves * moves)
+                    })
+                    .sum::<i32>()
             }
             None => 0,
         }
@@ -968,6 +1043,10 @@ macro_rules! pawn_structure {
 /// linear past the cap, and the sum itself in the endgame; the weights
 /// and the race rise come from [`derive_advantage_parameters`].
 ///
+/// Last, the goal race of [`goal_race!`] in both phases: a square the
+/// enemy attacks holds a goal piece back one move, two when it attacks
+/// twice or with a pawn.
+///
 /// Params:
 /// - state: &mut State -> position to score, with the threat scratch
 ///
@@ -1268,6 +1347,16 @@ macro_rules! attack_terms {
                 cost[color] = [opening as i32, endgame as i32];
             }
 
+            let hold = |to: Square, color: usize| {
+                let (word, bit) = (to as usize >> 6, 1u64 << (to & 63));
+                let hit = |kind: usize| {
+                    maps[region(kind, color ^ 1) + word] & bit != 0
+                };
+
+                hit(once) as i32 * (1 + (hit(twice) || hit(pawn_hits)) as i32)
+            };
+            let goal = goal_race!($state, 0, hold) - goal_race!($state, 1, hold);
+
             let value = |phase: usize| {
                 (counts[0][0] - counts[1][0]) * eval.hanging_value[phase]
                     + (counts[0][1] - counts[1][1])
@@ -1276,6 +1365,7 @@ macro_rules! attack_terms {
                         * eval.restricted_value[phase]
                     + mobility[0][phase] - mobility[1][phase]
                     + cost[1][phase] - cost[0][phase]
+                    + goal
             };
 
             (value(0), value(1))
@@ -1326,9 +1416,10 @@ macro_rules! opening_score {
 ///
 /// Gives the terms that the opening and the endgame score share, White
 /// minus Black: the enemy pressure and nearness to the royals, the check
-/// race, the goal race and the extinction threats. They do not depend on
-/// the phase, so the evaluation calculates them once and adds the same
-/// value to the two halves before the blend.
+/// race and the extinction threats. They do not depend on the phase, so
+/// the evaluation calculates them once and adds the same value to the two
+/// halves before the blend. The goal race needs the attack maps, so it is
+/// in [`attack_terms!`].
 ///
 /// Params:
 /// - state: &State -> position to evaluate
@@ -1348,8 +1439,6 @@ macro_rules! shared_score {
             - royal_proximity!($state, white)
             + check_race!($state, white)
             - check_race!($state, black)
-            + goal_race!($state, white)
-            - goal_race!($state, black)
             + extinct_threat!($state, black)
             - extinct_threat!($state, white)
     }};
@@ -1453,6 +1542,7 @@ macro_rules! material_advantage {
 /// - shared terms           : calculated once, added to both halves
 /// - pawn structure         : both halves, one value for each
 /// - threats, mobility      : both halves, one value for each
+/// - goal race              : with the threats, the same in both halves
 /// - material imbalance     : outside the blend, added once
 /// - tempo                  : outside, after the flip to the side to move
 ///
