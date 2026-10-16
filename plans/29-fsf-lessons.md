@@ -3834,3 +3834,22 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
 - Horde -58.5 to -29.6 (HP), koth -41.3 to +1.7 (GH), against FSF 2000.
 - Queue217 plays PR2 (on HP) in horde against HP and in the test set
   against build 28.
+- Queue217, three rounds of 200 (pooled): horde HP -45.4, -61.4, -20.9
+  (-42.5), PR2 -1.7, +1.7, -5.2 (-1.7), +41; standard build 28 -43.1,
+  PR2 -45.4; xiangqi -43.7, -42.5; crazyhouse -39.5, -50.1; capablanca
+  +23.2 (+8.7, +6.9, +54.3), -12.2 (+15.6, -43.7, -8.7). PR2 keeps the
+  horde gain and ends PR's loss in standard (-56 to -2). Capablanca
+  -35 is near -1.75 sigma where PR was +6, and PR2 differs from PR only
+  for passed pawns: queue218 plays three more capablanca rounds against
+  build 29.
+- Queue218, capablanca: build 29 -29.6, +13.9, -33.1 (-16.2); PR2
+  -3.5, +13.9, -45.4 (-11.6). Over six rounds PR2 is about -15 (about
+  -1 sigma), not below -2 sigma, and +41 in horde. To merge.
+
+### Merged build 30 (2026-10-16)
+
+- Build 29 with PR and PR2 (`plan27-main30`). Each variant with a pawn
+  type changes its derived connected values; the rest the same.
+- Against FSF 2000 on builds 29 and 30: horde about -2 (build 28
+  -58.5), koth +1.7 (-41.3). Open below 2000: extinction (-32, the
+  search of threats on set pieces), crazyhouse near.
