@@ -58,6 +58,14 @@ impl PieceSet {
     ///   Return:
     ///   bool                -> true when the index is a member
     ///
+    /// within
+    ///
+    ///   Params:
+    ///   - other: &PieceSet  -> set to compare with
+    ///
+    ///   Return:
+    ///   bool                -> true when each member is in `other`
+    ///
     /// slot
     ///
     ///   Params:
@@ -80,6 +88,10 @@ impl PieceSet {
 
     pub fn contains(&self, piece: PieceIndex) -> bool {
         self.0[Self::slot(piece)]
+    }
+
+    pub fn within(&self, other: &PieceSet) -> bool {
+        self.0.iter().zip(other.0.iter()).all(|(own, theirs)| !own || *theirs)
     }
 }
 
