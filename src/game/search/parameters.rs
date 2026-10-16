@@ -305,12 +305,14 @@ const GOAL_RATIO: u32 = 1000;
 /// The cost of an attacked set piece of a losing `extinct` rule, over
 /// `COEFFICIENT_SCALE` of the most valuable piece:
 ///
-/// - 1 copy left   : 25%, the next capture loses
-/// - `left` copies : 25% over `left` squared
+/// - 1 copy left   : 38.3%, the next capture loses
+/// - `left` copies : 38.3% over `left` squared
 ///
-/// A set with more than `EXTINCT_THREAT_LEFT` copies left is skipped.
+/// The part is Fairy-Stockfish's, 1000 over its queen of 2610 between the
+/// opening and the endgame. A set with more than `EXTINCT_THREAT_LEFT`
+/// copies left is skipped.
 ///
-const EXTINCT_THREAT_RATIO: u32 = 250;
+const EXTINCT_THREAT_RATIO: u32 = 383;
 
 /// Open shield penalty
 ///
