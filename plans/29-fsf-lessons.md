@@ -3560,3 +3560,82 @@ threecheck and fivecheck at FSF 2000), then the mean:
   PCR26 lost 17 to 29 in capablanca with FSF's king danger in our eval,
   and the record's root for that (PC, 2026-10-08) still holds: in our
   wide tree a check is a small share and keeping it costs little.
+
+### Build 27 against FSF 2000 (2026-10-16, queue207)
+
+As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
+600 games, the others 200. Elo of our engine, build 23 in brackets.
+
+| variant | Elo | variant | Elo |
+| ------- | --- | ------- | --- |
+| standard | +192.4 ± 29.8 (+102.5) | judkins | +123.0 ± 49.4 (+59.6) |
+| xiangqi | +205.8 ± 33.1 (+103.7) | fivecheck | +123.0 ± 54.5 (+13.9) |
+| grand | +129.6 ± 29.0 (+94.9) | modern | +119.1 ± 48.5 (+1.7) |
+| shogi | +74.1 ± 28.9 (+51.3) | chancellor | +115.2 ± 48.9 (+40.1) |
+| asean | +478.0 ± 82.1 (+494.0) | gothic | +83.2 ± 48.3 (-38.4) |
+| almost | +288.1 ± 63.4 (+153.4) | euroshogi | +81.4 ± 47.9 (+10.4) |
+| ai-wok | +257.6 ± 59.7 (+207.5) | kinglet | +79.5 ± 51.8 (+127.0) |
+| minixiangqi | +246.3 ± 53.2 (+214.8) | hoppelpoppel | +49.0 ± 49.0 (-5.2) |
+| makruk | +227.6 ± 36.5 (+190.8) | embassy | +26.1 ± 48.1 (-38.4) |
+| knightmate | +217.3 ± 58.4 (+137.0) | capablanca | +26.1 ± 44.5 (-47.2) |
+| amazon | +184.0 ± 50.4 (+179.5) | janus | +17.4 ± 47.2 (-8.7) |
+| minishogi | +172.8 ± 43.0 (+139.0) | newzealand | -1.7 ± 45.6 (-90.6) |
+| los-alamos | +168.4 ± 51.3 (+139.0) | threecheck | -15.6 ± 45.0 (-240.8) |
+| | | crazyhouse | -40.1 ± 48.1 (-74.1) |
+| | | extinction | -49.0 ± 44.8 (-33.1) |
+| | | koth | -74.1 ± 50.0 (-56.1) |
+| | | horde | -74.1 ± 29.1 |
+| | | pocketknight | -175.0 ± 47.8 (-88.7) |
+
+- Not valid, as before (FSF forfeits): janggi 200, sittuyin 110,
+  shatranj 79, ouk-chaktrang 20, chigorin 14.
+- Below 2000 beyond one interval: pocketknight, horde, koth. Crazyhouse
+  and extinction near one interval.
+- Pocketknight fell 86. Each side holds a knight from the start and a
+  capture does not fill the hand, so under PCRH the check rule is off
+  for most of the game while one knight gives few checks. Queue208 plays
+  build 26 and build 27 there, three rounds at FSF 2000.
+- Queue208, pocketknight by round: build 26 -202.6, -190.8, -207.5;
+  build 27 -164.1, -153.4, -184.0. PCRH gains 33 there; it is not the
+  cause. The fall came between build 23 and build 26.
+- Why: in our engine every capture in a drop variant goes to the
+  capturer's hand. Pocketknight's config gives the other pieces a drop
+  rule no square satisfies, so a captured queen sits in the hand for the
+  rest of the game. Every hand read takes it for a piece that comes back:
+  the material counts it at full value (taking a queen scores as two),
+  the phase never leaves the opening, the zone table and KD count a queen
+  drop next to the royal on each empty square, and PCRH's hand is never
+  empty. FSF's pocketknight has drops but no captures to the hand
+  (`[Nn]` after e4 d5 exd5 Qxd5, ours `[PNpn]`). KD is the likely step:
+  its safe checks from the hand cost up to 26% of the queen. Queue209
+  plays build 25 and build 26 there.
+- FSF keys its hand weights on `captures_to_hand()`, not on drops: the
+  weak ring and the hits of the danger sum, the doubled mobility, the
+  flank attacks. Ours read `drops!`, so pocketknight took crazyhouse's
+  weights where FSF takes chess's.
+- CH (`plan29-ch`, 23ee565): a capture fills the hand only with a piece
+  that can come back. A drop template can never match when one of its
+  stoppers takes, at the offset of an allower, every piece the allower
+  takes (`PieceSet::within`); `captured_to_hand` is set at load for each
+  piece from its demoted, colour-swapped hand form, or for every piece
+  when a promotion takes from the hand. The four make and undo gates read
+  it, and the weights for a growing hand (proximity, doubled mobility,
+  the danger's weak ring and hits) read `captures_fill_hand`. Our
+  pocketknight FEN now matches FSF's. Derive: one variant's mobility and
+  danger change (the doubling off), the capabilities the same. Queue210
+  runs `ident.sh` against build 27 and plays CH and build 27 in
+  pocketknight, three rounds at FSF 2000.
+- Queue209, pocketknight by round: build 25 -31.4, -13.9, -63.2 (mean
+  -36.2); build 26 -238.1, -172.8, -193.2 (-201.4). Build 26 (ZS and KD)
+  lost 165 there: KD's checks from a hand of pieces that never come back.
+- Queue210: `ident.sh` CH against build 27, every perft the same, the
+  seeded games the same in all but pocketknight. Pocketknight by round:
+  build 27 -238.1, -188.5, -179.5 (mean -202.0); CH +225.0, +222.4,
+  +179.5 (+209.0), a gain of 411. Merged.
+
+### Merged build 28 (2026-10-16, main eb85635)
+
+- Build 27 with CH (`plan27-main28`). Only pocketknight plays other
+  moves. Pocketknight is now above 2000 by about 200.
+- Open: horde (-74), koth (-74), extinction (-49), crazyhouse (-40) on
+  build 27; the last near one interval.
