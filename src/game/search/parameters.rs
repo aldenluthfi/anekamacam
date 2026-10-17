@@ -1898,7 +1898,7 @@ pub fn derive_search_parameters(state: &mut State) {
 /// writes them to `capabilities` (see [`StaticState`]). Each bit is set,
 /// unless a rule removes it:
 ///
-/// - exchange simulation : multi own destroy, misere, extinction
+/// - exchange simulation : multi own destroy, misere
 /// - pruning on it       : counting
 /// - forward pruning     : misere
 /// - null pruning        : misere, counting, pass, stand-off, setup, capturer
@@ -1908,8 +1908,9 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - wide quiescence     : a vector that captures more than one piece
 ///
 /// An extinction rule keeps forward pruning: the static score prices a
-/// last copy under attack (`extinct_threat!`), so its margins hold. The
-/// exchange stays off there, as a capture of a last copy ends the game.
+/// last copy under attack (`extinct_threat!`), so its margins hold. It
+/// keeps the exchange too: `see!` scores a capture that ends the game as
+/// the game's result.
 ///
 /// A condition on a move that takes nothing, as horde's double step from
 /// the first two ranks, does not change an exchange. Counting it too took
@@ -2005,7 +2006,6 @@ pub fn derive_search_capabilities(state: &mut State) {
 
     let termination = &state.termination;
 
-    let counts_pieces = !termination.extinct.is_empty();
     let counts_material = termination.counting.is_some();
 
     let misere = termination.checkmate == Outcome::Win
@@ -2018,7 +2018,7 @@ pub fn derive_search_capabilities(state: &mut State) {
 
     let mut capabilities = 0u16;
 
-    if !multi_destroy && !misere && !counts_pieces {
+    if !multi_destroy && !misere {
         enc_see_valid!(capabilities);
     }
 

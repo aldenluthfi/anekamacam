@@ -162,6 +162,11 @@ macro_rules! lva {
 /// i32                 -> net material gain for the side to move
 ///
 /// Notes:
+/// A capture that ends the game, as one that takes the last copy of an
+/// extinction set, is worth the game's result to the side that made it,
+/// and the sequence stops there. A win counts `INF / 8`: more than any
+/// exchange of material, and inside the capture bands of the move order.
+///
 /// An illegal first move gives `-INF`. The sequence stops at the array
 /// length. The move list and data vectors come from [`Scratch`], so there
 /// is no allocation. The macro takes out only the two vectors, because
@@ -185,6 +190,11 @@ macro_rules! see {
 
         let exchange = if !make_move!(state, seen_move.clone()) {
             -INF
+        } else if is_terminal!(state) {
+            let ended = -terminal_score!(state).clamp(-INF / 8, INF / 8);       /* the capture ends the game          */
+
+            undo_move!(state);
+            ended
         } else {
             let initial_attacker = attack_value!(seen_move, state);             /* it leaves at the next one          */
 
@@ -217,6 +227,14 @@ macro_rules! see {
                     } else {
                         piece!(&attacker)
                     };
+                }
+
+                if is_terminal!(state) {
+                    gain[gain_length - 1] =                                     /* this capture ends the game         */
+                        -terminal_score!(state).clamp(-INF / 8, INF / 8);
+                    gain_length += 1;                                           /* a slot for the trim below          */
+                    moves_to_undo += 1;
+                    break;
                 }
 
                 let attacker_value = p_value!(attacker_piece, state) as i32;    /* priced once its capture is made    */
