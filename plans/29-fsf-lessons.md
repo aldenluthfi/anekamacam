@@ -4123,3 +4123,20 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
   extinction from the start 133989 at depth 12, 618385 at depth 14.
   Queue234: extinction six rounds, kinglet and horde two, against build
   33 at FSF 2000, then chushogi self-play.
+- Queue234, interleaved: extinction build 33 -57.9, -52.5, -54.3,
+  -22.6, -49.0, +15.6 (-36.6), SX +50.7, +61.4, +33.1, +41.9, +70.4,
+  +68.6 (+54.3), +90.9 (6.4 sigma); horde +7.8 to +89.7 (+81.8, 3.3
+  sigma); kinglet +176.1 to +256.2 (+80.1, 2.7 sigma). Chushogi
+  self-play against build 33: 142-17-41. Merged.
+- So the extinction chain ends: plan 17 had taken forward pruning and
+  the exchange from every losing extinct rule, the static score later
+  learnt to price a last copy (EX) and the exchange to see a game end
+  (SX), and the two bits came back. FP and SX together: extinction -50
+  to +54, horde -5 to +90, kinglet +100 to +256 at FSF 2000.
+
+### Merged build 34 (2026-10-17)
+
+- Build 33 with SX (`plan27-main34`). Only the variants with a losing
+  extinct rule change.
+- Every variant FSF plays is at 2000 or above at FSF 2000 (queue231 on
+  build 32, then FP and SX for extinction, kinglet and horde).
