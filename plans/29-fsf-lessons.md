@@ -4029,3 +4029,39 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
   our tree, the lead for all variants, not an extinction one.
 - Queue231: build 32 against FSF 2000 in every variant FSF knows, the
   test set, grand and shogi 600 games each, the rest 200.
+
+### Queue231, build 32 against FSF 2000 (2026-10-17)
+
+| Variant | Build 32 (build 27) | Variant | Build 32 (build 27) |
+| - | - | - | - |
+| standard | +222.4 (+192.4) | gothic | +98.1 (+83.2) |
+| xiangqi | +221.6 (+205.8) | shogi | +76.5 (+74.1) |
+| grand | +135.0 (+129.6) | fivecheck | +57.9 (+123.0) |
+| capablanca | +42.5 (+26.1) | embassy | +31.4 (+26.1) |
+| crazyhouse | +15.1 (-40.1) | horde | +29.6 (-74.1) |
+| asean | +552.1 (+478) | newzealand | +12.2 (-1.7) |
+| ai-wok | +266.4 (+257.6) | hoppelpoppel | +8.7 (+49.0) |
+| almost | +254.7 (+288.1) | threecheck | +5.2 (-15.6) |
+| makruk | +249.1 (+227.6) | koth | -1.7 (-74.1) |
+| los-alamos | +246.3 (+168.4) | extinction | -26.1 (-49.0) |
+| minixiangqi | +217.3 (+246.3) | | |
+| pocketknight | +202.6 (-175.0) | | |
+| amazon | +170.6 (+184.0) | | |
+| knightmate | +168.4 (+217.3) | | |
+| modern | +143.1 (+119.1) | | |
+| kinglet | +125.0 | | |
+| judkins | +123.0 (+123.0) | | |
+| minishogi | +119.1 (+172.8) | | |
+| euroshogi | +111.4 (+81.4) | | |
+| chancellor | +111.4 (+115.2) | | |
+| janus | +107.5 (+17.4) | | |
+
+- 200 games: ± 24 to 28; 600 games: ± 14 to 17. No forfeit of ours.
+- Every variant is at 2000 or above within one interval but extinction
+  (-26 here, -43 over six rounds in queue230). Not valid, as before
+  (rule differences of the referee audit): janggi (FSF forfeits 200),
+  sittuyin (110), shatranj (62, after a bared king; results stand),
+  ouk-chaktrang (26), chigorin (19).
+- Open: extinction, by the general gap of our tree (LMR and
+  continuation history carry FSF there as everywhere), which is also
+  the lead toward full FSF.
