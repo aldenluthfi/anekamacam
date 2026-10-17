@@ -4097,3 +4097,17 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
   the start: depth 12 584195 to 121405, depth 14 2349553 to 443340.
   Queue232: FP against build 32 at FSF 2000, extinction six rounds,
   kinglet and horde two.
+- Queue232, interleaved: extinction build 32 -38.4, -56.1, -22.6, -68.6,
+  -98.1, -20.9 (-50.4), FP +22.6, -15.6, -52.5, -57.9, -75.9, -26.1
+  (-34.0), +16.5 (1.2 sigma); horde -5.2 to +57.0 (+62.2, 2.5 sigma);
+  kinglet +100.0 to +175.0 (+75.0, 2.8 sigma).
+- Gate D, chushogi self-play against build 32 (queue233, 200 games,
+  600-ply cap): 66-37-97, near +51, no forfeits. Merged.
+
+### Merged build 33 (2026-10-17)
+
+- Build 32 with FP (`plan27-main33`). Only the variants with a losing
+  extinct rule change (extinction, kinglet, horde, chushogi).
+- Extinction near -34 at FSF 2000, the one variant still below. FP left
+  the exchange off there; next, an exchange that scores a capture of a
+  last copy as the game it ends.
