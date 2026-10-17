@@ -4065,3 +4065,35 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
 - Open: extinction, by the general gap of our tree (LMR and
   continuation history carry FSF there as everywhere), which is also
   the lead toward full FSF.
+
+### The extinction tree (2026-10-17)
+
+- Earlier tries on the tree read first: LM2 (LMR from the second move,
+  -11.3), HL, H4, PB, CO2: none paid, why open. The plan 29 shogi
+  counters put our quiescence at 37.5% of the nodes against FSF's
+  11.7%.
+- Counters (temporary, ours a local build and FSF a lab copy, both
+  reverted), from the start position, total nodes (quiescence share):
+
+  | Depth | ours extinction | FSF extinction | ours standard | FSF standard |
+  | - | - | - | - | - |
+  | 10 | 116887 (37.4%) | 98299 (35.5%) | 32072 (37.0%) | 49945 (30.8%) |
+  | 12 | 584195 (37.6%) | 393250 (34.5%) | 122225 (38.0%) | 131585 (31.7%) |
+  | 14 | 2349553 (37.7%) | 1148891 (32.6%) | 390227 (38.9%) | 462485 (32.9%) |
+
+  Xiangqi 53.7%, crazyhouse 35.6%, shogi 36.4% at small depths. The
+  quiescence share is near FSF's: not the gap. In standard our tree is
+  as small as FSF's; in extinction it is twice FSF's at depth 14 and
+  grows faster (x4.0 for two plies against x2.9).
+- Root: extinction has no forward pruning. Plan 17 took it, and the
+  exchange, from every losing extinct rule ("a set one member above its
+  threshold makes the piece that leaves it decisive at a value material
+  never assigned it") and meant to give them back once a last-stock term
+  priced that; EX (build 11) is that term, and the bits never came back.
+  FSF prunes there as anywhere.
+- FP (`plan29-fp` cec76aa, on build 32): forward pruning under an extinct
+  rule; the exchange stays off (a capture of a last copy ends the game).
+  Extinction, kinglet, horde and chushogi change. Extinction nodes from
+  the start: depth 12 584195 to 121405, depth 14 2349553 to 443340.
+  Queue232: FP against build 32 at FSF 2000, extinction six rounds,
+  kinglet and horde two.
