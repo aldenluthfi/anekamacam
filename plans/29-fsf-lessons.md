@@ -4111,3 +4111,15 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
 - Extinction near -34 at FSF 2000, the one variant still below. FP left
   the exchange off there; next, an exchange that scores a capture of a
   last copy as the game it ends.
+- SX (`plan29-sx` 5c8842e, on build 33): `see!` makes real moves, so
+  after each capture it reads the game result; a capture that ends the
+  game is worth the result to its maker, `INF / 8` for a win, more than
+  any material swap and inside the capture bands, and the sequence stops.
+  The exchange bit then needs no extinction gate (misere and multi own
+  destroy keep theirs). A first draft used the result unclamped (near
+  INF): the losing band went below zero, the cast to `usize` wrapped to
+  near the "not scored" mark, and the search hung at depth 4. Bench
+  nodes of standard, xiangqi, crazyhouse the same as build 33;
+  extinction from the start 133989 at depth 12, 618385 at depth 14.
+  Queue234: extinction six rounds, kinglet and horde two, against build
+  33 at FSF 2000, then chushogi self-play.
