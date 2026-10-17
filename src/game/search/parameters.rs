@@ -1900,12 +1900,16 @@ pub fn derive_search_parameters(state: &mut State) {
 ///
 /// - exchange simulation : multi own destroy, misere, extinction
 /// - pruning on it       : counting
-/// - forward pruning     : misere, extinction
+/// - forward pruning     : misere
 /// - null pruning        : misere, counting, pass, stand-off, setup, capturer
 /// - recapture ordering  : none
 /// - quiet pruning       : misere
 /// - static movement     : a screened leg or a CPMN condition on a capture
 /// - wide quiescence     : a vector that captures more than one piece
+///
+/// An extinction rule keeps forward pruning: the static score prices a
+/// last copy under attack (`extinct_threat!`), so its margins hold. The
+/// exchange stays off there, as a capture of a last copy ends the game.
 ///
 /// A condition on a move that takes nothing, as horde's double step from
 /// the first two ranks, does not change an exchange. Counting it too took
@@ -2022,7 +2026,7 @@ pub fn derive_search_capabilities(state: &mut State) {
         enc_see_pruning!(capabilities);
     }
 
-    if !misere && !counts_pieces {
+    if !misere {
         enc_forward_pruning!(capabilities);
     }
 
