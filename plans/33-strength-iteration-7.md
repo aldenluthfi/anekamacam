@@ -184,6 +184,28 @@ play.
   for byte, and every capability line is as before. The shipped files
   are the derivation. Closed.
 
+### A1 (2026-10-18)
+
+- Build 34 values against FSF's removal-test ratios (plan 27), opening
+  then endgame: standard Q/R 1.91, 1.88 (FSF 2.19); grand Q/R 1.95, 1.92
+  (2.12), A/R 1.44, 1.24 (1.65); xiangqi R/C 1.88, 1.91 (1.58; it was
+  1.04 in plan 27).
+- PV's map, `100 (raw / cheapest)^0.7`, on standard's raw values (the
+  shift is +78.5): N 640, R 957, Q 1580, so Q/R 1.65. The map moves the
+  compounds further from FSF, while the pieces rise against the pawn.
+- Why chain: the shift distorts the ratios, but the compounds are low
+  because the model adds the mobility of each family (plan 27); a map
+  of the totals cannot add worth to a compound. The rule set before the
+  measure holds: compounds are still under FSF, so the map is not the
+  lever. Closed without games. The open root is in the value model (a
+  compound worth more than its parts), not in the map.
+
+### Other findings on the way
+
+- `derive_search_parameters` writes the razor margins and the ProbCut
+  margin with raw units: `mean / 3 + 100`, `mean / 2 + 200`, `mean +
+  300` and at least 100. They do not scale with the variant.
+
 ### Queue236 (stages 0 and 1)
 
 - The 16 parts off, one branch each (`plan33-off-<part>`, a one-line
