@@ -747,9 +747,13 @@ pub fn iterative_deepening(
 /// - quiet_checks: bool            -> true at the horizon of the main tree
 ///
 /// Return:
-/// i32                             -> stand pat or best capture score
+/// i32                             -> stand pat or best score, a bound
 ///
 /// Notes:
+/// Outside the window the score is a bound, and the table stores it so.
+/// A capture that the delta test skips raises the best score to the most
+/// it could give.
+///
 /// The loop stops at the first losing capture, as the order puts all later
 /// captures lower. The capability mask turns the stop off where a capture
 /// also fills a hand, counts a check, or takes two pieces.
@@ -792,7 +796,7 @@ pub fn quiescence_search(
 
     if !in_check {
         if stand_pat >= beta {
-            return beta;
+            return stand_pat;
         }
 
         if stand_pat > alpha {
@@ -828,6 +832,7 @@ pub fn quiescence_search(
     };
 
     let mut best_move = null_move();
+    let mut best_score = stand_pat;
     let alpha_start = alpha;
     let mut legal_moves = 0;
     let ply = state.search_ply as usize;
@@ -881,8 +886,14 @@ pub fn quiescence_search(
         if !quiet
         && delta_prunable
         && !m_promotion!(&moves[index])
-        && stand_pat + victim_value!(&moves[index], state) + delta <= alpha {
-            continue;
+        {
+            let futile_score = stand_pat
+                + victim_value!(&moves[index], state) + delta;
+
+            if futile_score <= alpha {
+                best_score = best_score.max(futile_score);                      /* the most the capture could give    */
+                continue;
+            }
         }
 
         if !make_move!(state, moves[index].clone()) {
@@ -909,14 +920,16 @@ pub fn quiescence_search(
             return alpha;
         }
 
+        best_score = best_score.max(score);
+
         if score > alpha {
             if score >= beta {
                 hash_qt_entry!(
-                    moves[index], beta, FBETA, state, qtable_key, qtable
+                    moves[index], score, FBETA, state, qtable_key, qtable
                 );
                 state.scratch.node_lists[ply] = lists;
 
-                return beta;
+                return score;
             }
 
             best_move = moves[index].clone();
@@ -941,7 +954,7 @@ pub fn quiescence_search(
         );
     }
 
-    alpha
+    best_score
 }
 
 /*----------------------------------------------------------------------------*\
@@ -986,9 +999,13 @@ pub fn quiescence_search(
 /// - known_check    : Option<bool>    -> check state of the mover, if known
 ///
 /// Return:
-/// i32                                -> best score in the window
+/// i32                                -> best score, a bound outside window
 ///
 /// Notes:
+/// A node gives the best score it found. Outside the window the score is
+/// a bound, and the table stores it so. A table cut gives the stored
+/// score.
+///
 /// A repetition gets the variant result at the first closed cycle. With a
 /// perpetual rule that blames an offender, the search waits for the rule
 /// count.
@@ -1552,15 +1569,15 @@ pub fn alpha_beta(
 
                     update_correction(
                         &mut info.corr_hist[corr_index],
-                        static_eval, beta, depth, FBETA, is_capture,
+                        static_eval, score, depth, FBETA, is_capture,
                     );
                     hash_tt_entry!(
-                        moves[index], beta, FBETA, depth, static_eval,
+                        moves[index], score, FBETA, depth, static_eval,
                         state, table_key, ttable
                     );
                     state.scratch.node_lists[ply] = lists;
 
-                    return beta;
+                    return score;
                 }
 
                 if is_quiet {
@@ -1615,15 +1632,15 @@ pub fn alpha_beta(
     } else {
         update_correction(
             &mut info.corr_hist[corr_index],
-            static_eval, alpha, depth, FALPHA, m_capture!(&best_move),
+            static_eval, best_score, depth, FALPHA, m_capture!(&best_move),
         );
         hash_tt_entry!(
-            best_move, alpha, FALPHA, depth, static_eval,
+            best_move, best_score, FALPHA, depth, static_eval,
             state, table_key, ttable
         );
     }
 
-    alpha
+    best_score
 }
 
 /*----------------------------------------------------------------------------*\
