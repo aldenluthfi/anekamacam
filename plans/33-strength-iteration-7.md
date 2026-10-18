@@ -176,3 +176,23 @@ play.
   session. After each merge, the open arms move to the new build.
 
 ## Results
+
+### A22 (2026-10-18)
+
+- A clone of main without its parameter files, built and derived again
+  for all 44 variants: every file is the same as the shipped one, byte
+  for byte, and every capability line is as before. The shipped files
+  are the derivation. Closed.
+
+### Queue236 (stages 0 and 1)
+
+- The 16 parts off, one branch each (`plan33-off-<part>`, a one-line
+  edit, never merged): lmr, lmrhist, nmp, rfp, razor, futility, lmp,
+  seeprune, probcut, iir, conthist, corrhist, killers, hk, checkext,
+  qchecks.
+- Each plays one round of 200 games against full FSF at the test-set
+  budget. Build 34 plays three rounds in each variant (at the start, the
+  middle and the end), as the paired base and the 10+0.1 rung of the
+  self-ladder. The rungs 20+0.2 and 40+0.4 follow, with FSF's
+  `nodestime` halved for each doubling (xiangqi 17 and 8, capablanca 13
+  and 6, rounded down).
