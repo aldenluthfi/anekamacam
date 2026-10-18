@@ -398,10 +398,10 @@ fn extract_sample(
         - state.minor_pieces[black] as f64;
     let mut pairs = 0.0;
 
-    for index in &eval.pair_pieces {
-        let color = p_color!(&state.statics.pieces[*index]) as f64;
+    for &(index, copies) in &eval.pair_pieces {
+        let color = p_color!(&state.statics.pieces[index]) as f64;
         pairs += (-2.0 * color + 1.0)
-            * (state.piece_count[*index] >= 2) as u8 as f64;
+            * (state.piece_count[index] >= copies) as u8 as f64;
     }
 
     let opening = opening_weight;

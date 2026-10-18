@@ -349,26 +349,24 @@ const IMBALANCE_MAJOR_FLOOR: u32 = 3;
 const IMBALANCE_MINOR_RATIO: u32 = 10;
 const IMBALANCE_MINOR_FLOOR: u32 = 1;
 
-/// Half-board pair
+/// Cover set
 ///
-/// The value of two pieces of a type that reaches only half the board. The
-/// second piece covers the other half. The test is on the mean reach, not
-/// on the name:
+/// The value of k pieces of a type that reaches 1/k of the board. Together
+/// the k copies can cover the whole board. The test is on the mean reach,
+/// not on the name:
 ///
-/// - 0.48 to 0.52 : half the board, the pair gets the bonus
-/// - above        : reaches the full board, no bonus
-/// - below        : reaches less, no bonus
+/// - k = 2 : half the board, as two bishops
+/// - k = 4 : a quarter, as four pieces that leap two squares straight
+/// - other : a reach that is no such part, or a full reach, no bonus
 ///
 /// - `PAIR_RATIO`       : 6% of the most valuable piece
 /// - `PAIR_FLOOR`       : 10, the minimum
-/// - `PAIR_REACH`       : 0.5, half the board
-/// - `PAIR_REACH_SLACK` : 0.02, the tolerance
+/// - `PAIR_REACH_SLACK` : 0.02 for each copy, the tolerance on k times r
 ///
 /// Royals are not tested.
 ///
 const PAIR_RATIO: u32 = 60;
 const PAIR_FLOOR: u32 = 10;
-const PAIR_REACH: f64 = 0.5;
 const PAIR_REACH_SLACK: f64 = 0.02;
 
 /// Threats
@@ -601,8 +599,8 @@ pub struct EvalParams {
     pub tempo_bonus: i32,                                                       /* worth of holding the move          */
     pub imbalance_major: i32,                                                   /* worth of one heavy piece of extra  */
     pub imbalance_minor: i32,                                                   /* worth of one light piece of extra  */
-    pub pair_pieces: Vec<usize>,                                                /* pieces a second copy completes     */
-    pub pair_bonus: i32,                                                        /* worth of completing such a pair    */
+    pub pair_pieces: Vec<(usize, u32)>,                                         /* piece, copies that cover the board */
+    pub pair_bonus: i32,                                                        /* worth of completing such a set     */
     pub hanging_value: [i32; 2],                                                /* worth of a loose enemy piece,      */
     pub pawn_threat_value: [i32; 2],                                            /* of a pawn on a piece and of a      */
     pub restricted_value: [i32; 2],                                             /* contested square, opening, ending  */
@@ -3575,19 +3573,23 @@ pub fn derive_advantage_parameters(state: &mut State) {
         * danger_cost[0] as u64 / (scale * scale);
     let threat_margin = threat_margin + ring_cost;
 
-    let bound: Vec<usize> = state.statics.pieces.iter()
+    let bound: Vec<(usize, u32)> = state.statics.pieces.iter()
         .filter(|piece| p_color!(piece) == WHITE)
         .filter(|piece| !p_is_royal!(piece))
-        .filter(|piece|
-            (derive_piece_reach(state, piece) - PAIR_REACH).abs()
-                < PAIR_REACH_SLACK
-        )
-        .map(|piece| p_index!(piece) as usize)
+        .filter_map(|piece| {
+            let reach = derive_piece_reach(state, piece);
+            let copies = (1.0 / reach).round();                                 /* copies whose parts cover the board */
+
+            (copies >= 2.0
+                && (copies * reach - 1.0).abs() < copies * PAIR_REACH_SLACK)
+                .then_some((p_index!(piece) as usize, copies as u32))
+        })
         .collect();
 
-    let pair_pieces: Vec<usize> = bound.iter()
-        .flat_map(|index| [
-            *index, state.statics.piece_swap_map[*index] as usize
+    let pair_pieces: Vec<(usize, u32)> = bound.iter()
+        .flat_map(|&(index, copies)| [
+            (index, copies),
+            (state.statics.piece_swap_map[index] as usize, copies),
         ])
         .collect();
 
@@ -3595,8 +3597,8 @@ pub fn derive_advantage_parameters(state: &mut State) {
         "Derived tempo {}, imbalance {} then {}, pair {} for {:?}",
         tempo, major, minor, pair,
         bound.iter()
-            .map(|index| state.statics.pieces[*index].char)
-            .collect::<Vec<char>>()
+            .map(|&(index, copies)| (state.statics.pieces[index].char, copies))
+            .collect::<Vec<(char, u32)>>()
     );
 
     log_3!(

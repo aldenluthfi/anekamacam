@@ -1492,9 +1492,9 @@ macro_rules! endgame_score {
 ///
 /// - major : difference in the count of major pieces
 /// - minor : difference in the count of minor pieces
-/// - pair  : two pieces of a type that can reach only half the board
+/// - pair  : k pieces of a type that can reach only 1/k of the board
 ///
-/// A pair is good because the second piece covers the other half. The
+/// A full set is good because together its copies cover the board. The
 /// value is the same in all phases, so it is added outside the blend.
 ///
 /// Params:
@@ -1517,11 +1517,11 @@ macro_rules! material_advantage {
 
         let mut pairs = 0;
 
-        for index in &statics.eval.pair_pieces {
-            let color = p_color!(&statics.pieces[*index]) as i32;
+        for &(index, copies) in &statics.eval.pair_pieces {
+            let color = p_color!(&statics.pieces[index]) as i32;
 
             pairs += (-2 * color + 1)
-                * ($state.piece_count[*index] >= 2) as i32;
+                * ($state.piece_count[index] >= copies) as i32;
         }
 
         major * statics.eval.imbalance_major
