@@ -862,9 +862,9 @@ impl PTable {
 
 /// Quiescence table packing macros
 ///
-/// Write and read the `slot[1]` fields of the quiescence table. Unlike
-/// `tt_enc_*`, the writers return the packed value. `slot[0]` has the raw
-/// `move.0`. Each row has 32 bits, and the field widths are to scale.
+/// Write and read the `slot[1]` fields of the quiescence table. The
+/// writers return the packed value. `slot[0]` has the raw `move.0`. Each
+/// row has 32 bits, and the field widths are to scale.
 ///
 /// ```text
 ///   Bits 0..31:

@@ -77,9 +77,7 @@ fn run_sandbox_root() -> PathBuf {
 ///
 /// Gives the private work directory of one engine in one match slot. Each
 /// engine runs in it, so `res/param` has its own exports or its embedded
-/// defaults, and `logs/latest.log` has one writer. With shared files, the
-/// two engines would have the same parameters, and two engines that roll
-/// one log at the same time crash at startup.
+/// defaults, and `logs/latest.log` has one writer.
 ///
 /// ```text
 /// /tmp/anekamacam-sprt/4242/3-engine-b
@@ -186,7 +184,6 @@ impl Display for SPRTEngine {
 /// - `Clock { base_ms: 8000, inc_ms: 80 }` : `go wtime 8000 ... binc 80`
 ///
 /// With a clock, each engine manages its own time, and a flag is a loss.
-/// Only the clock form tests time management. A fixed move time hides it.
 ///
 #[derive(Clone, Copy)]
 pub enum SPRTTimeControl {
@@ -1326,8 +1323,7 @@ enum SPRTReport {
 /// Gives the opening of one pair: random plies from the start position
 /// that capture nothing. The judge engine searches each try to
 /// `OPENING_JUDGE_DEPTH`, and a score within `OPENING_BALANCE_CP` of zero
-/// ends the search. A random ply often leaves a piece to take or a mate to
-/// give, and the pair would then test that, not the engines.
+/// ends the search.
 ///
 /// Params:
 /// - template: &State              -> loaded variant, forked for each try

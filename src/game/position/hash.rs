@@ -216,8 +216,7 @@ lazy_static! {
 /// u128           -> the combined context value
 ///
 /// Notes:
-/// With one row, a count and the same count plus 256 would have the same
-/// key. The config can give counting limits above 255.
+/// The config can give counting limits above 255.
 ///
 fn wide_context(slot: usize, value: u16) -> u128 {
     CONTEXT_HASHES[slot][(value & 0xFF) as usize]
@@ -347,8 +346,8 @@ pub fn qsearch_key(state: &State, repeats: u8, in_check: bool) -> u128 {
 ///
 /// hash_in_or_out_piece!
 ///
-///   Adds or removes one piece. A mask, not a branch, updates the pawn
-///   key. For a piece that is not a pawn, the mask is zero.
+///   Adds or removes one piece. A mask updates the pawn key. For a piece
+///   that is not a pawn, the mask is zero.
 ///
 ///   Params:
 ///   - state       : &mut State -> position to update

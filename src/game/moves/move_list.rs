@@ -722,11 +722,12 @@ pub type AttackRecipes = (
 /// ```
 ///
 /// - leap : nothing on the way, a bit of a fixed board
-/// - line : one step to each distance up to the edge, empty on the way;
-///          a ray cut at its first blocker at run time
-/// - hop  : one step, one screen at each distance, each target past it;
-///          the first blocker past the first blocker at run time
+/// - line : one step to each distance up to the edge, empty on the way
+/// - hop  : one step, one screen at each distance, each target past it
 /// - gate : any other target, its squares tested one by one
+///
+/// At run time a line is a ray cut at its first blocker, and a hop is the
+/// first blocker past the first blocker.
 ///
 /// Params:
 /// - state: &State -> variant with the compiled move tables

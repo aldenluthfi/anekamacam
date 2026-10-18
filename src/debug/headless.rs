@@ -390,8 +390,7 @@ fn run_evaluate_command(
 /// run_see_command
 ///
 /// Prints the static exchange result of one capture. The move must be a
-/// capture. A quiet move has no exchange, and zero would look like an equal
-/// trade.
+/// capture.
 ///
 /// Params:
 /// - position: HeadlessPosition -> the position and the capture
@@ -446,8 +445,7 @@ fn run_see_command(
 /// Result<(), String>           -> Ok, or the rejected limit
 ///
 /// Notes:
-/// The command makes new 1 MB tables each time. Old table entries would
-/// change the node count of the same position.
+/// The command makes new 1 MB tables each time.
 ///
 fn run_search_command(
     mut position: HeadlessPosition,
@@ -863,7 +861,7 @@ fn run_bench_command(
 /// Result<(), String>     -> Ok, or the rejected argument
 ///
 /// Notes:
-/// A zero number is an error, because the run would make no data.
+/// A zero number is an error.
 ///
 fn run_datagen_command(arguments: &[String]) -> Result<(), String> {
     if arguments.len() < 3 || arguments.len() > 4 {

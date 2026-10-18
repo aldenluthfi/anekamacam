@@ -1262,8 +1262,8 @@ impl State {
     /// State::fork
     ///
     /// Makes a new game from a loaded variant: a new state with the same
-    /// `statics`, at the start position, with new evaluation caches. It is
-    /// faster than `clone` and `reset`, because it copies no history.
+    /// `statics`, at the start position, with new evaluation caches. It
+    /// copies no history.
     ///
     /// Return:
     /// State -> a new state at the start position, ready to play
@@ -1411,15 +1411,16 @@ impl State {
     ///
     /// 1. compile the expressions, one set for each piece
     /// 2. `populate_relevant` puts the sets on each square
-    /// 3. the pieces a capture puts in the hand: those a promotion takes
-    ///    back, and those with a drop pattern that can match
+    /// 3. the pieces that a capture puts in the hand
     /// 4. `generate_attack_masks` stores each move under its target square
     /// 5. `derive_attack_recipes` makes the tables of `piece_attacks!`
     /// 6. the royal reach, the squares an attack on a royal square reads
     /// 7. the royal lines, the squares a piece attacks a royal square from
     /// 8. the capture reach, the squares that the capture legs land on
     ///
-    /// The size of steps 7 and 8 grows with the square of the board area.
+    /// A capture puts a piece in the hand when a promotion takes it back, or
+    /// when it has a drop pattern that can match. The size of steps 7 and 8
+    /// grows with the square of the board area.
     /// Only a board of at most `CAPTURE_REACH_WORDS` words keeps them.
     ///
     /// Params:

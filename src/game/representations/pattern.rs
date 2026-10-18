@@ -137,8 +137,9 @@ pub type PatternUnit = (u16, PieceSet);
 /// - PatternAllower : offsets that must have a piece from their set
 /// - PatternStopper : offsets that must not have a piece from their set
 /// - Pattern        : an (allower, stopper) pair
-/// - PatternSet     : all patterns of one (piece, square) table slot, or
-///                    the alternatives of one move condition
+/// - PatternSet     : all patterns of one (piece, square) table slot
+///
+/// A `PatternSet` also holds the alternatives of one move condition.
 ///
 pub type PatternAllower = Vec<PatternUnit>;
 pub type PatternStopper = Vec<PatternUnit>;

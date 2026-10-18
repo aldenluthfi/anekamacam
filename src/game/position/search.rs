@@ -95,8 +95,7 @@ macro_rules! move_key {
 /// CONTINUATION_PLIES
 ///
 /// The number of continuation history tables. One table follows the last
-/// move, and one follows the previous move of the same side. Tests showed
-/// that the two help and a third does not.
+/// move, and one follows the previous move of the same side.
 ///
 const CONTINUATION_PLIES: usize = 2;
 
@@ -110,12 +109,6 @@ const CONTINUATION_PLIES: usize = 2;
 /// The table size is the smaller of the dense size and `CONT_HIST_CELLS`.
 /// The cell is the dense index modulo the table length. Thus a small table
 /// is dense, and in a large table some replies share a cell.
-///
-/// Notes:
-/// Tests compared the wrap with a hash of the index, a hash of the overflow
-/// and masked move keys, on ten positions of daishogi and daidaishogi. The
-/// wrap stayed within a few percent of the dense table. The hash was 4 to
-/// 5% slower, and the mask cost daidaishogi 58% more nodes.
 ///
 const CONT_HIST_CELLS: usize = 1 << 29;
 
@@ -230,8 +223,7 @@ const MIN_IIR_DEPTH: usize = 4;
 /// start delta for each variant.
 ///
 /// Notes:
-/// A mate score skips the window. Mate scores change one ply at a time and
-/// would fail each window.
+/// A mate score skips the window.
 ///
 const ASPIRATION_CLAMP: u32 = 16000;
 const ASPIRATION_WIDEN: u32 = 2000;
@@ -762,9 +754,7 @@ pub fn iterative_deepening(
 /// A capture whose victim plus a margin is below alpha is skipped, except
 /// a promotion or in the endgame.
 ///
-/// Without the square rule, the flying generals of taikyoku shogi made
-/// 86-ply leaves. A node in check without a legal move gets the variant
-/// result.
+/// A node in check without a legal move gets the variant result.
 ///
 #[hotpath::measure]
 pub fn quiescence_search(

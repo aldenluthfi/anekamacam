@@ -342,8 +342,7 @@ macro_rules! m_signature {
 ///
 /// Notes:
 /// A destroy leg removes an own piece, with the `o` flag set. `m_capture!`
-/// does not count it. Else quiescence would search moves that only lose
-/// own pieces.
+/// does not count it.
 ///
 #[macro_export]
 macro_rules! m_matches {

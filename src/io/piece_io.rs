@@ -27,8 +27,7 @@ use crate::*;
 /// Vec<(usize, usize)> -> (white index, black index) for each piece type
 ///
 /// Notes:
-/// The function asserts that each pair has a black piece. A bad swap entry
-/// would make derivation write over white values without an error.
+/// The function asserts that each pair has a black piece.
 ///
 pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
     let mut type_pairs = Vec::new();
@@ -74,8 +73,7 @@ pub fn collect_piece_type_pairs(state: &State) -> Vec<(usize, usize)> {
 /// - is_major: bool       -> major-piece role flag
 ///
 /// Notes:
-/// A value wider than 14 bits causes a panic. A truncated value would give
-/// a wrong material value without an error.
+/// A value wider than 14 bits causes a panic.
 ///
 pub fn set_piece_dynamic_parameters(
     piece: &mut Piece,

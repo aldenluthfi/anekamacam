@@ -565,7 +565,6 @@ fn expand_directions(expr: &str) -> Option<String> {
 ///
 /// Notes:
 /// During the loop, the open upper bound is `&`. At the end it becomes `*`.
-/// Else the loop would expand the new `*` again.
 ///
 fn expand_ranges(expr: &str) -> Option<String> {
     assert!(!expr.contains("|"), "{expr} must be sanitized before parsing.");
@@ -718,9 +717,6 @@ where
 ///
 /// Return:
 /// String       -> the normalized and expanded `|` expression
-///
-/// Notes:
-/// A stage that gives `None` would remove its branch. No stage does this.
 ///
 fn parse_move_string(expr: &str) -> String {
 
@@ -1131,8 +1127,7 @@ fn filter_atomic_out_of_bounds(
 /// remove_duplicates_in_place
 ///
 /// Removes duplicates from a set and keeps the first copy. Two routes can
-/// give the same displacement, and a duplicate would give a second equal
-/// move.
+/// give the same displacement.
 ///
 /// Params:
 /// - vectors: &mut Vec<Element> -> set to change in place
@@ -2026,7 +2021,7 @@ fn compound_atomic_to_vector(
 /// (i8, i8)                   -> net (x, y) of the branch
 ///
 /// Notes:
-/// The sum saturates. A wrap would put a far square near the origin.
+/// The sum saturates.
 ///
 fn sum_multi_leg_vectors(vectors: &MultiLegVector) -> (i8, i8) {
     let mut sum: (i8, i8) = (0, 0);

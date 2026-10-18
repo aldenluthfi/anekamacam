@@ -501,8 +501,7 @@ fn mean_squared_error(samples: &[Sample], theta: &[f64], scaling: f64) -> f64 {
 /// fit_scaling
 ///
 /// Finds the K with the smallest error for the current parameters, before
-/// the first step. Without it, the first epochs would only scale the full
-/// evaluation.
+/// the first step.
 ///
 /// The error has one minimum in K, so the function uses golden-section
 /// search. It removes the part past the worse probe. The better probe
@@ -577,7 +576,7 @@ fn fit_scaling(samples: &[Sample], theta: &[f64]) -> f64 {
 ///
 /// Notes:
 /// Each thread has its own full accumulator, and the function adds them at
-/// the end. A shared vector would need a lock for each feature.
+/// the end.
 ///
 fn compute_gradient(
     samples: &[Sample],

@@ -42,8 +42,7 @@ const USUAL_CONDITION_CHANCE: u32 = 500;
 /// PST amplitude
 ///
 /// The maximum difference between the best and worst square of a piece
-/// square table, as a part of the piece value. A fixed value is too large
-/// for a pawn and too small for a taikyoku great general.
+/// square table, as a part of the piece value.
 ///
 /// - `PST_AMPLITUDE_RATIO` : 2.6% of the piece value, as for a chess queen
 /// - `PST_AMPLITUDE_FLOOR` : 24, the minimum
@@ -94,8 +93,6 @@ const ENDGAME_ARMY_SIZE: u32 = 5;
 /// - one piece : half of the contempt
 /// - two       : the full contempt, 12.5% of a mean piece
 /// - more      : the same, the cost stops increasing
-///
-/// The two use the mean piece of the army, not the most valuable piece.
 ///
 const DRAW_CONTEMPT_RATIO: u32 = 125;
 const DRAW_CONTEMPT_SPAN: u32 = 2;
@@ -380,15 +377,13 @@ const PAIR_REACH_SLACK: f64 = 0.02;
 /// square is held strongly when a pawn of its side attacks it, or two of
 /// its side attack it and fewer than two of the other side do:
 ///
-/// - hanging    : an enemy piece, not royal, that we attack and the enemy
-///                does not hold strongly; it counts when no enemy piece
-///                holds it, or when two of ours attack a piece that is not
-///                a pawn
-/// - pawn       : an enemy piece, not royal and not a pawn, that one of our
-///                pawns attacks from a square the enemy does not attack or
-///                we attack too
-/// - restricted : a square both sides attack that the enemy does not hold
-///                strongly
+/// - hanging    : an enemy piece, not royal, we attack and it holds weakly
+/// - pawn       : an enemy piece, not royal or pawn, our safe pawn attacks
+/// - restricted : a square both sides attack, the enemy holds weakly
+///
+/// A hanging piece counts when no enemy piece holds it, or when two of ours
+/// attack it and it is not a pawn. A safe pawn stands on a square the enemy
+/// does not attack, or one we attack too.
 ///
 /// Each is a part of the most valuable piece, opening then endgame. The
 /// parts are Fairy-Stockfish's values over its queen:
@@ -399,14 +394,15 @@ const PAIR_REACH_SLACK: f64 = 0.02;
 /// - `THREAT_FLOOR`      : 1, the minimum of each
 ///
 /// The quiescence search skips the threats when the score without them is
-/// beyond its window by more than a margin, as they would not bring it
-/// back. The margin is 10% of the most valuable piece, near four times the
-/// mean threat value in standard (`THREAT_LAZY_RATIO`). The goal race goes
-/// with the threats, so with a goal rule the margin adds its `value`, as
-/// much as the race can be worth. The king danger goes with them too, so
-/// where a royal can be mated the margin adds the cost of a full weak
-/// ring at the derived weights, four times as much where captures fill
-/// the hand and a weak square counts twice.
+/// beyond its window by more than a margin:
+///
+/// - `THREAT_LAZY_RATIO` : 10% of the most valuable piece
+/// - goal rule           : plus the `value` of the goal race
+/// - royal can be mated  : plus the cost of a full weak ring
+///
+/// The goal race and the king danger go with the threats. The ring cost
+/// uses the derived weights, so it is four times as much where captures
+/// fill the hand and a weak square counts twice.
 ///
 const HANGING_RATIO: [u32; 2] = [27, 13];
 const PAWN_THREAT_RATIO: [u32; 2] = [68, 35];
@@ -423,8 +419,8 @@ const THREAT_LAZY_RATIO: u32 = 100;
 /// then endgame (`MOBILITY_RATIO`: 5.9% and 7.5% of the most valuable
 /// piece).
 ///
-/// Fairy-Stockfish doubles it when a captured piece goes to the hand, or
-/// when a count of checks wins: more mobility is then worth more.
+/// The value doubles when a captured piece goes to the hand, or when a
+/// count of checks wins, as in Fairy-Stockfish.
 ///
 const MOBILITY_RATIO: [u32; 2] = [59, 75];
 
@@ -436,19 +432,20 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 /// `local_stride + 1` squares. The parts are Fairy-Stockfish's over its own
 /// full weak ring (nine squares at 183):
 ///
-/// - `DANGER_WEAK_RING`    : 100%, the ring squares the enemy attacks and
-///                           we do not hold twice, shared by the squares
-/// - `DANGER_HIT_RATIO`    : 37.7% of a weak square, each enemy hit on a
-///                           ring square next to the royal
-/// - `DANGER_UNSAFE_RATIO` : 80.9% of a weak square, each check square an
-///                           enemy type reaches when none is safe
+/// - `DANGER_WEAK_RING`    : 100%, shared by the weak ring squares
+/// - `DANGER_HIT_RATIO`    : 37.7% of a weak square, each enemy ring hit
+/// - `DANGER_UNSAFE_RATIO` : 80.9% of a weak square, each unsafe check
 /// - `DANGER_ATTACKER`     : 2.4% for each attacker, times the attackers
-/// - `DANGER_CHECK`        : 36.4% for an enemy type with one safe check
-///                           square, 54.6% with more
+/// - `DANGER_CHECK`        : 36.4% and 54.6%, one or more safe checks
 /// - `DANGER_NO_MAJOR`     : 53% less when the enemy has no major piece
 /// - `DANGER_BASE`         : 2.2% added to each sum
 /// - `DANGER_THRESHOLD`    : 6.1%, the sum costs nothing up to it
 /// - `DANGER_CAP`          : 212.5%, the opening cost is linear past it
+///
+/// A weak ring square is one the enemy attacks and we do not hold twice. A
+/// ring hit lands on a ring square next to the royal. An unsafe check is a
+/// check square an enemy type reaches when none of its squares is safe. A
+/// safe check counts once for each enemy type.
 ///
 /// A sum `d` past the threshold costs `min(d, cap) * d` in the opening and
 /// `d` in the endgame, scaled so that a full weak ring costs
@@ -478,22 +475,16 @@ const DANGER_COST_RATIO: [u32; 2] = [261, 38];
 /// tests are geometric: no backward step or capture, a quiet one-step
 /// forward move, and no move longer than one square after the first move.
 ///
-/// Notes:
-/// Without the count, the minishogi pawn and the two minixiangqi soldiers
-/// would be pawns. Pawn structure needs a rank of pawns.
-///
 const PAWN_MIN_START_COUNT: usize = 5;
 
 /// Pawn structure values
 ///
 /// Pawn structure values, as parts of the pawn value over
-/// `COEFFICIENT_SCALE`. Other derived values use the most valuable piece.
-/// These use the pawn, because each is a correction of one pawn value.
+/// `COEFFICIENT_SCALE`.
 ///
 /// - `PAWN_CONNECTED_OPENING_RATIO` : +20% of the opening pawn value
 /// - `PAWN_CONNECTED_ENDGAME_RATIO` : +35% of the endgame pawn value
-/// - `PAWN_MASS_ADVANCE_RATIO`      : +125% and +80% of the pawn value in
-///                                    each phase, times the progress
+/// - `PAWN_MASS_ADVANCE_RATIO`      : +125% and +80%, times the progress
 /// - `PAWN_DOUBLED_RATIO`           : -25%, the same in the two phases
 /// - `PAWN_ISOLATED_RATIO`          : -25%, the same in the two phases
 /// - `PAWN_BACKWARD_RATIO`          : -17.5%, the same in the two phases
@@ -502,8 +493,7 @@ const PAWN_MIN_START_COUNT: usize = 5;
 /// a pawn mass: it wins by pushing its defended pawns, so each one that is
 /// not passed gains the progress part, from the same squared progress as
 /// the passed pawn. One step from promotion on eight ranks, it is about
-/// one pawn more. Elsewhere the piece-square tables already pay for the
-/// progress, and a second part made the pawns run (plan 29 PR, PR2).
+/// one pawn more.
 ///
 const PAWN_CONNECTED_OPENING_RATIO: u32 = 200;
 const PAWN_CONNECTED_ENDGAME_RATIO: u32 = 350;
@@ -732,8 +722,6 @@ fn derive_piece_roles(state: &mut State) -> Vec<PieceRoles> {
 /// - rook     : all squares, reach one
 /// - bishop   : the squares of its colour, about a half
 /// - elephant : the seven points of its side, less than a tenth
-///
-/// A knight also has reach one. The mobility term tells that it is slower.
 ///
 /// Params:
 /// - state: &State -> precomputed move tables
@@ -1272,8 +1260,7 @@ fn derive_distance_from_center(state: &State, square: usize) -> f64 {
 /// Vec<f64>                  -> distance for each square, or infinity
 ///
 /// Notes:
-/// The function reads the zone once for the full board. A read for each
-/// square would cost the square of the board size for a full-board zone.
+/// The function reads the zone once for the full board.
 ///
 fn derive_promotion_field(state: &State, piece_index: PieceIndex) -> Vec<f64> {
     let zone: Vec<usize> = set_indices!(
@@ -1340,8 +1327,7 @@ fn derive_promotion_target(
 /// f64             -> spread of the finite distances, 0 if none
 ///
 /// Notes:
-/// A zone on the full board gives distance zero on all squares. Without
-/// the span, that gave a flat extra material value in the table.
+/// A zone on the full board gives distance zero on all squares.
 ///
 fn derive_promotion_span(field: &[f64]) -> f64 {
     let finite = field.iter().copied().filter(|d| d.is_finite());
@@ -1374,8 +1360,7 @@ fn derive_promotion_span(field: &[f64]) -> f64 {
 ///
 /// Notes:
 /// A piece without a zone, or with a zone on the full board, gets zero.
-/// The gradient only orders the squares. The passed pawn term gives the
-/// value of a free path, so a larger gradient counts the race two times.
+/// The gradient only orders the squares.
 ///
 fn derive_promotion_bonus(
     state: &State, piece_index: PieceIndex, closest: f64, span: f64,
@@ -1507,7 +1492,7 @@ fn derive_pst(
 /// the piece counts each time the variant rules end SETUP. It makes and
 /// undoes the placements in place.
 ///
-/// The visited key is the census, not the board:
+/// The visited key is the census:
 ///
 /// - piece_count   : count of each type on the board
 /// - piece_in_hand : pieces to place, White hand then Black hand
@@ -1683,8 +1668,8 @@ pub fn derive_parameters(state: &mut State) {
 /// Vec<u8>        -> `MAX_DEPTH * REDUCTION_MOVE_CAP` plies, depth major
 ///
 /// Notes:
-/// A table read is faster than a logarithm at each node, and each cell fits
-/// a byte. Depth zero and move zero are never reduced, so they are zero.
+/// Each cell fits a byte. Depth zero and move zero are never reduced, so
+/// they are zero.
 ///
 pub fn reduction_surface<F>(base: u32, divisor: u32, shape: F) -> Vec<u8>
 where
@@ -1907,16 +1892,6 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - static movement     : a screened leg or a CPMN condition on a capture
 /// - wide quiescence     : a vector that captures more than one piece
 ///
-/// An extinction rule keeps forward pruning: the static score prices a
-/// last copy under attack (`extinct_threat!`), so its margins hold. It
-/// keeps the exchange too: `see!` scores a capture that ends the game as
-/// the game's result.
-///
-/// A condition on a move that takes nothing, as horde's double step from
-/// the first two ranks, does not change an exchange. Counting it too took
-/// the losing-capture stop from horde's quiescence: a depth-8 search ran
-/// 4 s on some openings.
-///
 /// A pass is a vector that ends on its start square without a capture. A
 /// capturer is a piece that has capture vectors only. The movement facts
 /// come from the generated vectors, the terminal facts from the end rules.
@@ -1925,15 +1900,6 @@ pub fn derive_search_parameters(state: &mut State) {
 /// - state: &mut State -> variant with the capability mask to derive
 ///
 /// Notes:
-/// Drops keep the exchange bits. Each capture also fills the hand of the
-/// taker, so the sum doubles, but its sign stays.
-///
-/// Promotion to a captured type keeps the exchange bits. The simulation
-/// makes real moves, so each promotion obeys the pool.
-///
-/// Recapture ordering keeps multi own destroy. The capture band subtracts
-/// the own destroyed value, so such a move sorts below the quiet moves.
-///
 /// A lion that returns over a destroyed piece is not a pass. The scan
 /// reads each piece on each square, as some legs exist only near an edge.
 ///
@@ -2728,9 +2694,7 @@ pub fn derive_shelter_parameters(state: &mut State) {
 /// A piece in hand has no square, so it reads `zone_attack_best`. The
 /// function uses the ring of `derive_shelter_parameters`, so that function
 /// must run first. The vectors are in the frame of the piece owner, so a
-/// Black landing turns both shifts round, as the move walk does. Without
-/// it each Black landing was mirrored through the origin: a Black queen on
-/// h4 put no pressure on a White king on f3.
+/// Black landing turns both shifts round, as the move walk does.
 ///
 #[hotpath::measure]
 pub fn derive_danger_parameters(state: &mut State) {
@@ -2850,8 +2814,7 @@ pub fn derive_danger_parameters(state: &mut State) {
 ///
 /// Sets the goal race of the goal rule:
 ///
-/// - landings : for each goal piece and square, the squares of its moves
-///              on an empty board
+/// - landings : for each goal piece and square, its empty-board moves
 /// - value    : the worth of one zone square one move away, doubled
 ///
 /// A vector that needs a screen or only captures cannot move on an empty
@@ -2921,8 +2884,7 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
 ///
 /// - never backward : no vector has a negative rank
 /// - steps forward  : a quiet one-rank move, file change at most one
-/// - short range    : no move longer than one square, but the first move
-///                    or a move from a start square
+/// - short range    : no move longer than one square, but a first move
 /// - many copies    : at least `PAWN_MIN_START_COUNT`, board and hand
 ///
 /// The step test rejects the shogi knight and lance. The backward test
@@ -2940,8 +2902,8 @@ fn derive_goal_race(state: &mut State, dearest: u64) {
 ///
 /// Notes:
 /// The function tests White, and the Black pair gets the same result. The
-/// slots are in piece order. The tables have one row for each slot, not
-/// for each piece, so they stay small.
+/// slots are in piece order. The tables have one row for each slot, so
+/// they stay small.
 ///
 fn derive_pawn_slots(state: &State) -> (Vec<usize>, Vec<usize>) {
     let board_size = state.statics.board_size;
@@ -3361,8 +3323,7 @@ fn derive_pawn_advancement(
 /// - support      : own squares that connect it or defend its stop
 /// - backward     : enemy squares that attack its stop
 ///
-/// Each mask is a full board, so each test is one bit read. The tables use
-/// the pawn slot, not the piece index, so they stay small. The values are:
+/// Each mask is a full board, so each test is one bit read. The values are:
 ///
 /// - passed    : promotion gain, times the ratio, times the progress
 /// - connected : part of the pawn value, separate for each phase
@@ -3526,23 +3487,23 @@ pub fn derive_pawn_parameters(state: &mut State) {
 
 /// derive_advantage_parameters
 ///
-/// Gives the five advantages that material does not include:
+/// Gives the six advantages that material does not include:
 ///
 /// - tempo     : part of the most valuable piece, with a floor
 /// - imbalance : one part for a major surplus, one for a minor surplus
 /// - pair      : a part again, only for pieces that reach half the board
 /// - threats   : a part for each attack kind, opening then endgame
-/// - mobility  : a part, opening then endgame, twice when the captures
-///               fill the hand or with a count of checks
-/// - danger    : the parts of the king danger sum, the weak square from
-///               the ring size, the rule weights for a hand the captures
-///               fill and a race of checks, and the cost as a part of the
-///               most valuable piece; only where a royal can be mated, else
-///               the cost is 0 and the sum is off
+/// - mobility  : a part, opening then endgame
+/// - danger    : the parts of the king danger sum, and its cost
 ///
-/// The pair test uses the piece reach, not the name. Royals are not
-/// tested. The list has the two colours of each pair piece, so the
-/// evaluation needs no swap map.
+/// Mobility counts twice when the captures fill the hand or with a count
+/// of checks. The weak square of the danger sum comes from the ring size,
+/// and the rule weights change for a hand the captures fill and for a race
+/// of checks. The cost is a part of the most valuable piece where a royal
+/// can be mated; else it is 0 and the sum is off.
+///
+/// Royals are not tested for a pair. The list has the two colours of each
+/// pair piece, so the evaluation needs no swap map.
 ///
 /// Params:
 /// - state: &mut State -> variant with the advantage values to fill

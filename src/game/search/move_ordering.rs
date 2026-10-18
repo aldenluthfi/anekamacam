@@ -374,8 +374,8 @@ macro_rules! score_move {
 /// pick_by_score!
 ///
 /// Moves the best remaining move to `index`. The macro does one selection
-/// pass for each move that the search asks for, not a full sort. Thus a
-/// node that cuts early does not score all moves.
+/// pass for each move that the search asks for. Thus a node that cuts
+/// early does not score all moves.
 ///
 /// ```text
 /// index 0   [. . . . . .]  score all, swap the best to slot 0

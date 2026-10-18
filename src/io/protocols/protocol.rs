@@ -78,8 +78,7 @@ pub trait Protocol {
     /// bool                    -> true when the session must stop
     ///
     /// Notes:
-    /// An unknown line is ignored. A GUI can send unknown words, and output
-    /// on stdout would look like a reply.
+    /// An unknown line is ignored, with no output on stdout.
     ///
     fn execute(
         &self,

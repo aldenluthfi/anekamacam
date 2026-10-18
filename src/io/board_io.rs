@@ -313,8 +313,7 @@ pub fn format_numeric_board(values: &[i32], files: u8, ranks: u8) -> String {
 /// Vec<i32>        -> the mirrored table
 ///
 /// Notes:
-/// The function asserts that the length is `files * ranks`. Without this
-/// test, a wrong size would give a wrong table without an error.
+/// The function asserts that the length is `files * ranks`.
 ///
 pub fn mirror_pst_across_horizontal_axis(
     pst: &[i32],

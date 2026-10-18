@@ -261,9 +261,8 @@ macro_rules! royal_guard {
 /// i32             -> danger cost for that colour, 0 or more
 ///
 /// Notes:
-/// The cap is near the value of the most valuable piece. A summed hand of
-/// free drops grew past any use. The macro does not test drop legality,
-/// as a value that is too high is safer than one too low.
+/// The cap is near the value of the most valuable piece. The macro does not
+/// test drop legality.
 ///
 #[macro_export]
 macro_rules! king_danger {
@@ -479,21 +478,26 @@ macro_rules! check_race {
 ///   value * w / (w + d * d)
 /// ```
 ///
-/// - 1 square, 1 move  : half the `value`, it arrives next move if not
-///                       stopped
+/// - 1 square, 1 move  : half the `value`, it arrives next move
 /// - 1 square, 2 moves : a fifth of it
 /// - 2 squares, 3 moves: two elevenths of it
 ///
 /// Params:
-/// - state: &State                  -> position to score
-/// - color: usize                   -> colour of the goal pieces
-/// - hold : Fn(Square, usize) -> i32 -> moves the enemy attacks on a square
-///                                     cost that colour: 0, 1 when attacked
-///                                     once, 2 when twice or by a pawn
+///
+///     state: &State
+///     position to score
+///
+///     color: usize
+///     colour of the goal pieces
+///
+///     hold: Fn(Square, usize) -> i32
+///     moves the enemy attacks on a square cost that colour: 0, 1 when
+///     attacked once, 2 when twice or by a pawn
 ///
 /// Return:
-/// i32                              -> race worth for that colour, 0 or
-///                                     more
+///
+///     i32
+///     race worth for that colour, 0 or more
 ///
 /// Notes:
 /// A goal piece on the zone has won, so it is not scored here. The flood
@@ -757,11 +761,13 @@ macro_rules! castling_bonus {
 /// - protected passed : a passed pawn with a pawn defender, 1.5 times
 /// - connected passed : a passed pawn with a passed defender, 2 times
 /// - connected        : another own pawn defends it
-/// - pushed           : connected, not passed, in a colour with more pawns
-///                      than `pawn_mass`: its progress part too
+/// - pushed           : connected and not passed, in a pawn mass
 /// - doubled          : an own pawn is on its path
 /// - isolated         : no own pawn on a file that can defend it
 /// - backward         : a neighbour but no defender, stop square attacked
+///
+/// A colour with more pawns than `pawn_mass` is a pawn mass, and each of
+/// its pushed pawns gets its progress part too.
 ///
 /// The passed value is the promotion gain, scaled by the progress of the
 /// pawn. Derivation makes each mask from the moves of the pawn, so the same
@@ -1016,37 +1022,38 @@ macro_rules! pawn_structure {
 /// when its map is made:
 ///
 /// - area     : no own pawn, no own royal, no square an enemy pawn attacks
-/// - mobility : the squares of the area that the piece attacks, `m`; it
-///              is worth `value * (m - 2) / (8 + m)` from `mobility_table`,
-///              below zero under two squares and toward `value` above
+/// - mobility : `m`, the squares of the area that the piece attacks
+///
+/// A piece with mobility `m` is worth `value * (m - 2) / (8 + m)` from
+/// `mobility_table`: below zero under two squares and toward `value` above.
 ///
 /// Then for each colour, the threats:
 ///
-/// - strong     : an enemy pawn attacks it, or two enemy pieces and fewer
-///                than two of ours
-/// - weak       : an enemy piece, not royal, that we attack and that is not
-///                strong
-/// - hanging    : a weak piece that no enemy piece attacks, or one that is
-///                not a pawn and that two of ours attack
-/// - pawn       : an enemy piece, not royal and not a pawn, that one of our
-///                pawns attacks from a safe square: one the enemy does not
-///                attack, or one we attack too
+/// - strong     : an enemy pawn, or two enemy pieces and under two of ours
+/// - weak       : an enemy piece, not royal, that we attack, not strong
+/// - hanging    : a weak piece that no enemy piece attacks
+/// - pawn       : an enemy piece, not royal or pawn, our safe pawn attacks
 /// - restricted : a square both colours attack that is not strong
 ///
-/// Each piece or square counts once, whatever the number of attackers.
+/// A weak piece that is not a pawn and that two of ours attack is also
+/// hanging. A safe pawn stands on a square the enemy does not attack, or
+/// one we attack too. Each piece or square counts once, whatever the number
+/// of attackers.
 ///
 /// Then for each colour with one royal that can be mated, the king danger
 /// sum of the enemy, from the same maps. The ring is the royal square and
 /// its local ring:
 ///
-/// - attackers : enemy pieces whose map meets the ring, and the ring
-///               squares enemy pawns attack; their count times the pieces
+/// - attackers : (ring attackers + ring pawn hits) times ring attackers
 /// - weak      : ring squares the enemy attacks and we do not hold twice
 /// - hits      : the enemy hits on the local ring, one for each piece
-/// - checks    : an enemy piece type that reaches a check square that is
-///               safe, one we do not attack or a weak one the enemy holds
-///               twice; else each check square it reaches is unsafe
+/// - checks    : an enemy piece type that reaches a safe check square
 /// - no major  : the enemy has no major piece, less danger
+///
+/// A ring attacker is an enemy piece whose map meets the ring. A safe check
+/// square is one we do not attack, or a weak one the enemy holds twice. A
+/// type with no safe check square makes each check square it reaches
+/// unsafe.
 ///
 /// A sum past the threshold costs the colour its square in the opening,
 /// linear past the cap, and the sum itself in the endgame; the weights
@@ -1557,8 +1564,8 @@ macro_rules! material_advantage {
 /// - tempo                  : outside, after the flip to the side to move
 ///
 /// With a window, the attack terms are left out when the score without
-/// them is beyond the window by more than `threat_margin`: they would not
-/// bring it back inside. Without a window, the score is always complete.
+/// them is beyond the window by more than `threat_margin`. Without a
+/// window, the score is always complete.
 ///
 /// Params:
 /// - state: &mut State -> position to evaluate

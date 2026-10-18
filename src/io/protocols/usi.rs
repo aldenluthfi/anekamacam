@@ -44,8 +44,7 @@ impl Protocol for Usi {
     /// - `usinewgame`       : reset the session for a new game
     /// - `go ... byoyomi n` : run as `go ... movetime n`
     ///
-    /// Byoyomi is a time allowance that resets each move. A fixed move time
-    /// has the same effect, so the rename loses no data.
+    /// Byoyomi is a time allowance that resets each move.
     ///
     /// Params:
     /// - session: &mut Session -> the session the line acts on
