@@ -2,7 +2,8 @@
 
 ## Status
 
-Opened 2026-10-18 on build 34 (main 3731789). Stage 0 runs.
+Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
+(queues 236 to 238); the LMR why chain runs (queue239).
 
 ## Context
 
@@ -269,3 +270,112 @@ build, 80 columns, a seeded search from the start, seed 7, depth 10).
   self-ladder. The rungs 20+0.2 and 40+0.4 follow, with FSF's
   `nodestime` halved for each doubling (xiangqi 17 and 8, capablanca 13
   and 6, rounded down).
+- Base, three rounds (mean): standard -63.2, -90.6, -20.9 (-58.2);
+  xiangqi -81.4, -77.7, -61.4 (-73.5); crazyhouse -8.7, -6.9, -38.4
+  (-18.0); capablanca -54.3, -29.6, -61.4 (-48.4). Below queue235 at the
+  same budgets; see queue237.
+- Each part off, minus the base mean (σ near 26; a minus means the
+  part is worth that much to us), beside FSF's lab value (plan 29c, FSF
+  against FSF at 10+0.1, standard and xiangqi):
+
+| Part off | standard | xiangqi | crazyhouse | capablanca | FSF lab standard, xiangqi |
+| -------- | -------- | ------- | ---------- | ---------- | ------------------------- |
+| lmr | -26.8 | +73.5 | -50.6 | -27.5 | -184.0, -156.6 |
+| lmrhist | -19.5 | -4.2 | +14.5 | +41.5 | -40.1, -36.6 |
+| nmp | -10.4 | +40.4 | -11.6 | +46.7 | -54.3, -23.5 |
+| rfp | -21.3 | +19.2 | -89.5 | -11.2 | -27.9, -13.9 |
+| razor | -26.8 | +24.5 | -8.1 | +6.5 | |
+| futility | -34.3 | -7.9 | -2.9 | +36.2 | -11.3, -15.6 (fpp) |
+| lmp | -70.8 | -24.6 | -27.4 | -27.5 | -58.7, -65.0 (mcp) |
+| seeprune | -39.9 | +47.4 | -8.1 | +11.8 | -32.2, -9.6 (seecap) |
+| probcut | -21.3 | -6.0 | +18.0 | -0.6 | -9.6, +12.2 |
+| iir | -47.4 | +50.9 | -2.9 | +39.7 | +5.2, -1.7 |
+| conthist | -17.7 | +40.4 | +4.1 | +6.5 | -166.2, -212.9 |
+| corrhist | -14.0 | +15.6 | -20.4 | +1.2 | |
+| killers | -14.0 | +6.7 | +4.1 | -11.2 | +6.1, -9.6 |
+| hk | +11.0 | +28.1 | +0.6 | -55.3 | |
+| checkext | +12.8 | +4.9 | -31.0 | +15.3 | -3.5, +15.6 |
+| qchecks | -21.3 | -2.4 | +4.1 | +8.3 | |
+
+- No part of ours is worth more than 90, and only rfp in crazyhouse
+  (-89.5) and lmp in standard (-70.8) pass 2σ. LMR and continuation
+  history, FSF's two largest parts, are worth near nothing to us.
+- Self-ladder (base, then 20+0.2 and 40+0.4 with FSF's effort fixed):
+  standard -58.2, +31.4, +164.1; xiangqi -73.5, +63.2, +139.0;
+  crazyhouse -18.0, +83.2, +179.5; capablanca -48.4, +66.8, +186.2.
+  A doubling of our time is worth 111, 106, 99 and 117 on average (build
+  16: 75 to 82).
+
+### Queue237, the base after the reboot (2026-10-18)
+
+- The server rebooted at 15:43 into a new kernel (6.12.113, installed
+  on 10-17 at 06:45; queue235 and every build 32 round ran before, on
+  6.12.111). Queue236 was the first queue after it.
+- Build 34 in the queue235 protocol, on the idle server: standard -56.1,
+  -15.6; xiangqi -36.6, -40.1. All five rounds since the reboot: standard
+  -49, xiangqi -59. Before it (build 32, six rounds, the same search in
+  these variants, and queue235): standard -12.2 and +8.7, xiangqi +3.5
+  and +20.9. Near -40 (2.8σ) and -63 (4.5σ).
+- Not the machine speed: FSF from the start 272k nodes a second
+  (queue235: 262k); build 22 by `fsfspeed.py` 0.448M, 0.279M, 0.309M,
+  0.391M (queue170: 0.450M, 0.298M, 0.324M, 0.407M); our bench under 31
+  copies loses 13% (plan 29: 22%). Clock source `kvm-clock`; our search
+  reads the clock every 2048 nodes. Binaries, protocol and harness are
+  the same.
+- Cause not found. Paired tests in one session stay valid; levels from
+  before and after 10-18 15:43 are not compared.
+
+### Queue238, FSF's LMR and continuation history at our budget
+
+The FSF lab arm against full FSF, both at the test-set `nodestime`, two
+rounds of 200, minus the lab base (FSF against itself, near 0):
+
+| Part off | standard | xiangqi | crazyhouse | capablanca |
+| -------- | -------- | ------- | ---------- | ---------- |
+| lmr | -126.5 | -147.8 | -122.7 | -166.8 |
+| conthist | -46.4 | -84.3 | -44.2 | -66.0 |
+
+At our budget FSF's LMR is still worth 120 to 170 and its continuation
+history 44 to 84; ours -27 to +74 and -18 to +40. LMR is the largest
+shortfall in every variant, so it is the stage 1 lead.
+
+### Why chain: LMR
+
+- A: our LMR is worth near nothing (mean of four variants -8 ± 13),
+  FSF's 141 ± 12 at the same budget.
+- Tree shrink to a fixed depth (nodes off over on, geometric mean, the
+  first 17 positions of FSF's chess bench at depth 10 and the 11 xiangqi
+  suite positions at depth 9, ours seed 1): ours x3.18 and x3.19, FSF
+  x1.84 and x1.81. With LMR on, our tree is x1.72 and x1.94 FSF's to the
+  same depth. So our LMR saves more nodes than FSF's, not fewer.
+- Depth in 400 ms (standard, the same 17): 9.71 with LMR, 8.00 without.
+  At our 106 to 117 per doubling, x3.2 nodes should be worth 150 to 230;
+  FSF's x1.84 near 210, of which it keeps 127. We keep near 15%.
+- B (open): a ply that our LMR buys is worth much less than a ply of the
+  full tree. Counters (temporary, `plan33-cnt-lmr`, never merged; FSF in
+  a copy of the lab): each reduced move, its first search, the re-search,
+  and after a low first search a full-depth check search (a false low if
+  it passes alpha). Standard, depth 10, sums over the 17 positions:
+
+| Class | Engine | Reduced | Mean plies | First search high | Re-search confirms | False lows |
+| ----- | ------ | ------- | ---------- | ----------------- | ------------------ | ---------- |
+| capture, promotion | ours | 49236 | 1.42 | 1.0% | 80% | 0.28% |
+| capture, promotion | FSF | 46717 | 1.92 | 3.4% | 79% | 1.12% |
+| quiet, history above 0 | ours | 8245 | 1.02 | 8.2% | 77% | 1.23% |
+| quiet, history above 0 | FSF | 106199 | 1.61 | 7.5% | 74% | 3.17% |
+| quiet, history below 0 | ours | 289073 | 1.98 | 3.1% | 30% | 0.47% |
+| quiet, history below 0 | FSF | 158873 | 2.22 | 2.5% | 61% | 1.15% |
+
+- Xiangqi at depth 9 gives the same picture: false lows ours 0.18%,
+  2.8%, 0.71%; FSF 0.61%, 4.2%, 1.2%.
+- So our reductions are not wrong more often than FSF's: per class,
+  fewer of our reduced moves would have passed alpha at full depth.
+  Two differences stand out: 97% of our reduced quiet moves have a
+  history below zero (FSF 60%), so our history term adds a ply to near
+  every quiet move; and only 30% of our high first searches of such moves
+  hold at full depth (FSF 61%).
+- Queue239 tests B as stated: our off-lmr at 3.2 times the clock and
+  FSF's lmr arm at 1.8 times the nodes, each against full FSF at the
+  effort of the base, so each plays at the nominal depth of its LMR on.
+  If B holds, our off-lmr beats our base by far more than FSF's lab arm
+  beats its base.
