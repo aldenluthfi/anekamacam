@@ -225,8 +225,8 @@ build, 80 columns, a seeded search from the start, seed 7, depth 10).
 
 | Arm | Branch | Seeded nodes against main | Variants that change |
 | --- | ------ | ------------------------- | -------------------- |
-| FS-T | `plan33-fst` | standard 55870 (main 28316) | all |
-| FS-S | `plan33-fss` (on FS-T) | | all |
+| FS-T | `plan33-fst` | bench x0.94 standard, x0.955 xiangqi | all |
+| FS-S | `plan33-fss` (on FS-T) | bench x0.89 standard, x1.03 xiangqi | all |
 | A2 | `plan33-a2` | standard same | needs the derive diff (parameter files) |
 | A3 | `plan33-a3` | | all, needs new parameter files |
 | A6 | `plan33-a6` | | none of the test set; shogi (`P` x9) |
@@ -234,6 +234,10 @@ build, 80 columns, a seeded search from the start, seed 7, depth 10).
 | A13 | `plan33-a13` | | capablanca (A major), xiangqi (soldier not big; H, C, R major), shogi |
 | A17 | `plan33-a17` | standard same; xiangqi same | standard, crazyhouse, capablanca, shogi |
 
+- Bench: depth 10, 20 positions, seeds 1 to 3, total nodes against
+  main. One seeded search from the start gave FS-T twice main's nodes
+  (55870 against 28316); the bench shows that this was the one
+  position, not the change.
 - A6 cover sets found: standard, capablanca, grand B x2; crazyhouse B,
   V x2; makruk M x2; shatranj Q x2 and B x8; xiangqi E x10 and A x8
   (never complete); shogi P x9, L x9, N x4, B x2. Only shogi's P x9 is
