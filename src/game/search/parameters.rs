@@ -1412,9 +1412,11 @@ fn derive_promotion_bonus(
 /// rank 0    0   0   0   0   the rank it started on, and the best one
 /// ```
 ///
-/// Each square scores the negative rank index for White. No file is better
-/// than another. Shelter and castling decide the file. The endgame table
-/// keeps the center score, because the royal must be active.
+/// Each square scores minus its forward distance from the start rank of
+/// the royal, the mean rank of its setup squares. A square behind it
+/// scores zero. No file is better than another. Shelter and castling
+/// decide the file. The endgame table keeps the center score, because the
+/// royal must be active.
 ///
 /// Params:
 /// - index         : PieceIndex -> piece of the table
@@ -1452,7 +1454,24 @@ fn derive_pst(
     });
 
     let scores: Vec<f64> = if !is_endgame && (p_is_royal!(piece) || stand_in) {
-        (0..board_size).map(|square| -((square / files) as f64)).collect()
+        let forward = derive_forward_directions(state)[WHITE as usize];
+        let setup = &state.statics.initial_setup[index as usize];
+        let start_ranks: Vec<f64> = (0..board_size)
+            .filter(|square| get!(setup, *square as u32))
+            .map(|square| (square / files) as f64)
+            .collect();
+        let back_rank = match forward > 0 {                                     /* a royal outside the setup counts   */
+            true => 0.0,                                                        /* from the back rank of its side     */
+            false => state.statics.ranks as f64 - 1.0,
+        };
+        let start_rank = match start_ranks.is_empty() {
+            true => back_rank,
+            false => start_ranks.iter().sum::<f64>() / start_ranks.len() as f64,
+        };
+
+        (0..board_size).map(|square| {
+            -(((square / files) as f64 - start_rank) * forward as f64).max(0.0)
+        }).collect()
     } else {
         (0..board_size).into_par_iter().map(|square| {
             mobility_weight
