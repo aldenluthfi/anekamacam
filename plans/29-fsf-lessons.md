@@ -4140,3 +4140,29 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
   extinct rule change.
 - Every variant FSF plays is at 2000 or above at FSF 2000 (queue231 on
   build 32, then FP and SX for extinction, kinglet and horde).
+
+### Build 34 against full FSF (2026-10-18, queue235)
+
+- Ladder: build 34 against full FSF (no `UCI_LimitStrength`), 200 games
+  per rung, FSF's `nodestime` at the test-set budget and 1.5 and 2 times
+  it, and at full speed (`nodestime` 0). No forfeits.
+
+| Variant | Rungs (`nodestime`: Elo) | Full speed | 50% point | Elo per doubling |
+| ------- | ------------------------ | ---------- | --------- | ---------------- |
+| standard | 28: +8.7, 42: -117.2, 56: -227.6 | 0-198-2 | 28.8 | 215 |
+| xiangqi | 34: +20.9, 50: -113.3, 68: -193.2 | 6-193-1 | 36.1 | 241 |
+| crazyhouse | 24: +20.9, 36: -38.4, 48: -177.2 | 7-192-1 | 27.7 | 101 |
+| capablanca | 26: +41.9, 39: -129.0, 52: -202.6 | 0-199-1 | 28.7 | 292 |
+
+- Full FSF on the server, one thread, `go movetime 8000` from the start,
+  three runs (the server has no NNUE file, so FSF reports classical
+  evaluation): standard 262k, xiangqi 158k, crazyhouse 249k, capablanca
+  205k nodes per second. Full speed is then 9.1, 4.4, 9.0 and 7.1 times
+  our 50% budgets: 3.2, 2.1, 3.2 and 2.8 doublings of FSF's effort. The
+  slopes put that near -690, -510, -320 and -820 Elo; the full-speed
+  games say near -920, -590, -560 and -1040 (wide error at scores near
+  zero), so the slope flattens less than it would need to, and a
+  doubling at full effort is worth more than the measured slope.
+- The test-set budgets (28, 34, 24, 26) sit a little below the 50%
+  points; at FSF 2000 standard and xiangqi are near +220, crazyhouse and
+  capablanca near +15 and +42.
