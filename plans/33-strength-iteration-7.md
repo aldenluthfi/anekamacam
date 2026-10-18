@@ -200,6 +200,24 @@ play.
   lever. Closed without games. The open root is in the value model (a
   compound worth more than its parts), not in the map.
 
+### A9 (2026-10-18)
+
+- FSF's chess mobility tables (`evaluate.cpp`, N, B, R, Q) against our
+  single curve `150 (m - 2) / (8 + m)` (200 in the endgame) and against
+  a curve for each piece, zero at its mean mobility on the model board
+  (occupancy 0.36 and 0.12) and spanning the same total over its own
+  range of squares: root mean square error 15.6 and 33.4 for the single
+  curve, 46.3 and 125.8 for the curve for each piece.
+- Why: the model-board mean mobility (N 5.3, B 5.5 to 7.4, R 7.4 to
+  11.1, Q 12.9 to 18.5) lies far above FSF's zero points (2 to 4
+  squares). FSF counts only its mobility area, which leaves out the
+  squares that real positions block. The board model does not see that.
+- The rule set before the measure holds: the curve for each piece does
+  not follow FSF's tables better. Closed without games.
+- A13b (promotion gradient from the passed pawn ratios) gets no arm: it
+  would count a pawn's promotion twice, in the passed pawn term and in
+  the table.
+
 ### Other findings on the way
 
 - `derive_search_parameters` writes the razor margins and the ProbCut
