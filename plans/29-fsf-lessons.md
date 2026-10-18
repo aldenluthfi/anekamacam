@@ -4161,8 +4161,8 @@ As queue188 (build 23): FSF at `UCI_Elo=2000`, 10+0.1, the key variants
   our 50% budgets: 3.2, 2.1, 3.2 and 2.8 doublings of FSF's effort. The
   slopes put that near -690, -510, -320 and -820 Elo; the full-speed
   games say near -920, -590, -560 and -1040 (wide error at scores near
-  zero), so the slope flattens less than it would need to, and a
-  doubling at full effort is worth more than the measured slope.
+  zero), so a doubling near full effort costs us more than the slope
+  fitted over the three rungs.
 - The test-set budgets (28, 34, 24, 26) sit a little below the 50%
   points; at FSF 2000 standard and xiangqi are near +220, crazyhouse and
   capablanca near +15 and +42.
