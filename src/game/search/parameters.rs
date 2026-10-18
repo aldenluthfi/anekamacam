@@ -22,13 +22,12 @@ use crate::*;
 /// Board occupancy
 ///
 /// The part of the squares that a slider finds blocked in each phase. This
-/// makes the opening value different from the endgame value.
+/// makes the opening value different from the endgame value. The opening
+/// part is the start army over the squares ([`derive_occupancy`]).
 ///
-/// - `OPENING_OCCUPANCY` : 36% blocked, a slider stops early
-/// - `ENDGAME_OCCUPANCY` : 12% blocked, the lines are open
+/// - `ENDGAME_OCCUPANCY_SHARE` : 33.3% of the opening part, the lines open
 ///
-const OPENING_OCCUPANCY: u32 = 360;
-const ENDGAME_OCCUPANCY: u32 = 120;
+const ENDGAME_OCCUPANCY_SHARE: u32 = 333;
 
 /// USUAL_CONDITION_CHANCE
 ///
@@ -1179,6 +1178,38 @@ fn derive_condition_chance(
     1.0 - miss_chance
 }
 
+/// derive_occupancy
+///
+/// Gives the part of the squares that the pieces fill in each phase. The
+/// opening part is the start army over the squares, with the pieces that
+/// a setup phase places. The endgame keeps `ENDGAME_OCCUPANCY_SHARE` of it.
+///
+/// - standard : 32 pieces on 64 squares, 50%, then 16.7%
+/// - xiangqi  : 32 pieces on 90 points, 35.6%, then 11.9%
+///
+/// Params:
+/// - state: &State -> start position of the variant
+///
+/// Return:
+/// [f64; 2]        -> opening and endgame occupancy, at most one
+///
+fn derive_occupancy(state: &State) -> [f64; 2] {
+    let on_board = state.piece_count.iter().sum::<u32>();
+    let to_place = match setup_phase!(state) {
+        true => state.piece_in_hand.iter().flatten()
+            .map(|&count| count as u32)
+            .sum::<u32>(),
+        false => 0,
+    };
+    let opening = ((on_board + to_place) as f64
+        / state.statics.board_size as f64).min(1.0);
+
+    [
+        opening,
+        opening * ENDGAME_OCCUPANCY_SHARE as f64 / COEFFICIENT_SCALE,
+    ]
+}
+
 /// usual_vectors
 ///
 /// Keeps the vectors that are usual moves: the vectors whose condition
@@ -1197,7 +1228,7 @@ fn derive_condition_chance(
 fn usual_vectors<'a>(
     state: &'a State, vectors: &'a [MoveVector]
 ) -> impl Iterator<Item = &'a MoveVector> + 'a {
-    let occupancy = OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
+    let occupancy = derive_occupancy(state)[0];
     let usual_chance = USUAL_CONDITION_CHANCE as f64 / COEFFICIENT_SCALE;
 
     vectors.iter().filter(move |vector| {
@@ -1384,8 +1415,8 @@ fn derive_promotion_bonus(
 /// Makes one piece-square table. The raw score of a square is the mobility
 /// from it minus the distance from the center, with phase weights:
 ///
-/// - opening : mobility 0.50, centrality 1.25, board 36% full
-/// - endgame : mobility 0.25, centrality 1.75, board 12% full
+/// - opening : mobility 0.50, centrality 1.25, the opening occupancy
+/// - endgame : mobility 0.25, centrality 1.75, the endgame occupancy
 ///
 /// The scores are centered on their mean and scaled to an amplitude from
 /// the piece value. A more valuable piece gets a wider range. The promotion
@@ -1438,11 +1469,7 @@ fn derive_pst(
         p_ovalue!(piece) as f64
     };
 
-    let occupancy = if is_endgame {
-        ENDGAME_OCCUPANCY
-    } else {
-        OPENING_OCCUPANCY
-    } as f64 / COEFFICIENT_SCALE;
+    let occupancy = derive_occupancy(state)[is_endgame as usize];
 
     let mobility_weight = if is_endgame { 0.25 } else { 0.5 };
     let center_weight = if is_endgame { 1.75 } else { 1.25 };
@@ -2161,8 +2188,7 @@ fn captures_fill_hand(state: &State) -> bool {
 /// completed table.
 ///
 fn derive_material_values(state: &mut State) {
-    let opening_occupancy = OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
-    let endgame_occupancy = ENDGAME_OCCUPANCY as f64 / COEFFICIENT_SCALE;
+    let [opening_occupancy, endgame_occupancy] = derive_occupancy(state);
 
     let values = state.statics.pieces
         .par_iter()
@@ -2703,7 +2729,7 @@ pub fn derive_danger_parameters(state: &mut State) {
     let board_size = state.statics.board_size;
     let piece_count = state.statics.pieces.len();
     let stride = state.statics.eval.local_stride;
-    let occupancy = OPENING_OCCUPANCY as f64 / COEFFICIENT_SCALE;
+    let occupancy = derive_occupancy(state)[0];
 
     let mut table = vec![0u8; board_size * piece_count * board_size];
 
