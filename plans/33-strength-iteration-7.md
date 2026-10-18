@@ -218,6 +218,35 @@ play.
   would count a pawn's promotion twice, in the passed pawn term and in
   the table.
 
+### Arms built (2026-10-18)
+
+Each on its own branch from main, built and checked locally (release
+build, 80 columns, a seeded search from the start, seed 7, depth 10).
+
+| Arm | Branch | Seeded nodes against main | Variants that change |
+| --- | ------ | ------------------------- | -------------------- |
+| FS-T | `plan33-fst` | standard 55870 (main 28316) | all |
+| FS-S | `plan33-fss` (on FS-T) | | all |
+| A2 | `plan33-a2` | standard same | needs the derive diff (parameter files) |
+| A3 | `plan33-a3` | | all, needs new parameter files |
+| A6 | `plan33-a6` | | none of the test set; shogi (`P` x9) |
+| A7 | `plan33-a7` | standard same; xiangqi 67789 (main 83780) | all but standard |
+| A13 | `plan33-a13` | | capablanca (A major), xiangqi (soldier not big; H, C, R major), shogi |
+| A17 | `plan33-a17` | standard same; xiangqi same | standard, crazyhouse, capablanca, shogi |
+
+- A6 cover sets found: standard, capablanca, grand B x2; crazyhouse B,
+  V x2; makruk M x2; shatranj Q x2 and B x8; xiangqi E x10 and A x8
+  (never complete); shogi P x9, L x9, N x4, B x2. Only shogi's P x9 is
+  new and reachable: a full row of file-bound pawns gets the bonus.
+- A13a roles (big, major) by value: standard Q major as before (the
+  split {N, B, R} | {Q} has squared error 0.157 against 0.211 for {N, B}
+  | {R, Q}); crazyhouse the same; capablanca A, C, Q major (was C, Q);
+  xiangqi soldier not big, advisor and elephant minor, H, C, R major
+  (was: advisor not big, R and C major).
+- A17 removes `forward_steps`, which nothing reads after it.
+- A2's start rank: janggi's general starts on the second rank, so
+  janggi is the first candidate to change.
+
 ### Other findings on the way
 
 - `derive_search_parameters` writes the razor margins and the ProbCut
