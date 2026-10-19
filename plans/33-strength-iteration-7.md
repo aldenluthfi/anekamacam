@@ -631,3 +631,24 @@ Minus the base:
 - Queue246 checks C2: fstlo against fstcc and main in crazyhouse, three
   rounds of 200. If C2 holds, fstlo comes back to main in crazyhouse,
   and then plays the merge rule.
+
+### Queue246, alpha after a skipped move
+
+Crazyhouse, base -41.4. fstcc -20.6, fstlo -20.1 against it.
+
+- C2 does not hold: fstlo plays as fstcc. Its tree is a quarter smaller
+  and plays the same, so neither the size of the tree (B) nor the
+  fail-low bounds carry the loss.
+- Over six sessions FS loses in crazyhouse by 21 to 66 (fstcc, fsscc,
+  fstq, fstlo).
+
+### Why chain: FS in crazyhouse, which score
+
+- Two soft scores of FS-T are left: the score of a node that fails high
+  and the score of a table cut on a bound. Queue247 splits them in
+  crazyhouse: fsthi (`plan33-fsthi`, fstcc where a node that fails high
+  gives and stores beta) and fsttt (`plan33-fsttt`, fstcc where a table
+  cut on a bound gives the window edge), against fstcc and main, six
+  rounds of 200 (a crazyhouse round takes near two minutes).
+- The arm that comes back to main names the score; the mechanism is
+  then looked for in that score alone.
