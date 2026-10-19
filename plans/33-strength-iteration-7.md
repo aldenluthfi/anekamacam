@@ -6,7 +6,8 @@ Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
 (queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1
 merged as build 35 (queue242); stage 2 (FS) parked near +8 after the
 why chain (queues 243 to 249); A7, A13 and A17 closed; continuation
-history is the next lead.
+history: chp (the skip) does not merge (queue250), and queue251 plays the
+reply malus taken only when a later quiet move cuts (hm, chm).
 
 ## Context
 
