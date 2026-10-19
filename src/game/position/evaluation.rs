@@ -1615,7 +1615,8 @@ macro_rules! evaluate_position {
             };
             let lazy = finish(opening, endgame);
 
-            if lazy - margin >= $beta || lazy + margin <= $alpha {
+            if margin < 0
+            && (lazy - margin >= $beta || lazy + margin <= $alpha) {
                 lazy
             } else {
                 let (attack_opening, attack_endgame) = attack_terms!($state);
