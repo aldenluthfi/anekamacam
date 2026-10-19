@@ -11,8 +11,10 @@ history: chp (the skip) and the reply malus (hm, chm) do not merge
 FSF's, as each check at the last ply is extended; xf (no extension
 there) and xfc (chp on xf) do not merge (queues 253 and 254): the skip
 costs us the play it costs FSF, and the saved tree buys us less, the end
-of the LMR chain. Both tree chains end at the value of a doubling; next,
-plies per doubling against Elo per ply. A2 and A3 closed (queue252).
+of the LMR chain. Both tree chains end at the value of a doubling: a
+doubling buys us fewer plies and a ply is worth less to us. The eval
+map (queue256) looks for the evaluation's share. All audit arms are
+closed (A2 and A3 queue252, A6 queue255).
 
 ## Context
 
@@ -1070,3 +1072,61 @@ Minus the base:
   many plies a doubling buys each engine (the growth of nodes per ply),
   which splits the value of a doubling into plies per doubling and Elo
   per ply.
+
+### Plies per doubling
+
+- Growth per ply from depth 9 to 13 (ours: seeded bench, seed 1, 12
+  positions; FSF: its chess bench):
+
+| Engine | Nodes per ply | Time per ply | Plies per doubling | Elo per doubling | Elo per ply |
+| ------ | ------------- | ------------ | ------------------ | ---------------- | ----------- |
+| ours standard | x1.97 | x1.89 | 1.09 (time) | 108 | near 100 |
+| ours xiangqi | x1.70 | x1.71 | 1.29 (time) | | |
+| FSF chess | x1.68 | | 1.33 | 215 | near 160 |
+
+- Both parts are short: a doubling buys us fewer plies, and a ply is
+  worth less to us. A nominal ply is not the same unit in both engines
+  (each depth holds its own reductions and extensions), so the split is
+  rough; the two factors are near 1.2 and 1.6.
+- Our tree without LMR still grows faster than FSF's without LMR (near
+  x2.2 a ply against x1.79, from the LMR tree ratios at depth 10), so
+  the extra growth is not in LMR. The ledger closes the check rule as
+  its source (PC26, CR26, PCR26 near nothing outside crazyhouse; xf
+  above).
+- Elo per ply is the evaluation's side. The search map (stage 1) never
+  had an evaluation half: our own terms off, in games, were never
+  played. That is the next lead.
+
+### Queue255, A6
+
+- Derived again on the A6 build (parameter files removed, built,
+  derived): all 44 files equal the shipped ones; the cover sets are
+  derived at load, so A6 changes only the code.
+- Shogi at FSF UCI_Elo 2000, six rounds: main +90.2, A6 +77.5, so -12.7
+  (σ near 16). Not merged; closed. All audit arms are closed.
+
+### Eval map
+
+The stage 1 map for the evaluation: each group of terms off, paired with
+main, against full FSF at the test-set budgets, one round of 200 per
+variant (base three rounds), never merged. Arms (`plan33-off-<arm>`):
+
+| Arm | Off | FSF lab switch |
+| --- | --- | -------------- |
+| kdanger | the danger sum of the attack pass | `e_kdanger` |
+| kzone | zone pressure and proximity | part of `e_king` |
+| shelter | shelter, guard, castling, open shield | part of `e_king` |
+| threats | hanging, pawn threats, restricted squares | `e_threats` |
+| mobility | mobility | `e_mobility` |
+| passed | passed pawn bonus | `e_passed` |
+| pawns | pawn structure, passed pawns with it | `e_pawns` and `e_passed` |
+| imbalance | major, minor and cover set terms | `e_imbalance` |
+| lazy | the attack terms are never skipped | |
+
+- FSF's lab values (self-play, 400 games): standard `e_king` 295,
+  `e_passed` 229, `e_mobility` 87, `e_threats` 83, `e_imbalance` 57,
+  `e_pawns` 45; xiangqi `e_king` 95, `e_mobility` 56, `e_threats` 36;
+  crazyhouse `e_king` 214, `e_mobility` 96; capablanca `e_king` 288,
+  `e_threats` 85, `e_mobility` 80.
+- The term with the largest shortfall against FSF's value gets the why
+  chain, as LMR did for the search.
