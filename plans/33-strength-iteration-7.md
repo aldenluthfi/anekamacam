@@ -3,7 +3,7 @@
 ## Status
 
 Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
-(queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1 plays more rounds
+(queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1 merged as build 35
 (queue242); stage 2 (FS) next.
 
 ## Context
@@ -503,3 +503,18 @@ xiangqi -47.5, crazyhouse -35.8, capablanca -49.0.
   property of the whole engine, evaluation and search, not of LMR.
   Recorded as fundamental; the next lead is stage 2 (FS).
 - pv1 (+12.8, 1.3σ) plays three more rounds (queue242).
+
+### Queue242, pv1 again; merged build 35
+
+Three more rounds of 200, minus the base mean:
+
+| Rounds | standard | xiangqi | crazyhouse | capablanca | mean |
+| ------ | -------- | ------- | ---------- | ---------- | ---- |
+| queue242 (d to f) | +26.0 | +9.4 | +76.8 | +11.0 | +30.8 |
+| queues 240 and 242 (six) | +21.9 | +10.6 | +33.0 | +21.7 | +21.8 |
+
+- Six rounds: σ near 14 per variant and 6.9 on the mean, so +21.8 is
+  3.1σ; no variant below -2σ. Merged as build 35 (`plan33-pv1`, one
+  commit): `REDUCTION_PV` 1, one ply off the reduction at a PV node.
+- The arms still to play (FS-T, FS-S, A7, A13, A17, A2, A3, A6) rebase
+  on build 35.
