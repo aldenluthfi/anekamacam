@@ -99,6 +99,13 @@ macro_rules! move_key {
 ///
 const CONTINUATION_PLIES: usize = 2;
 
+/// FAILED_REPLIES
+///
+/// The most quiet moves of one node that lose continuation credit when a
+/// later quiet move cuts. Moves past this count keep their cells.
+///
+const FAILED_REPLIES: usize = 64;
+
 /// CONT_HIST_CELLS
 ///
 /// The maximum continuation history size of one worker: 2^29 cells, one
@@ -1331,6 +1338,8 @@ pub fn alpha_beta(
     let mut legal_moves = 0;
     let alpha_start = alpha;
     let mut next_index = 0;
+    let mut failed_replies = [0usize; FAILED_REPLIES];
+    let mut failed_count = 0;
 
     loop {
         let index = next_index;
@@ -1574,6 +1583,12 @@ pub fn alpha_beta(
                         update_histories(
                             info, &cont_bases, history_index, history_bonus,
                         );
+
+                        for &failed in &failed_replies[..failed_count] {
+                            update_continuation(
+                                info, &cont_bases, failed, -history_bonus,
+                            );
+                        }
                     }
 
                     update_correction(
@@ -1612,9 +1627,14 @@ pub fn alpha_beta(
                 }
             }
         } else if is_quiet {
-            update_histories(
-                info, &cont_bases, history_index, -history_bonus,
+            update_history!(
+                &mut info.search_hist[history_index], -history_bonus
             );
+
+            if failed_count < FAILED_REPLIES {
+                failed_replies[failed_count] = history_index;
+                failed_count += 1;
+            }
         }
     }
 
@@ -1679,9 +1699,10 @@ const HISTORY_MOST_SHARE: i32 = 16;
 /// ```
 ///
 /// The quiet move that cut gets the bonus. Each other quiet move tried gets
-/// the same value as a malus. The pull keeps a cell inside the bound, so a
-/// cell measures how often the move worked lately, not how often it was
-/// tried.
+/// the same value as a malus in the move table. In the reply table it gets
+/// the malus only when a later quiet move cuts. The pull keeps a cell
+/// inside the bound, so a cell measures how often the move worked lately,
+/// not how often it was tried.
 ///
 /// Params:
 /// - entry: &mut i16 -> history cell to update
@@ -1847,7 +1868,27 @@ fn update_histories(
     bonus: i32,
 ) {
     update_history!(&mut info.search_hist[index], bonus);
+    update_continuation(info, bases, index, bonus);
+}
 
+/// update_continuation
+///
+/// Applies one signed change to the continuation history of a quiet move,
+/// once for each set row.
+///
+/// Params:
+/// - info : &mut SearchInfo -> worker with the table
+/// - bases: &[usize]        -> continuation rows, `usize::MAX` if unset
+/// - index: usize           -> move key of the move
+/// - bonus: i32             -> signed bonus or malus
+///
+#[inline(always)]
+fn update_continuation(
+    info: &mut SearchInfo,
+    bases: &[usize],
+    index: usize,
+    bonus: i32,
+) {
     for base in bases.iter().filter(|&&base| base != usize::MAX) {
         let cell = cont_cell!(info, base + index);
 
