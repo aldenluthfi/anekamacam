@@ -1375,11 +1375,11 @@ macro_rules! attack_terms {
                 goal_race!($state, 0, hold) - goal_race!($state, 1, hold);
 
             let value = |phase: usize| {
-                (counts[0][0] - counts[1][0]) * eval.hanging_value[phase]
+                0 * ((counts[0][0] - counts[1][0]) * eval.hanging_value[phase]
                     + (counts[0][1] - counts[1][1])
                         * eval.pawn_threat_value[phase]
                     + (counts[0][2] - counts[1][2])
-                        * eval.restricted_value[phase]
+                        * eval.restricted_value[phase])
                     + mobility[0][phase] - mobility[1][phase]
                     + cost[1][phase] - cost[0][phase]
                     + goal
