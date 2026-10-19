@@ -724,6 +724,41 @@ Base (rounds a to c): standard -71.7, xiangqi -50.8, crazyhouse -31.5
   history (FSF 44 to 84 at our budget, ours -18 to +40). SE (stage 4)
   stays off, as FS did not merge.
 
+### To pick FS up again
+
+The chain is open, not closed. Where it stands and what comes next:
+
+- Known: A (FS gains nothing) holds because crazyhouse loses near 40
+  (queues 243 to 247). B: the crazyhouse tree is the same size, so the
+  soft scores steer the search to worse moves. C (narrowed, queues 247 and
+  248): the cost is the score of a node that fails high. Returned to the
+  parent alone (fsthr) it loses, stored in the table alone (fsths) it
+  loses, both as beta (fsthi) it plays level or better.
+- Ruled out for that score: a mate score (fsthm, queue249), quiescence
+  (fstq), the table cut (fsttt), the fail-low bound after a skip (fstlo).
+- Leads not yet tested:
+  - The size of the overshoot. Count, per variant, how far a fail-high
+    score lies past beta at each depth, and how often a deeper search of
+    the same node holds that score. If crazyhouse overshoots far more, or
+    its overshoots fail at depth more often, the soft bound is not a
+    sound bound there, and the next why is which shortcut or skip in the
+    child makes it unsound.
+  - The evaluation refined by a soft lower bound (`bound_eval`, FBETA
+    gives `max(eval, score)`). fsths and fsttt keep it and both lose;
+    fsthi removes it with the rest. An arm that stores the soft score but
+    refines the evaluation only up to the window edge splits this out.
+  - The root: a zero-window score at or above beta skips the full-window
+    re-search, at the root too (FSF re-searches at the root).
+  - Crazyhouse leans on reverse futility more than any part (worth 89 to
+    us, queue236), and reverse futility reads the refined evaluation.
+- Code and tools: `plan33-fsthi` is kept (fstcc's two commits plus beta
+  on a fail high). The other arms are archived in
+  `anekamacam-vps-archive/clones` (aneka-fstcc, fsscc, fstq, fstlo, fsttt,
+  fsths, fsthr, fsthm). A crazyhouse round of 200 takes near two minutes,
+  so six rounds per arm (σ near 14) cost near half an hour.
+- Pick it up again after continuation history, or sooner if fsthi
+  reaches the merge rule (queue250 adds three rounds).
+
 ### Why chain: continuation history
 
 - A: FSF's continuation history is worth 44 to 84 at our budget, ours
