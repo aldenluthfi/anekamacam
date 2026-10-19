@@ -3,7 +3,8 @@
 ## Status
 
 Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
-(queues 236 to 238); the LMR why chain runs (queue241, the PV cut at equal depth).
+(queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1 plays more rounds
+(queue242); stage 2 (FS) next.
 
 ## Context
 
@@ -472,3 +473,33 @@ capablanca -58.5.
 - Queue241, two rounds: pv3x, our pv at 1.65 to 1.73 times the clock
   (equal depth) against FSF at the base effort; fsfpv, the lab `pvadj`
   arm against full FSF at the test-set budget.
+
+### Queue241, the PV cut at equal depth
+
+Two rounds of 200 (σ near 12 on the mean). Base: standard -89.7,
+xiangqi -47.5, crazyhouse -35.8, capablanca -49.0.
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| pv3x minus base | +66.9 | +63.2 | +86.6 | +91.8 | +77.1 |
+| fsfpv (FSF, its PV terms off) | +14.8 | +19.3 | +33.2 | +38.4 | +26.4 |
+
+- D holds at equal depth: the PV cut wins back 77 of the 70 to 100 our
+  LMR costs in play.
+- With it our LMR matches FSF's: tree x3.18 / 1.69 = x1.88 (FSF x1.84),
+  cost in play near 101 - 77 = 24 (FSF 22).
+- FSF's own PV terms cost FSF 26 at this budget: at near 7000 nodes a
+  move, PV protection does not pay for FSF either.
+
+### End of the LMR chain
+
+- The same LMR is worth near +14 to us (pv against off-lmr, queues 236
+  and 240) and 141 to FSF, because a doubling of nodes is worth less to
+  us: LMR off, ours gains 65 a doubling against full FSF (queue239),
+  FSF's lab arm near 185.
+- FSF's figure is FSF against itself, which inflates it, and FSF plays at
+  near 7000 nodes a move (depth near 8.5) where a doubling is worth more;
+  ours plays near 100k nodes (depth near 10). The value of a doubling is a
+  property of the whole engine, evaluation and search, not of LMR.
+  Recorded as fundamental; the next lead is stage 2 (FS).
+- pv1 (+12.8, 1.3σ) plays three more rounds (queue242).
