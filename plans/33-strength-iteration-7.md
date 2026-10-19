@@ -672,3 +672,26 @@ Crazyhouse, six rounds, base -35.6 (σ near 14 for each arm against it):
   the parent gets beta) and fsthr (`plan33-fsthr`, the table keeps
   beta, the parent gets the score), with fsthi again, against main, six
   rounds of 200.
+
+### Queue248, the table and the parent
+
+Crazyhouse, six rounds, base -22.1:
+
+| Arm | Table | Parent | Against the base |
+| --- | ----- | ------ | ---------------- |
+| fsthi | beta | beta | +9.3 |
+| fsths | score | beta | -15.5 |
+| fsthr | beta | score | -28.2 |
+
+- fsthi holds its queue247 value (+9.4); over twelve rounds it sits
+  near +9 against the base and near 20 above fstcc.
+- Each half loses alone. The cost is in the score itself, wherever it
+  goes, and not in one use of it.
+- D (open): the score is a mate. Crazyhouse mates by drops and checks
+  far more than the other test variants. With hard bounds a wrong mate
+  score stops at beta in the node that found it; a soft one reaches the
+  parent and the table, and from there the root. Queue249 checks D in
+  crazyhouse: fsthm (`plan33-fsthm`, fstcc where a node that fails high
+  on a mate gives beta), with fsthi and main, six rounds. If D holds,
+  fsthm plays as fsthi. Both play the merge rule in the full test set in
+  the same queue (rounds a to c).
