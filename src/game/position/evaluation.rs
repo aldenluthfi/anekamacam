@@ -1596,8 +1596,8 @@ macro_rules! evaluate_position {
 
             let shared = shared_score!($state);
             let (pawn_opening, pawn_endgame) = pawn_structure!($state);
-            let opening = opening_score!($state) + shared + pawn_opening;
-            let endgame = endgame_score!($state) + shared + pawn_endgame;
+            let opening = opening_score!($state) + shared + 0 * pawn_opening;
+            let endgame = endgame_score!($state) + shared + 0 * pawn_endgame;
             let material = material_advantage!($state);
 
             let finish = |opening: i32, endgame: i32| {
