@@ -1381,7 +1381,7 @@ macro_rules! attack_terms {
                     + (counts[0][2] - counts[1][2])
                         * eval.restricted_value[phase]
                     + mobility[0][phase] - mobility[1][phase]
-                    + cost[1][phase] - cost[0][phase]
+                    + 0 * (cost[1][phase] - cost[0][phase])
                     + goal
             };
 
