@@ -4,7 +4,7 @@
 
 Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
 (queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1 merged as build 35
-(queue242); stage 2 (FS) next.
+(queue242); stage 2 (FS) and A7 play (queue243).
 
 ## Context
 
@@ -518,3 +518,11 @@ Three more rounds of 200, minus the base mean:
   commit): `REDUCTION_PV` 1, one ply off the reduction at a PV node.
 - The arms still to play (FS-T, FS-S, A7, A13, A17, A2, A3, A6) rebase
   on build 35.
+- The part-off arms, the PV arms, the counter branch and the FSF counter
+  copy are archived (`anekamacam-vps-archive/clones`, md5 checked) and
+  deleted with their branches. The lab keeps `pvadj`, off by default.
+
+### Queue243 (stage 2 and A7)
+
+FS-T, FS-S and A7 on build 35, interleaved with main under the merge
+rule, three rounds of 200.
