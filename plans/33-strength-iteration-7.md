@@ -827,3 +827,32 @@ capablanca -32.0. Minus the base:
   capablanca x1.11) and gains where the tree grows (crazyhouse).
 - fsthi does not merge. Over queues 249 and 250 (six rounds) it is +8.8,
   near 1σ on the mean; crazyhouse +16 over nine rounds.
+
+### Why chain: continuation history, the skip
+
+- A: chp does not gain (-8). B: it loses where it saves the most tree,
+  so it skips moves that matter there; the saved tree is worth less than
+  the skipped moves cost.
+- C: our cells say little about a reply. A quiet move that fails takes
+  the malus in every node, so in a node where all moves fail (most
+  zero-window nodes) every quiet move tried loses credit as a reply. FSF
+  takes the malus only when a later quiet move cuts, and only from the
+  quiet moves tried before it. Thus our cells are negative for most
+  replies (the first 67.7%, the second 61.7%), and "both negative" picks
+  46.6% of the late quiet moves, good or bad.
+- Plan 01 (stage 2) tried FSF's rule for the move table alone, before
+  continuation history existed: trees grew 19 to 47%, no games. Here the
+  move table keeps the all-node malus; only the reply table changes.
+- Arms: `plan33-hm` (main, reply malus only when a later quiet move cuts,
+  at most 64 moves) and `plan33-chm` (chp on hm). Nodes over main on the
+  seeded bench:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca |
+| --- | -------- | ------- | ---------- | ---------- |
+| hm | x0.812 ± 0.074 | x1.102 ± 0.040 | x1.069 ± 0.060 | x1.132 ± 0.074 |
+| chm | x0.838 ± 0.074 | x1.154 ± 0.037 | x1.185 ± 0.073 | x1.120 ± 0.087 |
+
+- hm grows the tree as continuation history off does (standard aside),
+  and on hm the skip fires less (chm over chp near x1.1 to x1.25). Tree
+  size did not predict chp's games, so queue251 plays both under the
+  merge rule.
