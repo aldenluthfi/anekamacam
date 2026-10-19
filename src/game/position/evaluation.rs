@@ -1418,14 +1418,6 @@ macro_rules! opening_score {
             - $state.opening_material[black] as i32
             + $state.opening_pst_bonus[white]
             - $state.opening_pst_bonus[black]
-            + royal_shelter!($state, white)
-            - royal_shelter!($state, black)
-            + royal_guard!($state, white)
-            - royal_guard!($state, black)
-            + castling_bonus!($state, white)
-            - castling_bonus!($state, black)
-            + open_shield!($state, black)
-            - open_shield!($state, white)
     }};
 }
 
