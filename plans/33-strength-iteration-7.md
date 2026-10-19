@@ -596,3 +596,38 @@ crazyhouse -20.3, capablanca -40.3. Minus the base:
   drop variants), against fstcc and main in crazyhouse, three rounds of
   200. If C holds, fstq comes back to main in crazyhouse, and fstq then
   plays the merge rule. A17 rides along in the full test set.
+
+### Queue245, quiescence and A17
+
+Base: standard -47.3, xiangqi -45.4, crazyhouse +1.8, capablanca -66.7.
+Minus the base:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| fstcc | | | -65.7 | | |
+| fstq | | | -48.1 | | |
+| A17 | -12.0 | +23.9 | -26.8 | +45.9 | +7.8 |
+
+- C does not hold: fstq is within one σ of fstcc (+17.6), and both lose
+  in crazyhouse. Quiescence is not where the soft scores go wrong.
+- A17 is closed. Xiangqi plays the same search, so its +23.9 is the
+  noise of the session; the three variants that change give +2.4.
+
+### Why chain: FS in crazyhouse, again from B
+
+- C2 (open): a node that fails low gives the best score of the moves it
+  searched. Late move pruning, futility and SEE skip moves without a
+  score, and one of them may hold more, so the bound is too low. A later
+  probe with a lower window cuts on it. In crazyhouse the drops make the
+  list long and most of it is skipped, so more of its fail-low bounds
+  are wrong.
+- FSF does the same: a skipped move leaves its best value as it is.
+  Its own soft bounds carry the same error, so C2 is a cause only if our
+  pruning skips more of the list than FSF's does.
+- Seeded search, depth 9 crazyhouse and 10 standard, seed 7, four
+  positions: fstlo (`plan33-fstlo`, fstcc where a node that fails low
+  after a skip gives alpha) searches 145973 nodes in crazyhouse against
+  fstcc's 191035 and main's 150474; standard 101361 against 121968.
+- Queue246 checks C2: fstlo against fstcc and main in crazyhouse, three
+  rounds of 200. If C2 holds, fstlo comes back to main in crazyhouse,
+  and then plays the merge rule.
