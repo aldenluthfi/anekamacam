@@ -1450,11 +1450,7 @@ macro_rules! shared_score {
         let white = WHITE as usize;
         let black = BLACK as usize;
 
-        king_danger!($state, black)
-            - king_danger!($state, white)
-            + royal_proximity!($state, black)
-            - royal_proximity!($state, white)
-            + check_race!($state, white)
+        check_race!($state, white)
             - check_race!($state, black)
             + extinct_threat!($state, black)
             - extinct_threat!($state, white)
