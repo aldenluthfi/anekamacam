@@ -8,8 +8,11 @@ merged as build 35 (queue242); stage 2 (FS) parked near +8 after the
 why chain (queues 243 to 249); A7, A13 and A17 closed; continuation
 history: chp (the skip) and the reply malus (hm, chm) do not merge
 (queues 250 and 251); the skip is precise but its region is half of
-FSF's, as each check at the last ply is extended; queue253 plays xf (no
-extension there) and xfc (chp on xf). A2 and A3 closed (queue252).
+FSF's, as each check at the last ply is extended; xf (no extension
+there) and xfc (chp on xf) do not merge (queues 253 and 254): the skip
+costs us the play it costs FSF, and the saved tree buys us less, the end
+of the LMR chain. Both tree chains end at the value of a doubling; next,
+plies per doubling against Elo per ply. A2 and A3 closed (queue252).
 
 ## Context
 
@@ -988,3 +991,82 @@ capablanca -49.8. Minus the base:
   FSF's figure; capablanca x1.21, xiangqi x1.14, crazyhouse x1.08 (on
   main: x1.17, x1.11, x1.09, x0.94). C2 holds in the tree. Queue253
   plays main, xf and xfc under the merge rule.
+
+### Queue253, xf and xfc
+
+Base (rounds a to c): standard -68.7, xiangqi -35.1, crazyhouse +0.6,
+capablanca -50.0. Minus the base:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| xf | -24.5 | +39.2 | -10.5 | +15.7 | +5.0 |
+| xfc | -26.0 | -72.3 | -23.3 | -7.2 | -32.2 |
+
+- Neither merges; xfc falls below -2σ in xiangqi.
+- C2 holds in the tree, but the larger saving does not reach the games:
+  xfc minus xf is -1.5 in standard, at x0.741 the time.
+
+### Why chain: continuation history, what the saved tree buys
+
+- The skip on xf, per variant: the time it saves (seeded bench; xiangqi
+  again at depth 12, x0.786 ± 0.093, nodes x0.739 ± 0.081), the worth of
+  that time at our 108 a doubling, the played result (xfc minus xf), and
+  their difference, the cost of the skip in play at equal depth:
+
+| Variant | Time, xfc over xf | Worth of the time | Played | Cost in play |
+| ------- | ----------------- | ----------------- | ------ | ------------ |
+| standard | x0.740 | +47 | -1.5 | 48 |
+| xiangqi | x0.786 | +38 | -111.5 | 149 |
+| crazyhouse | x0.948 | +8 | -12.8 | 21 |
+| capablanca | x0.831 | +29 | -22.9 | 52 |
+
+- FSF's `chprune`, the same arithmetic in standard: tree x1.353 (0.44
+  doublings), near +81 at its 185 a doubling, worth 32 (plan 29c), so
+  near 49 of play.
+- Standard: the skip costs both engines near the same play (48 against
+  49); the tree it saves buys FSF near 81 and us 47. That is the end of
+  the LMR chain: a doubling is worth less to us. Both tree chains, LMR
+  and continuation history, end at the value of a doubling.
+- The counters on xf (`plan33-cnt-skip` with xf, seed 1) give the skip
+  the precision it had on main:
+
+| Variant | Tagged fail high | Others fail high | Ratio | Tagged per loop node |
+| ------- | ---------------- | ---------------- | ----- | -------------------- |
+| standard | 1.23% | 10.4% | 0.12 | 1.04 |
+| xiangqi | 0.88% | 5.7% | 0.15 | 1.46 |
+| crazyhouse | 2.62% | 11.3% | 0.23 | 1.21 |
+| capablanca | 3.18% | 12.4% | 0.26 | 0.76 |
+
+- Xiangqi is the anomaly: on xf the skip costs 149 of play, on main
+  near 17 (chp -12.7 at x0.973 the time), and FSF's `chprune` is worth 66
+  to FSF in xiangqi, its largest. The precision does not explain it.
+  Quiescence after an evasion is not the cause either: wide quiescence
+  holds in the whole test set, so it searches every capture there, as
+  FSF's does. Queue254 plays xiangqi alone, main, chp, xf and xfc, six
+  rounds, to separate the interaction of xf and the skip from noise.
+
+### Queue254, the skip and xf in xiangqi
+
+Six rounds of 200 (σ near 10 per arm). Base (rounds d to i): -53.2.
+Minus the base:
+
+| Arm | Queue254 | Nine rounds with queue253 (chp with queue250) |
+| --- | -------- | --------------------------------------------- |
+| chp | -12.3 | -12.4 |
+| xf | +6.3 | +17.3 |
+| xfc | -27.1 | -42.2 |
+
+- The interaction (xfc - xf - chp) is -21 here, near 1σ: the anomaly
+  of queue253 was mostly noise (xf +39 and xfc -72 there, both far from
+  these rounds). Over nine rounds the skip on xf costs near 98 of play
+  in xiangqi, against 48 to 52 in standard and capablanca; higher, but
+  of the same kind.
+- The continuation history chain ends where the LMR chain ended: the
+  skip costs us the play it costs FSF, and the tree it saves buys us
+  less, because a doubling is worth less to us. xf, xfc and chp are
+  closed.
+- Two tree chains end at the value of a doubling (ours 108 against
+  full FSF, FSF's 215 against us near our 50% point). Next check: how
+  many plies a doubling buys each engine (the growth of nodes per ply),
+  which splits the value of a doubling into plies per doubling and Elo
+  per ply.
