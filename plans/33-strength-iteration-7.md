@@ -3,7 +3,7 @@
 ## Status
 
 Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
-(queues 236 to 238); the LMR why chain runs (queue239).
+(queues 236 to 238); the LMR why chain runs (queue240, the PV cut).
 
 ## Context
 
@@ -351,7 +351,7 @@ shortfall in every variant, so it is the stage 1 lead.
 - Depth in 400 ms (standard, the same 17): 9.71 with LMR, 8.00 without.
   At our 106 to 117 per doubling, x3.2 nodes should be worth 150 to 230;
   FSF's x1.84 near 210, of which it keeps 127. We keep near 15%.
-- B (open): a ply that our LMR buys is worth much less than a ply of the
+- B: a ply that our LMR buys is worth much less than a ply of the
   full tree. Counters (temporary, `plan33-cnt-lmr`, never merged; FSF in
   a copy of the lab): each reduced move, its first search, the re-search,
   and after a low first search a full-depth check search (a false low if
@@ -379,3 +379,50 @@ shortfall in every variant, so it is the stage 1 lead.
   effort of the base, so each plays at the nominal depth of its LMR on.
   If B holds, our off-lmr beats our base by far more than FSF's lab arm
   beats its base.
+
+### Queue239, LMR off at the depth of LMR on
+
+Two rounds of 200 per arm, each against full FSF at the effort of the
+base (σ near 23 per variant, 12 on the mean):
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| ours, off-lmr x3.2 minus base | +68 | +138 | +88 | +109 | +101 |
+| FSF, lmr arm x1.8 minus its base | +44 | +18 | -18 | +43 | +22 |
+
+- Depth check (`go movetime`, ours): standard, the 17 positions, main
+  400 ms 9.76, off-lmr 1280 ms 9.71; xiangqi, 10 suite positions (one is
+  a forced line at depth 241 or more and is left out), 9.2 and 9.8. So
+  standard plays at equal depth and xiangqi's off-lmr is 0.6 ply deeper,
+  near 35 of its 138.
+- B holds: at equal depth our LMR costs near 70 to 100 Elo of play, FSF's
+  22. Per doubling of nodes it saves, ours costs near 50, FSF's 25.
+- The per-class counters above do not explain it: FSF makes 3.5 times
+  as many false lows in all (near 5700 against 1600) and loses less.
+  So where the false lows fall matters, not how many there are.
+
+### Why chain: LMR, where the false lows fall
+
+- Counters by node type (the same branch and lab copy, extended): per
+  PV and non-PV node, the reduced moves, the false lows, and the false
+  lows at nodes that end below beta, where the false low changes the
+  value the node returns.
+
+| Variant | Engine | PV reduced | PV false lows (below beta) | PV rate | non-PV rate |
+| ------- | ------ | ---------- | -------------------------- | ------- | ----------- |
+| standard | ours | 31220 | 185 (175) | 0.59% | 0.43% |
+| standard | FSF | 9405 | 24 (22) | 0.26% | 1.78% |
+| xiangqi | ours | 12601 | 154 (147) | 1.22% | 0.64% |
+| xiangqi | FSF | 4543 | 6 (6) | 0.13% | 1.86% |
+
+- C: our harmful false lows fall on PV nodes, 8 times FSF's count in
+  standard and 25 times in xiangqi; off the PV ours are rarer than FSF's.
+  A false low at a PV node changes the line the search returns.
+- D: our reduction has no node type term (only the two extra full depth
+  moves at a wide window), so a PV node is cut as deep as any node. FSF
+  takes one ply off at a PV node and two more at a ttPv node, three at a
+  PV node in all.
+- Queue240 checks D, and is the candidate: `REDUCTION_PV` plies off the
+  reduction at a PV node, 3 (`plan33-lmr-pv`) and 1 (`plan33-lmr-pv1`),
+  interleaved with main under the merge rule. Tree to depth 10 (the 17
+  positions): x1.69 and x1.15 main's.
