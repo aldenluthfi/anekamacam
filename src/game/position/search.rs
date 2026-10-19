@@ -1455,7 +1455,9 @@ pub fn alpha_beta(
             0
         };
 
-        let extended = gives_check && ply + depth < 2 * info.root_depth;        /* a line gains at most its own depth */
+        let extended = gives_check                                              /* a line gains at most its own depth */
+            && depth > 1                                                        /* a last-ply check is answered by    */
+            && ply + depth < 2 * info.root_depth;                               /* the quiescence evasions            */
         let child_depth = depth - 1 + extended as usize;
 
         let mut score = if legal_moves == 1 {
