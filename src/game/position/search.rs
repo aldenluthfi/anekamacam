@@ -1002,9 +1002,9 @@ pub fn quiescence_search(
 /// i32                                -> best score, a bound outside window
 ///
 /// Notes:
-/// A node gives the best score it found. Outside the window the score is
-/// a bound, and the table stores it so. A table cut gives the stored
-/// score.
+/// A node that fails low gives the best score it found, a bound below the
+/// window, and the table stores it so. A node that fails high gives beta.
+/// A table cut gives the stored score.
 ///
 /// A repetition gets the variant result at the first closed cycle. With a
 /// perpetual rule that blames an offender, the search waits for the rule
@@ -1573,12 +1573,12 @@ pub fn alpha_beta(
                         static_eval, beta, depth, FBETA, is_capture,
                     );
                     hash_tt_entry!(
-                        moves[index], score, FBETA, depth, static_eval,
+                        moves[index], beta, FBETA, depth, static_eval,
                         state, table_key, ttable
                     );
                     state.scratch.node_lists[ply] = lists;
 
-                    return score;
+                    return beta;
                 }
 
                 if is_quiet {
