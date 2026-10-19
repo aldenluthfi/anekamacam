@@ -6,8 +6,9 @@ Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
 (queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1
 merged as build 35 (queue242); stage 2 (FS) parked near +8 after the
 why chain (queues 243 to 249); A7, A13 and A17 closed; continuation
-history: chp (the skip) does not merge (queue250), and queue251 plays the
-reply malus taken only when a later quiet move cuts (hm, chm).
+history: chp (the skip) and the reply malus (hm, chm) do not merge
+(queues 250 and 251); the skip is precise but saves little, and the
+quiet-move funnel is next; queue252 plays A3 and A2.
 
 ## Context
 
@@ -857,3 +858,65 @@ capablanca -32.0. Minus the base:
   and on hm the skip fires less (chm over chp near x1.1 to x1.25). Tree
   size did not predict chp's games, so queue251 plays both under the
   merge rule.
+
+### Queue251, the reply malus
+
+Base (rounds a to c): standard -41.1, xiangqi -33.9, crazyhouse +12.2,
+capablanca -49.8. Minus the base:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| hm | -29.4 | -5.7 | -2.9 | +31.2 | -1.7 |
+| chm | -47.9 | -13.8 | +14.6 | +32.9 | -3.6 |
+
+- Neither merges. The base's standard is near 40 above its usual score
+  (rounds b and c, -29.6 and -10.4), so the standard column leans low.
+- C does not hold: cells that take the malus FSF's way do not make the
+  skip pay. The arms are archived (aneka-hm, aneka-chm).
+
+### Why chain: continuation history, from B again
+
+- B said the skip cuts moves that matter. Check: the precision of the
+  skip in both engines. Counters (temporary; ours `plan33-cnt-skip` on
+  chp, FSF a lab copy) tag the moves the skip would take instead of
+  skipping them, and count at zero-window nodes how often a tagged move
+  that no other skip takes fails high, against the other quiet moves
+  with a reduced depth below 5 (no checks). Our seeded bench (seed 1),
+  FSF's chess bench:
+
+| Engine | Tagged fail high | Others fail high | Ratio | Tagged share |
+| ------ | ---------------- | ---------------- | ----- | ------------ |
+| FSF chess, depth 11 | 2.76% | 7.28% | 0.38 | 51% |
+| FSF chess, depth 13 | 2.48% | 7.79% | 0.32 | 51% |
+| ours standard, depth 12 | 1.79% | 10.0% | 0.18 | 70% |
+| ours xiangqi, depth 10 | 0.74% | 7.47% | 0.10 | 61% |
+| ours crazyhouse, depth 10 | 2.32% | 11.1% | 0.21 | 51% |
+| ours capablanca, depth 11 | 3.03% | 12.7% | 0.24 | 54% |
+
+- B does not hold: our skip takes fewer good moves than FSF's, and our
+  cells tell good replies from bad ones better than FSF's do.
+- B2: the skip saves us little. Tagged moves are 9.7% of our nodes in
+  standard (xiangqi 10.2%, crazyhouse 5.9%, capablanca 8.0%) against
+  15.7% in FSF; each costs near the same subtree (1.5 nodes against 1.65,
+  from the tree savings). chp's time saving follows its node saving
+  (standard x0.858, xiangqi x0.973). At our 108 a doubling, x1.10 is
+  worth near +11; chp played -8 ± 10.
+- Our quiescence share is near FSF's (38% against 32%, plan 29), so the
+  missing tagged moves are not spent in quiescence. Next check (after
+  queue252, no builds while it plays): the funnel of the quiet moves in
+  both engines, from the moves tried after the first, through the
+  reduced depth below 5, to the tag, at zero-window nodes.
+
+### A2 and A3, parameters derived again
+
+- On build 35 clones without parameter files, built and derived for all
+  44 variants (one at a time; three at once ran out of memory at
+  taikyoku). Capability lines are the same as main's in both.
+- A2 changes only grand (its royal starts on the second rank): it plays
+  grand against FSF at UCI_Elo 2000, six rounds.
+- A3 changes all 44 files: it plays the merge rule.
+- The regenerated files are in each branch's commit. Cargo did not
+  rebuild when only the parameter files changed, so the server builds
+  were forced (crate root touched).
+- Queue252: A3 and main, three rounds of the test set; then A2 and main
+  in grand at FSF 2000, six rounds.
