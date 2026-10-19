@@ -1016,7 +1016,8 @@ pub fn quiescence_search(
 /// Correction history applies only to the fail-high gates: reverse
 /// futility, null move and ProbCut. Fail-low futility and razoring use the
 /// raw score. Razoring asks quiescence, which plays no drops, so a drop
-/// variant skips it.
+/// variant skips it. Correction history learns the window edge, not the
+/// bound past it.
 ///
 /// A move that gives check gets one more ply while the line is shorter
 /// than two times the iteration depth. It is never reduced and only
@@ -1569,7 +1570,7 @@ pub fn alpha_beta(
 
                     update_correction(
                         &mut info.corr_hist[corr_index],
-                        static_eval, score, depth, FBETA, is_capture,
+                        static_eval, beta, depth, FBETA, is_capture,
                     );
                     hash_tt_entry!(
                         moves[index], score, FBETA, depth, static_eval,
@@ -1632,7 +1633,7 @@ pub fn alpha_beta(
     } else {
         update_correction(
             &mut info.corr_hist[corr_index],
-            static_eval, best_score, depth, FALPHA, m_capture!(&best_move),
+            static_eval, alpha, depth, FALPHA, m_capture!(&best_move),
         );
         hash_tt_entry!(
             best_move, best_score, FALPHA, depth, static_eval,
