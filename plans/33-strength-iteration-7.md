@@ -577,3 +577,22 @@ crazyhouse -20.3, capablanca -40.3. Minus the base:
   variants sit at or above the base in fstcc.
 - A13 is closed: +4.7, within one σ. Standard plays the same search, so
   its +6.9 is the noise of the session.
+
+### Why chain: FS in crazyhouse
+
+- A: FS plays level with the base, not above it, because crazyhouse
+  loses near 40 in every FS arm.
+- B: the crazyhouse loss is not a bigger tree. Seeded bench, depth 10 to
+  12, 16 seeds, fstcc over main in nodes: standard x0.861 ± 0.077,
+  xiangqi x1.049 ± 0.046, crazyhouse x0.988 ± 0.065, capablanca x1.178
+  ± 0.112. Crazyhouse searches the same tree and plays worse, so its
+  soft scores cut the wrong lines.
+- C (open): quiescence plays no drops, so in a drop variant its stand
+  pat and best capture are poor bounds; past the window they say less
+  still. FS-T returns and stores them, and a later probe with a lower
+  window cuts on them.
+- Queue245 checks C: fstq, fstcc with quiescence giving the window edge
+  in a drop variant (`plan33-fstq`; the same search as fstcc outside
+  drop variants), against fstcc and main in crazyhouse, three rounds of
+  200. If C holds, fstq comes back to main in crazyhouse, and fstq then
+  plays the merge rule. A17 rides along in the full test set.
