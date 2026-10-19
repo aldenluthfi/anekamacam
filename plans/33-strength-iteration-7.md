@@ -812,3 +812,18 @@ The chain is open, not closed. Where it stands and what comes next:
 - So chp saves x1.09 to x1.17 outside crazyhouse, short of FSF's x1.35,
   and grows the crazyhouse tree. Queue250 plays chp under the merge rule,
   with fsthi for three more rounds.
+
+### Queue250, chp and fsthi
+
+Base (rounds a to c): standard -89.5, xiangqi -62.1, crazyhouse -34.3,
+capablanca -32.0. Minus the base:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| chp | -21.5 | -12.7 | +34.9 | -32.6 | -8.0 |
+| fsthi | +0.6 | +13.5 | +39.6 | -17.1 | +9.2 |
+
+- chp does not merge. It loses where it saves tree (standard x1.17,
+  capablanca x1.11) and gains where the tree grows (crazyhouse).
+- fsthi does not merge. Over queues 249 and 250 (six rounds) it is +8.8,
+  near 1σ on the mean; crazyhouse +16 over nine rounds.
