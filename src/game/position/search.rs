@@ -21,13 +21,21 @@
 
 use crate::*;
 
-pub static CNT: [std::sync::atomic::AtomicU64; 4] =
-    [const { std::sync::atomic::AtomicU64::new(0) }; 4];
+pub static CNT: [std::sync::atomic::AtomicU64; 10] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 10];
 
 fn cnt(slot: usize, on: bool) {
     if on {
         CNT[slot].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
+}
+
+fn funnel(quiet: bool, late: bool, low: bool, tag: bool) {
+    cnt(4, quiet);
+    cnt(5, quiet && late);
+    cnt(6, quiet && !late);
+    cnt(7, quiet && !late && low);
+    cnt(8, quiet && !late && tag);
 }
 
 /*----------------------------------------------------------------------------*\
@@ -1347,6 +1355,8 @@ pub fn alpha_beta(
     let alpha_start = alpha;
     let mut next_index = 0;
 
+    cnt(9, ply > 0 && !in_check && beta - alpha == 1);
+
     loop {
         let index = next_index;
 
@@ -1444,11 +1454,15 @@ pub fn alpha_beta(
             && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
+        let quiet_test = prunable_quiet && quiet_pruning!(state);
+        let low = reduced_depth < FAILED_REPLY_DEPTH;
+
         if skippable
         && !royal_line!(                                                        /* no line from its landing square to */
             enemy, piece!(mv) as usize, end!(mv) as usize, state                /* a royal: it cannot check directly  */
         )
         {
+            funnel(quiet_test, late_quiet, low, failed_reply);
             continue;
         }
 
@@ -1459,8 +1473,13 @@ pub fn alpha_beta(
         let gives_check = to_move_in_check!(state);                             /* the side that got the move         */
 
         if skippable && !gives_check {
+            funnel(quiet_test, late_quiet, low, failed_reply);
             undo_move!(state);
             continue;
+        }
+
+        if !gives_check {
+            funnel(quiet_test, late_quiet, low, failed_reply);
         }
 
         legal_moves += 1;
