@@ -525,4 +525,32 @@ Three more rounds of 200, minus the base mean:
 ### Queue243 (stage 2 and A7)
 
 FS-T, FS-S and A7 on build 35, interleaved with main under the merge
-rule, three rounds of 200.
+rule, three rounds of 200. Base: standard -53.2, xiangqi -29.6,
+crazyhouse -25.7, capablanca -26.2. Minus the base mean (σ near 20 per
+variant, 10 on the mean):
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| FS-T | +0.2 | -23.8 | -37.1 | +4.7 | -14.0 |
+| FS-S | -52.8 | -23.5 | -29.8 | -19.6 | -31.4 |
+| A7 | -5.3 | +4.6 | +0.7 | +10.6 | +2.6 |
+
+- None merges. FS-S falls to -3.2σ (standard -52.8, below -2σ). A7 is
+  closed: margins in units of the mean piece play the same.
+
+### Why chain: FS
+
+- A: fail-soft scores lose (FS-T -14, FS-S -31), though FSF returns the
+  same scores: the node and table score, the quiescence best score, the
+  static cut's evaluation, the null move's score and ProbCut's.
+- B (open): our correction history learns from the node score (`gap =
+  score - eval`, weighted by depth). With hard bounds the gap stops at
+  the window edge; a soft bound can lie a piece past it, and FS-S's
+  shortcut scores (the evaluation of a child cut) are the farthest. The
+  corrections then swing, and they steer the reverse futility, null move
+  and ProbCut gates. FSF of this era has no correction history, so it
+  pays nothing for soft scores there.
+- Queue244 checks B: fstcc and fsscc, FS-T and FS-S with correction
+  history fed the window edge as on main (`plan33-fstcc`,
+  `plan33-fsscc`). If B holds, both come back to the base or above. A13
+  rides along.
