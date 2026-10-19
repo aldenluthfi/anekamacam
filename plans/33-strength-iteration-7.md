@@ -3,8 +3,10 @@
 ## Status
 
 Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
-(queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1 merged as build 35
-(queue242); stage 2 (FS) and A7 play (queue243).
+(queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1
+merged as build 35 (queue242); stage 2 (FS) plays level with the base
+once correction history learns the window edge, and loses in crazyhouse
+(queues 243 and 244); A7 and A13 closed.
 
 ## Context
 
@@ -554,3 +556,24 @@ variant, 10 on the mean):
   history fed the window edge as on main (`plan33-fstcc`,
   `plan33-fsscc`). If B holds, both come back to the base or above. A13
   rides along.
+
+### Queue244, FS with the window edge in correction history
+
+fstcc, fsscc and A13 on build 35, interleaved with main under the merge
+rule, three rounds of 200. Base: standard -86.5, xiangqi -54.9,
+crazyhouse -20.3, capablanca -40.3. Minus the base:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| fstcc | +27.3 | +26.9 | -44.2 | -8.1 | +0.5 |
+| fsscc | -16.0 | +14.6 | -49.3 | +33.4 | -4.3 |
+| A13 | +6.9 | +14.7 | +9.3 | -12.3 | +4.7 |
+
+- B holds in part: FS-T rises from -14.0 to +0.5 and FS-S from -31.4 to
+  -4.3. Soft bounds in correction history were a cost, but with it gone
+  FS plays level with the base, not above it.
+- Crazyhouse loses in all four FS arms of queues 243 and 244 (-37.1,
+  -29.8, -44.2, -49.3; near -40, σ near 10 over the four). The other
+  variants sit at or above the base in fstcc.
+- A13 is closed: +4.7, within one σ. Standard plays the same search, so
+  its +6.9 is the noise of the session.
