@@ -652,3 +652,23 @@ Crazyhouse, base -41.4. fstcc -20.6, fstlo -20.1 against it.
   rounds of 200 (a crazyhouse round takes near two minutes).
 - The arm that comes back to main names the score; the mechanism is
   then looked for in that score alone.
+
+### Queue247, the fail-high score
+
+Crazyhouse, six rounds, base -35.6 (σ near 14 for each arm against it):
+
+| Arm | Against the base |
+| --- | ---------------- |
+| fstcc | -10.6 |
+| fsthi | +9.4 |
+| fsttt | -10.6 |
+
+- The table cut is not it: fsttt plays as fstcc. The fail-high score is
+  the lead: fsthi is 20 above fstcc (1.4σ) and level with the base.
+- The score of a node that fails high goes two ways: into the table,
+  where later probes cut on it and refine the evaluation with it, and
+  to the parent, where it becomes a fail-low score. Queue248 splits the
+  two in crazyhouse: fsths (`plan33-fsths`, the table keeps the score,
+  the parent gets beta) and fsthr (`plan33-fsthr`, the table keeps
+  beta, the parent gets the score), with fsthi again, against main, six
+  rounds of 200.
