@@ -21,6 +21,15 @@
 
 use crate::*;
 
+pub static CNT: [std::sync::atomic::AtomicU64; 4] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 4];
+
+fn cnt(slot: usize, on: bool) {
+    if on {
+        CNT[slot].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /*----------------------------------------------------------------------------*\
                               SEARCH WORKER STATE
 \*----------------------------------------------------------------------------*/
@@ -595,6 +604,12 @@ pub fn iterative_deepening(
         };
 
         fill_pv_line!(state, info, ttable, depth);
+
+        if depth == info.set_depth {
+            eprintln!("CNT {:?}", CNT.iter().map(|c| c.load(
+                std::sync::atomic::Ordering::Relaxed
+            )).collect::<Vec<u64>>());
+        }
 
         if info.interrupt {
             if completed_depth == 0 && info.candidate_move != null_move() {
@@ -1425,7 +1440,7 @@ pub fn alpha_beta(
             continue;                                                           /* and the exchange as any move does  */
         }
 
-        let skippable = (late_quiet || futile || losing_capture || failed_reply)
+        let skippable = (late_quiet || futile || losing_capture)
             && !goal_move;
         let enemy = (state.playing ^ 1) as usize;
 
@@ -1552,6 +1567,14 @@ pub fn alpha_beta(
             state.scratch.node_lists[ply] = lists;
 
             return 0;
+        }
+
+        if prunable_quiet && quiet_pruning!(state) && !gives_check {
+            let late = reduced_depth < FAILED_REPLY_DEPTH;
+            cnt(0, failed_reply);
+            cnt(1, failed_reply && score > alpha);
+            cnt(2, late && !failed_reply);
+            cnt(3, late && !failed_reply && score > alpha);
         }
 
         if score > best_score {
