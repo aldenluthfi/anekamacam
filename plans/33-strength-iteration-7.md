@@ -737,3 +737,25 @@ Base (rounds a to c): standard -71.7, xiangqi -50.8, crazyhouse -31.5
   continuation history, as the stage 1 arm) over main, and of FSF's lab
   `conthist` arm over the lab base, on the bench positions of FSF's chess
   bench that have no moves appended.
+- Result, 15 positions, depth 10, geometric mean of nodes off over on
+  (± one standard error of the log):
+
+| Arm | Saving |
+| --- | ------ |
+| ours, continuation history off | x0.995 ± 0.091 |
+| FSF `conthist` | x1.332 ± 0.138 |
+| FSF `chprune` | x1.353 ± 0.081 |
+| FSF `lmrhist` | x1.237 ± 0.128 |
+| FSF `fpp` | x1.187 ± 0.100 |
+| FSF `mainhist` | x0.773 ± 0.121 |
+
+- B: our continuation history saves no tree, FSF's saves a third, so
+  the LMR end (a node worth less to us) does not reach this part. FSF's
+  whole saving comes through `chprune`: a late quiet move whose two
+  continuation cells are both negative is skipped below a reduced depth
+  of 5. In move order alone the cells save FSF near nothing, as they
+  save us nothing. Ours never prunes on them.
+- C: the skip is missing. Plan 29 tried it as H2 (+16, then H2b +6 and
+  H2c -3 on build 16, parked as noise); its tree was never measured.
+  `plan33-chp` ports H2 to build 35 (drops skipped too, as in FSF).
+  First check: its tree saving against FSF's x1.35.
