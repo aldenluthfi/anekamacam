@@ -3,7 +3,7 @@
 ## Status
 
 Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
-(queues 236 to 238); the LMR why chain runs (queue240, the PV cut).
+(queues 236 to 238); the LMR why chain runs (queue241, the PV cut at equal depth).
 
 ## Context
 
@@ -426,3 +426,49 @@ base (σ near 23 per variant, 12 on the mean):
   reduction at a PV node, 3 (`plan33-lmr-pv`) and 1 (`plan33-lmr-pv1`),
   interleaved with main under the merge rule. Tree to depth 10 (the 17
   positions): x1.69 and x1.15 main's.
+
+### Queue240, the PV cut
+
+Three rounds of 200, minus the base mean (σ near 20 per variant, 10 on
+the mean). Base: standard -67.5, xiangqi -64.5, crazyhouse -28.7,
+capablanca -58.5.
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| pv (3 plies) | -6.3 | +17.0 | +0.8 | +11.8 | +5.8 |
+| pv1 (1 ply) | +17.8 | +11.8 | -10.9 | +32.3 | +12.8 |
+
+- Neither passes +2σ (20); none falls below -2σ. Not merged.
+- pv's tree, x1.69, is 0.76 doublings, near 82 at our ladder; pv1's
+  x1.15 near 22. If the rest is play quality, pv wins back near 88 and
+  pv1 near 35, so the PV cut buys about what it costs in depth. Queue241
+  measures this at equal depth instead of inferring it.
+
+### Why chain: what a protected PV node costs
+
+- Counters (the same branch and lab copy), PV nodes that reach the move
+  loop and the moves they search:
+
+| Variant | Engine | PV nodes | PV share of nodes | Moves searched per PV node | Later move beats alpha, per PV node |
+| ------- | ------ | -------- | ----------------- | -------------------------- | ----------------------------------- |
+| standard | ours | 4236 | 0.48% | 20.97 | 0.59 |
+| standard | FSF | 5703 | 0.81% | 6.41 | 0.14 |
+| xiangqi | ours | 2065 | 0.69% | 16.53 | 0.48 |
+| xiangqi | FSF | 2515 | 0.73% | 6.12 | 0.13 |
+
+- We have fewer PV nodes than FSF, not more. Each searches three times
+  the moves: our move pruning needs a zero window, FSF's runs at every
+  node but the root. At a PV node FSF has 31.2 legal moves, picks 9.7
+  (the move count skip drops the rest of the quiet moves) and searches
+  6.4; continuation history pruning, futility and SEE remove the other
+  3.3 (xiangqi 24.3, 8.4, 6.1).
+- Pruning at PV nodes in ours (arms pp0, pp1, pp3, never played) leaves
+  the tree as it was: x0.99, x1.13, x1.78 main's to depth 10. Most PV
+  nodes are shallow and cheap; the PV cut costs at the deep ones, where
+  FSF skips little too. Archived and deleted.
+- FSF's own PV and ttPv terms (new lab switch `pvadj`, off by default,
+  base bench nodes unchanged) grow FSF's tree x1.52 (standard) and x1.54
+  (xiangqi). Protecting the PV costs both engines near the same tree.
+- Queue241, two rounds: pv3x, our pv at 1.65 to 1.73 times the clock
+  (equal depth) against FSF at the base effort; fsfpv, the lab `pvadj`
+  arm against full FSF at the test-set budget.
