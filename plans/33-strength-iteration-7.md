@@ -7,8 +7,9 @@ Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
 merged as build 35 (queue242); stage 2 (FS) parked near +8 after the
 why chain (queues 243 to 249); A7, A13 and A17 closed; continuation
 history: chp (the skip) and the reply malus (hm, chm) do not merge
-(queues 250 and 251); the skip is precise but saves little, and the
-quiet-move funnel is next; queue252 plays A3 and A2.
+(queues 250 and 251); the skip is precise but its region is half of
+FSF's, as each check at the last ply is extended; queue253 plays xf (no
+extension there) and xfc (chp on xf). A2 and A3 closed (queue252).
 
 ## Context
 
@@ -920,3 +921,70 @@ capablanca -49.8. Minus the base:
   were forced (crate root touched).
 - Queue252: A3 and main, three rounds of the test set; then A2 and main
   in grand at FSF 2000, six rounds.
+
+### Queue252, A3 and A2
+
+- A3, minus the base (base: standard -68.8, xiangqi -49.0, crazyhouse
+  -35.5, capablanca -19.2): standard -34.9, xiangqi +10.6, crazyhouse
+  +26.2, capablanca -26.9, mean -6.3. Not merged; closed.
+- A2 in grand at FSF 2000, six rounds: main +147.1, A2 +156.1, so +9.0
+  (σ near 16). Not merged; closed. Grand is far above 2000 either way.
+- Both clones archived (aneka-a2-b35, aneka-a3-b35). The audit arms left:
+  A6.
+
+### Why chain: continuation history, the region of the skip
+
+- B2 (the skip saves little) from the region the skip works in. Counters
+  (temporary, `plan33-cnt-skip`, and the FSF lab copy), at nodes out of
+  check with a zero window:
+
+| Engine | Loop nodes of all nodes | Quiet moves past the move count, per node | Reduced depth below 5 | Tagged per node |
+| ------ | ----------------------- | ----------------------------------------- | --------------------- | --------------- |
+| FSF chess, depth 13 | 28.7% | 1.74 | 95% | 0.63 |
+| ours standard | 13.1% | 1.49 | 99% | 0.89 |
+| ours xiangqi | 15.7% | 4.24 | 99% | 1.20 |
+| ours crazyhouse | 17.9% | 6.67 | 100% | 1.32 |
+| ours capablanca | 16.7% | 2.03 | 99% | 0.82 |
+
+- Per node of its region our skip tags more moves than FSF's. The region
+  is the smaller share: our node count holds every horizon node twice
+  (`alpha_beta` counts it before it hands depth 0 to quiescence, which
+  counts it again), and without that 28% of our nodes are main-search
+  nodes out of check with a zero window, against FSF's 56%. Of those,
+  60% reach the move loop (FSF 51%), so the cuts before the loop are not
+  the cause.
+- The rest of our main search is in check: in standard 231151 of 443231
+  nodes with depth above 0 (PV nodes 4315). By depth, in check against
+  out of check at depth 1:
+
+| Engine | In check, depth 1 | Out of check, depth 1 | Share in check |
+| ------ | ----------------- | --------------------- | -------------- |
+| FSF chess | 130215 | 2919930 | 4.3% |
+| ours standard | 151839 | 142976 | 51% |
+| ours xiangqi | 9954 | 76165 | 12% |
+| ours crazyhouse | 17216 | 151915 | 10% |
+| ours capablanca | 31715 | 255118 | 11% |
+
+- C2: the skip's region is half of FSF's because the check rule extends
+  every check, at the last ply too, so each check at depth 1 opens a
+  depth-1 node in check where FSF goes to quiescence. FSF extends a
+  check only at depth above 6 with the evaluation more than 100 from
+  zero. The lab put our extension rule at near nothing to FSF (`s1ext`:
+  standard -4, xiangqi +14); the earlier tries of fewer extensions (XS,
+  XS2, plan 27) played grand and shogi in self-play, never standard
+  against FSF.
+- Arms: `plan33-xf` (main; a check at depth 1 is not extended, so
+  quiescence answers it) and `plan33-xfc` (chp on xf). Seeded bench over
+  main, nodes and time:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca |
+| --- | -------- | ------- | ---------- | ---------- |
+| xf nodes | x1.039 ± 0.091 | x1.013 ± 0.055 | x1.152 ± 0.068 | x1.041 ± 0.076 |
+| xf time | x0.909 ± 0.092 | x1.036 ± 0.081 | x1.188 ± 0.071 | x1.062 ± 0.089 |
+| xfc nodes | x0.770 ± 0.082 | x0.890 ± 0.064 | x1.070 ± 0.080 | x0.863 ± 0.091 |
+| xfc time | x0.673 ± 0.079 | x0.974 ± 0.093 | x1.126 ± 0.091 | x0.883 ± 0.101 |
+
+- On xf the skip saves x1.35 in standard (xfc over xf x0.741 ± 0.074),
+  FSF's figure; capablanca x1.21, xiangqi x1.14, crazyhouse x1.08 (on
+  main: x1.17, x1.11, x1.09, x0.94). C2 holds in the tree. Queue253
+  plays main, xf and xfc under the merge rule.
