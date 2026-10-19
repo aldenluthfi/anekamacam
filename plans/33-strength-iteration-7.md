@@ -759,3 +759,21 @@ Base (rounds a to c): standard -71.7, xiangqi -50.8, crazyhouse -31.5
   H2c -3 on build 16, parked as noise); its tree was never measured.
   `plan33-chp` ports H2 to build 35 (drops skipped too, as in FSF).
   First check: its tree saving against FSF's x1.35.
+- On the 15 positions chp gives x1.004 ± 0.129, but our trees to a fixed
+  depth swing from x0.46 to x2.15 between the two builds position by
+  position, so 15 positions cannot tell x1.0 from x1.35. Counters
+  (temporary, `plan33-cnt-chp`, archived): the skip takes 46.6% of the
+  quiet moves at zero-window nodes, and 23.2% are moves no other skip
+  would take. Cells are present in 97.5%; the first is negative in 67.7%,
+  the second in 61.7%, zero in 28.9% and 35.4%.
+- The seeded bench (`treesize.sh`, 16 seeds, depth 12, 10, 10, 11) gives
+  nodes over main:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca |
+| --- | -------- | ------- | ---------- | ---------- |
+| chp | x0.858 ± 0.069 | x0.915 ± 0.046 | x1.064 ± 0.082 | x0.898 ± 0.099 |
+| continuation history off | x0.832 ± 0.063 | x1.200 ± 0.035 | x1.058 ± 0.074 | x1.135 ± 0.092 |
+
+- So chp saves x1.09 to x1.17 outside crazyhouse, short of FSF's x1.35,
+  and grows the crazyhouse tree. Queue250 plays chp under the merge rule,
+  with fsthi for three more rounds.
