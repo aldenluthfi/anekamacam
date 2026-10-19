@@ -164,17 +164,20 @@ const CORR_HIST_LIMIT: i32 = 64 * CORR_HIST_GRAIN;
 /// - move 1 to 4 : full depth, at a wide window
 /// - other moves : `surface[depth][move number]`, minimum one ply
 /// - history     : a quiet move with good history one ply less, bad one more
+/// - PV node     : `REDUCTION_PV` plies less
 ///
 /// A wide window is a PV node. There a bad reduction costs the full line,
-/// so more moves get full depth.
+/// so more moves get full depth and the rest a smaller cut.
 ///
 /// - `REDUCTION_MINIMUM_DEPTH` : minimum depth for a reduction
 /// - `REDUCTION_MOVE_BASE`     : full depth moves at a zero window
 /// - `REDUCTION_MOVE_WIDE`     : extra full depth moves at a wide window
+/// - `REDUCTION_PV`            : plies taken off the reduction at a PV node
 ///
 const REDUCTION_MINIMUM_DEPTH: u32 = 3;
 const REDUCTION_MOVE_BASE: u32 = 2;
 const REDUCTION_MOVE_WIDE: u32 = 2;
+const REDUCTION_PV: u32 = 1;
 
 /// ProbCut settings
 ///
@@ -1445,7 +1448,8 @@ pub fn alpha_beta(
                 && scores[index] < KILLER_MOVE_SCORE;                           /* killers keep the plain reduction   */
 
             (surface[depth_slot * REDUCTION_MOVE_CAP + move_slot] as i32
-                - history.signum() * learned as i32)                            /* a move that worked is cut less     */
+                - history.signum() * learned as i32                             /* a move that worked is cut less     */
+                - REDUCTION_PV as i32 * pv_node as i32)
                 .clamp(0, depth as i32 - 2) as usize                            /* one ply always survives the cut    */
         } else {
             0
