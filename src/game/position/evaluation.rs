@@ -956,10 +956,10 @@ macro_rules! pawn_structure {
 
                             let passer_opening =
                                 statics.eval.pawn_passed_opening[index]
-                                    * passed as i32;
+                                    * 0 * passed as i32;
                             let passer_endgame =
                                 statics.eval.pawn_passed_endgame[index]
-                                    * passed as i32;
+                                    * 0 * passed as i32;
                             let bonus =
                                 2 + connected as i32 + chained as i32;
                             let pushed = (mass && connected && !passed) as i32;
