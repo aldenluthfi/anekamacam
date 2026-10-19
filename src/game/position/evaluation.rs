@@ -1380,7 +1380,7 @@ macro_rules! attack_terms {
                         * eval.pawn_threat_value[phase]
                     + (counts[0][2] - counts[1][2])
                         * eval.restricted_value[phase]
-                    + mobility[0][phase] - mobility[1][phase]
+                    + 0 * (mobility[0][phase] - mobility[1][phase])
                     + cost[1][phase] - cost[0][phase]
                     + goal
             };
