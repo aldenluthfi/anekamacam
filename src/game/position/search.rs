@@ -21,8 +21,8 @@
 
 use crate::*;
 
-pub static CNT: [std::sync::atomic::AtomicU64; 14] =
-    [const { std::sync::atomic::AtomicU64::new(0) }; 14];
+pub static CNT: [std::sync::atomic::AtomicU64; 17] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 17];
 
 fn cnt(slot: usize, on: bool) {
     if on {
@@ -1121,6 +1121,9 @@ pub fn alpha_beta(
     let pv_node = beta - alpha > 1;                                             /* a window this wide wants a move    */
 
     cnt(13, ply > 0 && !in_check && !pv_node);
+    cnt(14, ply > 0 && pv_node);
+    cnt(15, ply > 0 && in_check);
+    cnt(16, ply == 0);
 
     let table_key = search_key(state, repeats);
     let table_entry =
