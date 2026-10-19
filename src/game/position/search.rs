@@ -21,8 +21,8 @@
 
 use crate::*;
 
-pub static CNT: [std::sync::atomic::AtomicU64; 10] =
-    [const { std::sync::atomic::AtomicU64::new(0) }; 10];
+pub static CNT: [std::sync::atomic::AtomicU64; 14] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 14];
 
 fn cnt(slot: usize, on: bool) {
     if on {
@@ -808,6 +808,7 @@ pub fn quiescence_search(
         return terminal_score!(state);
     }
 
+    cnt(12, true);
     info.nodes += 1;
     if info.nodes & 2047 == 0 {
         check_interrupt(info);
@@ -1108,6 +1109,9 @@ pub fn alpha_beta(
         .unwrap_or_else(|| to_move_in_check!(state));
     let mut depth = depth;
 
+    cnt(10, true);
+    cnt(11, depth == 0);
+
     if depth == 0 {
         return quiescence_search(
             state, ttable, qtable, alpha, beta, info, None, true,
@@ -1115,6 +1119,8 @@ pub fn alpha_beta(
     }
 
     let pv_node = beta - alpha > 1;                                             /* a window this wide wants a move    */
+
+    cnt(13, ply > 0 && !in_check && !pv_node);
 
     let table_key = search_key(state, repeats);
     let table_entry =
