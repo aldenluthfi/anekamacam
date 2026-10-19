@@ -4,9 +4,9 @@
 
 Opened 2026-10-18 on build 34 (main 3731789). Stages 0 and 1 played
 (queues 236 to 238); the LMR why chain ended (queues 239 to 241); pv1
-merged as build 35 (queue242); stage 2 (FS) plays level with the base
-once correction history learns the window edge, and loses in crazyhouse
-(queues 243 and 244); A7 and A13 closed.
+merged as build 35 (queue242); stage 2 (FS) parked near +8 after the
+why chain (queues 243 to 249); A7, A13 and A17 closed; continuation
+history is the next lead.
 
 ## Context
 
@@ -695,3 +695,45 @@ Crazyhouse, six rounds, base -22.1:
   on a mate gives beta), with fsthi and main, six rounds. If D holds,
   fsthm plays as fsthi. Both play the merge rule in the full test set in
   the same queue (rounds a to c).
+
+### Queue249, the mate and the merge rule
+
+Base (rounds a to c): standard -71.7, xiangqi -50.8, crazyhouse -31.5
+(six rounds -20.4), capablanca -39.6. Minus the base:
+
+| Arm | standard | xiangqi | crazyhouse | capablanca | mean |
+| --- | -------- | ------- | ---------- | ---------- | ---- |
+| fsthi | -14.1 | +27.0 | +21.0 (six rounds +3.8) | 0.0 | +8.5 |
+| fsthm | -26.1 | -21.0 | -30.4 (six rounds -32.5) | -2.9 | -20.1 |
+
+- D does not hold: fsthm loses in crazyhouse as fstcc does. The fail-high
+  score that costs is not a mate.
+- fsthi does not merge (+8.5, under 1σ). Over three sessions it sits near
+  +7 in crazyhouse.
+
+### FS parked
+
+- Tried: correction history fed the soft score (a cost, removed),
+  quiescence (no), alpha after a skipped move (no), the table cut (no),
+  the fail-high score (yes, in the table and in the parent alike), a mate
+  (no). The best FS arm, fsthi (fail-soft below the window, hard above),
+  plays near +8 and does not merge.
+- The chain stops short of a root cause: why a soft score above the
+  window costs us in crazyhouse is not found. FS is worth at most near
+  10 on the data, so the next lead is the larger shortfall, continuation
+  history (FSF 44 to 84 at our budget, ours -18 to +40). SE (stage 4)
+  stays off, as FS did not merge.
+
+### Why chain: continuation history
+
+- A: FSF's continuation history is worth 44 to 84 at our budget, ours
+  near nothing.
+- The LMR chain found that a node saved is worth less to us than to FSF
+  (a doubling 65 against 185). If continuation history saves us as much
+  tree as it saves FSF, the same cause holds and the chain ends there; if
+  it saves us far less, the cause is in the ordering, and the chain goes
+  on from there.
+- Check: nodes to depth 10 of `plan33-off-conthist` (ordering without
+  continuation history, as the stage 1 arm) over main, and of FSF's lab
+  `conthist` arm over the lab base, on the bench positions of FSF's chess
+  bench that have no moves appended.
