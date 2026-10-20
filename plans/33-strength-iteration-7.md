@@ -13,8 +13,10 @@ there) and xfc (chp on xf) do not merge (queues 253 and 254): the skip
 costs us the play it costs FSF, and the saved tree buys us less, the end
 of the LMR chain. Both tree chains end at the value of a doubling: a
 doubling buys us fewer plies and a ply is worth less to us. The eval
-map (queue256) looks for the evaluation's share. All audit arms are
-closed (A2 and A3 queue252, A6 queue255).
+map (queue256): threats match FSF's value; the king (outside xiangqi),
+passed pawns and pawn structure in standard fall far short; queue257
+measures FSF's terms at the same budget. All audit arms are closed (A2
+and A3 queue252, A6 queue255).
 
 ## Context
 
@@ -1130,3 +1132,40 @@ variant (base three rounds), never merged. Arms (`plan33-off-<arm>`):
   `e_threats` 85, `e_mobility` 80.
 - The term with the largest shortfall against FSF's value gets the why
   chain, as LMR did for the search.
+
+### Queue256, the eval map
+
+One round of 200 per arm, the base three (σ near 27 per arm against the
+base mean). Base: standard -69.1 (-27.9, -98.1, -81.4), xiangqi -29.9
+(-65.0, -50.7, +26.1), crazyhouse -28.5, capablanca -25.0. Worth of
+each term to us, the base minus the arm (above 0, the term helps):
+
+| Term | standard | xiangqi | crazyhouse | capablanca |
+| ---- | -------- | ------- | ---------- | ---------- |
+| kdanger | +3 | +105 | +5 | +13 |
+| kzone | -15 | +10 | +31 | -13 |
+| shelter | +40 | -6 | +21 | +17 |
+| threats | +78 | +42 | +5 | +79 |
+| mobility | +37 | +30 | +13 | +79 |
+| passed | -6 | +42 | -4 | -15 |
+| pawns | -1 | +52 | -8 | -46 |
+| imbalance | +18 | -7 | +5 | +15 |
+| lazy | +16 | -2 | +10 | +24 |
+
+- Lazy changes nothing in standard (its tree equals main's), so its +16
+  there is the noise of one arm.
+- Near FSF's value: threats (standard 78 against 83, xiangqi 42 against
+  36, capablanca 79 against 85), mobility in capablanca (79 against
+  80), the king in xiangqi (danger 105 against `e_king` 95).
+- Short of it: the king in standard, crazyhouse and capablanca (the
+  three parts near 29, 57 and 17 against 295, 214 and 288), passed pawns
+  in standard (-6 against 229), pawn structure in standard and
+  capablanca (-1 and -46 against 45), mobility in crazyhouse (13
+  against 96).
+- FSF's values are its own self-play under its own check rule; under
+  ours its king was worth 161 in standard, its danger sum 41 and its
+  shelter 39 (plan 29, queue160), near ours for shelter. Queue257 plays
+  FSF's lab arms against full FSF at the test-set budgets, as queue238
+  did for the search, so both maps stand on the same budget: base two
+  rounds, `e_king`, `e_kdanger`, `e_kshelter`, `e_passed`, `e_pawns`,
+  `e_mobility`, `e_threats`, `e_imbalance` one round each.
