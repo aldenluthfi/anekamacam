@@ -1238,3 +1238,9 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
   into check lines, and each extended check grows the tree. Check: the
   seeded bench of xf (no extension at the last ply) with and without
   the danger sum (`plan33-xfkd`).
+- Standard, xfkd over xf: nodes x0.968 ± 0.068, time x0.966 ± 0.056
+  (on main x0.850 and x0.799). Without the last-ply extension the
+  danger sum no longer grows the tree: C2 holds in the tree.
+- Queue259 climbs back: main, xf and xfkd, interleaved, three rounds of
+  200 per variant against full FSF. If C2 holds in play, the danger sum
+  is worth more on xf (xf minus xfkd) than on main (3 in standard).
