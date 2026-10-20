@@ -1169,3 +1169,72 @@ each term to us, the base minus the arm (above 0, the term helps):
   did for the search, so both maps stand on the same budget: base two
   rounds, `e_king`, `e_kdanger`, `e_kshelter`, `e_passed`, `e_pawns`,
   `e_mobility`, `e_threats`, `e_imbalance` one round each.
+
+### Queue257, FSF's eval terms at our budget
+
+The lab arm against full FSF at the test-set budgets, one round of 200,
+minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
+
+| Term off | standard | xiangqi | crazyhouse | capablanca |
+| -------- | -------- | ------- | ---------- | ---------- |
+| `e_king` | 122 (29) | 127 (110) | 115 (56) | 129 (18) |
+| `e_kdanger` | 100 (3) | 53 (105) | 92 (5) | 100 (13) |
+| `e_kshelter` | 37 (40) | -6 (-6) | 4 (21) | 9 (17) |
+| `e_passed` | 112 (-6) | -10 (42) | -34 (-4) | 106 (-15) |
+| `e_pawns` | 64 | -29 | -15 | 67 |
+| `e_threats` | 129 (78) | 96 (42) | 72 (5) | 62 (79) |
+| `e_mobility` | 6 (37) | 64 (30) | 38 (13) | 19 (79) |
+| `e_imbalance` | 48 (18) | 13 (-7) | 25 (5) | -17 (15) |
+
+- Our king is the sum of the three king arms (they need not add); our
+  pawns arm holds the passed pawns too, so it has no FSF match alone.
+- The danger sum is the largest shortfall in three variants: near 100
+  in standard and capablanca, 87 in crazyhouse; in xiangqi ours is worth
+  more than FSF's. Passed pawns follow (near 120 in standard and
+  capablanca). Shelter is level. The danger sum gets the why chain.
+
+### Why chain: the danger sum
+
+- A: our danger sum is worth near nothing in standard, crazyhouse and
+  capablanca, FSF's near 100; both read the same kind of inputs.
+- Static check: positions from queue258 (main against full FSF, one
+  round per variant, the games kept), move 9 on, one ply in 12 (standard
+  and capablanca one in 24), not in check. Ours is main minus
+  `plan33-off-kdanger`, FSF's the lab classical score minus `e_kdanger`,
+  in pawns from White's view; level is FSF's score within 1.5:
+
+| Variant | Positions | sd ours / FSF | Corr | Fires, ours / FSF | Level: sd ours / FSF, corr |
+| ------- | --------- | ------------- | ---- | ----------------- | -------------------------- |
+| standard | 1011 | 1.08 / 1.50 | +0.61 | 69% / 48% | 0.61 / 0.46, +0.63 |
+| xiangqi | 1475 | 0.68 / 2.49 | +0.79 | 83% / 78% | 0.33 / 0.91, +0.61 |
+| crazyhouse | 721 | 2.14 / 8.22 | +0.88 | 93% / 87% | 0.49 / 2.16, +0.49 |
+| capablanca | 726 | 1.64 / 2.76 | +0.69 | 82% / 79% | 1.08 / 1.44, +0.43 |
+
+- Neither size nor fit sorts the variants: xiangqi, where ours works,
+  has the smallest sum against FSF's; standard, where it does not, the
+  closest size.
+- Seeded bench, off-kdanger over main (nodes, time): standard x0.850 ±
+  0.075, x0.799 ± 0.070; xiangqi x1.215, x1.255; crazyhouse x1.079,
+  x1.100; capablanca x1.027, x1.027. FSF's chess bench at depth 13,
+  `e_kdanger` off over the lab base: nodes x1.065, time x1.087.
+- B: in standard our danger sum grows our tree x1.18 and our time x1.25,
+  near 35 at our 108 a doubling; FSF's shrinks its own tree. Elsewhere
+  ours keeps or shrinks the tree.
+- C, noise (no): the change of the term from ply to ply over 12 games,
+  over its spread, is ours 0.23 and FSF's 0.25 in standard, ours 0.19
+  and FSF's 0.26 in xiangqi. Ours is not jumpier than FSF's.
+- FSF's sum (`king()`, evaluate.cpp) against ours: its weak square is
+  held at most once and only by the king or queen, ours held at most
+  once by anything; its ring moves off the edge (nine squares for a
+  king on its first rank, ours six) and drops squares two own pawns hold;
+  its attackers weigh by type; its maps x-ray through queens and its own
+  rooks; it adds pins and flank attacks and subtracts its shelter, a
+  knight defender, flank defence and the mobility difference. The
+  per-type weights and the knight defender name pieces and are not
+  ported; the rest has a form from the rules.
+- C2 (open): standard is the one variant where half of our depth-1
+  nodes are in check (51%, the others 10% to 12%), as every check is
+  extended. A term that rewards an attack on the royal steers the search
+  into check lines, and each extended check grows the tree. Check: the
+  seeded bench of xf (no extension at the last ply) with and without
+  the danger sum (`plan33-xfkd`).
