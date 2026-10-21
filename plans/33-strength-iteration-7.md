@@ -1244,3 +1244,13 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
 - Queue259 climbs back: main, xf and xfkd, interleaved, three rounds of
   200 per variant against full FSF. If C2 holds in play, the danger sum
   is worth more on xf (xf minus xfkd) than on main (3 in standard).
+- Queue259 runs on the local machine (the server is down), concurrency
+  8, local FSF 14.0.1. Ours plays on the clock and FSF on nodes, so the
+  absolute level moves with the machine: main scores +90 here against
+  -69 on the server. Only differences within the queue count.
+- Standard (mean of three rounds, σ about 13 per arm, 18 per
+  difference): main +90.0, xf +71.0, xfkd +23.9. xf minus xfkd is +47,
+  2.6σ, where main minus off-kdanger was +3 on the server. xf itself is
+  -19 against main (1.0σ).
+- Queue259x plays main and off-kdanger on this machine, interleaved,
+  three rounds per variant, for the like-for-like danger worth on main.
