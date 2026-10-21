@@ -1286,3 +1286,41 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
   server's level". Check: main and off-kdanger in standard here, with
   FSF's `nodestime` raised so main scores near the server's level
   (queue260).
+- Queue260 (standard, `nodestime` 46, six rounds, no forfeits): main
+  -71.1, off-kdanger -88.9, so the danger sum is worth +17.8 ± 13.1 at
+  the server's level, against +53.6 ± 18.5 at +88 (1.6σ apart). Our
+  clock is the same in both, so the sum is worth less against a stronger
+  defender, not at a shallower search of ours. At this level FSF's sum is
+  worth near 100 (queue257).
+- Local budgets from here on: the `nodestime` that puts main at the
+  server's level, from each variant's FSF doubling worth: standard 46,
+  xiangqi 53, crazyhouse 61, capablanca 39.
+
+### Why chain: the danger sum, defence
+
+- D: our sum adds only attack inputs. FSF's also subtracts defence: the
+  mobility difference, its shelter, flank defence and a knight
+  defender. An attack-only sum rewards an attack a strong defender
+  holds, which fits a worth that falls as the defender gets stronger.
+- Static check (local FSF build that prints the parts of `kingDanger`,
+  and a probe of ours, on 4632 royal sides of 200 games at queue260's
+  level): ours against FSF's total 0.86, against its attack part 0.90,
+  against its defence part 0.06. Sd: ours 382, FSF total 836, attack
+  786, defence 159. FSF's total regressed on ours leaves a residual of
+  sd 426 that the defence part follows at 0.68.
+
+| FSF defence part | sd | Corr with FSF total | Corr with ours |
+| ---------------- | -- | ------------------- | -------------- |
+| mobility difference | 82 | 0.36 | 0.16 |
+| shelter (6/8) | 93 | 0.26 | 0.00 |
+| flank defence | 16 | 0.08 | -0.19 |
+| knight defender | 50 | 0.18 | -0.01 |
+
+- The knight defender names a piece and is not ported. The mobility
+  difference is the largest and is in our maps already: our opening
+  mobility of the enemy minus ours follows FSF's term at 0.88. Added at
+  FSF's weight as a ratio (a lead worth the most valuable piece is 154.1%
+  of a full weak ring), the fit to FSF's total goes from 0.861 to 0.877.
+- `plan33-kdmob` (a49bb36): the mobility lead joins the sum, off where
+  captures fill a hand (FSF's rule). Queue261 plays main and kdmob,
+  interleaved, three rounds per variant at the local budgets.
