@@ -1252,5 +1252,17 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
   difference): main +90.0, xf +71.0, xfkd +23.9. xf minus xfkd is +47,
   2.6σ, where main minus off-kdanger was +3 on the server. xf itself is
   -19 against main (1.0σ).
+- All four (mean of three rounds; σ 13 to 16 per arm, 18 to 22 per
+  difference; no forfeits):
+
+| Variant | main | xf | xfkd | xf - main | xf - xfkd | server main - off |
+| ------- | ---- | -- | ---- | --------- | --------- | ----------------- |
+| standard | +90.0 | +71.0 | +23.9 | -19.0 | +47.1 | +3 |
+| xiangqi | +119.9 | +132.3 | +11.0 | +12.4 | +121.3 | +105 |
+| crazyhouse | +107.9 | +132.7 | +18.6 | +24.8 | +114.1 | +5 |
+| capablanca | +139.4 | +170.2 | +86.7 | +30.8 | +83.5 | +13 |
+
+- xf over main is +12.2 on the mean of the four (σ 10.2, 1.2σ): short
+  of the merge rule, and standard is the one variant that falls.
 - Queue259x plays main and off-kdanger on this machine, interleaved,
   three rounds per variant, for the like-for-like danger worth on main.
