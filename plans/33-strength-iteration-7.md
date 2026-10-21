@@ -1266,3 +1266,23 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
   of the merge rule, and standard is the one variant that falls.
 - Queue259x plays main and off-kdanger on this machine, interleaved,
   three rounds per variant, for the like-for-like danger worth on main.
+- Queue259x (rounds d to f; no forfeits): main minus off-kdanger on this
+  machine, against xf minus xfkd (queue259):
+
+| Variant | main (d-f) | off-kdanger | main - off | xf - xfkd | server main - off |
+| ------- | ---------- | ----------- | ---------- | --------- | ----------------- |
+| standard | +87.3 | +33.7 | +53.6 | +47.1 | +3 |
+| xiangqi | +125.0 | +40.4 | +84.6 | +121.3 | +105 |
+| crazyhouse | +106.3 | +54.3 | +52.0 | +114.1 | +5 |
+| capablanca | +148.6 | +102.8 | +45.8 | +83.5 | +13 |
+
+- C2 is rejected in play for standard: the danger sum is worth the same
+  on xf as on main (-7, σ 26). Elsewhere it gains on xf (mean of the
+  four +32, σ 14), but xf alone does not merge.
+- The like-for-like worth on main here is 46 to 85 in every variant,
+  where the server gave 3 to 13 in three of them. The difference is the
+  level: main scores -69 to -25 on the server and +87 to +149 here. A
+  is not "the danger sum is worth nothing" but "worth nothing at the
+  server's level". Check: main and off-kdanger in standard here, with
+  FSF's `nodestime` raised so main scores near the server's level
+  (queue260).
