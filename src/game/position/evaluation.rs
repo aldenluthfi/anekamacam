@@ -1048,6 +1048,7 @@ macro_rules! pawn_structure {
 /// - weak      : ring squares the enemy attacks and we do not hold twice
 /// - hits      : the enemy hits on the local ring, one for each piece
 /// - checks    : an enemy piece type that reaches a safe check square
+/// - mobility  : the enemy opening mobility over ours
 /// - no major  : the enemy has no major piece, less danger
 ///
 /// A ring attacker is an enemy piece whose map meets the ring. A safe check
@@ -1348,6 +1349,8 @@ macro_rules! attack_terms {
                     + ring_hits[them] * eval.danger_hit as i64
                     + unsafe_squares * eval.danger_unsafe as i64
                     + checks * race.map_or(scale, |rise| rise[0] as i64) / scale
+                    + (mobility[them][0] - mobility[color][0]) as i64
+                        * eval.danger_mobility as i64 / scale
                     - major_gone as i64 * eval.danger_no_major as i64
                     + eval.danger_base as i64;
 

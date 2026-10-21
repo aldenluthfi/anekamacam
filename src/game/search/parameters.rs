@@ -438,7 +438,9 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 /// - `DANGER_ATTACKER`     : 2.4% for each attacker, times the attackers
 /// - `DANGER_CHECK`        : 36.4% and 54.6%, one or more safe checks
 /// - `DANGER_NO_MAJOR`     : 53% less when the enemy has no major piece
-/// - `DANGER_BASE`         : 2.2% added to each sum
+/// - `DANGER_MOBILITY_RATIO`: 154.1% for an enemy mobility lead worth the
+///   most valuable piece
+/// - `DANGER_BASE`       : 2.2% added to each sum
 /// - `DANGER_THRESHOLD`    : 6.1%, the sum costs nothing up to it
 /// - `DANGER_CAP`          : 212.5%, the opening cost is linear past it
 ///
@@ -452,7 +454,8 @@ const MOBILITY_RATIO: [u32; 2] = [59, 75];
 /// `DANGER_COST_RATIO` of the most valuable piece: 26.1% and 3.8%.
 ///
 /// Fairy-Stockfish weighs the parts by the rules. With drops, a weak square
-/// counts twice, a hit 1.5 times, and there is no cut for a missing major.
+/// counts twice, a hit 1.5 times, and there is no cut for a missing major
+/// and no mobility part.
 /// In a race of checks, a weak square and an unsafe check count twice, a
 /// hit five times, the cut halves, the safe checks rise by `7 / (3 + l)`
 /// with `l` checks left to the enemy, a check is always safe with one left,
@@ -464,6 +467,7 @@ const DANGER_UNSAFE_RATIO: u32 = 809;
 const DANGER_ATTACKER: u32 = 24;
 const DANGER_CHECK: [u32; 2] = [364, 546];
 const DANGER_NO_MAJOR: u32 = 530;
+const DANGER_MOBILITY_RATIO: u32 = 1541;
 const DANGER_BASE: u32 = 22;
 const DANGER_THRESHOLD: u32 = 61;
 const DANGER_CAP: u32 = 2125;
@@ -614,6 +618,7 @@ pub struct EvalParams {
     pub danger_attacker: i32,                                                   /* of each attacker, times attackers  */
     pub danger_check: [i32; 2],                                                 /* of a type with 1, more safe checks */
     pub danger_no_major: i32,                                                   /* cut when the enemy has no major    */
+    pub danger_mobility: i32,                                                   /* of the enemy mobility lead         */
     pub danger_base: i32,                                                       /* added to each sum                  */
     pub danger_threshold: i32,                                                  /* sum that costs nothing             */
     pub danger_cap: i32,                                                        /* opening cost is linear past it     */
@@ -3558,6 +3563,9 @@ pub fn derive_advantage_parameters(state: &mut State) {
         / scale;
     let danger_no_major = DANGER_NO_MAJOR as u64 * (1 - drop)
         / (1 + racing);
+    let danger_mobility = DANGER_MOBILITY_RATIO as u64 * (1 - drop)
+        * weak * (state.statics.eval.local_stride as u64 + 1)
+        / dearest.max(1);
     let danger_cost = DANGER_COST_RATIO.map(|part| {
         (dearest * part as u64 / scale) as i32 * mated as i32
     });
@@ -3624,6 +3632,7 @@ pub fn derive_advantage_parameters(state: &mut State) {
     statics.eval.danger_attacker = DANGER_ATTACKER as i32;
     statics.eval.danger_check = DANGER_CHECK.map(|part| part as i32);
     statics.eval.danger_no_major = danger_no_major as i32;
+    statics.eval.danger_mobility = danger_mobility as i32;
     statics.eval.danger_base = DANGER_BASE as i32;
     statics.eval.danger_threshold = DANGER_THRESHOLD as i32;
     statics.eval.danger_cap = DANGER_CAP as i32;
