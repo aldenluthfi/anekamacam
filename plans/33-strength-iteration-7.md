@@ -1344,5 +1344,36 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
 
 - The one crazyhouse run was invalid: the machine hibernated in it.
 - Partial, and not pooled with later runs. The work moved to a new
-  machine (Windows, 8 cores, concurrency 6); queue261 plays again there
+  machine (Windows, concurrency 6); queue261 plays again there
   in all four variants after the budgets are calibrated.
+
+### The Windows machine
+
+- An i5-10400F, 6 cores and 12 threads; concurrency 6 is one game a
+  core. Build: nightly `x86_64-pc-windows-gnu` (no MSVC tools on the
+  machine). Perft and the 4-game smoke in each variant pass; no
+  forfeits.
+- FSF is the official 14.0.1 XQ largeboard BMI2 release. It embeds the
+  xiangqi and janggi networks and no chess network, so by default it
+  plays xiangqi with NNUE and chess classical. The first calibration
+  round gave xiangqi -541 at `nodestime` 53, where the Mac gave +10.
+- Full FSF on the server was classical in all four variants: the lab
+  base, which runs the classical eval, scored near 0 against it
+  (queues 238 and 257). Every run here sets `Use NNUE=false` on FSF.
+  Chess was classical before and after, so the standard rounds stand.
+- Under load our search slows more than FSF's: six searches at once run
+  at 0.48 of one search alone (xiangqi, 217k to 104k nodes a second),
+  FSF at 0.62 (269k to 168k). Alone, ours is 0.59 of FSF's speed in
+  standard and 0.80 in xiangqi.
+- Calibration, main against classical full FSF, one round of 200 per
+  point (no forfeits):
+
+| Variant | Points (`nodestime`: Elo) | Target | Budget |
+| ------- | ------------------------- | ------ | ------ |
+| standard | 46: -263.4, 25: -117.2, 21: -52.5 | -69 | 22 |
+| xiangqi | 26: -12.2 | -30 | 27 |
+| crazyhouse | 13: +75.9 | -28 | 26 |
+| capablanca | 21: -77.7 | -25 | 18 |
+
+- Standard is the fit of the three points (-181 a doubling). The others
+  scale by FSF's doubling worth near our 50% point (241, 101, 292).
