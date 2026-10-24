@@ -16,7 +16,10 @@ doubling buys us fewer plies and a ply is worth less to us. The eval
 map (queue256): threats match FSF's value; the king (outside xiangqi),
 passed pawns and pawn structure in standard fall far short; queue257
 measures FSF's terms at the same budget. All audit arms are closed (A2
-and A3 queue252, A6 queue255).
+and A3 queue252, A6 queue255). The danger sum's mobility input (kdmob)
+is closed (queue261). Passed pawns in FSF's form merged as build 36
+(queue262, +31.4 ± 9.0). The test opponent is FSF at `UCI_Elo` 2100 from
+queue262 on, on the Windows machine.
 
 ## Context
 
@@ -1489,3 +1492,44 @@ above, two rounds of 200 (no forfeits). kdmob minus main:
   is picked at depth 7 or 8 among four, with noise; plan 29), so it
   depends little on the machine.
 - Queue262: main and pfsf against FSF 2100, three rounds per variant.
+
+### Before queue262, pfsf against FSF's term
+
+- The static check again, pfsf minus `plan33-off-passed` (the same
+  positions): correlation with FSF's passed term 0.85 (main 0.56), in
+  the middlegame 0.88 (0.68), toward the endgame 0.85 (0.57). Sd 2.10
+  against FSF's 1.38 (main 3.43). FSF's term is near 0.55 of ours in each
+  size band: the shape now follows FSF's, the size is still near 1.8
+  times. Two parts known to add size: the connected and chained factors
+  on the base (FSF has none in its passed term), and our endgame gain
+  (13.5 pawns, FSF's 11.9).
+
+### Queue262, pfsf against FSF 2100; merged build 36
+
+Three rounds of 200, interleaved (no forfeits). pfsf minus main:
+
+| Variant | main | pfsf | Difference |
+| ------- | ---- | ---- | ---------- |
+| standard | -9.3 | +83.5 | +92.8 ± 19.7 (+99, +89, +90) |
+| xiangqi | +19.1 (one round) | | 0, the same search |
+| crazyhouse | -139.7 | -165.6 | -26.0 ± 21.4 (-8, -70, 0) |
+| capablanca | -161.2 | -102.5 | +58.7 ± 20.8 |
+| mean | | | +31.4 ± 9.0 |
+
+- A xiangqi soldier cannot promote, so pfsf plays main's search there
+  (seeded search to depth 9: 32355 nodes in both); its rounds were left
+  out after round a and the difference is 0.
+- +3.5σ on the mean, no variant below -2σ: merged as build 36 (af5c07b,
+  one commit). The played binary and the committed code search the same
+  trees (seeded, depth 10: standard, crazyhouse, capablanca, horde).
+- The why chain's climb back: D holds (FSF's form, with path and royal
+  terms, follows FSF's term at 0.85 and gains 93 in standard and 59 in
+  capablanca, near FSF's own 112 and 106 at our budget).
+- Crazyhouse leans down (-1.2σ). A cause to test: a held piece drops on
+  any empty square, so a path that is free on the board is not free with
+  an enemy piece in hand; FSF's passed term loses 34 in crazyhouse too
+  (queue257). `plan33-pfsfd` (build 36 plus that rule: an empty square is
+  unsafe while the enemy has a piece in hand) changes only variants
+  with drops. Queue263: pfsfd against build 36 in crazyhouse, six rounds.
+- After it: the size (1.8 times FSF's), from the connected and chained
+  factors on the base.
