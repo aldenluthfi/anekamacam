@@ -1452,3 +1452,40 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
     pieces), its file penalty, the second push in the king part, and its
     removal of blocked candidates. A pawn that cannot promote keeps its
     present value and has no dynamic part.
+
+### Queue261 on the Windows machine (cut after two rounds)
+
+Main and kdmob interleaved against classical full FSF at the budgets
+above, two rounds of 200 (no forfeits). kdmob minus main:
+
+| Variant | main | kdmob | Difference |
+| ------- | ---- | ----- | ---------- |
+| standard | -80.5 | -83.2 | -2.8 ± 24.1 |
+| xiangqi | -38.4 | -44.7 | -6.3 ± 25.2 |
+| crazyhouse | -20.1 | -45.6 | -25.5 ± 24.3 |
+| capablanca | -12.2 | +25.4 | +37.5 ± 23.8 |
+| mean | | | +0.7 ± 12.2 |
+
+- Crazyhouse plays the same search in both (the input is off where
+  captures fill a hand; seeded search to depth 9: 17773 nodes in both),
+  so its -25.5 is the noise of the session.
+- Cut after round b (the user's rule: a run that cannot reach the merge
+  rule stops): round c would need near +55 on the mean. Not merged.
+- Why: the input is small in FSF too. Its static fit moved FSF's total
+  only from 0.861 to 0.877, and FSF's own sum without it lost 10 ± 23 in
+  standard (queue162). The result is the size the ledger said. Closed.
+- Next lead by size: passed pawns (FSF 112 and 106 at our budget, ours
+  near 0) before the shelter input (shelter is level with FSF's in
+  standard, 40 against 37).
+
+### FSF at UCI_Elo 2100, the baseline from here
+
+- The user set FSF at `UCI_Elo` 2100 as the test opponent: classical
+  (`Use NNUE=false`), `UCI_LimitStrength`, its own clock at 10+0.1, no
+  `nodestime`. The merge rule is the same: interleaved with main, three
+  rounds of 200 per variant, +2σ on the mean, no variant below -2σ.
+- A run may stop early once the merge rule is out of reach.
+- FSF's level at a fixed `UCI_Elo` comes from its skill level (the move
+  is picked at depth 7 or 8 among four, with noise; plan 29), so it
+  depends little on the machine.
+- Queue262: main and pfsf against FSF 2100, three rounds per variant.
