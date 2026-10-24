@@ -1592,5 +1592,15 @@ Three rounds of 200, interleaved (no forfeits). pfsf minus main:
   one on its rank; opposed is an enemy pawn on its path. The passed
   pawn base loses its connected and chained factors, as the connected
   term now pays a connected passer, as in FSF. Left out: FSF's early
-  doubled, weak lever, blocked pawn and doubled isolated parts, and the
-  second rank factor with drops.
+  doubled, weak lever, blocked pawn and doubled isolated parts, the
+  second rank factor with drops, and the edge file exception of the
+  unopposed backward pawn.
+- The first build gave horde +1053 at the start (build 36 -527): thirty
+  six connected pawns each took the unit. FSF scores a pawn mass (more
+  pawns than a quarter of the board, our `pawn_mass` too) with
+  `HordeConnected[opposed][r]` for each supporter and phalanx pawn, and
+  pstr takes that form for a mass, as parts of the pawn value over one to
+  seven steps. Horde then starts at -335. The four test variants start
+  at build 36's values.
+- Queue264: build 36 and pstr against FSF 2100, three rounds per
+  variant.
