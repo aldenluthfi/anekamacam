@@ -1533,3 +1533,17 @@ Three rounds of 200, interleaved (no forfeits). pfsf minus main:
   with drops. Queue263: pfsfd against build 36 in crazyhouse, six rounds.
 - After it: the size (1.8 times FSF's), from the connected and chained
   factors on the base.
+
+### Queue263, pfsfd in crazyhouse (cut after three rounds)
+
+- pfsfd minus build 36, crazyhouse: +6, +26, -66; -11.4 ± 21.8. Six
+  rounds need near +31 to pass, so the last three would need near +73:
+  cut. Closed, the branch deleted.
+- The drop rule does not move crazyhouse, so blocking drops are not why
+  pfsf leaned down there; queue262's -26 (-1.2σ) stays within noise.
+- The size note above is withdrawn. FSF also pays a connected advanced
+  passer about twice: its `Connected[r]` bonus (pawns.cpp) for a
+  supported phalanx pawn one step from promotion is near 283 units,
+  11% of its gain, close to its passed base there. It sits in FSF's
+  Pawns row, which the static check did not read, so our connected and
+  chained factors stand in for it. No size candidate.
