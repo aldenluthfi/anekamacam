@@ -1547,3 +1547,50 @@ Three rounds of 200, interleaved (no forfeits). pfsf minus main:
   11% of its gain, close to its passed base there. It sits in FSF's
   Pawns row, which the static check did not read, so our connected and
   chained factors stand in for it. No size candidate.
+
+### Why chain: pawn structure
+
+- A: FSF's pawn structure (`e_pawns`) is worth 64 in standard and 67 in
+  capablanca at our budget (queue257); our pawn arm, structure and passed
+  pawns, -1 and -46 (queue256).
+- Static check, build 36 minus `plan33-off-structure` (a diagnostic with
+  the structure terms off and the passed pawns on, never merged) against
+  FSF's classical Pawns row, blended by FSF's phase; 100 games each of
+  build 36 against FSF 2100 (standard +59.6 ± 66, capablanca -155.5 ±
+  76), ply 16 on, one ply in eight:
+
+| Variant | n | sd ours | sd FSF | Corr | FSF on ours |
+| ------- | - | ------- | ------ | ---- | ----------- |
+| standard | 1137 | 0.96 | 0.40 | +0.75 | 0.32 |
+| capablanca | 1030 | 1.01 | 0.38 | +0.75 | 0.28 |
+
+- B: our structure term is 2.5 times FSF's in spread, and FSF's is near
+  0.3 of ours on the fit; the shape is near (0.75).
+- C: our parts are flat shares of the pawn value, from iteration 3's
+  hand divisors: isolated 25% and doubled 25% in both phases, backward
+  17.5%, connected 20% and 35% at any rank. FSF's (over its pawn, 126
+  and 208): isolated 2.4% and 7.2%, 10.3% and 11.5% more when unopposed;
+  backward 7.1% and 10.6%, the same more when unopposed; doubled 10.3%
+  and 24.5%, only without a supporter; connected grows with the rank,
+  `Connected[r] (2 + phalanx - opposed) + 22 supporters`, from near 25%
+  on the second rank to near 90% one step from promotion (opening), and
+  the endgame part is `(r - 2) / 4` of it.
+- Earlier tries of these values:
+
+| Try | Result | Recorded cause | Recorded precondition | Difference now |
+| --- | ------ | -------------- | --------------------- | -------------- |
+| Iteration 3 values, restored as R4 (plan 21) | never played alone | | | |
+| Q-3 (plan 13), the pawn table collapse | a simplification | | | |
+| PR, PR2 (plan 29, the mass progress) | standard -56 (PR) | progress counted twice | | the mass term stays as it is |
+| off-pawns (queue256) | standard -1, capablanca -46 | | | static size measured: 2.5 times FSF's |
+| FSF's form | never | | | new |
+
+- D (the candidate, `plan33-pstr`): FSF's form, as parts of our pawn
+  value in each phase. Steps to promotion `s` give FSF's rank (`r = 7 -
+  s`); a pawn that cannot promote counts its steps to the far rank. A
+  supporter is a support square pawn behind the pawn's rank, a phalanx
+  one on its rank; opposed is an enemy pawn on its path. The passed
+  pawn base loses its connected and chained factors, as the connected
+  term now pays a connected passer, as in FSF. Left out: FSF's early
+  doubled, weak lever, blocked pawn and doubled isolated parts, and the
+  second rank factor with drops.
