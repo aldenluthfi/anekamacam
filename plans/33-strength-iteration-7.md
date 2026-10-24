@@ -1379,3 +1379,76 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
   the line through its two (-186 a doubling, not 101). Xiangqi and
   capablanca scale by FSF's doubling worth near our 50% point (241,
   292).
+
+### Why chain: passed pawns
+
+- A: our passed pawn term is worth near nothing (queue256: standard -6,
+  capablanca -15), FSF's 112 and 106 at the same budget (queue257).
+- Static check (main minus `plan33-off-passed` against FSF's classical
+  `Passed` line, blended by FSF's phase; 200 standard games at the local
+  budget, ply 16 on, one ply in 12; positions where FSF's term is zero
+  kept one in five), in pawns:
+
+| Positions | n | sd ours | sd FSF | Corr | Ours fires |
+| --------- | - | ------- | ------ | ---- | ---------- |
+| all | 1070 | 3.43 | 1.38 | +0.56 | 82% |
+| FSF phase 64 and up | 326 | 0.45 | 0.52 | +0.68 | 69% |
+| FSF phase under 64 | 744 | 4.11 | 1.62 | +0.57 | 88% |
+
+| Size of ours | n | Mean ours | Mean FSF | FSF over ours |
+| ------------ | - | --------- | -------- | ------------- |
+| 0.5 to 1 | 163 | 0.71 | 0.60 | 0.65 |
+| 1 to 2 | 183 | 1.41 | 0.74 | 0.37 |
+| 2 to 4 | 157 | 2.91 | 0.94 | 0.25 |
+| 4 to 8 | 114 | 5.65 | 1.39 | 0.20 |
+| 8 and up | 49 | 11.35 | 2.49 | 0.22 |
+
+- B: in the middlegame ours has FSF's size; toward the endgame it is 2.5
+  times FSF's, and 3 to 5 times where it is large. The largest gaps are
+  endings with two or three far passers (ours -20 pawns, FSF -4), and a
+  few have the other sign (ours +11.7, FSF -1.4).
+- C: ours prices every passer as unstoppable. Its endgame value one step
+  from promotion is 35% of the promotion gain times the progress (27%),
+  and up to twice that when connected and chained. FSF's base there is
+  10.6%; it reaches near our value only when the path is free (its top
+  tier, 36 w with w = 17, adds 24.7%) and the enemy king is far. Our
+  term has no test of the path and no king distance.
+- D (the candidate): FSF's form. A small base by steps to promotion, and
+  for a passer at most four steps away, a free path part by tiers from
+  the attack maps and a king distance part to the stop square, all as
+  parts of the promotion gain.
+- Earlier tries of the passed pawn term:
+
+| Try | Result | Recorded cause | Recorded precondition | Difference now |
+| --- | ------ | -------------- | --------------------- | -------------- |
+| E1 (plan 29, double count out) | grand +165 | the bonus was counted twice | | |
+| M3 (value times the safe share of the walk) | standard 0, xiangqi -16, grand -32, shogi +2 | middlegame paths are all attacked, so passers fell too low | | additive tiers on a small base; never a cut of the full value |
+| M3b, M3c (unsafe: held, or attacked and not defended) | -26, +19, -29, -14 (two rounds, stopped) | the discount does not pay at this budget | parked until our passer value is measured against FSF's on positions with a passer | measured above: ours is FSF's free path value everywhere |
+| PR (progress part on connected passers) | horde +31, standard -56, xiangqi -30, crazyhouse -45 | progress counted twice; our passed value already too high | | the candidate lowers the base |
+| King distance to the stop square | never | | | new |
+
+- `plan33-pfsf`, the port, from the rules:
+  - Steps to promotion `s` from the promotion field (rounded). The base
+    is FSF's rank table over its gain (queen minus pawn), by steps: one
+    step 11.5% and 10.6% (opening, endgame), two 7.0% and 7.0%, three
+    2.7% and 2.9%, four 0.7% and 1.6%, five 0.7% and 1.3%, six 0.3% and
+    1.1%. It takes the place of 10% and 35% times the squared progress.
+    The connected and chained factors stay on the base.
+  - At most four steps, the dynamic part, in units of the gain times the
+    step shape `w(s) / w(1)` (FSF's `5 r - 13`: 1, 0.71, 0.41, 0.12):
+    free path tiers 25.0%, 20.8%, 11.8%, 4.9%, 0 (FSF's 36, 30, 17, 7,
+    0 times 17 over its gain), and 3.5% more when we hold a stop square;
+    endgame only, 3.3% for each step of the enemy royal from the stop
+    square and -1.4% for each step of ours, each distance at most five.
+  - The path is the pawn's path mask, the span its interference mask,
+    the stop squares the path squares in the pawn's ring. A square is
+    unsafe when the enemy attacks or holds it. Tiers: no unsafe square in
+    the span; all unsafe squares held by our pawns; none on the path;
+    none on a stop square; else 0. The path part needs an empty stop
+    square. The dynamic part is in `attack_terms!`, where the maps are;
+    the passer test there is the interference mask against the enemy
+    pawn map.
+  - Left out: FSF's x-ray of a rook or queen behind the passer (named
+    pieces), its file penalty, the second push in the king part, and its
+    removal of blocked candidates. A pawn that cannot promote keeps its
+    present value and has no dynamic part.
