@@ -1372,8 +1372,10 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
 | ------- | ------------------------- | ------ | ------ |
 | standard | 46: -263.4, 25: -117.2, 21: -52.5 | -69 | 22 |
 | xiangqi | 26: -12.2 | -30 | 27 |
-| crazyhouse | 13: +75.9 | -28 | 26 |
+| crazyhouse | 13: +75.9, 26: -109.5 | -28 | 19 |
 | capablanca | 21: -77.7 | -25 | 18 |
 
-- Standard is the fit of the three points (-181 a doubling). The others
-  scale by FSF's doubling worth near our 50% point (241, 101, 292).
+- Standard is the fit of the three points (-181 a doubling), crazyhouse
+  the line through its two (-186 a doubling, not 101). Xiangqi and
+  capablanca scale by FSF's doubling worth near our 50% point (241,
+  292).
