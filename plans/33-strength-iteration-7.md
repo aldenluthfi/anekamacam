@@ -1324,3 +1324,25 @@ minus the lab base (two rounds, near 0). Ours from queue256 in brackets:
 - `plan33-kdmob` (a49bb36): the mobility lead joins the sum, off where
   captures fill a hand (FSF's rule). Queue261 plays main and kdmob,
   interleaved, three rounds per variant at the local budgets.
+- Earlier tries of the same input:
+
+| Try | Result | Recorded cause | Recorded precondition | Difference now |
+| --- | ------ | -------------- | --------------------- | -------------- |
+| `e_kmobsum`, FSF's input off in FSF (plan 29, queue162) | standard -10.4 ± 23, xiangqi +5.2, grand -10.4 | none (the shelter coupling guess was wrong) | FSF's other defence inputs stay | ours has no defence input at all; the static fit puts the residual on defence at 0.68 |
+
+### Queue261, kdmob (partial, old machine)
+
+- Played on the old local machine at its budgets, interrupted. Mean of
+  the rounds played (σ near 18 per difference):
+
+| Variant | main | kdmob | kdmob - main |
+| ------- | ---- | ----- | ------------ |
+| standard | -82.0 | -69.3 | +12.7 |
+| xiangqi | +10.5 | -24.6 | -35.1 (-1.75σ) |
+| crazyhouse | | | not played |
+| capablanca | | | not played |
+
+- The one crazyhouse run was invalid: the machine hibernated in it.
+- Partial, and not pooled with later runs. The work moved to a new
+  machine (Windows, 8 cores, concurrency 6); queue261 plays again there
+  in all four variants after the budgets are calibrated.
