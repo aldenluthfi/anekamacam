@@ -769,9 +769,10 @@ macro_rules! castling_bonus {
 /// A colour with more pawns than `pawn_mass` is a pawn mass, and each of
 /// its pushed pawns gets its progress part too.
 ///
-/// The passed value is the promotion gain, scaled by the progress of the
-/// pawn. Derivation makes each mask from the moves of the pawn, so the same
-/// tests work for all pawn types:
+/// The passed value is a part of the promotion gain for the steps of the
+/// pawn to promotion. Its path and the royals near it are priced in
+/// `attack_terms!`. Derivation makes each mask from the moves of the pawn,
+/// so the same tests work for all pawn types:
 ///
 /// - pawn_path         : squares that the pawn walks to promote
 /// - pawn_interference : squares where an enemy pawn stops the walk
@@ -1040,6 +1041,17 @@ macro_rules! pawn_structure {
 /// one we attack too. Each piece or square counts once, whatever the number
 /// of attackers.
 ///
+/// Then the path of each passed pawn with a unit, in units of its own:
+///
+/// - free  : the first path tier the pawn passes, if a stop square is empty
+/// - held  : the held stop part, if a stop square is empty and we attack it
+/// - royal : the enemy royal steps to a stop square less ours, endgame only
+///
+/// A square is unsafe when the enemy attacks or holds it. The tiers ask in
+/// turn for no unsafe square in the span, unsafe squares that our pawns
+/// attack, none on the path, none on a stop square. The span is the
+/// interference mask, and a stop square is a path square next to the pawn.
+///
 /// Then for each colour with one royal that can be mated, the king danger
 /// sum of the enemy, from the same maps. The ring is the royal square and
 /// its local ring:
@@ -1078,8 +1090,8 @@ macro_rules! pawn_structure {
 /// type for the checks. The check squares are the map of the type of the
 /// other colour cast from the royal, exact for leaps, lines and hops. A
 /// pawn checks only from the hand, and a held piece drops on any empty
-/// square. The mobility formula and the danger sum are Fairy-Stockfish's
-/// for its fairy pieces.
+/// square. The mobility formula, the danger sum and the passed pawn parts
+/// are Fairy-Stockfish's for its fairy pieces.
 ///
 #[macro_export]
 macro_rules! attack_terms {
@@ -1204,7 +1216,11 @@ macro_rules! attack_terms {
                             (royal as u64) << (at & 63);
 
                         if pawn {
-                            pawn_maps.push((color * board_size + at) as u64);   /* colour and square, then the map    */
+                            let slot = statics.eval.pawn_slots[piece_index];
+
+                            pawn_maps.push(
+                                ((2 * slot + color) * board_size + at) as u64   /* slot, colour, square, then the map */
+                            );
                             pawn_maps.extend_from_slice(&attacks.2[..words]);
                         } else if !first {
                             let worth = statics.eval.mobility_table[reach];
@@ -1217,7 +1233,7 @@ macro_rules! attack_terms {
             }
 
             for record in pawn_maps.chunks_exact(words + 1) {
-                let color = record[0] as usize / board_size;
+                let color = record[0] as usize / board_size % 2;
                 let at = record[0] as usize % board_size;
                 let bit = 1u64 << (at & 63);
                 let attacked = maps[region(once, color ^ 1) + (at >> 6)];
@@ -1259,6 +1275,91 @@ macro_rules! attack_terms {
             }
 
             let eval = &statics.eval;
+            let files = statics.files as i32;
+            let ring_stride = eval.local_stride;
+            let royal_reach = eval.passed_royal_reach as i64;
+            let king_steps = |from: Square, to: usize| {
+                let (from, to) = (from as i32, to as i32);
+
+                (from % files - to % files).abs()
+                    .max((from / files - to / files).abs()) as i64
+            };
+            let mut passers = [[0i64; 2]; 2];                                   /* colour to opening, endgame         */
+
+            for record in pawn_maps.chunks_exact(words + 1) {
+                let color = record[0] as usize / board_size % 2;
+                let at = record[0] as usize % board_size;
+                let entry =
+                    record[0] as usize / board_size / 2 * eval.pawn_stride + at;
+                let unit = eval.pawn_passed_unit[entry];
+                let them = color ^ 1;
+                let front = &eval.pawn_interference[entry];
+                let path = &eval.pawn_path[entry];
+                let threatened = |word: usize| {
+                    maps[region(once, them) + word]
+                        | $state.pieces_board[them].2[word]
+                };
+
+                if unit == [0, 0] || (0..words).any(|word| {
+                    front.2[word] & maps[region(pawns, them) + word] != 0
+                }) {
+                    continue;
+                }
+
+                let mut faults = [false; 4];                                    /* span, past our pawns, path, stop   */
+
+                for word in 0..words {
+                    let exposed = front.2[word] & threatened(word);
+                    let pawn_cover = maps[region(pawn_hits, color) + word];
+
+                    faults[0] |= exposed != 0;
+                    faults[1] |= exposed & !pawn_cover != 0;
+                    faults[2] |= exposed & path.2[word] != 0;
+                }
+
+                let mut stops = 0;
+                let mut open = false;
+                let mut held = false;
+                let mut near = [royal_reach; 2];                                /* enemy, own royal steps to a stop   */
+
+                for slot in 0..eval.ring_counts[at] as usize {
+                    let stop =
+                        eval.ring_squares[at * ring_stride + slot] as usize;
+                    let (word, bit) = (stop >> 6, 1u64 << (stop & 63));
+
+                    if !get!(path, stop as u32) {
+                        continue;
+                    }
+
+                    stops += 1;
+                    faults[3] |= threatened(word) & bit != 0;
+                    open |= occupied.2[word] & bit == 0;
+                    held |= maps[region(once, color) + word] & bit != 0;
+
+                    for (side, owner) in [them, color].into_iter().enumerate() {
+                        if let [royal] = $state.royal_list[owner][..] {
+                            near[side] =
+                                near[side].min(king_steps(royal, stop));
+                        }
+                    }
+                }
+
+                if stops == 0 {
+                    continue;
+                }
+
+                let tier = faults.iter().position(|fault| !fault).unwrap_or(4);
+                let free = open as i64 * (eval.passed_free[tier]
+                    + held as i32 * eval.passed_free[5]) as i64;
+                let proximity = near[0] * eval.passed_royal[0] as i64
+                    - near[1] * eval.passed_royal[1] as i64;
+                let scale = COEFFICIENT_SCALE as i64;
+
+                passers[color][0] += unit[0] as i64 * free / scale;
+                passers[color][1] +=
+                    unit[1] as i64 * (free + proximity) / scale;
+            }
+
             let mut cost = [[0i32; 2]; 2];                                      /* colour of the royal to its cost    */
 
             for color in (0..2).filter(|_| danger) {
@@ -1381,6 +1482,7 @@ macro_rules! attack_terms {
                     + (counts[0][2] - counts[1][2])
                         * eval.restricted_value[phase]
                     + mobility[0][phase] - mobility[1][phase]
+                    + (passers[0][phase] - passers[1][phase]) as i32
                     + cost[1][phase] - cost[0][phase]
                     + goal
             };

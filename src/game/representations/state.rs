@@ -871,7 +871,7 @@ pub struct Scratch {
     pub pawn_table: PTable,                                                     /* arrangement to its two scores      */
     pub threat_maps: Vec<u64>,                                                  /* colour maps of `attack_terms!`     */
     pub threat_boards: [Board; 2],                                              /* occupancy and one piece's attacks  */
-    pub threat_pawns: Vec<u64>,                                                 /* each pawn's square and its map     */
+    pub threat_pawns: Vec<u64>,                                                 /* each pawn's slot, square, its map  */
     pub threat_kinds: Vec<u64>,                                                 /* each piece type's union of maps    */
 }
 

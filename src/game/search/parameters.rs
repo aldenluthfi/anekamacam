@@ -507,14 +507,29 @@ const PAWN_BACKWARD_RATIO: u32 = 175;
 ///
 /// Passed pawn values, as parts of the promotion gain over
 /// `COEFFICIENT_SCALE`. The gain is the most valuable promotion minus the
-/// pawn value. The progress of the pawn scales the value.
+/// pawn value. The steps to promotion pick the part:
 ///
-/// - `PASSED_OPENING_RATIO`    : 10% of the gain
-/// - `PASSED_ENDGAME_RATIO`    : 35% of the gain
+/// - `PASSED_RANK_RATIO`       : base, one to six steps, opening, endgame
+/// - `PASSED_STEP_SHAPE`       : path and royal unit, one to four steps
+/// - `PASSED_FREE_RATIO`       : path tiers, then a held stop, times the unit
+/// - `PASSED_ROYAL_RATIO`      : 3.3% and -1.4% a step, enemy and own royal
 /// - `PASSED_UNPROMOTED_RATIO` : 40% of the pawn value, if it cannot promote
 ///
-const PASSED_OPENING_RATIO: u32 = 100;
-const PASSED_ENDGAME_RATIO: u32 = 350;
+/// The path tiers are 25%, 20.8%, 11.8%, 4.9% and 0: no unsafe square in
+/// the span, each one held by our pawns, none on the path, none on a stop
+/// square, else. A square is unsafe when the enemy attacks or holds it. A
+/// stop square we attack adds 3.5%. The royal part is in the endgame only,
+/// and each distance counts at most one step more than the unit has.
+///
+/// Fairy-Stockfish's passed pawn values over its gain, a queen less a pawn.
+/// Its unit is `5 r - 13` for the relative rank `r`, a share of 17 here.
+///
+const PASSED_RANK_RATIO: [[u32; 6]; 2] = [
+    [115, 70, 27, 7, 7, 3], [106, 70, 29, 16, 13, 11]
+];
+const PASSED_STEP_SHAPE: [u32; 4] = [1000, 706, 412, 118];
+const PASSED_FREE_RATIO: [u32; 6] = [250, 208, 118, 49, 0, 35];
+const PASSED_ROYAL_RATIO: [u32; 2] = [33, 14];
 const PASSED_UNPROMOTED_RATIO: u32 = 400;
 
 /// SHELTER_CONFINEMENT_DIVISOR
@@ -589,6 +604,10 @@ pub struct EvalParams {
     pub pawn_support_files: Vec<Vec<i32>>,                                      /* slot to supporting file offsets    */
     pub pawn_passed_opening: Vec<i32>,                                          /* slot, square to passer worth,      */
     pub pawn_passed_endgame: Vec<i32>,                                          /* opening then ending                */
+    pub pawn_passed_unit: Vec<[i32; 2]>,                                        /* slot, square to path, royal unit   */
+    pub passed_free: [i32; 6],                                                  /* path tiers, then a held stop       */
+    pub passed_royal: [i32; 2],                                                 /* a step of the enemy, own royal     */
+    pub passed_royal_reach: i32,                                                /* most royal steps that count        */
     pub pawn_connected_opening: Vec<i32>,                                       /* slot to worth of being defended,   */
     pub pawn_connected_endgame: Vec<i32>,                                       /* opening then ending                */
     pub pawn_mass_opening: Vec<i32>,                                            /* slot, square to progress worth in  */
@@ -3325,7 +3344,8 @@ fn derive_pawn_advancement(
 ///
 /// Each mask is a full board, so each test is one bit read. The values are:
 ///
-/// - passed    : promotion gain, times the ratio, times the progress
+/// - passed    : promotion gain, times the base part for its steps
+/// - unit      : promotion gain, times the step shape
 /// - connected : part of the pawn value, separate for each phase
 /// - mass      : pawn value, times the ratio, times the progress
 /// - doubled   : part of the opening pawn value, the same in both phases
@@ -3336,9 +3356,11 @@ fn derive_pawn_advancement(
 /// - state: &mut State -> variant with the pawn tables to rebuild
 ///
 /// Notes:
-/// A passed pawn one square from promotion is worth most of a piece. A pawn
-/// that cannot promote uses its own value. Only the connected term has an
-/// endgame value. A fault is not less bad in the endgame.
+/// The base of a passed pawn is small. The unit prices its path and the
+/// royals near it in `attack_terms!`, where the attack maps are. A pawn
+/// that cannot promote uses its own value, times its squared progress, and
+/// has no unit. Only the connected term has an endgame value. A fault is
+/// not less bad in the endgame.
 ///
 #[hotpath::measure]
 pub fn derive_pawn_parameters(state: &mut State) {
@@ -3359,6 +3381,7 @@ pub fn derive_pawn_parameters(state: &mut State) {
     let mut support_files = vec![Vec::new(); pieces.len()];
     let mut passed_opening = vec![0i32; pieces.len() * stride];
     let mut passed_endgame = vec![0i32; pieces.len() * stride];
+    let mut passed_unit = vec![[0i32; 2]; pieces.len() * stride];
     let mut mass_opening = vec![0i32; pieces.len() * stride];
     let mut mass_endgame = vec![0i32; pieces.len() * stride];
 
@@ -3373,14 +3396,9 @@ pub fn derive_pawn_parameters(state: &mut State) {
         let endgame_value = p_evalue!(piece) as i32;
         let promotes = p_can_promote!(piece);
 
-        let (opening_gain, opening_ratio) = match promotes {
-            true => (promoted_opening - opening_value, PASSED_OPENING_RATIO),
-            false => (opening_value, PASSED_UNPROMOTED_RATIO),
-        };
-        let (endgame_gain, endgame_ratio) = match promotes {
-            true => (promoted_endgame - endgame_value, PASSED_ENDGAME_RATIO),
-            false => (endgame_value, PASSED_UNPROMOTED_RATIO),
-        };
+        let gains = [
+            promoted_opening - opening_value, promoted_endgame - endgame_value
+        ];
 
         support_files[slot] = derive_pawn_support_files(state, index);
 
@@ -3410,8 +3428,31 @@ pub fn derive_pawn_parameters(state: &mut State) {
                     / (COEFFICIENT_SCALE as i64 * 256)) as i32
             };
 
-            passed_opening[entry] = grown(opening_gain, opening_ratio);
-            passed_endgame[entry] = grown(endgame_gain, endgame_ratio);
+            let steps = promotion_field[square].round() as usize;               /* no zone saturates past each table  */
+            let part = |table: &[u32], phase: usize| -> i32 {
+                let ratio = table.get(steps.wrapping_sub(1)).copied()
+                    .unwrap_or(0);
+
+                (gains[phase].max(0) as i64 * ratio as i64
+                    / COEFFICIENT_SCALE as i64) as i32
+            };
+
+            match promotes {
+                true => {
+                    passed_opening[entry] = part(&PASSED_RANK_RATIO[0], 0);
+                    passed_endgame[entry] = part(&PASSED_RANK_RATIO[1], 1);
+                    passed_unit[entry] = [0, 1].map(|phase| {
+                        part(&PASSED_STEP_SHAPE, phase)
+                    });
+                }
+                false => {
+                    passed_opening[entry] =
+                        grown(opening_value, PASSED_UNPROMOTED_RATIO);
+                    passed_endgame[entry] =
+                        grown(endgame_value, PASSED_UNPROMOTED_RATIO);
+                }
+            }
+
             mass_opening[entry] =
                 grown(opening_value, PAWN_MASS_ADVANCE_RATIO[0]);
             mass_endgame[entry] =
@@ -3471,6 +3512,10 @@ pub fn derive_pawn_parameters(state: &mut State) {
     statics.eval.pawn_support_files = support_files;
     statics.eval.pawn_passed_opening = passed_opening;
     statics.eval.pawn_passed_endgame = passed_endgame;
+    statics.eval.pawn_passed_unit = passed_unit;
+    statics.eval.passed_free = PASSED_FREE_RATIO.map(|ratio| ratio as i32);
+    statics.eval.passed_royal = PASSED_ROYAL_RATIO.map(|ratio| ratio as i32);
+    statics.eval.passed_royal_reach = PASSED_STEP_SHAPE.len() as i32 + 1;
     statics.eval.pawn_connected_opening = connected_opening;
     statics.eval.pawn_connected_endgame = connected_endgame;
     statics.eval.pawn_mass_opening = mass_opening;
