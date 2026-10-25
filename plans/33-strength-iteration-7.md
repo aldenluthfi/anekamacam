@@ -2127,6 +2127,31 @@ round a (FSF's phase from its xiangqi values):
 - Smoke 1 of 4 in crazyhouse, no forfeits. Queue271: main and parity,
   all four variants, three rounds of 200, the arm order alternating.
 
+### zhscale, the parts and the hand power
+
+- Every crazyhouse term probed is near half of FSF's size against a
+  pawn: threats (FSF on ours 2.1), royal safety (2.4), mobility (1.39 in
+  FSF's trace, which is before its doubling for a hand, so near 2.8).
+- Cause: all derived parts and margins are parts of the most valuable
+  piece (`dearest_piece_value`). CP2's hand power (0.7 on the value over
+  the cheapest piece, plan 27, +90 in crazyhouse) brings the material
+  closer together: the queen is 565 there, 1186 in standard. So every
+  part shrank with it, against a pawn of 100 in both. FSF halves its
+  material in a drop variant and keeps its other terms whole.
+- Past tries of the size in crazyhouse: KH (the royal hand inputs, size
+  2.39 to 1.88 of FSF's, +1.3) and DW (danger, cap, shelter and guard
+  scaled where captures return, -9). Neither moved all parts together,
+  nor through the cause.
+- zhscale (`plan33-zhscale`, b871da6, from main): with free drops,
+  `dearest_piece_value` takes the value before the hand power (565 to
+  1187). The material is unchanged. Only crazyhouse has free drops. Its
+  param file was made again (the file was removed, the engine derived and
+  wrote it, the build embeds it): the 11 eval scalars change by near 2.1
+  (tempo 13 to 28, the danger cap 565 to 1187), the material and tables
+  are the same. Bench nodes equal main's in standard, xiangqi and
+  capablanca (depth 7), and differ in crazyhouse.
+- It plays crazyhouse after queue271, against the base of that time.
+
 ### pim, the move of a stopped depth
 
 - An iteration that the clock stops was thrown away whole; the move of
