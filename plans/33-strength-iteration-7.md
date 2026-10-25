@@ -1787,3 +1787,35 @@ Past tries of these parts:
 - Smoke: 0 of 8 in capablanca (main 1 of 4); the loss in game 0 is a
   pawn grab by the chancellor that main plays too at depth 12.
 - Queue267: main and tpiece, three rounds of 200 per variant.
+- Next on the same chain, tqueen (`plan33-tqueen`, on tpiece): FSF's
+  knight and slider attacks next to its queen, read as the squares from
+  which a cheaper piece of ours, not a pawn, would hit the enemy's only
+  copy of its most valuable piece, in our area, not strong, attacked
+  twice. FSF asks for the double attack of sliders only; with no slider
+  mark in the piece data, every type needs it. Each square is worth
+  FSF's slider value over its queen (2.4% and 0.7%), twice when we have
+  no copy of our most valuable piece.
+
+### Why chain: mobility in crazyhouse
+
+- Mobility in crazyhouse fits poorly (0.70) because FSF's row holds a
+  part we do not have: drop mobility, (10, 10) for each type in the hand
+  and each empty square of the enemy half that the enemy does not
+  attack. On the probe positions (FSF probe build, a trace row for it):
+  sd 0.48 against 0.80 for FSF's whole row and 0.40 for ours; it
+  correlates 0.68 with FSF's row and 0.09 with ours; ours plus it fits
+  0.93.
+- FSF's trace prints its mobility before the hand doubling
+  (`evaluate.cpp` 1495: times 1 plus `captures_to_hand`); ours is
+  doubled the same way, so the drop part takes the same factor.
+- Past tries: none. No plan names a drop or hand mobility term; the hand
+  tries (HB, E2, KH, KH2, KH3, HM) are all royal safety.
+- Candidate dropmob (`plan33-dropmob`, ca6221f, from main): each type in
+  the hand, not royal, adds the empty squares of the enemy half where it
+  can drop (a drop template on the square, past the middle rank in its
+  forward direction) that the enemy does not attack. Each is worth FSF's
+  drop value over its queen (0.4% and 0.4%), doubled with the mobility.
+  A knight in hand at the start position: +32, the same with either side
+  to move.
+- The builds of tqueen and dropmob and the probes ran at idle priority
+  beside queue267, on the two cores the games leave.
