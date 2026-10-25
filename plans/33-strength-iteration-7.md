@@ -1694,3 +1694,21 @@ needed near +39 each on the mean: cut. Not merged.
 
 - `plan33-kh`: KH (edd5f93) on build 36. Only variants with drops
   change; it plays crazyhouse, six rounds against build 36.
+
+### Queue266, KH in crazyhouse (cut after three rounds)
+
+- KH minus build 36: +46, -2, -40; +1.3 ± 21.2. Six rounds need near
+  +31: cut. Not merged; the branch deleted (KH stays as `plan29-kh`).
+- Static check of KH's royal safety (KH minus off-king, the same
+  positions): correlation 0.90 (build 36 0.86), sd 4.85 against FSF's
+  10.16 (3.64), FSF on ours 1.88 (2.39). The hand closes part of the
+  gap in size and fit, and plays the same.
+- Standard, the gaps (build 36): where FSF's king term passes two pawns
+  ours points the same way in 89% to 96% of positions, near half the
+  size; where FSF's is under half a pawn (62% of the positions) ours
+  has the same sign in only 58%.
+- Three ports moved a term toward FSF's in the static check and did not
+  play better: kdmob, pstr2, KH. The one that gained, pfsf, changed a
+  term whose fit was poor (0.56 to 0.85) and gave it inputs it lacked.
+  The next leads are ranked by fit: threats and mobility were not yet
+  checked.
