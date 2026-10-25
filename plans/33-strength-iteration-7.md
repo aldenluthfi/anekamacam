@@ -1921,4 +1921,52 @@ Past tries of these parts:
   the root is a FSF table by piece name.
 - termprobe used the chess phase formula in crazyhouse; FSF's phase
   there is the board's non-pawn material over the board's and the
-  hand's. Crazyhouse probes run again with the fixed phase.
+  hand's. With the fixed phase the crazyhouse fits are the same:
+  mobility 0.70, threats 0.79.
+- Crazyhouse, the same per side check (1016 sides): units 0.91, FSF's
+  mean 1782 against ours 1252. The largest input gap is the ring hits
+  (FSF 5.5 a side, ours 1.4): FSF counts each drop square next to the
+  royal for each type in the hand. That is KH's input, played in
+  queue266 (+1.3); the crazyhouse royal chain stays closed.
+
+### Queue267, tpiece and tqueen (cut after round b)
+
+| Round | Arm | standard | xiangqi | crazyhouse | capablanca |
+|-------|-----|---------:|--------:|-----------:|-----------:|
+| a | main | +54.3 | +22.6 | -177.2 | -161.9 |
+| a | tpiece | +77.7 | +13.9 | -179.5 | -125.0 |
+| a | tqueen | +43.7 | +34.9 | -143.1 | -132.9 |
+| b | main | +83.2 | +29.6 | -181.7 | -164.1 |
+| b | tpiece | +50.7 | +56.1 | -190.8 | -113.3 |
+| b | tqueen | +17.4 | +52.5 | -164.1 | -125.0 |
+
+| Arm minus main, two rounds | standard | xiangqi | crazyhouse | capablanca | mean |
+|----------------------------|---------:|--------:|-----------:|-----------:|-----:|
+| tpiece | -4.6 | +8.9 | -5.7 | +43.9 | +10.6 |
+| tqueen | -38.2 | +17.6 | +25.9 | +34.1 | +9.9 |
+
+- σ near 25 for a variant over two rounds, 12.5 for the mean. A merge
+  needs near +20 on the mean of three rounds, so round c would have to
+  give near +40 against an expected +10 (σ near 17): near 4%. Cut; no
+  forfeits. Not merged; the branches stay for the record of the form.
+- Capablanca gains in both rounds and both arms (+44, +34, near 1.5σ
+  each); the other three are level, and tqueen loses in standard.
+- So the threat fit rose from 0.59 to 0.80 in standard and to 0.85 in
+  capablanca with no gain on the mean. pfsf is still the one port that
+  gained from a fit; the rule "rank leads by fit" does not hold for the
+  threats. Not known why; the capablanca gain is the one sign, and a
+  capablanca-only cause is not a candidate under the merge rule.
+- The speed of the arms could not be told apart at idle priority under
+  the games (standard 39.5k, 35.0k, 37.6k nodes a second; capablanca
+  24.2k, 27.1k, 26.3k; seeded searches of eight probe positions). The
+  bench positions are mostly pawn endings with no queen, where tqueen's
+  part cannot fire, so its bench nodes equal tpiece's.
+
+### Queue268, dropmob in crazyhouse
+
+- dropmob changes the evaluation only where a hand exists: its seeded
+  bench nodes equal main's in standard, xiangqi and capablanca. It
+  plays crazyhouse only, against main, three rounds of 200; the other
+  three variants are 0 by construction, so the crazyhouse difference
+  stands for the mean of four at the same z.
+- Smoke 0 of 4 (main scores near 25% here), no forfeits.
