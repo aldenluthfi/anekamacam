@@ -1633,3 +1633,34 @@ Three rounds of 200, interleaved (no forfeits). pfsf minus main:
   for pstr2, and xiangqi plays no more (0, the same search).
 - Queue265: build 36 and pstr2, standard and capablanca rounds b and c,
   crazyhouse three rounds.
+
+### Queue265, pstr2 (cut after round b in standard)
+
+pstr2 minus build 36 (round a in standard and capablanca from
+queue264): standard +43, -35 (+4.0 ± 25.2); crazyhouse -17.4 ± 38.3;
+capablanca +13.6 ± 36.6; xiangqi 0 (the same search). The rounds left
+needed near +39 each on the mean: cut. Not merged.
+
+- D rejected in play. Static check of pstr2 (pstr2 minus a diagnostic
+  with its structure off, never merged) against FSF's Pawns row, 4708
+  standard positions of queue265: correlation 0.93 (build 36 0.75), sd
+  0.56 against 0.41 (0.96). Most of the size left is the unit: FSF's
+  trace counts its opening values in endgame pawns (208), pstr2's
+  ratios take its opening pawn (126). The port follows FSF's term, and
+  plays as build 36.
+- So the worth that queue257 gave `e_pawns` (64 in standard, 67 in
+  capablanca) is not in the form of FSF's structure term as our engine
+  plays it. The cause is not known.
+
+### To pick the pawn structure up again
+
+- Known: build 36's structure term is 2.5 times FSF's in spread, at a
+  correlation of 0.75; FSF's form (pstr2) follows FSF's at 0.93 and
+  gains nothing (standard +4 ± 25).
+- Not known: what the lab's `e_pawns` switch turns off. FSF's pawn entry
+  also carries the shelter and storm (`evaluate_shelter`) and the passed
+  pawn set that `passed()` reads; if the switch clears the entry, its 64
+  holds more than the structure. Test: read the switch in the lab copy
+  (on the old machine) or rebuild the lab here, and measure FSF without
+  its pawn score alone against full FSF at our budget.
+- Kept: `plan33-pstr2` (2308a89). Deleted: pstr, both diagnostics.
