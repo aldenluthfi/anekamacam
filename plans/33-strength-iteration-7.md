@@ -1882,3 +1882,43 @@ Past tries of these parts:
   is its danger penalty, and ours follows it at 0.60. Next: our danger
   sum alone against FSF's danger penalty (`plan33-off-kdanger36`, the
   sum off on build 36), and the rest of ours against FSF's shelter.
+- Our danger sum alone (main minus off-kdanger) against FSF's row: 0.62
+  opening, 0.57 endgame. Our other royal terms (off-kdanger minus
+  off-king): 0.39 and 0.44, small (sd 0.37 against 2.25).
+- Per side, raw units (a probe build that prints our sum,
+  `plan33-probe-danger`; FSF probe rows for its raw `kingDanger` and its
+  inputs; ours times 1.647, FSF's full weak ring): 2718 sides where FSF
+  is not lazy. Units 0.88, FSF's penalty on both 0.74. Ours is near 0.63
+  of FSF's in every band of FSF's value (198 of 276, 525 of 743, 884 of
+  1384, 1591 of 2602).
+
+| Input | Corr | Mean FSF | Mean ours |
+|-------|-----:|---------:|----------:|
+| weak ring squares | 0.86 | 0.9 | 1.0 |
+| attackers | 0.52 | 1.1 | 0.7 |
+| ring hits | 0.98 | 1.3 | 1.3 |
+| unsafe checks | 0.62 | 0.5 | 0.6 |
+| safe checks (units) | 0.85 | 296 | 226 |
+| whole sum (units) | 0.88 | 269 | 148 |
+
+- FSF's sum less ours (least squares) follows its safe checks most
+  (0.58), then its shelter (0.42), flank defence (0.42), weak ring
+  (0.38) and mobility lead (0.37).
+- Three forms of FSF's safe checks on the same sides: its fairy weights
+  (600, 900) for all types, as ours: mean 192, 0.96 with its real check
+  sum; its weights by type: 300, 0.99; fairy weights with the slider
+  checks through the defender's queen: 198, 0.95. Our sum with FSF's
+  typed checks put in fits FSF's sum at 0.94 (0.88 now); with the
+  x-ray checks 0.90. Our checks scaled as one (times 1.0 to 2.0) stay
+  at 0.88 to 0.89 and only move the mean.
+- Cause: FSF's safe check weights and attacker weights are tables by
+  named piece (checks: knight 803, bishop 639, rook 1087, queen 759;
+  attackers: 81, 52, 44, 10); ours takes its fairy rows (600, 900 and
+  40), as the port rules ask. The spread of the table is the fit gap;
+  the mean is only size, which did not gain before (DX, KH, kdmob). No
+  rule-derived form of the table was found: it does not follow value,
+  reach or the attacker table. The standard royal chain stops here;
+  the root is a FSF table by piece name.
+- termprobe used the chess phase formula in crazyhouse; FSF's phase
+  there is the board's non-pawn material over the board's and the
+  hand's. Crazyhouse probes run again with the fixed phase.
