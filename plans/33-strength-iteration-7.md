@@ -2022,6 +2022,49 @@ round a (FSF's phase from its xiangqi values):
   fell within two of our moves. Test of the cause on 40 capablanca falls:
   our search and FSF's at depths 8, 11 and 14 from the position before
   the fall.
+- Most falls are not mates: to a mate 4% (standard) to 8% (xiangqi), to
+  -500 or less 4% to 13%; the rest fall by 150 to 500 cp.
+- The 40 capablanca falls split in two. In near a third, our own search
+  at depth 8 from a fresh table already sees the fall (20 to -567: -524
+  at depth 8; 32 to -740: -1002; mates): in play we did not reach that
+  depth (at a 5 s clock a move gets 130 to 430 ms, depth 6 to 10 here).
+  In near a third, our search does not see it at depth 14 and FSF's does
+  at depth 8 (742 to -120: ours +734 at depth 14, FSF +44; 177 to -190:
+  ours +171, FSF -299; 697 to 516: ours +293, FSF -138). These are the
+  evaluation.
+- On 16 positions that we rate 250 cp or more above FSF's depth 8, the
+  term that parts is the royal safety: FSF's King safety row at -5 to -16
+  pawns (opening) for one side where ours is near -1 or of the other
+  sign. Per side, FSF's safe checks there match ours at fairy weights;
+  its attacker part is 520 units where ours is near 40: its ring for a
+  royal on the edge reaches one rank further.
+
+### kring, the danger ring moves in from the edge
+
+- FSF's king ring is the 3 by 3 block around the royal's square moved in
+  from each edge (`evaluate.cpp`, `kingRing`), nine squares for a royal on
+  its first rank; ours is the same block around the royal's own square,
+  six squares there. The ring decides the attackers, the weak squares and
+  the pawn hits; the hits count on the squares next to the royal in
+  both. A ring square the royal may not enter is weak in FSF (a palace).
+- Past tries: none; plan 33 named the edge as a difference of FSF's sum
+  (the danger sum chain) and did not port it.
+- kring (`plan33-kring`, from main): a derived centre for each square
+  (its file and rank moved in by the ring radius); the zone is the
+  centre and its ring. Attackers, weak squares and pawn hits read the
+  zone; a zone square the royal may not enter is weak; the hits keep the
+  royal's own ring. Weights unchanged: the full ring is still nine
+  squares.
+- Static check (kring minus `offking`, FSF's King safety row):
+
+| Variant | main | kring | sd kring | sd FSF |
+|---------|-----:|------:|---------:|-------:|
+| standard | 0.61 | 0.71 | 1.54 | 1.52 |
+| crazyhouse | 0.86 | 0.90 | 3.88 | 10.16 |
+| capablanca | 0.75 | 0.81 | 2.93 | 3.43 |
+
+- Standard by the size of FSF's term: 4 pawns or more, ours +4.70
+  against +6.57 (main near half of FSF's there); 98% the same sign.
 
 ### pim, the move of a stopped depth
 
