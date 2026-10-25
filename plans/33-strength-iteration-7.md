@@ -1738,3 +1738,52 @@ classical Threats and Mobility rows blended by FSF's phase.
   not gain three times above, so it is not a lead.
 - The probes ran one after another on one core; later probes run side
   by side.
+
+### Why chain: threats in standard
+
+- Threats in standard fit poorly (0.59) because FSF's row holds parts we
+  do not have. A probe build of FSF (`fsf-tparts.exe`, its threats with
+  a trace row for each part) on the same positions: the three parts we
+  port (hanging, safe pawn, restricted) correlate 0.93 to 0.98 with ours;
+  the parts we lack sum to an sd of 0.35 in standard (ours 0.29) and
+  correlate 0.80 with FSF's row and 0.04 with ours.
+- Ours plus a missing part, against FSF's row:
+
+| Added to ours | standard | crazyhouse | capablanca |
+|---------------|---------:|-----------:|-----------:|
+| none | 0.59 | 0.79 | 0.71 |
+| by piece (minor, rook) | 0.81 | 0.88 | 0.83 |
+| by piece and king | 0.84 | 0.89 | 0.85 |
+| queen (knight, slider on queen) | 0.73 | 0.84 | 0.84 |
+| by piece and queen | 0.89 | 0.88 | 0.93 |
+| all missing parts | 0.97 | 0.93 | 0.99 |
+
+Past tries of these parts:
+
+| Try | Result | Recorded cause | Precondition | What differs now |
+|-----|--------|----------------|--------------|------------------|
+| queue165 (lab, `e_tpiece`, `e_tqueen` off) | standard -25, -24; xiangqi, grand, shogi near 0 | FSF's piece names fit only standard | FSF self-play | never ported; the port reads values, not names |
+| TH (plan 29, build 22) | +0.1 | eval +20 eaten by the map pass speed | a separate map pass | the pass exists; the new part reads it |
+| `e_tpiece` in TH's static check | corr 0.68 with the part off | not a cause, a check | | |
+
+- Candidate tpiece (`plan33-tpiece`, fd263c3): four kinds on the attack
+  maps, by the cheapest attacker that is not a pawn or a royal: lesser
+  (an enemy piece with a higher opening value than the attacker), even
+  (a weak enemy piece, no lesser attacker), loose pawn (a weak enemy
+  pawn), royal (a weak enemy piece the royal attacks, once a side). The
+  values are FSF's tier means over its queen: 3.0% and 3.5%, 1.7% and
+  2.0%, 0.2% and 1.4%, 0.9% and 3.3%.
+- Static check (tpiece minus `offthreats`, FSF's Threats row): standard
+  0.59 to 0.74, crazyhouse 0.79 to 0.86, capablanca 0.71 to 0.77. The new
+  part against FSF's minor, rook and king parts: 0.78 standard, 0.71
+  capablanca. The largest gaps: FSF's lazy eval (its row is 0 in
+  lopsided positions), and our queen as an attacker where FSF counts
+  only light pieces and rooks.
+- Speed: the first form (a loop over the attackers of each enemy piece)
+  cost 7% in capablanca. The pass now marks lesser hits as each piece is
+  mapped; the cost is near 3% (capablanca 136.0k against 131.4k nodes a
+  second, standard 759k against 744k), the same evaluations on 450
+  positions.
+- Smoke: 0 of 8 in capablanca (main 1 of 4); the loss in game 0 is a
+  pawn grab by the chancellor that main plays too at depth 12.
+- Queue267: main and tpiece, three rounds of 200 per variant.
