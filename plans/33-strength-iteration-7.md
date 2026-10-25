@@ -2086,6 +2086,47 @@ round a (FSF's phase from its xiangqi values):
 - Mean +0.2. A merge needs near +30 a round from here: near 1%. Cut, no
   forfeits; not merged.
 
+### Queue270, kring (cut in round b)
+
+| Round | Arm | standard | xiangqi | crazyhouse | capablanca |
+|-------|-----|---------:|--------:|-----------:|-----------:|
+| a | main | +115.2 | +74.1 | -205.0 | -135.0 |
+| a | kring | +65.0 | +63.2 | -145.1 | -101.8 |
+| b | main | +38.4 | +83.2 | -130.9 | |
+| b | kring | +94.3 | +27.9 | -166.2 | |
+
+- kring minus main: standard -50.2, +55.9 (+2.9); xiangqi -10.9, -55.3
+  (-33.1); crazyhouse +59.9, -35.3 (+12.3); capablanca +33.2 (one
+  round). Mean near +4; round c would need near +50. Cut, no forfeits;
+  not merged.
+- The tree does not explain xiangqi: kring's nodes there are +2% (24
+  probe positions, depth 9), and its fit rose (0.80 to 0.84).
+
+### The order of the arms
+
+- In each round the queue played main first, then the candidate. Four
+  candidates in a row lost in standard (tpiece -4.6, tqueen -38.2, pim
+  -9.1, kring -50.2 in their first rounds), where standard is the first
+  variant of a round and my idle builds and probes often started. Not
+  shown to be a bias, but an order that never changes could carry one.
+  `queue.sh` now plays the arms in the reverse order every other round.
+
+### The parity bundle
+
+- Each FSF-parity port since pfsf moved its fit and played near +10 on
+  the mean: tpiece +10.6, tqueen +9.9, dropmob +18.7 in crazyhouse alone,
+  kring near +4, all short of the merge rule (near +20 at three rounds).
+  A gain of near +10 cannot pass alone. A new candidate that holds
+  several of them is a new test, with no selection bias in its own
+  result.
+- parity (`plan33-parity`, cc288b4, from main): tpiece, dropmob and kring
+  merged; kring's map regions moved to 9 and 10 beside tpiece's at 11 to
+  13. The terms do not read each other: on one probe position in each of
+  crazyhouse, capablanca and standard, parity minus main equals the sum
+  of the three differences (-995, -494, -881 against the same sums).
+- Smoke 1 of 4 in crazyhouse, no forfeits. Queue271: main and parity,
+  all four variants, three rounds of 200, the arm order alternating.
+
 ### pim, the move of a stopped depth
 
 - An iteration that the clock stops was thrown away whole; the move of
